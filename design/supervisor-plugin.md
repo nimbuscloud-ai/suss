@@ -219,6 +219,25 @@ The 2026-09-03 decision to shelve per-file reuse was taken when the largest cold
 
 The CLI columns come from the survey's `warm.ts` harness with one change: the edit adds a branch instead of a comment, so the partial path runs rather than the touch path. Three alternating runs each, under 40% load, and the output byte-identical to a `--no-cache` run, which is the cache contract. The live column is a script that writes the same edit and times the server from the write to its rebuilt status, plus the hook end to end, from the PostToolUse start to its output. The corpora are the survey's, so the numbers compare.
 
+### What the live process measured
+
+The plugin's PostToolUse hook ran on two copies of each corpus. One copy had the server, and on the other the hooks fell back to the CLI. Both got the same edit, and the order alternated. The rebuild and the compare are the durations the worker logged for its two commands. The machine was shared with other builds and its 1-minute load stayed between 0.6 and 3 times its core count, so every number below is slower than a quiet machine would give, and the comparison between the two columns is the part to trust. Medians of five or six samples, leaving out the first edit after the program loads:
+
+| edit | CLI hook | live hook | live rebuild | live compare | server memory |
+|-|-:|-:|-:|-:|-:|
+| NestJS service, benchmark packs, leaf | 14.4s | 7.6s | 5.3s | 2.1s | 3.2 to 4.8 GB |
+| the same, a widely injected service | 33.8s | 24.0s | 21.7s | 1.9s | |
+| NestJS service, `suss init` packs, leaf | 28.3s | 21.5s | 19.2s | 2.1s | 4.6 to 5.2 GB |
+| the same, a widely injected service | 56.9s | 48.1s | 45.7s | 2.2s | |
+| Rails app, leaf | 5.0s | 3.0s | 2.6s | 0.25s | 1.2 to 2.1 GB |
+| Rails app, a model | 9.2s | 7.7s | 7.3s | 0.26s | |
+| FastAPI app, leaf | 8.1s | 6.5s | 6.0s | 0.29s | 1.9 to 2.4 GB |
+| FastAPI app, a service | 8.4s | 6.8s | 6.3s | 0.29s | |
+
+At that load only the Rails leaf edit is inside the 5s budget, and neither pack set is for the NestJS service. Every rebuilt read was byte-identical to a `--no-cache` run over the same tree, and every served compare to the CLI's.
+
+With the `suss init` packs, `registeringFiles` is 10s of a warm leaf edit's 15s: it emits the store's facts for every file a registering pack applies to, and a third of that is the checker resolving property accesses. Keeping those facts per file needs each file's reads of other files recorded, since the store emits a function's facts once, in whichever file reaches it first, and emission follows aliases across files. That is the next lever. After it come the manifest's parse and write, about 0.8s a run, and the new checker answering symbol questions for the files read again. A widely injected service costs what it costs from the CLI less the program build, because the cache re-walks every file whose recorded dependencies include it.
+
 ## The plan
 
 1. **Findings after each edit, from the CLI.** The plugin, the PostToolUse hook, the session record, the finding-identity diff and the noise rules. The worker runs `extract --out-dir` (cached) and `check --since --json` against the previous reading. Demo: the 409 story on the express and fetch fixtures, where a partial run is under a second. On a large repository the result arrives late, at the next hook, which is the budget rule doing its job.
