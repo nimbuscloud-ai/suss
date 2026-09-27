@@ -10,7 +10,7 @@
  * the file through the engine's own scope walk.
  */
 
-import { nodeOfKey } from "@suss/resolution";
+import { nodeOfKey, noteKeyRead } from "@suss/resolution";
 import { Evaluator, force, literalOf } from "@suss/values";
 
 import { enclosingFunction, field } from "../ast.js";
@@ -70,6 +70,27 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
       }),
     ),
   );
+}
+
+/**
+ * Starts the evaluator over `db` again with nothing remembered, so what
+ * the next reads ask the rules is charged to whoever asks it rather than
+ * to an earlier reader that computed the same value.
+ */
+export function forgetEvaluations(db: Database): void {
+  const bound = projects.get(db);
+  if (bound !== undefined) {
+    evaluators.set(
+      db,
+      new Evaluator(
+        pythonLowering({
+          context: bound.context,
+          originOf: calleeOrigin,
+          rows: pythonRows,
+        }),
+      ),
+    );
+  }
 }
 
 /**
@@ -137,7 +158,10 @@ export function constructionBehind(
   }
 
   const built = writtenValuesOf(db, key)
-    .map((answer) => constructionAt(answer, bound.roots))
+    .map((answer) => {
+      noteKeyRead(db, answer);
+      return constructionAt(answer, bound.roots);
+    })
     .filter((candidate): candidate is Construction => candidate !== null);
   if (built.length === 0) {
     return NOTHING_BUILT;
@@ -322,7 +346,12 @@ function projectOver(db: Database, nodes: ProjectNodes): BoundProject {
         site === undefined
           ? writtenValueOf(db, key)
           : writtenValueUnder(db, key, site);
-      return answer === null ? null : nodeOfKey(rootsByFile, answer);
+      if (answer === null) {
+        return null;
+      }
+      // The evaluator goes on to read the syntax around the answer.
+      noteKeyRead(db, answer);
+      return nodeOfKey(rootsByFile, answer);
     },
     callable: (call) => {
       const callee = field(call, "function");
@@ -332,7 +361,11 @@ function projectOver(db: Database, nodes: ProjectNodes): BoundProject {
       }
       resolveCalls(db, [key]);
       const settled = settledFunction(db, key);
-      return settled === null ? null : (nodes.definitions.get(settled) ?? null);
+      if (settled === null) {
+        return null;
+      }
+      noteKeyRead(db, settled);
+      return nodes.definitions.get(settled) ?? null;
     },
   };
 

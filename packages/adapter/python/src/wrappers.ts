@@ -14,6 +14,7 @@
  */
 
 import { absentReading, walkDescendants } from "@suss/extractor";
+import { noteKeyRead, noteLookup } from "@suss/resolution";
 
 import { field, rangeOf, spanOf, stripDecorators } from "./ast.js";
 import { decoratorReceiver, readCallArguments } from "./decorators.js";
@@ -79,10 +80,23 @@ interface Registered {
   form: PyWrapperForm;
 }
 
-interface FormOf {
+/** A wrapper form with the pattern and pack that declare it. */
+export interface FormOf {
   pack: PythonPack;
   pattern: PythonDiscoveryPattern;
   form: PyWrapperForm;
+}
+
+const EVERY_ROUTE = "wrapEvery ";
+const OWN_ROUTES = "wrapOwn ";
+
+function describeRegistered(found: readonly Registered[] | undefined): string {
+  return (found ?? [])
+    .map(
+      ({ reference }) =>
+        `${reference.file}:${reference.name}:${reference.onThrow === true}`,
+    )
+    .join(",");
 }
 
 export function buildWrapperIndex(
@@ -118,11 +132,44 @@ export class PythonWrapperIndex {
   private readonly ownRoutes = new Map<string, Registered[]>();
   private readonly unitsByKey = new Map<string, RawCodeStructure>();
   private readonly unitsByFile = new Map<string, RawCodeStructure[]>();
+  /** Told about every registration, so a cache can repeat the ones a file's discovery made. */
+  onRegistered: ((target: ReachedFunction, declared: FormOf) => void) | null =
+    null;
 
   constructor(
     readonly options: WrapperIndexOptions,
     readonly filesByPath: ReadonlyMap<string, BoundPythonFile>,
   ) {}
+
+  /**
+   * The same lookup `wrappersFor` noted under `id`, made again over this
+   * index, or null when `id` is not one of these.
+   */
+  lookAgain(id: string): string | null {
+    if (id.startsWith(EVERY_ROUTE)) {
+      return describeRegistered(
+        this.everyRoute.get(id.slice(EVERY_ROUTE.length)),
+      );
+    }
+    if (id.startsWith(OWN_ROUTES)) {
+      return describeRegistered(
+        this.ownRoutes.get(id.slice(OWN_ROUTES.length)),
+      );
+    }
+    return null;
+  }
+
+  private noted(
+    kind: string,
+    key: string,
+    found: readonly Registered[] | undefined,
+  ): readonly Registered[] {
+    const facts = this.options.facts;
+    if (facts !== undefined) {
+      noteLookup(facts, `${kind}${key}`, describeRegistered(found));
+    }
+    return found ?? [];
+  }
 
   /** The project function a module-level name in this file refers to, or null for anything else. */
   functionCalled(file: string, name: string): ReachedFunction | null {
@@ -155,6 +202,7 @@ export class PythonWrapperIndex {
 
   /** The unit for a function, built once however many registrations point at it. */
   registered(target: ReachedFunction, declared: FormOf): Registered {
+    this.onRegistered?.(target, declared);
     const span = spanOf(target.node);
     const key = `${target.file.file}:${span.start}-${span.end}`;
     if (!this.unitsByKey.has(key)) {
@@ -186,7 +234,11 @@ export class PythonWrapperIndex {
     }
 
     const found: Registered[] = [
-      ...(this.everyRoute.get(query.pack.name) ?? []),
+      ...this.noted(
+        EVERY_ROUTE,
+        query.pack.name,
+        this.everyRoute.get(query.pack.name),
+      ),
       ...this.ownRoutesOf(query),
     ];
     for (const declared of forms) {
@@ -228,6 +280,10 @@ export class PythonWrapperIndex {
     if (site === null || bound === undefined) {
       return [];
     }
+    // The registrar is read out of the syntax where the object was built.
+    if (this.options.facts !== undefined) {
+      noteKeyRead(this.options.facts, site.file);
+    }
     for (const form of query.pattern.wrappers ?? []) {
       const match = registrarOf(
         site.name,
@@ -237,7 +293,9 @@ export class PythonWrapperIndex {
         { pack: query.pack, pattern: query.pattern, form },
       );
       if (match !== null && match.registrar.covers === "ownRoutes") {
-        return this.ownRoutes.get(match.key) ?? [];
+        return [
+          ...this.noted(OWN_ROUTES, match.key, this.ownRoutes.get(match.key)),
+        ];
       }
     }
     return [];

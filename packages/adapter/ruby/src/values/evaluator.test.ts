@@ -20,6 +20,7 @@ import {
   bindEvaluator,
   constructionSitesOf,
   evaluatedValue,
+  forgetEvaluations,
   methodDefinitionsIn,
   stringValueOf,
 } from "./evaluator.js";
@@ -803,5 +804,18 @@ describe("reading a value under one construction", () => {
 
     expect(constructionSitesOf(node, db)).toEqual([]);
     expect(constructionSitesOf(node, undefined)).toEqual([]);
+  });
+
+  it("reads the same value again after forgetting what it computed", async () => {
+    const { db, root } = await boundTo(
+      'BASE = "/api"\nsubject = "#{BASE}/items"',
+    );
+    const node = subjectNodeIn(root);
+    expect(literalOf(evaluatedValue(node, db))).toBe("/api/items");
+
+    forgetEvaluations(db);
+    forgetEvaluations(new Database());
+
+    expect(literalOf(evaluatedValue(node, db))).toBe("/api/items");
   });
 });

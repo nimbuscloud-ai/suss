@@ -26,7 +26,8 @@ import {
   UNDER_ANSWER_RELATIONS,
 } from "./index.js";
 
-import type { Database, OnDemandRules, Rule } from "@suss/datalog";
+import type { Database, OnDemandRules, Rule, Tuple } from "@suss/datalog";
+import type { DependencyLedger } from "./dependencyLedger.js";
 
 /**
  * The facts that say somebody is asking. Each seeds one family of
@@ -127,6 +128,106 @@ export function queryFacts(program: OnDemandRules): readonly string[] {
   return [...program.demandDriven, ...ASKING_RELATIONS];
 }
 
+// A cache's ledger, which keeps an answer until something behind it
+// changes, is the one observer. Typing it as the class lets a reader
+// follow each call into the ledger.
+const observersByDb = new WeakMap<Database, DependencyLedger>();
+
+/** Tell whoever observes `db` that work read what `key` refers to around the rules. */
+export function noteKeyRead(db: Database, key: string): void {
+  observersByDb.get(db)?.readKey(key);
+}
+
+/** Tell whoever observes `db` about a lookup in an index built over every file. */
+export function noteLookup(db: Database, id: string, found: string): void {
+  observersByDb.get(db)?.looked(id, found);
+}
+
+/** Whether anybody observes `db`, for a lookup whose description costs something to build. */
+export function isObserved(db: Database): boolean {
+  return observersByDb.has(db);
+}
+
+/**
+ * Tell `observer` about every question put to `db` until the returned
+ * function is called. One observer per database; a second replaces the
+ * first.
+ */
+export function observeDemand(
+  db: Database,
+  observer: DependencyLedger,
+): () => void {
+  observersByDb.set(db, observer);
+  return () => {
+    if (observersByDb.get(db) === observer) {
+      observersByDb.delete(db);
+    }
+  };
+}
+
+const completeByProgram = new WeakMap<OnDemandRules, readonly string[]>();
+
+/**
+ * The relations a program derives in full. They keep their rows between
+ * questions, so what one question added is read from the rows past the
+ * count taken before it.
+ */
+function completeRelations(program: OnDemandRules): readonly string[] {
+  const known = completeByProgram.get(program);
+  if (known !== undefined) {
+    return known;
+  }
+  const driven = new Set(program.demandDriven);
+  const complete = [
+    ...new Set(program.rules.map((one) => one.head.relation)),
+  ].filter((relation) => !driven.has(relation));
+  completeByProgram.set(program, complete);
+  return complete;
+}
+
+/** How many rows each complete relation has, before a question adds to them. */
+function rowCounts(
+  db: Database,
+  relations: readonly string[],
+): readonly number[] {
+  return relations.map((relation) => db.size(relation));
+}
+
+function addStrings(into: Set<string>, rows: readonly Tuple[]): void {
+  for (const row of rows) {
+    for (const atom of row) {
+      if (typeof atom === "string") {
+        into.add(atom);
+      }
+    }
+  }
+}
+
+/**
+ * Every value one evaluation touched: the rows of each relation the
+ * question derived only for itself, read before they are cleared, and the
+ * rows it added to the relations whose rows stay between questions.
+ */
+function valuesTouched(
+  db: Database,
+  program: OnDemandRules,
+  countsBefore: readonly number[],
+): Set<string> {
+  const values = new Set<string>();
+  for (const relation of queryFacts(program)) {
+    addStrings(values, db.facts(relation));
+  }
+  if (program.demandDriven.length === 0) {
+    for (const relation of ASKING_RELATIONS) {
+      addStrings(values, db.facts(relation));
+    }
+  }
+  completeRelations(program).forEach((relation, at) => {
+    addStrings(values, db.facts(relation).slice(countsBefore[at] ?? 0));
+  });
+  return values;
+}
+
 /** Which keys have been asked about under which relation, per database. */
 const askedByDb = new WeakMap<Database, Map<string, Set<string>>>();
 
@@ -162,7 +263,15 @@ export function askResolution(
   program: OnDemandRules = resolutionProgram(),
 ): void {
   const asked = askedOf(db, asking);
-  const fresh = [...keys].filter((key) => !asked.has(key));
+  const all = [...keys];
+  const fresh = all.filter((key) => !asked.has(key));
+  const observer = observersByDb.get(db);
+  if (observer !== undefined && fresh.length < all.length) {
+    observer.reasked(
+      asking,
+      all.filter((key) => asked.has(key)),
+    );
+  }
   if (fresh.length === 0) {
     return;
   }
@@ -170,7 +279,10 @@ export function askResolution(
     asked.add(key);
     db.add(asking, [key]);
   }
+  const complete = observer === undefined ? [] : completeRelations(program);
+  const countsBefore = rowCounts(db, complete);
   evaluate(db, program.rules);
+  observer?.evaluated(asking, fresh, valuesTouched(db, program, countsBefore));
   const forget = queryFacts(program);
   if (forget.length > 0) {
     clearRelations(db, program.rules, forget);
@@ -262,15 +374,21 @@ export function askResolutionUnder(
     asked = new Set();
     askedUnderByDb.set(db, asked);
   }
-  const fresh = [...pairs].filter(
-    ([key, site]) => !asked.has(tupleKey([key, site])),
-  );
+  const all = [...pairs].map((pair) => ({ pair, key: tupleKey([...pair]) }));
+  const fresh = all.filter(({ key }) => !asked.has(key));
+  const observer = observersByDb.get(db);
+  if (observer !== undefined && fresh.length < all.length) {
+    observer.reasked(
+      "wantedUnder",
+      all.filter(({ key }) => asked.has(key)).map(({ key }) => key),
+    );
+  }
   if (fresh.length === 0) {
     return "answered";
   }
   const spend = spendOf(db);
-  for (const [key, site] of fresh) {
-    asked.add(tupleKey([key, site]));
+  for (const { key } of fresh) {
+    asked.add(key);
   }
   spend.asked += 1;
   // Nothing is added to the database when the run is out, so there is
@@ -278,13 +396,25 @@ export function askResolutionUnder(
   if (spend.rows >= runBudget) {
     spend.skipped += 1;
     chargeQuestion("skipped");
+    observer?.evaluated(
+      "wantedUnder",
+      fresh.map(({ key }) => key),
+      new Set(),
+    );
     return "abandoned";
   }
-  for (const [key, site] of fresh) {
-    db.add("wantedUnder", [key, site]);
+  for (const { pair } of fresh) {
+    db.add("wantedUnder", [pair[0], pair[1]]);
   }
   const forget = queryFacts(program);
+  const complete = observer === undefined ? [] : completeRelations(program);
+  const countsBefore = rowCounts(db, complete);
   const clearDerived = (): void => {
+    observer?.evaluated(
+      "wantedUnder",
+      fresh.map(({ key }) => key),
+      valuesTouched(db, program, countsBefore),
+    );
     if (forget.length > 0) {
       clearRelations(db, program.rules, forget);
     }
@@ -302,10 +432,13 @@ export function askResolutionUnder(
     chargeQuestion("abandoned");
     // Clearing covers these when the rules are demand-driven, and this
     // covers them when they are not.
-    db.retract("wantedUnder", fresh);
+    db.retract(
+      "wantedUnder",
+      fresh.map(({ pair }) => [pair[0], pair[1]]),
+    );
     clearDerived();
     chargeAbandoned(
-      fresh.map(([key, site]) => `${key} under ${site}`).join(", "),
+      fresh.map(({ pair }) => `${pair[0]} under ${pair[1]}`).join(", "),
       error.examined,
     );
     return "abandoned";

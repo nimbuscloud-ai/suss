@@ -529,6 +529,20 @@ Not read yet:
 - A parameter default that refers to something other than a function at module scope, such as a method or a variable bound inside a function.
 - Flask's `before_request` on a blueprint. A flask-restx route is decorated on a namespace, and the blueprint is where it is mounted, so only the app's hook is read.
 
+## What a run after an edit replays
+
+A run with a cache writes a record for every file beside the summaries: the units the file's discovery found, each with its summary; the wrappers its routes registered, in order; the file's load-time unit; and what the walk found for each function written in the file, with each reached function's summary. Every record also says what its work depended on, as the DESIGN.md of `@suss/resolution` describes under "What a piece of work depended on". A run after an edit parses every file and emits every fact again, then replays each record whose dependencies did not change and does the rest again. The output is the same, byte for byte, as a run without the cache.
+
+A route registers the wrappers it depends on as it is discovered, and the wrapper index builds a unit for each one the first time. A replayed file registers the same wrappers again at the same point, so the wrapper units come out in the same order as before. The wrapper units themselves are built again every run. The walk replays a function's stored scan at the same place in the same round, so the summaries come out in the order a run without the cache writes them.
+
+The indexes the run builds over every file are built again each time, and each lookup a record made in one is repeated and compared: a router's composed prefix, by pattern and module and name or by the call that built it; what the app and each router registered around their routes; which method names a storage chain may start from; and which parameters end up naming an environment variable. A mount added in `main.py` changes the prefix a route in another file gets, and the route's file is discovered again because its lookup comes back different.
+
+Python has no binding by name across the whole run like Ruby's constants. A name resolves inside its own module or through an explicit import, and each `imports` row says which file the module is. So a definition added to one file reaches only the work that asked about a key in that file, and that work is checked on the key. What remains are the indexes above, which are compared, and a wildcard import, whose module is read as a whole file and charged as one.
+
+The value evaluator remembers what it computed for the rest of the run, and a remembered value asks no questions. A recording run starts each piece of work with nothing remembered, so every question a piece of work depends on is charged to it. The lookup of where an imported name is defined keeps its answers too, and asks its question again on every lookup so whoever looks is charged.
+
+A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it. A file added or removed re-extracts the whole project.
+
 ## What a file imports from the project
 
 Every summary has `metadata.moduleImports`: the project files that its own file's imports resolved to, relative to the workspace root and sorted. A file whose imports all resolve outside the project gets an empty list instead of a missing field. That way a Lambda handler that imports only the standard library still shows the checker that its closure is the handler module alone. A checker rebuilds the import graph from that field to work out which modules a template's handler entry loads. The entry `app.handler` under `CodeUri: src/` matches `src/app.py`, and a dotted module such as `shop.app.handler` matches `src/shop/app.py`.

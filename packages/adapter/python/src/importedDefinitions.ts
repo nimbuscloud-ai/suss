@@ -9,6 +9,8 @@
  * scopes so the definition can be read in the scope it is written in.
  */
 
+import { isObserved, noteKeyRead } from "@suss/resolution";
+
 import { originsOf } from "./facts/resolve.js";
 import { moduleScopeOf } from "./scope.js";
 
@@ -20,6 +22,8 @@ import type { Binding, Scope } from "./scope.js";
 export interface ImportedDefinition {
   /** The class_definition, or the value an assignment gave the name. */
   node: PyNode;
+  /** The file the definition is written in. */
+  file: string;
   /** The module scope of the file the definition is written in. */
   moduleScope: Scope;
   /** The scopes of that file, keyed by the node that opens each one. */
@@ -50,12 +54,18 @@ export function importedDefinitionLookup(
       return null;
     }
     const key = `${fromFile}#${name}`;
-    const known = found.get(key);
-    if (known !== undefined) {
-      return known;
+    let definition = found.get(key);
+    if (definition === undefined) {
+      definition = definitionAmong(originsOf(db, key), byFile);
+      found.set(key, definition);
+    } else if (isObserved(db)) {
+      // Asked again so whoever asks second is charged for the question too.
+      originsOf(db, key);
     }
-    const definition = definitionAmong(originsOf(db, key), byFile);
-    found.set(key, definition);
+    if (definition !== null) {
+      // The caller reads the definition's syntax in the file that writes it.
+      noteKeyRead(db, definition.file);
+    }
     return definition;
   };
 }
@@ -75,6 +85,7 @@ function definitionAmong(
     if (node !== null) {
       return {
         node,
+        file: file.file,
         moduleScope: file.module.moduleScope,
         scopeFor: file.module.scopeFor,
       };
