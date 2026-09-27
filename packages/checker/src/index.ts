@@ -345,22 +345,41 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const compared = new Set(pairInfo.flatMap((p) => [p.provider, p.consumer]));
   const wentUncompared = (s: BehavioralSummary): boolean =>
     !compared.has(summaryIdentifier(s));
+  // A handler that paired only at the table it writes still has no client.
+  const comparedAtKey = new Set(
+    pairInfo.flatMap((p) => [
+      comparedAt(p.key, p.provider),
+      comparedAt(p.key, p.consumer),
+    ]),
+  );
+  const wentUncomparedAtItsBoundary = (s: BehavioralSummary): boolean => {
+    const { key } = describeUnmatched(s);
+    if (key === null) {
+      return wentUncompared(s);
+    }
+
+    return !comparedAtKey.has(comparedAt(key, summaryIdentifier(s)));
+  };
 
   return {
     findings: dedupeFindings(findings),
     pairs: pairInfo,
     unmatched: {
       providers: unmatched.providers
-        .filter(wentUncompared)
+        .filter(wentUncomparedAtItsBoundary)
         .map(describeUnmatched),
       consumers: unmatched.consumers
-        .filter(wentUncompared)
+        .filter(wentUncomparedAtItsBoundary)
         .map(describeUnmatched),
       unpairable: unmatched.unpairable
         .filter((u) => wentUncompared(u.summary))
         .map((u) => ({ ...describeUnmatched(u.summary), reason: u.reason })),
     },
   };
+}
+
+function comparedAt(key: string, summary: string): string {
+  return `${key}\0${summary}`;
 }
 
 function describeUnmatched(summary: BehavioralSummary): {

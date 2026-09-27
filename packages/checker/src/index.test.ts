@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { packageExportBinding, restBinding } from "@suss/behavioral-ir";
+import {
+  packageExportBinding,
+  restBinding,
+  storageBinding,
+} from "@suss/behavioral-ir";
 
 import {
   consumer,
@@ -188,5 +192,85 @@ describe("checkAll, which pairs get the response-shaped checks", () => {
         consumer: "src/ui/CheckoutPage.ts::CheckoutPage",
       },
     ]);
+  });
+});
+
+describe("checkAll, what it lists as unpaired", () => {
+  const ordersTable = (): ReturnType<typeof storageBinding> =>
+    storageBinding({
+      recognition: "terraform",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
+      container: "orders",
+      accessPath: null,
+    });
+
+  function table(): BehavioralSummary {
+    return {
+      ...emptySummary("orders"),
+      kind: "library",
+      identity: {
+        name: "orders",
+        exportPath: null,
+        boundaryBinding: ordersTable(),
+      },
+      confidence: { source: "declared", level: "high" },
+      metadata: {
+        storageContract: { fieldSet: "exhaustive", fields: [{ name: "id" }] },
+      },
+    };
+  }
+
+  /** A route handler that reads the table, with its own route binding. */
+  function listOrders(): BehavioralSummary {
+    return {
+      ...emptySummary("listOrders"),
+      identity: {
+        name: "listOrders",
+        exportPath: ["listOrders"],
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path: "/orders",
+          recognition: "express",
+        }),
+      },
+      transitions: [
+        {
+          ...transition("t-read", {
+            output: { type: "return", value: null },
+            isDefault: true,
+          }),
+          effects: [
+            {
+              type: "interaction",
+              binding: ordersTable(),
+              interaction: {
+                class: "storage-access",
+                kind: "read",
+                fields: ["id"],
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("lists a handler's route as missing its client when the handler paired only at the table it reads", () => {
+    const result = checkAll([table(), listOrders()]);
+
+    expect(result.pairs.map((pair) => pair.key)).toEqual([
+      "aws.dynamodb:orders",
+    ]);
+    expect(result.unmatched.providers.map((one) => one.key)).toEqual([
+      "GET /orders",
+    ]);
+  });
+
+  it("stops listing the table once the storage pass compared it", () => {
+    const result = checkAll([table(), listOrders()]);
+
+    expect(result.unmatched.unpairable).toEqual([]);
   });
 });
