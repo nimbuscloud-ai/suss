@@ -406,6 +406,27 @@ describe("the suss MCP server", () => {
     fs.rmSync(bare, { recursive: true, force: true });
   });
 
+  it("listens on the plugin's socket when asked, before its first build", async () => {
+    const liveRoot = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-mcp-live-")),
+    );
+    writeProject(liveRoot);
+    const { project, live } = createServer({
+      root: liveRoot,
+      watch: false,
+      live: true,
+    });
+
+    const socket = await live;
+    await project.settled();
+
+    expect(socket?.owner).toBe(true);
+    expect(project.lastBuild().configured).toBe(true);
+    socket?.close();
+    project.close();
+    fs.rmSync(liveRoot, { recursive: true, force: true });
+  }, 60_000);
+
   it("answers a tool call made right after createServer returns, before the first build finishes", async () => {
     const freshRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-mcp-fresh-"));
     writeProject(freshRoot);

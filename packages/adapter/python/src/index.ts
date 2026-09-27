@@ -36,6 +36,8 @@ export {
   extractPythonProject,
   factsForFile,
   findPythonFiles,
+  keptPythonParses,
+  parsePythonAhead,
 } from "./project.js";
 export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
@@ -85,6 +87,7 @@ export type {
   ExtractPythonOptions,
   ExtractPythonResult,
   FileFactsOptions,
+  KeptPythonParses,
 } from "./project.js";
 export type {
   BoundPythonFile,

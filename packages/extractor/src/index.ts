@@ -1047,6 +1047,7 @@ export {
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
+export { KeptParses } from "./keptParses.js";
 export {
   evaluatePackHealth,
   formatPackHealth,

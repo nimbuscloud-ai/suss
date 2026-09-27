@@ -15,6 +15,7 @@ import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { joinMountedPath, staysInItsFunction } from "@suss/resolution";
 
 import { nodeId } from "../facts/extract.js";
+import { createPerFileCache } from "../perFileCache.js";
 import { pathFromArgument } from "../resolve/routePath.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import { importDeclarationsOf } from "./importScan.js";
@@ -589,10 +590,7 @@ function callsOnCallResult(
   return methods.some((method) => called.has(method));
 }
 
-const methodsCalledOnCallResults = new WeakMap<
-  SourceFile,
-  ReadonlySet<string>
->();
+const methodsCalledOnCallResults = createPerFileCache<ReadonlySet<string>>();
 
 /** The method names called on a variable the file set to a call's result. */
 function collectMethodsCalledOnCallResults(

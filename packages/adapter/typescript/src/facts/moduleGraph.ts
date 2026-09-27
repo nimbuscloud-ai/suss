@@ -14,6 +14,7 @@
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 
+import { createPerFileCache } from "../perFileCache.js";
 import { GeneratedModules } from "./generatedModules.js";
 
 import type { SourceFile } from "ts-morph";
@@ -286,7 +287,24 @@ function readModuleSpecifiers(sourceFile: SourceFile): string[] {
   return specifiers;
 }
 
+/**
+ * Where a file's specifiers resolve depends on its text and on which
+ * files exist, and a kept project starts over when the set of files
+ * changes, so the result lasts as long as the file's parse.
+ */
+const resolvedSpecifiers = createPerFileCache<SourceFile[]>();
+
 function resolveModuleSpecifiers(sourceFile: SourceFile): SourceFile[] {
+  const known = resolvedSpecifiers.get(sourceFile);
+  if (known !== undefined) {
+    return known;
+  }
+  const resolved = resolveModuleSpecifiersOf(sourceFile);
+  resolvedSpecifiers.set(sourceFile, resolved);
+  return resolved;
+}
+
+function resolveModuleSpecifiersOf(sourceFile: SourceFile): SourceFile[] {
   const resolved: SourceFile[] = [];
   for (const importDecl of sourceFile.getImportDeclarations()) {
     const target = importDecl.getModuleSpecifierSourceFile();

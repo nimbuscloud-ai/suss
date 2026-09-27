@@ -37,7 +37,7 @@ process.on("SIGTERM", () => {
 session.log(
   `worker ${process.pid} runs suss from ${suss.from} (${[suss.command, ...suss.prefix].join(" ")})`,
 );
-await workUntilDone(session, async (args) => {
+await workUntilDone(session, async (args, notBefore) => {
   const started = Date.now();
   const run = await runSuss(suss, args, {
     cwd: projectDir,
@@ -45,6 +45,7 @@ await workUntilDone(session, async (args) => {
     onSpawn: (child) => {
       running = child;
     },
+    ...(notBefore === undefined ? {} : { notBefore }),
   });
   running = null;
   session.log(

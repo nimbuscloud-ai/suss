@@ -55,6 +55,8 @@ export {
   extractRubyProject,
   factsForFile,
   findRubyFiles,
+  keptRubyParses,
+  parseRubyAhead,
 } from "./project.js";
 export {
   graphqlTypeNameFromQualified,
@@ -111,6 +113,7 @@ export type {
   ExtractRubyOptions,
   ExtractRubyResult,
   FileFactsOptions,
+  KeptRubyParses,
 } from "./project.js";
 export type { ClassInfo, GraphqlTypeNameConvention } from "./scope.js";
 export type {

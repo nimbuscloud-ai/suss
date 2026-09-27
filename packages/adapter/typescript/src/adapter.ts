@@ -85,10 +85,15 @@ import {
   importedFilePathsOf,
   loadImportGraphsDepthFirst,
   loadImportGraphsDepthFirstFromPaths,
-  readTsconfigFileList,
+  readTsconfig,
   rememberResolvedImports,
 } from "./bootstrap/lazyProjectInit.js";
 import { computePackApplicability } from "./bootstrap/preFilter.js";
+import {
+  emptyLoadedState,
+  noteRunFileList,
+  refreshLoadedProject,
+} from "./bootstrap/refresh.js";
 import {
   createSourceFileLookup,
   type SourceFileLookup,
@@ -187,7 +192,12 @@ import {
   workspaceNameFor,
   workspaceRootFor,
 } from "./summaryIdentity.js";
-import { createTimer, type Timer, type TimingReport } from "./timing.js";
+import {
+  createTimer,
+  noopTimer,
+  type Timer,
+  type TimingReport,
+} from "./timing.js";
 import { evaluatedValueUnder } from "./values/evaluator.js";
 import {
   computeAdapterPacksDigest,
@@ -2165,6 +2175,35 @@ export interface TypeScriptAdapter extends LanguageAdapter {
   readonly tsProject: Project;
   extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]>;
   extractAll(): Promise<BehavioralSummary[]>;
+  /**
+   * Re-reads the files that changed on disk since the last `extractAll`,
+   * so the next one describes the tree as it is now and keeps the parse
+   * of every other file. A process that keeps the adapter between runs
+   * calls this before each one. `changedPaths` are files the caller knows
+   * were written; the rest are found by their stamps.
+   */
+  refresh(changedPaths?: readonly string[]): RefreshReport;
+  /**
+   * Loads the files a run walks and everything they import, and builds
+   * the compiler's program, without extracting. A run served whole from
+   * the cache loads nothing, so a process that keeps the adapter calls
+   * this once while nobody is waiting, and the first edit after that
+   * finds the program built.
+   */
+  loadProgram(): Promise<void>;
+}
+
+/**
+ * The adapter a method was called on, so starting over can point its
+ * `tsProject` at the new project. Undefined for a method called detached.
+ */
+type HoldsProject = { tsProject: Project } | undefined;
+
+export interface RefreshReport {
+  /** Files parsed again because their text changed. */
+  changed: string[];
+  /** Why the adapter started over with a new project, or null. */
+  startedOver: string | null;
 }
 
 /**
@@ -2233,8 +2272,7 @@ export function createTypeScriptAdapter(
     ],
   };
 
-  const project =
-    config.project ??
+  const newProject = (): Project =>
     new Project(
       config.tsConfigFilePath !== undefined
         ? {
@@ -2243,6 +2281,13 @@ export function createTypeScriptAdapter(
           }
         : { skipAddingFilesFromTsConfig: true },
     );
+  let project = config.project ?? newProject();
+  // An adapter that made its project from a tsconfig picks the files it
+  // walks on every run, so a later run on a kept project walks the same
+  // files a fresh process would.
+  const ownsProject =
+    config.tsConfigFilePath !== undefined && config.project === undefined;
+  let loaded = emptyLoadedState();
 
   // Settled once, before any file loads, so a cached run and a cold
   // run of the same command measure their ids from the same directory.
@@ -2252,13 +2297,24 @@ export function createTypeScriptAdapter(
       ? workspaceRootFor(path.dirname(config.tsConfigFilePath))
       : undefined);
 
-  let lazyBootstrapped = false;
   // The whole tsconfig include set, which bounds what closure expansion
   // may lazy-add, so a run never pulls in `node_modules`.
   let projectFileSet: ReadonlySet<string> | undefined;
+  // False until a run or loadProgram has loaded the walked files.
+  let programLoaded = false;
+  const startOver = (holder: HoldsProject): void => {
+    project = newProject();
+    if (holder !== undefined) {
+      holder.tsProject = project;
+    }
+    loaded = emptyLoadedState();
+    projectFileSet = undefined;
+    programLoaded = false;
+  };
 
-  // A caller-supplied Project gets no disk cache by default: the stat
-  // check against in-memory paths would always miss.
+  // Without a tsconfig there is no directory to keep the cache beside,
+  // so a caller that supplies a bare project passes a cache directory or
+  // runs without one.
   const cacheDir = declineWhenRunFromSource(
     config.cacheDir === null
       ? null
@@ -2290,8 +2346,65 @@ export function createTypeScriptAdapter(
   ): BehavioralSummary[] =>
     composeWrappers(summaries, config.extractorOptions ?? {});
 
+  const loadWalkedFiles = async (holder: HoldsProject): Promise<void> => {
+    const tsConfigFilePath =
+      config.tsConfigFilePath ??
+      raise("lazy bootstrap requires tsConfigFilePath");
+    const tsconfig = readTsconfig(tsConfigFilePath);
+    if (noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames)) {
+      startOver(holder);
+      noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames);
+    }
+    const lazy = await createLazyProject(
+      tsConfigFilePath,
+      config.frameworks,
+      tsconfig,
+    );
+    projectFileSet = lazy.projectFileSet;
+    const { deep } = loadRunFiles(project, lazy.candidatePaths, noopTimer());
+    warmExportChains(deep.deepRoots);
+    project.getTypeChecker().compilerObject;
+    programLoaded = true;
+  };
+
+  const refreshNow = (
+    holder: HoldsProject,
+    changedPaths: readonly string[],
+  ): RefreshReport => {
+    if (!ownsProject || config.tsConfigFilePath === undefined) {
+      return { changed: [], startedOver: null };
+    }
+    const outcome = refreshLoadedProject(
+      project,
+      loaded,
+      config.tsConfigFilePath,
+      changedPaths,
+    );
+    if (outcome.startOver === null) {
+      return { changed: outcome.changed, startedOver: null };
+    }
+    startOver(holder);
+    return { changed: [], startedOver: outcome.startOver };
+  };
+
   return {
     tsProject: project,
+
+    refresh(changedPaths: readonly string[] = []): RefreshReport {
+      return refreshNow(this, changedPaths);
+    },
+
+    async loadProgram(): Promise<void> {
+      if (!ownsProject) {
+        return;
+      }
+      if (!programLoaded) {
+        await loadWalkedFiles(this);
+      }
+      // The first refresh reads every loaded file to compare it with its
+      // parse, which this keeps off the first edit.
+      refreshNow(this, []);
+    },
 
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
       const summaries: BehavioralSummary[] = [];
@@ -2376,18 +2489,24 @@ export function createTypeScriptAdapter(
 
       // Read before bootstrap so the cache check below can run against
       // it, and a hit costs no parsing.
-      const lazyEligible =
-        !lazyBootstrapped &&
-        config.tsConfigFilePath !== undefined &&
-        config.project === undefined;
-      const tsconfigFileList = lazyEligible
+      const tsconfig = ownsProject
         ? timer.time("readTsconfigFileList", () =>
-            readTsconfigFileList(
+            readTsconfig(
               config.tsConfigFilePath ??
                 raise("lazy bootstrap requires tsConfigFilePath"),
             ),
           )
         : null;
+      const tsconfigFileList = tsconfig?.fileNames ?? null;
+      if (
+        tsconfigFileList !== null &&
+        config.tsConfigFilePath !== undefined &&
+        noteRunFileList(loaded, config.tsConfigFilePath, tsconfigFileList) !==
+          null
+      ) {
+        startOver(this);
+        noteRunFileList(loaded, config.tsConfigFilePath, tsconfigFileList);
+      }
 
       // Nothing reads the digest or the file list when the run is not
       // caching, and settling either walks the tree for every template
@@ -2463,17 +2582,17 @@ export function createTypeScriptAdapter(
       }
 
       let candidatePaths: string[] | null = null;
-      if (lazyEligible) {
+      if (tsconfig !== null) {
         const lazy = await timer.timeAsync("lazyProjectInit", () =>
           createLazyProject(
             config.tsConfigFilePath ??
               raise("lazy bootstrap requires tsConfigFilePath"),
             config.frameworks,
+            tsconfig,
           ),
         );
         candidatePaths = lazy.candidatePaths;
         projectFileSet = lazy.projectFileSet;
-        lazyBootstrapped = true;
       }
 
       const summaries: BehavioralSummary[] = [];
@@ -2489,6 +2608,7 @@ export function createTypeScriptAdapter(
         timer,
       );
       timer.time("warmExportChains", () => warmExportChains(deep.deepRoots));
+      programLoaded = true;
 
       const resolution = ResolutionStore.forPacks(config.frameworks);
       const packsByFile = timer.time("preFilter", () =>

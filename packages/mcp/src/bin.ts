@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     ]);
 
   const root = process.argv[2] ?? process.cwd();
-  const { server, project } = createServer({ root });
+  const { server, project, live } = createServer({ root, live: true });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -34,7 +34,9 @@ async function main(): Promise<void> {
     process.stderr.write(`[suss] ${line}\n`);
   }
 
+  const socket = await live;
   const stop = (): void => {
+    socket?.close();
     project.close();
     process.exit(0);
   };

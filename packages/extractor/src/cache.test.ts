@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   type CacheAttribution,
@@ -393,7 +393,7 @@ describe("per-file plan", () => {
         [{ file: "a.ts", deps: ["b.ts"] }, { file: "b.ts" }],
       ),
     );
-    return { cache, input, dir, summaryA, summaryB };
+    return { cache, cacheDir, input, dir, summaryA, summaryB };
   }
 
   it("returns null for an entry written without attribution", async () => {
@@ -708,5 +708,67 @@ describe("per-file plan", () => {
     await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
     const after = await cache.plan(input);
     expect(after?.validRoots).toEqual(new Set());
+  });
+
+  describe("reading the manifest", () => {
+    function manifestReads(reads: { mock: { calls: unknown[][] } }): number {
+      return reads.mock.calls.filter(([file]) =>
+        String(file).endsWith("manifest.json"),
+      ).length;
+    }
+
+    it("parses it once for the lookup, the plan and the write of one run", async () => {
+      const { cache, input, dir } = await writeTwoFileEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+      const reads = vi.spyOn(fs, "readFile");
+      try {
+        expect((await cache.lookup(input)).kind).toBe("miss");
+        const plan = await cache.plan(input);
+        if (plan === null) {
+          throw new Error("expected a plan");
+        }
+        await cache.write(input, plan.allSummaries(), plan.attribution());
+        expect(manifestReads(reads)).toBe(1);
+      } finally {
+        reads.mockRestore();
+      }
+    });
+
+    it("reads it again when another process wrote the entry after the lookup", async () => {
+      const { cache, cacheDir, input, dir, summaryA } =
+        await writeTwoFileEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+      expect((await cache.lookup(input)).kind).toBe("miss");
+
+      const other = createCacheLayer(cacheDir);
+      await other.write(
+        input,
+        [summaryA],
+        attributionFor(
+          dir,
+          [{ summary: summaryA, owners: ["a.ts"] }],
+          [{ file: "a.ts" }, { file: "b.ts" }],
+        ),
+      );
+
+      const plan = await cache.plan(input);
+      expect(plan?.changed.size).toBe(0);
+      expect(plan?.allSummaries().map((s) => s.identity.name)).toEqual([
+        "summaryA",
+      ]);
+    });
+
+    it("reads it again at the start of the next run", async () => {
+      const { cache, input, dir } = await writeTwoFileEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+      await cache.lookup(input);
+      const reads = vi.spyOn(fs, "readFile");
+      try {
+        await cache.lookup(input);
+        expect(manifestReads(reads)).toBe(1);
+      } finally {
+        reads.mockRestore();
+      }
+    });
   });
 });

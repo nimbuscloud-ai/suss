@@ -19,6 +19,7 @@ import {
 import { Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { createProgramMemo } from "../programMemo.js";
 import { peelSyntax } from "../walk/unwrap.js";
 import { stringValueOf } from "./resolveValue.js";
 
@@ -514,7 +515,7 @@ interface CachedFragmentIndex {
   signature: string;
 }
 
-const fragmentIndexes = new WeakMap<Project, CachedFragmentIndex>();
+const fragmentIndexes = createProgramMemo<Project, CachedFragmentIndex>();
 
 /** No fragment is defined in a file that never writes the word. */
 const FRAGMENT_DEFINITION_TEXT = /\bfragment\s+\w+\s+on\b/;
@@ -526,12 +527,12 @@ const FRAGMENT_DEFINITION_TEXT = /\bfragment\s+\w+\s+on\b/;
  */
 function projectFragmentDefinitions(project: Project): FragmentDefinitions {
   const signature = projectSignature(project);
-  const cached = fragmentIndexes.get(project);
+  const cached = fragmentIndexes.get(project, project);
   if (cached !== undefined && cached.signature === signature) {
     return cached.definitions;
   }
   const definitions = buildFragmentIndex(project);
-  fragmentIndexes.set(project, { definitions, signature });
+  fragmentIndexes.set(project, project, { definitions, signature });
   return definitions;
 }
 
