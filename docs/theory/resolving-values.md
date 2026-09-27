@@ -213,7 +213,7 @@ A field default is different. In Python, `is_admin: bool = False` on a
 dataclass or a pydantic model is only the value an instance starts with
 when its constructor is not given one, and the library that generates
 the constructor is not in the run. The adapter records it as
-`holdsDefault` rather than `holdsProperty`, so it is not something every
+`declaresDefault` rather than `holdsProperty`, so it is not something every
 instance contains. A construction written with no arguments contains it.
 A receiver or a parameter, whose construction the run cannot see, finds
 the class's methods and plain attributes and none of its field defaults.

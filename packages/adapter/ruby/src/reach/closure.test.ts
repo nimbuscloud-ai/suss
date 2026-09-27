@@ -182,6 +182,26 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
   });
 
+  it("follows a class method called through a local the constant was written to", async () => {
+    writeQueryType("orders", [
+      "service = OrderService",
+      "service.call(current_user)",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def self.call(user)",
+      "    user.orders",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const helper = unitNamed(summaries, "call");
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([
+      ["service.call", summaryIdentifier(helper)],
+    ]);
+  });
+
   it("follows a wired field's resolver the same way a plain field's is followed", async () => {
     write("app/graphql/types/query_type.rb", [
       "class Types::QueryType < Types::BaseObject",

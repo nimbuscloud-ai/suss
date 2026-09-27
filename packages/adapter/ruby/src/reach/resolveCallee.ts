@@ -14,6 +14,7 @@
  */
 
 import {
+  answersFor,
   calleeOutcomeOf,
   calleeOutcomes,
   couldBeSettled,
@@ -23,7 +24,11 @@ import { methodInAncestry } from "../ancestry.js";
 import { definesClassMethod, field, singletonMethodsByName } from "../ast.js";
 import { classBehind } from "../baseClass.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
-import { readKey } from "../facts/values.js";
+import {
+  classLocalsAt,
+  readKey,
+  readsOffClassItself,
+} from "../facts/values.js";
 import { pickedSource } from "../loaders.js";
 import { calleeMethodName } from "../paths/effects.js";
 
@@ -273,13 +278,31 @@ function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
   if (receiver === null || receiver.type === "self") {
     return { kind: "implicitSelf", name: methodName };
   }
+  const key = readKey(site.file, receiver, site.method);
   return {
     kind: "receiver",
-    key: readKey(site.file, receiver, site.method),
+    key,
     method: methodName,
-    onClassItself:
-      receiver.type === "constant" || receiver.type === "scope_resolution",
+    onClassItself: readsOffClassItself(
+      receiver,
+      key,
+      classLocalsFor(call, site),
+    ),
   };
+}
+
+/** Each scope's class locals, worked out once for every call in it. */
+const classLocalsByScope = new WeakMap<object, ReadonlySet<string>>();
+
+function classLocalsFor(call: RbNode, site: CallSite): ReadonlySet<string> {
+  const scope = site.method ?? call.tree;
+  const known = classLocalsByScope.get(scope);
+  if (known !== undefined) {
+    return known;
+  }
+  const found = classLocalsAt(site.file, site.method, call.tree.rootNode);
+  classLocalsByScope.set(scope, found);
+  return found;
 }
 
 function asCallee(
@@ -319,11 +342,7 @@ function asCallee(
  * `self` needs the first case, which `comesTo` does not cover.
  */
 function objectsBehind(facts: Database, key: string): string[] {
-  return [
-    ...new Set(
-      facts.lookup("wantedObjectOf", 0, key).map((row) => String(row[1])),
-    ),
-  ];
+  return answersFor(facts, "wantedObjectOf", key);
 }
 
 /**

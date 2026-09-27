@@ -50,12 +50,10 @@ export {
 } from "./program.js";
 export { explainResolvedKey, proofRules } from "./session.js";
 export {
-  answersByKey,
-  type OverrideRelations,
-  placeholderValues,
-  singleAnswers,
-  WANTED_OVERRIDES,
-  withoutOverridden,
+  answersFor,
+  resolvedFunctions,
+  settledFunction,
+  writtenAnswersFor,
 } from "./singleAnswer.js";
 export {
   type AskUnder,
@@ -1465,7 +1463,7 @@ const STATED_RULES = [
     "overrides",
     [v("m"), v("n"), v("h")],
     [
-      lit("holdsDefault", v("c"), v("n"), v("m")),
+      lit("declaresDefault", v("c"), v("n"), v("m")),
       lit("extends", v("c"), v("b")),
       lit("comesTo", v("b"), v("base")),
       lit("contains", v("base"), v("n"), v("h")),
@@ -1568,7 +1566,7 @@ const STATED_RULES = [
     "contains",
     [v("cls"), v("n"), v("held")],
     [
-      lit("holdsDefault", v("cls"), v("n"), v("held")),
+      lit("declaresDefault", v("cls"), v("n"), v("held")),
       lit("plainAncestry", v("cls")),
     ],
     "plain class attribute",
@@ -1593,7 +1591,7 @@ const STATED_RULES = [
   rule(
     "fieldDefault",
     [v("cls"), v("n"), v("held")],
-    [lit("holdsDefault", v("cls"), v("n"), v("held"))],
+    [lit("declaresDefault", v("cls"), v("n"), v("held"))],
   ),
   rule(
     "fieldDefault",

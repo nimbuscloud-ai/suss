@@ -600,6 +600,40 @@ describe("a class method and an instance method of one name", () => {
     ]);
   });
 
+  it("finds the class method for a read through a local the class was written to", async () => {
+    const source = [
+      ...REQUEST,
+      "end",
+      "",
+      "def fetch",
+      "  klass = Request",
+      "  klass.http_client",
+      "end",
+      "",
+    ].join("\n");
+    const db = await runFactsFor(source);
+    expect(resolvedRead(db, calleeIn(source, "klass.http_client"))).toEqual([
+      keyOfText(source, CLASS_METHOD),
+    ]);
+  });
+
+  it("finds the instance method for a read through a local an instance was written to", async () => {
+    const source = [
+      ...REQUEST,
+      "end",
+      "",
+      "def fetch",
+      "  request = Request.new",
+      "  request.http_client",
+      "end",
+      "",
+    ].join("\n");
+    const db = await runFactsFor(source);
+    expect(resolvedRead(db, calleeIn(source, "request.http_client"))).toEqual([
+      keyOfText(source, INSTANCE_METHOD),
+    ]);
+  });
+
   it("finds the instance method for a read off an instance", async () => {
     const source = [...REQUEST, "end", "", "Request.new.http_client", ""].join(
       "\n",

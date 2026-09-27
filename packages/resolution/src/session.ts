@@ -15,7 +15,7 @@
 import { evaluate, proofOf, rulesDeriving, witnesses } from "@suss/datalog";
 
 import { explainResolutionProof, renderExplanation } from "./explain.js";
-import { withoutOverridden } from "./singleAnswer.js";
+import { answersFor } from "./singleAnswer.js";
 
 import type { Database, Rule } from "@suss/datalog";
 import type { ResolutionExplanation, StepPhrase } from "./explain.js";
@@ -102,18 +102,11 @@ export function explainResolvedKey(
   const evaluateMs = performance.now() - started;
   const { baseFacts, derivedFacts } = factCounts(db, witnessRules);
 
-  const targets = new Set(
-    withoutOverridden(
-      db,
-      key,
-      db.lookup("resolves", 0, key).map((tuple) => String(tuple[1])),
-      PROOF_OVERRIDES,
-    ),
-  );
-  if (targets.size !== 1) {
+  const targets = answersFor(db, "resolves", key, PROOF_OVERRIDES);
+  if (targets.length !== 1) {
     return null;
   }
-  const target = [...targets][0] as string;
+  const target = targets[0] as string;
 
   const proof = proofOf(
     db,

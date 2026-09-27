@@ -789,19 +789,42 @@ function readsOffClassItself(receiver: Expression): boolean {
   if (written.getKind() === SyntaxKind.ThisKeyword) {
     return thisIsTheClass(written);
   }
-  if (Node.isPropertyAccessExpression(written)) {
-    return refersToAClass(written.getNameNode());
-  }
-  return Node.isIdentifier(written) && refersToAClass(written);
+  return isClassReference(written, new Set());
 }
 
-/** Whether a name is a class whose statics are spelled as class members, through an import or not. */
-function refersToAClass(nameNode: Node): boolean {
+/** Whether an expression is a name or a property read that refers to a class. */
+function isClassReference(written: Node, seen: Set<Node>): boolean {
+  if (Node.isPropertyAccessExpression(written)) {
+    return refersToAClass(written.getNameNode(), seen);
+  }
+  return Node.isIdentifier(written) && refersToAClass(written, seen);
+}
+
+/**
+ * Whether a name is a class whose statics are spelled as class members,
+ * through an import or not, or a variable every write gives such a class,
+ * as in `const Jobs = ReportJob`.
+ */
+function refersToAClass(nameNode: Node, seen: Set<Node>): boolean {
   const symbol = referencedSymbol(nameNode);
   const target = symbol?.isAlias() ? resolveAliasedSymbol(symbol) : symbol;
   return (target?.getDeclarations() ?? []).some(
     (declaration) =>
-      Node.isClassDeclaration(declaration) && spellsClassMembers(declaration),
+      (Node.isClassDeclaration(declaration) &&
+        spellsClassMembers(declaration)) ||
+      holdsAClass(declaration, seen),
+  );
+}
+
+function holdsAClass(declaration: Node, seen: Set<Node>): boolean {
+  if (!Node.isVariableDeclaration(declaration) || seen.has(declaration)) {
+    return false;
+  }
+  seen.add(declaration);
+  const { values } = writesToBinding(declaration);
+  return (
+    values.length > 0 &&
+    values.every((value) => isClassReference(unwrapExpression(value), seen))
   );
 }
 

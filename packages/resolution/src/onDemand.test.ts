@@ -59,7 +59,7 @@ const ARITY: Record<string, number> = {
   endsHolding: 2,
   readsProperty: 3,
   holdsProperty: 3,
-  holdsDefault: 3,
+  declaresDefault: 3,
   extends: 2,
   paramOf: 3,
   returnsValue: 2,
@@ -97,7 +97,7 @@ const POSITIONS = ["0", "1"];
 const COLUMNS: Record<string, string[][]> = {
   readsProperty: [VALUES, VALUES, NAMES],
   holdsProperty: [VALUES, NAMES, VALUES],
-  holdsDefault: [VALUES, NAMES, VALUES],
+  declaresDefault: [VALUES, NAMES, VALUES],
   callArgCount: [VALUES, POSITIONS],
   paramOf: [VALUES, POSITIONS, VALUES],
   callArg: [VALUES, POSITIONS, VALUES],

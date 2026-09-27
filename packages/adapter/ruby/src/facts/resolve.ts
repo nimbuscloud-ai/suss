@@ -15,12 +15,13 @@ import {
   resolutionUnderProgram,
   writtenValueOf as sharedWrittenValueOf,
   writtenValueUnder as sharedWrittenValueUnder,
-  withoutOverridden,
 } from "@suss/resolution";
 
 import { CONSTRUCTOR } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
+
+export { resolvedFunctions, settledFunction } from "@suss/resolution";
 
 /** The steps Ruby needs beyond the shared rules. */
 export const RUBY_RULES = alsoSteps([
@@ -74,20 +75,6 @@ export function resolveEnvObjects(
   objects: readonly string[],
 ): void {
   askResolution(db, objects, "wantedEnvObject", RUBY_PROGRAM);
-}
-
-/**
- * Every function that runs when a value is called: the function the
- * value comes down to, and the one a factory returned when the value was
- * assigned from a call. This runs once per call in a body, so it looks
- * up the index instead of scanning every answer the run has derived.
- */
-export function resolvedFunctions(db: Database, key: string): string[] {
-  const found = [
-    ...db.lookup("wantedResolves", 0, key),
-    ...db.lookup("wantedGivesBack", 0, key),
-  ].map((row) => String(row[1]));
-  return withoutOverridden(db, key, found);
 }
 
 /**

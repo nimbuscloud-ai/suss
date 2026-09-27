@@ -6,10 +6,10 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
-import { withoutOverridden } from "@suss/resolution";
+import { answersFor } from "@suss/resolution";
 
 import { children, enclosingFunction, field } from "./ast.js";
-import { originsOf, resolveCalls } from "./facts/resolve.js";
+import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { readKey } from "./facts/values.js";
 import {
   firstInBody,
@@ -198,12 +198,7 @@ function settledCallee(
 ): string | undefined {
   const key = readKey(options.filePath, callee, enclosingFunction(callee));
   resolveCalls(options.facts, [key]);
-  const resolved = withoutOverridden(
-    options.facts,
-    key,
-    options.facts.lookup("wantedResolves", 0, key).map((row) => String(row[1])),
-  );
-  return resolved.length === 1 ? resolved[0] : undefined;
+  return settledFunction(options.facts, key) ?? undefined;
 }
 
 /**
@@ -426,12 +421,7 @@ function modelNamed(
 function classBehind(typeName: string, options: StorageOptions): string | null {
   const key = `${options.filePath}#${typeName}`;
   originsOf(options.facts, key);
-  const reached = new Set(
-    options.facts
-      .facts("wantedComesTo")
-      .filter((row) => String(row[0]) === key)
-      .map((row) => String(row[1])),
-  );
+  const reached = new Set(answersFor(options.facts, "wantedComesTo", key));
   const classes = new Set(
     options.facts
       .facts("objectValue")

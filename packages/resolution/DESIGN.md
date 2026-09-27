@@ -32,10 +32,10 @@ writtenValue(x)             x is an expression written out in source
                             rather than a name for one
 placeholderValue(x)         x is a written value a later write is
                             expected to replace, such as None or nil.
-                            singleAnswers reads it, and no rule does
+                            answersFor reads it, and no rule does
                             (Python, Ruby)
 holdsProperty(o, n, x)      object o has x under the name n
-holdsDefault(cls, n, x)     cls's body gives its field n the value x,
+declaresDefault(cls, n, x)  cls declares a default x for its field n,
                             which a constructor may replace (Python)
 readsProperty(x, o, n)      x is the expression o.n, or o[n] with the
                             key written out
@@ -392,9 +392,11 @@ that contains h, and the full mastodon run ran out of memory. The
 object matters. A parameter that one caller passes an `Accounts` and
 another a plain `Repository` finds `Repository.save` on the plain one
 with nothing overriding it, so the read keeps both methods and a caller
-that needs one refuses it. `answersFor`, the callee outcomes, each
-adapter's reads of `wantedResolves`, and the proof pass behind
-`suss ask why` all apply it, so they give the same answer.
+that needs one refuses it. Every answer is read through `answersFor`
+or one of its siblings in `singleAnswer.ts`, which applies it along
+with the placeholder policy, so the callee outcomes, every adapter's
+reads and the proof pass behind `suss ask why` give the same answer.
+A new policy for picking one answer goes there too.
 
 Ruby looks a method up in the modules a class prepends before the class
 itself. So a prepended module is recorded as `prepends` rather than as
@@ -427,9 +429,9 @@ was built, so the adapter records it as `holdsProperty` and it is part
 of `contains`. `is_admin` is a field default. The library generates a
 constructor that fills it from an argument, and that constructor is not
 in the run, so the run cannot tell what `account.is_admin` is. The
-adapter records it as `holdsDefault`, which `contains` does not read.
+adapter records it as `declaresDefault`, which `contains` does not read.
 
-`fieldDefault` walks the ancestry of `holdsDefault` the way `contains`
+`fieldDefault` walks the ancestry of `declaresDefault` the way `contains`
 walks `holdsProperty`. A construction contains its class's field
 defaults only when `callArgCount` says the call passes no arguments.
 Any argument could fill a field, a splat included, and telling which
@@ -453,7 +455,7 @@ class Client:
         return httpx.get(self.base_url + "/orders")
 ```
 
-`contains` reads a `holdsDefault` row when `plainAncestry` says the
+`contains` reads a `declaresDefault` row when `plainAncestry` says the
 class is plain. The adapter says so with `plainClass` for a class
 written with no decorator, no keyword and no base but `object`, and
 with `extendsOnly` for one written the same way over a single base.
@@ -528,14 +530,15 @@ on the class, `Account.where(x)`, and on what another finder handed back,
 declares keeps plain names, so a pack that matches one of its statics by
 the name the library exports still finds it.
 
-How a read is written decides its spelling, so a read through another
-name for the class is spelled as an instance read. `klass.build` after
-`klass = Report` doesn't find the class method `build`, and finds an
-instance method `build` if the class has one. A rule could look the class
-member up for a plain read whose value comes to the class by value steps
-alone, since one of the class never does. On four projects a rule like
-that read 4% to 6% more rows and changed no output, so the rules leave it
-out.
+A read through another name for the class is spelled as a class read
+too. In Ruby that is a local every write gives a constant, as in
+`klass = Report; klass.build`, and in TypeScript a variable every write
+gives a class, as in `const Jobs = ReportJob`. The adapter can see those
+writes where it spells the read, so no rule is involved. A rule that
+looked the class member up for a plain read whose value comes to the
+class by value steps alone read 4% to 6% more rows on four projects. A
+name that is sometimes the class and sometimes something else keeps the
+instance spelling, and a class member read through it is not found.
 
 Python needs none of this. A class there has one namespace, so a read off
 the class and a read off an instance find the same members.
@@ -1063,15 +1066,16 @@ class its own ancestor at the top of the chain. So when an adapter asks
 `wantedSubjectWritten` about a call directly, the answers include the
 call itself as well as whatever the walk reaches. A call with one other
 answer would then count as two and be refused as ambiguous.
-`singleAnswers` drops the row whose answer is its own key before
-counting, and every adapter reads the relation through it.
+`writtenAnswersFor` drops the row whose answer is its own key before
+counting, and every adapter reads the relation through it. The other
+questions keep that row, since a function or an object comes to itself
+and that is the answer a caller wants.
 
 A name that is set to a placeholder until a guard fills it in also has
 two answers, for example `_client = None` at module level and
 `_client = make_client()` inside a getter. An adapter marks the
-placeholder write with `placeholderValue(x)` and passes those keys to
-`singleAnswers`, which sets them aside whenever the key has another
-answer. A name written only as a placeholder keeps that answer.
+placeholder write with `placeholderValue(x)`, and the answer readers
+set it aside whenever the key has another answer. A name written only as a placeholder keeps that answer.
 `valueLeftByWrites` sets `null` and `undefined` aside in the same way
 when it compares the writes to a name.
 

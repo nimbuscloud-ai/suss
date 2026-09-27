@@ -28,6 +28,7 @@ import {
   ASKING_RELATIONS,
   addPackWords,
   allocationSitesOf,
+  answersFor,
   askResolutionUnder,
   type ExplainStats,
   fallbackWrittenAs,
@@ -37,7 +38,7 @@ import {
   resolutionProgram,
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
-  withoutOverridden,
+  writtenAnswersFor,
   writtenValueUnder,
 } from "@suss/resolution";
 
@@ -918,9 +919,13 @@ export class ResolutionStore {
 
     const valueId = nodeId(value);
     const candidates = new Set<Node>();
-    for (const target of this.answersFor("wantedSubjectWritten", valueId)) {
+    for (const target of writtenAnswersFor(
+      this.db,
+      "wantedSubjectWritten",
+      valueId,
+    )) {
       const node = this.table.byId.get(target);
-      if (node === undefined || node === value || !Node.isExpression(node)) {
+      if (node === undefined || !Node.isExpression(node)) {
         continue;
       }
       candidates.add(node);
@@ -1414,9 +1419,10 @@ export class ResolutionStore {
     this.derive();
 
     const candidates = new Set<Node>();
-    for (const target of this.answersFor("wantedIsWrittenAs", nodeId(value))) {
+    const key = nodeId(value);
+    for (const target of writtenAnswersFor(this.db, "wantedIsWrittenAs", key)) {
       const node = this.table.byId.get(target);
-      if (node === undefined || node === value || !Node.isExpression(node)) {
+      if (node === undefined || !Node.isExpression(node)) {
         continue;
       }
       candidates.add(node);
@@ -1425,9 +1431,9 @@ export class ResolutionStore {
     if (candidates.size === 1) {
       return [...candidates][0] as Node;
     }
-    const fallback = fallbackWrittenAs(this.db, nodeId(value), (keys) => {
-      for (const key of keys) {
-        this.wantKey("wanted", key);
+    const fallback = fallbackWrittenAs(this.db, key, (keys) => {
+      for (const behind of keys) {
+        this.wantKey("wanted", behind);
       }
       this.derive();
     });
@@ -1556,11 +1562,7 @@ export class ResolutionStore {
   }
 
   private answersFor(relation: string, value: string): string[] {
-    return withoutOverridden(
-      this.db,
-      value,
-      this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1])),
-    );
+    return answersFor(this.db, relation, value);
   }
 
   /**
