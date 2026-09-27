@@ -46,6 +46,14 @@ The module-init summary is that root. `moduleInit.ts` records the calls the top-
 
 A function the module invokes on the spot is the exception to the stop rule. The body of `(async () => { await sync(); })()` runs while the module loads. All three module-scope walks (access recognizers, invocation capture, the closure) read through it, and what it does goes on the module's summary. The call itself is left off the summary, since there is no name behind it for a reader to follow, and the module's summary already has everything the body does.
 
+## What a partial run takes from the last run
+
+After an edit, the cache serves every summary whose owning files are unchanged, and the closure walks only from the units in the files it walks again. A recognizer-only pack's exported functions are roots too, and they belong to the file that exports them, so an edit elsewhere leaves them and everything they reach to the cache.
+
+The walk from the edited files still passes through functions nobody edited, and scanning each of those bodies costs a type checker question per call. So every scan's findings go into the cache manifest as a unit record, written by `closureRecords.ts`: the functions the body calls, its unfollowed calls, where each callee is declared, and the files those findings rest on. Those files are the ones the scan read, the files its callees and declarations are in, and the files the body's own file imports, which is the bar a walked file is held to. On the next partial run the cache hands back every record whose body's file and recorded files still hash the same, and the closure uses the record in place of the scan. A body in an edited file has new offsets, so its key is new and it is always scanned. A scan that asked which class an interface-typed field was given depends on the file the walk came in from, so its record also says which file that was, and a body reached from somewhere else is scanned again.
+
+A record is found by key, and the function behind it is found by its offsets only when its body has to be scanned or a summary built.
+
 ## Which unfollowed calls leave a gap
 
 A call the closure cannot follow looks exactly like a call that is not

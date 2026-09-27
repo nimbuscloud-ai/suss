@@ -96,11 +96,21 @@ Cross-file reads are recorded from several directions at once:
 
 A file is not cached when one of its summaries takes part in a GraphQL join across the whole run. That happens when a summary has a document label, because schema lifting moves SDL between summaries that share one. It also happens when the summary is an operation, because client stamping writes the project's only client onto every operation. A code-first resolver does not join with anything and stays cacheable. Summaries built by passes over the whole run belong to no file and are recomputed on every partial run. Those passes are wrapper-caller expansion, library env-read markers and schema documents. Units the cache serves are left out of closure emission in the same way a cold run's seeds are, so a re-walked file that reaches a cached unit never duplicates it.
 
+A recognizer-only pack, such as the node runtime pack, turns each exported function into a closure root. Such a root belongs to the file that exports it, the way a discovered unit does, so what it reaches is reused while that file and its recorded reads are unchanged.
+
+### Unit records
+
+Below the file layer, an adapter can keep what it worked out about one unit of its own, such as the calls one function body makes, as a unit record: a key, the file the unit is in, the other files the result rests on, and the result itself, which the cache never reads. `plan` hands back every record whose file and recorded files hash the same, and the adapter uses it in place of redoing the work. The TypeScript closure keeps one record per scanned body, so a partial run scans only bodies in edited files and bodies whose recorded files moved. The adapter writes back the records it used, the ones it made, and every still-valid record the run did not reach, so a later edit elsewhere can use them.
+
+A file's record can also list the files it imports, in the order the adapter's loader found them. Where an import resolves depends on the importing file's text and on which files exist, so `plan` hands the lists back for every unchanged file when no file joined or left the set, and none otherwise. The TypeScript loader takes those lists in place of reading and resolving the files again.
+
 ### Known gaps
 
 A type read more than one import hop away, through a chain that no recorded mechanism followed, can change a summary's printed types without invalidating it. The middle file of a deep re-export chain has the same gap when the compiler resolved the chain and the store did not. A dependency upgrade under `node_modules` invalidates nothing, because the pack and adapter hashes stand in for knowledge of the libraries. Stage two of #422 closes these gaps by recording what each answer read, per answer.
 
-A re-extracted summary can also be represented differently from one produced by a run without the cache. Type-shape expansion shares a memo across the run, so a run that walks five files can expand a shape to a different depth than a run that walks a thousand, and the shape digest changes with it. The summary was computed fresh either way, and nothing served is stale.
+A re-extracted summary can also be represented differently from one produced by a run without the cache. Type-shape expansion shares a memo across the run, so a run that walks five files can expand a shape to a different depth than a run that walks a thousand, and the shape digest changes with it. The summary was computed fresh either way, and nothing served is stale. The order of union members in a printed type can differ the same way, since the checker lists them in the order it created each type.
+
+A partial run writes the summaries it reused before the ones it built again, so its output has the same summaries as a run without the cache, in a different order.
 
 ### Invalidating every entry
 
