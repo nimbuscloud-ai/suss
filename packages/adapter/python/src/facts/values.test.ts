@@ -237,13 +237,15 @@ describe("python value facts", () => {
     expect(db.size("binds")).toBe(0);
   });
 
-  it("states both sides of a conditional as the branches its value picks between", async () => {
+  it("states both sides of a conditional as its branches, and keeps it a written value", async () => {
     const source = "client = injected if ready else fallback\n";
     const db = await factsFor(source);
-    expect(rows(db, "fallbackBranch").map((row) => row[1])).toEqual([
+    expect(rows(db, "conditionalBranch").map((row) => row[1])).toEqual([
       "#injected",
       "#fallback",
     ]);
+    expect(db.size("fallbackBranch")).toBe(0);
+    expect(db.size("writtenValue")).toBe(1);
   });
 
   it("states what parentheses wrap as the one branch of their value", async () => {

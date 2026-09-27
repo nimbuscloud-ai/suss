@@ -127,7 +127,7 @@ const WRITTEN_VALUE_TYPES = new Set([
   "concatenated_string",
   // Composed from other expressions, so a chain ends here and the
   // evaluator reads the expression back in the scope it is written in.
-  // `a or b`, `a if c else b` and `(a)` are stated as their branches instead.
+  // `a or b` and `(a)` are stated as their branches instead.
   "binary_operator",
   "boolean_operator",
   "comparison_operator",
@@ -642,7 +642,6 @@ const FALLBACK_BRANCH_READERS: Partial<
   Record<string, (node: PyNode) => PyNode[] | null>
 > = {
   boolean_operator: orBranches,
-  conditional_expression: conditionalBranches,
   parenthesized_expression: parenthesizedBranch,
 };
 
@@ -812,6 +811,16 @@ function emitExpressionFact(
     }
   } else if (WRITTEN_VALUE_TYPES.has(type)) {
     add(emitter, "writtenValue", nodeId(emitter.filePath, child));
+  }
+  const conditional =
+    type === "conditional_expression" ? conditionalBranches(child) : null;
+  for (const branch of conditional ?? []) {
+    add(
+      emitter,
+      "conditionalBranch",
+      nodeId(emitter.filePath, child),
+      valueKey(emitter, branch),
+    );
   }
   if (type === "none") {
     add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
