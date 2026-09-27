@@ -102,21 +102,28 @@ describe("createCacheLayer", () => {
 
   describe("a file that changes while a run reads it", () => {
     /**
-     * Stats `file` with its mtime and ctime held at `at`, as a file system
-     * whose clock has not ticked since would report them.
+     * Keeps `Date.now()` at the moment of the call, so however long the
+     * test runs, no time has passed. With `file`, its stats report an mtime
+     * and ctime of `changedAt`, as a file system whose clock has not ticked
+     * would. Returns the undo.
      */
-    function holdClockFor(file: string, at: number) {
+    function holdClock(file?: string, changedAt = Date.now()): () => void {
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
       const realStat = fs.stat.bind(fs);
-      return vi.spyOn(fs, "stat").mockImplementation((async (
+      const stat = vi.spyOn(fs, "stat").mockImplementation((async (
         target: Parameters<typeof fs.stat>[0],
       ) => {
-        const stat = await realStat(target);
+        const found = await realStat(target);
         if (String(target) === file) {
-          stat.mtimeMs = at;
-          stat.ctimeMs = at;
+          found.mtimeMs = changedAt;
+          found.ctimeMs = changedAt;
         }
-        return stat;
+        return found;
       }) as typeof fs.stat);
+      return () => {
+        stat.mockRestore();
+        vi.useRealTimers();
+      };
     }
 
     it("is read again by the next run", async () => {
@@ -136,7 +143,7 @@ describe("createCacheLayer", () => {
       const cacheDir = await makeTempDir();
       const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const file = paths[0] ?? "";
-      const stat = holdClockFor(file, Date.now());
+      const release = holdClock(file);
       try {
         const cache = createCacheLayer(cacheDir);
         const run = { files: paths, adapterPacksDigest: "test@1" };
@@ -147,7 +154,7 @@ describe("createCacheLayer", () => {
 
         expect((await cache.lookup({ ...run })).kind).toBe("miss");
       } finally {
-        stat.mockRestore();
+        release();
       }
     });
 
@@ -156,22 +163,27 @@ describe("createCacheLayer", () => {
       const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const file = paths[0] ?? "";
       const before = await fs.stat(file);
-      const cache = createCacheLayer(cacheDir);
-      const run = { files: paths, adapterPacksDigest: "test@1" };
+      const release = holdClock();
+      try {
+        const cache = createCacheLayer(cacheDir);
+        const run = { files: paths, adapterPacksDigest: "test@1" };
 
-      await cache.lookup(run);
-      await fs.writeFile(file, "export const a = 2;");
-      await fs.utimes(file, before.atime, before.mtime);
-      await cache.write(run, [fakeSummary]);
+        await cache.lookup(run);
+        await fs.writeFile(file, "export const a = 2;");
+        await fs.utimes(file, before.atime, before.mtime);
+        await cache.write(run, [fakeSummary]);
 
-      expect((await cache.lookup({ ...run })).kind).toBe("miss");
+        expect((await cache.lookup({ ...run })).kind).toBe("miss");
+      } finally {
+        release();
+      }
     });
 
     it("trusts the stamp of a file last changed well before the run", async () => {
       const cacheDir = await makeTempDir();
       const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const file = paths[0] ?? "";
-      const stat = holdClockFor(file, Date.now() - 60_000);
+      const release = holdClock(file, Date.now() - 60_000);
       try {
         const cache = createCacheLayer(cacheDir);
         const run = { files: paths, adapterPacksDigest: "test@1" };
@@ -186,7 +198,7 @@ describe("createCacheLayer", () => {
           reads.mockRestore();
         }
       } finally {
-        stat.mockRestore();
+        release();
       }
     });
 

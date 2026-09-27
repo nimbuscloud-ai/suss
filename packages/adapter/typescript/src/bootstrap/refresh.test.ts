@@ -106,9 +106,12 @@ async function freshRun(dir: string): Promise<BehavioralSummary[]> {
 
 /**
  * Stats `file` with its mtime and ctime held at `at`, as a file system
- * whose clock has not ticked since would report them. Returns the undo.
+ * whose clock has not ticked since would report them. `Date.now()` stays
+ * at `at` too, so however long the test runs, no time has passed.
+ * Returns the undo.
  */
 function holdClockFor(file: string, at: number): () => void {
+  vi.useFakeTimers({ toFake: ["Date"], now: at });
   const hold = <S extends { mtimeMs: number; ctimeMs: number }>(
     target: unknown,
     stat: S,
@@ -132,6 +135,7 @@ function holdClockFor(file: string, at: number): () => void {
   return () => {
     sync.mockRestore();
     promised.mockRestore();
+    vi.useRealTimers();
   };
 }
 
