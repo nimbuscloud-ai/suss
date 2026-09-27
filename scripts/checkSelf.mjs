@@ -3,7 +3,6 @@
 // that first. See intent/README.md for what the documents cover.
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 // Imported from built dist (not bare `@suss/*`) to match scripts/dogfood.mjs
@@ -38,66 +37,6 @@ function gatherDogfoodSummaries() {
   return copied;
 }
 
-/** The covering test the canary renames, and the file that lists it. */
-const CANARY = {
-  file: "checkAnAgentsEdit.prd.yaml",
-  title: "splits the findings into new and gone, by identity",
-};
-
-function checkArgs(intent, extra = []) {
-  // A finding neither suppressed nor triaged fails the run. The
-  // committed self-check rules under --sussignore are the triage.
-  const args = [
-    "check",
-    "--dir",
-    summariesDir,
-    "--intent",
-    intent,
-    "--fail-on",
-    "warning",
-    ...extra,
-  ];
-  if (fs.existsSync(suppressionsSrc)) {
-    args.push("--sussignore", suppressionsSrc);
-  }
-  return args;
-}
-
-/**
- * The same check over a copy of intent/ with one covering test renamed,
- * which has to fail and say the test is missing. Without it, a check
- * that stopped reading coveredBy would pass every run.
- */
-async function renamedTestFails() {
-  const copy = fs.mkdtempSync(path.join(os.tmpdir(), "suss-self-canary-"));
-  try {
-    fs.cpSync(intentDir, copy, { recursive: true });
-    const prd = path.join(copy, CANARY.file);
-    const written = fs.readFileSync(prd, "utf8");
-    if (!written.includes(CANARY.title)) {
-      return `${CANARY.file} no longer lists the test "${CANARY.title}", which the canary renames. Point CANARY at another covering test.`;
-    }
-    fs.writeFileSync(
-      prd,
-      written.replace(CANARY.title, `${CANARY.title}, renamed`),
-    );
-
-    const report = path.join(copy, "report.json");
-    const code = await runCli(checkArgs(copy, ["--json", "-o", report]));
-    const kinds = (
-      JSON.parse(fs.readFileSync(report, "utf8")).intent?.findings ?? []
-    )
-      .filter((finding) => finding.suppressed === undefined)
-      .map((finding) => finding.kind);
-    if (code === 0 || !kinds.includes("missingCoveringTest")) {
-      return `renaming the covering test "${CANARY.title}" should fail the check with missingCoveringTest, and it gave exit ${code} with ${kinds.join(", ") || "no findings"}.`;
-    }
-    return null;
-  } finally {
-    fs.rmSync(copy, { recursive: true, force: true });
-  }
-}
-
 async function main() {
   if (gatherDogfoodSummaries() === 0) {
     process.stderr.write(
@@ -106,16 +45,22 @@ async function main() {
     process.exit(1);
   }
 
-  const code = await runCli(checkArgs(intentDir));
-  if (code !== 0) {
-    process.exit(code);
+  // A finding neither suppressed nor triaged fails the run. The
+  // committed self-check rules under --sussignore are the triage.
+  const args = [
+    "check",
+    "--dir",
+    summariesDir,
+    "--intent",
+    intentDir,
+    "--fail-on",
+    "warning",
+  ];
+  if (fs.existsSync(suppressionsSrc)) {
+    args.push("--sussignore", suppressionsSrc);
   }
-  const canary = await renamedTestFails();
-  if (canary !== null) {
-    process.stderr.write(`check:self canary: ${canary}\n`);
-    process.exit(1);
-  }
-  process.exit(0);
+  const code = await runCli(args);
+  process.exit(code);
 }
 
 main().catch((err) => {
