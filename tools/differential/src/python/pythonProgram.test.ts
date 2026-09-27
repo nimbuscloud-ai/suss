@@ -384,6 +384,25 @@ describe("renderPythonProgram", () => {
     ]);
   });
 
+  it("expects an abstention for a namespace mounted twice on an Api whose blueprint sits inside another", () => {
+    const spec: PythonProgramSpec = {
+      framework: "flask-restx",
+      program: {
+        importStyle: "direct",
+        apiMount: { type: "blueprintNested" },
+        apiPrefix: { type: "absent" },
+        resources: [],
+        namespaces: [
+          { type: "mountedTwice", resources: [flaskResource("gamma")] },
+        ],
+      },
+    };
+    const rendered = renderPythonProgram(spec, "app_12");
+    expect(
+      rendered.intents.map((intent) => [intent.name, intent.expectation]),
+    ).toEqual([["Gamma0.get", "abstain"]]);
+  });
+
   it("writes each registration site where the app factory shape puts it, and claims every one it can follow to a namespace", () => {
     const spec: PythonProgramSpec = {
       framework: "flask-restx",
