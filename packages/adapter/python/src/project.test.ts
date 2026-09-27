@@ -551,7 +551,7 @@ describe("extractPythonProject", () => {
       "OrderList.get",
       "TodoList.get",
     ]);
-    expect(summaries.every((s) => s.confidence.level === "low")).toBe(true);
+    expect(summaries.every((s) => s.confidence.level === "high")).toBe(true);
     expect(summaries.map((s) => s.location.file).sort()).toEqual(
       ["myapp/routes/orders.py", "myapp/routes/todos.py"].sort(),
     );

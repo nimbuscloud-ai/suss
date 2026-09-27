@@ -306,7 +306,6 @@ export async function reachedFunctions(
       const raw = libraryUnit(target, options);
       dropPropertyReads(raw, propertyReadsByKey.get(key));
       const summary = assembleSummary(raw, { gapHandling });
-      summary.confidence = { source: "inferred_static", level: "low" };
       if (gapHandling !== "silent") {
         summary.gaps.push(
           ...(stopsByKey.get(key) ?? []).map(unfollowedCallGap),
