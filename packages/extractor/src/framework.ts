@@ -270,6 +270,20 @@ export type DiscoveryMatch =
        * catch-all decorator such as NestJS's `@All`.
        */
       methodDecoratorRouteMap: Record<string, string>;
+      /**
+       * The status the framework sends when a handler returns without
+       * stating one, keyed by method decorator, for the decorators whose
+       * status differs from the response terminals' `defaultStatusCode`.
+       * NestJS sends 201 for `@Post`.
+       */
+      defaultStatusCodes?: Record<string, number>;
+      /**
+       * A method decorator, imported from `importModule`, whose first
+       * argument sets the status of every response the handler returns
+       * without stating its own, NestJS's `@HttpCode(204)`. It wins over
+       * `defaultStatusCodes`.
+       */
+      statusCodeDecorator?: string;
     }
   | {
       /**

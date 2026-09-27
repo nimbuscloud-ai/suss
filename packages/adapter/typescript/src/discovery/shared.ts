@@ -160,6 +160,13 @@ export interface DiscoveredUnit {
     path: string | null;
   };
   /**
+   * The status the framework sends for a response this unit's body
+   * states none for, when the route declares one: `@HttpCode(204)`, or
+   * the 201 NestJS sends for `@Post`. It replaces the default on the
+   * pack's response terminals for this unit alone.
+   */
+  defaultStatusCode?: number;
+  /**
    * Populated by a pack's `discoverUnits` callback for a message-bus
    * consumer whose channel the code gives (a handler factory whose
    * config includes the expected subject). The adapter uses it to build

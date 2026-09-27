@@ -8,6 +8,7 @@
   "Options": "@nestjs/common: method decorator, HTTP OPTIONS",
   "Head": "@nestjs/common: method decorator, HTTP HEAD",
   "All": "@nestjs/common: method decorator matching every HTTP method",
+  "HttpCode": "@nestjs/common: method decorator setting the handler's response status",
   "Body": "@nestjs/common: parameter decorator injecting the request body",
   "Param": "@nestjs/common: parameter decorator injecting a path parameter",
   "Query": "@nestjs/common: parameter decorator injecting a query parameter",

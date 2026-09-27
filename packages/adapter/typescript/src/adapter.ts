@@ -788,9 +788,13 @@ function terminalsFor(
   // A pack whose units follow more than one convention overrides the
   // pack-level terminals per unit. The ones every unit is read with go
   // first, so the call they match is theirs.
-  const own = (
-    unit.terminals ?? pastFrameworkValue(pack.terminals, frameworkValueAt(unit))
-  ).filter((pattern) => pattern.inEveryUnit !== true);
+  const own = withRouteDefaultStatus(
+    (
+      unit.terminals ??
+      pastFrameworkValue(pack.terminals, frameworkValueAt(unit))
+    ).filter((pattern) => pattern.inEveryUnit !== true),
+    unit.defaultStatusCode,
+  );
   const declared = [
     ...everyUnitTerminals,
     ...own,
@@ -803,6 +807,35 @@ function terminalsFor(
     return declared;
   }
   return [...declared, FUNCTION_FALLTHROUGH_TERMINAL];
+}
+
+/**
+ * The response terminals with the route's own default status in place
+ * of the pack's. A terminal with no default keeps none, since it reads
+ * its status from the call or does not respond at all.
+ */
+function withRouteDefaultStatus(
+  patterns: TerminalPattern[],
+  status: number | undefined,
+): TerminalPattern[] {
+  if (status === undefined) {
+    return patterns;
+  }
+  const replaced: TerminalPattern[] = [];
+  for (const pattern of patterns) {
+    if (
+      pattern.kind !== "response" ||
+      pattern.extraction.defaultStatusCode === undefined
+    ) {
+      replaced.push(pattern);
+      continue;
+    }
+    replaced.push({
+      ...pattern,
+      extraction: { ...pattern.extraction, defaultStatusCode: status },
+    });
+  }
+  return replaced;
 }
 
 function readCodeStructure(

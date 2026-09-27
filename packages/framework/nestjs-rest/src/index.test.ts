@@ -15,14 +15,21 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/nestjs-rest");
 
-async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = createDecoratorFixtureProject(fixturesDir, "*.ts");
+const appFixturesDir = path.resolve(
+  __dirname,
+  "../../../../fixtures/nestjs-rest-app",
+);
+
+async function runAdapter(dir = fixturesDir): Promise<BehavioralSummary[]> {
+  const project = createDecoratorFixtureProject(dir, "*.ts");
   // Stub `@nestjs/common` so ts-morph import resolution succeeds.
   // Discovery only needs the decorator names + import module to
   // match: runtime behaviour is irrelevant to static analysis.
   project.createSourceFile(
-    "node_modules/@nestjs/common/index.d.ts",
-    `export const Controller: (...args: unknown[]) => ClassDecorator;
+    path.join(dir, "node_modules/@nestjs/common/index.d.ts"),
+    `export declare enum HttpStatus { OK = 200, CREATED = 201, ACCEPTED = 202, NO_CONTENT = 204 }
+     export const HttpCode: (status: number) => MethodDecorator;
+     export const Controller: (...args: unknown[]) => ClassDecorator;
      export const Get: (...args: unknown[]) => MethodDecorator;
      export const Post: (...args: unknown[]) => MethodDecorator;
      export const Put: (...args: unknown[]) => MethodDecorator;
@@ -221,5 +228,43 @@ describe("nestjsRestFramework — integration", () => {
       .filter((i) => i.type === "parameter")
       .map((i) => (i.type === "parameter" ? i.role : null));
     expect(removeRoles).toEqual(["pathParams", "request"]);
+  });
+});
+
+describe("nestjsRestFramework: the status a route sends", () => {
+  let summaries: BehavioralSummary[];
+  beforeAll(async () => {
+    summaries = await runAdapter(appFixturesDir);
+  }, 60_000);
+
+  function statusesOf(name: string): unknown[] {
+    const found = summaries.find((s) => s.identity.name === name);
+    if (found === undefined) {
+      throw new Error(`${name} missing`);
+    }
+    return found.transitions
+      .filter((t) => t.output.type === "response")
+      .map((t) => (t.output.type === "response" ? t.output.statusCode : null));
+  }
+
+  it("sends 201 for a POST and 200 for a GET", () => {
+    expect(statusesOf("OrdersController.create")).toEqual([
+      { type: "literal", value: 201 },
+    ]);
+    expect(statusesOf("OrdersController.list")).toEqual([
+      { type: "literal", value: 200 },
+    ]);
+  });
+
+  it("sends what @HttpCode says, as a literal, a constant or an enum member", () => {
+    expect(statusesOf("OrdersController.importMany")).toEqual([
+      { type: "literal", value: 200 },
+    ]);
+    expect(statusesOf("OrdersController.replace")).toEqual([
+      { type: "literal", value: 202 },
+    ]);
+    expect(statusesOf("OrdersController.remove")).toEqual([
+      { type: "literal", value: 204 },
+    ]);
   });
 });

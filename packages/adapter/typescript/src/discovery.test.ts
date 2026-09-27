@@ -4314,6 +4314,39 @@ describe("decoratedRoute discovery", () => {
     expect(units).toHaveLength(1);
     expect(units[0].routeInfo?.method).toBe("GET");
   });
+
+  it("takes a route's status from its verb, and from the status decorator over that", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "orders.controller.ts",
+      `
+      import { Controller, Get, HttpCode as Status, Post } from "@nestjs/common";
+      import { HttpCode } from "./local";
+      const NO_CONTENT = 204;
+      @Controller("orders")
+      class OrdersController {
+        @Get() list() { return []; }
+        @Post() create() { return null; }
+        @Post("bulk") @Status(NO_CONTENT) bulk() { return null; }
+        @Post("other") @HttpCode(299) other() { return null; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [
+      makeDecoratedRoutePattern({
+        defaultStatusCodes: { Post: 201 },
+        statusCodeDecorator: "HttpCode",
+      }),
+    ]);
+    expect(
+      Object.fromEntries(units.map((u) => [u.name, u.defaultStatusCode])),
+    ).toEqual({
+      "OrdersController.list": undefined,
+      "OrdersController.create": 201,
+      "OrdersController.bulk": 204,
+      "OrdersController.other": 201,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
