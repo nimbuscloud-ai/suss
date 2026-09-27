@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { LIVE_RECORD, LiveSocket } from "./liveSocket.js";
+import { LIVE_RECORD, LiveSocket, socketPathFor } from "./liveSocket.js";
 import { Project } from "./project.js";
 
 const cleanups: Array<() => void> = [];
@@ -107,6 +107,15 @@ function routesIn(dir: string): string[] {
   );
 }
 
+describe("socketPathFor", () => {
+  it("gives every server for one root the same path, and another root another", () => {
+    expect(socketPathFor("/work/orders")).toBe(socketPathFor("/work/orders"));
+    expect(socketPathFor("/work/orders")).not.toBe(
+      socketPathFor("/work/invoices"),
+    );
+  });
+});
+
 describe("LiveSocket", () => {
   it("takes the socket when nobody has it and says where it is", async () => {
     const root = projectWithOneRoute("/orders");
@@ -202,6 +211,150 @@ describe("LiveSocket", () => {
     expect(routesIn(project.summaryDir)).toEqual(["/orders"]);
     expect(project.keptAdapters()).toBe(0);
   }, 60_000);
+
+  it("takes a socket file whose server has gone", async () => {
+    const root = projectWithOneRoute("/orders");
+    const at = socketPath();
+    fs.writeFileSync(at, "");
+
+    const { live } = await open(root, at);
+
+    expect(live.owner).toBe(true);
+  });
+
+  it("reads a request that arrives in pieces, and says when one is not JSON", async () => {
+    const root = projectWithOneRoute("/orders");
+    const at = socketPath();
+    await open(root, at);
+
+    const pieces = await new Promise<string>((resolve) => {
+      let text = "";
+      const socket = net.connect(at);
+      socket.setEncoding("utf8");
+      socket.on("connect", () => {
+        socket.write('{"kind":"suss",');
+        setTimeout(() => socket.write('"args":["inspect"],"cwd":"/"}\n'), 50);
+      });
+      socket.on("data", (chunk: string) => {
+        text += chunk;
+      });
+      socket.on("end", () => resolve(text));
+    });
+    const broken = await new Promise<string>((resolve) => {
+      let text = "";
+      const socket = net.connect(at);
+      socket.setEncoding("utf8");
+      socket.on("connect", () => socket.write("not json\n"));
+      socket.on("data", (chunk: string) => {
+        text += chunk;
+      });
+      socket.on("end", () => resolve(text));
+    });
+
+    expect(JSON.parse(pieces)).toHaveProperty("unsupported");
+    expect(JSON.parse(broken)).toMatchObject({ code: 1 });
+  });
+
+  it("says which arguments it serves when a request has others", async () => {
+    const root = projectWithOneRoute("/orders");
+    const at = socketPath();
+    await open(root, at);
+
+    expect(
+      await ask(at, { kind: "suss", args: ["extract"], cwd: root }),
+    ).toHaveProperty("unsupported");
+    expect(
+      await ask(at, {
+        kind: "suss",
+        args: ["extract", "--out-dir", root, "--files", "x.ts"],
+        cwd: root,
+      }),
+    ).toHaveProperty("unsupported");
+    expect(
+      await ask(at, {
+        kind: "suss",
+        args: ["check", "--dir", root],
+        cwd: root,
+      }),
+    ).toHaveProperty("unsupported");
+  });
+
+  it("fails the way the CLI does when a read fails or a folder is missing", async () => {
+    const root = projectWithOneRoute("/orders");
+    fs.writeFileSync(
+      path.join(root, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [
+          {
+            kind: "extract",
+            language: "typescript",
+            project: "tsconfig.json",
+            packs: ["express"],
+          },
+          { kind: "contract", from: "openapi", file: "missing.yaml" },
+        ],
+      }),
+    );
+    const at = socketPath();
+    await open(root, at);
+
+    const extracted = await ask(at, {
+      kind: "suss",
+      args: ["extract", "--out-dir", path.join(root, ".suss", "next")],
+      cwd: root,
+    });
+    const checked = await ask(at, {
+      kind: "suss",
+      args: ["check", "--dir", "nowhere", "--since", "nowhere", "--json"],
+      cwd: root,
+    });
+
+    expect(extracted).toMatchObject({ code: 1 });
+    expect(String(extracted.stderr)).toContain("missing.yaml");
+    expect(checked).toMatchObject({ code: 1, stdout: "" });
+  }, 60_000);
+
+  it("fails a read that wrote no summary unless the request allows it", async () => {
+    const root = projectWithOneRoute("/orders");
+    fs.writeFileSync(path.join(root, "src/app.ts"), "export const x = 1;\n");
+    const at = socketPath();
+    await open(root, at);
+    const out = path.join(root, ".suss", "next");
+
+    const failing = await ask(at, {
+      kind: "suss",
+      args: ["extract", "--out-dir", out],
+      cwd: root,
+    });
+    const allowed = await ask(at, {
+      kind: "suss",
+      args: ["extract", "--out-dir", out, "--allow-empty"],
+      cwd: root,
+    });
+
+    expect(failing).toMatchObject({ code: 1 });
+    expect(String(failing.stderr)).toContain("--allow-empty");
+    expect(allowed).toMatchObject({ code: 0, stderr: "" });
+  }, 60_000);
+
+  it("says a project no pack matches has nothing to read", async () => {
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-live-bare-")),
+    );
+    cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
+    const at = socketPath();
+    await open(root, at);
+
+    const reply = await ask(at, {
+      kind: "suss",
+      args: ["extract", "--out-dir", path.join(root, "out")],
+      cwd: root,
+    });
+
+    expect(reply).toMatchObject({ code: 1 });
+    expect(String(reply.stderr)).toContain("matched a pack");
+  });
 
   it("takes the socket over when the first server has gone", async () => {
     const root = projectWithOneRoute("/orders");
