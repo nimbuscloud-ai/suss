@@ -28,6 +28,11 @@ async function runAdapter(dir = fixturesDir): Promise<BehavioralSummary[]> {
   project.createSourceFile(
     path.join(dir, "node_modules/@nestjs/common/index.d.ts"),
     `export declare enum HttpStatus { OK = 200, CREATED = 201, ACCEPTED = 202, NO_CONTENT = 204 }
+     export declare enum RequestMethod { GET = 0, POST = 1, PUT = 2, DELETE = 3, PATCH = 4, ALL = 5 }
+     export interface INestApplication {
+       setGlobalPrefix(prefix: string, options?: { exclude?: Array<string | { path: string; method: RequestMethod }> }): this;
+       listen(port: number): Promise<void>;
+     }
      export const HttpCode: (status: number) => MethodDecorator;
      export const Controller: (...args: unknown[]) => ClassDecorator;
      export const Get: (...args: unknown[]) => MethodDecorator;
@@ -49,6 +54,13 @@ async function runAdapter(dir = fixturesDir): Promise<BehavioralSummary[]> {
      export const Next: (...args: unknown[]) => ParameterDecorator;
      export class HttpException { constructor(...args: unknown[]); }
      export class BadRequestException extends HttpException {}`,
+  );
+  project.createSourceFile(
+    path.join(dir, "node_modules/@nestjs/core/index.d.ts"),
+    `import type { INestApplication } from "@nestjs/common";
+     export declare class NestFactory {
+       static create(module: unknown): Promise<INestApplication>;
+     }`,
   );
 
   const adapter = createTypeScriptAdapter({
@@ -254,6 +266,32 @@ describe("nestjsRestFramework: the status a route sends", () => {
     expect(statusesOf("OrdersController.list")).toEqual([
       { type: "literal", value: 200 },
     ]);
+  });
+
+  it("puts the global prefix the bootstrap sets in front of every route it does not exclude", () => {
+    const routes = Object.fromEntries(
+      summaries
+        .filter((s) => s.kind === "handler")
+        .map((s) => {
+          const semantics = s.identity.boundaryBinding?.semantics;
+          return [
+            s.identity.name,
+            semantics?.name === "rest"
+              ? `${semantics.method} ${semantics.path}`
+              : null,
+          ];
+        }),
+    );
+    expect(routes).toEqual({
+      "OrdersController.list": "GET /api/orders",
+      "OrdersController.create": "POST /api/orders",
+      "OrdersController.importMany": "POST /api/orders/import",
+      "OrdersController.replace": "PUT /api/orders/:reference",
+      "OrdersController.remove": "DELETE /api/orders/:reference",
+      "HealthController.check": "GET /health",
+      "HealthController.exportOrders": "GET /orders/export",
+      "HealthController.scheduleExport": "POST /api/orders/export",
+    });
   });
 
   it("sends what @HttpCode says, as a literal, a constant or an enum member", () => {

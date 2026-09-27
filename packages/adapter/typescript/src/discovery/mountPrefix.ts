@@ -24,6 +24,14 @@ import {
 import { recordMountPrefix } from "../depTracking.js";
 import { nodeId } from "../facts/extract.js";
 import {
+  agreedGlobalPrefix,
+  describeGlobalPrefix,
+  type GlobalPrefix,
+  globalPrefixesIn,
+  globalPrefixKey,
+  isGlobalPrefixKey,
+} from "./globalPrefix.js";
+import {
   discoverMountEdges,
   type MountEdgeCandidate,
   type MountPrefixIndex,
@@ -31,7 +39,11 @@ import {
   registrationSubjectIdsOf,
 } from "./registrationCall.js";
 
-import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import type {
+  DiscoveryPattern,
+  GlobalPrefixCall,
+  PatternPack,
+} from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -45,12 +57,21 @@ const NO_MOUNTS: MountPrefixIndex = {
     return "";
   },
   prefixForId: () => "",
+  globalPrefixFor: (key) => {
+    recordMountPrefix(key, describeGlobalPrefix(null));
+    return null;
+  },
 };
 
 type RegistrationMatch = Extract<
   DiscoveryPattern["match"],
   { type: "registrationCall" }
 >;
+
+interface GlobalPrefixWork {
+  sourceFile: SourceFile;
+  call: GlobalPrefixCall;
+}
 
 interface MountPattern {
   match: RegistrationMatch;
@@ -84,6 +105,7 @@ export function buildMountPrefixIndex(
   const subjectIdsByPack = new Map<string, Set<string>>();
   const mountWorkByPack = new Map<string, PackMountWork[]>();
   const ownMethodsByPack = new Map<string, Set<string>>();
+  const globalPrefixWork: GlobalPrefixWork[] = [];
 
   for (const [sourceFile, packs] of packsByFile) {
     for (const pack of packs) {
@@ -93,6 +115,15 @@ export function buildMountPrefixIndex(
         ownMethodsByPack.set(pack.name, methodsRegisteredOn(pack.discovery));
       }
       for (const pattern of pack.discovery) {
+        if (
+          pattern.match.type === "decoratedRoute" &&
+          pattern.match.globalPrefix !== undefined
+        ) {
+          globalPrefixWork.push({
+            sourceFile,
+            call: pattern.match.globalPrefix,
+          });
+        }
         if (pattern.match.type !== "registrationCall") {
           continue;
         }
@@ -146,13 +177,16 @@ export function buildMountPrefixIndex(
     }
   }
 
-  if (edgesByChild.size === 0) {
+  const globalPrefixes = agreedGlobalPrefixes(globalPrefixWork, resolution);
+  if (edgesByChild.size === 0 && globalPrefixes.size === 0) {
     return NO_MOUNTS;
   }
 
   const edges: MountEdges = edgesByChild;
   const byId = (childId: string): string =>
     agreedMountPrefix(edges, childId) ?? "";
+  const globalFor = (key: string): GlobalPrefix | null =>
+    globalPrefixes.get(key) ?? null;
   return {
     effectivePrefixFor(routerNode: Node): string {
       const childId = nodeId(routerNode);
@@ -160,8 +194,46 @@ export function buildMountPrefixIndex(
       recordMountPrefix(childId, prefix);
       return prefix;
     },
-    prefixForId: byId,
+    prefixForId: (id) =>
+      isGlobalPrefixKey(id) ? describeGlobalPrefix(globalFor(id)) : byId(id),
+    globalPrefixFor(key: string): GlobalPrefix | null {
+      const prefix = globalFor(key);
+      recordMountPrefix(key, describeGlobalPrefix(prefix));
+      return prefix;
+    },
   };
+}
+
+/**
+ * The prefix each pattern's calls agree on, across every file the pack
+ * applies to. A pattern whose calls disagree, or which no call sets,
+ * has no entry.
+ */
+function agreedGlobalPrefixes(
+  work: readonly GlobalPrefixWork[],
+  resolution: ResolutionStore,
+): Map<string, GlobalPrefix> {
+  const foundByKey = new Map<string, Array<GlobalPrefix | null>>();
+  const scanned = new Set<string>();
+  for (const { sourceFile, call } of work) {
+    const key = globalPrefixKey(call);
+    const scanKey = `${key}|${sourceFile.getFilePath()}`;
+    if (scanned.has(scanKey)) {
+      continue;
+    }
+    scanned.add(scanKey);
+    const found = foundByKey.get(key) ?? [];
+    found.push(...globalPrefixesIn(sourceFile, call, resolution));
+    foundByKey.set(key, found);
+  }
+  const agreed = new Map<string, GlobalPrefix>();
+  for (const [key, found] of foundByKey) {
+    const prefix = agreedGlobalPrefix(found);
+    if (prefix !== null) {
+      agreed.set(key, prefix);
+    }
+  }
+  return agreed;
 }
 
 function recordEdge(

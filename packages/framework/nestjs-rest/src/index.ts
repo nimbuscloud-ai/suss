@@ -25,6 +25,18 @@ export const optionsSchema = z
 
 export type NestjsRestPackOptions = z.infer<typeof optionsSchema>;
 
+// The numbers `RequestMethod` in `@nestjs/common` gives each verb.
+const REQUEST_METHODS: Record<number, string> = {
+  0: "GET",
+  1: "POST",
+  2: "PUT",
+  3: "DELETE",
+  4: "PATCH",
+  5: "*",
+  6: "OPTIONS",
+  7: "HEAD",
+};
+
 export function nestjsRestFramework(
   options: NestjsRestPackOptions = {},
 ): PatternPack {
@@ -56,6 +68,22 @@ export function nestjsRestFramework(
           // `@HttpCode(n)` sets the status for one handler.
           defaultStatusCodes: { Post: 201 },
           statusCodeDecorator: "HttpCode",
+          globalPrefix: {
+            method: "setGlobalPrefix",
+            application: {
+              importModule: "@nestjs/core",
+              importName: "NestFactory",
+              factory: "create",
+            },
+            // An exclusion is a path, or a `RouteInfo` whose method is a
+            // member of Nest's `RequestMethod` enum.
+            exclude: {
+              option: "exclude",
+              pathKey: "path",
+              methodKey: "method",
+              methods: REQUEST_METHODS,
+            },
+          },
         },
         requiresImport: ["@nestjs/common"],
       },

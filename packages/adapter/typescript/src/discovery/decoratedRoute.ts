@@ -10,6 +10,7 @@ import {
   importedDecoratorLocals,
 } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
+import { globalPrefixKey, pathUnderGlobalPrefix } from "./globalPrefix.js";
 import { numberValueOf, stringValueOf } from "./resolveValue.js";
 
 import type {
@@ -18,6 +19,7 @@ import type {
   DiscoveryPattern,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
+import type { MountPrefixIndex } from "./registrationCall.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
@@ -132,6 +134,7 @@ export function discoverDecoratedRoutes(
   kind: string,
   resolution?: ResolutionStore,
   binding?: DeclaredBinding,
+  mountPrefixes?: MountPrefixIndex,
 ): DiscoveredUnit[] {
   // Same gate as decoratedMethod: at least one method-route decorator
   // must be imported from the framework module.
@@ -155,6 +158,12 @@ export function discoverDecoratedRoutes(
             match.statusCodeDecorator,
           ]).keys(),
         ];
+  const globalPrefix =
+    match.globalPrefix === undefined
+      ? null
+      : (mountPrefixes?.globalPrefixFor?.(
+          globalPrefixKey(match.globalPrefix),
+        ) ?? null);
 
   const results: DiscoveredUnit[] = [];
   for (const cls of sourceFile.getClasses()) {
@@ -197,7 +206,11 @@ export function discoverDecoratedRoutes(
         localRouteDecorators.get(handler.standsFor) ?? handler.standsFor;
       const httpMethod = match.methodDecoratorRouteMap[verbDecorator];
       const pathSuffix = resolveRoutePathArg(handler.decorator, resolution);
-      const routePath = joinRoutePath(pathPrefix, pathSuffix);
+      const routePath = pathUnderGlobalPrefix(
+        globalPrefix,
+        httpMethod,
+        joinRoutePath(pathPrefix, pathSuffix),
+      );
       const status =
         statusCodeDecoratedOn(
           handler.decorator,

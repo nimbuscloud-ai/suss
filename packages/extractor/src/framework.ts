@@ -284,6 +284,11 @@ export type DiscoveryMatch =
        * `defaultStatusCodes`.
        */
       statusCodeDecorator?: string;
+      /**
+       * The call that puts one path in front of every route the
+       * application serves, NestJS's `app.setGlobalPrefix("api")`.
+       */
+      globalPrefix?: GlobalPrefixCall;
     }
   | {
       /**
@@ -659,6 +664,37 @@ export interface WrapperMethodRegistration extends WrapperFunctionShape {
    * middleware by arity alone, both being `app.use(fn)`.
    */
   arity?: number;
+}
+
+/**
+ * A call on the application object that puts one path in front of
+ * every route, with the path as its first argument. The adapter reads
+ * it in whichever file makes it, and applies the prefix to every route
+ * the pattern finds when all such calls in the run agree on it.
+ */
+export interface GlobalPrefixCall {
+  /** The method on the application object, NestJS's `setGlobalPrefix`. */
+  method: string;
+  /**
+   * How the application object is made: `NestFactory.create(...)`, where
+   * `NestFactory` is imported from `@nestjs/core`. A call on anything
+   * else is not read, including a parameter some caller passes anything
+   * else to.
+   */
+  application: { importModule: string; importName: string; factory: string };
+  /**
+   * The routes the prefix leaves out, listed under `option` on the
+   * object the call takes second. An entry is a path, or an object with
+   * the path under `pathKey` and the method under `methodKey`, written
+   * as a member of the library's method enum. `methods` maps each
+   * member's number to its verb, with `*` for every verb.
+   */
+  exclude?: {
+    option: string;
+    pathKey: string;
+    methodKey: string;
+    methods: Record<number, string>;
+  };
 }
 
 /** A wrapper handed to the routable's constructor as an option. */
