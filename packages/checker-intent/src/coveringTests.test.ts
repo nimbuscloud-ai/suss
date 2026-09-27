@@ -333,21 +333,9 @@ describe("a scenario covered by a test", () => {
   });
 
   it("counts a test that is itself part of the subject as reaching it", () => {
-    const test = testUnit("cancels", []);
-    const code = [cancelOrder, test];
-    const lookup = lookupOver(code);
-    const result = checkIntentAgreement(
-      [prd([covered("cancel", "cancels", ["cancels"])])],
-      code,
-      {
-        ...lookup,
-        subject: () => ({
-          found: true,
-          target: { functions: [functionOf(test)], keys: [] },
-          label: "cancels",
-        }),
-      },
-    );
+    // The lookup finds a subject by name, so "cancels" is the test itself.
+    const code = [cancelOrder, testUnit("cancels", [])];
+    const result = check([covered("cancel", "cancels", ["cancels"])], code);
 
     expect(result.findings).toEqual([]);
   });

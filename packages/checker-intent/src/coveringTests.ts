@@ -175,7 +175,7 @@ function subjectOf(
     const one = lookup.subject(spelledAs);
     if (!one.found) {
       return {
-        message: `and what it has to reach, ${spelledAs}, is nothing in these summaries: ${one.message}`,
+        message: `and what it has to reach, ${spelledAs}, is nothing in these summaries: ${one.message.replace(/\.$/, "")}`,
       };
     }
     found.push(one);
