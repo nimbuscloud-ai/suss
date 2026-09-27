@@ -191,6 +191,9 @@
       "path": "packages/framework/ts-rest/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/typeorm/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/intent-ir/tsconfig.typecheck.json"
     },
     {

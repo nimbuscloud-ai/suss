@@ -224,6 +224,10 @@
     "./ts-rest": {
       "types": "./dist/ts-rest.d.ts",
       "import": "./dist/ts-rest.js"
+    },
+    "./typeorm": {
+      "types": "./dist/typeorm.d.ts",
+      "import": "./dist/typeorm.js"
     }
   },
   "files": [
@@ -303,6 +307,7 @@
     "@suss/framework-sqlalchemy": "*",
     "@suss/framework-sqlmodel": "*",
     "@suss/framework-ts-rest": "*",
+    "@suss/framework-typeorm": "*",
     "@suss/runtime-node": "*",
     "tsup": "*",
     "typescript": "*",

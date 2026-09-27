@@ -111,7 +111,7 @@ function effectsOver(
   pack: PatternPack,
   written: readonly string[],
 ): Effect[] {
-  const store = new ResolutionStore();
+  const store = ResolutionStore.forPacks([pack]);
   const invocations = [
     ...(pack.invocationRecognizers ?? []),
     ...contributedBy(pack, sourceFile, written, store),
