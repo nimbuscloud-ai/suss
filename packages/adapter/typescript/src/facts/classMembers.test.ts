@@ -67,6 +67,22 @@ describe("a static and an instance method of one name", () => {
     expect(resolvedBody(assignedTo(project, "handler"))).toBe(STATIC_LIST);
   });
 
+  it("resolves a read through another name for the class to the static", () => {
+    const project = projectOf(`${ORDERS}
+      const Kind = Orders;
+      export const handler = Kind.list;
+    `);
+    expect(resolvedBody(assignedTo(project, "handler"))).toBe(STATIC_LIST);
+  });
+
+  it("resolves a read through a name for an instance to the instance method", () => {
+    const project = projectOf(`${ORDERS}
+      const orders = new Orders();
+      export const handler = orders.list;
+    `);
+    expect(resolvedBody(assignedTo(project, "handler"))).toBe(INSTANCE_LIST);
+  });
+
   it("resolves a read off an instance to the instance method", () => {
     const project = projectOf(`${ORDERS}
       export const handler = new Orders().list;

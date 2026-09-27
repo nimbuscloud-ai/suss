@@ -530,14 +530,15 @@ on the class, `Account.where(x)`, and on what another finder handed back,
 declares keeps plain names, so a pack that matches one of its statics by
 the name the library exports still finds it.
 
-How a read is written decides its spelling, so a read through another
-name for the class is spelled as an instance read. `klass.build` after
-`klass = Report` doesn't find the class method `build`, and finds an
-instance method `build` if the class has one. A rule could look the class
-member up for a plain read whose value comes to the class by value steps
-alone, since one of the class never does. On four projects a rule like
-that read 4% to 6% more rows and changed no output, so the rules leave it
-out.
+A read through another name for the class is spelled as a class read
+too. In Ruby that is a local every write gives a constant, as in
+`klass = Report; klass.build`, and in TypeScript a variable every write
+gives a class, as in `const Jobs = ReportJob`. The adapter can see those
+writes where it spells the read, so no rule is involved. A rule that
+looked the class member up for a plain read whose value comes to the
+class by value steps alone read 4% to 6% more rows on four projects. A
+name that is sometimes the class and sometimes something else keeps the
+instance spelling, and a class member read through it is not found.
 
 Python needs none of this. A class there has one namespace, so a read off
 the class and a read off an instance find the same members.

@@ -24,7 +24,11 @@ import { methodInAncestry } from "../ancestry.js";
 import { definesClassMethod, field, singletonMethodsByName } from "../ast.js";
 import { classBehind } from "../baseClass.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
-import { readKey } from "../facts/values.js";
+import {
+  classLocalsAt,
+  readKey,
+  readsOffClassItself,
+} from "../facts/values.js";
 import { pickedSource } from "../loaders.js";
 import { calleeMethodName } from "../paths/effects.js";
 
@@ -278,9 +282,24 @@ function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
     kind: "receiver",
     key: readKey(site.file, receiver, site.method),
     method: methodName,
-    onClassItself:
-      receiver.type === "constant" || receiver.type === "scope_resolution",
+    onClassItself: readsOffClassItself(receiver, (local) =>
+      classLocalsFor(call, site).has(readKey(site.file, local, site.method)),
+    ),
   };
+}
+
+/** Each scope's class locals, worked out once for every call in it. */
+const classLocalsByScope = new WeakMap<object, ReadonlySet<string>>();
+
+function classLocalsFor(call: RbNode, site: CallSite): ReadonlySet<string> {
+  const scope = site.method ?? call.tree;
+  const known = classLocalsByScope.get(scope);
+  if (known !== undefined) {
+    return known;
+  }
+  const found = classLocalsAt(site.file, site.method, call.tree.rootNode);
+  classLocalsByScope.set(scope, found);
+  return found;
 }
 
 function asCallee(

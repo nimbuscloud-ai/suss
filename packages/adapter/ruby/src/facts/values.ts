@@ -199,6 +199,8 @@ interface Emitter {
   insideMethod: boolean;
   /** Which of the class's methods a call on `self` here can run. */
   selfRuns: SelfRuns;
+  /** The locals in scope here that every write gives a class constant. */
+  classLocals: ReadonlySet<string>;
   /**
    * Every value the body being walked assigns to each instance variable.
    * Each method gets its own map, so the facts say which method stored
@@ -362,24 +364,84 @@ function emitMessageSent(
 }
 
 /**
- * The names a call reads its method under. A call on a constant runs a
- * class method, a call on `self` runs whichever kind `self` runs here, and
- * a call on anything else runs an instance method. The reach resolver
- * decides the same way, so a call it follows and the facts agree.
+ * The names a call reads its method under. A call on the class itself runs
+ * a class method, a call on `self` runs whichever kind `self` runs here,
+ * and a call on anything else runs an instance method.
  */
 function namesReadAs(
   emitter: Emitter,
   receiver: RbNode | null,
   name: string,
 ): string[] {
-  const written = receiver === null ? null : readThrough(receiver);
-  if (written !== null && CONSTANT_REF_TYPES.has(written.type)) {
-    return [classSpelling(name)];
+  if (receiver === null || readThrough(receiver).type === "self") {
+    return SELF_READS[emitter.selfRuns](name);
   }
-  if (written !== null && written.type !== "self") {
-    return [name];
+  const onClass = readsOffClassItself(receiver, (local) =>
+    emitter.classLocals.has(valueKey(emitter, local)),
+  );
+  return onClass ? [classSpelling(name)] : [name];
+}
+
+/**
+ * Whether a call on this receiver runs a method of the class itself: the
+ * receiver is a constant, or a local every write gives a constant, as in
+ * `klass = Report; klass.build`. The reach resolver asks this too, so a
+ * call it follows and the facts agree.
+ */
+export function readsOffClassItself(
+  receiver: RbNode,
+  isClassLocal: (local: RbNode) => boolean,
+): boolean {
+  const written = readThrough(receiver);
+  if (CONSTANT_REF_TYPES.has(written.type)) {
+    return true;
   }
-  return SELF_READS[emitter.selfRuns](name);
+  return written.type === "identifier" && isClassLocal(written);
+}
+
+/**
+ * The locals among these writes that every write gives a class constant,
+ * keyed the way a read of the local is. A parameter is left out, since
+ * its caller can pass anything.
+ */
+export function classLocalsOf(
+  filePath: string,
+  groups: readonly NameWrites[],
+): Set<string> {
+  const found = new Set<string>();
+  for (const group of groups) {
+    if (group.writes.every(writesAConstant)) {
+      found.add(scopedNameKey(filePath, group));
+    }
+  }
+  return found;
+}
+
+function writesAConstant(write: LocalWrite): boolean {
+  return (
+    !write.fromParameter &&
+    write.value !== null &&
+    CONSTANT_REF_TYPES.has(readThrough(write.value).type)
+  );
+}
+
+/** The key a scope's writes to one name are recorded under, which a read of the name also has. */
+function scopedNameKey(filePath: string, group: NameWrites): string {
+  return group.owner === null
+    ? nameId(filePath, group.name)
+    : `${nodeId(filePath, group.owner)}#${group.name}`;
+}
+
+/** The locals every write gives a class constant, in a method or lambda, or at the top of the file when `method` is null. */
+export function classLocalsAt(
+  filePath: string,
+  method: RbNode | null,
+  fileRoot: RbNode,
+): Set<string> {
+  const body = method === null ? fileRoot : definitionBody(method);
+  return body === null
+    ? new Set()
+    : classLocalsOf(filePath, collectWrites(method, body));
 }
 
 const SELF_READS: Record<SelfRuns, (name: string) => string[]> = {
@@ -1052,9 +1114,11 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   }
 
   const body = definitionBody(method);
+  const writes = body === null ? [] : collectWrites(method, body);
   const inside: Emitter = {
     ...emitter,
     enclosing: method,
+    classLocals: classLocalsOf(emitter.filePath, writes),
     namedWrites:
       body === null
         ? null
@@ -1109,7 +1173,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
 
   emitExpressionFacts(inside, body);
   emitNamedStores(inside);
-  emitScopeWrites(inside, method, body);
+  emitScopeWrites(inside, writes);
   emitLambdasIn(inside, body);
 
   return funcKey;
@@ -1188,15 +1252,11 @@ function settledValue(emitter: Emitter, group: NameWrites): string | null {
  */
 function emitScopeWrites(
   emitter: Emitter,
-  method: RbNode | null,
-  body: RbNode,
+  groups: readonly NameWrites[],
 ): void {
-  for (const group of collectWrites(method, body)) {
+  for (const group of groups) {
     const settled = settledValue(emitter, group);
-    const key =
-      group.owner === null
-        ? nameId(emitter.filePath, group.name)
-        : `${nodeId(emitter.filePath, group.owner)}#${group.name}`;
+    const key = scopedNameKey(emitter.filePath, group);
     if (settled === null) {
       emitCandidates(emitter, key, group);
       continue;
@@ -1454,6 +1514,7 @@ export function emitValueFacts(
   root: RbNode,
   bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
 ): void {
+  const writes = collectWrites(null, root);
   const emitter: Emitter = {
     db,
     filePath,
@@ -1461,6 +1522,7 @@ export function emitValueFacts(
     selfKey: null,
     insideMethod: false,
     selfRuns: "instanceMethods",
+    classLocals: classLocalsOf(filePath, writes),
     instanceWrites: null,
     namedWrites: { body: root, parameters: new Set(), byProperty: new Map() },
     bodyBlocks,
@@ -1494,7 +1556,7 @@ export function emitValueFacts(
   walk(root);
   emitExpressionFacts(emitter, root);
   emitNamedStores(emitter);
-  emitScopeWrites(emitter, null, root);
+  emitScopeWrites(emitter, writes);
   emitLambdasIn(emitter, root);
   // Every store holding Ruby values needs the language's words, a single
   // file's and a why session's included, and a second file adds nothing.
