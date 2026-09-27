@@ -79,6 +79,35 @@ transitions:
     expect(validate(doc)).toBe(true);
   });
 
+  it("takes an always block with the outcomes it exempts", () => {
+    const doc = YAML.parse(`
+kind: boundary
+name: admin-users-delete
+purpose: DELETE /admin/users/:id removes a user and records who did it.
+audience: admin-console
+boundary:
+  semantics: rest
+  method: DELETE
+  path: /admin/users/:id
+transitions:
+  - id: deleted
+    when: the user exists
+    response: { status: 204 }
+  - id: not-found
+    when: no user has that id
+    response: { status: 404 }
+always:
+  - writes: postgresql:audit_log
+    fields: [actor_id, action]
+    except: [not-found]
+`);
+    expect(IntentDocSchema.safeParse(doc).success).toBe(true);
+    expect(validate(doc)).toBe(true);
+    expect(validate({ ...doc, always: [{ writes: "x", unless: [] }] })).toBe(
+      false,
+    );
+  });
+
   it("leaves no suss marker key in the published file", () => {
     expect(JSON.stringify(published)).not.toContain("x-suss-");
   });

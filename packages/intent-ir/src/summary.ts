@@ -58,6 +58,17 @@ export interface IntentEffect {
 }
 
 /**
+ * An effect every transition producing a declared outcome has. A
+ * `results` line is satisfied by one transition; this is satisfied only
+ * when none of them lacks it.
+ */
+export interface IntentAlways {
+  effect: IntentEffect;
+  /** The outcome ids whose transitions do not have to have it. */
+  except: string[];
+}
+
+/**
  * One clause of what a branch turned on. The checker compares a clause
  * whose subject is a boundary, and the rest are kept for a reader.
  */
@@ -113,6 +124,8 @@ export interface BoundaryIntentSummary {
   /** Empty for a doc with no `receives` block, which states nothing about the input. */
   receives: IntentInputField[];
   outcomes: IntentOutcome[];
+  /** Empty for a doc with no `always` block. */
+  always: IntentAlways[];
 }
 
 export interface PrdScenarioSummary {
@@ -157,6 +170,10 @@ function boundaryIntentToSummary(doc: BoundaryIntent): BoundaryIntentSummary {
     boundary: toBoundaryBinding(doc.boundary),
     receives: toReceives(doc.boundary),
     outcomes: doc.transitions.map(toOutcome),
+    always: (doc.always ?? []).map((declared) => ({
+      effect: toIntentEffect(declared),
+      except: declared.except ?? [],
+    })),
   };
 }
 

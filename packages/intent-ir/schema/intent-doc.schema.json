@@ -1322,6 +1322,147 @@
             "additionalProperties": false
           },
           "description": "Every outcome the boundary can produce, one entry each."
+        },
+        "always": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "reads": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "fields": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "by": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    ]
+                  },
+                  "except": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "The ids of the outcomes that do not have to have the effect."
+                  }
+                },
+                "required": ["reads"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "writes": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "fields": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "by": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    ]
+                  },
+                  "except": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "The ids of the outcomes that do not have to have the effect."
+                  }
+                },
+                "required": ["writes"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "invokes": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "fields": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "by": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    ]
+                  },
+                  "except": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "The ids of the outcomes that do not have to have the effect."
+                  }
+                },
+                "required": ["invokes"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "Effects that every transition producing a declared outcome has, apart from the outcomes listed under except."
         }
       },
       "required": [

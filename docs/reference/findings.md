@@ -527,7 +527,7 @@ They have a different shape, because one side is a document rather than code, so
 
 | Field | Type | Meaning |
 |---|---|---|
-| `kind` | string | One of the ten below. |
+| `kind` | string | One of the kinds below. |
 | `severity` | `error` \| `warning` \| `info` | The default. |
 | `boundary` | string | A readable label, such as `GET /users/:id` or `fn:@suss/cli::contract`. The key the intent and the code paired on. |
 | `intent` | `{ name, outcomeId? }` | The document's `name` for a boundary intent or `title` for a PRD, plus the declared outcome where the finding is about one. |
@@ -536,7 +536,7 @@ They have a different shape, because one side is a document rather than code, so
 | `message` | string | One line of human-readable text. |
 | `suppressed` | `IntentFindingSuppression?` | Set only when a `.sussignore` rule matched. |
 
-One rule applies to all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet.
+One rule applies to all of them: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet.
 
 The severity split follows from what an intent doc is. A person wrote it deliberately, so code that fails to satisfy it is a defect, and those kinds are errors. An intent nothing can check, or a scenario pointing at nothing, is a gap in the documents, and those are warnings. Code that does more than the document claims is info.
 
@@ -617,6 +617,22 @@ Renaming a store without updating the intent doc would otherwise produce an `unc
 **Legitimate when:** never. The pairing is a guess about the cause, and the document and the code disagree either way.
 
 **A bug when:** always. Update the intent if the store was renamed, and fix the code if it was not.
+
+### `pathWithoutEffect`
+
+**Severity:** error.
+
+The intent's `always` block says every outcome has an effect, and one transition that produces a declared outcome does not have it.
+
+```
+[error] DELETE /admin/users/{id}: Intent "admin-users-delete" says every outcome results in a write to postgresql:audit_log of actor_id, action at DELETE /admin/users/{id}; the transition of delete at line 22, which produces not-found (status 404), does not. Add the effect on that path, or list not-found under except.
+```
+
+A `results` line on an outcome is satisfied when one transition producing that outcome has the effect. An `always` line has to be true of each transition, so there is one finding per transition, with the line it starts on and the outcome it produces. A throw counts as an outcome like any other. The checker skips a transition whose outcome is listed under `except`, and one that does not produce any declared outcome, which `undeclaredOutcome` reports instead.
+
+**Legitimate when:** the outcome should not have the effect, as a request turned away before anything happened usually should not write an audit row. List its id under `except`. It is also legitimate when the effect happens somewhere the transition's summary cannot see, such as middleware that writes the row after the handler returns.
+
+**A bug when:** the branch was supposed to have the effect and nobody wrote it, usually because somebody added an early return above the audit write. Add the effect on that path.
 
 ### `unreadInputField`
 

@@ -80,6 +80,8 @@ interface CodeOutcome {
   effects: CodeEffect[];
   /** The boundaries the branch leading here turned on. */
   turnsOn: BoundaryGuard[];
+  /** The line the transition starts on, for a finding about one transition. */
+  line: number;
 }
 
 /** A boundary intent that was paired and compared against code. */
@@ -645,9 +647,7 @@ function compareIntentToImpl(
     // A `when` clause that says which boundary the branch read is the
     // one part of the condition this pass can settle, so a declared
     // outcome narrows to the branches that turn on what it said.
-    const stated = outcome.conditions.filter(
-      (c): c is IntentCondition & { at: IntentEffect } => c.at !== null,
-    );
+    const stated = boundaryClauses(outcome);
     const matches =
       stated.length === 0
         ? ending
@@ -747,10 +747,24 @@ function compareIntentToImpl(
     });
   }
 
+  const always = checkAlwaysEffects(
+    intent,
+    impl,
+    boundary,
+    codeOutcomes,
+    everyEffect,
+    deployment,
+  );
+  findings.push(...always.findings);
+  vanished.push(...always.vanished);
+
   // An intent listing three writes on a unit doing four has one nobody
   // wrote down, the same open-specification case an undeclared status
   // is, so it gets the same severity.
-  const declaredEffects = intent.outcomes.flatMap((o) => o.effects);
+  const declaredEffects = [
+    ...intent.outcomes.flatMap((o) => o.effects),
+    ...intent.always.map((a) => a.effect),
+  ];
   const said = new Set<string>();
   for (const made of everyEffect) {
     const spelled = `${made.does} ${made.label}`;
@@ -1136,7 +1150,93 @@ function toCodeOutcome(
       ...guard,
       binding: groundBinding(guard.binding, deployment),
     })),
+    line: t.location.start,
   };
+}
+
+/** A `when` clause that says which boundary the branch read. */
+type BoundaryClause = IntentCondition & { at: IntentEffect };
+
+/** The clauses of an outcome's `when` this pass can settle against a branch. */
+function boundaryClauses(outcome: IntentOutcome): BoundaryClause[] {
+  return outcome.conditions.filter((c): c is BoundaryClause => c.at !== null);
+}
+
+/**
+ * Whether a code transition produces a declared outcome: it ends the
+ * way the outcome says, and its branch turns on every boundary the
+ * outcome's `when` mentions. An outcome that states only its effects
+ * has no ending to narrow by, so every transition produces it.
+ */
+function producesOutcome(outcome: IntentOutcome, co: CodeOutcome): boolean {
+  if (outcome.kind === "effect") {
+    return true;
+  }
+  return (
+    outcomeMatches(outcome, co) &&
+    boundaryClauses(outcome).every((c) => conditionMet(c, co.turnsOn))
+  );
+}
+
+/**
+ * The `always` block, one transition at a time. Each transition that
+ * produces a declared outcome has to have every `always` effect, unless
+ * an outcome it produces is listed under `except`. A transition that
+ * does not produce any declared outcome is left to `undeclaredOutcome`.
+ */
+function checkAlwaysEffects(
+  intent: BoundaryIntentSummary,
+  impl: BehavioralSummary,
+  boundary: string,
+  codeOutcomes: CodeOutcome[],
+  everyEffect: CodeEffect[],
+  deployment: Deployment,
+): { findings: IntentFinding[]; vanished: VanishedBoundaryUse[] } {
+  const findings: IntentFinding[] = [];
+  const vanished: VanishedBoundaryUse[] = [];
+  if (intent.always.length === 0) {
+    return { findings, vanished };
+  }
+
+  for (const co of codeOutcomes) {
+    const produced = intent.outcomes.filter((o) => producesOutcome(o, co));
+    if (produced.length === 0) {
+      continue;
+    }
+
+    for (const always of intent.always) {
+      // When the code could be producing two outcomes, one exempt, the
+      // checker cannot tell which, and reporting it would be a guess.
+      if (produced.some((o) => always.except.includes(o.id))) {
+        continue;
+      }
+
+      if (co.effects.some((made) => effectMatches(always.effect, made))) {
+        continue;
+      }
+      const outcome = produced.find((o) => o.kind !== "effect") ?? produced[0];
+      const finding: IntentFinding = {
+        kind: "pathWithoutEffect",
+        severity: "error",
+        boundary,
+        intent: { name: intent.name, outcomeId: outcome.id },
+        code: codeRef(impl),
+        message: `Intent "${intent.name}" says every outcome results in ${describeEffect(always.effect)} at ${boundary}; the transition of ${impl.identity.name} at line ${co.line}, which produces ${describeProduced(outcome)}, does not. Add the effect on that path, or list ${outcome.id} under except.${unsettledNote(co.effects, always.effect, deployment)}`,
+      };
+      findings.push(finding);
+      if (neverTouchesBoundary(always.effect.names, everyEffect)) {
+        vanished.push({
+          finding,
+          boundary: always.effect.names,
+          does: always.effect.does,
+          kind: "effect",
+          effect: always.effect,
+          reached: co.effects,
+        });
+      }
+    }
+  }
+  return { findings, vanished };
 }
 
 /** How a transition ends, in the terms intent states an ending in. */
@@ -1302,6 +1402,14 @@ function describeOutcome(outcome: IntentOutcome): string {
       : "a thrown error";
   }
   return "a return value";
+}
+
+/** An outcome's id, and how it ends when it states an ending. */
+function describeProduced(outcome: IntentOutcome): string {
+  if (outcome.kind === "effect") {
+    return outcome.id;
+  }
+  return `${outcome.id} (${describeOutcome(outcome)})`;
 }
 
 function describeEffect(effect: IntentEffect): string {

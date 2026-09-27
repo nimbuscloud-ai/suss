@@ -1126,3 +1126,81 @@ describe("IntentFindingKindSchema", () => {
     );
   });
 });
+
+describe("always: an effect on every outcome", () => {
+  const withAlways = (always: unknown, transitions = restIntent.transitions) =>
+    IntentDocSchema.safeParse({ ...restIntent, transitions, always });
+
+  it("takes an effect with the outcomes it exempts, and normalizes it", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...restIntent,
+        always: [
+          {
+            writes: "postgresql:audit_log",
+            fields: ["actor_id", "action"],
+            except: ["not-found"],
+          },
+        ],
+      }),
+    ) as BoundaryIntentSummary;
+    expect(summary.always).toEqual([
+      {
+        effect: {
+          does: "writes",
+          names: "postgresql:audit_log",
+          fields: ["actor_id", "action"],
+          by: [],
+        },
+        except: ["not-found"],
+      },
+    ]);
+  });
+
+  it("gives a document without the block an empty list", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(restIntent),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.always).toEqual([]);
+  });
+
+  it("stops on an except id no transition has, and lists the ones it has", () => {
+    const parsed = withAlways([
+      { writes: "postgresql:audit_log", except: ["notfound"] },
+    ]);
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0].path).toEqual(["always", 0, "except", 0]);
+    expect(parsed.error?.issues[0].message).toContain("not-found, found");
+  });
+
+  it("stops on an except id whose outcome states only its effects", () => {
+    const parsed = withAlways(
+      [{ writes: "postgresql:audit_log", except: ["audited"] }],
+      [
+        ...restIntent.transitions,
+        {
+          id: "audited",
+          when: "always",
+          results: [{ writes: "postgresql:audit_log" }],
+        },
+      ] as typeof restIntent.transitions,
+    );
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0].message).toContain(
+      "states only its effects",
+    );
+  });
+
+  it("refuses a key an effect does not take", () => {
+    expect(
+      withAlways([{ writes: "postgresql:audit_log", unless: ["x"] }]).success,
+    ).toBe(false);
+  });
+
+  it("has a finding kind for a path without the effect", () => {
+    expect(IntentFindingKindSchema.options).toContain("pathWithoutEffect");
+  });
+});

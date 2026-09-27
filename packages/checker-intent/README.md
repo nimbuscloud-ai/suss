@@ -31,6 +31,7 @@ the same boundary key, and emits:
 - `unkeyableBoundary`: the intent's boundary has no key to pair on, so nothing was compared (warning).
 - `undescribedOutcome`: a declared outcome no PRD scenario links to (info).
 - `renamedBoundary`: a declared store the unit never touches, paired with an undeclared store of the same system that the unit does touch, with the same verbs on the same outcomes.
+- `pathWithoutEffect`: a transition producing a declared outcome lacks an effect the document's `always` block says every outcome has.
 
 v0 checks system intent (`kind: boundary`). PRD outcome intent
 (`kind: prd`), which covers scenarios and links, is a separate pass.

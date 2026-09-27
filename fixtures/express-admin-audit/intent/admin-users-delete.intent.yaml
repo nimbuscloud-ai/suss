@@ -1,0 +1,35 @@
+kind: boundary
+
+name: admin-users-delete
+purpose: DELETE /admin/users/:id removes a user, and records which admin asked.
+audience: admin-console
+source: author
+
+boundary:
+  semantics: rest
+  method: DELETE
+  path: /admin/users/:id
+
+transitions:
+  - id: not-admin
+    when: the caller did not say which admin they are
+    response:
+      status: 403
+
+  - id: not-found
+    when: no user has that id
+    response:
+      status: 404
+
+  - id: deleted
+    when: the user exists
+    response:
+      status: 200
+    results:
+      - reads: postgresql:users
+      - writes: postgresql:users
+
+always:
+  - writes: postgresql:audit_log
+    fields: [actor_id, action]
+    except: [not-admin]

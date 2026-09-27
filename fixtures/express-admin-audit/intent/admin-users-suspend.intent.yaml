@@ -1,0 +1,34 @@
+kind: boundary
+
+name: admin-users-suspend
+purpose: POST /admin/users/:id/suspend suspends a user, and records which admin asked.
+audience: admin-console
+source: author
+
+boundary:
+  semantics: rest
+  method: POST
+  path: /admin/users/:id/suspend
+
+transitions:
+  - id: not-admin
+    when: the caller did not say which admin they are
+    response:
+      status: 403
+
+  - id: not-found
+    when: no user has that id
+    response:
+      status: 404
+
+  - id: suspended
+    when: the user exists
+    response:
+      status: 200
+    results:
+      - writes: postgresql:users
+
+always:
+  - writes: postgresql:audit_log
+    fields: [actor_id, action]
+    except: [not-admin]
