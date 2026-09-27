@@ -8,6 +8,29 @@ export {
 export { classMemberName, classMemberOf } from "./classMember.js";
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
 export { declaredTypesOf } from "./declaredType.js";
+export {
+  type Changes,
+  type Dependencies,
+  DependencyLedger,
+  FactLog,
+  hashString,
+  mergeStoredDependencies,
+  noDependencies,
+  packHashes,
+  type StoredDependencies,
+  type StoredFacts,
+  stillValid,
+  unpackHashes,
+  WatchedMap,
+} from "./dependencyLedger.js";
+export {
+  EntryReuse,
+  fileOfKey,
+  recordsToReplay,
+  type StoredFileRecord,
+  type StoredWalkRecord,
+  walkRecordsByFile,
+} from "./entryReuse.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export { importedFilesByFile } from "./fileImports.js";
 export {
@@ -40,6 +63,10 @@ export {
   ASKING_RELATIONS,
   askResolution,
   askResolutionUnder,
+  isObserved,
+  noteKeyRead,
+  noteLookup,
+  observeDemand,
   queryFacts,
   resolutionProgram,
   resolutionUnderProgram,

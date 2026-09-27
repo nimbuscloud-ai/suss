@@ -1111,6 +1111,63 @@ functions take a `describe` callback that turns an atom into source
 terms. `renderExplanation` turns the flattened chain into printable
 lines. `suss ask 'why does … reach …'` runs this whole pipeline.
 
+## What a piece of work depended on
+
+A cache that keeps one file's results after another file changes has
+to know what those results were read from. `DependencyLedger` works
+that out from the questions the work asked. An adapter registers it on
+the database with `observeDemand` and runs each piece of work, one
+file's discovery or one function's scan, inside `charging`.
+
+After each evaluation, and before the clear, `askResolution` and
+`askResolutionUnder` hand the ledger every value in the relations the
+question derived for itself, and every value in the rows it added to
+the answers. The relations derived for the question include the
+`wanted:` demand relations the on-demand rewrite adds, which is where
+the demand that travels down from a question ends up. The asking
+relations only ever contain the caller's own keys.
+
+Every key a tree-sitter adapter writes starts with its file, so the
+ledger keeps the values that are keys and drops names. A question asked
+a second time is answered from the database without evaluating
+anything, so the ledger keeps what each asked key touched and charges
+it again to whoever asks next.
+
+Three kinds of read go around the rules, and the adapter charges them
+itself:
+
+- Syntax read straight out of another file, such as the evaluator
+  following an answer to its node. `noteKeyRead` charges that whole
+  file.
+- A key that goes on a summary without a question, such as the span of
+  a method a scan followed. `touchKey` charges the key.
+- A lookup in an index the run builds over every file, such as methods
+  by name or a router's prefix. `noteLookup` records an id the next run
+  can repeat and a description of what came back.
+
+`FactLog` stores, for every file, a digest of the rows each key appears
+in: the rows the file emitted on its own, and the rows an adapter adds
+once every file is in, such as Ruby's constant bindings. The next run
+compares, and a key whose rows changed is a key whose facts changed,
+even in a file nobody edited. When a file starts defining
+`Api::V1::Status`, the binding row of every `Status` reference written
+inside `Api::V1` changes, so the work that asked about one of those
+references runs again. The other keys in a row are hashed without their
+offsets, so an edit that shifts the rest of a file leaves the digest of
+an untouched key alone. Work that used a key which moved has that key
+among its own values, and is checked on it.
+
+`EntryReuse` puts these together. A stored record is replayed when none
+of its files changed, none of its keys' facts changed, and every lookup
+it made comes back the same. A file's discovery record also needs the
+walk records of the functions its units start from, because those
+units' summaries carry what the walk placed on them.
+
+One case is not seen: a derivation that joins through a base row and
+uses a key only inside that join, so the key never appears in a
+derived row. The rules cross files through `binds` and `imports` rows,
+whose keys do appear in what they derive.
+
 ## Why rules and not a walker
 
 Each rule describes one hop. The chains people write are longer: a
