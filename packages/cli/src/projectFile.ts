@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { InitReport } from "./init.js";
+import type { InitReport, PackSuggestion } from "./init.js";
 
 /** Written at the project root, next to `.sussignore.json`. */
 export const PROJECT_FILE = "suss.json";
@@ -44,24 +44,37 @@ export interface ProjectFile {
   read: Array<ExtractEntry | ContractEntry>;
 }
 
-/** The file to write for what init found, or null when it found nothing. */
-export function projectFileFor(report: InitReport): ProjectFile | null {
+/**
+ * The file to write for what init found, or null when it found nothing.
+ * `directory` is where the project is, relative to the root the file is
+ * written at, and goes in front of each contract's and config's path.
+ * The packs in `leftOut` are not listed.
+ */
+export function projectFileFor(
+  report: InitReport,
+  directory = ".",
+  leftOut: ReadonlySet<string> = new Set(),
+): ProjectFile | null {
   const contracts: ContractEntry[] = report.suggestions
     .filter((one) => one.kind === "contract" && one.file !== undefined)
     .map((one) => ({
       kind: "contract",
       from: one.name,
-      file: one.file as string,
+      file: path.join(directory, one.file as string),
     }));
 
   const byLanguage = new Map<string, string[]>();
   for (const one of report.suggestions) {
-    if (one.kind === "contract" || one.language === undefined) {
+    if (
+      one.kind === "contract" ||
+      one.language === undefined ||
+      leftOut.has(one.name)
+    ) {
       continue;
     }
     byLanguage.set(one.language, [
       ...(byLanguage.get(one.language) ?? []),
-      one.name,
+      packSpecFor(report.root, directory, one),
     ]);
   }
 
@@ -76,6 +89,23 @@ export function projectFileFor(report: InitReport): ProjectFile | null {
 
   const read = [...extracts, ...contracts];
   return read.length === 0 ? null : { version: 1, read };
+}
+
+/**
+ * A pack as `-f` takes it. A pack's config file is named once it is on
+ * disk, because `-f rails=suss.rails.json` stops the extract when the file
+ * is missing.
+ */
+function packSpecFor(
+  projectRoot: string,
+  directory: string,
+  suggestion: PackSuggestion,
+): string {
+  const file = suggestion.configuration?.file;
+  if (file === undefined || !fs.existsSync(path.join(projectRoot, file))) {
+    return suggestion.name;
+  }
+  return `${suggestion.name}=${path.join(directory, file)}`;
 }
 
 /** Null when the project has no `suss.json`, or one that does not parse. */

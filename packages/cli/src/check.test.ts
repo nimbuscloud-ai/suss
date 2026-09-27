@@ -2094,6 +2094,44 @@ describe("failing when the run compares nothing", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it("fails a folder whose summary files are all empty, and says it read none", () => {
+    // A bare `suss check` over a project whose extract recognized nothing
+    // writes an empty file, and lands here.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-none-read-"));
+    fs.writeFileSync(path.join(dir, "0-extract.json"), "[]");
+
+    const { result } = captureQuietly(() => checkDir({ dir }));
+    expect(result.hasErrors).toBe(true);
+    expect(result.run?.[0]?.kind).toBe("nothingPaired");
+    expect(result.run?.[0]?.description).toContain("Didn't read any summaries");
+
+    const allowed = captureQuietly(() => checkDir({ dir, allowEmpty: true }));
+    expect(allowed.result.hasErrors).toBe(false);
+    expect(allowed.result.run).toBeUndefined();
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("fails a --since run whose later folder is empty", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-none-since-"));
+    for (const name of ["before", "after"]) {
+      fs.mkdirSync(path.join(root, name));
+      fs.writeFileSync(path.join(root, name, "0-extract.json"), "[]");
+    }
+
+    const { output, result } = captureQuietly(() =>
+      checkDir({
+        dir: path.join(root, "after"),
+        since: path.join(root, "before"),
+        json: true,
+      }),
+    );
+    expect(result.hasErrors).toBe(true);
+    expect(JSON.parse(output).run[0].kind).toBe("nothingPaired");
+
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   it("stays quiet when something did pair", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-paired-"));
     fs.writeFileSync(

@@ -26,10 +26,11 @@ no discovery.
 
 You have to set `storageSystem`. ActiveRecord works with Postgres, MySQL
 and SQLite, and database.yml decides which, so the pack cannot work it
-out.
+out from the code. `suss init` reads it from the `adapter` lines in
+`config/database.yml` and writes the config file for you.
 
-From the CLI, the option comes from a config file. A bare
-`-f activerecord` stops with a message asking for one:
+From the CLI, the option comes from that file. A bare `-f activerecord`
+stops with a message asking for one:
 
 ```sh
 echo '{ "storageSystem": "postgresql" }' > suss.activerecord.json

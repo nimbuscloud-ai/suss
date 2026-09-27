@@ -196,6 +196,22 @@ function fetchProjectIn(dir: string): string {
   return path.join(dir, "out", "summaries.json");
 }
 
+/** A project init picks the express pack for, with no route in it for the pack to find. */
+function projectWithNothingToRead(dir: string): void {
+  fs.writeFileSync(
+    path.join(dir, "package.json"),
+    JSON.stringify({ name: "orders", dependencies: { express: "^4.19.0" } }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "tsconfig.json"),
+    JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "constants.ts"),
+    'export const ORDERS_TABLE = "orders";\n',
+  );
+}
+
 function summaryNamesIn(file: string): string[] {
   const written = JSON.parse(fs.readFileSync(file, "utf8")) as Array<{
     identity: { name: string };
@@ -255,6 +271,35 @@ describe("runCli top-level dispatch", () => {
     const { exit, io } = await capture(() => runCli(["nope"]));
     expect(exit).toBe(1);
     expect(io.stderr).toContain("nope");
+  });
+
+  it("rejects a flag the command does not take, for every command", async () => {
+    const misspelled = [
+      ["init", "--plian"],
+      ["init", tmpDir, "-x"],
+      ["extract", "--bogus"],
+      ["inspect", "--bogus"],
+      ["inspect", "summaries.json", "-x"],
+      ["inspect", "--dir", tmpDir, "-q"],
+      ["inspect", "--diff", "a.json", "b.json", "-z"],
+      ["inspect", "--flow", "GET /orders", "--bogus"],
+      ["check", "--bogus"],
+      ["ask", "--bogus"],
+      ["contract", "--bogus"],
+      ["corroborate", "--bogus"],
+      ["infer", "stub", "--bogus"],
+      ["infer", "intent", "--bogus"],
+      ["infer", "prd", "--bogus"],
+      ["intent", "outcomes", "--bogus"],
+      ["intent", "check", "--bogus"],
+      ["intent", "keep", "--bogus"],
+    ];
+    for (const argv of misspelled) {
+      const flag = argv[argv.length - 1];
+      const { exit, io } = await capture(() => runCli(argv));
+      expect(exit, argv.join(" ")).toBe(1);
+      expect(io.stderr, argv.join(" ")).toContain(`Unknown option '${flag}'`);
+    }
   });
 
   it("turns a flag typed without its value into a sentence", async () => {
@@ -1076,6 +1121,30 @@ describe("runCli check", () => {
     expect(io.stderr).toContain(`Nothing in ${tmpDir} matched a pack`);
   });
 
+  it("fails when the project's extract writes no summaries, and says why in the JSON", async () => {
+    projectWithNothingToRead(tmpDir);
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["check", "--json"])),
+    );
+
+    expect(exit).toBe(1);
+    const report = JSON.parse(io.stdout) as {
+      run: Array<{ kind: string; description: string }>;
+    };
+    expect(report.run[0]?.kind).toBe("nothingPaired");
+    expect(report.run[0]?.description).toContain("Didn't read any summaries");
+  });
+
+  it("passes that project with --allow-empty, without telling the user to pass it", async () => {
+    projectWithNothingToRead(tmpDir);
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["check", "--allow-empty"])),
+    );
+
+    expect(exit).toBe(0);
+    expect(io.stderr).not.toContain("Failing because");
+  });
+
   it("rejects an invalid --fail-on value", async () => {
     const { exit, io } = await capture(() =>
       runCli(["check", "--fail-on", "bogus", "p.json", "c.json"]),
@@ -1308,6 +1377,32 @@ describe("runCli contract", () => {
     );
     expect(exit).toBe(0);
     expect(fs.existsSync(out)).toBe(true);
+  });
+});
+
+describe("runCli init", () => {
+  it("writes suss.json without asking when given --write", async () => {
+    projectWithNothingToRead(tmpDir);
+    const { exit, io } = await capture(() =>
+      runCli(["init", tmpDir, "--write"]),
+    );
+
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain("Wrote suss.json");
+    const written = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, "suss.json"), "utf8"),
+    ) as { read: Array<{ kind: string; packs?: string[] }> };
+    expect(written.read[0]?.packs).toContain("express");
+  });
+
+  it("refuses --overwrite without --write, which is the only thing it changes", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["init", tmpDir, "--overwrite"]),
+    );
+
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("needs --write");
+    expect(fs.existsSync(path.join(tmpDir, "suss.json"))).toBe(false);
   });
 });
 

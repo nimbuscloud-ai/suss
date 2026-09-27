@@ -208,6 +208,41 @@ describe("suss init, guided", () => {
     ).toContain("hono");
   });
 
+  it("writes the config each pack needs along with suss.json, and lists it there", async () => {
+    write("Gemfile", 'source "https://rubygems.org"\ngem "rails"\n');
+    write(
+      "Gemfile.lock",
+      "GEM\n  specs:\n    rails (7.1.0)\n    graphql (2.3.5)\n\nDEPENDENCIES\n  graphql\n  rails\n",
+    );
+    write("config/database.yml", "default: &default\n  adapter: mysql2\n");
+    write(
+      "app/controllers/application_controller.rb",
+      "class ApplicationController < ActionController::Base\nend\n",
+    );
+    // install: no, sussignore: no, ci: no, project file: yes
+    answers.push(false, false, false, true);
+
+    await initInteractive({ dir });
+
+    const written = JSON.parse(
+      fs.readFileSync(path.join(dir, "suss.json"), "utf8"),
+    ) as { read: Array<{ language?: string; packs?: string[] }> };
+    const ruby = written.read.find((entry) => entry.language === "ruby");
+    expect(ruby?.packs).toEqual(
+      expect.arrayContaining([
+        "rails=suss.rails.json",
+        "graphql-ruby=suss.graphql-ruby.json",
+        "activerecord=suss.activerecord.json",
+      ]),
+    );
+    expect(
+      JSON.parse(
+        fs.readFileSync(path.join(dir, "suss.activerecord.json"), "utf8"),
+      ),
+    ).toEqual({ storageSystem: "mysql" });
+    expect(output()).toContain("Wrote suss.graphql-ruby.json");
+  });
+
   it("leaves the project file alone when nobody asked for it", async () => {
     project(".", "api", ["hono"]);
     answers.push(false, false, false, false);
@@ -397,6 +432,103 @@ describe("suss init, guided", () => {
     expect(code).toBe(0);
     expect(output()).toContain("Left everything as it was");
     expect(fs.existsSync(path.join(dir, ".sussignore.json"))).toBe(false);
+  });
+
+  describe("with --write", () => {
+    async function printedBy(run: () => Promise<number>): Promise<string> {
+      const written: string[] = [];
+      const spy = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation((chunk) => {
+          written.push(String(chunk));
+          return true;
+        });
+      try {
+        expect(await run()).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+      return written.join("");
+    }
+
+    function projectFile(): { read: Array<Record<string, unknown>> } {
+      return JSON.parse(fs.readFileSync(path.join(dir, "suss.json"), "utf8"));
+    }
+
+    it("prints the commands, then writes suss.json without asking", async () => {
+      project(".", "api", ["hono"]);
+
+      const text = await printedBy(() => initInteractive({ dir, write: true }));
+
+      expect(text).toContain("suss extract -f hono");
+      expect(text).toContain("Wrote suss.json");
+      expect(shown).toEqual([]);
+      expect(projectFile().read).toContainEqual(
+        expect.objectContaining({
+          kind: "extract",
+          packs: expect.arrayContaining(["hono"]),
+        }),
+      );
+    });
+
+    it("leaves a suss.json that is already there alone, and says so", async () => {
+      project(".", "api", ["hono"]);
+      write("suss.json", '{ "version": 1, "read": [] }\n');
+
+      const text = await printedBy(() => initInteractive({ dir, write: true }));
+
+      expect(text).toContain("suss.json is already here");
+      expect(text).toContain("--overwrite");
+      expect(fs.readFileSync(path.join(dir, "suss.json"), "utf8")).toBe(
+        '{ "version": 1, "read": [] }\n',
+      );
+    });
+
+    it("replaces that suss.json when --overwrite asks it to", async () => {
+      project(".", "api", ["hono"]);
+      write("suss.json", '{ "version": 1, "read": [] }\n');
+
+      await printedBy(() =>
+        initInteractive({ dir, write: true, overwrite: true }),
+      );
+
+      expect(projectFile().read).toHaveLength(1);
+    });
+
+    it("writes nothing when nothing matched a pack", async () => {
+      project(".", "empty", []);
+
+      const text = await printedBy(() => initInteractive({ dir, write: true }));
+
+      expect(text).toContain("init wrote nothing");
+      expect(fs.existsSync(path.join(dir, "suss.json"))).toBe(false);
+    });
+
+    it("writes one suss.json for every package in a workspace, with each contract's path from the root", async () => {
+      write(
+        "package.json",
+        JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
+      );
+      project("packages/api", "@acme/api", ["hono"]);
+      write("packages/api/openapi.yaml", "openapi: 3.0.0\npaths: {}\n");
+      project("packages/web", "@acme/web", ["@apollo/client"]);
+
+      await printedBy(() => initInteractive({ dir, write: true }));
+
+      const read = projectFile().read;
+      expect(read).toContainEqual({
+        kind: "contract",
+        from: "openapi",
+        file: path.join("packages", "api", "openapi.yaml"),
+      });
+      const packs = read
+        .filter((entry) => entry.kind === "extract")
+        .map((entry) => entry.packs);
+      expect(packs).toEqual([
+        expect.arrayContaining(["hono"]),
+        expect.arrayContaining(["apollo-client"]),
+      ]);
+    });
   });
 
   describe("without a terminal", () => {

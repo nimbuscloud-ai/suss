@@ -745,9 +745,9 @@ Run findings are a third list, under `run` in the JSON. They are about the run i
 
 ### `nothingPaired`
 
-**Severity:** error. Emitted by `suss check --dir` unless `--allow-empty` was passed.
+**Severity:** error. Emitted by `suss check --dir`, and by a bare `suss check` over the project, unless `--allow-empty` was passed.
 
-The run read summaries and paired none of them. No boundary had both a provider and a consumer, so nothing was compared. Without this finding the report would look exactly like one where both sides agreed.
+The run paired nothing. No boundary had both a provider and a consumer, so nothing was compared. Without this finding the report would look exactly like one where both sides agreed.
 
 ```
 error: nothingPaired
@@ -755,7 +755,7 @@ error: nothingPaired
   Check that both sides of at least one boundary are in the directory. A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. `suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.
 ```
 
-It fires only when there was something to compare. A run over no summaries at all says so on its own, and a run with `--intent` that checked at least one intent doc did compare something.
+A run that didn't read a single summary gets the same finding, and its description says so. A bare `suss check` reports it when the extract didn't recognize anything in the code. A run with `--intent` that checked at least one intent doc did compare something, so it doesn't get one.
 
 **Legitimate when:** you meant to extract one side. Checking a service against a contract you have not read yet pairs nothing, correctly.
 

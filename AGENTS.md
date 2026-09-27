@@ -18,9 +18,15 @@ suss init
 
 It reads `package.json`, finds the frameworks and the spec files, and
 offers to write `suss.json` with the commands this project needs. Say
-yes. Later runs read that file. Without it, a boundary whose other side
-is in an OpenAPI spec goes unpaired, and nobody notices. In CI, `init`
-prints the commands instead of prompting.
+yes, or run `suss init --write` to write it without being asked, which
+is what an agent does. Later runs read that file.
+
+A bare `suss check` reads the specs `init` finds even when there is no
+`suss.json`. The file matters in the `extract` and `contract` loop
+below. If you skip a spec there, the report from `check --dir` lists the
+spec you skipped only when `suss.json` lists it. Without the file, the
+boundaries whose other side is in that spec go unpaired and nothing says
+why. In CI, `init` prints the commands instead of prompting.
 
 ## Which command to use
 

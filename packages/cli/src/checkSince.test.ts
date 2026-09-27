@@ -142,6 +142,38 @@ describe("extract --out-dir", () => {
     expect(fs.readdirSync(dir).sort()).toEqual(["0-extract.json", "notes.txt"]);
   });
 
+  it("fails when an extract writes no summaries, unless --allow-empty says that is expected", async () => {
+    fs.rmSync(path.join(project, "src"), { recursive: true });
+    fs.rmSync(path.join(project, "web"), { recursive: true });
+    fs.mkdirSync(path.join(project, "src"));
+    fs.writeFileSync(
+      path.join(project, "src", "constants.ts"),
+      'export const ORDERS_TABLE = "orders";\n',
+    );
+    const dir = path.join(work, "empty");
+
+    const failed = await quietly([
+      "extract",
+      "--out-dir",
+      dir,
+      "--dir",
+      project,
+    ]);
+    expect(failed.exit).toBe(1);
+    expect(failed.stderr).toContain("Failing because `suss extract");
+
+    const allowed = await quietly([
+      "extract",
+      "--out-dir",
+      dir,
+      "--dir",
+      project,
+      "--allow-empty",
+    ]);
+    expect(allowed.exit).toBe(0);
+    expect(allowed.stderr).not.toContain("Failing because");
+  });
+
   it("refuses the flags that pick one set of packs", async () => {
     const run = await quietly([
       "extract",

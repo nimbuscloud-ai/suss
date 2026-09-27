@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   projectFileFor,
@@ -8,6 +12,7 @@ import {
 } from "./projectFile.js";
 
 import type { InitReport } from "./init.js";
+import type { ProjectFile } from "./projectFile.js";
 
 const report = (over: Partial<InitReport> = {}): InitReport => ({
   root: "/project",
@@ -49,6 +54,73 @@ describe("what init writes down", () => {
 
   it("writes nothing for a project with nothing to read", () => {
     expect(projectFileFor(report({ suggestions: [] }))).toBeNull();
+  });
+
+  describe("a pack that takes a config file", () => {
+    const configured = (root: string): InitReport => ({
+      root,
+      tsconfig: null,
+      suggestions: [
+        {
+          name: "rails",
+          packageName: "@suss/framework-rails",
+          because: "rails in Gemfile.lock",
+          kind: "framework",
+          language: "ruby",
+          configuration: {
+            file: "suss.rails.json",
+            example: { root: "app" },
+            required: false,
+            why: "the app directory.",
+          },
+        },
+        {
+          name: "activerecord",
+          packageName: "@suss/framework-activerecord",
+          because: "rails in Gemfile.lock",
+          kind: "effects",
+          language: "ruby",
+        },
+      ],
+    });
+    let root: string;
+
+    beforeEach(() => {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-project-file-"));
+    });
+
+    afterEach(() => {
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    const packs = (file: ProjectFile | null): string[] =>
+      file?.read.flatMap((entry) =>
+        entry.kind === "extract" ? entry.packs : [],
+      ) ?? [];
+
+    it("lists the pack by name until its config file is on disk", () => {
+      expect(packs(projectFileFor(configured(root)))).toEqual([
+        "rails",
+        "activerecord",
+      ]);
+    });
+
+    it("lists the pack with its config file once the file is there, counted from the root", () => {
+      fs.writeFileSync(path.join(root, "suss.rails.json"), "{}\n");
+
+      expect(packs(projectFileFor(configured(root)))).toContain(
+        "rails=suss.rails.json",
+      );
+      expect(packs(projectFileFor(configured(root), "services/web"))).toContain(
+        `rails=${path.join("services/web", "suss.rails.json")}`,
+      );
+    });
+
+    it("leaves out the packs it is told to", () => {
+      expect(
+        packs(projectFileFor(configured(root), ".", new Set(["activerecord"]))),
+      ).toEqual(["rails"]);
+    });
   });
 });
 
