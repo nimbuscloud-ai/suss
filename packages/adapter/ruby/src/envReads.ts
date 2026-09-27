@@ -14,6 +14,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
+import { noteLookup } from "@suss/resolution";
 
 import {
   enclosingDefinition,
@@ -134,10 +135,56 @@ function helperFactsOf(facts: EnvFacts | undefined): HelperFacts | null {
     return null;
   }
   const named = namedParameters(facts.db);
+  noteLookup(facts.db, NAMED_ANY, describeAny(named));
   if (named.size === 0) {
     return null;
   }
   return { ...facts, named };
+}
+
+const NAMED_ANY = "envNamedAny";
+const NAMED_PARAMETER = "envNamed ";
+
+const describeAny = (named: ReadonlyMap<string, unknown>): string =>
+  named.size === 0 ? "none" : "some";
+
+const describeSites = (sites: readonly string[] | undefined): string =>
+  sites === undefined ? "-" : sites.join(",");
+
+/** The reads a parameter names, noted so a later run can tell whether that changed. */
+function sitesNamedBy(
+  db: Database,
+  named: ReadonlyMap<string, readonly string[]>,
+  parameter: string,
+): readonly string[] | undefined {
+  const sites = named.get(parameter);
+  noteLookup(db, `${NAMED_PARAMETER}${parameter}`, describeSites(sites));
+  return sites;
+}
+
+/**
+ * Asks the run's one question about which parameters name a variable,
+ * so it is answered before any file's work starts and no one file is
+ * charged for every file's reads.
+ */
+export function settleNamedParameters(db: Database): void {
+  namedParameters(db);
+}
+
+/**
+ * The same lookup `envReadEffects` noted under `id`, made again in this
+ * run, or null when `id` is not one of these.
+ */
+export function envLookupAgain(db: Database, id: string): string | null {
+  if (id === NAMED_ANY) {
+    return describeAny(namedParameters(db));
+  }
+  if (id.startsWith(NAMED_PARAMETER)) {
+    return describeSites(
+      namedParameters(db).get(id.slice(NAMED_PARAMETER.length)),
+    );
+  }
+  return null;
 }
 
 /** The answer, kept per run, since the question covers the whole project. */
@@ -277,14 +324,14 @@ function namingArguments(
   const found: NamingArgument[] = [];
   for (const func of callees.flatMap((key) => resolvedFunctions(db, key))) {
     for (const row of db.lookup("paramOf", 0, func)) {
-      const sites = named.get(String(row[2]));
+      const sites = sitesNamedBy(db, named, String(row[2]));
       const argument = positional[Number(row[1])];
       if (sites !== undefined && argument !== undefined) {
         found.push({ sites, argument });
       }
     }
     for (const row of db.lookup("paramNamed", 0, func)) {
-      const sites = named.get(String(row[2]));
+      const sites = sitesNamedBy(db, named, String(row[2]));
       const argument = keyword[String(row[1])];
       if (sites !== undefined && argument !== undefined) {
         found.push({ sites, argument });

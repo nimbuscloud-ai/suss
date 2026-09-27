@@ -432,6 +432,20 @@ A helper passed `ENV` itself is read too. That covers `make_reader(ENV)` returni
 
 The adapter does not read a name the helper builds instead of using whole, such as `ENV["#{prefix}_URL"]`. It also does not read a name the helper takes off a hash or an options object instead of as a parameter, or a proc written as `lambda { |k| ... }` or `proc { |k| ... }` instead of with `->`.
 
+## What a run after an edit replays
+
+A run with a cache writes a record for every file beside the summaries: the units the file's discovery found, before any file's duplicates were dropped, with each kept unit's summary; the file's load-time unit; and what the walk found for each method written in the file, with each reached method's summary. Every record also says what its work depended on, as the DESIGN.md of `@suss/resolution` describes under "What a piece of work depended on". A run after an edit parses every file and emits every fact again, then replays each record whose dependencies did not change and does the rest again. The output is the same, byte for byte, as a run without the cache.
+
+Discovery replays a file's units in their order and drops the same duplicates the stored run dropped. A unit the stored run dropped, which no earlier file claims this time, has no stored summary, so that file is discovered again. The walk replays a method's stored scan at the same place in the same round, so the reachable set grows in the same order and the summaries come out in the order a run without the cache writes them.
+
+The indexes the run builds over every file are built again each time, and each lookup a record made in one is repeated and compared: a class's ancestry by name, the methods Ruby makes private methods of every object by name, the blocks that open a class, what a class defines through `define_method`, and which parameters end up naming an environment variable. An ancestry is compared with the methods each of its blocks defines, so a method added to a class invalidates the work that looked on that class.
+
+Ruby binds a constant to its definition in `emitConstantBindings`, by name, once every file is in. A file that starts defining `Api::V1::Status` changes the binding of every `Status` written inside `Api::V1`, without touching the files those references are in. The binding rows are among the rows compared key by key, so the work that asked about one of those references runs again.
+
+The value evaluator remembers what it computed for the rest of the run, and a remembered value asks no questions. A recording run starts each piece of work with nothing remembered, so every question a piece of work depends on is charged to it.
+
+A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it. A file added or removed re-extracts the whole project.
+
 ## What a file depends on in the project
 
 Every summary has `metadata.moduleImports`: the project files this file depends on, relative to the workspace root and sorted. Ruby has no import statement, so the list comes from two sources. One is a `require_relative` whose target is a file in the run. The other is a constant the file references that another file in the run defines, so `Settings::REGION` adds the file that defines `Settings`. A plain `require` is not followed, because where it loads from depends on the load path at run time. A file that depends on nothing in the project gets an empty list, and the field is still present. So for a Lambda handler that only requires gems, the checker can still see that its closure is the handler file alone.
