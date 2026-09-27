@@ -227,6 +227,13 @@ export interface CacheInput {
    * a project manifest. Not every adapter has one.
    */
   configPath?: string;
+  /**
+   * When the run began reading its files, in milliseconds since the
+   * epoch, for an adapter that read some of them before the lookup, such
+   * as one that keeps a project and checked it against the disk first.
+   * Without it, the run is taken to start at its lookup.
+   */
+  readSince?: number;
 }
 
 /**
@@ -249,12 +256,16 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
     };
   }
   const manifests = new ManifestReads<Meta, UnitData>();
+  // When each run started, keyed by the input it passes to every call.
+  const runStarts = new WeakMap<CacheInput, number>();
   return {
     async tryHit(input: CacheInput): Promise<BehavioralSummary[] | null> {
       const result = await this.lookup(input);
       return result.kind === "hit" ? result.summaries : null;
     },
     async lookup(input: CacheInput): Promise<CacheLookup> {
+      const now = Date.now();
+      runStarts.set(input, Math.min(now, input.readSince ?? now));
       const entryDir = entryDirFor(cacheDir, input);
       const manifest = await manifests.readAtRunStart(
         path.join(entryDir, "manifest.json"),
@@ -316,8 +327,12 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         path.join(entryDir, "manifest.json"),
       );
       manifests.forget();
-      const configStamp = await stampConfigFile(input.configPath);
-      const files = await hashStamps(await resolveFileStamps(input), previous);
+      const since = runStarts.get(input) ?? input.readSince;
+      const configStamp = await stampConfigFile(input.configPath, since);
+      const files = await hashStamps(
+        await resolveFileStamps(input, since),
+        previous,
+      );
       const manifest: Manifest<Meta, UnitData> = {
         schemaVersion: SCHEMA_VERSION,
         adapterPacksDigest: input.adapterPacksDigest,
@@ -549,6 +564,9 @@ async function hashStamps<Meta, UnitData>(
   const before = new Map((previous?.files ?? []).map((f) => [f.path, f]));
   return Promise.all(
     stamps.map(async (stamp) => {
+      if (stamp.mtimeMs === UNSETTLED_MTIME) {
+        return stamp;
+      }
       const prior = before.get(stamp.path);
       if (
         prior !== undefined &&
@@ -741,30 +759,61 @@ async function readManifest<Meta, UnitData>(
   }
 }
 
+/**
+ * The stamp a file gets when it changed after the run started. The run
+ * may have read it before the change or after, so the summaries cannot
+ * be tied to either version. No stat returns this mtime, so the next run
+ * finds the stamp moved and, with no hash to compare, reads the file again.
+ */
+const UNSETTLED_MTIME = -2;
+
+/**
+ * A file's stamp. With `changedSince`, a file whose status changed in a
+ * later millisecond is stamped unsettled. The status change time is used
+ * because a tool that puts an old mtime back still moves it. The same
+ * millisecond is left out, since `Date.now()` rounds down and would
+ * otherwise flag every file written moments before the run.
+ */
+function stampOf(
+  filePath: string,
+  stat: { mtimeMs: number; ctimeMs: number; size: number },
+  changedSince: number | undefined,
+): FileStamp {
+  const unsettled =
+    changedSince !== undefined && Math.floor(stat.ctimeMs) > changedSince;
+  return {
+    path: filePath,
+    mtimeMs: unsettled ? UNSETTLED_MTIME : stat.mtimeMs,
+    size: stat.size,
+  };
+}
+
 async function stampConfigFile(
   configPath: string | undefined,
+  changedSince?: number,
 ): Promise<FileStamp | null> {
   if (configPath === undefined) {
     return null;
   }
   try {
-    const stat = await fs.stat(configPath);
-    return { path: configPath, mtimeMs: stat.mtimeMs, size: stat.size };
+    return stampOf(configPath, await fs.stat(configPath), changedSince);
   } catch {
     return null;
   }
 }
 
 /** Resolve the file list, sorted and stamped with mtime and size. */
-async function resolveFileStamps(input: CacheInput): Promise<FileStamp[]> {
+async function resolveFileStamps(
+  input: CacheInput,
+  changedSince?: number,
+): Promise<FileStamp[]> {
   // The stats run concurrently, limited by libuv's thread pool. On a
   // project of several thousand files they take around 25ms, most of the
   // cost of a whole-entry lookup.
   const stamped = await Promise.all(
     input.files.map(async (p) => {
       try {
-        const stat = await fs.stat(p);
-        return { path: p, mtimeMs: stat.mtimeMs, size: stat.size };
+        return stampOf(p, await fs.stat(p), changedSince);
       } catch {
         // The file was deleted after the list was made. The sentinel never
         // matches a stored stamp, so the lookup misses.
