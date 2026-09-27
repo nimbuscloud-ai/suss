@@ -25,6 +25,7 @@ import {
 import { readCallArguments } from "./decorators.js";
 import {
   containedValues,
+  isPassedOn,
   objectReturnedBy,
   resolveCalls,
   subjectConstructions,
@@ -1494,6 +1495,36 @@ function importedModuleSpec(
   return null;
 }
 
+/**
+ * Whether the mount is called on an app that its own function builds once
+ * and then drops, with no fact recording a read that passes the app on, so
+ * nobody can request a path the mount adds. DESIGN.md has the cases.
+ */
+function appNeverLeavesItsFunction(
+  objectName: string,
+  includerCall: PyNode,
+  position: WalkPosition,
+  scan: Scan,
+): boolean {
+  const facts = scan.index.facts;
+  if (
+    facts === undefined ||
+    scan.composition.mountObjectPrefix !== undefined ||
+    position.site.kind !== "function" ||
+    position.scope.bindings.get(objectName)?.kind !== "assignment"
+  ) {
+    return false;
+  }
+
+  const nameKey = nameKeyIn(scan.bound.file, position.scope.node, objectName);
+  const writes = facts.lookup("binds", 0, nameKey);
+  return (
+    writes.length === 1 &&
+    writes[0]?.[1] === nodeId(scan.bound.file, includerCall) &&
+    !isPassedOn(facts, nameKey)
+  );
+}
+
 function recordMountStatement(
   stmt: PyNode,
   position: WalkPosition,
@@ -1501,6 +1532,17 @@ function recordMountStatement(
 ): void {
   const mountCall = mountCallOf(stmt, position.scope, scan);
   if (mountCall === null) {
+    return;
+  }
+
+  if (
+    appNeverLeavesItsFunction(
+      mountCall.objectName,
+      mountCall.includerCall,
+      position,
+      scan,
+    )
+  ) {
     return;
   }
 

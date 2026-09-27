@@ -126,7 +126,7 @@ const WRITTEN_VALUE_TYPES = new Set([
   "concatenated_string",
   // Composed from other expressions, so a chain ends here and the
   // evaluator reads the expression back in the scope it is written in.
-  // `a or b` is the exception, stated as the branches it picks between.
+  // `a or b`, `a if c else b` and `(a)` are stated as their branches instead.
   "binary_operator",
   "boolean_operator",
   "comparison_operator",
@@ -142,8 +142,20 @@ const WRITTEN_VALUE_TYPES = new Set([
   "generator_expression",
 ]);
 
-/** A sequence keeps its elements under their positions, the way TypeScript's arrays do, so one property rule covers `items[0]`. */
-const SEQUENCE_TYPES = new Set(["list", "tuple", "set"]);
+/**
+ * A sequence keeps its elements under their positions, the way TypeScript's
+ * arrays do, so one property rule covers `items[0]`. `return a, b` writes a
+ * tuple without parentheses, which the grammar calls an expression list.
+ */
+const SEQUENCE_TYPES = new Set(["list", "tuple", "set", "expression_list"]);
+
+/** A comprehension, and where the grammar puts the element it builds each item from. */
+const COMPREHENSION_TYPES = new Set([
+  "list_comprehension",
+  "set_comprehension",
+  "generator_expression",
+  "dictionary_comprehension",
+]);
 
 /** `*args` and `**kwargs` collect what is left rather than taking one value. */
 const SPLAT_TYPES = new Set(["list_splat_pattern", "dictionary_splat_pattern"]);
@@ -424,7 +436,11 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
     }
     const key = field(pair, "key");
     const value = field(pair, "value");
-    if (key === null || value === null || key.type !== "string") {
+    if (key === null || value === null) {
+      continue;
+    }
+    if (key.type !== "string") {
+      add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value));
       continue;
     }
     add(
@@ -581,12 +597,12 @@ function mappingGetRead(
 }
 
 /**
- * The two sides of `a or b`, whose value is one of them, or null for any
- * other expression. `a and b` stays a written value, because its left
- * side is the value only when that side is falsy.
+ * The two sides of `a or b`, whose value is one of them. `a and b` stays a
+ * written value, because its left side is the value only when that side is
+ * falsy.
  */
-function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
-  if (type !== "boolean_operator" || field(node, "operator")?.text !== "or") {
+function orBranches(node: PyNode): PyNode[] | null {
+  if (field(node, "operator")?.text !== "or") {
     return null;
   }
   const left = field(node, "left");
@@ -597,6 +613,111 @@ function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
   }
   /* v8 ignore stop */
   return [left, right];
+}
+
+/** `a if test else b`, whose value is `a` or `b` and never the test. */
+function conditionalBranches(node: PyNode): PyNode[] | null {
+  const [chosen, , otherwise] = children(node).filter(
+    (child) => child.type !== "comment",
+  );
+  return chosen === undefined || otherwise === undefined
+    ? null
+    : [chosen, otherwise];
+}
+
+/** `(a)`, whose value is `a` itself. */
+function parenthesizedBranch(node: PyNode): PyNode[] | null {
+  const inner = children(node).filter((child) => child.type !== "comment");
+  return inner.length === 1 ? inner : null;
+}
+
+/**
+ * The expressions whose value an expression takes, one of them at run
+ * time, or null for an expression that computes a value of its own.
+ */
+const FALLBACK_BRANCH_READERS: Partial<
+  Record<string, (node: PyNode) => PyNode[] | null>
+> = {
+  boolean_operator: orBranches,
+  conditional_expression: conditionalBranches,
+  parenthesized_expression: parenthesizedBranch,
+};
+
+function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
+  return FALLBACK_BRANCH_READERS[type]?.(node) ?? null;
+}
+
+/**
+ * Where an assignment puts its value when the target is not a plain name.
+ * `writesProperty` covers every object, a parameter included, and every
+ * write whether or not the writes to that property settle, which is why
+ * it is kept apart from `storesProperty`.
+ */
+const STORE_TARGETS: Partial<
+  Record<string, (emitter: Emitter, target: PyNode, value: string) => void>
+> = {
+  attribute: (emitter, target, value) => {
+    const object = field(target, "object");
+    const property = field(target, "attribute");
+    /* v8 ignore start */
+    if (object === null || property === null) {
+      return;
+    }
+    /* v8 ignore stop */
+    add(
+      emitter,
+      "writesProperty",
+      valueKey(emitter, object),
+      property.text,
+      value,
+    );
+  },
+  subscript: (emitter, target, value) => {
+    const container = field(target, "value");
+    if (container !== null) {
+      add(emitter, "holdsUnderKey", valueKey(emitter, container), value);
+    }
+  },
+};
+
+function emitStoreTarget(emitter: Emitter, assignment: PyNode): void {
+  const left = field(assignment, "left");
+  const right = field(assignment, "right");
+  if (left === null || right === null) {
+    return;
+  }
+  STORE_TARGETS[left.type]?.(emitter, left, valueKey(emitter, right));
+}
+
+/** The value a `with` item enters, with or without an `as` name after it. */
+function emitEnteredValue(emitter: Emitter, item: PyNode): void {
+  const value = field(item, "value");
+  const entered =
+    value?.type === "as_pattern" ? (children(value)[0] ?? null) : value;
+  if (entered !== null) {
+    add(emitter, "entersValue", valueKey(emitter, entered));
+  }
+}
+
+/**
+ * A comprehension's result contains its element under keys the loop
+ * computes. For a dictionary comprehension the element is a pair, and the
+ * result contains the pair's value.
+ */
+function emitComprehensionElement(
+  emitter: Emitter,
+  comprehension: PyNode,
+): void {
+  const body = field(comprehension, "body");
+  const element = body?.type === "pair" ? field(body, "value") : body;
+  if (element != null) {
+    add(
+      emitter,
+      "holdsUnderKey",
+      nodeId(emitter.filePath, comprehension),
+      valueKey(emitter, element),
+    );
+  }
 }
 
 /** What one expression says about itself, whichever walk reached it. */
@@ -631,6 +752,13 @@ function emitExpressionFact(
   if (type === "assignment") {
     emitAssignedType(emitter, child);
     collectNamedWrite(emitter, child);
+    emitStoreTarget(emitter, child);
+  }
+  if (type === "with_item") {
+    emitEnteredValue(emitter, child);
+  }
+  if (COMPREHENSION_TYPES.has(type)) {
+    emitComprehensionElement(emitter, child);
   }
   const branches = fallbackBranchesOf(child, type);
   if (branches !== null) {
@@ -654,6 +782,18 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
   walkExpressions(emitter, node, (child, type) => {
     emitExpressionFact(emitter, child, type);
   });
+}
+
+/**
+ * The value `yield x` hands out. `yield from xs` hands out each item of
+ * `xs`, and no expression in the source is one of those items, so it
+ * gives null.
+ */
+function yieldedValue(node: PyNode): PyNode | null {
+  if (node.children.some((child) => child?.type === "from")) {
+    return null;
+  }
+  return node.namedChildren.find((child) => child?.type !== "comment") ?? null;
 }
 
 /** The class a method belongs to, and what that method calls its receiver. */
@@ -703,6 +843,11 @@ function emitFunctionFacts(
         add(emitter, "instanceOf", paramKey, classKey);
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
+      // A default is evaluated once, where the def is written.
+      const fallback = field(param, "value");
+      if (fallback !== null) {
+        add(emitter, "paramDefault", paramKey, valueKey(emitter, fallback));
+      }
       // The annotation is read in the scope around the function.
       emitStatedType(
         emitter,
@@ -762,6 +907,10 @@ function emitFunctionFacts(
         statesReturn = true;
       }
     }
+    const yielded = type === "yield" ? yieldedValue(child) : null;
+    if (yielded !== null) {
+      add(inside, "yieldsValue", funcKey, valueKey(inside, yielded));
+    }
     const callee = type === "call" ? calleeKey(inside, child) : null;
     if (callee !== null) {
       add(inside, "bodyCalls", funcKey, callee);
@@ -773,8 +922,11 @@ function emitFunctionFacts(
     emitExpressionFact(inside, child, type);
   };
   // A lambda's body is one expression rather than a block, and the walk
-  // below reaches only that expression's children.
+  // below reaches only that expression's children. That expression is
+  // what the lambda returns.
   if (fn.type === "lambda") {
+    add(inside, "returnsValue", funcKey, valueKey(inside, body));
+    statesReturn = true;
     visit(body, body.type);
   }
   walkExpressions(inside, body, visit);

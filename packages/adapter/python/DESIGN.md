@@ -388,6 +388,26 @@ Both conditions matter. Counting only loops keeps the ordinary case working: two
 
 A module-level mount is never dropped this way. It runs whichever factory the app calls.
 
+### A mount on an app that its function drops
+
+A function can build a second app, mount the project's router on it, and then let it go:
+
+```python
+def build_test_app():
+    test_app = FastAPI()
+    test_app.include_router(router, prefix="/t")   # test_app is never returned
+```
+
+Once the function returns, nothing refers to `test_app` any more, so no request can reach `/t` whether or not anything calls the function. suss does not record that mount. The router keeps whatever paths its other mounts give it.
+
+suss decides this from the value facts. The app's name has to be written once, from the construction, in the function that mounts on it. Then no fact may record a read that passes the app on: a return or a `yield`, an argument such as `serve(test_app)`, a second name or an object that takes it, an `or`, a conditional or parentheses around it, a keyed read, or a property read that is not called at once as a method. A lambda counts as returning its body, so `lambda: test_app` passes the app on as well.
+
+Storing the app on any object's property (`holder.app = test_app`, with `holder` a parameter), storing it under a key (`apps["t"] = test_app`) and entering it in a `with` statement count too, and so do a tuple written without parentheses (`return test_app, client`), the element of a comprehension, a dictionary value under a computed key, and a parameter default on a nested def. Each has a fact that only this adapter reads, because the shared rules leave a write through a parameter out on purpose.
+
+A read the facts do not record looks like no read at all, and then the mount is dropped when it may serve. So a spelling that passes a value on needs a fact before this check can see it.
+
+A pack that declares a mount object is left out, which today is flask-restx. Its `Api` serves through the app or blueprint it was built from or handed, so what happens to the `Api`'s own variable says nothing about whether the app is served.
+
 ## What a file reads from the environment
 
 `os.environ` is part of the standard library, so the adapter recognizes reads of it without a pack. Each read becomes the same `config-read` interaction that the TypeScript adapter emits for `process.env.X`, on the `runtime-config` binding, and is spelled `os.environ["X"]` whichever way the source wrote it. The runtime-config checker pairs those reads against what a template declares for the function the file runs in.

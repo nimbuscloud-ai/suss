@@ -232,9 +232,88 @@ describe("python value facts", () => {
     expect(db.size("binds")).toBe(0);
   });
 
+  it("states both sides of a conditional as the branches its value picks between", async () => {
+    const source = "client = injected if ready else fallback\n";
+    const db = await factsFor(source);
+    expect(rows(db, "fallbackBranch").map((row) => row[1])).toEqual([
+      "#injected",
+      "#fallback",
+    ]);
+  });
+
+  it("states what parentheses wrap as the one branch of their value", async () => {
+    const source = "client = (injected)\n";
+    const db = await factsFor(source);
+    expect(
+      rows(db, "fallbackBranch").map((row) => [
+        textAt(source, row[0] ?? ""),
+        row[1],
+      ]),
+    ).toEqual([["(injected)", "#injected"]]);
+  });
+
+  it("records a write to a parameter's property, which storesProperty leaves out", async () => {
+    const db = await factsFor(
+      "def keep(holder, value):\n    holder.item = value\n",
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "writesProperty")).toEqual([
+      [`${funcKey}#holder`, "item", `${funcKey}#value`],
+    ]);
+    expect(db.size("storesProperty")).toBe(0);
+  });
+
+  it("keeps the elements of a tuple written without parentheses", async () => {
+    const db = await factsFor("def pair():\n    return first, second\n");
+    expect(rows(db, "holdsProperty").map((row) => row[1])).toEqual(["0", "1"]);
+  });
+
+  it("records a comprehension's element and a computed key's value as held under a key", async () => {
+    const source =
+      "names = [first for _ in xs]\nby = {k: second for k in xs}\ntable = {key_name: third}\n";
+    const db = await factsFor(source);
+    expect(rows(db, "holdsUnderKey").map((row) => row[1])).toEqual([
+      "#first",
+      "#second",
+      "#third",
+    ]);
+  });
+
+  it("records a parameter's default, read where the def is written", async () => {
+    const db = await factsFor("def load(env=environ):\n    return env\n");
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "paramDefault")).toEqual([[`${funcKey}#env`, "#environ"]]);
+  });
+
+  it("records a value written under a key", async () => {
+    const db = await factsFor('items = {}\nitems["one"] = first\n');
+    expect(rows(db, "holdsUnderKey")).toEqual([["#items", "#first"]]);
+  });
+
+  it("records what a with statement enters, with or without a name after it", async () => {
+    const db = await factsFor(
+      "with lock:\n    pass\nwith session as opened:\n    pass\n",
+    );
+    expect(rows(db, "entersValue")).toEqual([["#lock"], ["#session"]]);
+  });
+
+  it("records what a function yields, and nothing for a yield from", async () => {
+    const db = await factsFor(
+      "def items(source):\n    yield source\n    yield from source\n",
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "yieldsValue")).toEqual([
+      [funcKey ?? "", `${funcKey}#source`],
+    ]);
+  });
+
   it("treats a lambda as a function of its own", async () => {
     const db = await factsFor("pick = lambda item: item\n");
     expect(db.size("func")).toBe(1);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")).toEqual([
+      [funcKey ?? "", `${funcKey}#item`],
+    ]);
   });
   it("keys a parameter under its own function, so two functions can both take a loader", async () => {
     const db = await factsFor(
