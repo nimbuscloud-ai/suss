@@ -20,7 +20,7 @@ import {
 } from "../facts/generatedModules.js";
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 
-import type { PatternPack } from "@suss/extractor";
+import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -184,13 +184,28 @@ export function collectPackGates(pack: PatternPack): string[] {
   }
   // Per-discovery-pattern gates (existing mechanism).
   for (const pattern of pack.discovery) {
-    const requires = pattern.requiresImport;
-    if (requires === undefined) {
-      continue;
-    }
-    for (const g of requires) {
+    for (const g of pattern.requiresImport ?? []) {
       gates.add(g);
+    }
+    const bootstrapModule = globalPrefixApplicationModule(pattern);
+    if (bootstrapModule !== null) {
+      gates.add(bootstrapModule);
     }
   }
   return [...gates];
+}
+
+/**
+ * The module the application is made from, when the pattern reads a
+ * global prefix. The bootstrap that makes the application and sets the
+ * prefix needs no import from the module the routes are declared with,
+ * so the pattern's own gate would leave that file out.
+ */
+function globalPrefixApplicationModule(
+  pattern: DiscoveryPattern,
+): string | null {
+  if (pattern.match.type !== "decoratedRoute") {
+    return null;
+  }
+  return pattern.match.globalPrefix?.application.importModule ?? null;
 }

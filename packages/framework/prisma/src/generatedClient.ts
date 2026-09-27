@@ -97,7 +97,21 @@ function unchanged(readFrom: ReadonlyMap<string, number>): boolean {
   return true;
 }
 
+// The pack asks once per receiver it checks, and a file's directory does
+// not move to another project between two receivers.
+const rootsByDir = new Map<string, string | null>();
+
 function projectRootOf(fromDir: string): string | null {
+  const known = rootsByDir.get(fromDir);
+  if (known !== undefined) {
+    return known;
+  }
+  const root = findProjectRoot(fromDir);
+  rootsByDir.set(fromDir, root);
+  return root;
+}
+
+function findProjectRoot(fromDir: string): string | null {
   let dir = path.resolve(fromDir);
   while (true) {
     if (

@@ -14,6 +14,8 @@ await db.user.findMany({ where: { tier }, select: { id: true, email: true } });
 
 The recognizer matches a three-part chain, `<receiver>.<modelDelegate>.<method>(args)`, and checks the receiver by its type. The type's symbol, or the symbol of a class it extends, has to be declared in `@prisma/client`, in `.prisma/client`, or in a directory that contains a `schema.prisma`. That covers `const db = new PrismaClient()`, a wrapped `ctx.prisma`, a project's `class PrismaService extends PrismaClient`, and a generator whose `output` points at a directory in the project.
 
+Before `prisma generate` has run, the client's type is `any`, so the pack checks where the receiver was made instead. A `new PrismaClient()` imported from `@prisma/client` or from a generator's `output` counts, whether it is made in the file that uses it or in a module that file imports it from, directly or through a barrel. A project class that extends that `PrismaClient` counts too.
+
 A generator with its own `output` also gets past the import check, since the code then reaches the client by a relative path and nothing imports `@prisma/client`. The pack declares `generatedModuleMarkers: ["schema.prisma"]`, and the adapter treats a relative import into a directory that contains that file as an import of the package.
 
 The model comes from the delegate property. Prisma lowercases the first letter of a model when it builds the client (`prisma.user` for `model User`), so the recognizer reads the property and capitalizes the first letter again to get the PascalCase schema model. That matches the channel `@suss/contract-prisma` publishes.
