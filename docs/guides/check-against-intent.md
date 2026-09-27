@@ -360,5 +360,5 @@ If `loadChangeListFile` stopped throwing `ChangeListRejected`, the self-check wo
 ```
 Intent:
   22 boundary intents checked against code
-  7 PRDs checked: 36 scenarios, 15 resolved, 21 unlinked
+  7 PRDs checked: 39 scenarios, 16 resolved, 23 unlinked
 ```
