@@ -17,6 +17,7 @@ import { discoverRegistrationCalls } from "./registrationCall.js";
 import { discoverRegistrationLoops } from "./registrationLoop.js";
 import { discoverRegistrationTemplates } from "./registrationTemplate.js";
 import { discoverResolverMaps } from "./resolverMap.js";
+import { discoverTestCases } from "./testCase.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
@@ -159,6 +160,14 @@ function runPattern(
   }
   if (pattern.match.type === "fileConvention") {
     return discoverFileConventions(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
+  }
+  if (pattern.match.type === "testCase") {
+    return discoverTestCases(
       sourceFile,
       pattern.match,
       pattern.kind,

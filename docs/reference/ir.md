@@ -53,7 +53,8 @@ type CodeUnitKind =
   | "library"             // function reachable through a package's exports
   | "caller"              // function that calls into another package's exports
   | "module-init"         // what a module does when it is first imported
-  | "scheduled-callback"; // a function handed to setTimeout or a library hook
+  | "scheduled-callback"  // a function handed to setTimeout or a library hook
+  | "test";               // one test case, named by its title path
 ```
 
 How inputs arrive and what counts as output depend on the kind. A handler takes a request and produces a response. A component takes props and state and produces a UI tree. A consumer takes a message and produces effects.
@@ -63,6 +64,8 @@ How inputs arrive and what counts as output depend on the kind. A handler takes 
 **`library` and `caller`** are the two sides of an in-process `function-call` boundary. The `packageExports` discovery variant produces the `library` side, one per function reachable through the package's `package.json` entry points. The `packageImport` variant produces the `caller` side, one per (enclosing function, consumed binding). They pair by `fn:<package>::<exportPath>`.
 
 **`module-init`** is what a source file does at import time, one per file, and it is always a consumer: it reads channels other units declare. **`scheduled-callback`** is a function the runtime calls at some later point, and what it reaches is recorded on its own summary.
+
+**`test`** is one test case, named by its suite titles and its own joined with ` > `, so a PRD scenario can list it under `coveredBy`. It has no boundary binding and pairs with nothing. A test pack records `metadata.test`: `skipped` when the case is marked skip or todo, `mocks` for what the test replaces before it runs, and `unresolvedTitle` for a title that is not a string the adapter could read.
 
 The union is closed, so a pack cannot add a kind. The rest of extraction makes assumptions about each kind, and a new framework that needs a new kind needs an IR change first.
 

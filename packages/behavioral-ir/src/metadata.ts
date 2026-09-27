@@ -1159,6 +1159,40 @@ export function readReactMetadata(
   return readNamespace(ReactMetadataSchema, summary.metadata?.react);
 }
 
+/**
+ * One thing a test replaces before it runs. `module` is the file the
+ * mocked specifier resolves to, or the specifier as written when it is
+ * a package name. `name` is the member a spy replaces. `written` is
+ * the call as the test wrote it, which a finding quotes.
+ */
+const TestMockSchema = z.object({
+  module: z.string().optional(),
+  name: z.string().optional(),
+  written: z.string(),
+});
+
+export type TestMock = z.infer<typeof TestMockSchema>;
+
+export const TestMetadataSchema = z.object({
+  /** Set when the case or a suite around it is marked skip or todo. */
+  skipped: z.boolean().optional(),
+  mocks: z.array(TestMockSchema).optional(),
+  /**
+   * The title as written, when it is not a string the adapter could
+   * read, such as a pattern `it.each` fills in for each row.
+   */
+  unresolvedTitle: z.string().optional(),
+});
+
+export type TestMetadata = z.infer<typeof TestMetadataSchema>;
+
+/** What a test pack recorded about a test unit, or undefined on any other unit. */
+export function readTestMetadata(
+  summary: BehavioralSummary,
+): TestMetadata | undefined {
+  return readNamespace(TestMetadataSchema, summary.metadata?.test);
+}
+
 const StorybookMetadataSchema = z.object({
   story: z.string().optional(),
   component: z.string().optional(),

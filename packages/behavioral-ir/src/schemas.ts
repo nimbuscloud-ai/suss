@@ -56,6 +56,12 @@ export const CodeUnitKindSchema = z.enum([
    * recorded on this unit and not on the unit that scheduled it.
    */
   "scheduled-callback",
+  /**
+   * One test case, named by its title path. It exists so a PRD scenario
+   * can say which test covers it and suss can check that the test
+   * reaches what the scenario is about. It provides no boundary.
+   */
+  "test",
 ]);
 
 export const ComparisonOpSchema = z.enum([
