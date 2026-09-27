@@ -48,6 +48,7 @@ function intent(
     source: "author",
     boundary,
     receives,
+    always: [],
     outcomes: [
       {
         id: "findings",

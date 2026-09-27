@@ -290,7 +290,7 @@ A required header is often checked in middleware instead of in the handler. suss
 
 The [findings catalog](/reference/findings#intent-findings) lists the intent finding kinds, with what makes each one legitimate and what makes it a bug. The severity follows what is being compared:
 
-- **Error**: the code does not do what an authored document says. `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary`.
+- **Error**: the code does not do what an authored document says. `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary`, `pathWithoutEffect`.
 - **Warning**: the documents have a gap, or nothing reads a field the document declares the boundary needs. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents, `unreadInputField` on a required field.
 - **Info**: the code does more than the documents claim. A status no outcome mentions, a store no outcome mentions, an input field no `receives` block lists, an outcome no scenario explains.
 

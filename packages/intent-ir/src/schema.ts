@@ -396,18 +396,33 @@ const ONE_OR_MORE = z.union([
 // The verb is the key and the boundary is the string `suss ask` takes.
 // The members come off ir-core's verbs, so one added there is
 // authorable here with no edit.
-const EFFECT_BY_VERB = EffectRelationSchema.options.map((verb) =>
-  z.strictObject({
-    [verb]: z.string().min(1),
-    fields: z.array(z.string().min(1)).min(1).optional(),
-    by: ONE_OR_MORE.optional(),
-  }),
-) as unknown as [
-  z.ZodType<DeclaredEffect>,
-  ...Array<z.ZodType<DeclaredEffect>>,
-];
+function effectByVerb<T extends DeclaredEffect>(
+  extra: z.ZodRawShape = {},
+): [z.ZodType<T>, ...Array<z.ZodType<T>>] {
+  return EffectRelationSchema.options.map((verb) =>
+    z.strictObject({
+      [verb]: z.string().min(1),
+      fields: z.array(z.string().min(1)).min(1).optional(),
+      by: ONE_OR_MORE.optional(),
+      ...extra,
+    }),
+  ) as unknown as [z.ZodType<T>, ...Array<z.ZodType<T>>];
+}
 
-export const EffectOutcomeSchema = z.union(EFFECT_BY_VERB);
+export const EffectOutcomeSchema = z.union(effectByVerb<DeclaredEffect>());
+
+/** One `always` line: an effect, and the outcomes that do not have to have it. */
+export type DeclaredAlways = DeclaredEffect & { except?: string[] };
+
+export const AlwaysEffectSchema = z.union(
+  effectByVerb<DeclaredAlways>({
+    except: z
+      .array(z.string().min(1))
+      .min(1)
+      .describe("The ids of the outcomes that do not have to have the effect.")
+      .optional(),
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // when: what the branch turned on, in the same verbs `results` takes.
@@ -525,7 +540,7 @@ function endingsOf(t: {
 
 // Strict for the same reason the boundary blocks are: suss reports
 // `scenario:` written for `scenarios:` and stops.
-const BoundaryIntentSchema = z.strictObject({
+const BoundaryIntentFields = z.strictObject({
   kind: z
     .literal("boundary")
     .describe("Makes this document boundary intent for one boundary."),
@@ -551,7 +566,49 @@ const BoundaryIntentSchema = z.strictObject({
     .array(BoundaryTransitionSchema)
     .min(1)
     .describe("Every outcome the boundary can produce, one entry each."),
+  always: z
+    .array(AlwaysEffectSchema)
+    .min(1)
+    .describe(
+      "Effects that every transition producing a declared outcome has, apart from the outcomes listed under except.",
+    )
+    .optional(),
 });
+
+const BoundaryIntentSchema = BoundaryIntentFields.superRefine((doc, ctx) => {
+  for (const [line, entry] of (doc.always ?? []).entries()) {
+    for (const [at, id] of (entry.except ?? []).entries()) {
+      const problem = exceptProblem(doc.transitions, id);
+      if (problem !== null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["always", line, "except", at],
+          message: problem,
+        });
+      }
+    }
+  }
+});
+
+/**
+ * Why an `except` id cannot exempt anything, or null when it can. An
+ * outcome that states only its effects has no ending, so the checker
+ * counts every transition as producing it, and exempting it would
+ * exempt the whole unit.
+ */
+function exceptProblem(
+  transitions: Array<{ id: string } & Parameters<typeof endingsOf>[0]>,
+  id: string,
+): string | null {
+  const outcome = transitions.find((t) => t.id === id);
+  if (outcome === undefined) {
+    return `except lists ${id}, and no transition has that id (known: ${transitions.map((t) => t.id).join(", ")})`;
+  }
+  if (endingsOf(outcome).length === 0) {
+    return `except lists ${id}, which states only its effects; an outcome with no response, returns or throws matches every transition, so it cannot be exempted`;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // kind: prd: outcome intent (human scenarios).

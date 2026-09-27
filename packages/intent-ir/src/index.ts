@@ -28,6 +28,7 @@ export {
 } from "./findings.js";
 export {
   ACCEPTS_NULL,
+  AlwaysEffectSchema,
   BodyShapeSchema,
   BoundarySchema,
   blanksLeftEmpty,
@@ -72,6 +73,7 @@ export type {
   Boundary,
   BoundaryIntent,
   BoundaryTransition,
+  DeclaredAlways,
   DeclaredEffect,
   EffectOutcome,
   IntentDoc,
@@ -84,6 +86,7 @@ export type {
 } from "./schema.js";
 export type {
   BoundaryIntentSummary,
+  IntentAlways,
   IntentCondition,
   IntentEffect,
   IntentInputField,
