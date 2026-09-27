@@ -144,8 +144,11 @@ npx @suss/mcp /path/to/project
 
 `suss_ask` takes the ten questions. `suss_check` compares both sides
 of every boundary. `suss_boundaries` lists the boundaries.
-`suss_status` reports which commands the server ran and which of them
-failed.
+`suss_stub_draft` drafts a stub for a package suss cannot read into,
+from how the project calls it. `suss_intent_outcomes` lists the
+outcomes the boundary intent documents declare, as the `link` a PRD
+scenario writes. `suss_status` reports which commands the server ran
+and which of them failed.
 
 The server extracts again whenever a source file changes. What it
 returns describes the tree as it is now, even if nobody has run
