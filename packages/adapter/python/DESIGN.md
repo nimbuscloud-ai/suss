@@ -402,7 +402,9 @@ Once the function returns, nothing refers to `test_app` any more, so no request 
 
 suss decides this from the value facts. The app's name has to be written once, from the construction, in the function that mounts on it. Then no fact may record a read that passes the app on: a return or a `yield`, an argument such as `serve(test_app)`, a second name or an object that takes it, an `or`, a conditional or parentheses around it, a keyed read, or a property read that is not called at once as a method. A lambda counts as returning its body, so `lambda: test_app` passes the app on as well.
 
-A read the facts do not record looks like no read at all, and then the mount is dropped when it may serve. Three spellings are like that today: storing the app on an object the function did not build (`holder.app = test_app` with `holder` a parameter), storing it under a key (`apps["t"] = test_app`), and entering it in a `with` statement. Each needs a fact before this check can see it.
+Storing the app on any object's property (`holder.app = test_app`, with `holder` a parameter), storing it under a key (`apps["t"] = test_app`) and entering it in a `with` statement count too. Each has a fact that only this adapter reads, because the shared rules leave a write through a parameter out on purpose.
+
+A read the facts do not record looks like no read at all, and then the mount is dropped when it may serve. So a spelling that passes a value on needs a fact before this check can see it.
 
 A pack that declares a mount object is left out, which today is flask-restx. Its `Api` serves through the app or blueprint it was built from or handed, so what happens to the `Api`'s own variable says nothing about whether the app is served.
 

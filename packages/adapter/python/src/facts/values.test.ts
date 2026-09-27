@@ -252,6 +252,29 @@ describe("python value facts", () => {
     ).toEqual([["(injected)", "#injected"]]);
   });
 
+  it("records a write to a parameter's property, which storesProperty leaves out", async () => {
+    const db = await factsFor(
+      "def keep(holder, value):\n    holder.item = value\n",
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "writesProperty")).toEqual([
+      [`${funcKey}#holder`, "item", `${funcKey}#value`],
+    ]);
+    expect(db.size("storesProperty")).toBe(0);
+  });
+
+  it("records a value written under a key", async () => {
+    const db = await factsFor('items = {}\nitems["one"] = first\n');
+    expect(rows(db, "holdsUnderKey")).toEqual([["#items", "#first"]]);
+  });
+
+  it("records what a with statement enters, with or without a name after it", async () => {
+    const db = await factsFor(
+      "with lock:\n    pass\nwith session as opened:\n    pass\n",
+    );
+    expect(rows(db, "entersValue")).toEqual([["#lock"], ["#session"]]);
+  });
+
   it("records what a function yields, and nothing for a yield from", async () => {
     const db = await factsFor(
       "def items(source):\n    yield source\n    yield from source\n",

@@ -248,6 +248,16 @@ yieldsValue(f, v)           f's body yields v. Calling f gives back a
                             The router index reads it to tell whether an
                             app leaves the function that built it
                             (Python)
+writesProperty(r, n, x)     an assignment writes x to the property n of
+                            r, whatever r is. It covers a parameter and
+                            writes that never settle, which
+                            storesProperty leaves out on purpose. The
+                            router index reads it (Python)
+holdsUnderKey(o, x)         o is given x under a key, as in o[k] = x.
+                            The router index reads it (Python)
+entersValue(x)              a with statement enters x, which calls its
+                            __enter__. The router index reads it
+                            (Python)
 ```
 
 `declaresName` is the only fact an adapter records after asking these

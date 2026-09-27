@@ -631,6 +631,58 @@ function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
   return FALLBACK_BRANCH_READERS[type]?.(node) ?? null;
 }
 
+/**
+ * Where an assignment puts its value when the target is not a plain name.
+ * `writesProperty` covers every object, a parameter included, and every
+ * write whether or not the writes to that property settle, which is why
+ * it is kept apart from `storesProperty`.
+ */
+const STORE_TARGETS: Partial<
+  Record<string, (emitter: Emitter, target: PyNode, value: string) => void>
+> = {
+  attribute: (emitter, target, value) => {
+    const object = field(target, "object");
+    const property = field(target, "attribute");
+    /* v8 ignore start */
+    if (object === null || property === null) {
+      return;
+    }
+    /* v8 ignore stop */
+    add(
+      emitter,
+      "writesProperty",
+      valueKey(emitter, object),
+      property.text,
+      value,
+    );
+  },
+  subscript: (emitter, target, value) => {
+    const container = field(target, "value");
+    if (container !== null) {
+      add(emitter, "holdsUnderKey", valueKey(emitter, container), value);
+    }
+  },
+};
+
+function emitStoreTarget(emitter: Emitter, assignment: PyNode): void {
+  const left = field(assignment, "left");
+  const right = field(assignment, "right");
+  if (left === null || right === null) {
+    return;
+  }
+  STORE_TARGETS[left.type]?.(emitter, left, valueKey(emitter, right));
+}
+
+/** The value a `with` item enters, with or without an `as` name after it. */
+function emitEnteredValue(emitter: Emitter, item: PyNode): void {
+  const value = field(item, "value");
+  const entered =
+    value?.type === "as_pattern" ? (children(value)[0] ?? null) : value;
+  if (entered !== null) {
+    add(emitter, "entersValue", valueKey(emitter, entered));
+  }
+}
+
 /** What one expression says about itself, whichever walk reached it. */
 function emitExpressionFact(
   emitter: Emitter,
@@ -663,6 +715,10 @@ function emitExpressionFact(
   if (type === "assignment") {
     emitAssignedType(emitter, child);
     collectNamedWrite(emitter, child);
+    emitStoreTarget(emitter, child);
+  }
+  if (type === "with_item") {
+    emitEnteredValue(emitter, child);
   }
   const branches = fallbackBranchesOf(child, type);
   if (branches !== null) {

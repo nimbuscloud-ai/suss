@@ -187,7 +187,7 @@ function itemsModule(testAppBody: string[]): string {
     "app.include_router(router)",
     "",
     "",
-    "def build_test_app():",
+    "def build_test_app(holder, apps):",
     "    test_app = FastAPI()",
     '    test_app.include_router(router, prefix="/t")',
     ...testAppBody,
@@ -225,6 +225,13 @@ describe("a mount on an app that never leaves the function that built it", () =>
       "    served = test_app\n    return served",
     ],
     ["returns a property of the app", "    return test_app.router"],
+    ["stores the app on a parameter", "    holder.app = test_app"],
+    ["stores the app under a key", '    apps["t"] = test_app'],
+    ["enters the app with `with`", "    with test_app:\n        pass"],
+    [
+      "enters the app with `with` under a name",
+      "    with test_app as entered:\n        pass",
+    ],
   ])("keeps the mount when the function %s", async (_, body) => {
     const summaries = await summariesOf({ "main.py": itemsModule([body]) });
     expect(pathsOf(summaries, "read_item").sort()).toEqual([
