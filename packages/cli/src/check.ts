@@ -334,14 +334,17 @@ const checkedFolders = new Map<string, CheckedFiles>();
 const FOLDERS_KEPT = 2;
 
 function checkedFiles(dir: string, files: readonly string[]): CheckedFiles {
-  const key = folderIdentity(dir, files);
+  // Each file is read once. The bytes that decide whether the folder is
+  // one read before are the bytes parsed when it is not.
+  const reads = files.map((file) => readFolderFile(dir, file));
+  const key = folderIdentity(reads);
   const known = key === null ? undefined : checkedFolders.get(key);
   if (key !== null && known !== undefined) {
     checkedFolders.delete(key);
     checkedFolders.set(key, known);
     return known;
   }
-  const checked = readAndCheck(dir, files);
+  const checked = readAndCheck(dir, reads);
   if (key !== null) {
     checkedFolders.set(key, checked);
     for (const stale of [...checkedFolders.keys()].slice(0, -FOLDERS_KEPT)) {
@@ -351,42 +354,69 @@ function checkedFiles(dir: string, files: readonly string[]): CheckedFiles {
   return checked;
 }
 
+/** One file of a summaries folder: its bytes, or why they could not be read. */
+type FolderFile =
+  | { file: string; bytes: Buffer }
+  | { file: string; error: unknown };
+
+function readFolderFile(dir: string, file: string): FolderFile {
+  try {
+    return { file, bytes: fs.readFileSync(path.join(dir, file)) };
+  } catch (error) {
+    return { file, error };
+  }
+}
+
 /** Null when a file cannot be read, so nothing is remembered. */
-function folderIdentity(dir: string, files: readonly string[]): string | null {
+function folderIdentity(reads: readonly FolderFile[]): string | null {
   const parts: string[] = [];
-  for (const file of files) {
-    try {
-      const digest = createHash("sha1")
-        .update(fs.readFileSync(path.join(dir, file)))
-        .digest("hex");
-      parts.push(`${file}\0${digest}`);
-    } catch {
+  for (const read of reads) {
+    if (!("bytes" in read)) {
       return null;
     }
+    const digest = createHash("sha1").update(read.bytes).digest("hex");
+    parts.push(`${read.file}\0${digest}`);
   }
   return parts.join("\n");
 }
 
-function readAndCheck(dir: string, files: readonly string[]): CheckedFiles {
+function readAndCheck(dir: string, reads: readonly FolderFile[]): CheckedFiles {
   const summaries: BehavioralSummary[] = [];
   const sourceFile = new Map<BehavioralSummary, string>();
   const skipped: string[] = [];
-  for (const file of files) {
-    let read: BehavioralSummary[];
-    try {
-      read = readSummaries(path.join(dir, file));
-    } catch (error) {
+  for (const one of reads) {
+    const read = summariesOf(dir, one);
+    if (!Array.isArray(read)) {
       // Other JSON ends up in a summaries folder, most often a report
       // written next to the summaries. Name the file and check the rest.
-      skipped.push(`${file}: ${reasonOf(error)}`);
+      skipped.push(`${one.file}: ${reasonOf(read.error)}`);
       continue;
     }
+
     for (const summary of read) {
       summaries.push(summary);
-      sourceFile.set(summary, file);
+      sourceFile.set(summary, one.file);
     }
   }
   return { summaries, sourceFile, skipped, rawResult: checkAll(summaries) };
+}
+
+function summariesOf(
+  dir: string,
+  one: FolderFile,
+): BehavioralSummary[] | { error: unknown } {
+  if (!("bytes" in one)) {
+    return one;
+  }
+
+  try {
+    return summariesFromText(
+      path.resolve(dir, one.file),
+      one.bytes.toString("utf-8"),
+    );
+  } catch (error) {
+    return { error };
+  }
 }
 
 export function checkDir(options: CheckDirOptions): CheckResult & {
@@ -646,9 +676,11 @@ function unpairedFindings(
     );
   }
 
-  const unpaired =
-    result.unmatched.providers.length + result.unmatched.consumers.length;
-  const total = unpaired + result.pairs.length;
+  // Counted by boundary the way the report's first line counts them, so
+  // the floor and that line agree on how many went unpaired.
+  const coverage = pairingCoverage(result);
+  const unpaired = unpairedCount(coverage);
+  const total = unpaired + coverage.compared;
   if (total === 0) {
     return [];
   }
@@ -665,7 +697,7 @@ function unpairedFindings(
       severity: "error",
       description:
         `${unpaired} of ${total} boundaries had nothing to pair with, over the --fail-on-unpaired floor of ${threshold}. ` +
-        `${result.pairs.length} paired.`,
+        `${coverage.compared} paired.`,
       remedy:
         "The unmatched lists in this report say which side each boundary is missing. " +
         "Extract the missing side, read its contract with `suss contract`, or raise the floor if this share is expected.",
@@ -897,9 +929,17 @@ function readSummaries(file: string): BehavioralSummary[] {
   if (!fs.existsSync(resolved)) {
     throw new UsageError(`No file at ${resolved}.`);
   }
+  return summariesFromText(resolved, fs.readFileSync(resolved, "utf-8"));
+}
+
+/** Parses a summaries file already read, naming `resolved` in any error. */
+function summariesFromText(
+  resolved: string,
+  text: string,
+): BehavioralSummary[] {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
+    parsed = JSON.parse(text) as unknown;
   } catch (error) {
     throw new UsageError(
       `${resolved} is not JSON suss can read: ${reasonOf(error)}`,

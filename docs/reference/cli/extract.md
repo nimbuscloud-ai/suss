@@ -24,7 +24,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 | `--dir <path>` | the working directory | Read this directory, for a project with no tsconfig. |
 | `--lang <name>` | worked out from what the directory contains, the packs you asked for, and the nearest tsconfig | `typescript`, `python` or `ruby`. When suss cannot work the language out for itself, it stops and asks you to pass this flag. |
 | `-o`, `--output <path>` | stdout | Write the summary JSON to a file. Parent directories are created. |
-| `--out-dir <path>` | none | Run every read `suss.json` lists, contracts included, and write each one to its own file in this folder. See [The whole project into a folder](#the-whole-project-into-a-folder). Takes no `-f`, `-o`, `-p`, `--lang`, `--intent` or files. |
+| `--out-dir <path>` | none | Run every read `suss.json` lists, contracts included, and write each one to its own file in this folder. See [The whole project into a folder](#the-whole-project-into-a-folder). Takes no `-f`, `-o`, `-p`, `--lang`, `--intent` or files. Each entry runs with its default settings, so `--out-dir` also refuses `--gaps`, `--explain`, `--timing`, `--datalog-profile`, `--no-cache` and `--fail-on-pack-error`. |
 | `--files <f1> <f2> ...` | every file the tsconfig or directory covers | Read only these files, resolved against the working directory. Bare arguments with no flag in front of them mean the same thing when `--files` is absent. |
 | `--gaps <mode>` | `permissive` | `permissive` records in the summary the returns and declared statuses a pack could not account for. `strict` records the same and then exits non-zero. `silent` skips gap detection. |
 | `--explain` | off | Print where the summaries came from, file by file and pack by pack. A run that found nothing prints it either way. |
@@ -70,7 +70,14 @@ An application split into modules inside one package can list them in `suss.json
 ```json
 {
   "version": 1,
-  "read": [],
+  "read": [
+    {
+      "kind": "extract",
+      "language": "typescript",
+      "project": "tsconfig.json",
+      "packs": ["express", "pg"]
+    }
+  ],
   "modules": [
     { "name": "billing", "root": "src/billing" },
     { "name": "catalog", "root": "src/catalog", "public": "src/catalog/api.ts" }
@@ -91,7 +98,7 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 ## Pack names
 
-`-f` takes these 44 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
+`-f` takes these 51 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
 
 **Frameworks.** These discover the units a run is about: a route, a resolver, a component, a deployed function.
 
@@ -103,9 +110,9 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 **What your code reaches.** These do not discover units. They read the calls inside a unit another pack found, so run one alongside a framework or client pack or it comes back empty.
 
-`activerecord`, `aws-dynamodb`, `aws-eventbridge`, `aws-s3`, `aws-secrets-manager`, `aws-sns`, `aws-sqs`, `aws-ssm`, `drizzle`, `gcs`, `mongoose`, `node`, `prisma`, `redis`, `sqlalchemy`, `sqlmodel`, `zustand`
+`activerecord`, `aws-dynamodb`, `aws-eventbridge`, `aws-s3`, `aws-secrets-manager`, `aws-sns`, `aws-sqs`, `aws-ssm`, `bigquery`, `bigquery-python`, `bigquery-ruby`, `drizzle`, `gcs`, `mongoose`, `node`, `pg`, `pg-ruby`, `prisma`, `redis`, `sqlalchemy`, `sqlmodel`, `typeorm`, `zustand`
 
-Twelve of them read something other than TypeScript, and a run reads one language at a time. `fastapi`, `flask-restx`, `sqlalchemy`, `sqlmodel`, `requests`, `httpx` and `aiohttp` read Python; `rails`, `graphql-ruby`, `activerecord`, `faraday` and `net-http` read Ruby. Naming one in a TypeScript run stops the run and prints the command to run it separately. See [Read Python or Ruby](/guides/python-and-ruby).
+Fifteen of them read something other than TypeScript, and a run reads one language at a time. `fastapi`, `flask-restx`, `sqlalchemy`, `sqlmodel`, `bigquery-python`, `requests`, `httpx` and `aiohttp` read Python; `rails`, `graphql-ruby`, `activerecord`, `bigquery-ruby`, `pg-ruby`, `faraday` and `net-http` read Ruby. Naming one in a TypeScript run stops the run and prints the command to run it separately. See [Read Python or Ruby](/guides/python-and-ruby).
 
 A name that is not on the list gets treated as a module to import, and that is how you run a pack of your own. A name starting with `@` or containing a `/` is imported exactly as written, so `-f @acme/suss-pack` works. Any other name is tried as `@suss/packs/<name>`, then `@suss/framework-<name>`, then `@suss/<name>`. If none of the three import, the run stops and prints the built-in list.
 

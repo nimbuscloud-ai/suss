@@ -28,8 +28,11 @@ interface PatternPack {
   subUnits?: (parent, ctx) => DiscoveredSubUnit[];
   discoverUnits?: (sourceFile, ctx) => DiscoveredCustomUnit[];
   requiresImport?: string[];
+  generatedModuleMarkers?: string[];
+  generatedModuleDirs?: (fromDir: string) => readonly string[];
   projectHelpers?: ProjectHelpers;
   transparentWrappers?: TransparentWrapper[];
+  parameterSuppliers?: Array<{ module: string; name: string }>;
   environmentObjects?: string[];
   libraryEnvVars?: Array<{ module: string; prefixes?: string[]; names?: string[] }>;
   discoveryInputs?: (files: readonly string[]) => string[];
@@ -142,6 +145,13 @@ React Router uses it for `loader`, `action` and `default`, and the React pack us
   importModule: string | string[];
   classDecorators: string[];
   methodDecoratorRouteMap: Record<string, string>;
+  defaultStatusCodes?: Record<string, number>;
+  statusCodeDecorator?: string;
+  globalPrefix?: {
+    method: string;
+    application: { importModule: string; importName: string; factory: string };
+    exclude?: { option: string; pathKey: string; methodKey: string; methods: Record<number, string> };
+  };
 }
 ```
 
@@ -156,6 +166,21 @@ class UsersController {
 ```
 
 The path comes from both decorators together, so the pair above gives `/users/:id`, and a constant passed by name resolves to the string it was written with. The file has to import at least one of the method decorators from `importModule` or nothing in it is discovered. NestJS REST declares it with `{ Get: "GET", Post: "POST", ... }`. NestJS microservices declares it for `@EventPattern` and `@MessagePattern`.
+
+Three optional fields cover how the framework sets a status and a path that the handler does not write itself:
+
+```ts
+const app = await NestFactory.create(AppModule);
+app.setGlobalPrefix("v2", { exclude: ["health"] });
+
+@Post()
+@HttpCode(202)
+create(@Body() order: CreateOrder) { ... }
+```
+
+- `defaultStatusCodes` gives the status a handler sends when it returns without stating one, keyed by method decorator, for the verbs where that differs from the terminal's `defaultStatusCode`. NestJS REST declares `{ Post: 201 }`.
+- `statusCodeDecorator` is a method decorator, imported from `importModule`, whose first argument sets that status instead, so the `create` above responds `202`. It wins over `defaultStatusCodes`.
+- `globalPrefix` describes the call that puts one path in front of every route, so the routes above are served under `/v2`. `application` says how the application object is made, here `NestFactory.create` with `NestFactory` imported from `@nestjs/core`, and a call on any other object is not read. `exclude` says where the call's second argument lists routes the prefix leaves out: under `option`, as a path or as an object with the path under `pathKey` and the method under `methodKey`. `methods` maps each member of the library's method enum, by its number, to a verb, with `*` for every verb.
 
 ### `decoratedMethod`
 
@@ -677,6 +702,15 @@ requiresImport?: string[]
 
 It is for recognizer-only packs that target one library: the SQS pack declares `["@aws-sdk/client-sqs"]` and the Prisma pack `["@prisma/client"]`. Without a gate the pack walks every file, which is correct and wasteful. A discovery pattern has its own `requiresImport` for the same purpose, and an empty array is the deliberate "every file" choice, which the fetch pack makes because `fetch` is a global.
 
+### `generatedModuleMarkers` and `generatedModuleDirs`
+
+```typescript
+generatedModuleMarkers?: string[]
+generatedModuleDirs?: (fromDir: string) => readonly string[]
+```
+
+A library with a code generator can write its module into a directory the project picks, and then the project imports it by relative path, so `requiresImport` matches nothing. These two fields let such an import count as the gated package. `generatedModuleMarkers` lists files the generator writes beside the module, and a directory with one of them in it counts. `generatedModuleDirs` is for a generator that leaves no marker: given the directory of a file that imports by relative path, it returns the output directories the project's own configuration gives for that file, so an import into one counts even before the generator has run. The Prisma pack declares both, with `schema.prisma` as the marker and the `output` of each `generator` block in the schema as the directories.
+
 ### `mount`
 
 ```typescript
@@ -715,6 +749,14 @@ transparentWrappers?: Array<{ module: string; name: string; argument: number }>
 ```
 
 `transparentWrappers` declares a library wrapper that returns the argument passed to it. For a factory inside the project the adapter works this out on its own by reading the body. A library's body is not there to read, so the pack has to declare it. The declaration says which module exports the wrapper and under what name, so a call matches however the project imports it: by name, renamed, or read off a namespace import under any name. AWS Lambda declares `wrapHandler` from `@sentry/aws-serverless`, and Hono declares `createRoute` from `@hono/zod-openapi`. A Python pack takes the same field. A Ruby pack takes it too, but the Ruby adapter does not record which module a callee comes from, so a Ruby declaration matches no call yet.
+
+### `parameterSuppliers`
+
+```typescript
+parameterSuppliers?: Array<{ module: string; name: string }>
+```
+
+`parameterSuppliers` lists parameter decorators whose call is the value a dependency injection container passes in. A constructor parameter written `@InjectRepository(User) private repo: Repository<User>` then reads as the call `InjectRepository(User)`, so a recognizer can match `this.repo.find()` by the decorator the value came from. The TypeORM pack declares `InjectRepository`, `InjectDataSource` and `InjectEntityManager` from `@nestjs/typeorm`.
 
 ### `environmentObjects` and `libraryEnvVars`
 

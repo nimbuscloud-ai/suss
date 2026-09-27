@@ -20,13 +20,6 @@ rules:
       A rule matches on the transition id, which leaves line numbers out, so
       the finding should stay accepted after a move. No test pastes a rule
       and then moves the handler yet.
-  - kind: unlinkedScenario
-    boundary: "prd:A second run gives the same output as the first"
-    scenario: the cache against no cache
-    effect: mark
-    reason: >-
-      The cache tests compare a warm run with the cold run that filled the
-      cache. None compares a warm run with a --no-cache run yet.
 
   # Tests that do cover their scenario, through a call suss does not follow.
   - kind: testMissesSubject

@@ -201,7 +201,7 @@ A transition ends one way, so it takes at most one of `response`, `returns`, `th
 
 `response` takes a `status` between 100 and 599, required, and an optional `body`. `returns` takes an optional `body`. `throws` takes an optional `errorType`, the name of the error class. `exits` takes the code itself, a number from 0 to 255, and a bare `exits:` is refused rather than read as 0.
 
-The checker matches `exits: 1` against a transition that ends the process with `1`, such as `process.exit(1)`, and against a `return 1` in a function whose return becomes the process's exit code. A command usually returns its code up to one place that sets it, so the second is how most commands say it. A code the program computes, `process.exit(code)`, matches no number.
+The checker matches `exits: 1` against a transition that ends the process with `1`, such as `process.exit(1)`, and against a `return 1` in a function whose return becomes the process's exit code. A command usually returns its code up to one place that sets it, so the second is how most commands say it. A code the program computes, `process.exit(code)`, matches no number. In a TypeScript project, `process.exit` is read by the `node` pack, so extract with `-f node` for `exits:` to match it.
 
 A `body` takes `type`, plus `items` when it is an array and `properties` when it is an object. `properties:` with no `type:` above it is shorthand for an object, at any depth. `const:` pins a value to one literal, such as `{ const: true }` or `{ const: nothingPaired }`. `required` inside a body shape is the list of property names that have to be there. The `required` on a `receives` field is a boolean, and the two are unrelated.
 
@@ -262,7 +262,7 @@ results:
 
 The line is satisfied when the code takes the column from that source. When it takes it from somewhere else suss can name, an input path or a literal, the checker reports [`valueFromElsewhere`](/reference/findings#valuefromelsewhere) with the source it found. When the walk from the value stopped at something it cannot follow, such as a call into a library no pack describes, the claim is listed under `unchecked` with where the walk stopped. suss stops loading a document whose `from` gives a column the line does not list, or a source not written as `input.<path>`. A change list and an `always` line do not take `from`.
 
-A route's source reads the same in every language when the pack says which part of the request each read is. The Express, Fastify, Hono, Lambda, FastAPI, flask-restx and Rails packs do. FastAPI's `x_tenant_id: str = Header()` is `input.headers.x-tenant-id`, and a Flask resource's `request.args["q"]` is `input.query.q`. Rails merges the path, the query string and the body into `params`, so a Rails action's `params[:tenant_id]` is `input.params.tenant_id` whichever of the three it came from.
+A route's source reads the same in every language when the pack says which part of the request each read is. The Express, Fastify, Lambda, FastAPI, flask-restx and Rails packs do. A Hono handler reads each part through a call, as in `c.req.header("x-tenant-id")`, and the read suss records keeps the method but not the field, so a `from` on a Hono route stays unchecked. FastAPI's `x_tenant_id: str = Header()` is `input.headers.x-tenant-id`, and a Flask resource's `request.args["q"]` is `input.query.q`. Rails merges the path, the query string and the body into `params`, so a Rails action's `params[:tenant_id]` is `input.params.tenant_id` whichever of the three it came from.
 
 A value the language converts on the way still comes from its input: `Number(req.params.id)`, `int(order_id)` and `params[:id].to_i` satisfy a `from` that names the input.
 
@@ -298,7 +298,7 @@ always:
 
 A throw is an outcome like the others, so a transition that throws needs the effect unless its outcome is listed under `except`. A transition that does not produce any declared outcome is not checked, and the checker reports it as `undeclaredOutcome`. Each transition that lacks the effect is its own [`pathWithoutEffect`](/reference/findings#pathwithouteffect) finding.
 
-An `except` id has to be the id of a transition in the document, and suss stops on one that is not. It also has to be an outcome with a `response`, `returns` or `throws`. An outcome that states only its effects matches every transition, so exempting it would exempt them all.
+An `except` id has to be the id of a transition in the document, and suss stops on one that is not. It also has to be an outcome with a `response`, `returns`, `throws` or `exits`. An outcome that states only its effects matches every transition, so exempting it would exempt them all.
 
 A change list does not take `always`. It describes one change at a time, and `always` describes the whole boundary.
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "read": [],
+  "read": [{ "kind": "extract", "language": "typescript", "packs": ["pg"] }],
   "modules": [
     { "name": "billing", "root": "src/billing" },
     { "name": "catalog", "root": "src/catalog" }

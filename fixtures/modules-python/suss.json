@@ -1,6 +1,12 @@
 {
   "version": 1,
-  "read": [],
+  "read": [
+    {
+      "kind": "extract",
+      "language": "python",
+      "packs": ["sqlalchemy=suss.sqlalchemy.json"]
+    }
+  ],
   "modules": [
     { "name": "billing", "root": "app/billing" },
     { "name": "catalog", "root": "app/catalog" }

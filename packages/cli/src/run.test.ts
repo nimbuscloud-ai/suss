@@ -1150,7 +1150,43 @@ describe("runCli check", () => {
       runCli(["check", "--fail-on", "bogus", "p.json", "c.json"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--fail-on must be");
+    expect(io.stderr).toContain('--fail-on takes "error"');
+  });
+
+  it("refuses a folder and files together, since the folder would win and the files go unread", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    writeJson("consumer.json", [matchingConsumer]);
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "orders.json", "--json"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("--dir");
+    expect(JSON.parse(io.stdout)).toEqual({ error: expect.any(String) });
+  });
+
+  it("puts the reason on stdout as JSON for every usage failure of a command that takes --json", async () => {
+    const forms = [
+      ["inspect", "--diff", "before.json"],
+      ["inspect", "--diff", "a.json", "b.json", "--budget", "lots"],
+      ["inspect", "--diff", "a.json", "b.json", "--changed-files", "gone.txt"],
+      ["inspect", "--diff", "a.json", "b.json", "--chain", "lots"],
+      ["inspect", "--flow", ""],
+      ["intent", "outcomes"],
+      ["check", "--fail-on", "bogus", "p.json", "c.json"],
+      ["check", "--at", "src/a.ts:1", "--intent", "intent/"],
+      ["check", "--at", "src/a.ts:1", "--since", "before/"],
+      ["check", "--at", "src/a.ts:1", "p.json", "c.json"],
+      ["check", "--intent", "intent/", "p.json", "c.json"],
+      ["check", "--since", "before/", "p.json", "c.json"],
+      ["check", "p.json"],
+    ];
+    for (const argv of forms) {
+      const { exit, io } = await capture(() => runCli([...argv, "--json"]));
+      expect(exit, argv.join(" ")).toBe(1);
+      expect(JSON.parse(io.stdout), argv.join(" ")).toEqual({
+        error: expect.any(String),
+      });
+    }
   });
 
   it("refuses --fail-on-empty, since failing on nothing is the default now", async () => {
@@ -1612,6 +1648,42 @@ describe("runCli check floors", () => {
       runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "50%"]),
     );
     expect(exit).toBe(0);
+  });
+
+  it("counts unpaired boundaries the way the first line of the report does", async () => {
+    const unpairedRoute = (name: string): BehavioralSummary => ({
+      ...minimalSummary,
+      location: { ...minimalSummary.location, exportName: name },
+      identity: {
+        name,
+        exportPath: [name],
+        boundaryBinding: {
+          transport: "http",
+          semantics: { name: "rest", method: "GET", path: "/y" },
+          recognition: "test",
+        },
+      },
+    });
+    writeJson("provider.json", [
+      minimalSummary,
+      unpairedRoute("listOrders"),
+      unpairedRoute("listOrdersAgain"),
+    ]);
+    writeJson("consumer.json", [matchingConsumer]);
+
+    // Two summaries serve the one unpaired route, so one boundary is unpaired.
+    const under = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "1"]),
+    );
+    expect(under.exit).toBe(0);
+
+    const over = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "0"]),
+    );
+    expect(over.exit).toBe(1);
+    expect(over.io.stdout).toContain("Compared 1 of 2 boundaries");
+    expect(over.io.stdout).toContain("1 of 2 boundaries had nothing to pair");
+    expect(over.io.stdout).toContain("1 paired.");
   });
 
   it("rejects a floor it cannot parse", async () => {

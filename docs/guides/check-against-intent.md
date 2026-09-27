@@ -380,8 +380,8 @@ If `loadChangeListFile` stopped throwing `ChangeListRejected`, the self-check wo
 
 ```
 Intent:
-  22 boundary intents checked against code
-  7 PRDs checked: 39 scenarios, 16 resolved, 16 covered by tests, 2 unlinked
+  24 boundary intents checked against code
+  7 PRDs checked: 40 scenarios, 17 resolved, 17 covered by tests, 1 unlinked
 ```
 
-The two unlinked scenarios have no test yet, and `intent/self.sussignore.yml` accepts each one by its title, with the reason.
+The unlinked scenario has no test yet, and `intent/self.sussignore.yml` accepts it by its title, with the reason.
