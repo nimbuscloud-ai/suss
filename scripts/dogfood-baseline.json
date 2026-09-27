@@ -6,7 +6,7 @@
     "internal": 4647,
     "consumers": 2532,
     "pairs": 2520,
-    "unfollowedCalls": 491,
+    "unfollowedCalls": 502,
     "findingErrors": 0
   },
   "packages": {
@@ -56,8 +56,8 @@
       "name": "@suss/cli",
       "exports": 54,
       "internal": 769,
-      "consumers": 470,
-      "unfollowedCalls": 38
+      "consumers": 468,
+      "unfollowedCalls": 42
     },
     "packages/client/aiohttp": {
       "name": "@suss/client-aiohttp",
@@ -204,7 +204,7 @@
       "exports": 75,
       "internal": 94,
       "consumers": 27,
-      "unfollowedCalls": 15
+      "unfollowedCalls": 18
     },
     "packages/framework/activerecord": {
       "name": "@suss/framework-activerecord",
@@ -526,7 +526,7 @@
       "exports": 9,
       "internal": 19,
       "consumers": 13,
-      "unfollowedCalls": 2
+      "unfollowedCalls": 6
     },
     "packages/packs": {
       "name": "@suss/packs",

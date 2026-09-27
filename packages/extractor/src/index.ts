@@ -1114,6 +1114,7 @@ export {
   runDigest,
 } from "./adapterStamp.js";
 export { createCacheLayer, MAX_ENTRIES } from "./cache.js";
+export { stampMayMissAWrite } from "./cacheStamps.js";
 export {
   buildUngatedExtractionReport,
   createPackTallies,
@@ -1122,6 +1123,7 @@ export {
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
+export { KeptParses } from "./keptParses.js";
 export {
   evaluatePackHealth,
   formatPackHealth,

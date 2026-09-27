@@ -7,10 +7,10 @@
  * extract describes code that has since changed.
  *
  * So a `Project` keeps its own summary directory and re-runs the
- * commands in `suss.json` when a source file changes. After the first
- * run this is cheap, because `suss extract` caches per file by content.
- * Rebuilds are debounced, since an agent writes files in bursts and a
- * rebuild per write would be thrown away by the next one.
+ * commands in `suss.json` when a source file changes, keeping each
+ * command's adapter so a run after an edit parses only what changed.
+ * Rebuilds are debounced, since an agent writes files in bursts. The
+ * package README says what stays in memory and for how long.
  */
 
 import fs from "node:fs";
@@ -18,7 +18,9 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  clearEarlierReads,
   declaredReads,
+  KeptAdapters,
   loadedSummaries,
   readProjectInto,
   readSummariesFromDir,
@@ -28,6 +30,14 @@ import type { LoadedSummaries } from "@suss/cli";
 
 /** How long the writes have to stop before a rebuild starts. */
 const DEFAULT_SETTLE_MS = 400;
+
+/**
+ * How long the server keeps the programs it built with nothing asking
+ * for a build. A large TypeScript program takes several gigabytes, and a
+ * build after the programs were let go costs what a CLI run with a warm
+ * cache costs.
+ */
+const DEFAULT_IDLE_MS = 30 * 60 * 1000;
 
 export interface ProjectOptions {
   /** The project root, which is where `suss.json` is looked for. */
@@ -42,6 +52,8 @@ export interface ProjectOptions {
    * what the test covers stops depending on scheduler timing.
    */
   settleMs?: number;
+  /** How long to keep the built programs with no build asked for. */
+  idleMs?: number;
 }
 
 /** What a rebuild produced, so a caller can say why an answer is thin. */
@@ -51,9 +63,20 @@ export interface BuildReport {
   ran: string[];
   /** Commands `suss.json` asked for that threw. */
   failed: string[];
+  /** Extract commands that ran and wrote no summary. */
+  empty: string[];
   /** False when the project has no `suss.json`, so detection picked the reads. */
   configured: boolean;
 }
+
+/**
+ * Another server's build, for a server that is not the one keeping the
+ * programs. Null when that server could not be reached, and this one
+ * builds for itself.
+ */
+export type BuildElsewhere = (
+  summaryDir: string,
+) => Promise<BuildReport | null>;
 
 export class Project {
   readonly root: string;
@@ -64,9 +87,23 @@ export class Project {
   private pending: NodeJS.Timeout | null = null;
   private watchWanted = true;
   private readonly settleMs: number;
+  private readonly idleMs: number;
   private readonly ownsSummaryDir: boolean;
-  /** A rebuild already running, so a burst does not start a second. */
-  private running: Promise<BuildReport> | null = null;
+  /** The adapters each read of `suss.json` left, for the next read. */
+  private readonly kept = new KeptAdapters();
+  /** Builds run one after another, each after the last has finished. */
+  private chain: Promise<unknown> = Promise.resolve();
+  /** A build that is queued and has not started, which a new ask joins. */
+  private queued: Promise<BuildReport> | null = null;
+  /** The build running now, and when it started reading the tree. */
+  private started: { at: number; build: Promise<BuildReport> } | null = null;
+  /** When the last finished build started reading the tree. */
+  private lastStart: number | null = null;
+  private inFlight = 0;
+  /** Work the kept adapters do between builds, which the next build waits on. */
+  private preparing: Promise<void> = Promise.resolve();
+  private idle: NodeJS.Timeout | null = null;
+  private elsewhere: BuildElsewhere | null = null;
   /** The summary directory as last read, dropped when a build rewrites it. */
   private loaded: LoadedSummaries | null = null;
   /** Set once a build finishes. Before that, lastBuild() is a placeholder. */
@@ -86,10 +123,12 @@ export class Project {
       summaryDir: this.summaryDir,
       ran: [],
       failed: [],
+      empty: [],
       configured: false,
     };
     this.watchWanted = options.watch !== false;
     this.settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
+    this.idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
   }
 
   /**
@@ -106,14 +145,66 @@ export class Project {
    * change events and rebuild for no reason.
    */
   start(): Promise<BuildReport> {
-    const build = this.runBuild();
-    this.running = build.finally(() => {
-      this.running = null;
-    });
+    const build = this.scheduleBuild();
     if (this.watchWanted) {
       void build.then(() => this.watch());
     }
     return build;
+  }
+
+  /**
+   * A build that read the tree after `notBefore`, for a caller that
+   * knows the tree changed and cannot wait out the debounce, such as a
+   * hook that runs right after an edit. A build that started after
+   * `notBefore` read every file after that moment, so it is reused, the
+   * one the watcher started included. Otherwise a new build starts after
+   * any build already running. Without `notBefore`, it always builds.
+   */
+  buildNow(notBefore?: number): Promise<BuildReport> {
+    const covering =
+      notBefore === undefined ? null : this.buildStartedSince(notBefore);
+    if (covering !== null) {
+      return covering;
+    }
+    this.cancelPending();
+    return this.scheduleBuild();
+  }
+
+  private buildStartedSince(notBefore: number): Promise<BuildReport> | null {
+    if (this.queued !== null) {
+      return this.queued;
+    }
+    // Both are whole milliseconds, so a build stamped with the same one
+    // may have started a moment before the change.
+    if (this.started !== null) {
+      return this.started.at > notBefore ? this.started.build : null;
+    }
+    const last = this.lastStart;
+    return last !== null && last > notBefore && this.everBuilt
+      ? Promise.resolve(this.report)
+      : null;
+  }
+
+  /**
+   * Delays every build until `ready` settles, for a caller that first
+   * has to find out whether another server builds for this one.
+   */
+  delayBuildsUntil(ready: Promise<unknown>): void {
+    this.preparing = ready.then(
+      () => undefined,
+      () => undefined,
+    );
+  }
+
+  /**
+   * Hands builds to another server that keeps the programs, or takes
+   * them back with null. See `BuildElsewhere`.
+   */
+  buildElsewhere(elsewhere: BuildElsewhere | null): void {
+    this.elsewhere = elsewhere;
+    if (elsewhere !== null) {
+      this.kept.release();
+    }
   }
 
   /** The last build, so a tool can say where its answer came from. */
@@ -121,9 +212,9 @@ export class Project {
     return this.report;
   }
 
-  /** Whether the first build or a watch-triggered rebuild is still running. */
+  /** Whether the first build or a later rebuild is still running. */
   building(): boolean {
-    return this.running !== null;
+    return this.inFlight > 0;
   }
 
   /**
@@ -134,9 +225,14 @@ export class Project {
     return this.everBuilt;
   }
 
+  /** How many adapters this server keeps between builds. */
+  keptAdapters(): number {
+    return this.kept.size;
+  }
+
   /** Waits for any build in flight, so a question reads a settled directory. */
   async settled(): Promise<void> {
-    await this.running;
+    await this.chain;
   }
 
   /**
@@ -159,24 +255,88 @@ export class Project {
    * about the code suss could read.
    */
   async build(): Promise<BuildReport> {
+    const remote = await this.elsewhere?.(this.summaryDir);
+    if (remote !== undefined && remote !== null) {
+      return this.finished({ ...remote, summaryDir: this.summaryDir });
+    }
+
     const reads = await declaredReads(this.root);
-    const { ran, failed } = await readProjectInto(
+    // An entry that fails this time must not leave last time's summaries.
+    clearEarlierReads(this.summaryDir);
+    const { ran, failed, empty } = await readProjectInto(
       this.root,
       this.summaryDir,
       reads,
+      this.kept,
     );
-
-    // Dropped after the writes rather than before, so a question asked
-    // during a build cannot leave a half-written directory cached.
-    this.loaded = null;
-    this.everBuilt = true;
-    this.report = {
+    return this.finished({
       summaryDir: this.summaryDir,
       ran,
       failed,
+      empty,
       configured: reads.declared,
-    };
-    return this.report;
+    });
+  }
+
+  /**
+   * Dropped after the writes rather than before, so a question asked
+   * during a build cannot leave a half-written directory cached.
+   */
+  private finished(report: BuildReport): BuildReport {
+    this.loaded = null;
+    this.everBuilt = true;
+    this.report = report;
+    return report;
+  }
+
+  /**
+   * Stop watching and clear up. A server shutting down calls this.
+   *
+   * The summaries go with it when this made the directory they are in,
+   * since a server that ran for a week and stopped should not leave one
+   * behind.
+   */
+  close(): void {
+    this.cancelPending();
+    if (this.idle !== null) {
+      clearTimeout(this.idle);
+      this.idle = null;
+    }
+    this.watcher?.close();
+    this.watcher = null;
+    this.kept.release();
+    if (this.ownsSummaryDir) {
+      fs.rmSync(this.summaryDir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Queues a build behind the one running. A caller that asks while a
+   * build is queued and not yet started joins that build, since it has
+   * not read the tree yet either.
+   */
+  private scheduleBuild(): Promise<BuildReport> {
+    if (this.queued !== null) {
+      return this.queued;
+    }
+    this.inFlight += 1;
+    const build: Promise<BuildReport> = this.chain
+      .then(async () => {
+        this.queued = null;
+        await this.preparing;
+        const at = Date.now();
+        this.started = { at, build };
+        const report = await this.runBuild();
+        this.started = null;
+        this.lastStart = at;
+        return report;
+      })
+      .finally(() => {
+        this.inFlight -= 1;
+      });
+    this.queued = build;
+    this.chain = build.catch(() => undefined);
+    return build;
   }
 
   /**
@@ -188,38 +348,39 @@ export class Project {
    * promise nobody catches, which is worse than reporting the failure.
    */
   private async runBuild(): Promise<BuildReport> {
+    let report: BuildReport;
     try {
-      return await this.build();
+      report = await this.build();
     } catch (error) {
-      this.loaded = null;
-      this.everBuilt = true;
-      this.report = {
+      report = this.finished({
         summaryDir: this.summaryDir,
         ran: [],
         failed: [messageOf(error)],
+        empty: [],
         configured: this.report.configured,
-      };
-      return this.report;
+      });
     }
+    this.afterBuild();
+    return report;
   }
 
   /**
-   * Stop watching and clear up. A server shutting down calls this.
-   *
-   * The summaries go with it when this made the directory they are in,
-   * since a server that ran for a week and stopped should not leave one
-   * behind.
+   * A build served whole from the cache loads no program, so the kept
+   * adapters load theirs now, before the edit that needs one. The next
+   * build waits for that, and questions do not.
    */
-  close(): void {
-    if (this.pending !== null) {
-      clearTimeout(this.pending);
-      this.pending = null;
+  private afterBuild(): void {
+    this.preparing = this.kept.prepare().catch(() => undefined);
+    if (this.idle !== null) {
+      clearTimeout(this.idle);
     }
-    this.watcher?.close();
-    this.watcher = null;
-    if (this.ownsSummaryDir) {
-      fs.rmSync(this.summaryDir, { recursive: true, force: true });
-    }
+    this.idle = setTimeout(() => {
+      this.idle = null;
+      if (!this.building()) {
+        this.kept.release();
+      }
+    }, this.idleMs);
+    this.idle.unref?.();
   }
 
   private watch(): void {
@@ -229,6 +390,7 @@ export class Project {
         { recursive: true },
         (_event, filename) => {
           if (filename !== null && worthRebuilding(filename)) {
+            this.kept.noteChanged([path.join(this.root, filename)]);
             this.rebuildSoon();
           }
         },
@@ -241,16 +403,19 @@ export class Project {
   }
 
   private rebuildSoon(): void {
-    if (this.pending !== null) {
-      clearTimeout(this.pending);
-    }
+    this.cancelPending();
     this.pending = setTimeout(() => {
       this.pending = null;
-      this.running = this.runBuild().finally(() => {
-        this.running = null;
-      });
+      void this.scheduleBuild();
     }, this.settleMs);
     this.pending.unref?.();
+  }
+
+  private cancelPending(): void {
+    if (this.pending !== null) {
+      clearTimeout(this.pending);
+      this.pending = null;
+    }
   }
 }
 

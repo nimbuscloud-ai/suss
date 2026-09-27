@@ -115,6 +115,7 @@ export type {
   WhyExplained,
 } from "@suss/resolution";
 export type {
+  RefreshReport,
   TypeScriptAdapter,
   TypeScriptAdapterConfig,
 } from "./adapter.js";

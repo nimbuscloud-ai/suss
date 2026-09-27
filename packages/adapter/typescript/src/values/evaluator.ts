@@ -1,12 +1,13 @@
 import { Evaluator, force, type Value } from "@suss/values";
 
+import { createProgramMemo } from "../programMemo.js";
 import { typescriptLowering } from "./lowering.js";
 import { typescriptRows } from "./rows.js";
 
-import type { Node } from "ts-morph";
+import type { Node, Project } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
-const evaluators = new WeakMap<object, Evaluator<Node>>();
+const evaluators = createProgramMemo<object, Evaluator<Node>>();
 
 /**
  * One evaluator per resolution store, or per project when a caller has
@@ -17,8 +18,9 @@ export function evaluatorFor(
   node: Node,
   resolution: ResolutionStore | undefined,
 ): Evaluator<Node> {
-  const key: object = resolution ?? node.getProject();
-  let evaluator = evaluators.get(key);
+  const project: Project = node.getProject();
+  const key: object = resolution ?? project;
+  let evaluator = evaluators.get(project, key);
   if (evaluator === undefined) {
     evaluator = new Evaluator(
       typescriptLowering(
@@ -27,7 +29,7 @@ export function evaluatorFor(
           : { resolution, rows: typescriptRows },
       ),
     );
-    evaluators.set(key, evaluator);
+    evaluators.set(project, key, evaluator);
   }
   return evaluator;
 }

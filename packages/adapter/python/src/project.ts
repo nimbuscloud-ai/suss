@@ -32,6 +32,7 @@ import {
   createTimer,
   effectToIR,
   extractionConfigStamp,
+  KeptParses,
   moduleInitStructure,
   noopTimer,
   runDigest,
@@ -155,6 +156,41 @@ export interface ExtractPythonOptions {
   cacheDir?: string | null;
   /** The modules the project lists in `suss.json`, with absolute paths. */
   modules?: readonly DeclaredModule[];
+  /** Parses an earlier run in this process left, for a file whose text is unchanged. */
+  keptParses?: KeptPythonParses;
+}
+
+/** A file's tree and the scopes bound over it, as a later run can reuse them. */
+export type KeptPythonParses = KeptParses<{
+  root: PyNode;
+  module: ModuleBinding;
+}>;
+
+/** A holder for parses between runs, which frees each tree it lets go of. */
+export function keptPythonParses(): KeptPythonParses {
+  return new KeptParses(({ root }) => root.tree.delete());
+}
+
+/**
+ * Parses these files into `kept` before any run needs them. A run served
+ * whole from the cache parses nothing, so a process that keeps parses
+ * calls this while nobody is waiting.
+ */
+export async function parsePythonAhead(
+  files: readonly string[],
+  kept: KeptPythonParses,
+): Promise<void> {
+  for (const file of files) {
+    await kept.parse(file, fs.readFileSync(file, "utf8"), parseAndBind);
+  }
+  kept.keepOnly(files);
+}
+
+async function parseAndBind(
+  source: string,
+): Promise<{ root: PyNode; module: ModuleBinding }> {
+  const tree = await parsePython(source);
+  return { root: tree.rootNode, module: bindModule(tree.rootNode) };
 }
 
 export interface ExtractPythonResult {
@@ -445,18 +481,15 @@ async function runPython(
       : file;
 
   const bound: BoundPythonFile[] = [];
+  const parses = options.keptParses ?? keptPythonParses();
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const source = fs.readFileSync(file, "utf8");
-      const tree = await parsePython(source);
-      bound.push({
-        file,
-        displayPath: displayPathOf(file),
-        root: tree.rootNode,
-        module: bindModule(tree.rootNode),
-      });
+      const { root, module } = await parses.parse(file, source, parseAndBind);
+      bound.push({ file, displayPath: displayPathOf(file), root, module });
     });
   }
+  options.keptParses?.keepOnly(options.files);
 
   // Discovery asks the rules what built an object it cannot find by name,
   // and router mounting asks what a loop over a call registers. Both read

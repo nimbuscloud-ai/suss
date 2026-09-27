@@ -110,7 +110,7 @@ export interface FileCache {
 }
 
 export function createFileCache(
-  parse: (source: string) => Promise<RbNode>,
+  parse: (source: string, absPath: string) => Promise<RbNode>,
   readFile: (absPath: string) => string | null,
 ): FileCache {
   const trees = new Map<string, RbNode | null>();
@@ -122,7 +122,7 @@ export function createFileCache(
         return cached;
       }
       const source = readFile(absPath);
-      const tree = source !== null ? await parse(source) : null;
+      const tree = source !== null ? await parse(source, absPath) : null;
       trees.set(absPath, tree);
       return tree;
     },

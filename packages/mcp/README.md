@@ -71,9 +71,29 @@ own directory and watches the tree. When a source file changes, it waits
 until writes have stopped for 400ms, then re-runs the extract and
 contract commands listed in `suss.json`.
 
-Re-extracting is cheap after the first run. `suss extract` keeps a
-per-file cache keyed on content, so an edit to one file rebuilds only
-that file's share of the work.
+The server keeps each command's adapter between builds. A TypeScript
+build after an edit parses only the files whose text changed and keeps
+the compiler's program, and a Python or Ruby build keeps every
+unchanged file's tree. The disk cache that `suss extract` keeps per
+file then decides which summaries to rebuild. After a build served
+whole from that cache, the server loads the program anyway, so the
+first edit does not pay for it.
+
+A large TypeScript program takes gigabytes: the server raises its own
+heap the way the CLI does, and lets the programs go after 30 minutes
+with no build. The next build costs what a CLI run with a warm cache
+costs.
+
+## The plugin's socket
+
+The supervisor plugin's hooks run `extract --out-dir` and
+`check --since --json` after every edit. The first server started for
+a repository listens on a local socket and writes its path to
+`.suss/live/server.json`, and the hooks send those commands there and
+get back what the CLI would have printed. A server started later for
+the same repository has the first one build for it and keeps no
+program of its own. When no server is up, or it does not serve a
+command, the hooks run the CLI.
 
 Writes under `node_modules`, `dist`, `.git`, `coverage`, `.next`,
 `.turbo`, and `build` are ignored. A watcher that rebuilt on those would
@@ -98,4 +118,5 @@ finished before doing anything else.
 Pass `watch: false` to extract once and stop there. Pass `summaryDir` to
 put the summaries in a directory you choose instead of a temporary one.
 `close()` leaves that directory alone, because the server only removes
-a directory it created.
+a directory it created. Pass `live: true` to listen on the plugin's
+socket, which the `suss-mcp` executable does.

@@ -14,6 +14,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { LiveSocket } from "./liveSocket.js";
 import { Project } from "./project.js";
 import {
   ASK_DESCRIPTION,
@@ -34,8 +35,10 @@ import { versionFrom } from "./version.js";
 
 import type { ProjectOptions } from "./project.js";
 
+export { LIVE_RECORD, LiveSocket, socketPathFor } from "./liveSocket.js";
 export { Project } from "./project.js";
 
+export type { LiveRequest, SussReply } from "./liveSocket.js";
 export type { BuildReport, ProjectOptions } from "./project.js";
 
 /**
@@ -47,11 +50,17 @@ export type { BuildReport, ProjectOptions } from "./project.js";
  * before the first extract finishes. A tool call that arrives before
  * then waits on project.settled().
  */
-export function createServer(options: ProjectOptions): {
+export function createServer(options: ServerOptions): {
   server: McpServer;
   project: Project;
+  /** The plugin's socket, when `live` asked for one. */
+  live: Promise<LiveSocket> | null;
 } {
   const project = new Project(options);
+  const live = options.live === true ? LiveSocket.open(project) : null;
+  if (live !== null) {
+    project.delayBuildsUntil(live);
+  }
   void project.start();
 
   const server = new McpServer({
@@ -168,7 +177,16 @@ export function createServer(options: ProjectOptions): {
     () => attempt("suss_status", () => statusTool(project)),
   );
 
-  return { server, project };
+  return { server, project, live };
+}
+
+export interface ServerOptions extends ProjectOptions {
+  /**
+   * Listen on the local socket the supervisor plugin's hooks use, or
+   * build through the server already listening there. The executable
+   * turns this on; a host embedding the server leaves it off.
+   */
+  live?: boolean;
 }
 
 /**
