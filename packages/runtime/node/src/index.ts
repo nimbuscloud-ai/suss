@@ -21,7 +21,11 @@ import { processSurfaceRecognizer } from "./processSurface.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
 import { PROCESS_STREAMS, streamWriteRecognizer } from "./streamWrites.js";
 
-import type { PatternPack, TerminalPattern } from "@suss/extractor";
+import type {
+  ArgumentParser,
+  PatternPack,
+  TerminalPattern,
+} from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export {
@@ -86,6 +90,15 @@ const PROCESS_EXIT: TerminalPattern = {
   },
 };
 
+/** Node's own flag parser, imported with or without the `node:` prefix. */
+const PARSE_ARGS: ArgumentParser[] = ["node:util", "util"].map((module) => ({
+  module,
+  name: "parseArgs",
+  argument: 0,
+  argsKey: "args",
+  optionsKey: "options",
+}));
+
 export function nodeRuntimePack(
   options: NodeRuntimePackOptions = {},
 ): PatternPack {
@@ -107,6 +120,7 @@ export function nodeRuntimePack(
     discovery: [],
     terminals: [PROCESS_EXIT],
     exitCodeWrites: ["process.exitCode"],
+    argumentParsers: PARSE_ARGS,
     inputMapping: { type: "positionalParams", params: [] },
     invocationRecognizers: [schedulingRecognizer, streamWriteRecognizer],
     environmentObjects: ["process.env"],

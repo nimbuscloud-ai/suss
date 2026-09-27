@@ -148,6 +148,14 @@ receives:
   options.stream: { type: string }
 ```
 
+A command's flags are fields of the argument list it parses, written with their dashes. For a function that hands its `args` parameter to Node's `parseArgs`, `--dir` is `"args.--dir"`:
+
+```yaml
+receives:
+  args: { type: array, required: true }
+  "args.--dir": { type: string }
+```
+
 A REST boundary has a section per part of the request, because a sender fills the four parts separately:
 
 ```yaml

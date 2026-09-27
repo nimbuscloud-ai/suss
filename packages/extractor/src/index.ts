@@ -104,6 +104,7 @@ export {
 
 export type {
   AccessRecognizer,
+  ArgumentParser,
   BindingExtraction,
   ChannelSource,
   ContractPattern,

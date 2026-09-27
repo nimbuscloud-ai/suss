@@ -84,6 +84,7 @@ import type {
 } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { DiscoveredUnit } from "../discovery/index.js";
+import type { EveryUnitDeclarations } from "../everyUnit.js";
 import type { ResolutionStore } from "../facts/store.js";
 
 /**
@@ -665,7 +666,7 @@ function extractReachableSummary(
     undefined,
     undefined,
     undefined,
-    recognizers.terminals,
+    recognizers.everyUnit,
   );
   raw.boundaryBinding = functionCallBinding({
     transport: "in-process",
@@ -739,8 +740,8 @@ export interface ClosureRecognizers {
   sourceDeclarationsBehind?: (declaration: Node) => Node[];
   invocation: InvocationRecognizer[];
   access: AccessRecognizer[];
-  /** Terminals a pack applies in every unit, such as the runtime's own exit. */
-  terminals?: readonly TerminalPattern[];
+  /** What a pack applies in every unit, such as the runtime's own exit. */
+  everyUnit?: EveryUnitDeclarations;
 }
 
 const NO_RECOGNIZERS: ClosureRecognizers = { invocation: [], access: [] };

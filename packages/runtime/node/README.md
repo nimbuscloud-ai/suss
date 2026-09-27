@@ -321,6 +321,30 @@ of those summaries keeps its `return` outputs and gets
 `exits: 1` about a function that ends in `return result.hasErrors ? 1 : 0`.
 That return comes out as two transitions, one per arm.
 
+## The flags a command takes
+
+A command reads its flags through `parseArgs` from `node:util`, and the
+options object is the only place a flag is written:
+
+```ts
+export function runCheck(args: string[]): number {
+  const { values } = parseArgs({
+    args,
+    options: { dir: { type: "string" }, json: { type: "boolean" } },
+  });
+}
+```
+
+The pack declares `parseArgs` as an argument parser, and the adapter
+records one input read per option, `--dir` and `--json` off `args`, the
+parameter the call takes its arguments from. An intent document lists
+them under `receives` as `"args.--dir"` and `"args.--json"`, and the
+checker reports a flag the document declares that the command no longer
+takes, or one it takes that the document leaves out, the way it does
+for a route's headers. Arguments taken from somewhere other than a
+parameter, such as `process.argv.slice(2)`, give no reads, since
+`process.argv` is already a config read.
+
 ## Options
 
 ```json

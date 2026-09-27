@@ -481,6 +481,14 @@ A runtime's own way of ending the process is a `functionCall` terminal too, with
 
 `inEveryUnit` has the adapter read the terminal in every unit, whichever pack found it, the way a recognizer fires in every unit. The pack that declares it discovers nothing of its own. An `exit` terminal ends the path it is on, so the statements after `process.exit(1)` are not on that path, and the status it extracts is the exit code. The pack's `exitCodeWrites` says where a program assigns the code instead, `process.exitCode`, and the adapter follows that value back to the functions whose return ends up there.
 
+A command-line parser is declared the same way, under `argumentParsers`, and is read in every unit too:
+
+```ts
+{ module: "node:util", name: "parseArgs", argument: 0, argsKey: "args", optionsKey: "options" }
+```
+
+At a call to it, the adapter takes the settings object at `argument`, and when the value under `argsKey` is one of the unit's parameters, records an input read of `--<key>` off that parameter for every key of the object under `optionsKey`. An intent document then lists the command's flags under `receives` as `"args.--dir"`.
+
 ### `jsxReturn`
 
 ```typescript
