@@ -25,6 +25,18 @@ export interface PackConfiguration {
   required: boolean;
   /** What the value is, in a sentence. */
   why: string;
+  /**
+   * What `suss init` writes to `file` when it sets a project up: the
+   * values a project the library's own generator made has. Absent when no
+   * value suits every project.
+   */
+  defaults?: Record<string, unknown>;
+  /**
+   * Reads the values from a file the project already has, so init can
+   * write them when there are no defaults. Null when the project does
+   * not say.
+   */
+  readFromProject?: (projectRoot: string) => Record<string, unknown> | null;
 }
 
 export interface PackDeclaration {

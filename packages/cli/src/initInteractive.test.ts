@@ -208,6 +208,41 @@ describe("suss init, guided", () => {
     ).toContain("hono");
   });
 
+  it("writes the config each pack needs along with suss.json, and lists it there", async () => {
+    write("Gemfile", 'source "https://rubygems.org"\ngem "rails"\n');
+    write(
+      "Gemfile.lock",
+      "GEM\n  specs:\n    rails (7.1.0)\n    graphql (2.3.5)\n\nDEPENDENCIES\n  graphql\n  rails\n",
+    );
+    write("config/database.yml", "default: &default\n  adapter: mysql2\n");
+    write(
+      "app/controllers/application_controller.rb",
+      "class ApplicationController < ActionController::Base\nend\n",
+    );
+    // install: no, sussignore: no, ci: no, project file: yes
+    answers.push(false, false, false, true);
+
+    await initInteractive({ dir });
+
+    const written = JSON.parse(
+      fs.readFileSync(path.join(dir, "suss.json"), "utf8"),
+    ) as { read: Array<{ language?: string; packs?: string[] }> };
+    const ruby = written.read.find((entry) => entry.language === "ruby");
+    expect(ruby?.packs).toEqual(
+      expect.arrayContaining([
+        "rails=suss.rails.json",
+        "graphql-ruby=suss.graphql-ruby.json",
+        "activerecord=suss.activerecord.json",
+      ]),
+    );
+    expect(
+      JSON.parse(
+        fs.readFileSync(path.join(dir, "suss.activerecord.json"), "utf8"),
+      ),
+    ).toEqual({ storageSystem: "mysql" });
+    expect(output()).toContain("Wrote suss.graphql-ruby.json");
+  });
+
   it("leaves the project file alone when nobody asked for it", async () => {
     project(".", "api", ["hono"]);
     answers.push(false, false, false, false);

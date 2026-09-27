@@ -49,7 +49,7 @@ export interface InteractiveInitOptions {
   /** Force the printed form even with a terminal attached. */
   plain?: boolean;
   /**
-   * Print the commands, then write `suss.json` without asking. An agent
+   * Print the commands, then write the setup without asking. An agent
    * setting a project up has no terminal to answer the guided form in.
    */
   write?: boolean;

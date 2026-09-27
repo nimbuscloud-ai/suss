@@ -9,7 +9,7 @@ Set up suss in this repository. suss reads the code and reports where the two si
 
 1. Install the CLI as a dev dependency with the project's package manager, for npm `npm install --save-dev @suss/cli`. Skip this when the repository has no package.json, since `npx @suss/cli` fetches it.
 
-2. Run `npx @suss/cli init --write`. It prints the packs suss found here and writes them to `suss.json` at the root, so later runs and the MCP server read the same packs. If a `suss.json` is already there, init leaves it alone and says so; keep it, and tell me it was already there.
+2. Run `npx @suss/cli init --write`. It prints the packs suss found here and writes them to `suss.json` at the root, with a config file beside it for each pack that takes one, so later runs and the MCP server read the same packs. If a `suss.json` is already there, init leaves it alone and says so; keep it, and tell me it was already there. If init says it left a pack out, tell me which one and what it needs.
 
 3. Run `npx @suss/cli check --json` at the repository root. If `pairs` in its output is empty, stop here and tell me that nothing paired, quoting any entry under `run` and what suss printed about the files it read. A report with no findings looks the same whether both sides agreed or nothing was compared, so never report an empty one as a pass.
 <!-- #endregion setup -->

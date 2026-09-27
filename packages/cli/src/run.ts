@@ -116,9 +116,10 @@ Commands:
 
 Options (init):
   --plain          Print the commands instead of asking, even in a terminal
-  --write          Print the commands, then write suss.json without asking,
-                   so an agent can finish setting a project up. A suss.json
-                   that is already there is left alone.
+  --write          Print the commands, then write suss.json and each pack's
+                   config file without asking, so an agent can finish
+                   setting a project up. A suss.json that is already there
+                   is left alone.
   --overwrite      With --write, replace a suss.json that is already there
 
 Options (extract):

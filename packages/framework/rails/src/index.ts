@@ -379,6 +379,7 @@ export const declares: PackDeclaration = {
     },
     required: false,
     why: "the app directory a controller is defined under and the routes file suss reads each action's method and path from; rails new scaffolds both at these paths. engineRoots lists where the project keeps engines it mounts, and routesFiles any other file that adds routes, when it has either.",
+    defaults: { root: "app", routesFile: "config/routes.rb" },
   },
 };
 

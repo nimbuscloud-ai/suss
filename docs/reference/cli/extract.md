@@ -86,7 +86,7 @@ A name that is not on the list gets treated as a module to import, and that is h
 
 Write `-f <pack>=<config.json>` and the file's contents go to the pack as its options. The CLI parses the file against the pack's own schema before the pack runs, so a key the pack never declared stops the run instead of being quietly ignored. The error gives the key you wrote and the keys that pack does take.
 
-A relative config path typed after `-f` is read against the working directory. The same spec written in `suss.json` is read against the directory `suss.json` is in, so the file works whichever directory a command or the MCP server starts from.
+A relative config path typed after `-f` is read against the working directory. The same spec written in `suss.json` is read against the directory `suss.json` is in, so the file works whichever directory a command or the MCP server starts from. [`suss init`](/reference/cli/init#what-it-writes) writes the config file for each pack that takes one when it writes `suss.json`, and lists the pack with its file.
 
 A pack config describes your own project: which database is behind a connection, or which directory your schema lives in. A fact about a package you depend on goes in a [dependency stub](/guides/teach-a-dependency) instead, and every pack in the run reads it from there.
 
