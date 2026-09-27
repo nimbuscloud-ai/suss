@@ -41,11 +41,17 @@ export interface LazyProjectInit {
   projectFileSet: ReadonlySet<string>;
 }
 
+/** A tsconfig's include set and compiler options, read once for a run. */
+export interface TsconfigRead {
+  fileNames: string[];
+  options: ts.CompilerOptions;
+}
+
 export async function createLazyProject(
   tsConfigFilePath: string,
   packs: ReadonlyArray<PatternPack>,
+  parsed: TsconfigRead = readTsconfig(tsConfigFilePath),
 ): Promise<LazyProjectInit> {
-  const parsed = parseTsconfig(tsConfigFilePath);
   const allFiles = parsed.fileNames;
   const candidates = await selectCandidateFiles(
     allFiles,
@@ -62,6 +68,11 @@ export async function createLazyProject(
 /** Reads no source, so a cache hit never pays for the bootstrap. */
 export function readTsconfigFileList(tsConfigFilePath: string): string[] {
   return parseTsconfig(tsConfigFilePath).fileNames;
+}
+
+/** The include set and the options, from one walk of the directories. */
+export function readTsconfig(tsConfigFilePath: string): TsconfigRead {
+  return parseTsconfig(tsConfigFilePath);
 }
 
 /**
@@ -235,6 +246,48 @@ export function rememberResolvedImports(
     if (!cache.has(filePath)) {
       cache.set(filePath, [...imports]);
     }
+  }
+}
+
+/**
+ * Drop what the load walk recorded about files whose text changed: the
+ * imports each one resolves, and the chain depth of every file that
+ * reaches it, since that depth was worked out from the changed file's.
+ * Where an unchanged file's imports resolve stays put while no file
+ * joins or leaves the project.
+ */
+export function forgetImportsOf(
+  project: Project,
+  changedPaths: readonly string[],
+): void {
+  const specifiers = specifierCacheFor(project);
+  const depths = settledDepthsFor(project);
+  const importers = new Map<string, string[]>();
+  for (const [from, targets] of specifiers) {
+    for (const target of targets) {
+      const list = importers.get(target);
+      if (list === undefined) {
+        importers.set(target, [from]);
+      } else {
+        list.push(from);
+      }
+    }
+  }
+
+  const reached = new Set(changedPaths);
+  const queue = [...changedPaths];
+  while (queue.length > 0) {
+    const next = queue.pop() as string;
+    depths.delete(next);
+    for (const importer of importers.get(next) ?? []) {
+      if (!reached.has(importer)) {
+        reached.add(importer);
+        queue.push(importer);
+      }
+    }
+  }
+  for (const changed of changedPaths) {
+    specifiers.delete(changed);
   }
 }
 

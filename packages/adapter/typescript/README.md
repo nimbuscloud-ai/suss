@@ -42,11 +42,21 @@ If the warmed compiler still cannot follow a chain, the adapter records that and
 
 ## Extraction cache
 
-This adapter uses the extraction cache from `@suss/extractor` that every language adapter shares. It supplies the files by reading the tsconfig's include list, and gives the tsconfig path as the config path that guards the entry along with the file list. Each adapter still chooses its own cache directory. This one keeps it beside the tsconfig, at `.suss/cache/`, and turns caching off for a `Project` the caller supplied or for `--no-cache` on one run. Before reusing a cached route, it reads the mount prefixes back out of each cached file's record to confirm the route's mount still resolves the same way. Each file's record also lists the project files it imports, and after an edit that added and removed no file, the import graph loader takes an unchanged file's imports from there instead of resolving them again. The reachable closure keeps what each function body's scan found as a unit record, described in `src/resolve/README.md`. See the extractor package's README for the design.
+This adapter uses the extraction cache from `@suss/extractor` that every language adapter shares. It supplies the files by reading the tsconfig's include list, and gives the tsconfig path as the config path that guards the entry along with the file list. Each adapter still chooses its own cache directory. This one keeps it beside the tsconfig, at `.suss/cache/`. A caller that supplies a `Project` with no tsconfig gets no cache unless it passes a directory, and `--no-cache` turns it off for one run. Before reusing a cached route, it reads the mount prefixes back out of each cached file's record to confirm the route's mount still resolves the same way. Each file's record also lists the project files it imports, and after an edit that added and removed no file, the import graph loader takes an unchanged file's imports from there instead of resolving them again. The reachable closure keeps what each function body's scan found as a unit record, described in `src/resolve/README.md`. See the extractor package's README for the design.
+
+## Keeping a project between runs
+
+The MCP server reads a project again after every edit, and it keeps one adapter per project rather than building one per run. Before each run it calls `refresh`, which stats every file the project has loaded, compares a file whose stamp moved with the text ts-morph parsed, and parses again only the files whose text changed. The compiler builds the next program from the old one, so every other file keeps its parse and its binding.
+
+What was worked out from a changed file goes with it. The load walk forgets the file's imports and the chain depth of every file that reaches it, and every memo made with `createProgramMemo` is emptied, since a memo like that can rest on any file. A result that depends on one file's text alone uses `createPerFileCache`, which expires when that file is parsed again.
+
+A file that joins or leaves the tsconfig's include set can change where an unchanged file's imports resolve, and a tsconfig edit changes the compiler options. In either case the adapter starts over with a new `Project`, and the run costs what a run with a warm disk cache costs.
+
+A run served whole from the cache loads nothing, so `loadProgram` loads the walked files and builds the program ahead of time. The server calls it after a build while nobody is waiting.
 
 ## Status
 
-Stable. Public API: `createTypeScriptAdapter` returns an adapter with `extractFromFiles` and `extractAll` methods. Provider-side extraction (handlers, terminals, contracts, body shapes) and client-side extraction (call sites, response field tracking) are both supported. See [`docs/theory/extraction-algorithm.md`](../../../docs/theory/extraction-algorithm.md) for the algorithm and [`design/status.md`](../../../design/status.md) for the capability matrix.
+Stable. Public API: `createTypeScriptAdapter` returns an adapter with `extractFromFiles` and `extractAll` methods, and `refresh` and `loadProgram` for a process that keeps it between runs. Provider-side extraction (handlers, terminals, contracts, body shapes) and client-side extraction (call sites, response field tracking) are both supported. See [`docs/theory/extraction-algorithm.md`](../../../docs/theory/extraction-algorithm.md) for the algorithm and [`design/status.md`](../../../design/status.md) for the capability matrix.
 
 ## More
 
