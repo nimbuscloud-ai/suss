@@ -75,7 +75,7 @@ An interactive run ends with one line on stderr when a newer suss is on the regi
 
 suss runs with a V8 heap limit of 8 GB. Node picks a smaller limit from the machine's memory, about 4 GB on a 16 GB machine, and extracting a large TypeScript service with every pack `suss init` suggests can use more than that. Under Node's limit such a run stops partway with "JavaScript heap out of memory".
 
-The limit is a ceiling on growth, so a small project uses no more memory than it would under Node's default. A large one can use more, because V8 collects garbage less often when it has room to grow. On a machine or container with less than about 11 GB, suss keeps the limit to three quarters of the memory there. A run that outgrows it then stops with V8's heap error, and the operating system does not have to kill it.
+The limit is a ceiling on growth, so a small project uses no more memory than it would under Node's default. A large one uses more, because V8 lets the heap grow before it collects garbage instead of collecting over and over near a lower limit. On a NestJS service of about 7,000 units with eleven packs, peak memory went from 4.7 GB to 6.2 GB, and the run got faster. If memory matters more than time on a large project, set a lower size as shown below. On a machine or container with less than about 11 GB, suss keeps the limit to three quarters of the memory there. A run that outgrows it then stops with V8's heap error, and the operating system does not have to kill it.
 
 To choose the size yourself, put it in `NODE_OPTIONS`. suss leaves a size set there alone, whether it is larger or smaller than its own:
 
