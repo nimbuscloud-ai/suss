@@ -63,4 +63,4 @@ The plain run continues with a `.sussignore` sketch and a note on running it in 
 
 ## Exit code
 
-`0`, always. Declining every question, cancelling, and a failed install all end the same way; a failed install prints what npm said and leaves you the command to retry. [Exit codes](/reference/cli/exit-codes) has the rest.
+`0`, unless you pass a flag `init` does not take, which exits `1`. Declining every question, cancelling, and a failed install all end the same way; a failed install prints what npm said and leaves you the command to retry. [Exit codes](/reference/cli/exit-codes) has the rest.

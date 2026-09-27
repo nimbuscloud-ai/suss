@@ -1350,7 +1350,7 @@ export function inspect(options: InspectOptions): void {
   const filePath = path.resolve(options.file);
 
   if (!fs.existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}`);
+    throw new UsageError(`File not found: ${filePath}`);
   }
 
   const content = fs.readFileSync(filePath, "utf-8");

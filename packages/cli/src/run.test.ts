@@ -273,6 +273,35 @@ describe("runCli top-level dispatch", () => {
     expect(io.stderr).toContain("nope");
   });
 
+  it("rejects a flag the command does not take, for every command", async () => {
+    const misspelled = [
+      ["init", "--plian"],
+      ["init", tmpDir, "-x"],
+      ["extract", "--bogus"],
+      ["inspect", "--bogus"],
+      ["inspect", "summaries.json", "-x"],
+      ["inspect", "--dir", tmpDir, "-q"],
+      ["inspect", "--diff", "a.json", "b.json", "-z"],
+      ["inspect", "--flow", "GET /orders", "--bogus"],
+      ["check", "--bogus"],
+      ["ask", "--bogus"],
+      ["contract", "--bogus"],
+      ["corroborate", "--bogus"],
+      ["infer", "stub", "--bogus"],
+      ["infer", "intent", "--bogus"],
+      ["infer", "prd", "--bogus"],
+      ["intent", "outcomes", "--bogus"],
+      ["intent", "check", "--bogus"],
+      ["intent", "keep", "--bogus"],
+    ];
+    for (const argv of misspelled) {
+      const flag = argv[argv.length - 1];
+      const { exit, io } = await capture(() => runCli(argv));
+      expect(exit, argv.join(" ")).toBe(1);
+      expect(io.stderr, argv.join(" ")).toContain(`Unknown option '${flag}'`);
+    }
+  });
+
   it("turns a flag typed without its value into a sentence", async () => {
     const { exit, io } = await capture(() =>
       runCli(["inspect", "--flow", "--dir", tmpDir]),
