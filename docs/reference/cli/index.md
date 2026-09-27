@@ -12,7 +12,7 @@ npm install --save-dev @suss/cli
 ```
 
 ```
-suss init [<directory>] [--plain]
+suss init [<directory>] [--plain | --write [--overwrite]]
 suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <pack>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
 suss inspect [<summaries.json> | --dir <directory>]
 suss inspect --diff <before.json | directory> <after.json | directory>
@@ -38,7 +38,7 @@ In a synopsis, `<...>` marks a required value and `[...]` an optional one.
 
 | Command | Reads | Writes |
 |---|---|---|
-| [`init`](/reference/cli/init) | `package.json`, schemas and deploy templates on disk | The commands to run, and `suss.json` if you accept it |
+| [`init`](/reference/cli/init) | `package.json`, schemas and deploy templates on disk | The commands to run, and `suss.json` if you accept it or pass `--write` |
 | [`extract`](/reference/cli/extract) | TypeScript, Python or Ruby source, through the packs you name | Summary JSON |
 | [`contract`](/reference/cli/contract) | One of ten declared sources: an OpenAPI document, a deploy template, a database schema, and so on | Summary JSON, the same structure `extract` writes |
 | [`check`](/reference/cli/check) | Summary files, and optionally a folder of intent docs | Findings, as text or JSON |

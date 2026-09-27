@@ -399,6 +399,103 @@ describe("suss init, guided", () => {
     expect(fs.existsSync(path.join(dir, ".sussignore.json"))).toBe(false);
   });
 
+  describe("with --write", () => {
+    async function printedBy(run: () => Promise<number>): Promise<string> {
+      const written: string[] = [];
+      const spy = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation((chunk) => {
+          written.push(String(chunk));
+          return true;
+        });
+      try {
+        expect(await run()).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+      return written.join("");
+    }
+
+    function projectFile(): { read: Array<Record<string, unknown>> } {
+      return JSON.parse(fs.readFileSync(path.join(dir, "suss.json"), "utf8"));
+    }
+
+    it("prints the commands, then writes suss.json without asking", async () => {
+      project(".", "api", ["hono"]);
+
+      const text = await printedBy(() => initInteractive({ dir, write: true }));
+
+      expect(text).toContain("suss extract -f hono");
+      expect(text).toContain("Wrote suss.json");
+      expect(shown).toEqual([]);
+      expect(projectFile().read).toContainEqual(
+        expect.objectContaining({
+          kind: "extract",
+          packs: expect.arrayContaining(["hono"]),
+        }),
+      );
+    });
+
+    it("leaves a suss.json that is already there alone, and says so", async () => {
+      project(".", "api", ["hono"]);
+      write("suss.json", '{ "version": 1, "read": [] }\n');
+
+      const text = await printedBy(() => initInteractive({ dir, write: true }));
+
+      expect(text).toContain("suss.json is already here");
+      expect(text).toContain("--overwrite");
+      expect(fs.readFileSync(path.join(dir, "suss.json"), "utf8")).toBe(
+        '{ "version": 1, "read": [] }\n',
+      );
+    });
+
+    it("replaces that suss.json when --overwrite asks it to", async () => {
+      project(".", "api", ["hono"]);
+      write("suss.json", '{ "version": 1, "read": [] }\n');
+
+      await printedBy(() =>
+        initInteractive({ dir, write: true, overwrite: true }),
+      );
+
+      expect(projectFile().read).toHaveLength(1);
+    });
+
+    it("writes nothing when nothing matched a pack", async () => {
+      project(".", "empty", []);
+
+      const text = await printedBy(() => initInteractive({ dir, write: true }));
+
+      expect(text).toContain("init wrote nothing");
+      expect(fs.existsSync(path.join(dir, "suss.json"))).toBe(false);
+    });
+
+    it("writes one suss.json for every package in a workspace, with each contract's path from the root", async () => {
+      write(
+        "package.json",
+        JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
+      );
+      project("packages/api", "@acme/api", ["hono"]);
+      write("packages/api/openapi.yaml", "openapi: 3.0.0\npaths: {}\n");
+      project("packages/web", "@acme/web", ["@apollo/client"]);
+
+      await printedBy(() => initInteractive({ dir, write: true }));
+
+      const read = projectFile().read;
+      expect(read).toContainEqual({
+        kind: "contract",
+        from: "openapi",
+        file: path.join("packages", "api", "openapi.yaml"),
+      });
+      const packs = read
+        .filter((entry) => entry.kind === "extract")
+        .map((entry) => entry.packs);
+      expect(packs).toEqual([
+        expect.arrayContaining(["hono"]),
+        expect.arrayContaining(["apollo-client"]),
+      ]);
+    });
+  });
+
   describe("without a terminal", () => {
     it("prints the commands instead of asking", async () => {
       project(".", "api", ["hono"]);

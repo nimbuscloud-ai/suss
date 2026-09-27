@@ -44,14 +44,21 @@ export interface ProjectFile {
   read: Array<ExtractEntry | ContractEntry>;
 }
 
-/** The file to write for what init found, or null when it found nothing. */
-export function projectFileFor(report: InitReport): ProjectFile | null {
+/**
+ * The file to write for what init found, or null when it found nothing.
+ * `directory` is where the project is, relative to the root the file is
+ * written at, and goes in front of each contract's path.
+ */
+export function projectFileFor(
+  report: InitReport,
+  directory = ".",
+): ProjectFile | null {
   const contracts: ContractEntry[] = report.suggestions
     .filter((one) => one.kind === "contract" && one.file !== undefined)
     .map((one) => ({
       kind: "contract",
       from: one.name,
-      file: one.file as string,
+      file: path.join(directory, one.file as string),
     }));
 
   const byLanguage = new Map<string, string[]>();

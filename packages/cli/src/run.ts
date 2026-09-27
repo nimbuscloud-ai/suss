@@ -55,7 +55,7 @@ import type { ProjectReadReport, ReadEntry } from "./projectRead.js";
 
 export const USAGE = `
 Usage:
-  suss init [directory] [--plain]
+  suss init [directory] [--plain | --write [--overwrite]]
   suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <framework>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss extract --out-dir <directory> [--dir <project>]
   suss inspect [<summaries.json> | --dir <directory>]
@@ -78,8 +78,7 @@ Usage:
 
 Commands:
   init      Work out which packs this project needs and offer to set them up.
-            --plain prints the commands instead of asking. Piped or in CI,
-            it prints either way.
+            Piped or in CI, it prints the commands instead of asking.
   extract   Read your source and describe what each boundary does.
             Without -f, it reads the packs from suss.json, or picks the
             ones init would when there is no file.
@@ -114,6 +113,13 @@ Commands:
             and after, and says which entries are done and which
             changes nobody asked for. "intent keep" writes a change
             list's entries as boundary intent documents.
+
+Options (init):
+  --plain          Print the commands instead of asking, even in a terminal
+  --write          Print the commands, then write suss.json without asking,
+                   so an agent can finish setting a project up. A suss.json
+                   that is already there is left alone.
+  --overwrite      With --write, replace a suss.json that is already there
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -444,14 +450,23 @@ async function runInit(args: string[]): Promise<number> {
     args,
     options: {
       plain: { type: "boolean" },
+      write: { type: "boolean" },
+      overwrite: { type: "boolean" },
     },
     allowPositionals: true,
   });
+  if (values.overwrite === true && values.write !== true) {
+    throw new UsageError(
+      `--overwrite replaces a ${PROJECT_FILE} that --write would leave alone, so it needs --write. Try: suss init --write --overwrite`,
+    );
+  }
 
   const dir = positionals[0];
   return await initInteractive({
     ...(dir !== undefined ? { dir } : {}),
     ...(values.plain === true ? { plain: true } : {}),
+    ...(values.write === true ? { write: true } : {}),
+    ...(values.overwrite === true ? { overwrite: true } : {}),
   });
 }
 

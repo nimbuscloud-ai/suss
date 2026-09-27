@@ -1380,6 +1380,32 @@ describe("runCli contract", () => {
   });
 });
 
+describe("runCli init", () => {
+  it("writes suss.json without asking when given --write", async () => {
+    projectWithNothingToRead(tmpDir);
+    const { exit, io } = await capture(() =>
+      runCli(["init", tmpDir, "--write"]),
+    );
+
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain("Wrote suss.json");
+    const written = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, "suss.json"), "utf8"),
+    ) as { read: Array<{ kind: string; packs?: string[] }> };
+    expect(written.read[0]?.packs).toContain("express");
+  });
+
+  it("refuses --overwrite without --write, which is the only thing it changes", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["init", tmpDir, "--overwrite"]),
+    );
+
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("needs --write");
+    expect(fs.existsSync(path.join(tmpDir, "suss.json"))).toBe(false);
+  });
+});
+
 describe("runCli infer", () => {
   it("asks for an artifact kind and rejects unknown ones", async () => {
     const bare = await capture(() => runCli(["infer"]));
