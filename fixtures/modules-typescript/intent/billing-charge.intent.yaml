@@ -1,0 +1,23 @@
+kind: boundary
+
+name: billing-charge
+purpose: Charge the account behind an invoice and record the invoice as charged.
+audience: the checkout flow
+source: author
+
+boundary:
+  semantics: function-call
+  module: billing
+  exportName: chargeInvoice
+
+transitions:
+  - id: declined
+    when: no account matches the invoice
+    throws:
+      errorType: CardDeclined
+
+  - id: charged
+    when: the account is charged
+    returns: {}
+    results:
+      - writes: postgresql:accounts
