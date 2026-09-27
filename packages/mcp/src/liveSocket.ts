@@ -14,6 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -386,19 +387,16 @@ const NOBODY_LISTENING = new Set(["ECONNREFUSED", "ENOENT", "ENOTSOCK"]);
  * connection is alive, whether or not it replies in time, so a connect
  * that neither succeeds nor fails within the wait counts as alive too.
  */
-function nobodyAccepts(socketPath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = net.connect(socketPath);
-    const done = (gone: boolean): void => {
-      socket.destroy();
-      resolve(gone);
-    };
-    socket.setTimeout(2000, () => done(false));
-    socket.on("connect", () => done(false));
-    socket.on("error", (error: NodeJS.ErrnoException) =>
-      done(NOBODY_LISTENING.has(error.code ?? "")),
-    );
-  });
+async function nobodyAccepts(socketPath: string): Promise<boolean> {
+  const socket = net.connect(socketPath);
+  try {
+    await once(socket, "connect", { signal: AbortSignal.timeout(2000) });
+    return false;
+  } catch (error) {
+    return NOBODY_LISTENING.has((error as NodeJS.ErrnoException).code ?? "");
+  } finally {
+    socket.destroy();
+  }
 }
 
 function request(
