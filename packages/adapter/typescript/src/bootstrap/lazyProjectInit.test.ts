@@ -5,7 +5,13 @@ import path from "node:path";
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { createLazyProject, lazyAddSourceFile } from "./lazyProjectInit.js";
+import {
+  createLazyProject,
+  importedFilePathsOf,
+  lazyAddSourceFile,
+  loadImportGraphsDepthFirstFromPaths,
+  rememberResolvedImports,
+} from "./lazyProjectInit.js";
 
 import type { PatternPack } from "@suss/extractor";
 
@@ -319,5 +325,26 @@ describe("lazyAddSourceFile", () => {
     const added = lazyAddSourceFile(project, result.projectFileSet, helperPath);
     expect(added).not.toBeNull();
     expect(added?.getFilePath()).toBe(helperPath);
+  });
+});
+
+describe("rememberResolvedImports", () => {
+  it("has the load walk follow the imports an earlier run resolved", async () => {
+    const { tsconfigPath, dir } = await makeTempProject({
+      "orders.ts": "export const orders = 1;",
+      "totals.ts": "export const totals = 2;",
+    });
+    const project = new Project({
+      tsConfigFilePath: tsconfigPath,
+      skipAddingFilesFromTsConfig: true,
+    });
+    const ordersPath = path.join(dir, "orders.ts");
+    const totalsPath = path.join(dir, "totals.ts");
+    // orders.ts imports nothing, so only the remembered list can load totals.ts.
+    rememberResolvedImports(project, new Map([[ordersPath, [totalsPath]]]));
+
+    loadImportGraphsDepthFirstFromPaths(project, [ordersPath]);
+    expect(importedFilePathsOf(project, ordersPath)).toEqual([totalsPath]);
+    expect(project.getSourceFile(totalsPath)).toBeDefined();
   });
 });

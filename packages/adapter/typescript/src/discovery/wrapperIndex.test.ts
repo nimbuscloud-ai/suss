@@ -216,6 +216,19 @@ function summaryNamed(
   return summary as BehavioralSummary;
 }
 
+/** The wrapper a factory returns shares the factory's name, so its line tells the two apart. */
+function summaryNamedAt(
+  summaries: BehavioralSummary[],
+  name: string,
+  line: number,
+): BehavioralSummary {
+  const summary = summaries.find(
+    (one) => one.identity.name === name && one.location.range.start === line,
+  );
+  expect(summary, `no summary named ${name} at line ${line}`).toBeDefined();
+  return summary as BehavioralSummary;
+}
+
 describe("wrapper registrations, end to end", () => {
   it("records middleware written in the same file as the route", async () => {
     const project = createTestProject();
@@ -548,7 +561,9 @@ describe("wrapper registrations, end to end", () => {
     expect(wrappersOf(summaries, "/orders")).toEqual([
       { file: "/requireCaller.ts", name: "requireCaller", line: 3 },
     ]);
-    expect(statusesOf(summaryNamed(summaries, "requireCaller"))).toEqual([401]);
+    expect(statusesOf(summaryNamedAt(summaries, "requireCaller", 3))).toEqual([
+      401,
+    ]);
     expect(unfollowedOn(summaries, "/orders")).toEqual([]);
   });
 
@@ -954,7 +969,9 @@ describe("wrapper registrations, end to end", () => {
         { file: "/mw.ts", name: "requireCaller", line: 3, scope: "/v1/*" },
       ]);
     }
-    expect(statusesOf(summaryNamed(summaries, "requireCaller"))).toEqual([401]);
+    expect(statusesOf(summaryNamedAt(summaries, "requireCaller", 3))).toEqual([
+      401,
+    ]);
   });
 
   it("leaves a mount alone, since the mounted value is a router and not a function", async () => {

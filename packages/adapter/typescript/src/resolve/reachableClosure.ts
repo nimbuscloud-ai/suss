@@ -44,7 +44,19 @@ import {
 } from "../depTracking.js";
 import { functionValuesOf } from "../discovery/resolveValue.js";
 import { isModuleScopeStop } from "../walk/descent.js";
-import { offsetKeyFor, offsetKeyOf } from "../walk/nodeKeys.js";
+import {
+  fileOfOffsetKey,
+  offsetKeyFor,
+  offsetKeyOf,
+  spanOfOffsetKey,
+} from "../walk/nodeKeys.js";
+import {
+  fromScanRecord,
+  type RecordedScan,
+  recordValidFrom,
+  type ScanFindings,
+  type ScanRecord,
+} from "./closureRecords.js";
 import {
   functionAmong,
   functionTargetOf,
@@ -68,6 +80,7 @@ import type {
   InvocationRecognizer,
   PatternPack,
   TerminalPattern,
+  UnitRecord,
 } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { DiscoveredUnit } from "../discovery/index.js";
@@ -88,6 +101,13 @@ export interface ClosureFacts {
    * dependencies of every entry that reaches the function.
    */
   filesByKey?: Map<string, Set<string>>;
+  /**
+   * What an earlier run's scans found, for bodies whose file and
+   * recorded files are unchanged. A body found here is not scanned.
+   */
+  previousScans?: ReadonlyMap<string, UnitRecord<ScanRecord>>;
+  /** When present, the closure puts what each body's scan found here. */
+  scans?: Map<string, RecordedScan>;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +229,9 @@ function resolveCallee(
     Node.isPropertyAccessExpression(callee) &&
     declarations.some(isDeclaredShape)
   ) {
+    if (scan.sourcesAsked !== undefined) {
+      scan.sourcesAsked.asked = true;
+    }
     const sources = resolveSources(callee, scan.reachedFrom);
     const only = sources.length === 1 ? sources[0] : undefined;
     const resolved = only === undefined ? null : resolveDecl(only, calleeName);
@@ -437,27 +460,8 @@ interface ScanContext {
   sourceDeclarationsBehind?: (declaration: Node) => Node[];
   reachedFrom?: SourceFile;
   scanning?: FunctionRoot;
-}
-
-/**
- * Everything one pass over a body found: edges to walk, stops, where
- * each callee the body writes is declared, where an argument that is
- * itself a project function is declared (by callee text and its
- * position in that call), calls made through one of this body's own
- * parameters, and the (callee, position) pairs this body passes a
- * function into. A callee or argument text the body resolved to two
- * different declarations is left out of `targets`/`argTargets`.
- */
-interface ScanResult {
-  readonly candidates: ReachableCandidate[];
-  readonly stops: UnfollowedCall[];
-  readonly targets: ReadonlyMap<string, CallTarget>;
-  readonly argTargets: ReadonlyMap<string, ReadonlyMap<number, CallTarget>>;
-  readonly parameterCalls: ReadonlyArray<{
-    callee: string;
-    parameterIndex: number;
-  }>;
-  readonly passedPositions: ReadonlySet<string>;
+  /** Set once the scan asks which class a declared shape was given. */
+  sourcesAsked?: { asked: boolean };
 }
 
 /** The key a (callee function, parameter position) pair is tracked under. */
@@ -516,12 +520,12 @@ interface FoundCall {
   outcome: CallOutcome;
 }
 
-function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
+function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
   const atModuleScope = Node.isSourceFile(root);
   const inFunc: ScanContext = atModuleScope
     ? { ...scan }
     : { ...scan, scanning: root };
-  const candidates: ReachableCandidate[] = [];
+  const calls: Array<{ key: string; name: string; func: FunctionRoot }> = [];
   const stops: UnfollowedCall[] = [];
   const placements = new TargetPlacements();
   const parameterCalls: Array<{ callee: string; parameterIndex: number }> = [];
@@ -543,7 +547,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
       return;
     }
     seen.add(key);
-    candidates.push(outcome.candidate);
+    calls.push({ key, ...outcome.candidate });
   };
 
   // An identifier argument that is a project function is reachable the
@@ -628,7 +632,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
   }
 
   return {
-    candidates,
+    calls,
     stops,
     targets: placements.targets,
     argTargets: placements.argTargets,
@@ -820,7 +824,10 @@ export function expandReachableClosure(
   // relations persist there for downstream rule passes (boundary
   // effects); otherwise they live and die locally.
   const db = facts?.db ?? new Database();
-  const functionByKey = new Map<string, ReachableCandidate>();
+  // A function reached through an earlier run's record has a name and a
+  // key but no node until something needs its body.
+  const nameByKey = new Map<string, string>();
+  const funcByKey = new Map<string, FunctionRoot>();
   // Module scope has no function node, so the file itself is the root
   // and the key is its extent rather than any declaration's.
   const moduleByKey = new Map<string, SourceFile>();
@@ -848,15 +855,25 @@ export function expandReachableClosure(
 
   // The file a function was reached from, which is where whoever called
   // it built the dependencies it works through.
-  const reachedFrom = new Map<string, SourceFile>();
-  const storeAnswers = new Map<Node, StoreAnswer>();
+  const reachedFrom = new Map<string, string>();
+  const finding: FindingContext = {
+    project,
+    lookup,
+    facts,
+    recognizers,
+    storeAnswers: new Map<Node, StoreAnswer>(),
+    funcByKey,
+    moduleByKey,
+    reachedFrom,
+  };
 
   for (const seed of seeds) {
     const func = lookup.functionAt(seed.location);
     if (func !== null) {
       const key = nodeKey(func);
       seedKeys.add(key);
-      functionByKey.set(key, { func, name: seed.identity.name });
+      nameByKey.set(key, seed.identity.name);
+      funcByKey.set(key, func);
       facts?.unitKeyBySummary.set(seed, key);
       rememberSummary(summariesByKey, key, seed);
       db.add("entry", [key]);
@@ -881,24 +898,17 @@ export function expandReachableClosure(
   // recognizer pack still describes the functions its effects live in.
   for (const root of extraRoots) {
     const key = nodeKey(root.func);
-    if (!functionByKey.has(key)) {
-      functionByKey.set(key, root);
+    if (!nameByKey.has(key)) {
+      nameByKey.set(key, root.name);
+      funcByKey.set(key, root.func);
     }
     db.add("entry", [key]);
   }
 
   // Units whose summaries a partial run serves from the cache: still
-  // scanned through for reachability, but reaching one emits nothing,
+  // walked through for reachability, but reaching one emits nothing,
   // since its summary already exists with its gaps on it.
-  const knownKeys = new Set<string>();
-  for (const summary of alreadySummarized) {
-    const func = lookup.functionAt(summary.location);
-    if (func !== null) {
-      const key = nodeKey(func);
-      knownKeys.add(key);
-      facts?.unitKeyBySummary.set(summary, key);
-    }
-  }
+  const known = knownUnits(alreadySummarized, lookup, facts);
 
   for (;;) {
     evaluate(db, REACHABLE_RULES);
@@ -911,52 +921,33 @@ export function expandReachableClosure(
     }
     for (const key of frontier) {
       scanned.add(key);
-      const root: ScanRoot | undefined =
-        functionByKey.get(key)?.func ?? moduleByKey.get(key);
-      if (root === undefined) {
+      const found = findingsFor(key, finding);
+      if (found === null) {
         continue;
       }
-      const cameFrom = reachedFrom.get(key);
-      const scan: ScanContext = {
-        ...(recognizers.resolution === undefined
-          ? {}
-          : { resolution: recognizers.resolution, storeAnswers }),
-        ...(recognizers.resolveCallableSources === undefined
-          ? {}
-          : { resolveCallableSources: recognizers.resolveCallableSources }),
-        ...(recognizers.sourceDeclarationsBehind === undefined
-          ? {}
-          : { sourceDeclarationsBehind: recognizers.sourceDeclarationsBehind }),
-        ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
-      };
-      const {
-        candidates,
-        stops,
-        targets,
-        argTargets,
-        parameterCalls,
-        passedPositions: scanPassedPositions,
-      } = scanWithRecording(key, facts, () => collectReachable(root, scan));
-      if (stops.length > 0) {
-        stopsByKey.set(key, stops);
+      if (found.stops.length > 0) {
+        stopsByKey.set(key, found.stops);
       }
-      targetsByKey.set(key, targets);
-      argTargetsByKey.set(key, argTargets);
-      if (parameterCalls.length > 0) {
-        parameterCallsByKey.set(key, parameterCalls);
+      targetsByKey.set(key, found.targets);
+      argTargetsByKey.set(key, found.argTargets);
+      if (found.parameterCalls.length > 0) {
+        parameterCallsByKey.set(key, found.parameterCalls);
       }
-      for (const position of scanPassedPositions) {
+      for (const position of found.passedPositions) {
         passedPositions.add(position);
       }
-      for (const candidate of candidates) {
-        const calleeKey = nodeKey(candidate.func);
-        if (!functionByKey.has(calleeKey)) {
-          functionByKey.set(calleeKey, candidate);
+      const callerFile = fileOfOffsetKey(key);
+      for (const call of found.calls) {
+        if (!nameByKey.has(call.key)) {
+          nameByKey.set(call.key, call.name);
         }
-        if (!reachedFrom.has(calleeKey)) {
-          reachedFrom.set(calleeKey, root.getSourceFile());
+        if (call.func !== undefined && !funcByKey.has(call.key)) {
+          funcByKey.set(call.key, call.func);
         }
-        db.add("calls", [key, calleeKey]);
+        if (callerFile !== null && !reachedFrom.has(call.key)) {
+          reachedFrom.set(call.key, callerFile);
+        }
+        db.add("calls", [key, call.key]);
       }
     }
   }
@@ -966,28 +957,26 @@ export function expandReachableClosure(
   const reached: BehavioralSummary[] = [];
   for (const [keyAtom] of db.facts("reachable")) {
     const key = String(keyAtom);
-    if (seedKeys.has(key) || knownKeys.has(key)) {
+    if (known.has(key) || seedKeys.has(key)) {
       continue;
     }
-    const candidate = functionByKey.get(key);
-    if (candidate === undefined) {
+    const name = nameByKey.get(key);
+    const file = fileOfOffsetKey(key);
+    if (name === undefined || file === null) {
       continue;
     }
-    // Lazy-add: ts-morph's symbol resolution loaded the candidate's
-    // source file into the underlying program but didn't register it
-    // with the project's source-file tracker. Without an explicit
-    // add, downstream passes (rethrow enrichment, partial-hit
-    // closure dedup) can't find the file via project.getSourceFiles().
-    // Guarded by projectFileSet so we never pollute the project with
-    // paths outside the tsconfig include.
+    // Symbol resolution loads a callee's file into the program without
+    // registering it, and later passes find files through the project.
+    // The include set keeps node_modules out.
     if (projectFileSet !== undefined) {
-      lazyAddSourceFile(
-        project,
-        projectFileSet,
-        candidate.func.getSourceFile().getFilePath(),
-      );
+      lazyAddSourceFile(project, projectFileSet, file);
     }
-    const summary = scanWithRecording(key, facts, () =>
+    const func = funcByKey.get(key) ?? functionAtKey(key, lookup);
+    if (func === undefined) {
+      continue;
+    }
+    const candidate: ReachableCandidate = { func, name };
+    const { result: summary } = scanWithRecording(key, facts, () =>
       extractReachableSummary(candidate, options, recognizers),
     );
     facts?.unitKeyBySummary.set(summary, key);
@@ -1010,6 +999,137 @@ export function expandReachableClosure(
 }
 
 /**
+ * Which reached functions a summary the cache serves already describes.
+ * Finding a summary's function indexes every function in its file, so a
+ * file's summaries are looked up once the walk reaches a function there,
+ * and a partial run reads the files it walks through instead of every
+ * file the cache serves. Each summary looked up gets its unit key.
+ */
+function knownUnits(
+  summaries: readonly BehavioralSummary[],
+  lookup: SourceFileLookup,
+  facts: ClosureFacts | undefined,
+): { has(key: string): boolean } {
+  const pendingByFile = new Map<string, BehavioralSummary[]>();
+  for (const summary of summaries) {
+    const file = lookup.bySuffix(summary.location.file)?.getFilePath();
+    if (file === undefined) {
+      continue;
+    }
+    const bucket = pendingByFile.get(file) ?? [];
+    bucket.push(summary);
+    pendingByFile.set(file, bucket);
+  }
+
+  const keys = new Set<string>();
+  const lookUpFile = (file: string): void => {
+    for (const summary of pendingByFile.get(file) ?? []) {
+      const func = lookup.functionAt(summary.location);
+      if (func !== null) {
+        const key = nodeKey(func);
+        keys.add(key);
+        facts?.unitKeyBySummary.set(summary, key);
+      }
+    }
+    pendingByFile.delete(file);
+  };
+  return {
+    has(key: string): boolean {
+      const file = fileOfOffsetKey(key);
+      if (file !== null && pendingByFile.has(file)) {
+        lookUpFile(file);
+      }
+      return keys.has(key);
+    },
+  };
+}
+
+/** What the frontier loop needs to find what one body calls. */
+interface FindingContext {
+  project: Project;
+  lookup: SourceFileLookup;
+  facts: ClosureFacts | undefined;
+  recognizers: ClosureRecognizers;
+  /** What the store said about each callee declaration, for the whole walk. */
+  storeAnswers: Map<Node, StoreAnswer>;
+  funcByKey: ReadonlyMap<string, FunctionRoot>;
+  moduleByKey: ReadonlyMap<string, SourceFile>;
+  reachedFrom: ReadonlyMap<string, string>;
+}
+
+/**
+ * What one body calls. An earlier run's record serves when the cache
+ * kept it and the body was reached from the same file; otherwise the
+ * body is scanned. Null when the body cannot be found.
+ */
+function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
+  const cameFrom = ctx.reachedFrom.get(key);
+  const stored = ctx.facts?.previousScans?.get(key);
+  const recorded =
+    stored !== undefined && recordValidFrom(stored.data, cameFrom)
+      ? fromScanRecord(stored)
+      : null;
+  if (stored !== undefined && recorded !== null) {
+    ctx.facts?.scans?.set(key, { kind: "reused", unit: stored });
+    noteFilesRead(key, ctx.facts, stored.deps);
+    return recorded;
+  }
+
+  const root: ScanRoot | undefined =
+    ctx.funcByKey.get(key) ??
+    ctx.moduleByKey.get(key) ??
+    functionAtKey(key, ctx.lookup);
+  if (root === undefined) {
+    return null;
+  }
+
+  const { resolution, resolveCallableSources, sourceDeclarationsBehind } =
+    ctx.recognizers;
+  const reachedFrom =
+    cameFrom === undefined
+      ? undefined
+      : (ctx.lookup.byPath(cameFrom) ?? ctx.project.getSourceFile(cameFrom));
+  const sourcesAsked = { asked: false };
+  const scan: ScanContext = {
+    ...(resolution === undefined
+      ? {}
+      : { resolution, storeAnswers: ctx.storeAnswers }),
+    ...(resolveCallableSources === undefined
+      ? {}
+      : { resolveCallableSources, sourcesAsked }),
+    ...(sourceDeclarationsBehind === undefined
+      ? {}
+      : { sourceDeclarationsBehind }),
+    ...(reachedFrom === undefined ? {} : { reachedFrom }),
+  };
+  const { result, read } = scanWithRecording(key, ctx.facts, () =>
+    collectReachable(root, scan),
+  );
+  ctx.facts?.scans?.set(key, {
+    kind: "fresh",
+    findings: result,
+    from: sourcesAsked.asked ? (cameFrom ?? null) : undefined,
+    read,
+  });
+  return result;
+}
+
+/** The function a key was minted from, found in its file by offsets. */
+function functionAtKey(
+  key: string,
+  lookup: SourceFileLookup,
+): FunctionRoot | undefined {
+  const file = fileOfOffsetKey(key);
+  const span = spanOfOffsetKey(key);
+  if (file === null || span === null) {
+    return undefined;
+  }
+  return lookup.functionWithSpan(file, span) ?? undefined;
+}
+
+const NOTHING_READ: ReadonlySet<string> = new Set();
+
+/**
  * Collect the files a scan read into the shared facts, per scanned
  * function, when a caller asked for them. With nobody collecting, the
  * scan runs bare and costs nothing extra.
@@ -1018,19 +1138,30 @@ function scanWithRecording<T>(
   key: string,
   facts: ClosureFacts | undefined,
   fn: () => T,
-): T {
-  const filesByKey = facts?.filesByKey;
-  if (filesByKey === undefined) {
-    return fn();
+): { result: T; read: ReadonlySet<string> } {
+  if (facts?.filesByKey === undefined && facts?.scans === undefined) {
+    return { result: fn(), read: NOTHING_READ };
   }
   const sink = createDependencySink();
   const result = withDependencySink(sink, fn);
+  noteFilesRead(key, facts, sink.files);
+  return { result, read: sink.files };
+}
+
+function noteFilesRead(
+  key: string,
+  facts: ClosureFacts | undefined,
+  files: Iterable<string>,
+): void {
+  const filesByKey = facts?.filesByKey;
+  if (filesByKey === undefined) {
+    return;
+  }
   const bucket = filesByKey.get(key) ?? new Set<string>();
-  for (const filePath of sink.files) {
+  for (const filePath of files) {
     bucket.add(filePath);
   }
   filesByKey.set(key, bucket);
-  return result;
 }
 
 function rememberSummary(

@@ -82,9 +82,11 @@ import {
 import {
   createLazyProject,
   type DeepImportGraphs,
+  importedFilePathsOf,
   loadImportGraphsDepthFirst,
   loadImportGraphsDepthFirstFromPaths,
   readTsconfigFileList,
+  rememberResolvedImports,
 } from "./bootstrap/lazyProjectInit.js";
 import { computePackApplicability } from "./bootstrap/preFilter.js";
 import {
@@ -151,6 +153,11 @@ import { moduleSurfacePack, settleTypeScriptModules } from "./moduleSurface.js";
 import { parameterReads } from "./parameterReads.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import { clientBasePath, underBasePath } from "./resolve/clientBasePath.js";
+import {
+  closureUnitRecords,
+  type RecordedScan,
+  type ScanRecord,
+} from "./resolve/closureRecords.js";
 import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
 import {
   type ClosureFacts,
@@ -184,6 +191,7 @@ import {
   isDescentStop,
   NO_BARRIERS,
 } from "./walk/descent.js";
+import { fileOfOffsetKey, offsetKeyOf } from "./walk/nodeKeys.js";
 import {
   expandWorkspacePatterns,
   workspaceExpansionStamp,
@@ -199,6 +207,7 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
+import type { ReachableCandidate } from "./resolve/functionBehind.js";
 import type {
   AnchorCallsOf,
   OriginatesFrom,
@@ -2235,8 +2244,10 @@ export function createTypeScriptAdapter(
             ? path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache")
             : null)),
   );
-  const cache: CacheLayer<TsCacheMeta> =
-    createCacheLayer<TsCacheMeta>(cacheDir);
+  const cache: CacheLayer<TsCacheMeta, ScanRecord> = createCacheLayer<
+    TsCacheMeta,
+    ScanRecord
+  >(cacheDir);
   const packsDigest = `${computeAdapterPacksDigest(
     config.frameworks.map((p) =>
       p.version !== undefined
@@ -2441,6 +2452,11 @@ export function createTypeScriptAdapter(
 
       const summaries: BehavioralSummary[] = [];
 
+      // A file with the same text, in a project with the same files,
+      // imports what it did last time, so the load walk skips resolving it.
+      if (plan !== null) {
+        rememberResolvedImports(project, plan.resolvedImports);
+      }
       const { sourceFiles, deep } = loadRunFiles(
         project,
         candidatePaths,
@@ -2621,13 +2637,27 @@ export function createTypeScriptAdapter(
           },
         ),
       );
+      // A recognizer-only pack's exports are roots owned by their file, the
+      // way a seed is, so a partial run takes them only from re-walked files.
+      const extraRoots =
+        config.includeReachable === false
+          ? []
+          : recognizerOnlyRoots(
+              reused === null ? packsByFile : packsOf(packsByFile, walkList),
+            );
       // Closure needs `projectFileSet` to lazy-add a callee's file as it
       // walks in: symbol resolution alone loads it into the program but
       // leaves it off `getSourceFiles`, which the rethrow lookup uses.
       const closureFacts: ClosureFacts = {
         db: new Database(),
         unitKeyBySummary: new Map(),
-        ...(caching ? { filesByKey: new Map<string, Set<string>>() } : {}),
+        ...(caching
+          ? {
+              filesByKey: new Map<string, Set<string>>(),
+              scans: new Map<string, RecordedScan>(),
+            }
+          : {}),
+        ...(plan === null ? {} : { previousScans: plan.validUnits }),
       };
       const withClosure =
         config.includeReachable !== false
@@ -2653,11 +2683,7 @@ export function createTypeScriptAdapter(
                 // Reached units the cache already serves emit nothing,
                 // the way a cold run's seeds do not.
                 reused?.summaries ?? [],
-                // A recognizer-only pack's effects need a function to
-                // live on even when nothing discovers units in its
-                // files, so those files' exports join the walk as
-                // roots.
-                recognizerOnlyRoots(packsByFile),
+                extraRoots,
               ),
             )
           : withSubUnits;
@@ -2672,6 +2698,7 @@ export function createTypeScriptAdapter(
                 withClosure.slice(withSubUnits.length),
                 closureFacts,
                 ownersBySummary,
+                extraRoots,
               ),
             )
           : null;
@@ -2721,7 +2748,7 @@ export function createTypeScriptAdapter(
             rootsReused: validRoots.size,
             rootsReextracted: walkList.length,
             rootsDeclined: plan.rootsDeclined,
-            summariesReused: merged.reusedKept.length,
+            summariesReused: merged.reusedOwners.size,
           },
         });
       }
@@ -2743,12 +2770,11 @@ export function createTypeScriptAdapter(
             closureOwnership,
             unitKeyBySummary: closureFacts.unitKeyBySummary,
             filesByKey: closureFacts.filesByKey,
+            scans: closureFacts.scans ?? new Map(),
             packsByFile,
-            reusedKept: merged.reusedKept,
+            // The passes' own additions (markers, schema documents) included.
+            summaries: enriched,
             reusedOwners: merged.reusedOwners,
-            // Everything after the reused prefix, the passes' own
-            // additions (markers, schema documents) included.
-            fresh: enriched.slice(merged.reusedKept.length),
           });
           await cache.write(cacheInput, enriched, attribution);
         } catch {
@@ -2814,6 +2840,15 @@ function mountAssumptionsAgree(
   );
 }
 
+/** The pack applicability map, cut down to these files. */
+function packsOf(
+  packsByFile: ReadonlyMap<SourceFile, PatternPack[]>,
+  files: readonly SourceFile[],
+): Map<SourceFile, PatternPack[]> {
+  const wanted = new Set(files);
+  return new Map([...packsByFile].filter(([file]) => wanted.has(file)));
+}
+
 /**
  * Give each closure-reached summary the owners of every walked file
  * whose seeds reach its function, and return the reachable key set per
@@ -2832,6 +2867,7 @@ function attributeReachedSummaries(
   reached: BehavioralSummary[],
   facts: ClosureFacts,
   owners: Map<BehavioralSummary, Set<string>>,
+  extraRoots: ReadonlyArray<ReachableCandidate>,
 ): ClosureOwnership {
   const adjacency = new Map<string, string[]>();
   for (const [from, to] of facts.db.facts("calls")) {
@@ -2842,16 +2878,25 @@ function attributeReachedSummaries(
   }
 
   const seedKeysByRoot = new Map<string, string[]>();
+  const addSeedKey = (root: string, key: string): void => {
+    const bucket = seedKeysByRoot.get(root) ?? [];
+    bucket.push(key);
+    seedKeysByRoot.set(root, bucket);
+  };
   for (const seed of seeds) {
     const key = facts.unitKeyBySummary.get(seed);
     if (key === undefined) {
       continue;
     }
     for (const root of owners.get(seed) ?? []) {
-      const bucket = seedKeysByRoot.get(root) ?? [];
-      bucket.push(key);
-      seedKeysByRoot.set(root, bucket);
+      addSeedKey(root, key);
     }
+  }
+
+  // Without an owner, what an extra root reaches would be rebuilt on
+  // every partial run, however far away the edit was.
+  for (const root of extraRoots) {
+    addSeedKey(root.func.getSourceFile().getFilePath(), offsetKeyOf(root.func));
   }
 
   const reachableByRoot = new Map<string, Set<string>>();
@@ -2891,15 +2936,6 @@ function attributeReachedSummaries(
 }
 
 /**
- * A unit key is `file:start-end`; everything before the last colon is
- * the file. Null for a key with no colon, which no walk produces.
- */
-function fileOfNodeKey(key: string): string | null {
-  const cut = key.lastIndexOf(":");
-  return cut <= 0 ? null : key.slice(0, cut);
-}
-
-/**
  * The unit a summary describes, spelled from fields that survive the
  * round trip through the manifest. Two runs over an unchanged file
  * spell the same unit the same way, which is what merge dedup needs.
@@ -2917,10 +2953,10 @@ function summaryMergeKey(summary: BehavioralSummary): string {
 }
 
 /**
- * Combine reused summaries with this run's. A fresh copy supersedes a
- * reused one for the same unit (a shared helper reached from both a
- * reused and a re-walked file), and the reused copy's owners fold into
- * the fresh one so the other file's later edits keep it alive.
+ * Combine reused summaries with this run's, in writing order. A fresh copy
+ * supersedes a reused one for the same unit (a shared helper reached from
+ * both a reused and a re-walked file), and the reused copy's owners fold
+ * into the fresh one so the other file's later edits keep it alive.
  */
 function mergeWithReused(
   reused: { summaries: BehavioralSummary[]; owners: string[][] } | null,
@@ -2928,18 +2964,17 @@ function mergeWithReused(
   ownersBySummary: Map<BehavioralSummary, Set<string>>,
 ): {
   summaries: BehavioralSummary[];
-  reusedKept: BehavioralSummary[];
-  reusedOwners: string[][];
+  /** Each reused summary kept, with the files that own it. */
+  reusedOwners: Map<BehavioralSummary, string[]>;
 } {
+  const reusedOwners = new Map<BehavioralSummary, string[]>();
   if (reused === null) {
-    return { summaries: fresh, reusedKept: [], reusedOwners: [] };
+    return { summaries: inWritingOrder(fresh), reusedOwners };
   }
   const freshByKey = new Map<string, BehavioralSummary>();
   for (const summary of fresh) {
     freshByKey.set(summaryMergeKey(summary), summary);
   }
-  const reusedKept: BehavioralSummary[] = [];
-  const reusedOwners: string[][] = [];
   reused.summaries.forEach((summary, i) => {
     const owners = reused.owners[i] ?? [];
     const supersededBy = freshByKey.get(summaryMergeKey(summary));
@@ -2952,10 +2987,63 @@ function mergeWithReused(
       ownersBySummary.set(supersededBy, freshOwners);
       return;
     }
-    reusedKept.push(summary);
-    reusedOwners.push(owners);
+    reusedOwners.set(summary, owners);
   });
-  return { summaries: [...reusedKept, ...fresh], reusedKept, reusedOwners };
+  return {
+    summaries: inWritingOrder([...reusedOwners.keys(), ...fresh]),
+    reusedOwners,
+  };
+}
+
+/**
+ * The order a run writes the summaries it built: by file, then by where
+ * in the file each one starts, then by the unit's spelling. A partial run
+ * builds its list from reused summaries and rebuilt ones, so an order
+ * that followed how the list was built would differ from a cold run's.
+ * The passes after the merge read the list in this order too.
+ */
+function inWritingOrder(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  const keyed = summaries.map(writingOrderKey);
+  keyed.sort(compareWritingOrder);
+  return keyed.map((one) => one.summary);
+}
+
+interface WritingOrderKey {
+  summary: BehavioralSummary;
+  file: string;
+  start: number;
+  end: number;
+  unit: string;
+}
+
+function writingOrderKey(summary: BehavioralSummary): WritingOrderKey {
+  const { location } = summary;
+  return {
+    summary,
+    file: location.file,
+    start: location.span?.start ?? -1,
+    end: location.span?.end ?? -1,
+    unit: summaryMergeKey(summary),
+  };
+}
+
+/** Two summaries of one unit, rare as that is, fall back to their whole text. */
+function compareWritingOrder(a: WritingOrderKey, b: WritingOrderKey): number {
+  if (a.file !== b.file) {
+    return a.file < b.file ? -1 : 1;
+  }
+  if (a.start !== b.start) {
+    return a.start - b.start;
+  }
+  if (a.end !== b.end) {
+    return a.end - b.end;
+  }
+  if (a.unit !== b.unit) {
+    return a.unit < b.unit ? -1 : 1;
+  }
+  const aText = JSON.stringify(a.summary);
+  const bText = JSON.stringify(b.summary);
+  return aText < bText ? -1 : aText > bText ? 1 : 0;
 }
 
 /**
@@ -2986,20 +3074,29 @@ function readsRunLevelJoins(summary: BehavioralSummary): boolean {
  */
 function buildCacheAttribution(args: {
   project: Project;
-  plan: PartialPlan<TsCacheMeta> | null;
+  plan: PartialPlan<TsCacheMeta, ScanRecord> | null;
   validRoots: Set<string>;
   sinkByRoot: Map<string, DependencySink>;
   ownersBySummary: Map<BehavioralSummary, Set<string>>;
   closureOwnership: ClosureOwnership | null;
   unitKeyBySummary: Map<BehavioralSummary, string>;
   filesByKey: Map<string, Set<string>> | undefined;
+  scans: ReadonlyMap<string, RecordedScan>;
   packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>;
-  reusedKept: BehavioralSummary[];
-  reusedOwners: string[][];
-  fresh: BehavioralSummary[];
-}): CacheAttribution<TsCacheMeta> {
+  /** Every summary the write stores, in the order it stores them. */
+  summaries: BehavioralSummary[];
+  reusedOwners: ReadonlyMap<BehavioralSummary, string[]>;
+}): CacheAttribution<TsCacheMeta, ScanRecord> {
+  const fresh = args.summaries.filter(
+    (summary) => !args.reusedOwners.has(summary),
+  );
   const references = createReferenceIndex(
     args.project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
+  );
+  const units = closureUnitRecords(
+    args.scans,
+    args.plan?.validUnits ?? new Map(),
+    references,
   );
   const packNamesByPath = new Map<string, string[]>();
   for (const [sf, packs] of args.packsByFile) {
@@ -3010,7 +3107,7 @@ function buildCacheAttribution(args: {
   }
 
   const summariesByRoot = new Map<string, BehavioralSummary[]>();
-  for (const summary of args.fresh) {
+  for (const summary of fresh) {
     for (const root of args.ownersBySummary.get(summary) ?? []) {
       const bucket = summariesByRoot.get(root) ?? [];
       bucket.push(summary);
@@ -3037,7 +3134,7 @@ function buildCacheAttribution(args: {
     const reachable =
       args.closureOwnership?.reachableByRoot.get(rootPath) ?? [];
     for (const key of reachable) {
-      const keyFile = fileOfNodeKey(key);
+      const keyFile = fileOfOffsetKey(key);
       if (keyFile !== null) {
         deps.add(keyFile);
         // One hop past a reached file covers the types and helpers its
@@ -3058,36 +3155,54 @@ function buildCacheAttribution(args: {
       claims: sink.claims,
       meta: { mountPrefixes: Object.fromEntries(sink.mountPrefixes) },
       packs: packNamesByPath.get(rootPath) ?? [],
+      imports: importedFilePathsOf(args.project, rootPath),
     });
   }
 
+  // A reused file's imports are taken from this run, since a file added
+  // or removed elsewhere can change where they resolve.
   if (args.plan !== null) {
     for (const rootPath of args.validRoots) {
       const record = args.plan.roots.get(rootPath);
       if (record !== undefined) {
-        roots.push(record);
+        roots.push({
+          ...record,
+          imports: importedFilePathsOf(args.project, rootPath),
+        });
       }
     }
   }
 
-  // A reused summary a fresh walk also reaches gains the fresh owners,
-  // so a later edit to either side still re-extracts or serves it.
-  const reusedOwners = args.reusedKept.map((summary, i) => {
-    const combined = new Set(args.reusedOwners[i] ?? []);
-    const key = args.unitKeyBySummary.get(summary);
-    if (key !== undefined) {
-      for (const root of args.closureOwnership?.rootsByKey.get(key) ?? []) {
-        combined.add(root);
-      }
-    }
-    return [...combined];
-  });
+  const owners = args.summaries.map((summary) => ownersOf(summary, args));
+  return { roots, owners, units };
+}
 
-  const owners: string[][] = [
-    ...reusedOwners,
-    ...args.fresh.map((s) => [...(args.ownersBySummary.get(s) ?? [])]),
-  ];
-  return { roots, owners };
+/**
+ * The files a stored summary belongs to. A reused summary a fresh walk
+ * also reaches gains the fresh owners, so a later edit to either side
+ * still re-extracts or serves it.
+ */
+function ownersOf(
+  summary: BehavioralSummary,
+  args: {
+    reusedOwners: ReadonlyMap<BehavioralSummary, string[]>;
+    ownersBySummary: Map<BehavioralSummary, Set<string>>;
+    unitKeyBySummary: Map<BehavioralSummary, string>;
+    closureOwnership: ClosureOwnership | null;
+  },
+): string[] {
+  const reused = args.reusedOwners.get(summary);
+  if (reused === undefined) {
+    return [...(args.ownersBySummary.get(summary) ?? [])];
+  }
+  const combined = new Set(reused);
+  const key = args.unitKeyBySummary.get(summary);
+  for (const root of key === undefined
+    ? []
+    : (args.closureOwnership?.rootsByKey.get(key) ?? [])) {
+    combined.add(root);
+  }
+  return [...combined];
 }
 
 // One summary per callback a framework's runtime schedules out of a
