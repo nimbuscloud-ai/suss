@@ -3031,3 +3031,64 @@ describe("resolveCalledFunction", () => {
     ).toBe("() => { run(); }");
   });
 });
+
+describe("a constructor parameter a decorator supplies", () => {
+  const INJECT_REPOSITORY = { module: "@acme/orm", name: "InjectRepository" };
+
+  /** What the receiver of the `find` call in `/service.ts` is written as. */
+  function writtenReceiver(
+    service: string,
+    suppliers: Array<{ module: string; name: string }>,
+  ): string | undefined {
+    const project = projectOf({
+      "/order.ts": "export class Order {}",
+      "/service.ts": service,
+    });
+    const find = project
+      .getSourceFileOrThrow("/service.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((call) => call.getExpression().getText().endsWith(".find"));
+    const callee = find?.getExpression();
+    if (callee === undefined || !Node.isPropertyAccessExpression(callee)) {
+      throw new Error("No find call on a receiver in /service.ts");
+    }
+    const store = new ResolutionStore([], [], undefined, suppliers);
+    return store.resolveWrittenValue(callee.getExpression())?.getText();
+  }
+
+  const PARAMETER_PROPERTY = `
+    import { InjectRepository } from "@acme/orm";
+    import { Order } from "./order";
+    export class Orders {
+      constructor(@InjectRepository(Order) private readonly orders: any) {}
+      list() { return this.orders.find(); }
+    }
+  `;
+
+  it("reads a parameter property as the decorator's call", () => {
+    expect(writtenReceiver(PARAMETER_PROPERTY, [INJECT_REPOSITORY])).toBe(
+      "InjectRepository(Order)",
+    );
+  });
+
+  it("reads a field assigned from the parameter the same way", () => {
+    expect(
+      writtenReceiver(
+        `
+          import { InjectRepository } from "@acme/orm";
+          import { Order } from "./order";
+          export class Orders {
+            private readonly orders: any;
+            constructor(@InjectRepository(Order) orders: any) { this.orders = orders; }
+            list() { return this.orders.find(); }
+          }
+        `,
+        [INJECT_REPOSITORY],
+      ),
+    ).toBe("InjectRepository(Order)");
+  });
+
+  it("leaves the parameter alone when no pack says the decorator supplies it", () => {
+    expect(writtenReceiver(PARAMETER_PROPERTY, [])).toBeUndefined();
+  });
+});

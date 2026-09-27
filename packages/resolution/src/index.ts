@@ -58,6 +58,7 @@ export {
   type GivesBackOneOfArgument,
   type GivesBackOneOfImport,
   type PackWords,
+  type SuppliesParameter,
   type UnwrapsByName,
 } from "./packWords.js";
 export {
@@ -468,6 +469,21 @@ const STATED_RULES = [
     ],
     "declared wrapper",
   ),
+
+  // A container fills a parameter from the decorator a pack says
+  // supplies it, so the parameter is written as that decorator's call.
+  rule(
+    "hop",
+    [v("p"), v("d"), VALUE_STEP],
+    [
+      lit("decoratedWith", v("p"), v("d")),
+      lit("call", v("d"), v("c")),
+      lit("comesFrom", v("c"), v("m"), v("n")),
+      lit("suppliesParameter", v("m"), v("n")),
+    ],
+    "supplied by a decorator",
+  ),
+
   // Every value but an object written with nothing in it. The demand
   // rewrite refuses negation, so each kind of value gets a rule.
   ...[

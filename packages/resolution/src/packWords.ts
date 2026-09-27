@@ -52,6 +52,12 @@ export interface AssociationConstructor {
   name: string;
 }
 
+/** A parameter decorated with a call of `module`'s `name` takes its value from that call. */
+export interface SuppliesParameter {
+  module: string;
+  name: string;
+}
+
 /** What a run's packs say about their own libraries, in one language-neutral shape. */
 export interface PackWords {
   givesBackOne?: ReadonlyArray<GivesBackOne>;
@@ -62,6 +68,7 @@ export interface PackWords {
   associationConstructor?: ReadonlyArray<AssociationConstructor>;
   /** Methods that hand back the object they are called on, by name. */
   returnsReceiver?: ReadonlyArray<string>;
+  suppliesParameter?: ReadonlyArray<SuppliesParameter>;
 }
 
 /**
@@ -105,5 +112,8 @@ export function addPackWords(db: Database, words: PackWords): void {
   }
   for (const method of (words.returnsReceiver ?? []).flatMap(readOffAnything)) {
     db.add("returnsReceiver", [method]);
+  }
+  for (const word of words.suppliesParameter ?? []) {
+    db.add("suppliesParameter", [word.module, word.name]);
   }
 }

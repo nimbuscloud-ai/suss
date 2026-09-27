@@ -30,7 +30,7 @@ import {
   sqlStatements,
 } from "@suss/recognize";
 
-import type { ReceiverType } from "@suss/adapter-typescript";
+import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   EffectArg,
@@ -100,6 +100,7 @@ function recognizePrismaCall(
   const recognizerCtx = ctx as {
     sourceFile: SourceFile;
     extractArgs: () => EffectArg[];
+    resolution?: ResolutionStore;
   };
 
   // The callee has to be `<receiver>.<delegate>.<method>`.
@@ -119,7 +120,7 @@ function recognizePrismaCall(
   }
 
   const receiverExpr = delegateExpr.getExpression();
-  if (!isPrismaClientReceiver(receiverExpr)) {
+  if (!isPrismaClientReceiver(receiverExpr, recognizerCtx.resolution)) {
     return null;
   }
 
@@ -454,12 +455,40 @@ function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
  * PrismaClient` all count. `isPrismaClientPath` lists the places the
  * type may be declared.
  */
-function isPrismaClientReceiver(node: Node): boolean {
-  return receiverTypesOf(node).some((type) => declaredByPrisma(type));
+function isPrismaClientReceiver(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return receiverTypesOf(node).some(
+    (type) => declaredByPrisma(type) || extendsImportedClient(type, resolution),
+  );
 }
 
 function declaredByPrisma(type: ReceiverType): boolean {
   return type.declaredIn.some((filePath) => isPrismaClientPath(filePath));
+}
+
+const CLIENT_MODULE = "@prisma/client";
+
+const CLIENT_CLASS = "PrismaClient";
+
+/**
+ * Without the client installed the checker cannot see past a project's
+ * `class Db extends PrismaClient`, so the store says where the base was
+ * imported from instead.
+ */
+function extendsImportedClient(
+  type: ReceiverType,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  if (resolution === undefined) {
+    return false;
+  }
+  return type.extendsWritten.some((base) =>
+    resolution
+      .importOriginsOf(base, [CLIENT_MODULE])
+      .some((origin) => origin.path.join(".") === CLIENT_CLASS),
+  );
 }
 
 // Prisma copies the schema next to the generated client, wherever the

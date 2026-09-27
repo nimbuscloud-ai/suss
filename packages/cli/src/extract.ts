@@ -218,6 +218,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   prisma: "@suss/packs/prisma",
   drizzle: "@suss/packs/drizzle",
   mongoose: "@suss/packs/mongoose",
+  typeorm: "@suss/packs/typeorm",
   "aws-sqs": "@suss/packs/aws-sqs",
   "aws-sns": "@suss/packs/aws-sns",
   "aws-eventbridge": "@suss/packs/aws-eventbridge",

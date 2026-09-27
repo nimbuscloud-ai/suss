@@ -24,6 +24,12 @@ import type { Symbol as TsSymbol, Type } from "ts-morph";
 export interface ReceiverType {
   name: string;
   declaredIn: readonly string[];
+  /**
+   * The base each declaring class is written as extending. When the
+   * library is not installed the checker cannot see past a project's
+   * `class Db extends Client`, and a pack asks where the base came from.
+   */
+  extendsWritten: readonly Node[];
 }
 
 /** Every named type the node's type is, nearest first. */
@@ -57,11 +63,18 @@ function collectCheckedTypes(
 }
 
 function receiverTypeOf(symbol: TsSymbol): ReceiverType {
+  const declarations = symbol.getDeclarations();
   return {
     name: symbol.getName(),
-    declaredIn: symbol
-      .getDeclarations()
-      .map((declaration) => declaration.getSourceFile().getFilePath()),
+    declaredIn: declarations.map((declaration) =>
+      declaration.getSourceFile().getFilePath(),
+    ),
+    extendsWritten: declarations.flatMap((declaration) => {
+      const heritage = Node.isClassDeclaration(declaration)
+        ? declaration.getExtends()
+        : undefined;
+      return heritage === undefined ? [] : [heritage.getExpression()];
+    }),
   };
 }
 
@@ -109,7 +122,7 @@ function awaitedTypes(type: Type): Type[] {
 function writtenTypesOf(node: Node): ReceiverType[] {
   return writtenTypeNodesOf(node)
     .flatMap((typeNode) => namesWritten(typeNode, new Set()))
-    .map((name) => ({ name, declaredIn: [] }));
+    .map((name) => ({ name, declaredIn: [], extendsWritten: [] }));
 }
 
 function writtenTypeNodesOf(node: Node): Node[] {

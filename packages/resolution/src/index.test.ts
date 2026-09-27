@@ -2114,6 +2114,51 @@ describe("a wrapper the caller declared transparent", () => {
   });
 });
 
+describe("a parameter a decorator supplies", () => {
+  /**
+   * `constructor(@InjectRepository(Order) repo)`, and `repoRef` reads
+   * the parameter. The word is on `orm`'s InjectRepository.
+   */
+  const INJECTED: Array<[string, ...string[]]> = [
+    ["binds", "repoRef", "repo"],
+    ["decoratedWith", "repo", "inject"],
+    ["writtenValue", "inject"],
+    ["call", "inject", "injectCallee"],
+    ["callArg", "inject", "0", "orderRef"],
+    ["suppliesParameter", "orm", "InjectRepository"],
+  ];
+
+  it("is written as the call of a decorator the word names", () => {
+    expect(
+      writtenAsOf(
+        [...INJECTED, ["imports", "injectCallee", "orm", "InjectRepository"]],
+        "repoRef",
+      ),
+    ).toEqual(["inject"]);
+  });
+
+  it("ignores a decorator no word names", () => {
+    expect(
+      writtenAsOf(
+        [...INJECTED, ["imports", "injectCallee", "orm", "InjectConnection"]],
+        "repoRef",
+      ),
+    ).toEqual([]);
+  });
+
+  it("ignores a decorator spelled the same way that another module exports", () => {
+    expect(
+      writtenAsOf(
+        [
+          ...INJECTED,
+          ["imports", "injectCallee", "./decorators", "InjectRepository"],
+        ],
+        "repoRef",
+      ),
+    ).toEqual([]);
+  });
+});
+
 /**
  * `class ApplicationRecord < ActiveRecord::Base` and `class Account <
  * ApplicationRecord`, with `suspend!` written on Account. The library

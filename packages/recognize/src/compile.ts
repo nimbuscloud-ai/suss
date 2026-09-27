@@ -93,6 +93,7 @@ export function compile(
   chain: Chain<MethodMeaning>,
   recognition: string,
 ): InvocationRecognizer {
+  const receiverMethods = methodsWhoseReceiversAreAsked(chain);
   return (_call: unknown, ctx: unknown): Effect[] | null => {
     const ops = opsIn(ctx);
     if (ops === null) {
@@ -115,6 +116,9 @@ export function compile(
     if (methods === null) {
       return null;
     }
+    if (receiverMethods !== null) {
+      ops.readingReceivers?.(receiverMethods);
+    }
     for (const subject of subjectsOf(chain, ops)) {
       const method = operationOf(subject);
       const meaning = method === null ? null : listed(methods, method);
@@ -132,6 +136,31 @@ export function compile(
     }
     return null;
   };
+}
+
+/**
+ * The methods whose receivers the chain asks about, or null when it does
+ * not say. A chain asks what made the receiver of every call whose
+ * method it lists when the match starts at the receiver of the call in
+ * hand and the origin is a construction. A table that ignores case
+ * cannot list the spellings, so it says nothing.
+ */
+function methodsWhoseReceiversAreAsked(
+  chain: Chain<MethodMeaning>,
+): ReadonlySet<string> | null {
+  const start = linkIn(chain, "start");
+  const table = methodsIn(chain);
+  if (
+    start === null ||
+    start.at.starts !== "receiver" ||
+    start.at.origin.origin !== "constructed" ||
+    linkIn(chain, "subject") !== null ||
+    table === null ||
+    table.ignoringCase
+  ) {
+    return null;
+  }
+  return new Set(Object.keys(table.table));
 }
 
 /** The link for one question, or null when the chain does not ask it. */

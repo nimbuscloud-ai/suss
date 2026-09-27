@@ -70,6 +70,7 @@ export type { RanExample, RunOverCode } from "./example.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
 export type {
   CallOps,
+  ClassOps,
   ConstructedFrom,
   DeclaredBy,
   OpsCarrier,

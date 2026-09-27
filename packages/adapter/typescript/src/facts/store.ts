@@ -71,7 +71,11 @@ import {
 } from "./moduleGraph.js";
 
 import type { Atom, Proof } from "@suss/datalog";
-import type { PatternPack, TransparentWrapper } from "@suss/extractor";
+import type {
+  ParameterSupplier,
+  PatternPack,
+  TransparentWrapper,
+} from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
@@ -159,6 +163,15 @@ export interface EnvironmentNamers {
   sitesNaming(parameter: Node): readonly Node[] | null;
 }
 
+/** What one value is written as, kept per declaration. */
+interface WrittenAnswer {
+  written: Node | null;
+  /** The class the value refers to, which `written` leaves out. */
+  writtenClass: Node | null;
+  walked: string[];
+  extractedAt: number;
+}
+
 /** What every parameter gets in a project with no environment read to follow. */
 const NO_NAMERS: EnvironmentNamers = { sitesNaming: () => [] };
 
@@ -207,10 +220,7 @@ export class ResolutionStore {
     string,
     { names: string[]; walked: string[] }
   >();
-  private readonly writtenValues = new Map<
-    string,
-    { written: Node | null; walked: string[]; extractedAt: number }
-  >();
+  private readonly writtenValues = new Map<string, WrittenAnswer>();
   private readonly importOrigins = new Map<
     string,
     {
@@ -263,11 +273,13 @@ export class ResolutionStore {
     wrappers: TransparentWrapper[] = [],
     environmentObjects: readonly string[] = [],
     runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
+    parameterSuppliers: readonly ParameterSupplier[] = [],
   ) {
     this.table = createNodeTable(environmentObjects, runtime);
     addPackWords(this.db, {
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
       returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
+      suppliesParameter: parameterSuppliers,
     });
   }
 
@@ -277,6 +289,7 @@ export class ResolutionStore {
       packs.flatMap((pack) => pack.transparentWrappers ?? []),
       packs.flatMap((pack) => pack.environmentObjects ?? []),
       runtimeSpellingsOf(packs),
+      packs.flatMap((pack) => pack.parameterSuppliers ?? []),
     );
   }
 
@@ -448,6 +461,21 @@ export class ResolutionStore {
    * asked one at a time.
    */
   resolveWrittenValues(values: readonly Node[]): Map<Node, Node | null> {
+    return this.writtenAnswers(values, "written");
+  }
+
+  /**
+   * The class a name refers to, asked the same narrow way. A class is
+   * not an expression, so `resolveWrittenValue` never gives one back.
+   */
+  resolveWrittenClass(value: Node): Node | null {
+    return this.writtenAnswers([value], "writtenClass").get(value) ?? null;
+  }
+
+  private writtenAnswers(
+    values: readonly Node[],
+    wanted: "written" | "writtenClass",
+  ): Map<Node, Node | null> {
     const found = new Map<Node, Node | null>();
     const asked = new Map<string, Node>();
     const keyOf = new Map<Node, string>();
@@ -460,7 +488,7 @@ export class ResolutionStore {
       // store has extracted more files than it had then.
       if (
         cached !== undefined &&
-        (cached.written !== null ||
+        (cached[wanted] !== null ||
           cached.extractedAt === this.fullyExtracted.size)
       ) {
         // A memo hit walks nothing, but whoever is collecting file
@@ -468,7 +496,7 @@ export class ResolutionStore {
         for (const walkedPath of cached.walked) {
           recordFileDependency(walkedPath);
         }
-        found.set(value, cached.written);
+        found.set(value, cached[wanted]);
         continue;
       }
       if (!asked.has(key)) {
@@ -484,13 +512,14 @@ export class ResolutionStore {
       for (const [key, target] of asked) {
         this.writtenValues.set(key, {
           written: this.lookupWritten(target),
+          writtenClass: this.lookupWrittenClass(target),
           walked: [...this.lastQueryWalked],
           extractedAt: this.fullyExtracted.size,
         });
       }
     });
     for (const [value, key] of keyOf) {
-      found.set(value, this.writtenValues.get(key)?.written ?? null);
+      found.set(value, this.writtenValues.get(key)?.[wanted] ?? null);
     }
     return found;
   }
@@ -1647,6 +1676,25 @@ export class ResolutionStore {
       this.derive();
     });
     return fallback === null ? null : (this.table.byId.get(fallback) ?? null);
+  }
+
+  /** The one class among what a value is written as, under the same policy. */
+  private lookupWrittenClass(value: Node): Node | null {
+    const classes = new Set<Node>();
+    for (const target of writtenAnswersFor(
+      this.db,
+      "wantedIsWrittenAs",
+      nodeId(value),
+    )) {
+      const node = this.table.byId.get(target);
+      if (
+        node !== undefined &&
+        (Node.isClassDeclaration(node) || Node.isClassExpression(node))
+      ) {
+        classes.add(node);
+      }
+    }
+    return classes.size === 1 ? ([...classes][0] as Node) : null;
   }
 
   /**

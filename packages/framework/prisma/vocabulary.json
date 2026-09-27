@@ -1,5 +1,6 @@
 {
   "prisma": "pack name, Prisma Client",
+  "PrismaClient": "@prisma/client: the client class a project may extend",
   "findUnique": "@prisma/client: delegate read method",
   "findFirst": "@prisma/client: delegate read method",
   "findMany": "@prisma/client: delegate read method",

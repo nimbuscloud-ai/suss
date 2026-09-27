@@ -1,0 +1,17 @@
+{
+  "typeorm": "pack name, and the TypeORM module that exports the Entity decorator",
+  "InjectRepository": "@nestjs/typeorm: the parameter decorator that injects an entity's repository",
+  "InjectDataSource": "@nestjs/typeorm: the parameter decorator that injects a DataSource",
+  "InjectEntityManager": "@nestjs/typeorm: the parameter decorator that injects an EntityManager",
+  "Entity": "typeorm: the class decorator that makes a class an entity and can name its table",
+  "name": "language: typeorm's EntityOptions key for the table, a word every adapter also spells for its own nodes",
+  "where": "typeorm: the FindOptions key that states the condition",
+  "select": "typeorm: the FindOptions key that lists the columns a read returns",
+  "query": "typeorm: the DataSource and EntityManager method that runs a SQL statement",
+  "$1_$2$3": "typeorm: a replacement in snakeCase from typeorm's StringUtils, which the default naming strategy uses",
+  "$1_$2": "typeorm: a replacement in snakeCase from typeorm's StringUtils, which the default naming strategy uses",
+  "postgresql": "the default storage system, matching the Prisma pack's default",
+  "nothing": "suss: what a reader says instead of a name when nothing settles it",
+  "read": "suss: access kind",
+  "write": "suss: access kind"
+}

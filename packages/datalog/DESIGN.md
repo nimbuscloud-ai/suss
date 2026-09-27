@@ -93,6 +93,26 @@ binds `y`, and the join then reads `chain` through its index on that
 column. On suss's own sources that one reordering took the rule from
 2.4 seconds to 55 milliseconds.
 
+A round's new facts are not always the shorter list. A program the
+demand rewrite produced has many rules that read one demand relation
+and then a relation a pack states in a handful of rows, such as
+`suppliesParameter(module, name)`. When a round adds more new facts
+than that, reading each one costs more than reading the handful. So
+when another positive literal shares a variable with the new facts and
+has fewer rows than them, the join reads that literal first and looks
+the new facts up under the shared variable. The lookup needs the new
+facts indexed on that column. Building the index reads each of them
+once, and the rule that builds it is charged for it, the same as the
+sort by a constant. Every other rule in the round that starts the same
+way shares the index. A rule alone gains nothing from building it, so
+before the index exists a literal has to have fewer than half as many
+rows as the new facts. On an 8,400-file TypeScript server with the
+packs `suss init` suggests plus the TypeORM pack, this took the rows
+read from 35.5 million to 34.5 million, and it saved between 3% and 6%
+on a Python, a Ruby and a React project, with byte-identical summaries
+everywhere. An evaluation with a tag algebra always reads the new facts
+first.
+
 After the first literal, the join picks the order again for each
 binding. At every step it looks up how many rows each remaining literal
 has under the variables bound so far, and reads the literal with the
