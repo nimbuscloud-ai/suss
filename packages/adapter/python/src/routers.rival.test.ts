@@ -232,6 +232,16 @@ describe("a mount on an app that never leaves the function that built it", () =>
       "enters the app with `with` under a name",
       "    with test_app as entered:\n        pass",
     ],
+    ["returns the app in a tuple", "    return test_app, holder"],
+    [
+      "returns the app from a comprehension",
+      "    return [test_app for _ in apps]",
+    ],
+    ["returns the app under a computed key", "    return {holder: test_app}"],
+    [
+      "gives the app to a nested def as a default",
+      "    def served(app=test_app):\n        return app\n    return served",
+    ],
   ])("keeps the mount when the function %s", async (_, body) => {
     const summaries = await summariesOf({ "main.py": itemsModule([body]) });
     expect(pathsOf(summaries, "read_item").sort()).toEqual([

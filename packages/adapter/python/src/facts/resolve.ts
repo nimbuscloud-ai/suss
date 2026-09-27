@@ -277,6 +277,7 @@ const PASSED_ON_IN: readonly (readonly [string, number])[] = [
   ["writesProperty", 2],
   ["holdsUnderKey", 1],
   ["entersValue", 0],
+  ["paramDefault", 1],
   ["fallbackBranch", 1],
   ["readsKeyed", 1],
   ["readsKeyed", 2],

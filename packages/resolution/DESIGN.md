@@ -81,7 +81,7 @@ paramOf(f, k, p)            p is f's parameter at position k. A class
                             lists its constructor's parameters here
 paramNamed(f, n, p)         p is f's parameter called n
 paramDefault(p, d)          p takes the value d when a caller passes no
-                            argument at all (TypeScript)
+                            argument at all (TypeScript, Python)
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
 returnsValue(f, v)          f returns v
@@ -253,8 +253,10 @@ writesProperty(r, n, x)     an assignment writes x to the property n of
                             writes that never settle, which
                             storesProperty leaves out on purpose. The
                             router index reads it (Python)
-holdsUnderKey(o, x)         o is given x under a key, as in o[k] = x.
-                            The router index reads it (Python)
+holdsUnderKey(o, x)         o is given x under a key, as in o[k] = x, a
+                            dictionary entry whose key is not a string,
+                            or the element of a comprehension. The
+                            router index reads it (Python)
 entersValue(x)              a with statement enters x, which calls its
                             __enter__. The router index reads it
                             (Python)

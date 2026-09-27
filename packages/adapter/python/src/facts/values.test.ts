@@ -263,6 +263,28 @@ describe("python value facts", () => {
     expect(db.size("storesProperty")).toBe(0);
   });
 
+  it("keeps the elements of a tuple written without parentheses", async () => {
+    const db = await factsFor("def pair():\n    return first, second\n");
+    expect(rows(db, "holdsProperty").map((row) => row[1])).toEqual(["0", "1"]);
+  });
+
+  it("records a comprehension's element and a computed key's value as held under a key", async () => {
+    const source =
+      "names = [first for _ in xs]\nby = {k: second for k in xs}\ntable = {key_name: third}\n";
+    const db = await factsFor(source);
+    expect(rows(db, "holdsUnderKey").map((row) => row[1])).toEqual([
+      "#first",
+      "#second",
+      "#third",
+    ]);
+  });
+
+  it("records a parameter's default, read where the def is written", async () => {
+    const db = await factsFor("def load(env=environ):\n    return env\n");
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "paramDefault")).toEqual([[`${funcKey}#env`, "#environ"]]);
+  });
+
   it("records a value written under a key", async () => {
     const db = await factsFor('items = {}\nitems["one"] = first\n');
     expect(rows(db, "holdsUnderKey")).toEqual([["#items", "#first"]]);

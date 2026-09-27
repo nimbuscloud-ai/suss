@@ -142,8 +142,20 @@ const WRITTEN_VALUE_TYPES = new Set([
   "generator_expression",
 ]);
 
-/** A sequence keeps its elements under their positions, the way TypeScript's arrays do, so one property rule covers `items[0]`. */
-const SEQUENCE_TYPES = new Set(["list", "tuple", "set"]);
+/**
+ * A sequence keeps its elements under their positions, the way TypeScript's
+ * arrays do, so one property rule covers `items[0]`. `return a, b` writes a
+ * tuple without parentheses, which the grammar calls an expression list.
+ */
+const SEQUENCE_TYPES = new Set(["list", "tuple", "set", "expression_list"]);
+
+/** A comprehension, and where the grammar puts the element it builds each item from. */
+const COMPREHENSION_TYPES = new Set([
+  "list_comprehension",
+  "set_comprehension",
+  "generator_expression",
+  "dictionary_comprehension",
+]);
 
 /** `*args` and `**kwargs` collect what is left rather than taking one value. */
 const SPLAT_TYPES = new Set(["list_splat_pattern", "dictionary_splat_pattern"]);
@@ -424,7 +436,11 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
     }
     const key = field(pair, "key");
     const value = field(pair, "value");
-    if (key === null || value === null || key.type !== "string") {
+    if (key === null || value === null) {
+      continue;
+    }
+    if (key.type !== "string") {
+      add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value));
       continue;
     }
     add(
@@ -683,6 +699,27 @@ function emitEnteredValue(emitter: Emitter, item: PyNode): void {
   }
 }
 
+/**
+ * A comprehension's result contains its element under keys the loop
+ * computes. For a dictionary comprehension the element is a pair, and the
+ * result contains the pair's value.
+ */
+function emitComprehensionElement(
+  emitter: Emitter,
+  comprehension: PyNode,
+): void {
+  const body = field(comprehension, "body");
+  const element = body?.type === "pair" ? field(body, "value") : body;
+  if (element != null) {
+    add(
+      emitter,
+      "holdsUnderKey",
+      nodeId(emitter.filePath, comprehension),
+      valueKey(emitter, element),
+    );
+  }
+}
+
 /** What one expression says about itself, whichever walk reached it. */
 function emitExpressionFact(
   emitter: Emitter,
@@ -719,6 +756,9 @@ function emitExpressionFact(
   }
   if (type === "with_item") {
     emitEnteredValue(emitter, child);
+  }
+  if (COMPREHENSION_TYPES.has(type)) {
+    emitComprehensionElement(emitter, child);
   }
   const branches = fallbackBranchesOf(child, type);
   if (branches !== null) {
@@ -803,6 +843,11 @@ function emitFunctionFacts(
         add(emitter, "instanceOf", paramKey, classKey);
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
+      // A default is evaluated once, where the def is written.
+      const fallback = field(param, "value");
+      if (fallback !== null) {
+        add(emitter, "paramDefault", paramKey, valueKey(emitter, fallback));
+      }
       // The annotation is read in the scope around the function.
       emitStatedType(
         emitter,
