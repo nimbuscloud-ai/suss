@@ -66,7 +66,8 @@ writesUnstated(x)           a write to x states no value at all. The
                             no rule does (Python, Ruby)
 fallbackBranch(x, b)        x is a fallback expression, a || b or
                             a ?? b, or a or b in Python and Ruby, and b
-                            is one of its branches
+                            is one of its branches. Python also states
+                            a if c else b and (a) this way
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -80,7 +81,7 @@ paramOf(f, k, p)            p is f's parameter at position k. A class
                             lists its constructor's parameters here
 paramNamed(f, n, p)         p is f's parameter called n
 paramDefault(p, d)          p takes the value d when a caller passes no
-                            argument at all (TypeScript)
+                            argument at all (TypeScript, Python)
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
 returnsValue(f, v)          f returns v
@@ -242,6 +243,23 @@ definesMethodFrom(c, x)     c's body calls define_method, and x is the
 nameTurnsOn(x, element, index, over)  the name x is written in a loop
                             block that binds element, and index when it
                             has one, to each item of over (Ruby)
+yieldsValue(f, v)           f's body yields v. Calling f gives back a
+                            generator, so no rule treats it as a return.
+                            The router index reads it to tell whether an
+                            app leaves the function that built it
+                            (Python)
+writesProperty(r, n, x)     an assignment writes x to the property n of
+                            r, whatever r is. It covers a parameter and
+                            writes that never settle, which
+                            storesProperty leaves out on purpose. The
+                            router index reads it (Python)
+holdsUnderKey(o, x)         o is given x under a key, as in o[k] = x, a
+                            dictionary entry whose key is not a string,
+                            or the element of a comprehension. The
+                            router index reads it (Python)
+entersValue(x)              a with statement enters x, which calls its
+                            __enter__. The router index reads it
+                            (Python)
 ```
 
 `declaresName` is the only fact an adapter records after asking these
