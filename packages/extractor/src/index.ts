@@ -55,6 +55,14 @@ import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
 export { composeWrappers } from "./composeWrappers.js";
+export {
+  type DeclaredModule,
+  MODULE_SURFACE_RECOGNITION,
+  moduleOfFile,
+  type SettledModule,
+  settleModules,
+  stampModules,
+} from "./declaredModules.js";
 export { guardsHoldOn, runsBefore } from "./effectGuards.js";
 export { stampModuleImports } from "./moduleImports.js";
 export { type ModuleInitOptions, moduleInitStructure } from "./moduleInit.js";
