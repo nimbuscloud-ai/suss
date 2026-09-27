@@ -78,6 +78,7 @@ export {
   intentOutcomes,
   intentOutcomesCommand,
 } from "./intentOutcomes.js";
+export { KeptAdapters } from "./keptAdapters.js";
 export { LANGUAGES, type Language } from "./language.js";
 export {
   type LoadedSummaries,
@@ -91,6 +92,7 @@ export {
   readProjectFile,
 } from "./projectFile.js";
 export {
+  clearEarlierReads,
   commandFor,
   type DeclaredReads,
   declaredReads,
