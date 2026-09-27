@@ -22,6 +22,7 @@ import {
   fromScanRecord,
   type RecordedScan,
   recordValidFrom,
+  type ScanFindings,
   type ScanRecord,
   toScanRecord,
 } from "./closureRecords.js";
@@ -273,31 +274,49 @@ describe("a summary the cache serves", () => {
 });
 
 describe("a scan record", () => {
-  it("keeps what the scan found through the manifest's JSON", () => {
-    const target = { file: "/orders.ts", span: { start: 0, end: 38 } };
-    const record = toScanRecord(
-      {
-        calls: [{ key: "/orders.ts:0-38", name: "load" }],
-        stops: [{ callee: "this.rows.remove", reason: "noDeclaration" }],
-        targets: new Map([["load", target]]),
-        argTargets: new Map([["retry", new Map([[0, target]])]]),
-        parameterCalls: [{ callee: "onDone", parameterIndex: 1 }],
-        passedPositions: new Set(["/orders.ts:0-38#0"]),
-      },
-      "/entry.ts",
-    );
+  const target = { file: "/orders.ts", span: { start: 0, end: 38 } };
+  const findings: ScanFindings = {
+    calls: [{ key: "/orders.ts:0-38", name: "load" }],
+    stops: [{ callee: "this.rows.remove", reason: "noDeclaration" }],
+    targets: new Map([["load", target]]),
+    argTargets: new Map([["retry", new Map([[0, target]])]]),
+    parameterCalls: [{ callee: "onDone", parameterIndex: 1 }],
+    passedPositions: new Set(["/orders.ts:0-38#0"]),
+  };
 
-    const found = fromScanRecord(JSON.parse(JSON.stringify(record)));
-    expect(found.calls).toEqual([{ key: "/orders.ts:0-38", name: "load" }]);
-    expect(found.stops).toEqual([
-      { callee: "this.rows.remove", reason: "noDeclaration" },
-    ]);
-    expect(found.targets.get("load")).toEqual(target);
-    expect(found.argTargets.get("retry")?.get(0)).toEqual(target);
-    expect(found.parameterCalls).toEqual([
-      { callee: "onDone", parameterIndex: 1 },
-    ]);
-    expect([...found.passedPositions]).toEqual(["/orders.ts:0-38#0"]);
+  it("keeps what the scan found through the manifest's JSON", () => {
+    const files = ["/entry.ts", "/orders.ts"];
+    const record = toScanRecord(findings, "/entry.ts", files);
+    if (record === null) {
+      throw new Error("expected a record");
+    }
+
+    const found = fromScanRecord({
+      key: "/entry.ts:33-75",
+      file: "/entry.ts",
+      deps: ["/orders.ts"],
+      data: JSON.parse(JSON.stringify(record)),
+    });
+    expect(found?.calls).toEqual([{ key: "/orders.ts:0-38", name: "load" }]);
+    expect(found?.stops).toEqual(findings.stops);
+    expect(found?.targets.get("load")).toEqual(target);
+    expect(found?.argTargets.get("retry")?.get(0)).toEqual(target);
+    expect(found?.parameterCalls).toEqual(findings.parameterCalls);
+    expect([...(found?.passedPositions ?? [])]).toEqual(["/orders.ts:0-38#0"]);
+  });
+
+  it("is not written when a finding points at a file the record does not list", () => {
+    expect(toScanRecord(findings, undefined, ["/entry.ts"])).toBeNull();
+  });
+
+  it("is not used when it points past the files it lists", () => {
+    const found = fromScanRecord({
+      key: "/entry.ts:33-75",
+      file: "/entry.ts",
+      deps: [],
+      data: { calls: [[1, 0, 38, "load"]] },
+    });
+    expect(found).toBeNull();
   });
 
   it("applies wherever the walk came from unless the scan asked where", () => {

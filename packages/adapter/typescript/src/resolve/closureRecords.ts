@@ -12,29 +12,16 @@
  * the body's own file imports, the bar a walked file is held to.
  */
 
-import { fileOfOffsetKey } from "../walk/nodeKeys.js";
+import {
+  fileOfOffsetKey,
+  offsetKeyFor,
+  spanOfOffsetKey,
+} from "../walk/nodeKeys.js";
 
 import type { DeclaredAt, UnfollowedCall } from "@suss/behavioral-ir";
 import type { UnitRecord } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ReferenceIndex } from "../referencedFiles.js";
-
-/** One scan's findings, as plain data the manifest can store. */
-export interface ScanRecord {
-  /**
-   * The file the walk came in from, set only when the scan asked which
-   * class a declared shape was given, since the answer depends on it.
-   * Null when the walk started at this body.
-   */
-  from?: string | null;
-  /** Each function the body reaches, by key, with the name it was reached by. */
-  calls: Array<[string, string]>;
-  stops?: UnfollowedCall[];
-  targets?: Array<[string, DeclaredAt]>;
-  argTargets?: Array<[string, Array<[number, DeclaredAt]>]>;
-  parameterCalls?: Array<{ callee: string; parameterIndex: number }>;
-  passed?: string[];
-}
 
 /** What one scan found, whether it ran on this run or came from a record. */
 export interface ScanFindings {
@@ -47,50 +34,93 @@ export interface ScanFindings {
 }
 
 /**
+ * A place in a file, as the manifest stores it: the file is an index
+ * into the record's own file followed by its deps, since every file a
+ * finding points at is one of those.
+ */
+type StoredPlace = [file: number, start: number, end: number];
+
+/** One scan's findings as the manifest stores them. */
+export interface ScanRecord {
+  /**
+   * The file the walk came in from, set only when the scan asked which
+   * class a declared shape was given, since the answer depends on it.
+   * Null when the walk started at this body.
+   */
+  from?: string | null;
+  /** Each function the body reaches, with the name it was reached by. */
+  calls: Array<[...StoredPlace, string]>;
+  stops?: UnfollowedCall[];
+  targets?: Array<[string, ...StoredPlace]>;
+  argTargets?: Array<[string, Array<[number, ...StoredPlace]>]>;
+  parameterCalls?: Array<{ callee: string; parameterIndex: number }>;
+  passed?: string[];
+}
+
+/**
  * A scan this run has findings for. A fresh scan lists the files it read;
- * a reused one keeps the deps it was stored with, which the next write
+ * a reused one keeps the record it came from, which the next write
  * stores again.
  */
 export type RecordedScan =
-  | { kind: "fresh"; record: ScanRecord; read: ReadonlySet<string> }
+  | {
+      kind: "fresh";
+      findings: ScanFindings;
+      /** Where the walk came in from, when the findings depend on it. */
+      from: string | null | undefined;
+      read: ReadonlySet<string>;
+    }
   | { kind: "reused"; unit: UnitRecord<ScanRecord> };
 
-export function toScanRecord(
-  findings: ScanFindings,
-  from: string | null | undefined,
-): ScanRecord {
-  const argTargets = [...findings.argTargets].map(
-    ([callee, byPosition]): [string, Array<[number, DeclaredAt]>] => [
-      callee,
-      [...byPosition],
-    ],
-  );
-  return {
-    ...(from === undefined ? {} : { from }),
-    calls: findings.calls.map((call) => [call.key, call.name]),
-    ...(findings.stops.length === 0 ? {} : { stops: findings.stops }),
-    ...(findings.targets.size === 0 ? {} : { targets: [...findings.targets] }),
-    ...(argTargets.length === 0 ? {} : { argTargets }),
-    ...(findings.parameterCalls.length === 0
-      ? {}
-      : { parameterCalls: [...findings.parameterCalls] }),
-    ...(findings.passedPositions.size === 0
-      ? {}
-      : { passed: [...findings.passedPositions] }),
+/**
+ * The findings a stored record describes, or null when it points at a
+ * file it does not list, which no write produces.
+ */
+export function fromScanRecord(
+  unit: UnitRecord<ScanRecord>,
+): ScanFindings | null {
+  const files = [unit.file, ...unit.deps];
+  const placeOf = ([file, start, end]: StoredPlace): DeclaredAt | null => {
+    const path = files[file];
+    return path === undefined ? null : { file: path, span: { start, end } };
   };
-}
+  const record = unit.data;
+  const calls: Array<{ key: string; name: string }> = [];
+  for (const [file, start, end, name] of record.calls) {
+    const place = placeOf([file, start, end]);
+    if (place === null) {
+      return null;
+    }
+    calls.push({ key: offsetKeyFor(place.file, place.span), name });
+  }
 
-export function fromScanRecord(record: ScanRecord): ScanFindings {
+  const targets = new Map<string, DeclaredAt>();
+  for (const [callee, ...stored] of record.targets ?? []) {
+    const place = placeOf(stored);
+    if (place === null) {
+      return null;
+    }
+    targets.set(callee, place);
+  }
+
+  const argTargets = new Map<string, Map<number, DeclaredAt>>();
+  for (const [callee, positions] of record.argTargets ?? []) {
+    const byPosition = new Map<number, DeclaredAt>();
+    for (const [position, ...stored] of positions) {
+      const place = placeOf(stored);
+      if (place === null) {
+        return null;
+      }
+      byPosition.set(position, place);
+    }
+    argTargets.set(callee, byPosition);
+  }
+
   return {
-    calls: record.calls.map(([key, name]) => ({ key, name })),
+    calls,
     stops: record.stops ?? [],
-    targets: new Map(record.targets ?? []),
-    argTargets: new Map(
-      (record.argTargets ?? []).map(([callee, byPosition]) => [
-        callee,
-        new Map(byPosition),
-      ]),
-    ),
+    targets,
+    argTargets,
     parameterCalls: record.parameterCalls ?? [],
     passedPositions: new Set(record.passed ?? []),
   };
@@ -130,12 +160,11 @@ export function closureUnitRecords(
       continue;
     }
 
-    units.push({
-      key,
-      file,
-      deps: depsOf(file, scan.record, scan.read, references),
-      data: scan.record,
-    });
+    const deps = depsOf(file, scan.findings, scan.read, references);
+    const data = toScanRecord(scan.findings, scan.from, [file, ...deps]);
+    if (data !== null) {
+      units.push({ key, file, deps, data });
+    }
   }
 
   for (const [key, unit] of stillValid) {
@@ -146,30 +175,101 @@ export function closureUnitRecords(
   return units;
 }
 
+/** Every file a scan's findings point at. */
+function filesNamedBy(findings: ScanFindings): string[] {
+  const files: string[] = [];
+  for (const call of findings.calls) {
+    const file = fileOfOffsetKey(call.key);
+    if (file !== null) {
+      files.push(file);
+    }
+  }
+  for (const target of findings.targets.values()) {
+    files.push(target.file);
+  }
+  for (const byPosition of findings.argTargets.values()) {
+    for (const target of byPosition.values()) {
+      files.push(target.file);
+    }
+  }
+  return files;
+}
+
 function depsOf(
   file: string,
-  record: ScanRecord,
+  findings: ScanFindings,
   read: ReadonlySet<string>,
   references: ReferenceIndex,
 ): string[] {
-  const deps = new Set<string>(read);
-  for (const imported of references.directOf(file)) {
-    deps.add(imported);
-  }
-  for (const [calleeKey] of record.calls) {
-    const calleeFile = fileOfOffsetKey(calleeKey);
-    if (calleeFile !== null) {
-      deps.add(calleeFile);
-    }
-  }
-  for (const [, target] of record.targets ?? []) {
-    deps.add(target.file);
-  }
-  for (const [, byPosition] of record.argTargets ?? []) {
-    for (const [, target] of byPosition) {
-      deps.add(target.file);
-    }
-  }
+  const deps = new Set<string>([
+    ...read,
+    ...references.directOf(file),
+    ...filesNamedBy(findings),
+  ]);
   deps.delete(file);
   return [...deps].sort();
+}
+
+/**
+ * The findings as the manifest stores them, against `files`, which has
+ * every file they point at. Null when one is missing, and then the body
+ * is scanned again next time.
+ */
+export function toScanRecord(
+  findings: ScanFindings,
+  from: string | null | undefined,
+  files: readonly string[],
+): ScanRecord | null {
+  const indexOf = new Map(files.map((file, i) => [file, i]));
+  let complete = true;
+  const placeOf = (place: DeclaredAt | null): StoredPlace => {
+    const file = place === null ? undefined : indexOf.get(place.file);
+    if (place === null || file === undefined) {
+      complete = false;
+      return [-1, -1, -1];
+    }
+    return [file, place.span.start, place.span.end];
+  };
+
+  const calls = findings.calls.map(
+    ({ key, name }): [...StoredPlace, string] => [
+      ...placeOf(placeOfKey(key)),
+      name,
+    ],
+  );
+  const targets = [...findings.targets].map(
+    ([callee, place]): [string, ...StoredPlace] => [callee, ...placeOf(place)],
+  );
+  const argTargets = [...findings.argTargets].map(
+    ([callee, byPosition]): [string, Array<[number, ...StoredPlace]>] => [
+      callee,
+      [...byPosition].map(([position, place]): [number, ...StoredPlace] => [
+        position,
+        ...placeOf(place),
+      ]),
+    ],
+  );
+  if (!complete) {
+    return null;
+  }
+
+  return {
+    ...(from === undefined ? {} : { from }),
+    calls,
+    ...(findings.stops.length === 0 ? {} : { stops: findings.stops }),
+    ...(targets.length === 0 ? {} : { targets }),
+    ...(argTargets.length === 0 ? {} : { argTargets }),
+    ...(findings.parameterCalls.length === 0
+      ? {}
+      : { parameterCalls: [...findings.parameterCalls] }),
+    ...(findings.passedPositions.size === 0
+      ? {}
+      : { passed: [...findings.passedPositions] }),
+  };
+}
+
+function placeOfKey(key: string): DeclaredAt | null {
+  const file = fileOfOffsetKey(key);
+  const span = spanOfOffsetKey(key);
+  return file === null || span === null ? null : { file, span };
 }

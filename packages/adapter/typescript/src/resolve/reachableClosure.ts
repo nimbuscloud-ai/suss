@@ -56,7 +56,6 @@ import {
   recordValidFrom,
   type ScanFindings,
   type ScanRecord,
-  toScanRecord,
 } from "./closureRecords.js";
 import {
   functionAmong,
@@ -1061,10 +1060,14 @@ interface FindingContext {
 function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
   const cameFrom = ctx.reachedFrom.get(key);
   const stored = ctx.facts?.previousScans?.get(key);
-  if (stored !== undefined && recordValidFrom(stored.data, cameFrom)) {
+  const recorded =
+    stored !== undefined && recordValidFrom(stored.data, cameFrom)
+      ? fromScanRecord(stored)
+      : null;
+  if (stored !== undefined && recorded !== null) {
     ctx.facts?.scans?.set(key, { kind: "reused", unit: stored });
     noteFilesRead(key, ctx.facts, stored.deps);
-    return fromScanRecord(stored.data);
+    return recorded;
   }
 
   const root: ScanRoot | undefined =
@@ -1103,7 +1106,8 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
   );
   ctx.facts?.scans?.set(key, {
     kind: "fresh",
-    record: toScanRecord(result, askedSources ? (cameFrom ?? null) : undefined),
+    findings: result,
+    from: askedSources ? (cameFrom ?? null) : undefined,
     read,
   });
   return result;
