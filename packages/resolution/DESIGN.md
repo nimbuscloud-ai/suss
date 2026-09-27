@@ -35,7 +35,7 @@ placeholderValue(x)         x is a written value a later write is
                             answersFor reads it, and no rule does
                             (Python, Ruby)
 holdsProperty(o, n, x)      object o has x under the name n
-holdsDefault(cls, n, x)     cls's body gives its field n the value x,
+declaresDefault(cls, n, x)  cls declares a default x for its field n,
                             which a constructor may replace (Python)
 readsProperty(x, o, n)      x is the expression o.n, or o[n] with the
                             key written out
@@ -429,9 +429,9 @@ was built, so the adapter records it as `holdsProperty` and it is part
 of `contains`. `is_admin` is a field default. The library generates a
 constructor that fills it from an argument, and that constructor is not
 in the run, so the run cannot tell what `account.is_admin` is. The
-adapter records it as `holdsDefault`, which `contains` does not read.
+adapter records it as `declaresDefault`, which `contains` does not read.
 
-`fieldDefault` walks the ancestry of `holdsDefault` the way `contains`
+`fieldDefault` walks the ancestry of `declaresDefault` the way `contains`
 walks `holdsProperty`. A construction contains its class's field
 defaults only when `callArgCount` says the call passes no arguments.
 Any argument could fill a field, a splat included, and telling which
@@ -455,7 +455,7 @@ class Client:
         return httpx.get(self.base_url + "/orders")
 ```
 
-`contains` reads a `holdsDefault` row when `plainAncestry` says the
+`contains` reads a `declaresDefault` row when `plainAncestry` says the
 class is plain. The adapter says so with `plainClass` for a class
 written with no decorator, no keyword and no base but `object`, and
 with `extendsOnly` for one written the same way over a single base.
