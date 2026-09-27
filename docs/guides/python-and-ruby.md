@@ -58,32 +58,32 @@ npx @suss/cli inspect summaries/shop.json
 
 ```
 shop/main.py
-├─ GET /health  (fastapi handler | line 24 | confidence: low)
+├─ GET /health  (fastapi handler | line 24)
 │      -> 200 HealthStatus
 │
-├─ POST /orders  (fastapi handler | line 29 | confidence: low)
+├─ POST /orders  (fastapi handler | line 29)
 │      -> 201
 │
-└─ GET ?  (fastapi handler | line 34 | confidence: low)
+└─ GET ?  (fastapi handler | line 34)
 
        !! The path in this route's decorator is not a string literal, so the binding names no path and nothing pairs with it
 
 shop/routers/admin.py
-└─ GET ?  (fastapi handler | line 13 | confidence: low)
+└─ GET ?  (fastapi handler | line 13)
 
        !! The router this route is declared on is mounted with a prefix that is not a string literal, so the binding names no path and nothing pairs with it
 
 shop/routers/items.py
-├─ current_user  (line 24 | confidence: low)
+├─ current_user  (line 24)
 │      -> delegate -> unknown
 │
-├─ GET /api/items/{item_id}  (fastapi handler | line 32 | confidence: low)
+├─ GET /api/items/{item_id}  (fastapi handler | line 32)
 │      -> 200 ItemResponse
 │
-├─ POST /api/items  (fastapi handler | line 37 | wrapped by current_user (shop/routers/items.py) | confidence: low)
+├─ POST /api/items  (fastapi handler | line 37 | wrapped by current_user (shop/routers/items.py))
 │      -> 201 ItemResponse
 │
-└─ GET /api/items/{item_id}/stock  (fastapi handler | line 42 | confidence: low)
+└─ GET /api/items/{item_id}/stock  (fastapi handler | line 42)
        if  item_id > 10
          -> 404
            + HTTPException
@@ -151,7 +151,7 @@ npx @suss/cli inspect summaries/rails.json
 
 ```
 app/controllers/profiles_controller.rb
-├─ GET /profile  (rails handler | line 4 | wrapped by require_login (app/controllers/application_controller.rb), not_found (app/controllers/application_controller.rb) on a throw | confidence: low)
+├─ GET /profile  (rails handler | line 4 | wrapped by require_login (app/controllers/application_controller.rb), not_found (app/controllers/application_controller.rb) on a throw)
 │      if  session[:user_id] == null
 │        -> 401  (from require_login)
 │      else
@@ -161,7 +161,7 @@ app/controllers/profiles_controller.rb
 │    Reaches:
 │      reads postgresql:Order  through OrderService.new.find_order
 │
-└─ PATCH /profile  (rails handler | line 8 | wrapped by require_login (app/controllers/application_controller.rb), not_found (app/controllers/application_controller.rb) on a throw | confidence: low)
+└─ PATCH /profile  (rails handler | line 8 | wrapped by require_login (app/controllers/application_controller.rb), not_found (app/controllers/application_controller.rb) on a throw)
        if  session[:user_id] == null
          -> 401  (from require_login)
        else
@@ -305,7 +305,7 @@ def health():
 
 ```
 shop/main.py
-└─ GET /health  (fastapi handler | line 9 | confidence: low)
+└─ GET /health  (fastapi handler | line 9)
        -> 200 { region, tier }
          + shop/config.setting →
          + shop/config.setting →
@@ -317,7 +317,7 @@ suss reports the variable names on the route that reads them, and not on the hel
 
 ```
 app/controllers/health_controller.rb
-├─ GET /health  (rails handler | line 2 | confidence: low)
+├─ GET /health  (rails handler | line 2)
 │      -> 200
 │        + setting →
 │        + setting →
