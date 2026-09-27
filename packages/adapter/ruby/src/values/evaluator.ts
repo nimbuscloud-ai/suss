@@ -11,7 +11,7 @@
  * walk.
  */
 
-import { nodeOfKey, writtenValuesByKey } from "@suss/resolution";
+import { nodeOfKey, noteKeyRead, writtenValuesByKey } from "@suss/resolution";
 import { Evaluator, force, literalOf, text } from "@suss/values";
 
 import { enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
@@ -56,6 +56,21 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   const context = contextOver(db, nodes);
   contexts.set(db, context);
   evaluators.set(db, new Evaluator(rubyLowering({ context, rows: rubyRows })));
+}
+
+/**
+ * Starts the evaluator over `db` again with nothing remembered, so what
+ * the next reads ask the rules is charged to whoever asks it rather than
+ * to an earlier reader that computed the same value.
+ */
+export function forgetEvaluations(db: Database): void {
+  const context = contexts.get(db);
+  if (context !== undefined) {
+    evaluators.set(
+      db,
+      new Evaluator(rubyLowering({ context, rows: rubyRows })),
+    );
+  }
 }
 
 /**
@@ -236,7 +251,12 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
         site === undefined
           ? writtenValueOf(db, key)
           : writtenValueUnder(db, key, site);
-      return answer === null ? null : nodeOfKey(rootsByFile, answer);
+      if (answer === null) {
+        return null;
+      }
+      // The evaluator goes on to read the syntax around the answer.
+      noteKeyRead(db, answer);
+      return nodeOfKey(rootsByFile, answer);
     },
     callable: (call) => {
       const file = fileOf(call);
@@ -251,7 +271,11 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
           : nodeId(file, method);
       resolveValues(db, [key]);
       const settled = settledFunction(db, key);
-      return settled === null ? null : (nodes.definitions.get(settled) ?? null);
+      if (settled === null) {
+        return null;
+      }
+      noteKeyRead(db, settled);
+      return nodes.definitions.get(settled) ?? null;
     },
   };
 }

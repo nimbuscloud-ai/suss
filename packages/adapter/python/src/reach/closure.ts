@@ -27,6 +27,11 @@ import {
   SKIP_CHILDREN,
   walkDescendants,
 } from "@suss/extractor";
+import {
+  type Dependencies,
+  type DependencyLedger,
+  noDependencies,
+} from "@suss/resolution";
 
 import {
   enclosingFunction,
@@ -47,7 +52,7 @@ import {
   calleeText,
   invocationEffects,
 } from "../paths/effects.js";
-import { askWrittenValues } from "../values/evaluator.js";
+import { askWrittenValues, forgetEvaluations } from "../values/evaluator.js";
 import {
   calleeSpellings,
   functionNamed,
@@ -68,6 +73,7 @@ import type {
 } from "@suss/extractor";
 import type { CalleeOutcome } from "@suss/resolution";
 import type { PyNode } from "../parser.js";
+import type { WalkReplay } from "../reuse.js";
 import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
 import type { StorageLookup } from "../storage.js";
@@ -89,6 +95,27 @@ export interface ReachOptions {
   readonly facts: Database;
   /** The function each function key was read from. */
   readonly definitions: ReadonlyMap<string, PyNode>;
+  /** What an earlier run's walk found where it is still valid, so those bodies are not scanned again. */
+  readonly replay?: WalkReplay;
+  /** Set when a cache is recording what each scanned body depended on. */
+  readonly ledger?: DependencyLedger;
+}
+
+/** A function one scan followed, as a cache stores it. */
+export interface StoredTarget {
+  readonly key: string;
+  readonly name: string;
+  readonly exportPath: string[];
+}
+
+/** What one scan of a body found, in a form JSON keeps. */
+export interface StoredScan {
+  readonly followed: StoredTarget[];
+  readonly stops: UnfollowedCall[];
+  readonly targets: [string, DeclaredAt][];
+  readonly argTargets: [string, [number, DeclaredAt][]][];
+  readonly parameterCalls: ParameterCall[];
+  readonly passedPositions: string[];
 }
 
 /** A discovered unit's function, keyed the way its summary's span is. */
@@ -116,6 +143,12 @@ export interface ReachedUnits {
   readonly callsByKey: ReadonlyMap<string, readonly string[]>;
   /** Every (function, position) some scanned body passed a named project function into, across the whole run. */
   readonly passedPositions: ReadonlySet<string>;
+  /** Every body scanned or replayed, as a cache stores it. */
+  readonly scans: ReadonlyMap<string, StoredScan>;
+  /** What each body scanned in this run depended on. Empty unless recording. */
+  readonly charges: ReadonlyMap<string, Dependencies>;
+  /** Each reached function's summary before parameter gaps were added, for the cache. Empty unless recording or replaying. */
+  readonly beforeGaps: ReadonlyMap<string, BehavioralSummary>;
 }
 
 const REACHABLE_RULES = [
@@ -153,6 +186,17 @@ export function reachedFunctions(
   // function into. An inline lambda or a variable does not count, so a
   // parameter call missing here is a gap even when a caller supplies one.
   const passedPositions = new Set<string>();
+  const { replay, ledger } = options;
+  const scans = new Map<string, StoredScan>();
+  const charges = new Map<string, Dependencies>();
+  const beforeGaps = new Map<string, BehavioralSummary>();
+  const functionFor = (target: StoredTarget): ReachedFunction => {
+    const found = replay?.functionOf(target) ?? null;
+    if (found === null) {
+      throw new ReplayFailed(target.key);
+    }
+    return found;
+  };
 
   for (const seed of seeds) {
     seedKeys.add(seed.key);
@@ -174,34 +218,36 @@ export function reachedFunctions(
     if (frontier.length === 0) {
       break;
     }
-    // Every body in this round asks the rules together, so evaluation
-    // runs once per round rather than once per body.
-    const bodies = frontier.flatMap((key) => {
+    const round = frontier.flatMap((key): RoundEntry[] => {
       scanned.add(key);
+      const stored = replay?.scanOf(key);
+      if (stored !== undefined) {
+        return [{ key, stored }];
+      }
       const source = functionByKey.get(key);
-      return source === undefined ? [] : [{ key, source, ...bodyOf(source) }];
+      return source === undefined ? [] : [{ key, source }];
     });
-    const spellings = calleeSpellings(
-      bodies.flatMap((body) => body.written),
-      ctx,
-    );
-    const passed = namedOutcomes(
-      bodies.flatMap(({ source, written }) =>
-        written.flatMap(({ call }) => passedNameKeys(source.file, call)),
-      ),
-      ctx,
-    );
+    // Without a cache recording, every body in this round asks the rules
+    // together, so evaluation runs once per round rather than once per body.
+    const batched = ledger === undefined ? batchedReads(round, ctx) : new Map();
 
-    for (const { key, source, body, written } of bodies) {
-      const scan = scanBody(
-        source,
-        ctx,
-        recognizedCallIds(
-          written.map(({ call }) => call),
-          options.storageFor(source.file),
-        ),
-        { body, written, spellings, passed },
-      );
+    for (const entry of round) {
+      const key = entry.key;
+      let scan: Scan;
+      if ("stored" in entry) {
+        scan = scanFromStored(entry.stored, functionFor);
+        scans.set(key, entry.stored);
+      } else {
+        scan = scanOnce(
+          entry.source,
+          key,
+          ctx,
+          options,
+          batched.get(key),
+          charges,
+        );
+        scans.set(key, storedScan(scan));
+      }
       if (scan.stops.length > 0) {
         stopsByKey.set(key, scan.stops);
       }
@@ -232,7 +278,11 @@ export function reachedFunctions(
     .facts("reachable")
     .map(([keyAtom]) => String(keyAtom))
     .filter((key) => !seedKeys.has(key));
-  settleBodyValues(reached, functionByKey, options.facts);
+  // A recording run settles each function's values in its own charge,
+  // right before its summary is built.
+  if (ledger === undefined) {
+    settleBodyValues(reached, functionByKey, options.facts);
+  }
 
   const summaries: BehavioralSummary[] = [];
   const summariesByKey = new Map<string, BehavioralSummary[]>();
@@ -241,16 +291,41 @@ export function reachedFunctions(
     if (target === undefined) {
       continue;
     }
-    const summary = assembleSummary(libraryUnit(target, options), {
-      gapHandling: options.gapHandling,
-    });
-    summary.confidence = { source: "inferred_static", level: "low" };
-    if (options.gapHandling !== "silent") {
-      summary.gaps.push(...(stopsByKey.get(key) ?? []).map(unfollowedCallGap));
+    const kept = replay?.summaryOf(key);
+    if (kept !== undefined) {
+      beforeGaps.set(key, kept);
+      const summary = structuredClone(kept);
+      summariesByKey.set(key, [summary]);
+      summaries.push(summary);
+      continue;
     }
-    placeCalls(summary, targetsByKey.get(key));
-    placeArgTargets(summary, argTargetsByKey.get(key));
-    placeCalleeParameters(summary, parameterCallsByKey.get(key));
+    const build = (): BehavioralSummary => {
+      const summary = assembleSummary(libraryUnit(target, options), {
+        gapHandling: options.gapHandling,
+      });
+      summary.confidence = { source: "inferred_static", level: "low" };
+      if (options.gapHandling !== "silent") {
+        summary.gaps.push(
+          ...(stopsByKey.get(key) ?? []).map(unfollowedCallGap),
+        );
+      }
+      placeCalls(summary, targetsByKey.get(key));
+      placeArgTargets(summary, argTargetsByKey.get(key));
+      placeCalleeParameters(summary, parameterCallsByKey.get(key));
+      return summary;
+    };
+    const summary =
+      ledger === undefined
+        ? build()
+        : ledger.charging(chargeOf(charges, key), () => {
+            forgetEvaluations(options.facts);
+            ledger.readFile(target.file.file);
+            askWrittenValues(bodyValueNodes(target.node), options.facts);
+            return build();
+          });
+    if (ledger !== undefined) {
+      beforeGaps.set(key, structuredClone(summary));
+    }
     summariesByKey.set(key, [summary]);
     summaries.push(summary);
   }
@@ -266,6 +341,158 @@ export function reachedFunctions(
     parameterCallsByKey,
     callsByKey,
     passedPositions,
+    scans,
+    charges,
+    beforeGaps,
+  };
+}
+
+/** A stored target whose node is no longer where the stored key says, which an earlier check should have caught. */
+export class ReplayFailed extends Error {
+  constructor(readonly key: string) {
+    super(`The cache stored a function at ${key}, and nothing is there now.`);
+  }
+}
+
+function chargeOf(
+  charges: Map<string, Dependencies>,
+  key: string,
+): Dependencies {
+  let charge = charges.get(key);
+  if (charge === undefined) {
+    charge = noDependencies();
+    charges.set(key, charge);
+  }
+  return charge;
+}
+
+/** A body the round reaches: one to scan, or one an earlier run scanned. */
+type RoundEntry =
+  | { readonly key: string; readonly stored: StoredScan }
+  | { readonly key: string; readonly source: ReachedFunction };
+
+/** What one body's scan reads before it walks the calls. */
+type BodyReads = BodyCalls & {
+  spellings: CalleeSpellings;
+  passed: ReadonlyMap<string, CalleeOutcome>;
+};
+
+/** One round's calls read and asked about together, which is how a run without a cache asks them. */
+function batchedReads(
+  round: readonly RoundEntry[],
+  ctx: ResolveContext,
+): Map<string, BodyReads> {
+  const bodies = round.flatMap((entry) =>
+    "source" in entry
+      ? [{ key: entry.key, source: entry.source, ...bodyOf(entry.source) }]
+      : [],
+  );
+  const spellings = calleeSpellings(
+    bodies.flatMap((body) => body.written),
+    ctx,
+  );
+  const passed = namedOutcomes(
+    bodies.flatMap(({ source, written }) =>
+      written.flatMap(({ call }) => passedNameKeys(source.file, call)),
+    ),
+    ctx,
+  );
+  return new Map(
+    bodies.map((body) => [
+      body.key,
+      { body: body.body, written: body.written, spellings, passed },
+    ]),
+  );
+}
+
+/**
+ * Scans one body. With a cache recording, the body's own reads are asked
+ * about on their own and charged to it, with its file, since the
+ * evaluator may read what the file declares around the body. The
+ * functions it reaches are charged by key, since their spans go on its
+ * summary.
+ */
+function scanOnce(
+  source: ReachedFunction,
+  key: string,
+  ctx: ResolveContext,
+  options: ReachOptions,
+  read: BodyReads | undefined,
+  charges: Map<string, Dependencies>,
+): Scan {
+  const scan = (reads: BodyReads): Scan =>
+    scanBody(
+      source,
+      ctx,
+      recognizedCallIds(
+        reads.written.map(({ call }) => call),
+        options.storageFor(source.file),
+      ),
+      reads,
+    );
+  const ledger = options.ledger;
+  if (ledger === undefined) {
+    return scan(read ?? ownReads(source, ctx));
+  }
+  return ledger.charging(chargeOf(charges, key), () => {
+    // Nothing an earlier body evaluated may be served to this one uncharged.
+    forgetEvaluations(options.facts);
+    ledger.readFile(source.file.file);
+    const found = scan(ownReads(source, ctx));
+    for (const target of found.followed) {
+      ledger.touchKey(keyOf(target));
+    }
+    return found;
+  });
+}
+
+/** One body's calls, asked about on their own. */
+function ownReads(source: ReachedFunction, ctx: ResolveContext): BodyReads {
+  const body = bodyOf(source);
+  return {
+    ...body,
+    spellings: calleeSpellings(body.written, ctx),
+    passed: namedOutcomes(
+      body.written.flatMap(({ call }) => passedNameKeys(source.file, call)),
+      ctx,
+    ),
+  };
+}
+
+function storedScan(scan: Scan): StoredScan {
+  return {
+    followed: scan.followed.map((target) => ({
+      key: keyOf(target),
+      name: target.name,
+      exportPath: target.exportPath,
+    })),
+    stops: scan.stops,
+    targets: [...scan.targets],
+    argTargets: [...scan.argTargets].map(([callee, byPosition]) => [
+      callee,
+      [...byPosition],
+    ]),
+    parameterCalls: [...scan.parameterCalls],
+    passedPositions: [...scan.passedPositions],
+  };
+}
+
+function scanFromStored(
+  stored: StoredScan,
+  functionFor: (target: StoredTarget) => ReachedFunction,
+): Scan {
+  return {
+    followed: stored.followed.map(functionFor),
+    stops: stored.stops,
+    targets: new Map(stored.targets),
+    argTargets: new Map(
+      stored.argTargets.map(([callee, byPosition]) => [
+        callee,
+        new Map(byPosition),
+      ]),
+    ),
+    parameterCalls: stored.parameterCalls,
+    passedPositions: new Set(stored.passedPositions),
   };
 }
 

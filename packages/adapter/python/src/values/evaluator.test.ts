@@ -13,7 +13,12 @@ import { emitModuleImportFacts } from "../facts.js";
 import { findPythonFiles } from "../index.js";
 import { parsePython } from "../parser.js";
 import { bindModule } from "../scope.js";
-import { bindEvaluator, evaluatedValue, stringValueOf } from "./evaluator.js";
+import {
+  bindEvaluator,
+  evaluatedValue,
+  forgetEvaluations,
+  stringValueOf,
+} from "./evaluator.js";
 
 import type { Value } from "@suss/values";
 import type { PyNode } from "../parser.js";
@@ -645,6 +650,22 @@ describe("a parameter annotated as a few strings", () => {
     expect(pathOf(evaluatedValue(subjectInFunction(tree.rootNode)))).toBe(
       "record.{kind}",
     );
+  });
+});
+
+describe("forgetEvaluations", () => {
+  it("reads the same value again after forgetting what it computed", async () => {
+    const { db, subject } = await projectValues({
+      "app/paths.py": 'BASE = "/api"\n',
+      "app/routes.py":
+        'from app.paths import BASE\n\nsubject = f"{BASE}/items"\n',
+    });
+    expect(literalOf(subject("routes.py"))).toBe("/api/items");
+
+    forgetEvaluations(db);
+    forgetEvaluations(new Database());
+
+    expect(literalOf(subject("routes.py"))).toBe("/api/items");
   });
 });
 

@@ -933,6 +933,51 @@ describe("a controllerActions pattern's routing gaps", () => {
     expect(calleesOf("visible_orders")).toEqual([]);
   });
 
+  it("leaves every gap off under silent gap handling, where permissive records them", async () => {
+    const orders = write(
+      "app/controllers/orders_controller.rb",
+      [
+        "class OrdersController < ApplicationController",
+        "  def index",
+        "    public_send(:audit)",
+        "    load_orders(-> { 1 })",
+        "  end",
+        "",
+        "  private",
+        "",
+        "  def load_orders(finder)",
+        "    finder.call",
+        "    public_send(:refresh)",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const pack = railsTestPack({
+      routingGaps: () => ["routes.rb also declares mount"],
+    });
+    const gapsUnder = async (
+      gapHandling: "silent" | "permissive",
+    ): Promise<string[]> => {
+      const { summaries } = await extractRubyProject({
+        files: [orders],
+        packs: [pack],
+        gapHandling,
+      });
+      return summaries.flatMap((s) =>
+        s.gaps.map((gap) => `${s.identity.name}: ${gap.description}`),
+      );
+    };
+
+    expect(await gapsUnder("permissive")).toEqual([
+      "index: The call to public_send goes through a value this run could not settle, so whatever runs there is missing from this summary",
+      "routes: routes.rb also declares mount",
+      "load_orders: The call to public_send goes through a value this run could not settle, so whatever runs there is missing from this summary",
+      "load_orders: The call to finder.call runs through a parameter, and no caller in this run passes it a function by name, so whatever runs there is missing from this summary",
+    ]);
+    expect(await gapsUnder("silent")).toEqual([]);
+  });
+
   it("emits nothing when the pattern has no gap to report", async () => {
     const orders = write(
       "app/controllers/orders_controller.rb",
