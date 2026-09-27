@@ -248,6 +248,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       write: async () => {},
     };
   }
+  const manifests = new ManifestReads<Meta, UnitData>();
   return {
     async tryHit(input: CacheInput): Promise<BehavioralSummary[] | null> {
       const result = await this.lookup(input);
@@ -255,7 +256,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
     },
     async lookup(input: CacheInput): Promise<CacheLookup> {
       const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await readManifest<Meta, UnitData>(
+      const manifest = await manifests.readAtRunStart(
         path.join(entryDir, "manifest.json"),
       );
       if (manifest === null) {
@@ -275,6 +276,8 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       // Eviction keeps the most recently used entries, and a run that hits
       // never writes, so the hit has to mark the entry as used.
       await markUsed(entryDir);
+      // The caller owns these summaries now and may change them.
+      manifests.forget();
       return {
         kind: "hit",
         summaries: manifest.summaries,
@@ -283,7 +286,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
     },
     async plan(input: CacheInput): Promise<PartialPlan<Meta, UnitData> | null> {
       const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await readManifest<Meta, UnitData>(
+      const manifest = await manifests.readAgain(
         path.join(entryDir, "manifest.json"),
       );
       if (
@@ -307,9 +310,12 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       attribution?: CacheAttribution<Meta, UnitData>,
     ): Promise<void> {
       const entryDir = entryDirFor(cacheDir, input);
-      const previous = await readManifest<Meta, UnitData>(
+      // Only the file stamps are read from the previous entry. The caller
+      // may have changed the summaries a plan handed out, which is fine here.
+      const previous = await manifests.readAgain(
         path.join(entryDir, "manifest.json"),
       );
+      manifests.forget();
       const configStamp = await stampConfigFile(input.configPath);
       const files = await hashStamps(await resolveFileStamps(input), previous);
       const manifest: Manifest<Meta, UnitData> = {
@@ -662,6 +668,64 @@ function missDiag(reason: NonNullable<CacheDiagnostic["missReason"]>): {
     kind: "miss",
     diagnostic: { kind: "miss", missReason: reason },
   };
+}
+
+/**
+ * One parse of the manifest per run. A partial run looks the entry up,
+ * plans from it and writes it back, and on a large project each parse
+ * of the manifest costs about half a second.
+ *
+ * `lookup` always reads the file, because a run starts there and another
+ * process may have written the entry since the last run. `plan` and
+ * `write` reuse that parse while the file on disk is the one it came
+ * from. Once a hit hands the summaries to the caller, or a write
+ * replaces the entry, the parse is dropped, since the caller may change
+ * the summaries it was given.
+ */
+class ManifestReads<Meta, UnitData> {
+  private last: {
+    path: string;
+    stamp: string | null;
+    manifest: Manifest<Meta, UnitData> | null;
+  } | null = null;
+
+  async readAtRunStart(
+    manifestPath: string,
+  ): Promise<Manifest<Meta, UnitData> | null> {
+    const stamp = await manifestStamp(manifestPath);
+    const manifest = await readManifest<Meta, UnitData>(manifestPath);
+    this.last = { path: manifestPath, stamp, manifest };
+    return manifest;
+  }
+
+  async readAgain(
+    manifestPath: string,
+  ): Promise<Manifest<Meta, UnitData> | null> {
+    const last = this.last;
+    if (
+      last !== null &&
+      last.path === manifestPath &&
+      last.stamp !== null &&
+      last.stamp === (await manifestStamp(manifestPath))
+    ) {
+      return last.manifest;
+    }
+    return await this.readAtRunStart(manifestPath);
+  }
+
+  forget(): void {
+    this.last = null;
+  }
+}
+
+/** Null when there is no manifest, so an absent file is never reused. */
+async function manifestStamp(manifestPath: string): Promise<string | null> {
+  try {
+    const stat = await fs.stat(manifestPath);
+    return `${stat.ino}:${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return null;
+  }
 }
 
 async function readManifest<Meta, UnitData>(
