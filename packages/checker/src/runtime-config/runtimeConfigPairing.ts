@@ -683,7 +683,7 @@ function makeScopeUnknownFinding(
     boundary: binding,
     provider: makeSide(runtime),
     consumer: makeSide(runtime),
-    description: `${semantics.instanceName} (${semantics.deploymentTarget}) has no codeScope; cannot verify whether code in this runtime reads its declared environment variables. ${whyUnplaced(runtime)}`,
+    description: `${semantics.instanceName} (${semantics.deploymentTarget}) has no codeScope, so suss cannot tell whether code in this runtime reads its declared environment variables. ${whyUnplaced(runtime)}`,
     severity: "info",
   };
 }
@@ -701,5 +701,5 @@ function whyUnplaced(runtime: BehavioralSummary): string {
   if (contract?.entryPoint !== undefined) {
     return `Its entry point is ${contract.entryPoint}, which matches no module in this run. Extracting the code the deployment packages would place it.`;
   }
-  return "Add Metadata.SussCodeScope to the resource (or use SAM CodeUri) to enable env-var pairing.";
+  return "Add Metadata.SussCodeScope to the resource, or give it a SAM CodeUri, so its environment can be paired with the code that reads it.";
 }

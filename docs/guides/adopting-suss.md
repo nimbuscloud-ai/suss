@@ -132,7 +132,7 @@ A client pairs with a handler when the method and the path match, so a client in
 
 ```
 [WARNING] boundaryFieldUnknown
-  PaidWorkerFunction.handler reads "data.invoiceId" off a message on aws_sqs channel "PaidQueue" but no producer in the analysed scope sends "data.invoiceId". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.
+  PaidWorkerFunction.handler reads "data.invoiceId" off a message on aws_sqs channel "PaidQueue" but no producer in this run sends "data.invoiceId". Either a producer renamed or removed the field, or the consumer expects a field that was never sent.
   provider: cloudformation:template.yaml::PaidWorkerFunction.FromPaid (cloudformation:template.yaml:1)
   consumer: src/handlers/paidWorker.ts::PaidWorkerFunction.handler (src/handlers/paidWorker.ts:10)
   boundary: cloudformation (aws_sqs)
