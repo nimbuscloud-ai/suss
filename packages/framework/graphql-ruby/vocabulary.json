@@ -10,7 +10,7 @@
   "resolve": "graphql-ruby: the instance method a Mutation or Resolver class defines to answer the field it is wired to",
   "required": "graphql-ruby: argument keyword opting out of the required-by-default registration",
   "camelize": "graphql-ruby: field/argument keyword overriding the schema-wide camelize default for that one name",
-  "Integer": "graphql-ruby: native Ruby class accepted as a convenience synonym for the Int scalar",
+  "Integer": "language: Ruby's own Integer class and Kernel#Integer conversion. graphql-ruby accepts the class as a convenience synonym for the Int scalar",
   "input": "graphql-ruby: the one wire argument RelayClassicMutation wraps a mutation's declared arguments into",
   "dataloader": "graphql-ruby: the receiverless call HasDataloader gives a resolver for the request's GraphQL::Dataloader",
   "with": "graphql-ruby: the Dataloader method that picks a Source class and its batch arguments",

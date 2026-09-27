@@ -52,6 +52,7 @@ export interface ConstructedFrom {
   readonly named?: readonly string[];
 }
 
+import type { Effect } from "@suss/behavioral-ir";
 import type { EffectArg } from "./index.js";
 
 /**
@@ -266,6 +267,20 @@ export interface CallOps {
    * `InjectRepository(Order)`, keeps the table on the class itself.
    */
   classAt?(index: number): ClassOps | null;
+  /**
+   * Said by a recognizer about an effect it built from this call: the
+   * value the call states for each column the effect writes or picks
+   * rows by. The adapter asks where each value came from and records it
+   * on the transition. Leaving it out changes only that record.
+   */
+  statesSlots?(effect: Effect, slots: readonly StatedSlot[]): void;
+}
+
+/** A column an effect writes or picks rows by, and the value stated for it. */
+export interface StatedSlot {
+  readonly slot: "field" | "selector";
+  readonly name: string;
+  readonly value: ValueOps;
 }
 
 /** One class a call refers to, as the questions a pack can ask about it. */

@@ -24,7 +24,12 @@ import { constantOf, literalOf } from "@suss/values";
 import { field, OWN_BODY_TYPES, rangeOf, readCallArgs } from "./ast.js";
 import { isBareMethodCall, localNamesIn } from "./paths/bareCalls.js";
 import { lowerRubyBody } from "./paths/lowering.js";
-import { predicateOf } from "./paths/predicates.js";
+import {
+  type GuardInputs,
+  operandsOf,
+  predicateOf,
+} from "./paths/predicates.js";
+import { guardInputs } from "./provenance.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
@@ -174,20 +179,50 @@ function effectsReaching(
   );
 }
 
-/** One of the engine's conditions as a raw condition, with the predicate read out of its Ruby expression when it has one. */
-function conditionOf(condition: {
+/** A condition as the path engine hands it over. */
+interface PathCondition {
   sourceText: string;
   polarity: "positive" | "negative";
   source: RawCondition["source"];
   expression: RbNode | null;
-}): RawCondition {
+}
+
+/** One of the engine's conditions as a raw condition, with the predicate read out of its Ruby expression when it has one. */
+function conditionOf(
+  condition: PathCondition,
+  inputs: GuardInputs | undefined,
+): RawCondition {
   return {
     sourceText: condition.sourceText,
     structured:
-      condition.expression === null ? null : predicateOf(condition.expression),
+      condition.expression === null
+        ? null
+        : predicateOf(condition.expression, inputs),
     polarity: condition.polarity,
     source: condition.source,
   };
+}
+
+/**
+ * The input each subject of a method's conditions reads, asked once for
+ * every path through it.
+ */
+function conditionInputs(
+  method: RbNode,
+  paths: ReadonlyArray<readonly PathCondition[]>,
+  facts: Database | undefined,
+): GuardInputs | undefined {
+  if (facts === undefined) {
+    return undefined;
+  }
+  const operands = paths.flatMap((path) =>
+    path.flatMap((condition) =>
+      condition.expression === null ? [] : operandsOf(condition.expression),
+    ),
+  );
+  return operands.length === 0
+    ? undefined
+    : guardInputs(operands, { facts, unit: method });
 }
 
 interface Outcome {
@@ -277,6 +312,7 @@ export function returnPathBranches(
   method: RbNode,
   effects: readonly RawEffect[],
   exits: readonly EndingCall[] = [],
+  facts?: Database,
 ): RawBranch[] | null {
   const body = field(method, "body");
   if (body === null) {
@@ -293,13 +329,20 @@ export function returnPathBranches(
     [...returns, ...exitCalls],
   );
 
+  const inputs = conditionInputs(
+    method,
+    [...enumerated.byTerminal.values(), enumerated.fallthrough].flat(),
+    facts,
+  );
   const branches: RawBranch[] = [];
   const push = (
     paths: readonly ConditionInfo<RbNode>[][],
     terminal: RawTerminal,
   ): void => {
     for (const path of paths) {
-      const conditions = path.map(conditionOf);
+      const conditions = path.map((condition) =>
+        conditionOf(condition, inputs),
+      );
       branches.push({
         conditions,
         terminal,
@@ -386,6 +429,13 @@ export function responseBranches(
   );
 
   const statusNames = pattern.statusCodeNames ?? {};
+  const inputs = conditionInputs(
+    method,
+    [...enumerated.byTerminal.values(), enumerated.fallthrough].flat(),
+    options.facts,
+  );
+  const conditionsOf = (path: readonly PathCondition[]): RawCondition[] =>
+    path.map((condition) => conditionOf(condition, inputs));
   const outcomes: Outcome[] = [];
   for (const terminal of terminals) {
     const declaration = declarationOf(terminal, byName, locals);
@@ -395,7 +445,7 @@ export function responseBranches(
         : readingOfCall(terminal, declaration, statusNames, options.facts);
     for (const path of enumerated.byTerminal.get(terminal) ?? []) {
       outcomes.push({
-        conditions: path.map(conditionOf),
+        conditions: conditionsOf(path),
         reading,
         location: rangeOf(terminal),
       });
@@ -403,7 +453,7 @@ export function responseBranches(
   }
   for (const path of enumerated.fallthrough) {
     outcomes.push({
-      conditions: path.map(conditionOf),
+      conditions: conditionsOf(path),
       reading: absentReading,
       location: rangeOf(method),
       fellThrough: true,

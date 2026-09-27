@@ -33,6 +33,8 @@ import {
   parameterNameAndType,
   stringLiteralValue,
 } from "../ast.js";
+import { bindModule } from "../scope.js";
+import { CONVERTING_BUILTINS } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameReads, NameWrite } from "@suss/resolution";
@@ -234,6 +236,8 @@ interface Emitter {
   namedWrites: NamedWrites | null;
   /** The assignments a receiver's or a declared name's stores collected, by node key. */
   placedWrites: Set<string>;
+  /** The names the module binds, so a builtin it rebinds or imports is not taken for the builtin. */
+  moduleNames: () => ReadonlySet<string>;
 }
 
 /**
@@ -341,6 +345,27 @@ function emitCall(emitter: Emitter, call: PyNode): void {
       String(argument.position),
       valueKey(emitter, argument.node),
     );
+  }
+  emitConversion(emitter, call, callKey);
+}
+
+/** `converts` for a call of a builtin conversion the file does not rebind. */
+function emitConversion(emitter: Emitter, call: PyNode, callKey: string): void {
+  const callee = field(call, "function");
+  const [first] = callArguments(call);
+  if (
+    callee?.type !== "identifier" ||
+    !CONVERTING_BUILTINS.has(callee.text) ||
+    first?.kind !== "positional"
+  ) {
+    return;
+  }
+  const name = callee.text;
+  const builtin =
+    nameKey(emitter.filePath, emitter.enclosing, name) ===
+      nameId(emitter.filePath, name) && !emitter.moduleNames().has(name);
+  if (builtin) {
+    add(emitter, "converts", callKey, valueKey(emitter, first.node), name);
   }
 }
 
@@ -549,7 +574,7 @@ function walkExpressions(
   }
 }
 
-/** A key the source writes out, which `readsProperty` covers instead. */
+/** A key the source writes out, which `readsEntry` covers when it is a string. */
 const WRITTEN_KEY_TYPES = new Set(["string", "integer", "concatenated_string"]);
 
 /**
@@ -573,6 +598,38 @@ function emitKeyedRead(
     valueKey(emitter, container),
     valueKey(emitter, key),
   );
+}
+
+/**
+ * `headers["x-tenant-id"]`, an entry read at a key the source writes out.
+ * It is `readsEntry` and not `readsProperty`, since a dict's entries are
+ * not its attributes. The resolution DESIGN.md says what the difference
+ * changes.
+ */
+function emitWrittenKeyRead(
+  emitter: Emitter,
+  site: PyNode,
+  container: PyNode,
+  key: PyNode,
+): void {
+  const name = plainStringOf(key);
+  if (name !== null) {
+    add(
+      emitter,
+      "readsEntry",
+      nodeId(emitter.filePath, site),
+      valueKey(emitter, container),
+      name,
+    );
+  }
+}
+
+/** What a string written with one pair of plain quotes says, or null. */
+function plainStringOf(node: PyNode): string | null {
+  const written = /^(['"])([^'"\\]*)\1$/.exec(node.text);
+  return node.type === "string" && written !== null
+    ? (written[2] ?? null)
+    : null;
 }
 
 /** The subscript of `a[i]`, when the source writes exactly one. */
@@ -777,6 +834,7 @@ function emitExpressionFact(
     const container = field(child, "value");
     if (index !== null && container !== null) {
       emitKeyedRead(emitter, child, container, index);
+      emitWrittenKeyRead(emitter, child, container, index);
     }
   }
   if (type === "dictionary") {
@@ -2126,6 +2184,7 @@ export function emitValueFacts(
   filePath: string,
   root: PyNode,
 ): void {
+  let moduleNames: ReadonlySet<string> | null = null;
   const emitter: Emitter = {
     db,
     filePath,
@@ -2134,6 +2193,12 @@ export function emitValueFacts(
     // Every name read at the top of a module belongs to the module.
     namedWrites: { body: root, declares: () => true, byProperty: new Map() },
     placedWrites: new Set(),
+    // Binding the module is a walk of its own, so only a file that calls
+    // a conversion pays for it.
+    moduleNames: () => {
+      moduleNames ??= new Set(bindModule(root).moduleScope.bindings.keys());
+      return moduleNames;
+    },
   };
   emitNestedDefinitions(emitter, root);
   emitScopeWrites(emitter, readScope(root, []), true);

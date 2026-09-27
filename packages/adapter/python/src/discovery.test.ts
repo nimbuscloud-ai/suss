@@ -427,7 +427,13 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
       path: "/orders/{order_id}",
     });
     expect(get?.parameters).toEqual([
-      { name: "order_id", position: 1, role: "pathParams", typeText: null },
+      {
+        name: "order_id",
+        position: 1,
+        role: "pathParams",
+        field: "order_id",
+        typeText: null,
+      },
     ]);
   });
 
@@ -450,8 +456,20 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
       path: "/orders/{order_id}/{page}",
     });
     expect(get?.parameters).toEqual([
-      { name: "order_id", position: 1, role: "pathParams", typeText: null },
-      { name: "page", position: 2, role: "pathParams", typeText: null },
+      {
+        name: "order_id",
+        position: 1,
+        role: "pathParams",
+        field: "order_id",
+        typeText: null,
+      },
+      {
+        name: "page",
+        position: 2,
+        role: "pathParams",
+        field: "page",
+        typeText: null,
+      },
     ]);
   });
 
@@ -501,7 +519,13 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
       path: "/users/{name}",
     });
     expect(get?.parameters).toEqual([
-      { name: "name", position: 1, role: "pathParams", typeText: null },
+      {
+        name: "name",
+        position: 1,
+        role: "pathParams",
+        field: "name",
+        typeText: null,
+      },
     ]);
   });
 
@@ -561,7 +585,13 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
       path: "/orders/<int:order_id>",
     });
     expect(get?.parameters).toEqual([
-      { name: "order_id", position: 1, role: "queryParams", typeText: null },
+      {
+        name: "order_id",
+        position: 1,
+        role: "queryParams",
+        field: "order_id",
+        typeText: null,
+      },
     ]);
   });
 
@@ -642,11 +672,18 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     const units = await unitsOf(source, [fastapiLike]);
     const readItem = units.find((u) => u.identity.name === "read_item");
     expect(readItem?.parameters).toEqual([
-      { name: "item_id", position: 0, role: "pathParams", typeText: "int" },
+      {
+        name: "item_id",
+        position: 0,
+        role: "pathParams",
+        field: "item_id",
+        typeText: "int",
+      },
       {
         name: "q",
         position: 1,
         role: "queryParams",
+        field: "q",
         typeText: "Optional[str]",
       },
     ]);
@@ -883,8 +920,20 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       path: "/files/{item_id}/{file_path}",
     });
     expect(readFile?.parameters).toEqual([
-      { name: "item_id", position: 0, role: "pathParams", typeText: "int" },
-      { name: "file_path", position: 1, role: "pathParams", typeText: "str" },
+      {
+        name: "item_id",
+        position: 0,
+        role: "pathParams",
+        field: "item_id",
+        typeText: "int",
+      },
+      {
+        name: "file_path",
+        position: 1,
+        role: "pathParams",
+        field: "file_path",
+        typeText: "str",
+      },
     ]);
   });
 

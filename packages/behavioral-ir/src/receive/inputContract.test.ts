@@ -10,6 +10,7 @@ import {
 import {
   boundaryInputPathOf,
   boundaryInputReads,
+  boundarySourcePathOf,
   type CarriesPayload,
   carriesPayloadFor,
   checkReceivedInput,
@@ -616,6 +617,114 @@ describe("boundaryInputPathOf", () => {
       { type: "input", inputRef: "row", path: ["id"] },
     );
     expect(path).toBeNull();
+  });
+});
+
+describe("boundarySourcePathOf", () => {
+  const off = (path: string[], summary = route([])) =>
+    boundarySourcePathOf(summary, GET_INVOICES, {
+      type: "input",
+      inputRef: "req",
+      path,
+    });
+
+  it("spells a value from a section the way a read of it is spelled", () => {
+    expect(off(["body", "tenantId"])).toEqual(["body", "tenantId"]);
+  });
+
+  it("spells a value middleware put on the request as its path off the request", () => {
+    expect(off(["auth", "tenantId"])).toEqual(["auth", "tenantId"]);
+  });
+
+  it("gives nothing for the request itself", () => {
+    expect(off([])).toBeNull();
+  });
+
+  it("gives nothing when the sections start from different values", () => {
+    const spelling = {
+      ...EXPRESS_SPELLING,
+      body: { path: ["payload"], saysWhichField: true },
+    };
+    expect(off(["auth", "tenantId"], route([], spelling))).toBeNull();
+  });
+
+  it("spells a parameter that is one field as that field of its part", () => {
+    const summary: BehavioralSummary = {
+      ...receiver({
+        inputs: [
+          {
+            type: "parameter",
+            name: "x_tenant_id",
+            position: 0,
+            role: "headers",
+            field: "x-tenant-id",
+            shape: null,
+          },
+        ],
+      }),
+      metadata: {
+        requestSpelling: {
+          headers: { path: ["headers"], saysWhichField: true },
+        },
+      },
+    };
+    expect(
+      boundarySourcePathOf(summary, GET_INVOICES, {
+        type: "input",
+        inputRef: "x_tenant_id",
+        path: [],
+      }),
+    ).toEqual(["headers", "x-tenant-id"]);
+  });
+
+  it("reads a request the handler is not handed by the word its spelling starts with", () => {
+    const summary: BehavioralSummary = {
+      ...receiver({ inputs: [] }),
+      metadata: {
+        requestSpelling: {
+          headers: { path: ["request", "headers"], saysWhichField: true },
+          params: { path: ["params"], saysWhichField: true },
+        },
+      },
+    };
+    const spelled = (inputRef: string, path: string[]) =>
+      boundarySourcePathOf(summary, GET_INVOICES, {
+        type: "input",
+        inputRef,
+        path,
+      });
+    expect([
+      spelled("params", ["tenant_id"]),
+      spelled("request", ["headers", "X-Tenant-Id"]),
+      spelled("session", ["user_id"]),
+    ]).toEqual([["params", "tenant_id"], ["headers", "X-Tenant-Id"], null]);
+  });
+
+  it("gives nothing for a route whose pack recorded no spelling", () => {
+    const summary = receiver({ inputs: [parameter("req", "request")] });
+    expect(off(["auth", "tenantId"], summary)).toBeNull();
+  });
+
+  it("reads a function-call and a message-bus boundary the way a guard does", () => {
+    const call = boundarySourcePathOf(
+      receiver({ inputs: [parameter("c", "consumer")] }),
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "code",
+        package: "@suss/checker",
+      }),
+      { type: "input", inputRef: "c", path: ["identity"] },
+    );
+    const message = boundarySourcePathOf(
+      receiver({ inputs: [parameter("event", "event")] }),
+      messageBusBinding({
+        recognition: "code",
+        messageBus: "aws_sqs",
+        channel: "orders",
+      }),
+      { type: "input", inputRef: "event", path: ["orderId"] },
+    );
+    expect([call, message]).toEqual([["consumer", "identity"], ["orderId"]]);
   });
 });
 

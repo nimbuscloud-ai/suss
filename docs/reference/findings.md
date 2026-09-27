@@ -634,6 +634,22 @@ A `results` line on an outcome is satisfied when one transition producing that o
 
 **A bug when:** the branch was supposed to have the effect and nobody wrote it, usually because somebody added an early return above the audit write. Add the effect on that path.
 
+### `valueFromElsewhere`
+
+**Severity:** error.
+
+A `results` line says where a column's value comes from with `from`, and the code takes it from somewhere else.
+
+```
+[error] GET /orders: Intent "orders-list" says listed reads postgresql:orders with tenant_id taken from input.auth.tenantId; get takes it from input.body.tenantId (in the transition at line 21). Take the value from the source the intent gives, or correct the document.
+```
+
+The summary records, for each column an access writes or picks rows by, where the walk from its value ended. The finding fires when none of the effects the line matched takes the column from the source the line gives, and at least one takes it from a source suss can name: a path off the unit's input, or a literal. When every walk stopped at something it cannot follow, the claim goes under `unchecked` as `unreadValue` instead, since the value might still come from the source the document gives.
+
+**Legitimate when:** the document is out of date, as when a route that took the tenant from a header now takes it from a verified token. Correct the `from` line.
+
+**A bug when:** the code takes a value from the caller that should have come from somewhere the caller cannot choose, such as a tenant id read from the request body instead of the token. Take the value from the source the intent gives.
+
 ### `unreadInputField`
 
 **Severity:** warning when the field is `required`, info otherwise.

@@ -154,6 +154,7 @@ describe("extraction over fixtures/python-webapp", () => {
         name: "order_id",
         position: 1,
         role: "pathParams",
+        field: "order_id",
         shape: null,
       },
     ]);
@@ -185,6 +186,7 @@ describe("extraction over fixtures/python-webapp", () => {
         name: "school_id",
         position: 1,
         role: "pathParams",
+        field: "school_id",
         shape: null,
       },
     ]);
@@ -223,6 +225,7 @@ describe("extraction over fixtures/python-webapp", () => {
         name: "report_id",
         position: 1,
         role: "pathParams",
+        field: "report_id",
         shape: null,
       },
     ]);

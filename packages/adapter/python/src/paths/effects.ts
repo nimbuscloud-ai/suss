@@ -12,9 +12,10 @@ import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
 import { field, runsAtModuleLoad } from "../ast.js";
+import { guardInputs } from "../provenance.js";
 import { askWrittenValues, evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
-import { predicateOf } from "./predicates.js";
+import { type GuardInputs, operandsOf, predicateOf } from "./predicates.js";
 
 import type { Database } from "@suss/datalog";
 import type { ConditionInfo, EffectArg, RawEffect } from "@suss/extractor";
@@ -193,6 +194,32 @@ function effectValueNodes(
   return found;
 }
 
+/**
+ * The input each subject of the conditions gating a body's calls reads,
+ * asked once for the body. Code at module level belongs to no function,
+ * so nothing it tests is an input.
+ */
+function gatingInputs(
+  body: PyNode,
+  gatingOf: ReadonlyArray<readonly ConditionInfo<PyNode>[][] | undefined>,
+  facts: Database | undefined,
+): GuardInputs | undefined {
+  const unit = body.parent;
+  if (facts === undefined || unit === null) {
+    return undefined;
+  }
+  const operands = gatingOf.flatMap((paths) =>
+    (paths ?? []).flatMap((path) =>
+      path.flatMap((condition) =>
+        condition.expression === null ? [] : operandsOf(condition.expression),
+      ),
+    ),
+  );
+  return operands.length === 0
+    ? undefined
+    : guardInputs(operands, { facts, unit });
+}
+
 function invocationEffectsIn(
   body: PyNode,
   written: readonly PyNode[],
@@ -241,10 +268,11 @@ function invocationEffectsIn(
     calls.flatMap((call, index) => effectValueNodes(call, gatingOf[index])),
     facts,
   );
+  const inputs = gatingInputs(body, gatingOf, facts);
 
   return calls.map((call, index) => {
     const conditions = sharedGatingConditions(gatingOf[index], (condition) =>
-      predicateOf(condition, facts),
+      predicateOf(condition, facts, inputs),
     );
     return {
       type: "invocation",

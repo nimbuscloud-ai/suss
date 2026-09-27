@@ -32,22 +32,32 @@ const opaqueOf = (node: RbNode): Predicate => ({
   reason: "complexExpression",
 });
 
+/**
+ * The input each operand of a body's conditions reads, by node id, for
+ * the operands whose value came from exactly one input. `guardInputs`
+ * builds it.
+ */
+export type GuardInputs = ReadonlyMap<number, ValueRef>;
+
+/** The operators that join two tests into one. */
+const JOINING = new Set(["&&", "||", "and", "or"]);
+
 /** What one condition tests. */
-export function predicateOf(node: RbNode): Predicate {
+export function predicateOf(node: RbNode, inputs?: GuardInputs): Predicate {
   if (node.type === "parenthesized_statements") {
     const inner = node.namedChildren[0];
-    return inner == null ? opaqueOf(node) : predicateOf(inner);
+    return inner == null ? opaqueOf(node) : predicateOf(inner, inputs);
   }
 
   if (node.type === "unary" && field(node, "operator")?.text === "!") {
     const operand = field(node, "operand") ?? node.namedChildren[0];
     return operand == null
       ? opaqueOf(node)
-      : { type: "negation", operand: predicateOf(operand) };
+      : { type: "negation", operand: predicateOf(operand, inputs) };
   }
 
   if (node.type === "binary") {
-    return binaryOf(node);
+    return binaryOf(node, inputs);
   }
 
   const asked = calledMethod(node);
@@ -55,13 +65,21 @@ export function predicateOf(node: RbNode): Predicate {
     const receiver = field(node, "receiver");
     return receiver === null
       ? opaqueOf(node)
-      : { type: "nullCheck", subject: valueRefOf(receiver), negated: false };
+      : {
+          type: "nullCheck",
+          subject: valueRefOf(receiver, inputs),
+          negated: false,
+        };
   }
 
-  if (node.type === "identifier" || memberChain(node) !== null) {
+  if (
+    node.type === "identifier" ||
+    memberChain(node) !== null ||
+    inputs?.has(node.id) === true
+  ) {
     return {
       type: "truthinessCheck",
-      subject: valueRefOf(node),
+      subject: valueRefOf(node, inputs),
       negated: false,
     };
   }
@@ -69,7 +87,51 @@ export function predicateOf(node: RbNode): Predicate {
   return opaqueOf(node);
 }
 
-function binaryOf(node: RbNode): Predicate {
+/**
+ * The values `predicateOf` reads a condition's subjects from, so a body
+ * can ask where all of them came from before it builds any predicate.
+ */
+export function operandsOf(node: RbNode): RbNode[] {
+  if (node.type === "parenthesized_statements") {
+    const inner = node.namedChildren[0];
+    return inner == null ? [] : operandsOf(inner);
+  }
+  if (node.type === "unary" && field(node, "operator")?.text === "!") {
+    const operand = field(node, "operand") ?? node.namedChildren[0];
+    return operand == null ? [] : operandsOf(operand);
+  }
+  if (node.type === "binary") {
+    const operator = field(node, "operator")?.text ?? "";
+    const sides = [field(node, "left"), field(node, "right")].filter(
+      (side): side is RbNode => side !== null,
+    );
+    if (JOINING.has(operator)) {
+      return sides.flatMap(operandsOf);
+    }
+    return OPERATORS[operator] === undefined ? [] : sides;
+  }
+  const receiver = field(node, "receiver");
+  if (calledMethod(node) === "nil?" && receiver !== null) {
+    return operandsOf(receiver);
+  }
+  return mayReadAnInput(node) ? [node] : [];
+}
+
+/**
+ * Whether a subject is written the way a read of an input is: a name, a
+ * member read with no arguments, or an entry read. A literal or a call
+ * with arguments computes its value, and asking where it came from costs
+ * a walk that ends at the call.
+ */
+function mayReadAnInput(node: RbNode): boolean {
+  return (
+    node.type === "identifier" ||
+    node.type === "element_reference" ||
+    memberChain(node) !== null
+  );
+}
+
+function binaryOf(node: RbNode, inputs: GuardInputs | undefined): Predicate {
   const operator = field(node, "operator")?.text ?? "";
   const left = field(node, "left");
   const right = field(node, "right");
@@ -80,31 +142,30 @@ function binaryOf(node: RbNode): Predicate {
   if (op !== undefined) {
     return {
       type: "comparison",
-      left: valueRefOf(left),
+      left: valueRefOf(left, inputs),
       op,
-      right: valueRefOf(right),
+      right: valueRefOf(right, inputs),
     };
   }
-  if (
-    operator === "&&" ||
-    operator === "||" ||
-    operator === "and" ||
-    operator === "or"
-  ) {
+  if (JOINING.has(operator)) {
     return {
       type: "compound",
       op: operator === "&&" || operator === "and" ? "and" : "or",
-      operands: [predicateOf(left), predicateOf(right)],
+      operands: [predicateOf(left, inputs), predicateOf(right, inputs)],
     };
   }
   return opaqueOf(node);
 }
 
 /** The value one side of a test reads. */
-function valueRefOf(node: RbNode): ValueRef {
+function valueRefOf(node: RbNode, inputs: GuardInputs | undefined): ValueRef {
   const literal = literalOf(node);
   if (literal !== null) {
     return literal;
+  }
+  const input = inputs?.get(node.id);
+  if (input !== undefined) {
+    return input;
   }
   const chain = memberChain(node);
   if (chain !== null) {

@@ -34,11 +34,29 @@ export interface SqlAccess {
   fields: string[];
   /** The fields it picks rows by. */
   selector: string[];
+  /**
+   * The placeholder that gives a column its value, where the statement
+   * writes one: `tenant_id = $1` in a `WHERE`, a column of an `INSERT`
+   * and its place under `VALUES`, an assignment in a `SET`. Present only
+   * when the caller asked for it and a column is given one.
+   */
+  placeholders?: SqlPlaceholder[];
+}
+
+/** One column the statement gives a placeholder's value. */
+export interface SqlPlaceholder {
+  field: string;
+  /** Which of the access's lists the column is in. */
+  clause: "fields" | "selector";
+  /** `$1` is 1, counted the way the driver counts; `:tenant` is `tenant`. */
+  placeholder: number | string;
 }
 
 export interface SqlReadOptions {
   /** Which dialect the statement is written in. */
   dialect?: string;
+  /** Whether to say which placeholder gives each column its value. */
+  placeholders?: boolean;
 }
 
 interface SqlParser {
@@ -52,14 +70,28 @@ interface ParserModule {
 /** The grammars, keyed by the store name a pack declares. */
 const DIALECTS: Record<string, Grammar> = {
   postgresql: { module: postgresql as ParserModule, database: "postgresql" },
-  mysql: { module: mysql as ParserModule, database: "mysql" },
-  sqlite: { module: sqlite as ParserModule, database: "sqlite" },
+  mysql: {
+    module: mysql as ParserModule,
+    database: "mysql",
+    bindsByPosition: true,
+  },
+  sqlite: {
+    module: sqlite as ParserModule,
+    database: "sqlite",
+    bindsByPosition: true,
+  },
   bigquery: { module: bigquery as ParserModule, database: "bigquery" },
 };
 
 interface Grammar {
   module: ParserModule;
   database: string;
+  /**
+   * Whether the dialect writes a bind as a bare `?`, counted by where it
+   * appears. The tree does not keep that order, so each `?` is numbered
+   * as `$1`, `$2` before parsing, which these grammars also read.
+   */
+  bindsByPosition?: boolean;
 }
 
 /** Every table a statement touches. Empty when the dialect is unknown or the statement cannot be parsed. */
@@ -71,9 +103,33 @@ export function readSqlAccess(
   if (grammar === undefined) {
     return [];
   }
-  return accessesInSql(sql, grammar)
+  const numbered = grammar.bindsByPosition === true ? numberedBinds(sql) : sql;
+  return accessesInSql(numbered, grammar)
     .map(qualified)
-    .filter((access): access is SqlAccess => access !== null);
+    .filter((access): access is SqlAccess => access !== null)
+    .map((access) =>
+      options.placeholders === true ? access : withoutPlaceholders(access),
+    );
+}
+
+/** Each bare `?` outside a quoted string or a comment, numbered in the order the statement writes them. */
+function numberedBinds(sql: string): string {
+  let count = 0;
+  return sql.replace(
+    /'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|-{2}[^\n]*|\/\*[\s\S]*?\*\/|\?/g,
+    (token) => {
+      if (token !== "?") {
+        return token;
+      }
+      count += 1;
+      return `$${count}`;
+    },
+  );
+}
+
+function withoutPlaceholders(access: SqlAccess): SqlAccess {
+  const { placeholders: _left, ...rest } = access;
+  return rest;
 }
 
 /**
@@ -580,6 +636,7 @@ function insertAccesses(node: Node, defined: Set<string>): SqlAccess[] {
       ...conflict.fields,
     ],
     selector: conflict.selector,
+    bound: boundInRows(namesOf(node.columns), node.values),
   };
   const sources = sourcesIn(node.table, defined);
   return [
@@ -598,6 +655,7 @@ function updateAccesses(node: Node, defined: Set<string>): SqlAccess[] {
   const stated: Stated = {
     fields: [...setTargets(node.set), ...refsIn(node.returning)],
     selector: refsIn(node.where),
+    bound: [...boundInSet(node.set), ...boundInWhere(node.where)],
   };
   return accessesAcross(sources, firstTable(node.table), stated, defined);
 }
@@ -611,6 +669,7 @@ function deleteAccesses(node: Node, defined: Set<string>): SqlAccess[] {
   const stated: Stated = {
     fields: refsIn(node.returning),
     selector: refsIn(node.where),
+    bound: boundInWhere(node.where),
   };
   const sources = withTable(sourcesIn(node.from, defined), written);
   return accessesAcross(sources, written, stated, defined);
@@ -622,7 +681,7 @@ function deleteAccesses(node: Node, defined: Set<string>): SqlAccess[] {
  * sets, with its `WHERE` as the selector. The other grammars write the
  * clause as `ON DUPLICATE KEY UPDATE`, which has no condition.
  */
-function conflictClauses(node: Node): Stated {
+function conflictClauses(node: Node): Omit<Stated, "bound"> {
   const conflict = asNode(node.conflict);
   const action = asNode(asNode(conflict?.action)?.expr);
   return {
@@ -686,6 +745,8 @@ interface Stated {
   fields: FieldRef[];
   /** The fields it picks rows by. */
   selector: FieldRef[];
+  /** The fields given a placeholder's value. */
+  bound: BoundRef[];
 }
 
 /** A select reads every table in its `FROM`. */
@@ -693,6 +754,7 @@ function selectAccesses(statement: Node, names: Set<string>): SqlAccess[] {
   const stated: Stated = {
     fields: refsIn(statement.columns),
     selector: refsIn(statement.where),
+    bound: boundInWhere(statement.where),
   };
   return accessesAcross(sourcesIn(statement.from, names), null, stated, names);
 }
@@ -715,16 +777,54 @@ function accessesAcross(
     named.length === 1 && !sources.derived ? (named[0] ?? null) : null;
   const fields = byTable(stated.fields, sources.tables, written ?? only);
   const selector = byTable(stated.selector, sources.tables, only);
+  const bound = boundByTable(stated.bound, sources.tables, {
+    fields: written ?? only,
+    selector: only,
+  });
   const own = named
     .filter((table) => !defined.has(table))
-    .map((table) => ({
-      table,
-      qualifier: [],
-      kind: table === written ? ("write" as const) : ("read" as const),
-      fields: fields.get(table) ?? [],
-      selector: selector.get(table) ?? [],
-    }));
+    .map((table): SqlAccess => {
+      const placeholders = bound.get(table) ?? [];
+      return {
+        table,
+        qualifier: [],
+        kind: table === written ? "write" : "read",
+        fields: fields.get(table) ?? [],
+        selector: selector.get(table) ?? [],
+        ...(placeholders.length > 0 ? { placeholders } : {}),
+      };
+    });
   return [...own, ...sources.inside];
+}
+
+/**
+ * The placeholders one statement gives each table's columns. An
+ * unqualified column goes where `byTable` would put it for its clause,
+ * so a placeholder is never on a column the access does not list.
+ */
+function boundByTable(
+  refs: readonly BoundRef[],
+  tables: ReadonlyMap<string, string>,
+  only: Record<SqlPlaceholder["clause"], string | null>,
+): Map<string, SqlPlaceholder[]> {
+  const found = new Map<string, SqlPlaceholder[]>();
+  for (const ref of refs) {
+    const table =
+      ref.table === undefined
+        ? only[ref.clause]
+        : (tables.get(ref.table) ?? null);
+    if (table === null) {
+      continue;
+    }
+    const already = found.get(table) ?? [];
+    already.push({
+      field: ref.field,
+      clause: ref.clause,
+      placeholder: ref.placeholder,
+    });
+    found.set(table, already);
+  }
+  return found;
 }
 
 /**
@@ -878,6 +978,104 @@ function refsIn(value: unknown): FieldRef[] {
     }
   };
   walk(value);
+  return found;
+}
+
+/** A column given a placeholder's value, before it is put on a table. */
+interface BoundRef extends FieldRef {
+  clause: SqlPlaceholder["clause"];
+  placeholder: number | string;
+}
+
+/**
+ * The placeholder a node is, or null for anything else. The grammars
+ * parse `$1` as a variable and `:tenant` as a parameter. A bare `?` is
+ * counted by where it appears in the text, which the tree does not keep
+ * in a form this reads, so it is left out.
+ */
+function placeholderOf(value: unknown): number | string | null {
+  const node = asNode(value);
+  if (node?.type === "var" && node.prefix === "$") {
+    return typeof node.name === "number" ? node.name : null;
+  }
+  return node?.type === "param" ? stringOf(node.value) : null;
+}
+
+/** Each `column = placeholder` comparison in a condition, either way round. */
+function boundInWhere(value: unknown): BoundRef[] {
+  const found: BoundRef[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    const record = asNode(node);
+    if (record === null) {
+      return;
+    }
+    if (record.type === "binary_expr" && record.operator === "=") {
+      const pair =
+        columnAndPlaceholder(record.left, record.right) ??
+        columnAndPlaceholder(record.right, record.left);
+      if (pair !== null) {
+        found.push({ ...pair, clause: "selector" });
+        return;
+      }
+    }
+    for (const entry of Object.values(record)) {
+      walk(entry);
+    }
+  };
+  walk(value);
+  return found;
+}
+
+function columnAndPlaceholder(
+  column: unknown,
+  placeholder: unknown,
+): Omit<BoundRef, "clause"> | null {
+  const ref = asNode(column);
+  const field = ref?.type === "column_ref" ? columnName(ref.column) : null;
+  const given = placeholderOf(placeholder);
+  if (ref === null || field === null || given === null) {
+    return null;
+  }
+  return { table: stringOf(ref.table) ?? undefined, field, placeholder: given };
+}
+
+/** Each assignment in a `SET` whose value is a placeholder. */
+function boundInSet(value: unknown): BoundRef[] {
+  const found: BoundRef[] = [];
+  for (const entry of Array.isArray(value) ? value : []) {
+    const node = asNode(entry);
+    const field = node === null ? null : columnName(node.column);
+    const given = placeholderOf(node?.value);
+    if (node !== null && field !== null && given !== null) {
+      const table = stringOf(node.table) ?? undefined;
+      found.push({ table, field, clause: "fields", placeholder: given });
+    }
+  }
+  return found;
+}
+
+/** Each listed column of an insert, against its place in every row of `VALUES`. */
+function boundInRows(columns: readonly string[], values: unknown): BoundRef[] {
+  const rows = asNode(values)?.values;
+  const found: BoundRef[] = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const items = asNode(row)?.value;
+    columns.forEach((field, at) => {
+      const given = placeholderOf(Array.isArray(items) ? items[at] : null);
+      if (given !== null) {
+        found.push({
+          table: undefined,
+          field,
+          clause: "fields",
+          placeholder: given,
+        });
+      }
+    });
+  }
   return found;
 }
 

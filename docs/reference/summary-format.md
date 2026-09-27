@@ -78,6 +78,8 @@ Here is a whole summary, from `suss extract --dir fixtures/express -f express`, 
 
 The handler is 23 lines of Express with two guards and a nested condition. The `db` it calls is declared with no body, so the walk stopped there and the gap records which call it was.
 
+A parameter the library fills with one field of the request says which field under `field`. FastAPI's `x_tenant_id: str = Header()` is `{ "role": "headers", "field": "x-tenant-id" }`, with the underscores written the way FastAPI sends them.
+
 ## One transition
 
 A transition records that when all of these conditions hold, this output comes out and these effects fire. Here is the 404 branch of the same handler:
@@ -163,6 +165,21 @@ The transition above has an `invocation` effect, which records that a call fired
 A transition lists each effect once, however many sites on that path produced it. The repeats become `count`, so a path that calls the same validator thirteen times has one effect with `"count": 13`, and a path that calls it once has no `count` at all. `callee` is the source text with its whitespace collapsed, so a chain broken across lines and the same chain written on one line are one effect.
 
 Every `interaction` includes the `BoundaryBinding` of the resource it reaches, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The nine classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read`, `schedule` and `stream-write`. [IR types](/reference/ir#effect) has each one's fields.
+
+## Where a value came from
+
+A transition whose effects write a column or pick rows by one records where each of those values came from, under `provenance`. The GetItem above, written in an Express route as `{ Key: { invoiceId: req.params.id } }`, gives:
+
+```json
+"provenance": [
+  {
+    "at": { "slot": "selector", "effect": 0, "name": "invoiceId" },
+    "from": [{ "type": "input", "inputRef": "req", "path": ["params", "id"] }]
+  }
+]
+```
+
+`at` says which column of which effect: `effect` is the effect's position in the transition's `effects`, and `slot` is `field` for a column the access writes and `selector` for one it picks rows by. `from` lists every place the value could have come from, in the value references a condition uses. An `input` is a path off one of the unit's inputs, a `literal` is a value written in the source, and an `unresolved` is where suss stopped following the value, with the source text it stopped at: a call into a library no pack describes, or a parameter of a helper function. A value the language converted on the way, as `Number(req.params.id)` or `params[:id].to_i`, is a `derived` reference whose `derivation` is a `methodCall` naming the conversion, with the input under it. A transition with no such column has no `provenance` field.
 
 ## How two summaries pair
 

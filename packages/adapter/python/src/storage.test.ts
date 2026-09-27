@@ -367,7 +367,25 @@ describe("the database work a Python body does", () => {
       { kind: "write", operation: "delete", fields: [] },
       { kind: "write", operation: "insert", fields: ["id", "total"] },
     ]);
-    expect(accessOf(effects[0])?.selector).toBeUndefined();
+    expect(accessOf(effects[0])?.selector).toEqual(["id"]);
+  });
+
+  it("picks rows by a model column compared in where, filter or and_", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import and_, select",
+        "",
+        "select(Orders).where(Orders.tenant_id == tenant)",
+        "select(Orders).where(and_(status == Orders.status, Orders.kind == 'a'))",
+        "select(Orders).where(Orders.total > 3, tenant.id == other)",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
+      ["tenant_id"],
+      ["status", "kind"],
+      undefined,
+    ]);
   });
 
   it("reads a session the handler takes as an annotated parameter", async () => {

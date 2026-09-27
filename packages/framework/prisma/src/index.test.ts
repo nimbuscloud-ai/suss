@@ -16,7 +16,7 @@ import { createFixtureProject, createTestProject } from "@suss/test-project";
 import { prismaFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { EffectArg } from "@suss/extractor";
+import type { EffectArg, StatedSlot } from "@suss/extractor";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -70,7 +70,10 @@ function makeProject(userSource: string): SourceFile {
   return project.createSourceFile("user.ts", userSource);
 }
 
-function recognizeAll(sourceFile: SourceFile): Effect[] {
+function recognizeAll(
+  sourceFile: SourceFile,
+  statesSlots?: (effect: Effect, slots: readonly StatedSlot[]) => void,
+): Effect[] {
   const pack = prismaFramework();
   const recognizer = pack.invocationRecognizers?.[0] ?? raise("no recognizer");
   const effects: Effect[] = [];
@@ -82,6 +85,9 @@ function recognizeAll(sourceFile: SourceFile): Effect[] {
       call: node as CallExpression,
       sourceFile,
       extractArgs: (): EffectArg[] => extractArgsForTest(node),
+      ...(statesSlots === undefined
+        ? {}
+        : { ops: callOpsFor(node, { statesSlots }) }),
     };
     const emitted = recognizer(node, ctx);
     if (emitted !== null) {
@@ -536,6 +542,37 @@ describe("prisma recognizer: happy path", () => {
       relationKey: true,
       operation: "set",
     });
+  });
+
+  it("states the value under `where` and under the payload for each column", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function rename(id: number, name: string) {
+        await db.user.update({ where: { id }, data: { name, extra: 1 } });
+      }
+      async function lookUp(email: string) {
+        await db.user.findUnique({ where: { email } });
+      }
+    `);
+    const said: unknown[] = [];
+    recognizeAll(file, (effect, slots) => {
+      const operation =
+        effect.type === "interaction" &&
+        effect.interaction.class === "storage-access"
+          ? effect.interaction.operation
+          : null;
+      for (const one of slots) {
+        said.push([operation, one.slot, one.name, one.value.asArg()]);
+      }
+    });
+    const named = (name: string) => ({ kind: "identifier", name });
+    expect(said).toEqual([
+      ["update", "selector", "id", named("id")],
+      ["update", "field", "name", named("name")],
+      ["update", "field", "extra", { kind: "number", value: 1 }],
+      ["findUnique", "selector", "email", named("email")],
+    ]);
   });
 
   it("keeps a write whose payload nobody could read as the whole row", () => {

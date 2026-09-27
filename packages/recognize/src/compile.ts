@@ -25,7 +25,12 @@ import { readSqlAccess, sqlFromParts } from "@suss/sql";
 import { opsIn } from "./ops.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { EffectArg, InvocationRecognizer } from "@suss/extractor";
+import type {
+  EffectArg,
+  InvocationRecognizer,
+  StatedSlot,
+} from "@suss/extractor";
+import type { SqlPlaceholder } from "@suss/sql";
 import type {
   AccessKind,
   AccessPathLink,
@@ -390,10 +395,25 @@ function accessEffect(matched: Matched, access: Access): Effect {
   const ending = chain.ending as StorageEnding;
   const { input, kind, reached, unsettled } = access;
   const stated = { input, entry: reached.entry, kind };
-  const selector = namesFor(meaning.selector, subject, stated, unsettled);
-  const fields = namesFor(meaning.fields, subject, stated, unsettled);
+  const listening = ops.statesSlots !== undefined;
+  const selectorRead: ReadValues | null = listening ? new Map() : null;
+  const fieldsRead: ReadValues | null = listening ? new Map() : null;
+  const selector = namesFor(
+    meaning.selector,
+    subject,
+    stated,
+    unsettled,
+    selectorRead,
+  );
+  const fields = namesFor(
+    meaning.fields,
+    subject,
+    stated,
+    unsettled,
+    fieldsRead,
+  );
 
-  return {
+  const effect: Effect = {
     type: "interaction",
     binding: storageBinding({
       recognition,
@@ -415,6 +435,92 @@ function accessEffect(matched: Matched, access: Access): Effect {
       operation: namesAt(subject, meaning.operation, unsettled)[0] ?? method,
       ...(selector.length > 0 ? { selector } : {}),
     },
+  };
+  const slots = [
+    ...slotsRead("selector", selector, selectorRead),
+    ...slotsRead("field", fields, fieldsRead),
+  ];
+  if (slots.length > 0) {
+    ops.statesSlots?.(effect, slots);
+  }
+  return effect;
+}
+
+/**
+ * The values a pack's rule read, by the entry or property name it read
+ * each one under. A column the rule reported is given every value it
+ * read under that name, which is how a slot finds its value without the
+ * pack saying anything more than the names.
+ */
+type ReadValues = Map<string, ValueOps[]>;
+
+function slotsRead(
+  slot: StatedSlot["slot"],
+  names: readonly string[],
+  read: ReadValues | null,
+): StatedSlot[] {
+  if (read === null) {
+    return [];
+  }
+  return [...new Set(names)].flatMap((name) =>
+    (read.get(name) ?? []).map((value) => ({ slot, name, value })),
+  );
+}
+
+function noteRead(read: ReadValues, name: string, value: ValueOps): void {
+  const already = read.get(name);
+  if (already === undefined) {
+    read.set(name, [value]);
+    return;
+  }
+  if (!already.includes(value)) {
+    already.push(value);
+  }
+}
+
+/** The same value, noting every entry and property a rule reads off it. */
+function recording(value: ValueOps, read: ReadValues): ValueOps {
+  return {
+    text: () => value.text(),
+    name: (unsettled) => value.name(unsettled),
+    ...(value.names === undefined
+      ? {}
+      : { names: (cap: number) => value.names?.(cap) ?? null }),
+    flag: () => value.flag(),
+    entries: (unsettled) =>
+      value.entries(unsettled).map((entry) => {
+        if (entry.key !== null) {
+          noteRead(read, entry.key, entry.value);
+        }
+        return { key: entry.key, value: recording(entry.value, read) };
+      }),
+    items: () => value.items().map((item) => recording(item, read)),
+    property: (name) => {
+      const inside = value.property(name);
+      if (inside === null) {
+        return null;
+      }
+      noteRead(read, name, inside);
+      return recording(inside, read);
+    },
+    asArg: () => value.asArg(),
+    parts: () => value.parts(),
+    holes: () => value.holes(),
+    ...(value.interpolated === undefined
+      ? {}
+      : { interpolated: () => value.interpolated?.() ?? [] }),
+  };
+}
+
+/** A rule's inputs, noting what the rule reads when somebody listens. */
+function watched(inputs: StatedInputs, read: ReadValues | null): StatedInputs {
+  if (read === null) {
+    return inputs;
+  }
+  return {
+    ...inputs,
+    input: recording(inputs.input, read),
+    entry: inputs.entry === null ? null : recording(inputs.entry, read),
   };
 }
 
@@ -553,6 +659,7 @@ function namesFor(
   subject: CallOps,
   stated: Omit<StatedInputs, "input"> & { input: ValueOps | null },
   unsettled: UnsettledName,
+  read: ReadValues | null = null,
 ): string[] {
   if (says === undefined) {
     return [];
@@ -562,7 +669,7 @@ function namesFor(
   }
   if (typeof says === "function") {
     const input = stated.input;
-    return input === null ? [] : [...says({ ...stated, input })];
+    return input === null ? [] : [...says(watched({ ...stated, input }, read))];
   }
   if ("selectorParam" in says) {
     return [...(subject.parameterReadsAt?.(says.selectorParam) ?? [])];
@@ -572,7 +679,7 @@ function namesFor(
     return namesAt(subject, pointed, unsettled);
   }
   const input = statedValue(subject, pointed.of) ?? NOTHING_STATED;
-  return [...pointed.by({ ...stated, input })];
+  return [...pointed.by(watched({ ...stated, input }, read))];
 }
 
 /** The name each picked argument gives, dropping the ones nothing settles. */
@@ -917,32 +1024,99 @@ function sqlAccess(matched: Matched): Effect[] | null {
     namesInHoles(chain, stated.value),
     settledHoles(stated.value),
   );
-  const accesses = readSqlAccess(statement, { dialect: ending.dialect });
-  return accesses.length === 0
-    ? null
-    : accesses.map((access) => ({
-        type: "interaction",
-        binding: storageBinding({
-          recognition,
-          storageSystem: ending.system,
-          ...(ending.transport === undefined
-            ? {}
-            : { transport: ending.transport }),
-          // A statement that qualifies its table says which namespace
-          // the access is in, and the pack's own scope is the fallback
-          // for a statement that leaves it out.
-          scope: access.qualifier[access.qualifier.length - 1] ?? ending.scope,
-          container: access.table,
-        }),
-        callee: ops.calleeText(),
-        interaction: {
-          class: "storage-access",
-          kind: access.kind,
-          fields: access.fields,
-          ...(access.selector.length > 0 ? { selector: access.selector } : {}),
-          operation: method,
-        },
-      }));
+  const accesses = readSqlAccess(statement, {
+    dialect: ending.dialect,
+    placeholders: ops.statesSlots !== undefined,
+  });
+  if (accesses.length === 0) {
+    return null;
+  }
+  const values = placeholderValues(
+    stated,
+    subject,
+    (matched.meaning as SqlMethod).parameters,
+  );
+  return accesses.map((access) => {
+    const effect: Effect = {
+      type: "interaction",
+      binding: storageBinding({
+        recognition,
+        storageSystem: ending.system,
+        ...(ending.transport === undefined
+          ? {}
+          : { transport: ending.transport }),
+        // A statement that qualifies its table says which namespace
+        // the access is in, and the pack's own scope is the fallback
+        // for a statement that leaves it out.
+        scope: access.qualifier[access.qualifier.length - 1] ?? ending.scope,
+        container: access.table,
+      }),
+      callee: ops.calleeText(),
+      interaction: {
+        class: "storage-access",
+        kind: access.kind,
+        fields: access.fields,
+        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
+        operation: method,
+      },
+    };
+    const slots = (access.placeholders ?? []).flatMap((one) => {
+      const value = placeholderValue(values, one.placeholder);
+      return value === null
+        ? []
+        : [{ slot: SLOT_OF[one.clause], name: one.field, value }];
+    });
+    if (slots.length > 0) {
+      ops.statesSlots?.(effect, slots);
+    }
+    return effect;
+  });
+}
+
+const SLOT_OF: Record<SqlPlaceholder["clause"], StatedSlot["slot"]> = {
+  fields: "field",
+  selector: "selector",
+};
+
+/**
+ * The value the call passes for each placeholder. A template's holes are
+ * numbered in order, unless its text writes placeholders of its own, as
+ * `` `SELECT id FROM ${USERS} WHERE id = $1` `` does. Those, and every
+ * placeholder in plain text, take their values from where the method
+ * says the call puts them.
+ */
+function placeholderValues(
+  stated: Statement,
+  subject: CallOps,
+  says: SqlMethod["parameters"],
+): PlaceholderValues {
+  const writesItsOwn = stated.parts.some((part) => /\$\d/.test(part));
+  if (stated.parts.length > 1 && !writesItsOwn) {
+    return { numbered: stated.value.interpolated?.() ?? [], named: null };
+  }
+  const picks = says === undefined ? [] : Array.isArray(says) ? says : [says];
+  const given = picks
+    .map((pick) => statedValue(subject, pick as OneArgument))
+    .find((value): value is ValueOps => value !== null);
+  return given === undefined
+    ? { numbered: [], named: null }
+    : { numbered: given.items(), named: given };
+}
+
+/** The values a statement's `$n` placeholders take, and the object its `:name` ones read. */
+interface PlaceholderValues {
+  numbered: readonly ValueOps[];
+  named: ValueOps | null;
+}
+
+function placeholderValue(
+  values: PlaceholderValues,
+  placeholder: number | string,
+): ValueOps | null {
+  if (typeof placeholder === "number") {
+    return values.numbered[placeholder - 1] ?? null;
+  }
+  return values.named?.property(placeholder) ?? null;
 }
 
 /** The statement one of a method's picks reaches, in the pieces it was written in. */

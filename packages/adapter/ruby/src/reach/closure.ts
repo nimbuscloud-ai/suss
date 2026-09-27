@@ -48,6 +48,7 @@ import {
   methodBody,
   moduleScopeBody,
 } from "../paths/effects.js";
+import { askSourcesOfBodies, withSlotSources } from "../provenance.js";
 import { callbacksReached, storageClaims } from "../storage.js";
 import { forgetEvaluations } from "../values/evaluator.js";
 import {
@@ -271,6 +272,20 @@ export async function reachedFunctions(
   }
 
   const gapHandling = options.gapHandling ?? "permissive";
+  // A recording run asks each method's questions in its own charge.
+  if (ledger === undefined) {
+    askSourcesOfBodies(
+      db.facts("reachable").flatMap(([keyAtom]) => {
+        const key = String(keyAtom);
+        const target = functionByKey.get(key);
+        return target === undefined || seedKeys.has(key)
+          ? []
+          : [{ file: target.file, method: target.node }];
+      }),
+      options.facts,
+      options.storage,
+    );
+  }
   const summaries: BehavioralSummary[] = [];
   const summariesByKey = new Map<string, BehavioralSummary[]>();
   for (const [keyAtom] of db.facts("reachable")) {
@@ -873,10 +888,13 @@ export function libraryUnit(
     },
     boundaryBinding: binding,
     parameters,
-    branches: branches.map((branch) =>
-      body.extraEffects === undefined
-        ? branch
-        : { ...branch, extraEffects: body.extraEffects },
+    branches: withSlotSources(
+      branches.map((branch) =>
+        body.extraEffects === undefined
+          ? branch
+          : { ...branch, extraEffects: body.extraEffects },
+      ),
+      body.provenance,
     ),
     ...(flags.length === 0 ? {} : { extraInputReads: flags }),
     bodyContent: body.bodyContent ?? "absent",

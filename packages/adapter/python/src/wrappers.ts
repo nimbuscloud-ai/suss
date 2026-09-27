@@ -22,6 +22,7 @@ import {
   bodyContentOf,
   recognizedBodyEffects,
   returnBranch,
+  withBodyEffects,
 } from "./discovery.js";
 import { nameKeyIn } from "./facts/values.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
@@ -704,9 +705,7 @@ function wrapperUnit(
     branchOf,
     fallthrough: delegate(node),
     facts: options.facts,
-  }).map((branch) =>
-    extra.length === 0 ? branch : { ...branch, extraEffects: extra },
-  );
+  }).map((branch) => withBodyEffects(branch, extra));
 
   return {
     identity: {

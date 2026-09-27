@@ -2,5 +2,6 @@
   "pg": "node-postgres, the client this reads",
   "postgresql": "suss: storage system",
   "query": "pg: the method every statement goes through",
-  "text": "pg: the config-object key the statement travels under"
+  "text": "pg: the config-object key the statement travels under",
+  "values": "pg: the config-object key the statement's parameters travel under"
 }

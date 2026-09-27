@@ -49,6 +49,13 @@ holdsUnderKey(o, x)         o is given x under a key the source computes,
                             of x into o, a JSX element given x as a prop
                             or a child, and Ruby's foo(&x) are stated
                             this way too. Only passedOn reads it
+readsEntry(site, o, n)      site reads the entry of o under the key n,
+                            which the source writes out, as
+                            params[:id]. Only the source walk reads it
+                            (Python, Ruby)
+converts(r, a, n)           the call r converts a to another type with
+                            the language's own n, as Number(x), int(x)
+                            or x.to_i. Only the source walk reads it
 environmentObject(w)        w is written as the process environment
 streamObject(w)             w is written as one of the process's output
                             streams, such as process.stdout
@@ -1151,6 +1158,88 @@ function computing `failed` is not one of them.
 The question starts from a parameter on purpose. Everything the walk
 passes after that is a return or a call, and the seed is a handful of
 values in the few files that write the exit code.
+
+## Where a value came from
+
+A summary records where the value in a slot came from: a column an
+access writes, or a column it picks rows by. The adapter asks
+`wantedSource(x)` about the expression in the slot, and the walk runs
+forward from it:
+
+```
+sourceChain(x, x)  :- wantedSource(x)
+sourceChain(x, z)  :- sourceChain(x, y), hop(y, z, value)
+sourceChain(x, z)  :- sourceChain(x, y), hop(y, z, result)
+sourceChain(x, o)  :- sourceChain(x, y), readsProperty(y, o, n)
+sourceChain(x, o)  :- sourceChain(x, y), readsEntry(y, o, n)
+sourceChain(x, o)  :- sourceChain(x, y), readsKeyed(y, o, k)
+sourceChain(x, a)  :- sourceChain(x, r), converts(r, a, n)
+```
+
+A tenant or user id usually arrives as a string and gets converted:
+`Number(req.params.id)`, `int(tenant_id)`, `params[:id].to_i`. The
+conversion is a different value from its argument, so it is not a
+value hop, and a value hop would let every other question take
+`Number(x)` for `x`. Each adapter states the language's own
+conversions as `converts(r, a, n)` at the call site, and only this
+walk reads it. `wantedSourceConverts` keeps the step, so the answer
+can say the value was converted from the input rather than read
+straight off it.
+
+The walk takes value and result steps and no instance step. An
+instance step ends at a class, which is never where a value came from,
+and asking for one would settle the callee of every call the walk
+passes.
+
+A guard asks a narrower question. It only has to say which input a
+test reads, and a value a helper returned is not an input as far as a
+guard is concerned. So `wantedInputRead(x)` seeds `inputChain`, which
+takes the name hops and the same three reads and stops at a call. On
+a Python service, following calls from the subject of every guard read
+6% more rows than main, and stopping at a call reads under 1% more.
+Both chains feed `sourceMember`, and the rules below read that, so one
+reader serves both questions.
+
+`readsEntry` is the Python and Ruby spelling of an entry read at a key
+the source writes out: `request.headers["x-tenant-id"]`, `params[:id]`.
+TypeScript records the same read as `readsProperty`, since an entry and
+a property are one thing there. In Python and Ruby they are not, and
+recording the read as `readsProperty` lets the property step settle it
+wherever the object is a literal. Measured that way, 7 summaries of a
+Python service and 21 of a Rails app changed: a dict's default was read
+as the value a later write replaced, calls through an entry were
+reported as unfollowed, and a different constructor was reached. So the
+entry read has a relation of its own that only this walk reads.
+
+The chain takes `hop`, which leaves out two steps on purpose. The
+argument step would go from a route's `req` parameter to every call
+of the route, which is the `callsFunction` join that reads a quarter of
+a million rows on a Rails app and derives nothing. The property step
+needs `contains`, and a parameter contains nothing. So the chain goes
+into the object a property is read off instead, and the answer keeps
+the property's name, which is how `req.headers["x-tenant-id"]` becomes
+a path off `req`.
+
+The question derives the chain's steps and what each member is, keyed
+by the value asked about: `wantedSourceHop`, `wantedSourceRead`,
+`wantedSourceKeyed` and `wantedSourceConverts` for the steps, and `wantedSourceParam`,
+`wantedSourceWritten`, `wantedSourceCall` and `wantedSourceImport` for
+the members. `sourceLeavesOf` rebuilds the walk from them and returns
+each place it ended, with the path of properties read on the way.
+
+A parameter ends the walk whatever steps lead on from it. A parameter
+of the unit is an input, and the adapter writes it as an `input`
+value. A parameter of a helper the walk entered through a call's
+result is where the walk stops, since mapping it back to the call's
+argument would take `passesArgument`, the fan-out the walk leaves out.
+A document about the helper states where its own parameter goes, and
+the route's document says what it passes the helper.
+
+Anything else with no step out of it is where the walk stopped: a call
+whose function is not in the run, a literal, an import from a library,
+an element of an array. The adapter reads a literal with its value
+evaluator, a request object a pack declares as an input, and writes
+the rest as `unresolved`, with the source text it stopped at.
 
 ## A type the callers declare
 

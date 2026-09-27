@@ -45,13 +45,18 @@ import {
   filterUnit,
 } from "./filters.js";
 import { EVERY_ARGLESS_CALL, invocationEffects } from "./paths/effects.js";
+import {
+  askSourcesOfBodies,
+  slotProvenance,
+  withSlotSources,
+} from "./provenance.js";
 import { responseBranches } from "./responseStatus.js";
 import {
   constantRefCandidates,
   graphqlTypeNameFromQualified,
   walkDefinitions,
 } from "./scope.js";
-import { type RbStorageOptions, storageEffects } from "./storage.js";
+import { methodStorage, type RbStorageOptions } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
 import { typeShapeFromNode } from "./typeShape.js";
 
@@ -69,6 +74,7 @@ import type {
   RawCodeStructure,
   RawEffect,
   RawParameter,
+  RawProvenance,
   Reading,
 } from "@suss/extractor";
 import type {
@@ -427,6 +433,24 @@ async function controllerActionUnits(
     dynamicNames: options.dynamicNames,
   });
   const units: RawCodeStructure[] = [];
+  const actions = controllerActions(
+    pattern,
+    info,
+    ownBlocks,
+    ancestry,
+    options,
+  );
+  askSourcesOfBodies(
+    [
+      ...filters.map((filter) => ({
+        file: filter.file,
+        method: filter.method,
+      })),
+      ...actions.map(([, method, block]) => ({ file: block.file, method })),
+    ],
+    options.facts,
+    options.storage,
+  );
 
   for (const filter of filters) {
     const displayPath = options.displayPathOf?.(filter.file) ?? filter.file;
@@ -482,37 +506,46 @@ async function controllerActionUnits(
     });
   };
 
-  const own = new Set<string>();
-  for (const [actionName, method, block] of publicInstanceMethods(
-    ownBlocks,
-    options.bodyBlocks,
-  )) {
-    own.add(actionName);
+  for (const [actionName, method, block] of actions) {
     emitAction(actionName, method, block);
   }
+  return units;
+}
 
-  // Rails dispatches a routed action to whichever ancestor defines it, so
-  // a subclass with a route to `show` and no `show` of its own runs the base's.
-  const seen = new Set(own);
+/**
+ * The actions a controller serves: its own public methods, then each
+ * routed action an ancestor defines and the controller does not. Rails
+ * dispatches a routed action to whichever ancestor defines it, so a
+ * subclass with a route to `show` and no `show` of its own runs the base's.
+ */
+function controllerActions(
+  pattern: ControllerActions,
+  info: ClassInfo,
+  ownBlocks: readonly ReachedBody[],
+  ancestry: Awaited<ReturnType<typeof ancestryOf>>,
+  options: DiscoveryOptions,
+): Array<[string, RbNode, ReachedBody]> {
+  const actions = publicInstanceMethods(ownBlocks, options.bodyBlocks);
+  const seen = new Set(actions.map(([actionName]) => actionName));
   for (const entry of ancestry) {
     if (entry.type !== "bodies" || entry.name === info.qualifiedName) {
       continue;
     }
-    for (const [actionName, method, block] of publicInstanceMethods(
+    for (const action of publicInstanceMethods(
       entry.blocks,
       options.bodyBlocks,
     )) {
+      const [actionName] = action;
       if (seen.has(actionName)) {
         continue;
       }
       seen.add(actionName);
-      if (pattern.routeFor(info.qualifiedName, actionName) === null) {
-        continue;
+      if (pattern.routeFor(info.qualifiedName, actionName) !== null) {
+        actions.push(action);
       }
-      emitAction(actionName, method, block);
     }
   }
-  return units;
+  return actions;
 }
 
 /** Every public instance method the blocks define, with the block it is written in, in source order. */
@@ -579,37 +612,43 @@ function buildControllerActionUnit(
             recognition: pack.name,
           }),
     parameters: [],
-    branches: perResponse ?? [
-      {
-        conditions: [],
-        terminal: {
-          kind: "response",
-          statusCode: null,
-          body: null,
-          exceptionType: null,
-          message: null,
-          component: null,
-          renderTree: null,
-          delegateTarget: null,
-          emitEvent: null,
+    branches: withSlotSources(
+      perResponse ?? [
+        {
+          conditions: [],
+          terminal: {
+            kind: "response",
+            statusCode: null,
+            body: null,
+            exceptionType: null,
+            message: null,
+            component: null,
+            renderTree: null,
+            delegateTarget: null,
+            emitEvent: null,
+            location: range,
+          },
+          statusCodeReading: {
+            reading: absentReading,
+            libraryDefault: pattern.defaultStatusCode,
+          },
+          effects: body.effects ?? [],
+          ...(body.extraEffects === undefined
+            ? {}
+            : { extraEffects: body.extraEffects }),
           location: range,
+          isDefault: true,
         },
-        statusCodeReading: {
-          reading: absentReading,
-          libraryDefault: pattern.defaultStatusCode,
-        },
-        effects: body.effects ?? [],
-        ...(body.extraEffects === undefined
-          ? {}
-          : { extraEffects: body.extraEffects }),
-        location: range,
-        isDefault: true,
-      },
-    ],
+      ],
+      body.provenance,
+    ),
     bodyContent: body.bodyContent ?? "absent",
     dependencyCalls: [],
     declaredContract: null,
     ...(wrappers.length > 0 ? { wrappers: [...wrappers] } : {}),
+    ...(pack.requestSpelling === undefined
+      ? {}
+      : { requestSpelling: pack.requestSpelling }),
   };
 }
 
@@ -715,29 +754,28 @@ function branchesFor(body: BodyReport, range: Range): RawBranch[] {
   if (body.effects === undefined && body.extraEffects === undefined) {
     return [];
   }
-  return [
-    {
-      conditions: [],
-      terminal: {
-        kind: "void",
-        statusCode: null,
-        body: null,
-        exceptionType: null,
-        message: null,
-        component: null,
-        renderTree: null,
-        delegateTarget: null,
-        emitEvent: null,
-        location: range,
-      },
-      effects: body.effects ?? [],
-      ...(body.extraEffects === undefined
-        ? {}
-        : { extraEffects: body.extraEffects }),
+  const branch: RawBranch = {
+    conditions: [],
+    terminal: {
+      kind: "void",
+      statusCode: null,
+      body: null,
+      exceptionType: null,
+      message: null,
+      component: null,
+      renderTree: null,
+      delegateTarget: null,
+      emitEvent: null,
       location: range,
-      isDefault: true,
     },
-  ];
+    effects: body.effects ?? [],
+    ...(body.extraEffects === undefined
+      ? {}
+      : { extraEffects: body.extraEffects }),
+    location: range,
+    isDefault: true,
+  };
+  return withSlotSources([branch], body.provenance);
 }
 
 /** A field's contract and the method behind it, read together because a wiring keyword decides both. */
@@ -757,6 +795,8 @@ export interface BodyReport {
   effects?: RawEffect[];
   /** Effects a recognizer built in IR form, such as database work. */
   extraEffects?: Effect[];
+  /** Where the values in the slots of `extraEffects` came from. */
+  provenance?: RawProvenance[];
   /** Set when this body came from a method, so the reach walk can follow the calls it makes. */
   reachSeed?: ReachSeed;
 }
@@ -777,35 +817,29 @@ export function bodyOfMethod(
   );
   const storage = bodyRead.storage;
   const facts = bodyRead.facts;
+  const database =
+    storage === undefined
+      ? { effects: [], slots: [] }
+      : methodStorage(method, file, storage);
   const extra = [
     ...envReadEffects(
       method,
       facts === undefined ? undefined : { db: facts, file },
     ),
-    ...(storage === undefined
-      ? []
-      : storageEffects(callsUnder(method), file, storage, method)),
+    ...database.effects,
     ...streamWriteEffects(method),
   ];
+  const provenance =
+    database.slots.length === 0 || storage === undefined
+      ? []
+      : slotProvenance(database.slots, { facts: storage.facts, unit: method });
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",
     readings: [],
     ...(effects.length > 0 ? { effects } : {}),
     ...(extra.length > 0 ? { extraEffects: extra } : {}),
+    ...(provenance.length > 0 ? { provenance } : {}),
   };
-}
-
-function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
-    if (child.type === "call") {
-      found.push(child);
-    }
-    callsUnder(child, found);
-  }
-  return found;
 }
 
 /** A field with no method behind it: the library reads the attribute off the object the field was resolved against, so there is no body to read. */

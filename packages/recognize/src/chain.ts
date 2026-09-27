@@ -382,6 +382,13 @@ export interface SqlMethod {
    * picks.
    */
   readonly statement: OneArgument | readonly OneArgument[];
+  /**
+   * Where the call passes the values the statement's placeholders take,
+   * tried in order like `statement`: `query(sql, [id])` and
+   * `query({ text: sql, values: [id] })`. Without it the access still
+   * reads, and nothing says where a column's value came from.
+   */
+  readonly parameters?: OneArgument | readonly OneArgument[];
 }
 
 /** What one send method does, as the message-send ending reads it. */
