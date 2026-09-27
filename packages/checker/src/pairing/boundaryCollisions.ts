@@ -3,12 +3,13 @@
  *
  * suss keys an HTTP boundary by method and path, without the service
  * that serves it, so two services that both expose `GET /users` share one
- * key. A caller of either one is then compared with both, and gets
- * findings from an API it never calls. Projects usually write one file
- * per service, so two files providing one key most likely means this
- * happened. A spec read with `suss contract` describes a route without
- * serving it, and a route a deployment template declares is served by
- * the handler the template points at, so neither is a second claim.
+ * key. When the summaries say which service each came from, pairing
+ * tells them apart for a caller inside one and skips any other caller.
+ * When they do not, a caller of either is compared with both. Projects
+ * usually write one file per service, so two files providing one key
+ * most likely means this happened. A spec read with `suss contract`
+ * describes a route without serving it, and the handler a deployment
+ * template points at serves its route, so neither is a second claim.
  */
 
 import { BOUNDARY_ROLE, readHttpMetadata } from "@suss/behavioral-ir";
@@ -16,6 +17,7 @@ import { boundaryKey } from "@suss/ir-core";
 
 import { readDeclaredContract } from "../contract/declaredContract.js";
 import { readGraphqlDeclaredContract } from "../contract/graphqlContract.js";
+import { servicesOf } from "./pairing.js";
 
 import type { BehavioralSummary, HttpMetadata } from "@suss/behavioral-ir";
 
@@ -29,6 +31,12 @@ export interface SummaryClaim {
 export interface BoundaryCollision {
   key: string;
   files: string[];
+  /**
+   * The services the claiming summaries say they came from, the way
+   * pairing counts them. With more than one, pairing tells the services
+   * apart for a caller inside one of them.
+   */
+  services: string[];
 }
 
 /** Every boundary more than one file provides, sorted by key, each with its files sorted. */
@@ -46,13 +54,14 @@ export function boundaryCollisions(
 
   const collisions: BoundaryCollision[] = [];
   for (const [key, onKey] of claimsByKey) {
-    const files = new Set(
-      onKey
-        .filter((claim) => !implementedIn(claim, onKey))
-        .map((claim) => claim.file),
-    );
+    const claiming = onKey.filter((claim) => !implementedIn(claim, onKey));
+    const files = new Set(claiming.map((claim) => claim.file));
     if (files.size > 1) {
-      collisions.push({ key, files: [...files].sort() });
+      collisions.push({
+        key,
+        files: [...files].sort(),
+        services: servicesOf(claiming.map((claim) => claim.summary)),
+      });
     }
   }
   return collisions.sort((a, b) => a.key.localeCompare(b.key));

@@ -685,12 +685,53 @@ function renderRunFindings(findings: readonly RunFinding[]): string {
     .join("");
 }
 
+/**
+ * Whether pairing could tell the claiming services apart. It can when the
+ * summaries name more than one service, and then a caller outside all of
+ * them is compared with none.
+ */
+type CollisionKind = "namedServices" | "unnamedServices";
+
+const COLLISION_NOTE: Record<CollisionKind, readonly string[]> = {
+  namedServices: [
+    "  suss tells boundaries apart by method and path, so two services that",
+    "  serve the same route share one boundary. A client inside one of these",
+    "  services is compared with its own service's route. Any other client",
+    "  is compared with neither and gets an ambiguousProvider warning, so",
+    "  check it against one service at a time.",
+  ],
+  unnamedServices: [
+    "  suss tells boundaries apart by method and path, so two services that",
+    "  serve the same route look like one. These summaries do not say which",
+    "  service they came from, so anything compared against these was",
+    "  compared against both. Check one service at a time to be sure.",
+  ],
+};
+
+function collisionKind(collision: BoundaryCollision): CollisionKind {
+  return collision.services.length > 1 ? "namedServices" : "unnamedServices";
+}
+
 function renderCollisions(
   collisions: ReadonlyArray<BoundaryCollision>,
+): string {
+  const blocks = (["namedServices", "unnamedServices"] as const).map((kind) =>
+    collisionBlock(
+      collisions.filter((collision) => collisionKind(collision) === kind),
+      COLLISION_NOTE[kind],
+    ),
+  );
+  return blocks.join("");
+}
+
+function collisionBlock(
+  collisions: ReadonlyArray<BoundaryCollision>,
+  note: readonly string[],
 ): string {
   if (collisions.length === 0) {
     return "";
   }
+
   const lines = [
     "",
     `${collisions.length} ${collisions.length === 1 ? "boundary is" : "boundaries are"} claimed by more than one file:`,
@@ -698,16 +739,7 @@ function renderCollisions(
   for (const collision of collisions) {
     lines.push(`  ${collision.key}  in ${collision.files.join(" and ")}`);
   }
-  lines.push("");
-  lines.push(
-    "  suss tells boundaries apart by method and path, so two services that",
-  );
-  lines.push(
-    "  serve the same route look like one. Anything compared against these",
-  );
-  lines.push(
-    "  was compared against both. Check one service at a time to be sure.",
-  );
+  lines.push("", ...note);
   return `${lines.join("\n")}\n`;
 }
 

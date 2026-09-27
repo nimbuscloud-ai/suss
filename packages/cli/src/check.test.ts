@@ -990,6 +990,31 @@ describe("checkDir", () => {
     expect(output).toContain("claimed by more than one file");
     expect(output).toContain("GET /users");
     expect(output).toContain("svc-a.json and svc-b.json");
+    expect(output).toContain("was\n  compared against both.");
+    expect(output).not.toContain("ambiguousProvider");
+  });
+
+  it("says a client outside two named services sharing a route is compared with neither", () => {
+    for (const service of ["svc-a", "svc-b"]) {
+      const handler = providerWithRoute(`${service}Handler`, "GET", "/users", [
+        transition(`${service}-200`, { statusCode: 200, isDefault: true }),
+      ]);
+      handler.location = { ...handler.location, workspace: service };
+      fs.writeFileSync(
+        path.join(tmpDir, `${service}.json`),
+        JSON.stringify([handler]),
+      );
+    }
+
+    const output = captureStdout(() => {
+      checkDir({ dir: tmpDir, allowEmpty: true });
+    });
+    expect(output).toContain("svc-a.json and svc-b.json");
+    expect(output).toContain(
+      "A client inside one of these\n  services is compared with its own service's route.",
+    );
+    expect(output).toContain("gets an ambiguousProvider warning");
+    expect(output).not.toContain("compared against both");
   });
 
   describe("a route a deployment template declares for a handler", () => {
