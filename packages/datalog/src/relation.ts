@@ -40,6 +40,85 @@ export interface CombinedIndex {
   root: Map<Atom, unknown>;
 }
 
+const sameTuple = (a: Tuple, b: Tuple): boolean =>
+  a.length === b.length && a.every((atom, at) => atom === b[at]);
+
+/**
+ * The relation's own tuple objects for these facts, found through a
+ * column index already built, or null when no column has one. Every
+ * fact must be in the relation.
+ */
+export function storedTuplesOf(
+  relation: Relation,
+  facts: readonly Tuple[],
+): Tuple[] | null {
+  const column = relation.columns.findIndex((buckets) => buckets !== undefined);
+  const buckets = relation.columns[column];
+  if (buckets === undefined) {
+    return null;
+  }
+  const stored: Tuple[] = [];
+  for (const fact of facts) {
+    const found = buckets
+      .get(fact[column] as Atom)
+      ?.find((tuple) => sameTuple(tuple, fact));
+    if (found === undefined) {
+      return null;
+    }
+    stored.push(found);
+  }
+  return stored;
+}
+
+function removeFrom<K>(buckets: Map<K, Tuple[]>, key: K, tuple: Tuple): void {
+  const bucket = buckets.get(key);
+  const at = bucket?.indexOf(tuple) ?? -1;
+  if (bucket === undefined || at === -1) {
+    return;
+  }
+  bucket.splice(at, 1);
+  if (bucket.length === 0) {
+    buckets.delete(key);
+  }
+}
+
+/**
+ * Take a few of the relation's own tuple objects out of its list and
+ * out of every index built over it. What is left keeps its order, so
+ * each bucket ends up as a rebuild from the remaining tuples would make
+ * it.
+ */
+export function removeTuples(
+  relation: Relation,
+  stored: readonly Tuple[],
+): void {
+  const leaving = new Set(stored);
+  relation.tuples = relation.tuples.filter((tuple) => !leaving.has(tuple));
+  for (const tuple of stored) {
+    relation.columns.forEach((buckets, column) => {
+      if (buckets !== undefined) {
+        removeFrom(buckets, tuple[column] as Atom, tuple);
+      }
+    });
+    for (const index of relation.combined.values()) {
+      let level: Map<Atom, unknown> | undefined = index.root;
+      const last = index.columns.length - 1;
+      for (let at = 0; at < last && level !== undefined; at++) {
+        level = level.get(tuple[index.columns[at]] as Atom) as
+          | Map<Atom, unknown>
+          | undefined;
+      }
+      if (level !== undefined) {
+        removeFrom(
+          level as Map<Atom, Tuple[]>,
+          tuple[index.columns[last]] as Atom,
+          tuple,
+        );
+      }
+    }
+  }
+}
+
 /** The column positions a bitmask sets, lowest first. */
 function columnsIn(mask: number): number[] {
   const columns: number[] = [];

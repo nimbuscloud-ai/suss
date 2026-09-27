@@ -363,6 +363,18 @@ Keep the facts you add and the facts the rules derive in separate
 relations. When a conclusion is taken back, the engine cannot tell the
 two apart. Most Datalog is written with them split anyway.
 
+`retract` of a few facts from a large relation takes each of them out
+of the buckets it is in, and leaves the rest of every index alone. It
+finds the relation's own tuple objects through a column index already
+built, so the list is filtered by identity rather than by looking each
+tuple up in the trie. When the facts going are one in sixteen of the
+relation or more, or no column has an index yet, it drops the indexes
+and the next lookup rebuilds them. Either way the buckets end up in the
+order a rebuild would give. The TypeScript store retracts one file's
+export rows from the whole project's export table for every file it
+reads, and on a large project that used to rebuild the table's index
+each time.
+
 ### Reading what the rules are waiting on
 
 A caller can also read the demand. `program.demands` lists each demand

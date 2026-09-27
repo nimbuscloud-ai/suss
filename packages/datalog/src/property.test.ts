@@ -407,6 +407,73 @@ describe("evaluate holds up under random rule sets", () => {
     );
   });
 
+  it("leaves the lookups and joins a rebuild would give after retracting a few facts", () => {
+    const atom = fc.constantFrom("a", "b", "c", "d");
+    const joinInto = (head: string): Rule[] => [
+      rule(
+        head,
+        [v("x"), v("z")],
+        [lit("asked", v("x")), lit("t", v("x"), v("z"), constant("a"))],
+      ),
+      rule(
+        head,
+        [v("x"), v("x")],
+        [lit("asked", v("x")), lit("t", v("x"), constant("b"), constant("a"))],
+      ),
+    ];
+    const JOIN = joinInto("out");
+    const built = (tuples: readonly Tuple[], asked: readonly string[]) => {
+      const db = new Database();
+      for (const tuple of tuples) {
+        db.add("t", tuple);
+      }
+      for (const one of asked) {
+        db.add("asked", [one]);
+      }
+      evaluate(db, JOIN);
+      return db;
+    };
+    const lookups = (db: Database): string[][] =>
+      [0, 1, 2].flatMap((column) =>
+        ["a", "b", "c", "d"].map((value) =>
+          db.lookup("t", column, value).map((tuple) => tuple.join(",")),
+        ),
+      );
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.tuple(atom, atom, atom), {
+          minLength: 16,
+          maxLength: 64,
+          selector: (tuple) => tuple.join(","),
+        }),
+        fc.array(fc.nat(), { minLength: 1, maxLength: 4 }),
+        (tuples, picks) => {
+          const inPlace = built(tuples, ["a", "b"]);
+          lookups(inPlace);
+          const going = picks.map((i) => [
+            ...(tuples[i % tuples.length] ?? []),
+          ]);
+          const leaving = new Set(going.map((tuple) => tuple.join(",")));
+          inPlace.retract("t", going);
+          const rebuilt = built(
+            tuples.filter((tuple) => !leaving.has(tuple.join(","))),
+            ["a", "b"],
+          );
+
+          expect(inPlace.facts("t")).toEqual(rebuilt.facts("t"));
+          expect(lookups(inPlace)).toEqual(lookups(rebuilt));
+          // A rule set neither database has seen starts from nothing on
+          // both, so its joins read the indexes in the order they have.
+          const fresh = joinInto("again");
+          evaluate(inPlace, fresh);
+          evaluate(rebuilt, fresh);
+          expect(inPlace.facts("again")).toEqual(rebuilt.facts("again"));
+        },
+      ),
+      { numRuns: 300, seed: PROPERTY_SEED },
+    );
+  });
+
   it("empties a relation in one step the way retracting each fact does", () => {
     fc.assert(
       fc.property(

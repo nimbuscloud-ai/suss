@@ -29,6 +29,8 @@ import {
   bucketIn,
   combinedBucketIn,
   type Relation,
+  removeTuples,
+  storedTuplesOf,
 } from "./relation.js";
 import { planStratum, rulesReading, type Stratum } from "./stratum.js";
 
@@ -135,6 +137,13 @@ export const ruleLabel = (r: Rule): string =>
 
 /** What `add` did: a new fact, a better tag on an existing one, or nothing. */
 export type AddOutcome = "added" | "improved" | "unchanged";
+
+/**
+ * A retract takes its tuples out of the indexes one by one when they are
+ * fewer than one in this many of the relation's tuples, and drops the
+ * indexes for a rebuild otherwise.
+ */
+const FEW_REMOVED = 16;
 
 /** A set of facts per relation, with O(1) membership. */
 export class Database {
@@ -284,19 +293,30 @@ export class Database {
     if (index.size === 0) {
       relation.tuples = [];
       index.clear();
+      relation.columns.length = 0;
+      relation.combined.clear();
+      forgetFacts(this, relationName, going);
+      return going.size;
+    }
+    for (const tuple of gone) {
+      index.prune(tuple);
+    }
+    const stored =
+      gone.length * FEW_REMOVED < relation.tuples.length
+        ? storedTuplesOf(relation, gone)
+        : null;
+    if (stored !== null) {
+      removeTuples(relation, stored);
     } else {
       relation.tuples = relation.tuples.filter(
         (tuple) => index.find(tuple) !== undefined,
       );
-      for (const tuple of gone) {
-        index.prune(tuple);
-      }
+      // For a large share of the relation, dropping the indexes and
+      // letting the next lookup rebuild them costs less than taking
+      // each tuple out of its buckets.
+      relation.columns.length = 0;
+      relation.combined.clear();
     }
-    // Dropping the column indexes and letting the next lookup rebuild
-    // them is cheaper than hunting through every bucket for the removed
-    // tuples.
-    relation.columns.length = 0;
-    relation.combined.clear();
     forgetFacts(this, relationName, going);
     return going.size;
   }
