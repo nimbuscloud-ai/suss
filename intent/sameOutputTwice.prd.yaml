@@ -25,8 +25,14 @@ scenarios:
     coveredBy: packages/cli/src/extractCacheIntegration.test.ts > the extraction cache through the built binary > writes the cold run's output after a touch that changed no content
     about: fn:@suss/cli::extract
 
-  # The tests above compare a warm run with the cold run that filled the
-  # cache, and none compares a warm run with --no-cache yet.
   - title: the cache against no cache
     when: extract runs once from a warm cache and once with --no-cache over the same files
     expect: the two outputs are byte for byte the same
+    coveredBy: packages/cli/src/extractCacheIntegration.test.ts > the extraction cache through the built binary > writes what a run without the cache writes after re-reading one changed file
+    about: fn:@suss/cli::extract
+
+  - title: no cache at all
+    when: extract runs twice with --no-cache over the same files
+    expect: it writes the same bytes both times
+    coveredBy: packages/cli/src/extractCacheIntegration.test.ts > the extraction cache through the built binary > writes the same bytes on two runs without the cache
+    about: fn:@suss/cli::extract
