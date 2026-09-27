@@ -102,6 +102,8 @@ A recognizer-only pack, such as the node runtime pack, turns each exported funct
 
 Below the file layer, an adapter can keep what it worked out about one unit of its own, such as the calls one function body makes, as a unit record: a key, the file the unit is in, the other files the result rests on, and the result itself, which the cache never reads. `plan` hands back every record whose file and recorded files hash the same, and the adapter uses it in place of redoing the work. The TypeScript closure keeps one record per scanned body, so a partial run scans only bodies in edited files and bodies whose recorded files moved. The adapter writes back the records it used, the ones it made, and every still-valid record the run did not reach, so a later edit elsewhere can use them.
 
+A partial run reads the manifest three times: the lookup, the plan and the write. On a large project each parse costs about half a second, so the lookup parses it and the plan and the write reuse that parse while the file on disk is still the one it came from. The next run's lookup reads the file again, since another process may have written the entry in between.
+
 A file's record can also list the files it imports, in the order the adapter's loader found them. Where an import resolves depends on the importing file's text and on which files exist, so `plan` hands the lists back for every unchanged file when no file joined or left the set, and none otherwise. The TypeScript loader takes those lists in place of reading and resolving the files again.
 
 ### Known gaps
