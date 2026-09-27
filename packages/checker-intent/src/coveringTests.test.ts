@@ -297,6 +297,61 @@ describe("a scenario covered by a test", () => {
     );
   });
 
+  it("reports a subject that is nothing in these summaries, with what the lookup said", () => {
+    const code = [
+      cancelOrder,
+      testUnit("cancels", [calls("cancelOrder", cancelOrder)]),
+    ];
+    const [finding] = check(
+      [covered("cancel", "cancels", ["refundOrder"])],
+      code,
+    ).findings;
+
+    expect(finding.kind).toBe("testMissesSubject");
+    expect(finding.message).toContain(
+      "what it has to reach, refundOrder, is nothing in these summaries: nothing here is refundOrder",
+    );
+  });
+
+  it("reports a test with nothing to reach when the PRD's only link resolves to nothing", () => {
+    const code = [
+      cancelOrder,
+      testUnit("cancels", [calls("cancelOrder", cancelOrder)]),
+    ];
+    const findings = check(
+      [{ ...covered("linked", "cancels", []), link: ["orders-cancel.gone"] }],
+      code,
+    ).findings;
+
+    expect(findings.map((one) => one.kind).sort()).toEqual([
+      "danglingScenarioLink",
+      "testMissesSubject",
+    ]);
+    expect(
+      findings.find((one) => one.kind === "testMissesSubject")?.message,
+    ).toContain("the PRD links to no boundary a test could be checked against");
+  });
+
+  it("counts a test that is itself part of the subject as reaching it", () => {
+    const test = testUnit("cancels", []);
+    const code = [cancelOrder, test];
+    const lookup = lookupOver(code);
+    const result = checkIntentAgreement(
+      [prd([covered("cancel", "cancels", ["cancels"])])],
+      code,
+      {
+        ...lookup,
+        subject: () => ({
+          found: true,
+          target: { functions: [functionOf(test)], keys: [] },
+          label: "cancels",
+        }),
+      },
+    );
+
+    expect(result.findings).toEqual([]);
+  });
+
   it("drops a finding against inferred intent one level", () => {
     const [finding] = check(
       [covered("cancel", "cancels twice")],
