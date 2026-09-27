@@ -46,7 +46,10 @@ export {
   typeDefinitionKey,
   withDefinitionsInlined,
 } from "./schemas.js";
-export { FunctionCallSemanticsSchema } from "./semantics/functionCall.js";
+export {
+  FunctionCallSemanticsSchema,
+  isModuleName,
+} from "./semantics/functionCall.js";
 export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
 export { GraphqlResolverSemanticsSchema } from "./semantics/graphqlResolver.js";
 export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
