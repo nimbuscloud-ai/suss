@@ -2302,6 +2302,9 @@ export function createTypeScriptAdapter(
   let projectFileSet: ReadonlySet<string> | undefined;
   // False until a run or loadProgram has loaded the walked files.
   let programLoaded = false;
+  // When the project's text was last known to match the disk. A run tells
+  // the cache, since a file written after it may be parsed from before.
+  let textCheckedAt = Date.now();
   const startOver = (holder: HoldsProject): void => {
     project = newProject();
     if (holder !== undefined) {
@@ -2310,6 +2313,7 @@ export function createTypeScriptAdapter(
     loaded = emptyLoadedState();
     projectFileSet = undefined;
     programLoaded = false;
+    textCheckedAt = Date.now();
   };
 
   // Without a tsconfig there is no directory to keep the cache beside,
@@ -2374,6 +2378,7 @@ export function createTypeScriptAdapter(
     if (!ownsProject || config.tsConfigFilePath === undefined) {
       return { changed: [], startedOver: null };
     }
+    const checkedAt = Date.now();
     const outcome = refreshLoadedProject(
       project,
       loaded,
@@ -2381,6 +2386,7 @@ export function createTypeScriptAdapter(
       changedPaths,
     );
     if (outcome.startOver === null) {
+      textCheckedAt = checkedAt;
       return { changed: outcome.changed, startedOver: null };
     }
     startOver(holder);
@@ -2530,6 +2536,7 @@ export function createTypeScriptAdapter(
         ...(config.tsConfigFilePath !== undefined
           ? { configPath: config.tsConfigFilePath }
           : {}),
+        readSince: textCheckedAt,
       };
       const lookup = await timer.timeAsync("cache.lookup", () =>
         cache.lookup(cacheInput),

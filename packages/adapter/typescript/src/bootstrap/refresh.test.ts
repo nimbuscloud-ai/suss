@@ -13,6 +13,13 @@ import path from "node:path";
 
 import { afterAll, describe, expect, it, vi } from "vitest";
 
+// A run from source turns the cache off. The test that asks for a cache
+// directory needs it on, and the rest pass null.
+vi.mock("../version.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../version.js")>()),
+  declineWhenRunFromSource: (cacheDir: string | null) => cacheDir,
+}));
+
 import { createTypeScriptAdapter } from "../adapter.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -115,6 +122,28 @@ describe("an adapter kept between runs", () => {
     expect(report.changed).toEqual([path.join(dir, "src/status.ts")]);
     expect(report.startedOver).toBeNull();
     expect(comparable(after)).not.toEqual(comparable(before));
+    expect(comparable(after)).toEqual(comparable(await freshRun(dir)));
+  });
+
+  it("reads a file written after the refresh on the next run, with the cache on", async () => {
+    const dir = await makeProject();
+    const kept = createTypeScriptAdapter({
+      tsConfigFilePath: path.join(dir, "tsconfig.json"),
+      frameworks: [pack],
+      cacheDir: path.join(dir, ".suss", "cache"),
+    });
+    await kept.extractAll();
+
+    await write(dir, "src/status.ts", statusFile(503));
+    kept.refresh();
+    // Written after the refresh compared the files, in a later millisecond,
+    // so this run reads the parse from before it.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await write(dir, "src/status.ts", statusFile(504));
+    await kept.extractAll();
+    kept.refresh();
+    const after = await kept.extractAll();
+
     expect(comparable(after)).toEqual(comparable(await freshRun(dir)));
   });
 
