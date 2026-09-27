@@ -3,14 +3,13 @@
  *
  * This is kept apart from @suss/checker because the inputs and outputs
  * differ: one side is an `IntentSummary`, and a finding says the code
- * does not do what the team declared. The comparison primitives both
- * checkers need, such as `boundaryKey` and `bodyShapesMatch`, live in
- * @suss/ir-core, so neither depends on the other.
+ * does not do what the team declared. It takes only the call facts from
+ * @suss/checker, to see whether a test reaches what a scenario is about.
  *
  * A boundary intent is paired with the code at its boundary key. A PRD
- * has its scenario links resolved against the loaded boundary intents.
- * Which severity each finding gets, and why a finding against inferred
- * intent drops a level, is in the package design notes.
+ * has its scenario links resolved and its covering tests checked. Which
+ * severity each finding gets, and why a finding against inferred intent
+ * drops a level, is in the package design notes.
  */
 
 import {
@@ -38,6 +37,7 @@ import {
   semanticsAgree,
 } from "@suss/ir-core";
 
+import { checkCoveringTests } from "./coveringTests.js";
 import { checkReceivesBlock } from "./receivedInput.js";
 
 import type {
@@ -67,8 +67,14 @@ import type {
   Semantics,
   SuppressionRule,
 } from "@suss/ir-core";
+import type { CoveringTestClaim, CoveringTestLookup } from "./coveringTests.js";
 
 export type { IntentFinding } from "@suss/intent-ir";
+export type {
+  CoveringTestLookup,
+  FoundSubject,
+  FoundTest,
+} from "./coveringTests.js";
 
 /** A code transition's terminal, reduced to the dimensions intent compares. */
 interface CodeOutcome {
@@ -104,7 +110,12 @@ export interface CheckedPrd {
   scenarios: number;
   /** Scenarios whose every link resolved to a declared outcome (had >=1 link). */
   resolved: number;
-  /** Scenarios carrying no structured link (a valid pending state). */
+  /**
+   * Scenarios whose every covering test exists, runs and reaches its
+   * subject. Zero when the check was given no way to look tests up.
+   */
+  covered: number;
+  /** Scenarios with neither a link nor a covering test. */
   unlinked: number;
 }
 
@@ -140,9 +151,10 @@ export interface CheckIntentResult {
 /**
  * Compare every loaded intent doc against what's known. Boundary intents
  * pair against the code summaries sharing their boundary key; PRDs resolve
- * each scenario's link against the loaded boundary intents (coverage). An
- * intent that can't be compared (an unkeyable boundary) is reported in
- * `unchecked`, never silently dropped.
+ * each scenario's link against the loaded boundary intents, and check the
+ * tests it lists under `coveredBy` through `tests`. Without `tests`, those
+ * scenarios count as backed and their tests go unchecked. An unkeyable
+ * boundary is reported in `unchecked`, never silently dropped.
  *
  * Findings against `source: "inferred"` intent are downgraded one severity
  * level: the intent describes what the code did when the inference ran, so
@@ -152,10 +164,12 @@ export interface CheckIntentResult {
 export function checkIntentAgreement(
   intents: IntentSummary[],
   code: BehavioralSummary[],
+  tests?: CoveringTestLookup,
 ): CheckIntentResult {
   const findings: IntentFinding[] = [];
   const checked: CheckedIntent[] = [];
   const unchecked: UncheckedIntent[] = [];
+  const claims: ScenarioClaim[] = [];
   const codeByBoundary = indexCodeByBoundary(code);
   const boundaryByName = indexBoundaryIntentsByName(intents);
   // The drafter fills in deploy-time names, so this pass has to fill in
@@ -169,6 +183,7 @@ export function checkIntentAgreement(
       const result = checkPrdCoverage(intent, boundaryByName);
       findings.push(...withProvenance(result.findings, intent.source));
       checked.push(result.checked);
+      claims.push(...result.claims);
       continue;
     }
     const result = checkBoundaryIntent(
@@ -181,9 +196,54 @@ export function checkIntentAgreement(
     checked.push(...result.checked);
     unchecked.push(...result.unchecked);
   }
+  if (tests !== undefined) {
+    findings.push(...checkScenarioTests(claims, tests));
+  }
   findings.push(...checkOutcomesDescribed(intents));
 
   return { findings, checked, unchecked };
+}
+
+/** A covering test to check, and the PRD count it adds to. */
+interface ScenarioClaim {
+  claim: CoveringTestClaim;
+  checked: CheckedPrd;
+  /** The scenario's position in its PRD, which groups a scenario's tests. */
+  scenario: number;
+}
+
+/**
+ * Every covering test in every PRD, checked together so the reach
+ * question runs once. A scenario counts as covered when each test it
+ * lists passes.
+ */
+function checkScenarioTests(
+  claims: readonly ScenarioClaim[],
+  tests: CoveringTestLookup,
+): IntentFinding[] {
+  const verdicts = checkCoveringTests(
+    claims.map((one) => one.claim),
+    tests,
+  );
+  const failed = new Set<string>();
+  const findings: IntentFinding[] = [];
+  for (const [at, verdict] of verdicts.entries()) {
+    if (verdict.kind === "finding") {
+      const { claim, checked, scenario } = claims[at];
+      failed.add(`${checked.intent}\u0000${scenario}`);
+      findings.push(...withProvenance([verdict.finding], claim.prd.source));
+    }
+  }
+
+  const counted = new Set<string>();
+  for (const { checked, scenario } of claims) {
+    const key = `${checked.intent}\u0000${scenario}`;
+    if (!failed.has(key) && !counted.has(key)) {
+      counted.add(key);
+      checked.covered += 1;
+    }
+  }
+  return findings;
 }
 
 /**
@@ -333,35 +393,62 @@ function codeRef(impl: BehavioralSummary): string {
 
 /**
  * Resolve every scenario's structured link against the loaded boundary
- * intents. Emits one finding per unlinked scenario (info, a valid pending
- * state) and per dangling / ambiguous link (warning, a planning gap the
- * author must fix). A scenario whose links all resolve produces nothing.
- * The pass stops at resolving links, and the design notes explain why.
+ * intents, and hand back the tests scenarios list for the caller to
+ * check together. Emits a warning per scenario with neither, and per
+ * dangling or ambiguous link, since each is a gap the author has to
+ * fix. The pass stops at resolving links, and the design notes say why.
  */
 function checkPrdCoverage(
   prd: PrdSummary,
   boundaryByName: Map<string, BoundaryIntentSummary[]>,
-): { findings: IntentFinding[]; checked: CheckedPrd } {
+): { findings: IntentFinding[]; checked: CheckedPrd; claims: ScenarioClaim[] } {
   const findings: IntentFinding[] = [];
-  let resolved = 0;
-  let unlinked = 0;
+  const claims: ScenarioClaim[] = [];
+  const checked: CheckedPrd = {
+    kind: "prd",
+    intent: prd.title,
+    scenarios: prd.scenarios.length,
+    resolved: 0,
+    covered: 0,
+    unlinked: 0,
+  };
+  const fallbackSubjects = linkedBoundaryKeys(prd, boundaryByName);
 
   prd.scenarios.forEach((scenario, index) => {
     const label = scenarioLabel(scenario.title, index);
-    if (scenario.link.length === 0) {
-      unlinked += 1;
+    for (const spelled of scenario.coveredBy) {
+      claims.push({
+        claim: {
+          prd,
+          scenarioTitle: scenario.title,
+          label,
+          spelled,
+          subjects:
+            scenario.about.length > 0 ? scenario.about : fallbackSubjects,
+        },
+        checked,
+        scenario: index,
+      });
+    }
+
+    if (scenario.link.length === 0 && scenario.coveredBy.length === 0) {
+      checked.unlinked += 1;
       findings.push({
         kind: "unlinkedScenario",
-        severity: "info",
+        severity: "warning",
         boundary: prdBoundaryLabel(prd),
         intent: { name: prd.title },
         ...(scenario.title !== null
           ? { scenario: { title: scenario.title } }
           : {}),
-        message: `Scenario ${label} in PRD "${prd.title}" has no structured link to a system-intent outcome; it reads on its own, but its coverage can't be checked until a link is added.`,
+        message: `Scenario ${label} in PRD "${prd.title}" has neither a link to a boundary outcome nor a covering test, so nothing checks it; add a link, or list the test that covers it under coveredBy.`,
       });
       return;
     }
+    if (scenario.link.length === 0) {
+      return;
+    }
+
     let allResolved = true;
     for (const ref of scenario.link) {
       const finding = resolveScenarioLink(
@@ -377,20 +464,31 @@ function checkPrdCoverage(
       }
     }
     if (allResolved) {
-      resolved += 1;
+      checked.resolved += 1;
     }
   });
 
-  return {
-    findings,
-    checked: {
-      kind: "prd",
-      intent: prd.title,
-      scenarios: prd.scenarios.length,
-      resolved,
-      unlinked,
-    },
-  };
+  return { findings, checked, claims };
+}
+
+/**
+ * The boundary keys the PRD's links resolve to, which is what a covering
+ * test with no `about` has to reach one of. A link that does not resolve
+ * adds nothing, and its own finding says why.
+ */
+function linkedBoundaryKeys(
+  prd: PrdSummary,
+  boundaryByName: Map<string, BoundaryIntentSummary[]>,
+): string[] {
+  const keys = new Set<string>();
+  for (const ref of prd.scenarios.flatMap((scenario) => scenario.link)) {
+    const matches = boundaryByName.get(ref.split(".")[0]) ?? [];
+    const key = matches.length === 1 ? boundaryKey(matches[0].boundary) : null;
+    if (key !== null) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
 }
 
 /**
@@ -512,8 +610,10 @@ function withProvenance(
  * in @suss/ir-core that the behavioural checker's `applySuppressions`
  * uses. A rule's `kind` matches the finding kind, and its `boundary`
  * matches the finding's boundary key, exactly for `fn:` and `gql:` keys
- * and path-normalized for REST. A rule that gives `consumer` or
- * `provider` never matches, since an intent finding has neither side.
+ * and path-normalized for REST. A rule's `scenario` matches the title
+ * of the PRD scenario the finding is about. A rule that gives
+ * `consumer` or `provider` never matches, since an intent finding has
+ * neither side.
  */
 export function applyIntentSuppressions(
   findings: IntentFinding[],
@@ -527,6 +627,14 @@ export function applyIntentSuppressions(
       if (rule.consumer !== undefined || rule.provider !== undefined) {
         return false;
       }
+
+      if (
+        rule.scenario !== undefined &&
+        rule.scenario !== finding.scenario?.title
+      ) {
+        return false;
+      }
+
       return (
         rule.boundary === undefined ||
         ruleBoundaryMatchesKey(rule.boundary, finding.boundary)

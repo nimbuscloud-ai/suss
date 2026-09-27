@@ -12,6 +12,7 @@ import {
   unitInvocationBinding,
   type ValueRef,
 } from "@suss/behavioral-ir";
+import { toCoveringTest } from "@suss/intent-ir";
 import { SemanticsSchema } from "@suss/ir-core";
 
 import {
@@ -521,8 +522,16 @@ function outcomeById(id: string, status = 200): IntentOutcome {
 function scenario(
   link: string[],
   title: string | null = null,
+  tests: { coveredBy?: string[]; about?: string[] } = {},
 ): PrdScenarioSummary {
-  return { title, when: "condition", expect: "outcome", link };
+  return {
+    title,
+    when: "condition",
+    expect: "outcome",
+    link,
+    coveredBy: (tests.coveredBy ?? []).map(toCoveringTest),
+    about: tests.about ?? [],
+  };
 }
 
 function prdDoc(
@@ -571,11 +580,12 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       intent: "profile-prd",
       scenarios: 1,
       resolved: 1,
+      covered: 0,
       unlinked: 0,
     });
   });
 
-  it("flags an unlinked scenario as info and counts it, never dropping it", () => {
+  it("warns about a scenario with neither a link nor a covering test, and counts it", () => {
     const result = checkIntentAgreement(
       [prdDoc([scenario([], "Missing id")])],
       [],
@@ -583,7 +593,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0]).toMatchObject({
       kind: "unlinkedScenario",
-      severity: "info",
+      severity: "warning",
       boundary: "prd:profile-prd",
       intent: { name: "profile-prd" },
       scenario: { title: "Missing id" },
@@ -593,6 +603,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       intent: "profile-prd",
       scenarios: 1,
       resolved: 0,
+      covered: 0,
       unlinked: 1,
     });
   });
@@ -665,6 +676,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       intent: "profile-prd",
       scenarios: 1,
       resolved: 0,
+      covered: 0,
       unlinked: 0,
     });
   });

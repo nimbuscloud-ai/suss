@@ -26,9 +26,14 @@ export const IntentFindingKindSchema = z.enum([
   "undeclaredInputRead", // the unit reads a path the receives block does not list
   // Outcome intent (kind: prd): whether each scenario's link resolves to
   // a system-intent outcome.
-  "unlinkedScenario", // scenario has no structured link (info: a valid pending state)
+  "unlinkedScenario", // scenario has neither a link nor a covering test
   "danglingScenarioLink", // link names an intent / outcome no boundary intent declares
   "ambiguousScenarioLink", // link resolves to two or more boundary intents sharing the name
+  // The same question for a scenario backed by a test: whether the test
+  // it lists exists, runs, and reaches what the scenario is about.
+  "missingCoveringTest", // coveredBy lists a test no summary here is
+  "testMissesSubject", // the test never reaches the subject, or reaches it only through a mock
+  "coveringTestSkipped", // the test is marked skip or todo, so it does not run
   // The same coverage question asked the other way: which declared
   // behaviour has nobody written a reason for.
   "undescribedOutcome", // a declared outcome no PRD scenario links to (info)
@@ -80,16 +85,17 @@ export const IntentFindingSchema = z.object({
    */
   code: z.string().optional(),
   /**
-   * Present only on outcome-intent findings (unlinkedScenario,
-   * danglingScenarioLink, ambiguousScenarioLink). It gives the scenario,
-   * by its optional title, and the qualified outcome ref
-   * (`<intent-name>.<outcome-id>`) that failed to resolve. Boundary
-   * findings leave it unset.
+   * Present only on outcome-intent findings. It gives the scenario, by
+   * its optional title, and the qualified outcome ref
+   * (`<intent-name>.<outcome-id>`) that failed to resolve, or the
+   * `coveredBy` entry whose test failed the check. Boundary findings
+   * leave it unset.
    */
   scenario: z
     .object({
       title: z.string().optional(),
       link: z.string().optional(),
+      coveredBy: z.string().optional(),
     })
     .optional(),
   message: z.string(),

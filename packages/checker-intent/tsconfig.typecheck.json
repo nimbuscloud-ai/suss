@@ -12,6 +12,9 @@
       "path": "../behavioral-ir/tsconfig.typecheck.json"
     },
     {
+      "path": "../checker/tsconfig.typecheck.json"
+    },
+    {
       "path": "../intent-ir/tsconfig.typecheck.json"
     },
     {

@@ -1541,6 +1541,40 @@
                   }
                 ],
                 "description": "The boundary-intent outcomes this scenario is about, each written <intent-name>.<outcome-id>."
+              },
+              "coveredBy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                ],
+                "description": "The tests that exercise this scenario, each written as the test file, then each describe title, then the test's own title, joined with ' > '."
+              },
+              "about": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                ],
+                "description": "What a covering test has to reach for the scenario to count as covered: a boundary or a unit, spelled the way suss ask takes one. Without it, a test has to reach one of the boundaries the PRD's other scenarios link to."
               }
             },
             "required": ["when", "expect"],
