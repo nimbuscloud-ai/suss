@@ -9,8 +9,8 @@ Three commands read a project and print what it does on every path.
 
 ```bash
 npx @suss/cli init
-npx suss extract -o summaries/code.json
-npx suss inspect summaries/code.json
+npx @suss/cli extract -o summaries/code.json
+npx @suss/cli inspect summaries/code.json
 ```
 
 suss does not run your code, and you do not have to annotate anything
@@ -133,7 +133,7 @@ somewhere or the run is in CI, it prints the commands and stops.
 ## Read the code
 
 ```bash
-npx suss extract -f hono -f fetch -f prisma -f node -o summaries/code.json
+npx @suss/cli extract -f hono -f fetch -f prisma -f node -o summaries/code.json
 ```
 
 ```
@@ -152,7 +152,7 @@ it picks the same ones `init` would have.
 ## Print what it found
 
 ```bash
-npx suss inspect summaries/code.json
+npx @suss/cli inspect summaries/code.json
 ```
 
 ```
@@ -205,9 +205,9 @@ export async function loadOrder(reference: string) {
 ```
 
 ```bash
-npx suss extract -f hono -f fetch -f prisma -f node -o summaries/code.json
-npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
-npx suss check --dir summaries/ --all
+npx @suss/cli extract -f hono -f fetch -f prisma -f node -o summaries/code.json
+npx @suss/cli contract --from prisma prisma/schema.prisma -o summaries/prisma.json
+npx @suss/cli check --dir summaries/ --all
 ```
 
 ```

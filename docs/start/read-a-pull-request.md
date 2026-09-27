@@ -37,7 +37,7 @@ users.get("/users/:id", async (c) => {
 ```
 
 ```bash
-npx suss extract -f hono -o summaries/before.json
+npx @suss/cli extract -f hono -o summaries/before.json
 ```
 
 The pull request rewrites two of those returns. A deleted account used to
@@ -70,8 +70,8 @@ users.get("/users/:id", async (c) => {
 ```
 
 ```bash
-npx suss extract -f hono -o summaries/after.json
-npx suss inspect --diff summaries/before.json summaries/after.json
+npx @suss/cli extract -f hono -o summaries/after.json
+npx @suss/cli inspect --diff summaries/before.json summaries/after.json
 ```
 
 ```

@@ -8,8 +8,8 @@ description: Read an OpenAPI 3.x document into summaries and compare it against 
 Compare an OpenAPI 3.x document against the code on either side of it. `suss contract` reads the document and writes summaries in the same format `extract` writes from source, and `check` compares the two.
 
 ```bash
-npx suss contract --from openapi openapi.yaml -o summaries/contract.json
-npx suss check --dir summaries/
+npx @suss/cli contract --from openapi openapi.yaml -o summaries/contract.json
+npx @suss/cli check --dir summaries/
 ```
 
 Everything ships inside `@suss/cli`, so `npm install --save-dev @suss/cli` is the only install.
@@ -278,7 +278,7 @@ To be strict about what is in use, filter the summaries before checking:
 ```bash
 jq '[.[] | select(.identity.boundaryBinding.semantics.path | test("^/v1/(charges|refunds)"))]' \
   summaries/vendor.json > summaries/vendor-subset.json
-npx suss check summaries/vendor-subset.json summaries/client.json
+npx @suss/cli check summaries/vendor-subset.json summaries/client.json
 ```
 
 The filtering happens before the check, so every check flag still applies.

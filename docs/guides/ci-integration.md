@@ -149,17 +149,17 @@ jobs:
 
       - name: Read every side into one folder
         run: |
-          npx suss extract -p tsconfig.json -f express -o summaries/api.json
-          npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
-          npx suss contract --from openapi openapi.yaml -o summaries/contract.json
+          npx @suss/cli extract -p tsconfig.json -f express -o summaries/api.json
+          npx @suss/cli extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
+          npx @suss/cli contract --from openapi openapi.yaml -o summaries/contract.json
 
       - name: Compare them
-        run: npx suss check --dir summaries/ --fail-on error
+        run: npx @suss/cli check --dir summaries/ --fail-on error
 ```
 
 `check --dir` pairs every provider summary with every consumer summary that shares a boundary key, `GET /users/:id` or `bus:aws_sqs PaidQueue`. The two sides do not have to come from the same kind of source: a provider read out of an OpenAPI document pairs with a consumer read out of axios call sites.
 
-With a `suss.json` committed, `npx suss check` does all of that. It runs every extract and every contract read that the file lists, then compares the results. [Add suss to a project](/guides/add-to-project) covers what `init` writes.
+With a `suss.json` committed, `npx @suss/cli check` does all of that. It runs every extract and every contract read that the file lists, then compares the results. [Add suss to a project](/guides/add-to-project) covers what `init` writes.
 
 ## The exit code as the gate
 
@@ -175,7 +175,7 @@ Do not gate on `--fail-on info`. Info findings are advisory. Failing the build o
 
 ```yaml
 - id: check
-  run: npx suss check --dir summaries/ --json -o findings.json
+  run: npx @suss/cli check --dir summaries/ --json -o findings.json
   continue-on-error: true
 
 - name: Count the errors
@@ -211,8 +211,8 @@ rules:
 The jobs above run after the code is written and pushed. You can run the same commands on your own checkout first:
 
 ```bash
-npx suss check --dir summaries/
-npx suss inspect --diff summaries/before.json summaries/after.json
+npx @suss/cli check --dir summaries/
+npx @suss/cli inspect --diff summaries/before.json summaries/after.json
 ```
 
 `before.json` is an extract from the commit you branched from and `after.json` is one from the working tree.

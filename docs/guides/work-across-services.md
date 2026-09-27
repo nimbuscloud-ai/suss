@@ -8,9 +8,9 @@ description: Extract each service into one folder and check them together, so a 
 Run one `extract` per service into the same folder, then one `check` over the folder.
 
 ```bash
-npx suss extract -p services/catalog/tsconfig.json -f hono -o summaries/catalog.json
-npx suss extract -p apps/storefront/tsconfig.json -f fetch -o summaries/storefront.json
-npx suss check --dir summaries/
+npx @suss/cli extract -p services/catalog/tsconfig.json -f hono -o summaries/catalog.json
+npx @suss/cli extract -p apps/storefront/tsconfig.json -f fetch -o summaries/storefront.json
+npx @suss/cli check --dir summaries/
 ```
 
 suss pairs summaries by boundary, so it compares a handler in one service with the client that calls it in another, whichever run wrote them. Order does not matter, because `check` reads whatever is in the folder. Each team writes the extract command for its own service. The pipeline runs all of them.
@@ -21,7 +21,7 @@ When the two sides live in separate repositories, the provider writes its summar
 
 ```bash
 # in the catalog-api repo
-npx suss extract -p tsconfig.json -f hono -o suss/catalog.json
+npx @suss/cli extract -p tsconfig.json -f hono -o suss/catalog.json
 git add suss/catalog.json
 ```
 
@@ -30,8 +30,8 @@ The consumer copies that file in next to its own and checks the pair:
 ```bash
 # in the storefront repo
 cp ../catalog-api/suss/catalog.json summaries/
-npx suss extract -p tsconfig.json -f fetch -o summaries/storefront.json
-npx suss check --dir summaries/
+npx @suss/cli extract -p tsconfig.json -f fetch -o summaries/storefront.json
+npx @suss/cli check --dir summaries/
 ```
 
 `extract` writes file paths relative to the project it read, and the format has nothing machine-specific in it, so the file means the same thing in the consumer's repo as it did in the provider's. [Publish summaries](/guides/publish-summaries) shows how to ship the file inside the package instead of copying it.
@@ -39,7 +39,7 @@ npx suss check --dir summaries/
 You can also pass both files, when the folder has more in it than the pair you want:
 
 ```bash
-npx suss check summaries/catalog.json summaries/storefront.json
+npx @suss/cli check summaries/catalog.json summaries/storefront.json
 ```
 
 ## When the provider stops sending a field
@@ -137,8 +137,8 @@ When two services both serve `GET /users`, suss sees one boundary and compares a
 suss cannot tell the two services apart, so check one service at a time:
 
 ```bash
-npx suss extract -p services/auth/tsconfig.json -f hono -o auth/api.json
-npx suss check --dir auth/
+npx @suss/cli extract -p services/auth/tsconfig.json -f hono -o auth/api.json
+npx @suss/cli check --dir auth/
 ```
 
 ## A spec instead of the other side's code
@@ -146,8 +146,8 @@ npx suss check --dir auth/
 `suss contract` reads a spec and writes it out in the same format as `extract`. The other side can then be an OpenAPI document, a Prisma schema or a CloudFormation template instead of code:
 
 ```bash
-npx suss contract --from openapi ../catalog-api/openapi.yaml -o summaries/catalog.json
-npx suss check --dir summaries/
+npx @suss/cli contract --from openapi ../catalog-api/openapi.yaml -o summaries/catalog.json
+npx @suss/cli check --dir summaries/
 ```
 
 In [Check against OpenAPI](/guides/check-against-openapi), suss compares the spec, the handlers behind it and the client that calls it in one run. [Contract sources](/packs/contract-sources) lists what `--from` accepts.

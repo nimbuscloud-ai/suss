@@ -21,8 +21,8 @@ Start on one service, where there is nothing to triage, and take the next step o
 <!-- suss:unchecked each step runs in a different project, so no single directory could follow the page from top to bottom -->
 
 ```bash
-npx suss extract --dir . -f aws-lambda -f aws-sqs -o summaries/code.json
-npx suss inspect summaries/code.json
+npx @suss/cli extract --dir . -f aws-lambda -f aws-sqs -o summaries/code.json
+npx @suss/cli inspect summaries/code.json
 ```
 
 **What you get.** One entry per unit, with every path it can take, what it returns on each, and the calls and queues along the way:
@@ -60,9 +60,9 @@ means suss found the unit and could not read its body, usually because the respo
 ## 2. Question it
 
 ```bash
-npx suss ask 'what writes bus:aws_sqs PaidQueue' --dir summaries/
-npx suss ask 'what calls src/lib/recordRefund.ts' --dir summaries/
-npx suss ask 'what reaches recordRefund' --dir summaries/
+npx @suss/cli ask 'what writes bus:aws_sqs PaidQueue' --dir summaries/
+npx @suss/cli ask 'what calls src/lib/recordRefund.ts' --dir summaries/
+npx @suss/cli ask 'what reaches recordRefund' --dir summaries/
 ```
 
 [Ask about a codebase](/guides/ask) works through the questions and the answers. A coding agent can ask the same questions over MCP, and [Give your agent suss](/start/give-your-agent-suss) sets that up.
@@ -84,8 +84,8 @@ That answer is complete as far as suss could read, and it tells you where it sto
 Most services keep at least one document that describes what they do, such as a Prisma schema or a CloudFormation template. `suss contract` reads that document and writes it in the same format as the code's summaries, and `check` compares the two:
 
 ```bash
-npx suss contract --from cloudformation template.yaml -o summaries/template.json
-npx suss check --dir summaries/
+npx @suss/cli contract --from cloudformation template.yaml -o summaries/template.json
+npx @suss/cli check --dir summaries/
 ```
 
 **What you get.** Your first findings. Each one says two halves of one deployment disagree:
@@ -118,12 +118,12 @@ Read the code on the other side into the same directory, such as the frontend th
 
 ```bash
 # the web client that calls the API
-npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
+npx @suss/cli extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
 
 # or the service that drains the queue
-npx suss extract --dir services/billing -f aws-lambda -f aws-sqs -o summaries/billing.json
+npx @suss/cli extract --dir services/billing -f aws-lambda -f aws-sqs -o summaries/billing.json
 
-npx suss check --dir summaries/
+npx @suss/cli check --dir summaries/
 ```
 
 A client pairs with a handler when the method and the path match, so a client in `apps/web` and a handler in `services/api` are compared against each other without anyone declaring anything. For a queue, suss reads from the template which consumer a producer reaches.
@@ -154,10 +154,10 @@ Two things go into CI. The `inspect-diff` action reads the base and the head of 
     extract: --dir . -f aws-lambda -f aws-sqs
 
 - name: Read every side into one folder
-  run: npx suss extract --dir . -f aws-lambda -f aws-sqs -o summaries/code.json
+  run: npx @suss/cli extract --dir . -f aws-lambda -f aws-sqs -o summaries/code.json
 
 - name: Check the boundaries
-  run: npx suss check --dir summaries/ --fail-on error
+  run: npx @suss/cli check --dir summaries/ --fail-on error
 ```
 
 [Run suss in CI](/guides/ci-integration) has the whole workflow and every input the action takes.

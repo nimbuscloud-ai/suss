@@ -8,7 +8,7 @@ description: Six questions a developer asks in a week, each run against a small 
 Ask one question about code you have already extracted. suss works the answer out from the summaries on disk, so it does not read your code again and the answer takes milliseconds.
 
 ```bash
-npx suss ask 'what reads aws.dynamodb:OrdersTable' --dir summaries/
+npx @suss/cli ask 'what reads aws.dynamodb:OrdersTable' --dir summaries/
 ```
 
 <!-- suss:example fixtures=storage-wrapper -->
