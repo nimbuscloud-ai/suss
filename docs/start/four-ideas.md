@@ -15,9 +15,12 @@ query and the table it reads. suss records every boundary in the same
 format. `check` prints the two sides it paired on each one:
 
 ```
-Compared 1 boundary:
+Compared 2 of 3 boundaries:
   GET /orders/{reference}
     orders-api::src/api.ts::get <-> orders-api::src/client.ts::loadOrder
+  postgresql:Order
+    prisma/schema.prisma::Order <-> orders-api::src/api.ts::get
+    prisma/schema.prisma::Order <-> orders-api::src/api.ts::post
 ```
 
 ## Summary
@@ -36,6 +39,7 @@ branch produces, and everything the code touched along the way.
          -> 201 { reference }
            + c.req.json
            + db.order.create
+           + writes postgresql:Order
 ```
 
 ## Check

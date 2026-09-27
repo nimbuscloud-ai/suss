@@ -14,7 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { configurationNeed } from "./init.js";
+import { configurationNeed, valuesFor } from "./init.js";
 import {
   PROJECT_FILE,
   projectFileFor,
@@ -131,19 +131,4 @@ function configurePack(
       text: `Left ${pack} out of ${PROJECT_FILE}. It ${configurationNeed(configuration)} ${configuration.why} Write that to ${shown}, as in ${JSON.stringify(configuration.example)}, then run \`suss init --write --overwrite\` to list the pack.`,
     },
   };
-}
-
-/**
- * The values init writes for a pack: what the project says, over the
- * pack's defaults. Null when there is neither.
- */
-function valuesFor(
-  configuration: PackConfiguration,
-  projectRoot: string,
-): Record<string, unknown> | null {
-  const read = configuration.readFromProject?.(projectRoot) ?? null;
-  if (read === null && configuration.defaults === undefined) {
-    return null;
-  }
-  return { ...configuration.defaults, ...read };
 }

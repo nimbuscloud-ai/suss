@@ -15,8 +15,8 @@ The adapter ships inside the CLI, so there is nothing else to install.
 ## Read a FastAPI service
 
 ```bash
-npx suss extract --lang python -f fastapi -f sqlalchemy -f requests -o summaries/python.json
-npx suss check --dir summaries/
+npx @suss/cli extract --lang python -f fastapi -f sqlalchemy -f requests -o summaries/python.json
+npx @suss/cli check --dir summaries/
 ```
 
 `suss init` reads your requirements file or pyproject and writes those two commands out for your own project.

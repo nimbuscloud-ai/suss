@@ -407,6 +407,8 @@ interface RenderCtx {
    * these names could be any of them, so it gets no `→` marker.
    */
   ambiguousFollowNames: ReadonlySet<string>;
+  /** Every summary's name as written, before `fileByName` strips it to its last segment. */
+  wholeFollowNames: ReadonlySet<string>;
   /**
    * Every loaded summary with an `identity.id`, keyed by that id. When an
    * invocation effect has a `summary` id, the extractor already resolved
@@ -810,9 +812,12 @@ function resolveFollowTargetById(
  * The `→` reference for a call with no recorded summary id, found by
  * matching the callee's name. The full callee text is tried first, then
  * its last dotted segment, so `utils.formatError` still finds a
- * `formatError` summary. Returns null when no summary has the name, or
- * when summaries in several files do. A name can recur across a run, so
- * this match can be wrong; it is used only when there is no id to go on.
+ * `formatError` summary. The segment has to be a summary's whole name:
+ * `Account.find` and a summary named `ReportJob.find` share only
+ * `find`, a method on two receivers, so that call stays unresolved.
+ * Returns null when no summary has the name, or when summaries in
+ * several files do. A name can recur across a run, so this match can be
+ * wrong; it is used only when there is no id to go on.
  */
 function resolveFollowTargetByName(
   callee: string,
@@ -828,7 +833,11 @@ function resolveFollowTargetByName(
     resolved = callee;
   } else {
     const last = callee.split(".").pop();
-    if (last !== undefined && last !== callee && byName.has(last)) {
+    if (
+      last !== undefined &&
+      last !== callee &&
+      ctx.base.wholeFollowNames.has(last)
+    ) {
       resolved = last;
     }
   }
@@ -1416,6 +1425,7 @@ export function inspect(options: InspectOptions): void {
 
 function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   const fileByName = new Map<string, string>();
+  const wholeFollowNames = new Set<string>();
   // A name that summaries in several files share cannot pick one of them,
   // and a guessed `→` looks the same as a resolved one (#121).
   const filesPerFollowName = new Map<string, Set<string>>();
@@ -1434,6 +1444,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     if (!fileByName.has(s.identity.name)) {
       fileByName.set(s.identity.name, s.location.file);
     }
+    wholeFollowNames.add(s.identity.name);
     noteFollowName(s.identity.name, s.location.file);
     const last = s.identity.name.split(".").pop();
     if (last !== undefined) {
@@ -1516,6 +1527,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   return {
     fileByName,
     ambiguousFollowNames,
+    wholeFollowNames,
     summaryById,
     spawnerIndex,
     ambiguousNames,

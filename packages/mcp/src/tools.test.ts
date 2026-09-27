@@ -159,11 +159,15 @@ describe("the tools, on a project bigger than one answer", () => {
 
     const result = await checkTool(project, {});
     const payload = result.structuredContent as {
-      collisions?: Array<{ key: string; files: string[] }>;
+      collisions?: Array<{ key: string; files: string[]; services: string[] }>;
     };
 
     expect(payload.collisions).toEqual([
-      { key: "GET /users", files: ["accounts.json", "billing.json"] },
+      {
+        key: "GET /users",
+        files: ["accounts.json", "billing.json"],
+        services: [],
+      },
     ]);
   });
 

@@ -64,9 +64,10 @@ pack ships inside `@suss/cli`, so there is one install.
 
 TypeScript is the furthest along. In Python and Ruby, suss reads routes
 and a smaller set of ORMs. [Read Python or Ruby](/guides/python-and-ruby)
-describes where each language stops. Both sides of a boundary
-have to be in one repository for suss to compare them, so a front end in
-a second repository is a second run for now.
+describes where each language stops. One run reads one repository. To
+check across two repositories, you publish one side's summaries and hand
+them to the other side's run; see [Work across
+services](/guides/work-across-services).
 [Compatibility](/reference/compatibility) has the rest of the limits.
 
 ## Where to go next

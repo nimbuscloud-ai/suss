@@ -168,6 +168,44 @@ describe("inspectProject", () => {
     expect(await names(dir)).toEqual(["activerecord", "rails"]);
   });
 
+  it("prints the config init --write would write, not the pack's example", async () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "DEPENDENCIES\n  rails (~> 7.1)\n",
+    );
+    fs.mkdirSync(path.join(dir, "config"));
+    fs.writeFileSync(
+      path.join(dir, "config", "database.yml"),
+      "default:\n  adapter: postgresql\n",
+    );
+    const output = formatInitReport(await inspectProject(dir));
+
+    expect(output).toContain(
+      "activerecord reads suss.activerecord.json, and `suss init --write` writes this to it:",
+    );
+    expect(output).toContain('{"storageSystem":"postgresql"}');
+    expect(output).toContain('{"root":"app","routesFile":"config/routes.rb"}');
+    expect(output).not.toContain("reads nothing until you tell it");
+    expect(output).not.toContain("engines/*");
+  });
+
+  it("says a pack's config file is already there instead of printing values", async () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "DEPENDENCIES\n  graphql (~> 2.0)\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "suss.graphql-ruby.json"),
+      '{ "root": "app/schema" }\n',
+    );
+    const output = formatInitReport(await inspectProject(dir));
+
+    expect(output).toContain(
+      "graphql-ruby reads suss.graphql-ruby.json, which is already here.",
+    );
+    expect(output).not.toContain('{"root":"app/graphql"}');
+  });
+
   it("says which per-project config a suggested pack needs", async () => {
     fs.writeFileSync(
       path.join(dir, "Gemfile.lock"),

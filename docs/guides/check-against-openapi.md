@@ -8,8 +8,8 @@ description: Read an OpenAPI 3.x document into summaries and compare it against 
 Compare an OpenAPI 3.x document against the code on either side of it. `suss contract` reads the document and writes summaries in the same format `extract` writes from source, and `check` compares the two.
 
 ```bash
-npx suss contract --from openapi openapi.yaml -o summaries/contract.json
-npx suss check --dir summaries/
+npx @suss/cli contract --from openapi openapi.yaml -o summaries/contract.json
+npx @suss/cli check --dir summaries/
 ```
 
 Everything ships inside `@suss/cli`, so `npm install --save-dev @suss/cli` is the only install.
@@ -206,14 +206,18 @@ Compared 1 boundary.
       provider: { transitionId: "get:response:410:3b915da" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
+[WARNING] providerContractViolation
+  The openapi document declares response 429, and no path in the handler produces it
+  provider: src/server.ts::get (src/server.ts:14)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  boundary: express (http) GET /users/:id
+────────────────────────────────────────────────────────────
 2 findings: 1 error, 1 warning, 0 info
-
-Not shown: 1 providerContractViolation (warning). Run the same command with --all to see it.
 
 suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
 
-A status the handler produces that the document leaves out is an error, because a client written against the document has no branch for it. The other direction is a warning, and that is the finding this run counted without printing: the document declares a 429 and no path in the handler produces it. suss keeps that one at warning because documents routinely declare a 401 that middleware sends.
+A status the handler produces that the document leaves out is an error, because a client written against the document has no branch for it. The other direction is a warning: the document declares a 429 and no path in the handler produces it. suss keeps that one at warning because documents routinely declare a 401 that middleware sends.
 
 ## Both at once
 
@@ -229,6 +233,34 @@ suss check --dir summaries/
 Compared 1 boundary.
 
 ────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 410 but no consumer branch handles it
+  provider: src/server.ts::get (src/server.ts:14)
+  consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
+  boundary: express (http) GET /users/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:410:3b915da" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 429 but no consumer branch handles it
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "getUser:response:429:stub" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+[WARNING] consumerContractViolation
+  Contract declares response 429 but consumer does not handle it
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
+────────────────────────────────────────────────────────────
 [ERROR] providerContractViolation
   Handler produces status 410 which the openapi document does not declare
   provider: src/server.ts::get (src/server.ts:14)
@@ -240,9 +272,13 @@ Compared 1 boundary.
       provider: { transitionId: "get:response:410:3b915da" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
+[WARNING] providerContractViolation
+  The openapi document declares response 429, and no path in the handler produces it
+  provider: src/server.ts::get (src/server.ts:14)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  boundary: express (http) GET /users/:id
+────────────────────────────────────────────────────────────
 5 findings: 1 error, 4 warning, 0 info
-
-Not shown: 2 unhandledProviderCase (warning), 1 consumerContractViolation (warning), 1 providerContractViolation (warning). Run the same command with --all to see them.
 
 suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
 ```
@@ -278,7 +314,7 @@ To be strict about what is in use, filter the summaries before checking:
 ```bash
 jq '[.[] | select(.identity.boundaryBinding.semantics.path | test("^/v1/(charges|refunds)"))]' \
   summaries/vendor.json > summaries/vendor-subset.json
-npx suss check summaries/vendor-subset.json summaries/client.json
+npx @suss/cli check summaries/vendor-subset.json summaries/client.json
 ```
 
 The filtering happens before the check, so every check flag still applies.

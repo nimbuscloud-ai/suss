@@ -110,11 +110,33 @@ suss check --dir summaries/
 ```
 
 ```
-Compared 1 boundary.
+Compared 1 of 2 boundaries.
 
   1 boundary had nothing to pair with, so nothing was checked across it.
   Run the same command with --all to list them.
 
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 404 but no consumer branch handles it
+  provider: src/handler.ts::getInvoice (src/handler.ts:8)
+  consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
+  boundary: ts-rest (http) GET /invoices/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /invoices/{id}"
+      provider: { transitionId: "getInvoice:response:404:6fc36d1" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider returns status 200 in 2 different situations, and the consumer treats them all the same
+  provider: src/handler.ts::getInvoice (src/handler.ts:8)
+  consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
+  boundary: ts-rest (http) GET /invoices/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /invoices/{id}"
+      provider: { transitionId: "getInvoice:response:200:1c1d37b" }
+      reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 [ERROR] providerContractViolation
   Declared response 500 is never produced by the handler
@@ -122,9 +144,41 @@ Compared 1 boundary.
   consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
   boundary: ts-rest (http) GET /invoices/:id
 ────────────────────────────────────────────────────────────
+[WARNING] consumerContractViolation
+  Contract declares response 404 but consumer does not handle it
+  provider: src/handler.ts::getInvoice (src/handler.ts:8)
+  consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
+  boundary: ts-rest (http) GET /invoices/:id
+────────────────────────────────────────────────────────────
+[WARNING] consumerContractViolation
+  Contract declares response 500 but consumer does not handle it
+  provider: src/handler.ts::getInvoice (src/handler.ts:8)
+  consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
+  boundary: ts-rest (http) GET /invoices/:id
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider transition getInvoice:response:200:1c1d37b for status 200 produces body with total = 0, but no consumer branch tests for this value
+  provider: src/handler.ts::getInvoice (src/handler.ts:8)
+  consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
+  boundary: ts-rest (http) GET /invoices/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /invoices/{id}"
+      provider: { transitionId: "getInvoice:response:200:1c1d37b" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider transition getInvoice:response:200:d7ed9b6 for status 200 produces body with state = "open", but no consumer branch tests for this value
+  provider: src/handler.ts::getInvoice (src/handler.ts:8)
+  consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
+  boundary: ts-rest (http) GET /invoices/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /invoices/{id}"
+      provider: { transitionId: "getInvoice:response:200:d7ed9b6" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
 7 findings: 1 error, 6 warning, 0 info
-
-Not shown: 4 unhandledProviderCase (warning), 2 consumerContractViolation (warning). Run the same command with --all to see them.
 
 suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
 ```

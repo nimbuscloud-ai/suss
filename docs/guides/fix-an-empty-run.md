@@ -10,7 +10,7 @@ Read the message first. A command that comes up empty prints the stage where it 
 Run the command again with `--explain` to see the count at every stage, pack by pack:
 
 ```bash
-npx suss extract -p tsconfig.json -f hono --explain
+npx @suss/cli extract -p tsconfig.json -f hono --explain
 ```
 
 ## That tsconfig matched no source files
@@ -32,7 +32,7 @@ No summaries to write in 0.00s.
 suss took the nearest `tsconfig.json`, and that one covers no source. In an Nx or Angular layout the root config is often `"files": []`, with the app's own config next to it. Pass the one that covers your source:
 
 ```bash
-npx suss extract -p tsconfig.app.json -f express -o summaries/code.json
+npx @suss/cli extract -p tsconfig.app.json -f express -o summaries/code.json
 ```
 
 suss follows a solution-style root on its own. That is a root with `"files": []` and a `references` array, and suss reads every file the referenced configs list. This message comes from a root that has neither files nor references.
@@ -63,7 +63,7 @@ No summaries to write in 0.02s.
 The tsconfig is right and the pack is wrong for this project. Re-run `init` to see which packs match your dependencies:
 
 ```bash
-npx suss init --plain
+npx @suss/cli init --plain
 ```
 
 suss reads through a module of your own that wraps the framework. That module imports the framework itself, so it counts in the line above. suss follows the app object through it, so a route written inside `registerHealth(app)` still comes out as a route. When the framework import is inside a package suss cannot read at all, write a [dependency stub](/guides/teach-a-dependency) for that package.
@@ -87,7 +87,7 @@ The `prisma` pack matches a call by the type of the thing it is called on, so it
 
   ```bash
   npx prisma generate
-  npx suss extract -p tsconfig.json -f hono -f prisma -o summaries/code.json
+  npx @suss/cli extract -p tsconfig.json -f hono -f prisma -o summaries/code.json
   ```
 
 - **A cast on the receiver.** `(db as any).user.findUnique(...)` is a call on an opaque value, so the pack has nothing to match even with the client generated.
@@ -161,15 +161,15 @@ error: nothingPaired
 Extract the other side into the same folder:
 
 ```bash
-npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
-npx suss check --dir summaries/
+npx @suss/cli extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
+npx @suss/cli check --dir summaries/
 ```
 
 When the other side is a schema or a spec instead of code, `contract` reads it and writes the same format. A Prisma schema becomes the provider for your query call sites, and an OpenAPI document becomes the provider for your client:
 
 ```bash
-npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
-npx suss check --dir summaries/
+npx @suss/cli contract --from prisma prisma/schema.prisma -o summaries/prisma.json
+npx @suss/cli check --dir summaries/
 ```
 
 If the other side is in another repository, extract it there and copy its summary file in. [Work across services](/guides/work-across-services) shows how.

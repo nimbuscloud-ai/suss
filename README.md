@@ -71,10 +71,10 @@ Here is what a finding looks like, taken from the [runnable example](examples/pe
 
 ```
 [WARNING] unhandledProviderCase
-  Provider produces status 400 but no consumer branch handles it
-  provider: openapi:openapi.json::findPetsByStatus (openapi:openapi.json:0)
-  consumer: src/petstore-client.ts::listPets (src/petstore-client.ts:48) (confidence: low)
-  boundary: openapi (http) GET /api/v3/pet/findByStatus
+  Provider produces status 404 but no consumer branch handles it
+  provider: openapi:openapi.json::getPetById (openapi:openapi.json:0)
+  consumer: src/petstore-client.ts::describePet (src/petstore-client.ts:66)
+  boundary: openapi (http) GET /api/v3/pet/{petId}
 ```
 
 ## Adopting it
@@ -90,7 +90,7 @@ Each step takes a little more work than the one before, and needs a little more 
 
 ## What it reads
 
-TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle, Mongoose, node-postgres and BigQuery for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. suss checks a boundary inside one repository. To compare summaries from two repositories, put both files in one directory. Nothing does that step for you yet.
+TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle, Mongoose, node-postgres and BigQuery for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. One run reads one repository. To check across two repositories, you publish one side's summaries and hand them to the other side's run; see [Work across services](docs/guides/work-across-services.md).
 
 ## Install
 

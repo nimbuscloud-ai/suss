@@ -82,25 +82,16 @@ describe("pair a TypeScript client against a Python provider", () => {
     expect(check.status).toBe(1);
   });
 
-  it("counts the warnings and the unpaired routes on a plain run", () => {
+  it("says how many boundaries paired and counts the unpaired routes on a plain run", () => {
     const check = runSuss(["check", "--dir", summaries]);
 
-    expect(check.stdout).toContain("Compared 1 boundary.");
-    expect(check.stdout).toContain(
-      "Not shown: 2 deadConsumerBranch (warning).",
-    );
+    expect(check.stdout).toMatch(/^Compared 1 of \d+ boundaries\./);
     expect(check.stdout).toContain("--all to list them");
     expect(check.stdout).not.toContain("POST /orders");
   });
 
-  it("writes the warnings out once the run is gated on them", () => {
-    const check = runSuss([
-      "check",
-      "--dir",
-      summaries,
-      "--fail-on",
-      "warning",
-    ]);
+  it("writes the warnings out on a plain run", () => {
+    const check = runSuss(["check", "--dir", summaries]);
 
     expect(check.stdout).toContain("[WARNING] deadConsumerBranch");
     expect(check.stdout).not.toContain("Not shown:");

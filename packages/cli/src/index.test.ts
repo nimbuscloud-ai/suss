@@ -894,6 +894,45 @@ describe("inspect", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it("without an id, leaves a call unresolved when only the method name matches a summary on another receiver", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byname-recv-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        onChangeHandlerSummary(
+          "app/models/report_job.rb",
+          undefined,
+          "ReportJob.find",
+        ),
+        counterSummary({ callee: "Account.find" }),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).toContain("+ Account.find\n");
+    expect(output).not.toContain("report_job.find");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("without an id, still links a qualified call to a summary named by its last segment", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byname-ns-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        onChangeHandlerSummary("src/Form.tsx"),
+        counterSummary({ callee: "handlers.onChange" }),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).toContain("+ src/Form.onChange →");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it("with an id, follows the call to the summary it actually reaches, not a name match", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byid-"));
     const file = path.join(dir, "summaries.json");
@@ -1155,13 +1194,17 @@ function busSummary(name: string, channel: string): unknown {
 }
 
 /** A minimal named handler summary, optionally carrying an id. */
-function onChangeHandlerSummary(file: string, id?: string): unknown {
+function onChangeHandlerSummary(
+  file: string,
+  id?: string,
+  name = "onChange",
+): unknown {
   return {
     kind: "handler",
-    location: { file, range: { start: 1, end: 2 }, exportName: "onChange" },
+    location: { file, range: { start: 1, end: 2 }, exportName: name },
     identity: {
-      name: "onChange",
-      exportPath: ["onChange"],
+      name,
+      exportPath: [name],
       boundaryBinding: null,
       ...(id !== undefined ? { id } : {}),
     },
@@ -1178,7 +1221,10 @@ function onChangeHandlerSummary(file: string, id?: string): unknown {
  * `effectSummary` to simulate what the extractor stamps once it has
  * resolved that call to a specific summary's id.
  */
-function counterSummary(opts: { effectSummary?: string }): unknown {
+function counterSummary(opts: {
+  effectSummary?: string;
+  callee?: string;
+}): unknown {
   return {
     kind: "component",
     location: {
@@ -1200,7 +1246,7 @@ function counterSummary(opts: { effectSummary?: string }): unknown {
         effects: [
           {
             type: "invocation",
-            callee: "onChange",
+            callee: opts.callee ?? "onChange",
             args: [],
             async: false,
             ...(opts.effectSummary !== undefined

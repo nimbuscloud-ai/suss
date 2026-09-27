@@ -8,7 +8,7 @@ description: Draft intent documents from the code, curate them, and compare what
 Compare the code against what your team said it should do. The other side of this comparison is a document your team wrote, instead of more code or a document somebody else published.
 
 ```bash
-npx suss check --dir summaries/ --intent intent/
+npx @suss/cli check --dir summaries/ --intent intent/
 ```
 
 An intent document is a YAML file your team writes and commits. There are two kinds:

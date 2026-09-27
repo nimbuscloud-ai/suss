@@ -27,10 +27,12 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
 ```
 
 The action runs `suss extract` at the head of the pull request, checks the base commit out next to it, runs the same extract there, and posts `suss inspect --diff` between the two as one comment. When you push again, it edits that comment.
+
+`@v0.33.1` pins the action to a release, so the job runs the same action until you change the tag. A commit SHA in place of the tag pins it to code you have read.
 
 ## What the comment says
 
@@ -67,7 +69,7 @@ Last come the files whose units moved. When a unit has only a couple of changed 
 The action reads the packs from the project's `suss.json`, the file `suss init` writes. If there is no such file, it picks the packs `init` would have picked. To choose them yourself, set `extract` to whatever you would type after `suss extract` on your own machine:
 
 ```yaml
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
         with:
           extract: -p tsconfig.json -f hono -f prisma
 ```
@@ -99,7 +101,7 @@ For Python that is `--dir src -f fastapi`, and for Ruby `--dir app -f rails`.
 A later step can test `changed` in its condition:
 
 ```yaml
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
         id: suss
         with:
           extract: -p tsconfig.json -f hono
@@ -149,17 +151,17 @@ jobs:
 
       - name: Read every side into one folder
         run: |
-          npx suss extract -p tsconfig.json -f express -o summaries/api.json
-          npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
-          npx suss contract --from openapi openapi.yaml -o summaries/contract.json
+          npx @suss/cli extract -p tsconfig.json -f express -o summaries/api.json
+          npx @suss/cli extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
+          npx @suss/cli contract --from openapi openapi.yaml -o summaries/contract.json
 
       - name: Compare them
-        run: npx suss check --dir summaries/ --fail-on error
+        run: npx @suss/cli check --dir summaries/ --fail-on error
 ```
 
 `check --dir` pairs every provider summary with every consumer summary that shares a boundary key, `GET /users/:id` or `bus:aws_sqs PaidQueue`. The two sides do not have to come from the same kind of source: a provider read out of an OpenAPI document pairs with a consumer read out of axios call sites.
 
-With a `suss.json` committed, `npx suss check` does all of that. It runs every extract and every contract read that the file lists, then compares the results. [Add suss to a project](/guides/add-to-project) covers what `init` writes.
+With a `suss.json` committed, `npx @suss/cli check` does all of that. It runs every extract and every contract read that the file lists, then compares the results. [Add suss to a project](/guides/add-to-project) covers what `init` writes.
 
 ## The exit code as the gate
 
@@ -175,7 +177,7 @@ Do not gate on `--fail-on info`. Info findings are advisory. Failing the build o
 
 ```yaml
 - id: check
-  run: npx suss check --dir summaries/ --json -o findings.json
+  run: npx @suss/cli check --dir summaries/ --json -o findings.json
   continue-on-error: true
 
 - name: Count the errors
@@ -211,8 +213,8 @@ rules:
 The jobs above run after the code is written and pushed. You can run the same commands on your own checkout first:
 
 ```bash
-npx suss check --dir summaries/
-npx suss inspect --diff summaries/before.json summaries/after.json
+npx @suss/cli check --dir summaries/
+npx @suss/cli inspect --diff summaries/before.json summaries/after.json
 ```
 
 `before.json` is an extract from the commit you branched from and `after.json` is one from the working tree.

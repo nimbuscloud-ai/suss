@@ -34,21 +34,24 @@ suss extract -p tsconfig.app.json -f express -f axios -f prisma --explain -o sum
     26  files in the tsconfig
     13  files read
      7  files importing express
-    20  boundaries recognized by express
-    20  summaries from express
-    20  of those, summaries saying what express does
+    21  boundaries recognized by express
+    21  summaries from express
+    21  of those, summaries saying what express does
      0  files importing axios
      0  boundaries recognized by axios
      0  summaries from axios
      0  of those, summaries saying what axios does
     12  files importing @prisma/client
-    20  unit bodies prisma could look inside
+    21  unit bodies prisma could look inside
     79  effects prisma recognized
+
+Pack health (1):
+  no-files  axios  axios is installed and no file in this run imports it, directly or through a module of the project's own. Either this code does not use the library, or it reaches it some way the import gate does not follow.
 ```
 
-Above that, `extract` prints one success line, `Wrote 46 summaries to <path> in 0.88s`, with the absolute path of the file it wrote and an elapsed time that moves from run to run.
+Above that, `extract` prints one success line, `Wrote 52 summaries to <path> in 1.48s`, with the absolute path of the file it wrote and an elapsed time that moves from run to run.
 
-Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes, in the shape a pack that found nothing always prints, because this repository lists axios in its `package.json` and never calls it. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
+Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 21 routes in them. The axios column is all zeroes, in the shape a pack that found nothing always prints, because this repository lists axios in its `package.json` and never calls it. Pack health says the same thing in one line. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 21 units express found and recognized 79 database calls in them.
 
 `--timing` shows where the time went, one row per phase, ordered by cost. The milliseconds differ on every run and the rows below a millisecond swap places, so read the shares rather than the numbers:
 
@@ -201,20 +204,69 @@ suss check --dir summaries/
 ```
 
 ```
-Compared 4 boundaries.
+Compared 7 of 37 boundaries.
 
   20 provider-side boundaries have no client to compare against.
-  5 boundaries had nothing to pair with, so nothing was checked across them.
+  10 boundaries had nothing to pair with, so nothing was checked across them.
   Run the same command with --all to list them.
 
-3 findings: 0 error, 3 warning, 0 info
+1 other summary is internal code with no boundary, so nothing pairs with it.
 
-Not shown: 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  Comment declares "articleId" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "articleId" off a record it already fetched.
+  provider: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  Comment declares "authorId" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "authorId" off a record it already fetched.
+  provider: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  _ArticleToTag declares "A" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "A" off a record it already fetched.
+  provider: src/prisma/schema.prisma::_ArticleToTag (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::_ArticleToTag (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  _ArticleToTag declares "B" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "B" off a record it already fetched.
+  provider: src/prisma/schema.prisma::_ArticleToTag (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::_ArticleToTag (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  _UserFavorites declares "A" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "A" off a record it already fetched.
+  provider: src/prisma/schema.prisma::_UserFavorites (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::_UserFavorites (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  _UserFavorites declares "B" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "B" off a record it already fetched.
+  provider: src/prisma/schema.prisma::_UserFavorites (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::_UserFavorites (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  _UserFollows declares "A" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "A" off a record it already fetched.
+  provider: src/prisma/schema.prisma::_UserFollows (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::_UserFollows (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  _UserFollows declares "B" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "B" off a record it already fetched.
+  provider: src/prisma/schema.prisma::_UserFollows (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::_UserFollows (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+8 findings: 0 error, 8 warning, 0 info
 
-suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
+suss met a call it could not follow in 19 units, of 59, so those are described in part. `suss inspect` says which calls.
 ```
 
-The four boundaries compared are the four Prisma models, each against every query that reads or writes it. The 20 uncompared providers are the HTTP routes: the front end for this API is in another repository, so nothing in this run is on the other side of them. The five that paired with nothing are `function-call:reachable` helpers, functions a route reaches and no file imports, so no boundary key addresses them. Those three lines give three different reasons nothing was compared, and the run reports each one separately.
+The seven boundaries compared are the four Prisma models and the three tables Prisma adds for many-to-many relations, each against every query that reads or writes it. The 20 uncompared providers are the HTTP routes: the front end for this API is in another repository, so nothing in this run is on the other side of them. Nine of the ten that paired with nothing are `function-call:reachable` helpers, functions a route or the seed script reaches and no file imports, so no boundary key addresses them. The tenth is the `app.use` call in `main.ts`. Each of those lines gives a different reason nothing was compared, and the run reports each one separately. The eight warnings are foreign-key columns that code writes and no query selects.
 
 The grouping in `pairSummaries` reads the method and the path and nothing else, so a store, a queue and a runtime's configuration all come back unpaired from it. Each of those has a pass of its own, and each records what it compared into the same `pairs` list. `checkAll` then drops those from the unmatched buckets, so one table is never reported as compared and unpaired in the same run.
 
