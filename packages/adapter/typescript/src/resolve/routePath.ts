@@ -5,10 +5,11 @@
  * as one in any other language.
  */
 
-import { force, pathOf } from "@suss/values";
+import { force, isLocalUrl, pathOf } from "@suss/values";
 
 import { evaluatedValue } from "../values/evaluator.js";
 
+import type { Value } from "@suss/values";
 import type { Node } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -39,10 +40,36 @@ export function pathFromProperty(
   resolution?: ResolutionStore,
   site?: string,
 ): string | undefined {
+  const value = propertyValueAt(arg, property, resolution, site);
+  return value === undefined ? undefined : pathOf(value);
+}
+
+/**
+ * Whether the URL at the argument, or at one of its properties, is one
+ * fetch reads without a request, such as a `data:` URI.
+ */
+export function statesLocalUrl(
+  arg: Node,
+  property: string | undefined,
+  resolution?: ResolutionStore,
+): boolean {
+  const value =
+    property === undefined
+      ? evaluatedValue(arg, resolution)
+      : propertyValueAt(arg, property, resolution);
+  return value !== undefined && isLocalUrl(value);
+}
+
+function propertyValueAt(
+  arg: Node,
+  property: string,
+  resolution?: ResolutionStore,
+  site?: string,
+): Value | undefined {
   const record = evaluatedValue(arg, resolution, site);
   if (record.kind !== "record") {
     return undefined;
   }
   const field = record.fields.get(property);
-  return field === undefined ? undefined : pathOf(force(field.value));
+  return field === undefined ? undefined : force(field.value);
 }
