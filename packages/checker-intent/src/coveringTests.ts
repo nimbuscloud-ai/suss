@@ -29,6 +29,7 @@ import type {
   IntentFindingKind,
   PrdSummary,
 } from "@suss/intent-ir";
+import type { UncheckedIntent } from "./index.js";
 
 export type FoundTest =
   | { found: true; unit: BehavioralSummary }
@@ -66,7 +67,8 @@ interface Subject {
 
 type Verdict =
   | { kind: "covered" }
-  | { kind: "finding"; finding: IntentFinding };
+  | { kind: "finding"; finding: IntentFinding }
+  | { kind: "unchecked"; unchecked: UncheckedIntent };
 
 /**
  * One verdict per claim, in the order given. A claim whose test and
@@ -141,17 +143,92 @@ export function checkCoveringTests(
       continue;
     }
 
-    const throughMock = pathInto(one.test, ignoring.get(one.test), one.subject);
-    verdicts[one.at] = finding(
-      claim,
-      "testMissesSubject",
-      throughMock === null
-        ? missedBecause(one.unit, one.subject, lookup)
-        : `which reaches ${one.subject.label} only through a call its mocks replace (${mocksOf(lookup, one.test).join(", ")}), by ${callSpellings(throughMock).join(" -> ")}`,
-    );
+    const reached = ignoring.get(one.test);
+    const throughMock = pathInto(one.test, reached, one.subject);
+    if (throughMock !== null) {
+      verdicts[one.at] = finding(
+        claim,
+        "testMissesSubject",
+        `which reaches ${one.subject.label} only through a call its mocks replace (${mocksOf(lookup, one.test).join(", ")}), by ${callSpellings(throughMock).join(" -> ")}`,
+      );
+      continue;
+    }
+    const unfollowed = unfollowedOnTheWay(one.unit, one.test, reached, lookup);
+    const nameMatches = unfollowedToSubject(one.unit, one.subject, lookup);
+    verdicts[one.at] =
+      unfollowed.length === 0 && nameMatches.length === 0
+        ? finding(
+            claim,
+            "testMissesSubject",
+            `which never reaches ${one.subject.label}`,
+          )
+        : notChecked(claim, one.subject, nameMatches, unfollowed);
   }
 
   return verdicts.map((verdict) => verdict ?? { kind: "covered" });
+}
+
+/** How many calls an unchecked test's detail lists. */
+const CALLS_LISTED = 3;
+
+/**
+ * A test that does not reach its subject through the calls suss
+ * followed, and makes calls suss could not follow, might reach it
+ * through one of those. It is reported as unchecked, with the calls.
+ */
+function notChecked(
+  claim: CoveringTestClaim,
+  subject: Subject,
+  nameMatches: readonly string[],
+  unfollowed: readonly string[],
+): Verdict {
+  const calls = nameMatches.length > 0 ? nameMatches : unfollowed;
+  const listed = calls.slice(0, CALLS_LISTED).join(", ");
+  const more =
+    calls.length > CALLS_LISTED
+      ? `, and ${calls.length - CALLS_LISTED} more`
+      : "";
+  const why =
+    nameMatches.length > 0
+      ? `it calls ${listed}${more}, and suss could not follow that call to ${subject.label}`
+      : `it never reaches ${subject.label} through the calls suss followed, and suss could not follow ${listed}${more}`;
+  return {
+    kind: "unchecked",
+    unchecked: {
+      intent: claim.prd.title,
+      reason: "unfollowedCall",
+      scenario: claim.label,
+      coveredBy: claim.spelled.spelledAs,
+      detail: `Scenario ${claim.label} lists the test "${claim.spelled.spelledAs}": ${why}.`,
+    },
+  };
+}
+
+/**
+ * The calls suss could not follow in the test and in every function it
+ * reaches, each once, in the order they were recorded.
+ */
+function unfollowedOnTheWay(
+  test: BehavioralSummary,
+  key: FunctionKey,
+  reached: Reached | undefined,
+  lookup: CoveringTestLookup,
+): string[] {
+  const units = [
+    test,
+    ...[...(reached?.functions.keys() ?? [])]
+      .filter((fn) => fn !== key)
+      .flatMap((fn) => lookup.facts.units.get(fn) ?? []),
+  ];
+  const found = new Set<string>();
+  for (const unit of units) {
+    for (const gap of unit.gaps) {
+      if (gap.type === "unfollowedCall" && gap.callee !== undefined) {
+        found.add(gap.callee);
+      }
+    }
+  }
+  return [...found];
 }
 
 /**
@@ -214,15 +291,14 @@ function pathInto(
 }
 
 /**
- * Why a test reaches nothing of its subject. When its own body makes a
- * call with the subject's name that suss could not follow, that call is
- * the likeliest reason, and the message says so.
+ * The calls in the test's own body with the subject's name that suss
+ * could not follow, which are the likeliest way it reaches the subject.
  */
-function missedBecause(
+function unfollowedToSubject(
   test: BehavioralSummary,
   subject: Subject,
   lookup: CoveringTestLookup,
-): string {
+): string[] {
   const names = new Set([
     ...[...subject.target.functions, ...(subject.target.at ?? [])].flatMap(
       (fn) =>
@@ -241,10 +317,7 @@ function missedBecause(
         : [],
     ),
   );
-  if (unfollowed.length === 0) {
-    return `which never reaches ${subject.label}`;
-  }
-  return `which calls ${[...new Set(unfollowed)].join(", ")}, and suss could not follow that call to ${subject.label}`;
+  return [...new Set(unfollowed)];
 }
 
 /** `Orders.cancel`, `fn:@acme/orders::cancel` and `cancel` all end in `cancel`. */

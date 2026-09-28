@@ -354,6 +354,7 @@ describe.each(OTHER_RUNNERS)("a PRD listing $runner tests", (each) => {
     expect(messageFor("skipped")?.message).toMatch(
       /, which is marked to be skipped, so it does not run\.$/,
     );
+    expect(result.unchecked).toEqual([]);
     expect(messageFor("mocked")?.kind).toBe("testMissesSubject");
     expect(messageFor("mocked")?.message).toContain(
       `reaches ${each.subject} only through a call its mocks replace (${each.mock})`,

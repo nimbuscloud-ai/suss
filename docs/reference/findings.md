@@ -738,15 +738,15 @@ A scenario lists a test under `coveredBy`, and no test unit in the summaries has
 
 **Severity:** warning.
 
-The test exists and runs, and its calls never reach what the scenario is about, or reach it only through something the test replaced with a mock. What it has to reach is the scenario's `about`, or, without one, one of the boundaries the PRD's other scenarios link to.
+The test exists and runs, and either suss followed every call it makes and none reaches what the scenario is about, or it reaches the subject only through something the test replaced with a mock. What it has to reach is the scenario's `about`, or, without one, one of the boundaries the PRD's other scenarios link to.
 
 ```
 [warning] prd:Cancel an order: Scenario "cancelled" in PRD "Cancel an order" lists the test "src/checkout.test.ts > cancels on a failed checkout", which reaches cancelOrder only through a call its mocks replace (vi.mock("./orders")), by checkout -> cancelOrder.
 ```
 
-When the test's own body calls something with the subject's name that suss could not follow, the message says which call, since that is the likeliest reason.
+A test that doesn't reach its subject through the calls suss followed, and makes a call suss could not follow, on the way or in its own body, might still reach it through that call. suss doesn't report it as this finding. It goes under `unchecked` as `unfollowedCall`, with the calls it could not follow, and its scenario is not counted as covered.
 
-**Legitimate when:** the test reaches the subject through something suss does not follow, such as a child process or a call destructured from a dynamic import. Accept it with a rule for that scenario, saying why.
+**Legitimate when:** the test reaches the subject through something suss doesn't follow and doesn't record a gap for, such as a child process. Accept it with a rule for that scenario, saying why.
 
 **A bug when:** the test was changed to call something else, or a mock was added in front of the subject. The scenario no longer rests on a test that exercises it.
 

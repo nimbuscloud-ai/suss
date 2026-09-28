@@ -205,14 +205,64 @@ describe("a scenario covered by a test", () => {
     expect(finding.message).toContain("which never reaches cancelOrder");
   });
 
-  it("says which call it could not follow when the test calls something with the subject's name", () => {
+  it("reports a test as unchecked when it calls something with the subject's name that suss could not follow", () => {
     const code = [cancelOrder, testUnit("cancels", [calls("cancelOrder")])];
-    const [finding] = check([covered("cancel", "cancels")], code).findings;
+    const result = check([covered("cancel", "cancels")], code);
 
-    expect(finding.kind).toBe("testMissesSubject");
-    expect(finding.message).toContain(
-      "which calls cancelOrder, and suss could not follow that call to cancelOrder",
+    expect(result.findings).toEqual([]);
+    expect(result.unchecked).toEqual([
+      expect.objectContaining({
+        reason: "unfollowedCall",
+        scenario: '"cancel"',
+        coveredBy: "src/orders.test.ts > cancels",
+      }),
+    ]);
+    expect(result.unchecked[0]?.detail).toContain(
+      "it calls cancelOrder, and suss could not follow that call to cancelOrder",
     );
+    expect(result.checked).toContainEqual(
+      expect.objectContaining({ covered: 0 }),
+    );
+  });
+
+  it("reports a test as unchecked when a function on its way has a call suss could not follow", () => {
+    const helper: BehavioralSummary = {
+      ...fn("prepare", "src/prepare.ts", 1),
+      gaps: [
+        {
+          type: "unfollowedCall",
+          conditions: [],
+          consequence: "unknown",
+          description: "The call to handler goes through a value",
+          callee: "handler",
+        },
+      ],
+    };
+    const code = [
+      cancelOrder,
+      helper,
+      testUnit("cancels", [calls("prepare", helper)]),
+    ];
+    const result = check([covered("cancel", "cancels")], code);
+
+    expect(result.findings).toEqual([]);
+    expect(result.unchecked[0]?.detail).toContain(
+      "it never reaches cancelOrder through the calls suss followed, and suss could not follow handler",
+    );
+  });
+
+  it("still reports a test whose calls all resolved and none reach the subject", () => {
+    const code = [
+      cancelOrder,
+      refund,
+      testUnit("cancels", [calls("refundOrder", refund)]),
+    ];
+    const result = check([covered("cancel", "cancels")], code);
+
+    expect(result.findings[0]?.message).toContain(
+      "which never reaches cancelOrder",
+    );
+    expect(result.unchecked).toEqual([]);
   });
 
   it("reports a test that reaches its subject only through a module it mocks, and names the mock", () => {
