@@ -1,0 +1,9 @@
+{
+  "fabrication": "fabrication: the library this pack reads, and the pack's name",
+  "Fabricator": "fabrication: defines a fabricator by name",
+  "class_name": "fabrication: the keyword on Fabricator that gives the class it builds",
+  "from": "fabrication: the keyword on Fabricator that gives the fabricator or class it builds on",
+  "Fabricate": "fabrication: builds and saves a record from a fabricator, and the module build and create are called on",
+  "build": "fabrication: Fabricate.build, which builds a record without saving it",
+  "create": "fabrication: Fabricate.create, which builds a record and saves it"
+}

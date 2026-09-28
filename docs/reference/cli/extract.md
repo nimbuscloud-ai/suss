@@ -98,7 +98,7 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 ## Pack names
 
-`-f` takes these 53 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
+`-f` takes these 55 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
 
 **Frameworks.** These discover the units a run is about: a route, a resolver, a component, a deployed function.
 
@@ -106,7 +106,7 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 **Tests.** These read the tests a PRD scenario lists under `coveredBy`, one pack per runner, and read only the listed files when the run is given `--intent`.
 
-`vitest`, `pytest`, `rspec`
+`vitest`, `pytest`, `rspec`, and next to `rspec`, `factory-bot` and `fabrication`, which say what class a Ruby test's factory builds
 
 **Clients.** These discover the calls your code makes out.
 
@@ -116,7 +116,7 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 `activerecord`, `aws-dynamodb`, `aws-eventbridge`, `aws-s3`, `aws-secrets-manager`, `aws-sns`, `aws-sqs`, `aws-ssm`, `bigquery`, `bigquery-python`, `bigquery-ruby`, `drizzle`, `gcs`, `mongoose`, `node`, `pg`, `pg-ruby`, `prisma`, `redis`, `sqlalchemy`, `sqlmodel`, `typeorm`, `zustand`
 
-Seventeen of them read something other than TypeScript, and a run reads one language at a time. `fastapi`, `flask-restx`, `sqlalchemy`, `sqlmodel`, `bigquery-python`, `pytest`, `requests`, `httpx` and `aiohttp` read Python; `rails`, `graphql-ruby`, `activerecord`, `bigquery-ruby`, `pg-ruby`, `rspec`, `faraday` and `net-http` read Ruby. Naming one in a TypeScript run stops the run and prints the command to run it separately. See [Read Python or Ruby](/guides/python-and-ruby).
+Nineteen of them read something other than TypeScript, and a run reads one language at a time. `fastapi`, `flask-restx`, `sqlalchemy`, `sqlmodel`, `bigquery-python`, `pytest`, `requests`, `httpx` and `aiohttp` read Python; `rails`, `graphql-ruby`, `activerecord`, `bigquery-ruby`, `pg-ruby`, `rspec`, `factory-bot`, `fabrication`, `faraday` and `net-http` read Ruby. Naming one in a TypeScript run stops the run and prints the command to run it separately. See [Read Python or Ruby](/guides/python-and-ruby).
 
 A name that is not on the list gets treated as a module to import, and that is how you run a pack of your own. A name starting with `@` or containing a `/` is imported exactly as written, so `-f @acme/suss-pack` works. Any other name is tried as `@suss/packs/<name>`, then `@suss/framework-<name>`, then `@suss/<name>`. If none of the three import, the run stops and prints the built-in list.
 

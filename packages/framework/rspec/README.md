@@ -32,9 +32,13 @@ controller action's are.
 Read only the spec files your PRDs list:
 
 ```bash
-suss extract --lang ruby -f rspec -f rails --intent intent/ -o .suss/code.json
+suss extract --lang ruby -f rspec -f rails -f factory-bot --intent intent/ -o .suss/code.json
 suss check --dir .suss --intent intent/
 ```
+
+A test that builds its records with factory_bot or Fabrication needs
+`-f factory-bot` or `-f fabrication` too, so `create(:order).cancel`
+is known to call `Order#cancel`.
 
 `--intent` reads the `coveredBy` lines in the PRDs under `intent/` and
 hands the pack those files. Without it the pack reads every

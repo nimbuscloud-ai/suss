@@ -181,6 +181,14 @@
       "types": "./dist/rspec.d.ts",
       "import": "./dist/rspec.js"
     },
+    "./factory-bot": {
+      "types": "./dist/factory-bot.d.ts",
+      "import": "./dist/factory-bot.js"
+    },
+    "./fabrication": {
+      "types": "./dist/fabrication.d.ts",
+      "import": "./dist/fabrication.js"
+    },
     "./prisma": {
       "types": "./dist/prisma.d.ts",
       "import": "./dist/prisma.js"
@@ -306,6 +314,8 @@
     "@suss/framework-pg": "*",
     "@suss/framework-pg-ruby": "*",
     "@suss/framework-rspec": "*",
+    "@suss/framework-factory-bot": "*",
+    "@suss/framework-fabrication": "*",
     "@suss/framework-prisma": "*",
     "@suss/framework-pytest": "*",
     "@suss/framework-rails": "*",

@@ -106,6 +106,7 @@ import {
   registerTestFileNames,
   testPatternsIn,
 } from "./testCases.js";
+import { emitFactoryFacts, factoriesIn } from "./testFactories.js";
 import {
   emitSharedGroupBinds,
   type PatternedFile,
@@ -326,6 +327,17 @@ export class RunFacts {
     if (this.testPatterns.length > 0) {
       this.sharedGroups = new SharedGroupIndex(this.db, this.testFiles);
       emitSharedGroupBinds(this.db, this.sharedGroups, this.testFiles);
+    }
+    const factories = factoriesIn(this.packs);
+    if (factories.length > 0) {
+      const testFiles = new Set(this.testFiles.map(({ file }) => file));
+      emitFactoryFacts(
+        this.db,
+        this.parsed,
+        (file) => testFiles.has(file),
+        factories,
+        this.inflections,
+      );
     }
     bindRequestAccessors(
       this.db,

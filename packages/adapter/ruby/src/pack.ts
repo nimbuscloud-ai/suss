@@ -85,6 +85,8 @@ export interface RubyPack {
   inflections?: RbInflections;
   /** Methods the library offers that hand back the argument at `argument`, keyed on the module the callee comes from. */
   transparentWrappers?: UnwrapsByName[];
+  /** How the library builds test records from named factories. */
+  factories?: RbFactories[];
   /** How the library writes a test, so each one becomes a `test` unit a PRD scenario can list under `coveredBy`. */
   tests?: RbTestCases[];
 }
@@ -142,6 +144,33 @@ export interface RbTestCases {
   mocks: RbTestMocks;
   /** Read only these files, matched on whole path segments from the end. Left out, every file matching `filePatterns` is read. */
   files?: string[];
+}
+
+/**
+ * How a test data library builds a record from a factory it looks up by
+ * name, so a value a test builds with `create(:order)` or
+ * `Fabricate(:order)` is known to be one of the factory's class. The
+ * adapter reads the definitions wherever the run finds them, and the
+ * builds in the files it reads as tests.
+ */
+export interface RbFactories {
+  /** Calls that define a factory, given its name first: `factory`, `Fabricator`. */
+  definitionMethods: string[];
+  /** Keywords a definition gives its class under, as a constant or a string: `class`, `class_name`. */
+  classKeywords: string[];
+  /** Keywords a definition gives the factory it builds on under: `parent`, `from`. A name no factory has is read as a class. */
+  parentKeywords: string[];
+  /** Whether a definition written in another's block builds on it, as a nested FactoryBot factory does. */
+  nestedDefinitionsInherit: boolean;
+  /** Calls that build one record from the factory their first argument names. */
+  builders: RbFactoryBuilder[];
+}
+
+/** One build call: `create`, or `Fabricate.build` with `receiver` set. */
+export interface RbFactoryBuilder {
+  method: string;
+  /** The constant the call is made on, when it is made on one. */
+  receiver?: string;
 }
 
 /**

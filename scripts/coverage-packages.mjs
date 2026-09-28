@@ -77,6 +77,8 @@ export const coveragePackages = [
   ["packages/framework/bigquery-ruby", "bigquery-ruby"],
   ["packages/framework/pg-ruby", "pg-ruby"],
   ["packages/framework/rspec", "rspec"],
+  ["packages/framework/factory-bot", "factory-bot"],
+  ["packages/framework/fabrication", "fabrication"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],

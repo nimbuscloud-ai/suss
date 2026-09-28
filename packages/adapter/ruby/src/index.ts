@@ -100,6 +100,8 @@ export type {
   RbAddressingCall,
   RbArgumentPlace,
   RbBodyBlock,
+  RbFactories,
+  RbFactoryBuilder,
   RbInflections,
   RbRawSqlPattern,
   RbRowCall,

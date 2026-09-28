@@ -268,10 +268,10 @@ The same works for Python and Ruby. A pytest test is listed by the node id pytes
 
 ```bash
 suss extract --lang python -f fastapi -f pytest --intent intent/ -o .suss/code.json
-suss extract --lang ruby -f rails -f rspec --intent intent/ -o .suss/rails.json
+suss extract --lang ruby -f rails -f rspec -f factory-bot --intent intent/ -o .suss/rails.json
 ```
 
-A pytest test counts as calling the fixtures it takes by parameter name, so a test that reaches the route only through a fixture still covers it. An RSpec example counts as running the `before`, `let!` and `subject` blocks around it, and each `let` it refers to. The [intent format](/reference/intent-format#covering-tests) says how each runner's test is spelled and what counts as reaching.
+A pytest test counts as calling the fixtures it takes by parameter name, so a test that reaches the route only through a fixture still covers it. An RSpec example counts as running the `before`, `let!` and `subject` blocks around it, each `let` it refers to, and the shared examples and contexts its group includes. A call on a `let`, on the subject or on `described_class` is followed into the class behind it, and with `-f factory-bot` or `-f fabrication`, so is a call on a record a factory built. The [intent format](/reference/intent-format#covering-tests) says how each runner's test is spelled and what counts as reaching.
 
 ## Say what the boundary receives
 
