@@ -12,7 +12,12 @@ export function rspecPattern(files?: string[]): RbTestCases {
     receiver: "RSpec",
     groupNames: ["describe", "context"],
     skippedGroupNames: ["xdescribe", "xcontext"],
-    sharedGroupNames: ["shared_examples"],
+    sharedGroupNames: ["shared_examples", "shared_context"],
+    sharedIncludes: [
+      { method: "it_behaves_like", nestedTitle: "behaves like" },
+      { method: "include_examples" },
+      { method: "include_context" },
+    ],
     exampleNames: ["it", "specify"],
     skippedExampleNames: ["xit", "skip", "pending"],
     skipStatements: ["skip", "pending"],

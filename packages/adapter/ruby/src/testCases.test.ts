@@ -439,6 +439,94 @@ describe("RSpec examples as test units", () => {
     expect(tests(await extract())).toEqual([]);
   });
 
+  it("reads a shared group's examples under each group that includes it, named the way RSpec prints them", async () => {
+    write("spec/support/cancellable.rb", [
+      'RSpec.shared_examples "cancellable" do',
+      '  it "cancels" do',
+      "    target.cancel_now",
+      "  end",
+      "end",
+    ]);
+    write("app/models/invoice.rb", [
+      "class Invoice",
+      "  def cancel_now",
+      "    Order.cancel(1)",
+      "  end",
+      "end",
+    ]);
+    write("spec/invoice_spec.rb", [
+      "describe Invoice do",
+      '  it_behaves_like "cancellable" do',
+      "    let(:target) { Invoice.new }",
+      "  end",
+      "",
+      '  context "inline" do',
+      '    include_examples "cancellable"',
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+
+    expect(tests(summaries).map((one) => one.identity.name)).toEqual([
+      "Invoice > behaves like cancellable > cancels",
+      "Invoice > inline > cancels",
+    ]);
+    expect(tests(summaries).map((one) => one.location.file)).toEqual([
+      "spec/invoice_spec.rb",
+      "spec/invoice_spec.rb",
+    ]);
+  });
+
+  it("follows a shared example into its one includer's values, and a shared context's values into the includer", async () => {
+    write("spec/support/cancellable.rb", [
+      'RSpec.shared_examples "cancellable" do',
+      '  it "cancels" do',
+      "    target.cancel_now",
+      "  end",
+      "end",
+      "",
+      'RSpec.shared_context "with an invoice" do',
+      "  let(:invoice) { Invoice.new }",
+      "  before { Order.build(1) }",
+      "end",
+    ]);
+    write("app/models/invoice.rb", [
+      "class Invoice",
+      "  def cancel_now",
+      "    Order.cancel(1)",
+      "  end",
+      "end",
+    ]);
+    write("spec/invoice_spec.rb", [
+      "describe Invoice do",
+      '  it_behaves_like "cancellable" do',
+      "    let(:target) { Invoice.new }",
+      "  end",
+      "",
+      '  context "with a context" do',
+      '    include_context "with an invoice"',
+      '    it "cancels it" do',
+      "      invoice.cancel_now",
+      "    end",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+
+    expect(
+      linkedCalls(
+        testNamed(summaries, "Invoice > behaves like cancellable > cancels"),
+      ),
+    ).toEqual(["target.cancel_now"]);
+    expect(
+      linkedCalls(
+        testNamed(summaries, "Invoice > with a context > cancels it"),
+      ).sort(),
+    ).toEqual(["Order.build", "invoice.cancel_now"]);
+  });
+
   it("reads only spec files, and only the listed ones when given a list", async () => {
     write("spec/order_spec.rb", [
       "describe Order do",

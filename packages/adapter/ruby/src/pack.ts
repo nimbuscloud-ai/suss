@@ -106,6 +106,8 @@ export interface RbTestCases {
   skippedGroupNames: string[];
   /** Calls that open a group other groups include by name, whose examples belong to whoever includes them: `shared_examples`. */
   sharedGroupNames: string[];
+  /** Calls that include a shared group by name into the group they are written in: `it_behaves_like`, `include_context`. */
+  sharedIncludes: RbSharedInclude[];
   /** Calls that declare one example: `it`, `specify`. */
   exampleNames: string[];
   /** Calls that declare an example that does not run: `xit`, `skip`. */
@@ -140,6 +142,17 @@ export interface RbTestCases {
   mocks: RbTestMocks;
   /** Read only these files, matched on whole path segments from the end. Left out, every file matching `filePatterns` is read. */
   files?: string[];
+}
+
+/**
+ * One way a group includes a shared group. With `nestedTitle`, the shared
+ * examples run in a group of their own titled that and then the shared
+ * group's name, as `it_behaves_like "x"` runs them under "behaves like x".
+ * Without it they run in the including group itself.
+ */
+export interface RbSharedInclude {
+  method: string;
+  nestedTitle?: string;
 }
 
 /**

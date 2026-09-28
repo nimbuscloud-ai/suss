@@ -98,6 +98,7 @@ import type {
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
 import type { ClassInfo } from "./scope.js";
+import type { SharedGroupIndex } from "./testSharedGroups.js";
 import type { TypeReadContext } from "./typeShape.js";
 
 /**
@@ -159,6 +160,8 @@ export interface DiscoveryOptions extends BodyReadOptions {
   cache: FileCache;
   /** Called once for each discovered unit whose body is a method, so the reach walk can start from it. */
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
+  /** The shared groups the run's test files define, when a pack reads tests. */
+  sharedGroups?: SharedGroupIndex | undefined;
 }
 
 /** The method behind a discovered unit, and where it is, so the reach walk can start there as it does at any `def`. */
@@ -299,9 +302,10 @@ export async function discoverUnits(
       displayPathOf: options.displayPathOf ?? ((file) => file),
       facts: options.facts,
       inheritedMethods: options.inheritedMethods,
-      onSeed: (raw, block) =>
+      shared: options.sharedGroups,
+      onSeed: (raw, block, file) =>
         options.onReachSeed?.(raw, {
-          file: absoluteFile,
+          file,
           node: block,
           enclosingQualifiedName: null,
         }),

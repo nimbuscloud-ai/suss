@@ -107,6 +107,11 @@ import {
   testPatternsIn,
 } from "./testCases.js";
 import {
+  emitSharedGroupBinds,
+  type PatternedFile,
+  SharedGroupIndex,
+} from "./testSharedGroups.js";
+import {
   bindEvaluator,
   forgetEvaluations,
   methodDefinitionsIn,
@@ -277,6 +282,9 @@ export class RunFacts {
   private readonly inflections: RbInflections;
   private readonly definitions = new Map<string, RbNode>();
   private readonly constants: FileConstants[] = [];
+  private readonly testFiles: PatternedFile[] = [];
+  /** The shared groups the run's test files define, once every file is in. Undefined when no pack reads tests. */
+  sharedGroups: SharedGroupIndex | undefined;
 
   constructor(db: Database, packs: readonly RubyPack[]) {
     this.db = db;
@@ -293,6 +301,7 @@ export class RunFacts {
     emitValueFacts(this.db, file, root, this.bodyBlocks);
     if (testPattern !== null) {
       emitGroupFacts(this.db, file, root, testPattern);
+      this.testFiles.push({ file, root, pattern: testPattern });
     }
     emitEnvFacts(this.db, file, root);
     for (const [key, method] of methodDefinitionsIn(file, root)) {
@@ -314,6 +323,10 @@ export class RunFacts {
       files: this.parsed,
       definitions: this.definitions,
     });
+    if (this.testPatterns.length > 0) {
+      this.sharedGroups = new SharedGroupIndex(this.db, this.testFiles);
+      emitSharedGroupBinds(this.db, this.sharedGroups, this.testFiles);
+    }
     bindRequestAccessors(
       this.db,
       this.packs.flatMap((pack) => pack.requestAccessors ?? []),
@@ -732,6 +745,7 @@ async function runRuby(
         displayPathOf,
         facts: db,
         onReachSeed,
+        sharedGroups: facts.sharedGroups,
       })),
       ...moduleExportUnits(root, file, {
         modules: declaredModules,
@@ -863,7 +877,7 @@ async function runRuby(
       bodyBlocks,
       dynamicNames: watchedNames,
       gapHandling,
-      examples: exampleReads(testPatternsIn(options.packs)),
+      examples: exampleReads(testPatternsIn(options.packs), facts.sharedGroups),
       ...(reuse === null ? {} : { replay: new WalkReplay(reuse, rootsByFile) }),
       ...(ledger === null ? {} : { ledger }),
     }),

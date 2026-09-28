@@ -65,6 +65,13 @@ A file matches on whole path segments from the end.
   in the groups around it, and each `let` or `subject` it reads by
   name, from the nearest group that defines it. `is_expected` reads the
   subject. Their calls count as the example's own.
+- Shared groups. `it_behaves_like "x"` runs the examples of
+  `shared_examples "x"` in a nested group titled `behaves like x`, and
+  `include_examples` and `include_context` run them, and the shared
+  group's hooks and values, in the group they are written in. The shared
+  group is found by name in the same file first, then in any file the
+  run reads, such as one under `spec/support`. Each includer gets its own
+  test units, named and filed under the includer.
 - What a value is. A name a `let` or `subject(:name)` defines gives
   back what its block gives back, from the nearest group that defines
   it, so `order.cancel` in an example runs `cancel` on whatever the
@@ -91,8 +98,9 @@ reaching the subject, and says which mock was in the way.
 
 ## What this leaves out
 
-- Examples inside `shared_examples` and `shared_context`, and the
-  groups that include them with `it_behaves_like`.
+- `described_class` inside a shared group, and a shared group included
+  by more than one group reading a value its includers define. Which
+  includer ran is not known there, so the value is left unread.
 - Minitest. Its tests are methods on a class or blocks under a class,
   and need their own pattern.
 - Tests generated in a loop, such as `%w[a b].each { |x| it x do ... }`.

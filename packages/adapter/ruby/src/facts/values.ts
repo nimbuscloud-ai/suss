@@ -100,11 +100,18 @@ function nameKey(
   enclosing: RbNode | null,
 ): string {
   const owner =
-    ownerOfName(node, node.text, enclosing) ??
-    (node.type === "identifier" ? groupNameOwner(node, node.text) : null);
+    ownerOfName(node, node.text, enclosing) ?? groupOwnerOf(node, enclosing);
   return owner === null
     ? nameId(filePath, node.text)
     : `${nodeId(filePath, owner)}#${node.text}`;
+}
+
+/** The test group a bare name belongs to, when the name is no local, since a local wins over a group's value in Ruby. */
+function groupOwnerOf(node: RbNode, enclosing: RbNode | null): RbNode | null {
+  if (node.type !== "identifier" || isLocalName(node, node.text, enclosing)) {
+    return null;
+  }
+  return groupNameOwner(node, node.text);
 }
 
 /**

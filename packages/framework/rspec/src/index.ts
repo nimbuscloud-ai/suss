@@ -87,6 +87,15 @@ export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
           "shared_examples_for",
           "shared_context",
         ],
+        sharedIncludes: [
+          { method: "it_behaves_like", nestedTitle: "behaves like" },
+          {
+            method: "it_should_behave_like",
+            nestedTitle: "it should behave like",
+          },
+          { method: "include_examples" },
+          { method: "include_context" },
+        ],
         exampleNames: ["it", "specify", "example", "scenario", "its"],
         skippedExampleNames: [
           "xit",

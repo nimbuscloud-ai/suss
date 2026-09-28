@@ -42,9 +42,10 @@ import type { TestMetadata, TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawCodeStructure } from "@suss/extractor";
 import type { GroupNames } from "./facts/specNames.js";
-import type { RbTestCases, RubyPack } from "./pack.js";
+import type { RbSharedInclude, RbTestCases, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
+import type { SharedGroupIndex } from "./testSharedGroups.js";
 
 const BLOCK_TYPES = new Set(["block", "do_block"]);
 
@@ -57,11 +58,14 @@ export interface ExampleRun {
    * `expect(x).to eq(y)`. Neither is a call into project code.
    */
   readonly isRunnerCall: (call: RbNode) => boolean;
+  /** The file a node in those blocks is written in. */
+  readonly fileOf: (node: RbNode) => string;
 }
 
 /** Tells the reach walk which blocks an example runs, from the example's block alone. */
 export interface ExampleReads {
-  runOf(node: RbNode): ExampleRun | null;
+  /** `file` is the file the node is written in. */
+  runOf(node: RbNode, file: string): ExampleRun | null;
 }
 
 /** The run's test patterns, pooled from every pack. */
@@ -71,20 +75,21 @@ export function testPatternsIn(packs: readonly RubyPack[]): RbTestCases[] {
 
 export function exampleReads(
   patterns: readonly RbTestCases[],
+  shared: SharedGroupIndex | undefined,
 ): ExampleReads | undefined {
   if (patterns.length === 0) {
     return undefined;
   }
   return {
-    runOf: (node) => {
+    runOf: (node, file) => {
       const call = node.parent;
       if (!BLOCK_TYPES.has(node.type) || call === null) {
         return null;
       }
       for (const pattern of patterns) {
-        const found = exampleAt(call, pattern);
+        const found = exampleAt(call, file, pattern, shared);
         if (found !== null) {
-          return exampleRun(found, pattern);
+          return exampleRun(found, pattern, shared);
         }
       }
       return null;
@@ -92,16 +97,22 @@ export function exampleReads(
   };
 }
 
-/** One example, with the groups around it, outermost first. */
+/**
+ * One example, with the calls around it whose blocks it runs through,
+ * outermost first: its groups, and for an example a shared group gives
+ * an including group, the include and the shared group too.
+ */
 interface Example {
   readonly call: RbNode;
   readonly block: RbNode;
   readonly groups: readonly RbNode[];
+  /** The file the example is written in, which a shared example's includer is not. */
+  readonly file: string;
 }
 
 type Role = "opensGroup" | "sharedGroup" | "declaresTest" | null;
 
-function roleOf(node: RbNode, pattern: RbTestCases): Role {
+export function roleOf(node: RbNode, pattern: RbTestCases): Role {
   if (node.type !== "call" || field(node, "block") === null) {
     return null;
   }
@@ -110,10 +121,8 @@ function roleOf(node: RbNode, pattern: RbTestCases): Role {
   if (method === undefined) {
     return null;
   }
-  if (receiver !== null) {
-    return receiver.text === pattern.receiver && isGroupName(method, pattern)
-      ? "opensGroup"
-      : null;
+  if (receiver !== null && receiver.text !== pattern.receiver) {
+    return null;
   }
   if (isGroupName(method, pattern)) {
     return "opensGroup";
@@ -121,7 +130,21 @@ function roleOf(node: RbNode, pattern: RbTestCases): Role {
   if (pattern.sharedGroupNames.includes(method)) {
     return "sharedGroup";
   }
-  return isExampleName(method, pattern) ? "declaresTest" : null;
+  return receiver === null && isExampleName(method, pattern)
+    ? "declaresTest"
+    : null;
+}
+
+/** How this call includes a shared group, or null when it includes none. */
+export function sharedIncludeOf(
+  node: RbNode,
+  pattern: RbTestCases,
+): RbSharedInclude | null {
+  if (node.type !== "call" || field(node, "receiver") !== null) {
+    return null;
+  }
+  const method = calleeMethodName(node);
+  return pattern.sharedIncludes.find((one) => one.method === method) ?? null;
 }
 
 function isGroupName(method: string, pattern: RbTestCases): boolean {
@@ -138,10 +161,23 @@ function isExampleName(method: string, pattern: RbTestCases): boolean {
   );
 }
 
-/** Every example in a file, in source order. */
-function examplesIn(root: RbNode, pattern: RbTestCases): Example[] {
+/**
+ * Every example in a file, in source order. An include of a shared group
+ * reads the shared group's examples as though they were written there,
+ * so each includer gets its own.
+ */
+function examplesIn(
+  root: RbNode,
+  file: string,
+  pattern: RbTestCases,
+  shared: SharedGroupIndex | undefined,
+): Example[] {
   const found: Example[] = [];
-  const visit = (node: RbNode, groups: readonly RbNode[]): void => {
+  const visit = (
+    node: RbNode,
+    groups: readonly RbNode[],
+    written: string,
+  ): void => {
     for (const child of children(node)) {
       const role = roleOf(child, pattern);
       const block = field(child, "block");
@@ -149,24 +185,48 @@ function examplesIn(root: RbNode, pattern: RbTestCases): Example[] {
         continue;
       }
       if (role === "opensGroup" && block !== null) {
-        visit(block, [...groups, child]);
+        visit(block, [...groups, child], written);
         continue;
       }
       if (role === "declaresTest" && block !== null) {
         if (groups.length > 0) {
-          found.push({ call: child, block, groups });
+          found.push({ call: child, block, groups, file: written });
         }
         continue;
       }
-      visit(child, groups);
+      const included = groups.length === 0 ? null : shared?.includedAt(child);
+      if (included !== null && included !== undefined) {
+        const through = included.nested ? [child] : [];
+        const definition = included.definition;
+        const body = field(definition.call, "block");
+        if (body !== null && !groups.includes(definition.call)) {
+          visit(
+            body,
+            [...groups, ...through, definition.call],
+            definition.file,
+          );
+        }
+        continue;
+      }
+      visit(child, groups, written);
     }
   };
-  visit(root, []);
+  visit(root, [], file);
   return found;
 }
 
-/** The example whose call this is, with its groups, or null when the call declares none. */
-function exampleAt(call: RbNode, pattern: RbTestCases): Example | null {
+/**
+ * The example whose call this is, with its groups, or null when the call
+ * declares none. An example in a shared group runs through its includer's
+ * groups when one group includes it; with several, which one ran is not
+ * known, so it runs through the shared group's own blocks alone.
+ */
+function exampleAt(
+  call: RbNode,
+  file: string,
+  pattern: RbTestCases,
+  shared: SharedGroupIndex | undefined,
+): Example | null {
   const block = field(call, "block");
   if (roleOf(call, pattern) !== "declaresTest" || block === null) {
     return null;
@@ -175,13 +235,22 @@ function exampleAt(call: RbNode, pattern: RbTestCases): Example | null {
   for (let above = call.parent; above !== null; above = above.parent) {
     const role = roleOf(above, pattern);
     if (role === "sharedGroup") {
-      return null;
+      const definition = shared?.definitionAt(above);
+      if (definition === undefined || definition === null) {
+        return null;
+      }
+      const [only, ...others] = shared?.includersOf(definition) ?? [];
+      const outer =
+        only === undefined || others.length > 0
+          ? []
+          : [...only.groups, ...(only.nested ? [only.call] : [])];
+      return { call, block, groups: [...outer, above, ...groups], file };
     }
     if (role === "opensGroup") {
       groups.unshift(above);
     }
   }
-  return groups.length === 0 ? null : { call, block, groups };
+  return groups.length === 0 ? null : { call, block, groups, file };
 }
 
 /** One `let`, `subject` or hook written directly in a group. */
@@ -202,13 +271,8 @@ function firstSymbol(call: RbNode): string | null {
 }
 
 function groupBlocks(group: RbNode, pattern: RbTestCases): GroupBlock[] {
-  const groupBlock = field(group, "block");
-  const body = groupBlock === null ? null : field(groupBlock, "body");
-  if (body === null) {
-    return [];
-  }
   const found: GroupBlock[] = [];
-  for (const statement of bodyStatements(body)) {
+  for (const statement of groupStatements(group)) {
     const block = field(statement, "block");
     const method =
       statement.type === "call" && field(statement, "receiver") === null
@@ -254,16 +318,18 @@ function groupBlockOf(
 }
 
 /** What one group defines for the examples inside it. */
-interface GroupScope {
+export interface GroupScope {
   /** Each value the group defines, by the name that reads it, with the block that gives it. */
   readonly values: ReadonlyMap<string, RbNode>;
   /** The class the group is given, as in `describe Order`, or null. */
   readonly described: RbNode | null;
+  /** The calls in the group's body that include a shared group. */
+  readonly includes: readonly RbNode[];
 }
 
 const CLASS_TYPES = new Set(["constant", "scope_resolution"]);
 
-function groupScope(group: RbNode, pattern: RbTestCases): GroupScope {
+export function groupScope(group: RbNode, pattern: RbTestCases): GroupScope {
   const values = new Map<string, RbNode>();
   for (const one of groupBlocks(group, pattern)) {
     for (const name of one.values) {
@@ -271,10 +337,25 @@ function groupScope(group: RbNode, pattern: RbTestCases): GroupScope {
     }
   }
   const first = firstArgument(group);
+  const described =
+    roleOf(group, pattern) === "opensGroup" &&
+    first !== null &&
+    CLASS_TYPES.has(first.type)
+      ? first
+      : null;
   return {
     values,
-    described: first !== null && CLASS_TYPES.has(first.type) ? first : null,
+    described,
+    includes: groupStatements(group).filter(
+      (statement) => sharedIncludeOf(statement, pattern) !== null,
+    ),
   };
+}
+
+function groupStatements(group: RbNode): RbNode[] {
+  const groupBlock = field(group, "block");
+  const body = groupBlock === null ? null : field(groupBlock, "body");
+  return body === null ? [] : bodyStatements(body);
 }
 
 /** The test pattern that reads this file, or null when none does or the file is not on its list. */
@@ -295,6 +376,10 @@ export function patternForFile(
  * Which group a name read at a node belongs to. The nearest group that
  * defines the name wins. `described_class` and an implicit subject come
  * from the nearest group given a class, which RSpec reads the same way.
+ * Past those, a name belongs to the nearest group that includes a shared
+ * group, which may define it, and inside a shared group to the shared
+ * group, whose includers supply it. The run binds both once every file
+ * is in.
  */
 function groupNamesIn(pattern: RbTestCases): GroupNames {
   const scopes = new Map<number, GroupScope>();
@@ -310,19 +395,30 @@ function groupNamesIn(pattern: RbTestCases): GroupNames {
   const fromClass = new Set([pattern.describedClass, pattern.subjectValue]);
   const owner = (node: RbNode, name: string): RbNode | null => {
     let classGroup: RbNode | null = null;
+    let including: RbNode | null = null;
     for (let up = node.parent; up !== null; up = up.parent) {
-      if (roleOf(up, pattern) !== "opensGroup") {
+      const role = roleOf(up, pattern);
+      if (role !== "opensGroup" && role !== "sharedGroup") {
         continue;
       }
       const scope = scopeOf(up);
       if (scope.values.has(name)) {
         return up;
       }
+      if (role === "sharedGroup") {
+        return including ?? up;
+      }
       if (classGroup === null && scope.described !== null) {
         classGroup = up;
       }
+      if (including === null && scope.includes.length > 0) {
+        including = up;
+      }
     }
-    return fromClass.has(name) ? classGroup : null;
+    if (fromClass.has(name) && classGroup !== null) {
+      return classGroup;
+    }
+    return including;
   };
   return {
     owner,
@@ -339,16 +435,51 @@ function groupNamesIn(pattern: RbTestCases): GroupNames {
 
 /**
  * Registers which group each name in a test file belongs to, before the
- * file's value facts are emitted, and clears it for any other file.
+ * file's value facts are emitted, and clears it for any other file. A
+ * file that defines shared groups, as a support file does, counts too.
  */
 export function registerTestFileNames(
   file: string,
   root: RbNode,
   patterns: readonly RbTestCases[],
 ): RbTestCases | null {
-  const pattern = patternForFile(file, patterns);
+  const pattern =
+    patternForFile(file, patterns) ??
+    patterns.find((one) => definesSharedGroups(root, one)) ??
+    null;
   registerGroupNames(root, pattern === null ? null : groupNamesIn(pattern));
   return pattern;
+}
+
+/** Whether a file defines a shared group at its top level. */
+function definesSharedGroups(root: RbNode, pattern: RbTestCases): boolean {
+  return sharedGroupsIn(root, pattern).length > 0;
+}
+
+/** The shared group definitions written at the top of a file, or inside a group. */
+export function sharedGroupsIn(root: RbNode, pattern: RbTestCases): RbNode[] {
+  const found: RbNode[] = [];
+  const visit = (node: RbNode): void => {
+    for (const child of children(node)) {
+      const role = roleOf(child, pattern);
+      if (role === "sharedGroup") {
+        found.push(child);
+        continue;
+      }
+      if (role === "opensGroup" || child.type === "program") {
+        const block = field(child, "block");
+        if (block !== null) {
+          visit(block);
+        }
+        continue;
+      }
+      if (child.type === "body_statement" || child.type === "block_body") {
+        visit(child);
+      }
+    }
+  };
+  visit(root);
+  return found;
 }
 
 /**
@@ -365,7 +496,13 @@ export function emitGroupFacts(
 ): void {
   const visit = (node: RbNode): void => {
     for (const child of children(node)) {
-      if (roleOf(child, pattern) === "opensGroup") {
+      const role = roleOf(child, pattern);
+      const opensScope =
+        role === "opensGroup" ||
+        role === "sharedGroup" ||
+        (sharedIncludeOf(child, pattern) !== null &&
+          field(child, "block") !== null);
+      if (opensScope) {
         emitOneGroup(db, file, child, pattern);
       }
       visit(child);
@@ -400,14 +537,54 @@ function emitOneGroup(
 }
 
 /**
+ * The groups an example runs through, each followed by the shared groups
+ * it includes in place, whose hooks and values run as its own.
+ */
+function withInlineIncludes(
+  groups: readonly RbNode[],
+  pattern: RbTestCases,
+  shared: SharedGroupIndex | undefined,
+): RbNode[] {
+  return groups.flatMap((group) => [
+    group,
+    ...groupScope(group, pattern).includes.flatMap((call) => {
+      const included = shared?.includedAt(call);
+      return included === null || included === undefined || included.nested
+        ? []
+        : [included.definition.call];
+    }),
+  ]);
+}
+
+/** Nodes from any number of files, each counted once. */
+class NodesSeen {
+  private readonly byTree = new WeakMap<object, Set<number>>();
+
+  /** Adds the node, and says whether it was new. */
+  add(node: RbNode): boolean {
+    const seen = this.byTree.get(node.tree) ?? new Set<number>();
+    this.byTree.set(node.tree, seen);
+    if (seen.has(node.id)) {
+      return false;
+    }
+    seen.add(node.id);
+    return true;
+  }
+}
+
+/**
  * The blocks an example runs: its own, the hooks and eager values of
  * every group around it, and each value it reads by name from the
  * nearest group that defines it, followed through the values those read.
  */
-function exampleRun(example: Example, pattern: RbTestCases): ExampleRun {
+function exampleRun(
+  example: Example,
+  pattern: RbTestCases,
+  shared: SharedGroupIndex | undefined,
+): ExampleRun {
   const byName = new Map<string, RbNode>();
   const always: RbNode[] = [];
-  for (const group of example.groups) {
+  for (const group of withInlineIncludes(example.groups, pattern, shared)) {
     for (const one of groupBlocks(group, pattern)) {
       for (const name of one.names) {
         byName.set(name, one.block);
@@ -418,12 +595,11 @@ function exampleRun(example: Example, pattern: RbTestCases): ExampleRun {
     }
   }
   const blocks: RbNode[] = [];
-  const included = new Set<number>();
+  const included = new NodesSeen();
   const include = (block: RbNode): void => {
-    if (included.has(block.id)) {
+    if (!included.add(block)) {
       return;
     }
-    included.add(block.id);
     blocks.push(block);
     for (const name of namesRead(block)) {
       const defined = byName.get(name);
@@ -456,6 +632,10 @@ function exampleRun(example: Example, pattern: RbTestCases): ExampleRun {
       }
       return isRunnerMethod(chainOrigin(call));
     },
+    fileOf: (node) =>
+      node.tree === example.block.tree
+        ? example.file
+        : (shared?.fileOf(node) ?? example.file),
   };
 }
 
@@ -528,8 +708,10 @@ export interface TestUnitOptions {
   readonly displayPathOf: (absolute: string) => string;
   readonly facts?: Database | undefined;
   readonly inheritedMethods?: InheritedMethods | undefined;
-  /** Called for each example, so the reach walk starts at its block. */
-  readonly onSeed: (raw: RawCodeStructure, block: RbNode) => void;
+  /** Called for each example, so the reach walk starts at its block, in the file the block is written in. */
+  readonly onSeed: (raw: RawCodeStructure, block: RbNode, file: string) => void;
+  /** The run's shared groups, so an include reads the shared examples. */
+  readonly shared?: SharedGroupIndex | undefined;
 }
 
 /** One `test` unit per example in the file, when a pack in the run reads tests and the file is one of them. */
@@ -545,11 +727,13 @@ export function testCaseUnits(
     ) {
       return [];
     }
-    return examplesIn(root, pattern).map((example) => {
-      const raw = exampleUnit(example, pattern, options);
-      options.onSeed(raw, example.block);
-      return raw;
-    });
+    return examplesIn(root, options.absoluteFile, pattern, options.shared).map(
+      (example) => {
+        const raw = exampleUnit(example, pattern, root, options);
+        options.onSeed(raw, example.block, example.file);
+        return raw;
+      },
+    );
   });
 }
 
@@ -558,15 +742,51 @@ interface Title {
   readonly unresolved: boolean;
 }
 
+/**
+ * Each title in an example's name. A shared group adds none of its own,
+ * and an include adds one only when it nests the examples, as
+ * `it_behaves_like "x"` adds "behaves like x".
+ */
+function titlesOf(
+  example: Example,
+  pattern: RbTestCases,
+  facts: Database | undefined,
+): Title[] {
+  return [...example.groups, example.call].flatMap((call): Title[] => {
+    if (roleOf(call, pattern) === "sharedGroup") {
+      return [];
+    }
+    const include = sharedIncludeOf(call, pattern);
+    if (include === null) {
+      return [titleOf(call, facts)];
+    }
+    if (include.nestedTitle === undefined) {
+      return [];
+    }
+    const name = titleOf(call, facts);
+    return [{ ...name, text: `${include.nestedTitle} ${name.text}` }];
+  });
+}
+
+/** Where the unit is recorded: the example, or for a shared example, the include that brought it here. */
+function anchorOf(example: Example, root: RbNode): RbNode {
+  if (example.call.tree === root.tree) {
+    return example.call;
+  }
+  return (
+    [...example.groups].reverse().find((one) => one.tree === root.tree) ??
+    example.call
+  );
+}
+
 function exampleUnit(
   example: Example,
   pattern: RbTestCases,
+  root: RbNode,
   options: TestUnitOptions,
 ): RawCodeStructure {
-  const titles = [...example.groups, example.call].map((call) =>
-    titleOf(call, options.facts),
-  );
-  const run = exampleRun(example, pattern);
+  const titles = titlesOf(example, pattern, options.facts);
+  const run = exampleRun(example, pattern, options.shared);
   const runnerCallees = new Set(
     exampleCalls(run, options.inheritedMethods)
       .filter(run.isRunnerCall)
@@ -583,7 +803,10 @@ function exampleUnit(
     )
     .filter((effect) => !runnerCallees.has(effect.callee));
   const mocks = run.blocks.flatMap((block) =>
-    mocksIn(block, pattern.mocks, options),
+    mocksIn(block, pattern.mocks, {
+      ...options,
+      absoluteFile: options.shared?.fileOf(block) ?? options.absoluteFile,
+    }),
   );
   const unresolved = titles.find((title) => title.unresolved);
   const test: TestMetadata = {
@@ -591,7 +814,8 @@ function exampleUnit(
     ...(mocks.length > 0 ? { mocks } : {}),
     ...(unresolved !== undefined ? { unresolvedTitle: unresolved.text } : {}),
   };
-  const range = rangeOf(example.call);
+  const anchor = anchorOf(example, root);
+  const range = rangeOf(anchor);
   return {
     identity: {
       name: testUnitName(titles.map((title) => title.text)),
@@ -599,7 +823,7 @@ function exampleUnit(
       kind: "test",
       file: options.filePath,
       range,
-      span: spanOf(example.call),
+      span: spanOf(anchor),
       exportName: null,
       exportPath: null,
     },
@@ -843,7 +1067,7 @@ function chainStart(node: RbNode | null): RbNode | null {
   return null;
 }
 
-function firstArgument(call: RbNode): RbNode | null {
+export function firstArgument(call: RbNode): RbNode | null {
   const args = field(call, "arguments");
   return (args === null ? undefined : bodyStatements(args)[0]) ?? null;
 }

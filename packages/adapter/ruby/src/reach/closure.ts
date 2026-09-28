@@ -77,7 +77,7 @@ import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type { ReadableBody } from "../paths/effects.js";
 import type { WalkReplay } from "../reuse.js";
-import type { ExampleReads } from "../testCases.js";
+import type { ExampleReads, ExampleRun } from "../testCases.js";
 import type {
   CalleeResolution,
   CalleeSpellings,
@@ -564,6 +564,8 @@ interface BodyCalls {
   /** Every call in this body with no arguments. The summary already has an effect for each. */
   readonly argless: RbNode[];
   readonly site: CallSite;
+  /** Where one call is written, which for an example that runs a shared group's blocks can be another file. */
+  readonly siteFor: (call: RbNode) => CallSite;
   readonly written: { call: RbNode; site: CallSite }[];
 }
 
@@ -575,15 +577,23 @@ interface BodyCalls {
  */
 function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
   const site = siteOf(source);
-  const written = callsWrittenIn(source.node, options);
+  const run = options.examples?.runOf(source.node, source.file) ?? null;
+  const siteFor = (call: RbNode): CallSite => {
+    const file = run?.fileOf(call) ?? source.file;
+    return file === source.file
+      ? site
+      : { ...site, file, method: enclosingDefinition(call) };
+  };
+  const written = callsWrittenIn(source.node, run, options);
   const calls = callsReported(written, (call) =>
-    mightReadAsACall(call, site, options.context),
+    mightReadAsACall(call, siteFor(call), options.context),
   );
   return {
     calls,
     argless: written.filter(isArglessReceiverCall),
     site,
-    written: calls.map((call) => ({ call, site })),
+    siteFor,
+    written: calls.map((call) => ({ call, site: siteFor(call) })),
   };
 }
 
@@ -592,8 +602,11 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
  * values around it, so their calls are read with its own, and the calls
  * the test runner handles itself are left out.
  */
-function callsWrittenIn(node: RbNode, options: ReachOptions): RbNode[] {
-  const run = options.examples?.runOf(node) ?? null;
+function callsWrittenIn(
+  node: RbNode,
+  run: ExampleRun | null,
+  options: ReachOptions,
+): RbNode[] {
   if (run !== null) {
     return exampleCalls(run, options.inheritedMethods).filter(
       (call) => !run.isRunnerCall(call),
@@ -642,7 +655,7 @@ const BLOCK_TYPES = new Set(["block", "do_block"]);
  */
 function callsMade(
   asked: readonly RbNode[],
-  site: CallSite,
+  siteFor: (call: RbNode) => CallSite,
   ctx: ReachContext,
   spellings: CalleeSpellings,
   inExample: boolean,
@@ -650,8 +663,8 @@ function callsMade(
   return asked.filter(
     (call) =>
       !isArglessReceiverCall(call) ||
-      readsAsACall(call, site, ctx, spellings) ||
-      (inExample && runsAProjectMethod(call, site, ctx, spellings)),
+      readsAsACall(call, siteFor(call), ctx, spellings) ||
+      (inExample && runsAProjectMethod(call, siteFor(call), ctx, spellings)),
   );
 }
 
@@ -677,6 +690,7 @@ function scanBody(
     calls: RbNode[];
     argless: RbNode[];
     site: CallSite;
+    siteFor: (call: RbNode) => CallSite;
     spellings: CalleeSpellings;
   },
 ): Scan {
@@ -688,10 +702,10 @@ function scanBody(
   const site = read.site;
   const calls = callsMade(
     read.calls,
-    site,
+    read.siteFor,
     ctx,
     read.spellings,
-    (options.examples?.runOf(source.node) ?? null) !== null,
+    (options.examples?.runOf(source.node, source.file) ?? null) !== null,
   );
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
 
@@ -760,19 +774,20 @@ function scanBody(
 
   for (const call of calls) {
     const callee = calleeText(call);
-    const outcome = resolveCallee(call, site, ctx, read.spellings);
+    const callSite = read.siteFor(call);
+    const outcome = resolveCallee(call, callSite, ctx, read.spellings);
     if (options.storage !== undefined) {
       for (const callback of callbacksReached(
         call,
-        source.file,
+        callSite.file,
         options.storage,
-        site.method,
+        callSite.method,
       )) {
         followCallback(callback.name, callback.key);
       }
     }
     placeCallee(placements, outcome, call, {
-      callerFile: source.file,
+      callerFile: callSite.file,
       displayPathOf,
     });
     recordPassedArgs(
@@ -787,7 +802,7 @@ function scanBody(
       // database work, so it is not reported as a gap.
       const claimed =
         options.storage !== undefined &&
-        storageClaims(call, source.file, options.storage, site.method);
+        storageClaims(call, callSite.file, options.storage, callSite.method);
       if (!seen.has(stopKey) && !claimed && worthRecording(outcome.reason)) {
         seen.add(stopKey);
         stops.push({ callee, reason: outcome.reason });

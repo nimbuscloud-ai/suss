@@ -103,6 +103,7 @@ export type {
   RbInflections,
   RbRawSqlPattern,
   RbRowCall,
+  RbSharedInclude,
   RbStatusCall,
   RbStoragePattern,
   RbTestCases,
