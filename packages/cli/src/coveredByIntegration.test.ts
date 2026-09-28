@@ -249,6 +249,14 @@ const OTHER_RUNNERS = [
     subject: "app/orders.py::cancel_order",
     titlesListed: "TestCancel::test_marks_the_order_cancelled",
   },
+  {
+    runner: "rspec",
+    lang: "ruby",
+    fixture: "covered-by-rspec",
+    mock: "allow(Order).to receive(:cancel).and_return({ status: :cancelled })",
+    subject: "app/models/order.rb::Order.cancel",
+    titlesListed: "Order > cancel > marks the order cancelled",
+  },
 ];
 
 const FIXTURES = path.resolve(import.meta.dirname, "../../../fixtures");

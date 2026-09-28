@@ -17,4 +17,12 @@ RSpec.describe Order do
       Order.cancel(id)
     end
   end
+
+  describe "a cancelled order" do
+    let(:cancelled) { Order.cancel("o-1") }
+
+    it "reads back as cancelled" do
+      expect(cancelled[:status]).to eq(:cancelled)
+    end
+  end
 end

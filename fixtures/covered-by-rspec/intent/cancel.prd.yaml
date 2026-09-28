@@ -28,3 +28,11 @@ scenarios:
     expect: the order is cancelled
     coveredBy: spec/services/checkout_spec.rb > Checkout > cancels on a failed checkout
     about: cancel
+  - title: through a fixture
+    when: a cancelled order is read back
+    expect: it says it is cancelled
+    coveredBy: spec/models/order_spec.rb > Order > a cancelled order > reads back as cancelled
+    about: cancel
+  - title: nothing yet
+    when: an order that shipped is cancelled
+    expect: the customer is told it is too late

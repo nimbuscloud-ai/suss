@@ -72,6 +72,16 @@ describe("the covered-by fixture", () => {
         test: { skipped: true },
       },
       {
+        name: "Order > a cancelled order > reads back as cancelled",
+        file: "spec/models/order_spec.rb",
+        test: {},
+      },
+      {
+        name: "Order > is never read",
+        file: "spec/models/unlisted_spec.rb",
+        test: {},
+      },
+      {
         name: "Checkout > cancels on a failed checkout",
         file: "spec/services/checkout_spec.rb",
         test: {
