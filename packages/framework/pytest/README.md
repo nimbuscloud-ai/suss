@@ -58,9 +58,14 @@ path matches a file the run reads from a package directory.
   and `test` methods on any `unittest.TestCase` subclass.
 - The fixtures each test asks for by parameter name, found on the
   class, in the module, or in a `conftest.py` in the test's directory or
-  above, plus every `autouse` fixture in scope and a TestCase's `setUp`.
-  The test's unit calls each one, so a path through a fixture counts as
-  the test reaching what the fixture calls.
+  above, plus every `autouse` fixture in scope and each fixture a
+  `@pytest.mark.usefixtures` marker lists. The test's unit calls each
+  one, so a path through a fixture counts as the test reaching what the
+  fixture calls.
+- The setup that runs before each test: `setup_module` and
+  `setup_function` in its module, `setup_class` and `setup_method` on a
+  test class, and `setUpClass`, `setUp` and `asyncSetUp` on a
+  `unittest.TestCase`, including one written on a project base class.
 - Whether the test runs. `@pytest.mark.skip`, `skipif`, `xfail`,
   `unittest.skip`, `skipIf`, `skipUnless` and `expectedFailure`, on the
   test, on a class around it, or in a `pytestmark` variable, are recorded
@@ -79,8 +84,7 @@ reaching the subject, and says which patch was in the way.
 
 - A `python_files`, `python_classes` or `python_functions` setting in the
   project's pytest configuration, and tests a plugin collects.
-- Fixtures requested through `request.getfixturevalue` or
-  `@pytest.mark.usefixtures`.
-- `setUpClass`, `setup_method` and `setup_function`.
+- Fixtures requested through `request.getfixturevalue`, and a
+  `usefixtures` marker applied in a configuration file.
 - A condition on `skipif`. The test is recorded as skipped whatever the
   condition says.

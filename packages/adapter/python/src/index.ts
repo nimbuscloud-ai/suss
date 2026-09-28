@@ -73,6 +73,7 @@ export type {
   PyStatusCall,
   PyTestCases,
   PyTestMocks,
+  PyTestSetUp,
   PythonDiscoveryPattern,
   PythonPack,
   RawSqlPattern,

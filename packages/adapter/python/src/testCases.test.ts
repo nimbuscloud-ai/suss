@@ -17,7 +17,13 @@ const RUNNER: PyTestCases = {
   functionPrefix: "test",
   classPrefix: "Test",
   caseBaseClasses: ["unittest.TestCase"],
-  setUpMethods: ["setUp"],
+  setUp: {
+    module: ["setup_module"],
+    function: ["setup_function"],
+    testClass: ["setup_class", "setup_method"],
+    caseClass: ["setUpClass", "setUp"],
+  },
+  usesFixtureMarkers: ["pytest.mark.usefixtures"],
   fixtureDecorators: ["pytest.fixture"],
   fixtureNameKeyword: "name",
   autouseKeyword: "autouse",
@@ -362,6 +368,118 @@ describe("pytest tests as test units", () => {
         name: "checkout",
         written: "monkeypatch.setattr(checkout, 'checkout', None)",
       },
+    ]);
+  });
+
+  it("runs the fixtures a usefixtures marker lists, from the test, its class or pytestmark", async () => {
+    write(
+      "tests/conftest.py",
+      [
+        "import pytest",
+        "from unittest.mock import patch",
+        "from app.orders import cancel_order, archive",
+        "",
+        "@pytest.fixture",
+        "def cancelled():",
+        "    cancel_order('o-1')",
+        "",
+        "@pytest.fixture",
+        "def archived():",
+        "    archive('o-1')",
+        "",
+        "@pytest.fixture",
+        "def no_archive():",
+        "    with patch('app.orders.archive'):",
+        "        yield",
+      ].join("\n"),
+    );
+    write(
+      "tests/test_marked.py",
+      [
+        "import pytest",
+        "",
+        "pytestmark = pytest.mark.usefixtures('archived')",
+        "",
+        "@pytest.mark.usefixtures('cancelled', 'no_archive')",
+        "def test_reads(cancelled):",
+        "    pass",
+        "",
+        "@pytest.mark.usefixtures('cancelled')",
+        "class TestOrders:",
+        "    def test_lists(self):",
+        "        pass",
+      ].join("\n"),
+    );
+    const summaries = await extract();
+
+    expect(callsOf(testNamed(summaries, "test_reads"))).toEqual([
+      "no_archive ->",
+      "archived ->",
+      "cancelled ->",
+    ]);
+    expect(callsOf(testNamed(summaries, "TestOrders > test_lists"))).toEqual([
+      "cancelled ->",
+      "archived ->",
+    ]);
+    expect(
+      readTestMetadata(testNamed(summaries, "test_reads"))?.mocks?.map(
+        (one) => one.name,
+      ),
+    ).toEqual(["archive"]);
+  });
+
+  it("runs the module's and each class's setup before a test, a base class's included", async () => {
+    write(
+      "tests/base.py",
+      [
+        "import unittest",
+        "from app.orders import archive",
+        "",
+        "class OrdersCase(unittest.TestCase):",
+        "    @classmethod",
+        "    def setUpClass(cls):",
+        "        archive('o-0')",
+      ].join("\n"),
+    );
+    write(
+      "tests/test_setup.py",
+      [
+        "from app.orders import cancel_order, archive",
+        "from tests.base import OrdersCase",
+        "",
+        "def setup_module(module):",
+        "    archive('o-1')",
+        "",
+        "def setup_function(function):",
+        "    cancel_order('o-1')",
+        "",
+        "def test_plain():",
+        "    pass",
+        "",
+        "class TestOrders:",
+        "    def setup_method(self, method):",
+        "        cancel_order('o-2')",
+        "",
+        "    def test_in_class(self):",
+        "        pass",
+        "",
+        "class OrderChecks(OrdersCase):",
+        "    def test_case(self):",
+        "        pass",
+      ].join("\n"),
+    );
+    const summaries = await extract();
+
+    expect(callsOf(testNamed(summaries, "test_plain"))).toEqual([
+      "setup_module ->",
+      "setup_function ->",
+    ]);
+    expect(callsOf(testNamed(summaries, "TestOrders > test_in_class"))).toEqual(
+      ["setup_module ->", "setup_method ->"],
+    );
+    expect(callsOf(testNamed(summaries, "OrderChecks > test_case"))).toEqual([
+      "setup_module ->",
+      "setUpClass ->",
     ]);
   });
 

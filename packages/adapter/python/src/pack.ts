@@ -83,8 +83,10 @@ export interface PyTestCases {
   classPrefix: string;
   /** Base classes whose subclasses contain tests whatever the class is called, as dotted names: `unittest.TestCase`. */
   caseBaseClasses: string[];
-  /** Methods of such a class that run before each of its tests: `setUp`. */
-  setUpMethods: string[];
+  /** The functions and methods the runner calls before a test, by where they are written. */
+  setUp: PyTestSetUp;
+  /** Markers whose string arguments are the fixtures every test under them runs through, as dotted names: `pytest.mark.usefixtures`. */
+  usesFixtureMarkers: string[];
   /** Decorators that declare a fixture, as dotted names: `pytest.fixture`. */
   fixtureDecorators: string[];
   /** The keyword on a fixture decorator that renames the fixture: `name`. */
@@ -103,6 +105,22 @@ export interface PyTestCases {
   mocks: PyTestMocks;
   /** Read only these files, matched on whole path segments from the end. Left out, every collected file is read. */
   files?: string[];
+}
+
+/**
+ * The setup a runner calls before a test, listed in the order it calls
+ * them. A method is looked for on the class and then on the project
+ * classes it extends, since the setup is often written on a base class.
+ */
+export interface PyTestSetUp {
+  /** Functions in the test's module that run before any test in it: `setup_module`. */
+  module: string[];
+  /** Functions in the test's module that run before each test written as a function: `setup_function`. */
+  function: string[];
+  /** Methods of a class of tests that run before each test in it: `setup_class`, `setup_method`. */
+  testClass: string[];
+  /** Methods of a `caseBaseClasses` subclass that run before each test in it: `setUpClass`, `setUp`. */
+  caseClass: string[];
 }
 
 /**

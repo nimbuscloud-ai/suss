@@ -588,7 +588,8 @@ pytest calls things the test's body never writes, and the walk has to follow the
 
 - Each parameter a test or a fixture takes asks for a fixture by that name, other than `reservedParameters`. The fixture is looked for on each class around the requester, then in the requester's module, then in each `sharedFixtureFiles` file from the module's directory up to the root. A fixture a module imports counts under the name its decorator gives it, the way pytest registers it. A fixture that asks for its own name gets the next one out.
 - Each `autouse` fixture in scope runs before every test.
-- A test on a TestCase subclass runs the class's `setUpMethods` first.
+- Each fixture a `usesFixtureMarkers` marker lists runs before the test, whether the marker is on the test, on a class around it, or in a `markerVariable` assignment. The names are read through the evaluator and looked up the same way a parameter's are.
+- The `setUp` functions run next. The module's `setUp.module` functions run before every test in it, and its `setUp.function` functions before each test written as a function. Each class around the test, from the outermost in, runs its `setUp.caseClass` methods when it extends a `caseBaseClasses` entry and its `setUp.testClass` methods otherwise. A method the class does not declare is looked for on the project classes it extends.
 
 `metadata.test.skipped` is set when a `skipDecorators` entry is on the test or a class around it, or in a `markerVariable` assignment in its module or class. A marker applied with a condition counts as skipping, since whether the condition is true is known only when the tests run.
 
@@ -596,9 +597,9 @@ pytest calls things the test's body never writes, and the walk has to follow the
 
 Not read yet:
 
-- A fixture reached through `request.getfixturevalue(name)` or `@pytest.mark.usefixtures`.
+- A fixture reached through `request.getfixturevalue(name)`, or a `usefixtures` marker applied in a configuration file.
 - A test a plugin collects, or a `python_files`, `python_classes` or `python_functions` setting in the project's pytest configuration.
-- `unittest.TestCase.setUpClass`, and `setup_method` and `setup_function` on a pytest class or module.
+- A fixture or a setup method on a base class that lives in a package outside the run.
 - A patcher's `new=` value. The mock is recorded whatever replaces the target.
 
 ## What a run after an edit replays

@@ -5,12 +5,12 @@
  * subclass, named by its classes and then its own name, the way a
  * pytest node id writes them. The pack says what each of those names is.
  *
- * pytest calls the fixtures a test asks for by parameter name before
- * the test runs, and a TestCase calls `setUp` before each method. The
- * index reports those as implied calls, so the reach walk follows a test
- * into its fixtures the way it follows any call. A test's mocks are the
- * patchers written on it, in its body, and in the fixtures and `setUp`
- * it runs through. DESIGN.md says what is left out.
+ * pytest calls the fixtures a test asks for, by parameter name or through
+ * a `usefixtures` marker, and the module's and classes' setup, before the
+ * test runs. The index reports those as implied calls, so the reach walk
+ * follows a test into them the way it follows any call. A test's mocks
+ * are the patchers written on it, in its body, and in everything it runs
+ * through. DESIGN.md says what is left out.
  */
 
 import path from "node:path";
@@ -52,8 +52,6 @@ interface CollectedTest {
   readonly node: PyNode;
   readonly titles: string[];
   readonly pattern: PyTestCases;
-  /** The innermost TestCase subclass around the test, whose `setUp` runs before it. */
-  readonly caseClass: PyNode | null;
 }
 
 interface Fixture {
@@ -123,7 +121,42 @@ export class PythonTestIndex {
     const autouse = this.autouseFor(source, pattern).filter(
       ({ callee }) => !asked.includes(callee),
     );
-    return [...autouse, ...this.setUpCalls(source.file, test), ...calls];
+    const marked = this.usedFixtures(source, test).filter(
+      ({ callee }) =>
+        !asked.includes(callee) &&
+        !autouse.some((one) => one.callee === callee),
+    );
+    return [
+      ...autouse,
+      ...marked,
+      ...this.setUpCalls(source.file, test),
+      ...calls,
+    ];
+  }
+
+  /** The fixtures a `usefixtures` marker on the test, a class around it, or a `pytestmark` asks for. */
+  private usedFixtures(
+    source: ReachedFunction,
+    test: CollectedTest,
+  ): ImpliedCall[] {
+    const names = markersOn(source.file, test)
+      .filter(
+        (marker) =>
+          marker.type === "call" &&
+          test.pattern.usesFixtureMarkers.includes(
+            dottedOrigin(calleeOf(marker), source.file) ?? "",
+          ),
+      )
+      .flatMap((marker) =>
+        positionalArguments(marker).flatMap((arg) => {
+          const name = literalOf(evaluatedValue(arg, this.context.facts));
+          return name === null ? [] : [name];
+        }),
+      );
+    return [...new Set(names)].flatMap((name): ImpliedCall[] => {
+      const fixture = this.fixtureFor(source, name, test.pattern);
+      return fixture === null ? [] : [{ callee: name, target: fixture.target }];
+    });
   }
 
   private testUnit(
@@ -172,7 +205,7 @@ export class PythonTestIndex {
     const pattern = this.patternFor(file);
     const found: CollectedTest[] = [];
     if (pattern !== null) {
-      this.collectIn(file, file.root, pattern, [], null, found);
+      this.collectIn(file, file.root, pattern, [], found);
     }
     this.collected.set(file.file, found);
     return found;
@@ -184,7 +217,6 @@ export class PythonTestIndex {
     container: PyNode,
     pattern: PyTestCases,
     titles: readonly string[],
-    caseClass: PyNode | null,
     found: CollectedTest[],
   ): void {
     for (const definition of definitionsIn(container)) {
@@ -194,29 +226,18 @@ export class PythonTestIndex {
       }
 
       if (isFunction(definition) && name.startsWith(pattern.functionPrefix)) {
-        found.push({
-          node: definition,
-          titles: [...titles, name],
-          pattern,
-          caseClass,
-        });
+        found.push({ node: definition, titles: [...titles, name], pattern });
         continue;
       }
 
       if (definition.type !== "class_definition") {
         continue;
       }
-      const isCase = this.isCaseClass(file, definition, pattern, new Set());
-      if (isCase || name.startsWith(pattern.classPrefix)) {
-        const around = isCase ? definition : caseClass;
-        this.collectIn(
-          file,
-          definition,
-          pattern,
-          [...titles, name],
-          around,
-          found,
-        );
+      if (
+        name.startsWith(pattern.classPrefix) ||
+        this.isCaseClass(file, definition, pattern, new Set())
+      ) {
+        this.collectIn(file, definition, pattern, [...titles, name], found);
       }
     }
   }
@@ -485,36 +506,74 @@ export class PythonTestIndex {
     return [...byName.values()];
   }
 
-  /** The `setUp` a TestCase runs before each of its tests. */
+  /**
+   * The setup the runner calls before this test: the module's, then each
+   * class's from the outermost in. A class that extends a case base class
+   * runs the case class setup, and any other class the test class setup.
+   */
   private setUpCalls(
     file: BoundPythonFile,
     test: CollectedTest,
   ): ImpliedCall[] {
-    if (test.caseClass === null) {
-      return [];
+    const setUp = test.pattern.setUp;
+    const classes = enclosingClasses(test.node).reverse();
+    const inModule = [
+      ...setUp.module,
+      ...(classes.length === 0 ? setUp.function : []),
+    ];
+    const moduleCalls = inModule.flatMap((name): ImpliedCall[] => {
+      const found = definitionsIn(file.root).find(
+        (one) => isFunction(one) && field(one, "name")?.text === name,
+      );
+      return found === undefined
+        ? []
+        : [{ callee: name, target: reachedFunctionOf(file, found) }];
+    });
+    const classCalls = classes.flatMap((classNode) => {
+      const isCase = this.isCaseClass(file, classNode, test.pattern, new Set());
+      const names = isCase ? setUp.caseClass : setUp.testClass;
+      return names.flatMap((name): ImpliedCall[] => {
+        const found = this.methodOn(file, classNode, name, new Set());
+        return found === null ? [] : [{ callee: name, target: found }];
+      });
+    });
+    return [...moduleCalls, ...classCalls];
+  }
+
+  /** The method a class declares under this name, or the nearest project base class that does. */
+  private methodOn(
+    file: BoundPythonFile,
+    classNode: PyNode,
+    name: string,
+    visited: Set<string>,
+  ): ReachedFunction | null {
+    const key = nodeId(file.file, classNode);
+    if (visited.has(key)) {
+      return null;
     }
-    return definitionsIn(test.caseClass).flatMap(
-      (definition): ImpliedCall[] => {
-        const name = field(definition, "name")?.text;
-        return isFunction(definition) &&
-          name !== undefined &&
-          test.pattern.setUpMethods.includes(name)
-          ? [{ callee: name, target: reachedFunctionOf(file, definition) }]
-          : [];
-      },
+    visited.add(key);
+    const own = definitionsIn(classNode).find(
+      (one) => isFunction(one) && field(one, "name")?.text === name,
     );
+    if (own !== undefined) {
+      return reachedFunctionOf(file, own);
+    }
+    const bases = field(classNode, "superclasses");
+    for (const base of bases === null ? [] : children(bases)) {
+      const project = this.projectClassOf(base, file);
+      const found =
+        project === null
+          ? null
+          : this.methodOn(project.file, project.node, name, visited);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
   }
 
   private isSkipped(file: BoundPythonFile, test: CollectedTest): boolean {
-    const markers = [
-      ...decoratorsOf(test.node),
-      ...enclosingClasses(test.node).flatMap((classNode) => [
-        ...decoratorsOf(classNode),
-        ...markerVariable(file, classNode, test.pattern),
-      ]),
-      ...markerVariable(file, file.root, test.pattern),
-    ];
-    return markers.some((marker) =>
+    return markersOn(file, test).some((marker) =>
       test.pattern.skipDecorators.includes(
         dottedOrigin(calleeOf(marker), file) ?? "",
       ),
@@ -687,6 +746,18 @@ export class PythonTestIndex {
   private displayPathOf(file: string): string {
     return this.context.filesByPath.get(file)?.displayPath ?? file;
   }
+}
+
+/** The markers that apply to a test: its decorators, each class's around it, and every `pytestmark` in scope. */
+function markersOn(file: BoundPythonFile, test: CollectedTest): PyNode[] {
+  return [
+    ...decoratorsOf(test.node),
+    ...enclosingClasses(test.node).flatMap((classNode) => [
+      ...decoratorsOf(classNode),
+      ...markerVariable(file, classNode, test.pattern),
+    ]),
+    ...markerVariable(file, file.root, test.pattern),
+  ];
 }
 
 function functionKey(fn: ReachedFunction): string {
