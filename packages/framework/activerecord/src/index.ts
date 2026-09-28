@@ -255,6 +255,7 @@ export function activeRecordStorage(
         plural: ["has_many", "has_and_belongs_to_many"],
         classNameKeyword: "class_name",
       },
+      scopes: ["scope"],
       storageSystem: options.storageSystem,
     },
   ];

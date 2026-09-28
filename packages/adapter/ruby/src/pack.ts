@@ -30,6 +30,15 @@ export function inflectionsIn(packs: readonly RubyPack[]): RbInflections {
   return pooled;
 }
 
+/** Every scope call the run's storage patterns declare, pooled. */
+export function scopeCallsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
+  return new Set(
+    packs.flatMap((pack) =>
+      (pack.storage ?? []).flatMap((pattern) => pattern.scopes ?? []),
+    ),
+  );
+}
+
 /** Every body block the run's packs declare, pooled, with each optional flag defaulted to false. */
 export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
   const pooled = new Map<string, BodyBlockKind>();
@@ -85,6 +94,184 @@ export interface RubyPack {
   inflections?: RbInflections;
   /** Methods the library offers that hand back the argument at `argument`, keyed on the module the callee comes from. */
   transparentWrappers?: UnwrapsByName[];
+  /** How the library builds test records from named factories. */
+  factories?: RbFactories[];
+  /** How a class-based test runner declares tests, as Minitest does. */
+  testClasses?: RbTestClasses[];
+  /** How the library writes a test, so each one becomes a `test` unit a PRD scenario can list under `coveredBy`. */
+  tests?: RbTestCases[];
+}
+
+/**
+ * Tests written as nested blocks, the way RSpec writes them:
+ * `describe Order do; it "cancels" do ... end; end`. Each example is a
+ * `test` unit whose name is its group titles and its own. Every call
+ * listed here is one the library defines; the adapter reads the nesting.
+ */
+export interface RbTestCases {
+  /** Base names of the files the runner loads, where `*` matches any run of characters: `*_spec.rb`. */
+  filePatterns: string[];
+  /** The constant a top-level group may be opened on, `RSpec` in `RSpec.describe`. */
+  receiver: string;
+  /** Calls that open a group of examples: `describe`, `context`. */
+  groupNames: string[];
+  /** Calls that open a group whose examples do not run: `xdescribe`, `xcontext`. */
+  skippedGroupNames: string[];
+  /** Calls that open a group other groups include by name, whose examples belong to whoever includes them: `shared_examples`. */
+  sharedGroupNames: string[];
+  /** Calls that include a shared group by name into the group they are written in: `it_behaves_like`, `include_context`. */
+  sharedIncludes: RbSharedInclude[];
+  /** Calls that declare one example: `it`, `specify`. */
+  exampleNames: string[];
+  /** Calls that declare an example that does not run: `xit`, `skip`. */
+  skippedExampleNames: string[];
+  /** Calls that, written as a statement in an example or a `before` block, mark the example as not run: `skip`, `pending`. */
+  skipStatements: string[];
+  /** Metadata keys that mark a group or an example as not run, written `:skip` or `skip: true`. */
+  skipMetadata: string[];
+  /** Hooks whose block runs before every example in the group: `before`. */
+  beforeHooks: string[];
+  /** Calls that define a value an example reads by name, run when it is first read: `let`. */
+  lazyValues: string[];
+  /** The same, run before every example whether it reads the value or not: `let!`. */
+  eagerValues: string[];
+  /** Calls that define the group's subject, lazily and eagerly: `subject`, `subject!`. */
+  subjectNames: { lazy: string[]; eager: string[] };
+  /** Calls an example makes on itself to read the subject: `subject`, `is_expected`. */
+  subjectReads: string[];
+  /** The one of those that gives back the subject itself: `subject`. A group given a class has that class's `new` as its subject unless it says otherwise. */
+  subjectValue: string;
+  /** The call that gives back the class the nearest group around was given: `described_class`. */
+  describedClass: string;
+  /**
+   * Methods the library gives an example to call on itself to check or
+   * set something up, such as `expect`, `eq` and `allow`. A call made
+   * through one is no call into project code.
+   */
+  runnerMethods: string[];
+  /** The matchers the library makes up from a predicate method, as `be_cancelled` calls `cancelled?` on what the expectation is about. */
+  predicateMatchers: RbPredicateMatcher[];
+  /** How an example states an expectation, which a predicate matcher is given to. */
+  expectations: RbExpectations;
+  /** How the library replaces something for the length of an example. */
+  mocks: RbTestMocks;
+  /** Read only these files, matched on whole path segments from the end. Left out, every file matching `filePatterns` is read. */
+  files?: string[];
+}
+
+/**
+ * Tests written as a class, the way Minitest and Rails' test cases write
+ * them: a class that extends one of `baseClassNames`, with a method per
+ * test or a `test "..." do` block per test. Each becomes a `test` unit
+ * named by the class and then the test's method name.
+ */
+export interface RbTestClasses {
+  /** Base names of the files the runner loads, where `*` matches any run of characters: `*_test.rb`. */
+  filePatterns: string[];
+  /** The library's test case classes, as a project writes them: `Minitest::Test`, `ActiveSupport::TestCase`. */
+  baseClassNames: string[];
+  /** What a test method's name starts with: `test_`. */
+  testMethodPrefix: string;
+  /** Calls that declare a test as a block, given its description: `test`. */
+  testBlockMethods: string[];
+  /** How the library turns a block test's description into the method it defines: `test_` in front, each run of spaces as `_`. */
+  blockTestName: { prefix: string; spacesAs: string };
+  /** Calls whose block runs before each test: `setup`. */
+  setupBlockMethods: string[];
+  /** Methods the runner calls before each test: `setup`. */
+  setupMethodNames: string[];
+  /** Calls that, written as a statement in a test, mark it as not run: `skip`. */
+  skipStatements: string[];
+  /** Prefixes of the checks the runner gives a test, which call no project code: `assert`, `refute`. */
+  assertionPrefixes: string[];
+  /** Calls that replace a method on the object they are called on, given its name first: `stub`, `stubs`, `expects`. */
+  stubMethods: string[];
+  /** Read only these files, matched on whole path segments from the end. */
+  files?: string[];
+}
+
+/**
+ * How a test data library builds a record from a factory it looks up by
+ * name, so a value a test builds with `create(:order)` or
+ * `Fabricate(:order)` is known to be one of the factory's class. The
+ * adapter reads the definitions wherever the run finds them, and the
+ * builds in the files it reads as tests.
+ */
+export interface RbFactories {
+  /** Calls that define a factory, given its name first: `factory`, `Fabricator`. */
+  definitionMethods: string[];
+  /** Keywords a definition gives its class under, as a constant or a string: `class`, `class_name`. */
+  classKeywords: string[];
+  /** Keywords a definition gives the factory it builds on under: `parent`, `from`. A name no factory has is read as a class. */
+  parentKeywords: string[];
+  /** Whether a definition written in another's block builds on it, as a nested FactoryBot factory does. */
+  nestedDefinitionsInherit: boolean;
+  /** Calls that build one record from the factory their first argument names. */
+  builders: RbFactoryBuilder[];
+}
+
+/** One build call: `create`, or `Fabricate.build` with `receiver` set. */
+export interface RbFactoryBuilder {
+  method: string;
+  /** The constant the call is made on, when it is made on one. */
+  receiver?: string;
+}
+
+/**
+ * A matcher the library makes up from a predicate method: a matcher
+ * written `prefix` and a name calls `methodPrefix`, that name and
+ * `methodSuffix` on the value the expectation is about, so `be_local`
+ * calls `local?` and `have_key` calls `has_key?`.
+ */
+export interface RbPredicateMatcher {
+  prefix: string;
+  methodPrefix: string;
+  methodSuffix: string;
+}
+
+/**
+ * How an example states an expectation: `expect(order).to be_open`, on
+ * the argument of a `starts` call, or `is_expected.to be_open`, on the
+ * subject through `onSubject`. `runs` are the calls given the matcher.
+ */
+export interface RbExpectations {
+  starts: string[];
+  onSubject: string;
+  runs: string[];
+}
+
+/**
+ * One way a group includes a shared group. With `nestedTitle`, the shared
+ * examples run in a group of their own titled that and then the shared
+ * group's name, as `it_behaves_like "x"` runs them under "behaves like x".
+ * Without it they run in the including group itself.
+ */
+export interface RbSharedInclude {
+  method: string;
+  nestedTitle?: string;
+}
+
+/**
+ * The library's mock spellings. `allow(Order).to receive(:cancel)`
+ * replaces one method: `targets` opens it, `expectations` joins it, and
+ * `messages` says which method. `stub_const("Order", ...)` replaces a
+ * whole constant. A double is a fake object the test hands over, and it
+ * replaces nothing the test would otherwise reach unless the test makes
+ * it the constant with `constantDoubleMethod`.
+ */
+export interface RbTestMocks {
+  /** `allow`, `expect`, `allow_any_instance_of`. */
+  targets: string[];
+  /** `to`. */
+  expectations: string[];
+  /** `receive`, `receive_messages`. */
+  messages: string[];
+  /** `stub_const`. */
+  constantStubs: string[];
+  /** `instance_double`, `class_double`. */
+  doubles: string[];
+  /** `as_stubbed_const`, which makes a double the constant it stands in for. */
+  constantDoubleMethod: string;
 }
 
 /**
@@ -200,6 +387,12 @@ export interface RbStoragePattern {
   columnArguments?: string[];
   /** The calls a model uses to declare an association with another model, when the library has them. */
   associations?: RbAssociationCalls;
+  /**
+   * The calls a model body makes to define a class method from a lambda,
+   * as `scope :recent, -> { order(:created_at) }` defines `recent`. The
+   * first argument is the method's name and the lambda after it runs.
+   */
+  scopes?: string[];
   /** Which database is behind the connection. The project decides this, so the pack passes it in. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
 }

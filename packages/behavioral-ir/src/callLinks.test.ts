@@ -11,6 +11,8 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placeReceiverClasses,
+  ReceiverClasses,
   recordParameterGaps,
   TargetPlacements,
 } from "./callLinks.js";
@@ -513,6 +515,53 @@ describe("placeCalleeParameters", () => {
     expect(callee.transitions[0]?.effects[0]).not.toHaveProperty(
       "calleeParameter",
     );
+  });
+});
+
+describe("placeReceiverClasses", () => {
+  const account = { file: "app/models/account.rb", name: "Account" };
+  const order = { file: "app/models/order.rb", name: "Order" };
+
+  it("writes the class each call was sent to, and leaves a callee sent to two classes without one", () => {
+    const test = summary({
+      name: "reviews",
+      file: "spec/account_spec.rb",
+      calls: ["account.reviewed?", "record.id", "untouched"],
+    });
+    const classes = new ReceiverClasses();
+    classes.add("account.reviewed?", account);
+    classes.add("account.reviewed?", account);
+    classes.add("record.id", account);
+    classes.add("record.id", order);
+    classes.add("record.id", account);
+    test.transitions[0]?.effects.push({
+      type: "emission",
+      event: "account.reviewed?",
+    });
+
+    placeReceiverClasses(test, classes.settled);
+
+    const effects = test.transitions[0]?.effects ?? [];
+    expect(effects[0]).toMatchObject({ receiverClass: account });
+    expect(effects[1]).not.toHaveProperty("receiverClass");
+    expect(effects[2]).not.toHaveProperty("receiverClass");
+    expect(effects[3]).toEqual({
+      type: "emission",
+      event: "account.reviewed?",
+    });
+  });
+
+  it("does nothing when no call was sent to a class", () => {
+    const test = summary({
+      name: "reviews",
+      file: "spec/account_spec.rb",
+      calls: ["account.reviewed?"],
+    });
+
+    placeReceiverClasses(test, undefined);
+    placeReceiverClasses(test, new ReceiverClasses().settled);
+
+    expect(test.transitions[0]?.effects[0]).not.toHaveProperty("receiverClass");
   });
 });
 

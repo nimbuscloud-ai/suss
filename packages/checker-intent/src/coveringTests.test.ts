@@ -101,11 +101,20 @@ function lookupOver(code: BehavioralSummary[]): CoveringTestLookup {
         : { found: true, unit: found };
     },
     subject: (spelledAs) => {
-      const units = code.filter(
+      const ofClass = code.filter(
         (one) =>
-          one.identity.name === spelledAs ||
-          (spelledAs === CANCEL_KEY && one === cancelOrder),
+          one.kind !== "test" &&
+          (one.identity.exportPath?.length ?? 0) > 1 &&
+          one.identity.exportPath?.[0] === spelledAs,
       );
+      const units =
+        ofClass.length > 0
+          ? ofClass
+          : code.filter(
+              (one) =>
+                one.identity.name === spelledAs ||
+                (spelledAs === CANCEL_KEY && one === cancelOrder),
+            );
       return units.length === 0
         ? { found: false, message: `nothing here is ${spelledAs}` }
         : {
@@ -115,6 +124,10 @@ function lookupOver(code: BehavioralSummary[]): CoveringTestLookup {
               keys: spelledAs === CANCEL_KEY ? [CANCEL_KEY] : [],
             },
             label: spelledAs,
+            classes: ofClass.map((one) => ({
+              file: one.location.file,
+              name: spelledAs,
+            })),
           };
     },
   };
@@ -205,14 +218,64 @@ describe("a scenario covered by a test", () => {
     expect(finding.message).toContain("which never reaches cancelOrder");
   });
 
-  it("says which call it could not follow when the test calls something with the subject's name", () => {
+  it("reports a test as unchecked when it calls something with the subject's name that suss could not follow", () => {
     const code = [cancelOrder, testUnit("cancels", [calls("cancelOrder")])];
-    const [finding] = check([covered("cancel", "cancels")], code).findings;
+    const result = check([covered("cancel", "cancels")], code);
 
-    expect(finding.kind).toBe("testMissesSubject");
-    expect(finding.message).toContain(
-      "which calls cancelOrder, and suss could not follow that call to cancelOrder",
+    expect(result.findings).toEqual([]);
+    expect(result.unchecked).toEqual([
+      expect.objectContaining({
+        reason: "unfollowedCall",
+        scenario: '"cancel"',
+        coveredBy: "src/orders.test.ts > cancels",
+      }),
+    ]);
+    expect(result.unchecked[0]?.detail).toContain(
+      "it calls cancelOrder, and suss could not follow that call to cancelOrder",
     );
+    expect(result.checked).toContainEqual(
+      expect.objectContaining({ covered: 0 }),
+    );
+  });
+
+  it("reports a test as unchecked when a function on its way has a call suss could not follow", () => {
+    const helper: BehavioralSummary = {
+      ...fn("prepare", "src/prepare.ts", 1),
+      gaps: [
+        {
+          type: "unfollowedCall",
+          conditions: [],
+          consequence: "unknown",
+          description: "The call to handler goes through a value",
+          callee: "handler",
+        },
+      ],
+    };
+    const code = [
+      cancelOrder,
+      helper,
+      testUnit("cancels", [calls("prepare", helper)]),
+    ];
+    const result = check([covered("cancel", "cancels")], code);
+
+    expect(result.findings).toEqual([]);
+    expect(result.unchecked[0]?.detail).toContain(
+      "it never reaches cancelOrder through the calls suss followed, and suss could not follow handler",
+    );
+  });
+
+  it("still reports a test whose calls all resolved and none reach the subject", () => {
+    const code = [
+      cancelOrder,
+      refund,
+      testUnit("cancels", [calls("refundOrder", refund)]),
+    ];
+    const result = check([covered("cancel", "cancels")], code);
+
+    expect(result.findings[0]?.message).toContain(
+      "which never reaches cancelOrder",
+    );
+    expect(result.unchecked).toEqual([]);
   });
 
   it("reports a test that reaches its subject only through a module it mocks, and names the mock", () => {
@@ -234,6 +297,150 @@ describe("a scenario covered by a test", () => {
     );
   });
 
+  describe("a call sent to the subject's class", () => {
+    const ACCOUNT_FILE = "app/models/account.rb";
+    const inClass = (
+      className: string,
+      name: string,
+      file: string,
+    ): BehavioralSummary => {
+      const unit = fn(`${className}.${name}`, file, 1);
+      return {
+        ...unit,
+        identity: { ...unit.identity, exportPath: [className, name] },
+      };
+    };
+    const follow = inClass("Account", "follow", ACCOUNT_FILE);
+    const reviewed = inClass(
+      "Reviewable",
+      "reviewed?",
+      "app/models/concerns/reviewable.rb",
+    );
+    const sentToAccount = (effect: Effect): Effect =>
+      ({
+        ...effect,
+        receiverClass: { file: ACCOUNT_FILE, name: "Account" },
+      }) as Effect;
+
+    it("counts a method a module the class includes gives it, called on the class", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit("reviews", [
+          sentToAccount(calls("account.reviewed?", reviewed)),
+        ]),
+      ];
+      const result = check([covered("review", "reviews", ["Account"])], code);
+
+      expect(result.findings).toEqual([]);
+      expect(result.unchecked).toEqual([]);
+    });
+
+    it("counts a finder or an attribute read on the class, which no summary is behind", () => {
+      const code = [
+        follow,
+        testUnit("finds", [
+          sentToAccount(calls("Account.find")),
+          sentToAccount(calls("account.username")),
+        ]),
+      ];
+      const result = check([covered("find", "finds", ["Account"])], code);
+
+      expect(result.findings).toEqual([]);
+      expect(result.unchecked).toEqual([]);
+    });
+
+    it("skips a call sent to another class, and a mock of the method by name alone stops the one sent to the subject's class", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit(
+          "reviews",
+          [
+            {
+              ...calls("order.cancel"),
+              receiverClass: { file: "app/models/order.rb", name: "Order" },
+            } as Effect,
+            sentToAccount(calls("account.reviewed?", reviewed)),
+          ],
+          {
+            mocks: [
+              {
+                name: "reviewed?",
+                written: "allow(account).to receive(:reviewed?)",
+              },
+            ],
+          },
+        ),
+      ];
+      const [finding] = check(
+        [covered("review", "reviews", ["Account"])],
+        code,
+      ).findings;
+
+      expect(finding.kind).toBe("testMissesSubject");
+      expect(finding.message).toContain(
+        "only through a call its mocks replace (allow(account).to receive(:reviewed?)), by account.reviewed?",
+      );
+    });
+
+    it("counts a test that reaches two of the class's methods", () => {
+      const unfollow = inClass("Account", "unfollow", ACCOUNT_FILE);
+      const code = [
+        follow,
+        unfollow,
+        testUnit("follows", [
+          calls("account.follow", follow),
+          calls("account.unfollow", unfollow),
+        ]),
+      ];
+      const result = check([covered("follow", "follows", ["Account"])], code);
+
+      expect(result.findings).toEqual([]);
+    });
+
+    it("does not count a call on the class toward a subject that is one of its methods", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit("reviews", [
+          sentToAccount(calls("account.reviewed?", reviewed)),
+        ]),
+      ];
+      const [finding] = check(
+        [covered("review", "reviews", ["Account.follow"])],
+        code,
+      ).findings;
+
+      expect(finding.kind).toBe("testMissesSubject");
+    });
+
+    it("does not count the same call when a mock replaces the class", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit(
+          "reviews",
+          [sentToAccount(calls("account.reviewed?", reviewed))],
+          {
+            mocks: [
+              { module: ACCOUNT_FILE, written: 'stub_const("Account", ...)' },
+            ],
+          },
+        ),
+      ];
+      const [finding] = check(
+        [covered("review", "reviews", ["Account"])],
+        code,
+      ).findings;
+
+      expect(finding.kind).toBe("testMissesSubject");
+      expect(finding.message).toContain(
+        "only through a call its mocks replace",
+      );
+    });
+  });
+
   it("reports a skipped test without asking what it reaches", () => {
     const code = [
       cancelOrder,
@@ -244,7 +451,7 @@ describe("a scenario covered by a test", () => {
     const [finding] = check([covered("cancel", "cancels")], code).findings;
 
     expect(finding.kind).toBe("coveringTestSkipped");
-    expect(finding.message).toContain("marked skip or todo");
+    expect(finding.message).toContain("marked to be skipped");
   });
 
   it("falls back on the boundaries the PRD links to when about is empty", () => {

@@ -65,7 +65,7 @@ How inputs arrive and what counts as output depend on the kind. A handler takes 
 
 **`module-init`** is what a source file does at import time, one per file, and it is always a consumer: it reads channels other units declare. **`scheduled-callback`** is a function the runtime calls at some later point, and what it reaches is recorded on its own summary.
 
-**`test`** is one test case, named by its suite titles and its own joined with ` > `, so a PRD scenario can list it under `coveredBy`. It has no boundary binding and pairs with nothing. A test pack records `metadata.test`: `skipped` when the case is marked skip or todo, `mocks` for what the test replaces before it runs, and `unresolvedTitle` for a title that is not a string the adapter could read.
+**`test`** is one test case, named by its suite titles and its own joined with ` > `, so a PRD scenario can list it under `coveredBy`. It has no boundary binding and pairs with nothing. A test pack records `metadata.test`: `skipped` when the test is marked to be skipped, `mocks` for what the test replaces before it runs, and `unresolvedTitle` for a title that is not a string the adapter could read.
 
 The union is closed, so a pack cannot add a kind. The rest of extraction makes assumptions about each kind, and a new framework that needs a new kind needs an IR change first.
 
@@ -283,6 +283,7 @@ type Effect = ({ count?: number }) & (
       argsDeclaredAt?: Record<string, DeclarationPlace>;
       argsSummary?: Record<string, string>;
       calleeParameter?: number;
+      receiverClass?: { file: string; name: string };
       preconditions?: Predicate[] }
   | { type: "emission"; event: string; payload?: unknown }
   | { type: "stateChange"; variable: string; newValue?: unknown }
@@ -303,7 +304,7 @@ A transition lists each effect once. `count` says how many sites on that path pr
 
 **Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that something happened: a call fired, a state variable was set, an event went out. They are there for impact analysis, the kind where you want to say "this change edits a handler that writes `users`, and here is who reads `users`".
 
-On an `invocation`, `summary` is the summary this call reaches, the one whose unit is declared where the type checker resolved `callee`. It is absent when the callee is declared outside the run, when more than one summary describes that unit, or when nothing resolved and no summary in the same file has that name. `declaredAt` and `argsDeclaredAt` are the raw declaration places an adapter sets while extracting; naming turns them into `summary` and `argsSummary` and removes them, so you see them only in the extraction cache. `calleeParameter` is set when the callee is one of this unit's own parameters, and gives its index among them, so a caller that passes a function into that parameter reaches this call through it.
+On an `invocation`, `summary` is the summary this call reaches, the one whose unit is declared where the type checker resolved `callee`. It is absent when the callee is declared outside the run, when more than one summary describes that unit, or when nothing resolved and no summary in the same file has that name. `declaredAt` and `argsDeclaredAt` are the raw declaration places an adapter sets while extracting; naming turns them into `summary` and `argsSummary` and removes them, so you see them only in the extraction cache. `calleeParameter` is set when the callee is one of this unit's own parameters, and gives its index among them, so a caller that passes a function into that parameter reaches this call through it. `receiverClass` is the file and qualified name of the class the call was sent to: the receiver's class, or the class itself for a class method. It is set when the adapter settled the receiver on a class the run defines, even when the method comes from a module the class includes or from the library, as `Account.find(id)` does. Only a test unit's calls have it, and the intent check reads it to decide whether a test reached the class a scenario is about.
 
 **`interaction` effects** are the typed boundary crossings. Each one includes the `BoundaryBinding` of the resource it reaches, plus a payload discriminated on `class`:
 

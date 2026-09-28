@@ -164,7 +164,22 @@
       "path": "packages/framework/vitest/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/pytest/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/pg-ruby/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/rspec/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/factory-bot/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/fabrication/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/minitest/tsconfig.typecheck.json"
     },
     {
       "path": "packages/framework/prisma/tsconfig.typecheck.json"

@@ -58,6 +58,8 @@ import {
 } from "./scope.js";
 import { methodStorage, type RbStorageOptions } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
+import { testCaseUnits, testPatternsIn } from "./testCases.js";
+import { testClassPatternsIn, testClassUnits } from "./testClasses.js";
 import { typeShapeFromNode } from "./typeShape.js";
 
 import type {
@@ -97,6 +99,7 @@ import type {
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
 import type { ClassInfo } from "./scope.js";
+import type { SharedGroupIndex } from "./testSharedGroups.js";
 import type { TypeReadContext } from "./typeShape.js";
 
 /**
@@ -158,6 +161,8 @@ export interface DiscoveryOptions extends BodyReadOptions {
   cache: FileCache;
   /** Called once for each discovered unit whose body is a method, so the reach walk can start from it. */
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
+  /** The shared groups the run's test files define, when a pack reads tests. */
+  sharedGroups?: SharedGroupIndex | undefined;
 }
 
 /** The method behind a discovered unit, and where it is, so the reach walk can start there as it does at any `def`. */
@@ -290,6 +295,37 @@ export async function discoverUnits(
       }
     }
   }
+  const absoluteFile = options.absoluteFile ?? options.filePath;
+  units.push(
+    ...testCaseUnits(root, testPatternsIn(options.packs), {
+      filePath: options.filePath,
+      absoluteFile,
+      displayPathOf: options.displayPathOf ?? ((file) => file),
+      facts: options.facts,
+      inheritedMethods: options.inheritedMethods,
+      shared: options.sharedGroups,
+      onSeed: (raw, block, file) =>
+        options.onReachSeed?.(raw, {
+          file,
+          node: block,
+          enclosingQualifiedName: null,
+        }),
+    }),
+    ...testClassUnits(root, testClassPatternsIn(options.packs), {
+      filePath: options.filePath,
+      absoluteFile,
+      displayPathOf: options.displayPathOf ?? ((file) => file),
+      facts: options.facts,
+      inheritedMethods: options.inheritedMethods,
+      onSeed: () => undefined,
+      onClassSeed: (raw, node, qualifiedName) =>
+        options.onReachSeed?.(raw, {
+          file: absoluteFile,
+          node,
+          enclosingQualifiedName: qualifiedName,
+        }),
+    }),
+  );
   return units;
 }
 

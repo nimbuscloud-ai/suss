@@ -49,6 +49,7 @@ export const coveragePackages = [
   ["packages/framework/redis", "redis"],
   ["packages/framework/zustand", "zustand"],
   ["packages/framework/vitest", "vitest"],
+  ["packages/framework/pytest", "pytest"],
   ["packages/framework/drizzle", "drizzle"],
   ["packages/framework/mongoose", "mongoose"],
   ["packages/framework/typeorm", "typeorm"],
@@ -75,6 +76,10 @@ export const coveragePackages = [
   ["packages/framework/rails", "rails"],
   ["packages/framework/bigquery-ruby", "bigquery-ruby"],
   ["packages/framework/pg-ruby", "pg-ruby"],
+  ["packages/framework/rspec", "rspec"],
+  ["packages/framework/factory-bot", "factory-bot"],
+  ["packages/framework/fabrication", "fabrication"],
+  ["packages/framework/minitest", "minitest"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],

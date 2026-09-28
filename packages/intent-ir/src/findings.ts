@@ -34,7 +34,7 @@ export const IntentFindingKindSchema = z.enum([
   // it lists exists, runs, and reaches what the scenario is about.
   "missingCoveringTest", // coveredBy lists a test no summary here is
   "testMissesSubject", // the test never reaches the subject, or reaches it only through a mock
-  "coveringTestSkipped", // the test is marked skip or todo, so it does not run
+  "coveringTestSkipped", // the test is marked to be skipped, so it does not run
   // The same coverage question asked the other way: which declared
   // behaviour has nobody written a reason for.
   "undescribedOutcome", // a declared outcome no PRD scenario links to (info)

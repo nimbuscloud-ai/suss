@@ -1,0 +1,9 @@
+{
+  "factory": "factory_bot: defines a factory by name, inside FactoryBot.define or another factory",
+  "class": "language: Ruby's keyword for a class, which the adapter reads as syntax; also factory_bot: the keyword on factory that gives the class it builds",
+  "parent": "factory_bot: the keyword on factory that gives the factory it builds on",
+  "create": "factory_bot: builds a record from a factory and saves it",
+  "build": "factory_bot: builds a record from a factory without saving it",
+  "build_stubbed": "factory_bot: builds a record from a factory that acts as saved",
+  "FactoryBot": "factory_bot: the module the build methods are called on outside a spec that includes its syntax methods"
+}

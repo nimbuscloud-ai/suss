@@ -17,6 +17,7 @@ import {
   answersFor,
   calleeOutcomeOf,
   calleeOutcomes,
+  classMemberName,
   couldBeSettled,
 } from "@suss/resolution";
 
@@ -26,6 +27,7 @@ import { classBehind } from "../baseClass.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
 import {
   classLocalsAt,
+  nodeId,
   readKey,
   readsOffClassItself,
 } from "../facts/values.js";
@@ -44,7 +46,7 @@ import type { RbNode } from "../parser.js";
 /** A method in this run, and the export path its summary gets. */
 export interface ReachedFunction {
   readonly file: string;
-  /** The `method` node. */
+  /** The `method` node, or the lambda a scope call defines a class method with. */
   readonly node: RbNode;
   readonly name: string;
   /** `[name]` for a method defined outside any class, `[qualifiedName, name]` for one written in a class body. */
@@ -53,14 +55,24 @@ export interface ReachedFunction {
   readonly enclosingQualifiedName: string | null;
 }
 
-export type CalleeResolution =
+/** A class the run defines, by the value facts' key for its node and its qualified name. */
+export interface SettledClass {
+  readonly key: string;
+  readonly name: string;
+}
+
+export type CalleeResolution = (
   | { readonly kind: "followed"; readonly target: ReachedFunction }
   | {
       readonly kind: "stopped";
       readonly reason: UnfollowedReason;
       /** Set on a call on `self` the resolver could not settle, which the link step may still match by name in the caller's file. */
       readonly matchByName?: true;
-    };
+    }
+) & {
+  /** The class the receiver settled on, or the class itself for a class method, whether or not the method was found. */
+  readonly onClass?: SettledClass;
+};
 
 export interface ReachContext {
   readonly lookup: AncestorLookup;
@@ -188,6 +200,32 @@ export function resolveCallee(
     return resolveImplicitSelf(spelling.name, site, ctx);
   }
   return asCallee(spelling, outcomeFor(spelling.key, ctx, read), site, ctx);
+}
+
+/**
+ * A method called on a value the source writes, with no call written for
+ * it, as an RSpec predicate matcher calls `local?` on what its
+ * expectation is about. The value goes to the rules the way a written
+ * receiver does.
+ */
+export function resolveMethodOn(
+  receiver: RbNode,
+  method: string,
+  site: CallSite,
+  ctx: ReachContext,
+): CalleeResolution {
+  const key = readKey(site.file, receiver, site.method);
+  const spelling: ReceiverSpelling = {
+    kind: "receiver",
+    key,
+    method,
+    onClassItself: readsOffClassItself(
+      receiver,
+      key,
+      classLocalsFor(receiver, site),
+    ),
+  };
+  return asCallee(spelling, outcomeFor(key, ctx), site, ctx);
 }
 
 /**
@@ -361,12 +399,55 @@ function methodOnObject(
   if (qualifiedName === undefined) {
     return NO_DECLARATION;
   }
+  return {
+    ...methodOfClass(spelling, qualifiedName, ctx),
+    onClass: { key: objectKey, name: qualifiedName },
+  };
+}
+
+function methodOfClass(
+  spelling: ReceiverSpelling,
+  qualifiedName: string,
+  ctx: ReachContext,
+): CalleeResolution {
   if (!spelling.onClassItself) {
     return methodOnAncestryOf(qualifiedName, spelling.method, ctx);
   }
-  return spelling.method === "new"
-    ? methodOnAncestryOf(qualifiedName, "initialize", ctx)
-    : singletonMethodOn(qualifiedName, spelling.method, ctx);
+  if (spelling.method === "new") {
+    return methodOnAncestryOf(qualifiedName, "initialize", ctx);
+  }
+  const written = singletonMethodOn(qualifiedName, spelling.method, ctx);
+  return written.kind === "followed"
+    ? written
+    : (scopeOn(qualifiedName, spelling.method, ctx) ?? written);
+}
+
+/**
+ * The class method a scope call defines, which the value facts record as
+ * a property holding the lambda. A subclass inherits it, and a scope in a
+ * concern's `included` block is defined on the class that includes it,
+ * so the lookup goes through the whole ancestry.
+ */
+function scopeOn(
+  qualifiedName: string,
+  method: string,
+  ctx: ReachContext,
+): CalleeResolution | null {
+  const spelled = classMemberName(method);
+  const bodies = (ctx.ancestries.get(qualifiedName) ?? []).flatMap((entry) =>
+    entry.type === "bodies" ? entry.blocks : [],
+  );
+  for (const body of bodies) {
+    const classKey = nodeId(body.file, body.info.node);
+    for (const row of ctx.facts.lookup("holdsProperty", 0, classKey)) {
+      const target =
+        row[1] === spelled ? ctx.definitions.get(String(row[2])) : undefined;
+      if (target !== undefined) {
+        return followed(target);
+      }
+    }
+  }
+  return null;
 }
 
 /**

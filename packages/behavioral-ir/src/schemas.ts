@@ -526,6 +526,15 @@ export const EffectSchema = z.discriminatedUnion("type", [
      * this call through it.
      */
     calleeParameter: z.number().optional(),
+    /**
+     * The class the call was sent to: the receiver's class, or the class
+     * itself for a class method. An adapter sets it when it settled the
+     * receiver on a class the run defines, whether or not it found the
+     * method, so a test that calls a method a concern or the library
+     * gives that class still says which class it used. Only a test
+     * unit's calls have it.
+     */
+    receiverClass: z.object({ file: z.string(), name: z.string() }).optional(),
     args: z.array(z.unknown()),
     async: z.boolean(),
     /** Absent for a call that always fires within its transition. */

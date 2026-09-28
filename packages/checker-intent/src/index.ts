@@ -140,13 +140,19 @@ export type CheckedIntent = CheckedBoundaryIntent | CheckedPrd;
  * Intent that was loaded and not compared, and why. `unkeyable` is a
  * whole document whose boundary cannot be paired. `unreadValue` is one
  * `from` source the code gave no answer to compare against.
+ * `unfollowedCall` is a covering test that never reaches its subject
+ * through the calls suss followed, and makes calls suss did not follow.
  */
 export interface UncheckedIntent {
   /** The intent doc's `name` (boundary) or `title` (prd). */
   intent: string;
-  reason: "unkeyable" | "unreadValue";
+  reason: "unkeyable" | "unreadValue" | "unfollowedCall";
   /** The outcome the claim is on, for a claim narrower than the document. */
   outcomeId?: string;
+  /** The scenario the claim is on, by its title or its position, for a covering test. */
+  scenario?: string;
+  /** The covering test, as the scenario lists it. */
+  coveredBy?: string;
   /** Human-readable explanation, render-ready. */
   detail: string;
 }
@@ -213,7 +219,9 @@ export function checkIntentAgreement(
     unchecked.push(...result.unchecked);
   }
   if (tests !== undefined) {
-    findings.push(...checkScenarioTests(claims, tests));
+    const scenarioTests = checkScenarioTests(claims, tests);
+    findings.push(...scenarioTests.findings);
+    unchecked.push(...scenarioTests.unchecked);
   }
   findings.push(...checkOutcomesDescribed(intents));
 
@@ -231,24 +239,31 @@ interface ScenarioClaim {
 /**
  * Every covering test in every PRD, checked together so the reach
  * question runs once. A scenario counts as covered when each test it
- * lists passes.
+ * lists passes. A test suss could not follow far enough to tell is
+ * reported as unchecked, and its scenario is not counted as covered.
  */
 function checkScenarioTests(
   claims: readonly ScenarioClaim[],
   tests: CoveringTestLookup,
-): IntentFinding[] {
+): { findings: IntentFinding[]; unchecked: UncheckedIntent[] } {
   const verdicts = checkCoveringTests(
     claims.map((one) => one.claim),
     tests,
   );
   const failed = new Set<string>();
   const findings: IntentFinding[] = [];
+  const unchecked: UncheckedIntent[] = [];
   for (const [at, verdict] of verdicts.entries()) {
-    if (verdict.kind === "finding") {
-      const { claim, checked, scenario } = claims[at];
-      failed.add(`${checked.intent}\u0000${scenario}`);
-      findings.push(...withProvenance([verdict.finding], claim.prd.source));
+    if (verdict.kind === "covered") {
+      continue;
     }
+    const { claim, checked, scenario } = claims[at];
+    failed.add(`${checked.intent}\u0000${scenario}`);
+    if (verdict.kind === "finding") {
+      findings.push(...withProvenance([verdict.finding], claim.prd.source));
+      continue;
+    }
+    unchecked.push(verdict.unchecked);
   }
 
   const counted = new Set<string>();
@@ -259,7 +274,7 @@ function checkScenarioTests(
       checked.covered += 1;
     }
   }
-  return findings;
+  return { findings, unchecked };
 }
 
 /**

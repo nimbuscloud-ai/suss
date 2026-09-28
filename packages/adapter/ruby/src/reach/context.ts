@@ -17,6 +17,7 @@ import {
   methodsDefinedIn,
   NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
+  scopesDefinedIn,
 } from "../ast.js";
 import { createConstantFileCache } from "../constantPath.js";
 import { nodeId } from "../facts/values.js";
@@ -38,6 +39,7 @@ export async function buildReachContext(
   bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
   dynamicNames: DynamicNames = new Map(),
   loaders: readonly RbLoaderPattern[] = [],
+  scopeCalls: ReadonlySet<string> = new Set(),
 ): Promise<ReachContext> {
   const blocksByQualifiedName = new Map<string, ReachedBody[]>();
   const classes: { file: string; info: ReachedBody["info"] }[] = [];
@@ -76,6 +78,28 @@ export async function buildReachContext(
         name,
         exportPath: owner === null ? [name] : [owner, name],
         enclosingQualifiedName: owner,
+      });
+    }
+  }
+  // A scope's lambda runs as the class method it defines.
+  for (const { file, info } of classes) {
+    const body = info.bodyNode;
+    const scopes =
+      body === null
+        ? []
+        : scopesDefinedIn(
+            body,
+            info.node.type === "module",
+            bodyBlocks,
+            scopeCalls,
+          );
+    for (const { name, lambda } of scopes) {
+      definitions.set(nodeId(file, lambda), {
+        file,
+        node: lambda,
+        name,
+        exportPath: [info.qualifiedName, name],
+        enclosingQualifiedName: info.qualifiedName,
       });
     }
   }

@@ -2,8 +2,8 @@
  * Finds the summaries a PRD's `coveredBy` and `about` spellings mean,
  * for the intent pass in @suss/checker-intent to check.
  *
- * A test is spelled the way the runner prints it, the file and then its
- * titles joined with ` > `. The file goes through `filesMatching`, so a
+ * A test is spelled the way the runner prints it, which `toCoveringTest`
+ * splits into the file and its titles. The file goes through `filesMatching`, so a
  * repo-relative path matches a summary written relative to its package,
  * and the titles have to equal the test unit's name. A subject goes
  * through the same resolver `suss ask` uses.
@@ -12,12 +12,12 @@
 import { summaryIdentifier } from "@suss/behavioral-ir";
 import { readCallFacts } from "@suss/checker";
 import { loadIntentDirectory } from "@suss/contract-intent";
-import { TEST_TITLE_SEPARATOR } from "@suss/intent-ir";
+import { NODE_ID_SEPARATOR, TEST_TITLE_SEPARATOR } from "@suss/intent-ir";
 
-import { functionsSpelled } from "./reachTarget.js";
+import { functionsSpelled, reachTargetOfUnits } from "./reachTarget.js";
 import { filesMatching } from "./target.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, ReceiverClass } from "@suss/behavioral-ir";
 import type { CallFacts } from "@suss/checker";
 import type {
   CoveringTestLookup,
@@ -44,8 +44,24 @@ export function coveringTestLookup(
   const subjects = new Map<string, FoundSubject>();
   const subjectSpelled = (spelledAs: string): FoundSubject => {
     const found = functionsSpelled(spelledAs, code, factsOnce());
-    return found.found
-      ? { found: true, target: found.target, label: found.label }
+    if (found.found) {
+      return {
+        found: true,
+        target: found.target,
+        label: found.label,
+        classes: found.matched === "file" ? classesOf(found.units) : [],
+      };
+    }
+    const ofClass = code.filter(
+      (unit) => unit.kind !== "test" && classOf(unit)?.name === spelledAs,
+    );
+    return ofClass.length > 0
+      ? {
+          found: true,
+          target: reachTargetOfUnits(ofClass),
+          label: spelledAs,
+          classes: classesOf(ofClass),
+        }
       : { found: false, message: found.headline };
   };
   return {
@@ -59,6 +75,26 @@ export function coveringTestLookup(
       return known;
     },
   };
+}
+
+/** The class a unit is a method of, by its file and the export path before the method's name. */
+function classOf(unit: BehavioralSummary): ReceiverClass | null {
+  const path = unit.identity.exportPath ?? [];
+  return path.length > 1
+    ? { file: unit.location.file, name: path.slice(0, -1).join("::") }
+    : null;
+}
+
+/** The classes some units are methods of, each once. */
+function classesOf(units: ReadonlyArray<BehavioralSummary>): ReceiverClass[] {
+  const byKey = new Map<string, ReceiverClass>();
+  for (const unit of units) {
+    const one = classOf(unit);
+    if (one !== null) {
+      byKey.set(`${one.file}#${one.name}`, one);
+    }
+  }
+  return [...byKey.values()];
 }
 
 /**
@@ -97,6 +133,13 @@ function withoutWorkspace(file: string): {
     : { workspace: file.slice(0, at), file: file.slice(at + 2) };
 }
 
+/** A test's name written the way the author wrote the claim, so a pytest author sees node ids. */
+function spelledLike(spelled: CoveringTestSpelling, name: string): string {
+  return spelled.spelledAs.includes(TEST_TITLE_SEPARATOR)
+    ? name
+    : name.split(TEST_TITLE_SEPARATOR).join(NODE_ID_SEPARATOR);
+}
+
 function testSpelled(
   spelled: CoveringTestSpelling,
   tests: ReadonlyArray<BehavioralSummary>,
@@ -105,7 +148,7 @@ function testSpelled(
     return {
       found: false,
       message:
-        "and these summaries have no tests in them; extract the test files with a test pack, such as -f vitest",
+        "and these summaries have no tests in them; extract the test files with a test pack: -f vitest, -f pytest or -f rspec",
     };
   }
 
@@ -136,7 +179,9 @@ function testSpelled(
     };
   }
 
-  const near = inFile.slice(0, TESTS_LISTED).map((test) => test.identity.name);
+  const near = inFile
+    .slice(0, TESTS_LISTED)
+    .map((test) => spelledLike(spelled, test.identity.name));
   return {
     found: false,
     message: `and no test in ${file} has that title. Tests there: ${near.join("; ")}${inFile.length > TESTS_LISTED ? `, and ${inFile.length - TESTS_LISTED} more` : ""}`,

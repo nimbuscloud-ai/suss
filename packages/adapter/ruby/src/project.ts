@@ -21,6 +21,7 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placeReceiverClasses,
   recordParameterGaps,
   summaryIdFromParts,
   unfollowedCallGap,
@@ -33,6 +34,7 @@ import {
   createTimer,
   extractionConfigStamp,
   KeptParses,
+  matchesTestFileName,
   moduleInitStructure,
   noopTimer,
   runDigest,
@@ -78,7 +80,7 @@ import {
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitRequireFacts } from "./facts.js";
 import { moduleExportUnits, settleRubyModules } from "./moduleSurface.js";
-import { bodyBlocksIn, inflectionsIn } from "./pack.js";
+import { bodyBlocksIn, inflectionsIn, scopeCallsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 import {
   EVERY_ARGLESS_CALL,
@@ -100,6 +102,19 @@ import {
   watchReachContext,
 } from "./reuse.js";
 import { walkDefinitions } from "./scope.js";
+import {
+  emitGroupFacts,
+  exampleReads,
+  registerTestFileNames,
+  testPatternsIn,
+} from "./testCases.js";
+import { classTestRunAt, testClassPatternsIn } from "./testClasses.js";
+import { emitFactoryFacts, factoriesIn } from "./testFactories.js";
+import {
+  emitSharedGroupBinds,
+  type PatternedFile,
+  SharedGroupIndex,
+} from "./testSharedGroups.js";
 import {
   bindEvaluator,
   forgetEvaluations,
@@ -129,7 +144,12 @@ import type {
 } from "@suss/resolution";
 import type { BodyBlocks, Range } from "./ast.js";
 import type { ReachSeed } from "./discovery.js";
-import type { RbAssociationCalls, RbInflections, RubyPack } from "./pack.js";
+import type {
+  RbAssociationCalls,
+  RbInflections,
+  RbTestCases,
+  RubyPack,
+} from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { ReachedUnits, Seed } from "./reach/closure.js";
 import type {
@@ -260,23 +280,35 @@ export class RunFacts {
   readonly db: Database;
   readonly parsed: EvaluatedFile[] = [];
   readonly bodyBlocks: BodyBlocks;
+  readonly scopeCalls: ReadonlySet<string>;
   private readonly packs: readonly RubyPack[];
+  private readonly testPatterns: readonly RbTestCases[];
   private readonly associationCalls: RbAssociationCalls[];
   private readonly inflections: RbInflections;
   private readonly definitions = new Map<string, RbNode>();
   private readonly constants: FileConstants[] = [];
+  private readonly testFiles: PatternedFile[] = [];
+  /** The shared groups the run's test files define, once every file is in. Undefined when no pack reads tests. */
+  sharedGroups: SharedGroupIndex | undefined;
 
   constructor(db: Database, packs: readonly RubyPack[]) {
     this.db = db;
     this.packs = packs;
     this.bodyBlocks = bodyBlocksIn(packs);
+    this.scopeCalls = scopeCallsIn(packs);
+    this.testPatterns = testPatternsIn(packs);
     this.associationCalls = associationCallsIn(packs);
     this.inflections = inflectionsIn(packs);
   }
 
   addFile(file: string, root: RbNode): void {
     this.parsed.push({ file, root });
-    emitValueFacts(this.db, file, root, this.bodyBlocks);
+    const testPattern = registerTestFileNames(file, root, this.testPatterns);
+    emitValueFacts(this.db, file, root, this.bodyBlocks, this.scopeCalls);
+    if (testPattern !== null) {
+      emitGroupFacts(this.db, file, root, testPattern);
+      this.testFiles.push({ file, root, pattern: testPattern });
+    }
     emitEnvFacts(this.db, file, root);
     for (const [key, method] of methodDefinitionsIn(file, root)) {
       this.definitions.set(key, method);
@@ -297,6 +329,31 @@ export class RunFacts {
       files: this.parsed,
       definitions: this.definitions,
     });
+    if (this.testPatterns.length > 0) {
+      this.sharedGroups = new SharedGroupIndex(this.db, this.testFiles);
+      emitSharedGroupBinds(this.db, this.sharedGroups, this.testFiles);
+    }
+    const factories = factoriesIn(this.packs);
+    if (factories.length > 0) {
+      const classTests = testClassPatternsIn(this.packs);
+      const testFiles = new Set([
+        ...this.testFiles.map(({ file }) => file),
+        ...this.parsed
+          .map(({ file }) => file)
+          .filter((file) =>
+            classTests.some((one) =>
+              matchesTestFileName(file, one.filePatterns),
+            ),
+          ),
+      ]);
+      emitFactoryFacts(
+        this.db,
+        this.parsed,
+        (file) => testFiles.has(file),
+        factories,
+        this.inflections,
+      );
+    }
     bindRequestAccessors(
       this.db,
       this.packs.flatMap((pack) => pack.requestAccessors ?? []),
@@ -569,7 +626,7 @@ async function runRuby(
   // Facts are emitted for every file before discovery starts, because the
   // storage recognizer asks during discovery which file defines a constant.
   const facts = new RunFacts(db, options.packs);
-  const { parsed, bodyBlocks } = facts;
+  const { parsed, bodyBlocks, scopeCalls } = facts;
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const root = await trees.get(file);
@@ -612,7 +669,14 @@ async function runRuby(
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const declaredModules = settleRubyModules(options.modules);
   const plainContext = await timer.timeAsync("discover", () =>
-    buildReachContext(parsed, db, bodyBlocks, watchedNames, loaderPatterns),
+    buildReachContext(
+      parsed,
+      db,
+      bodyBlocks,
+      watchedNames,
+      loaderPatterns,
+      scopeCalls,
+    ),
   );
   const reachContext =
     ledger === null ? plainContext : watchReachContext(plainContext);
@@ -715,6 +779,7 @@ async function runRuby(
         displayPathOf,
         facts: db,
         onReachSeed,
+        sharedGroups: facts.sharedGroups,
       })),
       ...moduleExportUnits(root, file, {
         modules: declaredModules,
@@ -837,6 +902,7 @@ async function runRuby(
     }
   }
 
+  const classTests = testClassPatternsIn(options.packs);
   const reached = await timer.timeAsync("summarize", () =>
     reachedFunctions(seeds, {
       context: reachContext,
@@ -846,6 +912,13 @@ async function runRuby(
       bodyBlocks,
       dynamicNames: watchedNames,
       gapHandling,
+      examples: exampleReads(
+        testPatternsIn(options.packs),
+        facts.sharedGroups,
+        classTests.length === 0
+          ? null
+          : (node, file) => classTestRunAt(node, file, classTests, db),
+      ),
       ...(reuse === null ? {} : { replay: new WalkReplay(reuse, rootsByFile) }),
       ...(ledger === null ? {} : { ledger }),
     }),
@@ -911,6 +984,7 @@ async function runRuby(
       placeCalls(summary, reached.targetsByKey.get(key));
       placeArgTargets(summary, reached.argTargetsByKey.get(key));
       placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
+      placeReceiverClasses(summary, reached.receiverClassesByKey.get(key));
     }
   }
   if (ledger !== null) {

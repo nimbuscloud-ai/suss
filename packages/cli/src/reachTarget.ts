@@ -19,7 +19,7 @@ import { resolveTarget, unitsServing } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CallFacts, FunctionKey, ReachTarget } from "@suss/checker";
-import type { ResolvedTarget, TargetTouch } from "./target.js";
+import type { ResolvedTarget, TargetKind, TargetTouch } from "./target.js";
 
 export type SpelledFunctions =
   | {
@@ -27,6 +27,10 @@ export type SpelledFunctions =
       target: ReachTarget;
       /** The subject's label in the answer. */
       label: string;
+      /** What the spelling matched: a file, a unit, a boundary and so on, or `name` for a bare function name. */
+      matched: TargetKind | "name";
+      /** The units the spelling picked out, empty for a boundary. */
+      units: ReadonlyArray<BehavioralSummary>;
     }
   | { found: false; headline: string };
 
@@ -47,6 +51,8 @@ export function functionsSpelled(
       found: true,
       target: reachTargetOf(resolution.target),
       label: resolution.target.touches[0]?.touched.label ?? spec,
+      matched: "boundary",
+      units: [],
     };
   }
 
@@ -83,6 +89,8 @@ export function functionsSpelled(
       target.functions.length === 1
         ? summaryIdentifier(representativeUnit(facts, target.functions[0]))
         : spec,
+    matched: resolution.matched ? resolution.target.kind : "name",
+    units,
   };
 }
 
@@ -131,7 +139,7 @@ export function reachTargetOfTouches(
 }
 
 /** The reach target for some units: their functions, and the exports they provide. */
-function reachTargetOfUnits(
+export function reachTargetOfUnits(
   units: ReadonlyArray<BehavioralSummary>,
 ): ReachTarget {
   const keys = new Set<string>();

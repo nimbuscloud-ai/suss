@@ -1,0 +1,38 @@
+kind: prd
+title: Cancel an order
+purpose: A customer cancels an order they no longer want.
+audience: customers
+scenarios:
+  - title: cancelled
+    when: a customer cancels an order
+    expect: the order is cancelled
+    coveredBy: spec/models/order_spec.rb > Order > cancel > marks the order cancelled
+    about: cancel
+  - title: renamed test
+    when: a customer cancels an order again
+    expect: nothing changes
+    coveredBy: spec/models/order_spec.rb > Order > cancel > cancels an order twice
+    about: cancel
+  - title: wrong subject
+    when: a refund follows a cancel
+    expect: the payment goes back
+    coveredBy: spec/models/order_spec.rb > Order > cancel > refunds the payment
+    about: cancel
+  - title: skipped
+    when: an order is cancelled twice
+    expect: the second cancel does nothing
+    coveredBy: spec/models/order_spec.rb > Order > cancel > cancels twice without harm
+    about: cancel
+  - title: mocked
+    when: a checkout fails
+    expect: the order is cancelled
+    coveredBy: spec/services/checkout_spec.rb > Checkout > cancels on a failed checkout
+    about: cancel
+  - title: through a fixture
+    when: a cancelled order is read back
+    expect: it says it is cancelled
+    coveredBy: spec/models/order_spec.rb > Order > a cancelled order > reads back as cancelled
+    about: cancel
+  - title: nothing yet
+    when: an order that shipped is cancelled
+    expect: the customer is told it is too late
