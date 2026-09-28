@@ -254,7 +254,7 @@ suss extract -f express -f vitest --intent intent/ -o .suss/code.json
 suss check --dir .suss --intent intent/
 ```
 
-`--intent` on `extract` hands the vitest pack the test files the PRDs list, so the run reads those and no others. The check then reports a listed test that is gone or renamed, one marked skip or todo, and one whose calls never reach the route, or reach it only through something the test replaced with `vi.mock`. The [intent format](/reference/intent-format#covering-tests) says how a test is spelled and what counts as reaching.
+`--intent` on `extract` hands the vitest pack the test files the PRDs list, so the run reads those and no others. The check then reports a listed test that is gone or renamed, one marked skip or todo, and one whose calls never reach the route, or reach it only through something the test replaced with `vi.mock`. The [intent format](/reference/intent-format#covering-tests) says how a test is spelled and what counts as reaching. vitest is the only test pack so far, so a Python or Ruby project can't list a pytest or RSpec test yet.
 
 ## Say what the boundary receives
 
@@ -376,7 +376,7 @@ A scenario in `intent/checkAnAgentsEdit.prd.yaml` links to the rejection:
     link: contract-intent-load-change-list.rejected
 ```
 
-If `loadChangeListFile` stopped throwing `ChangeListRejected`, the self-check would report `uncoveredOutcome` against the document and fail. A scenario whose promise is about which values come back lists the test that covers it under `coveredBy`, and so, for now, does a scenario about what a command prints, since suss has no boundary for a command's output yet. The dogfood run reads those test files with the vitest pack, and the self-check fails when one is renamed, skipped, or stops reaching its subject. On a green run the intent section starts with:
+If `loadChangeListFile` stopped throwing `ChangeListRejected`, the self-check would report `uncoveredOutcome` against the document and fail. A scenario whose promise is about which values come back lists the test that covers it under `coveredBy`. The dogfood run reads those test files with the vitest pack, and the self-check fails when one is renamed, skipped, or stops reaching its subject. On a green run the intent section starts with:
 
 ```
 Intent:

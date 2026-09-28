@@ -27,12 +27,12 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.34.0
 ```
 
 The action runs `suss extract` at the head of the pull request, checks the base commit out next to it, runs the same extract there, and posts `suss inspect --diff` between the two as one comment. When you push again, it edits that comment.
 
-`@v0.33.1` pins the action to a release, so the job runs the same action until you change the tag. A commit SHA in place of the tag pins it to code you have read.
+`@v0.34.0` pins the action to a release, so the job runs the same action until you change the tag. A commit SHA in place of the tag pins it to code you have read.
 
 ## What the comment says
 
@@ -69,7 +69,7 @@ Last come the files whose units moved. When a unit has only a couple of changed 
 The action reads the packs from the project's `suss.json`, the file `suss init` writes. If there is no such file, it picks the packs `init` would have picked. To choose them yourself, set `extract` to whatever you would type after `suss extract` on your own machine:
 
 ```yaml
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.34.0
         with:
           extract: -p tsconfig.json -f hono -f prisma
 ```
@@ -101,7 +101,7 @@ For Python that is `--dir src -f fastapi`, and for Ruby `--dir app -f rails`.
 A later step can test `changed` in its condition:
 
 ```yaml
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.34.0
         id: suss
         with:
           extract: -p tsconfig.json -f hono

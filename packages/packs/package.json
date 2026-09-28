@@ -1,6 +1,6 @@
 {
   "name": "@suss/packs",
-  "version": "0.33.1",
+  "version": "0.34.0",
   "type": "module",
   "description": "Every pack suss ships in one install, so it can read Express, Hono, NestJS, FastAPI, Rails, Prisma, OpenAPI and the rest.",
   "keywords": [
@@ -247,15 +247,15 @@
   },
   "dependencies": {
     "@mrleebo/prisma-ast": "^0.15.0",
-    "@suss/adapter-python": "0.33.1",
-    "@suss/adapter-ruby": "0.33.1",
-    "@suss/adapter-typescript": "0.33.1",
-    "@suss/behavioral-ir": "0.33.1",
-    "@suss/contract-graphql": "0.33.1",
-    "@suss/extractor": "0.33.1",
-    "@suss/manifest-aws": "0.33.1",
-    "@suss/recognize": "0.33.1",
-    "@suss/sql": "0.33.1",
+    "@suss/adapter-python": "0.34.0",
+    "@suss/adapter-ruby": "0.34.0",
+    "@suss/adapter-typescript": "0.34.0",
+    "@suss/behavioral-ir": "0.34.0",
+    "@suss/contract-graphql": "0.34.0",
+    "@suss/extractor": "0.34.0",
+    "@suss/manifest-aws": "0.34.0",
+    "@suss/recognize": "0.34.0",
+    "@suss/sql": "0.34.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
