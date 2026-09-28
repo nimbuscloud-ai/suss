@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-fabrication",
-  "version": "0.33.1",
+  "version": "0.34.0",
   "type": "module",
   "description": "Ruby pack for Fabrication: what each fabricator builds, so a test's calls on the records it builds are followed.",
   "keywords": [
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.33.1",
+    "@suss/adapter-ruby": "0.34.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
