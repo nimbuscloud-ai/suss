@@ -692,22 +692,24 @@ function callsMade(
     (call) =>
       !isArglessReceiverCall(call) ||
       readsAsACall(call, siteFor(call), ctx, spellings) ||
-      (inExample && runsAProjectMethod(call, siteFor(call), ctx, spellings)),
+      (inExample && readsTheObjectSetUp(call, siteFor(call), ctx, spellings)),
   );
 }
 
 /**
- * Whether a no-argument call resolves to a method the project defines.
- * A test reads the object it set up, `order.cancelled?`, where a value
- * built in a `let` is seldom one the rules settle as an object.
+ * Whether a no-argument call in a test resolves to a project method, or
+ * is sent to a class the project defines. A test reads the object it set
+ * up, `order.cancelled?` or the column `order.state`, and either is a
+ * call on that class, which the intent check counts.
  */
-function runsAProjectMethod(
+function readsTheObjectSetUp(
   call: RbNode,
   site: CallSite,
   ctx: ReachContext,
   spellings: CalleeSpellings,
 ): boolean {
-  return resolveCallee(call, site, ctx, spellings).kind === "followed";
+  const outcome = resolveCallee(call, site, ctx, spellings);
+  return outcome.kind === "followed" || outcome.onClass !== undefined;
 }
 
 function scanBody(
@@ -748,7 +750,9 @@ function scanBody(
   const passedPositions = new Set<string>();
   const seen = new Set<string>();
   const parameterCallsSeen = new Set<string>();
-  const followedArgless = new Set<number>();
+  // No-argument calls that stay calls: each one that reached a project
+  // method, and in a test each one sent to a class the project defines.
+  const keptArgless = new Set<number>();
 
   // Records each `method(:name)` argument as passed into that position of
   // the callee, so it can be joined to the parameter the callee calls.
@@ -831,6 +835,7 @@ function scanBody(
         file: displayPathOf(fileOfKey(outcome.onClass.key)),
         name: outcome.onClass.name,
       });
+      keptArgless.add(call.id);
     }
     recordPassedArgs(
       call,
@@ -864,7 +869,7 @@ function scanBody(
       continue;
     }
     if (isArglessReceiverCall(call)) {
-      followedArgless.add(call.id);
+      keptArgless.add(call.id);
     }
     const key = keyOf(outcome.target);
     if (!seen.has(key)) {
@@ -880,7 +885,7 @@ function scanBody(
     argTargets: placements.argTargets,
     parameterCalls,
     passedPositions,
-    propertyReads: propertyReadsAmong(read.argless, calls, followedArgless),
+    propertyReads: propertyReadsAmong(read.argless, calls, keptArgless),
     receiverClasses: receiverClasses.settled,
   };
 }
@@ -919,18 +924,19 @@ function placeCallee(
 }
 
 /**
- * The no-argument calls that reached no project method, by callee text.
- * A text that another call in this body kept is left out, since effects
- * are dropped by text and that call would be dropped too.
+ * The no-argument calls that did not stay calls, by callee text, less any
+ * text another kept call shares, since effects are dropped by text.
  */
 function propertyReadsAmong(
   argless: readonly RbNode[],
   made: readonly RbNode[],
-  followed: ReadonlySet<number>,
+  keptArgless: ReadonlySet<number>,
 ): ReadonlySet<string> {
   const kept = new Set(
     made
-      .filter((call) => !isArglessReceiverCall(call) || followed.has(call.id))
+      .filter(
+        (call) => !isArglessReceiverCall(call) || keptArgless.has(call.id),
+      )
       .map(calleeText),
   );
   const reads = new Set<string>();

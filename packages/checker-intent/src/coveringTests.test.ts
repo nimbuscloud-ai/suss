@@ -336,6 +336,20 @@ describe("a scenario covered by a test", () => {
       expect(result.unchecked).toEqual([]);
     });
 
+    it("counts a finder or an attribute read on the class, which no summary is behind", () => {
+      const code = [
+        follow,
+        testUnit("finds", [
+          sentToAccount(calls("Account.find")),
+          sentToAccount(calls("account.username")),
+        ]),
+      ];
+      const result = check([covered("find", "finds", ["Account"])], code);
+
+      expect(result.findings).toEqual([]);
+      expect(result.unchecked).toEqual([]);
+    });
+
     it("does not count a call on the class toward a subject that is one of its methods", () => {
       const code = [
         follow,

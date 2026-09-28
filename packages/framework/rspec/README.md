@@ -87,6 +87,11 @@ A file matches on whole path segments from the end.
   order, and `have_items` calls `has_items?`, so
   `it { is_expected.to be_open }` counts as calling `open?` on the
   subject.
+- Which class each call was sent to, as `receiverClass` on the call,
+  when the receiver is a class the project defines or an instance of
+  one. The call is kept even when the method is ActiveRecord's, as
+  `Order.find(1)` is, and so is a column read such as `order.state`,
+  so the intent check can count it as reaching that class.
 - Whether the example runs. `xit`, `skip` and `pending` examples, any
   example under `xdescribe` or `xcontext`, `:skip` or `skip: true`
   metadata on the example or a group, and a `skip` or `pending`

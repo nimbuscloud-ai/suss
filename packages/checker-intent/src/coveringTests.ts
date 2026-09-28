@@ -311,11 +311,9 @@ function pathInto(
 }
 
 /**
- * A call in the test's own body sent to a class the subject is written
- * in, as the adapter records it on the call. A method that a module the
- * class includes gives it runs in the module's file, so reaching it
- * counts through the class it was called on. A mock of the class, or of
- * that method, stops the call counting while `honourMocks` is set.
+ * A call in the test's own body sent to one of the subject's classes. A
+ * concern's or the library's method on that class runs outside the
+ * subject's file, so the call graph alone misses it. A mock stops it.
  */
 function callOnSubjectClass(
   test: FunctionKey,
@@ -336,7 +334,6 @@ function callOnSubjectClass(
   )) {
     if (
       effect.type !== "invocation" ||
-      effect.summary === undefined ||
       effect.receiverClass === undefined ||
       !classes.has(classKey(effect.receiverClass))
     ) {

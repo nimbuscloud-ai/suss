@@ -316,7 +316,7 @@ describe("RSpec examples as test units", () => {
       linkedCalls(testNamed(summaries, "Account > with notes > has them")),
     ).toEqual(["have_notes"]);
     expect(
-      calls(testNamed(summaries, "Account > with notes > is not nil")),
+      linkedCalls(testNamed(summaries, "Account > with notes > is not nil")),
     ).toEqual([]);
   });
 
@@ -360,6 +360,44 @@ describe("RSpec examples as test units", () => {
     expect(sentTo("Account > reads it")).toEqual([
       ["described_class.new.reviewed?", account],
     ]);
+  });
+
+  it("keeps an attribute read and a call the project does not define, on the class they were sent to", async () => {
+    write("app/models/account.rb", ["class Account", "end"]);
+    write("spec/account_spec.rb", [
+      "describe Account do",
+      '  it "reads a column" do',
+      "    expect(described_class.new.username).to eq('a')",
+      "  end",
+      "",
+      '  it "finds one" do',
+      "    described_class.find(1)",
+      "  end",
+      "",
+      '  it "reads something else" do',
+      "    expect(config.host).to eq('a')",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const sentTo = (name: string) =>
+      testNamed(summaries, name).transitions.flatMap((transition) =>
+        transition.effects.flatMap((effect) =>
+          effect.type === "invocation"
+            ? [[effect.callee, effect.receiverClass?.name]]
+            : [],
+        ),
+      );
+
+    expect(sentTo("Account > reads a column")).toContainEqual([
+      "described_class.new.username",
+      "Account",
+    ]);
+    expect(sentTo("Account > finds one")).toEqual([
+      ["described_class.find", "Account"],
+    ]);
+    expect(sentTo("Account > reads something else")).toEqual([]);
   });
 
   it("reads a value from the nearest group that defines it, so sibling groups keep their own", async () => {

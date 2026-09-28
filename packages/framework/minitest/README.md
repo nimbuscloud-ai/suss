@@ -50,6 +50,9 @@ not suggest the pack. A config file can list the files instead:
 - What the test runs: its own body, then its class's `setup` blocks and
   `setup` method. Their calls count as the test's own, and assertions
   such as `assert_equal` are left out.
+- Which class each call was sent to, as `receiverClass` on the call,
+  when the receiver is a class the project defines or an instance of
+  one, including a finder such as `Order.find(1)` and a column read.
 - Whether it runs: a `skip` statement in the test marks it
   `metadata.test.skipped`.
 - What it stubs, under `metadata.test.mocks`: `Order.stub(:cancel, 1)`,
