@@ -46,7 +46,7 @@ import type { RbNode } from "../parser.js";
 /** A method in this run, and the export path its summary gets. */
 export interface ReachedFunction {
   readonly file: string;
-  /** The `method` node. */
+  /** The `method` node, or the lambda a scope call defines a class method with. */
   readonly node: RbNode;
   readonly name: string;
   /** `[name]` for a method defined outside any class, `[qualifiedName, name]` for one written in a class body. */
@@ -55,14 +55,24 @@ export interface ReachedFunction {
   readonly enclosingQualifiedName: string | null;
 }
 
-export type CalleeResolution =
+/** A class the run defines, by the value facts' key for its node and its qualified name. */
+export interface SettledClass {
+  readonly key: string;
+  readonly name: string;
+}
+
+export type CalleeResolution = (
   | { readonly kind: "followed"; readonly target: ReachedFunction }
   | {
       readonly kind: "stopped";
       readonly reason: UnfollowedReason;
       /** Set on a call on `self` the resolver could not settle, which the link step may still match by name in the caller's file. */
       readonly matchByName?: true;
-    };
+    }
+) & {
+  /** The class the receiver settled on, or the class itself for a class method, whether or not the method was found. */
+  readonly onClass?: SettledClass;
+};
 
 export interface ReachContext {
   readonly lookup: AncestorLookup;
@@ -389,6 +399,17 @@ function methodOnObject(
   if (qualifiedName === undefined) {
     return NO_DECLARATION;
   }
+  return {
+    ...methodOfClass(spelling, qualifiedName, ctx),
+    onClass: { key: objectKey, name: qualifiedName },
+  };
+}
+
+function methodOfClass(
+  spelling: ReceiverSpelling,
+  qualifiedName: string,
+  ctx: ReachContext,
+): CalleeResolution {
   if (!spelling.onClassItself) {
     return methodOnAncestryOf(qualifiedName, spelling.method, ctx);
   }

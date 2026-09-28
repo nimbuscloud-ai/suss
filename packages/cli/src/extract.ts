@@ -1721,6 +1721,29 @@ export function relativizeSummaryPaths(
   relativizeWrapperPaths(summary, projectRoot);
   relativizeTypeRefs(summary, projectRoot);
   relativizeMockedModules(summary, projectRoot);
+  relativizeReceiverClasses(summary, projectRoot);
+}
+
+/** A call's receiver class is matched against the subject's file, so both are relative. */
+function relativizeReceiverClasses(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  for (const transition of summary.transitions) {
+    // A summary built by hand in a caller's test can leave the list out.
+    for (const effect of transition.effects ?? []) {
+      if (
+        effect.type === "invocation" &&
+        effect.receiverClass !== undefined &&
+        path.isAbsolute(effect.receiverClass.file)
+      ) {
+        effect.receiverClass = {
+          ...effect.receiverClass,
+          file: relativeTo(projectRoot, effect.receiverClass.file),
+        };
+      }
+    }
+  }
 }
 
 /** A mocked module is a file the unit's own path is compared against, so both are relative. */

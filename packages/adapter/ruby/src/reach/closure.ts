@@ -16,6 +16,7 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  ReceiverClasses,
   recordParameterGaps,
   TargetPlacements,
   unfollowedCallGap,
@@ -26,6 +27,7 @@ import { assembleSummary } from "@suss/extractor";
 import {
   type Dependencies,
   type DependencyLedger,
+  fileOfKey,
   noDependencies,
 } from "@suss/resolution";
 
@@ -67,6 +69,7 @@ import type {
   BoundaryBinding,
   DeclaredAt,
   ParameterCall,
+  ReceiverClass,
   UnfollowedCall,
 } from "@suss/behavioral-ir";
 import type {
@@ -120,6 +123,8 @@ export interface StoredScan {
   readonly parameterCalls: ParameterCall[];
   readonly passedPositions: string[];
   readonly propertyReads: string[];
+  /** Absent from a scan an older run stored. */
+  readonly receiverClasses?: [string, ReceiverClass][];
 }
 
 /** A discovered unit's method, or a file's program node, keyed the same way as its summary's span. */
@@ -147,6 +152,11 @@ export interface ReachedUnits {
   readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
   /** The callee text of each no-argument call that turned out to be a property read, by the scanned method's key, so a summary built before the walk can drop it. */
   readonly propertyReadsByKey: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The class each call in a test's body was sent to, by callee text, keyed by the test's key. */
+  readonly receiverClassesByKey: ReadonlyMap<
+    string,
+    ReadonlyMap<string, ReceiverClass>
+  >;
   /** Every (method, position) pair that some scanned body passes a named project method into, across the whole run. */
   readonly passedPositions: ReadonlySet<string>;
   /** The keys of the bodies that reached at least one project method, for a caller that reports a body only when it reaches something. */
@@ -184,6 +194,10 @@ export async function reachedFunctions(
   >();
   const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
   const propertyReadsByKey = new Map<string, ReadonlySet<string>>();
+  const receiverClassesByKey = new Map<
+    string,
+    ReadonlyMap<string, ReceiverClass>
+  >();
   // Only a named project method counts, not an inline block or a variable,
   // so a parameter call missing from this set is a gap even when some
   // caller supplies a value.
@@ -256,6 +270,10 @@ export async function reachedFunctions(
       argTargetsByKey.set(key, scan.argTargets);
       if (scan.propertyReads.size > 0) {
         propertyReadsByKey.set(key, scan.propertyReads);
+      }
+
+      if (scan.receiverClasses.size > 0) {
+        receiverClassesByKey.set(key, scan.receiverClasses);
       }
       if (scan.parameterCalls.length > 0) {
         parameterCallsByKey.set(key, scan.parameterCalls);
@@ -347,6 +365,7 @@ export async function reachedFunctions(
     argTargetsByKey,
     parameterCallsByKey,
     propertyReadsByKey,
+    receiverClassesByKey,
     passedPositions,
     followedKeys,
     scans,
@@ -452,6 +471,7 @@ function storedScan(scan: Scan): StoredScan {
     parameterCalls: [...scan.parameterCalls],
     passedPositions: [...scan.passedPositions],
     propertyReads: [...scan.propertyReads],
+    receiverClasses: [...scan.receiverClasses],
   };
 }
 
@@ -472,6 +492,7 @@ function scanFromStored(
     parameterCalls: stored.parameterCalls,
     passedPositions: new Set(stored.passedPositions),
     propertyReads: new Set(stored.propertyReads),
+    receiverClasses: new Map(stored.receiverClasses ?? []),
   };
 }
 
@@ -525,6 +546,8 @@ interface Scan {
   readonly passedPositions: ReadonlySet<string>;
   /** The no-argument calls in this body that reached no project method, by callee text. */
   readonly propertyReads: ReadonlySet<string>;
+  /** In a test, the class each call was sent to, by callee text. */
+  readonly receiverClasses: ReadonlyMap<string, ReceiverClass>;
 }
 
 const EMPTY_SCAN: Scan = {
@@ -535,6 +558,7 @@ const EMPTY_SCAN: Scan = {
   parameterCalls: [],
   passedPositions: new Set(),
   propertyReads: new Set(),
+  receiverClasses: new Map(),
 };
 
 /**
@@ -705,18 +729,21 @@ function scanBody(
   }
 
   const site = read.site;
+  const inExample =
+    (options.examples?.runOf(source.node, source.file) ?? null) !== null;
   const calls = callsMade(
     read.calls,
     read.siteFor,
     ctx,
     read.spellings,
-    (options.examples?.runOf(source.node, source.file) ?? null) !== null,
+    inExample,
   );
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
 
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
   const placements = new TargetPlacements();
+  const receiverClasses = new ReceiverClasses();
   const parameterCalls: ParameterCall[] = [];
   const passedPositions = new Set<string>();
   const seen = new Set<string>();
@@ -799,6 +826,12 @@ function scanBody(
       callerFile: callSite.file,
       displayPathOf,
     });
+    if (inExample && outcome.onClass !== undefined) {
+      receiverClasses.add(callee, {
+        file: displayPathOf(fileOfKey(outcome.onClass.key)),
+        name: outcome.onClass.name,
+      });
+    }
     recordPassedArgs(
       call,
       callee,
@@ -848,6 +881,7 @@ function scanBody(
     parameterCalls,
     passedPositions,
     propertyReads: propertyReadsAmong(read.argless, calls, followedArgless),
+    receiverClasses: receiverClasses.settled,
   };
 }
 

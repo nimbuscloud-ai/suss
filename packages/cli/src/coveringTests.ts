@@ -14,10 +14,10 @@ import { readCallFacts } from "@suss/checker";
 import { loadIntentDirectory } from "@suss/contract-intent";
 import { NODE_ID_SEPARATOR, TEST_TITLE_SEPARATOR } from "@suss/intent-ir";
 
-import { functionsSpelled } from "./reachTarget.js";
+import { functionsSpelled, reachTargetOfUnits } from "./reachTarget.js";
 import { filesMatching } from "./target.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, ReceiverClass } from "@suss/behavioral-ir";
 import type { CallFacts } from "@suss/checker";
 import type {
   CoveringTestLookup,
@@ -44,8 +44,24 @@ export function coveringTestLookup(
   const subjects = new Map<string, FoundSubject>();
   const subjectSpelled = (spelledAs: string): FoundSubject => {
     const found = functionsSpelled(spelledAs, code, factsOnce());
-    return found.found
-      ? { found: true, target: found.target, label: found.label }
+    if (found.found) {
+      return {
+        found: true,
+        target: found.target,
+        label: found.label,
+        classes: found.matched === "file" ? classesOf(found.units) : [],
+      };
+    }
+    const ofClass = code.filter(
+      (unit) => unit.kind !== "test" && classOf(unit)?.name === spelledAs,
+    );
+    return ofClass.length > 0
+      ? {
+          found: true,
+          target: reachTargetOfUnits(ofClass),
+          label: spelledAs,
+          classes: classesOf(ofClass),
+        }
       : { found: false, message: found.headline };
   };
   return {
@@ -59,6 +75,26 @@ export function coveringTestLookup(
       return known;
     },
   };
+}
+
+/** The class a unit is a method of, by its file and the export path before the method's name. */
+function classOf(unit: BehavioralSummary): ReceiverClass | null {
+  const path = unit.identity.exportPath ?? [];
+  return path.length > 1
+    ? { file: unit.location.file, name: path.slice(0, -1).join("::") }
+    : null;
+}
+
+/** The classes some units are methods of, each once. */
+function classesOf(units: ReadonlyArray<BehavioralSummary>): ReceiverClass[] {
+  const byKey = new Map<string, ReceiverClass>();
+  for (const unit of units) {
+    const one = classOf(unit);
+    if (one !== null) {
+      byKey.set(`${one.file}#${one.name}`, one);
+    }
+  }
+  return [...byKey.values()];
 }
 
 /**

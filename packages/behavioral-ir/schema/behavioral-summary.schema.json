@@ -895,6 +895,19 @@
                       "calleeParameter": {
                         "type": "number"
                       },
+                      "receiverClass": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["file", "name"],
+                        "additionalProperties": false
+                      },
                       "args": {
                         "type": "array",
                         "items": {}

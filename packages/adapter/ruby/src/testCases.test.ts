@@ -320,6 +320,48 @@ describe("RSpec examples as test units", () => {
     ).toEqual([]);
   });
 
+  it("records the class a call was sent to, when the method comes from a module the class includes", async () => {
+    write("app/models/concerns/reviewable.rb", [
+      "module Reviewable",
+      "  def reviewed?",
+      "    Order.audit(1)",
+      "  end",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account",
+      "  include Reviewable",
+      "end",
+    ]);
+    write("spec/account_spec.rb", [
+      "describe Account do",
+      "  it { is_expected.to be_reviewed }",
+      "",
+      '  it "reads it" do',
+      "    described_class.new.reviewed?",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const sentTo = (name: string) =>
+      testNamed(summaries, name).transitions.flatMap((transition) =>
+        transition.effects.flatMap((effect) =>
+          effect.type === "invocation" && effect.summary !== undefined
+            ? [[effect.callee, effect.receiverClass]]
+            : [],
+        ),
+      );
+
+    const account = { file: "app/models/account.rb", name: "Account" };
+    expect(sentTo("Account > { is_expected.to be_reviewed }")).toEqual([
+      ["be_reviewed", account],
+    ]);
+    expect(sentTo("Account > reads it")).toEqual([
+      ["described_class.new.reviewed?", account],
+    ]);
+  });
+
   it("reads a value from the nearest group that defines it, so sibling groups keep their own", async () => {
     write("app/models/account.rb", [
       "class Account",

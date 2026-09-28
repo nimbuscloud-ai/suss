@@ -744,6 +744,8 @@ The test exists and runs, and either suss followed every call it makes and none 
 [warning] prd:Cancel an order: Scenario "cancelled" in PRD "Cancel an order" lists the test "src/checkout.test.ts > cancels on a failed checkout", which reaches cancelOrder only through a call its mocks replace (vi.mock("./orders")), by checkout -> cancelOrder.
 ```
 
+When the subject is a class, or a file a class is written in, a call the test sends to that class reaches it even when the method comes from a module the class includes, as `account.reviewed?` does when `Reviewable` defines `reviewed?`.
+
 A test that doesn't reach its subject through the calls suss followed, and makes a call suss could not follow, on the way or in its own body, might still reach it through that call. suss doesn't report it as this finding. It goes under `unchecked` as `unfollowedCall`, with the calls it could not follow, and its scenario is not counted as covered.
 
 **Legitimate when:** the test reaches the subject through something suss doesn't follow and doesn't record a gap for, such as a child process. Accept it with a rule for that scenario, saying why.

@@ -21,6 +21,7 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placeReceiverClasses,
   recordParameterGaps,
   summaryIdFromParts,
   unfollowedCallGap,
@@ -983,6 +984,7 @@ async function runRuby(
       placeCalls(summary, reached.targetsByKey.get(key));
       placeArgTargets(summary, reached.argTargetsByKey.get(key));
       placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
+      placeReceiverClasses(summary, reached.receiverClassesByKey.get(key));
     }
   }
   if (ledger !== null) {

@@ -1030,6 +1030,41 @@ describe("relativizeSummaryPaths", () => {
     ).toBe("src/avatar.tsx");
   });
 
+  it("rewrites the file of the class a call in a test was sent to", () => {
+    const summary = {
+      location: {
+        file: "/repo/spec/account_spec.rb",
+        range: { start: 1, end: 2 },
+      },
+      transitions: [
+        {
+          output: { type: "return" },
+          effects: [
+            {
+              type: "invocation",
+              callee: "account.reviewed?",
+              args: [],
+              async: false,
+              receiverClass: {
+                file: "/repo/app/models/account.rb",
+                name: "Account",
+              },
+            },
+          ],
+        },
+      ],
+      identity: { name: "reviews", exportPath: [], boundaryBinding: null },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo");
+
+    const [effect] = summary.transitions[0].effects;
+    expect(effect.type === "invocation" ? effect.receiverClass : null).toEqual({
+      file: "app/models/account.rb",
+      name: "Account",
+    });
+  });
+
   it("rewrites the file each wrapper around the unit is declared in", () => {
     const summary = {
       location: { file: "/repo/src/app.ts", range: { start: 1, end: 2 } },

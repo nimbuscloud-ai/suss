@@ -101,11 +101,20 @@ function lookupOver(code: BehavioralSummary[]): CoveringTestLookup {
         : { found: true, unit: found };
     },
     subject: (spelledAs) => {
-      const units = code.filter(
+      const ofClass = code.filter(
         (one) =>
-          one.identity.name === spelledAs ||
-          (spelledAs === CANCEL_KEY && one === cancelOrder),
+          one.kind !== "test" &&
+          (one.identity.exportPath?.length ?? 0) > 1 &&
+          one.identity.exportPath?.[0] === spelledAs,
       );
+      const units =
+        ofClass.length > 0
+          ? ofClass
+          : code.filter(
+              (one) =>
+                one.identity.name === spelledAs ||
+                (spelledAs === CANCEL_KEY && one === cancelOrder),
+            );
       return units.length === 0
         ? { found: false, message: `nothing here is ${spelledAs}` }
         : {
@@ -115,6 +124,10 @@ function lookupOver(code: BehavioralSummary[]): CoveringTestLookup {
               keys: spelledAs === CANCEL_KEY ? [CANCEL_KEY] : [],
             },
             label: spelledAs,
+            classes: ofClass.map((one) => ({
+              file: one.location.file,
+              name: spelledAs,
+            })),
           };
     },
   };
@@ -282,6 +295,87 @@ describe("a scenario covered by a test", () => {
     expect(finding.message).toContain(
       'which reaches cancelOrder only through a call its mocks replace (vi.mock("./orders.js")), by orderService -> cancelOrder',
     );
+  });
+
+  describe("a call sent to the subject's class", () => {
+    const ACCOUNT_FILE = "app/models/account.rb";
+    const inClass = (
+      className: string,
+      name: string,
+      file: string,
+    ): BehavioralSummary => {
+      const unit = fn(`${className}.${name}`, file, 1);
+      return {
+        ...unit,
+        identity: { ...unit.identity, exportPath: [className, name] },
+      };
+    };
+    const follow = inClass("Account", "follow", ACCOUNT_FILE);
+    const reviewed = inClass(
+      "Reviewable",
+      "reviewed?",
+      "app/models/concerns/reviewable.rb",
+    );
+    const sentToAccount = (effect: Effect): Effect =>
+      ({
+        ...effect,
+        receiverClass: { file: ACCOUNT_FILE, name: "Account" },
+      }) as Effect;
+
+    it("counts a method a module the class includes gives it, called on the class", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit("reviews", [
+          sentToAccount(calls("account.reviewed?", reviewed)),
+        ]),
+      ];
+      const result = check([covered("review", "reviews", ["Account"])], code);
+
+      expect(result.findings).toEqual([]);
+      expect(result.unchecked).toEqual([]);
+    });
+
+    it("does not count a call on the class toward a subject that is one of its methods", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit("reviews", [
+          sentToAccount(calls("account.reviewed?", reviewed)),
+        ]),
+      ];
+      const [finding] = check(
+        [covered("review", "reviews", ["Account.follow"])],
+        code,
+      ).findings;
+
+      expect(finding.kind).toBe("testMissesSubject");
+    });
+
+    it("does not count the same call when a mock replaces the class", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit(
+          "reviews",
+          [sentToAccount(calls("account.reviewed?", reviewed))],
+          {
+            mocks: [
+              { module: ACCOUNT_FILE, written: 'stub_const("Account", ...)' },
+            ],
+          },
+        ),
+      ];
+      const [finding] = check(
+        [covered("review", "reviews", ["Account"])],
+        code,
+      ).findings;
+
+      expect(finding.kind).toBe("testMissesSubject");
+      expect(finding.message).toContain(
+        "only through a call its mocks replace",
+      );
+    });
   });
 
   it("reports a skipped test without asking what it reaches", () => {

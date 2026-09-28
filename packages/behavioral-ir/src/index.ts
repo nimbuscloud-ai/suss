@@ -112,6 +112,9 @@ export {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placeReceiverClasses,
+  type ReceiverClass,
+  ReceiverClasses,
   recordParameterGaps,
   TargetPlacements,
 } from "./callLinks.js";

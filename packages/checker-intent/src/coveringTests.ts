@@ -15,7 +15,11 @@
 import { readTestMetadata } from "@suss/behavioral-ir";
 import { callSpellings, functionOf } from "@suss/checker";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  ReceiverClass,
+  TestMock,
+} from "@suss/behavioral-ir";
 import type {
   CallFacts,
   CallPath,
@@ -36,7 +40,17 @@ export type FoundTest =
   | { found: false; message: string };
 
 export type FoundSubject =
-  | { found: true; target: ReachTarget; label: string }
+  | {
+      found: true;
+      target: ReachTarget;
+      label: string;
+      /**
+       * The classes the subject is, when it was spelled as a class or as
+       * a file a class is written in. A call a test sends to one of them
+       * reaches the subject. Empty for a single unit or a boundary.
+       */
+      classes?: ReadonlyArray<ReceiverClass>;
+    }
   | { found: false; message: string };
 
 /** How the check finds the summaries a PRD's spellings mean. */
@@ -63,6 +77,7 @@ export interface CoveringTestClaim {
 interface Subject {
   target: ReachTarget;
   label: string;
+  classes: ReadonlyArray<ReceiverClass>;
 }
 
 type Verdict =
@@ -129,7 +144,9 @@ export function checkCoveringTests(
     { pastMocks: true },
   );
   const missed = waiting.filter(
-    (one) => pathInto(one.test, honouring.get(one.test), one.subject) === null,
+    (one) =>
+      pathInto(one.test, honouring.get(one.test), one.subject) === null &&
+      callOnSubjectClass(one.test, one.subject, lookup, true) === null,
   );
   const ignoring =
     missed.length === 0
@@ -144,7 +161,9 @@ export function checkCoveringTests(
     }
 
     const reached = ignoring.get(one.test);
-    const throughMock = pathInto(one.test, reached, one.subject);
+    const throughMock =
+      pathInto(one.test, reached, one.subject) ??
+      callOnSubjectClass(one.test, one.subject, lookup, false);
     if (throughMock !== null) {
       verdicts[one.at] = finding(
         claim,
@@ -255,7 +274,7 @@ function subjectOf(
         message: `and what it has to reach, ${spelledAs}, is nothing in these summaries: ${one.message.replace(/\.$/, "")}`,
       };
     }
-    found.push(one);
+    found.push({ ...one, classes: one.classes ?? [] });
   }
   return {
     target: {
@@ -264,6 +283,7 @@ function subjectOf(
       at: found.flatMap((one) => one.target.at ?? []),
     },
     label: found.map((one) => one.label).join(" or "),
+    classes: found.flatMap((one) => one.classes),
   };
 }
 
@@ -287,6 +307,66 @@ function pathInto(
   }
   return paths.reduce((shortest, path) =>
     path.length < shortest.length ? path : shortest,
+  );
+}
+
+/**
+ * A call in the test's own body sent to a class the subject is written
+ * in, as the adapter records it on the call. A method that a module the
+ * class includes gives it runs in the module's file, so reaching it
+ * counts through the class it was called on. A mock of the class, or of
+ * that method, stops the call counting while `honourMocks` is set.
+ */
+function callOnSubjectClass(
+  test: FunctionKey,
+  subject: Subject,
+  lookup: CoveringTestLookup,
+  honourMocks: boolean,
+): CallPath | null {
+  const classes = new Set(subject.classes.map(classKey));
+  if (classes.size === 0) {
+    return null;
+  }
+  const units = lookup.facts.units.get(test) ?? [];
+  const mocks = honourMocks
+    ? units.flatMap((unit) => readTestMetadata(unit)?.mocks ?? [])
+    : [];
+  for (const effect of units.flatMap((unit) =>
+    unit.transitions.flatMap((transition) => transition.effects),
+  )) {
+    if (
+      effect.type !== "invocation" ||
+      effect.summary === undefined ||
+      effect.receiverClass === undefined ||
+      !classes.has(classKey(effect.receiverClass))
+    ) {
+      continue;
+    }
+    const method = lastName(effect.callee);
+    if (mocks.some((mock) => replaces(mock, effect.receiverClass, method))) {
+      continue;
+    }
+    return [{ callee: effect.callee, to: null, recorded: "written" }];
+  }
+  return null;
+}
+
+function classKey(sentTo: ReceiverClass): string {
+  return `${sentTo.file}#${sentTo.name}`;
+}
+
+/** Whether a mock replaces this method on this class: the class's whole file, the method on it, or the method by name alone. */
+function replaces(
+  mock: TestMock,
+  sentTo: ReceiverClass | undefined,
+  method: string,
+): boolean {
+  if (mock.module === undefined) {
+    return mock.name === method;
+  }
+  return (
+    mock.module === sentTo?.file &&
+    (mock.name === undefined || mock.name === method)
   );
 }
 

@@ -153,10 +153,8 @@ function settle<K>(
   }
 }
 
-function onlySettled<K>(
-  map: ReadonlyMap<K, DeclaredAt | null>,
-): ReadonlyMap<K, DeclaredAt> {
-  const out = new Map<K, DeclaredAt>();
+function onlySettled<K, V>(map: ReadonlyMap<K, V | null>): ReadonlyMap<K, V> {
+  const out = new Map<K, V>();
   for (const [key, value] of map) {
     if (value !== null) {
       out.set(key, value);
@@ -227,6 +225,59 @@ export function placeCalleeParameters(
       const parameterIndex = byCallee.get(normalizeCalleeText(effect.callee));
       if (parameterIndex !== undefined) {
         effect.calleeParameter = parameterIndex;
+      }
+    }
+  }
+}
+
+/** The class a call was sent to, as an invocation's `receiverClass` records it. */
+export type ReceiverClass = NonNullable<InvocationEffect["receiverClass"]>;
+
+/**
+ * The class each call in a scanned body was sent to, by callee text. Two
+ * calls written the same way on two classes leave that text with none,
+ * the rule `TargetPlacements` applies to a shadowed name.
+ */
+export class ReceiverClasses {
+  private readonly byCallee = new Map<string, ReceiverClass | null>();
+
+  add(calleeText: string, sentTo: ReceiverClass): void {
+    const key = normalizeCalleeText(calleeText);
+    const known = this.byCallee.get(key);
+    if (known === undefined) {
+      this.byCallee.set(key, sentTo);
+      return;
+    }
+    if (
+      known !== null &&
+      (known.file !== sentTo.file || known.name !== sentTo.name)
+    ) {
+      this.byCallee.set(key, null);
+    }
+  }
+
+  /** Every callee text sent to exactly one class, as `placeReceiverClasses` takes it. */
+  get settled(): ReadonlyMap<string, ReceiverClass> {
+    return onlySettled(this.byCallee);
+  }
+}
+
+/** Record on each invocation effect the class its call was sent to. */
+export function placeReceiverClasses(
+  summary: BehavioralSummary,
+  classes: ReadonlyMap<string, ReceiverClass> | undefined,
+): void {
+  if (classes === undefined || classes.size === 0) {
+    return;
+  }
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (effect.type !== "invocation") {
+        continue;
+      }
+      const sentTo = classes.get(normalizeCalleeText(effect.callee));
+      if (sentTo !== undefined) {
+        effect.receiverClass = sentTo;
       }
     }
   }
