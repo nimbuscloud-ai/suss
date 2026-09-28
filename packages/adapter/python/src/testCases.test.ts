@@ -161,6 +161,19 @@ describe("pytest tests as test units", () => {
     ]);
   });
 
+  it("leaves the module alone when its first line is a test", async () => {
+    write(
+      "tests/conftest.py",
+      "import pytest\n\n@pytest.fixture\ndef order():\n    return 1",
+    );
+    write("tests/test_first.py", "def test_first(order):\n    pass");
+    const [withPack, without] = [await extract(), await extract([])];
+    const loads = (summaries: BehavioralSummary[]) =>
+      summaries.filter((one) => one.kind === "module-init").length;
+
+    expect(loads(withPack)).toBe(loads(without));
+  });
+
   it("reads nothing as a test without the pack", async () => {
     write("tests/test_orders.py", "def test_cancels():\n    pass");
     const summaries = await extract([]);

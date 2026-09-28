@@ -283,7 +283,7 @@ export class PythonTestIndex {
   private testAt(source: ReachedFunction): CollectedTest | null {
     return (
       this.testsIn(source.file).find(
-        (test) => test.node.startIndex === source.node.startIndex,
+        (test) => test.node.id === source.node.id,
       ) ?? null
     );
   }
