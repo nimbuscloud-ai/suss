@@ -122,6 +122,20 @@ Concerns are covered too. A `has_many` inside an `included do` belongs
 to the module, and the module is in the ancestry of every model that
 includes it.
 
+## Scopes
+
+`scope :recent, -> { order(:created_at) }` defines a class method
+`recent` on the model, and the lambda is its body. The pack lists the
+call as `scopes: ["scope"]`, and the adapter reads `Account.recent` as a
+call to that lambda, which the reach walk follows like any class method
+the model writes with `def self.recent`. A subclass inherits the scope,
+and a scope in a concern's `included do` block belongs to each model
+that includes the concern.
+
+A scope written with `lambda { ... }` instead of `->` is not read, and a
+scope called on a relation, as in `Account.where(x).recent`, is not
+followed.
+
 ## Statements the project wrote itself
 
 A project that goes around the query builder still reaches the database.

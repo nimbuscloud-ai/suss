@@ -17,6 +17,7 @@ import {
   answersFor,
   calleeOutcomeOf,
   calleeOutcomes,
+  classMemberName,
   couldBeSettled,
 } from "@suss/resolution";
 
@@ -26,6 +27,7 @@ import { classBehind } from "../baseClass.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
 import {
   classLocalsAt,
+  nodeId,
   readKey,
   readsOffClassItself,
 } from "../facts/values.js";
@@ -390,9 +392,41 @@ function methodOnObject(
   if (!spelling.onClassItself) {
     return methodOnAncestryOf(qualifiedName, spelling.method, ctx);
   }
-  return spelling.method === "new"
-    ? methodOnAncestryOf(qualifiedName, "initialize", ctx)
-    : singletonMethodOn(qualifiedName, spelling.method, ctx);
+  if (spelling.method === "new") {
+    return methodOnAncestryOf(qualifiedName, "initialize", ctx);
+  }
+  const written = singletonMethodOn(qualifiedName, spelling.method, ctx);
+  return written.kind === "followed"
+    ? written
+    : (scopeOn(qualifiedName, spelling.method, ctx) ?? written);
+}
+
+/**
+ * The class method a scope call defines, which the value facts record as
+ * a property holding the lambda. A subclass inherits it, and a scope in a
+ * concern's `included` block is defined on the class that includes it,
+ * so the lookup goes through the whole ancestry.
+ */
+function scopeOn(
+  qualifiedName: string,
+  method: string,
+  ctx: ReachContext,
+): CalleeResolution | null {
+  const spelled = classMemberName(method);
+  const bodies = (ctx.ancestries.get(qualifiedName) ?? []).flatMap((entry) =>
+    entry.type === "bodies" ? entry.blocks : [],
+  );
+  for (const body of bodies) {
+    const classKey = nodeId(body.file, body.info.node);
+    for (const row of ctx.facts.lookup("holdsProperty", 0, classKey)) {
+      const target =
+        row[1] === spelled ? ctx.definitions.get(String(row[2])) : undefined;
+      if (target !== undefined) {
+        return followed(target);
+      }
+    }
+  }
+  return null;
 }
 
 /**

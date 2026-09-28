@@ -79,7 +79,7 @@ import {
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitRequireFacts } from "./facts.js";
 import { moduleExportUnits, settleRubyModules } from "./moduleSurface.js";
-import { bodyBlocksIn, inflectionsIn } from "./pack.js";
+import { bodyBlocksIn, inflectionsIn, scopeCallsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 import {
   EVERY_ARGLESS_CALL,
@@ -279,6 +279,7 @@ export class RunFacts {
   readonly db: Database;
   readonly parsed: EvaluatedFile[] = [];
   readonly bodyBlocks: BodyBlocks;
+  readonly scopeCalls: ReadonlySet<string>;
   private readonly packs: readonly RubyPack[];
   private readonly testPatterns: readonly RbTestCases[];
   private readonly associationCalls: RbAssociationCalls[];
@@ -293,6 +294,7 @@ export class RunFacts {
     this.db = db;
     this.packs = packs;
     this.bodyBlocks = bodyBlocksIn(packs);
+    this.scopeCalls = scopeCallsIn(packs);
     this.testPatterns = testPatternsIn(packs);
     this.associationCalls = associationCallsIn(packs);
     this.inflections = inflectionsIn(packs);
@@ -301,7 +303,7 @@ export class RunFacts {
   addFile(file: string, root: RbNode): void {
     this.parsed.push({ file, root });
     const testPattern = registerTestFileNames(file, root, this.testPatterns);
-    emitValueFacts(this.db, file, root, this.bodyBlocks);
+    emitValueFacts(this.db, file, root, this.bodyBlocks, this.scopeCalls);
     if (testPattern !== null) {
       emitGroupFacts(this.db, file, root, testPattern);
       this.testFiles.push({ file, root, pattern: testPattern });
@@ -623,7 +625,7 @@ async function runRuby(
   // Facts are emitted for every file before discovery starts, because the
   // storage recognizer asks during discovery which file defines a constant.
   const facts = new RunFacts(db, options.packs);
-  const { parsed, bodyBlocks } = facts;
+  const { parsed, bodyBlocks, scopeCalls } = facts;
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const root = await trees.get(file);
@@ -666,7 +668,14 @@ async function runRuby(
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const declaredModules = settleRubyModules(options.modules);
   const plainContext = await timer.timeAsync("discover", () =>
-    buildReachContext(parsed, db, bodyBlocks, watchedNames, loaderPatterns),
+    buildReachContext(
+      parsed,
+      db,
+      bodyBlocks,
+      watchedNames,
+      loaderPatterns,
+      scopeCalls,
+    ),
   );
   const reachContext =
     ledger === null ? plainContext : watchReachContext(plainContext);

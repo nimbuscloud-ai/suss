@@ -1533,11 +1533,93 @@ function railsWithModels(): RubyPack {
         reads: ["find", "where", "first"],
         givesBack: ["find", "where", "first"],
         byPrimaryKey: { methods: ["find"], column: "id" },
+        scopes: ["scope"],
         storageSystem: "postgresql",
       },
     ],
   };
 }
+
+describe("a scope a model declares", () => {
+  it("follows a call on the model into the scope's lambda, as a class method", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  scope :recent, ->(days) { where(created_at: days) }",
+      "end",
+    ]);
+    writeThroughAccount("Account.recent(3)");
+
+    const summaries = await extractRails();
+    const scope = unitNamed(summaries, "recent");
+    expect(callTo(unitNamed(summaries, "suspend"), "Account.recent")).toBe(
+      summaryIdentifier(scope),
+    );
+    expect(scope.location.file).toBe("app/models/account.rb");
+    expect(scope.identity.exportPath).toEqual(["Account", "recent"]);
+  });
+
+  it("follows a scope a concern's included block declares, on the class that includes it", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/concerns/reviewable.rb", [
+      "module Reviewable",
+      "  included do",
+      "    scope :reviewed, -> { where.not(reviewed_at: nil) }",
+      "  end",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  include Reviewable",
+      "end",
+    ]);
+    writeThroughAccount("Account.reviewed");
+
+    const { summaries } = await extractRubyProject({
+      files: findRubyFiles(tmpDir),
+      packs: [
+        {
+          ...railsWithModels(),
+          bodyBlocks: [{ name: "included", moduleOnly: true }],
+        },
+      ],
+      workspaceRoot: tmpDir,
+    });
+    expect(callTo(unitNamed(summaries, "suspend"), "Account.reviewed")).toBe(
+      summaryIdentifier(unitNamed(summaries, "reviewed")),
+    );
+  });
+
+  it("follows nothing for a scope call no pack declares", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  scope :recent, -> { where(created_at: 1) }",
+      "end",
+    ]);
+    writeThroughAccount("Account.recent");
+
+    const pack = railsWithModels();
+    const [storage] = pack.storage ?? [];
+    const { summaries } = await extractRubyProject({
+      files: findRubyFiles(tmpDir),
+      packs: [{ ...pack, storage: [{ ...storage, scopes: [] }] }] as RubyPack[],
+      workspaceRoot: tmpDir,
+    });
+    expect(callTo(unitNamed(summaries, "suspend"), "Account.recent")).toBe(
+      undefined,
+    );
+  });
+});
 
 async function extractRails(): Promise<BehavioralSummary[]> {
   const { summaries } = await extractRubyProject({

@@ -72,6 +72,7 @@
   "only": "ActiveRecord::SpawnMethods#only: keeps only the named parts of the query",
   "except": "ActiveRecord::SpawnMethods#except: drops the named parts of the query",
   "has_many": "ActiveRecord::Associations::ClassMethods#has_many: declares a collection of another model",
+  "scope": "language: the tree-sitter-ruby field for the left side of A::B, which the adapter reads; ActiveRecord's scope, which defines a class method on the model from a lambda, is what the pack means",
   "has_one": "ActiveRecord::Associations::ClassMethods#has_one: declares one record of another model",
   "belongs_to": "ActiveRecord::Associations::ClassMethods#belongs_to: declares the model this one's foreign key points at",
   "has_and_belongs_to_many": "ActiveRecord::Associations::ClassMethods#has_and_belongs_to_many: declares a collection joined through a table with no model",

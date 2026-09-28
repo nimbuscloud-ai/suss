@@ -410,6 +410,16 @@ A concern needs nothing extra. The mixed-in module is in the `extends` ancestry,
 
 The facts do not record whether an association is a collection. `@account.statuses` and `@account.profile` both resolve to the class, as `Account.where(x)` and `Account.find(x)` already do.
 
+## What a scope defines
+
+`scopes` on a storage pattern lists the class-body calls that define a class method from a lambda. ActiveRecord's `scope :recent, -> { order(:created_at) }` defines `Account.recent`. The value facts record it the way they record `def self.recent`, as a property of the class holding the lambda:
+
+```
+holdsProperty  app/models/account.rb:0-812  self.recent  app/models/account.rb:40-75
+```
+
+So the rules settle what `Account.recent` gives back from the lambda's last expression. The reach walk looks a class method up in the class body first, and then asks the facts for a scope on each class and module in the ancestry. A subclass inherits a scope, and a scope in a concern's `included do` block is read as the module's own, so it is found from every class that includes the concern. A scope called on a relation, as in `Account.where(x).recent`, is not followed, because the rules settle the relation on an instance of the model and a scope is a class method.
+
 ## What a file reads from the environment
 
 `ENV` is part of the language core, so the adapter recognizes reads of it without a pack. Each read becomes the same `config-read` interaction the TypeScript adapter emits for `process.env.X`, on the `runtime-config` binding. It is written `ENV["X"]` however the source spelled it. The runtime-config checker pairs those reads with what a template declares for the process the file runs in.

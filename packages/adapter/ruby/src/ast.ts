@@ -239,6 +239,45 @@ export function bodyStatementsRun(
   });
 }
 
+/** A class method a scope call defines: its name, and the lambda that runs. */
+export interface ScopeDefinition {
+  readonly name: string;
+  readonly lambda: RbNode;
+}
+
+/**
+ * The class methods a class body defines through a scope call a pack
+ * declares, as `scope :recent, -> { order(:created_at) }` defines
+ * `recent`. The value facts and the reach walk both read them here.
+ */
+export function scopesDefinedIn(
+  body: RbNode,
+  isModule: boolean,
+  blocks: BodyBlocks,
+  scopeCalls: ReadonlySet<string>,
+): ScopeDefinition[] {
+  if (scopeCalls.size === 0) {
+    return [];
+  }
+  return bodyStatementsRun(body, isModule, blocks).flatMap((statement) => {
+    const method = field(statement, "method")?.text;
+    if (
+      statement.type !== "call" ||
+      field(statement, "receiver") !== null ||
+      method === undefined ||
+      !scopeCalls.has(method)
+    ) {
+      return [];
+    }
+    const args = field(statement, "arguments");
+    const [first, second] = args === null ? [] : bodyStatements(args);
+    const name = first === undefined ? null : symbolValue(first);
+    return name === null || second?.type !== LAMBDA_TYPE
+      ? []
+      : [{ name, lambda: second }];
+  });
+}
+
 /**
  * Whether a definition inside `body` defines a class method, because it
  * is inside a declared body block that defines class methods.

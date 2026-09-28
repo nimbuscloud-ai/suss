@@ -30,6 +30,15 @@ export function inflectionsIn(packs: readonly RubyPack[]): RbInflections {
   return pooled;
 }
 
+/** Every scope call the run's storage patterns declare, pooled. */
+export function scopeCallsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
+  return new Set(
+    packs.flatMap((pack) =>
+      (pack.storage ?? []).flatMap((pattern) => pattern.scopes ?? []),
+    ),
+  );
+}
+
 /** Every body block the run's packs declare, pooled, with each optional flag defaulted to false. */
 export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
   const pooled = new Map<string, BodyBlockKind>();
@@ -378,6 +387,12 @@ export interface RbStoragePattern {
   columnArguments?: string[];
   /** The calls a model uses to declare an association with another model, when the library has them. */
   associations?: RbAssociationCalls;
+  /**
+   * The calls a model body makes to define a class method from a lambda,
+   * as `scope :recent, -> { order(:created_at) }` defines `recent`. The
+   * first argument is the method's name and the lambda after it runs.
+   */
+  scopes?: string[];
   /** Which database is behind the connection. The project decides this, so the pack passes it in. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
 }
