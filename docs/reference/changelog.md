@@ -7,25 +7,124 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
-## Unreleased
+## 0.34.0 (2026-09-28)
 
-### Behavior changes
+0.34.0 lets a coding agent's edits be checked as it makes them, and lets an intent document say where a value has to come from.
 
-`unlinkedScenario` is a warning now, where it was info. A scenario can be backed by a test under `coveredBy` as well as by a `link`, and a scenario with neither is the same kind of gap as a link to nothing. A project on the default `--fail-on error` sees no change in its exit code. A project that runs `suss check --intent` with `--fail-on warning` and has PRD scenarios with neither a link nor a test will start failing. Give each one a link or a covering test, or accept it with a `.sussignore` rule that gives the scenario's title under the new `scenario` field.
+### Breaking changes
 
-### A PRD scenario lists the test that covers it
+A check that pairs nothing fails. A bare `suss check`, `check --dir` and `check --since` over summaries that pair nothing exit 1 with a `nothingPaired` finding under `run`, where they used to print "no findings" and exit 0. A two-file `check` with an empty file does the same, and its `--json` output on that failure is `{ findings, run }` instead of a bare array. Pass `--allow-empty` where an empty run is expected. ([#1208](https://github.com/nimbuscloud-ai/suss/pull/1208))
 
-A scenario whose promise is about which values come back, which no outcome can state, lists the test that covers it, spelled the way the runner prints it:
+`check` counts what paired. The report opens with `Compared 2 of 3 boundaries`, and "every compared boundary agreed" appears only when every boundary paired. `unmatched.providers` and `unmatched.consumers` now include a summary that paired somewhere else but not at its own boundary, so a job that gates on `--fail-on-unpaired` sees more entries than before. ([#1230](https://github.com/nimbuscloud-ai/suss/pull/1230), [#1234](https://github.com/nimbuscloud-ai/suss/pull/1234))
+
+Flags a command cannot use are refused. `init` and `inspect` refuse a flag they do not take, `check --dir X file.json` is refused where it used to ignore the file, and `extract --out-dir` refuses `--gaps`, `--timing`, `--datalog-profile`, `--no-cache`, `--explain` and `--fail-on-pack-error`. `init --write` writes `suss.json` and each pack's config file without prompting, and without the flag it only prints. ([#1208](https://github.com/nimbuscloud-ai/suss/pull/1208), [#1234](https://github.com/nimbuscloud-ai/suss/pull/1234))
+
+A NestJS `@Post()` handler returns 201, `@HttpCode(n)` sets the status, and every route under `app.setGlobalPrefix("api")` has the prefix in its path. A spec written without the prefix stops pairing with the code, and one written with it starts. ([#1231](https://github.com/nimbuscloud-ai/suss/pull/1231), [#1235](https://github.com/nimbuscloud-ai/suss/pull/1235))
+
+Every Python and Ruby summary used to say `confidence: low`, a setting left over from when those adapters read only decorators. They now carry the score the adapter works out, the way TypeScript summaries do, so most say high. ([#1231](https://github.com/nimbuscloud-ai/suss/pull/1231))
+
+`unlinkedScenario` is a warning, where it was info. A project that runs `suss check --intent` with `--fail-on warning` and has PRD scenarios with neither a link nor a covering test will start failing. Give each one a link or a covering test, or accept it with a `.sussignore` rule that gives the scenario's title under the new `scenario` field. ([#1217](https://github.com/nimbuscloud-ai/suss/pull/1217))
+
+Smaller changes a run shows:
+
+- The first run after upgrading is cold, because the cache format changed. `suss-mcp` writes `.suss/live/` into the project. ([#1226](https://github.com/nimbuscloud-ai/suss/pull/1226))
+- A relative pack config path in `suss.json` resolves from the directory `suss.json` is in, not the working directory. ([#1195](https://github.com/nimbuscloud-ai/suss/pull/1195))
+- `suss` and `suss-mcp` restart themselves with a larger heap, up to 8 GB, when `NODE_OPTIONS` sets no size. A start takes about 50 ms longer, and a large project's peak memory is higher because V8 collects less often. ([#1222](https://github.com/nimbuscloud-ai/suss/pull/1222))
+- A Python or Ruby environment read no longer says `deploymentTarget: "lambda"` or `instanceName: "<unknown>"`, so `inspect --diff` across the upgrade shows a binding change on every read. Findings are the same. ([#1213](https://github.com/nimbuscloud-ai/suss/pull/1213))
+- A Drizzle `db.query.<key>` whose key does not resolve to a table records the access with no table, instead of using the key as the table name. ([#1181](https://github.com/nimbuscloud-ai/suss/pull/1181))
+- An EventBridge send whose detail type can be one of up to 16 strings becomes one send per string. ([#1156](https://github.com/nimbuscloud-ai/suss/pull/1156))
+
+For library callers:
+
+- `readCallFacts`, `functionOf`, `CallFacts` and `FunctionKey` moved from `@suss/cli` to `@suss/checker`. ([#1213](https://github.com/nimbuscloud-ai/suss/pull/1213))
+- In `@suss/resolution`, `answersByKey`, `singleAnswers` and `placeholderValues` are gone. Read answers through `answersFor`, `writtenAnswersFor`, `resolvedFunctions` or `settledFunction`. The relation `holdsDefault` is now `declaresDefault`, and `writtenValueUnder` takes a fourth `ask` argument. ([#1212](https://github.com/nimbuscloud-ai/suss/pull/1212), [#1190](https://github.com/nimbuscloud-ai/suss/pull/1190))
+- A `transparentWrappers` entry is `{ module, name, argument }` instead of `{ callee, argument }`. ([#1186](https://github.com/nimbuscloud-ai/suss/pull/1186))
+- `@suss/values` keeps a set of up to 16 strings as a set, where it used to widen past 4, so summaries with enum-like values change. ([#1156](https://github.com/nimbuscloud-ai/suss/pull/1156))
+- Several unions gained members, which breaks an exhaustive `Record` over them at compile time: a `test` unit kind, an `exit` output, a `stream-write` interaction, four intent finding kinds, and the `unreadValue` and `unfollowedCall` unchecked reasons. Every new field is optional, so a 0.33.1 summary parses on 0.34.0. A 0.33.1 reader rejects a 0.34.0 file that contains one of the new kinds. ([#1217](https://github.com/nimbuscloud-ai/suss/pull/1217), [#1224](https://github.com/nimbuscloud-ai/suss/pull/1224), [#1229](https://github.com/nimbuscloud-ai/suss/pull/1229), [#1238](https://github.com/nimbuscloud-ai/suss/pull/1238))
+
+### A Claude Code plugin checks each edit an agent makes
+
+The supervisor plugin runs suss inside the agent's session. After each edit it re-reads the files that changed and tells the agent what the edit did, before the next edit. When an edit adds a 409 to an Express handler whose client does not handle it, the agent is told `unhandledProviderCase at POST /orders` with both locations, and the next edit's report says the finding is resolved. When the agent stops, the plugin lists every outcome the session changed on both sides of the boundary.
+
+Before it starts, the agent writes down what it means to change (`adds`, `removes`, `changes`, `exits:`), and when it stops, `suss intent check` compares that list against what the session changed. `extract --out-dir` writes the summaries for a partial run, and `check --since <dir>` reports only the findings that are new since a snapshot. [Supervise an agent](/guides/supervise-an-agent) has the setup. ([#1201](https://github.com/nimbuscloud-ai/suss/pull/1201), [#1203](https://github.com/nimbuscloud-ai/suss/pull/1203), [#1206](https://github.com/nimbuscloud-ai/suss/pull/1206), [#1209](https://github.com/nimbuscloud-ai/suss/pull/1209))
+
+The MCP server keeps the program in memory between edits and serves the plugin's hooks over a local socket, and the hooks fall back to the CLI when no server is running. A partial TypeScript run reuses what it worked out for every function the edit did not touch, and Python and Ruby reuse the cache file by file. A leaf edit on a NestJS service went from 14.4 seconds through the CLI to 7.6 through the live server, on a Rails app from 5.0 to 3.0, and on a FastAPI app from 8.1 to 6.5. ([#1215](https://github.com/nimbuscloud-ai/suss/pull/1215), [#1218](https://github.com/nimbuscloud-ai/suss/pull/1218), [#1226](https://github.com/nimbuscloud-ai/suss/pull/1226), [#1233](https://github.com/nimbuscloud-ai/suss/pull/1233))
+
+### An intent can say where a value comes from
+
+suss records where each column a query picks rows by, and each column it writes, got its value, and an intent document can say where it has to come from:
 
 ```yaml
-- title: a finding that was already there
-  when: a finding was in the code before the agent's edit and is still there after it
-  expect: it is not reported as new
-  coveredBy: packages/checker/src/since/changesSince.test.ts > findingsSince > splits the findings into new and gone, by identity
-  about: fn:@suss/checker::findingsSince
+results:
+  - reads: postgresql:orders
+    by: [tenant_id]
+    from: { tenant_id: input.auth.tenantId }
 ```
 
-`suss extract -f vitest --intent intent/` reads the tests the PRDs list, and only those, and `suss check --intent intent/` reports a listed test that is gone or renamed (`missingCoveringTest`), one marked skip or todo (`coveringTestSkipped`), and one whose calls never reach what the scenario is about, or reach it only through something the test mocked (`testMissesSubject`). A `.sussignore` rule can give one scenario by its title, so accepting one gap in a PRD leaves the others reported.
+When the code takes the tenant from somewhere else, such as the request body, `suss check --intent` reports `valueFromElsewhere` with both sources. A conversion such as `Number(x)`, `int(x)` or `x.to_i` does not break the chain, and a value that goes through a helper suss cannot see into is listed as unchecked. This works in TypeScript, Python and Ruby, including SQLAlchemy filters and raw SQL placeholders. ([#1229](https://github.com/nimbuscloud-ai/suss/pull/1229))
+
+### A PRD scenario can name the test that covers it
+
+A scenario lists the test that covers it under `coveredBy`, and suss reads tests from vitest, pytest, RSpec and Minitest:
+
+```yaml
+coveredBy: packages/checker/src/since/changesSince.test.ts > findingsSince > splits the findings into new and gone, by identity
+coveredBy: tests/test_orders.py::TestCancel::test_second_time
+coveredBy: spec/models/order_spec.rb > Order > #cancel > changes nothing the second time
+```
+
+`suss extract -f vitest --intent intent/` (or `-f pytest`, `-f rspec`, `-f minitest`) reads only the tests the PRDs list, and `suss check --intent intent/` reports a listed test that is gone or renamed (`missingCoveringTest`), one marked to be skipped (`coveringTestSkipped`), and one whose calls never reach what the scenario is about, or reach it only through a mock (`testMissesSubject`). A test whose calls suss could not follow is listed as unchecked instead of reported as missing its subject. A test runs through its fixtures, `let` and `subject` blocks, setup methods and shared examples, and new `factory-bot` and `fabrication` packs say which class a factory builds. On mastodon, 164 of 204 listed RSpec examples count as covering their model and 10 are unchecked. A scenario can also say an effect happens on every path with `always`. ([#1211](https://github.com/nimbuscloud-ai/suss/pull/1211), [#1217](https://github.com/nimbuscloud-ai/suss/pull/1217), [#1238](https://github.com/nimbuscloud-ai/suss/pull/1238))
+
+The activerecord pack reads `scope :x, -> { ... }` as a class method on the model, so a call to a scope reaches the scope's body and its table reads, including a scope a concern defines. ([#1238](https://github.com/nimbuscloud-ai/suss/pull/1238))
+
+### What a command prints and how it exits
+
+Writes to stdout and stderr are recorded as effects, `process.exit`, `sys.exit` and `exit` end a path with their code, and the flags a command reads from its parser are its inputs, in all three languages. An intent can say `exits: 1`, and `check --intent` compares it. ([#1224](https://github.com/nimbuscloud-ai/suss/pull/1224))
+
+### Repositories and clients a framework injects
+
+A new `typeorm` pack reads repositories and data sources NestJS injects into a constructor, and the Prisma pack finds a `PrismaService` that extends the client. On twenty-server, 517 of 578 repository calls now record their table, and on ghostfolio, 136 of 140 calls through an injected Prisma client do. The Prisma pack also finds a client before `prisma generate` has run, one built in another file and imported, and one from Prisma 7's new generator. On immich, none of the 303 NestJS handlers paired with its OpenAPI spec in 0.33.1, and 287 pair now. ([#1225](https://github.com/nimbuscloud-ai/suss/pull/1225), [#1231](https://github.com/nimbuscloud-ai/suss/pull/1231), [#1235](https://github.com/nimbuscloud-ai/suss/pull/1235))
+
+### Modules inside one app
+
+`suss.json` can list an app's modules, and each module's exports get their own keys, so `inspect --diff` shows when a change adds a call across a module line. suss reports the crossing and enforces nothing. ([#1219](https://github.com/nimbuscloud-ai/suss/pull/1219))
+
+### A test app that a function builds and drops
+
+suss skips a mount or a route on an app that never leaves the function that built it, in all three languages, so a test helper that builds a second app no longer adds its routes to the router. ([#1227](https://github.com/nimbuscloud-ai/suss/pull/1227), [#1228](https://github.com/nimbuscloud-ai/suss/pull/1228))
+
+### Performance
+
+Each number is the median of three alternating cold runs of 0.33.1 and 0.34.0 on the same checkout:
+
+| Corpus | 0.33.1 | 0.34.0 | Change |
+|---|---:|---:|---:|
+| twenty-server, with the packs `suss init` picks | 190.5s | 105.6s | −45% |
+| twenty-server, with the benchmark packs | 49.7s | 47.7s | −4% |
+| twenty-front | 146.7s | 120.9s | −18% |
+| directus `api/` | 111.5s | 92.5s | −17% |
+| saleor-dashboard | 58.5s | 52.3s | −11% |
+| saleor-storefront | 8.2s | 7.5s | −9% |
+| mastodon (Ruby) | 35.0s | 23.0s | −34% |
+| dispatch (Python) | 11.8s | 14.7s | +25% |
+
+dispatch is slower because 0.34.0 reads 52% more of it: Python imports now resolve under the source directory `pyproject.toml` declares, so 1,064 functions get a summary where 701 did. Peak memory went from 1.5 GB to 1.9 GB on dispatch and from 3.0 GB to 3.7 GB on mastodon, partly from the extra code and partly because the CLI now starts with a larger heap and collects less often. ([#1199](https://github.com/nimbuscloud-ai/suss/pull/1199), [#1202](https://github.com/nimbuscloud-ai/suss/pull/1202), [#1216](https://github.com/nimbuscloud-ai/suss/pull/1216), [#1236](https://github.com/nimbuscloud-ai/suss/pull/1236))
+
+### Fixes
+
+- A warm cache run gives the same output as a cold one, and a file edited while a run reads it is read again next time. ([#1197](https://github.com/nimbuscloud-ai/suss/pull/1197), [#1226](https://github.com/nimbuscloud-ai/suss/pull/1226))
+- A class method and an instance method with the same name are told apart. ([#1200](https://github.com/nimbuscloud-ai/suss/pull/1200))
+- A write through a name, such as `client.timeout = 5`, reaches later reads of that property. ([#1194](https://github.com/nimbuscloud-ai/suss/pull/1194))
+- An unannotated parameter gets the type its callers declare. ([#1161](https://github.com/nimbuscloud-ai/suss/pull/1161))
+- Python imports resolve under the source directory `pyproject.toml` declares. ([#1159](https://github.com/nimbuscloud-ai/suss/pull/1159))
+- Ruby looks up an included module the way Ruby does, and reads `concerns` directories. ([#1160](https://github.com/nimbuscloud-ai/suss/pull/1160))
+- A client typed as an intersection, a union or an alias is recognized. ([#1182](https://github.com/nimbuscloud-ai/suss/pull/1182))
+- A why question on a large Ruby project finishes in seconds instead of running for hours. ([#1183](https://github.com/nimbuscloud-ai/suss/pull/1183))
+- A queue consumer is scoped to the files its handler entry imports. ([#1155](https://github.com/nimbuscloud-ai/suss/pull/1155))
+- An environment read used only behind a presence test counts as defaulted. ([#1157](https://github.com/nimbuscloud-ai/suss/pull/1157))
+- Contract bodies are compared when a source that gives only a range comes first. ([#1179](https://github.com/nimbuscloud-ai/suss/pull/1179))
+- Types are written the same way whatever order the checker read them in. ([#1221](https://github.com/nimbuscloud-ai/suss/pull/1221))
+- `--json` usage errors print `{"error"}` on stdout for `check`, `inspect --diff`, `inspect --flow` and `intent outcomes`. ([#1234](https://github.com/nimbuscloud-ai/suss/pull/1234))
 
 ## 0.33.1 (2026-09-23)
 

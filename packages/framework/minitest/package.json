@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-minitest",
-  "version": "0.33.1",
+  "version": "0.34.0",
   "type": "module",
   "description": "Ruby pack for Minitest and Rails test cases: each test as a unit named by its class and method, with whether it is skipped and what it stubs, so a PRD scenario can name the test that covers it.",
   "keywords": [
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.33.1",
+    "@suss/adapter-ruby": "0.34.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {

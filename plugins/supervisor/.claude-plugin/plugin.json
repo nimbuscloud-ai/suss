@@ -1,7 +1,7 @@
 {
   "name": "suss",
   "displayName": "suss supervisor",
-  "version": "0.33.1",
+  "version": "0.34.0",
   "description": "Checks each edit an agent makes against both sides of every boundary it touches, and reports what changed when the agent stops. Includes the suss MCP server.",
   "author": {
     "name": "Nimbus Cloud AI LLC",
