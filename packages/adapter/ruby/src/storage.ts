@@ -25,7 +25,7 @@ import {
 } from "./ast.js";
 import { classBehind, reachesBase } from "./baseClass.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
-import { readKey } from "./facts/values.js";
+import { nodeId, readKey } from "./facts/values.js";
 import { loaderPick } from "./loaders.js";
 import {
   NOWHERE,
@@ -34,7 +34,11 @@ import {
   statementEffects,
 } from "./rawSql.js";
 import { compoundName } from "./scope.js";
-import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
+import {
+  evaluatedValue,
+  evaluationScope,
+  stringValueOf,
+} from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -723,15 +727,55 @@ export interface EffectSlot extends SlotValue {
   effect: Effect;
 }
 
+/** Effects, and the value each of their columns is given. */
+export interface SlottedEffects {
+  effects: Effect[];
+  slots: EffectSlot[];
+}
+
+/** Each method's storage work by its node id, for as long as one evaluator lasts. */
+const storageByScope = new WeakMap<object, Map<string, SlottedEffects>>();
+
 /**
  * The database work one method's body does, calls nested anywhere in it
  * included, with the value each column is given.
+ *
+ * A file asks for its methods' slot values before its units are built,
+ * and each unit then reads its own body again, so the answer is kept.
+ * It is kept per evaluator because a cache charge that starts evaluation
+ * over has to recognize the body again to be charged for what it reads.
+ * A run has one set of storage options, so the method and its file are
+ * the whole key.
  */
 export function methodStorage(
   method: RbNode,
   file: string,
   options: RbStorageOptions,
-): { effects: Effect[]; slots: EffectSlot[] } {
+): SlottedEffects {
+  const scope = evaluationScope(options.facts);
+  if (scope === undefined) {
+    return recognizeMethodStorage(method, file, options);
+  }
+  let kept = storageByScope.get(scope);
+  if (kept === undefined) {
+    kept = new Map();
+    storageByScope.set(scope, kept);
+  }
+  const key = nodeId(file, method);
+  const known = kept.get(key);
+  if (known !== undefined) {
+    return known;
+  }
+  const found = recognizeMethodStorage(method, file, options);
+  kept.set(key, found);
+  return found;
+}
+
+function recognizeMethodStorage(
+  method: RbNode,
+  file: string,
+  options: RbStorageOptions,
+): SlottedEffects {
   const slots: EffectSlot[] = [];
   const effects = storageEffects(
     callsUnder(method),

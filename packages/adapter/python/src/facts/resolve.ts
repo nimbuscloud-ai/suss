@@ -169,8 +169,7 @@ export interface SubjectOrigin {
 export function originsOf(db: Database, nameKey: string): SubjectOrigin[] {
   askResolution(db, [nameKey], "wantedOrigin", programFor(db));
   return db
-    .facts("wantedComesFrom")
-    .filter((row) => String(row[0]) === nameKey)
+    .lookup("wantedComesFrom", 0, nameKey)
     .map((row) => ({ module: String(row[1]), name: String(row[2]) }));
 }
 
@@ -277,8 +276,7 @@ function originsByConstruction(db: Database): Map<string, SubjectOrigin[]> {
  */
 export function containedValues(db: Database, objectKey: string): string[] {
   return db
-    .facts("holdsProperty")
-    .filter((row) => row[0] === objectKey)
+    .lookup("holdsProperty", 0, objectKey)
     .map((row) => [String(row[1]), String(row[2])] as const)
     .sort(([left], [right]) => Number(left) - Number(right))
     .map(([, value]) => value);
@@ -295,6 +293,6 @@ export function usesOf(db: Database, key: string): ValueUses {
 
 /** The object a call returns, when the rules settled it on one. */
 export function objectReturnedBy(db: Database, callKey: string): string | null {
-  const row = db.facts("wantedObjectOf").find((entry) => entry[0] === callKey);
+  const [row] = db.lookup("wantedObjectOf", 0, callKey);
   return row === undefined ? null : String(row[1]);
 }
