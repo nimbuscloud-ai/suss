@@ -1767,7 +1767,7 @@
                     }
                   }
                 ],
-                "description": "The tests that exercise this scenario, each written as the test file, then each describe title, then the test's own title, joined with ' > '."
+                "description": "The tests that exercise this scenario, each written the way its runner prints it: for vitest or RSpec, the test file, then each describe or context title, then the test's own title, joined with ' > '; for pytest, the node id, as in tests/test_orders.py::TestCancel::test_twice."
               },
               "about": {
                 "anyOf": [

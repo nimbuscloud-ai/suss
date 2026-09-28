@@ -247,6 +247,14 @@ function functionAt(key: string, ctx: ResolveContext): ReachedFunction | null {
     return null;
   }
   /* v8 ignore stop */
+  return reachedFunctionOf(file, node);
+}
+
+/** A function as the walk records it, with the class it is a method of when it is one. */
+export function reachedFunctionOf(
+  file: BoundPythonFile,
+  node: PyNode,
+): ReachedFunction {
   const name = field(node, "name")?.text ?? "<anon>";
   const owner = ownerClassOf(node);
   const ownerName = owner === null ? undefined : field(owner, "name")?.text;

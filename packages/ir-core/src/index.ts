@@ -219,6 +219,7 @@ export {
   SuppressionRuleSchema,
   validateRule,
 } from "./suppressions.js";
+export { TEST_TITLE_SEPARATOR, testUnitName } from "./testName.js";
 export { bodyShapesMatch, type MatchResult } from "./typeShapeMatch.js";
 export { pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
 

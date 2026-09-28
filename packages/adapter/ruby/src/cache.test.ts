@@ -27,6 +27,7 @@ vi.mock("./version.js", async (importOriginal) => {
 
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
+import { rspecTestPack } from "./__fixtures__/rspecPattern.js";
 import { extractRubyProject, findRubyFiles } from "./project.js";
 
 import type { CacheDiagnostic } from "@suss/extractor";
@@ -524,6 +525,27 @@ describe("extractRubyProject's on-disk cache", () => {
 
       expect(unrelated.cached).toBe(unrelated.cold);
       expect(cached).toBe(cold);
+    });
+
+    it("gives what a run without the cache gives when a spec example's let block changes", async () => {
+      const { files, packs } = shopProject();
+      const orderSpec = (value: string) =>
+        `describe Order do\n  let(:order) { ${value} }\n  it "opens" do\n    order\n  end\nend\n`;
+      write("spec/models/order_spec.rb", orderSpec("Order.find(1)"));
+      write(
+        "spec/models/item_spec.rb",
+        'describe Item do\n  it "lists" do\n    Item.all\n  end\nend\n',
+      );
+      const withTests = [...packs, rspecTestPack()];
+      const diagnostics: CacheDiagnostic[] = [];
+      await bothRuns(files(), withTests, diagnostics);
+      write("spec/models/order_spec.rb", orderSpec("Order.new.open?"));
+
+      const { cached, cold } = await bothRuns(files(), withTests, diagnostics);
+
+      expect(cold).toContain("Order.new.open?");
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
     });
 
     /** The entry the runs so far wrote, to change by hand. */

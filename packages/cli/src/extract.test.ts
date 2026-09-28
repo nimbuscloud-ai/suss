@@ -288,6 +288,20 @@ describe("packs for the other two languages", () => {
     );
   });
 
+  it("hands the rspec pack the spec files an intent directory lists", async () => {
+    const listed = ["spec/models/order_spec.rb"];
+    const handed = await resolveRubyPack("rspec", undefined, undefined, listed);
+    const kept = await resolveRubyPack(
+      `rspec=${writeConfig(JSON.stringify({ files: ["spec/own_spec.rb"] }))}`,
+      undefined,
+      undefined,
+      listed,
+    );
+
+    expect(handed.tests?.[0]?.files).toEqual(listed);
+    expect(kept.tests?.[0]?.files).toEqual(["spec/own_spec.rb"]);
+  });
+
   it("reads a bare pack's default paths against the directory the run reads", async () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-run-"));
     const pack = await resolveRubyPack("rails", undefined, projectRoot);
@@ -1014,6 +1028,41 @@ describe("relativizeSummaryPaths", () => {
         ? rendered.root.target?.file
         : undefined,
     ).toBe("src/avatar.tsx");
+  });
+
+  it("rewrites the file of the class a call in a test was sent to", () => {
+    const summary = {
+      location: {
+        file: "/repo/spec/account_spec.rb",
+        range: { start: 1, end: 2 },
+      },
+      transitions: [
+        {
+          output: { type: "return" },
+          effects: [
+            {
+              type: "invocation",
+              callee: "account.reviewed?",
+              args: [],
+              async: false,
+              receiverClass: {
+                file: "/repo/app/models/account.rb",
+                name: "Account",
+              },
+            },
+          ],
+        },
+      ],
+      identity: { name: "reviews", exportPath: [], boundaryBinding: null },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo");
+
+    const [effect] = summary.transitions[0].effects;
+    expect(effect.type === "invocation" ? effect.receiverClass : null).toEqual({
+      file: "app/models/account.rb",
+      name: "Account",
+    });
   });
 
   it("rewrites the file each wrapper around the unit is declared in", () => {

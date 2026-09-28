@@ -1,0 +1,17 @@
+{
+  "minitest": "minitest: the test runner this pack reads, and the pack's name",
+  "test_": "minitest: the prefix of a test method's name",
+  "_": "rails: what joins the words of a test block's description in the method name it defines",
+  "test": "suss: code-unit kind; also rails: declares a test as a block given its description",
+  "setup": "rails: runs a block before each test; also minitest: the method run before each test",
+  "before_setup": "minitest: the hook run before setup",
+  "skip": "minitest: stops a test and marks it skipped",
+  "assert": "minitest: the prefix of its assertions",
+  "refute": "minitest: the prefix of its negative assertions",
+  "must_": "minitest: the prefix of its spec expectations",
+  "wont_": "minitest: the prefix of its negative spec expectations",
+  "flunk": "minitest: fails a test",
+  "stub": "minitest: replaces a method on an object for the length of a block",
+  "stubs": "mocha: replaces a method on an object",
+  "expects": "mocha: replaces a method on an object and expects it to be called"
+}

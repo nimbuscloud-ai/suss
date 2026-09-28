@@ -33,6 +33,7 @@ import {
   PREPEND_CALL,
   readCallArgs,
   runStatements,
+  scopesDefinedIn,
   singletonMethodsByName,
   stringLiteralValue,
   symbolValue,
@@ -55,6 +56,11 @@ import {
   RUBY_NAME_TYPES,
   WHOLE_VALUE_OPERATORS,
 } from "./locals.js";
+import {
+  groupClassRead,
+  groupNameOwner,
+  groupNameReadsClass,
+} from "./specNames.js";
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameWrite } from "@suss/resolution";
@@ -98,10 +104,19 @@ function nameKey(
   node: RbNode,
   enclosing: RbNode | null,
 ): string {
-  const owner = ownerOfName(node, node.text, enclosing);
+  const owner =
+    ownerOfName(node, node.text, enclosing) ?? groupOwnerOf(node, enclosing);
   return owner === null
     ? nameId(filePath, node.text)
     : `${nodeId(filePath, owner)}#${node.text}`;
+}
+
+/** The test group a bare name belongs to, when the name is no local, since a local wins over a group's value in Ruby. */
+function groupOwnerOf(node: RbNode, enclosing: RbNode | null): RbNode | null {
+  if (node.type !== "identifier" || isLocalName(node, node.text, enclosing)) {
+    return null;
+  }
+  return groupNameOwner(node, node.text);
 }
 
 /**
@@ -125,6 +140,11 @@ export function readKey(
   const type = node.type;
   if (type !== "identifier" && type !== "constant") {
     return nodeId(filePath, node);
+  }
+  // A test group's `described_class` reads as the class the group was given.
+  const described = type === "identifier" ? groupClassRead(node) : null;
+  if (described !== null) {
+    return readKey(filePath, described, null);
   }
   const above = node === written && parent !== undefined ? parent : node.parent;
   if (
@@ -247,6 +267,8 @@ interface Emitter {
   namedWrites: NamedWrites | null;
   /** The calls whose block the run's packs declare runs as part of the surrounding body. */
   bodyBlocks: BodyBlocks;
+  /** The calls the run's packs declare define a class method from a lambda. */
+  scopeCalls: ReadonlySet<string>;
 }
 
 /**
@@ -532,7 +554,10 @@ export function readsOffClassItself(
   if (CONSTANT_REF_TYPES.has(written.type)) {
     return true;
   }
-  return written.type === "identifier" && classLocals.has(receiverKey);
+  return (
+    written.type === "identifier" &&
+    (classLocals.has(receiverKey) || groupNameReadsClass(written))
+  );
 }
 
 /**
@@ -2082,6 +2107,20 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   emitInstanceWrites(within, classKey, collected);
   if (body !== null) {
     emitLambdasIn(within, body);
+    for (const scope of scopesDefinedIn(
+      body,
+      cls.type === "module",
+      emitter.bodyBlocks,
+      emitter.scopeCalls,
+    )) {
+      add(
+        emitter,
+        "holdsProperty",
+        classKey,
+        classSpelling(scope.name),
+        nodeId(emitter.filePath, scope.lambda),
+      );
+    }
   }
 
   return classKey;
@@ -2097,6 +2136,7 @@ export function emitValueFacts(
   filePath: string,
   root: RbNode,
   bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
+  scopeCalls: ReadonlySet<string> = new Set(),
 ): void {
   const writes = collectWrites(null, root);
   const emitter: Emitter = {
@@ -2111,6 +2151,7 @@ export function emitValueFacts(
     instanceWrites: null,
     namedWrites: { body: root, parameters: new Set(), byProperty: new Map() },
     bodyBlocks,
+    scopeCalls,
   };
 
   const declaresName = (child: RbNode, key: string): void => {

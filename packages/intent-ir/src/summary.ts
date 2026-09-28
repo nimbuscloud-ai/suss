@@ -20,12 +20,10 @@ import {
   unitInvocationBinding,
 } from "@suss/ir-core";
 
-import {
-  INPUT_SOURCE_PREFIX,
-  oneOrMore,
-  TEST_TITLE_SEPARATOR,
-} from "./schema.js";
+import { toCoveringTest } from "./coveringTest.js";
+import { INPUT_SOURCE_PREFIX, oneOrMore } from "./schema.js";
 
+import type { CoveringTestSpelling } from "./coveringTest.js";
 import type {
   AuthoredConstant,
   AuthoredInputField,
@@ -164,21 +162,6 @@ export interface PrdScenarioSummary {
   coveredBy: CoveringTestSpelling[];
   /** What a covering test has to reach. Empty means the PRD's linked boundaries. */
   about: string[];
-}
-
-/** One `coveredBy` entry, split into the test file and its title path. */
-export interface CoveringTestSpelling {
-  /** The entry as the author wrote it. */
-  spelledAs: string;
-  file: string;
-  /** The suite titles, outermost first, then the test's own title. */
-  titles: string[];
-}
-
-/** A `coveredBy` entry split at ` > `: the file, then each title. */
-export function toCoveringTest(spelledAs: string): CoveringTestSpelling {
-  const [file, ...titles] = spelledAs.split(TEST_TITLE_SEPARATOR);
-  return { spelledAs, file: file.trim(), titles };
 }
 
 export interface PrdSummary {

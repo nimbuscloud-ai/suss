@@ -23,6 +23,8 @@ import {
   UnitInvocationSemanticsSchema,
 } from "@suss/ir-core";
 
+import { toCoveringTest } from "./coveringTest.js";
+
 // ---------------------------------------------------------------------------
 // Provenance: how this intent doc came to exist. Findings against
 // `inferred` (not-yet-curated) intent are downgraded; curation moves it
@@ -729,19 +731,15 @@ const PrdScenarioSchema = z.strictObject({
   /**
    * The tests that exercise this scenario, for a promise about which
    * values come back that no outcome can state. Each is spelled the way
-   * the runner prints it: the file, each suite title, then the test's
-   * own title, joined with ` > `.
+   * the runner prints it, as `toCoveringTest` reads it.
    */
   coveredBy: ONE_OR_MORE.describe(
-    "The tests that exercise this scenario, each written as the test file, then each describe title, then the test's own title, joined with ' > '.",
+    "The tests that exercise this scenario, each written the way its runner prints it: for vitest or RSpec, the test file, then each describe or context title, then the test's own title, joined with ' > '; for pytest, the node id, as in tests/test_orders.py::TestCancel::test_twice.",
   ).optional(),
   about: ONE_OR_MORE.describe(
     "What a covering test has to reach for the scenario to count as covered: a boundary or a unit, spelled the way suss ask takes one. Without it, a test has to reach one of the boundaries the PRD's other scenarios link to.",
   ).optional(),
 });
-
-/** What separates the file and the titles in a `coveredBy` spelling. */
-export const TEST_TITLE_SEPARATOR = " > ";
 
 const PrdFields = z.strictObject({
   kind: z
@@ -766,11 +764,11 @@ const PrdSchema = PrdFields.superRefine((doc, ctx) => {
     const label =
       scenario.title === undefined ? `#${at + 1}` : `"${scenario.title}"`;
     for (const [line, spelled] of oneOrMore(scenario.coveredBy).entries()) {
-      if (!spelled.includes(TEST_TITLE_SEPARATOR)) {
+      if (toCoveringTest(spelled).titles.length === 0) {
         ctx.addIssue({
           code: "custom",
           path: ["scenarios", at, "coveredBy", line],
-          message: `scenario ${label} lists the test "${spelled}", which has no title; write the file, then each describe title, then the test's own title, joined with " > "`,
+          message: `scenario ${label} lists the test "${spelled}", which has no title; write the file, then each describe title, then the test's own title, joined with " > ", or for pytest the node id, file::test_name`,
         });
       }
     }

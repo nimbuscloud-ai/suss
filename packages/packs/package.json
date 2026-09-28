@@ -177,6 +177,22 @@
       "types": "./dist/pg-ruby.d.ts",
       "import": "./dist/pg-ruby.js"
     },
+    "./rspec": {
+      "types": "./dist/rspec.d.ts",
+      "import": "./dist/rspec.js"
+    },
+    "./factory-bot": {
+      "types": "./dist/factory-bot.d.ts",
+      "import": "./dist/factory-bot.js"
+    },
+    "./fabrication": {
+      "types": "./dist/fabrication.d.ts",
+      "import": "./dist/fabrication.js"
+    },
+    "./minitest": {
+      "types": "./dist/minitest.d.ts",
+      "import": "./dist/minitest.js"
+    },
     "./prisma": {
       "types": "./dist/prisma.d.ts",
       "import": "./dist/prisma.js"
@@ -212,6 +228,10 @@
     "./vitest": {
       "types": "./dist/vitest.d.ts",
       "import": "./dist/vitest.js"
+    },
+    "./pytest": {
+      "types": "./dist/pytest.d.ts",
+      "import": "./dist/pytest.js"
     },
     "./sqlalchemy": {
       "types": "./dist/sqlalchemy.d.ts",
@@ -297,7 +317,12 @@
     "@suss/framework-package-exports": "*",
     "@suss/framework-pg": "*",
     "@suss/framework-pg-ruby": "*",
+    "@suss/framework-rspec": "*",
+    "@suss/framework-factory-bot": "*",
+    "@suss/framework-fabrication": "*",
+    "@suss/framework-minitest": "*",
     "@suss/framework-prisma": "*",
+    "@suss/framework-pytest": "*",
     "@suss/framework-rails": "*",
     "@suss/framework-react": "*",
     "@suss/framework-react-query": "*",

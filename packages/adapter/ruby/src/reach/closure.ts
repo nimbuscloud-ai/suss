@@ -16,6 +16,7 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  ReceiverClasses,
   recordParameterGaps,
   TargetPlacements,
   unfollowedCallGap,
@@ -26,11 +27,13 @@ import { assembleSummary } from "@suss/extractor";
 import {
   type Dependencies,
   type DependencyLedger,
+  fileOfKey,
   noDependencies,
 } from "@suss/resolution";
 
 import {
   bodyStatements,
+  enclosingDefinition,
   field,
   PROGRAM_TYPE,
   rangeOf,
@@ -50,12 +53,14 @@ import {
 } from "../paths/effects.js";
 import { askSourcesOfBodies, withSlotSources } from "../provenance.js";
 import { callbacksReached, storageClaims } from "../storage.js";
+import { exampleCalls } from "../testCases.js";
 import { forgetEvaluations } from "../values/evaluator.js";
 import {
   calleeSpellings,
   mightReadAsACall,
   readsAsACall,
   resolveCallee,
+  resolveMethodOn,
   resolveMethodReference,
 } from "./resolveCallee.js";
 
@@ -64,6 +69,7 @@ import type {
   BoundaryBinding,
   DeclaredAt,
   ParameterCall,
+  ReceiverClass,
   UnfollowedCall,
 } from "@suss/behavioral-ir";
 import type {
@@ -75,6 +81,7 @@ import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type { ReadableBody } from "../paths/effects.js";
 import type { WalkReplay } from "../reuse.js";
+import type { ExampleReads, ExampleRun, PredicateCall } from "../testCases.js";
 import type {
   CalleeResolution,
   CalleeSpellings,
@@ -94,6 +101,8 @@ export interface ReachOptions extends BodyReadOptions {
   readonly replay?: WalkReplay;
   /** Set when a cache is recording what each scanned body depended on. */
   readonly ledger?: DependencyLedger;
+  /** Which blocks a test example runs besides its own. Absent when no pack in the run reads tests. */
+  readonly examples?: ExampleReads | undefined;
 }
 
 /** A method one scan followed, as a cache stores it. */
@@ -114,6 +123,8 @@ export interface StoredScan {
   readonly parameterCalls: ParameterCall[];
   readonly passedPositions: string[];
   readonly propertyReads: string[];
+  /** Absent from a scan an older run stored. */
+  readonly receiverClasses?: [string, ReceiverClass][];
 }
 
 /** A discovered unit's method, or a file's program node, keyed the same way as its summary's span. */
@@ -141,6 +152,11 @@ export interface ReachedUnits {
   readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
   /** The callee text of each no-argument call that turned out to be a property read, by the scanned method's key, so a summary built before the walk can drop it. */
   readonly propertyReadsByKey: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The class each call in a test's body was sent to, by callee text, keyed by the test's key. */
+  readonly receiverClassesByKey: ReadonlyMap<
+    string,
+    ReadonlyMap<string, ReceiverClass>
+  >;
   /** Every (method, position) pair that some scanned body passes a named project method into, across the whole run. */
   readonly passedPositions: ReadonlySet<string>;
   /** The keys of the bodies that reached at least one project method, for a caller that reports a body only when it reaches something. */
@@ -178,6 +194,10 @@ export async function reachedFunctions(
   >();
   const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
   const propertyReadsByKey = new Map<string, ReadonlySet<string>>();
+  const receiverClassesByKey = new Map<
+    string,
+    ReadonlyMap<string, ReceiverClass>
+  >();
   // Only a named project method counts, not an inline block or a variable,
   // so a parameter call missing from this set is a gap even when some
   // caller supplies a value.
@@ -250,6 +270,10 @@ export async function reachedFunctions(
       argTargetsByKey.set(key, scan.argTargets);
       if (scan.propertyReads.size > 0) {
         propertyReadsByKey.set(key, scan.propertyReads);
+      }
+
+      if (scan.receiverClasses.size > 0) {
+        receiverClassesByKey.set(key, scan.receiverClasses);
       }
       if (scan.parameterCalls.length > 0) {
         parameterCallsByKey.set(key, scan.parameterCalls);
@@ -341,6 +365,7 @@ export async function reachedFunctions(
     argTargetsByKey,
     parameterCallsByKey,
     propertyReadsByKey,
+    receiverClassesByKey,
     passedPositions,
     followedKeys,
     scans,
@@ -446,6 +471,7 @@ function storedScan(scan: Scan): StoredScan {
     parameterCalls: [...scan.parameterCalls],
     passedPositions: [...scan.passedPositions],
     propertyReads: [...scan.propertyReads],
+    receiverClasses: [...scan.receiverClasses],
   };
 }
 
@@ -466,6 +492,7 @@ function scanFromStored(
     parameterCalls: stored.parameterCalls,
     passedPositions: new Set(stored.passedPositions),
     propertyReads: new Set(stored.propertyReads),
+    receiverClasses: new Map(stored.receiverClasses ?? []),
   };
 }
 
@@ -519,6 +546,8 @@ interface Scan {
   readonly passedPositions: ReadonlySet<string>;
   /** The no-argument calls in this body that reached no project method, by callee text. */
   readonly propertyReads: ReadonlySet<string>;
+  /** In a test, the class each call was sent to, by callee text. */
+  readonly receiverClasses: ReadonlyMap<string, ReceiverClass>;
 }
 
 const EMPTY_SCAN: Scan = {
@@ -529,6 +558,7 @@ const EMPTY_SCAN: Scan = {
   parameterCalls: [],
   passedPositions: new Set(),
   propertyReads: new Set(),
+  receiverClasses: new Map(),
 };
 
 /**
@@ -559,6 +589,10 @@ interface BodyCalls {
   /** Every call in this body with no arguments. The summary already has an effect for each. */
   readonly argless: RbNode[];
   readonly site: CallSite;
+  /** Where one call is written, which for an example that runs a shared group's blocks can be another file. */
+  readonly siteFor: (call: RbNode) => CallSite;
+  /** The predicate a matcher call in an example calls, and on what. */
+  readonly predicateOf: (call: RbNode) => PredicateCall | null;
   readonly written: { call: RbNode; site: CallSite }[];
 }
 
@@ -570,23 +604,49 @@ interface BodyCalls {
  */
 function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
   const site = siteOf(source);
-  const read = readableBodyOf(source.node);
-  const written =
-    read === null ? [] : bodyCalls(read, options.inheritedMethods);
+  const run = options.examples?.runOf(source.node, source.file) ?? null;
+  const siteFor = (call: RbNode): CallSite => {
+    const file = run?.fileOf(call) ?? source.file;
+    return file === source.file
+      ? site
+      : { ...site, file, method: enclosingDefinition(call) };
+  };
+  const written = callsWrittenIn(source.node, run, options);
   const calls = callsReported(written, (call) =>
-    mightReadAsACall(call, site, options.context),
+    mightReadAsACall(call, siteFor(call), options.context),
   );
   return {
     calls,
     argless: written.filter(isArglessReceiverCall),
     site,
-    written: calls.map((call) => ({ call, site })),
+    siteFor,
+    predicateOf: (call) => run?.predicateOf?.(call) ?? null,
+    written: calls.map((call) => ({ call, site: siteFor(call) })),
   };
 }
 
 /**
+ * The calls this source writes. A test example also runs the hooks and
+ * values around it, so their calls are read with its own, and the calls
+ * the test runner handles itself are left out.
+ */
+function callsWrittenIn(
+  node: RbNode,
+  run: ExampleRun | null,
+  options: ReachOptions,
+): RbNode[] {
+  if (run !== null) {
+    return exampleCalls(run, options.inheritedMethods).filter(
+      (call) => !run.isRunnerCall(call),
+    );
+  }
+  const read = readableBodyOf(node);
+  return read === null ? [] : bodyCalls(read, options.inheritedMethods);
+}
+
+/**
  * The statements this source runs. For a program node they are the file's
- * load-time statements, and for a method, its body.
+ * load-time statements, and for a method or a block, its body.
  */
 function readableBodyOf(node: RbNode): ReadableBody | null {
   return node.type === PROGRAM_TYPE ? moduleScopeBody(node) : methodBody(node);
@@ -595,15 +655,25 @@ function readableBodyOf(node: RbNode): ReadableBody | null {
 /**
  * Where this source's calls are written. At module scope, names are keyed
  * on the file instead of a method, matching how the value facts key them.
+ * A block's names belong to the method it is written in, or to the file.
  */
 function siteOf(source: ReachedFunction): CallSite {
   return {
     file: source.file,
-    method: source.node.type === PROGRAM_TYPE ? null : source.node,
+    method: localsOwnerOf(source.node),
     owner: keyOf(source),
     enclosingQualifiedName: source.enclosingQualifiedName,
   };
 }
+
+function localsOwnerOf(node: RbNode): RbNode | null {
+  if (node.type === PROGRAM_TYPE) {
+    return null;
+  }
+  return BLOCK_TYPES.has(node.type) ? enclosingDefinition(node) : node;
+}
+
+const BLOCK_TYPES = new Set(["block", "do_block"]);
 
 /**
  * The calls this body makes, out of the ones the round asked about. A
@@ -613,14 +683,33 @@ function siteOf(source: ReachedFunction): CallSite {
  */
 function callsMade(
   asked: readonly RbNode[],
-  site: CallSite,
+  siteFor: (call: RbNode) => CallSite,
   ctx: ReachContext,
   spellings: CalleeSpellings,
+  inExample: boolean,
 ): RbNode[] {
   return asked.filter(
     (call) =>
-      !isArglessReceiverCall(call) || readsAsACall(call, site, ctx, spellings),
+      !isArglessReceiverCall(call) ||
+      readsAsACall(call, siteFor(call), ctx, spellings) ||
+      (inExample && readsTheObjectSetUp(call, siteFor(call), ctx, spellings)),
   );
+}
+
+/**
+ * Whether a no-argument call in a test resolves to a project method, or
+ * is sent to a class the project defines. A test reads the object it set
+ * up, `order.cancelled?` or the column `order.state`, and either is a
+ * call on that class, which the intent check counts.
+ */
+function readsTheObjectSetUp(
+  call: RbNode,
+  site: CallSite,
+  ctx: ReachContext,
+  spellings: CalleeSpellings,
+): boolean {
+  const outcome = resolveCallee(call, site, ctx, spellings);
+  return outcome.kind === "followed" || outcome.onClass !== undefined;
 }
 
 function scanBody(
@@ -631,6 +720,8 @@ function scanBody(
     calls: RbNode[];
     argless: RbNode[];
     site: CallSite;
+    siteFor: (call: RbNode) => CallSite;
+    predicateOf: (call: RbNode) => PredicateCall | null;
     spellings: CalleeSpellings;
   },
 ): Scan {
@@ -640,17 +731,28 @@ function scanBody(
   }
 
   const site = read.site;
-  const calls = callsMade(read.calls, site, ctx, read.spellings);
+  const inExample =
+    (options.examples?.runOf(source.node, source.file) ?? null) !== null;
+  const calls = callsMade(
+    read.calls,
+    read.siteFor,
+    ctx,
+    read.spellings,
+    inExample,
+  );
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
 
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
   const placements = new TargetPlacements();
+  const receiverClasses = new ReceiverClasses();
   const parameterCalls: ParameterCall[] = [];
   const passedPositions = new Set<string>();
   const seen = new Set<string>();
   const parameterCallsSeen = new Set<string>();
-  const followedArgless = new Set<number>();
+  // No-argument calls that stay calls: each one that reached a project
+  // method, and in a test each one sent to a class the project defines.
+  const keptArgless = new Set<number>();
 
   // Records each `method(:name)` argument as passed into that position of
   // the callee, so it can be joined to the parameter the callee calls.
@@ -708,21 +810,33 @@ function scanBody(
 
   for (const call of calls) {
     const callee = calleeText(call);
-    const outcome = resolveCallee(call, site, ctx, read.spellings);
+    const callSite = read.siteFor(call);
+    const predicate = read.predicateOf(call);
+    const outcome =
+      predicate === null
+        ? resolveCallee(call, callSite, ctx, read.spellings)
+        : resolveMethodOn(predicate.target, predicate.method, callSite, ctx);
     if (options.storage !== undefined) {
       for (const callback of callbacksReached(
         call,
-        source.file,
+        callSite.file,
         options.storage,
-        site.method,
+        callSite.method,
       )) {
         followCallback(callback.name, callback.key);
       }
     }
     placeCallee(placements, outcome, call, {
-      callerFile: source.file,
+      callerFile: callSite.file,
       displayPathOf,
     });
+    if (inExample && outcome.onClass !== undefined) {
+      receiverClasses.add(callee, {
+        file: displayPathOf(fileOfKey(outcome.onClass.key)),
+        name: outcome.onClass.name,
+      });
+      keptArgless.add(call.id);
+    }
     recordPassedArgs(
       call,
       callee,
@@ -735,7 +849,7 @@ function scanBody(
       // database work, so it is not reported as a gap.
       const claimed =
         options.storage !== undefined &&
-        storageClaims(call, source.file, options.storage, site.method);
+        storageClaims(call, callSite.file, options.storage, callSite.method);
       if (!seen.has(stopKey) && !claimed && worthRecording(outcome.reason)) {
         seen.add(stopKey);
         stops.push({ callee, reason: outcome.reason });
@@ -755,7 +869,7 @@ function scanBody(
       continue;
     }
     if (isArglessReceiverCall(call)) {
-      followedArgless.add(call.id);
+      keptArgless.add(call.id);
     }
     const key = keyOf(outcome.target);
     if (!seen.has(key)) {
@@ -771,7 +885,8 @@ function scanBody(
     argTargets: placements.argTargets,
     parameterCalls,
     passedPositions,
-    propertyReads: propertyReadsAmong(read.argless, calls, followedArgless),
+    propertyReads: propertyReadsAmong(read.argless, calls, keptArgless),
+    receiverClasses: receiverClasses.settled,
   };
 }
 
@@ -809,18 +924,19 @@ function placeCallee(
 }
 
 /**
- * The no-argument calls that reached no project method, by callee text.
- * A text that another call in this body kept is left out, since effects
- * are dropped by text and that call would be dropped too.
+ * The no-argument calls that did not stay calls, by callee text, less any
+ * text another kept call shares, since effects are dropped by text.
  */
 function propertyReadsAmong(
   argless: readonly RbNode[],
   made: readonly RbNode[],
-  followed: ReadonlySet<number>,
+  keptArgless: ReadonlySet<number>,
 ): ReadonlySet<string> {
   const kept = new Set(
     made
-      .filter((call) => !isArglessReceiverCall(call) || followed.has(call.id))
+      .filter(
+        (call) => !isArglessReceiverCall(call) || keptArgless.has(call.id),
+      )
       .map(calleeText),
   );
   const reads = new Set<string>();

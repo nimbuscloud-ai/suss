@@ -15,7 +15,11 @@
 import { readTestMetadata } from "@suss/behavioral-ir";
 import { callSpellings, functionOf } from "@suss/checker";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  ReceiverClass,
+  TestMock,
+} from "@suss/behavioral-ir";
 import type {
   CallFacts,
   CallPath,
@@ -29,13 +33,24 @@ import type {
   IntentFindingKind,
   PrdSummary,
 } from "@suss/intent-ir";
+import type { UncheckedIntent } from "./index.js";
 
 export type FoundTest =
   | { found: true; unit: BehavioralSummary }
   | { found: false; message: string };
 
 export type FoundSubject =
-  | { found: true; target: ReachTarget; label: string }
+  | {
+      found: true;
+      target: ReachTarget;
+      label: string;
+      /**
+       * The classes the subject is, when it was spelled as a class or as
+       * a file a class is written in. A call a test sends to one of them
+       * reaches the subject. Empty for a single unit or a boundary.
+       */
+      classes?: ReadonlyArray<ReceiverClass>;
+    }
   | { found: false; message: string };
 
 /** How the check finds the summaries a PRD's spellings mean. */
@@ -62,11 +77,13 @@ export interface CoveringTestClaim {
 interface Subject {
   target: ReachTarget;
   label: string;
+  classes: ReadonlyArray<ReceiverClass>;
 }
 
 type Verdict =
   | { kind: "covered" }
-  | { kind: "finding"; finding: IntentFinding };
+  | { kind: "finding"; finding: IntentFinding }
+  | { kind: "unchecked"; unchecked: UncheckedIntent };
 
 /**
  * One verdict per claim, in the order given. A claim whose test and
@@ -97,7 +114,7 @@ export function checkCoveringTests(
         finding(
           claim,
           "coveringTestSkipped",
-          "which is marked skip or todo, so it does not run",
+          "which is marked to be skipped, so it does not run",
         ),
       );
       continue;
@@ -127,7 +144,9 @@ export function checkCoveringTests(
     { pastMocks: true },
   );
   const missed = waiting.filter(
-    (one) => pathInto(one.test, honouring.get(one.test), one.subject) === null,
+    (one) =>
+      pathInto(one.test, honouring.get(one.test), one.subject) === null &&
+      callOnSubjectClass(one.test, one.subject, lookup, true) === null,
   );
   const ignoring =
     missed.length === 0
@@ -141,17 +160,94 @@ export function checkCoveringTests(
       continue;
     }
 
-    const throughMock = pathInto(one.test, ignoring.get(one.test), one.subject);
-    verdicts[one.at] = finding(
-      claim,
-      "testMissesSubject",
-      throughMock === null
-        ? missedBecause(one.unit, one.subject, lookup)
-        : `which reaches ${one.subject.label} only through a call its mocks replace (${mocksOf(lookup, one.test).join(", ")}), by ${callSpellings(throughMock).join(" -> ")}`,
-    );
+    const reached = ignoring.get(one.test);
+    const throughMock =
+      pathInto(one.test, reached, one.subject) ??
+      callOnSubjectClass(one.test, one.subject, lookup, false);
+    if (throughMock !== null) {
+      verdicts[one.at] = finding(
+        claim,
+        "testMissesSubject",
+        `which reaches ${one.subject.label} only through a call its mocks replace (${mocksOf(lookup, one.test).join(", ")}), by ${callSpellings(throughMock).join(" -> ")}`,
+      );
+      continue;
+    }
+    const unfollowed = unfollowedOnTheWay(one.unit, one.test, reached, lookup);
+    const nameMatches = unfollowedToSubject(one.unit, one.subject, lookup);
+    verdicts[one.at] =
+      unfollowed.length === 0 && nameMatches.length === 0
+        ? finding(
+            claim,
+            "testMissesSubject",
+            `which never reaches ${one.subject.label}`,
+          )
+        : notChecked(claim, one.subject, nameMatches, unfollowed);
   }
 
   return verdicts.map((verdict) => verdict ?? { kind: "covered" });
+}
+
+/** How many calls an unchecked test's detail lists. */
+const CALLS_LISTED = 3;
+
+/**
+ * A test that does not reach its subject through the calls suss
+ * followed, and makes calls suss could not follow, might reach it
+ * through one of those. It is reported as unchecked, with the calls.
+ */
+function notChecked(
+  claim: CoveringTestClaim,
+  subject: Subject,
+  nameMatches: readonly string[],
+  unfollowed: readonly string[],
+): Verdict {
+  const calls = nameMatches.length > 0 ? nameMatches : unfollowed;
+  const listed = calls.slice(0, CALLS_LISTED).join(", ");
+  const more =
+    calls.length > CALLS_LISTED
+      ? `, and ${calls.length - CALLS_LISTED} more`
+      : "";
+  const why =
+    nameMatches.length > 0
+      ? `it calls ${listed}${more}, and suss could not follow that call to ${subject.label}`
+      : `it never reaches ${subject.label} through the calls suss followed, and suss could not follow ${listed}${more}`;
+  return {
+    kind: "unchecked",
+    unchecked: {
+      intent: claim.prd.title,
+      reason: "unfollowedCall",
+      scenario: claim.label,
+      coveredBy: claim.spelled.spelledAs,
+      detail: `Scenario ${claim.label} lists the test "${claim.spelled.spelledAs}": ${why}.`,
+    },
+  };
+}
+
+/**
+ * The calls suss could not follow in the test and in every function it
+ * reaches, each once, in the order they were recorded.
+ */
+function unfollowedOnTheWay(
+  test: BehavioralSummary,
+  key: FunctionKey,
+  reached: Reached | undefined,
+  lookup: CoveringTestLookup,
+): string[] {
+  const units = [
+    test,
+    ...[...(reached?.functions.keys() ?? [])]
+      .filter((fn) => fn !== key)
+      .flatMap((fn) => lookup.facts.units.get(fn) ?? []),
+  ];
+  const found = new Set<string>();
+  for (const unit of units) {
+    for (const gap of unit.gaps) {
+      if (gap.type === "unfollowedCall" && gap.callee !== undefined) {
+        found.add(gap.callee);
+      }
+    }
+  }
+  return [...found];
 }
 
 /**
@@ -178,7 +274,7 @@ function subjectOf(
         message: `and what it has to reach, ${spelledAs}, is nothing in these summaries: ${one.message.replace(/\.$/, "")}`,
       };
     }
-    found.push(one);
+    found.push({ ...one, classes: one.classes ?? [] });
   }
   return {
     target: {
@@ -187,6 +283,7 @@ function subjectOf(
       at: found.flatMap((one) => one.target.at ?? []),
     },
     label: found.map((one) => one.label).join(" or "),
+    classes: found.flatMap((one) => one.classes),
   };
 }
 
@@ -214,15 +311,71 @@ function pathInto(
 }
 
 /**
- * Why a test reaches nothing of its subject. When its own body makes a
- * call with the subject's name that suss could not follow, that call is
- * the likeliest reason, and the message says so.
+ * A call in the test's own body sent to one of the subject's classes. A
+ * concern's or the library's method on that class runs outside the
+ * subject's file, so the call graph alone misses it. A mock stops it.
  */
-function missedBecause(
+function callOnSubjectClass(
+  test: FunctionKey,
+  subject: Subject,
+  lookup: CoveringTestLookup,
+  honourMocks: boolean,
+): CallPath | null {
+  const classes = new Set(subject.classes.map(classKey));
+  if (classes.size === 0) {
+    return null;
+  }
+  const units = lookup.facts.units.get(test) ?? [];
+  const mocks = honourMocks
+    ? units.flatMap((unit) => readTestMetadata(unit)?.mocks ?? [])
+    : [];
+  for (const effect of units.flatMap((unit) =>
+    unit.transitions.flatMap((transition) => transition.effects),
+  )) {
+    if (
+      effect.type !== "invocation" ||
+      effect.receiverClass === undefined ||
+      !classes.has(classKey(effect.receiverClass))
+    ) {
+      continue;
+    }
+    const method = lastName(effect.callee);
+    if (mocks.some((mock) => replaces(mock, effect.receiverClass, method))) {
+      continue;
+    }
+    return [{ callee: effect.callee, to: null, recorded: "written" }];
+  }
+  return null;
+}
+
+function classKey(sentTo: ReceiverClass): string {
+  return `${sentTo.file}#${sentTo.name}`;
+}
+
+/** Whether a mock replaces this method on this class: the class's whole file, the method on it, or the method by name alone. */
+function replaces(
+  mock: TestMock,
+  sentTo: ReceiverClass | undefined,
+  method: string,
+): boolean {
+  if (mock.module === undefined) {
+    return mock.name === method;
+  }
+  return (
+    mock.module === sentTo?.file &&
+    (mock.name === undefined || mock.name === method)
+  );
+}
+
+/**
+ * The calls in the test's own body with the subject's name that suss
+ * could not follow, which are the likeliest way it reaches the subject.
+ */
+function unfollowedToSubject(
   test: BehavioralSummary,
   subject: Subject,
   lookup: CoveringTestLookup,
-): string {
+): string[] {
   const names = new Set([
     ...[...subject.target.functions, ...(subject.target.at ?? [])].flatMap(
       (fn) =>
@@ -241,10 +394,7 @@ function missedBecause(
         : [],
     ),
   );
-  if (unfollowed.length === 0) {
-    return `which never reaches ${subject.label}`;
-  }
-  return `which calls ${[...new Set(unfollowed)].join(", ")}, and suss could not follow that call to ${subject.label}`;
+  return [...new Set(unfollowed)];
 }
 
 /** `Orders.cancel`, `fn:@acme/orders::cancel` and `cancel` all end in `cancel`. */

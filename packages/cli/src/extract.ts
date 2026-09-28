@@ -255,10 +255,15 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "graphql-ruby": "@suss/packs/graphql-ruby",
   sqlalchemy: "@suss/packs/sqlalchemy",
   sqlmodel: "@suss/packs/sqlmodel",
+  pytest: "@suss/packs/pytest",
   activerecord: "@suss/packs/activerecord",
   "bigquery-ruby": "@suss/packs/bigquery-ruby",
   "pg-ruby": "@suss/packs/pg-ruby",
   rails: "@suss/packs/rails",
+  rspec: "@suss/packs/rspec",
+  "factory-bot": "@suss/packs/factory-bot",
+  fabrication: "@suss/packs/fabrication",
+  minitest: "@suss/packs/minitest",
   requests: "@suss/packs/requests",
   httpx: "@suss/packs/httpx",
   aiohttp: "@suss/packs/aiohttp",
@@ -273,11 +278,16 @@ const PACK_LANGUAGE: Record<string, Language> = {
   "graphql-ruby": "ruby",
   sqlalchemy: "python",
   sqlmodel: "python",
+  pytest: "python",
   "bigquery-python": "python",
   activerecord: "ruby",
   "bigquery-ruby": "ruby",
   "pg-ruby": "ruby",
   rails: "ruby",
+  rspec: "ruby",
+  "factory-bot": "ruby",
+  fabrication: "ruby",
+  minitest: "ruby",
   requests: "python",
   httpx: "python",
   aiohttp: "python",
@@ -695,10 +705,11 @@ export async function resolvePythonPack(
   spec: string,
   stubOverlay?: StubOverlay,
   projectRoot?: string,
+  testFiles?: readonly string[],
 ): Promise<PythonPack> {
-  const loaded = withStubbedOptions(
-    await loadPackFactory(spec, projectRoot),
-    stubOverlay,
+  const loaded = withTestFiles(
+    withStubbedOptions(await loadPackFactory(spec, projectRoot), stubOverlay),
+    testFiles,
   );
   assertPackLanguage(loaded.name, "python");
   return instantiatePack<PythonPack>(loaded, loaded.specifier, loaded.name);
@@ -708,10 +719,11 @@ export async function resolveRubyPack(
   spec: string,
   stubOverlay?: StubOverlay,
   projectRoot?: string,
+  testFiles?: readonly string[],
 ): Promise<RubyPack> {
-  const loaded = withStubbedOptions(
-    await loadPackFactory(spec, projectRoot),
-    stubOverlay,
+  const loaded = withTestFiles(
+    withStubbedOptions(await loadPackFactory(spec, projectRoot), stubOverlay),
+    testFiles,
   );
   assertPackLanguage(loaded.name, "ruby");
   return instantiatePack<RubyPack>(loaded, loaded.specifier, loaded.name);
@@ -852,6 +864,13 @@ function clearReports(reports: Partial<AdapterReports>): AdapterReports {
   return reports as AdapterReports;
 }
 
+/** The test files the PRDs list, when the run was given an intent directory. */
+function testFilesFor(options: ExtractOptions): string[] | undefined {
+  return options.intent === undefined
+    ? undefined
+    : testFilesListedIn(options.intent);
+}
+
 interface LanguageRunOptions {
   options: ExtractOptions;
   /** The directory the command was pointed at. */
@@ -883,10 +902,7 @@ async function runTypeScript(
   // so a reader can rebuild an id from a summary's own fields.
   const runRoot = workspaceRootFor(source.root);
   const stubOverlay = stubOverlayOf(loadStubs(runRoot));
-  const testFiles =
-    options.intent === undefined
-      ? undefined
-      : testFilesListedIn(options.intent);
+  const testFiles = testFilesFor(options);
   const packs = await Promise.all(
     options.frameworks.map((one) =>
       resolveFramework(one, stubOverlay, runRoot, testFiles),
@@ -976,9 +992,10 @@ async function runTypeScript(
 
 async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
+  const testFiles = testFilesFor(runOptions.options);
   const packs = await Promise.all(
     runOptions.options.frameworks.map((one) =>
-      resolvePythonPack(one, stubOverlay, runOptions.root),
+      resolvePythonPack(one, stubOverlay, runOptions.root, testFiles),
     ),
   );
   // Each checked-out submodule becomes an import root, or imports into
@@ -1026,7 +1043,10 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     summaries,
     runOptions.root,
     files.length,
-    packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+    packs.length > 0 &&
+      packs.every(
+        (p) => p.discovery.length === 0 && (p.tests ?? []).length === 0,
+      ),
     timingReport,
     extractionReport,
     cacheDiagnostic,
@@ -1052,9 +1072,10 @@ export function formatUnreadManifests(
 
 async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
+  const testFiles = testFilesFor(runOptions.options);
   const packs = await Promise.all(
     runOptions.options.frameworks.map((one) =>
-      resolveRubyPack(one, stubOverlay, runOptions.root),
+      resolveRubyPack(one, stubOverlay, runOptions.root, testFiles),
     ),
   );
   // findRubyFiles skips .git directories but still walks the rest of a
@@ -1094,7 +1115,13 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     summaries,
     runOptions.root,
     files.length,
-    packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+    packs.length > 0 &&
+      packs.every(
+        (p) =>
+          p.discovery.length === 0 &&
+          (p.tests ?? []).length === 0 &&
+          (p.testClasses ?? []).length === 0,
+      ),
     timingReport,
     extractionReport,
     cacheDiagnostic,
@@ -1694,6 +1721,29 @@ export function relativizeSummaryPaths(
   relativizeWrapperPaths(summary, projectRoot);
   relativizeTypeRefs(summary, projectRoot);
   relativizeMockedModules(summary, projectRoot);
+  relativizeReceiverClasses(summary, projectRoot);
+}
+
+/** A call's receiver class is matched against the subject's file, so both are relative. */
+function relativizeReceiverClasses(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  for (const transition of summary.transitions) {
+    // A summary built by hand in a caller's test can leave the list out.
+    for (const effect of transition.effects ?? []) {
+      if (
+        effect.type === "invocation" &&
+        effect.receiverClass !== undefined &&
+        path.isAbsolute(effect.receiverClass.file)
+      ) {
+        effect.receiverClass = {
+          ...effect.receiverClass,
+          file: relativeTo(projectRoot, effect.receiverClass.file),
+        };
+      }
+    }
+  }
 }
 
 /** A mocked module is a file the unit's own path is compared against, so both are relative. */

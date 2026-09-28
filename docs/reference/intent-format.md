@@ -364,7 +364,7 @@ A link to an outcome nothing declares is `danglingScenarioLink` at warning. A li
 
 ### Covering tests
 
-Some promises are about which values come back, such as a finding that was already there not being reported as new. No outcome can state that, so the scenario lists the test that covers it instead, spelled the way the runner prints it: the test file, each `describe` title, then the test's own title, joined with ` > `. One test is a string and several are a list:
+Some promises are about which values come back, such as a finding that was already there not being reported as new. No outcome can state that, so the scenario lists the test that covers it instead, spelled the way the runner prints it. One test is a string and several are a list:
 
 ```yaml
 - title: a finding that was already there
@@ -374,11 +374,22 @@ Some promises are about which values come back, such as a finding that was alrea
   about: fn:@suss/checker::findingsSince
 ```
 
-The file matches on whole path segments from the end, so a path from the repository root matches a summary written relative to its package. When two packages have a test at the same path and title, write the workspace in front of the file: `@suss/cli::src/run.test.ts > ...`.
+Each runner prints a test its own way, and `coveredBy` takes each one as printed:
 
-`suss check --intent` checks each covering test three ways. The test has to be in the summaries, which takes a test pack at extract time, such as `suss extract -f vitest --intent intent/`. It has to run, so a test marked skip or todo does not count. And its calls have to reach what the scenario is about without going through something the test replaced with a mock. The findings are `missingCoveringTest`, `coveringTestSkipped` and `testMissesSubject`, each a warning.
+| Runner | Pack | A test is spelled |
+|---|---|---|
+| vitest | `-f vitest` | the file, each `describe` title, then the test's own title, joined with ` > `: `src/orders.test.ts > cancel > changes nothing the second time` |
+| pytest | `-f pytest` | the node id pytest prints, the file, the class when there is one, then the function, joined with `::`: `tests/test_orders.py::TestCancel::test_second_time`, or `tests/test_orders.py::test_second_time` outside a class. A parametrized id such as `test_second_time[card]` means the function `test_second_time`. |
+| RSpec | `-f rspec` | the file, each `describe` and `context` title, then the `it` title, joined with ` > `, the same as vitest: `spec/orders_spec.rb > Orders > cancel > changes nothing the second time`. A `describe` given a constant is titled by the constant as written: `describe Order` gives `Order`, and `RSpec.describe Orders::Cancel` gives `Orders::Cancel`. |
+| Minitest | `-f minitest` | the file, the test class, then the test's method name, joined with ` > `: `test/models/order_test.rb > OrderTest > test_changes_nothing_the_second_time`. A `test "changes nothing the second time" do` block is spelled by the method Rails defines for it: `test_` and the description with each run of spaces as `_`. |
+
+The file matches on whole path segments from the end, so a path from the repository root matches a summary written relative to its package. When two packages have a test at the same path and title, write the workspace in front of the file: `@suss/cli::src/run.test.ts > ...`, or `orders-api::tests/test_orders.py::test_second_time` for pytest.
+
+`suss check --intent` checks each covering test three ways. The test has to be in the summaries, which takes a test pack at extract time, such as `suss extract -f vitest --intent intent/`. It has to run, so a test marked to be skipped does not count: `skip` or `todo` in vitest, `@pytest.mark.skip`, `skipif`, `xfail` or `unittest.skip` in pytest, `xit`, `skip`, `pending` or `:skip` metadata in RSpec, and a `skip` statement in Minitest. And its calls have to reach what the scenario is about without going through something the test replaced with a mock. The findings are `missingCoveringTest`, `coveringTestSkipped` and `testMissesSubject`, each a warning. A test that doesn't reach its subject through the calls suss followed, and makes a call suss could not follow, isn't reported as missing it: it goes under `unchecked` as `unfollowedCall`, with the calls, and its scenario isn't counted as covered.
 
 What a test has to reach is `about` when the scenario gives it. Without `about`, it is any of the boundaries the PRD's linked scenarios link to, so a test that reaches one of them covers every scenario in that PRD that leaves `about` out. A PRD with no link anywhere has nothing to fall back on, and the schema asks for `about` on each scenario that lists a test.
+
+A subject that is a class, or a file a class is written in, also counts as reached when the test's own body sends a call to that class or to an instance of it, wherever the method is written. `account.reviewed?` reaches `Account` when `Reviewable`, included in `Account`, defines `reviewed?`. `Account.find(1)` and a column read such as `account.username` reach it too, though ActiveRecord defines both. The instance can come from a factory, `described_class.new`, the subject or a finder. The adapter records which class each call in a test was sent to, and today only the Ruby adapter does. A mock of the class, or of that method on it, stops the call counting.
 
 The check does not read what a test asserts, so a test that calls the subject and asserts nothing counts as covering it. It runs nothing, so a test that fails still counts; the runner's own exit code already fails the build for that.
 

@@ -88,6 +88,7 @@ import {
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 import { pythonSourceRoots } from "./sourceRoots.js";
+import { pythonTestIndex } from "./testCases.js";
 import { bindEvaluator, forgetEvaluations } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 import { buildWrapperIndex } from "./wrappers.js";
@@ -541,7 +542,8 @@ async function runPython(
     // A statement written as SQL is read through the evaluator, and so is
     // the client object the statement is passed to.
     rawSqlPatterns.length > 0 ||
-    sqlClients.length > 0;
+    sqlClients.length > 0 ||
+    options.packs.some((pack) => (pack.tests ?? []).length > 0);
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns and the call walk can start from a route.
   const definitions = new Map<string, PyNode>();
@@ -625,6 +627,11 @@ async function runPython(
 
   const importedDefinition = importedDefinitionLookup(db, bound);
   const filesByPath = new Map(bound.map((one) => [one.file, one]));
+  const tests = pythonTestIndex(options.packs, {
+    filesByPath,
+    roots,
+    facts: db,
+  });
 
   const reuse: PythonEntryReuse | null =
     previous === null || log === null
@@ -711,6 +718,9 @@ async function runPython(
         facts: db,
         storageFor,
       }),
+      ...(tests === null
+        ? []
+        : tests.unitsIn(boundFile, { storageFor, facts: db })),
     ];
     const charge = noDependencies();
     const registrations: StoredRegistration[] = [];
@@ -869,6 +879,7 @@ async function runPython(
         ? {}
         : { replay: new WalkReplay(reuse, definitions, filesByPath) }),
       ...(ledger === null ? {} : { ledger }),
+      ...(tests === null ? {} : { tests }),
     }),
   );
   const placeWhatItReached = (

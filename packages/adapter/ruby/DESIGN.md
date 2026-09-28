@@ -410,6 +410,16 @@ A concern needs nothing extra. The mixed-in module is in the `extends` ancestry,
 
 The facts do not record whether an association is a collection. `@account.statuses` and `@account.profile` both resolve to the class, as `Account.where(x)` and `Account.find(x)` already do.
 
+## What a scope defines
+
+`scopes` on a storage pattern lists the class-body calls that define a class method from a lambda. ActiveRecord's `scope :recent, -> { order(:created_at) }` defines `Account.recent`. The value facts record it the way they record `def self.recent`, as a property of the class holding the lambda:
+
+```
+holdsProperty  app/models/account.rb:0-812  self.recent  app/models/account.rb:40-75
+```
+
+So the rules settle what `Account.recent` gives back from the lambda's last expression. The reach walk looks a class method up in the class body first, and then asks the facts for a scope on each class and module in the ancestry. A subclass inherits a scope, and a scope in a concern's `included do` block is read as the module's own, so it is found from every class that includes the concern. A scope called on a relation, as in `Account.where(x).recent`, is not followed, because the rules settle the relation on an instance of the model and a scope is a class method.
+
 ## What a file reads from the environment
 
 `ENV` is part of the language core, so the adapter recognizes reads of it without a pack. Each read becomes the same `config-read` interaction the TypeScript adapter emits for `process.env.X`, on the `runtime-config` binding. It is written `ENV["X"]` however the source spelled it. The runtime-config checker pairs those reads with what a template declares for the process the file runs in.
@@ -457,6 +467,24 @@ These are Ruby's own `Kernel` methods and its standard library, so the adapter r
 `exit`, `exit!` and `abort` end the process. A reached method has one transition, because nothing tells its paths apart. One that ends the process has its paths read one at a time instead, so each exit is an `exit` transition with the conditions that lead to it. `exit` with no code exits 0, `exit false` and a bare `exit!` exit 1, and `abort` exits 1 after its message, which is recorded as a write to stderr. `exit(main(ARGV))` makes `main`'s return the exit code, through the same `wantedExitSink` question the other adapters ask.
 
 `opts.on("--dir DIR")` in the block of `OptionParser.new`, followed by `parse!(argv)`, records an input read of `--dir` off `argv`. `--[no-]json` declares `--json`.
+
+## Tests a PRD scenario can list
+
+A pack with `tests` turns each example its runner declares into a `test` unit, so a PRD scenario can list it under `coveredBy`. The RSpec pack is the one that does. An example is a call such as `it` with a block, inside at least one group such as `describe`, in a file matching one of `filePatterns`. The unit is named by each group's title and then its own, joined with ` > `. It has no boundary binding, and its block seeds the walk the way a method does.
+
+An example runs more than its own block. The walk reads every `before` hook and `let!` in the groups around it, and each `let` or `subject` it reads by name, and counts their calls as the example's. It works that list out from the example's block alone, so a replayed scan reads the same blocks. Calls the runner handles itself, such as `expect(x).to eq(y)`, are left out.
+
+A `let` defines a name for its group and every group inside it, and a sibling group can define its own. Ruby has no scope for that, so in a test file the pack reads, a bare name some group around defines is keyed on that group, `<group call>#<name>`, instead of on the file. The group's `let` or `subject` block is a function bound to that key, so `order.cancel` in an example runs `cancel` on whatever the nearest `let(:order)` gave back. `described_class` reads as the class the nearest group around was given, as though the example had written the constant. Inside a shared group the class depends on who includes it, so the name is keyed on the shared group like any other name its includers supply, and each include site binds it to a function that gives back its own group's class. One includer settles it, and two that describe two classes leave it unsettled. A group given a class with no `subject` of its own has an implicit subject, stated as a function that gives back one of that class. A test file the run does not read as tests keeps the usual keys, so a run without a test pack is unchanged.
+
+A predicate matcher is a call RSpec turns into a method call on the value under test: `expect(order).to be_open` calls `open?` on the order. The pack lists each matcher prefix and the method it becomes, and the reach closure resolves the matcher as that method on the `expect` argument, or on the subject for `is_expected`. A matcher outside an expectation, and one whose prefix the pack does not list, stays a runner call.
+
+A shared group, `shared_examples "x"`, is found by name when a group includes it: in the including file first, then in any file the run reads. Its examples become test units of each includer, filed and named under the includer, with `it_behaves_like` adding a nested title. They seed the walk once, at their block in the shared group's file, so the walk cannot tell one includer from another. With one includer, the example runs through that includer's groups; with several, it runs through the shared group's own blocks alone. A name the shared group reads but does not define is keyed on the shared group, and once every file is in, the run binds it to what each include site has under that name. Several includers with different values leave it unsettled, which is the answer when which includer ran is not known. A group that includes a shared group in place, with `include_context`, owns every name no nearer group defines, and the run binds the names the shared group defines there. A support file that defines shared groups is read the same way as a test file for this, and doesn't produce units of its own.
+
+A pack with `testClasses` reads tests written as a class, as Minitest and Rails' test cases write them. A class whose ancestry reaches one of `baseClassNames`, directly or through a project class, as the shared ancestry rules follow it, is a test class. Each `test_*` method in it is a test, and so is each `test "..." do` block, named by the method the library defines for it. A method test seeds the walk at the method, with the class as its self, and a block test at its block. Either one runs the class's `setup` blocks and `setup` method first, the same way an RSpec example runs its hooks.
+
+A pack with `factories` says how a test data library builds a record from a factory it looks up by name, as factory_bot's `create(:order)` and Fabrication's `Fabricate(:order)` do. Once every file is in, the run reads each definition wherever it is written and works out its class: the class keyword it gives, else the class of the factory it builds on or is nested in, else the class its own name camelizes to with the project's acronyms, looked up by qualified name among the classes the run defines. Each build in a file the run reads as tests is then stated as `instanceOf` that class, so a method called on the record resolves the way one called on `Order.new` does. A build anywhere else is left alone.
+
+A no-argument call in an example is kept as a call when it resolves to a method the project defines. Elsewhere such a call is a call only when the rules settle its receiver as an object, and a value a `let` built seldom is, so `order.cancelled?` would otherwise be read as a property.
 
 ## What a run after an edit replays
 

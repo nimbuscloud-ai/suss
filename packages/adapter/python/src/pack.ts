@@ -64,6 +64,76 @@ export interface PythonPack {
   requestObjects?: RequestObject[];
   /** Where a route reads each part of the request, recorded on every route the pack finds. */
   requestSpelling?: RequestSpellingMetadata;
+  /** How the library's test runner collects tests, so a PRD scenario can say which test covers it. */
+  tests?: PyTestCases[];
+}
+
+/**
+ * How a test runner finds tests and what it runs around each one. Every
+ * name here is one the runner itself defines or documents; a project's
+ * own conventions come through `files`, which lists the files to read.
+ * DESIGN.md says how the adapter reads each field.
+ */
+export interface PyTestCases {
+  /** Base-name patterns of the files the runner collects, `*` matching any run of characters: `test_*.py`. */
+  filePatterns: string[];
+  /** What a test function or method name starts with: `test`. */
+  functionPrefix: string;
+  /** What a class of tests is named starting with: `Test`. */
+  classPrefix: string;
+  /** Base classes whose subclasses contain tests whatever the class is called, as dotted names: `unittest.TestCase`. */
+  caseBaseClasses: string[];
+  /** The functions and methods the runner calls before a test, by where they are written. */
+  setUp: PyTestSetUp;
+  /** Markers whose string arguments are the fixtures every test under them runs through, as dotted names: `pytest.mark.usefixtures`. */
+  usesFixtureMarkers: string[];
+  /** Decorators that declare a fixture, as dotted names: `pytest.fixture`. */
+  fixtureDecorators: string[];
+  /** The keyword on a fixture decorator that renames the fixture: `name`. */
+  fixtureNameKeyword: string;
+  /** The keyword on a fixture decorator that runs it before every test in its scope: `autouse`. */
+  autouseKeyword: string;
+  /** Files whose fixtures apply to every test under their directory: `conftest.py`. */
+  sharedFixtureFiles: string[];
+  /** Decorators that mark a test so it does not run, or runs expecting to fail, as dotted names: `pytest.mark.skip`. */
+  skipDecorators: string[];
+  /** The module or class variable the runner reads markers from for every test under it: `pytestmark`. */
+  markerVariable?: string;
+  /** Parameters the runner fills with something other than a fixture, which are never looked up: `self`, `request`. */
+  reservedParameters: string[];
+  /** How a test replaces something before it runs. */
+  mocks: PyTestMocks;
+  /** Read only these files, matched on whole path segments from the end. Left out, every collected file is read. */
+  files?: string[];
+}
+
+/**
+ * The setup a runner calls before a test, listed in the order it calls
+ * them. A method is looked for on the class and then on the project
+ * classes it extends, since the setup is often written on a base class.
+ */
+export interface PyTestSetUp {
+  /** Functions in the test's module that run before any test in it: `setup_module`. */
+  module: string[];
+  /** Functions in the test's module that run before each test written as a function: `setup_function`. */
+  function: string[];
+  /** Methods of a class of tests that run before each test in it: `setup_class`, `setup_method`. */
+  testClass: string[];
+  /** Methods of a `caseBaseClasses` subclass that run before each test in it: `setUpClass`, `setUp`. */
+  caseClass: string[];
+}
+
+/**
+ * The calls that replace a module or a member for the length of a test.
+ * A patcher called with a dotted string replaces the object at that path,
+ * `patch("orders.service.cancel")`. Called with an object and a member
+ * name, it replaces that member, `patch.object(OrderService, "cancel")`.
+ */
+export interface PyTestMocks {
+  /** Patchers imported from a library, as dotted names: `unittest.mock.patch`, `unittest.mock.patch.object`. */
+  patchers: string[];
+  /** Patchers a fixture hands the test, by the fixture's parameter name and the methods called on it. */
+  fixturePatchers: { fixture: string; methods: string[] }[];
 }
 
 /**

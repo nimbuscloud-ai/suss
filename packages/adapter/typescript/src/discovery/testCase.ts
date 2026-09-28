@@ -12,6 +12,9 @@ import path from "node:path";
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
+import { testUnitName } from "@suss/behavioral-ir";
+import { isListedTestFile } from "@suss/extractor";
+
 import { moduleImportedWholeAs, namedImportsOf } from "./importScan.js";
 import { functionValueOf, stringValueOf } from "./resolveValue.js";
 
@@ -19,9 +22,6 @@ import type { TestMock } from "@suss/behavioral-ir";
 import type { TestCaseMatch } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
-
-/** What the titles in a test's name are joined with. */
-export const TITLE_SEPARATOR = " > ";
 
 interface RunnerCall {
   /** A group opens a suite of cases, and a case is one test. */
@@ -37,7 +37,7 @@ export function discoverTestCases(
   kind: string,
   resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
-  if (!isListed(sourceFile.getFilePath(), match.files)) {
+  if (!isListedTestFile(sourceFile.getFilePath(), match.files)) {
     return [];
   }
   const spellings = runnerSpellings(sourceFile, match.importModule);
@@ -119,7 +119,7 @@ function caseUnit(
   return {
     ...(func === null ? { func: null, announcedAt: call } : { func }),
     kind,
-    name: titles.map((title) => title.text).join(TITLE_SEPARATOR),
+    name: testUnitName(titles.map((title) => title.text)),
     nameKind: "label",
     metadata: { test },
   };
@@ -146,21 +146,6 @@ function unresolvedTitleOf(
     return titles[titles.length - 1]?.text ?? null;
   }
   return null;
-}
-
-/** Whether the file is on the list, matched on whole segments from the end. */
-function isListed(
-  file: string,
-  listed: readonly string[] | undefined,
-): boolean {
-  if (listed === undefined) {
-    return true;
-  }
-  const whole = file.split(path.sep).join("/");
-  return listed.some((entry) => {
-    const tail = entry.split(path.sep).join("/").replace(/^\.\//, "");
-    return whole === tail || whole.endsWith(`/${tail}`);
-  });
 }
 
 /** Local spelling to the name the runner exports it as. */
