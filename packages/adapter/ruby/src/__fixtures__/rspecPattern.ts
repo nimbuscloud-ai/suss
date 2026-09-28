@@ -22,6 +22,8 @@ export function rspecPattern(files?: string[]): RbTestCases {
     eagerValues: ["let!"],
     subjectNames: { lazy: ["subject"], eager: ["subject!"] },
     subjectReads: ["subject", "is_expected"],
+    subjectValue: "subject",
+    describedClass: "described_class",
     runnerMethods: ["expect", "allow", "receive", "eq", "be", "stub_const"],
     predicateMatcherPrefixes: ["be_"],
     mocks: {

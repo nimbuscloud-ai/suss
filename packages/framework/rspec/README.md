@@ -65,6 +65,12 @@ A file matches on whole path segments from the end.
   in the groups around it, and each `let` or `subject` it reads by
   name, from the nearest group that defines it. `is_expected` reads the
   subject. Their calls count as the example's own.
+- What a value is. A name a `let` or `subject(:name)` defines gives
+  back what its block gives back, from the nearest group that defines
+  it, so `order.cancel` in an example runs `cancel` on whatever the
+  `let` built. `described_class` is the class the nearest group around
+  was given, and a group given a class with no `subject` of its own has
+  one of that class as its subject, the way RSpec makes one with `new`.
 - Whether the example runs. `xit`, `skip` and `pending` examples, any
   example under `xdescribe` or `xcontext`, `:skip` or `skip: true`
   metadata on the example or a group, and a `skip` or `pending`
@@ -87,8 +93,6 @@ reaching the subject, and says which mock was in the way.
 
 - Examples inside `shared_examples` and `shared_context`, and the
   groups that include them with `it_behaves_like`.
-- `described_class`, which is read as a call RSpec handles and not
-  followed to the class it describes.
 - Minitest. Its tests are methods on a class or blocks under a class,
   and need their own pattern.
 - Tests generated in a loop, such as `%w[a b].each { |x| it x do ... }`.

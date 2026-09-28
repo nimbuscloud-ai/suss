@@ -100,7 +100,12 @@ import {
   watchReachContext,
 } from "./reuse.js";
 import { walkDefinitions } from "./scope.js";
-import { exampleReads, testPatternsIn } from "./testCases.js";
+import {
+  emitGroupFacts,
+  exampleReads,
+  registerTestFileNames,
+  testPatternsIn,
+} from "./testCases.js";
 import {
   bindEvaluator,
   forgetEvaluations,
@@ -130,7 +135,12 @@ import type {
 } from "@suss/resolution";
 import type { BodyBlocks, Range } from "./ast.js";
 import type { ReachSeed } from "./discovery.js";
-import type { RbAssociationCalls, RbInflections, RubyPack } from "./pack.js";
+import type {
+  RbAssociationCalls,
+  RbInflections,
+  RbTestCases,
+  RubyPack,
+} from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { ReachedUnits, Seed } from "./reach/closure.js";
 import type {
@@ -262,6 +272,7 @@ export class RunFacts {
   readonly parsed: EvaluatedFile[] = [];
   readonly bodyBlocks: BodyBlocks;
   private readonly packs: readonly RubyPack[];
+  private readonly testPatterns: readonly RbTestCases[];
   private readonly associationCalls: RbAssociationCalls[];
   private readonly inflections: RbInflections;
   private readonly definitions = new Map<string, RbNode>();
@@ -271,13 +282,18 @@ export class RunFacts {
     this.db = db;
     this.packs = packs;
     this.bodyBlocks = bodyBlocksIn(packs);
+    this.testPatterns = testPatternsIn(packs);
     this.associationCalls = associationCallsIn(packs);
     this.inflections = inflectionsIn(packs);
   }
 
   addFile(file: string, root: RbNode): void {
     this.parsed.push({ file, root });
+    const testPattern = registerTestFileNames(file, root, this.testPatterns);
     emitValueFacts(this.db, file, root, this.bodyBlocks);
+    if (testPattern !== null) {
+      emitGroupFacts(this.db, file, root, testPattern);
+    }
     emitEnvFacts(this.db, file, root);
     for (const [key, method] of methodDefinitionsIn(file, root)) {
       this.definitions.set(key, method);

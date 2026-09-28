@@ -46,7 +46,7 @@
   "spy": "rspec: makes a double that records every message",
   "instance_spy": "rspec: the spy form of instance_double",
   "as_stubbed_const": "rspec: makes a class double replace the constant it stands for",
-  "described_class": "rspec: the class the outermost group describes",
+  "described_class": "rspec: the class the nearest group around was given",
   "eq": "rspec: the equality matcher",
   "eql": "rspec: the eql? matcher",
   "equal": "rspec: the identity matcher",

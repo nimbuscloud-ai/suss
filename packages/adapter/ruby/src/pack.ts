@@ -124,6 +124,10 @@ export interface RbTestCases {
   subjectNames: { lazy: string[]; eager: string[] };
   /** Calls an example makes on itself to read the subject: `subject`, `is_expected`. */
   subjectReads: string[];
+  /** The one of those that gives back the subject itself: `subject`. A group given a class has that class's `new` as its subject unless it says otherwise. */
+  subjectValue: string;
+  /** The call that gives back the class the nearest group around was given: `described_class`. */
+  describedClass: string;
   /**
    * Methods the library gives an example to call on itself to check or
    * set something up, such as `expect`, `eq` and `allow`. A call made

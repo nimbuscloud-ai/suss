@@ -458,6 +458,16 @@ These are Ruby's own `Kernel` methods and its standard library, so the adapter r
 
 `opts.on("--dir DIR")` in the block of `OptionParser.new`, followed by `parse!(argv)`, records an input read of `--dir` off `argv`. `--[no-]json` declares `--json`.
 
+## Tests a PRD scenario can list
+
+A pack with `tests` turns each example its runner declares into a `test` unit, so a PRD scenario can list it under `coveredBy`. The RSpec pack is the one that does. An example is a call such as `it` with a block, inside at least one group such as `describe`, in a file matching one of `filePatterns`. The unit is named by each group's title and then its own, joined with ` > `. It has no boundary binding, and its block seeds the walk the way a method does.
+
+An example runs more than its own block. The walk reads every `before` hook and `let!` in the groups around it, and each `let` or `subject` it reads by name, and counts their calls as the example's. It works that list out from the example's block alone, so a replayed scan reads the same blocks. Calls the runner handles itself, such as `expect(x).to eq(y)`, are left out.
+
+A `let` defines a name for its group and every group inside it, and a sibling group can define its own. Ruby has no scope for that, so in a test file the pack reads, a bare name some group around defines is keyed on that group, `<group call>#<name>`, instead of on the file. The group's `let` or `subject` block is a function bound to that key, so `order.cancel` in an example runs `cancel` on whatever the nearest `let(:order)` gave back. `described_class` reads as the class the nearest group around was given, as though the example had written the constant. A group given a class with no `subject` of its own has an implicit subject, stated as a function that gives back one of that class. A test file the run does not read as tests keeps the usual keys, so a run without a test pack is unchanged.
+
+A no-argument call in an example is kept as a call when it resolves to a method the project defines. Elsewhere such a call is a call only when the rules settle its receiver as an object, and a value a `let` built seldom is, so `order.cancelled?` would otherwise be read as a property.
+
 ## What a run after an edit replays
 
 A run with a cache writes a record for every file beside the summaries: the units the file's discovery found, before any file's duplicates were dropped, with each kept unit's summary; the file's load-time unit; and what the walk found for each method written in the file, with each reached method's summary. Every record also says what its work depended on, as the DESIGN.md of `@suss/resolution` describes under "What a piece of work depended on". A run after an edit parses every file and emits every fact again, then replays each record whose dependencies did not change and does the rest again. The output is the same, byte for byte, as a run without the cache.

@@ -645,11 +645,28 @@ function callsMade(
   site: CallSite,
   ctx: ReachContext,
   spellings: CalleeSpellings,
+  inExample: boolean,
 ): RbNode[] {
   return asked.filter(
     (call) =>
-      !isArglessReceiverCall(call) || readsAsACall(call, site, ctx, spellings),
+      !isArglessReceiverCall(call) ||
+      readsAsACall(call, site, ctx, spellings) ||
+      (inExample && runsAProjectMethod(call, site, ctx, spellings)),
   );
+}
+
+/**
+ * Whether a no-argument call resolves to a method the project defines.
+ * A test reads the object it set up, `order.cancelled?`, where a value
+ * built in a `let` is seldom one the rules settle as an object.
+ */
+function runsAProjectMethod(
+  call: RbNode,
+  site: CallSite,
+  ctx: ReachContext,
+  spellings: CalleeSpellings,
+): boolean {
+  return resolveCallee(call, site, ctx, spellings).kind === "followed";
 }
 
 function scanBody(
@@ -669,7 +686,13 @@ function scanBody(
   }
 
   const site = read.site;
-  const calls = callsMade(read.calls, site, ctx, read.spellings);
+  const calls = callsMade(
+    read.calls,
+    site,
+    ctx,
+    read.spellings,
+    (options.examples?.runOf(source.node) ?? null) !== null,
+  );
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
 
   const followed: ReachedFunction[] = [];

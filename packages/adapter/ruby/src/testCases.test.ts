@@ -233,6 +233,97 @@ describe("RSpec examples as test units", () => {
     );
   });
 
+  it("follows a call on described_class, an implicit subject and a named subject into the described class", async () => {
+    write("app/services/checkout.rb", [
+      "class Checkout",
+      "  def call(id)",
+      "    Order.cancel(id)",
+      "  end",
+      "",
+      "  def self.run(id)",
+      "    Order.refund(id)",
+      "  end",
+      "end",
+    ]);
+    write("spec/checkout_spec.rb", [
+      "RSpec.describe Checkout do",
+      '  it "runs on the class" do',
+      "    described_class.run(1)",
+      "  end",
+      "",
+      '  it "calls the implicit subject" do',
+      "    subject.call(1)",
+      "  end",
+      "",
+      '  context "with a subject of its own" do',
+      "    subject(:checkout) { described_class.new }",
+      "",
+      '    it "calls it by name" do',
+      "      checkout.call(2)",
+      "    end",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const linked = (name: string) =>
+      linkedCalls(testNamed(summaries, `Checkout > ${name}`));
+
+    expect(linked("runs on the class")).toEqual(["described_class.run"]);
+    expect(linked("calls the implicit subject")).toEqual(["subject.call"]);
+    expect(linked("with a subject of its own > calls it by name")).toEqual([
+      "checkout.call",
+    ]);
+  });
+
+  it("reads a value from the nearest group that defines it, so sibling groups keep their own", async () => {
+    write("app/models/account.rb", [
+      "class Account",
+      "  def lock",
+      "    Order.cancel(1)",
+      "  end",
+      "end",
+      "",
+      "class Guest",
+      "  def lock",
+      "    Order.refund(1)",
+      "  end",
+      "end",
+    ]);
+    write("spec/account_spec.rb", [
+      "describe Account do",
+      '  context "a member" do',
+      "    let(:who) { Account.new }",
+      '    it "locks" do',
+      "      who.lock",
+      "    end",
+      "  end",
+      "",
+      '  context "a guest" do',
+      "    let(:who) { Guest.new }",
+      '    it "locks" do',
+      "      who.lock",
+      "    end",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const reached = (group: string) =>
+      testNamed(summaries, `Account > ${group} > locks`).transitions.flatMap(
+        (transition) =>
+          transition.effects.flatMap((effect) =>
+            effect.type === "invocation" && effect.summary !== undefined
+              ? [effect.summary]
+              : [],
+          ),
+      );
+
+    expect(reached("a member")).toHaveLength(1);
+    expect(reached("a guest")).toHaveLength(1);
+    expect(reached("a member")).not.toEqual(reached("a guest"));
+  });
+
   it("marks an example skipped for each way RSpec spells it", async () => {
     write("spec/order_spec.rb", [
       "describe Order do",

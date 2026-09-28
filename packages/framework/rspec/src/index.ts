@@ -45,7 +45,6 @@ const RUNNER_METHODS = [
   "spy",
   "instance_spy",
   "stub_const",
-  "described_class",
   "eq",
   "eql",
   "equal",
@@ -104,6 +103,8 @@ export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
         eagerValues: ["let!"],
         subjectNames: { lazy: ["subject"], eager: ["subject!"] },
         subjectReads: ["subject", "is_expected"],
+        subjectValue: "subject",
+        describedClass: "described_class",
         runnerMethods: RUNNER_METHODS,
         predicateMatcherPrefixes: ["be_", "have_"],
         mocks: {

@@ -26,6 +26,8 @@ import {
   symbolValue,
 } from "./ast.js";
 import { classBehind } from "./baseClass.js";
+import { registerGroupNames } from "./facts/specNames.js";
+import { nodeId, readKey } from "./facts/values.js";
 import {
   bodyCalls,
   calleeMethodName,
@@ -39,6 +41,7 @@ import { evaluatedValue } from "./values/evaluator.js";
 import type { TestMetadata, TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawCodeStructure } from "@suss/extractor";
+import type { GroupNames } from "./facts/specNames.js";
 import type { RbTestCases, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
@@ -184,8 +187,10 @@ function exampleAt(call: RbNode, pattern: RbTestCases): Example | null {
 /** One `let`, `subject` or hook written directly in a group. */
 interface GroupBlock {
   readonly block: RbNode;
-  /** The names it defines, empty for a hook. */
+  /** The names an example reads it through, empty for a hook. */
   readonly names: readonly string[];
+  /** The names that give back the block's value, which `is_expected` does not. */
+  readonly values: readonly string[];
   /** Whether it runs before every example whatever the example reads. */
   readonly always: boolean;
 }
@@ -227,24 +232,171 @@ function groupBlockOf(
   pattern: RbTestCases,
 ): GroupBlock | null {
   if (pattern.beforeHooks.includes(method)) {
-    return { block, names: [], always: true };
+    return { block, names: [], values: [], always: true };
   }
   const named = firstSymbol(call);
   const lazyValue = pattern.lazyValues.includes(method);
   if ((lazyValue || pattern.eagerValues.includes(method)) && named !== null) {
-    return { block, names: [named], always: !lazyValue };
+    return { block, names: [named], values: [named], always: !lazyValue };
   }
   const lazySubject = pattern.subjectNames.lazy.includes(method);
   if (lazySubject || pattern.subjectNames.eager.includes(method)) {
     // Every way the library spells a read of the subject reaches this block.
-    const names = [...pattern.subjectReads];
+    const extra = named === null ? [] : [named];
     return {
       block,
-      names: named === null ? names : [...names, named],
+      names: [...pattern.subjectReads, ...extra],
+      values: [pattern.subjectValue, ...extra],
       always: !lazySubject,
     };
   }
   return null;
+}
+
+/** What one group defines for the examples inside it. */
+interface GroupScope {
+  /** Each value the group defines, by the name that reads it, with the block that gives it. */
+  readonly values: ReadonlyMap<string, RbNode>;
+  /** The class the group is given, as in `describe Order`, or null. */
+  readonly described: RbNode | null;
+}
+
+const CLASS_TYPES = new Set(["constant", "scope_resolution"]);
+
+function groupScope(group: RbNode, pattern: RbTestCases): GroupScope {
+  const values = new Map<string, RbNode>();
+  for (const one of groupBlocks(group, pattern)) {
+    for (const name of one.values) {
+      values.set(name, one.block);
+    }
+  }
+  const first = firstArgument(group);
+  return {
+    values,
+    described: first !== null && CLASS_TYPES.has(first.type) ? first : null,
+  };
+}
+
+/** The test pattern that reads this file, or null when none does or the file is not on its list. */
+export function patternForFile(
+  file: string,
+  patterns: readonly RbTestCases[],
+): RbTestCases | null {
+  return (
+    patterns.find(
+      (pattern) =>
+        matchesTestFileName(file, pattern.filePatterns) &&
+        isListedTestFile(file, pattern.files),
+    ) ?? null
+  );
+}
+
+/**
+ * Which group a name read at a node belongs to. The nearest group that
+ * defines the name wins. `described_class` and an implicit subject come
+ * from the nearest group given a class, which RSpec reads the same way.
+ */
+function groupNamesIn(pattern: RbTestCases): GroupNames {
+  const scopes = new Map<number, GroupScope>();
+  const scopeOf = (group: RbNode): GroupScope => {
+    const known = scopes.get(group.id);
+    if (known !== undefined) {
+      return known;
+    }
+    const found = groupScope(group, pattern);
+    scopes.set(group.id, found);
+    return found;
+  };
+  const fromClass = new Set([pattern.describedClass, pattern.subjectValue]);
+  const owner = (node: RbNode, name: string): RbNode | null => {
+    let classGroup: RbNode | null = null;
+    for (let up = node.parent; up !== null; up = up.parent) {
+      if (roleOf(up, pattern) !== "opensGroup") {
+        continue;
+      }
+      const scope = scopeOf(up);
+      if (scope.values.has(name)) {
+        return up;
+      }
+      if (classGroup === null && scope.described !== null) {
+        classGroup = up;
+      }
+    }
+    return fromClass.has(name) ? classGroup : null;
+  };
+  return {
+    owner,
+    classRead: (node) => {
+      const name = node.text;
+      if (name !== pattern.describedClass) {
+        return null;
+      }
+      const group = owner(node, name);
+      return group === null ? null : scopeOf(group).described;
+    },
+  };
+}
+
+/**
+ * Registers which group each name in a test file belongs to, before the
+ * file's value facts are emitted, and clears it for any other file.
+ */
+export function registerTestFileNames(
+  file: string,
+  root: RbNode,
+  patterns: readonly RbTestCases[],
+): RbTestCases | null {
+  const pattern = patternForFile(file, patterns);
+  registerGroupNames(root, pattern === null ? null : groupNamesIn(pattern));
+  return pattern;
+}
+
+/**
+ * The facts that give each group's values to the names that read them.
+ * A `let` or `subject` block is a function its name runs, and a group
+ * given a class with no subject of its own has one of that class as its
+ * subject. `described_class` needs no fact, since it reads as the class.
+ */
+export function emitGroupFacts(
+  db: Database,
+  file: string,
+  root: RbNode,
+  pattern: RbTestCases,
+): void {
+  const visit = (node: RbNode): void => {
+    for (const child of children(node)) {
+      if (roleOf(child, pattern) === "opensGroup") {
+        emitOneGroup(db, file, child, pattern);
+      }
+      visit(child);
+    }
+  };
+  visit(root);
+}
+
+function emitOneGroup(
+  db: Database,
+  file: string,
+  group: RbNode,
+  pattern: RbTestCases,
+): void {
+  const scope = groupScope(group, pattern);
+  const groupKey = nodeId(file, group);
+  for (const [name, block] of scope.values) {
+    const blockKey = nodeId(file, block);
+    db.add("func", [blockKey]);
+    db.add("binds", [`${groupKey}#${name}`, blockKey]);
+  }
+  if (scope.described === null || scope.values.has(pattern.subjectValue)) {
+    return;
+  }
+  const classKey = readKey(file, scope.described, null);
+  const subject = `${groupKey}:${pattern.subjectValue}`;
+  const made = `${subject}:new`;
+  db.add("func", [subject]);
+  db.add("returnsValue", [subject, made]);
+  db.add("instanceOf", [made, classKey]);
+  db.add("binds", [`${groupKey}#${pattern.subjectValue}`, subject]);
 }
 
 /**
@@ -284,7 +436,11 @@ function exampleRun(example: Example, pattern: RbTestCases): ExampleRun {
   for (const block of always) {
     include(block);
   }
-  const valueNames = new Set([...byName.keys(), ...pattern.subjectReads]);
+  const valueNames = new Set([
+    ...byName.keys(),
+    ...pattern.subjectReads,
+    pattern.describedClass,
+  ]);
   const isRunnerMethod = (name: string | null): boolean =>
     name !== null &&
     (pattern.runnerMethods.includes(name) ||

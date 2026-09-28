@@ -55,6 +55,7 @@ import {
   RUBY_NAME_TYPES,
   WHOLE_VALUE_OPERATORS,
 } from "./locals.js";
+import { groupClassRead, groupNameOwner } from "./specNames.js";
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameWrite } from "@suss/resolution";
@@ -98,7 +99,9 @@ function nameKey(
   node: RbNode,
   enclosing: RbNode | null,
 ): string {
-  const owner = ownerOfName(node, node.text, enclosing);
+  const owner =
+    ownerOfName(node, node.text, enclosing) ??
+    (node.type === "identifier" ? groupNameOwner(node, node.text) : null);
   return owner === null
     ? nameId(filePath, node.text)
     : `${nodeId(filePath, owner)}#${node.text}`;
@@ -125,6 +128,11 @@ export function readKey(
   const type = node.type;
   if (type !== "identifier" && type !== "constant") {
     return nodeId(filePath, node);
+  }
+  // A test group's `described_class` reads as the class the group was given.
+  const described = type === "identifier" ? groupClassRead(node) : null;
+  if (described !== null) {
+    return readKey(filePath, described, null);
   }
   const above = node === written && parent !== undefined ? parent : node.parent;
   if (
@@ -532,7 +540,10 @@ export function readsOffClassItself(
   if (CONSTANT_REF_TYPES.has(written.type)) {
     return true;
   }
-  return written.type === "identifier" && classLocals.has(receiverKey);
+  return (
+    written.type === "identifier" &&
+    (classLocals.has(receiverKey) || groupClassRead(written) !== null)
+  );
 }
 
 /**
