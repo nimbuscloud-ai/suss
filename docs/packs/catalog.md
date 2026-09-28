@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Fifty-one packs read code today, across forty-two frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Fifty-two packs read code today, across forty-three frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -63,6 +63,7 @@ A framework pack finds the units a framework defines: a route handler, a compone
 | [`nestjs-rest`](../../packages/framework/nestjs-rest) | NestJS REST controllers. | ![](../../.github/badges/coverage-nestjs-rest.svg) |
 | [`nextjs`](../../packages/framework/nextjs) | Next.js route handlers, pages and server actions. The route comes from where the file is on disk, and a `"use server"` function becomes an action unit. | ![](../../.github/badges/coverage-nextjs.svg) |
 | [`package-exports`](../../packages/framework/package-exports) | The boundary between packages in one workspace: public exports on the provider side, and imports of them on the consumer side. The pack reads the workspace manifest, so nobody has to list the packages for each project. | ![](../../.github/badges/coverage-package-exports.svg) |
+| [`pytest`](../../packages/framework/pytest) | pytest tests (Python), named by their node ids, so a PRD scenario can say which test covers it. | ![](../../.github/badges/coverage-pytest.svg) |
 | [`rails`](../../packages/framework/rails) | Rails controller actions (Ruby), bound to the method and path `config/routes.rb` gives each one. An action the routes file does not reach is still discovered, with no boundary. | ![](../../.github/badges/coverage-rails.svg) |
 | [`react`](../../packages/framework/react) | React function components, event handlers and `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
 | [`react-query`](../../packages/framework/react-query) | TanStack Query hooks. The pack links a component to the query function that its `useQuery` or `useMutation` call runs. | ![](../../.github/badges/coverage-react-query.svg) |

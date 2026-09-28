@@ -2,8 +2,8 @@
  * Finds the summaries a PRD's `coveredBy` and `about` spellings mean,
  * for the intent pass in @suss/checker-intent to check.
  *
- * A test is spelled the way the runner prints it, the file and then its
- * titles joined with ` > `. The file goes through `filesMatching`, so a
+ * A test is spelled the way the runner prints it, which `toCoveringTest`
+ * splits into the file and its titles. The file goes through `filesMatching`, so a
  * repo-relative path matches a summary written relative to its package,
  * and the titles have to equal the test unit's name. A subject goes
  * through the same resolver `suss ask` uses.
@@ -12,7 +12,7 @@
 import { summaryIdentifier } from "@suss/behavioral-ir";
 import { readCallFacts } from "@suss/checker";
 import { loadIntentDirectory } from "@suss/contract-intent";
-import { TEST_TITLE_SEPARATOR } from "@suss/intent-ir";
+import { NODE_ID_SEPARATOR, TEST_TITLE_SEPARATOR } from "@suss/intent-ir";
 
 import { functionsSpelled } from "./reachTarget.js";
 import { filesMatching } from "./target.js";
@@ -97,6 +97,13 @@ function withoutWorkspace(file: string): {
     : { workspace: file.slice(0, at), file: file.slice(at + 2) };
 }
 
+/** A test's name written the way the author wrote the claim, so a pytest author sees node ids. */
+function spelledLike(spelled: CoveringTestSpelling, name: string): string {
+  return spelled.spelledAs.includes(TEST_TITLE_SEPARATOR)
+    ? name
+    : name.split(TEST_TITLE_SEPARATOR).join(NODE_ID_SEPARATOR);
+}
+
 function testSpelled(
   spelled: CoveringTestSpelling,
   tests: ReadonlyArray<BehavioralSummary>,
@@ -105,7 +112,7 @@ function testSpelled(
     return {
       found: false,
       message:
-        "and these summaries have no tests in them; extract the test files with a test pack, such as -f vitest",
+        "and these summaries have no tests in them; extract the test files with a test pack: -f vitest, -f pytest or -f rspec",
     };
   }
 
@@ -136,7 +143,9 @@ function testSpelled(
     };
   }
 
-  const near = inFile.slice(0, TESTS_LISTED).map((test) => test.identity.name);
+  const near = inFile
+    .slice(0, TESTS_LISTED)
+    .map((test) => spelledLike(spelled, test.identity.name));
   return {
     found: false,
     message: `and no test in ${file} has that title. Tests there: ${near.join("; ")}${inFile.length > TESTS_LISTED ? `, and ${inFile.length - TESTS_LISTED} more` : ""}`,

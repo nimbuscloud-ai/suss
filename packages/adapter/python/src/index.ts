@@ -71,6 +71,8 @@ export type {
   PyModelEntryMethod,
   PyModelQueries,
   PyStatusCall,
+  PyTestCases,
+  PyTestMocks,
   PythonDiscoveryPattern,
   PythonPack,
   RawSqlPattern,

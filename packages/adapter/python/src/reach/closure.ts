@@ -73,7 +73,9 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   ExtractorOptions,
+  RawBranch,
   RawCodeStructure,
+  RawEffect,
   RawParameter,
 } from "@suss/extractor";
 import type { CalleeOutcome } from "@suss/resolution";
@@ -104,7 +106,21 @@ export interface ReachOptions {
   readonly replay?: WalkReplay;
   /** Set when a cache is recording what each scanned body depended on. */
   readonly ledger?: DependencyLedger;
+  /** The calls a function makes that no line of its body writes. */
+  readonly impliedCalls?: ImpliedCalls;
 }
+
+/**
+ * A call the runtime makes on a function's behalf, such as pytest
+ * calling each fixture a test asks for by parameter name. `callee` is
+ * the text the call is recorded under.
+ */
+export interface ImpliedCall {
+  readonly callee: string;
+  readonly target: ReachedFunction;
+}
+
+export type ImpliedCalls = (source: ReachedFunction) => readonly ImpliedCall[];
 
 /** A function one scan followed, as a cache stores it. */
 export interface StoredTarget {
@@ -433,6 +449,7 @@ function scanOnce(
         options.storageFor(source.file),
       ),
       reads,
+      options.impliedCalls?.(source) ?? [],
     );
   const ledger = options.ledger;
   if (ledger === undefined) {
@@ -662,6 +679,7 @@ function scanBody(
     spellings: CalleeSpellings;
     passed: ReadonlyMap<string, CalleeOutcome>;
   },
+  implied: readonly ImpliedCall[],
 ): Scan {
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
@@ -760,6 +778,17 @@ function scanBody(
   for (const { call, site } of written) {
     record(call, site);
   }
+  for (const { callee, target } of implied) {
+    placements.place(callee, {
+      file: target.file.displayPath,
+      span: spanOf(target.node),
+    });
+    const key = keyOf(target);
+    if (!seen.has(key)) {
+      seen.add(key);
+      followed.push(target);
+    }
+  }
 
   return {
     followed,
@@ -830,7 +859,7 @@ function identifiersUnder(node: PyNode, found: string[] = []): string[] {
  */
 export function libraryUnit(
   target: ReachedFunction,
-  options: Pick<ReachOptions, "storageFor" | "facts">,
+  options: Pick<ReachOptions, "storageFor" | "facts" | "impliedCalls">,
   binding: BoundaryBinding = functionCallBinding({
     transport: "in-process",
     recognition: "reachable",
@@ -890,11 +919,39 @@ export function libraryUnit(
     },
     boundaryBinding: binding,
     parameters,
-    branches: branches.map((branch) => withBodyEffects(branch, extra)),
+    branches: branches.map((branch) =>
+      withBodyEffects(withImpliedCalls(branch, target, options), extra),
+    ),
     ...(flags.length === 0 ? {} : { extraInputReads: flags }),
     bodyContent: body === null ? "absent" : bodyContentOf(body),
     dependencyCalls: [],
     declaredContract: null,
+  };
+}
+
+/** The branch with the calls made on the function's behalf in front, since they run before its body does. */
+function withImpliedCalls(
+  branch: RawBranch,
+  target: ReachedFunction,
+  options: Pick<ReachOptions, "impliedCalls">,
+): RawBranch {
+  const implied = options.impliedCalls?.(target) ?? [];
+  if (implied.length === 0) {
+    return branch;
+  }
+  return {
+    ...branch,
+    effects: [
+      ...implied.map(
+        ({ callee }): RawEffect => ({
+          type: "invocation",
+          callee,
+          args: [],
+          async: false,
+        }),
+      ),
+      ...branch.effects,
+    ],
   };
 }
 

@@ -1,0 +1,17 @@
+{
+  "pytest": "pytest: the test runner this pack reads, and the module its fixture decorator and markers come from",
+  "test": "suss: code-unit kind; also pytest: the default python_functions prefix of a test function",
+  "Test": "pytest: the default python_classes prefix of a class of tests",
+  "setUp": "unittest: the method a TestCase runs before each test",
+  "asyncSetUp": "unittest: the coroutine an IsolatedAsyncioTestCase runs before each test",
+  "name": "suss: the syntax field every adapter reads a definition's name from; also pytest: the keyword on pytest.fixture that gives the fixture another name",
+  "autouse": "pytest: the keyword on pytest.fixture that runs it before every test in its scope",
+  "pytestmark": "pytest: the module or class variable whose markers apply to every test under it",
+  "self": "language: the instance a method is called on",
+  "cls": "language: the class a class method is called on",
+  "request": "pytest: the parameter a fixture takes to read the test that requested it",
+  "mocker": "pytest-mock: the fixture that hands a test its patchers",
+  "patch": "pytest-mock: mocker.patch, the same as unittest.mock.patch",
+  "monkeypatch": "pytest: the fixture that sets attributes for the length of a test",
+  "setattr": "pytest: monkeypatch.setattr, which replaces an attribute given a dotted path or an object and a name"
+}

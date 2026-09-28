@@ -213,6 +213,10 @@
       "types": "./dist/vitest.d.ts",
       "import": "./dist/vitest.js"
     },
+    "./pytest": {
+      "types": "./dist/pytest.d.ts",
+      "import": "./dist/pytest.js"
+    },
     "./sqlalchemy": {
       "types": "./dist/sqlalchemy.d.ts",
       "import": "./dist/sqlalchemy.js"
@@ -298,6 +302,7 @@
     "@suss/framework-pg": "*",
     "@suss/framework-pg-ruby": "*",
     "@suss/framework-prisma": "*",
+    "@suss/framework-pytest": "*",
     "@suss/framework-rails": "*",
     "@suss/framework-react": "*",
     "@suss/framework-react-query": "*",

@@ -578,6 +578,29 @@ Not read yet:
 - A parameter default that refers to something other than a function at module scope, such as a method or a variable bound inside a function.
 - Flask's `before_request` on a blueprint. A flask-restx route is decorated on a namespace, and the blueprint is where it is mounted, so only the app's hook is read.
 
+## Tests a PRD scenario can list
+
+A pack with `tests` turns each test its runner collects into a `test` unit, so a PRD scenario can list it under `coveredBy`. The pytest pack is the one that does. A test is a function whose name starts with `functionPrefix` in a file matching one of `filePatterns`, or a method with that prefix on a class pytest collects: one whose name starts with `classPrefix`, or one that extends a `caseBaseClasses` entry directly or through a project class. The unit is named by its classes and then its own name, joined with ` > `, so `tests/test_orders.py::TestCancel::test_twice` in a PRD matches the unit `TestCancel > test_twice` in `tests/test_orders.py`. With `files` set, only the tests in those files become units.
+
+A test unit has no boundary binding. Its body is read the way a reached function's is, and it seeds the walk the way a route does, so a question about what the test reaches is answered from the summaries.
+
+pytest calls things the test's body never writes, and the walk has to follow them too. The test index reports them to the walk as implied calls, recorded on the unit as invocations in front of its own and followed like any other call:
+
+- Each parameter a test or a fixture takes asks for a fixture by that name, other than `reservedParameters`. The fixture is looked for on each class around the requester, then in the requester's module, then in each `sharedFixtureFiles` file from the module's directory up to the root. A fixture a module imports counts under the name its decorator gives it, the way pytest registers it. A fixture that asks for its own name gets the next one out.
+- Each `autouse` fixture in scope runs before every test.
+- A test on a TestCase subclass runs the class's `setUpMethods` first.
+
+`metadata.test.skipped` is set when a `skipDecorators` entry is on the test or a class around it, or in a `markerVariable` assignment in its module or class. A marker applied with a condition counts as skipping, since whether the condition is true is known only when the tests run.
+
+`metadata.test.mocks` lists every patcher written on the test or its classes as a decorator, in its body, and in each fixture and `setUp` it runs through. A patcher called with a dotted string is followed to the project file that defines the thing at that path, through the imports of the module at the front of the path, so `patch("app.checkout.cancel_order")` records `app/orders.py` and `cancel_order` when `app.checkout` imports it from there. That is the function the checker then refuses to count a path through. A patcher called with an object and a member name records the file the object's module or class is defined in. A path outside the project is recorded as written. `fixturePatchers` are the patchers a fixture hands the test, such as `mocker.patch`, and count only in a function that takes that fixture.
+
+Not read yet:
+
+- A fixture reached through `request.getfixturevalue(name)` or `@pytest.mark.usefixtures`.
+- A test a plugin collects, or a `python_files`, `python_classes` or `python_functions` setting in the project's pytest configuration.
+- `unittest.TestCase.setUpClass`, and `setup_method` and `setup_function` on a pytest class or module.
+- A patcher's `new=` value. The mock is recorded whatever replaces the target.
+
 ## What a run after an edit replays
 
 A run with a cache writes a record for every file beside the summaries: the units the file's discovery found, each with its summary; the wrappers its routes registered, in order; the file's load-time unit; and what the walk found for each function written in the file, with each reached function's summary. Every record also says what its work depended on, as the DESIGN.md of `@suss/resolution` describes under "What a piece of work depended on". A run after an edit parses every file and emits every fact again, then replays each record whose dependencies did not change and does the rest again. The output is the same, byte for byte, as a run without the cache.

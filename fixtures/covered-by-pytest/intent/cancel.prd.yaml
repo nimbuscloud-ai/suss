@@ -1,0 +1,38 @@
+kind: prd
+title: Cancel an order
+purpose: A customer cancels an order they no longer want.
+audience: customers
+scenarios:
+  - title: cancelled
+    when: a customer cancels an order
+    expect: the order is cancelled
+    coveredBy: tests/test_orders.py::TestCancel::test_marks_the_order_cancelled
+    about: cancel_order
+  - title: renamed test
+    when: a customer cancels an order again
+    expect: nothing changes
+    coveredBy: tests/test_orders.py::TestCancel::test_cancels_an_order_twice
+    about: cancel_order
+  - title: wrong subject
+    when: a refund follows a cancel
+    expect: the payment goes back
+    coveredBy: tests/test_orders.py::TestCancel::test_refunds_the_payment
+    about: cancel_order
+  - title: skipped
+    when: an order is cancelled twice
+    expect: the second cancel does nothing
+    coveredBy: tests/test_orders.py::TestCancel::test_cancels_twice_without_harm
+    about: cancel_order
+  - title: mocked
+    when: a checkout fails
+    expect: the order is cancelled
+    coveredBy: tests/test_checkout.py::test_cancels_on_a_failed_checkout
+    about: cancel_order
+  - title: through a fixture
+    when: a cancelled order is read back
+    expect: it says it is cancelled
+    coveredBy: tests/test_orders.py::test_reads_a_cancelled_order[first]
+    about: cancel_order
+  - title: nothing yet
+    when: an order that shipped is cancelled
+    expect: the customer is told it is too late

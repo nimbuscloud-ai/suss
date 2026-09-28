@@ -255,6 +255,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "graphql-ruby": "@suss/packs/graphql-ruby",
   sqlalchemy: "@suss/packs/sqlalchemy",
   sqlmodel: "@suss/packs/sqlmodel",
+  pytest: "@suss/packs/pytest",
   activerecord: "@suss/packs/activerecord",
   "bigquery-ruby": "@suss/packs/bigquery-ruby",
   "pg-ruby": "@suss/packs/pg-ruby",
@@ -273,6 +274,7 @@ const PACK_LANGUAGE: Record<string, Language> = {
   "graphql-ruby": "ruby",
   sqlalchemy: "python",
   sqlmodel: "python",
+  pytest: "python",
   "bigquery-python": "python",
   activerecord: "ruby",
   "bigquery-ruby": "ruby",
@@ -1033,7 +1035,10 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     summaries,
     runOptions.root,
     files.length,
-    packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+    packs.length > 0 &&
+      packs.every(
+        (p) => p.discovery.length === 0 && (p.tests ?? []).length === 0,
+      ),
     timingReport,
     extractionReport,
     cacheDiagnostic,
