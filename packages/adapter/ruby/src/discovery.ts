@@ -59,6 +59,7 @@ import {
 import { methodStorage, type RbStorageOptions } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
 import { testCaseUnits, testPatternsIn } from "./testCases.js";
+import { testClassPatternsIn, testClassUnits } from "./testClasses.js";
 import { typeShapeFromNode } from "./typeShape.js";
 
 import type {
@@ -308,6 +309,20 @@ export async function discoverUnits(
           file,
           node: block,
           enclosingQualifiedName: null,
+        }),
+    }),
+    ...testClassUnits(root, testClassPatternsIn(options.packs), {
+      filePath: options.filePath,
+      absoluteFile,
+      displayPathOf: options.displayPathOf ?? ((file) => file),
+      facts: options.facts,
+      inheritedMethods: options.inheritedMethods,
+      onSeed: () => undefined,
+      onClassSeed: (raw, node, qualifiedName) =>
+        options.onReachSeed?.(raw, {
+          file: absoluteFile,
+          node,
+          enclosingQualifiedName: qualifiedName,
         }),
     }),
   );

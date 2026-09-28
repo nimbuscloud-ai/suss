@@ -263,6 +263,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   rspec: "@suss/packs/rspec",
   "factory-bot": "@suss/packs/factory-bot",
   fabrication: "@suss/packs/fabrication",
+  minitest: "@suss/packs/minitest",
   requests: "@suss/packs/requests",
   httpx: "@suss/packs/httpx",
   aiohttp: "@suss/packs/aiohttp",
@@ -286,6 +287,7 @@ const PACK_LANGUAGE: Record<string, Language> = {
   rspec: "ruby",
   "factory-bot": "ruby",
   fabrication: "ruby",
+  minitest: "ruby",
   requests: "python",
   httpx: "python",
   aiohttp: "python",
@@ -1115,7 +1117,10 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     files.length,
     packs.length > 0 &&
       packs.every(
-        (p) => p.discovery.length === 0 && (p.tests ?? []).length === 0,
+        (p) =>
+          p.discovery.length === 0 &&
+          (p.tests ?? []).length === 0 &&
+          (p.testClasses ?? []).length === 0,
       ),
     timingReport,
     extractionReport,

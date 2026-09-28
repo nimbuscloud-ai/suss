@@ -257,6 +257,14 @@ const OTHER_RUNNERS = [
     subject: "app/models/order.rb::Order.cancel",
     titlesListed: "Order > cancel > marks the order cancelled",
   },
+  {
+    runner: "minitest",
+    lang: "ruby",
+    fixture: "covered-by-minitest",
+    mock: "Order.stub(:cancel, { status: :cancelled })",
+    subject: "app/models/order.rb::Order.cancel",
+    titlesListed: "OrderTest > test_marks_the_order_cancelled",
+  },
 ];
 
 const FIXTURES = path.resolve(import.meta.dirname, "../../../fixtures");

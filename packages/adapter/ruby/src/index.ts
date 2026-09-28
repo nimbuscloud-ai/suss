@@ -109,6 +109,7 @@ export type {
   RbStatusCall,
   RbStoragePattern,
   RbTestCases,
+  RbTestClasses,
   RbTestMocks,
   RubyDiscoveryPattern,
   RubyPack,

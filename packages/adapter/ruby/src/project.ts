@@ -33,6 +33,7 @@ import {
   createTimer,
   extractionConfigStamp,
   KeptParses,
+  matchesTestFileName,
   moduleInitStructure,
   noopTimer,
   runDigest,
@@ -106,6 +107,7 @@ import {
   registerTestFileNames,
   testPatternsIn,
 } from "./testCases.js";
+import { classTestRunAt, testClassPatternsIn } from "./testClasses.js";
 import { emitFactoryFacts, factoriesIn } from "./testFactories.js";
 import {
   emitSharedGroupBinds,
@@ -330,7 +332,17 @@ export class RunFacts {
     }
     const factories = factoriesIn(this.packs);
     if (factories.length > 0) {
-      const testFiles = new Set(this.testFiles.map(({ file }) => file));
+      const classTests = testClassPatternsIn(this.packs);
+      const testFiles = new Set([
+        ...this.testFiles.map(({ file }) => file),
+        ...this.parsed
+          .map(({ file }) => file)
+          .filter((file) =>
+            classTests.some((one) =>
+              matchesTestFileName(file, one.filePatterns),
+            ),
+          ),
+      ]);
       emitFactoryFacts(
         this.db,
         this.parsed,
@@ -880,6 +892,7 @@ async function runRuby(
     }
   }
 
+  const classTests = testClassPatternsIn(options.packs);
   const reached = await timer.timeAsync("summarize", () =>
     reachedFunctions(seeds, {
       context: reachContext,
@@ -889,7 +902,13 @@ async function runRuby(
       bodyBlocks,
       dynamicNames: watchedNames,
       gapHandling,
-      examples: exampleReads(testPatternsIn(options.packs), facts.sharedGroups),
+      examples: exampleReads(
+        testPatternsIn(options.packs),
+        facts.sharedGroups,
+        classTests.length === 0
+          ? null
+          : (node, file) => classTestRunAt(node, file, classTests, db),
+      ),
       ...(reuse === null ? {} : { replay: new WalkReplay(reuse, rootsByFile) }),
       ...(ledger === null ? {} : { ledger }),
     }),

@@ -256,7 +256,7 @@ suss check --dir .suss --intent intent/
 
 `--intent` on `extract` hands the test pack the test files the PRDs list, so the run reads those and no others. The check then reports a listed test that is gone or renamed, one marked to be skipped, and one whose calls never reach the route, or reach it only through something the test replaced with a mock such as `vi.mock`.
 
-The same works for Python and Ruby. A pytest test is listed by the node id pytest prints, and an RSpec example by its file and its `describe`, `context` and `it` titles joined with ` > `:
+The same works for Python and Ruby. A pytest test is listed by the node id pytest prints, an RSpec example by its file and its `describe`, `context` and `it` titles joined with ` > `, and a Minitest test by its file, its class and its method:
 
 ```yaml
     coveredBy: tests/test_orders.py::TestCancel::test_second_time
@@ -266,12 +266,16 @@ The same works for Python and Ruby. A pytest test is listed by the node id pytes
     coveredBy: spec/orders_spec.rb > Orders > cancel > changes nothing the second time
 ```
 
+```yaml
+    coveredBy: test/models/order_test.rb > OrderTest > test_changes_nothing_the_second_time
+```
+
 ```bash
 suss extract --lang python -f fastapi -f pytest --intent intent/ -o .suss/code.json
 suss extract --lang ruby -f rails -f rspec -f factory-bot --intent intent/ -o .suss/rails.json
 ```
 
-A pytest test counts as calling the fixtures it takes by parameter name, so a test that reaches the route only through a fixture still covers it. An RSpec example counts as running the `before`, `let!` and `subject` blocks around it, each `let` it refers to, and the shared examples and contexts its group includes. A call on a `let`, on the subject or on `described_class` is followed into the class behind it, and with `-f factory-bot` or `-f fabrication`, so is a call on a record a factory built. The [intent format](/reference/intent-format#covering-tests) says how each runner's test is spelled and what counts as reaching.
+A pytest test counts as calling the fixtures it takes by parameter name, so a test that reaches the route only through a fixture still covers it. An RSpec example counts as running the `before`, `let!` and `subject` blocks around it, each `let` it refers to, and the shared examples and contexts its group includes. A call on a `let`, on the subject or on `described_class` is followed into the class behind it, and with `-f factory-bot` or `-f fabrication`, so is a call on a record a factory built. A Minitest test counts as running its class's `setup` blocks and `setup` method. The [intent format](/reference/intent-format#covering-tests) says how each runner's test is spelled and what counts as reaching.
 
 ## Say what the boundary receives
 

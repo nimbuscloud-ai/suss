@@ -189,6 +189,10 @@
       "types": "./dist/fabrication.d.ts",
       "import": "./dist/fabrication.js"
     },
+    "./minitest": {
+      "types": "./dist/minitest.d.ts",
+      "import": "./dist/minitest.js"
+    },
     "./prisma": {
       "types": "./dist/prisma.d.ts",
       "import": "./dist/prisma.js"
@@ -316,6 +320,7 @@
     "@suss/framework-rspec": "*",
     "@suss/framework-factory-bot": "*",
     "@suss/framework-fabrication": "*",
+    "@suss/framework-minitest": "*",
     "@suss/framework-prisma": "*",
     "@suss/framework-pytest": "*",
     "@suss/framework-rails": "*",

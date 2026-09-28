@@ -76,23 +76,23 @@ export function testPatternsIn(packs: readonly RubyPack[]): RbTestCases[] {
 export function exampleReads(
   patterns: readonly RbTestCases[],
   shared: SharedGroupIndex | undefined,
+  classTests: ((node: RbNode, file: string) => ExampleRun | null) | null,
 ): ExampleReads | undefined {
-  if (patterns.length === 0) {
+  if (patterns.length === 0 && classTests === null) {
     return undefined;
   }
   return {
     runOf: (node, file) => {
       const call = node.parent;
-      if (!BLOCK_TYPES.has(node.type) || call === null) {
-        return null;
-      }
-      for (const pattern of patterns) {
-        const found = exampleAt(call, file, pattern, shared);
-        if (found !== null) {
-          return exampleRun(found, pattern, shared);
+      if (BLOCK_TYPES.has(node.type) && call !== null) {
+        for (const pattern of patterns) {
+          const found = exampleAt(call, file, pattern, shared);
+          if (found !== null) {
+            return exampleRun(found, pattern, shared);
+          }
         }
       }
-      return null;
+      return classTests?.(node, file) ?? null;
     },
   };
 }
@@ -737,7 +737,7 @@ export function testCaseUnits(
   });
 }
 
-interface Title {
+export interface Title {
   readonly text: string;
   readonly unresolved: boolean;
 }
@@ -785,8 +785,39 @@ function exampleUnit(
   root: RbNode,
   options: TestUnitOptions,
 ): RawCodeStructure {
-  const titles = titlesOf(example, pattern, options.facts);
   const run = exampleRun(example, pattern, options.shared);
+  return testUnitOf({
+    titles: titlesOf(example, pattern, options.facts),
+    run,
+    mocks: run.blocks.flatMap((block) =>
+      mocksIn(block, pattern.mocks, {
+        ...options,
+        absoluteFile: options.shared?.fileOf(block) ?? options.absoluteFile,
+      }),
+    ),
+    skipped: isSkipped(example, pattern),
+    anchor: anchorOf(example, root),
+    body: example.block,
+    options,
+  });
+}
+
+/** What a test unit is built from, whichever runner declared the test. */
+export interface TestUnitParts {
+  readonly titles: readonly Title[];
+  readonly run: ExampleRun;
+  readonly mocks: readonly TestMock[];
+  readonly skipped: boolean;
+  /** Where the unit is recorded in the file being read. */
+  readonly anchor: RbNode;
+  /** The test's own block or method, whose body says whether it is empty. */
+  readonly body: RbNode;
+  readonly options: TestUnitOptions;
+}
+
+/** A `test` unit: its calls are every call the blocks it runs make, less the runner's own. */
+export function testUnitOf(parts: TestUnitParts): RawCodeStructure {
+  const { titles, run, mocks, anchor, options } = parts;
   const runnerCallees = new Set(
     exampleCalls(run, options.inheritedMethods)
       .filter(run.isRunnerCall)
@@ -802,19 +833,12 @@ function exampleUnit(
       ),
     )
     .filter((effect) => !runnerCallees.has(effect.callee));
-  const mocks = run.blocks.flatMap((block) =>
-    mocksIn(block, pattern.mocks, {
-      ...options,
-      absoluteFile: options.shared?.fileOf(block) ?? options.absoluteFile,
-    }),
-  );
   const unresolved = titles.find((title) => title.unresolved);
   const test: TestMetadata = {
-    ...(isSkipped(example, pattern) ? { skipped: true } : {}),
-    ...(mocks.length > 0 ? { mocks } : {}),
+    ...(parts.skipped ? { skipped: true } : {}),
+    ...(mocks.length > 0 ? { mocks: [...mocks] } : {}),
     ...(unresolved !== undefined ? { unresolvedTitle: unresolved.text } : {}),
   };
-  const anchor = anchorOf(example, root);
   const range = rangeOf(anchor);
   return {
     identity: {
@@ -849,7 +873,7 @@ function exampleUnit(
         isDefault: true,
       },
     ],
-    bodyContent: field(example.block, "body") === null ? "empty" : "statements",
+    bodyContent: field(parts.body, "body") === null ? "empty" : "statements",
     dependencyCalls: [],
     declaredContract: null,
     test,
@@ -930,7 +954,10 @@ function keyName(key: RbNode | null): string | null {
 }
 
 /** A `skip` or `pending` written as one of the block's own statements, which stops the example there. */
-function skipsAsItRuns(block: RbNode, statements: readonly string[]): boolean {
+export function skipsAsItRuns(
+  block: RbNode,
+  statements: readonly string[],
+): boolean {
   const body = field(block, "body");
   return (body === null ? [] : bodyStatements(body)).some((statement) => {
     const onSelf =
@@ -1078,7 +1105,7 @@ export function firstArgument(call: RbNode): RbNode | null {
  * constant the run defines. A name given as a string, as `stub_const`
  * takes it, is looked up by its qualified name.
  */
-function moduleOfConstant(
+export function moduleOfConstant(
   node: RbNode | null,
   options: TestUnitOptions,
 ): string | null {
@@ -1102,6 +1129,6 @@ function moduleOfConstant(
 }
 
 /** The call as a finding quotes it, on one line. */
-function oneLine(text: string): string {
+export function oneLine(text: string): string {
   return text.replace(/\s*\n\s*/g, " ").trim();
 }

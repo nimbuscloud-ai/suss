@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Fifty-five packs read code today, across forty-six frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Fifty-six packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -60,6 +60,7 @@ A framework pack finds the units a framework defines: a route handler, a compone
 | [`flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module that re-exports the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
 | [`graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby). The pack follows `mutation:` and `resolver:` wiring one hop out to what the referenced class declares. It also records the model a resolver reads through `dataloader`, when a storage pack in the run recognizes that model. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
 | [`hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | ![](../../.github/badges/coverage-hono.svg) |
+| [`minitest`](../../packages/framework/minitest) | Minitest and Rails test cases (Ruby), named by class and test method, so a PRD scenario can say which test covers it. | ![](../../.github/badges/coverage-minitest.svg) |
 | [`nestjs-graphql`](../../packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](../../.github/badges/coverage-nestjs-graphql.svg) |
 | [`nestjs-microservices`](../../packages/framework/nestjs-microservices) | NestJS microservice handlers: `@EventPattern` and `@MessagePattern` consumers on the channel the decorator states. | ![](../../.github/badges/coverage-nestjs-microservices.svg) |
 | [`nestjs-rest`](../../packages/framework/nestjs-rest) | NestJS REST controllers. | ![](../../.github/badges/coverage-nestjs-rest.svg) |

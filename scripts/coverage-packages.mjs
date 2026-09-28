@@ -79,6 +79,7 @@ export const coveragePackages = [
   ["packages/framework/rspec", "rspec"],
   ["packages/framework/factory-bot", "factory-bot"],
   ["packages/framework/fabrication", "fabrication"],
+  ["packages/framework/minitest", "minitest"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],

@@ -33,7 +33,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 | `--no-cache` | off | Skip the on-disk cache for this run. |
 | `--allow-empty` | off | Exit `0` even when the run produced nothing. Without it that run fails, because a silent zero looks the same in CI as a passing check. |
 | `--fail-on-pack-error` | off | Exit non-zero when a pack throws while it reads. By default the run reports the throw and keeps going with the other packs. |
-| `--intent <path>` | none | A folder of intent documents. A test pack (`-f vitest`, `-f pytest` or `-f rspec`) reads only the test files its PRDs list under `coveredBy`, instead of every test, so `check --intent` can check them. A pack given its own `files` in a config file keeps that list. |
+| `--intent <path>` | none | A folder of intent documents. A test pack (`-f vitest`, `-f pytest`, `-f rspec` or `-f minitest`) reads only the test files its PRDs list under `coveredBy`, instead of every test, so `check --intent` can check them. A pack given its own `files` in a config file keeps that list. |
 
 `--fail-on-empty` is gone. A run that finds nothing now fails by default, and passing the old flag stops the run and points you at `--allow-empty`.
 
@@ -98,7 +98,7 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 ## Pack names
 
-`-f` takes these 55 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
+`-f` takes these 56 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
 
 **Frameworks.** These discover the units a run is about: a route, a resolver, a component, a deployed function.
 
@@ -106,7 +106,7 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 **Tests.** These read the tests a PRD scenario lists under `coveredBy`, one pack per runner, and read only the listed files when the run is given `--intent`.
 
-`vitest`, `pytest`, `rspec`, and next to `rspec`, `factory-bot` and `fabrication`, which say what class a Ruby test's factory builds
+`vitest`, `pytest`, `rspec`, `minitest`, and next to the Ruby ones, `factory-bot` and `fabrication`, which say what class a test's factory builds
 
 **Clients.** These discover the calls your code makes out.
 
@@ -116,7 +116,7 @@ suss enforces nothing about how modules call each other. [`inspect --diff`](/ref
 
 `activerecord`, `aws-dynamodb`, `aws-eventbridge`, `aws-s3`, `aws-secrets-manager`, `aws-sns`, `aws-sqs`, `aws-ssm`, `bigquery`, `bigquery-python`, `bigquery-ruby`, `drizzle`, `gcs`, `mongoose`, `node`, `pg`, `pg-ruby`, `prisma`, `redis`, `sqlalchemy`, `sqlmodel`, `typeorm`, `zustand`
 
-Nineteen of them read something other than TypeScript, and a run reads one language at a time. `fastapi`, `flask-restx`, `sqlalchemy`, `sqlmodel`, `bigquery-python`, `pytest`, `requests`, `httpx` and `aiohttp` read Python; `rails`, `graphql-ruby`, `activerecord`, `bigquery-ruby`, `pg-ruby`, `rspec`, `factory-bot`, `fabrication`, `faraday` and `net-http` read Ruby. Naming one in a TypeScript run stops the run and prints the command to run it separately. See [Read Python or Ruby](/guides/python-and-ruby).
+Twenty of them read something other than TypeScript, and a run reads one language at a time. `fastapi`, `flask-restx`, `sqlalchemy`, `sqlmodel`, `bigquery-python`, `pytest`, `requests`, `httpx` and `aiohttp` read Python; `rails`, `graphql-ruby`, `activerecord`, `bigquery-ruby`, `pg-ruby`, `rspec`, `minitest`, `factory-bot`, `fabrication`, `faraday` and `net-http` read Ruby. Naming one in a TypeScript run stops the run and prints the command to run it separately. See [Read Python or Ruby](/guides/python-and-ruby).
 
 A name that is not on the list gets treated as a module to import, and that is how you run a pack of your own. A name starting with `@` or containing a `/` is imported exactly as written, so `-f @acme/suss-pack` works. Any other name is tried as `@suss/packs/<name>`, then `@suss/framework-<name>`, then `@suss/<name>`. If none of the three import, the run stops and prints the built-in list.
 
