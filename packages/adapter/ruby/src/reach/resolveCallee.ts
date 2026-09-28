@@ -191,6 +191,32 @@ export function resolveCallee(
 }
 
 /**
+ * A method called on a value the source writes, with no call written for
+ * it, as an RSpec predicate matcher calls `local?` on what its
+ * expectation is about. The value goes to the rules the way a written
+ * receiver does.
+ */
+export function resolveMethodOn(
+  receiver: RbNode,
+  method: string,
+  site: CallSite,
+  ctx: ReachContext,
+): CalleeResolution {
+  const key = readKey(site.file, receiver, site.method);
+  const spelling: ReceiverSpelling = {
+    kind: "receiver",
+    key,
+    method,
+    onClassItself: readsOffClassItself(
+      receiver,
+      key,
+      classLocalsFor(receiver, site),
+    ),
+  };
+  return asCallee(spelling, outcomeFor(key, ctx), site, ctx);
+}
+
+/**
  * A read through a loader runs in the project's own source class, so the
  * call resolves to the method the library runs on that class. Null when
  * no pack declares a source, or when this call does not pick one.

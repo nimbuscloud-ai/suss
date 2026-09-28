@@ -268,10 +268,9 @@ function visibleAt(
       }
     }
     if (scope.described !== null && !found.has(pattern.subjectValue)) {
-      found.set(
-        pattern.subjectValue,
-        `${nodeId(file, scopeCall)}:${pattern.subjectValue}`,
-      );
+      const implicit = `${nodeId(file, scopeCall)}:${pattern.subjectValue}`;
+      found.set(pattern.subjectValue, implicit);
+      found.set(pattern.expectations.onSubject, implicit);
     }
   }
   return found;

@@ -82,6 +82,10 @@ A file matches on whole path segments from the end.
   `let` built. `described_class` is the class the nearest group around
   was given, and a group given a class with no `subject` of its own has
   one of that class as its subject, the way RSpec makes one with `new`.
+- Predicate matchers. `expect(order).to be_open` calls `open?` on the
+  order, and `have_items` calls `has_items?`, so
+  `it { is_expected.to be_open }` counts as calling `open?` on the
+  subject.
 - Whether the example runs. `xit`, `skip` and `pending` examples, any
   example under `xdescribe` or `xcontext`, `:skip` or `skip: true`
   metadata on the example or a group, and a `skip` or `pending`

@@ -29,8 +29,25 @@ export function rspecPattern(files?: string[]): RbTestCases {
     subjectReads: ["subject", "is_expected"],
     subjectValue: "subject",
     describedClass: "described_class",
-    runnerMethods: ["expect", "allow", "receive", "eq", "be", "stub_const"],
-    predicateMatcherPrefixes: ["be_"],
+    runnerMethods: [
+      "expect",
+      "is_expected",
+      "allow",
+      "receive",
+      "eq",
+      "be",
+      "be_nil",
+      "stub_const",
+    ],
+    predicateMatchers: [
+      { prefix: "be_", methodPrefix: "", methodSuffix: "?" },
+      { prefix: "have_", methodPrefix: "has_", methodSuffix: "?" },
+    ],
+    expectations: {
+      starts: ["expect"],
+      onSubject: "is_expected",
+      runs: ["to", "not_to", "to_not"],
+    },
     mocks: {
       targets: ["allow", "expect", "allow_any_instance_of"],
       expectations: ["to", "not_to"],

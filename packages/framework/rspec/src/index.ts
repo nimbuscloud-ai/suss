@@ -115,7 +115,15 @@ export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
         subjectValue: "subject",
         describedClass: "described_class",
         runnerMethods: RUNNER_METHODS,
-        predicateMatcherPrefixes: ["be_", "have_"],
+        predicateMatchers: [
+          { prefix: "be_", methodPrefix: "", methodSuffix: "?" },
+          { prefix: "have_", methodPrefix: "has_", methodSuffix: "?" },
+        ],
+        expectations: {
+          starts: ["expect"],
+          onSubject: "is_expected",
+          runs: ["to", "not_to", "to_not"],
+        },
         mocks: {
           targets: [
             "allow",

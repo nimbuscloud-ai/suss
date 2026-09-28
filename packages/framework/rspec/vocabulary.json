@@ -76,5 +76,6 @@
   "output": "rspec: the matcher for printed output",
   "all": "rspec: the matcher that applies another to every element",
   "be_": "rspec: the prefix of a predicate matcher, as in be_cancelled",
-  "have_": "rspec: the prefix of a has_ predicate matcher, as in have_key"
+  "have_": "rspec: the prefix of a has_ predicate matcher, as in have_key",
+  "has_": "rspec: the prefix of the method a have_ matcher calls, as have_key calls has_key?"
 }

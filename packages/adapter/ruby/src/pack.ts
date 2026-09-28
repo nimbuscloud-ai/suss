@@ -140,8 +140,10 @@ export interface RbTestCases {
    * through one is no call into project code.
    */
   runnerMethods: string[];
-  /** Prefixes of the matchers the library makes up from a predicate, `be_` in `be_cancelled`. */
-  predicateMatcherPrefixes: string[];
+  /** The matchers the library makes up from a predicate method, as `be_cancelled` calls `cancelled?` on what the expectation is about. */
+  predicateMatchers: RbPredicateMatcher[];
+  /** How an example states an expectation, which a predicate matcher is given to. */
+  expectations: RbExpectations;
   /** How the library replaces something for the length of an example. */
   mocks: RbTestMocks;
   /** Read only these files, matched on whole path segments from the end. Left out, every file matching `filePatterns` is read. */
@@ -204,6 +206,29 @@ export interface RbFactoryBuilder {
   method: string;
   /** The constant the call is made on, when it is made on one. */
   receiver?: string;
+}
+
+/**
+ * A matcher the library makes up from a predicate method: a matcher
+ * written `prefix` and a name calls `methodPrefix`, that name and
+ * `methodSuffix` on the value the expectation is about, so `be_local`
+ * calls `local?` and `have_key` calls `has_key?`.
+ */
+export interface RbPredicateMatcher {
+  prefix: string;
+  methodPrefix: string;
+  methodSuffix: string;
+}
+
+/**
+ * How an example states an expectation: `expect(order).to be_open`, on
+ * the argument of a `starts` call, or `is_expected.to be_open`, on the
+ * subject through `onSubject`. `runs` are the calls given the matcher.
+ */
+export interface RbExpectations {
+  starts: string[];
+  onSubject: string;
+  runs: string[];
 }
 
 /**

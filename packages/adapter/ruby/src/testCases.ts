@@ -42,7 +42,12 @@ import type { TestMetadata, TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawCodeStructure } from "@suss/extractor";
 import type { GroupNames } from "./facts/specNames.js";
-import type { RbSharedInclude, RbTestCases, RubyPack } from "./pack.js";
+import type {
+  RbExpectations,
+  RbSharedInclude,
+  RbTestCases,
+  RubyPack,
+} from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
 import type { SharedGroupIndex } from "./testSharedGroups.js";
@@ -60,6 +65,14 @@ export interface ExampleRun {
   readonly isRunnerCall: (call: RbNode) => boolean;
   /** The file a node in those blocks is written in. */
   readonly fileOf: (node: RbNode) => string;
+  /** The predicate a matcher in those blocks calls, and on what, or null. */
+  readonly predicateOf?: (call: RbNode) => PredicateCall | null;
+}
+
+/** A predicate a matcher calls: `local?` on `account`. */
+export interface PredicateCall {
+  readonly target: RbNode;
+  readonly method: string;
 }
 
 /** Tells the reach walk which blocks an example runs, from the example's block alone. */
@@ -310,7 +323,7 @@ function groupBlockOf(
     return {
       block,
       names: [...pattern.subjectReads, ...extra],
-      values: [pattern.subjectValue, ...extra],
+      values: [pattern.subjectValue, pattern.expectations.onSubject, ...extra],
       always: !lazySubject,
     };
   }
@@ -392,7 +405,11 @@ function groupNamesIn(pattern: RbTestCases): GroupNames {
     scopes.set(group.id, found);
     return found;
   };
-  const fromClass = new Set([pattern.describedClass, pattern.subjectValue]);
+  const fromClass = new Set([
+    pattern.describedClass,
+    pattern.subjectValue,
+    pattern.expectations.onSubject,
+  ]);
   const owner = (node: RbNode, name: string): RbNode | null => {
     let classGroup: RbNode | null = null;
     let including: RbNode | null = null;
@@ -534,6 +551,7 @@ function emitOneGroup(
   db.add("returnsValue", [subject, made]);
   db.add("instanceOf", [made, classKey]);
   db.add("binds", [`${groupKey}#${pattern.subjectValue}`, subject]);
+  db.add("binds", [`${groupKey}#${pattern.expectations.onSubject}`, subject]);
 }
 
 /**
@@ -620,9 +638,7 @@ function exampleRun(
   const isRunnerMethod = (name: string | null): boolean =>
     name !== null &&
     (pattern.runnerMethods.includes(name) ||
-      pattern.predicateMatcherPrefixes.some((prefix) =>
-        name.startsWith(prefix),
-      ));
+      pattern.predicateMatchers.some((one) => name.startsWith(one.prefix)));
   return {
     blocks,
     isRunnerCall: (call) => {
@@ -630,13 +646,88 @@ function exampleRun(
       if (read !== null && valueNames.has(read)) {
         return true;
       }
+      if (predicateCallOf(call, pattern) !== null) {
+        return false;
+      }
       return isRunnerMethod(chainOrigin(call));
     },
+    predicateOf: (call) => predicateCallOf(call, pattern),
     fileOf: (node) =>
       node.tree === example.block.tree
         ? example.file
         : (shared?.fileOf(node) ?? example.file),
   };
+}
+
+/**
+ * The predicate a matcher calls, and the value it calls it on:
+ * `be_local` in `expect(account).to be_local` calls `local?` on
+ * `account`, and in `is_expected.to be_local` on the subject, which
+ * `is_expected` reads as. Null for any other call.
+ */
+function predicateCallOf(
+  call: RbNode,
+  pattern: RbTestCases,
+): PredicateCall | null {
+  const name = calleeMethodName(call);
+  if (
+    name === undefined ||
+    field(call, "receiver") !== null ||
+    pattern.runnerMethods.includes(name)
+  ) {
+    return null;
+  }
+  const matcher = pattern.predicateMatchers.find(
+    (one) => name.startsWith(one.prefix) && name.length > one.prefix.length,
+  );
+  const run = expectationRunOf(call, pattern.expectations);
+  const target =
+    run === null ? null : expectationTarget(run, pattern.expectations);
+  if (matcher === undefined || target === null) {
+    return null;
+  }
+  const predicate = name.slice(matcher.prefix.length);
+  return {
+    target,
+    method: `${matcher.methodPrefix}${predicate}${matcher.methodSuffix}`,
+  };
+}
+
+/** The `to` call a matcher is the first argument of, or null. */
+function expectationRunOf(
+  matcher: RbNode,
+  expectations: RbExpectations,
+): RbNode | null {
+  const list = matcher.parent;
+  const run = list?.type === "argument_list" ? list.parent : null;
+  return run !== null &&
+    run !== undefined &&
+    run.type === "call" &&
+    expectations.runs.includes(calleeMethodName(run) ?? "") &&
+    firstArgument(run)?.id === matcher.id
+    ? run
+    : null;
+}
+
+/** What an expectation is about: the argument of `expect(x)`, or `is_expected` itself. */
+function expectationTarget(
+  run: RbNode,
+  expectations: RbExpectations,
+): RbNode | null {
+  const start = field(run, "receiver");
+  if (start === null) {
+    return null;
+  }
+  const name = calleeMethodName(start);
+  if (name === expectations.onSubject && field(start, "receiver") === null) {
+    return start;
+  }
+  return name !== undefined &&
+    expectations.starts.includes(name) &&
+    field(start, "receiver") === null &&
+    field(start, "block") === null
+    ? firstArgument(start)
+    : null;
 }
 
 /**

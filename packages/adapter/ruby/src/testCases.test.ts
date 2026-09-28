@@ -276,6 +276,50 @@ describe("RSpec examples as test units", () => {
     ]);
   });
 
+  it("follows a predicate matcher to the predicate it calls, on the subject or on what expect is given", async () => {
+    write("app/models/account.rb", [
+      "class Account",
+      "  def local?",
+      "    Order.audit(1)",
+      "  end",
+      "",
+      "  def has_notes?",
+      "    Order.refund(1)",
+      "  end",
+      "end",
+    ]);
+    write("spec/account_spec.rb", [
+      "describe Account do",
+      "  it { is_expected.to be_local }",
+      "",
+      '  context "with notes" do',
+      "    let(:account) { Account.new }",
+      '    it "has them" do',
+      "      expect(account).to have_notes",
+      "    end",
+      "",
+      '    it "is not nil" do',
+      "      expect(account).not_to be_nil",
+      "    end",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+
+    expect(
+      linkedCalls(
+        testNamed(summaries, "Account > { is_expected.to be_local }"),
+      ),
+    ).toEqual(["be_local"]);
+    expect(
+      linkedCalls(testNamed(summaries, "Account > with notes > has them")),
+    ).toEqual(["have_notes"]);
+    expect(
+      calls(testNamed(summaries, "Account > with notes > is not nil")),
+    ).toEqual([]);
+  });
+
   it("reads a value from the nearest group that defines it, so sibling groups keep their own", async () => {
     write("app/models/account.rb", [
       "class Account",

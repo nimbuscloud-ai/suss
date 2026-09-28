@@ -58,6 +58,7 @@ import {
   mightReadAsACall,
   readsAsACall,
   resolveCallee,
+  resolveMethodOn,
   resolveMethodReference,
 } from "./resolveCallee.js";
 
@@ -77,7 +78,7 @@ import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type { ReadableBody } from "../paths/effects.js";
 import type { WalkReplay } from "../reuse.js";
-import type { ExampleReads, ExampleRun } from "../testCases.js";
+import type { ExampleReads, ExampleRun, PredicateCall } from "../testCases.js";
 import type {
   CalleeResolution,
   CalleeSpellings,
@@ -566,6 +567,8 @@ interface BodyCalls {
   readonly site: CallSite;
   /** Where one call is written, which for an example that runs a shared group's blocks can be another file. */
   readonly siteFor: (call: RbNode) => CallSite;
+  /** The predicate a matcher call in an example calls, and on what. */
+  readonly predicateOf: (call: RbNode) => PredicateCall | null;
   readonly written: { call: RbNode; site: CallSite }[];
 }
 
@@ -593,6 +596,7 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
     argless: written.filter(isArglessReceiverCall),
     site,
     siteFor,
+    predicateOf: (call) => run?.predicateOf?.(call) ?? null,
     written: calls.map((call) => ({ call, site: siteFor(call) })),
   };
 }
@@ -691,6 +695,7 @@ function scanBody(
     argless: RbNode[];
     site: CallSite;
     siteFor: (call: RbNode) => CallSite;
+    predicateOf: (call: RbNode) => PredicateCall | null;
     spellings: CalleeSpellings;
   },
 ): Scan {
@@ -775,7 +780,11 @@ function scanBody(
   for (const call of calls) {
     const callee = calleeText(call);
     const callSite = read.siteFor(call);
-    const outcome = resolveCallee(call, callSite, ctx, read.spellings);
+    const predicate = read.predicateOf(call);
+    const outcome =
+      predicate === null
+        ? resolveCallee(call, callSite, ctx, read.spellings)
+        : resolveMethodOn(predicate.target, predicate.method, callSite, ctx);
     if (options.storage !== undefined) {
       for (const callback of callbacksReached(
         call,
