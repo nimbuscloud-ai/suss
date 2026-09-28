@@ -92,7 +92,7 @@ export class PythonTestIndex {
   }
 
   /** What pytest calls before this function runs, when it is a test or a fixture. */
-  readonly impliedCalls = (source: ReachedFunction): readonly ImpliedCall[] => {
+  impliedCalls(source: ReachedFunction): readonly ImpliedCall[] {
     const key = functionKey(source);
     const known = this.implied.get(key);
     // A recording cache has to see every file the answer reads, per charge.
@@ -102,7 +102,7 @@ export class PythonTestIndex {
     const found = this.impliedCallsOf(source);
     this.implied.set(key, found);
     return found;
-  };
+  }
 
   private impliedCallsOf(source: ReachedFunction): ImpliedCall[] {
     const test = this.testAt(source);
@@ -133,7 +133,7 @@ export class PythonTestIndex {
   ): RawCodeStructure {
     const raw = libraryUnit(reachedFunctionOf(file, test.node), {
       ...options,
-      impliedCalls: this.impliedCalls,
+      tests: this,
     });
     const skipped = this.isSkipped(file, test);
     const mocks = this.mocksOf(file, test);

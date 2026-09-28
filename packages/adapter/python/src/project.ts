@@ -879,7 +879,7 @@ async function runPython(
         ? {}
         : { replay: new WalkReplay(reuse, definitions, filesByPath) }),
       ...(ledger === null ? {} : { ledger }),
-      ...(tests === null ? {} : { impliedCalls: tests.impliedCalls }),
+      ...(tests === null ? {} : { tests }),
     }),
   );
   const placeWhatItReached = (

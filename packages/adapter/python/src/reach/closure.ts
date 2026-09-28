@@ -84,6 +84,7 @@ import type { WalkReplay } from "../reuse.js";
 import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
 import type { StorageLookup } from "../storage.js";
+import type { PythonTestIndex } from "../testCases.js";
 import type {
   CalleeResolution,
   CalleeSpellings,
@@ -106,8 +107,8 @@ export interface ReachOptions {
   readonly replay?: WalkReplay;
   /** Set when a cache is recording what each scanned body depended on. */
   readonly ledger?: DependencyLedger;
-  /** The calls a function makes that no line of its body writes. */
-  readonly impliedCalls?: ImpliedCalls;
+  /** Where the calls a test runner makes on a function's behalf come from, when a pack describes one. */
+  readonly tests?: PythonTestIndex;
 }
 
 /**
@@ -119,8 +120,6 @@ export interface ImpliedCall {
   readonly callee: string;
   readonly target: ReachedFunction;
 }
-
-export type ImpliedCalls = (source: ReachedFunction) => readonly ImpliedCall[];
 
 /** A function one scan followed, as a cache stores it. */
 export interface StoredTarget {
@@ -449,7 +448,7 @@ function scanOnce(
         options.storageFor(source.file),
       ),
       reads,
-      options.impliedCalls?.(source) ?? [],
+      options.tests?.impliedCalls(source) ?? [],
     );
   const ledger = options.ledger;
   if (ledger === undefined) {
@@ -859,7 +858,7 @@ function identifiersUnder(node: PyNode, found: string[] = []): string[] {
  */
 export function libraryUnit(
   target: ReachedFunction,
-  options: Pick<ReachOptions, "storageFor" | "facts" | "impliedCalls">,
+  options: Pick<ReachOptions, "storageFor" | "facts" | "tests">,
   binding: BoundaryBinding = functionCallBinding({
     transport: "in-process",
     recognition: "reachable",
@@ -933,9 +932,9 @@ export function libraryUnit(
 function withImpliedCalls(
   branch: RawBranch,
   target: ReachedFunction,
-  options: Pick<ReachOptions, "impliedCalls">,
+  options: Pick<ReachOptions, "tests">,
 ): RawBranch {
-  const implied = options.impliedCalls?.(target) ?? [];
+  const implied = options.tests?.impliedCalls(target) ?? [];
   if (implied.length === 0) {
     return branch;
   }
