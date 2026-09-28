@@ -26,13 +26,6 @@ let cancel: Played;
 let region: Played;
 let rename: Played;
 
-beforeAll(() => {
-  played = playOrders409();
-  cancel = playCancelOrder();
-  region = playAccountsRegion();
-  rename = playListingRename();
-});
-
 function stepOf(demo: Played, index: number) {
   const found = demo.steps[index];
   if (found === undefined) {
@@ -46,6 +39,10 @@ function step(index: number) {
 }
 
 describe("the 409 story", () => {
+  beforeAll(() => {
+    played = playOrders409();
+  });
+
   it("runs every hook and exits 0 each time", () => {
     expect(played.steps.map((s) => s.hook)).toEqual([
       "session-start",
@@ -123,6 +120,10 @@ describe("the 409 story", () => {
 });
 
 describe("the cancel story, with a change list", () => {
+  beforeAll(() => {
+    cancel = playCancelOrder();
+  });
+
   const DONE = [
     "done        + POST /orders/{id}/cancel responds 200, 404  src/orders/cancel.ts::post",
     "            + POST /orders/{id}/cancel writes postgresql:orders [cancelled_at]  src/orders/cancel.ts::post",
@@ -196,6 +197,10 @@ function saidAt(demo: Played, index: number): string {
 }
 
 describe("the environment variable story, on a Lambda service with a SAM template", () => {
+  beforeAll(() => {
+    region = playAccountsRegion();
+  });
+
   function said(index: number): string {
     return saidAt(region, index);
   }
@@ -282,6 +287,10 @@ describe("the environment variable story, on a Lambda service with a SAM templat
 });
 
 describe("the rename story, on a GraphQL API with a React client", () => {
+  beforeAll(() => {
+    rename = playListingRename();
+  });
+
   function said(index: number): string {
     return saidAt(rename, index);
   }
