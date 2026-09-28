@@ -55,7 +55,11 @@ import {
   RUBY_NAME_TYPES,
   WHOLE_VALUE_OPERATORS,
 } from "./locals.js";
-import { groupClassRead, groupNameOwner } from "./specNames.js";
+import {
+  groupClassRead,
+  groupNameOwner,
+  groupNameReadsClass,
+} from "./specNames.js";
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameWrite } from "@suss/resolution";
@@ -549,7 +553,7 @@ export function readsOffClassItself(
   }
   return (
     written.type === "identifier" &&
-    (classLocals.has(receiverKey) || groupClassRead(written) !== null)
+    (classLocals.has(receiverKey) || groupNameReadsClass(written))
   );
 }
 

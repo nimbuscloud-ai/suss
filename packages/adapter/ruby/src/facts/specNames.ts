@@ -22,6 +22,12 @@ export interface GroupNames {
    * that class, so a call on it runs a class method.
    */
   classRead(node: RbNode): RbNode | null;
+  /**
+   * Whether a bare name at `node` gives back a class, including where the
+   * class depends on who includes a shared group, so a call on it runs a
+   * class method.
+   */
+  readsClass(node: RbNode): boolean;
 }
 
 const namesByTree = new WeakMap<object, GroupNames>();
@@ -48,4 +54,8 @@ export function groupNameOwner(node: RbNode, name: string): RbNode | null {
 
 export function groupClassRead(node: RbNode): RbNode | null {
   return namesByTree.get(node.tree)?.classRead(node) ?? null;
+}
+
+export function groupNameReadsClass(node: RbNode): boolean {
+  return namesByTree.get(node.tree)?.readsClass(node) ?? false;
 }

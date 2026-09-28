@@ -82,6 +82,7 @@ A file matches on whole path segments from the end.
   `let` built. `described_class` is the class the nearest group around
   was given, and a group given a class with no `subject` of its own has
   one of that class as its subject, the way RSpec makes one with `new`.
+  Inside a shared group, both come from the group that includes it.
 - Predicate matchers. `expect(order).to be_open` calls `open?` on the
   order, and `have_items` calls `has_items?`, so
   `it { is_expected.to be_open }` counts as calling `open?` on the
@@ -106,9 +107,10 @@ reaching the subject, and says which mock was in the way.
 
 ## What this leaves out
 
-- `described_class` inside a shared group, and a shared group included
-  by more than one group reading a value its includers define. Which
-  includer ran is not known there, so the value is left unread.
+- A shared group included by groups that give one name two values, as
+  when two includers describe two classes and the shared group reads
+  `described_class`. Which includer ran is not known there, so the
+  value is left unread.
 - Minitest. Its tests are methods on a class or blocks under a class,
   and need their own pattern.
 - Tests generated in a loop, such as `%w[a b].each { |x| it x do ... }`.

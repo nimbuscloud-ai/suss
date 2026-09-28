@@ -267,6 +267,13 @@ function visibleAt(
         found.set(name, nodeId(file, block));
       }
     }
+    if (scope.described !== null && !found.has(pattern.describedClass)) {
+      found.set(
+        pattern.describedClass,
+        `${nodeId(file, scopeCall)}:${pattern.describedClass}`,
+      );
+    }
+
     if (scope.described !== null && !found.has(pattern.subjectValue)) {
       const implicit = `${nodeId(file, scopeCall)}:${pattern.subjectValue}`;
       found.set(pattern.subjectValue, implicit);

@@ -571,6 +571,57 @@ describe("RSpec examples as test units", () => {
     ).toEqual(["Order.build", "invoice.cancel_now"]);
   });
 
+  it("reads described_class in a shared group as its one includer's class, and leaves it unread when two includers describe two classes", async () => {
+    write("spec/support/runnable.rb", [
+      'RSpec.shared_examples "runnable" do',
+      '  it "runs" do',
+      "    described_class.run(1)",
+      "  end",
+      "end",
+      "",
+      'RSpec.shared_examples "buildable" do',
+      '  it "builds" do',
+      "    described_class.build(1)",
+      "  end",
+      "end",
+    ]);
+    write("app/services/checkout.rb", [
+      "class Checkout",
+      "  def self.run(id)",
+      "    Order.refund(id)",
+      "  end",
+      "",
+      "  def self.build(id)",
+      "    id",
+      "  end",
+      "end",
+    ]);
+    write("spec/checkout_spec.rb", [
+      "RSpec.describe Checkout do",
+      '  it_behaves_like "runnable"',
+      '  it_behaves_like "buildable"',
+      "end",
+    ]);
+    write("spec/order_spec.rb", [
+      "RSpec.describe Order do",
+      '  it_behaves_like "buildable"',
+      "end",
+    ]);
+
+    const summaries = await extract();
+
+    expect(
+      linkedCalls(
+        testNamed(summaries, "Checkout > behaves like runnable > runs"),
+      ),
+    ).toEqual(["described_class.run"]);
+    expect(
+      linkedCalls(
+        testNamed(summaries, "Checkout > behaves like buildable > builds"),
+      ),
+    ).toEqual([]);
+  });
+
   it("reads only spec files, and only the listed ones when given a list", async () => {
     write("spec/order_spec.rb", [
       "describe Order do",

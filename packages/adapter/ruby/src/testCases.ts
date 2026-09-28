@@ -422,6 +422,10 @@ function groupNamesIn(pattern: RbTestCases): GroupNames {
       if (scope.values.has(name)) {
         return up;
       }
+      if (role === "sharedGroup" && name === pattern.describedClass) {
+        return classGroup ?? up;
+      }
+
       if (role === "sharedGroup") {
         return including ?? up;
       }
@@ -447,6 +451,8 @@ function groupNamesIn(pattern: RbTestCases): GroupNames {
       const group = owner(node, name);
       return group === null ? null : scopeOf(group).described;
     },
+    readsClass: (node) =>
+      node.text === pattern.describedClass && owner(node, node.text) !== null,
   };
 }
 
@@ -541,10 +547,17 @@ function emitOneGroup(
     db.add("func", [blockKey]);
     db.add("binds", [`${groupKey}#${name}`, blockKey]);
   }
-  if (scope.described === null || scope.values.has(pattern.subjectValue)) {
+  if (scope.described === null) {
     return;
   }
   const classKey = readKey(file, scope.described, null);
+  const described = `${groupKey}:${pattern.describedClass}`;
+  db.add("func", [described]);
+  db.add("returnsValue", [described, classKey]);
+  db.add("binds", [`${groupKey}#${pattern.describedClass}`, described]);
+  if (scope.values.has(pattern.subjectValue)) {
+    return;
+  }
   const subject = `${groupKey}:${pattern.subjectValue}`;
   const made = `${subject}:new`;
   db.add("func", [subject]);
