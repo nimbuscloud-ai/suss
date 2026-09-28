@@ -10,7 +10,7 @@ import { answersFor } from "@suss/resolution";
 
 import { children, enclosingFunction, field } from "./ast.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
-import { readKey } from "./facts/values.js";
+import { nodeId, readKey } from "./facts/values.js";
 import { bodyCalls } from "./paths/effects.js";
 import { rawSqlEffects, rawSqlOptionsOf } from "./rawSql.js";
 import {
@@ -18,6 +18,7 @@ import {
   receiverTypeOrigins,
   statedTypeName,
 } from "./receiverTypes.js";
+import { evaluationScope } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -767,11 +768,43 @@ export interface SlottedEffects {
   slots: EffectSlot[];
 }
 
+/** Each body's storage work by its node id, for as long as one evaluator lasts. */
+const storageByScope = new WeakMap<object, Map<string, SlottedEffects>>();
+
 /**
  * The database work a body does through a library and through SQL it
  * wrote itself, with the value each column is given.
+ *
+ * A file asks for its bodies' slot values before its units are built,
+ * and each unit then reads its own body again, so the answer is kept.
+ * It is kept per evaluator because a cache charge that starts evaluation
+ * over has to recognize the body again to be charged for what it reads.
+ * Every lookup in one run differs only by the file, which the key has.
  */
 export function bodyStorage(
+  definitionNode: PyNode,
+  lookup: StorageLookup,
+): SlottedEffects {
+  const scope = evaluationScope(lookup.facts);
+  if (scope === undefined) {
+    return recognizeBodyStorage(definitionNode, lookup);
+  }
+  let kept = storageByScope.get(scope);
+  if (kept === undefined) {
+    kept = new Map();
+    storageByScope.set(scope, kept);
+  }
+  const key = nodeId(lookup.factsPath, definitionNode);
+  const known = kept.get(key);
+  if (known !== undefined) {
+    return known;
+  }
+  const found = recognizeBodyStorage(definitionNode, lookup);
+  kept.set(key, found);
+  return found;
+}
+
+function recognizeBodyStorage(
   definitionNode: PyNode,
   lookup: StorageLookup,
 ): SlottedEffects {

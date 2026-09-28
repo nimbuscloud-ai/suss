@@ -94,6 +94,15 @@ export function forgetEvaluations(db: Database): void {
 }
 
 /**
+ * An object that lives as long as the evaluator over `db` does, for a
+ * memo that has to start over whenever `forgetEvaluations` does.
+ * Undefined until a project has been bound.
+ */
+export function evaluationScope(db: Database): object | undefined {
+  return evaluators.get(db);
+}
+
+/**
  * The single expression the rules say a value was written as, as a node
  * in whichever file writes it. Null until a project has been bound,
  * because a key leads back to a node only once the run's files are known.
