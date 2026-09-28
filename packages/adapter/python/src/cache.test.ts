@@ -602,3 +602,62 @@ describe("extractPythonProject's on-disk cache", () => {
     expect(fs.existsSync(path.join(tmpDir, ".suss", "cache"))).toBe(false);
   });
 });
+
+describe("a test run replayed from the cache", () => {
+  const pytestLike: PythonPack = {
+    name: "pytest-test",
+    protocol: "in-process",
+    discovery: [],
+    tests: [
+      {
+        filePatterns: ["test_*.py"],
+        functionPrefix: "test",
+        classPrefix: "Test",
+        caseBaseClasses: [],
+        setUpMethods: [],
+        fixtureDecorators: ["pytest.fixture"],
+        fixtureNameKeyword: "name",
+        autouseKeyword: "autouse",
+        sharedFixtureFiles: ["conftest.py"],
+        skipDecorators: [],
+        reservedParameters: ["self"],
+        mocks: { patchers: ["unittest.mock.patch"], fixturePatchers: [] },
+      },
+    ],
+  };
+
+  const fixtureCalling = (callee: string): string =>
+    `import pytest\nfrom app.orders import ${callee}\n\n\n@pytest.fixture(name="order")\ndef made_order():\n    return ${callee}("o-1")\n`;
+
+  it("follows a fixture edited in a file the test imports it from, the same as a run without the cache", async () => {
+    write(
+      "app/orders.py",
+      "def cancel_order(order_id):\n    return order_id\n\n\ndef ship_order(order_id):\n    return order_id\n",
+    );
+    write("tests/fixtures.py", fixtureCalling("cancel_order"));
+    write(
+      "tests/test_orders.py",
+      "from tests.fixtures import made_order\n\n\ndef test_reads(order):\n    pass\n",
+    );
+    const run = (cacheDir?: null) =>
+      extractPythonProject({
+        files: findPythonFiles(tmpDir),
+        roots: [tmpDir],
+        packs: [pytestLike],
+        projectRoot: tmpDir,
+        ...(cacheDir === null ? { cacheDir } : {}),
+      });
+
+    await run();
+    write("tests/fixtures.py", fixtureCalling("ship_order"));
+    const replayed = await run();
+    const fresh = await run(null);
+
+    expect(replayed.summaries).toEqual(fresh.summaries);
+    expect(
+      fresh.summaries.some(
+        (one) => one.kind === "library" && one.identity.name === "ship_order",
+      ),
+    ).toBe(true);
+  });
+});
