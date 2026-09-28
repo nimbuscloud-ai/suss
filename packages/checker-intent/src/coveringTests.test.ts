@@ -350,6 +350,55 @@ describe("a scenario covered by a test", () => {
       expect(result.unchecked).toEqual([]);
     });
 
+    it("skips a call sent to another class, and a mock of the method by name alone stops the one sent to the subject's class", () => {
+      const code = [
+        follow,
+        reviewed,
+        testUnit(
+          "reviews",
+          [
+            {
+              ...calls("order.cancel"),
+              receiverClass: { file: "app/models/order.rb", name: "Order" },
+            } as Effect,
+            sentToAccount(calls("account.reviewed?", reviewed)),
+          ],
+          {
+            mocks: [
+              {
+                name: "reviewed?",
+                written: "allow(account).to receive(:reviewed?)",
+              },
+            ],
+          },
+        ),
+      ];
+      const [finding] = check(
+        [covered("review", "reviews", ["Account"])],
+        code,
+      ).findings;
+
+      expect(finding.kind).toBe("testMissesSubject");
+      expect(finding.message).toContain(
+        "only through a call its mocks replace (allow(account).to receive(:reviewed?)), by account.reviewed?",
+      );
+    });
+
+    it("counts a test that reaches two of the class's methods", () => {
+      const unfollow = inClass("Account", "unfollow", ACCOUNT_FILE);
+      const code = [
+        follow,
+        unfollow,
+        testUnit("follows", [
+          calls("account.follow", follow),
+          calls("account.unfollow", unfollow),
+        ]),
+      ];
+      const result = check([covered("follow", "follows", ["Account"])], code);
+
+      expect(result.findings).toEqual([]);
+    });
+
     it("does not count a call on the class toward a subject that is one of its methods", () => {
       const code = [
         follow,

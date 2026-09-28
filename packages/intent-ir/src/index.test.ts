@@ -1243,6 +1243,14 @@ describe("a PRD scenario covered by a test", () => {
     });
   });
 
+  it("reads a spelling with no file in it as a file with no titles, which the schema then refuses", () => {
+    expect(toCoveringTest(" TestCancel::test_twice ")).toEqual({
+      spelledAs: " TestCancel::test_twice ",
+      file: "TestCancel::test_twice",
+      titles: [],
+    });
+  });
+
   it("reads an RSpec example the way it reads a vitest case", () => {
     expect(
       toCoveringTest(

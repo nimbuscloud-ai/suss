@@ -651,6 +651,63 @@ describe("RSpec examples as test units", () => {
     ).toEqual(["Order.build", "invoice.cancel_now"]);
   });
 
+  it("runs a value once when a hook and the example both read it", async () => {
+    write("spec/order_spec.rb", [
+      "describe Order do",
+      "  let(:order) { Order.build(1) }",
+      "  before { order }",
+      '  it "cancels" do',
+      "    order",
+      "    Order.cancel(1)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+
+    expect(linkedCalls(testNamed(summaries, "Order > cancels")).sort()).toEqual(
+      ["Order.build", "Order.cancel"],
+    );
+  });
+
+  it("reads no include whose name two files define, and no shared group whose name is not a string", async () => {
+    write("spec/support/one.rb", [
+      'RSpec.shared_examples "cancellable" do',
+      '  it "cancels" do',
+      "    Order.cancel(1)",
+      "  end",
+      "end",
+    ]);
+    write("spec/support/two.rb", [
+      'RSpec.shared_examples "cancellable" do',
+      '  it "cancels too" do',
+      "    Order.cancel(2)",
+      "  end",
+      "end",
+      "",
+      "RSpec.shared_examples SHARED_NAME do",
+      '  it "refunds" do',
+      "    Order.refund(1)",
+      "  end",
+      "end",
+    ]);
+    write("spec/order_spec.rb", [
+      "describe Order do",
+      '  it_behaves_like "cancellable"',
+      "  it_behaves_like SHARED_NAME",
+      '  it "builds" do',
+      "    Order.build(1)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+
+    expect(tests(summaries).map((one) => one.identity.name)).toEqual([
+      "Order > builds",
+    ]);
+  });
+
   it("reads described_class in a shared group as its one includer's class, and leaves it unread when two includers describe two classes", async () => {
     write("spec/support/runnable.rb", [
       'RSpec.shared_examples "runnable" do',

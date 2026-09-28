@@ -187,6 +187,46 @@ describe("factory builds in tests", () => {
     ]);
   });
 
+  it("types a build by a class: constant, and a build of a factory nothing defines by its camelized name", async () => {
+    write("spec/factories/orders.rb", [
+      "FactoryBot.define do",
+      "  factory :bill, class: Billing::Invoice do",
+      "  end",
+      "",
+      "  factory :draft, class: draft_class do",
+      "  end",
+      "end",
+    ]);
+    write("spec/order_spec.rb", [
+      "describe Order do",
+      '  it "voids" do',
+      "    build(:bill).void",
+      "  end",
+      "",
+      '  it "cancels" do',
+      "    create(:order).cancel",
+      "  end",
+      "",
+      '  it "drafts" do',
+      "    build(:draft).void",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract([
+      rspecTestPack(),
+      factoryPack(factoryBotLike),
+    ]);
+
+    expect(linkedCalls(summaries, "Order > voids")).toEqual([
+      "build(:bill).void",
+    ]);
+    expect(linkedCalls(summaries, "Order > cancels")).toEqual([
+      "create(:order).cancel",
+    ]);
+    expect(linkedCalls(summaries, "Order > drafts")).toEqual([]);
+  });
+
   it("leaves a build outside a test file alone", async () => {
     write("spec/factories/orders.rb", [
       "FactoryBot.define do",

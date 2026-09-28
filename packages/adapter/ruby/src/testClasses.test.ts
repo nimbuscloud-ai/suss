@@ -202,6 +202,7 @@ describe("Minitest tests as test units", () => {
       "      Order.cancel(2)",
       "    end",
       "    Order.expects(:audit)",
+      "    Order.stubs(method_name)",
       "  end",
       "end",
     ]);

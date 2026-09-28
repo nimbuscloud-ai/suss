@@ -29,6 +29,7 @@ import {
   withRoutingMetadata,
   withRuntimeContractMetadata,
   withSourceDocumentMetadata,
+  withTestMetadata,
   withWrapperMetadata,
 } from "./index.js";
 
@@ -85,6 +86,23 @@ describe("the test metadata namespace", () => {
       mocks: [{ module: "src/orders.ts", written: 'vi.mock("./orders")' }],
     });
     expect(readTestMetadata(summaryWith(undefined))).toBeUndefined();
+  });
+
+  it("writes the namespace beside what the bag already has, and refuses a field the schema does not declare", () => {
+    const metadata = withTestMetadata(
+      { http: { declaredContract: null } },
+      { skipped: true },
+    );
+    expect(metadata).toEqual({
+      http: { declaredContract: null },
+      test: { skipped: true },
+    });
+    expect(
+      readTestMetadata(summaryWith(withTestMetadata(undefined, {}))),
+    ).toEqual({});
+    expect(() =>
+      withTestMetadata(undefined, { skipped: true, flaky: true } as never),
+    ).toThrow();
   });
 });
 
