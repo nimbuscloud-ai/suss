@@ -260,6 +260,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "bigquery-ruby": "@suss/packs/bigquery-ruby",
   "pg-ruby": "@suss/packs/pg-ruby",
   rails: "@suss/packs/rails",
+  rspec: "@suss/packs/rspec",
   requests: "@suss/packs/requests",
   httpx: "@suss/packs/httpx",
   aiohttp: "@suss/packs/aiohttp",
@@ -280,6 +281,7 @@ const PACK_LANGUAGE: Record<string, Language> = {
   "bigquery-ruby": "ruby",
   "pg-ruby": "ruby",
   rails: "ruby",
+  rspec: "ruby",
   requests: "python",
   httpx: "python",
   aiohttp: "python",
@@ -1107,7 +1109,10 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     summaries,
     runOptions.root,
     files.length,
-    packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+    packs.length > 0 &&
+      packs.every(
+        (p) => p.discovery.length === 0 && (p.tests ?? []).length === 0,
+      ),
     timingReport,
     extractionReport,
     cacheDiagnostic,
