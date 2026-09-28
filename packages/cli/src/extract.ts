@@ -695,10 +695,11 @@ export async function resolvePythonPack(
   spec: string,
   stubOverlay?: StubOverlay,
   projectRoot?: string,
+  testFiles?: readonly string[],
 ): Promise<PythonPack> {
-  const loaded = withStubbedOptions(
-    await loadPackFactory(spec, projectRoot),
-    stubOverlay,
+  const loaded = withTestFiles(
+    withStubbedOptions(await loadPackFactory(spec, projectRoot), stubOverlay),
+    testFiles,
   );
   assertPackLanguage(loaded.name, "python");
   return instantiatePack<PythonPack>(loaded, loaded.specifier, loaded.name);
@@ -708,10 +709,11 @@ export async function resolveRubyPack(
   spec: string,
   stubOverlay?: StubOverlay,
   projectRoot?: string,
+  testFiles?: readonly string[],
 ): Promise<RubyPack> {
-  const loaded = withStubbedOptions(
-    await loadPackFactory(spec, projectRoot),
-    stubOverlay,
+  const loaded = withTestFiles(
+    withStubbedOptions(await loadPackFactory(spec, projectRoot), stubOverlay),
+    testFiles,
   );
   assertPackLanguage(loaded.name, "ruby");
   return instantiatePack<RubyPack>(loaded, loaded.specifier, loaded.name);
@@ -852,6 +854,13 @@ function clearReports(reports: Partial<AdapterReports>): AdapterReports {
   return reports as AdapterReports;
 }
 
+/** The test files the PRDs list, when the run was given an intent directory. */
+function testFilesFor(options: ExtractOptions): string[] | undefined {
+  return options.intent === undefined
+    ? undefined
+    : testFilesListedIn(options.intent);
+}
+
 interface LanguageRunOptions {
   options: ExtractOptions;
   /** The directory the command was pointed at. */
@@ -883,10 +892,7 @@ async function runTypeScript(
   // so a reader can rebuild an id from a summary's own fields.
   const runRoot = workspaceRootFor(source.root);
   const stubOverlay = stubOverlayOf(loadStubs(runRoot));
-  const testFiles =
-    options.intent === undefined
-      ? undefined
-      : testFilesListedIn(options.intent);
+  const testFiles = testFilesFor(options);
   const packs = await Promise.all(
     options.frameworks.map((one) =>
       resolveFramework(one, stubOverlay, runRoot, testFiles),
@@ -976,9 +982,10 @@ async function runTypeScript(
 
 async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
+  const testFiles = testFilesFor(runOptions.options);
   const packs = await Promise.all(
     runOptions.options.frameworks.map((one) =>
-      resolvePythonPack(one, stubOverlay, runOptions.root),
+      resolvePythonPack(one, stubOverlay, runOptions.root, testFiles),
     ),
   );
   // Each checked-out submodule becomes an import root, or imports into
@@ -1052,9 +1059,10 @@ export function formatUnreadManifests(
 
 async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
+  const testFiles = testFilesFor(runOptions.options);
   const packs = await Promise.all(
     runOptions.options.frameworks.map((one) =>
-      resolveRubyPack(one, stubOverlay, runOptions.root),
+      resolveRubyPack(one, stubOverlay, runOptions.root, testFiles),
     ),
   );
   // findRubyFiles skips .git directories but still walks the rest of a

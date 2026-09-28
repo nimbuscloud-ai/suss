@@ -1197,7 +1197,7 @@ const TestMockSchema = z.object({
 export type TestMock = z.infer<typeof TestMockSchema>;
 
 export const TestMetadataSchema = z.object({
-  /** Set when the case or a suite around it is marked skip or todo. */
+  /** Set when the case or a suite around it is marked to be skipped, such as skip or todo in vitest. */
   skipped: z.boolean().optional(),
   mocks: z.array(TestMockSchema).optional(),
   /**
@@ -1208,6 +1208,17 @@ export const TestMetadataSchema = z.object({
 });
 
 export type TestMetadata = z.infer<typeof TestMetadataSchema>;
+
+/** A metadata bag with the test namespace set. A field the schema does not declare throws here. */
+export function withTestMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: TestMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    test: TestMetadataSchema.strict().parse(value),
+  };
+}
 
 /** What a test pack recorded about a test unit, or undefined on any other unit. */
 export function readTestMetadata(

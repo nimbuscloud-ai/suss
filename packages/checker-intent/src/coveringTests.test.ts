@@ -244,7 +244,7 @@ describe("a scenario covered by a test", () => {
     const [finding] = check([covered("cancel", "cancels")], code).findings;
 
     expect(finding.kind).toBe("coveringTestSkipped");
-    expect(finding.message).toContain("marked skip or todo");
+    expect(finding.message).toContain("marked to be skipped");
   });
 
   it("falls back on the boundaries the PRD links to when about is empty", () => {

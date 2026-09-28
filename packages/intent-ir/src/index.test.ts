@@ -6,6 +6,7 @@ import {
   IntentDocSchema,
   IntentFindingKindSchema,
   intentDocToSummary,
+  toCoveringTest,
 } from "./index.js";
 
 import type { BoundaryIntentSummary, PrdSummary } from "./index.js";
@@ -1214,6 +1215,70 @@ describe("a PRD scenario covered by a test", () => {
     ]);
   });
 
+  it("splits a pytest node id into its file, its class and its function", () => {
+    expect(
+      toCoveringTest("tests/test_orders.py::TestCancel::test_second_time"),
+    ).toEqual({
+      spelledAs: "tests/test_orders.py::TestCancel::test_second_time",
+      file: "tests/test_orders.py",
+      titles: ["TestCancel", "test_second_time"],
+    });
+    expect(toCoveringTest("test_orders.py::test_second_time").titles).toEqual([
+      "test_second_time",
+    ]);
+  });
+
+  it("reads a parametrized pytest id as its function", () => {
+    expect(
+      toCoveringTest("tests/test_orders.py::test_refund[card-1.5]").titles,
+    ).toEqual(["test_refund"]);
+  });
+
+  it("keeps a workspace written in front of a pytest node id with the file", () => {
+    expect(
+      toCoveringTest("orders-api::tests/test_orders.py::test_refund"),
+    ).toMatchObject({
+      file: "orders-api::tests/test_orders.py",
+      titles: ["test_refund"],
+    });
+  });
+
+  it("reads an RSpec example the way it reads a vitest case", () => {
+    expect(
+      toCoveringTest(
+        "spec/orders_spec.rb > Orders > cancel > changes nothing the second time",
+      ),
+    ).toMatchObject({
+      file: "spec/orders_spec.rb",
+      titles: ["Orders", "cancel", "changes nothing the second time"],
+    });
+  });
+
+  it("accepts a pytest node id and refuses one that names only a file", () => {
+    expect(
+      issuesOf(
+        prdWith([
+          {
+            ...scenario,
+            coveredBy: "tests/test_orders.py::test_second_time",
+            about: "fn:orders::cancel_order",
+          },
+        ]),
+      ),
+    ).toEqual([]);
+    expect(
+      issuesOf(
+        prdWith([
+          {
+            ...scenario,
+            coveredBy: "orders-api::tests/test_orders.py",
+            about: "fn:orders::cancel_order",
+          },
+        ]),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("falls back on the PRD's links when a scenario says nothing under about", () => {
     expect(
       issuesOf(
@@ -1249,7 +1314,7 @@ describe("a PRD scenario covered by a test", () => {
         ]),
       ),
     ).toEqual([
-      'scenarios.0.coveredBy.0: scenario "cancelled twice" lists the test "src/orders.test.ts", which has no title; write the file, then each describe title, then the test\'s own title, joined with " > "',
+      'scenarios.0.coveredBy.0: scenario "cancelled twice" lists the test "src/orders.test.ts", which has no title; write the file, then each describe title, then the test\'s own title, joined with " > ", or for pytest the node id, file::test_name',
     ]);
   });
 

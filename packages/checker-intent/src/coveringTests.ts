@@ -97,7 +97,7 @@ export function checkCoveringTests(
         finding(
           claim,
           "coveringTestSkipped",
-          "which is marked skip or todo, so it does not run",
+          "which is marked to be skipped, so it does not run",
         ),
       );
       continue;

@@ -65,7 +65,7 @@ How inputs arrive and what counts as output depend on the kind. A handler takes 
 
 **`module-init`** is what a source file does at import time, one per file, and it is always a consumer: it reads channels other units declare. **`scheduled-callback`** is a function the runtime calls at some later point, and what it reaches is recorded on its own summary.
 
-**`test`** is one test case, named by its suite titles and its own joined with ` > `, so a PRD scenario can list it under `coveredBy`. It has no boundary binding and pairs with nothing. A test pack records `metadata.test`: `skipped` when the case is marked skip or todo, `mocks` for what the test replaces before it runs, and `unresolvedTitle` for a title that is not a string the adapter could read.
+**`test`** is one test case, named by its suite titles and its own joined with ` > `, so a PRD scenario can list it under `coveredBy`. It has no boundary binding and pairs with nothing. A test pack records `metadata.test`: `skipped` when the test is marked to be skipped, `mocks` for what the test replaces before it runs, and `unresolvedTitle` for a title that is not a string the adapter could read.
 
 The union is closed, so a pack cannot add a kind. The rest of extraction makes assumptions about each kind, and a new framework that needs a new kind needs an IR change first.
 

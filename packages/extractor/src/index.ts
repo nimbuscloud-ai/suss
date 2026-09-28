@@ -22,6 +22,7 @@ import {
   withMountMetadata,
   withRequestSpellingMetadata,
   withSourceDocumentMetadata,
+  withTestMetadata,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
@@ -48,6 +49,7 @@ import type {
   ProvenanceSlot,
   RenderNode,
   RequestSpellingMetadata,
+  TestMetadata,
   Transition,
   TypeShape,
   ValueRef,
@@ -105,6 +107,7 @@ export {
   valueToReadFurtherFrom,
   writtenReading,
 } from "./reading.js";
+export { isListedTestFile, matchesTestFileName } from "./testFiles.js";
 export {
   type SourceSpelling,
   sourceRefsOf,
@@ -417,6 +420,8 @@ export interface RawCodeStructure {
   wrappers?: WrapperReference[];
   /** Where a REST pack's handlers read each part of the request, from the pack. */
   requestSpelling?: RequestSpellingMetadata;
+  /** What a test pack found about a `test` unit: whether it is skipped, and what it replaces with a mock. */
+  test?: TestMetadata;
   /** The extractor cannot derive this. An adapter that has the SDL and knows
    * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
@@ -775,6 +780,9 @@ function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
   }
   if (raw.requestSpelling !== undefined) {
     metadata = withRequestSpellingMetadata(metadata, raw.requestSpelling);
+  }
+  if (raw.test !== undefined) {
+    metadata = withTestMetadata(metadata, raw.test);
   }
   return Object.keys(metadata).length > 0 ? metadata : null;
 }

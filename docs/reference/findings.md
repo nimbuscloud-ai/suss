@@ -754,10 +754,10 @@ When the test's own body calls something with the subject's name that suss could
 
 **Severity:** warning.
 
-A scenario lists a test that is marked to not run: `it.skip`, `it.todo`, or a case under a skipped suite.
+A scenario lists a test that is marked to not run: `it.skip` or `it.todo` in vitest, `@pytest.mark.skip`, `skipif` or `xfail` in pytest, `xit`, `skip` or `pending` in RSpec, or a test under a skipped suite, class or group.
 
 ```
-[warning] prd:Cancel an order: Scenario "skipped" in PRD "Cancel an order" lists the test "src/orders.test.ts > cancel > cancels twice without harm", which is marked skip or todo, so it does not run.
+[warning] prd:Cancel an order: Scenario "skipped" in PRD "Cancel an order" lists the test "src/orders.test.ts > cancel > cancels twice without harm", which is marked to be skipped, so it does not run.
 ```
 
 **Legitimate when:** the test is skipped for a while on purpose. Accept it with a rule for that scenario, saying until when.

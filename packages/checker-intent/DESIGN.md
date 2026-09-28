@@ -44,7 +44,7 @@ Whether the code implements a linked outcome is a question for the boundary pass
 
 ## Covering tests
 
-A scenario can list tests under `coveredBy` instead of, or beside, a link. The check asks three things of each: that a test unit with that file and title path is in the summaries, that it is not marked skip or todo, and that its calls reach the scenario's subject. The subject is `about` when the scenario gives it, and otherwise any boundary the PRD's links resolve to, so a test that reaches one of them covers every scenario in the PRD that leaves `about` out. The schema requires `about` in a PRD with no link at all.
+A scenario can list tests under `coveredBy` instead of, or beside, a link. The check asks three things of each: that a test unit with that file and title path is in the summaries, that it is not marked to be skipped, and that its calls reach the scenario's subject. The subject is `about` when the scenario gives it, and otherwise any boundary the PRD's links resolve to, so a test that reaches one of them covers every scenario in the PRD that leaves `about` out. The schema requires `about` in a PRD with no link at all.
 
 Reach is the forward question over `@suss/checker`'s call facts, asked for every test in one fixpoint. The facts include the mocks a test pack recorded on each test, and the rule refuses a hop into a module or member the test mocks. A test that misses its subject is asked again without that refusal, which tells a test that never reaches its subject from one that reaches it only through a mock, and the message says which. When the test's own body makes a call with the subject's name that suss could not follow, the message says that too, since it is the likeliest reason.
 

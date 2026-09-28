@@ -20,6 +20,11 @@ export {
   parseChangeList,
 } from "./changeList.js";
 export {
+  NODE_ID_SEPARATOR,
+  TEST_TITLE_SEPARATOR,
+  toCoveringTest,
+} from "./coveringTest.js";
+export {
   IntentFindingKindSchema,
   IntentFindingSchema,
   IntentFindingSeveritySchema,
@@ -38,12 +43,10 @@ export {
   INPUT_SOURCE_PREFIX,
   IntentDocSchema,
   IntentSourceSchema,
-  TEST_TITLE_SEPARATOR,
 } from "./schema.js";
 export {
   intentDocToSummary,
   toBoundaryBinding,
-  toCoveringTest,
   toIntentEffect,
   toReceives,
 } from "./summary.js";
@@ -60,6 +63,7 @@ export type {
   IntentChange,
   ParsedChangeList,
 } from "./changeList.js";
+export type { CoveringTestSpelling } from "./coveringTest.js";
 export type {
   IntentFinding,
   IntentFindingKind,
@@ -91,7 +95,6 @@ export type {
 } from "./schema.js";
 export type {
   BoundaryIntentSummary,
-  CoveringTestSpelling,
   IntentAlways,
   IntentCondition,
   IntentEffect,

@@ -96,6 +96,8 @@ export {
   semconvAttributes,
   setPiece,
   storageBinding,
+  TEST_TITLE_SEPARATOR,
+  testUnitName,
   unitIdentityKey,
   unitInvocationBinding,
   withinScope,
@@ -231,6 +233,7 @@ export {
   withRoutingMetadata,
   withRuntimeContractMetadata,
   withSourceDocumentMetadata,
+  withTestMetadata,
   withWrapperMetadata,
 } from "./metadata.js";
 export {
