@@ -100,6 +100,7 @@ import {
   watchReachContext,
 } from "./reuse.js";
 import { walkDefinitions } from "./scope.js";
+import { exampleReads, testPatternsIn } from "./testCases.js";
 import {
   bindEvaluator,
   forgetEvaluations,
@@ -846,6 +847,7 @@ async function runRuby(
       bodyBlocks,
       dynamicNames: watchedNames,
       gapHandling,
+      examples: exampleReads(testPatternsIn(options.packs)),
       ...(reuse === null ? {} : { replay: new WalkReplay(reuse, rootsByFile) }),
       ...(ledger === null ? {} : { ledger }),
     }),

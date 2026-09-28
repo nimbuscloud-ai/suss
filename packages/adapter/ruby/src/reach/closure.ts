@@ -31,6 +31,7 @@ import {
 
 import {
   bodyStatements,
+  enclosingDefinition,
   field,
   PROGRAM_TYPE,
   rangeOf,
@@ -50,6 +51,7 @@ import {
 } from "../paths/effects.js";
 import { askSourcesOfBodies, withSlotSources } from "../provenance.js";
 import { callbacksReached, storageClaims } from "../storage.js";
+import { exampleCalls } from "../testCases.js";
 import { forgetEvaluations } from "../values/evaluator.js";
 import {
   calleeSpellings,
@@ -75,6 +77,7 @@ import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type { ReadableBody } from "../paths/effects.js";
 import type { WalkReplay } from "../reuse.js";
+import type { ExampleReads } from "../testCases.js";
 import type {
   CalleeResolution,
   CalleeSpellings,
@@ -94,6 +97,8 @@ export interface ReachOptions extends BodyReadOptions {
   readonly replay?: WalkReplay;
   /** Set when a cache is recording what each scanned body depended on. */
   readonly ledger?: DependencyLedger;
+  /** Which blocks a test example runs besides its own. Absent when no pack in the run reads tests. */
+  readonly examples?: ExampleReads | undefined;
 }
 
 /** A method one scan followed, as a cache stores it. */
@@ -570,9 +575,7 @@ interface BodyCalls {
  */
 function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
   const site = siteOf(source);
-  const read = readableBodyOf(source.node);
-  const written =
-    read === null ? [] : bodyCalls(read, options.inheritedMethods);
+  const written = callsWrittenIn(source.node, options);
   const calls = callsReported(written, (call) =>
     mightReadAsACall(call, site, options.context),
   );
@@ -585,8 +588,24 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
 }
 
 /**
+ * The calls this source writes. A test example also runs the hooks and
+ * values around it, so their calls are read with its own, and the calls
+ * the test runner handles itself are left out.
+ */
+function callsWrittenIn(node: RbNode, options: ReachOptions): RbNode[] {
+  const run = options.examples?.runOf(node) ?? null;
+  if (run !== null) {
+    return exampleCalls(run, options.inheritedMethods).filter(
+      (call) => !run.isRunnerCall(call),
+    );
+  }
+  const read = readableBodyOf(node);
+  return read === null ? [] : bodyCalls(read, options.inheritedMethods);
+}
+
+/**
  * The statements this source runs. For a program node they are the file's
- * load-time statements, and for a method, its body.
+ * load-time statements, and for a method or a block, its body.
  */
 function readableBodyOf(node: RbNode): ReadableBody | null {
   return node.type === PROGRAM_TYPE ? moduleScopeBody(node) : methodBody(node);
@@ -595,15 +614,25 @@ function readableBodyOf(node: RbNode): ReadableBody | null {
 /**
  * Where this source's calls are written. At module scope, names are keyed
  * on the file instead of a method, matching how the value facts key them.
+ * A block's names belong to the method it is written in, or to the file.
  */
 function siteOf(source: ReachedFunction): CallSite {
   return {
     file: source.file,
-    method: source.node.type === PROGRAM_TYPE ? null : source.node,
+    method: localsOwnerOf(source.node),
     owner: keyOf(source),
     enclosingQualifiedName: source.enclosingQualifiedName,
   };
 }
+
+function localsOwnerOf(node: RbNode): RbNode | null {
+  if (node.type === PROGRAM_TYPE) {
+    return null;
+  }
+  return BLOCK_TYPES.has(node.type) ? enclosingDefinition(node) : node;
+}
+
+const BLOCK_TYPES = new Set(["block", "do_block"]);
 
 /**
  * The calls this body makes, out of the ones the round asked about. A

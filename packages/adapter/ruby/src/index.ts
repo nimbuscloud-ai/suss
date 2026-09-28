@@ -105,6 +105,8 @@ export type {
   RbRowCall,
   RbStatusCall,
   RbStoragePattern,
+  RbTestCases,
+  RbTestMocks,
   RubyDiscoveryPattern,
   RubyPack,
 } from "./pack.js";

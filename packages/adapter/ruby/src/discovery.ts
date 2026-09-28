@@ -58,6 +58,7 @@ import {
 } from "./scope.js";
 import { methodStorage, type RbStorageOptions } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
+import { testCaseUnits, testPatternsIn } from "./testCases.js";
 import { typeShapeFromNode } from "./typeShape.js";
 
 import type {
@@ -290,6 +291,22 @@ export async function discoverUnits(
       }
     }
   }
+  const absoluteFile = options.absoluteFile ?? options.filePath;
+  units.push(
+    ...testCaseUnits(root, testPatternsIn(options.packs), {
+      filePath: options.filePath,
+      absoluteFile,
+      displayPathOf: options.displayPathOf ?? ((file) => file),
+      facts: options.facts,
+      inheritedMethods: options.inheritedMethods,
+      onSeed: (raw, block) =>
+        options.onReachSeed?.(raw, {
+          file: absoluteFile,
+          node: block,
+          enclosingQualifiedName: null,
+        }),
+    }),
+  );
   return units;
 }
 

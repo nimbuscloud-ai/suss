@@ -85,6 +85,80 @@ export interface RubyPack {
   inflections?: RbInflections;
   /** Methods the library offers that hand back the argument at `argument`, keyed on the module the callee comes from. */
   transparentWrappers?: UnwrapsByName[];
+  /** How the library writes a test, so each one becomes a `test` unit a PRD scenario can list under `coveredBy`. */
+  tests?: RbTestCases[];
+}
+
+/**
+ * Tests written as nested blocks, the way RSpec writes them:
+ * `describe Order do; it "cancels" do ... end; end`. Each example is a
+ * `test` unit whose name is its group titles and its own. Every call
+ * listed here is one the library defines; the adapter reads the nesting.
+ */
+export interface RbTestCases {
+  /** Base names of the files the runner loads, where `*` matches any run of characters: `*_spec.rb`. */
+  filePatterns: string[];
+  /** The constant a top-level group may be opened on, `RSpec` in `RSpec.describe`. */
+  receiver: string;
+  /** Calls that open a group of examples: `describe`, `context`. */
+  groupNames: string[];
+  /** Calls that open a group whose examples do not run: `xdescribe`, `xcontext`. */
+  skippedGroupNames: string[];
+  /** Calls that open a group other groups include by name, whose examples belong to whoever includes them: `shared_examples`. */
+  sharedGroupNames: string[];
+  /** Calls that declare one example: `it`, `specify`. */
+  exampleNames: string[];
+  /** Calls that declare an example that does not run: `xit`, `skip`. */
+  skippedExampleNames: string[];
+  /** Calls that, written as a statement in an example or a `before` block, mark the example as not run: `skip`, `pending`. */
+  skipStatements: string[];
+  /** Metadata keys that mark a group or an example as not run, written `:skip` or `skip: true`. */
+  skipMetadata: string[];
+  /** Hooks whose block runs before every example in the group: `before`. */
+  beforeHooks: string[];
+  /** Calls that define a value an example reads by name, run when it is first read: `let`. */
+  lazyValues: string[];
+  /** The same, run before every example whether it reads the value or not: `let!`. */
+  eagerValues: string[];
+  /** Calls that define the group's subject, lazily and eagerly: `subject`, `subject!`. */
+  subjectNames: { lazy: string[]; eager: string[] };
+  /** Calls an example makes on itself to read the subject: `subject`, `is_expected`. */
+  subjectReads: string[];
+  /**
+   * Methods the library gives an example to call on itself to check or
+   * set something up, such as `expect`, `eq` and `allow`. A call made
+   * through one is no call into project code.
+   */
+  runnerMethods: string[];
+  /** Prefixes of the matchers the library makes up from a predicate, `be_` in `be_cancelled`. */
+  predicateMatcherPrefixes: string[];
+  /** How the library replaces something for the length of an example. */
+  mocks: RbTestMocks;
+  /** Read only these files, matched on whole path segments from the end. Left out, every file matching `filePatterns` is read. */
+  files?: string[];
+}
+
+/**
+ * The library's mock spellings. `allow(Order).to receive(:cancel)`
+ * replaces one method: `targets` opens it, `expectations` joins it, and
+ * `messages` says which method. `stub_const("Order", ...)` replaces a
+ * whole constant. A double is a fake object the test hands over, and it
+ * replaces nothing the test would otherwise reach unless the test makes
+ * it the constant with `constantDoubleMethod`.
+ */
+export interface RbTestMocks {
+  /** `allow`, `expect`, `allow_any_instance_of`. */
+  targets: string[];
+  /** `to`. */
+  expectations: string[];
+  /** `receive`, `receive_messages`. */
+  messages: string[];
+  /** `stub_const`. */
+  constantStubs: string[];
+  /** `instance_double`, `class_double`. */
+  doubles: string[];
+  /** `as_stubbed_const`, which makes a double the constant it stands in for. */
+  constantDoubleMethod: string;
 }
 
 /**
