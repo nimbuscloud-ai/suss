@@ -553,4 +553,22 @@ describe("one method's storage work", () => {
     expect(again).not.toBe(first);
     expect(again.effects).toEqual(first.effects);
   });
+
+  it("is recognized again on every call when no project is bound", async () => {
+    const tree = await parseRuby(
+      connected('conn.run("SELECT id FROM accounts")'),
+    );
+    const db = new Database();
+    emitValueFacts(db, FILE, tree.rootNode);
+    const [method] = tree.rootNode.descendantsOfType("method");
+    if (method === undefined || method === null) {
+      throw new Error("no method in the source");
+    }
+    const options = { facts: db, patterns: [], rawSql: [STORE] };
+
+    const first = methodStorage(method, FILE, options);
+    const again = methodStorage(method, FILE, options);
+    expect(again).not.toBe(first);
+    expect(again).toEqual(first);
+  });
 });
