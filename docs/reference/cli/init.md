@@ -24,7 +24,7 @@ It reads `package.json`, the Python manifests and the Gemfile for dependencies, 
 
 Every folder below the root with its own `package.json`, `pyproject.toml` or `Gemfile` is a project of its own, whether or not a workspace file lists it, so a server folder and a client folder side by side each get their commands. A folder found only by its `package.json` is shown when a pack matched there.
 
-fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in it calls the library, and the report says which file.
+fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in it calls the library, and the report says which file. A call in a test does not count.
 
 When the project depends on a framework suss knows and has no pack for, such as Django, tRPC or Grape, the report says so, including when other packs matched.
 
