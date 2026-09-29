@@ -62,10 +62,29 @@ describe("pathsMeet", () => {
     expect(pathsMeet("/files/{name}.json", "/files/{file}")).toBe(true);
   });
 
+  it("lets a star or optional hole inside a segment take no text at all", () => {
+    expect(pathsMeet("/files/report{query*}", "/files/report")).toBe(true);
+    expect(pathsMeet("/files/report{query?}", "/files/report")).toBe(true);
+    expect(pathsMeet("/files/report{id}", "/files/report")).toBe(false);
+  });
+
   it("treats the root as a path with no segments", () => {
     expect(pathsMeet("/", "/")).toBe(true);
     expect(pathsMeet("/", "/{rest*}")).toBe(true);
     expect(pathsMeet("/", "/{id}")).toBe(false);
+  });
+
+  it("reads a hole before the first slash as the origin, which takes no segment", () => {
+    const client = "{baseUrl}/links/count{value*}";
+    expect(pathsMeet(client, "/wellknown/{domain}/{file}")).toBe(false);
+    expect(pathsMeet(client, "/links/count")).toBe(true);
+    expect(pathsMeet("{value*}/companion/desktop", "/workflows/{a}/{b}")).toBe(
+      false,
+    );
+    expect(pathsMeet("{value*}/companion/desktop", "/companion/desktop")).toBe(
+      true,
+    );
+    expect(pathsMeet("/{tenant}/orders", "/acme/orders")).toBe(true);
   });
 
   it("keeps a path with more sets than it can expand, with the sets as one hole", () => {

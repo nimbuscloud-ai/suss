@@ -179,4 +179,22 @@ describe("a consumer whose base URL the deployment fills in", () => {
 
     expect(keys).toEqual(["GET /orders/{id}"]);
   });
+
+  it("does not let an open base URL take a segment the route spells out", () => {
+    const keys = pairedKeys([
+      backend("/wellknown/{domain}/{file}"),
+      forwarder("{baseUrl}/links/count{query*}"),
+    ]);
+
+    expect(keys).toHaveLength(0);
+  });
+
+  it("pairs an open base URL that stands for the origin with the route after it", () => {
+    const keys = pairedKeys([
+      backend("/links/count"),
+      forwarder("{baseUrl}/links/count{query*}"),
+    ]);
+
+    expect(keys).toHaveLength(1);
+  });
 });
