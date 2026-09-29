@@ -97,6 +97,32 @@ function recognizeAll(
   return effects;
 }
 
+/** What the pack's access recognizers, the raw SQL ones, find in a file. */
+function accessEffectsIn(sourceFile: SourceFile): Effect[] {
+  const recognizers = prismaFramework().accessRecognizers ?? [];
+  const effects: Effect[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (
+      !Node.isCallExpression(node) &&
+      !Node.isTaggedTemplateExpression(node)
+    ) {
+      return;
+    }
+    for (const recognizer of recognizers) {
+      const emitted = recognizer(node, {
+        access: node,
+        sourceFile,
+        resolveWrittenValue: () => null,
+        ops: callOpsFor(node),
+      });
+      if (emitted !== null) {
+        effects.push(...emitted);
+      }
+    }
+  });
+  return effects;
+}
+
 /**
  * A small EffectArg builder, mirroring the adapter's extractArg closely enough
  * for what the recognizer needs: object literals, property access, identifiers,
@@ -990,23 +1016,10 @@ describe("the storage system a project's schema declares", () => {
     const sourceFile = fixture.getSourceFileOrThrow(
       path.join(root, project, "src/api.ts"),
     );
-    const pack = prismaFramework();
-    const effects = [...recognizeAll(sourceFile)];
-    sourceFile.forEachDescendant((node) => {
-      if (!Node.isTaggedTemplateExpression(node)) {
-        return;
-      }
-      for (const recognizer of pack.accessRecognizers ?? []) {
-        effects.push(
-          ...(recognizer(node, {
-            access: node,
-            sourceFile,
-            resolveWrittenValue: () => null,
-            ops: callOpsFor(node),
-          }) ?? []),
-        );
-      }
-    });
+    const effects = [
+      ...recognizeAll(sourceFile),
+      ...accessEffectsIn(sourceFile),
+    ];
     return effects.map((effect) =>
       effect.type === "interaction" &&
       effect.binding.semantics.name === "storage"
@@ -1026,29 +1039,7 @@ describe("the storage system a project's schema declares", () => {
 
 describe("prisma raw SQL", () => {
   function rawEffects(source: string): Effect[] {
-    const sourceFile = makeProject(source);
-    const recognizers = prismaFramework().accessRecognizers ?? [];
-    const effects: Effect[] = [];
-    sourceFile.forEachDescendant((node) => {
-      if (
-        !Node.isCallExpression(node) &&
-        !Node.isTaggedTemplateExpression(node)
-      ) {
-        return;
-      }
-      for (const recognizer of recognizers) {
-        const emitted = recognizer(node, {
-          access: node,
-          sourceFile,
-          resolveWrittenValue: () => null,
-          ops: callOpsFor(node),
-        });
-        if (emitted !== null) {
-          effects.push(...emitted);
-        }
-      }
-    });
-    return effects;
+    return accessEffectsIn(makeProject(source));
   }
 
   function storageOf(effect: Effect) {
