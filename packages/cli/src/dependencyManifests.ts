@@ -278,7 +278,11 @@ function joinContinuations(contents: string): string[] {
   return joined;
 }
 
-/** Reads the standard `project.dependencies` list and both of Poetry's tables. */
+/**
+ * Reads the standard `project.dependencies` list, the optional extras,
+ * the `[dependency-groups]` table that uv and pip read, and both of
+ * Poetry's tables.
+ */
 function readPyproject(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
   const read = readTomlFile(file);
@@ -289,24 +293,24 @@ function readPyproject(root: string, file: string): DeclaredDependencies {
 
   const named: DeclaredDependency[] = [];
   const unread: UnreadDependencies[] = [];
+  const readList = (entries: unknown, table: string): void => {
+    const listed = readRequirementList(entries, where, table);
+    named.push(...listed.named);
+    unread.push(...listed.unread);
+  };
 
   const project = tableAt(parsed, "project");
-  const dependencies = project?.dependencies;
-  if (Array.isArray(dependencies)) {
-    for (const entry of dependencies) {
-      if (typeof entry !== "string") {
-        continue;
-      }
-      const name = nameOfRequirement(entry);
-      if (name === null) {
-        unread.push({
-          where,
-          reason: `\`${entry}\` under [project] states no library name suss can read.`,
-        });
-        continue;
-      }
-      named.push({ name, where });
-    }
+  readList(project?.dependencies, "[project]");
+  for (const [group, entries] of Object.entries(
+    tableAt(parsed, "project", "optional-dependencies") ?? {},
+  )) {
+    readList(entries, `[project.optional-dependencies] ${group}`);
+  }
+
+  for (const [group, entries] of Object.entries(
+    tableAt(parsed, "dependency-groups") ?? {},
+  )) {
+    readList(entries, `[dependency-groups] ${group}`);
   }
 
   // Dependencies marked dynamic are computed at build time, so suss
@@ -334,6 +338,39 @@ function readPyproject(root: string, file: string): DeclaredDependencies {
     }
   }
 
+  return { named, unread };
+}
+
+/**
+ * The libraries in one list of requirement strings. A dependency group
+ * can also include another group by a table, and that group is read on
+ * its own, so a table entry is skipped here.
+ */
+function readRequirementList(
+  entries: unknown,
+  where: string,
+  table: string,
+): DeclaredDependencies {
+  const named: DeclaredDependency[] = [];
+  const unread: UnreadDependencies[] = [];
+  if (!Array.isArray(entries)) {
+    return { named, unread };
+  }
+
+  for (const entry of entries) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const name = nameOfRequirement(entry);
+    if (name === null) {
+      unread.push({
+        where,
+        reason: `\`${entry}\` under ${table} states no library name suss can read.`,
+      });
+      continue;
+    }
+    named.push({ name, where });
+  }
   return { named, unread };
 }
 
