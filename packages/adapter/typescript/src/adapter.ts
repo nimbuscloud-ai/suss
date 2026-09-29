@@ -80,6 +80,7 @@ import {
   extractRawBranches,
 } from "./assembly.js";
 import {
+  admitListedFiles,
   createLazyProject,
   type DeepImportGraphs,
   importedFilePathsOf,
@@ -2388,6 +2389,7 @@ export function createTypeScriptAdapter(
       startOver(holder);
       noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames);
     }
+    admitListedFiles(project, tsconfig);
     const lazy = await createLazyProject(
       tsConfigFilePath,
       config.frameworks,
@@ -2539,6 +2541,9 @@ export function createTypeScriptAdapter(
       ) {
         startOver(this);
         noteRunFileList(loaded, config.tsConfigFilePath, tsconfigFileList);
+      }
+      if (tsconfig !== null) {
+        admitListedFiles(project, tsconfig);
       }
 
       // Nothing reads the digest or the file list when the run is not
