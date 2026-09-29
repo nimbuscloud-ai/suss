@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1059,
-      "covered": 1046,
+      "total": 1131,
+      "covered": 1118,
       "skipped": 0,
-      "pct": 98.77
+      "pct": 98.85
     },
     "statements": {
-      "total": 1102,
-      "covered": 1089,
+      "total": 1177,
+      "covered": 1164,
       "skipped": 0,
-      "pct": 98.82
+      "pct": 98.89
     },
     "functions": {
-      "total": 286,
-      "covered": 286,
+      "total": 303,
+      "covered": 303,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 610,
-      "covered": 559,
+      "total": 640,
+      "covered": 588,
       "skipped": 0,
-      "pct": 91.63
+      "pct": 91.87
     },
     "branchesTrue": {
       "total": 0,
@@ -267,20 +267,20 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 34,
-      "covered": 34,
+      "total": 43,
+      "covered": 43,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 8,
-      "covered": 8,
+      "total": 13,
+      "covered": 13,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 34,
-      "covered": 34,
+      "total": 43,
+      "covered": 43,
       "skipped": 0,
       "pct": 100
     },
@@ -395,6 +395,32 @@
       "pct": 100
     }
   },
+  "src/passedOn.ts": {
+    "lines": {
+      "total": 7,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 7,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 2,
+      "covered": 2,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
   "src/program.ts": {
     "lines": {
       "total": 140,
@@ -471,6 +497,32 @@
       "covered": 20,
       "skipped": 0,
       "pct": 90.9
+    }
+  },
+  "src/sources.ts": {
+    "lines": {
+      "total": 56,
+      "covered": 56,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 8,
+      "covered": 8,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 59,
+      "covered": 59,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 28,
+      "covered": 27,
+      "skipped": 0,
+      "pct": 96.42
     }
   },
   "src/underContext.ts": {
