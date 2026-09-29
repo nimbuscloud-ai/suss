@@ -1,14 +1,14 @@
 import {
   type ArrowFunction,
   Node,
-  type Project,
+  Project,
   type SourceFile,
   SyntaxKind,
 } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { profileEvaluation } from "@suss/datalog";
-import { createTestProject } from "@suss/test-project";
+import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { ResolutionStore } from "./store.js";
 
@@ -3090,5 +3090,33 @@ describe("a constructor parameter a decorator supplies", () => {
 
   it("leaves the parameter alone when no pack says the decorator supplies it", () => {
     expect(writtenReceiver(PARAMETER_PROPERTY, [])).toBeUndefined();
+  });
+});
+
+describe("a JavaScript file in a project that does not allow JavaScript", () => {
+  const INITIALIZER = `
+    export default {
+      initialize(owner) {
+        this.handler = () => owner.reload();
+        window.addEventListener("pageshow", this.handler);
+      },
+    };
+  `;
+
+  it("is never read for facts, since the compiler leaves it unbound", () => {
+    const project = new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: { ...testCompilerOptions, allowJs: false },
+    });
+    project.createSourceFile("/initializer.js", INITIALIZER);
+    project.createSourceFile(
+      "/app.ts",
+      `import initializer from "./initializer.js";\nexport const start = initializer.initialize;\n`,
+    );
+    const store = new ResolutionStore();
+
+    expect(() =>
+      store.resolveCallable(exportValue(project, "/app.ts", "start")),
+    ).not.toThrow();
   });
 });
