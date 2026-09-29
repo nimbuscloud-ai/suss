@@ -5,6 +5,9 @@
 
 import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 
+import { force, literalOf } from "@suss/values";
+
+import { evaluatedValue } from "../values/evaluator.js";
 import {
   decoratedCallablesOf,
   importedDecoratorLocals,
@@ -26,17 +29,11 @@ import type { ResolutionStore } from "../facts/store.js";
 import type { MountPrefixIndex } from "./registrationCall.js";
 import type { DiscoveredUnit } from "./shared.js";
 
-/**
- * Read the first argument of `@Controller("path")` / `@Get("subpath")`
- * as a path string. Empty arg list yields the empty string (NestJS
- * behaviour: `@Controller()` mounts at root). Non-string args (a
- * route options object, a path-array, etc.) yield the empty string
- * too: the caller falls back to whatever it can extract elsewhere.
- */
+/** The path `@Get("subpath")` states, read the way a controller's prefix is. */
 function resolveRoutePathArg(
   decorator: Node,
   resolution: ResolutionStore | undefined,
-): string {
+): string | null {
   if (!Node.isDecorator(decorator)) {
     return "";
   }
@@ -44,20 +41,37 @@ function resolveRoutePathArg(
 }
 
 /**
- * The path a decorator's argument list states, when it states one. A
- * constant passed by name resolves to its written string, so
- * `@Controller(BASE_PATH)` keeps its prefix instead of mounting at
- * root and pairing with the wrong client (#123).
+ * The path a decorator's argument list states. No argument mounts at
+ * the root, and so does an options object with no `path`, such as
+ * `@Controller({ host })`. `@Controller({ path, version })` states it
+ * in the object. A constant passed by name resolves to its written
+ * string (#123).
+ *
+ * Null when a path is given and does not settle to one string, such as
+ * a constant from a package that is not installed. The route then
+ * claims no path, since at the root it would pair with the wrong client.
  */
 function routePathOf(
   args: Node[],
   resolution: ResolutionStore | undefined,
-): string {
-  if (args.length === 0) {
+): string | null {
+  const [first] = args;
+  if (first === undefined) {
     return "";
   }
-  return stringValueOf(args[0], resolution) ?? "";
+  const value = evaluatedValue(first, resolution);
+  if (value.kind !== "record") {
+    return literalOf(value);
+  }
+  const path = value.fields.get("path");
+  if (path === undefined) {
+    return value.open ? null : "";
+  }
+  return literalOf(force(path.value));
 }
+
+const PREFIX_NOT_READ =
+  "The path this controller or route declares does not settle to one string, so no path is claimed and this route pairs with nothing";
 
 /**
  * Join a controller's class-prefix with a method-suffix. NestJS
@@ -208,11 +222,14 @@ export function discoverDecoratedRoutes(
         localRouteDecorators.get(handler.standsFor) ?? handler.standsFor;
       const httpMethod = match.methodDecoratorRouteMap[verbDecorator];
       const pathSuffix = resolveRoutePathArg(handler.decorator, resolution);
-      const routePath = pathUnderGlobalPrefix(
-        globalPrefix,
-        httpMethod,
-        joinRoutePath(pathPrefix, pathSuffix),
-      );
+      const routePath =
+        pathPrefix === null || pathSuffix === null
+          ? null
+          : pathUnderGlobalPrefix(
+              globalPrefix,
+              httpMethod,
+              joinRoutePath(pathPrefix, pathSuffix),
+            );
       const status =
         statusCodeDecoratedOn(
           handler.decorator,
@@ -225,6 +242,7 @@ export function discoverDecoratedRoutes(
         kind,
         name: `${className}.${handler.name}`,
         routeInfo: { method: httpMethod, path: routePath },
+        ...(routePath === null ? { unreadBinding: PREFIX_NOT_READ } : {}),
         ...(status === undefined ? {} : { defaultStatusCode: status }),
       });
     }
