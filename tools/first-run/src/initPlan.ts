@@ -104,14 +104,15 @@ export function planCommands(
 ): PlannedCommand[] {
   const planned: PlannedCommand[] = [];
   for (const project of projects) {
-    const cwd = path.resolve(root, project.dir);
     const slug = projectSlug(project.dir);
     for (const argv of project.commands) {
       const verb = argv[0] ?? "";
       const { rewritten, output } = redirectOutput(argv, outDir, slug);
       planned.push({
         project: project.dir,
-        cwd,
+        cwd: runsFromRoot(argv, project.dir)
+          ? root
+          : path.resolve(root, project.dir),
         argv: rewritten,
         output,
         verb,
@@ -120,6 +121,25 @@ export function planCommands(
   }
 
   return planned;
+}
+
+/**
+ * Whether a command printed under a project's heading runs from the
+ * directory init ran in. Releases up to 0.34.0 printed each command
+ * relative to its project; later ones print `--dir` on an extract and
+ * start a contract's path with the project's folder.
+ */
+export function runsFromRoot(argv: string[], dir: string): boolean {
+  if (dir === "." || argv.includes("--dir") || argv.includes("-p")) {
+    return true;
+  }
+
+  return argv[0] === "contract" && startsFromRoot(argv[3] ?? "", dir);
+}
+
+/** Whether a path printed under a project's heading starts with that project's folder. */
+export function startsFromRoot(printed: string, dir: string): boolean {
+  return dir === "." || printed.startsWith(`${dir}/`);
 }
 
 export function projectSlug(dir: string): string {

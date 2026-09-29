@@ -100,6 +100,23 @@ describe("planCommands", () => {
     expect(planned[0]?.argv.at(-1)).toBe("/out/web--code.json");
   });
 
+  it("runs a command from the root when init wrote its paths from there", () => {
+    const planned = planCommands(
+      parseInitOutput(`════ api ════
+
+   suss extract --dir api --lang python -f fastapi -o summaries/api-code.json
+   suss contract --from openapi api/openapi.yaml -o summaries/api-openapi.json
+`),
+      "/work/app",
+      "/out",
+    );
+
+    expect(planned.map((command) => command.cwd)).toEqual([
+      "/work/app",
+      "/work/app",
+    ]);
+  });
+
   it("adds an output when init printed none", () => {
     const planned = planCommands(
       [
