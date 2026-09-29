@@ -9,6 +9,7 @@ import {
 } from "@suss/ir-core";
 
 import { groundedKeys } from "./groundedPath.js";
+import { isTestCode } from "./testCode.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 
@@ -23,7 +24,11 @@ export interface SummaryPair {
 }
 
 /** Why a summary took no part in pairing. */
-export type UnpairableReason = "noBoundary" | "unnamedBoundary" | "unknownKind";
+export type UnpairableReason =
+  | "noBoundary"
+  | "unnamedBoundary"
+  | "unknownKind"
+  | "testCode";
 
 export interface UnpairableSummary {
   summary: BehavioralSummary;
@@ -47,8 +52,8 @@ export interface PairingResult {
      * `noBoundary` is internal code with nothing to pair on,
      * `unnamedBoundary` is a boundary the source never gave a name to,
      * and `unknownKind` is a summary read from disk with a kind this
-     * build does not know. They share one list, and a reader groups them
-     * by reason.
+     * build does not know, and `testCode` is a test or code in a test
+     * file. They share one list, and a reader groups them by reason.
      */
     unpairable: UnpairableSummary[];
   };
@@ -212,6 +217,11 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
     const binding = summary.identity.boundaryBinding;
     if (binding === null) {
       unpairable.push({ summary, reason: "noBoundary" });
+      continue;
+    }
+
+    if (isTestCode(summary)) {
+      unpairable.push({ summary, reason: "testCode" });
       continue;
     }
 

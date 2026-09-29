@@ -22,6 +22,7 @@ import { checkMetric } from "./metric/metricPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
+import { isTestCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { checkStorage } from "./storage/storagePairing.js";
@@ -275,12 +276,15 @@ function twoServicesServeIt(ambiguous: AmbiguousPairing): Finding {
  * providers describing one boundary produce one finding between them,
  * with `sources` set; `checkPair` on its own does no such collapsing.
  */
-export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
+export function checkAll(all: BehavioralSummary[]): CheckAllResult {
   const {
     pairs: restPairs,
     unmatched: restUnmatched,
     ambiguous: restAmbiguous,
-  } = pairSummaries(summaries);
+  } = pairSummaries(all);
+  // REST pairing lists test code as unpairable, and every other pass
+  // leaves it out the same way.
+  const summaries = all.filter((summary) => !isTestCode(summary));
   const graphql = pairGraphqlOperations(summaries);
 
   const findings: Finding[] = [
