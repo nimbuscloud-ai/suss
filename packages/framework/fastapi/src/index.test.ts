@@ -33,6 +33,7 @@ describe("fastapiFramework", () => {
         },
         parameterAliasKeyword: "alias",
         defaultStatusCode: 200,
+        validationFailureStatus: 422,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
         responseStatusCalls: [

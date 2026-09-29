@@ -88,6 +88,9 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         parameterAliasKeyword: "alias",
         // FastAPI returns 200 for a route that declares no status.
         defaultStatusCode: 200,
+        // FastAPI checks every declared request input before the handler
+        // runs, and responds to a bad one itself.
+        validationFailureStatus: 422,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
         // FastAPI re-exports Starlette's class, and a project may import

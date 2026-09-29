@@ -1415,6 +1415,15 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     };
     branches.push(withBodyEffects(bare, extra));
   }
+  if (branches.length > 0) {
+    branches.push(
+      ...validationFailureBranches(
+        pattern,
+        parameters,
+        rangeOf(definitionNode),
+      ),
+    );
+  }
 
   const bodyNode = field(definitionNode, "body");
 
@@ -1458,6 +1467,52 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       ? {}
       : { requestSpelling: pack.requestSpelling }),
   };
+}
+
+/**
+ * The response the library sends on its own when a request input the
+ * route reads fails validation. The body never runs on that path, so the
+ * branch has no effects. None when the route reads nothing off the request.
+ */
+function validationFailureBranches(
+  pattern: PythonDiscoveryPattern,
+  parameters: readonly RawParameter[],
+  range: SourceRange,
+): RawBranch[] {
+  const status = pattern.validationFailureStatus;
+  if (
+    status === undefined ||
+    !parameters.some((parameter) => parameter.role !== null)
+  ) {
+    return [];
+  }
+  return [
+    {
+      conditions: [
+        {
+          sourceText: "request input fails validation",
+          structured: null,
+          polarity: "positive",
+          source: "earlyThrow",
+        },
+      ],
+      terminal: {
+        kind: "response",
+        statusCode: { type: "literal", value: status },
+        body: null,
+        exceptionType: null,
+        message: null,
+        component: null,
+        renderTree: null,
+        delegateTarget: null,
+        emitEvent: null,
+        location: range,
+      },
+      effects: [],
+      location: range,
+      isDefault: false,
+    },
+  ];
 }
 
 /** One reading covers every parameter, because an unread path is the same reason for all of them. An injected parameter also has no role, but for a different reason, and it does not trigger this. */

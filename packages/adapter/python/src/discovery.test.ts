@@ -1163,6 +1163,31 @@ describe("discoverUnits: a raise the pack says the library responds with", () =>
     ]);
   });
 
+  it("adds the library's own validation response to a route that reads the request", async () => {
+    const validating: PythonPack = {
+      ...fastapiWithRaises,
+      discovery: [
+        {
+          ...fastapiWithRaises.discovery[0],
+          validationFailureStatus: 422,
+        } as PythonPack["discovery"][number],
+      ],
+    };
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException(status_code=404)",
+        'return {"id": item_id}',
+      ]),
+      [validating],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["404", ["comparison"]],
+      ["200", ["!comparison"]],
+      ["422", ["request input fails validation"]],
+    ]);
+  });
+
   it("keeps a single raise when the rest of the body runs off the end", async () => {
     const units = await unitsOf(
       routeRaising([
