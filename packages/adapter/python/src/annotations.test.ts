@@ -208,6 +208,51 @@ describe("annotationToShape: local classes", () => {
     expect(Object.keys(collectedDefinitions(ctx) ?? {})).toHaveLength(1);
   });
 
+  it("gives a class the fields of its project base classes, its own last", async () => {
+    const { typeNode, scope, ctx } = await firstParamType(
+      [
+        "class Base(BaseModel):",
+        "    model_config: ClassVar[ConfigDict] = ConfigDict()",
+        "    id: int",
+        "    name: str",
+        "",
+        "class Page(Generic[T]):",
+        "    total: int",
+        "",
+        "class AccountPage(Base, Page, metaclass=Meta):",
+        "    name: int",
+        "    items: list[str]",
+        "",
+        "def f(x: AccountPage):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const shape = annotationToShape(typeNode, scope, ctx);
+    const def = shape.type === "ref" ? shape.def : undefined;
+    expect(def !== undefined && collectedDefinitions(ctx)?.[def]).toEqual({
+      type: "record",
+      properties: {
+        total: { type: "integer" },
+        id: { type: "integer" },
+        name: { type: "integer" },
+        items: { type: "array", items: { type: "text" } },
+      },
+    });
+  });
+
+  it("stops at a class that lists itself among its bases", async () => {
+    const { typeNode, scope, ctx } = await firstParamType(
+      "class Loop(Loop):\n    id: int\n\n\ndef f(x: Loop):\n    pass\n",
+    );
+    const shape = annotationToShape(typeNode, scope, ctx);
+    const def = shape.type === "ref" ? shape.def : undefined;
+    expect(def !== undefined && collectedDefinitions(ctx)?.[def]).toEqual({
+      type: "record",
+      properties: { id: { type: "integer" } },
+    });
+  });
+
   it("stops at a self-referential model instead of recursing forever", async () => {
     const { scope, ctx } = await firstParamType(
       "class Node:\n    id: int\n\n\ndef f(x: Node):\n    pass\n",
