@@ -1,0 +1,23 @@
+{
+  "name": "@suss/first-run",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Runs a published suss release the way a newcomer would over a list of public repositories at pinned commits, and records what each first run produced. Internal; never published.",
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "scripts": {
+    "first-run": "tsx src/run.ts",
+    "table": "tsx src/table.ts",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "*",
+    "tsx": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
