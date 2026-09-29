@@ -1,0 +1,212 @@
+[
+  {
+    "name": "immich",
+    "url": "https://github.com/immich-app/immich.git",
+    "commit": "a9d102234b8b190cc13b6ac948f4049aa15abb42",
+    "stack": "typescript",
+    "sides": "NestJS REST server in server/, SvelteKit client in web/ through the generated SDK in open-api/typescript-sdk"
+  },
+  {
+    "name": "twenty",
+    "url": "https://github.com/twentyhq/twenty.git",
+    "commit": "c36c806f51191524360219b82f3433ad29ad5a7d",
+    "stack": "typescript",
+    "sides": "NestJS REST and GraphQL server in packages/twenty-server, React and Apollo client in packages/twenty-front"
+  },
+  {
+    "name": "cal.com",
+    "url": "https://github.com/calcom/cal.diy.git",
+    "commit": "54343aa685ae8f33159d2f485ec4a57bad5c574a",
+    "stack": "typescript",
+    "sides": "Next.js API routes and tRPC routers in apps/web and packages/trpc, React client in apps/web and packages/features"
+  },
+  {
+    "name": "documenso",
+    "url": "https://github.com/documenso/documenso.git",
+    "commit": "a1d4bec1430a937395db9a4aae28979cd71c2831",
+    "stack": "typescript",
+    "sides": "Hono and tRPC server in apps/remix/server and packages/trpc, React client in apps/remix"
+  },
+  {
+    "name": "formbricks",
+    "url": "https://github.com/formbricks/formbricks.git",
+    "commit": "9b7bfa0d83bdf63aaa35d1cacfbbdbb01dcbae02",
+    "stack": "typescript",
+    "sides": "Next.js route handlers in apps/web/app/api, React client in apps/web and the JS SDK in packages/js-core"
+  },
+  {
+    "name": "outline",
+    "url": "https://github.com/outline/outline.git",
+    "commit": "5f93d3233afdcc8a25a9b311c590a201f8978f3c",
+    "stack": "typescript",
+    "sides": "Koa server in server/routes/api, React client in app/ calling it through app/utils/ApiClient"
+  },
+  {
+    "name": "hoppscotch",
+    "url": "https://github.com/hoppscotch/hoppscotch.git",
+    "commit": "a9ffa29ce5036ef5be0768db35a8b6bae32e1160",
+    "stack": "typescript",
+    "sides": "NestJS GraphQL and REST backend in packages/hoppscotch-backend, Vue client in packages/hoppscotch-common"
+  },
+  {
+    "name": "n8n",
+    "url": "https://github.com/n8n-io/n8n.git",
+    "commit": "9f5c752cd179d52a91459dc98871c026fce49b51",
+    "stack": "typescript",
+    "sides": "Express server with decorator controllers in packages/cli, Vue client in packages/frontend/editor-ui"
+  },
+  {
+    "name": "directus",
+    "url": "https://github.com/directus/directus.git",
+    "commit": "1694b19048c8523bc90dd1fd11566b748b155ec4",
+    "stack": "typescript",
+    "sides": "Express API in api/, Vue client in app/ calling it through axios"
+  },
+  {
+    "name": "medusa",
+    "url": "https://github.com/medusajs/medusa.git",
+    "commit": "3951432a78a8e397b92b8d1a4ca1eadd9544f59d",
+    "stack": "typescript",
+    "sides": "File-routed HTTP API in packages/medusa/src/api, React admin in packages/admin/dashboard through the JS SDK"
+  },
+  {
+    "name": "dub",
+    "url": "https://github.com/dubinc/dub.git",
+    "commit": "00f3a1b32bb854f029fd2c8580b7f6b4262a9d28",
+    "stack": "typescript",
+    "sides": "Next.js route handlers in apps/web/app/api, React client in apps/web calling them with fetch and SWR"
+  },
+  {
+    "name": "ghost",
+    "url": "https://github.com/TryGhost/Ghost.git",
+    "commit": "ae3febbebfd1435de57fff12127f05d237d58be1",
+    "stack": "typescript",
+    "sides": "Express admin and content API in ghost/core, React admin apps in apps/ calling it with fetch"
+  },
+  {
+    "name": "tooljet",
+    "url": "https://github.com/ToolJet/ToolJet.git",
+    "commit": "fccfbf0748c81059714c2c42aa5e584eff5cad1b",
+    "stack": "typescript",
+    "sides": "NestJS REST server in server/, React client in frontend/ calling it through fetch service modules"
+  },
+  {
+    "name": "full-stack-fastapi-template",
+    "url": "https://github.com/fastapi/full-stack-fastapi-template.git",
+    "commit": "cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7",
+    "stack": "python",
+    "sides": "FastAPI server in backend/, React client in frontend/ through a generated axios client"
+  },
+  {
+    "name": "dispatch",
+    "url": "https://github.com/Netflix/dispatch.git",
+    "commit": "dd2837e82a0bf5565b1b4b4b91ea30b7262d4061",
+    "stack": "python",
+    "sides": "FastAPI server in src/dispatch, Vue client in src/dispatch/static/dispatch calling it through axios (repository archived)"
+  },
+  {
+    "name": "mealie",
+    "url": "https://github.com/mealie-recipes/mealie.git",
+    "commit": "021d75d07d5a1a9b4df7a2e8dceb42110f96264e",
+    "stack": "python",
+    "sides": "FastAPI server in mealie/, Nuxt client in frontend/ calling it through axios wrappers"
+  },
+  {
+    "name": "netbox",
+    "url": "https://github.com/netbox-community/netbox.git",
+    "commit": "9bcfd73994b7dbdaf22b88a0e68b7193cd313d4e",
+    "stack": "python",
+    "sides": "Django REST framework API in netbox/, TypeScript client in netbox/project-static/src calling it with fetch"
+  },
+  {
+    "name": "paperless-ngx",
+    "url": "https://github.com/paperless-ngx/paperless-ngx.git",
+    "commit": "61f36eb253bdeb4362d96f2b9db864c91e2bb09e",
+    "stack": "python",
+    "sides": "Django REST framework API in src/, Angular client in src-ui calling it through HttpClient services"
+  },
+  {
+    "name": "label-studio",
+    "url": "https://github.com/HumanSignal/label-studio.git",
+    "commit": "3e0201b5f5d61d5dd143a2a8f492cc41a396f84b",
+    "stack": "python",
+    "sides": "Django REST framework API in label_studio/, React client in web/ calling it through an API wrapper"
+  },
+  {
+    "name": "zulip",
+    "url": "https://github.com/zulip/zulip.git",
+    "commit": "d5588059642756497685fe909204f2e328496edb",
+    "stack": "python",
+    "sides": "Django views routed in zproject/urls.py, TypeScript client in web/src calling them through channel.get and channel.post"
+  },
+  {
+    "name": "plane",
+    "url": "https://github.com/makeplane/plane.git",
+    "commit": "c23728e769ac9f6f475b75c02ee8f73adce88a67",
+    "stack": "python",
+    "sides": "Django REST framework API in apps/api, Next.js client in apps/web calling it through axios service classes"
+  },
+  {
+    "name": "superset",
+    "url": "https://github.com/apache/superset.git",
+    "commit": "6f6e52ba8b1201218f6a476a33177141bd492222",
+    "stack": "python",
+    "sides": "Flask API in superset/, React client in superset-frontend calling it through SupersetClient"
+  },
+  {
+    "name": "mastodon",
+    "url": "https://github.com/mastodon/mastodon.git",
+    "commit": "301087af929f1470ac330a3b3f3e5072c54bb05d",
+    "stack": "ruby",
+    "sides": "Rails API controllers in app/controllers/api, React client in app/javascript calling them through an axios wrapper"
+  },
+  {
+    "name": "discourse",
+    "url": "https://github.com/discourse/discourse.git",
+    "commit": "0f0e70998ca46873e96208412ad9edaa3747d9ea",
+    "stack": "ruby",
+    "sides": "Rails controllers in app/controllers, Ember client in app/assets/javascripts calling them through ajax()"
+  },
+  {
+    "name": "chatwoot",
+    "url": "https://github.com/chatwoot/chatwoot.git",
+    "commit": "e2de952fad8c91895a5bc20803fbf4ac60b8a0e0",
+    "stack": "ruby",
+    "sides": "Rails API controllers in app/controllers/api, Vue client in app/javascript calling them through axios API classes"
+  },
+  {
+    "name": "forem",
+    "url": "https://github.com/forem/forem.git",
+    "commit": "6d0df2a317ca048e0753a996b2f11cb1231c842d",
+    "stack": "ruby",
+    "sides": "Rails controllers in app/controllers, Preact client in app/javascript calling them with fetch"
+  },
+  {
+    "name": "lobsters",
+    "url": "https://github.com/lobsters/lobsters.git",
+    "commit": "9adf9a180a617097e3effc17cdb6f11b58b214bf",
+    "stack": "ruby",
+    "sides": "Rails controllers in app/controllers, plain JavaScript in app/assets/javascripts calling them with fetch"
+  },
+  {
+    "name": "openproject",
+    "url": "https://github.com/opf/openproject.git",
+    "commit": "5c5675c11544cb5fe0eac66841e7d3bc2cc17e1b",
+    "stack": "ruby",
+    "sides": "Rails controllers and a Grape API in app/ and lib/api, Angular client in frontend/ calling them through HttpClient"
+  },
+  {
+    "name": "loomio",
+    "url": "https://github.com/loomio/loomio.git",
+    "commit": "77151f5bb356325fc04e586360567708084dc744",
+    "stack": "ruby",
+    "sides": "Rails API controllers in app/controllers/api, Vue client in vue/ calling them through a fetch wrapper"
+  },
+  {
+    "name": "diaspora",
+    "url": "https://github.com/diaspora/diaspora.git",
+    "commit": "f96527862dc1ba2e5b95c4196efb0d1f0cc4b6e5",
+    "stack": "ruby",
+    "sides": "Rails controllers in app/controllers, Backbone client in app/assets/javascripts calling them through jQuery ajax"
+  }
+]
