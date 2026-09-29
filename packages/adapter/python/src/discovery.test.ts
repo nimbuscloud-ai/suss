@@ -1145,6 +1145,39 @@ describe("discoverUnits: a raise the pack says the library responds with", () =>
     ]);
   });
 
+  it("responds with the route's status on a path that runs off the end of the body", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException(status_code=404)",
+        "if item_id < 0:",
+        "    raise HTTPException(status_code=409)",
+        "remove(item_id)",
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["404", ["comparison"]],
+      ["409", ["!comparison", "comparison"]],
+      ["200", ["!comparison", "!comparison"]],
+    ]);
+  });
+
+  it("keeps a single raise when the rest of the body runs off the end", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException(status_code=404)",
+        "remove(item_id)",
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["404", ["comparison"]],
+      ["200", ["!comparison"]],
+    ]);
+  });
+
   it("reads the message the raise was given", async () => {
     const units = await unitsOf(
       routeRaising([

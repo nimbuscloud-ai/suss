@@ -841,6 +841,40 @@ export function returnBranch(
 ): TerminalBranch {
   const range = rangeOf(statement);
   const writtenBody = returnedBodyShape(statement);
+  return responseBranchAt(
+    range,
+    returnStatusReading(statement, ctx),
+    writtenBody === null
+      ? ctx.responseShape.reading
+      : writtenReading(writtenBody, range),
+    ctx,
+  );
+}
+
+/**
+ * A route body that runs off its end returns None, which the library
+ * sends the same way as a bare `return`.
+ */
+function fallthroughBranch(
+  definitionNode: PyNode,
+  ctx: TerminalContext,
+): TerminalBranch {
+  return responseBranchAt(
+    rangeOf(definitionNode),
+    ctx.pattern.statusFromReturnedTuple === true
+      ? absentReading
+      : ctx.declaredStatus.reading,
+    ctx.responseShape.reading,
+    ctx,
+  );
+}
+
+function responseBranchAt(
+  range: SourceRange,
+  status: Reading<number>,
+  body: Reading<TypeShape>,
+  ctx: TerminalContext,
+): TerminalBranch {
   return {
     terminal: {
       kind: "response",
@@ -857,17 +891,12 @@ export function returnBranch(
       location: range,
     },
     statusCodeReading: {
-      reading: returnStatusReading(statement, ctx),
+      reading: status,
       ...(ctx.declaredStatus.libraryDefault !== undefined
         ? { libraryDefault: ctx.declaredStatus.libraryDefault }
         : {}),
     },
-    bodyShapeReading: {
-      reading:
-        writtenBody === null
-          ? ctx.responseShape.reading
-          : writtenReading(writtenBody, range),
-    },
+    bodyShapeReading: { reading: body },
     location: range,
   };
 }
@@ -900,9 +929,9 @@ interface PerTerminalOptions {
 }
 
 /**
- * One branch per terminal the body writes, with the conditions that gate
- * it. Null when the body writes fewer than two terminals, and then the
- * caller keeps the single declared branch.
+ * One branch per terminal the body writes, and one for running off its
+ * end, with the conditions that gate each. Null when that comes to a
+ * single branch, and then the caller keeps the single declared branch.
  */
 function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
   const body = field(options.definitionNode, "body");
@@ -919,7 +948,7 @@ function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
     terminals.length === 1 &&
     terminals[0]?.type === "return" &&
     returnedBodyShape(terminals[0].statement) !== null;
-  if (terminals.length < 2 && !soleReturnWritesBody) {
+  if (terminals.length === 0) {
     return null;
   }
 
@@ -929,6 +958,7 @@ function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
     raised,
     effects: options.effects,
     branchOf: (found) => terminalBranchOf(found, options.ctx),
+    fallthrough: fallthroughBranch(options.definitionNode, options.ctx),
     facts: options.ctx.facts,
   });
   return branches.length > 1 || soleReturnWritesBody ? branches : null;
