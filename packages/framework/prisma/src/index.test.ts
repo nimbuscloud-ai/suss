@@ -985,7 +985,7 @@ describe("the storage system a project's schema declares", () => {
     writeProject(path.join(root, "unschemed"), null);
   });
 
-  function systemsIn(project: string): string[] {
+  function systemsIn(project: string): (string | null)[] {
     const fixture = createFixtureProject(path.join(root, project), "src/*.ts");
     const sourceFile = fixture.getSourceFileOrThrow(
       path.join(root, project, "src/api.ts"),
