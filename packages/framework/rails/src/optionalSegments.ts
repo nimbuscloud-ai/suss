@@ -119,11 +119,20 @@ function asOnePath(paths: readonly string[]): string | null {
 }
 
 /**
- * The route path with its optional groups written as the set of paths
- * they allow. A path with no group comes back as it is, and so does one
- * whose parentheses do not balance.
+ * A Rails glob segment such as `*rest` takes the rest of the path, one
+ * segment or more, which the path matcher spells `:rest+`.
  */
-export function pathWithOptionalGroups(path: string): string {
+function withGlobsAsHoles(path: string): string {
+  return path.replace(/(^|[/(])\*([A-Za-z_]\w*)/g, "$1:$2+");
+}
+
+/**
+ * The route path with its optional groups written as the set of paths
+ * they allow, and each glob as a hole of one segment or more. A path
+ * whose parentheses do not balance keeps its groups as they are.
+ */
+export function pathWithOptionalGroups(written: string): string {
+  const path = withGlobsAsHoles(written);
   if (!path.includes("(")) {
     return path;
   }

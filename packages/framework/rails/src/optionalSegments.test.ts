@@ -33,6 +33,13 @@ describe("pathWithOptionalGroups", () => {
     );
   });
 
+  it("reads a glob as a hole that takes one segment or more", () => {
+    expect(pathWithOptionalGroups("/files/*rest")).toBe("/files/:rest+");
+    expect(pathWithOptionalGroups("/media/:id/(*any)")).toBe(
+      "/media/:id(|/:any+)",
+    );
+  });
+
   it("leaves a path whose parentheses do not balance as it is", () => {
     expect(pathWithOptionalGroups("/a(/b")).toBe("/a(/b");
     expect(pathWithOptionalGroups("/a)/b(")).toBe("/a)/b(");
