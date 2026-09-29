@@ -71,10 +71,13 @@ export function extractEntryFor(
   reads: readonly ReadEntry[],
   language: string,
 ): ExtractEntry | undefined {
-  return reads.find(
+  const inLanguage = reads.filter(
     (entry): entry is ExtractEntry =>
       entry.kind === "extract" && entry.language === language,
   );
+  // A command run at the root reads the root's own entry before one for
+  // a project in a folder below it.
+  return inLanguage.find((entry) => entry.dir === undefined) ?? inLanguage[0];
 }
 
 /**
@@ -96,8 +99,9 @@ export function commandFor(entry: ReadEntry): string {
   if (entry.kind === "contract") {
     return `suss contract --from ${entry.from} ${entry.file}`;
   }
+  const dir = entry.dir === undefined ? "" : ` --dir ${entry.dir}`;
   const project = entry.project === undefined ? "" : ` -p ${entry.project}`;
-  return `suss extract --lang ${entry.language}${project} ${packFlags(entry.packs)}`;
+  return `suss extract --lang ${entry.language}${dir}${project} ${packFlags(entry.packs)}`;
 }
 
 export function packFlags(packs: readonly string[]): string {
@@ -179,7 +183,7 @@ async function runEntry(
     });
   }
   return await extract({
-    dir: root,
+    dir: path.resolve(root, entry.dir ?? "."),
     frameworks: packSpecsOf(entry, root),
     output: out,
     lang: entry.language as Language,

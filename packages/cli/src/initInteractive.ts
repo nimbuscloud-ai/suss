@@ -22,6 +22,7 @@ import {
   declaredPacks,
   formatInitReport,
   inspectProject,
+  readCommands,
   recognizedWithoutPackSentence,
   unnamedLanguageSentence,
   unnamedLanguages,
@@ -29,7 +30,7 @@ import {
 import { run } from "./processRun.js";
 import { PROJECT_FILE, projectFileFor } from "./projectFile.js";
 import { writeProjectSetup } from "./projectSetup.js";
-import { isProjectIn, projectsBelow } from "./projectsBelow.js";
+import { filesBelow, isProjectIn, projectsBelow } from "./projectsBelow.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
@@ -42,6 +43,12 @@ interface Target {
   directory: string;
   label: string;
   report: InitReport;
+  /**
+   * Set for a folder found only by its package.json. Tooling and docs
+   * folders have one too, so such a folder is reported only when a pack
+   * counts there or it depends on a framework suss knows.
+   */
+  onlyWithPacks?: boolean;
 }
 
 export interface InteractiveInitOptions {
@@ -96,6 +103,7 @@ export async function initInteractive(
     return 0;
   }
 
+  reportRecognizedWithoutPack(targets);
   reportUnread(targets);
 
   const chosen = await chooseTargets(withPacks);
@@ -124,38 +132,74 @@ export async function initInteractive(
 
 async function findTargets(root: string): Promise<Target[]> {
   const workspace = readWorkspace(root);
-  const directories: Array<Pick<Target, "directory" | "label">> =
-    workspace.packages.length === 0
-      ? [{ directory: ".", label: path.basename(root) }]
-      : (workspace.packages as Workspace[]).map((pkg) => ({
-          directory: pkg.directory,
-          label: pkg.name ?? pkg.directory,
-        }));
-
-  // An npm workspace file never lists a Python or Ruby service next to
-  // the packages, or a root that is itself a Rails app, so look for those.
-  for (const directory of projectDirectoriesAtOrBelow(root)) {
+  const inWorkspace = workspace.packages.length > 0;
+  const directories: Array<Omit<Target, "report">> = inWorkspace
+    ? (workspace.packages as Workspace[]).map((pkg) => ({
+        directory: pkg.directory,
+        label: pkg.name ?? pkg.directory,
+      }))
+    : [{ directory: ".", label: path.basename(root) }];
+  const add = (directory: string, onlyWithPacks: boolean): void => {
     if (!directories.some((known) => known.directory === directory)) {
-      directories.push({ directory, label: directory });
+      directories.push({ directory, label: directory, onlyWithPacks });
     }
+  };
+
+  // A workspace file never lists a Python or Ruby service next to the
+  // packages, and a server and a client folder often sit side by side
+  // with no workspace file at all, so look for every project below.
+  for (const directory of pythonAndRubyProjectsAtOrBelow(root)) {
+    add(directory, false);
+  }
+
+  for (const manifest of filesBelow(root, ["package.json"])) {
+    add(path.dirname(manifest), true);
   }
 
   const targets: Target[] = [];
-  for (const { directory, label } of directories) {
+  for (const known of directories) {
     targets.push({
-      directory,
-      label,
-      report: await inspectProject(path.join(root, directory)),
+      ...known,
+      report: await inspectProject(path.join(root, known.directory)),
     });
   }
 
+  if (inWorkspace && !directories.some((known) => known.directory === ".")) {
+    targets.push(await workspaceRootContracts(root));
+  }
+
   return withoutLanguagesCoveredBelow(targets).filter((target) =>
-    worthReporting(target.report),
+    target.onlyWithPacks === true
+      ? readsSomething(target.report)
+      : worthReporting(target.report),
   );
 }
 
+/**
+ * A spec kept in a folder of its own at a workspace root belongs to no
+ * package. The root's code is the packages', which have their own
+ * targets, so from the root only the contracts are read.
+ */
+async function workspaceRootContracts(root: string): Promise<Target> {
+  const report = await inspectProject(root);
+  return {
+    directory: ".",
+    label: path.basename(root),
+    onlyWithPacks: true,
+    report: {
+      ...report,
+      suggestions: report.suggestions.filter(
+        (suggestion) => suggestion.kind === "contract",
+      ),
+      languages: [],
+      unread: [],
+      recognizedWithoutPack: [],
+    },
+  };
+}
+
 /** The root and the directories below it that declare a Python or Ruby project of their own. */
-function projectDirectoriesAtOrBelow(root: string): string[] {
+function pythonAndRubyProjectsAtOrBelow(root: string): string[] {
   const found = new Set<string>();
   for (const language of ["python", "ruby"] as const) {
     if (isProjectIn(root, language)) {
@@ -201,10 +245,13 @@ function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
  * the user still needs to hear about it.
  */
 const worthReporting = (report: InitReport): boolean =>
-  declaredPacks(report).length > 0 ||
+  readsSomething(report) ||
   (report.unread ?? []).length > 0 ||
-  (report.recognizedWithoutPack ?? []).length > 0 ||
   unnamedLanguages(report).length > 0;
+
+const readsSomething = (report: InitReport): boolean =>
+  declaredPacks(report).length > 0 ||
+  (report.recognizedWithoutPack ?? []).length > 0;
 
 function reportRecognizedWithoutPack(targets: Target[]): void {
   const names = new Set(
@@ -283,7 +330,7 @@ function printable(root: string, targets: Target[]): string {
   return targets
     .map(
       (t) =>
-        `${"═".repeat(4)} ${t.directory} ${"═".repeat(4)}\n\n${formatInitReport(t.report)}`,
+        `${"═".repeat(4)} ${t.directory} ${"═".repeat(4)}\n\n${formatInitReport(t.report, t.directory)}`,
     )
     .join("\n");
 }
@@ -492,68 +539,18 @@ interface RunnableCommand {
   needsConfig?: string[];
 }
 
+/** The same commands the printed form shows, minus an extract that would come back empty. */
 function runCommandsFor(target: Target): RunnableCommand[] {
-  const commands: RunnableCommand[] = [];
-  const prefix = target.directory === "." ? "" : `${target.directory}/`;
-  const out = (name: string) => `summaries/${prefix}${name}.json`;
-
-  const code = target.report.suggestions.filter((s) => s.kind !== "contract");
-  const languages = [...new Set(code.map((s) => s.language ?? "typescript"))];
-  for (const language of languages) {
-    // One command per language, because each pack works with one
-    // language's adapter.
-    const args = ["extract"];
-    if (target.directory !== ".") {
-      args.push("--dir", target.directory);
-    }
-    if (language !== "typescript") {
-      args.push("--lang", language);
-    }
-    for (const item of code.filter(
-      (s) => (s.language ?? "typescript") === language,
-    )) {
-      args.push(
-        "-f",
-        item.configuration === undefined
-          ? item.name
-          : `${item.name}=${item.configuration.file}`,
-      );
-    }
-    args.push("-o", out(languages.length === 1 ? "code" : language));
-    const needsConfig = code
-      .filter((s) => (s.language ?? "typescript") === language)
-      .filter((s) => s.configuration?.required === true)
-      .map((s) => path.join(target.directory, s.configuration?.file ?? ""));
-    commands.push({
+  return readCommands(target.report, target.directory)
+    .filter((command) => !command.effectsOnly)
+    .map((command) => ({
       bin: "npx",
-      args: ["suss", ...args],
-      display: `suss ${args.join(" ")}`,
-      ...(needsConfig.length > 0 ? { needsConfig } : {}),
-    });
-  }
-
-  for (const item of target.report.suggestions.filter(
-    (s) => s.kind === "contract",
-  )) {
-    if (item.file === undefined) {
-      continue;
-    }
-    const args = [
-      "contract",
-      "--from",
-      item.name,
-      path.join(target.directory === "." ? "" : target.directory, item.file),
-      "-o",
-      out(item.name),
-    ];
-    commands.push({
-      bin: "npx",
-      args: ["suss", ...args],
-      display: `suss ${args.join(" ")}`,
-    });
-  }
-
-  return commands;
+      args: ["suss", ...command.args],
+      display: `suss ${command.args.join(" ")}`,
+      ...(command.needsConfig.length > 0
+        ? { needsConfig: command.needsConfig }
+        : {}),
+    }));
 }
 
 /**

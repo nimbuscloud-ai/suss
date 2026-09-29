@@ -28,13 +28,14 @@ import { builtinDeclarations } from "./extract.js";
 import { readSubmodules } from "./gitSubmodules.js";
 import {
   detectLanguages,
+  firstSourceMatching,
   LANGUAGE_LABEL,
   projectFilesOf,
   SKIP_DIRECTORIES,
 } from "./language.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
 
-import type { PackConfiguration } from "@suss/ir-core";
+import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
 import type { UnreadDependencies } from "./dependencyManifests.js";
 import type { Language } from "./language.js";
 
@@ -61,6 +62,11 @@ export interface PackSuggestion {
    * Every project in that language can use it, and none declares it.
    */
   shippedWithLanguage?: boolean;
+  /**
+   * For a pack that comes with the language, a file that calls the
+   * library. With one, the pack is a reason to set the project up.
+   */
+  calledIn?: string;
   configuration?: PackConfiguration;
 }
 
@@ -80,22 +86,36 @@ export interface InitReport {
 type Ecosystem = "npm" | "pypi" | "rubygems";
 
 /**
- * Web frameworks that no pack reads yet. When no pack matches a Flask
- * project, the report says that suss recognises Flask and cannot read it
- * yet. Saying only that nothing matched would leave the user guessing
- * (#229).
+ * Frameworks and clients that no pack reads yet. The report mentions
+ * each one the project depends on, including when other packs
+ * matched: a Django app whose only match is `requests` would otherwise
+ * look fully read (#229).
  */
 const RECOGNIZED_WITHOUT_A_PACK: Array<{
   ecosystem: Ecosystem;
   dependency: string;
+  /** What to call it, when the package name is not what people call it. */
+  label?: string;
 }> = [
   { ecosystem: "pypi", dependency: "flask" },
   { ecosystem: "pypi", dependency: "quart" },
   { ecosystem: "pypi", dependency: "django" },
+  {
+    ecosystem: "pypi",
+    dependency: "djangorestframework",
+    label: "Django REST framework",
+  },
   { ecosystem: "pypi", dependency: "bottle" },
   { ecosystem: "npm", dependency: "koa" },
   { ecosystem: "npm", dependency: "@hapi/hapi" },
+  { ecosystem: "npm", dependency: "@trpc/server", label: "tRPC" },
+  {
+    ecosystem: "npm",
+    dependency: "@angular/common",
+    label: "Angular's HttpClient",
+  },
   { ecosystem: "rubygems", dependency: "sinatra" },
+  { ecosystem: "rubygems", dependency: "grape" },
 ];
 
 const BY_FILE: Array<{
@@ -148,8 +168,11 @@ const BY_FILE: Array<{
   },
   {
     // The OpenAPI reader also reads Swagger 2.0, and a Swagger project
-    // usually calls its file swagger.json.
-    matches: (f) => /^(openapi|swagger)\.(ya?ml|json)$/.test(f),
+    // usually calls its file swagger.json. A spec named after the product
+    // is found by the version line at its top.
+    matches: (f, file) =>
+      /^(openapi|swagger)\.(ya?ml|json)$/.test(f) ||
+      (/\.(ya?ml|json)$/.test(f) && declaresOpenApiVersion(file)),
     name: "openapi",
     packageName: "@suss/contract-openapi",
     describe: (p) => `an OpenAPI document at ${p}`,
@@ -181,6 +204,38 @@ function declaresTypes(file: string): boolean {
  */
 function declaresOperations(file: string): boolean {
   return describesOperations(textOf(file));
+}
+
+/** How much of a JSON or YAML file to read when looking for an OpenAPI version. */
+const SPEC_HEAD_BYTES = 4096;
+
+/**
+ * Whether the start of a JSON or YAML file says which OpenAPI or Swagger
+ * version it follows. Every spec starts with that key or has it near the
+ * top, so the rest of the file is not read.
+ */
+function declaresOpenApiVersion(file: string): boolean {
+  const head = headOf(file, SPEC_HEAD_BYTES);
+  return (
+    /"(openapi"\s*:\s*"3|swagger"\s*:\s*"2)\./.test(head) ||
+    /^(openapi:\s*["']?3|swagger:\s*["']?2)\./m.test(head)
+  );
+}
+
+function headOf(file: string, bytes: number): string {
+  let handle: number | undefined;
+  try {
+    handle = fs.openSync(file, "r");
+    const buffer = Buffer.alloc(bytes);
+    const read = fs.readSync(handle, buffer, 0, bytes, 0);
+    return buffer.subarray(0, read).toString("utf8");
+  } catch {
+    return "";
+  } finally {
+    if (handle !== undefined) {
+      fs.closeSync(handle);
+    }
+  }
 }
 
 function textOf(file: string): string {
@@ -295,13 +350,23 @@ export async function inspectProject(root: string): Promise<InitReport> {
       continue;
     }
 
+    const calledIn = callOfShippedLibrary(
+      resolved,
+      language,
+      pack.declares,
+      suggestions,
+    );
     add({
       name: pack.name,
       packageName: pack.declares.package,
-      because: `${LANGUAGE_LABEL[language]} sources, and ${pack.name} reads what the language itself ships`,
+      because:
+        calledIn === null
+          ? `${LANGUAGE_LABEL[language]} sources, and ${pack.name} reads what the language itself ships`
+          : `${pack.name} is called in ${calledIn}`,
       kind: pack.declares.kind,
       language,
       shippedWithLanguage: true,
+      ...(calledIn === null ? {} : { calledIn }),
     });
   }
 
@@ -311,22 +376,30 @@ export async function inspectProject(root: string): Promise<InitReport> {
 
   const recognizedWithoutPack = [
     ...new Set(
-      declared.named
-        .filter((library) =>
-          RECOGNIZED_WITHOUT_A_PACK.some(
-            (entry) =>
-              entry.ecosystem === library.ecosystem &&
-              entry.dependency === library.name,
-          ),
-        )
-        .map((library) => library.name),
+      declared.named.flatMap((library) => {
+        const entry = RECOGNIZED_WITHOUT_A_PACK.find(
+          (candidate) =>
+            candidate.ecosystem === library.ecosystem &&
+            candidate.dependency === library.name,
+        );
+        return entry === undefined ? [] : [entry.label ?? entry.dependency];
+      }),
     ),
   ];
 
+  // A pack that comes with the language says nothing about a project in
+  // which no pack of that language counts, so it is left out there.
+  const languagesThatCount = new Set(
+    suggestions.filter(countsForProject).map(languageOf),
+  );
   return {
     root: resolved,
     tsconfig: tsconfig ?? null,
-    suggestions,
+    suggestions: suggestions.filter(
+      (suggestion) =>
+        suggestion.kind === "contract" ||
+        languagesThatCount.has(languageOf(suggestion)),
+    ),
     languages,
     unread: declared.unread,
     recognizedWithoutPack,
@@ -378,6 +451,33 @@ function declaredLibraries(root: string): {
   }
 
   return { named, unread };
+}
+
+/**
+ * A file in the project that calls a library the language ships, or null.
+ * The search only matters when nothing else in that language led to a
+ * pack, so it is skipped otherwise, which keeps init fast on a large
+ * project that already has its framework's pack.
+ */
+function callOfShippedLibrary(
+  root: string,
+  language: Language,
+  declares: PackDeclaration,
+  suggestions: ReadonlyArray<PackSuggestion>,
+): string | null {
+  if (declares.sourcePattern === undefined) {
+    return null;
+  }
+
+  const languageAlreadyCounts = suggestions.some(
+    (suggestion) =>
+      suggestion.language === language && countsForProject(suggestion),
+  );
+  if (languageAlreadyCounts) {
+    return null;
+  }
+
+  return firstSourceMatching(root, language, declares.sourcePattern);
 }
 
 /**
@@ -526,25 +626,124 @@ function contractOutput(
   if (sameReader < 2 || item.file === undefined) {
     return item.name;
   }
-  const slug = item.file
-    .replace(/\.[^./]+$/, "")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return `${item.name}-${slug}`;
+  return `${item.name}-${slugOf(item.file.replace(/\.[^./]+$/, ""))}`;
 }
 
 /**
- * The packs that something in this project led to. A pack for a library
- * that comes with the language fits every project in it, so it alone is
- * no reason to set suss up here.
+ * Whether a pack is a reason to set the project up. A pack for a library
+ * that comes with the language fits every project in it, so it counts
+ * only once a file in the project calls that library.
  */
-export function declaredPacks(report: InitReport): PackSuggestion[] {
-  return report.suggestions.filter(
-    (suggestion) => suggestion.shippedWithLanguage !== true,
+export function countsForProject(suggestion: PackSuggestion): boolean {
+  return (
+    suggestion.shippedWithLanguage !== true || suggestion.calledIn !== undefined
   );
 }
 
-export function formatInitReport(report: InitReport): string {
+/** The packs that something in this project led to. */
+export function declaredPacks(report: InitReport): PackSuggestion[] {
+  return report.suggestions.filter(countsForProject);
+}
+
+/** One `suss` command init prints and the guided form runs, from the directory init ran in. */
+export interface ReadCommand {
+  /** The arguments after `suss`. */
+  args: string[];
+  /** For an extract, the language it reads. */
+  language?: Language;
+  /**
+   * True when every pack in an extract reads calls inside units that
+   * another pack finds first, so run on its own it comes back empty.
+   */
+  effectsOnly: boolean;
+  /** Config files, from the directory init ran in, that a pack here cannot run without. */
+  needsConfig: string[];
+}
+
+/**
+ * The extract and contract commands for one project, written to run from
+ * the directory init ran in: `directory` is where the project is from
+ * there. Every output goes into one `summaries/` folder, named for the
+ * project, so one `check` over that folder sees every side.
+ */
+export function readCommands(
+  report: InitReport,
+  directory = ".",
+): ReadCommand[] {
+  const prefix = directory === "." ? "" : `${slugOf(directory)}-`;
+  const code = report.suggestions.filter((s) => s.kind !== "contract");
+  // A language gets a command once one of its packs counts. The other
+  // packs in that language come along, since they read the same files.
+  const languages = [...new Set(code.filter(countsForProject).map(languageOf))];
+  const mixed = languages.length > 1 || (report.languages ?? []).length > 1;
+
+  const extracts = languages.map((language): ReadCommand => {
+    const items = code.filter((item) => languageOf(item) === language);
+    const args = ["extract"];
+    if (directory !== ".") {
+      args.push("--dir", directory);
+    }
+    // A directory with more than one language is read as whichever its
+    // manifest says, so each command says which one it wants.
+    if (language !== "typescript" || mixed) {
+      args.push("--lang", language);
+    }
+    for (const item of items) {
+      args.push(
+        "-f",
+        item.configuration === undefined
+          ? item.name
+          : `${item.name}=${path.join(directory, item.configuration.file)}`,
+      );
+    }
+    const name = languages.length === 1 ? "code" : language;
+    args.push("-o", `summaries/${prefix}${name}.json`);
+
+    return {
+      args,
+      language,
+      effectsOnly: !items.some(
+        (item) => countsForProject(item) && item.kind !== "effects",
+      ),
+      needsConfig: items
+        .filter((item) => item.configuration?.required === true)
+        .map((item) => path.join(directory, item.configuration?.file ?? "")),
+    };
+  });
+
+  const contracts = report.suggestions.filter((s) => s.kind === "contract");
+  const contractCommands = contracts.flatMap((item): ReadCommand[] =>
+    item.file === undefined
+      ? []
+      : [
+          {
+            args: [
+              "contract",
+              "--from",
+              item.name,
+              path.join(directory, item.file),
+              "-o",
+              `summaries/${prefix}${contractOutput(item, contracts)}.json`,
+            ],
+            effectsOnly: false,
+            needsConfig: [],
+          },
+        ],
+  );
+
+  return [...extracts, ...contractCommands];
+}
+
+function slugOf(text: string): string {
+  return text.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+/**
+ * The printed report for one project. `directory` is where the project
+ * is from the directory init ran in, and every path in the commands
+ * starts from there, so a user can paste them without changing folder.
+ */
+export function formatInitReport(report: InitReport, directory = "."): string {
   const lines: string[] = [];
   const { suggestions } = report;
 
@@ -560,10 +759,7 @@ export function formatInitReport(report: InitReport): string {
       dim("  recognizes, and this project's dependencies name none of them."),
     );
     lines.push(dim("  Run `suss --help` for the built-in list."));
-    for (const name of report.recognizedWithoutPack ?? []) {
-      lines.push("");
-      lines.push(`${yellow("!")} ${recognizedWithoutPackSentence(name)}`);
-    }
+    lines.push(...recognizedWithoutPackLines(report));
     lines.push(...unreadLines(report));
     lines.push(...unnamedLanguageLines(report));
     return `${lines.join("\n")}\n`;
@@ -571,11 +767,6 @@ export function formatInitReport(report: InitReport): string {
 
   const frameworks = suggestions.filter((s) => s.kind === "framework");
   const clients = suggestions.filter((s) => s.kind === "client");
-  // A pack for a library that comes with the language fits any project,
-  // so it does not show what this project is built on.
-  const declaredCode = [...frameworks, ...clients].filter(
-    (suggestion) => suggestion.shippedWithLanguage !== true,
-  );
   const contracts = suggestions.filter((s) => s.kind === "contract");
   const effects = suggestions.filter((s) => s.kind === "effects");
 
@@ -607,34 +798,24 @@ export function formatInitReport(report: InitReport): string {
 
   lines.push(bold("2. Read each side into one folder"));
   lines.push("");
-  const code = [...frameworks, ...clients];
-  if (declaredCode.length > 0) {
-    lines.push(...configurationLines([...code, ...effects], report.root));
-    // One command per language, because each pack works with one
-    // language's adapter.
-    lines.push(...extractCommands([...code, ...effects]));
-  } else if (effects.length > 0) {
-    // An effects pack run alone writes an empty file, so print a warning
-    // in place of a runnable command.
+  const commands = readCommands(report, directory);
+  const runnable = commands.filter((command) => !command.effectsOnly);
+  if (runnable.some((command) => command.args[0] === "extract")) {
     lines.push(
-      `   ${dim(`suss extract ${[...code, ...effects].map((e) => `-f ${e.name}`).join(" ")} ...`)}`,
+      ...configurationLines(
+        [...frameworks, ...clients, ...effects],
+        report.root,
+        directory,
+      ),
     );
-    lines.push("");
-    lines.push(
-      `   ${yellow("!")} ${listOfNames(effects)} ${effects.length === 1 ? "reads calls" : "read calls"} inside handlers and`,
-    );
-    lines.push(
-      "     components that another pack finds first, so on its own it comes",
-    );
-    lines.push(
-      "     back empty. Add the pack for whatever serves this project, and",
-    );
-    lines.push("     see `suss --help` for the built-in list.");
   }
-  for (const item of contracts) {
-    lines.push(
-      `   suss contract --from ${item.name} ${item.file ?? "<path>"} -o summaries/${contractOutput(item, contracts)}.json`,
-    );
+  // One extract per language, because each pack works with one
+  // language's adapter.
+  for (const command of runnable) {
+    lines.push(`   suss ${command.args.join(" ")}`);
+  }
+  for (const command of commands.filter((one) => one.effectsOnly)) {
+    lines.push(...effectsOnlyLines(command, effects));
   }
   lines.push("");
 
@@ -677,7 +858,10 @@ export function formatInitReport(report: InitReport): string {
     dim("   as a CI step unchanged. Add --fail-on warning to gate harder."),
   );
 
-  if (report.tsconfig === null && readsTypeScript(suggestions)) {
+  const readsTypeScript = runnable.some(
+    (command) => command.language === "typescript",
+  );
+  if (report.tsconfig === null && readsTypeScript) {
     lines.push("");
     lines.push(
       dim(
@@ -687,36 +871,36 @@ export function formatInitReport(report: InitReport): string {
     lines.push(dim("   at a particular one instead."));
   }
 
+  lines.push(...recognizedWithoutPackLines(report));
   lines.push(...unreadLines(report));
   lines.push(...unnamedLanguageLines(report));
 
   return `${lines.join("\n")}\n`;
 }
 
-const readsTypeScript = (suggestions: ReadonlyArray<PackSuggestion>): boolean =>
-  suggestions.some((s) => (s.language ?? "typescript") === "typescript");
-
 const languageOf = (suggestion: PackSuggestion): Language =>
   suggestion.language ?? "typescript";
 
-function extractCommands(items: ReadonlyArray<PackSuggestion>): string[] {
-  const languages = [...new Set(items.map(languageOf))];
-  return languages.map((language) => {
-    const flags = items
-      .filter((item) => languageOf(item) === language)
-      .map((item) =>
-        item.configuration === undefined
-          ? `-f ${item.name}`
-          : `-f ${item.name}=${item.configuration.file}`,
-      )
-      .join(" ");
-    const output =
-      languages.length === 1
-        ? "summaries/code.json"
-        : `summaries/${language}.json`;
-    const reading = language === "typescript" ? "" : ` --lang ${language}`;
-    return `   suss extract${reading} ${flags} -o ${output}`;
-  });
+/**
+ * An effects pack run alone writes an empty file, so the report prints
+ * the command unfinished with a warning in place of a runnable one.
+ */
+function effectsOnlyLines(
+  command: ReadCommand,
+  effects: ReadonlyArray<PackSuggestion>,
+): string[] {
+  const output = command.args.indexOf("-o");
+  const unfinished =
+    output === -1 ? command.args : command.args.slice(0, output);
+  const named = effects.filter((item) => languageOf(item) === command.language);
+  return [
+    `   ${dim(`suss ${unfinished.join(" ")} ...`)}`,
+    "",
+    `   ${yellow("!")} ${listOfNames(named)} ${named.length === 1 ? "reads calls" : "read calls"} inside handlers and`,
+    "     components that another pack finds first, so on its own it comes",
+    "     back empty. Add the pack for whatever serves this project, and",
+    "     see `suss --help` for the built-in list.",
+  ];
 }
 
 /**
@@ -727,6 +911,7 @@ function extractCommands(items: ReadonlyArray<PackSuggestion>): string[] {
 function configurationLines(
   items: ReadonlyArray<PackSuggestion>,
   projectRoot: string,
+  directory: string,
 ): string[] {
   const lines: string[] = [];
   for (const item of items) {
@@ -736,7 +921,12 @@ function configurationLines(
     }
 
     lines.push(
-      ...packConfigurationLines(item.name, configuration, projectRoot),
+      ...packConfigurationLines(
+        item.name,
+        configuration,
+        projectRoot,
+        path.join(directory, configuration.file),
+      ),
     );
     lines.push("");
   }
@@ -747,24 +937,23 @@ function packConfigurationLines(
   pack: string,
   configuration: PackConfiguration,
   projectRoot: string,
+  shown: string,
 ): string[] {
   if (fs.existsSync(path.join(projectRoot, configuration.file))) {
-    return [
-      `   ${cyan(pack)} reads ${configuration.file}, which is already here.`,
-    ];
+    return [`   ${cyan(pack)} reads ${shown}, which is already here.`];
   }
 
   const values = valuesFor(configuration, projectRoot);
   if (values !== null) {
     return [
-      `   ${cyan(pack)} reads ${configuration.file}, and \`suss init --write\` writes this to it:`,
+      `   ${cyan(pack)} reads ${shown}, and \`suss init --write\` writes this to it:`,
       dim(`     ${JSON.stringify(values)}`),
     ];
   }
 
   return [
     `   ${cyan(pack)} ${configurationNeed(configuration)} ${configuration.why}`,
-    dim(`   Write that to ${configuration.file}:`),
+    dim(`   Write that to ${shown}:`),
     dim(`     ${JSON.stringify(configuration.example)}`),
   ];
 }
@@ -824,7 +1013,14 @@ export function unnamedLanguages(report: InitReport): Language[] {
 }
 
 export function recognizedWithoutPackSentence(name: string): string {
-  return `This project depends on ${name}, which suss knows and has no pack for yet, so those routes are not read.`;
+  return `This project depends on ${name}, which suss knows and has no pack for yet, so the code built on it is not read.`;
+}
+
+function recognizedWithoutPackLines(report: InitReport): string[] {
+  return (report.recognizedWithoutPack ?? []).flatMap((name) => [
+    "",
+    `${yellow("!")} ${recognizedWithoutPackSentence(name)}`,
+  ]);
 }
 
 export function unnamedLanguageSentence(language: Language): string {

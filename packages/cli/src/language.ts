@@ -13,6 +13,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { SOURCE_SUFFIXES } from "@suss/adapter-typescript";
+
 export type Language = "typescript" | "python" | "ruby";
 
 export const LANGUAGES: readonly Language[] = ["typescript", "python", "ruby"];
@@ -56,7 +58,7 @@ interface LanguageMarkers {
 const MARKERS: Record<Language, LanguageMarkers> = {
   typescript: {
     projectFiles: ["package.json", "tsconfig.json", "jsconfig.json"],
-    sourceSuffixes: [".ts", ".tsx"],
+    sourceSuffixes: SOURCE_SUFFIXES,
   },
   python: {
     projectFiles: [
@@ -138,6 +140,93 @@ export function languageOfProject(
     };
   }
   return { language: first };
+}
+
+/** How far and how wide `firstSourceMatching` looks before it gives up. */
+const MATCH_DEPTH = 10;
+const MATCH_FILES = 5000;
+/** A file this large is a bundle or generated code, not something the project wrote. */
+const MATCH_FILE_BYTES = 512 * 1024;
+
+/**
+ * The first source file in `language` under `root` whose text matches
+ * `pattern`, relative to `root`, or null when none does. A directory that
+ * declares a project of its own in that language is left out, because
+ * init sets that project up separately.
+ */
+export function firstSourceMatching(
+  root: string,
+  language: Language,
+  pattern: RegExp,
+): string | null {
+  const suffixes = MARKERS[language].sourceSuffixes;
+  let budget = MATCH_FILES;
+
+  const walk = (dir: string, depth: number): string | null => {
+    if (depth > MATCH_DEPTH || budget <= 0) {
+      return null;
+    }
+    if (depth > 0 && projectFilesOf(dir, language).length > 0) {
+      return null;
+    }
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+
+    const directories: string[] = [];
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) {
+        continue;
+      }
+
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        directories.push(full);
+        continue;
+      }
+
+      if (
+        !suffixes.some((suffix) => entry.name.endsWith(suffix)) ||
+        isDeclarationOrBundle(entry.name)
+      ) {
+        continue;
+      }
+
+      budget -= 1;
+      if (matchesText(full, pattern)) {
+        return path.relative(root, full);
+      }
+    }
+
+    for (const directory of directories) {
+      const found = walk(directory, depth + 1);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
+  };
+
+  return walk(root, 0);
+}
+
+/** A type declaration or a minified copy of a library, which says nothing about what the project calls. */
+const isDeclarationOrBundle = (name: string): boolean =>
+  name.endsWith(".d.ts") || /\.min\.[cm]?js$/.test(name);
+
+function matchesText(file: string, pattern: RegExp): boolean {
+  try {
+    if (fs.statSync(file).size > MATCH_FILE_BYTES) {
+      return false;
+    }
+    return pattern.test(fs.readFileSync(file, "utf8"));
+  } catch {
+    return false;
+  }
 }
 
 /** Stops three levels down, because a project nearly always has source files nearer the top than that. */

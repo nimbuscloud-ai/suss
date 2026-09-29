@@ -90,6 +90,120 @@ describe("suss init, guided", () => {
     answers.push(...Array<boolean>(count).fill(false));
   }
 
+  async function printedBy(run: () => Promise<number>): Promise<string> {
+    const written: string[] = [];
+    const spy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      });
+    try {
+      expect(await run()).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+    return written.join("");
+  }
+
+  describe("finding the projects", () => {
+    it("reads a client folder under a Python root as its own project, with commands that run from the root", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["fastapi"]\n',
+      );
+      write("app/main.py", "from fastapi import FastAPI\n");
+      project("frontend", "frontend", []);
+      write(
+        "frontend/src/api.ts",
+        "export const load = () => fetch('/api/orders');\n",
+      );
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("═ frontend ═");
+      expect(text).toContain("fetch is called in src/api.ts");
+      expect(text).toContain(
+        "suss extract --dir frontend -f fetch -f node -o summaries/frontend-code.json",
+      );
+      expect(text).toContain(
+        "suss extract --lang python -f fastapi -o summaries/code.json",
+      );
+      // The root's own TypeScript is the frontend's, which has its own command.
+      expect(text).not.toMatch(/^ {3}suss extract -f fetch/m);
+    });
+
+    it("finds a server folder and a client folder that no workspace file lists", async () => {
+      project(".", "monorepo", []);
+      project("server", "server", ["@nestjs/common"]);
+      project("frontend", "frontend", ["react"]);
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("═ server ═");
+      expect(text).toContain("═ frontend ═");
+      expect(text).toContain("suss extract --dir server -f nestjs-rest");
+      expect(text).toContain("suss extract --dir frontend -f react");
+    });
+
+    it("leaves out a folder whose only reason would be a library the language ships", async () => {
+      project(".", "monorepo", []);
+      project("server", "server", ["express"]);
+      project("scripts", "scripts", []);
+      write("scripts/build.ts", "console.log('built');\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("suss extract --dir server -f express");
+      expect(text).not.toContain("═ scripts ═");
+    });
+
+    it("reads a spec kept in its own folder at a workspace root", async () => {
+      write(
+        "package.json",
+        JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
+      );
+      project("packages/api", "@acme/api", ["hono"]);
+      write(
+        "open-api/acme-openapi-specs.json",
+        '{\n  "openapi": "3.0.0",\n  "paths": {}\n}\n',
+      );
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain(
+        "suss contract --from openapi open-api/acme-openapi-specs.json",
+      );
+      expect(text).toContain("suss extract --dir packages/api -f hono");
+    });
+
+    it("names a framework it has no pack for even when other packs matched", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["requests"]\n\n[dependency-groups]\nprod = ["django"]\n',
+      );
+      write("app/views.py", "import requests\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("requests in pyproject.toml");
+      expect(text).toContain(
+        "This project depends on django, which suss knows and has no pack for yet",
+      );
+    });
+
+    it("tells the guided form about a framework with no pack, beside the packs it found", async () => {
+      project(".", "web", ["react", "@trpc/server"]);
+      declineEverything(5);
+
+      await initInteractive({ dir });
+
+      expect(output()).toContain(
+        "This project depends on tRPC, which suss knows and has no pack for yet",
+      );
+    });
+  });
+
   it("says so plainly when nothing in the project names a pack", async () => {
     project(".", "empty", []);
 
@@ -317,8 +431,9 @@ describe("suss init, guided", () => {
 
       await initInteractive({ dir });
 
-      expect(output()).toContain("summaries/packages/api/code.json");
-      expect(output()).toContain("summaries/packages/web/code.json");
+      // One folder, because check reads only the files directly in it.
+      expect(output()).toContain("summaries/packages-api-code.json");
+      expect(output()).toContain("summaries/packages-web-code.json");
     });
 
     it("acts only on the packages picked", async () => {
@@ -435,22 +550,6 @@ describe("suss init, guided", () => {
   });
 
   describe("with --write", () => {
-    async function printedBy(run: () => Promise<number>): Promise<string> {
-      const written: string[] = [];
-      const spy = vi
-        .spyOn(process.stdout, "write")
-        .mockImplementation((chunk) => {
-          written.push(String(chunk));
-          return true;
-        });
-      try {
-        expect(await run()).toBe(0);
-      } finally {
-        spy.mockRestore();
-      }
-      return written.join("");
-    }
-
     function projectFile(): { read: Array<Record<string, unknown>> } {
       return JSON.parse(fs.readFileSync(path.join(dir, "suss.json"), "utf8"));
     }

@@ -59,6 +59,13 @@ describe("detectLanguages", () => {
     expect(detectLanguages(dir)).toEqual(["python"]);
   });
 
+  it("counts plain JavaScript as source the TypeScript adapter reads", () => {
+    write("Gemfile", "source 'https://rubygems.org'\n");
+    write("app/javascript/orders.js", "fetch('/orders');\n");
+    expect(detectLanguages(dir)).toEqual(["typescript", "ruby"]);
+    expect(languageOfFile("app/javascript/orders.mjs")).toBe("typescript");
+  });
+
   it("names both languages of a project written in two", () => {
     write("package.json", "{}");
     write("service/main.py", "x = 1\n");
@@ -113,6 +120,6 @@ describe("languageOfFile", () => {
   });
 
   it("returns null for a file no adapter reads", () => {
-    expect(languageOfFile("src/orders.js")).toBeNull();
+    expect(languageOfFile("src/orders.go")).toBeNull();
   });
 });

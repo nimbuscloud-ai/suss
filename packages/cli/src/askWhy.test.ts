@@ -29,6 +29,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 let explainThrows: string | null = null;
 
 vi.mock("@suss/adapter-typescript", () => ({
+  SOURCE_SUFFIXES: [".ts", ".tsx", ".js"],
   TypeScriptWhySession: class {
     findExpression() {
       return {};

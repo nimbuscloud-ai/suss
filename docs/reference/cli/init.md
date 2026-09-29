@@ -20,7 +20,15 @@ suss init [<directory>] [--plain | --write [--overwrite]]
 
 ## What it reads
 
-It reads `package.json` for dependencies, and the directory for schemas and deploy templates. At a monorepo root it also reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and asks which packages to set up.
+It reads `package.json`, the Python manifests and the Gemfile for dependencies, and the directory for schemas and deploy templates. An OpenAPI document is found by its name, `openapi.yaml` or `swagger.json`, or by the version line at its top. At a monorepo root it also reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and asks which packages to set up.
+
+Every folder below the root with its own `package.json`, `pyproject.toml` or `Gemfile` is a project of its own, whether or not a workspace file lists it, so a server folder and a client folder side by side each get their commands. A folder found only by its `package.json` is shown when a pack matched there.
+
+fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in it calls the library, and the report says which file.
+
+When the project depends on a framework suss knows and has no pack for, such as Django, tRPC or Grape, the report says so, including when other packs matched.
+
+The commands for a project in a folder below the root name that folder with `--dir` and start every path from the root, so you can paste them where you ran `init`. Each writes its own file in one `summaries/` folder, and a folder with more than one language gets `--lang` on every extract.
 
 ## What it writes
 
