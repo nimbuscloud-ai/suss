@@ -104,7 +104,7 @@ export function prismaSchemaToSummaries(
   // enum declared later in the file.
   const modelNames = new Set<string>();
   const enumNames = new Set<string>();
-  let storageSystem: "postgresql" | "mysql" | "sqlite" | null = null;
+  const storageSystem = storageSystemIn(list);
 
   for (const node of list) {
     const n = node as { type: string; name?: string };
@@ -115,12 +115,6 @@ export function prismaSchemaToSummaries(
     } else if (n.type === "enum") {
       if (typeof n.name === "string") {
         enumNames.add(n.name);
-      }
-    } else if (n.type === "datasource") {
-      const ds = node as PrismaDatasource;
-      const provider = readProviderString(ds);
-      if (provider !== null && provider in PROVIDER_TO_SYSTEM) {
-        storageSystem = PROVIDER_TO_SYSTEM[provider];
       }
     }
   }
@@ -686,6 +680,35 @@ function arrayNames(value: unknown): string[] | null {
     }
   }
   return out;
+}
+
+export type PrismaStorageSystem = "postgresql" | "mysql" | "sqlite";
+
+/**
+ * The storage system the datasource provider says, or null for MongoDB or
+ * a file with no datasource. The client pack binds its calls with this.
+ */
+export function prismaStorageSystem(
+  source: string,
+): PrismaStorageSystem | null {
+  try {
+    return storageSystemIn((getSchema(source) as { list: unknown[] }).list);
+  } catch {
+    return null;
+  }
+}
+
+function storageSystemIn(list: readonly unknown[]): PrismaStorageSystem | null {
+  for (const node of list) {
+    if ((node as { type: string }).type !== "datasource") {
+      continue;
+    }
+    const provider = readProviderString(node as PrismaDatasource);
+    if (provider !== null && provider in PROVIDER_TO_SYSTEM) {
+      return PROVIDER_TO_SYSTEM[provider];
+    }
+  }
+  return null;
 }
 
 function readProviderString(ds: PrismaDatasource): string | null {

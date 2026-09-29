@@ -31,10 +31,15 @@ import {
   sqlStatements,
 } from "@suss/recognize";
 
-import { generatedClientDirs, isInGeneratedClient } from "./generatedClient.js";
+import {
+  generatedClientDirs,
+  isInGeneratedClient,
+  schemaStorageSystem,
+} from "./generatedClient.js";
 
 import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
+import type { PrismaStorageSystem } from "@suss/contract-prisma";
 import type {
   CallOps,
   EffectArg,
@@ -75,9 +80,9 @@ const PRISMA_WRITE_METHODS = new Set([
 export const optionsSchema = z
   .object({
     /**
-     * The storage system the calls target, `"postgresql"` when unset. It
-     * has to match the `storageSystem` on the schema reader's summaries,
-     * or the calls do not pair.
+     * The storage system the calls target. When unset, the project
+     * schema's datasource decides, then `"postgresql"`. The README says
+     * why it has to match the schema reader's summaries.
      */
     storageSystem: storageSystemOption.optional(),
     /**
@@ -91,10 +96,32 @@ export const optionsSchema = z
 export type PrismaRecognizerOptions = z.infer<typeof optionsSchema>;
 
 function makeRecognizer(opts: PrismaRecognizerOptions): InvocationRecognizer {
-  const storageSystem = opts.storageSystem ?? "postgresql";
   const scope = opts.scope ?? "default";
-  return (call, ctx) => recognizePrismaCall(call, ctx, storageSystem, scope);
+  return (call, ctx) =>
+    recognizePrismaCall(
+      call,
+      ctx,
+      storageSystemFor(opts, (call as Node).getSourceFile()),
+      scope,
+    );
 }
+
+/**
+ * An option wins. Otherwise the datasource of the schema in the calling
+ * file's project decides, so two projects on different databases stay apart.
+ */
+function storageSystemFor(
+  opts: PrismaRecognizerOptions,
+  file: SourceFile,
+): PrismaStorageSystem {
+  return (
+    opts.storageSystem ??
+    schemaStorageSystem(path.dirname(file.getFilePath())) ??
+    DEFAULT_STORAGE_SYSTEM
+  );
+}
+
+const DEFAULT_STORAGE_SYSTEM: PrismaStorageSystem = "postgresql";
 
 function recognizePrismaCall(
   call: unknown,
@@ -706,10 +733,12 @@ const STATEMENT: SqlMethod = { statement: { at: 0 } };
  * place its tables show up. The method has to be declared under
  * `.prisma/client` or `@prisma/client`.
  */
-function rawStatements(options: PrismaRecognizerOptions): SqlStatements {
+function rawStatements(
+  options: PrismaRecognizerOptions,
+  provider: PrismaStorageSystem,
+): SqlStatements {
   // Prisma's provider sets both the store and the SQL dialect, so one
-  // option covers both.
-  const provider = options.storageSystem ?? "postgresql";
+  // value covers both.
   return sqlStatements({
     system: provider,
     dialect: provider,
@@ -726,13 +755,36 @@ function rawStatements(options: PrismaRecognizerOptions): SqlStatements {
 }
 
 /**
+ * A raw statement binds to the same database as a typed call in its file,
+ * so the chain is compiled once for each system a project may use.
+ */
+function rawRecognizer(options: PrismaRecognizerOptions): InvocationRecognizer {
+  const bySystem = new Map<PrismaStorageSystem, InvocationRecognizer>();
+  return (call, ctx) => {
+    const system = storageSystemFor(options, (call as Node).getSourceFile());
+    let recognizer = bySystem.get(system);
+    if (recognizer === undefined) {
+      recognizer = compile(
+        rawStatements(options, system).declared,
+        "@suss/framework-prisma",
+      );
+      bySystem.set(system, recognizer);
+    }
+    return recognizer(call, ctx);
+  };
+}
+
+/**
  * The pack discovers no units. A Prisma call becomes an effect inside a
  * handler or service that another pack discovered.
  */
 export function prismaFramework(
   options: PrismaRecognizerOptions = {},
 ): PatternPack {
-  const raw = rawStatements(options);
+  const raw = rawStatements(
+    options,
+    options.storageSystem ?? DEFAULT_STORAGE_SYSTEM,
+  );
   return {
     name: "prisma",
     protocol: "in-process",
@@ -751,7 +803,7 @@ export function prismaFramework(
     invocationRecognizers: [makeRecognizer(options)],
     // A tagged template is not an invocation, so the raw chain runs on
     // the access walk, which visits calls as well.
-    accessRecognizers: [compile(raw.declared, "@suss/framework-prisma")],
+    accessRecognizers: [rawRecognizer(options)],
     declarations: declarationsIn([raw]),
   };
 }
