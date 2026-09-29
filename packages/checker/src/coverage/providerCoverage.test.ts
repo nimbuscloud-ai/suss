@@ -516,11 +516,105 @@ describe("checkProviderCoverage — sub-case analysis", () => {
         output: { type: "return", value: null },
       }),
     ]);
+    // The branch never tests the status, so a 200 can reach it.
     const findings = checkProviderCoverage(p, c);
     expect(findings.map((f) => f.description)).toEqual([
       "Provider produces status 404 but no consumer branch handles it",
-      "Provider produces status 200 but no consumer branch handles it",
     ]);
+  });
+
+  it("lets branches that never test the status take a success", () => {
+    const p = provider("saveMarkers", [
+      transition("t-200", { output: response(200) }),
+      transition("t-401", { output: response(401) }),
+    ]);
+    // Each branch tests something before the call, none tests the response.
+    const c = consumer("SubmitMarkers", [
+      transition("ct-no-token", {
+        conditions: [
+          {
+            type: "truthinessCheck",
+            subject: { type: "dependency", name: "getToken", accessChain: [] },
+            negated: true,
+          },
+        ],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-sent", {
+        conditions: [
+          {
+            type: "truthinessCheck",
+            subject: { type: "dependency", name: "getToken", accessChain: [] },
+            negated: false,
+          },
+        ],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(
+      checkProviderCoverage(p, c).map((f) => f.description),
+    ).toEqual(["Provider produces status 401 but no consumer branch handles it"]);
+  });
+
+  it("leaves the status to the caller when the consumer returns the response", () => {
+    const p = provider("setup", [
+      transition("t-200", { output: response(200) }),
+      transition("t-401", { output: response(401) }),
+      transition("t-500", { output: response(500) }),
+    ]);
+    const c = consumer("TwoFactorApi.setup", [
+      transition("ct-return", {
+        output: {
+          type: "return",
+          value: { type: "ref", name: "Promise<Response>" },
+        },
+        isDefault: true,
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("still judges a consumer that returns a body type named like a response", () => {
+    const p = provider("getUser", [
+      transition("t-200", { output: response(200) }),
+      transition("t-404", { output: response(404) }),
+    ]);
+    const c = consumer("getUser", [
+      transition("ct-return", {
+        output: {
+          type: "return",
+          value: { type: "ref", name: "Promise<UserResponse>" },
+        },
+        isDefault: true,
+      }),
+    ]);
+    expect(
+      checkProviderCoverage(p, c).map((f) => f.description),
+    ).toEqual(["Provider produces status 404 but no consumer branch handles it"]);
+  });
+
+  it("does not ask a consumer that never looks at the response to tell sub-cases apart", () => {
+    const p = provider("getHome", [
+      transition("t-200-signed-in", {
+        conditions: [
+          {
+            type: "truthinessCheck",
+            subject: { type: "dependency", name: "currentUser", accessChain: [] },
+            negated: false,
+          },
+        ],
+        output: response(200),
+      }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    // `cache.put("/", await fetch("/"))`: the response is stored unread.
+    const c = consumer("cacheRoot", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
   });
 
   it("reads a one-sided comparison as the range it describes", () => {
