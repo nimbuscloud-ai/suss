@@ -22,6 +22,7 @@ import {
   declaredPacks,
   formatInitReport,
   inspectProject,
+  languageOf,
   readCommands,
   recognizedWithoutPackSentence,
   unnamedLanguageSentence,
@@ -35,6 +36,7 @@ import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
 import type { InitReport, PackSuggestion } from "./init.js";
+import type { Language } from "./language.js";
 import type { SetupLine } from "./projectSetup.js";
 import type { Workspace } from "./workspaces.js";
 
@@ -168,11 +170,66 @@ async function findTargets(root: string): Promise<Target[]> {
     targets.push(await workspaceRootContracts(root));
   }
 
-  return withoutLanguagesCoveredBelow(targets).filter((target) =>
+  const reported = withoutLanguagesCoveredBelow(
+    withoutContractsOfProjectsBelow(targets),
+  ).filter((target) =>
     target.onlyWithPacks === true
       ? readsSomething(target.report)
       : worthReporting(target.report),
   );
+  return withRepositoryNotesOnce(reported);
+}
+
+/**
+ * The root finds the specs in the folders one level down, and each of
+ * those folders is a target of its own now, so the root leaves them to
+ * it. Read twice, one spec would look like two providers of every route.
+ */
+function withoutContractsOfProjectsBelow(targets: Target[]): Target[] {
+  const below = targets
+    .map((target) => target.directory)
+    .filter((directory) => directory !== ".");
+  return targets.map((target) =>
+    target.directory === "."
+      ? {
+          ...target,
+          report: {
+            ...target.report,
+            suggestions: target.report.suggestions.filter(
+              (suggestion) =>
+                suggestion.file === undefined ||
+                !below.some((directory) =>
+                  suggestion.file?.startsWith(`${directory}${path.sep}`),
+                ),
+            ),
+          },
+        }
+      : target,
+  );
+}
+
+/** A note about the whole repository goes on the first project that has it, rather than on every one. */
+function withRepositoryNotesOnce(targets: Target[]): Target[] {
+  const said = new Set<string>();
+  return targets.map((target) => ({
+    ...target,
+    report: {
+      ...target.report,
+      unread: (target.report.unread ?? []).filter((entry) => {
+        if (entry.aboutRepository !== true) {
+          return true;
+        }
+
+        const key = `${entry.where}\n${entry.reason}`;
+        if (said.has(key)) {
+          return false;
+        }
+
+        said.add(key);
+        return true;
+      }),
+    },
+  }));
 }
 
 /**
@@ -215,14 +272,16 @@ function pythonAndRubyProjectsAtOrBelow(root: string): string[] {
 /**
  * The root's report counts source files in every project below it. Drop
  * from the root the languages a project below already has packs for, or
- * the root would report them as languages suss could not place.
+ * the root would report them as languages suss could not place. When
+ * nothing at the root declares a pack in such a language, its packs go
+ * too: an extract at the root would read the projects below a second time.
  */
 function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
   const coveredBelow = new Set(
     targets
       .filter((target) => target.directory !== ".")
       .flatMap((target) => declaredPacks(target.report))
-      .map((suggestion) => suggestion.language ?? "typescript"),
+      .map(languageOf),
   );
   return targets.map((target) =>
     target.directory === "."
@@ -233,11 +292,26 @@ function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
             languages: (target.report.languages ?? []).filter(
               (language) => !coveredBelow.has(language),
             ),
+            suggestions: target.report.suggestions.filter(
+              (suggestion) =>
+                suggestion.kind === "contract" ||
+                !coveredBelow.has(languageOf(suggestion)) ||
+                declaredAtRoot(target.report, languageOf(suggestion)),
+            ),
           },
         }
       : target,
   );
 }
+
+/** Whether a manifest at the root, rather than a call in a file, led to a pack in this language. */
+const declaredAtRoot = (report: InitReport, language: Language): boolean =>
+  report.suggestions.some(
+    (suggestion) =>
+      languageOf(suggestion) === language &&
+      suggestion.kind !== "contract" &&
+      suggestion.shippedWithLanguage !== true,
+  );
 
 /**
  * Whether a target has anything to report. A Python directory with no
@@ -266,7 +340,7 @@ function reportUnread(targets: Target[]): void {
   for (const target of targets) {
     for (const entry of target.report.unread ?? []) {
       const where =
-        target.directory === "."
+        target.directory === "." || entry.aboutRepository === true
           ? entry.where
           : path.join(target.directory, entry.where);
       p.log.warn(`${where}: ${entry.reason}`);

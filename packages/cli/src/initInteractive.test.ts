@@ -133,6 +133,21 @@ describe("suss init, guided", () => {
       expect(text).not.toMatch(/^ {3}suss extract -f fetch/m);
     });
 
+    it("does not read a client below the root a second time from the root", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["requests"]\n',
+      );
+      write("app/static/js/worker.js", "self.fetch('/api/ping');\n");
+      project("web", "web", ["react"]);
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("suss extract --dir web -f react");
+      expect(text).not.toContain("--lang typescript");
+      expect(text).not.toContain("fetch is called in app/static");
+    });
+
     it("finds a server folder and a client folder that no workspace file lists", async () => {
       project(".", "monorepo", []);
       project("server", "server", ["@nestjs/common"]);
@@ -175,6 +190,33 @@ describe("suss init, guided", () => {
         "suss contract --from openapi open-api/acme-openapi-specs.json",
       );
       expect(text).toContain("suss extract --dir packages/api -f hono");
+    });
+
+    it("reads a spec in a project's folder once, from that project", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["fastapi"]\n',
+      );
+      project("docs", "docs", ["react"]);
+      write("docs/static/openapi.json", '{ "openapi": "3.1.0", "paths": {} }');
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text.match(/suss contract --from openapi/g)).toHaveLength(1);
+      expect(text).toContain(
+        "suss contract --from openapi docs/static/openapi.json -o summaries/docs-openapi.json",
+      );
+    });
+
+    it("says once that a submodule is missing, however many projects there are", async () => {
+      write(".gitmodules", '[submodule "vendor-ui"]\n\tpath = shared/ui\n');
+      fs.mkdirSync(path.join(dir, "shared", "ui"), { recursive: true });
+      project("server", "server", ["express"]);
+      project("web", "web", ["react"]);
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text.match(/this submodule is not checked out/g)).toHaveLength(1);
     });
 
     it("names a framework it has no pack for even when other packs matched", async () => {

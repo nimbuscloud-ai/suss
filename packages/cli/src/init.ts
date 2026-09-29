@@ -446,6 +446,7 @@ function declaredLibraries(root: string): {
         where: submodule.declaredPath,
         reason:
           "this submodule is not checked out, so suss can read neither the code in it nor what it depends on. Run `git submodule update --init --recursive`.",
+        aboutRepository: true,
       });
     }
   }
@@ -878,7 +879,8 @@ export function formatInitReport(report: InitReport, directory = "."): string {
   return `${lines.join("\n")}\n`;
 }
 
-const languageOf = (suggestion: PackSuggestion): Language =>
+/** A suggestion's language, with TypeScript for a contract, which has none. */
+export const languageOf = (suggestion: PackSuggestion): Language =>
   suggestion.language ?? "typescript";
 
 /**

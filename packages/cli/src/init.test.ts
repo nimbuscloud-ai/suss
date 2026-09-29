@@ -122,6 +122,21 @@ describe("inspectProject", () => {
     expect(declaredPacks(report)).toEqual([]);
   });
 
+  it("does not count a call a test makes", async () => {
+    writeManifest({ name: "tooling" });
+    fs.mkdirSync(path.join(dir, "e2e-tests"));
+    fs.writeFileSync(
+      path.join(dir, "e2e-tests", "login.ts"),
+      "await fetch('/login');\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "rules.test.mjs"),
+      "await fetch('/rules');\n",
+    );
+
+    expect(declaredPacks(await inspectProject(dir))).toEqual([]);
+  });
+
   it("does not count a call inside a folder that is a project of its own", async () => {
     writeManifest({ name: "root" });
     fs.mkdirSync(path.join(dir, "web"));

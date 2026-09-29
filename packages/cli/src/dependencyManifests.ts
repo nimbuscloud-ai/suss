@@ -36,10 +36,16 @@ export interface DeclaredDependency {
 }
 
 export interface UnreadDependencies {
-  /** Relative to the project root. */
+  /** Relative to the project root, or to the repository root when `aboutRepository` is set. */
   where: string;
   /** Why the file could not be read, as a sentence that tells the user what to do. */
   reason: string;
+  /**
+   * Set for something every project in the repository shares, such as a
+   * submodule nobody checked out, so a report over several projects says
+   * it once.
+   */
+  aboutRepository?: boolean;
 }
 
 export interface DeclaredDependencies {

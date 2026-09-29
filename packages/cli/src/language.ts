@@ -152,7 +152,8 @@ const MATCH_FILE_BYTES = 512 * 1024;
  * The first source file in `language` under `root` whose text matches
  * `pattern`, relative to `root`, or null when none does. A directory that
  * declares a project of its own in that language is left out, because
- * init sets that project up separately.
+ * init sets that project up separately. Tests are left out too: a test
+ * that calls a server says nothing about what the application calls.
  */
 export function firstSourceMatching(
   root: string,
@@ -185,13 +186,16 @@ export function firstSourceMatching(
 
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        directories.push(full);
+        if (!TEST_DIRECTORIES.has(entry.name)) {
+          directories.push(full);
+        }
         continue;
       }
 
       if (
         !suffixes.some((suffix) => entry.name.endsWith(suffix)) ||
-        isDeclarationOrBundle(entry.name)
+        isDeclarationOrBundle(entry.name) ||
+        TEST_FILE.test(entry.name)
       ) {
         continue;
       }
@@ -213,6 +217,19 @@ export function firstSourceMatching(
 
   return walk(root, 0);
 }
+
+const TEST_DIRECTORIES = new Set([
+  "test",
+  "tests",
+  "__tests__",
+  "spec",
+  "e2e",
+  "e2e-tests",
+  "cypress",
+]);
+
+/** `orders.test.ts`, `orders.spec.js`, `orders_test.py`, `orders_spec.rb`. */
+const TEST_FILE = /[._](test|spec)\.[a-z]+$|^test_[^.]+\.py$/;
 
 /** A type declaration or a minified copy of a library, which says nothing about what the project calls. */
 const isDeclarationOrBundle = (name: string): boolean =>
