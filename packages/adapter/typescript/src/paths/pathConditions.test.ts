@@ -1203,3 +1203,31 @@ describe("computePathConditions, branches written inside a callback", () => {
     expect((result?.fallthrough ?? []).map(sig)).toEqual(["<unconditional>"]);
   });
 });
+
+describe("computePathConditions: a mapped type inside a statement", () => {
+  it("reads the unit after the checker has printed a type that reuses the mapped type", () => {
+    const fn = getFunction(`
+      export function subscribable<T extends object>(obj: T) {
+        const proxy = {
+          ...obj,
+          subscribers: {} as {
+            [key in keyof T]?: (() => void)[]
+          },
+        };
+        if (proxy === undefined) {
+          throw new Error("no proxy");
+        }
+        return proxy;
+      }
+    `);
+    // Printing the type is what leaves the mapped type unwalkable.
+    fn.getVariableDeclarationOrThrow("proxy").getType().getText();
+    const terminals = returnTerminals(fn);
+
+    const result = computePathConditions(fn, terminals);
+
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "negative:earlyThrow:proxy === undefined",
+    ]);
+  });
+});
