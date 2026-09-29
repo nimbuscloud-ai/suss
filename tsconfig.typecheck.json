@@ -254,6 +254,9 @@
       "path": "tools/differential/tsconfig.typecheck.json"
     },
     {
+      "path": "tools/first-run/tsconfig.typecheck.json"
+    },
+    {
       "path": "tools/metamorphic/tsconfig.typecheck.json"
     },
     {
