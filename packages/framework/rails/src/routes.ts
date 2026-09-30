@@ -22,6 +22,8 @@ import {
   symbolValue,
 } from "@suss/adapter-ruby";
 
+import { pathWithOptionalGroups } from "./optionalSegments.js";
+
 import type { ParameterBindings, RbNode } from "@suss/adapter-ruby";
 import type { RailsEngine } from "./engines.js";
 
@@ -265,7 +267,10 @@ class RouteAccumulator {
   add(controllerKey: string, action: string, route: Route): void {
     const key = `${controllerKey}#${action}`;
     if (!this.byKey.has(key)) {
-      this.byKey.set(key, route);
+      this.byKey.set(key, {
+        method: route.method,
+        path: pathWithOptionalGroups(route.path),
+      });
     }
   }
 

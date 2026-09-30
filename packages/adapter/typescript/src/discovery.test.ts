@@ -4253,6 +4253,61 @@ describe("decoratedRoute discovery", () => {
     expect(units[0].routeInfo).toEqual({ method: "GET", path: "/" });
   });
 
+  it("reads the prefix from the path of an options object", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "webhooks.controller.ts",
+      `
+      import { Controller, Get } from "@nestjs/common";
+      @Controller({ path: "webhooks", version: "2" })
+      class WebhooksController {
+        @Get(":id")
+        one() { return null; }
+      }
+      @Controller({ host: "admin.example.com" })
+      class AdminController {
+        @Get("health")
+        health() { return null; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    expect(units.map((u) => u.routeInfo)).toEqual([
+      { method: "GET", path: "/webhooks/:id" },
+      { method: "GET", path: "/health" },
+    ]);
+  });
+
+  it("claims no path when the prefix does not settle to one string", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "webhooks.controller.ts",
+      `
+      import { Controller, Get, Post } from "@nestjs/common";
+      import { ApiPath } from "not-installed-shared";
+      @Controller(ApiPath.Webhooks)
+      class WebhooksController {
+        @Post()
+        receive() { return null; }
+      }
+      @Controller("orders")
+      class OrdersController {
+        @Get(ApiPath.Latest)
+        latest() { return null; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    expect(units.map((u) => u.routeInfo)).toEqual([
+      { method: "POST", path: null },
+      { method: "GET", path: null },
+    ]);
+    expect(units.map((u) => u.unreadBinding)).toEqual([
+      expect.stringContaining("does not settle to one string"),
+      expect.stringContaining("does not settle to one string"),
+    ]);
+  });
+
   it("reads a handler written as a property holding an arrow", () => {
     const project = createProject();
     const file = project.createSourceFile(

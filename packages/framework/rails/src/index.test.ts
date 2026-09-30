@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { preloadRubyGrammar } from "@suss/adapter-ruby";
+import { routePathsMeet } from "@suss/ir-core";
 
 import { railsFramework } from "./index.js";
 import { readRoutes } from "./routes.js";
@@ -322,6 +323,28 @@ describe("railsFramework", () => {
         path: "/orders",
       });
       expect(routeFor(source, "OrdersController", "destroy")).toBeNull();
+    });
+
+    it("writes an optional scope as the set of paths it allows, which a client's plain path meets", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  scope "(/locale/:locale)", locale: /en|fr/ do\n' +
+        "    resources :articles, only: [:index, :show]\n" +
+        "  end\nend\n";
+      const index = routeFor(source, "ArticlesController", "index");
+      expect(index).toEqual({
+        method: "GET",
+        path: "/(|locale/:locale/)articles",
+      });
+      expect(routePathsMeet(index?.path ?? "", "/articles")).toBe(true);
+      expect(routePathsMeet(index?.path ?? "", "/locale/fr/articles")).toBe(
+        true,
+      );
+      expect(routePathsMeet(index?.path ?? "", "/fr/articles")).toBe(false);
+      expect(routeFor(source, "ArticlesController", "show")).toEqual({
+        method: "GET",
+        path: "/(|locale/:locale/)articles/:id",
+      });
     });
 
     it("binds a route declared inside collection do ... end, with no :id", () => {
