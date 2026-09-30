@@ -55,7 +55,7 @@ import type {
   ValueRef,
   WrapperReference,
 } from "@suss/behavioral-ir";
-import type { FailureDelivery } from "./framework.js";
+import type { FailureDelivery, RedirectDelivery } from "./framework.js";
 import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
@@ -134,6 +134,7 @@ export type {
   PackDeclarations,
   ParameterSupplier,
   PatternPack,
+  RedirectDelivery,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,
   TerminalExtraction,
@@ -407,6 +408,8 @@ export interface RawCodeStructure {
   successAccessors?: string[];
   /** Whether this client's non-2xx arrives as a response or a rejection. */
   failureDelivery?: FailureDelivery;
+  /** Whether this client follows a redirect or hands the 3xx back. */
+  redirectDelivery?: RedirectDelivery;
   /** Left exactly as written, because the extractor does not depend on
    * graphql-js. The parsing happens at check time. */
   graphqlDocument?: string;
@@ -821,6 +824,9 @@ function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
   }
   if (raw.failureDelivery !== undefined) {
     http.failureDelivery = raw.failureDelivery;
+  }
+  if (raw.redirectDelivery !== undefined) {
+    http.redirectDelivery = raw.redirectDelivery;
   }
   return Object.keys(http).length > 0 ? http : null;
 }

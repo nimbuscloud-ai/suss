@@ -50,6 +50,7 @@
   "externalFunction": "suss: effect target kind",
   "field": "suss: record field kind in a value lowering, which graphql-ruby also happens to call its field declaration",
   "fileConvention": "suss: DiscoveryMatch variant tag",
+  "followed": "suss: RedirectDelivery tag",
   "fromArgument": "suss: BindingExtraction source tag",
   "fromArgumentProperty": "suss: BindingExtraction source tag",
   "fromClientMethod": "suss: BindingExtraction source tag",

@@ -271,6 +271,7 @@ describe("a function that calls a request function", () => {
           success: ["ok"],
           body: ["json"],
           failureDelivery: "response",
+          redirectDelivery: "followed",
         },
       },
     );
@@ -280,6 +281,7 @@ describe("a function that calls a request function", () => {
       successAccessors: ["ok"],
       bodyAccessors: ["json"],
       failureDelivery: "response",
+      redirectDelivery: "followed",
     });
   });
 

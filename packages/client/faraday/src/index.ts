@@ -43,6 +43,9 @@ export function faradayClient(): RubyPack {
           success: ["success?"],
           body: ["body"],
           failureDelivery: "response",
+          // Faraday follows a redirect only with the follow_redirects
+          // middleware added, so a plain connection hands the 3xx back.
+          redirectDelivery: "response",
         },
       },
     ],

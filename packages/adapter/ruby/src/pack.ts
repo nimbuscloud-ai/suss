@@ -349,6 +349,8 @@ export interface RbClientResponse {
   body?: string[];
   /** Whether a refused request comes back as a response or raises where it was made. */
   failureDelivery?: "response" | "exception";
+  /** Whether the client follows a redirect itself or hands the 3xx back. */
+  redirectDelivery?: "followed" | "response";
 }
 
 /**

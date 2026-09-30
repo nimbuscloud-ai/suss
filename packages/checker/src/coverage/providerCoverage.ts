@@ -2,6 +2,7 @@ import { isCatchEntry } from "@suss/behavioral-ir";
 
 import {
   failureDeliveryFor,
+  redirectDeliveryFor,
   statusAccessorsFor,
   successAccessorsFor,
 } from "../contract/declaredContract.js";
@@ -36,6 +37,15 @@ import type {
 } from "@suss/behavioral-ir";
 
 /**
+ * The redirects a client that follows redirects never hands back. A 300
+ * or a 304 still reaches the caller, because there is no single place to
+ * go next.
+ */
+const FOLLOWED_REDIRECTS: ReadonlySet<number> = new Set([
+  301, 302, 303, 307, 308,
+]);
+
+/**
  * Whether the consumer has anything at all for a status the provider
  * can send. Four things count, and the README beside this file says why
  * each one does: a branch that admits the status, a fall-through over
@@ -66,10 +76,14 @@ function coverageOf(
   const catchesThrownFailures =
     failureDeliveryFor(consumer) === "exception" &&
     consumer.transitions.some((ct) => ct.conditions.some(isCatchEntry));
+  const followsRedirects = redirectDeliveryFor(consumer) === "followed";
 
   return (status) => {
     if (isSuccessStatus(status)) {
       return handles(status) || runsOnSuccess;
+    }
+    if (followsRedirects && FOLLOWED_REDIRECTS.has(status)) {
+      return true;
     }
     return (
       handles(status) || discriminatesByContent(status) || catchesThrownFailures

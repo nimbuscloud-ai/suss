@@ -202,6 +202,9 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
     // axios rejects on a non-2xx status, so every failure reaches the
     // caller's catch block instead of coming back as a response.
     failureDelivery: "exception",
+
+    // axios follows redirects unless the call sets `maxRedirects: 0`.
+    redirectDelivery: "followed",
   };
 }
 

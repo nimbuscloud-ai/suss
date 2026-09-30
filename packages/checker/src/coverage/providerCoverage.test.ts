@@ -4,6 +4,7 @@ import {
   bodyFieldTruthy,
   catchEntry,
   consumer,
+  followsRedirects,
   negated,
   opaqueResponse,
   provider,
@@ -195,6 +196,27 @@ describe("checkProviderCoverage", () => {
       ]),
     );
     expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("does not ask a client that follows redirects to handle one", () => {
+    const p = provider("requireLogin", [
+      transition("t-301", { output: response(301) }),
+      transition("t-302", { output: response(302) }),
+      transition("t-304", { output: response(304) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = consumer("trackClick", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+
+    // A 304 has nowhere to go next, so even fetch hands it back.
+    expect(
+      checkProviderCoverage(p, followsRedirects(c)).map((f) => f.description),
+    ).toEqual(["Provider produces status 304 but no consumer branch handles it"]);
+    expect(checkProviderCoverage(p, c)).toHaveLength(3);
   });
 
   it("does not count a catch when the client returns the failing response", () => {
