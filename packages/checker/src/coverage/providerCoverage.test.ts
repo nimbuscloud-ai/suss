@@ -18,7 +18,7 @@ import {
 } from "../__fixtures__/pairs.js";
 import { checkProviderCoverage } from "./providerCoverage.js";
 
-import type { Predicate } from "@suss/behavioral-ir";
+import type { Predicate, TypeShape } from "@suss/behavioral-ir";
 
 describe("checkProviderCoverage", () => {
   it("reports no findings when consumer explicitly handles every provider status", () => {
@@ -572,6 +572,33 @@ describe("checkProviderCoverage — sub-case analysis", () => {
       }),
     ]);
     expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("finds the response inside a record or a union the consumer returns", () => {
+    const p = provider("lookup", [
+      transition("t-200", { output: response(200) }),
+      transition("t-404", { output: response(404) }),
+    ]);
+    const returning = (value: TypeShape) =>
+      consumer("lookup", [
+        transition("ct-return", {
+          output: { type: "return", value },
+          isDefault: true,
+        }),
+      ]);
+    const inRecord: TypeShape = {
+      type: "record",
+      properties: { response: { type: "ref", name: "Response" } },
+    };
+    const inUnion: TypeShape = {
+      type: "union",
+      variants: [{ type: "null" }, { type: "ref", name: "AxiosResponse<User>" }],
+    };
+    expect(checkProviderCoverage(p, returning(inRecord))).toEqual([]);
+    expect(checkProviderCoverage(p, returning(inUnion))).toEqual([]);
+    expect(
+      checkProviderCoverage(p, returning({ type: "text" })),
+    ).toHaveLength(1);
   });
 
   it("still judges a consumer that returns a body type named like a response", () => {

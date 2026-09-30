@@ -274,6 +274,38 @@ describe("checkRenderProps", () => {
     expect(checkRenderProps([parent, child])).toHaveLength(1);
   });
 
+  it("finds a nested unit by its lines when the summaries have no span", () => {
+    const edge = rendering(
+      "Swatch",
+      { file: "src/swatch.tsx", name: "Swatch" },
+      { onChange: "setColor" },
+    );
+    // Two parents render the child, so the second edge asks again.
+    const first = component({
+      name: "Panel",
+      file: "src/panel.tsx",
+      root: edge,
+    });
+    const second = component({
+      name: "Menu",
+      file: "src/menu.tsx",
+      root: edge,
+    });
+    const child = component({
+      name: "Swatch",
+      file: "src/swatch.tsx",
+      inputs: [param("color"), param("onChange")],
+      inputReads: [{ input: "color", path: [] }],
+    });
+    const handler = {
+      ...component({ name: "Swatch.onSelect", file: "src/swatch.tsx" }),
+      kind: "handler",
+    } as BehavioralSummary;
+    handler.location = { ...handler.location, range: { start: 4, end: 6 } };
+
+    expect(checkRenderProps([first, second, child, handler])).toEqual([]);
+  });
+
   it("skips the edge when the child was not read as a component", () => {
     const parent = component({
       name: "Settings",

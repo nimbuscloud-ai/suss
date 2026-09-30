@@ -260,30 +260,23 @@ function handsResponseToCaller(consumer: BehavioralSummary): boolean {
     (ct) =>
       ct.output.type === "return" &&
       ct.output.value !== null &&
-      shapeHasResponse(ct.output.value, 0),
+      shapeHasResponse(ct.output.value),
   );
 }
 
 const RESPONSE_OBJECT = /^(\w+\.)*Response$|^\w*Response<.+>$/;
 
-function shapeHasResponse(shape: TypeShape, depth: number): boolean {
-  if (depth > 3) {
-    return false;
-  }
+function shapeHasResponse(shape: TypeShape): boolean {
   if (shape.type === "ref") {
     return RESPONSE_OBJECT.test(withoutPromise(shape.name));
   }
 
   if (shape.type === "record") {
-    return Object.values(shape.properties).some((property) =>
-      shapeHasResponse(property, depth + 1),
-    );
+    return Object.values(shape.properties).some(shapeHasResponse);
   }
 
   if (shape.type === "union") {
-    return shape.variants.some((variant) =>
-      shapeHasResponse(variant, depth + 1),
-    );
+    return shape.variants.some(shapeHasResponse);
   }
   return false;
 }

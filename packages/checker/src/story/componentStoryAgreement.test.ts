@@ -349,6 +349,22 @@ describe("checkComponentStoryAgreement — coverage gap", () => {
     expect(checkComponentStoryAgreement([component, story])).toEqual([]);
   });
 
+  it("compares args only with the component's parameters", () => {
+    const base = makeComponent("Clock", [{ name: "zone" }]);
+    const component: BehavioralSummary = {
+      ...base,
+      inputs: [
+        ...base.inputs,
+        { type: "hookReturn", hook: "useNow", destructuredFields: ["now"] },
+      ],
+    };
+    const story = makeStory("Default", "Clock", { zone: '"UTC"', now: "0" });
+    const findings = checkComponentStoryAgreement([component, story]);
+    expect(findings.map((f) => f.description)).toEqual([
+      'Story "Default" provides arg "now" but component "Clock" does not declare it as an input.',
+    ]);
+  });
+
   it("reads a renamed prop under the name the story passes", () => {
     const component = withRoles(makeComponent("Toast", [{ name: "_icon" }]), {
       _icon: "icon",
