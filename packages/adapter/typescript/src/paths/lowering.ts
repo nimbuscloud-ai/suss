@@ -23,6 +23,7 @@ import {
 } from "@suss/extractor";
 
 import {
+  containsNoCode,
   type DescentBarriers,
   isDescentStop,
   isInlineCallback,
@@ -59,6 +60,9 @@ function exitKindOf(stmt: Node, endings: ReadonlySet<Node>): ExitKind {
   let sawThrow = false;
   const visit = (node: Node): void => {
     if (node !== stmt && startsItsOwnScope(node)) {
+      return;
+    }
+    if (containsNoCode(node)) {
       return;
     }
     if (Node.isReturnStatement(node) || endings.has(node)) {
@@ -207,6 +211,9 @@ function lowerCallbacksIn(
         return;
       }
     } else if (node !== root && startsItsOwnScope(node)) {
+      return;
+    }
+    if (containsNoCode(node)) {
       return;
     }
     for (const child of node.getChildren()) {

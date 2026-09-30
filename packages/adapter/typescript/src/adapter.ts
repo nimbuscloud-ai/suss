@@ -80,6 +80,7 @@ import {
   extractRawBranches,
 } from "./assembly.js";
 import {
+  admitListedFiles,
   createLazyProject,
   type DeepImportGraphs,
   importedFilePathsOf,
@@ -160,9 +161,10 @@ import {
   unreadableExportFiles,
   warmExportChains,
 } from "./moduleExports.js";
-import { moduleInitSummary } from "./moduleInit.js";
+import { moduleInitSummary, unreadModuleInitSummary } from "./moduleInit.js";
 import { moduleSurfacePack, settleTypeScriptModules } from "./moduleSurface.js";
 import { parameterReads } from "./parameterReads.js";
+import { reportReadFailure } from "./readFailure.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import { clientBasePath, underBasePath } from "./resolve/clientBasePath.js";
 import {
@@ -631,24 +633,65 @@ export function extractCodeStructure(
   resolveCallee?: ResolveCallee,
   everyUnit: EveryUnitDeclarations = NOTHING_IN_EVERY_UNIT,
 ): RawCodeStructure {
-  // One table per unit: every shape read during this call goes into it.
-  const read = withDefinitions(() =>
-    readCodeStructure(
-      unit,
-      pack,
-      invocationRecognizers,
-      accessRecognizers,
-      barriers,
-      resolution,
-      originatesFrom,
-      anchorCallsOf,
-      resolveCallee,
-      everyUnit,
-    ),
-  );
-  return read.definitions === null
-    ? read.value
-    : { ...read.value, definitions: read.definitions };
+  try {
+    // One table per unit: every shape read during this call goes into it.
+    const read = withDefinitions(() =>
+      readCodeStructure(
+        unit,
+        pack,
+        invocationRecognizers,
+        accessRecognizers,
+        barriers,
+        resolution,
+        originatesFrom,
+        anchorCallsOf,
+        resolveCallee,
+        everyUnit,
+      ),
+    );
+    return read.definitions === null
+      ? read.value
+      : { ...read.value, definitions: read.definitions };
+  } catch (error) {
+    return unreadUnitStructure(unit, error);
+  }
+}
+
+/**
+ * The structure of a unit whose body threw while it was read. The unit
+ * keeps its name, place and binding, so it still pairs, and the error
+ * goes on it as a gap instead of ending the run.
+ */
+function unreadUnitStructure(
+  unit: DiscoveredUnit,
+  error: unknown,
+): RawCodeStructure {
+  const at = unit.func ?? unit.announcedAt;
+  const file = at?.getSourceFile().getFilePath() ?? "an unknown file";
+  return {
+    identity: {
+      name: unit.name,
+      ...(unit.nameKind !== undefined ? { nameKind: unit.nameKind } : {}),
+      kind: unit.kind as CodeUnitKind,
+      file,
+      range:
+        at === undefined
+          ? { start: 0, end: 0 }
+          : { start: startLineOf(at), end: endLineOf(at) },
+      ...(at === undefined
+        ? {}
+        : { span: { start: at.getStart(), end: at.getEnd() } }),
+      exportName: unit.name,
+      exportPath: [unit.name],
+    },
+    boundaryBinding: null,
+    parameters: [],
+    branches: [],
+    bodyContent: "statements",
+    dependencyCalls: [],
+    declaredContract: null,
+    readFailure: reportReadFailure(unit.name, file, error),
+  };
 }
 
 function responseAccessorNames(
@@ -1201,6 +1244,41 @@ interface ClaimedUnit {
   file: string;
 }
 
+/**
+ * The units a pack's discovery patterns find in one file. When reading
+ * the file throws, the file gives no units and the failure goes on the
+ * pack's tally, so the rest of the run still extracts.
+ */
+function discoverUnitsOrReport(
+  sourceFile: SourceFile,
+  pack: PatternPack,
+  patterns: PatternPack["discovery"],
+  tally: PackTally | undefined,
+  resolution?: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
+  projectHelpers?: ProjectHelperIndex,
+): DiscoveredUnit[] {
+  try {
+    return discoverUnits(
+      sourceFile,
+      patterns,
+      resolution,
+      mountPrefixes,
+      projectHelpers,
+    );
+  } catch (err) {
+    process.stderr.write(
+      recordPackFailure(tally, {
+        pack: pack.name,
+        hook: "discovery",
+        file: sourceFile.getFilePath(),
+        error: err,
+      }),
+    );
+    return [];
+  }
+}
+
 function extractFromSourceFile(
   sourceFile: SourceFile,
   frameworks: PatternPack[],
@@ -1240,11 +1318,13 @@ function extractFromSourceFile(
     }
 
     const contributed = projectHelpers?.patternsFor(pack.name) ?? [];
-    const units = discoverUnits(
+    const units = discoverUnitsOrReport(
       sourceFile,
+      pack,
       contributed.length === 0
         ? pack.discovery
         : [...pack.discovery, ...contributed],
+      tally,
       resolution,
       mountPrefixes,
       projectHelpers,
@@ -1601,11 +1681,33 @@ function extractFromSourceFile(
   // What the module does when it loads, which is in no unit's body. Once
   // per file, because module scope belongs to the module and not to
   // whichever pack got there first.
-  const moduleScope = moduleInitSummary(
+  const moduleScope = moduleScopeSummary(
     sourceFile,
-    runAccessRecognizersAtModuleScope(
+    allAccessRecognizers,
+    resolution,
+    options,
+  );
+  if (moduleScope !== null) {
+    summaries.push(moduleScope);
+  }
+
+  return summaries;
+}
+
+/**
+ * What the module does when it loads. A top level that throws while it
+ * is read still gets a summary, with the error as a gap on it.
+ */
+function moduleScopeSummary(
+  sourceFile: SourceFile,
+  accessRecognizers: AccessRecognizer[],
+  resolution: ResolutionStore | undefined,
+  options: ExtractorOptions | undefined,
+): BehavioralSummary | null {
+  try {
+    const effects = runAccessRecognizersAtModuleScope(
       sourceFile,
-      allAccessRecognizers,
+      accessRecognizers,
       resolution,
       resolution === undefined
         ? undefined
@@ -1614,14 +1716,11 @@ function extractFromSourceFile(
       resolution === undefined
         ? undefined
         : (value, matches) => resolution.anchorCallsOf(value, matches),
-    ).map((recognized) => recognized.effect),
-    options,
-  );
-  if (moduleScope !== null) {
-    summaries.push(moduleScope);
+    ).map((recognized) => recognized.effect);
+    return moduleInitSummary(sourceFile, effects, options);
+  } catch (error) {
+    return unreadModuleInitSummary(sourceFile, error, options);
   }
-
-  return summaries;
 }
 
 /**
@@ -2388,6 +2487,7 @@ export function createTypeScriptAdapter(
       startOver(holder);
       noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames);
     }
+    admitListedFiles(project, tsconfig);
     const lazy = await createLazyProject(
       tsConfigFilePath,
       config.frameworks,
@@ -2539,6 +2639,9 @@ export function createTypeScriptAdapter(
       ) {
         startOver(this);
         noteRunFileList(loaded, config.tsConfigFilePath, tsconfigFileList);
+      }
+      if (tsconfig !== null) {
+        admitListedFiles(project, tsconfig);
       }
 
       // Nothing reads the digest or the file list when the run is not

@@ -1109,9 +1109,11 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
       : { sourceDeclarationsBehind }),
     ...(reachedFrom === undefined ? {} : { reachedFrom }),
   };
-  const { result, read } = scanWithRecording(key, ctx.facts, () =>
-    collectReachable(root, scan),
-  );
+  const scanned = scanOrReport(key, ctx.facts, root, scan);
+  if (scanned === null) {
+    return null;
+  }
+  const { result, read } = scanned;
   ctx.facts?.scans?.set(key, {
     kind: "fresh",
     findings: result,
@@ -1119,6 +1121,31 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
     read,
   });
   return result;
+}
+
+/**
+ * Scan one body for what it calls. A body whose scan throws is left out
+ * of the closure, so what it calls is not followed, and the run goes on.
+ * Nothing is recorded for it, so a later run scans it again.
+ */
+function scanOrReport(
+  key: string,
+  facts: ClosureFacts | undefined,
+  root: ScanRoot,
+  scan: ScanContext,
+): { result: ScanFindings; read: ReadonlySet<string> } | null {
+  try {
+    return scanWithRecording(key, facts, () => collectReachable(root, scan));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const where = Node.isSourceFile(root)
+      ? root.getFilePath()
+      : `${root.getSourceFile().getFilePath()}:${root.getStartLineNumber()}`;
+    process.stderr.write(
+      `[suss] could not scan the function at ${where} for the calls it makes, so nothing it calls is followed from it: ${message}\n`,
+    );
+    return null;
+  }
 }
 
 /** The function a key was minted from, found in its file by offsets. */

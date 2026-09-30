@@ -13,6 +13,7 @@
 
 import { assembleSummary, moduleInitStructure } from "@suss/extractor";
 
+import { reportReadFailure } from "./readFailure.js";
 import { functionCalledAt } from "./resolve/functionBehind.js";
 import { extractInvocationEffectsAtModuleScope } from "./resolve/invocationEffects.js";
 
@@ -52,6 +53,34 @@ export function moduleInitSummary(
       effects,
       calls: calls.map((call) => call.effect),
     }),
+    options,
+  );
+}
+
+/**
+ * The summary for a module whose top level threw while it was read. It
+ * describes nothing the module does, and a gap on it gives the error, so
+ * the rest of the run goes on.
+ */
+export function unreadModuleInitSummary(
+  sourceFile: SourceFile,
+  error: unknown,
+  options?: ExtractorOptions,
+): BehavioralSummary {
+  const name = moduleInitName(sourceFile);
+  const file = sourceFile.getFilePath();
+  return assembleSummary(
+    {
+      ...moduleInitStructure({
+        name,
+        file,
+        range: { start: 0, end: sourceFile.getEnd() },
+        effects: [],
+      }),
+      branches: [],
+      bodyContent: "statements",
+      readFailure: reportReadFailure(name, file, error),
+    },
     options,
   );
 }

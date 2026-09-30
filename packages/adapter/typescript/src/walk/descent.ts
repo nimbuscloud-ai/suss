@@ -183,3 +183,15 @@ export function startsItsOwnScope(node: Node): boolean {
     Node.isConstructorDeclaration(node)
   );
 }
+
+/**
+ * A type annotation contains no statement and no function body, so a
+ * walk looking for either can skip it. It has to for a mapped type: once
+ * the checker has printed a type that reuses one, asking the mapped type
+ * for its children fails an assertion inside the compiler. The `extends`
+ * clause of a class is the one type position that can contain an
+ * expression, as in `extends mixin(() => ...)`, so it is still walked.
+ */
+export function containsNoCode(node: Node): boolean {
+  return Node.isTypeNode(node) && !Node.isExpressionWithTypeArguments(node);
+}

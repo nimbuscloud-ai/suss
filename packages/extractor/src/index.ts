@@ -442,6 +442,13 @@ export interface RawCodeStructure {
    */
   unreadBinding?: string;
   /**
+   * Why the adapter could not read this unit's body, when reading it threw.
+   * The summary keeps the unit's identity and binding, and the reason comes
+   * out as an `unreadOutcome` gap, so an empty body is not taken for one
+   * that does nothing.
+   */
+  readFailure?: string;
+  /**
    * Readings the adapter passed along without collapsing. This module writes
    * the reason for any that came back unreadable or ambiguous. Written and
    * absent readings contribute nothing here, since what they found is already
@@ -604,6 +611,7 @@ function unreadSentences(raw: RawCodeStructure): string[] {
   ];
 
   return [
+    ...(raw.readFailure !== undefined ? [raw.readFailure] : []),
     ...(raw.unreadBinding !== undefined ? [raw.unreadBinding] : []),
     ...handedOver
       .map(unreadReasonOf)
@@ -918,6 +926,9 @@ export function detectGaps(
 /** True when a summary is empty because the pack could not read the body.
  * A unit whose body does nothing gives false. */
 function bodyWentUnread(raw: RawCodeStructure): boolean {
+  if (raw.readFailure !== undefined) {
+    return true;
+  }
   if (raw.bodyContent === "absent" || raw.bodyContent === "elsewhere") {
     return true;
   }
@@ -927,7 +938,8 @@ function bodyWentUnread(raw: RawCodeStructure): boolean {
 /** Why an empty summary is empty, as a gap sentence, or null when it is not
  * empty. A reader cannot tell this from the transitions alone. */
 function describeUnreadBody(raw: RawCodeStructure): string | null {
-  if (!bodyWentUnread(raw)) {
+  // The read failure already went out as a gap, with the error in it.
+  if (!bodyWentUnread(raw) || raw.readFailure !== undefined) {
     return null;
   }
   if (raw.bodyContent === "absent") {

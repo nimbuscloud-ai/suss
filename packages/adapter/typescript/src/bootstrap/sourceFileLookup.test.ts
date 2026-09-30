@@ -77,6 +77,17 @@ describe("sourceFileFor", () => {
     spy.mockRestore();
   });
 
+  it("leaves out a JavaScript file the compiler will not bind", () => {
+    const project = projectWith({ "src/a.js": "export const x = 1;\n" });
+    expect(sourceFileFor(project, "/src/a.js")).toBeUndefined();
+
+    project.compilerOptions.set({ checkJs: true });
+    expect(sourceFileFor(project, "/src/a.js")?.getBaseName()).toBe("a.js");
+
+    project.compilerOptions.set({ allowJs: false });
+    expect(sourceFileFor(project, "/src/a.js")).toBeUndefined();
+  });
+
   it("still asks about a relative specifier, which is a path", () => {
     const project = projectWith({ "src/a.ts": "export const x = 1;\n" });
     const spy = vi.spyOn(project, "getSourceFile");

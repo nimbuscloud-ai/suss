@@ -4,11 +4,11 @@
  */
 
 import { Node, Project } from "ts-morph";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
-import { moduleInitSummary } from "./moduleInit.js";
+import { moduleInitSummary, unreadModuleInitSummary } from "./moduleInit.js";
 import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -287,5 +287,25 @@ describe("what a module calls when it loads", () => {
       void (async () => { sync(); })();
     `);
     expect(callsOf(summary)).toEqual(["sync"]);
+  });
+});
+
+describe("a module whose top level cannot be read", () => {
+  it("still gets a summary, with a gap that gives the error", () => {
+    const file = moduleOf("export const ready = true;\n");
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    const summary = unreadModuleInitSummary(
+      file,
+      new Error("the recognizer walk failed"),
+    );
+    stderr.mockRestore();
+
+    expect(summary.kind).toBe("module-init");
+    expect(summary.transitions).toEqual([]);
+    expect(summary.gaps.map((gap) => gap.type)).toEqual(["unreadOutcome"]);
+    expect(summary.gaps[0]?.description).toContain(
+      "the recognizer walk failed",
+    );
   });
 });
