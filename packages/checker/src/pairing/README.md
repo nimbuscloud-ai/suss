@@ -19,6 +19,8 @@ This directory has the base pairing code that every per-domain checker builds on
 
 ## Gotchas
 
+- **Test code takes no part in pairing.** A test that calls `fetch("https://test.local/")`, or a server a test starts, summarizes like production code, and pairing it compares a test double with the app. `testCode.ts:isTestCode` goes by the file names test runners look for (`*.test.ts`, `test_*.py`, `*_spec.rb`, anything under `__tests__`, and a top-level `test`, `tests`, `spec` or `e2e` folder), and by the `test` kind. `pairSummaries` lists those summaries under `unmatched.unpairable` with the reason `testCode`, and `checkAll` leaves them out of every other pass too.
+
 - **Null keys land in `unmatched.noBinding`.** A summary with a binding but no usable key (e.g. REST with an empty path) is left unpaired on purpose. It is recorded so reports can show what was skipped and why.
 - **A key bucket can contain summaries that pair with nothing in it.** A message-bus key contains only the subject, so `default#order.placed` and `order.placed` land together. That lets a handler that cannot know its bus still meet the template that declares one. `bindingsPair` then compares the buses inside the bucket, and two buses with different names stay apart. For this reason matching is tracked per summary and not per key.
 - **`checkAll` does not put message-bus summaries in the unmatched lists.** `checkMessageBus` already reports a channel that paired with nothing, with a severity and with what it knows about who sends to it. Pairing produces the pair list, and `checkMessageBus` makes every judgement about a channel.

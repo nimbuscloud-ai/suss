@@ -28,9 +28,14 @@ They emit `unhandledProviderCase`, `misreadProviderResponse` and `lowConfidence`
 `providerCoverage.ts:coverageOf` is the one place that decides this. Four things count.
 
 - **A branch admits the status.** Its guard compares against that number (`res.status === 404`), or it is a range that includes it (`!res.ok`). `statusRanges.ts` handles this part.
-- **A fall-through covers the 2xx class.** A consumer branch with no guard on it at all is the success path, so it covers 2xx and nothing else. Letting it cover every status would be wrong on exactly the code this check exists to find. dub's `handleBanLink` fires a `DELETE` inside `toast.promise`, never reads the response, and comes out as one unguarded branch. If the fall-through covered the whole space, the check would call its 404 handled.
+- **A fall-through covers the 2xx class.** A consumer branch with no guard on the status is the success path, so it covers 2xx and nothing else. That includes a branch whose guards test something else, such as whether a token exists before the request goes out, because a 200 reaches it all the same. Letting it cover every status would be wrong on exactly the code this check exists to find. dub's `handleBanLink` fires a `DELETE` inside `toast.promise`, never reads the response, and comes out as one unguarded branch. If the fall-through covered the whole space, the check would call its 404 handled.
 - **A guard on a body field that only the failing status returns.** `if (res.error) toast.error(res.error)` after `.then((r) => r.json())` handles the 404 that comes back as `{ error }`, because a 200 from the same provider has no `error` on it. The field has to be one that no 2xx body includes. A field that both kinds of response return does not tell them apart, and counting it would swallow the finding above.
 - **A catch, on a client that throws.** axios and ky reject on a non-2xx, so the caller never sees a response to guard on and every failure reaches its `catch`. `fetch` returns the response instead, so the same `catch` there covers nothing. The pack declares which kind of client it is in `metadata.http.failureDelivery`.
+
+Two kinds of consumer are left out before any of that is asked.
+
+- **A consumer that returns the response.** `setup() { return fetch(url) }` hands the response to its own caller, and that caller handles the status. The pair does not include the caller, so coverage reports nothing for it. The return type decides this: `Response`, or a generic such as `AxiosResponse<User>`, alone or inside a record or a union. A body type such as `UserResponse` does not count.
+- **Sub-cases on a consumer that never looks at the response.** When the provider returns one status in several situations, the check asks whether the consumer tells them apart. A consumer with no read of the body and no guard on the status cannot, and has no reason to, so it is not asked. Its unhandled statuses are still reported.
 
 ## What counts as a misread
 
