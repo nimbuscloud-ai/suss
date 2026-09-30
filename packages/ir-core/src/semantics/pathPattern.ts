@@ -6,7 +6,8 @@
  * `{rest*}` is zero or more, the modifiers Express puts on `:name`. A
  * bare `*` segment is zero or more segments, Express 4's reading of a
  * star. A set piece is written `(v1|v2)` and matches any one of its
- * options, and an option can contain a slash.
+ * options, and an option can contain a slash. A hole before the first
+ * slash is a base URL the client left open, and it matches the origin.
  *
  * `pathsMeet` expands the sets into alternatives, splits each one into
  * segments, and walks the two segment lists with a reachability table
@@ -115,7 +116,8 @@ function shapedItem(segment: string): Item {
         return ".*";
       }
       if (part.startsWith("{")) {
-        return "[^/]+";
+        // `count{query*}` is `count` with nothing after it too.
+        return /[?*]\}$/.test(part) ? "[^/]*" : "[^/]+";
       }
       return escapedForRegex(part);
     })
@@ -149,9 +151,25 @@ function segmentsOf(alternative: string): string[] {
   return trimmed === "" ? [] : trimmed.split("/");
 }
 
+/**
+ * The segments of one alternative, less a base URL hole at the front.
+ * `{baseUrl}/links/count` leaves the origin open, and until a deployment
+ * fills it in, the hole is read as the origin and takes no segment. A
+ * route at `/wellknown/{domain}/{file}` is not the one that call reaches.
+ */
+function patternSegmentsOf(alternative: string): string[] {
+  const segments = segmentsOf(alternative);
+  const first = segments[0];
+  const opensWithBaseUrl =
+    !alternative.startsWith("/") &&
+    first !== undefined &&
+    HOLE_SEGMENT.test(first);
+  return opensWithBaseUrl ? segments.slice(1) : segments;
+}
+
 function patternOf(path: string): Item[][] {
   return alternativesOf(path).map((alternative) =>
-    segmentsOf(alternative).flatMap(itemsOf),
+    patternSegmentsOf(alternative).flatMap(itemsOf),
   );
 }
 
