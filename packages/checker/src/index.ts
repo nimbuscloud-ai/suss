@@ -22,7 +22,7 @@ import { checkMetric } from "./metric/metricPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
-import { isTestCode } from "./pairing/testCode.js";
+import { isStory, isTestCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { checkStorage } from "./storage/storagePairing.js";
@@ -331,7 +331,11 @@ export function checkAll(all: BehavioralSummary[]): CheckAllResult {
   findings.push(...checkContractCompleteness(summaries));
   findings.push(...checkContractImplementation(summaries, pairInfo));
   findings.push(...checkGraphqlContractAgreement(summaries));
-  findings.push(...checkComponentStoryAgreement(summaries));
+  // Stories are left out of pairing, and comparing them with the
+  // components they render is this pass's whole job.
+  findings.push(
+    ...checkComponentStoryAgreement([...summaries, ...all.filter(isStory)]),
+  );
   findings.push(...checkRenderProps(summaries));
 
   // Indexed once and shared: each pass would otherwise walk every

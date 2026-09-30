@@ -16,6 +16,11 @@ describe("isTestFile", () => {
     "e2e/checkout.ts",
     "conftest.py",
     "cmd/server/main_test.go",
+    "src/components/Button.stories.tsx",
+    "src/testing/decorators/RouterDecorator.tsx",
+    "src/__fixtures__/orders.ts",
+    "src/api/orders.fixture.ts",
+    ".storybook/preview.tsx",
   ])("reads %s as test code", (file) => {
     expect(isTestFile(file)).toBe(true);
   });
@@ -34,6 +39,14 @@ describe("isTestFile", () => {
 describe("isTestCode", () => {
   it("reads a test case as test code wherever it lives", () => {
     const summary = { ...consumer("checkout", []), kind: "test" as const };
+    expect(isTestCode(summary)).toBe(true);
+  });
+
+  it("reads a Storybook story as test code wherever it lives", () => {
+    const summary = {
+      ...consumer("Primary", []),
+      metadata: { component: { storybook: { story: "Primary" } } },
+    };
     expect(isTestCode(summary)).toBe(true);
   });
 
