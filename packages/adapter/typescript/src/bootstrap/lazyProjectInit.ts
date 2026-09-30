@@ -434,15 +434,51 @@ function parseTsconfig(
   }
   const referenced = (parsed.projectReferences ?? [])
     .map((reference) => ts.resolveProjectReferencePath(reference))
-    .filter((referencePath) => !seen.has(referencePath));
+    .filter((referencePath) => !seen.has(referencePath))
+    .map((referencePath) => parseTsconfig(referencePath, seen));
   const fileNames = [
-    ...new Set(
-      referenced.flatMap(
-        (referencePath) => parseTsconfig(referencePath, seen).fileNames,
-      ),
-    ),
+    ...new Set(referenced.flatMap((reference) => reference.fileNames)),
   ];
-  return { fileNames, options: parsed.options };
+  return {
+    fileNames,
+    options: admittingReferencedJavaScript(parsed.options, referenced),
+  };
+}
+
+/**
+ * A solution-style tsconfig usually sets no options of its own, while the
+ * references it lists do. A program built with the solution's options
+ * would leave out the JavaScript files a reference allows, and the checker
+ * throws on a file the program left out, so JavaScript is allowed when
+ * any reference allows it.
+ */
+function admittingReferencedJavaScript(
+  options: ts.CompilerOptions,
+  referenced: ReadonlyArray<TsconfigRead>,
+): ts.CompilerOptions {
+  const allowed = referenced.some(
+    (reference) =>
+      reference.options.allowJs ?? reference.options.checkJs ?? false,
+  );
+  return allowed ? { ...options, allowJs: true } : options;
+}
+
+/**
+ * Give the project the options that decide which listed files the
+ * compiler takes in. The project reads its options from the tsconfig
+ * file itself, which for a solution-style tsconfig leaves out what its
+ * references allow.
+ */
+export function admitListedFiles(
+  project: Project,
+  tsconfig: TsconfigRead,
+): void {
+  if (
+    tsconfig.options.allowJs === true &&
+    project.getCompilerOptions().allowJs !== true
+  ) {
+    project.compilerOptions.set({ allowJs: true });
+  }
 }
 
 interface FileImports {

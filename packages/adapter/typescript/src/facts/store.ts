@@ -46,7 +46,7 @@ import {
   writtenValueUnder,
 } from "@suss/resolution";
 
-import { sourceFileFor } from "../bootstrap/sourceFileLookup.js";
+import { checkerReads, sourceFileFor } from "../bootstrap/sourceFileLookup.js";
 import { recordFileDependency } from "../depTracking.js";
 import { isFunctionRoot } from "../discovery/shared.js";
 import {
@@ -1932,6 +1932,9 @@ export class ResolutionStore {
       return;
     }
     this.fullyExtracted.add(filePath);
+    if (!checkerReads(sourceFile.getProject(), filePath)) {
+      return;
+    }
     this.stale = true;
     extractFileFacts(this.db, this.table, sourceFile);
   }

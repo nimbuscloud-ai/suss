@@ -1679,6 +1679,22 @@ describe("detectGaps", () => {
     expect(gaps[0]?.description).toContain("widget");
   });
 
+  it("gives the error once for a body that threw while it was read", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [],
+      bodyContent: "statements",
+      declaredContract: null,
+      readFailure: 'Reading this unit\'s body failed with "boom"',
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps.map((g) => [g.type, g.description])).toEqual([
+      ["unreadOutcome", 'Reading this unit\'s body failed with "boom"'],
+    ]);
+    expect(assessConfidence(raw).level).toBe("low");
+  });
+
   it("states the reason on a reading the adapter handed over unread", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,

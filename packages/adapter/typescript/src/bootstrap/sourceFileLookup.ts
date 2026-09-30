@@ -77,6 +77,10 @@ export function sourceFileFor(
     return undefined;
   }
 
+  if (!checkerReads(project, moduleKey)) {
+    return undefined;
+  }
+
   const known = project.getSourceFile(moduleKey);
   if (known !== undefined) {
     return known;
@@ -91,6 +95,23 @@ export function sourceFileFor(
   } catch {
     return undefined;
   }
+}
+
+const JAVASCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs"]);
+
+/**
+ * Whether the compiler binds the file at this path, which it has to
+ * before the checker can answer anything about it. A project that does
+ * not allow JavaScript leaves a `.js` file out of the program even after
+ * the file is loaded, and the checker then throws on its nodes. The
+ * default for `allowJs` follows `checkJs`, the way the compiler reads it.
+ */
+export function checkerReads(project: Project, filePath: string): boolean {
+  if (!JAVASCRIPT_EXTENSIONS.has(path.extname(filePath))) {
+    return true;
+  }
+  const options = project.getCompilerOptions();
+  return options.allowJs ?? options.checkJs ?? false;
 }
 
 /** Whether ts-morph reads this key as a path and looks it up in its map. */
