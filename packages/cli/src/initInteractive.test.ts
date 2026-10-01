@@ -138,14 +138,14 @@ describe("suss init, guided", () => {
         "pyproject.toml",
         '[project]\nname = "app"\ndependencies = ["requests"]\n',
       );
-      write("app/static/js/worker.js", "self.fetch('/api/ping');\n");
+      write("src/static/worker.js", "self.fetch('/api/ping');\n");
       project("web", "web", ["react"]);
 
       const text = await printedBy(() => initInteractive({ dir, plain: true }));
 
       expect(text).toContain("suss extract --dir web -f react");
       expect(text).not.toContain("--lang typescript");
-      expect(text).not.toContain("fetch is called in app/static");
+      expect(text).not.toContain("fetch is called in src/static");
     });
 
     it("finds a server folder and a client folder that no workspace file lists", async () => {
@@ -206,6 +206,63 @@ describe("suss init, guided", () => {
       expect(text).toContain(
         "suss contract --from openapi docs/static/openapi.json -o summaries/docs-openapi.json",
       );
+    });
+
+    it("leaves out a folder below the root whose only manifest is for tooling", async () => {
+      project("web", "web", ["react"]);
+      write("mobile/android/Gemfile", 'source "https://rubygems.org"\n');
+      write(
+        "mobile/android/Gemfile.lock",
+        "GEM\n  specs:\n    fastlane (2.0.0)\n\nDEPENDENCIES\n  fastlane\n",
+      );
+      write("mobile/android/fastlane/Fastfile.rb", "lane :beta do\nend\n");
+      write("tools/lint/requirements.txt", "black\n");
+      write("tools/lint/run.py", "print('lint')\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("suss extract --dir web -f react");
+      expect(text).not.toContain("mobile/android");
+      expect(text).not.toContain("tools/lint");
+      expect(text).not.toContain("Nothing in");
+    });
+
+    it("leaves out a lock-less Gemfile whose Ruby is only build scripts", async () => {
+      project("web", "web", ["react"]);
+      write("mobile/ios/Gemfile", 'source "https://rubygems.org"\n');
+      write("mobile/ios/scripts/bump.rb", "puts 'bump'\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).not.toContain("mobile/ios");
+    });
+
+    it("still says a service below the root has a manifest it could not read", async () => {
+      project("web", "web", ["react"]);
+      write(
+        "billing/setup.py",
+        "setup(install_requires=read_requirements())\n",
+      );
+      write("billing/billing/api.py", "def charge():\n    return {}\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("═ billing ═");
+      expect(text).toContain("install_requires is computed");
+    });
+
+    it("sets up no project for a build script that calls fetch", async () => {
+      project("dashboard", "dashboard", []);
+      write(
+        "dashboard/scripts/fetch-schema.cjs",
+        "await fetch('https://api.example.test/schema');\n",
+      );
+      write("dashboard/vite.config.ts", "await fetch('/config');\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).not.toContain("fetch is called in");
+      expect(text).not.toContain("suss extract");
     });
 
     it("says once that a submodule is missing, however many projects there are", async () => {

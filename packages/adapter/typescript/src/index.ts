@@ -5,6 +5,7 @@ export {
   extractCodeStructure,
 } from "./adapter.js";
 export { extractRawBranches } from "./assembly.js";
+export { readTsconfigFileList } from "./bootstrap/lazyProjectInit.js";
 export {
   createProjectWithoutTsconfig,
   findNearestTsconfig,

@@ -28,11 +28,11 @@ import { builtinDeclarations } from "./extract.js";
 import { readSubmodules } from "./gitSubmodules.js";
 import {
   detectLanguages,
-  firstSourceMatching,
   LANGUAGE_LABEL,
   projectFilesOf,
   SKIP_DIRECTORIES,
 } from "./language.js";
+import { firstSourceMatching } from "./projectSource.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
 
 import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";

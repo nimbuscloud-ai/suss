@@ -22,9 +22,9 @@ suss init [<directory>] [--plain | --write [--overwrite]]
 
 It reads `package.json`, the Python manifests and the Gemfile for dependencies, and the directory for schemas and deploy templates. An OpenAPI document is found by its name, `openapi.yaml` or `swagger.json`, or by the version line at its top. At a monorepo root it also reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and asks which packages to set up.
 
-Every folder below the root with its own `package.json`, `pyproject.toml` or `Gemfile` is a project of its own, whether or not a workspace file lists it, so a server folder and a client folder side by side each get their commands. A folder found only by its `package.json` is shown when a pack matched there.
+Every folder below the root with its own `package.json`, `pyproject.toml` or `Gemfile` is a project of its own, whether or not a workspace file lists it, so a server folder and a client folder side by side each get their commands. A folder below the root is shown when a pack matched there, or when its own manifest could not be read and it has source of its own. A Gemfile that only drives a mobile build, for example, does not get a section.
 
-fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in it calls the library, and the report says which file. A call in a test does not count.
+fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in the project's own source calls the library, and the report says which file. For TypeScript and JavaScript, the project's own source is what its tsconfig includes, or `src/` when there is no tsconfig. In every language, files under a scripts, tools, config or test directory don't count, and neither do `*.config.*` files or tests.
 
 When the project depends on a framework suss knows and has no pack for, such as Django, tRPC or Grape, the report says so, including when other packs matched.
 

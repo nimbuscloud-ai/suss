@@ -31,6 +31,7 @@ import {
 import { run } from "./processRun.js";
 import { PROJECT_FILE, projectFileFor } from "./projectFile.js";
 import { writeProjectSetup } from "./projectSetup.js";
+import { hasProjectSource } from "./projectSource.js";
 import { filesBelow, isProjectIn, projectsBelow } from "./projectsBelow.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
@@ -45,12 +46,6 @@ interface Target {
   directory: string;
   label: string;
   report: InitReport;
-  /**
-   * Set for a folder found only by its package.json. Tooling and docs
-   * folders have one too, so such a folder is reported only when a pack
-   * counts there or it depends on a framework suss knows.
-   */
-  onlyWithPacks?: boolean;
 }
 
 export interface InteractiveInitOptions {
@@ -141,9 +136,9 @@ async function findTargets(root: string): Promise<Target[]> {
         label: pkg.name ?? pkg.directory,
       }))
     : [{ directory: ".", label: path.basename(root) }];
-  const add = (directory: string, onlyWithPacks: boolean): void => {
+  const add = (directory: string): void => {
     if (!directories.some((known) => known.directory === directory)) {
-      directories.push({ directory, label: directory, onlyWithPacks });
+      directories.push({ directory, label: directory });
     }
   };
 
@@ -151,11 +146,11 @@ async function findTargets(root: string): Promise<Target[]> {
   // packages, and a server and a client folder often sit side by side
   // with no workspace file at all, so look for every project below.
   for (const directory of pythonAndRubyProjectsAtOrBelow(root)) {
-    add(directory, false);
+    add(directory);
   }
 
   for (const manifest of filesBelow(root, ["package.json"])) {
-    add(path.dirname(manifest), true);
+    add(path.dirname(manifest));
   }
 
   const targets: Target[] = [];
@@ -172,12 +167,36 @@ async function findTargets(root: string): Promise<Target[]> {
 
   const reported = withoutLanguagesCoveredBelow(
     withoutContractsOfProjectsBelow(targets),
-  ).filter((target) =>
-    target.onlyWithPacks === true
-      ? readsSomething(target.report)
-      : worthReporting(target.report),
-  );
+  ).filter(isWorthReporting);
   return withRepositoryNotesOnce(reported);
+}
+
+/**
+ * Whether a target has anything to report. Below the root, a folder often
+ * has a manifest for tooling of its own, such as a Gemfile for a mobile
+ * build or a package.json for docs. A folder there is reported when
+ * something in it can be read, or when its own manifest could not be read
+ * and it has source of its own that the manifest may have hidden packs for.
+ */
+function isWorthReporting(target: Target): boolean {
+  const { report } = target;
+  if (target.directory === ".") {
+    return worthReporting(report);
+  }
+
+  if (readsSomething(report)) {
+    return true;
+  }
+
+  const ownUnread = (report.unread ?? []).some(
+    (entry) => entry.aboutRepository !== true,
+  );
+  return (
+    ownUnread &&
+    (report.languages ?? []).some((language) =>
+      hasProjectSource(report.root, language),
+    )
+  );
 }
 
 /**
@@ -242,7 +261,6 @@ async function workspaceRootContracts(root: string): Promise<Target> {
   return {
     directory: ".",
     label: path.basename(root),
-    onlyWithPacks: true,
     report: {
       ...report,
       suggestions: report.suggestions.filter(
@@ -314,7 +332,7 @@ const declaredAtRoot = (report: InitReport, language: Language): boolean =>
   );
 
 /**
- * Whether a target has anything to report. A Python directory with no
+ * Whether the root has anything to report. A Python root with no
  * requirements file gets no suggestions and has no unread manifest, but
  * the user still needs to hear about it.
  */
