@@ -27,6 +27,7 @@ import {
   recognizedWithoutPackSentence,
   unnamedLanguageSentence,
   unnamedLanguages,
+  withReadableContracts,
 } from "./init.js";
 import { run } from "./processRun.js";
 import { PROJECT_FILE, projectFileFor } from "./projectFile.js";
@@ -157,7 +158,9 @@ async function findTargets(root: string): Promise<Target[]> {
   for (const known of directories) {
     targets.push({
       ...known,
-      report: await inspectProject(path.join(root, known.directory)),
+      report: await withReadableContracts(
+        await inspectProject(path.join(root, known.directory)),
+      ),
     });
   }
 
@@ -261,7 +264,7 @@ async function workspaceRootContracts(root: string): Promise<Target> {
   return {
     directory: ".",
     label: path.basename(root),
-    report: {
+    report: await withReadableContracts({
       ...report,
       suggestions: report.suggestions.filter(
         (suggestion) => suggestion.kind === "contract",
@@ -269,7 +272,7 @@ async function workspaceRootContracts(root: string): Promise<Target> {
       languages: [],
       unread: [],
       recognizedWithoutPack: [],
-    },
+    }),
   };
 }
 

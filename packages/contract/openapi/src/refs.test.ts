@@ -47,7 +47,10 @@ function bodyAt(
 }
 
 /** The summaries a file gives, and each line the reader wrote to stderr. */
-function readReporting(file: string): {
+function readReporting(
+  file: string,
+  warnings?: string[],
+): {
   summaries: BehavioralSummary[];
   unread: string[];
 } {
@@ -59,7 +62,11 @@ function readReporting(file: string): {
       return true;
     });
   try {
-    return { summaries: openApiFileToSummaries(file), unread };
+    const summaries = openApiFileToSummaries(
+      file,
+      warnings === undefined ? {} : { warnings },
+    );
+    return { summaries, unread };
   } finally {
     write.mockRestore();
   }
@@ -186,6 +193,27 @@ describe("a document split across files", () => {
     expect(unread[1]).toContain(
       "$ref #/components/parameters/Nope points at nothing",
     );
+  });
+
+  it("collects what it would print into warnings, when the caller asks", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-openapi-split-"));
+    const file = path.join(tmp, "openapi.yaml");
+    fs.writeFileSync(
+      file,
+      "openapi: 3.0.3\npaths:\n  /a:\n    $ref: gone.yaml\n",
+    );
+    const warnings: string[] = [];
+    let read: ReturnType<typeof readReporting>;
+    try {
+      read = readReporting(file, warnings);
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+
+    expect(read.unread).toEqual([]);
+    expect(warnings).toEqual([
+      expect.stringContaining("could not read gone.yaml"),
+    ]);
   });
 
   it("counts the dangling refs past the first ten instead of listing them", () => {

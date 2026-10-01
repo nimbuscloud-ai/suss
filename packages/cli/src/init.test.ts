@@ -2,14 +2,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   declaredPacks,
   formatInitReport,
   inspectProject,
   readCommands,
+  withReadableContracts,
 } from "./init.js";
+
+import type { InitReport } from "./init.js";
 
 /** Contract files each reader gives a summary for, since init asks the reader before it suggests one. */
 const TEMPLATE =
@@ -689,7 +692,7 @@ describe("a reader that walks a directory", () => {
       "export default { title: 'Chat', render: () => ({}) };\nexport const Full = { args: {} };\n",
     );
 
-    const report = await inspectProject(dir);
+    const report = await withReadableContracts(await inspectProject(dir));
     const printed = formatInitReport(report);
 
     expect(report.suggestions.filter((s) => s.kind === "contract")).toEqual([]);
@@ -698,21 +701,65 @@ describe("a reader that walks a directory", () => {
         name: "storybook",
         because: `Storybook stories under ${path.join("src", "__stories__")}`,
         reason: "the storybook reader found nothing it reads there",
+        warnings: [],
       },
     ]);
     expect(printed).not.toContain("suss contract");
     expect(printed).toContain("Contracts with nothing to read");
   });
 
-  it("says why it prints no command for a contract its reader cannot parse", async () => {
+  it("leaves the readers out of inspectProject, which check and --out-dir run on a time budget", async () => {
     fs.writeFileSync(path.join(dir, "package.json"), "{}");
     fs.writeFileSync(path.join(dir, "openapi.json"), "{ not json");
 
     const report = await inspectProject(dir);
 
+    const contracts = report.suggestions.filter((s) => s.kind === "contract");
+    expect(contracts.map((s) => `${s.name} ${s.file}`)).toEqual([
+      "openapi openapi.json",
+    ]);
+    expect(report.emptyContracts).toBeUndefined();
+  });
+
+  it("says why it prints no command for a contract its reader cannot parse", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.writeFileSync(path.join(dir, "openapi.json"), "{ not json");
+
+    const report = await withReadableContracts(await inspectProject(dir));
+
     expect(report.suggestions.filter((s) => s.kind === "contract")).toEqual([]);
     expect(report.emptyContracts?.[0]?.reason).toMatch(
       /^the openapi reader could not read it: /,
+    );
+  });
+
+  it("keeps a reader quiet while init checks it, and shows what it said under the skipped contract", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.writeFileSync(
+      path.join(dir, "openapi.yaml"),
+      "openapi: 3.0.3\npaths:\n  /orders:\n    $ref: ./paths/orders.yaml\n",
+    );
+    const written: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      });
+
+    let report: InitReport;
+    try {
+      report = await withReadableContracts(await inspectProject(dir));
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(written).toEqual([]);
+    expect(report.emptyContracts?.[0]?.warnings).toEqual([
+      expect.stringContaining("could not read paths/orders.yaml"),
+    ]);
+    expect(formatInitReport(report)).toContain(
+      "could not read paths/orders.yaml",
     );
   });
 
