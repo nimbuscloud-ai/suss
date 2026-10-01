@@ -107,6 +107,19 @@ describe("checkContractCompleteness", () => {
     ]);
   });
 
+  it("counts a route whose optional segment covers the operation", () => {
+    const findings = checkContractCompleteness([
+      stub("GET", "/orders"),
+      stub("GET", "/receipts/{id}"),
+      stub("DELETE", "/receipts/{id}"),
+      implemented("GET", "/orders"),
+      implemented("GET", "/receipts/:pk/:filename?"),
+    ]);
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "The openapi contract declares DELETE /receipts/{id} and no extracted provider implements it.",
+    ]);
+  });
+
   it("says nothing when every declared operation is implemented", () => {
     const findings = checkContractCompleteness([
       stub("POST", "/v1/provision"),

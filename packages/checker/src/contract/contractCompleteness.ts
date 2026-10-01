@@ -1,10 +1,19 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { operationKey } from "@suss/ir-core";
+import {
+  bucketsMeet,
+  operationKey,
+  semanticsAgree,
+  spansBuckets,
+} from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
 import { readDeclaredContract } from "./declaredContract.js";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  BoundaryBinding,
+  Finding,
+} from "@suss/behavioral-ir";
 
 /**
  * Reports operations a contract declares that no extracted provider
@@ -23,6 +32,7 @@ export function checkContractCompleteness(
 ): Finding[] {
   const stubsBySource = new Map<string, BehavioralSummary[]>();
   const implementedKeys = new Set<string>();
+  const spanning: BoundaryBinding[] = [];
 
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
@@ -46,6 +56,9 @@ export function checkContractCompleteness(
     }
 
     implementedKeys.add(key);
+    if (spansBuckets(binding)) {
+      spanning.push(binding);
+    }
   }
 
   const findings: Finding[] = [];
@@ -57,7 +70,11 @@ export function checkContractCompleteness(
 
     for (const stub of stubs) {
       const key = stubKey(stub);
-      if (key === null || implementedKeys.has(key)) {
+      if (
+        key === null ||
+        implementedKeys.has(key) ||
+        servedBySpanningRoute(stub, spanning)
+      ) {
         continue;
       }
       const finding = unimplementedFinding(source, stub);
@@ -67,6 +84,25 @@ export function checkContractCompleteness(
     }
   }
   return findings;
+}
+
+/**
+ * Whether a route with a hole spanning segments, such as `/:pk/:file?`,
+ * serves the operation, the way pairing lets it meet a client's call.
+ */
+function servedBySpanningRoute(
+  stub: BehavioralSummary,
+  spanning: readonly BoundaryBinding[],
+): boolean {
+  const binding = stub.identity.boundaryBinding;
+  return (
+    binding !== null &&
+    spanning.some(
+      (route) =>
+        bucketsMeet(route, binding) &&
+        semanticsAgree(route.semantics, binding.semantics),
+    )
+  );
 }
 
 function stubKey(stub: BehavioralSummary): string | null {
