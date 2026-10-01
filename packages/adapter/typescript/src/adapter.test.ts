@@ -5160,6 +5160,68 @@ describe("wrapper expansion", () => {
     ).toBe("getJson");
   });
 
+  it("tells a wrapper's caller how the client delivers failures and redirects", async () => {
+    const throwingPack: PatternPack = {
+      ...axiosLikePack,
+      failureDelivery: "exception",
+      redirectDelivery: "followed",
+    };
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+
+      export async function getQuietly<T>(path: string): Promise<T | null> {
+        try {
+          const { data } = await api.get(path);
+          return data;
+        } catch {
+          return null;
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson, getQuietly } from "./api";
+
+      export async function getPet(id: number) {
+        return getJson<unknown>(\`/pet/\${id}\`);
+      }
+
+      export async function getOwner(id: number) {
+        return getQuietly<unknown>(\`/owner/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [throwingPack],
+    });
+    const summaries = await adapter.extractAll();
+    const httpOf = (name: string) =>
+      readHttpMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      );
+
+    // The wrapper reads the body itself, so its accessors stay behind.
+    expect(httpOf("getPet")).toEqual({
+      failureDelivery: "exception",
+      redirectDelivery: "followed",
+    });
+    // A wrapper that catches the failure never lets it reach the caller.
+    expect(httpOf("getOwner")).toEqual({ redirectDelivery: "followed" });
+  });
+
   it("emits a synthetic summary for every distinct caller", async () => {
     const project = makeProject();
     project.createSourceFile(
@@ -5694,6 +5756,86 @@ describe("subUnits plumbing", () => {
     expect(sub?.identity.boundaryBinding).toEqual(
       parent?.identity.boundaryBinding,
     );
+  });
+
+  it("does not make a callback inside a client a caller of the client's request", async () => {
+    const clientPack: PatternPack = {
+      name: "fetch",
+      protocol: "http",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "client",
+          match: {
+            type: "clientCall",
+            importModule: "global",
+            importName: "fetch",
+          },
+          bindingExtraction: {
+            method: { type: "literal", value: "POST" },
+            path: { type: "fromArgument", position: 0 },
+          },
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+      responseSemantics: [
+        {
+          name: "status",
+          access: "property",
+          semantics: { type: "statusCode" },
+        },
+      ],
+      redirectDelivery: "followed",
+      subUnits: (parent) =>
+        (parent.func as Node)
+          .getDescendants()
+          .filter((node: Node) => Node.isArrowFunction(node))
+          .map((callback: Node, index: number) => ({
+            func: callback,
+            kind: "scheduled-callback",
+            name: `${parent.name}.setTimeout#${index}`,
+          })),
+    };
+    const project = makeProject();
+    project.createSourceFile(
+      "/generate.ts",
+      `
+        export function generate(prompt: string, onTimeout: () => void) {
+          setTimeout(() => {
+            onTimeout();
+          }, 35000);
+          return fetch("/generations", { method: "POST", body: prompt });
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [clientPack],
+    });
+    const summaries = await adapter.extractAll();
+
+    const parent = summaries.find((s) => s.identity.name === "generate");
+    const timeout = summaries.find(
+      (s) => s.identity.name === "generate.setTimeout#0",
+    );
+    expect(parent?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "POST",
+      path: "/generations",
+    });
+    expect(readHttpMetadata(parent as BehavioralSummary)).toEqual({
+      statusAccessors: ["status"],
+      redirectDelivery: "followed",
+    });
+    // Internal code with nothing to pair on, like a reachable function.
+    expect(timeout?.identity.boundaryBinding).toEqual({
+      transport: "in-process",
+      semantics: { name: "function-call" },
+      recognition: "reachable",
+    });
   });
 
   it("packs without subUnits produce no sub-units", async () => {
