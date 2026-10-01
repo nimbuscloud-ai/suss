@@ -69,7 +69,7 @@ export function checkContractImplementation(
   const findings: Finding[] = [];
   for (const [operation, stubs] of stubsByKey) {
     const handlers = handlersByKey.get(operation);
-    if (handlers === undefined) {
+    if (handlers === undefined || servedByMoreThanOneFunction(handlers)) {
       continue;
     }
     for (const stub of stubs) {
@@ -159,6 +159,25 @@ function checkHandlerAgainstDocument(
     ...checkBodiesAgainstDeclared(handler, contract, boundary, document),
   );
   return findings;
+}
+
+/**
+ * Whether two different functions serve one operation, such as two API
+ * versions that a header chooses between. Nothing in the run says which
+ * one the document describes, so neither is compared with it. Two
+ * summaries of one function, one per path it is registered under, still
+ * count as one.
+ */
+function servedByMoreThanOneFunction(
+  handlers: readonly BehavioralSummary[],
+): boolean {
+  const functions = new Set(
+    handlers.map(
+      ({ location }) =>
+        `${location.workspace ?? ""}|${location.file}:${location.range.start}`,
+    ),
+  );
+  return functions.size > 1;
 }
 
 function boundaryKeyOfHandler(handler: BehavioralSummary): string | null {
