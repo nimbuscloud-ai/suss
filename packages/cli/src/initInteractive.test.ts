@@ -84,6 +84,8 @@ describe("suss init, guided", () => {
         dependencies: Object.fromEntries(deps.map((d) => [d, "1.0.0"])),
       }),
     );
+    // init prints no extract for a folder without source to read.
+    write(`${relative}/src/index.ts`.replace(/^\//, ""), "export {};\n");
   }
 
   function output(): string {

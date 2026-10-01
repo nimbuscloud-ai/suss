@@ -15,12 +15,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { TSCONFIG_NAMES } from "@suss/adapter-typescript";
+import { findNearestTsconfig, TSCONFIG_NAMES } from "@suss/adapter-typescript";
 import { describesOperations, describesTypes } from "@suss/contract-graphql";
 import { isConfigurationFile } from "@suss/contract-wrangler";
 import { commonDirectoryOf } from "@suss/extractor";
 
 import { readContract } from "./contract.js";
+import {
+  contentByBoundary,
+  contractsCoveredByAnother,
+} from "./contractCopies.js";
 import {
   readPythonDependencies,
   readRubyDependencies,
@@ -33,11 +37,12 @@ import {
   projectFilesOf,
   SKIP_DIRECTORIES,
 } from "./language.js";
-import { firstSourceMatching } from "./projectSource.js";
+import { extractReadsAnything, firstSourceMatching } from "./projectSource.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
 
 import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
 import type { ContractSource } from "./contract.js";
+import type { ContentByBoundary } from "./contractCopies.js";
 import type { UnreadDependencies } from "./dependencyManifests.js";
 import type { Language } from "./language.js";
 
@@ -85,6 +90,10 @@ export interface InitReport {
   recognizedWithoutPack?: string[];
   /** Contract files whose reader found nothing in them, so no command reads them. Only `withReadableContracts` fills it. */
   emptyContracts?: EmptyContract[];
+  /** Contract files whose every boundary another file here also declares. Only `withReadableContracts` fills it. */
+  coveredContracts?: CoveredContract[];
+  /** Languages whose extract would have no file to read here, so no command reads them. Only `withReadableCode` fills it. */
+  emptyExtracts?: EmptyExtract[];
 }
 
 export interface EmptyContract {
@@ -93,6 +102,20 @@ export interface EmptyContract {
   reason: string;
   /** What the reader said while it read, such as a `$ref` it could not follow. */
   warnings: string[];
+}
+
+export interface CoveredContract {
+  name: string;
+  because: string;
+  /** The file, relative to the project, whose command reads the same boundaries. */
+  coveredBy: string;
+}
+
+export interface EmptyExtract {
+  language: Language;
+  /** The packs the extract would have run. */
+  packs: string[];
+  reason: string;
 }
 
 type Ecosystem = "npm" | "pypi" | "rubygems";
@@ -440,51 +463,69 @@ export async function withReadableContracts(
   report: InitReport,
 ): Promise<InitReport> {
   const emptyContracts: EmptyContract[] = [];
-  const empty = new Set<PackSuggestion>();
+  const dropped = new Set<PackSuggestion>();
+  const contentRead = new Map<PackSuggestion, ContentByBoundary | null>();
   for (const suggestion of report.suggestions) {
     if (suggestion.kind !== "contract" || suggestion.file === undefined) {
       continue;
     }
-    const why = await whyNothingIsRead(
+    const read = await readForInit(
       suggestion.name as ContractSource,
       path.join(report.root, suggestion.file),
     );
-    if (why === null) {
+    if ("content" in read) {
+      contentRead.set(suggestion, read.content);
       continue;
     }
-    empty.add(suggestion);
+    dropped.add(suggestion);
     emptyContracts.push({
       name: suggestion.name,
       because: suggestion.because,
-      ...why,
+      ...read,
     });
   }
-  if (emptyContracts.length === 0) {
+
+  const coveredContracts = contractsCoveredByAnother(report.root, contentRead);
+  for (const { suggestion } of coveredContracts) {
+    dropped.add(suggestion);
+  }
+  if (dropped.size === 0) {
     return report;
   }
 
   return {
     ...report,
     suggestions: withoutIdleShippedPacks(
-      report.suggestions.filter((suggestion) => !empty.has(suggestion)),
+      report.suggestions.filter((suggestion) => !dropped.has(suggestion)),
     ),
     emptyContracts: [...(report.emptyContracts ?? []), ...emptyContracts],
+    coveredContracts: [
+      ...(report.coveredContracts ?? []),
+      ...coveredContracts.map(({ suggestion, coveredBy }) => ({
+        name: suggestion.name,
+        because: suggestion.because,
+        coveredBy,
+      })),
+    ],
   };
 }
 
 /**
- * Null when the reader gives a summary. What the reader would print on
- * stderr is collected, since it belongs to the `contract` run.
+ * What each boundary the reader gives says, or why it gives nothing.
+ * What the reader would print on stderr is collected, since it belongs
+ * to the `contract` run.
  */
-async function whyNothingIsRead(
+async function readForInit(
   from: ContractSource,
   spec: string,
-): Promise<{ reason: string; warnings: string[] } | null> {
+): Promise<
+  { content: ContentByBoundary | null } | { reason: string; warnings: string[] }
+> {
   const warnings: string[] = [];
   try {
     const summaries = await readContract({ from, spec, warnings });
     if (summaries.length > 0) {
-      return null;
+      return { content: contentByBoundary(summaries) };
     }
 
     return {
@@ -497,6 +538,56 @@ async function whyNothingIsRead(
       warnings,
     };
   }
+}
+
+/**
+ * The report with each language whose extract wouldn't find a file to
+ * read moved out of the suggestions, with why. A folder without a
+ * tsconfig of its own is read through the nearest one above it, and when
+ * that one leaves the folder out, the extract reads nothing and fails.
+ */
+export function withReadableCode(report: InitReport): InitReport {
+  const code = report.suggestions.filter(
+    (suggestion) => suggestion.kind !== "contract",
+  );
+  const languages = [...new Set(code.filter(countsForProject).map(languageOf))];
+  const unreadable = languages.filter(
+    (language) => !extractReadsAnything(report.root, language),
+  );
+  if (unreadable.length === 0) {
+    return report;
+  }
+
+  return {
+    ...report,
+    suggestions: report.suggestions.filter(
+      (suggestion) =>
+        suggestion.kind === "contract" ||
+        !unreadable.includes(languageOf(suggestion)),
+    ),
+    emptyExtracts: [
+      ...(report.emptyExtracts ?? []),
+      ...unreadable.map((language) => ({
+        language,
+        packs: code
+          .filter((suggestion) => languageOf(suggestion) === language)
+          .map((suggestion) => suggestion.name),
+        reason: whyNoFileIsRead(report.root, language),
+      })),
+    ],
+  };
+}
+
+function whyNoFileIsRead(root: string, language: Language): string {
+  const tsconfig = language === "typescript" ? findNearestTsconfig(root) : null;
+  if (tsconfig === null) {
+    return `there is no ${LANGUAGE_LABEL[language]} source here for an extract to read`;
+  }
+
+  if (path.dirname(tsconfig) === root) {
+    return `${path.basename(tsconfig)} here doesn't include any source file`;
+  }
+  return `an extract here reads through ${path.relative(root, tsconfig)}, which doesn't include any file in this folder`;
 }
 
 interface DeclaredLibrary {
@@ -860,21 +951,8 @@ export function formatInitReport(report: InitReport, directory = "."): string {
   const { suggestions } = report;
 
   if (declaredPacks(report).length === 0) {
-    lines.push(`${yellow("!")} Nothing in ${report.root} matched a pack.`);
-    lines.push("");
-    lines.push(
-      dim(
-        "  suss reads code through a pack per framework, client, or schema it",
-      ),
-    );
-    lines.push(
-      dim("  recognizes, and this project's dependencies name none of them."),
-    );
-    lines.push(dim("  Run `suss --help` for the built-in list."));
-    lines.push(...recognizedWithoutPackLines(report));
-    lines.push(...unreadLines(report));
-    lines.push(...emptyContractLines(report));
-    lines.push(...unnamedLanguageLines(report));
+    lines.push(...nothingToReadLines(report));
+    lines.push(...notReadLines(report));
     return `${lines.join("\n")}\n`;
   }
 
@@ -984,12 +1062,38 @@ export function formatInitReport(report: InitReport, directory = "."): string {
     lines.push(dim("   at a particular one instead."));
   }
 
-  lines.push(...recognizedWithoutPackLines(report));
-  lines.push(...unreadLines(report));
-  lines.push(...emptyContractLines(report));
-  lines.push(...unnamedLanguageLines(report));
+  lines.push(...notReadLines(report));
 
   return `${lines.join("\n")}\n`;
+}
+
+/** The opening of a report with no command to print. */
+function nothingToReadLines(report: InitReport): string[] {
+  if ((report.emptyExtracts ?? []).length > 0) {
+    return [
+      `${yellow("!")} Packs matched in ${report.root}, but an extract there wouldn't find a file to read.`,
+    ];
+  }
+
+  return [
+    `${yellow("!")} Nothing in ${report.root} matched a pack.`,
+    "",
+    dim("  suss reads code through a pack per framework, client, or schema it"),
+    dim("  recognizes, and this project's dependencies name none of them."),
+    dim("  Run `suss --help` for the built-in list."),
+  ];
+}
+
+/** Everything init found and prints no command for, with why. */
+function notReadLines(report: InitReport): string[] {
+  return [
+    ...recognizedWithoutPackLines(report),
+    ...unreadLines(report),
+    ...emptyExtractLines(report),
+    ...emptyContractLines(report),
+    ...coveredContractLines(report),
+    ...unnamedLanguageLines(report),
+  ];
 }
 
 /** A suggestion's language, with TypeScript for a contract, which has none. */
@@ -1144,10 +1248,58 @@ function emptyContractLines(report: InitReport): string[] {
   return lines;
 }
 
+function coveredContractLines(report: InitReport): string[] {
+  const covered = report.coveredContracts ?? [];
+  if (covered.length === 0) {
+    return [];
+  }
+
+  const lines = [
+    "",
+    `  ${yellow("!")} ${bold("Contracts another file already declares")}`,
+  ];
+  const indent = `    ${"".padEnd(16)} `;
+  for (const entry of covered) {
+    lines.push(`    ${cyan(entry.name.padEnd(16))} ${dim(entry.because)}`);
+    lines.push(
+      `${indent}${dim(`${entry.coveredBy} describes every boundary in it the same way`)}`,
+    );
+  }
+  lines.push(
+    dim(
+      "    suss prints no command for these, since reading both would report each finding twice.",
+    ),
+  );
+  return lines;
+}
+
+function emptyExtractLines(report: InitReport): string[] {
+  const empty = report.emptyExtracts ?? [];
+  if (empty.length === 0) {
+    return [];
+  }
+
+  const lines = ["", `  ${yellow("!")} ${bold("Code with nothing to read")}`];
+  const indent = `    ${"".padEnd(16)} `;
+  for (const entry of empty) {
+    lines.push(
+      `    ${cyan(LANGUAGE_LABEL[entry.language].padEnd(16))} ${dim(`would run ${entry.packs.join(", ")}`)}`,
+    );
+    lines.push(`${indent}${dim(entry.reason)}`);
+  }
+  lines.push(
+    dim("    suss prints no extract for these, since each would read nothing."),
+  );
+  return lines;
+}
+
 /** Languages with source in the project that no suggested pack reads. */
 export function unnamedLanguages(report: InitReport): Language[] {
   const languages = report.languages ?? [];
-  const covered = new Set(report.suggestions.map(languageOf));
+  const covered = new Set([
+    ...report.suggestions.map(languageOf),
+    ...(report.emptyExtracts ?? []).map((entry) => entry.language),
+  ]);
   return languages.filter(
     (language) =>
       !covered.has(language) &&

@@ -27,6 +27,7 @@ import {
   recognizedWithoutPackSentence,
   unnamedLanguageSentence,
   unnamedLanguages,
+  withReadableCode,
   withReadableContracts,
 } from "./init.js";
 import { run } from "./processRun.js";
@@ -158,8 +159,10 @@ async function findTargets(root: string): Promise<Target[]> {
   for (const known of directories) {
     targets.push({
       ...known,
-      report: await withReadableContracts(
-        await inspectProject(path.join(root, known.directory)),
+      report: withReadableCode(
+        await withReadableContracts(
+          await inspectProject(path.join(root, known.directory)),
+        ),
       ),
     });
   }
@@ -178,8 +181,9 @@ async function findTargets(root: string): Promise<Target[]> {
  * Whether a target has anything to report. Below the root, a folder often
  * has a manifest for tooling of its own, such as a Gemfile for a mobile
  * build or a package.json for docs. A folder there is reported when
- * something in it can be read, or when its own manifest could not be read
- * and it has source of its own that the manifest may have hidden packs for.
+ * something in it can be read, when a pack matched and an extract would
+ * find nothing to read, or when its own manifest could not be read and it
+ * has source of its own that the manifest may have hidden packs for.
  */
 function isWorthReporting(target: Target): boolean {
   const { report } = target;
@@ -187,7 +191,7 @@ function isWorthReporting(target: Target): boolean {
     return worthReporting(report);
   }
 
-  if (readsSomething(report)) {
+  if (readsSomething(report) || (report.emptyExtracts ?? []).length > 0) {
     return true;
   }
 
@@ -342,6 +346,7 @@ const declaredAtRoot = (report: InitReport, language: Language): boolean =>
 const worthReporting = (report: InitReport): boolean =>
   readsSomething(report) ||
   (report.unread ?? []).length > 0 ||
+  (report.emptyExtracts ?? []).length > 0 ||
   unnamedLanguages(report).length > 0;
 
 const readsSomething = (report: InitReport): boolean =>

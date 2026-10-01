@@ -9,6 +9,7 @@ import {
   formatInitReport,
   inspectProject,
   readCommands,
+  withReadableCode,
   withReadableContracts,
 } from "./init.js";
 
@@ -792,5 +793,223 @@ describe("a reader that walks a directory", () => {
       .map((s) => s.name);
 
     expect(read).toEqual(["graphql-documents"]);
+  });
+});
+
+/** An OpenAPI document with one GET per path. */
+function openapiWith(paths: readonly string[]): string {
+  return [
+    "openapi: 3.0.3",
+    "info: { title: orders, version: '1' }",
+    "paths:",
+    ...paths.flatMap((one) => [
+      `  ${one}:`,
+      "    get:",
+      "      responses:",
+      "        '200':",
+      "          description: ok",
+    ]),
+  ].join("\n");
+}
+
+describe("contract files that declare the same boundaries", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-covered-"));
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.mkdirSync(path.join(dir, "spec", "groups"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function offered(): Promise<InitReport> {
+    return await withReadableContracts(await inspectProject(dir));
+  }
+
+  const contractFiles = (report: InitReport): Array<string | undefined> =>
+    report.suggestions
+      .filter((suggestion) => suggestion.kind === "contract")
+      .map((suggestion) => suggestion.file);
+
+  it("offers a spec once when a bundle and a tag group repeat its operations", async () => {
+    const all = ["/orders", "/orders/{id}", "/invoices"];
+    fs.writeFileSync(path.join(dir, "spec", "index.yaml"), openapiWith(all));
+    // The bundle spells the same operations at more length.
+    fs.writeFileSync(
+      path.join(dir, "spec", "bundle.yaml"),
+      `${openapiWith(all)}\n# built from index.yaml\n`,
+    );
+    fs.writeFileSync(
+      path.join(dir, "spec", "groups", "orders.yaml"),
+      openapiWith(["/orders", "/orders/{id}"]),
+    );
+
+    const report = await offered();
+
+    expect(contractFiles(report)).toEqual([path.join("spec", "index.yaml")]);
+    expect(
+      report.coveredContracts?.map((entry) => [entry.because, entry.coveredBy]),
+    ).toEqual([
+      [
+        `an OpenAPI document at ${path.join("spec", "bundle.yaml")}`,
+        path.join("spec", "index.yaml"),
+      ],
+      [
+        `an OpenAPI document at ${path.join("spec", "groups", "orders.yaml")}`,
+        path.join("spec", "index.yaml"),
+      ],
+    ]);
+    const printed = formatInitReport(report);
+    expect(printed).toContain("Contracts another file already declares");
+    expect(printed).not.toContain("spec/bundle.yaml -o");
+  });
+
+  it("offers one of two identical copies", async () => {
+    const same = openapiWith(["/orders"]);
+    fs.writeFileSync(path.join(dir, "spec", "openapi.yaml"), same);
+    fs.writeFileSync(path.join(dir, "spec", "groups", "openapi.yaml"), same);
+
+    expect(contractFiles(await offered())).toHaveLength(1);
+  });
+
+  it("offers both specs when one describes a shared operation differently", async () => {
+    fs.writeFileSync(
+      path.join(dir, "spec", "openapi.yaml"),
+      openapiWith(["/orders", "/invoices"]),
+    );
+    fs.writeFileSync(
+      path.join(dir, "spec", "groups", "served.yaml"),
+      openapiWith(["/orders"]).replace("'200'", "'201'"),
+    );
+
+    expect(contractFiles(await offered())).toHaveLength(2);
+  });
+
+  it("offers both specs when each declares an operation the other lacks", async () => {
+    fs.writeFileSync(
+      path.join(dir, "spec", "orders.yaml"),
+      openapiWith(["/health", "/orders"]),
+    );
+    fs.writeFileSync(
+      path.join(dir, "spec", "groups", "invoices.yaml"),
+      openapiWith(["/health", "/invoices"]),
+    );
+
+    expect(contractFiles(await offered())).toHaveLength(2);
+  });
+});
+
+describe("a folder an extract would read nothing in", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-unread-folder-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("prints no extract when the tsconfig above leaves the folder out, and says why", () => {
+    fs.writeFileSync(
+      path.join(dir, "tsconfig.json"),
+      JSON.stringify({ include: ["shared/**/*.ts"] }),
+    );
+    fs.mkdirSync(path.join(dir, "shared"));
+    fs.writeFileSync(
+      path.join(dir, "shared", "money.ts"),
+      "export const x = 1;",
+    );
+    const folder = path.join(dir, "plugins", "ledger");
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(
+      path.join(folder, "package.json"),
+      JSON.stringify({ peerDependencies: { react: "^19.0.0" } }),
+    );
+    fs.writeFileSync(
+      path.join(folder, "index.tsx"),
+      "export const Ledger = () => <div />;",
+    );
+    const report: InitReport = {
+      root: folder,
+      tsconfig: null,
+      suggestions: [
+        {
+          name: "react",
+          packageName: "@suss/framework-react",
+          because: "react in peerDependencies",
+          kind: "framework",
+          language: "typescript",
+        },
+      ],
+      languages: ["typescript"],
+    };
+
+    const checked = withReadableCode(report);
+    const printed = formatInitReport(checked, "plugins/ledger");
+
+    expect(declaredPacks(checked)).toEqual([]);
+    expect(checked.emptyExtracts).toEqual([
+      {
+        language: "typescript",
+        packs: ["react"],
+        reason: `an extract here reads through ${path.join("..", "..", "tsconfig.json")}, which doesn't include any file in this folder`,
+      },
+    ]);
+    expect(printed).not.toContain("suss extract");
+    expect(printed).toContain("Code with nothing to read");
+    expect(printed).not.toContain("could not tell which packs");
+  });
+
+  it("keeps the extract when the tsconfig above includes the folder", () => {
+    fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify({}));
+    const folder = path.join(dir, "plugins", "ledger");
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, "index.ts"), "export const x = 1;");
+    const report: InitReport = {
+      root: folder,
+      tsconfig: null,
+      suggestions: [
+        {
+          name: "express",
+          packageName: "@suss/framework-express",
+          because: "express in dependencies",
+          kind: "framework",
+          language: "typescript",
+        },
+      ],
+    };
+
+    expect(withReadableCode(report)).toBe(report);
+  });
+
+  it("says so when the folder's own tsconfig lists no source", () => {
+    fs.writeFileSync(
+      path.join(dir, "tsconfig.json"),
+      JSON.stringify({ files: ["package.json"] }),
+    );
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(path.join(dir, "src", "index.ts"), "export {};");
+    const report: InitReport = {
+      root: dir,
+      tsconfig: path.join(dir, "tsconfig.json"),
+      suggestions: [
+        {
+          name: "axios",
+          packageName: "@suss/client-axios",
+          because: "axios in dependencies",
+          kind: "client",
+          language: "typescript",
+        },
+      ],
+    };
+
+    expect(withReadableCode(report).emptyExtracts?.[0]?.reason).toBe(
+      "tsconfig.json here doesn't include any source file",
+    );
   });
 });
