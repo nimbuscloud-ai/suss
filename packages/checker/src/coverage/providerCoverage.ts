@@ -53,7 +53,7 @@ const FOLLOWED_REDIRECTS: ReadonlySet<number> = new Set([
  * returns, and a catch on a client that throws rather than returning a
  * response.
  */
-function coverageOf(
+export function coverageOf(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
 ): (status: number) => boolean {
