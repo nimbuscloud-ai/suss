@@ -10,7 +10,11 @@
  * own, and each action it covers records a reference to that unit.
  */
 
-import { inheritedStatements, methodInAncestry } from "./ancestry.js";
+import {
+  inheritedStatements,
+  methodInAncestry,
+  methodPastUnreadAncestors,
+} from "./ancestry.js";
 import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { withSlotSources } from "./provenance.js";
 import { responseBranches } from "./responseStatus.js";
@@ -19,11 +23,12 @@ import { namesOf } from "./values/literals.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure, Reading } from "@suss/extractor";
-import type { Ancestry, BodyReading } from "./ancestry.js";
+import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type { Ancestry, BodyReading, MethodLookup } from "./ancestry.js";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
 import type { RbNode } from "./parser.js";
+import type { RespondingHelper } from "./responseStatus.js";
 
 /** One filter the ancestry declares, resolved to its method. */
 export interface ControllerFilter {
@@ -108,7 +113,7 @@ export function controllerFilters(
 
   const resolved: ControllerFilter[] = [];
   for (const declaration of declared) {
-    const found = methodInAncestry(ancestry, declaration.methodName, read);
+    const found = filterMethod(ancestry, declaration.methodName, read);
     if (found.type !== "found") {
       continue;
     }
@@ -128,6 +133,23 @@ export function controllerFilters(
     ...resolved.filter((one) => one.filter.onThrow !== true),
     ...resolved.filter((one) => one.filter.onThrow === true),
   ];
+}
+
+/**
+ * The method a filter runs. A controller that includes a library module
+ * would otherwise lose every filter its ancestors define, since the
+ * module comes before them in the lookup.
+ */
+function filterMethod(
+  ancestry: Ancestry,
+  name: string,
+  read: BodyReading,
+): MethodLookup {
+  const found = methodInAncestry(ancestry, name, read);
+  if (found.type === "unsettled" && found.cause === "unreadAncestor") {
+    return methodPastUnreadAncestors(ancestry, name, read);
+  }
+  return found;
 }
 
 /** Whether the library runs this filter for the given action. */
@@ -171,7 +193,7 @@ export function filterUnit(
   displayPath: string,
   body: FilterBody,
   facts?: Database | undefined,
-  respondingHelper?: (name: string) => Reading<number> | null,
+  respondingHelper?: RespondingHelper,
   raised: readonly RawBranch[] = [],
 ): RawCodeStructure {
   const range = rangeOf(filter.method);

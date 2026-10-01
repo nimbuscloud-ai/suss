@@ -768,7 +768,32 @@ describe("discoverUnits: controller actions", () => {
             : `${branch.terminal.kind} ${reading?.kind ?? ""}`;
         });
     expect(statuses("authenticate!")).toEqual([401, "delegate "]);
-    expect(statuses("index")).toEqual(["response unreadable", 200]);
+    expect(statuses("index")).toEqual([404, 200]);
+  });
+
+  it("leaves a helper's status unread when the call passes one that does not settle", async () => {
+    const pack = railsTestPack({
+      routeFor: () => null,
+      responseStatusCalls: [{ name: "render", statusKeyword: "status" }],
+    });
+    const units = await discoverActions(
+      [
+        "class OrdersController < ApplicationController",
+        "  def index",
+        "    render_error(lookup_status)",
+        "  end",
+        "  private",
+        "  def render_error(status)",
+        "    render json: {}, status: status",
+        "  end",
+        "end",
+      ].join("\n"),
+      pack,
+    );
+    const index = units.find((unit) => unit.identity.name === "index");
+    expect(
+      index?.branches.map((branch) => branch.statusCodeReading?.reading.kind),
+    ).toEqual(["unreadable"]);
   });
 
   it("discovers every instance method a controller defines directly, routed or not", async () => {

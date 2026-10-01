@@ -389,6 +389,34 @@ describe("composeWrappers", () => {
     expect(fromOf(composed.transitions[2])).toBe("onError");
   });
 
+  it("lists the error handler's response beside a throw from a middleware in front of the route", () => {
+    const loadAccount: WrapperReference = {
+      file: "src/app.ts",
+      name: "loadAccount",
+    };
+    const onError: WrapperReference = {
+      file: "src/app.ts",
+      name: "onError",
+      onThrow: true,
+    };
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [loadAccount, onError],
+    });
+    const middleware = unit("loadAccount", "src/app.ts", [
+      throws("missing", [guard("account.nil?")]),
+      continues("next"),
+    ]);
+    const handler = unit("onError", "src/app.ts", [responds("gone", 404)]);
+
+    const [composed] = composeWrappers([route, middleware, handler]);
+
+    expect(statusesOf(composed)).toEqual([
+      "throw",
+      { type: "literal", value: 200 },
+      { type: "literal", value: 404 },
+    ]);
+  });
+
   it("leaves a route that never throws alone, error handler or not", () => {
     const onError: WrapperReference = {
       file: "src/app.ts",

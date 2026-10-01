@@ -15,6 +15,8 @@ Rails.application.routes.draw do
 
   resource :profile, only: [:show, :update]
 
+  resources :receipts, only: [:show, :destroy]
+
   namespace :admin do
     resources :reports, only: [:index]
     resources :audits, only: [:index]

@@ -285,6 +285,96 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
+  it("gaps a call in a module's method on a name the module leaves to the class that includes it", async () => {
+    write("app/graphql/concerns/guard.rb", [
+      "module Guard",
+      "  def ensure_user(user)",
+      '    render_unauthorized("no") if user.nil?',
+      "  end",
+      "end",
+    ]);
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  include Guard",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    ensure_user(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(unitNamed(summaries, "ensure_user").gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "render_unauthorized",
+        description: expect.stringContaining("is made on self in a mixin"),
+      }),
+    );
+    expect(
+      unitNamed(summaries, "Query.orders").gaps.filter(
+        (gap) => gap.type === "unfollowedCall",
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a call in a module's method alone when every object has the method", async () => {
+    write("app/graphql/concerns/guard.rb", [
+      "module Guard",
+      "  def ensure_user(user)",
+      '    format("%s", user) if block_given?',
+      "  end",
+      "end",
+    ]);
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  include Guard",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    ensure_user(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "ensure_user").gaps.filter(
+        (gap) => gap.type === "unfollowedCall",
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a call in a module's method alone when the module includes one this run did not read", async () => {
+    write("app/graphql/concerns/guard.rb", [
+      "module Guard",
+      "  include Authorization::Gem",
+      "",
+      "  def ensure_user(user)",
+      "    authorize(user)",
+      "  end",
+      "end",
+    ]);
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  include Guard",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    ensure_user(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "ensure_user").gaps.filter(
+        (gap) => gap.type === "unfollowedCall",
+      ),
+    ).toEqual([]);
+  });
+
   it("gaps a call on a name a define_method loop was read to define", async () => {
     writeQueryType("orders", [
       "Form::AdminSettings.new.update_site_title(current_user)",

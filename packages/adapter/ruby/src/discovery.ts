@@ -51,7 +51,11 @@ import {
   withSlotSources,
 } from "./provenance.js";
 import { raisedStatusBranches } from "./raisedStatuses.js";
-import { helperResponse, responseBranches } from "./responseStatus.js";
+import {
+  boundStatusArguments,
+  helperResponse,
+  responseBranches,
+} from "./responseStatus.js";
 import {
   constantRefCandidates,
   graphqlTypeNameFromQualified,
@@ -99,6 +103,7 @@ import type {
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
+import type { RespondingHelper } from "./responseStatus.js";
 import type { ClassInfo } from "./scope.js";
 import type { SharedGroupIndex } from "./testSharedGroups.js";
 import type { TypeReadContext } from "./typeShape.js";
@@ -631,37 +636,42 @@ function publicInstanceMethods(
 
 /**
  * What each project method the controller can call sends, when every
- * path through it responds, read once per name. A method this run cannot
- * find in the ancestry, or one an unread ancestor might replace, sends
- * nothing it can claim.
+ * path through it responds, read once per name and status the call
+ * passes. A method this run cannot find in the ancestry, or one an
+ * unread ancestor might replace, sends nothing it can claim.
  */
 function respondingHelpersOf(
   ancestry: Ancestry,
   pattern: ControllerActions,
   options: DiscoveryOptions,
-): (name: string) => Reading<number> | null {
+): RespondingHelper {
+  const methods = new Map<string, RbNode | null>();
   const known = new Map<string, Reading<number> | null>();
   const declared = new Set(
     (pattern.responseStatusCalls ?? []).map((call) => call.name),
   );
-  return (name) => {
-    if (declared.has(name)) {
-      return null;
-    }
-    if (!known.has(name)) {
+  const methodNamed = (name: string): RbNode | null => {
+    if (!methods.has(name)) {
       const found = methodInAncestry(ancestry, name, {
         facts: options.facts,
         bodyBlocks: options.bodyBlocks,
         dynamicNames: options.dynamicNames,
       });
-      known.set(
-        name,
-        found.type === "found"
-          ? helperResponse(found.method, pattern, options.facts)
-          : null,
-      );
+      methods.set(name, found.type === "found" ? found.method : null);
     }
-    return known.get(name) ?? null;
+    return methods.get(name) ?? null;
+  };
+  return (name, call) => {
+    const method = declared.has(name) ? null : methodNamed(name);
+    if (method === null) {
+      return null;
+    }
+    const bound = boundStatusArguments(method, call, pattern, options.facts);
+    const key = `${name}(${[...bound].join(",")})`;
+    if (!known.has(key)) {
+      known.set(key, helperResponse(method, pattern, options.facts, bound));
+    }
+    return known.get(key) ?? null;
   };
 }
 
@@ -674,7 +684,7 @@ function buildControllerActionUnit(
   file: { display: string; absolute: string },
   bodyRead: BodyReadOptions,
   wrappers: readonly WrapperReference[] = [],
-  respondingHelper?: (name: string) => Reading<number> | null,
+  respondingHelper?: RespondingHelper,
   rescued: ReadonlySet<string> = new Set(),
 ): RawCodeStructure {
   const range = rangeOf(method);

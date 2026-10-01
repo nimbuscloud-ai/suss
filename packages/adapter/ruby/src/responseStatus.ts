@@ -64,12 +64,21 @@ function statusArgumentOf(
   return args.positional[declaration.statusArgument] ?? null;
 }
 
-/** The number a status argument comes down to, written either as a number or as one of the names the library accepts. */
+/**
+ * The number a status argument comes down to, written either as a number
+ * or as one of the names the library accepts. `bound` gives the status a
+ * helper's caller passed for each of its parameters.
+ */
 function statusNumberOf(
   node: RbNode,
   names: Record<string, number>,
   facts: Database | undefined,
+  bound: ReadonlyMap<string, number> = new Map(),
 ): number | null {
+  const passed = node.type === "identifier" ? bound.get(node.text) : undefined;
+  if (passed !== undefined) {
+    return passed;
+  }
   const value = evaluatedValue(node, facts);
   const constant = constantOf(value);
   if (typeof constant === "number") {
@@ -108,11 +117,17 @@ function declarationOf(
   return name === undefined ? undefined : byName.get(name);
 }
 
+/** What a project method sends when every path through it responds, read for one call to it, or null when it does not respond. */
+export type RespondingHelper = (
+  name: string,
+  call: RbNode,
+) => Reading<number> | null;
+
 /** What decides whether a call in a body sends the response. */
 interface Responders {
   byName: ReadonlyMap<string, RbStatusCall>;
   locals: ReadonlySet<string>;
-  helper: ((name: string) => Reading<number> | null) | undefined;
+  helper: RespondingHelper | undefined;
 }
 
 /** A call that sends the response: one the pack declares, or a project helper that always responds. */
@@ -132,7 +147,7 @@ function responderOf(
   const reading =
     name === null || responders.helper === undefined
       ? null
-      : responders.helper(name);
+      : responders.helper(name, node);
   return reading === null ? undefined : { kind: "helper", reading };
 }
 
@@ -154,11 +169,11 @@ function readingOfResponder(
   call: RbNode,
   responder: Responder,
   names: Record<string, number>,
-  facts: Database | undefined,
+  options: BranchOptions,
 ): Reading<number> {
   return responder.kind === "helper"
     ? responder.reading
-    : readingOfCall(call, responder.declaration, names, facts);
+    : readingOfCall(call, responder.declaration, names, options);
 }
 
 /** Every call written in a body that sends the response, in source order. */
@@ -200,7 +215,7 @@ function readingOfCall(
   call: RbNode,
   declaration: RbStatusCall,
   names: Record<string, number>,
-  facts: Database | undefined,
+  options: BranchOptions,
 ): Reading<number> {
   const argument = statusArgumentOf(call, declaration);
   if (argument === null) {
@@ -208,7 +223,12 @@ function readingOfCall(
       ? absentReading
       : writtenReading(declaration.defaultStatusCode, rangeOf(call));
   }
-  const status = statusNumberOf(argument, names, facts);
+  const status = statusNumberOf(
+    argument,
+    names,
+    options.facts,
+    options.boundStatuses,
+  );
   if (status === null) {
     return unreadableReading(
       "This response writes a status that does not settle on a number here, so this outcome claims none",
@@ -290,24 +310,59 @@ export interface BranchOptions {
   fallthrough?: "respond" | "handOn";
   /** The project's facts, so a status written as a constant another file defines resolves. */
   facts?: Database | undefined;
-  /** What a project method sends when every path through it responds, or null when it does not. */
-  respondingHelper?: (name: string) => Reading<number> | null;
+  respondingHelper?: RespondingHelper;
+  /** The status a helper's caller passed for each of the helper's parameters, when the body read is a helper. */
+  boundStatuses?: ReadonlyMap<string, number>;
+}
+
+/**
+ * The status a call passes for each of the helper's positional
+ * parameters, where the argument settles on one, as `404` does in
+ * `respond_with_error(404)`.
+ */
+export function boundStatusArguments(
+  helper: RbNode,
+  call: RbNode,
+  pattern: ControllerActions,
+  facts: Database | undefined,
+): ReadonlyMap<string, number> {
+  const parameters = (field(helper, "parameters")?.namedChildren ?? []).filter(
+    (child): child is RbNode => child !== null && child.type === "identifier",
+  );
+  const args =
+    call.type === "call"
+      ? readCallArgs(field(call, "arguments")).positional
+      : [];
+  const bound = new Map<string, number>();
+  parameters.forEach((parameter, index) => {
+    const arg = args[index];
+    const status =
+      arg === undefined
+        ? null
+        : statusNumberOf(arg, pattern.statusCodeNames ?? {}, facts);
+    if (status !== null) {
+      bound.set(parameter.text, status);
+    }
+  });
+  return bound;
 }
 
 /**
  * What a helper method responds with, read one hop deep: every path
  * through it has to end at a call the pack declares, or it does not
- * count. A status that differs between paths, or is a parameter the
- * caller passes, is reported as unread.
+ * count. A status that differs between paths is reported as unread. A
+ * status the caller passes in counts when this call passes a number.
  */
 export function helperResponse(
   helper: RbNode,
   pattern: ControllerActions,
   facts: Database | undefined,
+  boundStatuses: ReadonlyMap<string, number> = new Map(),
 ): Reading<number> | null {
   const branches = responseBranches(helper, pattern, [], undefined, {
     fallthrough: "handOn",
     facts,
+    boundStatuses,
   });
   if (
     branches === null ||
@@ -505,7 +560,7 @@ export function responseBranches(
   };
   const responses = collectResponseCalls(body, responders, []);
   const returns = collectReturns(body, []);
-  const lowered = lowerRubyBody(body, returns, responses);
+  const lowered = lowerRubyBody(body, returns, responses, pattern.formatSwitch);
 
   // A `return` written on its own responds with whatever Rails renders
   // implicitly, so it is an outcome of its own. One written around a
@@ -538,7 +593,7 @@ export function responseBranches(
     const reading =
       responder === undefined
         ? absentReading
-        : readingOfResponder(terminal, responder, statusNames, options.facts);
+        : readingOfResponder(terminal, responder, statusNames, options);
     for (const path of enumerated.byTerminal.get(terminal) ?? []) {
       outcomes.push({
         conditions: conditionsOf(path),

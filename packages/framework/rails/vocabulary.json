@@ -18,6 +18,7 @@
   "redirect_to": "Rails: ActionController::Redirecting#redirect_to",
   "redirect_back": "Rails: ActionController::Redirecting#redirect_back",
   "respond_to": "Rails: ActionController::MimeResponds#respond_to, included in ActionController::Base",
+  "any": "Rails: ActionController::MimeResponds::Collector#any, the respond_to format that accepts every request",
   "render_to_string": "Rails: AbstractController::Rendering#render_to_string",
   "url_for": "Rails: AbstractController::UrlFor#url_for",
   "helpers": "Rails: ActionController::Helpers#helpers, included in ActionController::Base",

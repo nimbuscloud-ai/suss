@@ -20,6 +20,7 @@ const STORAGE = [
     raises: [
       { exception: "RecordNotFound", methods: ["find", "find_by!"] },
       { exception: "RecordInvalid", methods: ["save!"] },
+      { exception: "LockWaitTimeout", methods: ["lock!"] },
     ],
   } as unknown as RbStoragePattern,
 ];
@@ -69,12 +70,31 @@ describe("raisedStatusBranches", () => {
     ]);
   });
 
-  it("leaves a status out when the controller rescues that exception or one it inherits from", () => {
-    expect(statuses([storageCall("find")], ["RecordNotFound"])).toEqual([]);
-    expect(statuses([storageCall("find")], ["StoreError"])).toEqual([]);
-    expect(statuses([storageCall("find")], ["OtherError"])).toEqual([
-      { type: "literal", value: 404 },
-    ]);
+  it("throws instead of responding when the controller rescues that exception or one it inherits from", () => {
+    const thrown = (rescued: string[]) =>
+      raisedStatusBranches(
+        PATTERN,
+        STORAGE,
+        [storageCall("find")],
+        new Set(rescued),
+        AT,
+      ).map((branch) => [branch.terminal.kind, branch.terminal.exceptionType]);
+    expect(thrown(["RecordNotFound"])).toEqual([["throw", "RecordNotFound"]]);
+    expect(thrown(["StoreError"])).toEqual([["throw", "RecordNotFound"]]);
+    expect(thrown(["OtherError"])).toEqual([["response", null]]);
+  });
+
+  it("throws an exception the library sends no status for only when the controller rescues it", () => {
+    const kinds = (rescued: string[]) =>
+      raisedStatusBranches(
+        PATTERN,
+        STORAGE,
+        [storageCall("lock!")],
+        new Set(rescued),
+        AT,
+      ).map((branch) => branch.terminal.kind);
+    expect(kinds(["LockWaitTimeout"])).toEqual(["throw"]);
+    expect(kinds([])).toEqual([]);
   });
 
   it("adds nothing for a body that makes no raising call", () => {
