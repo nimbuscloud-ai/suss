@@ -13,13 +13,13 @@
 import path from "node:path";
 
 import {
-  createProjectWithoutTsconfig,
   createTypeScriptAdapter,
   workspaceRootFor,
 } from "@suss/adapter-typescript";
 
 import { corroborateSummary } from "./corroborate.js";
 import {
+  adapterSourceOf,
   relativizeSummaryPaths,
   resolveFramework,
   resolveSource,
@@ -172,9 +172,7 @@ export async function corroborate(
   );
 
   const adapter = createTypeScriptAdapter({
-    ...(source.kind === "tsconfig"
-      ? { tsConfigFilePath: source.path }
-      : { project: createProjectWithoutTsconfig(source.root).project }),
+    ...adapterSourceOf(source),
     projectRoot: runRoot,
     frameworks: packs,
     // The sandbox needs the files loaded into the same Project that

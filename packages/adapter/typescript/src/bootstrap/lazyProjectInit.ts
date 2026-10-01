@@ -44,10 +44,16 @@ export interface TsconfigRead {
   options: ts.CompilerOptions;
 }
 
+/**
+ * `walkedDirectory`, when given, keeps the walk to the tsconfig's files
+ * under it. The gate still reads the whole include set, so a file there
+ * that reaches a pack through a wrapper outside the directory is kept.
+ */
 export async function createLazyProject(
   tsConfigFilePath: string,
   packs: ReadonlyArray<PatternPack>,
   parsed: TsconfigRead = readTsconfig(tsConfigFilePath),
+  walkedDirectory?: string,
 ): Promise<LazyProjectInit> {
   const allFiles = parsed.fileNames;
   const candidates = await selectCandidateFiles(
@@ -57,9 +63,19 @@ export async function createLazyProject(
   );
 
   return {
-    candidatePaths: candidates,
+    candidatePaths:
+      walkedDirectory === undefined
+        ? candidates
+        : filesUnder(candidates, walkedDirectory),
     projectFileSet: new Set(allFiles),
   };
+}
+
+function filesUnder(files: ReadonlyArray<string>, directory: string): string[] {
+  const prefix = directory.endsWith(path.sep)
+    ? directory
+    : `${directory}${path.sep}`;
+  return files.filter((file) => path.resolve(file).startsWith(prefix));
 }
 
 /** Reads no source, so a cache hit never pays for the bootstrap. */

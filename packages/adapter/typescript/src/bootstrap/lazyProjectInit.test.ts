@@ -213,6 +213,40 @@ describe("createLazyProject", () => {
     ]);
   });
 
+  it("walks only the files under the directory it was given", async () => {
+    const { dir, tsconfigPath } = await makeTempProject({
+      "packages/orders/handler.ts": "export const foo = 1;",
+      "packages/billing/handler.ts": "export const foo = 2;",
+      "packages/orders-archive/handler.ts": "export const foo = 3;",
+    });
+    const result = await createLazyProject(
+      tsconfigPath,
+      [ungatedPack],
+      undefined,
+      path.join(dir, "packages", "orders"),
+    );
+    expect(
+      result.candidatePaths.map((p) => path.relative(dir, p)).sort(),
+    ).toEqual([path.join("packages", "orders", "handler.ts")]);
+    expect(result.projectFileSet.size).toBe(3);
+  });
+
+  it("keeps a file under the directory that reaches a pack through a wrapper outside it", async () => {
+    const { dir, tsconfigPath } = await makeTempProject({
+      "shared/wrapper.ts": `import { foo } from "@gated/lib"; export const call = () => foo;`,
+      "app/consumer.ts": `import { call } from "../shared/wrapper"; export const loader = () => call();`,
+    });
+    const result = await createLazyProject(
+      tsconfigPath,
+      [gatedPack],
+      undefined,
+      path.join(dir, "app"),
+    );
+    expect(result.candidatePaths.map((p) => path.basename(p))).toEqual([
+      "consumer.ts",
+    ]);
+  });
+
   it("loads every file when at least one pack is ungated", async () => {
     const { tsconfigPath } = await makeTempProject({
       "a.ts": "export const a = 1;",

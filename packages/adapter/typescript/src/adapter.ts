@@ -2275,6 +2275,11 @@ export interface TypeScriptAdapterConfig {
   cacheDir?: string | null;
   /** The modules the project lists in `suss.json`, with absolute paths. */
   modules?: readonly DeclaredModule[];
+  /**
+   * Absolute. Walks only the tsconfig's files under this directory, for a
+   * tsconfig found above the directory a run was pointed at.
+   */
+  walkedDirectory?: string;
 }
 
 export interface TypeScriptAdapter extends LanguageAdapter {
@@ -2444,6 +2449,7 @@ export function createTypeScriptAdapter(
     gapHandling: config.extractorOptions?.gapHandling,
     includeReachable: config.includeReachable !== false,
     modules,
+    walkedDirectory: config.walkedDirectory,
   })}|ws:${workspaceExpansionStamp(config.frameworks)}`;
 
   // The cache stores summaries before their wrappers are composed, so every
@@ -2467,6 +2473,7 @@ export function createTypeScriptAdapter(
       tsConfigFilePath,
       config.frameworks,
       tsconfig,
+      config.walkedDirectory,
     );
     projectFileSet = lazy.projectFileSet;
     const { deep } = loadRunFiles(project, lazy.candidatePaths, noopTimer());
@@ -2710,6 +2717,7 @@ export function createTypeScriptAdapter(
               raise("lazy bootstrap requires tsConfigFilePath"),
             config.frameworks,
             tsconfig,
+            config.walkedDirectory,
           ),
         );
         candidatePaths = lazy.candidatePaths;
