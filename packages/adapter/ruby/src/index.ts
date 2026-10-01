@@ -96,6 +96,7 @@ export type {
 } from "./facts/why.js";
 export type {
   ControllerActions,
+  ControllerRoute,
   GraphqlObjectFields,
   LibraryException,
   RbAddressingCall,

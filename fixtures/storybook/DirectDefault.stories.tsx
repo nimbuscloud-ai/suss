@@ -1,5 +1,5 @@
 // `export default { ... }` directly, without any intermediate const.
-import type { Greeting } from "../react/Greeting";
+import Greeting from "../react/Greeting";
 
 export default {
   component: Greeting,

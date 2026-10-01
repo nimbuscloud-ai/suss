@@ -32,6 +32,15 @@ function pattern(pack: ReturnType<typeof railsFramework>): ControllerActions {
   return first as ControllerActions;
 }
 
+/** The first route the pattern gives an action, the one Rails declares first. */
+function firstRoute(
+  p: ControllerActions,
+  controllerQualifiedName: string,
+  actionName: string,
+) {
+  return p.routesFor(controllerQualifiedName, actionName)[0] ?? null;
+}
+
 describe("railsFramework", () => {
   it("states the pack's own shape, with Rails' vocabulary on the pattern", () => {
     const pack = railsFramework({
@@ -167,7 +176,7 @@ describe("railsFramework", () => {
         root: path.join(fixtureRoot, "app"),
         routesFile: path.join(fixtureRoot, "config/routes.rb"),
       });
-      return pattern(pack).routeFor(qualifiedName, actionName);
+      return firstRoute(pattern(pack), qualifiedName, actionName);
     }
 
     it("binds the conventional resources actions the controller defines", () => {
@@ -237,7 +246,7 @@ describe("railsFramework", () => {
           "config/routes-that-do-not-exist.rb",
         ),
       });
-      return pattern(pack).routeFor(qualifiedName, actionName);
+      return firstRoute(pattern(pack), qualifiedName, actionName);
     }
 
     it("falls back to Rails' RESTful naming convention for a conventional action name", () => {
@@ -253,6 +262,20 @@ describe("railsFramework", () => {
 
     it("has nothing to say about a custom action name", () => {
       expect(routeFor("OrdersController", "cancel")).toBeNull();
+    });
+
+    it("gives update both PATCH and PUT", () => {
+      const pack = railsFramework({
+        root: path.join(fixtureRoot, "app"),
+        routesFile: path.join(
+          fixtureRoot,
+          "config/routes-that-do-not-exist.rb",
+        ),
+      });
+      expect(pattern(pack).routesFor("OrdersController", "update")).toEqual([
+        { method: "PATCH", path: "/orders/:id" },
+        { method: "PUT", path: "/orders/:id" },
+      ]);
     });
 
     it("records one gap saying the paths are assumed from naming", () => {
@@ -286,8 +309,60 @@ describe("railsFramework", () => {
       const file = path.join(dir, "routes.rb");
       fs.writeFileSync(file, source);
       const pack = railsFramework({ root: dir, routesFile: file });
-      return pattern(pack).routeFor(qualifiedName, actionName);
+      return firstRoute(pattern(pack), qualifiedName, actionName);
     }
+
+    function routesFor(
+      source: string,
+      qualifiedName: string,
+      actionName: string,
+    ) {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-routes-"));
+      const file = path.join(dir, "routes.rb");
+      fs.writeFileSync(file, source);
+      const pack = railsFramework({ root: dir, routesFile: file });
+      return pattern(pack).routesFor(qualifiedName, actionName);
+    }
+
+    it("routes update under both PATCH and PUT, the way resources does", () => {
+      const plural =
+        "Rails.application.routes.draw do\n" +
+        "  resources :orders, only: [:update]\nend\n";
+      expect(routesFor(plural, "OrdersController", "update")).toEqual([
+        { method: "PATCH", path: "/orders/:id" },
+        { method: "PUT", path: "/orders/:id" },
+      ]);
+
+      const singular =
+        "Rails.application.routes.draw do\n  resource :profile\nend\n";
+      expect(routesFor(singular, "ProfilesController", "update")).toEqual([
+        { method: "PATCH", path: "/profile" },
+        { method: "PUT", path: "/profile" },
+      ]);
+    });
+
+    it("keeps both routes of an action declared in a member and a collection block", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :accounts, only: [:index] do\n" +
+        "    member do\n      post :suspend\n    end\n" +
+        "    collection do\n      post :suspend\n    end\n" +
+        "  end\nend\n";
+      expect(routesFor(source, "AccountsController", "suspend")).toEqual([
+        { method: "POST", path: "/accounts/:id/suspend" },
+        { method: "POST", path: "/accounts/suspend" },
+      ]);
+    });
+
+    it("keeps one copy of a route declared twice", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  get "status" => "health#show"\n' +
+        '  get "status" => "health#show"\nend\n';
+      expect(routesFor(source, "HealthController", "show")).toEqual([
+        { method: "GET", path: "/status" },
+      ]);
+    });
 
     it("gives a singular resource its six actions, no index and no :id", () => {
       const source =
@@ -848,7 +923,8 @@ describe("railsFramework", () => {
       actionName: string,
       drawn: Record<string, string> = {},
     ) {
-      return pattern(packFor(source, drawn)).routeFor(
+      return firstRoute(
+        pattern(packFor(source, drawn)),
         qualifiedName,
         actionName,
       );
@@ -884,7 +960,7 @@ describe("railsFramework", () => {
         "Rails.application.routes.draw do\n  draw(:missing)\nend\n",
       );
       const p = pattern(pack);
-      expect(p.routeFor("OrdersController", "index")).toBeNull();
+      expect(firstRoute(p, "OrdersController", "index")).toBeNull();
       expect(p.routingGaps?.()).toEqual([
         expect.stringContaining(
           "draws missing, but there is no missing.rb under routes/",
@@ -1017,7 +1093,7 @@ describe("railsFramework", () => {
       const file = path.join(dir, "routes.rb");
       fs.writeFileSync(file, source);
       const pack = railsFramework({ root: dir, routesFile: file });
-      return pattern(pack).routeFor(controller, "index");
+      return firstRoute(pattern(pack), controller, "index");
     }
 
     const drawn = (body: string, before = ""): string =>
@@ -1128,7 +1204,7 @@ describe("railsFramework", () => {
     it("serves a mounted engine's routes under the mount path, keyed by its isolated namespace", () => {
       const pack = projectWith(app('  mount Billing::Engine, at: "/billing"'));
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toEqual({ method: "GET", path: "/billing/invoices" });
       expect(pattern(pack).routingGaps?.()).toEqual([]);
     });
@@ -1144,14 +1220,14 @@ describe("railsFramework", () => {
         },
       );
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toEqual({ method: "GET", path: "/invoices" });
     });
 
     it("reads the hash-rocket spelling of a mount", () => {
       const pack = projectWith(app('  mount Billing::Engine => "/billing"'));
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toEqual({ method: "GET", path: "/billing/invoices" });
     });
 
@@ -1162,10 +1238,10 @@ describe("railsFramework", () => {
         ),
       );
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toEqual({ method: "GET", path: "/api/billing/invoices" });
       expect(
-        pattern(pack).routeFor("Api::Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Api::Billing::InvoicesController", "index"),
       ).toBeNull();
     });
 
@@ -1175,7 +1251,7 @@ describe("railsFramework", () => {
           "module Billing\n  class Engine < Rails::Engine\n    engine_name :billing\n  end\nend\n",
         "engines/billing/config/routes.rb": ENGINE_ROUTES,
       });
-      expect(pattern(pack).routeFor("InvoicesController", "index")).toEqual({
+      expect(firstRoute(pattern(pack), "InvoicesController", "index")).toEqual({
         method: "GET",
         path: "/billing/invoices",
       });
@@ -1189,7 +1265,7 @@ describe("railsFramework", () => {
           'Rails.application.routes.draw do\n  get "health" => "billing/status#show"\nend\n',
       });
       expect(
-        pattern(pack).routeFor("Billing::StatusController", "show"),
+        firstRoute(pattern(pack), "Billing::StatusController", "show"),
       ).toEqual({ method: "GET", path: "/health" });
     });
 
@@ -1208,11 +1284,11 @@ describe("railsFramework", () => {
         { routesFiles: ["engines/*/plugin.rb"] },
       );
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toEqual({ method: "GET", path: "/billing/invoices" });
     });
 
-    it("runs prepend blocks before the draw block and append blocks after, so the first route written wins", () => {
+    it("runs prepend blocks before the draw block and append blocks after, and keeps every route in that order", () => {
       const pack = projectWith(
         app('  get "first" => "status#show"'),
         {
@@ -1224,10 +1300,11 @@ describe("railsFramework", () => {
         },
         { routesFiles: ["extra/routes.rb"], engineRoots: [] },
       );
-      expect(pattern(pack).routeFor("StatusController", "show")).toEqual({
-        method: "GET",
-        path: "/prepended",
-      });
+      expect(pattern(pack).routesFor("StatusController", "show")).toEqual([
+        { method: "GET", path: "/prepended" },
+        { method: "GET", path: "/first" },
+        { method: "GET", path: "/appended" },
+      ]);
     });
 
     it("reads a draw block owned by the app's own Application class", () => {
@@ -1235,7 +1312,7 @@ describe("railsFramework", () => {
         'Shop::Application.routes.draw do\n  mount Billing::Engine, at: "/billing"\nend\n',
       );
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toEqual({ method: "GET", path: "/billing/invoices" });
     });
 
@@ -1258,7 +1335,7 @@ describe("railsFramework", () => {
         "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
       });
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toBeNull();
       expect(pattern(pack).routingGaps?.()).toEqual([]);
     });
@@ -1272,7 +1349,7 @@ describe("railsFramework", () => {
           '  mount Billing::Engine, at: "/again"\nend\n',
       });
       expect(
-        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
       ).toEqual({ method: "GET", path: "/billing/invoices" });
     });
 
@@ -1302,7 +1379,7 @@ describe("railsFramework", () => {
           engineRoots: ["nowhere/*", "also/missing", "config"],
         },
       );
-      expect(pattern(pack).routeFor("StatusController", "show")).toEqual({
+      expect(firstRoute(pattern(pack), "StatusController", "show")).toEqual({
         method: "GET",
         path: "/ping",
       });
@@ -1317,7 +1394,7 @@ describe("railsFramework", () => {
           app('  devise_for :users\n  get "ping" => "status#show"'),
       );
       const p = pattern(pack);
-      expect(p.routeFor("StatusController", "show")).toEqual({
+      expect(firstRoute(p, "StatusController", "show")).toEqual({
         method: "GET",
         path: "/ping",
       });
@@ -1340,11 +1417,11 @@ describe("railsFramework", () => {
         ),
       );
       const p = pattern(pack);
-      expect(p.routeFor("Auth::SetupController", "update")).toEqual({
+      expect(firstRoute(p, "Auth::SetupController", "update")).toEqual({
         method: "PATCH",
         path: "/auth/setup",
       });
-      expect(p.routeFor("Auth::ChallengesController", "create")).toEqual({
+      expect(firstRoute(p, "Auth::ChallengesController", "create")).toEqual({
         method: "POST",
         path: "/auth/challenge",
       });
@@ -1366,10 +1443,9 @@ describe("railsFramework", () => {
           { file: path.join(dir, "missing.rb"), displayPath: "missing.rb" },
         ],
       });
-      expect(table.routeFor("status", "show")).toEqual({
-        method: "GET",
-        path: "/ping",
-      });
+      expect(table.routesFor("status", "show")).toEqual([
+        { method: "GET", path: "/ping" },
+      ]);
       expect(table.gaps).toEqual([]);
     });
   });
@@ -1406,7 +1482,7 @@ describe("railsFramework", () => {
     it("keys a controller under a registered acronym the way Rails does", () => {
       const pack = projectWith(INFLECTIONS);
       expect(
-        pattern(pack).routeFor("ActivityPub::InboxesController", "create"),
+        firstRoute(pattern(pack), "ActivityPub::InboxesController", "create"),
       ).toEqual({ method: "POST", path: "/activitypub/inbox" });
       expect(pattern(pack).acronyms).toEqual(["ActivityPub"]);
     });
@@ -1414,7 +1490,7 @@ describe("railsFramework", () => {
     it("splits the same name the ordinary way when nothing registers it", () => {
       const pack = projectWith(null);
       expect(
-        pattern(pack).routeFor("ActivityPub::InboxesController", "create"),
+        firstRoute(pattern(pack), "ActivityPub::InboxesController", "create"),
       ).toBeNull();
       expect(pattern(pack).acronyms).toEqual([]);
     });

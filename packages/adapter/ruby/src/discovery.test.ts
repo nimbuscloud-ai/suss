@@ -12,7 +12,7 @@ import {
 import { createFileCache, discoverUnits } from "./discovery.js";
 import { parseRuby } from "./parser.js";
 
-import type { ControllerActions, RubyPack } from "./pack.js";
+import type { ControllerActions, ControllerRoute, RubyPack } from "./pack.js";
 
 /** For tests that never resolve a `mutation:` or `resolver:` reference, and so never read a file. */
 function inMemoryCache(files: Record<string, string> = {}) {
@@ -699,12 +699,22 @@ describe("discoverUnits: camelize", () => {
   });
 });
 
+const ROUTES_BY_ACTION: Record<string, ControllerRoute[]> = {
+  index: [{ method: "get", path: "/orders" }],
+  update: [
+    { method: "PATCH", path: "/orders/:id" },
+    { method: "PUT", path: "/orders/:id" },
+  ],
+};
+
 describe("discoverUnits: controller actions", () => {
   const ROUTED_PACK: RubyPack = railsTestPack({
-    routeFor: (controllerQualifiedName, actionName) =>
-      controllerQualifiedName === "OrdersController" && actionName === "index"
-        ? { method: "get", path: "/orders" }
-        : null,
+    routesFor: (controllerQualifiedName, actionName) => {
+      if (controllerQualifiedName !== "OrdersController") {
+        return [];
+      }
+      return ROUTES_BY_ACTION[actionName] ?? [];
+    },
   });
 
   async function discoverActions(source: string, pack: RubyPack = ROUTED_PACK) {
@@ -718,7 +728,7 @@ describe("discoverUnits: controller actions", () => {
 
   it("reads a status sent through a helper an inherited filter or the action calls", async () => {
     const pack = railsTestPack({
-      routeFor: () => null,
+      routesFor: () => [],
       filters: [
         {
           name: "before_action",
@@ -773,7 +783,7 @@ describe("discoverUnits: controller actions", () => {
 
   it("keeps a raise of a class the run did not read as a throw a StandardError handler may catch", async () => {
     const pack = railsTestPack({
-      routeFor: () => null,
+      routesFor: () => [],
       filters: [
         { name: "rescue_from", methodFrom: "withKeyword", onThrow: true },
       ],
@@ -822,7 +832,7 @@ describe("discoverUnits: controller actions", () => {
 
   it("ends a path at a raise with the class it raises, and lists the classes each handler catches", async () => {
     const pack = railsTestPack({
-      routeFor: () => null,
+      routesFor: () => [],
       filters: [
         {
           name: "before_action",
@@ -919,7 +929,7 @@ describe("discoverUnits: controller actions", () => {
 
   it("leaves a helper's status unread when the call passes one that does not settle", async () => {
     const pack = railsTestPack({
-      routeFor: () => null,
+      routesFor: () => [],
       responseStatusCalls: [{ name: "render", statusKeyword: "status" }],
     });
     const units = await discoverActions(
@@ -954,7 +964,7 @@ describe("discoverUnits: controller actions", () => {
     expect(units.map((u) => u.identity.name)).toEqual(["index", "preview"]);
   });
 
-  it("binds a routed action with restBinding, at what routeFor gives it", async () => {
+  it("binds a routed action with restBinding, at what routesFor gives it", async () => {
     const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +
         "  def index\n" +
@@ -968,7 +978,20 @@ describe("discoverUnits: controller actions", () => {
     });
   });
 
-  it("discovers an action routeFor answers null for, with no boundary binding", async () => {
+  it("gives an action routed twice one unit per route", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def update\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.boundaryBinding?.semantics)).toEqual([
+      { name: "rest", method: "PATCH", path: "/orders/:id" },
+      { name: "rest", method: "PUT", path: "/orders/:id" },
+    ]);
+  });
+
+  it("discovers an action routesFor gives no route, with no boundary binding", async () => {
     const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +
         "  def preview\n" +
@@ -1071,10 +1094,10 @@ describe("discoverUnits: controller actions", () => {
       packs: [
         railsTestPack({
           root: tmpDir,
-          routeFor: (controller, action) =>
+          routesFor: (controller, action) =>
             controller === "Settings::ProfilesController" && routed.has(action)
-              ? { method: "GET", path: `/settings/profile/${action}` }
-              : null,
+              ? [{ method: "GET", path: `/settings/profile/${action}` }]
+              : [],
         }),
       ],
       filePath: "settings/profiles_controller.rb",

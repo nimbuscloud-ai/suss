@@ -916,12 +916,18 @@ describe("render-tree summaries", () => {
 });
 
 describe("renderTargetKey", () => {
-  it("keys a file and a spelling with a separator no path contains", () => {
-    expect(renderTargetKey("src/a b.tsx", "Card")).toBe(
-      "src/a b.tsx\u0000Card",
+  it("keys a workspace, a file and a spelling with a separator no path contains", () => {
+    expect(renderTargetKey("web", "src/a b.tsx", "Card")).toBe(
+      "web\u0000src/a b.tsx\u0000Card",
     );
-    expect(renderTargetKey("src/a.tsx", "Widgets.Card")).not.toBe(
-      renderTargetKey("src/a.tsx Widgets", "Card"),
+    expect(renderTargetKey("web", "src/a.tsx", "Widgets.Card")).not.toBe(
+      renderTargetKey("web", "src/a.tsx Widgets", "Card"),
+    );
+  });
+
+  it("tells apart two packages with the same file", () => {
+    expect(renderTargetKey("admin", "src/Box.tsx", "Box")).not.toBe(
+      renderTargetKey("signup", "src/Box.tsx", "Box"),
     );
   });
 });

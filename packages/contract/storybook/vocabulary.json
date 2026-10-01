@@ -1,5 +1,7 @@
 {
   "react": "pack name applies to React stories",
   "args": "Storybook CSF: story key holding the props a story renders with",
+  "decorators": "Storybook CSF: story or meta key listing functions that wrap the story and receive its args",
+  "render": "Storybook CSF: story or meta key for the function that renders the component from the args",
   "ref": "suss: marker for a component the story refers to"
 }

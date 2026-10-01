@@ -133,13 +133,18 @@ export function summaryIdFromParts(parts: SummaryIdParts): string {
 }
 
 /**
- * The key a render edge joins on: the file a component is declared in,
- * and one of the component's names. The producer writes `target` with
- * the declaration's name, and the checker indexes each summary under
- * its name and its export path. Both build the key here so they always
- * agree. The separator is a NUL character, which cannot appear in a
- * path the way a space can.
+ * The key a render edge joins on: the workspace a component was
+ * extracted in, the file it is declared in, and one of its names. Two
+ * packages can have the same file path, so the file alone is not
+ * enough. The producer writes `target` with the declaration's name, and
+ * the checker indexes each summary under its name and its export path.
+ * Both build the key here so they always agree. The separator is a NUL
+ * character, which cannot appear in a path the way a space can.
  */
-export function renderTargetKey(file: string, name: string): string {
-  return `${file}\u0000${name}`;
+export function renderTargetKey(
+  workspace: string | undefined,
+  file: string,
+  name: string,
+): string {
+  return `${workspace ?? ""}\u0000${file}\u0000${name}`;
 }

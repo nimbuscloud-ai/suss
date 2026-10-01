@@ -5,7 +5,7 @@
 //   - A shorthand property in args.
 //   - Args spread in from an object declared beside the story.
 
-import type { Counter } from "../react/Counter";
+import Counter from "../react/Counter";
 
 type Meta<_T> = Record<string, unknown>;
 type StoryObj<_T> = Record<string, unknown>;

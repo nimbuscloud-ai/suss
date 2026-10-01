@@ -131,6 +131,30 @@ export function moduleImportedWholeAs(
   return null;
 }
 
+/**
+ * The specifier, as written, of the import that binds this local name,
+ * whether as a named, default or namespace import. Null when no import
+ * in the file binds it.
+ */
+export function specifierImportedAs(
+  sourceFile: SourceFile,
+  local: string,
+): string | null {
+  for (const decl of sourceFile.getImportDeclarations()) {
+    const bound = [
+      decl.getDefaultImport()?.getText(),
+      decl.getNamespaceImport()?.getText(),
+      ...decl
+        .getNamedImports()
+        .map((named) => named.getAliasNode()?.getText() ?? named.getName()),
+    ];
+    if (bound.includes(local)) {
+      return decl.getModuleSpecifierValue();
+    }
+  }
+  return null;
+}
+
 /** Every import declaration in the file that names one of `modules`. */
 export function importDeclarationsOf(
   sourceFile: SourceFile,

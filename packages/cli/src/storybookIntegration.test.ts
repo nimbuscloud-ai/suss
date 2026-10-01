@@ -21,6 +21,8 @@ import { generateSummariesFromStories } from "@suss/contract-storybook";
 import { reactFramework } from "@suss/framework-react";
 import { testCompilerOptions } from "@suss/test-project";
 
+import { relativizeSummaryPaths } from "./extract.js";
+
 const repoRoot = path.resolve(__dirname, "../../..");
 const reactFixtures = path.join(repoRoot, "fixtures/react");
 const storybookFixtures = path.join(repoRoot, "fixtures/storybook");
@@ -114,9 +116,15 @@ async function runPipeline() {
   project.addSourceFilesAtPaths(path.join(reactFixtures, "*.tsx"));
   const adapter = createTypeScriptAdapter({
     project,
+    projectRoot: repoRoot,
     frameworks: [reactFramework()],
   });
   const componentSummaries = await adapter.extractAll();
+  // Written the way `suss extract` writes them, so a story's component
+  // module compares with the component's own path.
+  for (const summary of componentSummaries) {
+    relativizeSummaryPaths(summary, repoRoot);
+  }
 
   // Generate Storybook stub summaries from the stories fixture set.
   const storySummaries = generateSummariesFromStories(

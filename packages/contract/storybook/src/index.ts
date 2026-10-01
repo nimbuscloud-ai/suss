@@ -13,6 +13,7 @@
 import path from "node:path";
 
 import {
+  type Identifier,
   Node as N,
   type Node,
   type ObjectLiteralExpression,
@@ -21,14 +22,20 @@ import {
 } from "ts-morph";
 
 import {
+  declarationsBehind,
   exportedDeclarationsOf,
+  findNearestTsconfig,
   objectLiteralOf,
   propertiesOf,
   propertyNameOf,
   propertyOf,
   propertyValueOf,
   ResolutionStore,
+  specifierImportedAs,
   stringValueOf,
+  symbolBehind,
+  workspaceNameFor,
+  workspaceRootFor,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
@@ -57,39 +64,77 @@ export function generateSummariesFromStories(
   filePaths: string[],
   options: StorybookStubOptions = {},
 ): BehavioralSummary[] {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-      allowJs: true,
-      jsx: 4,
-    },
-  });
-  for (const fp of filePaths) {
-    project.addSourceFileAtPath(fp);
-  }
-
   const projectRoot = options.projectRoot ?? process.cwd();
-  const summaries: BehavioralSummary[] = [];
-  const resolution = new ResolutionStore();
+  const byFile = new Map<string, BehavioralSummary[]>();
 
-  for (const sf of project.getSourceFiles()) {
-    const absPath = sf.getFilePath();
-    const relPath = path.relative(projectRoot, absPath);
-    const meta = extractMeta(sf, resolution);
-    if (meta === null) {
-      continue;
-    }
-    const stories = extractStories(sf, resolution);
-    for (const story of stories) {
-      summaries.push(buildSummary(story, meta, relPath));
+  for (const [tsconfig, files] of filesByTsconfig(filePaths)) {
+    const project = projectFor(tsconfig);
+    const resolution = new ResolutionStore();
+    for (const sf of files.map((fp) => project.addSourceFileAtPath(fp))) {
+      const relPath = path.relative(projectRoot, sf.getFilePath());
+      const meta = extractMeta(sf, resolution);
+      if (meta === null) {
+        continue;
+      }
+      byFile.set(
+        sf.getFilePath(),
+        extractStories(sf, resolution, meta).map((story) =>
+          buildSummary(story, meta, relPath),
+        ),
+      );
     }
   }
 
-  return summaries;
+  return filePaths.flatMap(
+    (fp) => byFile.get(path.resolve(fp).replace(/\\/g, "/")) ?? [],
+  );
+}
+
+/**
+ * Story files grouped by the tsconfig nearest each one. A story imports
+ * its component through the path aliases that tsconfig declares, so the
+ * import only resolves under it.
+ */
+function filesByTsconfig(filePaths: string[]): Map<string | null, string[]> {
+  const groups = new Map<string | null, string[]>();
+  for (const fp of filePaths) {
+    const tsconfig = findNearestTsconfig(path.dirname(fp));
+    const group = groups.get(tsconfig) ?? [];
+    group.push(fp);
+    groups.set(tsconfig, group);
+  }
+  return groups;
+}
+
+const COMPILER_OPTIONS = {
+  target: 99,
+  module: 99,
+  moduleResolution: 100,
+  skipLibCheck: true,
+  allowJs: true,
+  jsx: 4,
+  // Ambient types say nothing about a story, and a missing types folder
+  // makes every program build fail.
+  types: [],
+};
+
+function projectFor(tsconfig: string | null): Project {
+  if (tsconfig !== null) {
+    try {
+      return new Project({
+        tsConfigFilePath: tsconfig,
+        skipAddingFilesFromTsConfig: true,
+        compilerOptions: { allowJs: true, jsx: 4, types: [] },
+      });
+    } catch {
+      // A tsconfig that does not parse leaves the defaults below, which
+      // still follow a relative import.
+    }
+  }
+  return new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: COMPILER_OPTIONS,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +144,38 @@ export function generateSummariesFromStories(
 interface MetaInfo {
   /** The `component` identifier as written, such as `Button`. */
   componentName: string;
+  componentModule: ComponentModule | undefined;
+  componentImport: string | undefined;
+  /** Args on the default export, which Storybook gives every story in the file. */
+  args: Record<string, string>;
+  argReaders: ArgReader[];
+}
+
+/**
+ * The parts of a story or its meta that receive the story's args before
+ * the component does. The reader does not follow either, so it cannot say
+ * which args reach the component.
+ */
+const ARG_READERS = ["decorators", "render"] as const;
+type ArgReader = (typeof ARG_READERS)[number];
+
+function argReadersOf(
+  storyOrMeta: ObjectLiteralExpression,
+  resolution: ResolutionStore,
+): ArgReader[] {
+  // Read by name, since `render(args) { ... }` is a method with no value.
+  const names = new Set(
+    propertiesOf(storyOrMeta, resolution).map((property) =>
+      propertyNameOf(property),
+    ),
+  );
+  return ARG_READERS.filter((name) => names.has(name));
+}
+
+interface ComponentModule {
+  workspace?: string;
+  file: string;
+  name: string;
 }
 
 function extractMeta(
@@ -110,15 +187,83 @@ function extractMeta(
     if (meta === null) {
       continue;
     }
-    // Usually an identifier. Its text is kept and the import is never
-    // followed.
     const component = propertyOf(meta, "component", resolution);
     if (component !== null) {
-      return { componentName: component.getText() };
+      return {
+        componentName: component.getText(),
+        componentModule: declaredModuleOf(component),
+        componentImport: importSpecifierOf(component),
+        args: argsOf(meta, resolution),
+        argReaders: argReadersOf(meta, resolution),
+      };
     }
   }
 
   return null;
+}
+
+/**
+ * The file and name the component is declared under, followed through
+ * imports and re-exports. The file is spelled from the root an extract of
+ * that file's project measures from, so the two can be compared.
+ */
+function declaredModuleOf(component: Node): ComponentModule | undefined {
+  if (!N.isIdentifier(component)) {
+    return undefined;
+  }
+  const declaration = componentDeclarationOf(component);
+  if (declaration === undefined) {
+    return undefined;
+  }
+  const file = declaration.getSourceFile().getFilePath();
+  const tsconfig = findNearestTsconfig(path.dirname(file));
+  const root = workspaceRootFor(
+    tsconfig === null ? path.dirname(file) : path.dirname(tsconfig),
+  );
+  const workspace = workspaceNameFor(root);
+  return {
+    ...(workspace === null ? {} : { workspace }),
+    file: path.relative(root, file).replace(/\\/g, "/"),
+    name: declaredNameOf(declaration) ?? component.getText(),
+  };
+}
+
+/** An import whose module did not resolve leaves only the import itself. */
+function componentDeclarationOf(component: Identifier): Node | undefined {
+  return declarationsBehind(symbolBehind(component)).find(
+    (declaration) => !isImportBinding(declaration),
+  );
+}
+
+function isImportBinding(node: Node): boolean {
+  return (
+    N.isImportSpecifier(node) ||
+    N.isImportClause(node) ||
+    N.isNamespaceImport(node) ||
+    N.isImportEqualsDeclaration(node)
+  );
+}
+
+function declaredNameOf(declaration: Node): string | undefined {
+  if (
+    N.isVariableDeclaration(declaration) ||
+    N.isFunctionDeclaration(declaration) ||
+    N.isClassDeclaration(declaration)
+  ) {
+    return declaration.getName();
+  }
+  return undefined;
+}
+
+/** The module the story file imports the component from, as written. */
+function importSpecifierOf(component: Node): string | undefined {
+  if (!N.isIdentifier(component)) {
+    return undefined;
+  }
+  return (
+    specifierImportedAs(component.getSourceFile(), component.getText()) ??
+    undefined
+  );
 }
 
 /** The object literal a declaration or expression resolves to, or null. */
@@ -139,12 +284,14 @@ function objectBehind(
 interface StoryInfo {
   name: string;
   args: Record<string, string>;
+  argReaders: ArgReader[];
   line: number;
 }
 
 function extractStories(
   sf: SourceFile,
   resolution: ResolutionStore,
+  meta: MetaInfo,
 ): StoryInfo[] {
   const results: StoryInfo[] = [];
 
@@ -160,9 +307,15 @@ function extractStories(
         continue;
       }
 
+      // A story's own arg replaces the one of the same name on the meta.
+      const ownReaders = argReadersOf(story, resolution);
       results.push({
         name,
-        args: storyArgs(story, resolution),
+        args: { ...meta.args, ...argsOf(story, resolution) },
+        argReaders: ARG_READERS.filter(
+          (reader) =>
+            meta.argReaders.includes(reader) || ownReaders.includes(reader),
+        ),
         line: decl.getStartLineNumber(),
       });
     }
@@ -172,16 +325,17 @@ function extractStories(
 }
 
 /**
- * An arg that evaluates to a string gives that string, so a constant or a
- * template gives the same value as a quoted literal. Anything else, such
- * as a number or JSX, keeps its source text.
+ * The `args` of a story or of the meta. An arg that evaluates to a string
+ * gives that string, so a constant or a template gives the same value as
+ * a quoted literal. Anything else, such as a number or JSX, keeps its
+ * source text.
  */
-function storyArgs(
-  story: ObjectLiteralExpression,
+function argsOf(
+  storyOrMeta: ObjectLiteralExpression,
   resolution: ResolutionStore,
 ): Record<string, string> {
   const args: Record<string, string> = {};
-  const written = propertyOf(story, "args", resolution);
+  const written = propertyOf(storyOrMeta, "args", resolution);
   const object = written === null ? null : objectLiteralOf(written, resolution);
   if (object === null) {
     return args;
@@ -254,7 +408,16 @@ function buildSummary(
         storybook: {
           story: story.name,
           component: meta.componentName,
+          ...(meta.componentModule === undefined
+            ? {}
+            : { componentModule: meta.componentModule }),
+          ...(meta.componentImport === undefined
+            ? {}
+            : { componentImport: meta.componentImport }),
           args: story.args,
+          ...(story.argReaders.length === 0
+            ? {}
+            : { argReaders: story.argReaders }),
           provenance: "independent",
         },
       },

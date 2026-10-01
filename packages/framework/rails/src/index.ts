@@ -22,7 +22,7 @@ import {
   readEngines,
 } from "./engines.js";
 import { inflectionFiles, readInflections } from "./inflections.js";
-import { drawDirectoryOf, readRoutes } from "./routes.js";
+import { drawDirectoryOf, readRoutes, restfulRoutes } from "./routes.js";
 import { LIBRARY_EXCEPTIONS, RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
 import type {
@@ -95,23 +95,6 @@ export const RAILS_ROOT_CLASS_NAMES: readonly string[] = [
   "ActionController::Base",
   "ActionController::API",
 ];
-
-/**
- * The naming-convention fallback, used only when the project has no
- * routes file. `:resource` is filled in from the controller's name.
- */
-const RESTFUL_ACTIONS: Record<
-  string,
-  { method: string; pathTemplate: string }
-> = {
-  index: { method: "GET", pathTemplate: "/:resource" },
-  show: { method: "GET", pathTemplate: "/:resource/:id" },
-  new: { method: "GET", pathTemplate: "/:resource/new" },
-  create: { method: "POST", pathTemplate: "/:resource" },
-  edit: { method: "GET", pathTemplate: "/:resource/:id/edit" },
-  update: { method: "PATCH", pathTemplate: "/:resource/:id" },
-  destroy: { method: "DELETE", pathTemplate: "/:resource/:id" },
-};
 
 /**
  * `render` takes the status as `status:`, `head` takes it first or as the
@@ -206,22 +189,16 @@ function controllerKeyFromQualified(
 }
 
 /**
- * The path and method Rails' naming convention gives one of the seven
- * conventional actions, or null for any other name.
+ * The naming-convention fallback, used only when the project has no
+ * routes file: the routes `resources` would give one of the seven
+ * conventional actions, under the controller's own name.
  */
-function conventionalRoute(
+function conventionalRoutes(
   controllerKey: string,
   actionName: string,
-): Route | null {
-  const template = RESTFUL_ACTIONS[actionName];
-  if (template === undefined) {
-    return null;
-  }
+): Route[] {
   const resource = controllerKey.split("/").pop() ?? controllerKey;
-  return {
-    method: template.method,
-    path: template.pathTemplate.replace(":resource", resource),
-  };
+  return restfulRoutes(actionName, `/${resource}`);
 }
 
 function resolveAgainst(
@@ -309,14 +286,14 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     ],
     routesFile,
     filters: CONTROLLER_FILTERS,
-    routeFor: (controllerQualifiedName, actionName) => {
+    routesFor: (controllerQualifiedName, actionName) => {
       const key = controllerKeyFromQualified(controllerQualifiedName, acronyms);
       const found = routeTable();
       // When the routes file exists, an action it does not reach stays
       // unbound, even when its name is a conventional one.
       return found.fileFound
-        ? found.routeFor(key, actionName)
-        : conventionalRoute(key, actionName);
+        ? found.routesFor(key, actionName)
+        : conventionalRoutes(key, actionName);
     },
     routingGaps: () => routeTable().gaps,
   };
