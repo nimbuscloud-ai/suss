@@ -19,7 +19,6 @@ import {
 } from "@suss/behavioral-ir";
 
 import { hasOpaqueStatus } from "../coverage/responseMatch.js";
-import { predicateContainsOpaque } from "../match.js";
 
 import type {
   BehavioralSummary,
@@ -50,12 +49,13 @@ function refsOf(p: Predicate): ValueRef[] {
   return (REFS_OF[p.type] as (q: Predicate) => ValueRef[])(p);
 }
 
-/** Whether suss could not read what a condition tests. */
+/**
+ * Whether a condition tests state some other code set, so the path runs
+ * only on the routes that set it. An opaque condition hides when a path
+ * runs, never whether it can, so it does not count.
+ */
 function conditionUnread(handler: BehavioralSummary, p: Predicate): boolean {
-  return (
-    predicateContainsOpaque(p) ||
-    refsOf(p).some((ref) => readsBesideTheRequest(handler, ref))
-  );
+  return refsOf(p).some((ref) => readsBesideTheRequest(handler, ref));
 }
 
 /** Whether a path is gated on at least one condition suss could not read. */
@@ -96,15 +96,17 @@ export function failuresSussCouldNotRead(
 
 /**
  * Whether a wrapper's outcomes are missing from the route it was
- * composed into: the run has no summary for it, or part of it went
- * unread.
+ * composed into: the run has no summary for it, part of it went unread,
+ * or it calls something suss could not follow. A filter that responds
+ * through a helper often does it in that call.
  */
 function wrapperUnread(wrapper: BehavioralSummary | undefined): boolean {
   if (wrapper === undefined) {
     return true;
   }
   return (
-    wrapper.gaps.some((gap) => gap.type === "unreadOutcome") ||
-    wrapper.transitions.some(hasOpaqueStatus)
+    wrapper.gaps.some(
+      (gap) => gap.type === "unreadOutcome" || gap.type === "unfollowedCall",
+    ) || wrapper.transitions.some(hasOpaqueStatus)
   );
 }

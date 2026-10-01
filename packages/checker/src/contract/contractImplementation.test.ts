@@ -325,24 +325,27 @@ describe("checkContractImplementation, on a handler suss read in part", () => {
     ]);
   });
 
-  it("does not report a status reached only through an opaque condition", () => {
+  it("still reports a status reached through an opaque condition", () => {
+    // A filter's `return head(403) unless account.api_enabled?`, composed into the route.
     const findings = checkContractImplementation([
       document("GET", "/users", [{ statusCode: 200 }]),
       handler("GET", "/users", [
-        transition("t-304", {
+        transition("t-403", {
           conditions: [
             {
               type: "opaque",
-              sourceText: "shouldCache",
+              sourceText: "account.api_enabled?",
               reason: "complexExpression",
             },
           ],
-          output: response(304),
+          output: response(403),
         }),
         transition("t-200", { output: response(200), isDefault: true }),
       ]),
     ]);
-    expect(findings).toEqual([]);
+    expect(findings.map((f) => f.description)).toEqual([
+      "Handler produces status 403 which the openapi document does not declare",
+    ]);
   });
 
   it("still reports a status behind a local suss left unresolved", () => {
@@ -408,6 +411,24 @@ describe("checkContractImplementation, on a handler suss read in part", () => {
           conditions: [],
           consequence: "unknown",
           description: "No terminal matched a return in requireUser",
+        },
+      ]),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("does not claim a declared failure is never sent past middleware with a call suss could not follow", () => {
+    // A filter that responds through `render_unauthorized`, which the walk did not reach.
+    const findings = checkContractImplementation([
+      document("GET", "/users", [{ statusCode: 200 }, { statusCode: 401 }]),
+      routedThrough,
+      requireUser([
+        {
+          type: "unfollowedCall",
+          conditions: [],
+          consequence: "unknown",
+          description: "The call to render_unauthorized could not be followed",
+          callee: "render_unauthorized",
         },
       ]),
     ]);
