@@ -50,7 +50,8 @@ import {
   slotProvenance,
   withSlotSources,
 } from "./provenance.js";
-import { responseBranches } from "./responseStatus.js";
+import { raisedStatusBranches } from "./raisedStatuses.js";
+import { helperResponse, responseBranches } from "./responseStatus.js";
 import {
   constantRefCandidates,
   graphqlTypeNameFromQualified,
@@ -208,6 +209,7 @@ function fieldReadContext(
     },
     lookup: {
       root: pattern.root,
+      autoloadRoots: pattern.autoloadRoots ?? [],
       pathConvention: pattern.pathConvention,
       acronyms: pattern.acronyms ?? [],
       ancestryRootClassNames: pattern.ancestryRootClassNames,
@@ -444,6 +446,7 @@ async function controllerActionUnits(
   }
   const lookup: AncestorLookup = {
     root: pattern.root,
+    autoloadRoots: pattern.autoloadRoots ?? [],
     pathConvention: pattern.pathConvention,
     acronyms: pattern.acronyms ?? [],
     ancestryRootClassNames: pattern.ancestryRootClassNames,
@@ -488,14 +491,27 @@ async function controllerActionUnits(
     options.storage,
   );
 
+  const respondingHelper = respondingHelpersOf(ancestry, pattern, options);
+  const rescuedAnywhere = new Set(filters.flatMap((filter) => filter.rescues));
   for (const filter of filters) {
     const displayPath = options.displayPathOf?.(filter.file) ?? filter.file;
+    const body = bodyOfMethod(filter.method, filter.file, options);
     const raw = filterUnit(
       filter,
       pattern,
       displayPath,
-      bodyOfMethod(filter.method, filter.file, options),
+      body,
       options.facts,
+      respondingHelper,
+      filter.filter.onThrow === true
+        ? []
+        : raisedStatusBranches(
+            pattern,
+            options.storage?.patterns ?? [],
+            body.extraEffects,
+            rescuedAnywhere,
+            rangeOf(filter.method),
+          ),
     );
     units.push(raw);
     options.onReachSeed?.(raw, {
@@ -533,6 +549,12 @@ async function controllerActionUnits(
       },
       options,
       around,
+      respondingHelper,
+      new Set(
+        filters
+          .filter((filter) => filterCoversAction(filter, actionName))
+          .flatMap((filter) => filter.rescues),
+      ),
     );
     units.push(raw);
     options.onReachSeed?.(raw, {
@@ -607,6 +629,42 @@ function publicInstanceMethods(
   return found;
 }
 
+/**
+ * What each project method the controller can call sends, when every
+ * path through it responds, read once per name. A method this run cannot
+ * find in the ancestry, or one an unread ancestor might replace, sends
+ * nothing it can claim.
+ */
+function respondingHelpersOf(
+  ancestry: Ancestry,
+  pattern: ControllerActions,
+  options: DiscoveryOptions,
+): (name: string) => Reading<number> | null {
+  const known = new Map<string, Reading<number> | null>();
+  const declared = new Set(
+    (pattern.responseStatusCalls ?? []).map((call) => call.name),
+  );
+  return (name) => {
+    if (declared.has(name)) {
+      return null;
+    }
+    if (!known.has(name)) {
+      const found = methodInAncestry(ancestry, name, {
+        facts: options.facts,
+        bodyBlocks: options.bodyBlocks,
+        dynamicNames: options.dynamicNames,
+      });
+      known.set(
+        name,
+        found.type === "found"
+          ? helperResponse(found.method, pattern, options.facts)
+          : null,
+      );
+    }
+    return known.get(name) ?? null;
+  };
+}
+
 function buildControllerActionUnit(
   pack: RubyPack,
   pattern: ControllerActions,
@@ -616,6 +674,8 @@ function buildControllerActionUnit(
   file: { display: string; absolute: string },
   bodyRead: BodyReadOptions,
   wrappers: readonly WrapperReference[] = [],
+  respondingHelper?: (name: string) => Reading<number> | null,
+  rescued: ReadonlySet<string> = new Set(),
 ): RawCodeStructure {
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
@@ -625,7 +685,10 @@ function buildControllerActionUnit(
     pattern,
     body.effects ?? [],
     body.extraEffects,
-    { facts: bodyRead.facts },
+    {
+      facts: bodyRead.facts,
+      ...(respondingHelper === undefined ? {} : { respondingHelper }),
+    },
   );
   return {
     identity: {
@@ -677,6 +740,14 @@ function buildControllerActionUnit(
         },
       ],
       body.provenance,
+    ).concat(
+      raisedStatusBranches(
+        pattern,
+        bodyRead.storage?.patterns ?? [],
+        body.extraEffects,
+        rescued,
+        range,
+      ),
     ),
     bodyContent: body.bodyContent ?? "absent",
     dependencyCalls: [],

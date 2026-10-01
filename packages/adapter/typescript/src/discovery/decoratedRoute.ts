@@ -18,7 +18,7 @@ import {
   globalPrefixOf,
   pathUnderGlobalPrefix,
 } from "./globalPrefix.js";
-import { numberValueOf, stringValueOf } from "./resolveValue.js";
+import { numberValueOf, stringValueOf, writtenNodeOf } from "./resolveValue.js";
 
 import type {
   ChannelSource,
@@ -127,6 +127,7 @@ function declaredChannelOf(
 function statusCodeDecoratedOn(
   routeDecorator: Node,
   statusDecorators: readonly string[],
+  constants: LibraryConstants,
   resolution: ResolutionStore | undefined,
 ): number | undefined {
   const member = routeDecorator.getParent();
@@ -141,9 +142,45 @@ function statusCodeDecoratedOn(
     if (argument === undefined) {
       continue;
     }
-    return numberValueOf(argument, resolution) ?? undefined;
+    return (
+      numberValueOf(argument, resolution) ??
+      libraryConstantOf(argument, constants, resolution) ??
+      undefined
+    );
   }
   return undefined;
+}
+
+/** The constants a library exports, by export path, and the modules that export them. */
+interface LibraryConstants {
+  modules: string[];
+  values: Readonly<Record<string, number>>;
+}
+
+/**
+ * The number a library constant is equal to, when the value is one of the
+ * library's exports the pack lists. `HttpStatus.NO_CONTENT` is asked about
+ * as the member of the `HttpStatus` it reads.
+ */
+function libraryConstantOf(
+  value: Node,
+  constants: LibraryConstants,
+  resolution: ResolutionStore | undefined,
+): number | null {
+  if (resolution === undefined || constants.modules.length === 0) {
+    return null;
+  }
+  const written = writtenNodeOf(value, resolution) ?? value;
+  const [asked, member] = Node.isPropertyAccessExpression(written)
+    ? [written.getExpression(), [written.getName()]]
+    : [written, []];
+  for (const origin of resolution.importOriginsOf(asked, constants.modules)) {
+    const found = constants.values[[...origin.path, ...member].join(".")];
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return null;
 }
 
 export function discoverDecoratedRoutes(
@@ -234,6 +271,7 @@ export function discoverDecoratedRoutes(
         statusCodeDecoratedOn(
           handler.decorator,
           statusDecorators,
+          { modules: acceptedModules, values: match.statusCodeConstants ?? {} },
           resolution,
         ) ?? match.defaultStatusCodes?.[verbDecorator];
 

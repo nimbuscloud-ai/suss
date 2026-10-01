@@ -622,6 +622,7 @@ async function runPython(
       facts: needsValues ? db : undefined,
       definitions,
       storageFor,
+      routers: plainRouterIndex,
     }),
   );
 

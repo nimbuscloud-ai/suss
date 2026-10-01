@@ -100,6 +100,16 @@ export interface RouterIndex {
     constructorName: string,
     constructionKey: string,
   ): RoutePrefixResolution;
+  /**
+   * The mounts above the router built by this call, innermost first, up
+   * to the one on the app. Null unless every router on the way is mounted
+   * exactly once by a mount this reading followed, since a route reached
+   * two ways runs only the wrappers of the way a request took.
+   */
+  mountsAbove(
+    pattern: PythonDiscoveryPattern,
+    constructionKey: string,
+  ): MountHop[] | null;
 }
 
 /** An `x = <Constructor>(...)` from an accepted module, and what its call said about a prefix. */
@@ -145,8 +155,17 @@ type MountState =
       /** The router the child is mounted on, or null when it is mounted
        * on the app or a carrier, where a chain starts. */
       parentValueKey: string | null;
+      /** The mount call, and the file it is written in. */
+      written?: { call: PyNode; file: string };
     }
   | { kind: "abstain"; reason: string };
+
+/** One mount above a router: the call that mounts it, and the router it mounts it on, null for the app. */
+export interface MountHop {
+  call: PyNode;
+  file: string;
+  parentKey: string | null;
+}
 
 /** Where a mount call is written: a module's top level, which runs on import, or one function's body, which runs only if something calls it. */
 type MountSite = { kind: "module" } | { kind: "function"; node: number };
@@ -287,7 +306,33 @@ export function buildRouterIndex(
 
       return NOT_ROUTER;
     },
+
+    mountsAbove(pattern, constructionKey) {
+      const index = byPattern.get(pattern);
+      return index === undefined ? null : hopsAbove(index, constructionKey);
+    },
   };
+}
+
+function hopsAbove(index: PatternIndex, key: string): MountHop[] | null {
+  const hops: MountHop[] = [];
+  const seen = new Set<string>();
+  let current: string | null = key;
+  while (current !== null) {
+    const construction = index.byValueKey.get(current);
+    if (construction === undefined || seen.has(current)) {
+      return null;
+    }
+    seen.add(current);
+    const states = index.mounts.get(construction) ?? [];
+    const only = states.length === 1 ? states[0] : undefined;
+    if (only?.kind !== "mounted" || only.written === undefined) {
+      return null;
+    }
+    hops.push({ ...only.written, parentKey: only.parentValueKey });
+    current = only.parentValueKey;
+  }
+  return hops;
 }
 
 /** What a construction the index knows composes to, once the caller has found it by name or by call. */
@@ -1576,8 +1621,12 @@ function recordMountStatement(
     (scan.composition.routerKeyword === undefined
       ? undefined
       : keywordArgs[scan.composition.routerKeyword]);
+  const recorded: MountState =
+    state.kind === "mounted"
+      ? { ...state, written: { call: mountCall.call, file: scan.bound.file } }
+      : state;
   for (const target of mountedConstructions(mounted, position, scan)) {
-    recordMount(scan.index, target, state);
+    recordMount(scan.index, target, recorded);
   }
 }
 

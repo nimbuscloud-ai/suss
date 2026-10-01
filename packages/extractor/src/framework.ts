@@ -285,6 +285,13 @@ export type DiscoveryMatch =
        */
       statusCodeDecorator?: string;
       /**
+       * The number each of a library's own status constants is, by the
+       * path of the export (`HttpStatus.NO_CONTENT`), for when the
+       * library is not installed and its declaration cannot give them.
+       * `importModule` says which module exports them.
+       */
+      statusCodeConstants?: Record<string, number>;
+      /**
        * The call that puts one path in front of every route the
        * application serves, NestJS's `app.setGlobalPrefix("api")`.
        */

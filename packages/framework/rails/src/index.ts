@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { underscoreConstantPath } from "@suss/adapter-ruby";
 
+import { applicationFile, readAutoloadRoots } from "./autoloadPaths.js";
 import {
   engineSourceFiles,
   expandPathPattern,
@@ -22,7 +23,7 @@ import {
 } from "./engines.js";
 import { inflectionFiles, readInflections } from "./inflections.js";
 import { drawDirectoryOf, readRoutes } from "./routes.js";
-import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
+import { RACK_STATUS_CODE_NAMES, RESCUE_RESPONSES } from "./statusCodes.js";
 
 import type {
   ControllerActions,
@@ -290,12 +291,17 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       ...(options.baseClassNames ?? []),
     ],
     root,
+    autoloadRoots:
+      options.configDirectory === undefined
+        ? []
+        : readAutoloadRoots(options.configDirectory),
     pathConvention: "railsUnderscore",
     acronyms,
     ancestryRootClassNames: [...RAILS_ROOT_CLASS_NAMES],
     defaultStatusCode: 200,
     responseStatusCalls: RESPONSE_STATUS_CALLS,
     statusCodeNames: RACK_STATUS_CODE_NAMES,
+    exceptionStatuses: RESCUE_RESPONSES,
     inheritedMethodNames: [
       ...RAILS_CONTROLLER_METHODS,
       ...(options.inheritedMethodNames ?? []),
@@ -339,7 +345,10 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       ...extraRoutesFiles(),
       ...(options.configDirectory === undefined
         ? []
-        : inflectionFiles(options.configDirectory)),
+        : [
+            ...inflectionFiles(options.configDirectory),
+            ...applicationFile(options.configDirectory),
+          ]),
     ],
   };
 }

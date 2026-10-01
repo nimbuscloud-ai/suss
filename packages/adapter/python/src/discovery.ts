@@ -46,6 +46,7 @@ import { clientCallReceivers, clientCallUnits } from "./clientCalls.js";
 import {
   classifyDecorator,
   decoratorReceiver,
+  readCallArguments,
   unwrapDecorator,
 } from "./decorators.js";
 import { routeOnDroppedApp } from "./droppedApps.js";
@@ -59,13 +60,18 @@ import { invocationEffects } from "./paths/effects.js";
 import {
   raisedResponses,
   returnedResponseStatus,
+  statusNumberOf,
 } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { askFileSources, slotProvenance } from "./provenance.js";
 import { rawSqlCallIds, rawSqlOptionsOf } from "./rawSql.js";
 import { bodyStorage, type StorageLookup, storageCallIds } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
-import { askWrittenValues, evaluatedValue } from "./values/evaluator.js";
+import {
+  askWrittenValues,
+  evaluatedValue,
+  moduleOf,
+} from "./values/evaluator.js";
 
 import type {
   DispatchTable,
@@ -735,10 +741,11 @@ function readRouterPrefix(
   return absentReading;
 }
 
-/** If the status keyword is written as anything but a literal number, falling back to the library's default would claim a status the running app does not return. */
+/** If the status keyword does not come to a number, falling back to the library's default would claim a status the running app does not return. */
 function readStatusCode(
   pattern: DecoratedFunctionRoute,
   classification: DecoratorClassification,
+  options: { module: ModuleBinding; facts: Database | undefined },
 ): Reading<number> {
   if (pattern.statusCodeKeyword === undefined) {
     return absentReading;
@@ -749,12 +756,16 @@ function readStatusCode(
     return absentReading;
   }
 
-  if (arg.kind === "number") {
-    return writtenReading(arg.value, classification.range);
+  const status = statusNumberOf(arg.node, {
+    ...options,
+    constants: pattern.statusCodeConstants ?? {},
+  });
+  if (status !== null) {
+    return writtenReading(status, classification.range);
   }
 
   return unreadableReading(
-    "The status this route's decorator states is not a literal number, so the response claims no status",
+    "The status this route's decorator states does not come to a number here, so the response claims no status",
     classification.range,
   );
 }
@@ -939,6 +950,7 @@ function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
     calls: options.responseStatusCalls,
     module: options.ctx.module,
     facts: options.ctx.facts,
+    constants: options.ctx.pattern.statusCodeConstants ?? {},
   });
   const terminals = bodyTerminals(body, raised);
   // A lone `return {"status": "ok"}` says what the response is even though
@@ -974,6 +986,7 @@ function statusOfReturnIn(
     calls: pattern.responseConstructors ?? [],
     module: options.module,
     facts: options.facts,
+    constants: pattern.statusCodeConstants ?? {},
   });
   if (constructed !== null) {
     return constructed.type === "literal"
@@ -1130,6 +1143,25 @@ function functionRouteUnits(
     module.scopeFor,
     options.importedDefinition ?? null,
   );
+  const wrappers = wrappersAround(
+    pattern,
+    pack,
+    classification,
+    functionNode,
+    module,
+    options,
+  );
+  const dependencyParameters = options.wrappers?.dependencyParameters(
+    wrappers,
+  ) ?? { names: new Set<string>(), declaresSource: false };
+  const declaredStatuses = declaredStatusesOf(
+    pattern,
+    pack,
+    classification,
+    functionNode,
+    module,
+    options,
+  );
   return readRoutePaths(
     pattern,
     readPathArgument(classification, options),
@@ -1142,6 +1174,8 @@ function functionRouteUnits(
         pack,
         name: functionName,
         exportPath: [functionName],
+        dependencyParameters,
+        declaredStatuses,
         method: verb,
         routePath: entry.routePath,
         ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
@@ -1159,7 +1193,10 @@ function functionRouteUnits(
         responseShape: readResponseModel(pattern, classification, module, ctx),
         statusCode: defaultedStatus(
           declaredOrReturnedStatus(
-            readStatusCode(pattern, classification),
+            readStatusCode(pattern, classification, {
+              module,
+              facts: options.facts,
+            }),
             readReturnedStatus(pattern, functionNode, {
               module,
               facts: options.facts,
@@ -1170,14 +1207,7 @@ function functionRouteUnits(
         definitionsCtx: ctx,
         storage: options.storage,
         importedDefinition: options.importedDefinition,
-        wrappers: wrappersAround(
-          pattern,
-          pack,
-          classification,
-          functionNode,
-          module,
-          options,
-        ),
+        wrappers,
       },
       options,
     ),
@@ -1206,6 +1236,56 @@ function wrappersAround(
   });
 }
 
+/**
+ * The statuses the route's own code lists through the pattern's
+ * `responsesKeyword`: on its decorator, and on each call the wrapper index
+ * finds above it. A key that does not come to a number is left out.
+ */
+function declaredStatusesOf(
+  pattern: DecoratedFunctionRoute,
+  pack: PythonPack,
+  classification: DecoratorClassification,
+  definitionNode: PyNode,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): number[] {
+  const keyword = pattern.responsesKeyword;
+  if (keyword === undefined) {
+    return [];
+  }
+  const above =
+    options.wrappers?.callsAbove({
+      pack,
+      pattern,
+      file: options.absoluteFile ?? options.filePath,
+      module,
+      classification,
+      definitionNode,
+    }) ?? [];
+  const dictionaries = [
+    classification.keywordArgs[keyword]?.node,
+    ...above.map(
+      (call) =>
+        readCallArguments(field(call, "arguments")).keywordArgs[keyword]?.node,
+    ),
+  ].filter((node): node is PyNode => node?.type === "dictionary");
+  const statuses = dictionaries.flatMap((dictionary) =>
+    dictionary.namedChildren.flatMap((pair) => {
+      const key = pair?.type === "pair" ? field(pair, "key") : null;
+      const status =
+        key === null
+          ? null
+          : statusNumberOf(key, {
+              module: moduleOf(key),
+              facts: options.facts,
+              constants: pattern.statusCodeConstants ?? {},
+            });
+      return status === null ? [] : [status];
+    }),
+  );
+  return [...new Set(statuses)].sort((a, b) => a - b);
+}
+
 interface BuildRouteUnitOptions {
   pack: PythonPack;
   name: string;
@@ -1218,6 +1298,13 @@ interface BuildRouteUnitOptions {
   pattern: PythonDiscoveryPattern;
   /** What the route's own decorator and parameters register around it, or nothing when the pack declares no wrapper forms. */
   wrappers?: WrapperReference[];
+  /** The parameters the route's dependencies declare, which the library reads off the request too. */
+  dependencyParameters?: {
+    names: ReadonlySet<string>;
+    declaresSource: boolean;
+  };
+  /** Statuses the route's own code lists as possible responses. */
+  declaredStatuses?: number[];
   /** The library's own callables that end the request with a status. Empty when its pack declares none. */
   responseStatusCalls: readonly PyStatusCall[];
   /** The project's facts, so a status written as a name resolves the same way a path does. */
@@ -1419,7 +1506,14 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     branches.push(
       ...validationFailureBranches(
         pattern,
-        parameters,
+        readsTheRequest(
+          parameters,
+          template,
+          options.dependencyParameters ?? {
+            names: new Set(),
+            declaresSource: false,
+          },
+        ),
         rangeOf(definitionNode),
       ),
     );
@@ -1466,7 +1560,32 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     ...(pack.requestSpelling === undefined
       ? {}
       : { requestSpelling: pack.requestSpelling }),
+    ...(options.declaredStatuses !== undefined &&
+    options.declaredStatuses.length > 0
+      ? { declaredStatuses: options.declaredStatuses }
+      : {}),
   };
+}
+
+/**
+ * Whether the route reads anything the library validates first: one of
+ * its own parameters, or one a dependency declares as a source or as a
+ * parameter of the route's path. A path parameter nothing declares is not.
+ */
+function readsTheRequest(
+  parameters: readonly RawParameter[],
+  template: PathTemplateReading | null,
+  dependencies: { names: ReadonlySet<string>; declaresSource: boolean },
+): boolean {
+  if (
+    dependencies.declaresSource ||
+    parameters.some((parameter) => parameter.role !== null)
+  ) {
+    return true;
+  }
+  return [...(template?.paramNames ?? [])].some((name) =>
+    dependencies.names.has(name),
+  );
 }
 
 /**
@@ -1476,14 +1595,11 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
  */
 function validationFailureBranches(
   pattern: PythonDiscoveryPattern,
-  parameters: readonly RawParameter[],
+  readsRequest: boolean,
   range: SourceRange,
 ): RawBranch[] {
   const status = pattern.validationFailureStatus;
-  if (
-    status === undefined ||
-    !parameters.some((parameter) => parameter.role !== null)
-  ) {
+  if (status === undefined || !readsRequest) {
     return [];
   }
   return [

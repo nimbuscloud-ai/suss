@@ -108,22 +108,74 @@ function declarationOf(
   return name === undefined ? undefined : byName.get(name);
 }
 
-/** Every declared response call written in a body, in source order. */
+/** What decides whether a call in a body sends the response. */
+interface Responders {
+  byName: ReadonlyMap<string, RbStatusCall>;
+  locals: ReadonlySet<string>;
+  helper: ((name: string) => Reading<number> | null) | undefined;
+}
+
+/** A call that sends the response: one the pack declares, or a project helper that always responds. */
+type Responder =
+  | { kind: "declared"; declaration: RbStatusCall }
+  | { kind: "helper"; reading: Reading<number> };
+
+function responderOf(
+  node: RbNode,
+  responders: Responders,
+): Responder | undefined {
+  const declaration = declarationOf(node, responders.byName, responders.locals);
+  if (declaration !== undefined) {
+    return { kind: "declared", declaration };
+  }
+  const name = receiverlessName(node, responders.locals);
+  const reading =
+    name === null || responders.helper === undefined
+      ? null
+      : responders.helper(name);
+  return reading === null ? undefined : { kind: "helper", reading };
+}
+
+/** The method a call with no receiver invokes, written with or without arguments. */
+function receiverlessName(
+  node: RbNode,
+  locals: ReadonlySet<string>,
+): string | null {
+  if (node.type === "identifier") {
+    return isBareMethodCall(node, locals) ? node.text : null;
+  }
+  if (node.type !== "call" || field(node, "receiver") !== null) {
+    return null;
+  }
+  return field(node, "method")?.text ?? null;
+}
+
+function readingOfResponder(
+  call: RbNode,
+  responder: Responder,
+  names: Record<string, number>,
+  facts: Database | undefined,
+): Reading<number> {
+  return responder.kind === "helper"
+    ? responder.reading
+    : readingOfCall(call, responder.declaration, names, facts);
+}
+
+/** Every call written in a body that sends the response, in source order. */
 function collectResponseCalls(
   node: RbNode,
-  byName: ReadonlyMap<string, RbStatusCall>,
-  locals: ReadonlySet<string>,
+  responders: Responders,
   found: RbNode[],
 ): RbNode[] {
   for (const child of node.namedChildren) {
     if (child === null || OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
-    if (declarationOf(child, byName, locals) !== undefined) {
+    if (responderOf(child, responders) !== undefined) {
       found.push(child);
       continue;
     }
-    collectResponseCalls(child, byName, locals, found);
+    collectResponseCalls(child, responders, found);
   }
   return found;
 }
@@ -238,6 +290,47 @@ export interface BranchOptions {
   fallthrough?: "respond" | "handOn";
   /** The project's facts, so a status written as a constant another file defines resolves. */
   facts?: Database | undefined;
+  /** What a project method sends when every path through it responds, or null when it does not. */
+  respondingHelper?: (name: string) => Reading<number> | null;
+}
+
+/**
+ * What a helper method responds with, read one hop deep: every path
+ * through it has to end at a call the pack declares, or it does not
+ * count. A status that differs between paths, or is a parameter the
+ * caller passes, is reported as unread.
+ */
+export function helperResponse(
+  helper: RbNode,
+  pattern: ControllerActions,
+  facts: Database | undefined,
+): Reading<number> | null {
+  const branches = responseBranches(helper, pattern, [], undefined, {
+    fallthrough: "handOn",
+    facts,
+  });
+  if (
+    branches === null ||
+    branches.some((branch) => branch.terminal.kind !== "response")
+  ) {
+    return null;
+  }
+  const statuses = new Set(
+    branches.map((branch) => {
+      const reading = branch.statusCodeReading?.reading;
+      if (reading?.kind === "absent") {
+        return branch.statusCodeReading?.libraryDefault ?? null;
+      }
+      return reading?.kind === "written" ? reading.value : null;
+    }),
+  );
+  const [only] = [...statuses];
+  return statuses.size === 1 && typeof only === "number"
+    ? writtenReading(only, rangeOf(helper))
+    : unreadableReading(
+        "This response is sent by a helper whose status does not settle on one number here, so this outcome claims none",
+        rangeOf(helper),
+      );
 }
 
 function branchOf(
@@ -405,9 +498,12 @@ export function responseBranches(
     return null;
   }
 
-  const byName = declarationsByName(declarations);
-  const locals = localNamesIn(method);
-  const responses = collectResponseCalls(body, byName, locals, []);
+  const responders: Responders = {
+    byName: declarationsByName(declarations),
+    locals: localNamesIn(method),
+    helper: options.respondingHelper,
+  };
+  const responses = collectResponseCalls(body, responders, []);
   const returns = collectReturns(body, []);
   const lowered = lowerRubyBody(body, returns, responses);
 
@@ -417,7 +513,7 @@ export function responseBranches(
   const bareReturns = returns.filter(
     (node) =>
       lowered.terminalHome.has(node) &&
-      collectResponseCalls(node, byName, locals, []).length === 0,
+      collectResponseCalls(node, responders, []).length === 0,
   );
   const terminals = [...responses, ...bareReturns];
   const enumerated = enumerateOrDegrade(
@@ -438,11 +534,11 @@ export function responseBranches(
     path.map((condition) => conditionOf(condition, inputs));
   const outcomes: Outcome[] = [];
   for (const terminal of terminals) {
-    const declaration = declarationOf(terminal, byName, locals);
+    const responder = responderOf(terminal, responders);
     const reading =
-      declaration === undefined
+      responder === undefined
         ? absentReading
-        : readingOfCall(terminal, declaration, statusNames, options.facts);
+        : readingOfResponder(terminal, responder, statusNames, options.facts);
     for (const path of enumerated.byTerminal.get(terminal) ?? []) {
       outcomes.push({
         conditions: conditionsOf(path),
@@ -450,7 +546,7 @@ export function responseBranches(
         location: rangeOf(terminal),
         // A bare `return` wrote no response, so a filter that takes it
         // hands the request on the same as one that reaches its end.
-        ...(declaration === undefined ? { fellThrough: true } : {}),
+        ...(responder === undefined ? { fellThrough: true } : {}),
       });
     }
   }

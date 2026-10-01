@@ -826,6 +826,14 @@ export const HttpMetadataSchema = z.object({
    * back to the caller. Falls back to `"response"` when absent.
    */
   redirectDelivery: z.enum(["followed", "response"]).optional(),
+  /**
+   * Statuses the handler's own code lists as responses it may send,
+   * whether or not a path read here produces them: FastAPI's
+   * `responses=` on the route, its router, or a mount above it. A
+   * document generated from the same code lists them for that reason
+   * alone, so the document check does not ask a path to produce them.
+   */
+  declaredStatuses: z.array(z.number()).optional(),
   /** Code that implements this declared route, when the manifest says which. */
   implementingHandler: HttpHandlerPointerSchema.optional(),
   /** The range spec ("2XX", "5xx", and so on) this transition's response covers. */

@@ -716,6 +716,61 @@ describe("discoverUnits: controller actions", () => {
     });
   }
 
+  it("reads a status sent through a helper an inherited filter or the action calls", async () => {
+    const pack = railsTestPack({
+      routeFor: () => null,
+      filters: [
+        {
+          name: "before_action",
+          methodFrom: "argument",
+          actionKeywords: { include: "only", exclude: "except" },
+        },
+      ],
+      responseStatusCalls: [{ name: "render", statusKeyword: "status" }],
+      statusCodeNames: { unauthorized: 401, not_found: 404 },
+    });
+    const units = await discoverActions(
+      [
+        "module ErrorRendering",
+        "  def render_unauthorized(message)",
+        "    render json: { error: message }, status: :unauthorized",
+        "  end",
+        "  def render_error(status)",
+        "    render json: {}, status: status",
+        "  end",
+        "  def render_report",
+        "    render json: {}",
+        "  end",
+        "end",
+        "class ApiController < ApplicationController",
+        "  include ErrorRendering",
+        "  before_action :authenticate!",
+        "  def authenticate!",
+        "    render_unauthorized('no token') && return if token.blank?",
+        "  end",
+        "end",
+        "class OrdersController < ApiController",
+        "  def index",
+        "    return render_error(404) if missing?",
+        "    render_report",
+        "  end",
+        "end",
+      ].join("\n"),
+      pack,
+    );
+    const statuses = (name: string) =>
+      units
+        .find((unit) => unit.identity.name === name)
+        ?.branches.map((branch) => {
+          const reading = branch.statusCodeReading?.reading;
+          return reading?.kind === "written"
+            ? reading.value
+            : `${branch.terminal.kind} ${reading?.kind ?? ""}`;
+        });
+    expect(statuses("authenticate!")).toEqual([401, "delegate "]);
+    expect(statuses("index")).toEqual(["response unreadable", 200]);
+  });
+
   it("discovers every instance method a controller defines directly, routed or not", async () => {
     const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +

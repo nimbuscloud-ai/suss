@@ -221,6 +221,11 @@ export function watchRouterIndex(
       );
       return found;
     },
+    // The wrapper index notes what it reads through the mounts, in terms
+    // it can look up again.
+    mountsAbove(pattern, constructionKey) {
+      return index.mountsAbove(pattern, constructionKey);
+    },
   };
 }
 

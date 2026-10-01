@@ -73,3 +73,28 @@ export const RACK_STATUS_CODE_NAMES: Record<string, number> = {
   not_extended: 510,
   network_authentication_required: 511,
 };
+
+const ACTIVE_RECORD_ERROR = [
+  "ActiveRecord::ActiveRecordError",
+  "StandardError",
+  "Exception",
+];
+
+/**
+ * The entries ActiveRecord's railtie adds to Rails' `rescue_responses`
+ * for the exceptions a model call raises, with the classes each one
+ * inherits from.
+ */
+export const RESCUE_RESPONSES: Record<
+  string,
+  { status: number; ancestors: string[] }
+> = {
+  "ActiveRecord::RecordNotFound": {
+    status: 404,
+    ancestors: ACTIVE_RECORD_ERROR,
+  },
+  "ActiveRecord::RecordInvalid": {
+    status: 422,
+    ancestors: ACTIVE_RECORD_ERROR,
+  },
+};

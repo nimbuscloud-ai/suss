@@ -11,6 +11,8 @@
 
 import { z } from "zod";
 
+import { STATUS_CONSTANTS } from "./statusConstants.js";
+
 import type { ParameterSource, PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
@@ -91,8 +93,10 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         // FastAPI checks every declared request input before the handler
         // runs, and responds to a bad one itself.
         validationFailureStatus: 422,
+        statusCodeConstants: STATUS_CONSTANTS,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
+        responsesKeyword: "responses",
         // FastAPI re-exports Starlette's class, and a project may import
         // it from either module.
         responseStatusCalls: [

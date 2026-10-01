@@ -101,6 +101,29 @@ describe("resolveConstantFile", () => {
     ).toBe(file);
   });
 
+  it("finds a constant in an added autoload root, read as the top of the namespace, after the root", () => {
+    const app = path.join(tmpDir, "app");
+    const lib = path.join(tmpDir, "lib");
+    const file = path.join(lib, "events", "types.rb");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.mkdirSync(path.join(app, "controllers"), { recursive: true });
+    fs.writeFileSync(file, "module Events::Types\nend\n");
+
+    expect(
+      resolveConstantFile(
+        app,
+        "Events::Types",
+        "railsUnderscore",
+        [],
+        undefined,
+        [lib],
+      ),
+    ).toBe(file);
+    expect(
+      resolveConstantFile(app, "Events::Types", "railsUnderscore"),
+    ).toBeNull();
+  });
+
   it("takes the root's own file over one in a directory under it", () => {
     const atRoot = path.join(tmpDir, "order.rb");
     const nested = path.join(tmpDir, "models", "order.rb");

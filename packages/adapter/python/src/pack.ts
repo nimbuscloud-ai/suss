@@ -436,6 +436,12 @@ export interface RouteConventions {
    * sends 422. Unset means the library checks nothing on its own.
    */
   validationFailureStatus?: number;
+  /**
+   * The number each of the library's status constants is, keyed by the
+   * module and name it is imported as (`fastapi.status.HTTP_404_NOT_FOUND`),
+   * for a project read without the library installed.
+   */
+  statusCodeConstants?: Record<string, number>;
 }
 
 /** The part of the request a parameter declared with one callable is read from. */
@@ -550,6 +556,13 @@ export interface DecoratedFunctionRoute extends RouteConventions {
   /** Unset leaves the return annotation as the only source for the response shape. */
   responseModelKeyword?: string;
   statusCodeKeyword?: string;
+  /**
+   * The keyword whose dictionary lists statuses a route may respond
+   * with, FastAPI's `responses`, on the route decorator, its router, a
+   * mount call above it or the app. Its keys become the route's declared
+   * statuses.
+   */
+  responsesKeyword?: string;
 }
 
 /**

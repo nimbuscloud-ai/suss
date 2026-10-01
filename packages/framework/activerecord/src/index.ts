@@ -257,6 +257,24 @@ export function activeRecordStorage(
       },
       scopes: ["scope"],
       storageSystem: options.storageSystem,
+      raises: [
+        {
+          exception: "ActiveRecord::RecordNotFound",
+          methods: [
+            "find",
+            "find_by!",
+            "find_sole_by",
+            "sole",
+            "first!",
+            "last!",
+            "take!",
+          ],
+        },
+        {
+          exception: "ActiveRecord::RecordInvalid",
+          methods: ["save!", "create!", "update!", "find_or_create_by!"],
+        },
+      ],
     },
   ];
 }
