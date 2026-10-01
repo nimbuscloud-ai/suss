@@ -775,6 +775,17 @@ describe("composeWrappers and the classes an error handler catches", () => {
     ]);
   });
 
+  it("keeps a StandardError handler on a throw of a class the run did not read, as uncertain, and an Exception handler as sure", () => {
+    const gemError = raises("Gatekeeper::AccessDenied", ["Exception"], true);
+    expect(caught(gemError, [MISSING, LIMIT, ANY_ERROR])).toEqual([
+      ["respond_error", true],
+    ]);
+    const anyException = handler("respond_error", ["Exception"], true);
+    expect(caught(gemError, [MISSING, anyException])).toEqual([
+      ["respond_error", false],
+    ]);
+  });
+
   it("marks every handler that lists classes as uncertain for a throw with no class", () => {
     expect(caught(raises(null), [MISSING, LIMIT])).toEqual([
       ["respond_missing", true],

@@ -771,6 +771,55 @@ describe("discoverUnits: controller actions", () => {
     expect(statuses("index")).toEqual([404, 200]);
   });
 
+  it("keeps a raise of a class the run did not read as a throw a StandardError handler may catch", async () => {
+    const pack = railsTestPack({
+      routeFor: () => null,
+      filters: [
+        { name: "rescue_from", methodFrom: "withKeyword", onThrow: true },
+      ],
+      responseStatusCalls: [{ name: "head", statusArgument: 0 }],
+    });
+    const units = await discoverActions(
+      [
+        "class OrdersController < ApplicationController",
+        "  rescue_from StandardError, with: :fail_safe",
+        "  def index",
+        "    raise Gatekeeper::AccessDenied if locked?",
+        "    head :ok",
+        "  end",
+        "  def fail_safe",
+        "    head 500",
+        "  end",
+        "end",
+      ].join("\n"),
+      pack,
+    );
+    const index = units.find((unit) => unit.identity.name === "index");
+    expect(
+      index?.branches.map((branch) => [
+        branch.terminal.kind,
+        branch.terminal.exceptionType,
+        branch.terminal.exceptionAncestry ?? null,
+      ]),
+    ).toEqual([
+      ["response", null, null],
+      [
+        "throw",
+        "Gatekeeper::AccessDenied",
+        { ancestors: ["Exception"], incomplete: true },
+      ],
+    ]);
+    expect(index?.wrappers).toEqual([
+      {
+        file: "controllers/orders_controller.rb",
+        name: "fail_safe",
+        onThrow: true,
+        catches: ["StandardError"],
+        mayCatchUnreadClasses: true,
+      },
+    ]);
+  });
+
   it("ends a path at a raise with the class it raises, and lists the classes each handler catches", async () => {
     const pack = railsTestPack({
       routeFor: () => null,
