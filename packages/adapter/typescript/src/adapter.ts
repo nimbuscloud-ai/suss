@@ -891,7 +891,7 @@ function readCodeStructure(
   const depCalls = extractDependencyCalls(func, barriers);
   const parameterNames = params.map((one) => one.name);
   const paramReads = [
-    ...parameterReads(func, parameterNames, barriers),
+    ...parameterReads(func, parameterNames),
     ...flagReads(
       func,
       parameterNames,
@@ -1410,6 +1410,9 @@ function extractFromSourceFile(
       }
       if (unit.unreadBinding !== undefined) {
         raw.unreadBinding = unit.unreadBinding;
+      }
+      if (unit.declaredStatuses !== undefined) {
+        raw.declaredStatuses = unit.declaredStatuses;
       }
       stampWrappers(raw, unit, wrappers);
 

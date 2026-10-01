@@ -171,6 +171,17 @@ export const restSemantics = defineBoundarySemantics({
       }
       return `rest ${pathShape(semantics.path)}`;
     },
+    /**
+     * A spec writes `/teams/{team_id}` where the route that serves it
+     * writes `/teams/:id`. The method stays in, so a `"*"` handler is
+     * never compared with the document for one method.
+     */
+    operationKey(semantics) {
+      if (semantics.method === null || semantics.path === null) {
+        return null;
+      }
+      return `${semantics.method.toUpperCase()} ${pathShape(semantics.path)}`;
+    },
     sidesAgree(a, b) {
       return methodsAgree(a.method, b.method);
     },

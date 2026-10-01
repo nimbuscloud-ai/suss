@@ -4,6 +4,7 @@ import {
   summaryIdentifier,
   wrapperIndex,
 } from "@suss/behavioral-ir";
+import { operationKey } from "@suss/ir-core";
 
 import { extractResponseStatus, makeSide } from "../coverage/responseMatch.js";
 import { boundaryKey } from "../pairing/pairing.js";
@@ -52,7 +53,7 @@ export function checkContractImplementation(
     if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
       continue;
     }
-    const key = boundaryKey(binding);
+    const key = operationKey(binding);
     if (key === null) {
       continue;
     }
@@ -66,9 +67,9 @@ export function checkContractImplementation(
 
   const wrappers = wrapperIndex(summaries);
   const findings: Finding[] = [];
-  for (const [key, stubs] of stubsByKey) {
-    const handlers = handlersByKey.get(key);
-    if (handlers === undefined) {
+  for (const [operation, stubs] of stubsByKey) {
+    const handlers = handlersByKey.get(operation);
+    if (handlers === undefined || servedByMoreThanOneFunction(handlers)) {
       continue;
     }
     for (const stub of stubs) {
@@ -85,7 +86,7 @@ export function checkContractImplementation(
           ),
         );
         compared?.push({
-          key,
+          key: boundaryKeyOfHandler(handler) ?? operation,
           provider: summaryIdentifier(handler),
           consumer: summaryIdentifier(stub),
         });
@@ -158,6 +159,30 @@ function checkHandlerAgainstDocument(
     ...checkBodiesAgainstDeclared(handler, contract, boundary, document),
   );
   return findings;
+}
+
+/**
+ * Whether two different functions serve one operation, such as two API
+ * versions that a header chooses between. Nothing in the run says which
+ * one the document describes, so neither is compared with it. Two
+ * summaries of one function, one per path it is registered under, still
+ * count as one.
+ */
+function servedByMoreThanOneFunction(
+  handlers: readonly BehavioralSummary[],
+): boolean {
+  const functions = new Set(
+    handlers.map(
+      ({ location }) =>
+        `${location.workspace ?? ""}|${location.file}:${location.range.start}`,
+    ),
+  );
+  return functions.size > 1;
+}
+
+function boundaryKeyOfHandler(handler: BehavioralSummary): string | null {
+  const binding = handler.identity.boundaryBinding;
+  return binding === null ? null : boundaryKey(binding);
 }
 
 function addUnder(

@@ -18,13 +18,22 @@ import {
   globalPrefixOf,
   pathUnderGlobalPrefix,
 } from "./globalPrefix.js";
-import { numberValueOf, stringValueOf, writtenNodeOf } from "./resolveValue.js";
+import {
+  libraryExportPathsOf,
+  numberValueOf,
+  objectLiteralOf,
+  propertyOf,
+  stringValueOf,
+} from "./resolveValue.js";
+import { routeVersionSegments, routeVersionsIn } from "./routeVersioning.js";
 
 import type {
   ChannelSource,
   DeclaredBinding,
+  DeclaredStatusDecorators,
   DiscoveryPattern,
 } from "@suss/extractor";
+import type { Decorator, MethodDeclaration } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 import type { MountPrefixIndex } from "./registrationCall.js";
 import type { DiscoveredUnit } from "./shared.js";
@@ -72,6 +81,9 @@ function routePathOf(
 
 const PREFIX_NOT_READ =
   "The path this controller or route declares does not settle to one string, so no path is claimed and this route pairs with nothing";
+
+const VERSION_NOT_READ =
+  "This route serves an API version, and the run cannot read the version or how the application serves versions, so no path is claimed and this route pairs with nothing";
 
 /**
  * Join a controller's class-prefix with a method-suffix. NestJS
@@ -159,28 +171,109 @@ interface LibraryConstants {
 
 /**
  * The number a library constant is equal to, when the value is one of the
- * library's exports the pack lists. `HttpStatus.NO_CONTENT` is asked about
- * as the member of the `HttpStatus` it reads.
+ * library's exports the pack lists.
  */
 function libraryConstantOf(
   value: Node,
   constants: LibraryConstants,
   resolution: ResolutionStore | undefined,
 ): number | null {
-  if (resolution === undefined || constants.modules.length === 0) {
-    return null;
-  }
-  const written = writtenNodeOf(value, resolution) ?? value;
-  const [asked, member] = Node.isPropertyAccessExpression(written)
-    ? [written.getExpression(), [written.getName()]]
-    : [written, []];
-  for (const origin of resolution.importOriginsOf(asked, constants.modules)) {
-    const found = constants.values[[...origin.path, ...member].join(".")];
+  for (const path of libraryExportPathsOf(
+    value,
+    constants.modules,
+    resolution,
+  )) {
+    const found = constants.values[path];
     if (found !== undefined) {
       return found;
     }
   }
   return null;
+}
+
+/** What every route in one file needs to read the statuses its decorators declare. */
+interface DeclaredStatuses {
+  declared: DeclaredStatusDecorators;
+  /** The decorators this file imports, by local name, to the name the pack lists. */
+  locals: ReadonlyMap<string, string>;
+  constants: LibraryConstants;
+  resolution: ResolutionStore | undefined;
+}
+
+function declaredStatusesIn(
+  sourceFile: SourceFile,
+  declared: DeclaredStatusDecorators,
+  constants: LibraryConstants,
+  resolution: ResolutionStore | undefined,
+): DeclaredStatuses {
+  const locals = importedDecoratorLocals(
+    sourceFile,
+    [declared.importModule].flat(),
+    Object.keys(declared.decorators),
+  );
+  return { declared, locals, constants, resolution };
+}
+
+/**
+ * The statuses a route's decorators list, on its method and on its
+ * class. A status that does not settle to a number is left out.
+ */
+function routeDeclaredStatuses(
+  statuses: DeclaredStatuses,
+  cls: ClassDeclaration,
+  routeDecorator: Node,
+): number[] {
+  if (statuses.locals.size === 0) {
+    return [];
+  }
+  const member = routeDecorator.getParent();
+  const own =
+    member !== undefined && Node.isMethodDeclaration(member)
+      ? statusesDecoratedOn(member, statuses)
+      : [];
+  return [...new Set([...statusesDecoratedOn(cls, statuses), ...own])].sort(
+    (a, b) => a - b,
+  );
+}
+
+function statusesDecoratedOn(
+  decorated: ClassDeclaration | MethodDeclaration,
+  { declared, locals, constants, resolution }: DeclaredStatuses,
+): number[] {
+  const found: number[] = [];
+  for (const decorator of decorated.getDecorators()) {
+    const name = locals.get(decorator.getName());
+    if (name === undefined) {
+      continue;
+    }
+    const status =
+      declared.decorators[name] ??
+      statusInOptions(decorator, declared.statusKey, constants, resolution);
+    if (status !== null && status !== undefined) {
+      found.push(status);
+    }
+  }
+  return found;
+}
+
+function statusInOptions(
+  decorator: Decorator,
+  statusKey: string,
+  constants: LibraryConstants,
+  resolution: ResolutionStore | undefined,
+): number | null {
+  const [options] = decorator.getArguments();
+  const object =
+    options === undefined ? null : objectLiteralOf(options, resolution);
+  const status =
+    object === null ? null : propertyOf(object, statusKey, resolution);
+  if (status === null) {
+    return null;
+  }
+  return (
+    numberValueOf(status, resolution) ??
+    libraryConstantOf(status, constants, resolution)
+  );
 }
 
 export function discoverDecoratedRoutes(
@@ -217,6 +310,28 @@ export function discoverDecoratedRoutes(
     match.globalPrefix === undefined
       ? null
       : globalPrefixOf(mountPrefixes, globalPrefixKey(match.globalPrefix));
+  const versions =
+    match.versioning === undefined
+      ? null
+      : routeVersionsIn(
+          sourceFile,
+          match.versioning,
+          acceptedModules,
+          resolution,
+          mountPrefixes,
+        );
+  const declaredStatuses =
+    match.declaredStatuses === undefined
+      ? null
+      : declaredStatusesIn(
+          sourceFile,
+          match.declaredStatuses,
+          {
+            modules: acceptedModules,
+            values: match.statusCodeConstants ?? {},
+          },
+          resolution,
+        );
 
   const results: DiscoveredUnit[] = [];
   for (const cls of sourceFile.getClasses()) {
@@ -259,14 +374,6 @@ export function discoverDecoratedRoutes(
         localRouteDecorators.get(handler.standsFor) ?? handler.standsFor;
       const httpMethod = match.methodDecoratorRouteMap[verbDecorator];
       const pathSuffix = resolveRoutePathArg(handler.decorator, resolution);
-      const routePath =
-        pathPrefix === null || pathSuffix === null
-          ? null
-          : pathUnderGlobalPrefix(
-              globalPrefix,
-              httpMethod,
-              joinRoutePath(pathPrefix, pathSuffix),
-            );
       const status =
         statusCodeDecoratedOn(
           handler.decorator,
@@ -274,15 +381,56 @@ export function discoverDecoratedRoutes(
           { modules: acceptedModules, values: match.statusCodeConstants ?? {} },
           resolution,
         ) ?? match.defaultStatusCodes?.[verbDecorator];
-
-      results.push({
+      const declared =
+        declaredStatuses === null
+          ? []
+          : routeDeclaredStatuses(
+              declaredStatuses,
+              cls as ClassDeclaration,
+              handler.decorator,
+            );
+      const unit = {
         func: handler.func,
         kind,
         name: `${className}.${handler.name}`,
-        routeInfo: { method: httpMethod, path: routePath },
-        ...(routePath === null ? { unreadBinding: PREFIX_NOT_READ } : {}),
         ...(status === undefined ? {} : { defaultStatusCode: status }),
-      });
+        ...(declared.length === 0 ? {} : { declaredStatuses: declared }),
+      };
+
+      if (pathPrefix === null || pathSuffix === null) {
+        results.push({
+          ...unit,
+          routeInfo: { method: httpMethod, path: null },
+          unreadBinding: PREFIX_NOT_READ,
+        });
+        continue;
+      }
+
+      const path = joinRoutePath(pathPrefix, pathSuffix);
+      const segments =
+        versions === null
+          ? [null]
+          : routeVersionSegments(versions, marker.args, handler.decorator);
+      if (segments === null) {
+        results.push({
+          ...unit,
+          routeInfo: { method: httpMethod, path: null },
+          unreadBinding: VERSION_NOT_READ,
+        });
+        continue;
+      }
+
+      for (const segment of segments) {
+        const routePath = pathUnderGlobalPrefix(
+          globalPrefix,
+          httpMethod,
+          joinRoutePath(segment ?? "", path),
+        );
+        results.push({
+          ...unit,
+          routeInfo: { method: httpMethod, path: routePath },
+        });
+      }
     }
   }
   return results;

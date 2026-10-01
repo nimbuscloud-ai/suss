@@ -72,6 +72,7 @@ import {
   evaluatedValue,
   moduleOf,
 } from "./values/evaluator.js";
+import { originOf } from "./values/origin.js";
 
 import type {
   DispatchTable,
@@ -1436,6 +1437,8 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       pathParamNames: template?.paramNames ?? null,
       requestBodyFromAnnotatedClass,
       injectedCallees,
+      injectedTypes: new Set(pattern.injectedParameterTypes ?? []),
+      module,
       sources: pattern.parameterSources ?? {},
       aliasKeyword: pattern.parameterAliasKeyword,
     },
@@ -1737,6 +1740,8 @@ interface ParameterReading {
   pathParamNames: ReadonlySet<string> | null;
   requestBodyFromAnnotatedClass: boolean;
   injectedCallees: ReadonlySet<string>;
+  injectedTypes: ReadonlySet<string>;
+  module: ModuleBinding;
   sources: Readonly<Record<string, ParameterSource>>;
   aliasKeyword: string | undefined;
 }
@@ -1792,7 +1797,10 @@ function readParameter(
       ? annotationToShape(typeNode, reading.scope, reading.ctx)
       : null;
   const typeText = typeNode !== null ? typeNode.text : null;
-  if (isInjectedParameter(param, reading)) {
+  if (
+    isInjectedParameter(param, reading) ||
+    isInjectedType(typeNode, reading)
+  ) {
     return { name, position, role: null, typeText };
   }
   const declared = declaringCall(
@@ -1930,6 +1938,28 @@ function isInjectedParameter(
   reading: ParameterReading,
 ): boolean {
   return declaringCall(param, reading.injectedCallees, reading) !== null;
+}
+
+/**
+ * Whether the parameter's annotation is a class the library supplies a
+ * value for, `resp: Response`, read through what the file imported the
+ * name from so a project's own `Response` class is not mistaken for it.
+ */
+function isInjectedType(
+  typeNode: PyNode | null,
+  reading: ParameterReading,
+): boolean {
+  if (typeNode === null || reading.injectedTypes.size === 0) {
+    return false;
+  }
+  // The grammar wraps an annotation's expression in a `type` node.
+  const written =
+    typeNode.type === "type" ? (typeNode.namedChildren[0] ?? null) : typeNode;
+  const origin = written === null ? null : originOf(written, reading.module);
+  return (
+    origin !== null &&
+    reading.injectedTypes.has(`${origin.module}.${origin.name}`)
+  );
 }
 
 /**
