@@ -358,6 +358,34 @@ describe("checkContractImplementation, on a handler suss read in part", () => {
     expect(findings).toEqual([]);
   });
 
+  it("still claims a declared failure is never sent past a dependency call it could not follow", () => {
+    const callsTheDatabase = {
+      ...handler("GET", "/users/{id}", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      gaps: [
+        {
+          type: "unfollowedCall" as const,
+          conditions: [],
+          consequence: "unknown" as const,
+          description:
+            "The call to db.findById lands on a declaration with no body",
+          callee: "db.findById",
+        },
+      ],
+    };
+    const findings = checkContractImplementation([
+      document("GET", "/users/{id}", [
+        { statusCode: 200 },
+        { statusCode: 429 },
+      ]),
+      callsTheDatabase,
+    ]);
+    expect(findings.map((f) => f.description)).toEqual([
+      "The openapi document declares response 429, and no path in the handler produces it",
+    ]);
+  });
+
   it("does not claim a declared failure is never sent by a handler that throws", () => {
     const findings = checkContractImplementation([
       document("GET", "/users", [{ statusCode: 200 }, { statusCode: 404 }]),

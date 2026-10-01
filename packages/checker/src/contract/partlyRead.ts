@@ -67,8 +67,9 @@ export function reachedThroughUnreadCondition(
 /**
  * Whether the handler can end with a failing status no transition names:
  * middleware runs in front of it, it throws something the framework
- * turns into a status, a status could not be read, or the walk left part
- * of it unread.
+ * turns into a status, a status could not be read, or no pack terminal
+ * matched part of what it produces. A call the walk could not follow is
+ * left out, since a dependency it calls does not send the response.
  */
 export function failuresSussCouldNotRead(handler: BehavioralSummary): boolean {
   const middleware = readWrapperMetadata(handler)?.applied ?? [];
@@ -76,10 +77,7 @@ export function failuresSussCouldNotRead(handler: BehavioralSummary): boolean {
     return true;
   }
 
-  const unreadPart = handler.gaps.some(
-    (gap) => gap.type === "unfollowedCall" || gap.type === "unreadOutcome",
-  );
-  if (unreadPart) {
+  if (handler.gaps.some((gap) => gap.type === "unreadOutcome")) {
     return true;
   }
 
