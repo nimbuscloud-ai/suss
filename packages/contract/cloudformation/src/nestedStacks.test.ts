@@ -117,6 +117,18 @@ describe("a template split across nested stacks", () => {
     expect(written).toContain("./dashboard-template.yaml is not on disk");
   });
 
+  it("collects those children into warnings instead, when the caller asks", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const warnings: string[] = [];
+    cloudFormationFileToSummaries(fixture, { warnings });
+
+    expect(stderr).not.toHaveBeenCalled();
+    expect(warnings).toEqual([
+      expect.stringContaining("PackagedStack"),
+      expect.stringContaining("DashboardStack"),
+    ]);
+  });
+
   it("summarizes a route declared in a child", () => {
     const routes = summariesFromFixture()
       .map((s) => s.identity.boundaryBinding?.semantics)
