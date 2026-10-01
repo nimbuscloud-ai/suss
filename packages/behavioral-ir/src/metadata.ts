@@ -170,6 +170,15 @@ const WrapperReferenceSchema = z.object({
    */
   onThrow: z.boolean().optional(),
   /**
+   * For an error handler, the exception classes it is registered for, in
+   * the order the framework tries handlers. Absent means it runs for any throw.
+   */
+  catches: z.array(z.string()).optional(),
+  /** True when a class the run did not read may inherit from one of `catches`. */
+  mayCatchUnreadClasses: z.boolean().optional(),
+  /** True when the run could not read some of the classes it is registered for. */
+  mayCatchAny: z.boolean().optional(),
+  /**
    * The path pattern the registration narrowed the wrapper to, if any,
    * under whatever prefix its router was mounted at, so it reads in the
    * same terms as the paths of the routes it covers.
@@ -186,6 +195,11 @@ const WrapperMetadataSchema = z.object({
    * none, which is how a reader tells the two apart.
    */
   from: WrapperReferenceSchema.optional(),
+  /**
+   * Set beside `from` when the run could not tell whether this error
+   * handler catches the throw, so the outcome may never happen.
+   */
+  catchUncertain: z.boolean().optional(),
 });
 
 export type WrapperMetadata = z.infer<typeof WrapperMetadataSchema>;

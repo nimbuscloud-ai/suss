@@ -236,7 +236,8 @@ Each variant has exactly the fields it needs.
 type Output =
   | { type: "response"; statusCode: ValueRef | null; body: TypeShape | null;
       headers: Record<string, ValueRef> }
-  | { type: "throw"; exceptionType: string | null; message: string | null }
+  | { type: "throw"; exceptionType: string | null; message: string | null;
+      exceptionAncestors?: string[]; ancestryIncomplete?: boolean }
   | { type: "render"; component: string; props?: Record<string, unknown>;
       root?: RenderNode }
   | { type: "return"; value: TypeShape | null }
@@ -249,7 +250,7 @@ type Output =
 `Output` is what a terminal produces. Each pack uses the variants its framework needs, and the union itself has nothing framework-specific in it.
 
 - **`response`** is an HTTP response. `statusCode` is a `ValueRef`, because the status can be dynamic (`res.status(code).json(...)`). A literal 200 arrives as `{ "type": "literal", "value": 200 }`.
-- **`throw`** keeps the constructor expression as text (`"HttpError.NotFound"`), because the class itself cannot be resolved statically in general.
+- **`throw`** keeps the constructor expression as text (`"HttpError.NotFound"`), because the class itself cannot be resolved statically in general. Where an adapter reads the class's ancestry, as the Ruby adapter does for a `raise`, `exceptionAncestors` lists the classes and modules it inherits from, and `ancestryIncomplete` says the list stops at a class the run did not read. Composition uses them to pick the `rescue_from` handler that catches the throw.
 - **`render`** is a component render result. `component` is the root element's name. `root` is the whole tree, filled in by packs that read their language's render form, so a checker can compare structural output against a contract source such as a Storybook story.
 - **`return`** is a plain return. `value` is a `TypeShape`, because for a hook or a utility the shape is the contract.
 - **`delegate`** passes control on, to the next middleware or handler. `to` is a symbolic name such as `"next"`.

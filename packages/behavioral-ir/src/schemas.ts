@@ -442,6 +442,13 @@ export const OutputSchema = z.discriminatedUnion("type", [
     type: z.literal("throw"),
     exceptionType: z.string().nullable(),
     message: z.string().nullable(),
+    /**
+     * The classes and modules `exceptionType` inherits from, as far as the
+     * run read them. Absent when the adapter did not read its ancestry.
+     */
+    exceptionAncestors: z.array(z.string()).optional(),
+    /** True when the ancestry reaches a class the run did not read. */
+    ancestryIncomplete: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("render"),
