@@ -18,3 +18,10 @@ export const Custom = {
   args: { label: "Custom" },
   render: (args: { label: string }) => <Chip label={args.label} size="md" />,
 };
+
+export const Method = {
+  args: { label: "Method" },
+  render(args: { label: string }) {
+    return <Chip label={args.label} />;
+  },
+};

@@ -196,6 +196,7 @@ describe("args on the meta", () => {
 
     expect(readersOf("Chip.Routed")).toEqual(["decorators"]);
     expect(readersOf("Chip.Custom")).toEqual(["decorators", "render"]);
+    expect(readersOf("Chip.Method")).toEqual(["decorators", "render"]);
     const [plain] = generateSummariesFromStories(
       [path.join(importsDir, "src/Chip/__stories__/Chip.stories.tsx")],
       { projectRoot: importsDir },

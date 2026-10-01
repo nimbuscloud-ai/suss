@@ -163,9 +163,13 @@ function argReadersOf(
   storyOrMeta: ObjectLiteralExpression,
   resolution: ResolutionStore,
 ): ArgReader[] {
-  return ARG_READERS.filter(
-    (name) => propertyOf(storyOrMeta, name, resolution) !== null,
+  // Read by name, since `render(args) { ... }` is a method with no value.
+  const names = new Set(
+    propertiesOf(storyOrMeta, resolution).map((property) =>
+      propertyNameOf(property),
+    ),
   );
+  return ARG_READERS.filter((name) => names.has(name));
 }
 
 interface ComponentModule {
