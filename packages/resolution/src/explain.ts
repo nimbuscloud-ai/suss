@@ -101,11 +101,15 @@ function exportTrail(proof: Proof, describe: DescribeAtom): string[] {
  */
 function argumentReason(proof: Proof, describe: DescribeAtom): string {
   const [, p, a] = proof.tuple;
-  if (proof.kind !== "derived") {
-    return `${describe(p)} is a parameter, and a call passes it ${describe(a)}`;
-  }
-  const f = proof.premises[0].tuple[0];
-  return `${describe(p)} is a parameter of ${describe(f)}, and a call passes it ${describe(a)}`;
+  const f =
+    proof.kind === "derived"
+      ? proof.premises.find(
+          (premise) =>
+            premise.relation === "paramOf" || premise.relation === "paramNamed",
+        )?.tuple[0]
+      : undefined;
+  const ofFunction = f === undefined ? "" : ` of ${describe(f)}`;
+  return `${describe(p)} is a parameter${ofFunction}, and a call passes it ${describe(a)}`;
 }
 
 /** A property's name as a person says it, with a class member called one. */

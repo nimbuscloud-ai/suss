@@ -1118,13 +1118,15 @@ const STATED_RULES = [
 
   // An argument arriving at the parameter it is passed to, by position
   // or by the name the caller wrote, keeping the call it went through
-  // so a caller can tell two call sites apart.
+  // so a caller can tell two call sites apart. The callee comes before the
+  // parameter, so a walk that starts from the argument asks which function
+  // its call runs instead of trying every function with a parameter there.
   rule(
     "passesArgument",
     [v("r"), v("p"), v("a")],
     [
-      lit("paramOf", v("f"), v("k"), v("p")),
       lit("callsFunction", v("r"), v("f")),
+      lit("paramOf", v("f"), v("k"), v("p")),
       lit("callArg", v("r"), v("k"), v("a")),
     ],
   ),
@@ -1132,8 +1134,8 @@ const STATED_RULES = [
     "passesArgument",
     [v("r"), v("p"), v("a")],
     [
-      lit("paramNamed", v("f"), v("n"), v("p")),
       lit("callsFunction", v("r"), v("f")),
+      lit("paramNamed", v("f"), v("n"), v("p")),
       lit("callKeywordArg", v("r"), v("n"), v("a")),
     ],
   ),
