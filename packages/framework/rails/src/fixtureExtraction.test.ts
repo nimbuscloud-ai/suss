@@ -124,12 +124,14 @@ describe("extraction over fixtures/ruby-rails", () => {
         "show",
         "show",
         "show",
+        "show",
         "update",
         "update",
         "archive",
         "cancel",
         "create",
         "create",
+        "destroy",
         "destroy",
         "summary",
         "preview",
@@ -246,6 +248,30 @@ describe("extraction over fixtures/ruby-rails", () => {
       type: "response",
       statusCode: { type: "literal", value: 302 },
     });
+  });
+
+  it("reads each respond_to format block as a branch of the action", async () => {
+    const { summaries } = await extractFixture();
+    const show = action(summaries, "receipts_controller", "show");
+    expect(own(show).map((transition) => transition.output)).toMatchObject([
+      { type: "response", statusCode: { type: "literal", value: 302 } },
+      { type: "response", statusCode: { type: "literal", value: 200 } },
+    ]);
+    expect(own(show).map((transition) => transition.conditions)).toEqual([
+      [expect.objectContaining({ sourceText: "format.html" })],
+      [expect.objectContaining({ sourceText: "format.json" })],
+    ]);
+  });
+
+  it("reads the status a responding helper gets from the call that passes it", async () => {
+    const { summaries } = await extractFixture();
+    const destroy = action(summaries, "receipts_controller", "destroy");
+    expect(own(destroy).map((transition) => transition.output)).toEqual([
+      expect.objectContaining({
+        type: "response",
+        statusCode: { type: "literal", value: 410 },
+      }),
+    ]);
   });
 
   it("reads the status a head call gives", async () => {

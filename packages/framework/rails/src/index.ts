@@ -301,6 +301,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     defaultStatusCode: 200,
     responseStatusCalls: RESPONSE_STATUS_CALLS,
     statusCodeNames: RACK_STATUS_CODE_NAMES,
+    formatSwitch: { name: "respond_to", matchesEvery: "any" },
     exceptionStatuses: RESCUE_RESPONSES,
     inheritedMethodNames: [
       ...RAILS_CONTROLLER_METHODS,

@@ -28,6 +28,10 @@ A model call in an action can raise an exception the library turns into a status
 
 Each filter method becomes a `middleware` unit with no boundary. A path through it that writes a response ends the request. Every other path passes the request on, and the unit records those paths as `delegate` branches. `composeWrappers` in `@suss/extractor` folds the unit into each action that uses the filter. The action then reports the filter's 401 under the filter's condition, and its own outcomes under the negation of that condition.
 
+A pack can declare a call whose block responds once per request format, in `formatSwitch`, which for Rails is `respond_to`. Its block lowers to a switch with one arm per call on the block's parameter, so `format.json { render json: x, status: :created }` is a branch of its own under the condition `format.json`. The pack says which format accepts every request, Rails' `any`, and that arm runs when no other one matched. With no such arm, a request no arm accepts makes the library raise, so that path ends without a response. A block that contains anything besides those arms is read the old way, as a block that may run.
+
+A project method that responds on every path counts as a response at the call, one hop deep. When its status is a parameter, the status the call passes is read in, so `respond_with_error(404)` sends 404 even though the method itself writes `status: code`.
+
 ## The method behind a field
 
 Most fields in a graphql-ruby schema get their value from a method. A summary should report that a field has no method behind it only when the adapter looked for one and found none.

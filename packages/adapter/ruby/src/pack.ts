@@ -576,6 +576,8 @@ export interface ControllerActions {
   responseStatusCalls?: RbStatusCall[];
   /** The number for each status name the library accepts in place of a number. For Rails this is Rack's symbol table. */
   statusCodeNames?: Record<string, number>;
+  /** The call whose block responds differently for each format the request asks for, Rails' `respond_to`. */
+  formatSwitch?: RbFormatSwitch;
   /**
    * Methods every controller inherits from the library, which for Rails
    * are `params`, `render` and the rest of what `ActionController` mixes
@@ -637,6 +639,19 @@ export interface RbStatusCall {
    * so a default declared here takes precedence over `defaultStatusCode`.
    */
   defaultStatusCode?: number;
+}
+
+/**
+ * A receiverless call whose block responds one way per format the request
+ * asks for. Each call on the block's parameter, `format.json { ... }`, is
+ * one branch, and the request runs the first one whose format it accepts.
+ * When none does, the library raises.
+ */
+export interface RbFormatSwitch {
+  /** The call's own name, `respond_to` for Rails. */
+  name: string;
+  /** The format that accepts every request, `any` for Rails. */
+  matchesEvery?: string;
 }
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */

@@ -364,6 +364,46 @@ describe("responseBranches, one branch per path", () => {
       "some iteration of: format.json",
     ]);
   });
+
+  const FORMATS: Partial<ControllerActions> = {
+    ...RAILS_LIKE,
+    formatSwitch: { name: "respond_to", matchesEvery: "any" },
+  };
+
+  it("reads each format block as one branch when the pack declares the format switch", async () => {
+    const branches = await branchesOf(
+      "    respond_to do |format|\n      format.html { redirect_to root_path }\n      format.json { render json: item, status: :created }\n    end",
+      FORMATS,
+    );
+    expect(readings(branches)).toMatchObject([
+      { kind: "written", value: 302 },
+      { kind: "written", value: 201 },
+    ]);
+    expect(conditions(branches)).toEqual([["format.html"], ["format.json"]]);
+  });
+
+  it("runs the format that accepts every request when no other format matched", async () => {
+    const branches = await branchesOf(
+      "    respond_to do |format|\n      format.any { head :not_found }\n      format.json { render json: {}, status: :not_found }\n    end",
+      FORMATS,
+    );
+    expect(readings(branches)).toMatchObject([
+      { kind: "written", value: 404 },
+      { kind: "written", value: 404 },
+    ]);
+    expect(conditions(branches)).toEqual([["!format.json"], ["format.json"]]);
+  });
+
+  it("keeps reading the block as a loop when it does more than pick a format", async () => {
+    const branches = await branchesOf(
+      "    respond_to do |format|\n      log_request\n      format.json { render json: item, status: :ok }\n    end",
+      FORMATS,
+    );
+    expect(conditions(branches)[0]).toEqual([
+      "some iteration of: respond_to",
+      "some iteration of: format.json",
+    ]);
+  });
 });
 
 describe("responseBranches, effects per branch", () => {
