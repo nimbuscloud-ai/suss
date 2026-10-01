@@ -221,6 +221,8 @@ export interface RawTerminal {
     | null;
   body: { typeText: string | null; shape: TypeShape | null } | null;
   exceptionType: string | null;
+  /** On a throw, what the exception inherits from, where the adapter read it. */
+  exceptionAncestry?: { ancestors: string[]; incomplete: boolean };
   message: string | null;
   /** Set on a throw whose pack declared the thrown status is the wire response. */
   producesResponse?: boolean;
@@ -1053,10 +1055,17 @@ const terminalConverters: Record<
         headers: {},
       };
     }
+    const ancestry = t.exceptionAncestry;
     return {
       type: "throw",
       exceptionType: t.exceptionType,
       message: t.message,
+      ...(ancestry === undefined
+        ? {}
+        : {
+            exceptionAncestors: ancestry.ancestors,
+            ...(ancestry.incomplete ? { ancestryIncomplete: true } : {}),
+          }),
     };
   },
   render: (t) => ({
