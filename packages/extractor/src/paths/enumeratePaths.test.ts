@@ -630,6 +630,27 @@ describe("enumerateStructuredPaths, path budget", () => {
       enumerateStructuredPaths({ statements, terminalsByStmt: new Map() }),
     ).toThrow(PathBudgetExceeded);
   });
+
+  it("degrades a returned chain of callbacks before it multiplies past the cap", () => {
+    // `return rows.attr(...).attr(...)` with forty callbacks, each choosing
+    // between two returns. The return ends every path, so no frontier ever
+    // grows, and the chain alone would open 2^40 paths.
+    const chooser = (i: number): S[] => [
+      mkIf(cond(`d.kind${i}`), [ret()], null),
+      ret(),
+    ];
+    const chain: S = {
+      ...ret(),
+      callbacks: Array.from({ length: 40 }, (_, i) => chooser(i)),
+    };
+
+    expect(() =>
+      enumerateStructuredPaths({
+        statements: [chain],
+        terminalsByStmt: new Map(),
+      }),
+    ).toThrow(PathBudgetExceeded);
+  });
 });
 
 describe("enumerateStructuredPaths, opaque pass-through", () => {
