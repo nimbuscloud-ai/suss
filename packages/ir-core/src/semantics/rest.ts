@@ -72,7 +72,10 @@ function baseUrlReference(semantics: {
  * - Lowercases the static segments (params stay case-sensitive)
  */
 export function normalizePath(path: string): string {
-  let normalized = path.replace(/:([a-zA-Z_]\w*)([?+*]?)/g, "{$1$2}");
+  let normalized = withoutParameterConstraints(path).replace(
+    /:([a-zA-Z_]\w*)([?+*]?)/g,
+    "{$1$2}",
+  );
 
   if (normalized.length > 1 && normalized.endsWith("/")) {
     normalized = normalized.slice(0, -1);
@@ -83,6 +86,55 @@ export function normalizePath(path: string): string {
   );
 
   return normalized;
+}
+
+/**
+ * The path with the pattern Express lets a parameter carry,
+ * `/:pk([0-9a-f]{8})`, left out. The pattern narrows the values the
+ * parameter takes, and the parameter is still one segment. Parentheses
+ * that follow anything but a parameter name are kept.
+ */
+function withoutParameterConstraints(path: string): string {
+  let out = "";
+  let i = 0;
+  while (i < path.length) {
+    const name = /^:[a-zA-Z_]\w*\(/.exec(path.slice(i));
+    if (name === null) {
+      out += path[i];
+      i += 1;
+      continue;
+    }
+    const open = i + name[0].length - 1;
+    const close = closingParenthesis(path, open);
+    if (close === -1) {
+      return out + path.slice(i);
+    }
+    out += path.slice(i, open);
+    i = close + 1;
+  }
+  return out;
+}
+
+/** Where the group opened at `open` closes, skipping escaped characters, or -1. */
+function closingParenthesis(text: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "\\") {
+      i += 1;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+    }
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+  return -1;
 }
 
 /**
