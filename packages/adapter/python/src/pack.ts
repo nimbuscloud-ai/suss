@@ -358,6 +358,8 @@ export interface PyClientResponse {
   body?: string[];
   /** Whether a refused request comes back as a response or raises where it was made. */
   failureDelivery?: "response" | "exception";
+  /** Whether the client follows a redirect itself or hands the 3xx back. */
+  redirectDelivery?: "followed" | "response";
 }
 
 /** An object a module exports that a route reads the request off. */

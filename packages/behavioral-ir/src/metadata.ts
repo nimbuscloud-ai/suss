@@ -819,6 +819,13 @@ export const HttpMetadataSchema = z.object({
    * `"response"` when absent.
    */
   failureDelivery: z.enum(["response", "exception"]).optional(),
+  /**
+   * What the consumer's client does with a redirect. `"followed"` is
+   * fetch and axios, where the caller only sees the response at the end
+   * of the chain. `"response"` is httpx and Faraday, where the 3xx comes
+   * back to the caller. Falls back to `"response"` when absent.
+   */
+  redirectDelivery: z.enum(["followed", "response"]).optional(),
   /** Code that implements this declared route, when the manifest says which. */
   implementingHandler: HttpHandlerPointerSchema.optional(),
   /** The range spec ("2XX", "5xx", and so on) this transition's response covers. */

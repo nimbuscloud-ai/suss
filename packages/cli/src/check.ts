@@ -1425,6 +1425,14 @@ function renderDirHuman(
     lines.push("", internal);
   }
 
+  const testCode = unpairable.filter((u) => u.reason === "testCode").length;
+  if (testCode > 0) {
+    lines.push(
+      "",
+      `${testCode} summar${testCode === 1 ? "y is" : "ies are"} test code, so ${testCode === 1 ? "it was" : "they were"} left out of pairing.`,
+    );
+  }
+
   const unknownKinds = unpairable.filter((u) => u.reason === "unknownKind");
   if (unknownKinds.length > 0) {
     lines.push("");

@@ -1027,6 +1027,9 @@ export type ResponsePropertyMeaning =
 /** Whether a refused request comes back as a response or as an exception. */
 export type FailureDelivery = "response" | "exception";
 
+/** Whether the client follows a redirect itself or hands the 3xx to the caller. */
+export type RedirectDelivery = "followed" | "response";
+
 export interface ResponsePropertyMapping {
   /** Property or method name on the response (e.g. "ok", "status", "json") */
   name: string;
@@ -1156,6 +1159,13 @@ export interface PatternPack {
    * `"response"`.
    */
   failureDelivery?: FailureDelivery;
+  /**
+   * What this client does with a redirect by default. `fetch` and axios
+   * follow it, so the caller only ever sees the response at the end of
+   * the chain. httpx and Faraday hand the 3xx back. Defaults to
+   * `"response"`.
+   */
+  redirectDelivery?: RedirectDelivery;
   /**
    * Build extra code units from a parent unit's body, for callbacks the
    * runtime schedules that are not top-level declarations: React event

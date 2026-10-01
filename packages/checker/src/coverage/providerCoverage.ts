@@ -2,6 +2,7 @@ import { isCatchEntry } from "@suss/behavioral-ir";
 
 import {
   failureDeliveryFor,
+  redirectDeliveryFor,
   statusAccessorsFor,
   successAccessorsFor,
 } from "../contract/declaredContract.js";
@@ -17,6 +18,7 @@ import {
   makeSide,
   refLooksLikeStatus,
   type StatusAccessors,
+  statusesNamedIn,
 } from "./responseMatch.js";
 import {
   branchHandlesStatus,
@@ -31,7 +33,17 @@ import type {
   Finding,
   Predicate,
   Transition,
+  TypeShape,
 } from "@suss/behavioral-ir";
+
+/**
+ * The redirects a client that follows redirects never hands back. A 300
+ * or a 304 still reaches the caller, because there is no single place to
+ * go next.
+ */
+const FOLLOWED_REDIRECTS: ReadonlySet<number> = new Set([
+  301, 302, 303, 307, 308,
+]);
 
 /**
  * Whether the consumer has anything at all for a status the provider
@@ -46,7 +58,17 @@ function coverageOf(
   consumer: BehavioralSummary,
 ): (status: number) => boolean {
   const handles = consumerHandlesStatus(consumer);
-  const hasDefault = consumer.transitions.some((ct) => ct.isDefault);
+  const accessors = statusAccessorsFor(consumer);
+  const successAccessors = successAccessorsFor(consumer);
+  // A branch whose guards never mention the status runs on a success
+  // whatever else it tests, the same as a fall-through does.
+  const runsOnSuccess = consumer.transitions.some(
+    (ct) =>
+      ct.isDefault ||
+      ct.conditions.every(
+        (p) => !mentionsStatus(p, accessors, successAccessors),
+      ),
+  );
   const discriminatesByContent = consumerDiscriminatesByContent(
     provider,
     consumer,
@@ -57,7 +79,7 @@ function coverageOf(
 
   return (status) => {
     if (isSuccessStatus(status)) {
-      return handles(status) || hasDefault;
+      return handles(status) || runsOnSuccess;
     }
     return (
       handles(status) || discriminatesByContent(status) || catchesThrownFailures
@@ -69,12 +91,19 @@ export function checkProviderCoverage(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
 ): Finding[] {
+  // The caller handles the status of a response it is handed, and this
+  // pair does not include that caller.
+  if (handsResponseToCaller(consumer)) {
+    return [];
+  }
+
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
   const statusAccessors = statusAccessorsFor(consumer);
   const successAccessors = successAccessorsFor(consumer);
 
   const covers = coverageOf(provider, consumer);
+  const followsRedirects = redirectDeliveryFor(consumer) === "followed";
 
   const providerByStatus = new Map<number, Transition[]>();
 
@@ -110,6 +139,11 @@ export function checkProviderCoverage(
       continue;
     }
 
+    // The client goes on to the next URL, so the caller never sees this one.
+    if (followsRedirects && FOLLOWED_REDIRECTS.has(status)) {
+      continue;
+    }
+
     if (!covers(status)) {
       findings.push({
         kind: "unhandledProviderCase",
@@ -131,8 +165,18 @@ export function checkProviderCoverage(
   }
 
   // When the provider returns one status under several conditions, such
-  // as two 200s, check whether the consumer tells them apart.
-  for (const [status, providerTransitions] of providerByStatus) {
+  // as two 200s, check whether the consumer tells them apart. One that
+  // never looks at the response has no way to and no reason to.
+  const looksAtResponse = consumer.transitions.some(
+    (ct) =>
+      ct.expectedInput != null ||
+      ct.conditions.some((p) =>
+        mentionsStatus(p, statusAccessors, successAccessors),
+      ),
+  );
+  for (const [status, providerTransitions] of looksAtResponse
+    ? providerByStatus
+    : []) {
     if (providerTransitions.length <= 1) {
       continue;
     }
@@ -221,6 +265,43 @@ export function checkProviderCoverage(
   return findings;
 }
 
+/**
+ * Whether the consumer returns the response object itself, as a thin
+ * wrapper such as `setup() { return fetch(url) }` does. Client libraries
+ * call that object `Response`, or a generic such as `AxiosResponse<T>`,
+ * and a body type such as `UserResponse` is left out.
+ */
+function handsResponseToCaller(consumer: BehavioralSummary): boolean {
+  return consumer.transitions.some(
+    (ct) =>
+      ct.output.type === "return" &&
+      ct.output.value !== null &&
+      shapeHasResponse(ct.output.value),
+  );
+}
+
+const RESPONSE_OBJECT = /^(\w+\.)*Response$|^\w*Response<.+>$/;
+
+function shapeHasResponse(shape: TypeShape): boolean {
+  if (shape.type === "ref") {
+    return RESPONSE_OBJECT.test(withoutPromise(shape.name));
+  }
+
+  if (shape.type === "record") {
+    return Object.values(shape.properties).some(shapeHasResponse);
+  }
+
+  if (shape.type === "union") {
+    return shape.variants.some(shapeHasResponse);
+  }
+  return false;
+}
+
+function withoutPromise(name: string): string {
+  const inner = /^Promise<(.+)>$/.exec(name.trim());
+  return inner === null ? name.trim() : withoutPromise(inner[1] ?? "");
+}
+
 /** Whether the consumer covers at least one status a declared range admits. */
 function rangeIsCovered(
   range: DeclaredStatusRange,
@@ -245,6 +326,18 @@ function getNonStatusConditions(
 ): Predicate[] {
   return t.conditions.filter(
     (p) => !isStatusPredicate(p, accessors, successAccessors),
+  );
+}
+
+/** Whether `p` says anything about the status, by range or by one number. */
+function mentionsStatus(
+  p: Predicate,
+  accessors: StatusAccessors,
+  successAccessors: StatusAccessors,
+): boolean {
+  return (
+    isStatusPredicate(p, accessors, successAccessors) ||
+    statusesNamedIn([p], accessors).length > 0
   );
 }
 

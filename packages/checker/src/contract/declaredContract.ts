@@ -179,3 +179,13 @@ export function failureDeliveryFor(
 ): "response" | "exception" {
   return readHttpMetadata(summary)?.failureDelivery ?? "response";
 }
+
+/**
+ * What this consumer's client does with a redirect. On `"followed"` the
+ * caller never sees the 3xx, only the response at the end of the chain.
+ */
+export function redirectDeliveryFor(
+  summary: BehavioralSummary,
+): "followed" | "response" {
+  return readHttpMetadata(summary)?.redirectDelivery ?? "response";
+}

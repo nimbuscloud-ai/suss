@@ -38,6 +38,9 @@ export function aiohttpClient(): PythonPack {
           urlPosition: 1,
         },
         receiverConstructors: ["ClientSession"],
+        // aiohttp follows redirects unless the call passes
+        // `allow_redirects=False`.
+        response: { redirectDelivery: "followed" },
       },
     ],
     // `ClientSession.__aenter__` returns the session, so `async with

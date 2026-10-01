@@ -210,6 +210,7 @@ const WHY_UNPAIRED: Record<string, string> = {
   noBoundary: "internal code, so nothing pairs with it",
   unnamedBoundary: "its boundary has no name to pair on",
   unknownKind: "its kind is one this version does not know",
+  testCode: "it is test code, which is left out of pairing",
 };
 
 function renderScoped(

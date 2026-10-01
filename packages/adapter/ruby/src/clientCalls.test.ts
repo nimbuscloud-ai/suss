@@ -192,6 +192,7 @@ describe("a method that calls a request method", () => {
           success: ["success?"],
           body: ["body"],
           failureDelivery: "response",
+          redirectDelivery: "response",
         },
       },
     );
@@ -201,6 +202,7 @@ describe("a method that calls a request method", () => {
       successAccessors: ["success?"],
       bodyAccessors: ["body"],
       failureDelivery: "response",
+      redirectDelivery: "response",
     });
   });
 

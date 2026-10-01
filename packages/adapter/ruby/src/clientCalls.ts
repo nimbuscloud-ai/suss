@@ -464,6 +464,7 @@ function responseAccessors(pattern: RbClientCall): {
   statusAccessors?: string[];
   successAccessors?: string[];
   failureDelivery?: "response" | "exception";
+  redirectDelivery?: "followed" | "response";
 } {
   const response = pattern.response;
   if (response === undefined) {
@@ -480,6 +481,9 @@ function responseAccessors(pattern: RbClientCall): {
     ...(response.failureDelivery === undefined
       ? {}
       : { failureDelivery: response.failureDelivery }),
+    ...(response.redirectDelivery === undefined
+      ? {}
+      : { redirectDelivery: response.redirectDelivery }),
   };
 }
 

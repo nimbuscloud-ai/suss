@@ -331,4 +331,75 @@ describe("checkComponentStoryAgreement — coverage gap", () => {
     expect(gapFindings.some((d) => d.includes('"a"'))).toBe(true);
     expect(gapFindings.some((d) => d.includes('"b"'))).toBe(true);
   });
+
+  it("does not judge args against a component that collects the rest of its props", () => {
+    const component = withRoles(
+      makeComponent("Box", [{ name: "padding" }, { name: "props" }]),
+      { props: "rest" },
+    );
+    const story = makeStory("Default", "Box", { children: '"Hello"' });
+    expect(checkComponentStoryAgreement([component, story])).toEqual([]);
+  });
+
+  it("does not judge args against a component that takes its props whole", () => {
+    const component = withRoles(makeComponent("Banner", [{ name: "props" }]), {
+      props: "props",
+    });
+    const story = makeStory("Default", "Banner", { variant: '"info"' });
+    expect(checkComponentStoryAgreement([component, story])).toEqual([]);
+  });
+
+  it("compares args only with the component's parameters", () => {
+    const base = makeComponent("Clock", [{ name: "zone" }]);
+    const component: BehavioralSummary = {
+      ...base,
+      inputs: [
+        ...base.inputs,
+        { type: "hookReturn", hook: "useNow", destructuredFields: ["now"] },
+      ],
+    };
+    const story = makeStory("Default", "Clock", { zone: '"UTC"', now: "0" });
+    const findings = checkComponentStoryAgreement([component, story]);
+    expect(findings.map((f) => f.description)).toEqual([
+      'Story "Default" provides arg "now" but component "Clock" does not declare it as an input.',
+    ]);
+  });
+
+  it("reads a renamed prop under the name the story passes", () => {
+    const component = withRoles(makeComponent("Toast", [{ name: "_icon" }]), {
+      _icon: "icon",
+    });
+    const story = makeStory("Default", "Toast", { icon: '"bell"' });
+    expect(checkComponentStoryAgreement([component, story])).toEqual([]);
+  });
+
+  it("counts only the component's own props as gating ones", () => {
+    const component = makeComponent(
+      "LoadingIndicator",
+      [{ name: "size" }],
+      [
+        conditionalTransition("small", {
+          type: "opaque",
+          sourceText: "size === Sizes.sm && React.Children.count(kids) > 0",
+          reason: "complexExpression",
+        }),
+      ],
+    );
+    const story = makeStory("Default", "LoadingIndicator", { size: '"sm"' });
+    expect(checkComponentStoryAgreement([component, story])).toEqual([]);
+  });
 });
+
+function withRoles(
+  summary: BehavioralSummary,
+  roles: Record<string, string>,
+): BehavioralSummary {
+  return {
+    ...summary,
+    inputs: summary.inputs.map((input) =>
+      input.type === "parameter" && roles[input.name] !== undefined
+        ? { ...input, role: roles[input.name] }
+        : input,
+    ),
+  };
+}

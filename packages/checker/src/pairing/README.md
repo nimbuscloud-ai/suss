@@ -19,6 +19,13 @@ This directory has the base pairing code that every per-domain checker builds on
 
 ## Gotchas
 
+- **Test code, stories and fixtures take no part in pairing.** A test that calls `fetch("https://test.local/")`, a server a test starts, or a Storybook decorator that mounts a router on `*` summarizes like production code, and pairing it compares a stand-in with the app. `testCode.ts:isTestCode` counts a summary of the `test` kind, a Storybook story, and any file that one of these names matches:
+  - file names `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.stories.*`, `*.story.*`, `*.fixture(s).*`, `*.mock.*`, `test_*.py`, `*_test.py`, `*_test.rb`, `*_test.go`, `*_spec.rb` and `conftest.py`;
+  - a folder anywhere named `__tests__`, `__mocks__`, `__fixtures__`, `__stories__`, `.storybook`, `testing` or `stories`. A plain `fixtures` folder is left alone, because projects keep sample apps there that should pair like any other code;
+  - a `test`, `tests`, `spec` or `e2e` folder at the top of the project. Deeper folders with those names are left alone, because an application can serve a route from `app/api/test/route.ts`.
+
+  `pairSummaries` lists those summaries under `unmatched.unpairable` with the reason `testCode`, and `checkAll` leaves them out of every other pass except the one that compares stories with their components.
+
 - **Null keys land in `unmatched.noBinding`.** A summary with a binding but no usable key (e.g. REST with an empty path) is left unpaired on purpose. It is recorded so reports can show what was skipped and why.
 - **A key bucket can contain summaries that pair with nothing in it.** A message-bus key contains only the subject, so `default#order.placed` and `order.placed` land together. That lets a handler that cannot know its bus still meet the template that declares one. `bindingsPair` then compares the buses inside the bucket, and two buses with different names stay apart. For this reason matching is tracked per summary and not per key.
 - **`checkAll` does not put message-bus summaries in the unmatched lists.** `checkMessageBus` already reports a channel that paired with nothing, with a severity and with what it knows about who sends to it. Pairing produces the pair list, and `checkMessageBus` makes every judgement about a channel.
