@@ -254,30 +254,42 @@ describe("checkRenderProps", () => {
       ),
     });
     // `onSelect={(c) => onChange(c)}` is a handler with its own summary,
-    // and the component's read set has the `onChange` that handler uses.
-    const child = {
+    // and that summary records the `onChange` it uses from the component.
+    const child = component({
+      name: "Swatch",
+      file: "src/swatch.tsx",
+      inputs: [param("color"), param("onChange"), param("width")],
+      inputReads: [{ input: "color", path: [] }],
+    });
+    const handler = {
       ...component({
-        name: "Swatch",
+        name: "Swatch.Picker.onSelect",
         file: "src/swatch.tsx",
-        inputs: [param("color"), param("onChange"), param("width")],
+        inputs: [param("c", "event"), param("width", "event")],
         inputReads: [
-          { input: "color", path: [] },
+          { input: "c", path: [] },
           { input: "onChange", path: [] },
+          { input: "width", path: [] },
         ],
       }),
-    } as BehavioralSummary;
-    child.location = { ...child.location, span: { start: 100, end: 900 } };
-    const handler = {
-      ...component({ name: "Swatch.Picker.onSelect", file: "src/swatch.tsx" }),
       kind: "handler",
+      metadata: { react: { kind: "handler", component: "Swatch" } },
     } as BehavioralSummary;
-    handler.location = { ...handler.location, span: { start: 400, end: 430 } };
+    const elsewhere = {
+      ...handler,
+      location: { ...handler.location, file: "src/other.tsx" },
+      inputs: [],
+      inputReads: [{ input: "width", path: [] }],
+    } as BehavioralSummary;
 
     expect(
-      checkRenderProps([parent, child, handler]).map((f) => f.description),
+      checkRenderProps([parent, child, handler, elsewhere]).map(
+        (f) => f.description,
+      ),
     ).toEqual([
       'Panel passes "width" to Swatch, and nothing in Swatch reads it.',
     ]);
+    expect(checkRenderProps([parent, child])).toHaveLength(2);
   });
 
   it("skips the edge when the child was not read as a component", () => {
