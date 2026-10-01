@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+import { HTTP_STATUS_CONSTANTS } from "./httpStatus.js";
+
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
@@ -93,6 +95,7 @@ export function nestjsRestFramework(
           // `@HttpCode(n)` sets the status for one handler.
           defaultStatusCodes: { Post: 201 },
           statusCodeDecorator: "HttpCode",
+          statusCodeConstants: HTTP_STATUS_CONSTANTS,
           globalPrefix: {
             method: "setGlobalPrefix",
             application: {
