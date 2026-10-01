@@ -1162,6 +1162,35 @@ describe("relativizeSummaryPaths", () => {
     });
   });
 
+  it("keeps the mark on an outcome an error handler may not catch when it rewrites the file", () => {
+    const summary = {
+      location: { file: "/repo/app/a.rb", range: { start: 1, end: 2 } },
+      transitions: [
+        {
+          output: { type: "return" },
+          metadata: {
+            wrappers: {
+              from: {
+                file: "/repo/app/base.rb",
+                name: "refuse",
+                onThrow: true,
+              },
+              catchUncertain: true,
+            },
+          },
+        },
+      ],
+      identity: { name: "show", exportPath: [], boundaryBinding: null },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo");
+
+    expect(summary.transitions[0].metadata?.wrappers).toEqual({
+      from: { file: "app/base.rb", name: "refuse", onThrow: true },
+      catchUncertain: true,
+    });
+  });
+
   it("rewrites the declaring file on every ref shape, wherever it sits", () => {
     const ref = (from: string) => ({ type: "ref", name: "User", from });
     const summary = {
