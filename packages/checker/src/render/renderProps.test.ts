@@ -243,24 +243,27 @@ describe("checkRenderProps", () => {
     expect(findings[0].description).toContain('"ghost"');
   });
 
-  it("skips the edge when the child declares a handler with its own summary", () => {
+  it("still reports a prop no part of a child with its own handler reads", () => {
     const parent = component({
       name: "Panel",
       file: "src/panel.tsx",
       root: rendering(
         "Swatch",
         { file: "src/swatch.tsx", name: "Swatch" },
-        { color: "c", onChange: "setColor" },
+        { color: "c", onChange: "setColor", width: "w" },
       ),
     });
-    // `onSelect={(c) => onChange(c)}`: the call lands on the handler's
-    // summary, and neither summary records it as a read of the prop.
+    // `onSelect={(c) => onChange(c)}` is a handler with its own summary,
+    // and the component's read set has the `onChange` that handler uses.
     const child = {
       ...component({
         name: "Swatch",
         file: "src/swatch.tsx",
-        inputs: [param("color"), param("onChange")],
-        inputReads: [{ input: "color", path: [] }],
+        inputs: [param("color"), param("onChange"), param("width")],
+        inputReads: [
+          { input: "color", path: [] },
+          { input: "onChange", path: [] },
+        ],
       }),
     } as BehavioralSummary;
     child.location = { ...child.location, span: { start: 100, end: 900 } };
@@ -270,40 +273,11 @@ describe("checkRenderProps", () => {
     } as BehavioralSummary;
     handler.location = { ...handler.location, span: { start: 400, end: 430 } };
 
-    expect(checkRenderProps([parent, child, handler])).toEqual([]);
-    expect(checkRenderProps([parent, child])).toHaveLength(1);
-  });
-
-  it("finds a nested unit by its lines when the summaries have no span", () => {
-    const edge = rendering(
-      "Swatch",
-      { file: "src/swatch.tsx", name: "Swatch" },
-      { onChange: "setColor" },
-    );
-    // Two parents render the child, so the second edge asks again.
-    const first = component({
-      name: "Panel",
-      file: "src/panel.tsx",
-      root: edge,
-    });
-    const second = component({
-      name: "Menu",
-      file: "src/menu.tsx",
-      root: edge,
-    });
-    const child = component({
-      name: "Swatch",
-      file: "src/swatch.tsx",
-      inputs: [param("color"), param("onChange")],
-      inputReads: [{ input: "color", path: [] }],
-    });
-    const handler = {
-      ...component({ name: "Swatch.onSelect", file: "src/swatch.tsx" }),
-      kind: "handler",
-    } as BehavioralSummary;
-    handler.location = { ...handler.location, range: { start: 4, end: 6 } };
-
-    expect(checkRenderProps([first, second, child, handler])).toEqual([]);
+    expect(
+      checkRenderProps([parent, child, handler]).map((f) => f.description),
+    ).toEqual([
+      'Panel passes "width" to Swatch, and nothing in Swatch reads it.',
+    ]);
   });
 
   it("skips the edge when the child was not read as a component", () => {

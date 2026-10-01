@@ -3,11 +3,12 @@
  *
  * A render-tree element with a `target` says which component the parent
  * renders and which attrs it passes, and the child's `inputReads` say
- * which props it uses. TypeScript already rejects a missing required
- * prop or an unknown extra one, so this pass reports only a prop that
- * arrives and is never read. It skips an edge whenever the read set
- * could be incomplete: no `inputReads`, props forwarded whole, or a
- * nested unit such as a handler. `key`, `ref` and `children` never count.
+ * which props it uses, including the ones its handlers and effects use.
+ * TypeScript already rejects a missing required prop or an unknown extra
+ * one, so this pass reports only a prop that arrives and is never read.
+ * It skips an edge whenever the read set could be incomplete: no
+ * `inputReads`, or props forwarded whole. `key`, `ref` and `children`
+ * never count.
  */
 
 import {
@@ -85,62 +86,8 @@ function propsUsedBy(child: BehavioralSummary): Set<string> | null {
   return new Set(result.reads.paths.map((path) => path[0]));
 }
 
-/**
- * The summaries declared inside another one, by file. A handler, an
- * effect or an inner function gets a summary of its own, and a prop it
- * uses from the enclosing component is recorded on neither summary, so
- * a component with any of them has a read set with holes in it.
- */
-function nestedUnitsIndex(
-  summaries: BehavioralSummary[],
-): (outer: BehavioralSummary) => boolean {
-  const byFile = new Map<string, BehavioralSummary[]>();
-  for (const summary of summaries) {
-    const inFile = byFile.get(summary.location.file) ?? [];
-    inFile.push(summary);
-    byFile.set(summary.location.file, inFile);
-  }
-  const known = new Map<BehavioralSummary, boolean>();
-  return (outer) => {
-    const cached = known.get(outer);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const nested = (byFile.get(outer.location.file) ?? []).some(
-      (inner) => inner !== outer && declaredInside(inner, outer),
-    );
-    known.set(outer, nested);
-    return nested;
-  };
-}
-
-function declaredInside(
-  inner: BehavioralSummary,
-  outer: BehavioralSummary,
-): boolean {
-  const innerSpan = inner.location.span;
-  const outerSpan = outer.location.span;
-  if (innerSpan !== undefined && outerSpan !== undefined) {
-    return (
-      outerSpan.start <= innerSpan.start &&
-      innerSpan.end <= outerSpan.end &&
-      innerSpan.end - innerSpan.start < outerSpan.end - outerSpan.start
-    );
-  }
-
-  const innerLines = inner.location.range;
-  const outerLines = outer.location.range;
-  return (
-    outerLines.start <= innerLines.start &&
-    innerLines.end <= outerLines.end &&
-    innerLines.end - innerLines.start < outerLines.end - outerLines.start
-  );
-}
-
 export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
   const findings: Finding[] = [];
-  const hasNestedUnits = nestedUnitsIndex(summaries);
   const childByKey = new Map<string, BehavioralSummary>();
   for (const summary of summaries) {
     const file = summary.location.file;
@@ -162,10 +109,7 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
       // Only a component's inputs are spelled as props. Any other kind
       // keeps the parameter's own spelling, so its reads say nothing
       // about which prop was used.
-      const used =
-        child.kind !== "component" || hasNestedUnits(child)
-          ? null
-          : propsUsedBy(child);
+      const used = child.kind === "component" ? propsUsedBy(child) : null;
       if (used === null) {
         continue;
       }

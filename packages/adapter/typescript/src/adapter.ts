@@ -891,7 +891,7 @@ function readCodeStructure(
   const depCalls = extractDependencyCalls(func, barriers);
   const parameterNames = params.map((one) => one.name);
   const paramReads = [
-    ...parameterReads(func, parameterNames, barriers),
+    ...parameterReads(func, parameterNames),
     ...flagReads(
       func,
       parameterNames,

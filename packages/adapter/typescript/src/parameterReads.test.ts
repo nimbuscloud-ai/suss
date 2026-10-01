@@ -73,25 +73,20 @@ describe("parameterReads", () => {
     ]);
   });
 
-  it("leaves a claimed sub-unit's reads off the parent", () => {
+  it("counts a parameter a nested handler uses as the parent's read, and not the handler's own parameter", () => {
     const func = functionNamed(
       `
-      function Panel({ title, onSave }: { title: string; onSave: () => void }) {
-        const handler = () => onSave();
+      function Panel({ title, onSave }: { title: string; onSave: (id: string) => void }) {
+        const handler = (event: { id: string }) => onSave(event.id);
         return <button onClick={handler}>{title}</button>;
       }
     `,
       "Panel",
     );
-    const claimed = new Set<unknown>();
-    func.forEachDescendant((node) => {
-      if (node.getKindName() === "ArrowFunction") {
-        claimed.add(node);
-      }
-    });
-    expect(parameterReads(func, ["title", "onSave"], claimed as never)).toEqual(
-      [{ input: "title", path: [] }],
-    );
+    expect(parameterReads(func, ["title", "onSave", "event"])).toEqual([
+      { input: "onSave", path: [] },
+      { input: "title", path: [] },
+    ]);
   });
 
   it("never attributes a shadowing inner binding to the parameter", () => {
