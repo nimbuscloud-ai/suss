@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1026,
-      "covered": 1022,
+      "total": 1048,
+      "covered": 1044,
       "skipped": 0,
       "pct": 99.61
     },
     "statements": {
-      "total": 1058,
-      "covered": 1053,
+      "total": 1080,
+      "covered": 1075,
       "skipped": 0,
-      "pct": 99.52
+      "pct": 99.53
     },
     "functions": {
-      "total": 299,
-      "covered": 297,
+      "total": 304,
+      "covered": 302,
       "skipped": 0,
-      "pct": 99.33
+      "pct": 99.34
     },
     "branches": {
-      "total": 689,
-      "covered": 653,
+      "total": 709,
+      "covered": 671,
       "skipped": 0,
-      "pct": 94.77
+      "pct": 94.64
     },
     "branchesTrue": {
       "total": 0,
@@ -337,28 +337,28 @@
       "pct": 96
     },
     "branches": {
-      "total": 24,
-      "covered": 19,
+      "total": 26,
+      "covered": 20,
       "skipped": 0,
-      "pct": 79.16
+      "pct": 76.92
     }
   },
   "src/unfollowedCall.ts": {
     "lines": {
-      "total": 14,
-      "covered": 14,
+      "total": 16,
+      "covered": 16,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 12,
-      "covered": 12,
+      "total": 14,
+      "covered": 14,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 14,
-      "covered": 14,
+      "total": 16,
+      "covered": 16,
       "skipped": 0,
       "pct": 100
     },
@@ -579,28 +579,28 @@
   },
   "src/receive/inputContract.ts": {
     "lines": {
-      "total": 153,
-      "covered": 153,
+      "total": 173,
+      "covered": 173,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 60,
-      "covered": 60,
+      "total": 63,
+      "covered": 63,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 164,
-      "covered": 164,
+      "total": 184,
+      "covered": 184,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 116,
-      "covered": 112,
+      "total": 134,
+      "covered": 129,
       "skipped": 0,
-      "pct": 96.55
+      "pct": 96.26
     }
   }
 }

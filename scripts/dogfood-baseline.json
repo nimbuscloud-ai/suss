@@ -2,47 +2,47 @@
   "totals": {
     "packages": 87,
     "packagesWithExports": 87,
-    "exports": 1251,
-    "internal": 5088,
-    "consumers": 2667,
-    "pairs": 1514,
+    "exports": 1261,
+    "internal": 5324,
+    "consumers": 2749,
+    "pairs": 1553,
     "unfollowedCalls": 532,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
-      "exports": 62,
-      "internal": 656,
-      "consumers": 322,
+      "exports": 63,
+      "internal": 677,
+      "consumers": 326,
       "unfollowedCalls": 77
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 74,
-      "internal": 706,
-      "consumers": 283,
+      "internal": 746,
+      "consumers": 286,
       "unfollowedCalls": 103
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 137,
-      "internal": 1123,
-      "consumers": 284,
+      "exports": 140,
+      "internal": 1159,
+      "consumers": 299,
       "unfollowedCalls": 119
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 154,
-      "internal": 60,
+      "exports": 155,
+      "internal": 63,
       "consumers": 22,
       "unfollowedCalls": 13
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 59,
-      "internal": 239,
-      "consumers": 237,
+      "internal": 254,
+      "consumers": 260,
       "unfollowedCalls": 24
     },
     "packages/checker-intent": {
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 61,
-      "internal": 792,
-      "consumers": 469,
+      "internal": 840,
+      "consumers": 472,
       "unfollowedCalls": 43
     },
     "packages/client/aiohttp": {
@@ -77,7 +77,7 @@
       "name": "@suss/client-axios",
       "exports": 2,
       "internal": 3,
-      "consumers": 43,
+      "consumers": 46,
       "unfollowedCalls": 0
     },
     "packages/client/faraday": {
@@ -112,7 +112,7 @@
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 14,
+      "consumers": 17,
       "unfollowedCalls": 0
     },
     "packages/contract/appsync": {
@@ -153,14 +153,14 @@
     "packages/contract/openapi": {
       "name": "@suss/contract-openapi",
       "exports": 2,
-      "internal": 22,
-      "consumers": 9,
+      "internal": 46,
+      "consumers": 12,
       "unfollowedCalls": 0
     },
     "packages/contract/prisma": {
       "name": "@suss/contract-prisma",
-      "exports": 2,
-      "internal": 17,
+      "exports": 3,
+      "internal": 18,
       "consumers": 2,
       "unfollowedCalls": 0
     },
@@ -174,8 +174,8 @@
     "packages/contract/storybook": {
       "name": "@suss/contract-storybook",
       "exports": 1,
-      "internal": 1,
-      "consumers": 11,
+      "internal": 4,
+      "consumers": 25,
       "unfollowedCalls": 0
     },
     "packages/contract/terraform": {
@@ -201,9 +201,9 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 81,
-      "internal": 112,
-      "consumers": 30,
+      "exports": 82,
+      "internal": 118,
+      "consumers": 31,
       "unfollowedCalls": 18
     },
     "packages/framework/activerecord": {
@@ -371,7 +371,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 21,
+      "consumers": 23,
       "unfollowedCalls": 0
     },
     "packages/framework/minitest": {
@@ -406,7 +406,7 @@
       "name": "@suss/framework-nestjs-rest",
       "exports": 2,
       "internal": 0,
-      "consumers": 2,
+      "consumers": 3,
       "unfollowedCalls": 0
     },
     "packages/framework/nextjs": {
@@ -440,8 +440,8 @@
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
       "exports": 4,
-      "internal": 41,
-      "consumers": 14,
+      "internal": 47,
+      "consumers": 15,
       "unfollowedCalls": 6
     },
     "packages/framework/pytest": {
@@ -454,8 +454,8 @@
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
       "exports": 4,
-      "internal": 43,
-      "consumers": 42,
+      "internal": 60,
+      "consumers": 44,
       "unfollowedCalls": 7
     },
     "packages/framework/react": {
@@ -544,8 +544,8 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 91,
-      "internal": 28,
+      "exports": 92,
+      "internal": 31,
       "consumers": 0,
       "unfollowedCalls": 15
     },
@@ -566,7 +566,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 67,
-      "internal": 225,
+      "internal": 236,
       "consumers": 0,
       "unfollowedCalls": 8
     },
@@ -581,7 +581,7 @@
       "name": "@suss/resolution",
       "exports": 79,
       "internal": 87,
-      "consumers": 161,
+      "consumers": 165,
       "unfollowedCalls": 19
     },
     "packages/runtime/node": {
@@ -614,8 +614,8 @@
     },
     "packages/values": {
       "name": "@suss/values",
-      "exports": 49,
-      "internal": 73,
+      "exports": 51,
+      "internal": 75,
       "consumers": 3,
       "unfollowedCalls": 27
     }
