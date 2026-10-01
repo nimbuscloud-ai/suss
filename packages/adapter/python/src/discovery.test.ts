@@ -804,7 +804,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     ].join("\n");
     const units = await unitsOf(source, [validating]);
     const theme = units.find((u) => u.identity.name === "get_theme");
-    expect(outcomesOf(theme).map(([status]) => status)).not.toContain("422");
+    expect(outcomesOf(theme)?.map(([status]) => status)).toEqual(["200"]);
   });
 
   it("still reads an injected parameter as a request body for a pack that declares no injectors", async () => {
