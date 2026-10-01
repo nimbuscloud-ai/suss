@@ -248,7 +248,7 @@ function declarationsOf(
     keywords === undefined
       ? null
       : actionsUnder(args.keyword[keywords.exclude], facts);
-  return methodNamesOf(args, filter, facts).map((methodName) => ({
+  return methodNamesOf(statement, args, filter, facts).map((methodName) => ({
     filter,
     methodName,
     only,
@@ -257,16 +257,49 @@ function declarationsOf(
 }
 
 function methodNamesOf(
+  statement: RbNode,
   args: ReturnType<typeof readCallArgs>,
   filter: RbControllerFilter,
   facts: Database | undefined,
 ): string[] {
   if (filter.methodFrom === "withKeyword") {
     const named = args.keyword.with;
-    const value = named === undefined ? null : stringValueOf(named, facts);
+    if (named === undefined) {
+      const called = blockHandlerName(statement);
+      return called === null ? [] : [called];
+    }
+    const value = stringValueOf(named, facts);
     return value === null ? [] : [value];
   }
   return symbolArgumentNames(args, facts);
+}
+
+/**
+ * The method a block given in place of `with:` hands the error to, when
+ * the block is one call with no receiver: `{ |e| render_denied e }`. A
+ * block that does anything more is not read, and registers no handler.
+ */
+function blockHandlerName(statement: RbNode): string | null {
+  const block = field(statement, "block");
+  if (block === null) {
+    return null;
+  }
+  const statements = (field(block, "body")?.namedChildren ?? []).filter(
+    (child): child is RbNode => child !== null && child.type !== "comment",
+  );
+  const only = statements.length === 1 ? statements[0] : undefined;
+  if (only === undefined) {
+    return null;
+  }
+  const parameters = new Set(
+    (field(block, "parameters")?.namedChildren ?? []).map(
+      (parameter) => parameter?.text,
+    ),
+  );
+  if (only.type === "identifier") {
+    return parameters.has(only.text) ? null : only.text;
+  }
+  return calledName(only);
 }
 
 /** The method names a class body call passes as leading symbols, `:a` and `:b` in `before_action :a, :b`. */
