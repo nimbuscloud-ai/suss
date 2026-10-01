@@ -555,6 +555,8 @@ export interface ControllerActions {
   baseClassNames: string[];
   /** The directory a bare superclass name is looked up under, which depends on the project's layout. */
   root: string;
+  /** Other directories the project autoloads constants from, each read as the top of the namespace, after `root`. */
+  autoloadRoots?: string[];
   pathConvention: ConstantPathConvention;
   /** Acronyms the project registers with the inflector. The path convention keeps each one as one word: `ActivityPub` becomes `activitypub`. */
   acronyms?: string[];
@@ -636,6 +638,8 @@ export interface GraphqlObjectFields {
   baseClassNames: string[];
   /** The directory a wiring keyword's referenced class is looked up under, which depends on the project's layout. */
   root: string;
+  /** Other directories the project autoloads constants from, each read as the top of the namespace, after `root`. */
+  autoloadRoots?: string[];
   pathConvention: ConstantPathConvention;
   /** Acronyms the project registers with the inflector. The path convention keeps each one as one word. */
   acronyms?: string[];

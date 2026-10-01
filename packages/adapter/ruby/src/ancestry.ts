@@ -62,6 +62,8 @@ export interface BodyReading {
 export interface AncestorLookup {
   /** Directory the constant-to-path convention resolves an ancestor's name against. */
   root: string;
+  /** Further directories tried after `root`, each as the top of the namespace. */
+  autoloadRoots?: readonly string[];
   pathConvention: ConstantPathConvention;
   /** Acronyms the convention keeps as one word, `ActivityPub` to `activitypub`. */
   acronyms?: readonly string[];
@@ -96,6 +98,7 @@ export async function reachDefinition(
     lookup.pathConvention,
     lookup.acronyms,
     lookup.constantFiles,
+    lookup.autoloadRoots,
   );
   if (filePath === null) {
     return null;

@@ -208,6 +208,7 @@ function fieldReadContext(
     },
     lookup: {
       root: pattern.root,
+      autoloadRoots: pattern.autoloadRoots ?? [],
       pathConvention: pattern.pathConvention,
       acronyms: pattern.acronyms ?? [],
       ancestryRootClassNames: pattern.ancestryRootClassNames,
@@ -444,6 +445,7 @@ async function controllerActionUnits(
   }
   const lookup: AncestorLookup = {
     root: pattern.root,
+    autoloadRoots: pattern.autoloadRoots ?? [],
     pathConvention: pattern.pathConvention,
     acronyms: pattern.acronyms ?? [],
     ancestryRootClassNames: pattern.ancestryRootClassNames,

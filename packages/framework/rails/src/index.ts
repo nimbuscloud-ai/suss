@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { underscoreConstantPath } from "@suss/adapter-ruby";
 
+import { applicationFile, readAutoloadRoots } from "./autoloadPaths.js";
 import {
   engineSourceFiles,
   expandPathPattern,
@@ -290,6 +291,10 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       ...(options.baseClassNames ?? []),
     ],
     root,
+    autoloadRoots:
+      options.configDirectory === undefined
+        ? []
+        : readAutoloadRoots(options.configDirectory),
     pathConvention: "railsUnderscore",
     acronyms,
     ancestryRootClassNames: [...RAILS_ROOT_CLASS_NAMES],
@@ -339,7 +344,10 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       ...extraRoutesFiles(),
       ...(options.configDirectory === undefined
         ? []
-        : inflectionFiles(options.configDirectory)),
+        : [
+            ...inflectionFiles(options.configDirectory),
+            ...applicationFile(options.configDirectory),
+          ]),
     ],
   };
 }
