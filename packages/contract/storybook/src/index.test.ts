@@ -2,7 +2,11 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { readStorybookMetadata } from "@suss/behavioral-ir";
+
 import { generateSummariesFromStories } from "./index.js";
+
+import type { BehavioralSummary, StorybookMetadata } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/storybook");
 const repoRoot = path.resolve(__dirname, "../../../..");
@@ -113,6 +117,115 @@ describe("generateSummariesFromStories — CSF3 basics", () => {
     expect(primary?.location.file).toBe(
       "fixtures/storybook/Button.stories.tsx",
     );
+  });
+});
+
+describe("the module a story's component comes from", () => {
+  const importsDir = path.resolve(fixturesDir, "../storybook-imports");
+
+  function storybookOf(file: string): StorybookMetadata | undefined {
+    const [summary] = generateSummariesFromStories(
+      [path.join(importsDir, file)],
+      { projectRoot: importsDir },
+    );
+    return summary === undefined ? undefined : readStorybookMetadata(summary);
+  }
+
+  it("follows an import through a path alias the nearest tsconfig declares", () => {
+    const story = storybookOf("src/Chip/__stories__/Chip.stories.tsx");
+    expect(story?.componentModule).toEqual({
+      workspace: "ui-kit",
+      file: "src/Chip/Chip.tsx",
+      name: "Chip",
+    });
+    expect(story?.componentImport).toBe("@ui/Chip/Chip");
+  });
+
+  it("follows a renamed import through a barrel to the declaration", () => {
+    expect(storybookOf("src/Barrel.stories.tsx")?.componentModule).toEqual({
+      workspace: "ui-kit",
+      file: "src/Chip/Chip.tsx",
+      name: "Chip",
+    });
+  });
+
+  it("records the story file itself for a component declared there", () => {
+    const story = storybookOf("src/Preview.stories.tsx");
+    expect(story?.componentModule).toEqual({
+      workspace: "ui-kit",
+      file: "src/Preview.stories.tsx",
+      name: "Preview",
+    });
+    expect(story?.componentImport).toBeUndefined();
+  });
+
+  it("records no module for a component reached through a namespace member", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Icons.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "Icons.Star.Default",
+    ]);
+    const story = readStorybookMetadata(summaries[0] as BehavioralSummary);
+    expect(story?.componentModule).toBeUndefined();
+    expect(story?.componentImport).toBeUndefined();
+    expect(story?.args).toEqual({ size: "sm" });
+  });
+
+  it("names an anonymous default export by the story's spelling", () => {
+    expect(storybookOf("src/Divider.stories.tsx")?.componentModule).toEqual({
+      workspace: "ui-kit",
+      file: "src/divider.tsx",
+      name: "Divider",
+    });
+  });
+
+  it("records no module when the import does not lead to a file", () => {
+    const story = storybookOf("src/Missing.stories.tsx");
+    expect(story?.component).toBe("Badge");
+    expect(story?.componentModule).toBeUndefined();
+    expect(story?.componentImport).toBe("@ui/Badge/Badge");
+  });
+});
+
+describe("args on the meta", () => {
+  const importsDir = path.resolve(fixturesDir, "../storybook-imports");
+
+  it("gives every story the meta's args, under the story's own", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipMeta.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const argsOf = (name: string) =>
+      readStorybookMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.args;
+
+    expect(argsOf("Chip.Plain")).toEqual({ label: "Shared", size: "sm" });
+    expect(argsOf("Chip.Medium")).toEqual({ label: "Shared", size: "md" });
+  });
+
+  it("records the decorators and render functions that receive the args first", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipWrapped.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const readersOf = (name: string) =>
+      readStorybookMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.argReaders;
+
+    expect(readersOf("Chip.Routed")).toEqual(["decorators"]);
+    expect(readersOf("Chip.Custom")).toEqual(["decorators", "render"]);
+    expect(readersOf("Chip.Method")).toEqual(["decorators", "render"]);
+    const [plain] = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/Chip.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    expect(
+      readStorybookMetadata(plain as BehavioralSummary)?.argReaders,
+    ).toBeUndefined();
   });
 });
 

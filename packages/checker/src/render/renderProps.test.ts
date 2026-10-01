@@ -9,6 +9,7 @@ type InputRead = { input: string; path: string[] };
 function component(args: {
   name: string;
   file: string;
+  workspace?: string;
   inputs?: Input[];
   inputReads?: InputRead[];
   root?: RenderNode;
@@ -19,6 +20,7 @@ function component(args: {
       file: args.file,
       range: { start: 1, end: 10 },
       exportName: args.name,
+      ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
     },
     identity: {
       name: args.name,
@@ -91,6 +93,32 @@ describe("checkRenderProps", () => {
     expect(findings[0].kind).toBe("boundaryFieldUnused");
     expect(findings[0].severity).toBe("info");
     expect(findings[0].description).toContain('"unusedThing"');
+  });
+
+  it("joins a target to the component in the parent's own package when two packages share the file path", () => {
+    const boxTarget = { file: "src/content-box.tsx", name: "ContentBox" };
+    const parent = component({
+      name: "Settings",
+      file: "src/settings.tsx",
+      workspace: "admin",
+      root: rendering("ContentBox", boxTarget, { title: '"General"' }),
+    });
+    const ownBox = component({
+      name: "ContentBox",
+      file: "src/content-box.tsx",
+      workspace: "admin",
+      inputs: [param("title")],
+      inputReads: [{ input: "title", path: [] }],
+    });
+    const otherBox = component({
+      name: "ContentBox",
+      file: "src/content-box.tsx",
+      workspace: "signup",
+      inputs: [param("heading")],
+      inputReads: [{ input: "heading", path: [] }],
+    });
+
+    expect(checkRenderProps([parent, ownBox, otherBox])).toEqual([]);
   });
 
   it("counts a chain off the props object as a read of its first segment", () => {

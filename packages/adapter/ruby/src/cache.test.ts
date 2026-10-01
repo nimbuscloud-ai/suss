@@ -292,10 +292,9 @@ describe("extractRubyProject's on-disk cache", () => {
       const packs: RubyPack[] = [
         railsTestPack({
           root: path.join(tmpDir, "app", "controllers"),
-          routeFor: (controller, action) => ({
-            method: "GET",
-            path: `/${controller}/${action}`,
-          }),
+          routesFor: (controller, action) => [
+            { method: "GET", path: `/${controller}/${action}` },
+          ],
         }),
         storagePack,
       ];
@@ -430,10 +429,9 @@ describe("extractRubyProject's on-disk cache", () => {
       const withFilters: RubyPack[] = [
         railsTestPack({
           root: path.join(tmpDir, "app", "controllers"),
-          routeFor: (controller, action) => ({
-            method: "GET",
-            path: `/${controller}/${action}`,
-          }),
+          routesFor: (controller, action) => [
+            { method: "GET", path: `/${controller}/${action}` },
+          ],
           filters: [{ name: "before_action", methodFrom: "argument" }],
         }),
         ...packs.slice(1),

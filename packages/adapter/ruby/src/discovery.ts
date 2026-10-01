@@ -102,6 +102,7 @@ import type { ExceptionClass } from "./exceptionClasses.js";
 import type { ControllerFilter } from "./filters.js";
 import type {
   ControllerActions,
+  ControllerRoute,
   GraphqlObjectFields,
   RubyDiscoveryPattern,
   RubyPack,
@@ -437,9 +438,9 @@ async function graphqlObjectFieldUnits(
  * Every public instance method a controller defines directly is an
  * action. Rails dispatches only to public methods, so a private or
  * protected one is not discovered here, though the reach walk still
- * gives it a summary once something calls it. Each action becomes a unit,
- * bound when `routeFor` finds a route and unbound otherwise, and the
- * reach walk starts from it either way.
+ * gives it a summary once something calls it. Each action becomes one
+ * unit per route `routesFor` finds, or one unbound unit when it finds
+ * none, and the reach walk starts from each.
  */
 async function controllerActionUnits(
   pattern: ControllerActions,
@@ -558,6 +559,7 @@ async function controllerActionUnits(
     actionName: string,
     method: RbNode,
     block: ReachedBody,
+    routes: readonly ControllerRoute[],
   ) => {
     const around = filters
       .filter((filter) => filterCoversAction(filter, actionName))
@@ -568,42 +570,44 @@ async function controllerActionUnits(
           caught.get(filter),
         ),
       );
-    const handlers = handlersAround(actionName);
-    const raw = buildControllerActionUnit(
-      pack,
-      pattern,
-      info.qualifiedName,
-      actionName,
-      method,
-      {
-        display:
-          block.file === (options.absoluteFile ?? options.filePath)
-            ? options.filePath
-            : (options.displayPathOf?.(block.file) ?? block.file),
-        absolute: block.file,
-      },
-      options,
-      around,
-      respondingHelper,
-      {
-        classes: await raisedClasses(
-          method,
-          block.info.bodyNesting,
-          exceptions,
-        ),
-        handlers,
-      },
-    );
-    units.push(raw);
-    options.onReachSeed?.(raw, {
-      file: block.file,
-      node: method,
-      enclosingQualifiedName: block.info.qualifiedName,
-    });
+    const raises: RaisesRead = {
+      classes: await raisedClasses(method, block.info.bodyNesting, exceptions),
+      handlers: handlersAround(actionName),
+    };
+    // An action routed twice, such as `update` under both PATCH and PUT,
+    // serves each route, so each gets a unit of its own.
+    for (const route of routes.length === 0 ? [null] : routes) {
+      const raw = buildControllerActionUnit(
+        pack,
+        pattern,
+        info.qualifiedName,
+        actionName,
+        route,
+        method,
+        {
+          display:
+            block.file === (options.absoluteFile ?? options.filePath)
+              ? options.filePath
+              : (options.displayPathOf?.(block.file) ?? block.file),
+          absolute: block.file,
+        },
+        options,
+        around,
+        respondingHelper,
+        raises,
+      );
+      units.push(raw);
+      options.onReachSeed?.(raw, {
+        file: block.file,
+        node: method,
+        enclosingQualifiedName: block.info.qualifiedName,
+      });
+    }
   };
 
   for (const [actionName, method, block] of actions) {
-    await emitAction(actionName, method, block);
+    const routes = pattern.routesFor(info.qualifiedName, actionName);
+    await emitAction(actionName, method, block, routes);
   }
   return units;
 }
@@ -670,7 +674,7 @@ function controllerActions(
         continue;
       }
       seen.add(actionName);
-      if (pattern.routeFor(info.qualifiedName, actionName) !== null) {
+      if (pattern.routesFor(info.qualifiedName, actionName).length > 0) {
         actions.push(action);
       }
     }
@@ -747,6 +751,7 @@ function buildControllerActionUnit(
   pattern: ControllerActions,
   controllerQualifiedName: string,
   actionName: string,
+  route: ControllerRoute | null,
   method: RbNode,
   file: { display: string; absolute: string },
   bodyRead: BodyReadOptions,
@@ -755,7 +760,6 @@ function buildControllerActionUnit(
   raises: RaisesRead,
 ): RawCodeStructure {
   const range = rangeOf(method);
-  const route = pattern.routeFor(controllerQualifiedName, actionName);
   const body = bodyOfMethod(method, file.absolute, bodyRead);
   const perResponse = responseBranches(
     method,

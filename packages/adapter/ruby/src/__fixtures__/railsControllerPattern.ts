@@ -16,7 +16,7 @@ export function controllerActionsPattern(
     ancestryRootClassNames: ["ActionController::Base", "ActionController::API"],
     defaultStatusCode: 200,
     routesFile: "/config/routes.rb",
-    routeFor: () => null,
+    routesFor: () => [],
     ...overrides,
   };
 }

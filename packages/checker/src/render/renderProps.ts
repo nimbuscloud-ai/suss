@@ -130,7 +130,8 @@ function subUnitsByComponent(
     if (component === undefined) {
       continue;
     }
-    const key = renderTargetKey(summary.location.file, component);
+    const { workspace, file } = summary.location;
+    const key = renderTargetKey(workspace, file, component);
     byComponent.set(key, [...(byComponent.get(key) ?? []), summary]);
   }
   return byComponent;
@@ -141,18 +142,27 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
   const subUnitsOf = subUnitsByComponent(summaries);
   const childByKey = new Map<string, BehavioralSummary>();
   for (const summary of summaries) {
-    const file = summary.location.file;
-    childByKey.set(renderTargetKey(file, summary.identity.name), summary);
+    const { workspace, file } = summary.location;
+    childByKey.set(
+      renderTargetKey(workspace, file, summary.identity.name),
+      summary,
+    );
     const exported = summary.identity.exportPath?.join(".");
     if (exported !== undefined && exported.length > 0) {
-      childByKey.set(renderTargetKey(file, exported), summary);
+      childByKey.set(renderTargetKey(workspace, file, exported), summary);
     }
   }
 
   for (const summary of summaries) {
     for (const edge of edgesOf(summary)) {
+      // A target's file is written from the root of the parent's own
+      // extract, so it is a file in the parent's workspace.
       const child = childByKey.get(
-        renderTargetKey(edge.target.file, edge.target.name),
+        renderTargetKey(
+          summary.location.workspace,
+          edge.target.file,
+          edge.target.name,
+        ),
       );
       if (child === undefined || child === summary) {
         continue;
@@ -165,7 +175,11 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
           ? propsUsedBy(
               child,
               subUnitsOf.get(
-                renderTargetKey(child.location.file, child.identity.name),
+                renderTargetKey(
+                  child.location.workspace,
+                  child.location.file,
+                  child.identity.name,
+                ),
               ) ?? [],
             )
           : null;

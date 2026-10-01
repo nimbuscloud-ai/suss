@@ -544,12 +544,18 @@ export interface RbLoaderSource {
 
 export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;
 
+/** One route to a controller action. */
+export interface ControllerRoute {
+  method: string;
+  path: string;
+}
+
 /**
  * A class whose ancestry reaches one of `baseClassNames` or
  * `ancestryRootClassNames` is a controller, and every instance method it
- * defines directly is an action. `routeFor` binds each action to the
- * method and path the project's routing gives it. An action `routeFor`
- * has no route for is still discovered, with no boundary binding.
+ * defines directly is an action. `routesFor` binds each action to the
+ * methods and paths the project's routing gives it, one unit per route.
+ * An action with no route is still discovered, with no boundary binding.
  */
 export interface ControllerActions {
   type: "controllerActions";
@@ -588,11 +594,14 @@ export interface ControllerActions {
   inheritedMethodNames?: string[];
   /** Absolute path of the routes file this pattern read, used in the gap `routingGaps` can report. */
   routesFile: string;
-  /** The method and path the project's routing gives one controller action, or null when it has none. */
-  routeFor: (
+  /**
+   * Every method and path the project's routing gives one controller
+   * action, in the order they are declared, or none.
+   */
+  routesFor: (
     controllerQualifiedName: string,
     actionName: string,
-  ) => { method: string; path: string } | null;
+  ) => readonly ControllerRoute[];
   /** One message for each kind of routing declaration the pattern could not read. Calling it again returns the same list. */
   routingGaps?: () => readonly string[];
   /** The class-level calls that run one of the controller's own methods around its actions, Rails' `before_action` and `rescue_from`. */

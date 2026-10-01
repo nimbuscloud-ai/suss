@@ -8,7 +8,7 @@
 // `scenarioCoverageGap` finding for the `user` prop: there's a
 // conditional branch on it that no story reaches.
 
-import type { UserCard } from "../react/UserCard";
+import UserCard from "../react/UserCard";
 
 const meta = {
   component: UserCard,

@@ -119,6 +119,10 @@ const EXEMPT = new Map([
     "What one measurement covers, written by terraform-gcp. checkMetric compares `values` only, so a GAUGE compared as a DELTA goes unchecked. #464.",
   ],
   [
+    "component.storybook.componentImport",
+    "The specifier a story imported its component from, for a person reading the summary. The story agreement check pairs on componentModule, which is where that import leads. #464.",
+  ],
+  [
     "component.storybook.provenance",
     "Whether a story's args are an independent statement about the component. The story agreement check treats every story alike. #464.",
   ],
