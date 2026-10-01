@@ -25,6 +25,7 @@ import type { Gap } from "./index.js";
  * `unresolvedWrapper`: a registration whose function the run could not resolve.
  * `definedAtLoadTime`: a method the project defines while the file loads.
  * `behindUnreadAncestor`: an ancestor the run did not read comes before the project's own definition.
+ * `selfCallInMixin`: a call on `self` in a mixin that does not define the method, so the class that mixes it in decides what runs.
  */
 export type UnfollowedReason =
   | "noBody"
@@ -37,7 +38,8 @@ export type UnfollowedReason =
   | "unboundParameter"
   | "unresolvedWrapper"
   | "definedAtLoadTime"
-  | "behindUnreadAncestor";
+  | "behindUnreadAncestor"
+  | "selfCallInMixin";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
@@ -68,6 +70,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   unresolvedWrapper: true,
   definedAtLoadTime: true,
   behindUnreadAncestor: true,
+  selfCallInMixin: true,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -100,6 +103,8 @@ const STOP_SENTENCE: Record<
     `The call to ${callee} lands on a method the project defines with define_method, which this reader does not follow, so whatever runs there is missing from this summary`,
   behindUnreadAncestor: ({ callee }) =>
     `The call to ${callee} could land in an ancestor this run did not read, which comes before the project's own definition, so whatever runs there is missing from this summary`,
+  selfCallInMixin: ({ callee }) =>
+    `The call to ${callee} is made on self in a mixin that does not define it, so it runs whatever the class that mixes it in provides, which is missing from this summary`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {

@@ -8,7 +8,8 @@
  * `rescue_responses`. A body whose storage effects include one of those
  * calls gets a response for it. A `rescue_from` for that exception, or
  * for one of its ancestors, replaces the library's response with its own
- * handler, so the response is left out then.
+ * handler. The body then gets the throw instead, and the handler's
+ * response is put beside it when the wrappers are composed.
  */
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -44,19 +45,23 @@ export function raisedStatusBranches(
   );
   return [...raised].flatMap((exception) => {
     const declared = statuses[exception];
-    if (
-      declared === undefined ||
-      [exception, ...declared.ancestors].some((name) => rescued.has(name))
-    ) {
-      return [];
+    const lineage = [exception, ...(declared?.ancestors ?? [])];
+    if (lineage.some((name) => rescued.has(name))) {
+      return [raisedBranch(exception, null, location)];
     }
-    return [statusBranch(exception, declared.status, location)];
+    return declared === undefined
+      ? []
+      : [raisedBranch(exception, declared.status, location)];
   });
 }
 
-function statusBranch(
+/**
+ * The library's response for the exception, or the throw itself when a
+ * handler rescues it, so the handler's own response goes in its place.
+ */
+function raisedBranch(
   exception: string,
-  status: number,
+  status: number | null,
   location: Range,
 ): RawBranch {
   return {
@@ -69,10 +74,10 @@ function statusBranch(
       },
     ],
     terminal: {
-      kind: "response",
-      statusCode: { type: "literal", value: status },
+      kind: status === null ? "throw" : "response",
+      statusCode: status === null ? null : { type: "literal", value: status },
       body: null,
-      exceptionType: null,
+      exceptionType: status === null ? exception : null,
       message: null,
       component: null,
       renderTree: null,
