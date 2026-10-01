@@ -806,18 +806,28 @@ const STATED_RULES = [
     ],
     "construction enters its constructor",
   ),
+  // Written first so the rewrite joins it first: the receiver is then read
+  // under the sites the call is made under, instead of under every site in
+  // the project with the call's own sites filtered out afterwards.
   rule(
     "entersUnder",
     [v("r"), v("f"), v("site"), v("caller")],
     [
-      lit("call", v("r"), v("cal")),
-      lit("readsProperty", v("cal"), v("o"), v("m")),
+      lit("methodCallUnder", v("r"), v("o"), v("m"), v("caller")),
       lit("objectOfUnder", v("o"), v("caller"), v("site")),
       lit("allocates", v("site"), v("cls")),
       lit("contains", v("site"), v("m"), v("f")),
-      lit("callUnder", v("r"), v("caller")),
     ],
     "method call enters under its receiver",
+  ),
+  rule(
+    "methodCallUnder",
+    [v("r"), v("o"), v("m"), v("caller")],
+    [
+      lit("call", v("r"), v("cal")),
+      lit("readsProperty", v("cal"), v("o"), v("m")),
+      lit("callUnder", v("r"), v("caller")),
+    ],
   ),
   // A call written as a name runs with whatever receiver the body
   // around it has, so a plain function called from a method keeps the
