@@ -64,6 +64,14 @@ export interface BoundaryBehavior<S extends { name: string }> {
   sidesAgree?(a: S, b: S): boolean;
 
   /**
+   * The key two providers of one operation share, such as a handler and
+   * the spec that documents it. Defaults to `identityKey`. Leave out
+   * what two sources can spell differently without serving different
+   * requests: REST drops parameter names, so `{id}` meets `:pk`.
+   */
+  operationKey?(semantics: S): string | null;
+
+  /**
    * Whether this boundary's bucket can meet buckets with other keys. A
    * REST path with a hole that spans some number of segments has a key
    * of its own and serves what several other keys serve, so the pairing

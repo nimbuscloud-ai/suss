@@ -11,6 +11,7 @@
  */
 
 import { summaryRef } from "@suss/behavioral-ir";
+import { operationKey } from "@suss/ir-core";
 
 import { bodyShapesMatch } from "../body/bodyMatch.js";
 import { makeSide } from "../coverage/responseMatch.js";
@@ -69,7 +70,7 @@ function groupProvidersByBoundary(
     if (binding === null) {
       continue;
     }
-    const key = boundaryKey(binding);
+    const key = operationKey(binding);
     if (key === null) {
       continue;
     }

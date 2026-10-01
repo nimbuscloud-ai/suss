@@ -68,6 +68,26 @@ const REQUEST_SPELLING = {
   body: { path: ["requestBody"], saysWhichField: true },
 };
 
+// The classes FastAPI supplies a parameter for when the parameter is
+// annotated with one, under every module that exports them.
+const INJECTED_PARAMETER_TYPES = [
+  "fastapi.Request",
+  "fastapi.Response",
+  "fastapi.BackgroundTasks",
+  "fastapi.WebSocket",
+  "fastapi.requests.Request",
+  "fastapi.requests.HTTPConnection",
+  "fastapi.responses.Response",
+  "fastapi.background.BackgroundTasks",
+  "fastapi.websockets.WebSocket",
+  "fastapi.security.SecurityScopes",
+  "starlette.requests.Request",
+  "starlette.requests.HTTPConnection",
+  "starlette.responses.Response",
+  "starlette.background.BackgroundTasks",
+  "starlette.websockets.WebSocket",
+];
+
 export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
   return {
     name: "fastapi",
@@ -86,6 +106,8 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         // FastAPI resolves both of these itself and calls the handler with
         // the result, so a parameter defaulted to one is never sent.
         injectedParameterCallees: ["Depends", "Security"],
+        // FastAPI also hands a route these objects by the annotation alone.
+        injectedParameterTypes: INJECTED_PARAMETER_TYPES,
         parameterSources: PARAMETER_SOURCES,
         parameterAliasKeyword: "alias",
         // FastAPI returns 200 for a route that declares no status.

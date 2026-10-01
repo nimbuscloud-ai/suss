@@ -23,6 +23,12 @@ describe("fastapiFramework", () => {
         pathParamSyntax: "braces",
         annotatedClassIsRequestBody: true,
         injectedParameterCallees: ["Depends", "Security"],
+        injectedParameterTypes: expect.arrayContaining([
+          "fastapi.Request",
+          "fastapi.Response",
+          "fastapi.BackgroundTasks",
+          "starlette.requests.Request",
+        ]),
         parameterSources: {
           Header: { role: "headers", underscoresAs: "-" },
           Query: { role: "queryParams" },

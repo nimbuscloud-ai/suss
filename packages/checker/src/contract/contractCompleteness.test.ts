@@ -85,6 +85,41 @@ describe("checkContractCompleteness", () => {
     expect(findings).toEqual([]);
   });
 
+  it("counts a route that names its parameters differently as implementing the operation", () => {
+    const findings = checkContractCompleteness([
+      stub("GET", "/orders"),
+      stub("DELETE", "/accounts/{account_id}/teams/{team_id}"),
+      implemented("GET", "/orders"),
+      implemented("DELETE", "/accounts/:account_id/teams/:id"),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("keeps the method apart when parameter names are dropped", () => {
+    const findings = checkContractCompleteness([
+      stub("GET", "/orders"),
+      stub("PATCH", "/orders/{order_id}"),
+      implemented("GET", "/orders"),
+      implemented("GET", "/orders/:pk"),
+    ]);
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "The openapi contract declares PATCH /orders/{order_id} and no extracted provider implements it.",
+    ]);
+  });
+
+  it("counts a route whose optional segment covers the operation", () => {
+    const findings = checkContractCompleteness([
+      stub("GET", "/orders"),
+      stub("GET", "/receipts/{id}"),
+      stub("DELETE", "/receipts/{id}"),
+      implemented("GET", "/orders"),
+      implemented("GET", "/receipts/:pk/:filename?"),
+    ]);
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "The openapi contract declares DELETE /receipts/{id} and no extracted provider implements it.",
+    ]);
+  });
+
   it("says nothing when every declared operation is implemented", () => {
     const findings = checkContractCompleteness([
       stub("POST", "/v1/provision"),
