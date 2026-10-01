@@ -32,6 +32,8 @@ import {
 } from "@suss/behavioral-ir";
 import { bindingIs, boundaryKey, gqlIdentityKey } from "@suss/ir-core";
 
+import { servicesOf } from "./pairing.js";
+
 import type {
   BehavioralSummary,
   Finding,
@@ -594,15 +596,12 @@ function scopeToBoundService(
 
 /**
  * The distinct workspaces the matched resolvers came from. A resolver
- * without a workspace (a single-project run) counts as one bucket, so
- * two unlabeled services still collapse to one and stay quiet.
+ * without a workspace is a schema document or a single-project run, and
+ * REST pairing does not count either one as a rival service, so this
+ * does not either.
  */
 function providerWorkspaces(resolvers: BehavioralSummary[]): string[] {
-  const seen = new Set<string>();
-  for (const resolver of resolvers) {
-    seen.add(resolver.location.workspace ?? "");
-  }
-  return [...seen].sort();
+  return servicesOf(resolvers);
 }
 
 function ambiguousProviderFinding(

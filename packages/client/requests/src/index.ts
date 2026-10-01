@@ -48,6 +48,9 @@ export function requestsClient(): PythonPack {
           success: ["ok"],
           body: ["json", "text", "content"],
           failureDelivery: "response",
+          // Every verb but HEAD follows redirects unless the call passes
+          // `allow_redirects=False`.
+          redirectDelivery: "followed",
         },
       },
     ],

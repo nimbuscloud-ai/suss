@@ -61,6 +61,10 @@ export function webFetchPack(): PatternPack {
       { name: "body", access: "property", semantics: { type: "body" } },
       { name: "headers", access: "property", semantics: { type: "headers" } },
     ],
+
+    // fetch follows 301, 302, 303, 307 and 308 unless the call passes
+    // `redirect: "manual"`, so the caller sees the final response.
+    redirectDelivery: "followed",
   };
 }
 

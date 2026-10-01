@@ -107,6 +107,19 @@ export function recordBody(...fields: string[]): TypeShape {
   };
 }
 
+/** A consumer whose client follows redirects, the way fetch does. */
+export function followsRedirects(
+  summary: BehavioralSummary,
+): BehavioralSummary {
+  return {
+    ...summary,
+    metadata: withHttpMetadata(summary.metadata, {
+      ...readHttpMetadata(summary),
+      redirectDelivery: "followed",
+    }),
+  };
+}
+
 /** A consumer whose client rejects on a non-2xx, the way axios does. */
 export function throwsOnFailure(summary: BehavioralSummary): BehavioralSummary {
   return {

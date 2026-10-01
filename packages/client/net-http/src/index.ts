@@ -60,6 +60,8 @@ export function netHttpClient(): RubyPack {
           statusCode: ["code"],
           body: ["body"],
           failureDelivery: "response",
+          // Net::HTTP never follows a redirect.
+          redirectDelivery: "response",
         },
       },
     ],

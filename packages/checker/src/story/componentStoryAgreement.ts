@@ -88,11 +88,10 @@ export function checkComponentStoryAgreement(
     if (component === undefined) {
       continue;
     }
-    const inputNames = new Set(
-      component.inputs
-        .filter((i) => i.type === "parameter")
-        .map((i) => (i.type === "parameter" ? i.name : "")),
-    );
+    const inputNames = declaredProps(component);
+    if (inputNames === null) {
+      continue;
+    }
     for (const argName of Object.keys(meta.args ?? {})) {
       if (!inputNames.has(argName)) {
         findings.push(makeUnknownArgFinding(story, component, argName, meta));
@@ -102,7 +101,7 @@ export function checkComponentStoryAgreement(
 
   // Props a component branches on that none of its stories supply.
   for (const [component, componentStories] of storiesByComponent) {
-    const gatingProps = collectGatingProps(component.transitions);
+    const gatingProps = collectGatingProps(component);
     if (gatingProps.size === 0) {
       continue;
     }
@@ -149,6 +148,26 @@ function resolveComponent(
     : null;
 }
 
+/**
+ * The props a component declares, by the name a story passes them
+ * under, which a destructure rename keeps in the role. Null when the
+ * list is open: a rest binding or a props object taken whole accepts
+ * any arg without naming it.
+ */
+function declaredProps(component: BehavioralSummary): Set<string> | null {
+  const names = new Set<string>();
+  for (const input of component.inputs) {
+    if (input.type !== "parameter") {
+      continue;
+    }
+    if (input.role === "rest" || input.role === "props") {
+      return null;
+    }
+    names.add(input.role ?? input.name);
+  }
+  return names;
+}
+
 function directoryOf(file: string): string {
   const at = file.lastIndexOf("/");
   return at === -1 ? "" : file.slice(0, at);
@@ -162,21 +181,37 @@ function storyMeta(summary: BehavioralSummary): StorybookMetadata | null {
  * The prop names that any of the component's transition conditions
  * refer to. The structured predicates are walked, so `user.active`
  * gives `user`. An opaque predicate falls back to a regex over its
- * source text.
+ * source text, which also finds locals and globals, so a name counts
+ * only when it is one of the component's own destructured props.
  */
-function collectGatingProps(transitions: Transition[]): Set<string> {
-  const props = new Set<string>();
-  for (const t of transitions) {
-    if (t.isDefault && t.conditions.length === 0) {
-      continue;
+function collectGatingProps(component: BehavioralSummary): Set<string> {
+  const propByBinding = new Map<string, string>();
+  for (const input of component.inputs) {
+    if (
+      input.type === "parameter" &&
+      input.role !== "rest" &&
+      input.role !== "props"
+    ) {
+      propByBinding.set(input.name, input.role ?? input.name);
     }
+  }
+
+  const props = new Set<string>();
+  for (const t of gatedTransitions(component.transitions)) {
     for (const pred of t.conditions) {
       for (const name of inputsInPredicate(pred)) {
-        props.add(name);
+        const prop = propByBinding.get(name);
+        if (prop !== undefined) {
+          props.add(prop);
+        }
       }
     }
   }
   return props;
+}
+
+function gatedTransitions(transitions: Transition[]): Transition[] {
+  return transitions.filter((t) => !(t.isDefault && t.conditions.length === 0));
 }
 
 type PredicateInputsTable = {

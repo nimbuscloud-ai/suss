@@ -64,6 +64,7 @@ describe("axiosPack — integration", () => {
     expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("getUser");
     expect(readHttpMetadata(summaries[0])?.failureDelivery).toBe("exception");
+    expect(readHttpMetadata(summaries[0])?.redirectDelivery).toBe("followed");
     expect(summaries[0].identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/users/1" },

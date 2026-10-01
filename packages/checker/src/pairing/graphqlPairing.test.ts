@@ -360,6 +360,36 @@ describe("pairGraphqlOperations", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("does not count a schema file with no workspace as a second service", () => {
+    const served = {
+      ...resolver("Query", "pet", "nestjs"),
+      location: {
+        file: "src/pet.resolver.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "api",
+      },
+    };
+    // A generated copy of the schema checked into the client.
+    const generated = {
+      ...resolver("Query", "pet", "graphql"),
+      location: {
+        file: "src/generated/schema.graphql",
+        range: { start: 1, end: 5 },
+        exportName: null,
+      },
+    };
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { id } }`,
+    );
+    const result = pairGraphqlOperations([served, generated, op]);
+    expect(result.pairs).toHaveLength(2);
+    expect(result.findings).toEqual([]);
+  });
+
   it("handles anonymous queries — no operation name, still maps by root type", () => {
     const pingResolver = resolver("Query", "ping");
     const op = operation("usePing", undefined, "query", "query { ping }");

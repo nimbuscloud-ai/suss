@@ -3263,8 +3263,14 @@ export function inspectDir(options: DirOptions): void {
       }
     }
     const internalCount = unpairable.filter(
-      (u) => u.reason !== "unnamedBoundary",
+      (u) => u.reason === "noBoundary" || u.reason === "unknownKind",
     ).length;
+    const testCount = unpairable.filter((u) => u.reason === "testCode").length;
+    if (testCount > 0) {
+      process.stdout.write(
+        `  ${testCount} test function${testCount === 1 ? "" : "s"} left out of pairing\n`,
+      );
+    }
     if (internalCount > 0) {
       // A project has dozens of internal helpers, and most functions have
       // no boundary. Listing each one would bury the lines above, so they

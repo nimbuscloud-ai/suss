@@ -46,6 +46,9 @@ export function httpxClient(): PythonPack {
           success: ["is_success"],
           body: ["json", "text", "content"],
           failureDelivery: "response",
+          // httpx hands a 3xx back unless the call passes
+          // `follow_redirects=True`.
+          redirectDelivery: "response",
         },
       },
     ],

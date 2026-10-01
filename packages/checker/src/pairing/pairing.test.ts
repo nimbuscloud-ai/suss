@@ -335,6 +335,37 @@ describe("pairSummaries", () => {
     expect(result.unmatched.unpairable).toHaveLength(0);
   });
 
+  it("leaves a client in a test file out of pairing and says why", () => {
+    const p = providerWithPath("getPage", "GET", "/page");
+    const c = consumerWithPath("fetchPage", "GET", "/page");
+    const inTest = {
+      ...c,
+      location: { ...c.location, file: "src/__tests__/fetchPage.test.ts" },
+    };
+
+    const result = pairSummaries([p, inTest]);
+
+    expect(result.pairs).toHaveLength(0);
+    expect(result.unmatched.unpairable).toEqual([
+      { summary: inTest, reason: "testCode" },
+    ]);
+    expect(result.unmatched.providers).toEqual([p]);
+  });
+
+  it("leaves a server a test starts out of pairing", () => {
+    const p = providerWithPath("getPage", "GET", "/page");
+    const inTest = {
+      ...p,
+      location: { ...p.location, file: "test/server.ts" },
+    };
+    const c = consumerWithPath("fetchPage", "GET", "/page");
+
+    const result = pairSummaries([inTest, c]);
+
+    expect(result.pairs).toHaveLength(0);
+    expect(result.unmatched.consumers).toEqual([c]);
+  });
+
   const inService = (
     summary: BehavioralSummary,
     workspace: string,

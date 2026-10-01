@@ -273,4 +273,56 @@ describe("checkAll, what it lists as unpaired", () => {
 
     expect(result.unmatched.unpairable).toEqual([]);
   });
+
+  it("still compares a story with its component after leaving it out of pairing", () => {
+    const card: BehavioralSummary = {
+      ...emptySummary("Card"),
+      kind: "component",
+      inputs: [
+        {
+          type: "parameter",
+          name: "title",
+          position: 0,
+          role: "title",
+          shape: null,
+        },
+      ],
+    };
+    const story: BehavioralSummary = {
+      ...emptySummary("Card.Primary"),
+      kind: "component",
+      location: { ...emptySummary("x").location, file: "src/Card.stories.tsx" },
+      metadata: {
+        component: {
+          storybook: {
+            story: "Primary",
+            component: "Card",
+            args: { subtitle: "x" },
+          },
+        },
+      },
+    };
+    const result = checkAll([card, story]);
+
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "boundaryFieldUnknown",
+    ]);
+  });
+
+  it("leaves a test that seeds the table out of every pass and lists it as test code", () => {
+    const seed = {
+      ...listOrders(),
+      location: { ...listOrders().location, file: "test/seedOrders.ts" },
+      identity: { ...listOrders().identity, name: "seedOrders" },
+    };
+    const result = checkAll([table(), seed]);
+
+    expect(result.pairs).toEqual([]);
+    expect(
+      result.unmatched.unpairable.map((one) => [one.name, one.reason]),
+    ).toEqual([
+      ["orders", "unnamedBoundary"],
+      ["seedOrders", "testCode"],
+    ]);
+  });
 });

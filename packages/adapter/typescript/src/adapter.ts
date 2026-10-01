@@ -991,6 +991,9 @@ function readCodeStructure(
     ...(unit.callSite !== undefined && pack.failureDelivery !== undefined
       ? { failureDelivery: pack.failureDelivery }
       : {}),
+    ...(unit.callSite !== undefined && pack.redirectDelivery !== undefined
+      ? { redirectDelivery: pack.redirectDelivery }
+      : {}),
   };
 }
 
