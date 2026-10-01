@@ -53,10 +53,9 @@ async function actionNamed(name: string): Promise<BehavioralSummary> {
   const rails = {
     ...railsTestPack({
       root: path.join(tmpDir, "app", "controllers"),
-      routeFor: (_controller, action) => ({
-        method: "GET",
-        path: `/orders/${action}`,
-      }),
+      routesFor: (_controller, action) => [
+        { method: "GET", path: `/orders/${action}` },
+      ],
       responseStatusCalls: [{ name: "head", statusArgument: 0 }],
       statusCodeNames: { unauthorized: 401 },
     }),

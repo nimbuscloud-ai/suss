@@ -129,7 +129,8 @@ describe("extraction over fixtures/ruby-rails", () => {
       .map((s) => s.identity.name)
       .sort();
     // OrdersController, ItemsController, Admin::ReportsController and
-    // Admin::AuditsController each define their own index.
+    // Admin::AuditsController each define their own index. Each of the
+    // three updates is routed under PATCH and PUT, so it appears twice.
     expect(actionNames).toEqual(
       [
         "index",
@@ -141,6 +142,9 @@ describe("extraction over fixtures/ruby-rails", () => {
         "show",
         "show",
         "show",
+        "update",
+        "update",
+        "update",
         "update",
         "update",
         "update",

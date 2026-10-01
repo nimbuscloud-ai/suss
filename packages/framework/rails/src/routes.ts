@@ -34,12 +34,12 @@ export interface Route {
 
 export interface RouteTable {
   /**
-   * The method and path for one controller's action, or null when nothing
-   * routes to it. `controllerKey` is lowercase and slash-joined the way
-   * the routes file writes it: `admin/orders` for
-   * `namespace :admin do resources :orders end`.
+   * Every method and path that reaches one controller's action, in the
+   * order the file declares them, or none. `controllerKey` is lowercase
+   * and slash-joined the way the routes file writes it: `admin/orders`
+   * for `namespace :admin do resources :orders end`.
    */
-  routeFor(controllerKey: string, actionName: string): Route | null;
+  routesFor(controllerKey: string, actionName: string): Route[];
   /** Messages about declarations left unread, or one saying the routes file does not exist. */
   readonly gaps: readonly string[];
   /**
@@ -189,24 +189,41 @@ function readSymbolList(node: RbNode | undefined): string[] | null {
   return single === null ? null : [single];
 }
 
-const RESTFUL_ROUTES_PLURAL: Record<string, (base: string) => Route> = {
-  index: (base) => ({ method: "GET", path: base }),
-  create: (base) => ({ method: "POST", path: base }),
-  new: (base) => ({ method: "GET", path: `${base}/new` }),
-  show: (base) => ({ method: "GET", path: `${base}/:id` }),
-  edit: (base) => ({ method: "GET", path: `${base}/:id/edit` }),
-  update: (base) => ({ method: "PATCH", path: `${base}/:id` }),
-  destroy: (base) => ({ method: "DELETE", path: `${base}/:id` }),
+/** Rails routes `update` under both methods, PATCH first. */
+const updateAt = (path: string): Route[] => [
+  { method: "PATCH", path },
+  { method: "PUT", path },
+];
+
+const RESTFUL_ROUTES_PLURAL: Record<string, (base: string) => Route[]> = {
+  index: (base) => [{ method: "GET", path: base }],
+  create: (base) => [{ method: "POST", path: base }],
+  new: (base) => [{ method: "GET", path: `${base}/new` }],
+  show: (base) => [{ method: "GET", path: `${base}/:id` }],
+  edit: (base) => [{ method: "GET", path: `${base}/:id/edit` }],
+  update: (base) => updateAt(`${base}/:id`),
+  destroy: (base) => [{ method: "DELETE", path: `${base}/:id` }],
 };
 
-const RESTFUL_ROUTES_SINGULAR: Record<string, (base: string) => Route> = {
-  create: (base) => ({ method: "POST", path: base }),
-  new: (base) => ({ method: "GET", path: `${base}/new` }),
-  show: (base) => ({ method: "GET", path: base }),
-  edit: (base) => ({ method: "GET", path: `${base}/edit` }),
-  update: (base) => ({ method: "PATCH", path: base }),
-  destroy: (base) => ({ method: "DELETE", path: base }),
+const RESTFUL_ROUTES_SINGULAR: Record<string, (base: string) => Route[]> = {
+  create: (base) => [{ method: "POST", path: base }],
+  new: (base) => [{ method: "GET", path: `${base}/new` }],
+  show: (base) => [{ method: "GET", path: base }],
+  edit: (base) => [{ method: "GET", path: `${base}/edit` }],
+  update: (base) => updateAt(base),
+  destroy: (base) => [{ method: "DELETE", path: base }],
 };
+
+/**
+ * The routes `resources` gives one of Rails' seven actions under `base`,
+ * such as `/orders`, or none for any other action.
+ */
+export function restfulRoutes(action: string, base: string): Route[] {
+  if (!Object.hasOwn(RESTFUL_ROUTES_PLURAL, action)) {
+    return [];
+  }
+  return RESTFUL_ROUTES_PLURAL[action]?.(base) ?? [];
+}
 
 /**
  * A small pluralizer that covers the regular names a routes file uses.
@@ -244,7 +261,7 @@ interface EngineRouteSet {
 }
 
 class RouteAccumulator {
-  private readonly byKey = new Map<string, Route>();
+  private readonly byKey = new Map<string, Route[]>();
   private readonly unread = new Map<string, Set<string>>();
   /** Per file, the gem block calls whose bodies were walked as if the call were not there. */
   private readonly walkedBlocks = new Map<string, Set<string>>();
@@ -263,15 +280,17 @@ class RouteAccumulator {
   /** `drawDirectory` is where `draw(:name)` finds `name.rb`. */
   constructor(readonly drawDirectory: string) {}
 
-  /** The first route written for an action wins, because Rails matches routes in the order they are declared. */
+  /** An action routed from several places serves every one of them, so each distinct route is kept. */
   add(controllerKey: string, action: string, route: Route): void {
     const key = `${controllerKey}#${action}`;
-    if (!this.byKey.has(key)) {
-      this.byKey.set(key, {
-        method: route.method,
-        path: pathWithOptionalGroups(route.path),
-      });
+    const routes = this.byKey.get(key) ?? [];
+    const path = pathWithOptionalGroups(route.path);
+    if (
+      !routes.some((one) => one.method === route.method && one.path === path)
+    ) {
+      routes.push({ method: route.method, path });
     }
+    this.byKey.set(key, routes);
   }
 
   recordUnread(callName: string): void {
@@ -286,8 +305,8 @@ class RouteAccumulator {
     this.missingDrawn.push({ file: this.file, name });
   }
 
-  routeFor(controllerKey: string, action: string): Route | null {
-    return this.byKey.get(`${controllerKey}#${action}`) ?? null;
+  routesFor(controllerKey: string, action: string): Route[] {
+    return this.byKey.get(`${controllerKey}#${action}`) ?? [];
   }
 
   /** Runs `walk` with gaps attributed to `file`, then goes back to the file being walked before. */
@@ -378,14 +397,16 @@ function handleResourceCall(
   const only = readSymbolList(args.keyword.only);
   const except = readSymbolList(args.keyword.except);
   const table = plural ? RESTFUL_ROUTES_PLURAL : RESTFUL_ROUTES_SINGULAR;
-  for (const [action, routeAt] of Object.entries(table)) {
+  for (const [action, routesAt] of Object.entries(table)) {
     if (only !== null && !only.includes(action)) {
       continue;
     }
     if (except?.includes(action)) {
       continue;
     }
-    out.add(controllerKey, action, routeAt(base));
+    for (const route of routesAt(base)) {
+      out.add(controllerKey, action, route);
+    }
   }
 
   // Rails takes the nesting parameter from the resource's own name,
@@ -990,7 +1011,7 @@ function parseDeclarations(source: RoutesSource): RouteDeclaration[] {
 export function readRoutes(input: RoutesInput): RouteTable {
   if (!fs.existsSync(input.routesFile.file)) {
     return {
-      routeFor: () => null,
+      routesFor: () => [],
       fileFound: false,
       gaps: [
         `${input.routesFile.displayPath} does not exist, so this run assumes each action's path and method from Rails' RESTful naming convention instead of reading it from routing`,
@@ -1038,7 +1059,7 @@ export function readRoutes(input: RoutesInput): RouteTable {
     });
   }
   return {
-    routeFor: (controllerKey, action) => out.routeFor(controllerKey, action),
+    routesFor: (controllerKey, action) => out.routesFor(controllerKey, action),
     fileFound: true,
     gaps: out.gaps(),
   };
