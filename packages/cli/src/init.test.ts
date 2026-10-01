@@ -486,6 +486,29 @@ describe("formatInitReport", () => {
     ]);
   });
 
+  it("lists a command's packs in the order the report groups them", () => {
+    const pack = (name: string, kind: "framework" | "client" | "effects") => ({
+      name,
+      packageName: `@suss/${name}`,
+      because: `${name} in dependencies`,
+      kind,
+      language: "typescript" as const,
+    });
+    const [extract] = readCommands({
+      root: "/project",
+      tsconfig: null,
+      suggestions: [
+        pack("prisma", "effects"),
+        pack("fetch", "client"),
+        pack("hono", "framework"),
+      ],
+    });
+
+    expect(extract?.args.join(" ")).toBe(
+      "extract -f hono -f fetch -f prisma -o summaries/code.json",
+    );
+  });
+
   it("keeps an effects pack's warning to its own language", () => {
     const output = formatInitReport({
       root: "/project",

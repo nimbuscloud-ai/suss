@@ -672,7 +672,9 @@ export function readCommands(
   directory = ".",
 ): ReadCommand[] {
   const prefix = directory === "." ? "" : `${slugOf(directory)}-`;
-  const code = report.suggestions.filter((s) => s.kind !== "contract");
+  const code = inReportOrder(
+    report.suggestions.filter((s) => s.kind !== "contract"),
+  );
   // A language gets a command once one of its packs counts. The other
   // packs in that language come along, since they read the same files.
   const languages = [...new Set(code.filter(countsForProject).map(languageOf))];
@@ -733,6 +735,22 @@ export function readCommands(
   );
 
   return [...extracts, ...contractCommands];
+}
+
+const KIND_ORDER: Record<PackSuggestion["kind"], number> = {
+  framework: 0,
+  client: 1,
+  effects: 2,
+  contract: 3,
+};
+
+/** The packs in the order the report lists them, so a command reads in the same order as the groups above it. */
+function inReportOrder(
+  suggestions: ReadonlyArray<PackSuggestion>,
+): PackSuggestion[] {
+  return [...suggestions].sort(
+    (a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind],
+  );
 }
 
 function slugOf(text: string): string {
