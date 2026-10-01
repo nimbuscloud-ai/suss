@@ -559,6 +559,7 @@ async function controllerActionUnits(
     actionName: string,
     method: RbNode,
     block: ReachedBody,
+    routes: readonly ControllerRoute[],
   ) => {
     const around = filters
       .filter((filter) => filterCoversAction(filter, actionName))
@@ -575,7 +576,6 @@ async function controllerActionUnits(
     };
     // An action routed twice, such as `update` under both PATCH and PUT,
     // serves each route, so each gets a unit of its own.
-    const routes = pattern.routesFor(info.qualifiedName, actionName);
     for (const route of routes.length === 0 ? [null] : routes) {
       const raw = buildControllerActionUnit(
         pack,
@@ -606,7 +606,8 @@ async function controllerActionUnits(
   };
 
   for (const [actionName, method, block] of actions) {
-    await emitAction(actionName, method, block);
+    const routes = pattern.routesFor(info.qualifiedName, actionName);
+    await emitAction(actionName, method, block, routes);
   }
   return units;
 }
