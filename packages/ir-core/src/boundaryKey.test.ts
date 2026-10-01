@@ -153,6 +153,16 @@ describe("boundaryKey", () => {
       channel: "orders",
     });
     expect(operationKey(bus)).toBe(boundaryKey(bus));
+    expect(
+      operationKey(
+        restBinding({
+          transport: "http",
+          method: null,
+          path: "/teams/:id",
+          recognition: "x",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("buckets a route on its parameters' positions and ranges, and says when it spans other buckets", () => {
