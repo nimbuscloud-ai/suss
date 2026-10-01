@@ -2,7 +2,7 @@
 
 Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and reports where the two disagree.
 
-This package builds suss `BehavioralSummary[]` from an [OpenAPI 3.x](https://swagger.io/specification/) specification. With it you can check TypeScript consumers against a published API contract, or check your own provider against a contract you publish, without extracting summaries from the provider's source code.
+This package builds suss `BehavioralSummary[]` from an [OpenAPI 3.x](https://swagger.io/specification/) or Swagger 2.0 specification. With it you can check TypeScript consumers against a published API contract, or check your own provider against a contract you publish, without extracting summaries from the provider's source code.
 
 ## What this package is
 
@@ -48,7 +48,8 @@ const summaries = openApiToSummaries(spec);
 - Response body schemas under `content.<media-type>.schema` (the JSON one when the operation offers it, otherwise the media types in sorted order)
 - Path, query, header, and cookie parameters mapped to `Input.role`
 - Request body schemas mapped to a single `requestBody` input
-- `$ref` to `#/components/schemas/<Name>` with cycle protection (recursive schemas resolve to a `{ type: "ref", name }` placeholder)
+- `$ref` on a path item, a parameter, a request body, a response or a schema, in 3.x and 2.0, with cycle protection (a recursive schema resolves to a `{ type: "ref", name }` placeholder)
+- A document split across files. `openApiFileToSummaries` reads every file a `$ref` reaches, each ref resolved relative to the file it is written in, and reports on stderr each file it could not read and each ref that points at nothing. A ref with a URL scheme is never fetched.
 - Schema features: `object`/`array`/`string`/`integer`/`number`/`boolean`, `enum`, `oneOf`/`anyOf`, `allOf` (object merge), `nullable`, `additionalProperties` (as `dictionary`)
 
 ## Range codes and `default`
