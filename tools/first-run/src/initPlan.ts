@@ -137,9 +137,9 @@ export function runsFromRoot(argv: string[], dir: string): boolean {
   return argv[0] === "contract" && startsFromRoot(argv[3] ?? "", dir);
 }
 
-/** Whether a path printed under a project's heading starts with that project's folder. */
+/** Whether a path printed under a project's heading is that project's folder or a path inside it. */
 export function startsFromRoot(printed: string, dir: string): boolean {
-  return dir === "." || printed.startsWith(`${dir}/`);
+  return dir === "." || printed === dir || printed.startsWith(`${dir}/`);
 }
 
 export function projectSlug(dir: string): string {

@@ -117,6 +117,19 @@ describe("planCommands", () => {
     ]);
   });
 
+  it("runs a contract from the root when its path is the project folder itself", () => {
+    const planned = planCommands(
+      parseInitOutput(`════ web ════
+
+   suss contract --from graphql-documents web -o summaries/web-graphql-documents.json
+`),
+      "/work/app",
+      "/out",
+    );
+
+    expect(planned.map((command) => command.cwd)).toEqual(["/work/app"]);
+  });
+
   it("adds an output when init printed none", () => {
     const planned = planCommands(
       [
