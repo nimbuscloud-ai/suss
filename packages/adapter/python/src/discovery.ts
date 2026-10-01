@@ -1138,6 +1138,16 @@ function functionRouteUnits(
     module.scopeFor,
     options.importedDefinition ?? null,
   );
+  const wrappers = wrappersAround(
+    pattern,
+    pack,
+    classification,
+    functionNode,
+    module,
+    options,
+  );
+  const dependencyParameters =
+    options.wrappers?.dependencyParameterNames(wrappers) ?? new Set<string>();
   return readRoutePaths(
     pattern,
     readPathArgument(classification, options),
@@ -1150,6 +1160,7 @@ function functionRouteUnits(
         pack,
         name: functionName,
         exportPath: [functionName],
+        dependencyParameters,
         method: verb,
         routePath: entry.routePath,
         ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
@@ -1181,14 +1192,7 @@ function functionRouteUnits(
         definitionsCtx: ctx,
         storage: options.storage,
         importedDefinition: options.importedDefinition,
-        wrappers: wrappersAround(
-          pattern,
-          pack,
-          classification,
-          functionNode,
-          module,
-          options,
-        ),
+        wrappers,
       },
       options,
     ),
@@ -1229,6 +1233,8 @@ interface BuildRouteUnitOptions {
   pattern: PythonDiscoveryPattern;
   /** What the route's own decorator and parameters register around it, or nothing when the pack declares no wrapper forms. */
   wrappers?: WrapperReference[];
+  /** The parameters the route's dependencies declare, which the library reads off the request too. */
+  dependencyParameters?: ReadonlySet<string>;
   /** The library's own callables that end the request with a status. Empty when its pack declares none. */
   responseStatusCalls: readonly PyStatusCall[];
   /** The project's facts, so a status written as a name resolves the same way a path does. */
@@ -1430,7 +1436,11 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     branches.push(
       ...validationFailureBranches(
         pattern,
-        parameters,
+        readsTheRequest(
+          parameters,
+          template,
+          options.dependencyParameters ?? new Set(),
+        ),
         rangeOf(definitionNode),
       ),
     );
@@ -1485,16 +1495,31 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
  * route reads fails validation. The body never runs on that path, so the
  * branch has no effects. None when the route reads nothing off the request.
  */
+/**
+ * Whether the route reads anything the library validates first: one of
+ * its own parameters, or a parameter of its path that a dependency
+ * declares. A path parameter nothing declares is not validated.
+ */
+function readsTheRequest(
+  parameters: readonly RawParameter[],
+  template: PathTemplateReading | null,
+  dependencyParameters: ReadonlySet<string>,
+): boolean {
+  if (parameters.some((parameter) => parameter.role !== null)) {
+    return true;
+  }
+  return [...(template?.paramNames ?? [])].some((name) =>
+    dependencyParameters.has(name),
+  );
+}
+
 function validationFailureBranches(
   pattern: PythonDiscoveryPattern,
-  parameters: readonly RawParameter[],
+  readsRequest: boolean,
   range: SourceRange,
 ): RawBranch[] {
   const status = pattern.validationFailureStatus;
-  if (
-    status === undefined ||
-    !parameters.some((parameter) => parameter.role !== null)
-  ) {
+  if (status === undefined || !readsRequest) {
     return [];
   }
   return [
