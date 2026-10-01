@@ -3,18 +3,19 @@
  *
  * A finding that a handler produces an undeclared status, or never
  * produces a declared one, is a claim about every way the handler can
- * end. The claim holds only for paths suss read well enough. A path
- * gated on an opaque condition, or on state some other code set (a
- * field middleware put on the request, `res.locals`), may or may not
- * run. A handler with middleware in front of it, or a throw the
- * framework turns into a status, can end in ways no transition says.
- * A local suss left unresolved still counts as read, since it is
- * usually what the handler looked up.
+ * end. The claim holds only where suss read well enough. A path gated on
+ * state some other code set (a field middleware put on the request,
+ * `res.locals`) runs only on the routes that set it. A wrapper suss
+ * could not read, or a throw the framework turns into a status, can end
+ * the handler in ways no transition says. A middleware or filter that
+ * was read and composed into the route counts like the handler's own
+ * code. The README beside this file has the full rule.
  */
 
 import {
   readsBesideTheRequest,
   readWrapperMetadata,
+  wrapperFor,
 } from "@suss/behavioral-ir";
 
 import { hasOpaqueStatus } from "../coverage/responseMatch.js";
@@ -25,6 +26,7 @@ import type {
   Predicate,
   Transition,
   ValueRef,
+  WrapperIndex,
 } from "@suss/behavioral-ir";
 
 /** A new predicate kind without an entry here fails the build (decision 8). */
@@ -66,22 +68,43 @@ export function reachedThroughUnreadCondition(
 
 /**
  * Whether the handler can end with a failing status no transition names:
- * middleware runs in front of it, it throws something the framework
- * turns into a status, a status could not be read, or no pack terminal
- * matched part of what it produces. A call the walk could not follow is
- * left out, since a dependency it calls does not send the response.
+ * a wrapper in front of it was not read, it throws something the
+ * framework turns into a status, a status could not be read, or no pack
+ * terminal matched part of what it produces. A call the walk could not
+ * follow is left out, since a dependency it calls does not send the
+ * response.
  */
-export function failuresSussCouldNotRead(handler: BehavioralSummary): boolean {
-  const middleware = readWrapperMetadata(handler)?.applied ?? [];
-  if (middleware.length > 0) {
+export function failuresSussCouldNotRead(
+  handler: BehavioralSummary,
+  wrappers: WrapperIndex,
+): boolean {
+  if (handler.gaps.some((gap) => gap.type === "unreadOutcome")) {
     return true;
   }
 
-  if (handler.gaps.some((gap) => gap.type === "unreadOutcome")) {
+  const unreadWrapper = (readWrapperMetadata(handler)?.applied ?? []).some(
+    (reference) => wrapperUnread(wrapperFor(wrappers, reference)),
+  );
+  if (unreadWrapper) {
     return true;
   }
 
   return handler.transitions.some(
     (t) => t.output.type === "throw" || hasOpaqueStatus(t),
+  );
+}
+
+/**
+ * Whether a wrapper's outcomes are missing from the route it was
+ * composed into: the run has no summary for it, or part of it went
+ * unread.
+ */
+function wrapperUnread(wrapper: BehavioralSummary | undefined): boolean {
+  if (wrapper === undefined) {
+    return true;
+  }
+  return (
+    wrapper.gaps.some((gap) => gap.type === "unreadOutcome") ||
+    wrapper.transitions.some(hasOpaqueStatus)
   );
 }

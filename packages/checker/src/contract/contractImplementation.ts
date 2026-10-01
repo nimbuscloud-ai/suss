@@ -2,6 +2,7 @@ import {
   BOUNDARY_ROLE,
   readHttpMetadata,
   summaryIdentifier,
+  wrapperIndex,
 } from "@suss/behavioral-ir";
 
 import { extractResponseStatus, makeSide } from "../coverage/responseMatch.js";
@@ -22,6 +23,7 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   Finding,
+  WrapperIndex,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
 
@@ -62,6 +64,7 @@ export function checkContractImplementation(
     }
   }
 
+  const wrappers = wrapperIndex(summaries);
   const findings: Finding[] = [];
   for (const [key, stubs] of stubsByKey) {
     const handlers = handlersByKey.get(key);
@@ -78,6 +81,7 @@ export function checkContractImplementation(
             summaryWithDefinitionsInlined(handler),
             stub,
             contract,
+            wrappers,
           ),
         );
         compared?.push({
@@ -95,6 +99,7 @@ function checkHandlerAgainstDocument(
   handler: BehavioralSummary,
   document: BehavioralSummary,
   contract: DeclaredContract,
+  wrappers: WrapperIndex,
 ): Finding[] {
   const boundary = handler.identity.boundaryBinding as BoundaryBinding;
   const source = document.identity.boundaryBinding?.recognition ?? "contract";
@@ -124,7 +129,7 @@ function checkHandlerAgainstDocument(
     });
   }
 
-  const failuresUnread = failuresSussCouldNotRead(handler);
+  const failuresUnread = failuresSussCouldNotRead(handler, wrappers);
   // A status the handler's own code declares is in a generated document
   // because of that declaration, which says nothing about a path.
   const declaredInCode = new Set(readHttpMetadata(handler)?.declaredStatuses);

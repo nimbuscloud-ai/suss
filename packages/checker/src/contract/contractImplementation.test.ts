@@ -362,20 +362,67 @@ describe("checkContractImplementation, on a handler suss read in part", () => {
     ]);
   });
 
-  it("does not claim a declared failure is never sent when middleware runs first", () => {
-    const routed = {
-      ...handler("GET", "/users", [
-        transition("t-200", { output: response(200), isDefault: true }),
-      ]),
-      metadata: {
-        wrappers: { applied: [{ file: "src/auth.ts", name: "requireUser" }] },
-      },
-    };
+  /** A route with `requireUser` in front of it, composed into its transitions. */
+  const routedThrough = {
+    ...handler("GET", "/users", [
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]),
+    metadata: {
+      wrappers: { applied: [{ file: "src/auth.ts", name: "requireUser" }] },
+    },
+  };
+
+  /** `requireUser`'s own summary, which hands every request on. */
+  const requireUser = (gaps: BehavioralSummary["gaps"] = []) => ({
+    ...handler("GET", "/users", [
+      transition("t-next", {
+        output: { type: "delegate", to: "next" },
+        isDefault: true,
+      }),
+    ]),
+    kind: "middleware" as const,
+    location: {
+      file: "src/auth.ts",
+      range: { start: 1, end: 9 },
+      exportName: null,
+    },
+    identity: { name: "requireUser", exportPath: null, boundaryBinding: null },
+    gaps,
+  });
+
+  it("does not claim a declared failure is never sent past middleware the run has no summary for", () => {
     const findings = checkContractImplementation([
       document("GET", "/users", [{ statusCode: 200 }, { statusCode: 401 }]),
-      routed,
+      routedThrough,
     ]);
     expect(findings).toEqual([]);
+  });
+
+  it("does not claim a declared failure is never sent past middleware suss read in part", () => {
+    const findings = checkContractImplementation([
+      document("GET", "/users", [{ statusCode: 200 }, { statusCode: 401 }]),
+      routedThrough,
+      requireUser([
+        {
+          type: "unreadOutcome",
+          conditions: [],
+          consequence: "unknown",
+          description: "No terminal matched a return in requireUser",
+        },
+      ]),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("claims a declared failure is never sent past middleware suss read and composed", () => {
+    const findings = checkContractImplementation([
+      document("GET", "/users", [{ statusCode: 200 }, { statusCode: 401 }]),
+      routedThrough,
+      requireUser(),
+    ]);
+    expect(findings.map((f) => f.description)).toEqual([
+      "The openapi document declares response 401, and no path in the handler produces it",
+    ]);
   });
 
   it("still claims a declared failure is never sent past a dependency call it could not follow", () => {
