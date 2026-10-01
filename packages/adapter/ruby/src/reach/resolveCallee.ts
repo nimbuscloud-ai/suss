@@ -24,6 +24,7 @@ import {
 import { methodInAncestry } from "../ancestry.js";
 import { definesClassMethod, field, singletonMethodsByName } from "../ast.js";
 import { classBehind } from "../baseClass.js";
+import { OBJECT_METHODS } from "../facts/languageWords.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
 import {
   classLocalsAt,
@@ -542,7 +543,9 @@ function resolveImplicitSelf(
   if (declaredForTheOtherSelf(site, methodName, ctx)) {
     return NO_DECLARATION;
   }
-  return readWholeAncestry && inModuleInstanceMethod(site, ctx)
+  return readWholeAncestry &&
+    !OBJECT_METHODS.has(methodName) &&
+    inModuleInstanceMethod(site, ctx)
     ? SELF_CALL_IN_MIXIN
     : UNSETTLED_ON_SELF;
 }

@@ -26,6 +26,77 @@ export const CONVERTING_FUNCTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Methods every Ruby object has from `Object` and `Kernel`. A module that
+ * calls one of these bare runs the language's own method, whichever
+ * class includes it.
+ */
+export const OBJECT_METHODS: ReadonlySet<string> = new Set([
+  "Array",
+  "Float",
+  "Hash",
+  "Integer",
+  "String",
+  "abort",
+  "binding",
+  "block_given?",
+  "caller",
+  "catch",
+  "class",
+  "clone",
+  "define_singleton_method",
+  "dup",
+  "eql?",
+  "equal?",
+  "eval",
+  "exit",
+  "extend",
+  "fail",
+  "format",
+  "freeze",
+  "frozen?",
+  "hash",
+  "inspect",
+  "instance_of?",
+  "instance_variable_defined?",
+  "instance_variable_get",
+  "instance_variable_set",
+  "instance_variables",
+  "is_a?",
+  "itself",
+  "kind_of?",
+  "lambda",
+  "loop",
+  "method",
+  "methods",
+  "nil?",
+  "object_id",
+  "p",
+  "pp",
+  "print",
+  "printf",
+  "proc",
+  "public_send",
+  "puts",
+  "raise",
+  "rand",
+  "require",
+  "require_relative",
+  "respond_to?",
+  "send",
+  "singleton_class",
+  "sleep",
+  "sprintf",
+  "srand",
+  "system",
+  "tap",
+  "then",
+  "throw",
+  "to_s",
+  "warn",
+  "yield_self",
+]);
+
+/**
  * The method every Ruby class runs to make one of itself. An instance
  * has no `new`, so a read of it keeps its plain name wherever it is
  * written, and the one rule for a construction matches that name.
