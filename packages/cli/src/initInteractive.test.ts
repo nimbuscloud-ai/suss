@@ -90,6 +90,243 @@ describe("suss init, guided", () => {
     answers.push(...Array<boolean>(count).fill(false));
   }
 
+  async function printedBy(run: () => Promise<number>): Promise<string> {
+    const written: string[] = [];
+    const spy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      });
+    try {
+      expect(await run()).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+    return written.join("");
+  }
+
+  describe("finding the projects", () => {
+    it("reads a client folder under a Python root as its own project, with commands that run from the root", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["fastapi"]\n',
+      );
+      write("app/main.py", "from fastapi import FastAPI\n");
+      project("frontend", "frontend", []);
+      write(
+        "frontend/src/api.ts",
+        "export const load = () => fetch('/api/orders');\n",
+      );
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("═ frontend ═");
+      expect(text).toContain("fetch is called in src/api.ts");
+      expect(text).toContain(
+        "suss extract --dir frontend -f fetch -f node -o summaries/frontend-code.json",
+      );
+      expect(text).toContain(
+        "suss extract --lang python -f fastapi -o summaries/code.json",
+      );
+      // The root's own TypeScript is the frontend's, which has its own command.
+      expect(text).not.toMatch(/^ {3}suss extract -f fetch/m);
+    });
+
+    it("does not read a client below the root a second time from the root", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["requests"]\n',
+      );
+      write("src/static/worker.js", "self.fetch('/api/ping');\n");
+      project("web", "web", ["react"]);
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("suss extract --dir web -f react");
+      expect(text).not.toContain("--lang typescript");
+      expect(text).not.toContain("fetch is called in src/static");
+    });
+
+    it("finds a server folder and a client folder that no workspace file lists", async () => {
+      project(".", "monorepo", []);
+      project("server", "server", ["@nestjs/common"]);
+      project("frontend", "frontend", ["react"]);
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("═ server ═");
+      expect(text).toContain("═ frontend ═");
+      expect(text).toContain("suss extract --dir server -f nestjs-rest");
+      expect(text).toContain("suss extract --dir frontend -f react");
+    });
+
+    it("leaves out a folder whose only reason would be a library the language ships", async () => {
+      project(".", "monorepo", []);
+      project("server", "server", ["express"]);
+      project("scripts", "scripts", []);
+      write("scripts/build.ts", "console.log('built');\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("suss extract --dir server -f express");
+      expect(text).not.toContain("═ scripts ═");
+    });
+
+    it("reads a spec kept in its own folder at a workspace root", async () => {
+      write(
+        "package.json",
+        JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
+      );
+      project("packages/api", "@acme/api", ["hono"]);
+      write(
+        "open-api/acme-openapi-specs.json",
+        '{\n  "openapi": "3.0.0",\n  "paths": {}\n}\n',
+      );
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain(
+        "suss contract --from openapi open-api/acme-openapi-specs.json",
+      );
+      expect(text).toContain("suss extract --dir packages/api -f hono");
+    });
+
+    it("reads a spec in a project's folder once, from that project", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["fastapi"]\n',
+      );
+      project("docs", "docs", ["react"]);
+      write("docs/static/openapi.json", '{ "openapi": "3.1.0", "paths": {} }');
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text.match(/suss contract --from openapi/g)).toHaveLength(1);
+      expect(text).toContain(
+        "suss contract --from openapi docs/static/openapi.json -o summaries/docs-openapi.json",
+      );
+    });
+
+    it("leaves out a folder below the root whose only manifest is for tooling", async () => {
+      project("web", "web", ["react"]);
+      write("mobile/android/Gemfile", 'source "https://rubygems.org"\n');
+      write(
+        "mobile/android/Gemfile.lock",
+        "GEM\n  specs:\n    fastlane (2.0.0)\n\nDEPENDENCIES\n  fastlane\n",
+      );
+      write("mobile/android/fastlane/Fastfile.rb", "lane :beta do\nend\n");
+      write("tools/lint/requirements.txt", "black\n");
+      write("tools/lint/run.py", "print('lint')\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("suss extract --dir web -f react");
+      expect(text).not.toContain("mobile/android");
+      expect(text).not.toContain("tools/lint");
+      expect(text).not.toContain("Nothing in");
+    });
+
+    it("leaves out a lock-less Gemfile whose Ruby is only build scripts", async () => {
+      project("web", "web", ["react"]);
+      write("mobile/ios/Gemfile", 'source "https://rubygems.org"\n');
+      write("mobile/ios/scripts/bump.rb", "puts 'bump'\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).not.toContain("mobile/ios");
+    });
+
+    it("still says a service below the root has a manifest it could not read", async () => {
+      project("web", "web", ["react"]);
+      write(
+        "billing/setup.py",
+        "setup(install_requires=read_requirements())\n",
+      );
+      write("billing/billing/api.py", "def charge():\n    return {}\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("═ billing ═");
+      expect(text).toContain("install_requires is computed");
+    });
+
+    it("reads a Rails app's client code in app/javascript beside the Ruby", async () => {
+      write("Gemfile", 'source "https://rubygems.org"\ngem "rails"\n');
+      write(
+        "Gemfile.lock",
+        "GEM\n  specs:\n    rails (7.1.0)\n\nDEPENDENCIES\n  rails\n",
+      );
+      write(
+        "app/controllers/orders_controller.rb",
+        "class OrdersController < ApplicationController\nend\n",
+      );
+      write(
+        "app/javascript/orders.js",
+        "export const load = () => fetch('/orders.json');\n",
+      );
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain(
+        `fetch is called in ${path.join("app", "javascript", "orders.js")}`,
+      );
+      expect(text).toMatch(/suss extract --lang ruby .*-f rails/);
+      expect(text).toContain("suss extract --lang typescript -f fetch");
+    });
+
+    it("sets up no project for a build script that calls fetch", async () => {
+      project("dashboard", "dashboard", []);
+      write(
+        "dashboard/scripts/fetch-schema.cjs",
+        "await fetch('https://api.example.test/schema');\n",
+      );
+      write("dashboard/vite.config.ts", "await fetch('/config');\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).not.toContain("fetch is called in");
+      expect(text).not.toContain("suss extract");
+    });
+
+    it("says once that a submodule is missing, however many projects there are", async () => {
+      write(".gitmodules", '[submodule "vendor-ui"]\n\tpath = shared/ui\n');
+      fs.mkdirSync(path.join(dir, "shared", "ui"), { recursive: true });
+      project("server", "server", ["express"]);
+      project("web", "web", ["react"]);
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text.match(/this submodule is not checked out/g)).toHaveLength(1);
+    });
+
+    it("names a framework it has no pack for even when other packs matched", async () => {
+      write(
+        "pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["requests"]\n\n[dependency-groups]\nprod = ["django"]\n',
+      );
+      write("app/views.py", "import requests\n");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain("requests in pyproject.toml");
+      expect(text).toContain(
+        "This project depends on django, which suss knows and has no pack for yet",
+      );
+    });
+
+    it("tells the guided form about a framework with no pack, beside the packs it found", async () => {
+      project(".", "web", ["react", "@trpc/server"]);
+      declineEverything(5);
+
+      await initInteractive({ dir });
+
+      expect(output()).toContain(
+        "This project depends on tRPC, which suss knows and has no pack for yet",
+      );
+    });
+  });
+
   it("says so plainly when nothing in the project names a pack", async () => {
     project(".", "empty", []);
 
@@ -317,8 +554,9 @@ describe("suss init, guided", () => {
 
       await initInteractive({ dir });
 
-      expect(output()).toContain("summaries/packages/api/code.json");
-      expect(output()).toContain("summaries/packages/web/code.json");
+      // One folder, because check reads only the files directly in it.
+      expect(output()).toContain("summaries/packages-api-code.json");
+      expect(output()).toContain("summaries/packages-web-code.json");
     });
 
     it("acts only on the packages picked", async () => {
@@ -435,22 +673,6 @@ describe("suss init, guided", () => {
   });
 
   describe("with --write", () => {
-    async function printedBy(run: () => Promise<number>): Promise<string> {
-      const written: string[] = [];
-      const spy = vi
-        .spyOn(process.stdout, "write")
-        .mockImplementation((chunk) => {
-          written.push(String(chunk));
-          return true;
-        });
-      try {
-        expect(await run()).toBe(0);
-      } finally {
-        spy.mockRestore();
-      }
-      return written.join("");
-    }
-
     function projectFile(): { read: Array<Record<string, unknown>> } {
       return JSON.parse(fs.readFileSync(path.join(dir, "suss.json"), "utf8"));
     }

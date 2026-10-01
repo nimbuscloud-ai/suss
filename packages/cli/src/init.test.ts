@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { formatInitReport, inspectProject } from "./init.js";
+import {
+  declaredPacks,
+  formatInitReport,
+  inspectProject,
+  readCommands,
+} from "./init.js";
 
 describe("inspectProject", () => {
   let dir: string;
@@ -85,6 +90,80 @@ describe("inspectProject", () => {
       .map((s) => s.name)
       .sort();
     expect(shipped).toEqual(["fetch", "node"]);
+  });
+
+  it("sets up a project whose only client is fetch, once a file calls it", async () => {
+    writeManifest({ name: "web" });
+    fs.mkdirSync(path.join(dir, "src", "lib"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "src", "lib", "orders.js"),
+      "export const load = () => window.fetch(`/api/orders`);\n",
+    );
+
+    const report = await inspectProject(dir);
+    expect(declaredPacks(report).map((s) => s.name)).toEqual(["fetch"]);
+    expect(report.suggestions.find((s) => s.name === "fetch")?.because).toBe(
+      `fetch is called in ${path.join("src", "lib", "orders.js")}`,
+    );
+    expect(formatInitReport(report)).toContain(
+      "suss extract -f fetch -f node -o summaries/code.json",
+    );
+  });
+
+  it("leaves out the packs the language ships when nothing calls them", async () => {
+    writeManifest({ name: "tooling" });
+    fs.writeFileSync(
+      path.join(dir, "build.ts"),
+      "const refetch = () => api.fetch('x');\nrefetch();\n",
+    );
+
+    const report = await inspectProject(dir);
+    expect(report.suggestions).toEqual([]);
+    expect(declaredPacks(report)).toEqual([]);
+  });
+
+  it("does not count a call a test makes", async () => {
+    writeManifest({ name: "tooling" });
+    fs.mkdirSync(path.join(dir, "e2e-tests"));
+    fs.writeFileSync(
+      path.join(dir, "e2e-tests", "login.ts"),
+      "await fetch('/login');\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "rules.test.mjs"),
+      "await fetch('/rules');\n",
+    );
+
+    expect(declaredPacks(await inspectProject(dir))).toEqual([]);
+  });
+
+  it("does not count a call inside a folder that is a project of its own", async () => {
+    writeManifest({ name: "root" });
+    fs.mkdirSync(path.join(dir, "web"));
+    fs.writeFileSync(path.join(dir, "web", "package.json"), "{}");
+    fs.writeFileSync(path.join(dir, "web", "api.ts"), "fetch('/orders');\n");
+
+    expect(declaredPacks(await inspectProject(dir))).toEqual([]);
+  });
+
+  it("finds an OpenAPI document named after the product by its version line", async () => {
+    writeManifest({});
+    fs.mkdirSync(path.join(dir, "api", "openapi"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "api", "openapi", "orders.yaml"),
+      "# The orders API.\n\nopenapi: 3.0.1\ninfo:\n  title: Orders\npaths: {}\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "api", "openapi", "settings.json"),
+      JSON.stringify({ spaces: 2 }),
+    );
+
+    const contracts = (await inspectProject(dir)).suggestions.filter(
+      (s) => s.kind === "contract",
+    );
+    expect(contracts.map((s) => s.file)).toEqual([
+      path.join("api", "openapi", "orders.yaml"),
+    ]);
   });
 
   it("names one pack once, however many things point at it", async () => {
@@ -228,6 +307,19 @@ describe("inspectProject", () => {
     expect(output).toContain("no pack for");
   });
 
+  it("names a framework it cannot read even when another pack matched", async () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "GEM\n  specs:\n    grape (2.0.0)\n    faraday (2.9.0)\n\nDEPENDENCIES\n  grape\n  faraday\n",
+    );
+    const report = await inspectProject(dir);
+    expect(declaredPacks(report).length).toBeGreaterThan(0);
+    expect(report.recognizedWithoutPack).toEqual(["grape"]);
+    expect(formatInitReport(report)).toContain(
+      "This project depends on grape, which suss knows and has no pack for yet",
+    );
+  });
+
   it("reports a manifest it could not read rather than saying nothing", async () => {
     fs.writeFileSync(
       path.join(dir, "setup.py"),
@@ -342,13 +434,109 @@ describe("formatInitReport", () => {
       ],
     });
 
+    // With Ruby beside it, a bare extract would read the directory as
+    // whichever language the manifest says, so the TypeScript one says so.
     expect(output).toContain(
-      "suss extract -f hono -o summaries/typescript.json",
+      "suss extract --lang typescript -f hono -o summaries/typescript.json",
     );
     expect(output).toContain(
       "suss extract --lang ruby -f graphql-ruby=suss.graphql-ruby.json",
     );
     expect(output).toContain('{"root":"app/graphql"}');
+  });
+
+  it("writes a folder's commands to run from where init ran, into one summaries folder", () => {
+    const commands = readCommands(
+      {
+        root: "/repo/services/api",
+        tsconfig: null,
+        languages: ["ruby"],
+        suggestions: [
+          {
+            name: "graphql-ruby",
+            packageName: "@suss/framework-graphql-ruby",
+            because: "graphql in Gemfile.lock",
+            kind: "framework",
+            language: "ruby",
+            configuration: {
+              file: "suss.graphql-ruby.json",
+              example: { root: "app/graphql" },
+              required: true,
+              why: "the directory your schema lives in.",
+            },
+          },
+          {
+            name: "openapi",
+            packageName: "@suss/contract-openapi",
+            because: "an OpenAPI document at openapi.yaml",
+            kind: "contract",
+            file: "openapi.yaml",
+          },
+        ],
+      },
+      "services/api",
+    );
+
+    expect(commands.map((command) => command.args.join(" "))).toEqual([
+      "extract --dir services/api --lang ruby -f graphql-ruby=services/api/suss.graphql-ruby.json -o summaries/services-api-code.json",
+      "contract --from openapi services/api/openapi.yaml -o summaries/services-api-openapi.json",
+    ]);
+    expect(commands[0]?.needsConfig).toEqual([
+      "services/api/suss.graphql-ruby.json",
+    ]);
+  });
+
+  it("lists a command's packs in the order the report groups them", () => {
+    const pack = (name: string, kind: "framework" | "client" | "effects") => ({
+      name,
+      packageName: `@suss/${name}`,
+      because: `${name} in dependencies`,
+      kind,
+      language: "typescript" as const,
+    });
+    const [extract] = readCommands({
+      root: "/project",
+      tsconfig: null,
+      suggestions: [
+        pack("prisma", "effects"),
+        pack("fetch", "client"),
+        pack("hono", "framework"),
+      ],
+    });
+
+    expect(extract?.args.join(" ")).toBe(
+      "extract -f hono -f fetch -f prisma -o summaries/code.json",
+    );
+  });
+
+  it("keeps an effects pack's warning to its own language", () => {
+    const output = formatInitReport({
+      root: "/project",
+      tsconfig: "/project/tsconfig.json",
+      languages: ["typescript", "python"],
+      suggestions: [
+        {
+          name: "react",
+          packageName: "@suss/framework-react",
+          because: "react in dependencies",
+          kind: "framework",
+          language: "typescript",
+        },
+        {
+          name: "sqlalchemy",
+          packageName: "@suss/framework-sqlalchemy",
+          because: "sqlalchemy in pyproject.toml",
+          kind: "effects",
+          language: "python",
+        },
+      ],
+    });
+
+    expect(output).toContain(
+      "suss extract --lang typescript -f react -o summaries/typescript.json",
+    );
+    expect(output).toContain("suss extract --lang python -f sqlalchemy ...");
+    expect(output).not.toContain("-f react -f sqlalchemy");
   });
 
   it("says what it could not read, so an empty answer is not mistaken for none", () => {

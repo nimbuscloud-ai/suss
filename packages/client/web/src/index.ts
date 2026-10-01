@@ -70,6 +70,7 @@ export const declares: PackDeclaration = {
   package: "@suss/client-web",
   dependencies: [],
   shippedWith: "typescript",
+  sourcePattern: /(?:^|[^.\w$]|\b(?:window|globalThis|self)\.)fetch\s*\(/m,
   reads: "Global \`fetch\` call sites.",
 };
 

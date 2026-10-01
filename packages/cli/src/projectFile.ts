@@ -24,7 +24,9 @@ export const PROJECT_FILE = "suss.json";
 export interface ExtractEntry {
   kind: "extract";
   language: string;
-  /** The tsconfig, for TypeScript. */
+  /** The folder to read, relative to the project root. Left out, the root. */
+  dir?: string;
+  /** The tsconfig, for TypeScript, relative to the project root. */
   project?: string;
   /** Pack names as `-f` takes them. */
   packs: string[];
@@ -95,8 +97,14 @@ export function projectFileFor(
   const extracts: ExtractEntry[] = [...byLanguage].map(([language, packs]) => ({
     kind: "extract",
     language,
+    ...(directory === "." ? {} : { dir: directory }),
     ...(language === "typescript" && report.tsconfig !== null
-      ? { project: path.relative(report.root, report.tsconfig) }
+      ? {
+          project: path.join(
+            directory,
+            path.relative(report.root, report.tsconfig),
+          ),
+        }
       : {}),
     packs,
   }));

@@ -61,6 +61,13 @@ export interface PackDeclaration {
    * Every project in that language is a candidate.
    */
   shippedWith?: "typescript" | "python" | "ruby";
+  /**
+   * Text in a source file that shows the project calls a library the
+   * language ships. No manifest can say that a project uses fetch, so
+   * `suss init` looks for a call before it sets up a project on the
+   * strength of this pack alone.
+   */
+  sourcePattern?: RegExp;
   /** The line the packages page shows, one sentence, what it reads. */
   reads: string;
   /** Set when the pack needs a value from the project to run at all. */

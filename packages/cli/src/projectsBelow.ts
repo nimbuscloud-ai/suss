@@ -50,7 +50,16 @@ export function isProjectIn(dir: string, language: Language): boolean {
 
 /** Paths of the markers below `root`, relative to it, in a stable order. */
 export function projectsBelow(root: string, language: Language): string[] {
-  const markers = MARKERS[language];
+  return filesBelow(root, MARKERS[language]);
+}
+
+/**
+ * Paths below `root` of the first of `markers` in each directory that has
+ * one, relative to `root`. The walk does not go into a directory it found
+ * a marker in, or into a hidden one such as `.github`, whose projects are
+ * tooling rather than the user's services.
+ */
+export function filesBelow(root: string, markers: readonly string[]): string[] {
   const found: string[] = [];
   const walk = (dir: string, depth: number): void => {
     if (depth > MAX_DEPTH) {
@@ -65,7 +74,11 @@ export function projectsBelow(root: string, language: Language): string[] {
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || SKIPPED.has(entry.name)) {
+      if (
+        !entry.isDirectory() ||
+        SKIPPED.has(entry.name) ||
+        entry.name.startsWith(".")
+      ) {
         continue;
       }
 
