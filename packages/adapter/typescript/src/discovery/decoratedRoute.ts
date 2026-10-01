@@ -25,7 +25,7 @@ import {
   propertyOf,
   stringValueOf,
 } from "./resolveValue.js";
-import { routeVersionsReader } from "./routeVersioning.js";
+import { routeVersionSegments, routeVersionsIn } from "./routeVersioning.js";
 
 import type {
   ChannelSource,
@@ -191,16 +191,16 @@ function libraryConstantOf(
   return null;
 }
 
+/** What every route in one file needs to read the statuses its decorators declare. */
 interface DeclaredStatuses {
-  on(cls: ClassDeclaration, routeDecorator: Node): number[];
+  declared: DeclaredStatusDecorators;
+  /** The decorators this file imports, by local name, to the name the pack lists. */
+  locals: ReadonlyMap<string, string>;
+  constants: LibraryConstants;
+  resolution: ResolutionStore | undefined;
 }
 
-/**
- * The statuses a route's decorators list, on its method and on its
- * class, read through the decorators this file imports under any local
- * name. A status that does not settle to a number is left out.
- */
-function declaredStatusesReader(
+function declaredStatusesIn(
   sourceFile: SourceFile,
   declared: DeclaredStatusDecorators,
   constants: LibraryConstants,
@@ -211,31 +211,49 @@ function declaredStatusesReader(
     [declared.importModule].flat(),
     Object.keys(declared.decorators),
   );
-  const statusesOf = (decorated: ClassDeclaration | MethodDeclaration) =>
-    [...locals].flatMap(([local, name]) =>
-      decorated.getDecorators().flatMap((decorator) => {
-        if (decorator.getName() !== local) {
-          return [];
-        }
-        const status =
-          declared.decorators[name] ??
-          statusInOptions(decorator, declared.statusKey, constants, resolution);
-        return status === null || status === undefined ? [] : [status];
-      }),
-    );
-  return {
-    on(cls, routeDecorator) {
-      if (locals.size === 0) {
-        return [];
-      }
-      const member = routeDecorator.getParent();
-      const own =
-        member !== undefined && Node.isMethodDeclaration(member)
-          ? statusesOf(member)
-          : [];
-      return [...new Set([...statusesOf(cls), ...own])].sort((a, b) => a - b);
-    },
-  };
+  return { declared, locals, constants, resolution };
+}
+
+/**
+ * The statuses a route's decorators list, on its method and on its
+ * class. A status that does not settle to a number is left out.
+ */
+function routeDeclaredStatuses(
+  statuses: DeclaredStatuses,
+  cls: ClassDeclaration,
+  routeDecorator: Node,
+): number[] {
+  if (statuses.locals.size === 0) {
+    return [];
+  }
+  const member = routeDecorator.getParent();
+  const own =
+    member !== undefined && Node.isMethodDeclaration(member)
+      ? statusesDecoratedOn(member, statuses)
+      : [];
+  return [...new Set([...statusesDecoratedOn(cls, statuses), ...own])].sort(
+    (a, b) => a - b,
+  );
+}
+
+function statusesDecoratedOn(
+  decorated: ClassDeclaration | MethodDeclaration,
+  { declared, locals, constants, resolution }: DeclaredStatuses,
+): number[] {
+  const found: number[] = [];
+  for (const decorator of decorated.getDecorators()) {
+    const name = locals.get(decorator.getName());
+    if (name === undefined) {
+      continue;
+    }
+    const status =
+      declared.decorators[name] ??
+      statusInOptions(decorator, declared.statusKey, constants, resolution);
+    if (status !== null && status !== undefined) {
+      found.push(status);
+    }
+  }
+  return found;
 }
 
 function statusInOptions(
@@ -295,7 +313,7 @@ export function discoverDecoratedRoutes(
   const versions =
     match.versioning === undefined
       ? null
-      : routeVersionsReader(
+      : routeVersionsIn(
           sourceFile,
           match.versioning,
           acceptedModules,
@@ -305,7 +323,7 @@ export function discoverDecoratedRoutes(
   const declaredStatuses =
     match.declaredStatuses === undefined
       ? null
-      : declaredStatusesReader(
+      : declaredStatusesIn(
           sourceFile,
           match.declaredStatuses,
           {
@@ -366,7 +384,11 @@ export function discoverDecoratedRoutes(
       const declared =
         declaredStatuses === null
           ? []
-          : declaredStatuses.on(cls as ClassDeclaration, handler.decorator);
+          : routeDeclaredStatuses(
+              declaredStatuses,
+              cls as ClassDeclaration,
+              handler.decorator,
+            );
       const unit = {
         func: handler.func,
         kind,
@@ -388,7 +410,7 @@ export function discoverDecoratedRoutes(
       const segments =
         versions === null
           ? [null]
-          : versions.segmentsFor(marker.args, handler.decorator);
+          : routeVersionSegments(versions, marker.args, handler.decorator);
       if (segments === null) {
         results.push({
           ...unit,

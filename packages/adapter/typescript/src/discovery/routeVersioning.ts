@@ -290,43 +290,54 @@ export function classVersionOf(
     : statedVersionOf(stated, versioning, modules, resolution);
 }
 
-/** The version segments each route in one file is served under. */
+/** What every route in one file needs to read the versions it serves. */
 export interface RouteVersions {
-  segmentsFor(
-    classArgs: readonly Node[],
-    routeDecorator: Node,
-  ): ReadonlyArray<string | null> | null;
+  app: AppVersioning;
+  decorators: readonly string[];
+  versioning: RouteVersioning;
+  modules: string[];
+  resolution: ResolutionStore | undefined;
 }
 
-export function routeVersionsReader(
+export function routeVersionsIn(
   sourceFile: SourceFile,
   versioning: RouteVersioning,
   modules: string[],
   resolution: ResolutionStore | undefined,
   index: MountPrefixIndex | undefined,
 ): RouteVersions {
-  const app = versioningOf(index, routeVersioningKey(versioning));
-  const decorators = [
-    ...importedDecoratorLocals(sourceFile, modules, [
-      versioning.decorator,
-    ]).keys(),
-  ];
   return {
-    segmentsFor(classArgs, routeDecorator) {
-      if (app.kind === "off") {
-        return [null];
-      }
-      const stated =
-        methodVersionOf(
-          routeDecorator,
-          decorators,
-          versioning,
-          modules,
-          resolution,
-        ) ?? classVersionOf(classArgs, versioning, modules, resolution);
-      return versionSegmentsOf(app, stated);
-    },
+    app: versioningOf(index, routeVersioningKey(versioning)),
+    decorators: [
+      ...importedDecoratorLocals(sourceFile, modules, [
+        versioning.decorator,
+      ]).keys(),
+    ],
+    versioning,
+    modules,
+    resolution,
   };
+}
+
+/** The version segments one route is served under, from `versionSegmentsOf`. */
+export function routeVersionSegments(
+  versions: RouteVersions,
+  classArgs: readonly Node[],
+  routeDecorator: Node,
+): ReadonlyArray<string | null> | null {
+  const { app, decorators, versioning, modules, resolution } = versions;
+  if (app.kind === "off") {
+    return [null];
+  }
+  const stated =
+    methodVersionOf(
+      routeDecorator,
+      decorators,
+      versioning,
+      modules,
+      resolution,
+    ) ?? classVersionOf(classArgs, versioning, modules, resolution);
+  return versionSegmentsOf(app, stated);
 }
 
 /** What the version decorator on the route's own method states, when it has one. */
