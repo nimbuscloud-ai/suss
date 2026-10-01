@@ -311,6 +311,29 @@ end
 
     expect(filters).toEqual([]);
   });
+
+  it("keeps a filter a base class defines when the controller includes a module this run did not read", async () => {
+    const filters = await filtersOf(`
+class ApplicationController < ActionController::Base
+  before_action :require_login
+
+  def require_login
+    head :unauthorized
+  end
+end
+
+class OrdersController < ApplicationController
+  include Sortable::FromGem
+
+  def show
+  end
+end
+`);
+
+    expect(filters.map((filter) => filter.enclosingQualifiedName)).toEqual([
+      "ApplicationController",
+    ]);
+  });
 });
 
 describe("the unit a filter method gets", () => {
