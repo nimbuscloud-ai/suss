@@ -27,6 +27,12 @@ export const optionsSchema = z
 
 export type NestjsRestPackOptions = z.infer<typeof optionsSchema>;
 
+const NEST_APPLICATION = {
+  importModule: "@nestjs/core",
+  importName: "NestFactory",
+  factory: "create",
+};
+
 // The numbers `RequestMethod` in `@nestjs/common` gives each verb.
 const REQUEST_METHODS: Record<number, string> = {
   0: "GET",
@@ -98,11 +104,7 @@ export function nestjsRestFramework(
           statusCodeConstants: HTTP_STATUS_CONSTANTS,
           globalPrefix: {
             method: "setGlobalPrefix",
-            application: {
-              importModule: "@nestjs/core",
-              importName: "NestFactory",
-              factory: "create",
-            },
+            application: NEST_APPLICATION,
             // An exclusion is a path, or a `RouteInfo` whose method is a
             // member of Nest's `RequestMethod` enum.
             exclude: {
@@ -111,6 +113,30 @@ export function nestjsRestFramework(
               methodKey: "method",
               methods: REQUEST_METHODS,
             },
+          },
+          // `app.enableVersioning()` with no options is URI versioning,
+          // which serves version 1 of a route at `/v1/...`.
+          versioning: {
+            option: "version",
+            decorator: "Version",
+            neutral: "VERSION_NEUTRAL",
+            call: { method: "enableVersioning", application: NEST_APPLICATION },
+            typeKey: "type",
+            types: {
+              "VersioningType.URI": "path",
+              "VersioningType.HEADER": "outsidePath",
+              "VersioningType.MEDIA_TYPE": "outsidePath",
+              "VersioningType.CUSTOM": "outsidePath",
+            },
+            typeNumbers: {
+              0: "path",
+              1: "outsidePath",
+              2: "outsidePath",
+              3: "outsidePath",
+            },
+            defaultType: "path",
+            pathPrefix: { key: "prefix", default: "v" },
+            defaultVersionKey: "defaultVersion",
           },
         },
         requiresImport: ["@nestjs/common"],

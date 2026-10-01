@@ -296,6 +296,12 @@ export type DiscoveryMatch =
        * application serves, NestJS's `app.setGlobalPrefix("api")`.
        */
       globalPrefix?: GlobalPrefixCall;
+      /**
+       * How a route states an API version and how the application serves
+       * one, NestJS's `@Controller({ version })` with
+       * `app.enableVersioning()`.
+       */
+      versioning?: RouteVersioning;
     }
   | {
       /**
@@ -708,6 +714,49 @@ export interface GlobalPrefixCall {
     methodKey: string;
     methods: Record<number, string>;
   };
+}
+
+/**
+ * Where an application puts the version a route serves. `path` puts it
+ * in the URL as a segment. `outsidePath` reads it from somewhere else
+ * in the request, such as a header, so every version of a route shares
+ * one path.
+ */
+export type VersionPlacement = "path" | "outsidePath";
+
+/**
+ * API versions on decorated routes. A route serves the versions its own
+ * method decorator states, or else the ones its class decorator's
+ * options state, or else the application's default. The application
+ * ignores every version until a call on it turns versioning on.
+ */
+export interface RouteVersioning {
+  /** The key in the class decorator's options object, NestJS's `version`. */
+  option: string;
+  /** A method decorator imported from `importModule` that sets one route's version, NestJS's `Version`. */
+  decorator: string;
+  /** The export from `importModule` that means every version, NestJS's `VERSION_NEUTRAL`. */
+  neutral: string;
+  /** The call on the application that turns versioning on, NestJS's `enableVersioning`. */
+  call: Pick<GlobalPrefixCall, "method" | "application">;
+  /** The key in the call's options that says the placement. */
+  typeKey: string;
+  /**
+   * The placement each of the library's constants means, by the path of
+   * the export (`VersioningType.URI`), and by the number the constant is
+   * equal to when the library is installed.
+   */
+  types: Readonly<Record<string, VersionPlacement>>;
+  typeNumbers: Readonly<Record<number, VersionPlacement>>;
+  /** The placement when the call takes no options at all. */
+  defaultType: VersionPlacement;
+  /**
+   * The key for the text put before a version in the path, and the text
+   * when the options leave it out. `false` there means no text at all.
+   */
+  pathPrefix: { key: string; default: string };
+  /** The key for the versions a route that states none serves. */
+  defaultVersionKey: string;
 }
 
 /** A wrapper handed to the routable's constructor as an option. */
