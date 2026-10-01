@@ -37,12 +37,7 @@ export function clientBasePath(
   if (match?.type !== "clientCall" || match.basePathOption === undefined) {
     return undefined;
   }
-  const receiver = receiverOf(call);
-  if (receiver === null) {
-    return undefined;
-  }
-  const construction = clientConstructionCall(receiver, match, resolution);
-  const config = construction?.getArguments()[0];
+  const config = clientConstructionConfig(call, match, resolution);
   if (config === undefined) {
     return undefined;
   }
@@ -73,6 +68,26 @@ export function underBasePath(
     return path;
   }
   return path.startsWith("/") ? `${prefix}${path}` : `${prefix}/${path}`;
+}
+
+/**
+ * The config object the instance behind this call was built with, as in
+ * `axios.create({ baseURL })`, or undefined when the call is made on the
+ * import itself or nothing built the receiver.
+ */
+export function clientConstructionConfig(
+  call: CallExpression,
+  match: DiscoveryPattern["match"] | undefined,
+  resolution: ResolutionStore | undefined,
+): Node | undefined {
+  if (match?.type !== "clientCall") {
+    return undefined;
+  }
+  const receiver = receiverOf(call);
+  if (receiver === null) {
+    return undefined;
+  }
+  return clientConstructionCall(receiver, match, resolution)?.getArguments()[0];
 }
 
 /** The object a client call is made on: `api` in `api.get(...)`, `api(...)`. */

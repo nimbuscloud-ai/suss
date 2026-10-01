@@ -579,6 +579,12 @@ export type BindingExtraction = {
       }
     | { type: "fromContract" }
     | { type: "fromClientMethod" };
+  /**
+   * Which argument is the request's options object, for a call that
+   * takes one: fetch's second argument, the config axios takes after the
+   * URL or after the body. The pack's `redirectOption` is read off it.
+   */
+  options?: { position: number };
 };
 
 /**
@@ -1030,6 +1036,17 @@ export type FailureDelivery = "response" | "exception";
 /** Whether the client follows a redirect itself or hands the 3xx to the caller. */
 export type RedirectDelivery = "followed" | "response";
 
+/**
+ * The request option that decides, for one call, whether the client
+ * follows a redirect: `redirect` for fetch, `maxRedirects` for axios,
+ * `allow_redirects` for requests. A call that sets it to one of
+ * `handsBack` gets the 3xx, and any other value it settles on follows.
+ */
+export interface RedirectOption {
+  name: string;
+  handsBack: ReadonlyArray<string | number | boolean>;
+}
+
 export interface ResponsePropertyMapping {
   /** Property or method name on the response (e.g. "ok", "status", "json") */
   name: string;
@@ -1166,6 +1183,8 @@ export interface PatternPack {
    * `"response"`.
    */
   redirectDelivery?: RedirectDelivery;
+  /** The option one call sets to change `redirectDelivery` for itself. */
+  redirectOption?: RedirectOption;
   /**
    * Build extra code units from a parent unit's body, for callbacks the
    * runtime schedules that are not top-level declarations: React event

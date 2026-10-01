@@ -183,6 +183,7 @@ import {
   expandReachableClosure,
   recognizerOnlyRoots,
 } from "./resolve/reachableClosure.js";
+import { redirectDeliveryAtCall } from "./resolve/redirectDelivery.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { pathFromArgument, pathFromProperty } from "./resolve/routePath.js";
 import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
@@ -1519,6 +1520,15 @@ function extractFromSourceFile(
           pack,
           resolution,
         );
+        const redirect = redirectDeliveryAtCall(
+          unit.callSite,
+          matchedPattern,
+          pack,
+          resolution,
+        );
+        if (redirect !== undefined) {
+          raw.redirectDelivery = redirect;
+        }
         if (binding !== null) {
           raw.boundaryBinding = binding;
           // The summary already records the crossing, so a call whose

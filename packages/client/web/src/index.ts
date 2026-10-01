@@ -23,6 +23,7 @@ export function webFetchPack(): PatternPack {
             default: "GET",
           },
           path: { type: "fromArgument", position: 0 },
+          options: { position: 1 },
         },
         // `fetch` is a global, so there is no import to gate on. Walking
         // every file stays cheap because discovery only looks for calls
@@ -62,9 +63,11 @@ export function webFetchPack(): PatternPack {
       { name: "headers", access: "property", semantics: { type: "headers" } },
     ],
 
-    // fetch follows 301, 302, 303, 307 and 308 unless the call passes
-    // `redirect: "manual"`, so the caller sees the final response.
+    // fetch follows 301, 302, 303, 307 and 308, so the caller sees the
+    // final response, unless the call passes `redirect: "manual"` or
+    // `redirect: "error"`.
     redirectDelivery: "followed",
+    redirectOption: { name: "redirect", handsBack: ["manual", "error"] },
   };
 }
 

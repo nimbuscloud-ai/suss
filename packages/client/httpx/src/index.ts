@@ -49,6 +49,7 @@ export function httpxClient(): PythonPack {
           // httpx hands a 3xx back unless the call passes
           // `follow_redirects=True`.
           redirectDelivery: "response",
+          redirectOption: { name: "follow_redirects", handsBack: [false] },
         },
       },
     ],
