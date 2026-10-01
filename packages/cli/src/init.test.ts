@@ -11,6 +11,17 @@ import {
   readCommands,
 } from "./init.js";
 
+/** Contract files each reader gives a summary for, since init asks the reader before it suggests one. */
+const TEMPLATE =
+  "Resources:\n  Orders:\n    Type: AWS::DynamoDB::Table\n    Properties:\n      TableName: orders\n";
+const OPENAPI_PATHS =
+  "paths:\n  /orders:\n    get:\n      responses:\n        '200':\n          description: ok\n";
+const STORY = [
+  "import { Button } from './Button';",
+  "export default { component: Button };",
+  "export const Primary = { args: { label: 'Save' } };",
+].join("\n");
+
 describe("inspectProject", () => {
   let dir: string;
 
@@ -51,7 +62,10 @@ describe("inspectProject", () => {
     writeManifest({});
     fs.writeFileSync(
       path.join(dir, "swagger.json"),
-      JSON.stringify({ swagger: "2.0", paths: {} }),
+      JSON.stringify({
+        swagger: "2.0",
+        paths: { "/orders": { get: { responses: { "200": {} } } } },
+      }),
     );
     expect(await names(dir)).toContain("openapi");
   });
@@ -75,7 +89,7 @@ describe("inspectProject", () => {
 
   it("finds a contract source on disk", async () => {
     writeManifest({ dependencies: {} });
-    fs.writeFileSync(path.join(dir, "template.yaml"), "Resources: {}\n");
+    fs.writeFileSync(path.join(dir, "template.yaml"), TEMPLATE);
     const report = await inspectProject(dir);
     expect(await names(dir)).toEqual(["cloudformation"]);
     const contract = report.suggestions.find((s) => s.kind === "contract");
@@ -151,7 +165,7 @@ describe("inspectProject", () => {
     fs.mkdirSync(path.join(dir, "api", "openapi"), { recursive: true });
     fs.writeFileSync(
       path.join(dir, "api", "openapi", "orders.yaml"),
-      "# The orders API.\n\nopenapi: 3.0.1\ninfo:\n  title: Orders\npaths: {}\n",
+      `# The orders API.\n\nopenapi: 3.0.1\ninfo:\n  title: Orders\n${OPENAPI_PATHS}`,
     );
     fs.writeFileSync(
       path.join(dir, "api", "openapi", "settings.json"),
@@ -188,7 +202,7 @@ describe("inspectProject", () => {
     const nested = path.join(dir, "services", "other");
     fs.mkdirSync(nested, { recursive: true });
     fs.writeFileSync(path.join(nested, "package.json"), "{}");
-    fs.writeFileSync(path.join(nested, "template.yaml"), "Resources: {}\n");
+    fs.writeFileSync(path.join(nested, "template.yaml"), TEMPLATE);
 
     expect(await names(dir)).toEqual([]);
   });
@@ -197,7 +211,7 @@ describe("inspectProject", () => {
     writeManifest({ dependencies: {} });
     const nested = path.join(dir, "infra");
     fs.mkdirSync(nested, { recursive: true });
-    fs.writeFileSync(path.join(nested, "template.yaml"), "Resources: {}\n");
+    fs.writeFileSync(path.join(nested, "template.yaml"), TEMPLATE);
 
     expect(await names(dir)).toEqual(["cloudformation"]);
   });
@@ -584,14 +598,8 @@ describe("a project with more than one contract file", () => {
     fs.writeFileSync(path.join(dir, "package.json"), "{}");
     fs.mkdirSync(path.join(dir, "orders"));
     fs.mkdirSync(path.join(dir, "billing"));
-    fs.writeFileSync(
-      path.join(dir, "orders", "template.yaml"),
-      "Resources: {}\n",
-    );
-    fs.writeFileSync(
-      path.join(dir, "billing", "template.yaml"),
-      "Resources: {}\n",
-    );
+    fs.writeFileSync(path.join(dir, "orders", "template.yaml"), TEMPLATE);
+    fs.writeFileSync(path.join(dir, "billing", "template.yaml"), TEMPLATE);
 
     const report = await inspectProject(dir);
     const files = report.suggestions
@@ -661,10 +669,7 @@ describe("a reader that walks a directory", () => {
     for (const component of ["Button", "Chip", "Table"]) {
       const under = path.join(dir, "src", "components", component);
       fs.mkdirSync(under, { recursive: true });
-      fs.writeFileSync(
-        path.join(under, `${component}.stories.tsx`),
-        "export default { title: 'x' };\n",
-      );
+      fs.writeFileSync(path.join(under, `${component}.stories.tsx`), STORY);
     }
 
     const report = await inspectProject(dir);
@@ -673,6 +678,42 @@ describe("a reader that walks a directory", () => {
     expect(stories.map((s) => s.file)).toEqual([
       path.join("src", "components"),
     ]);
+  });
+
+  it("prints no command for stories the reader finds nothing in, and says why", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.mkdirSync(path.join(dir, "src", "__stories__"), { recursive: true });
+    // A story that renders through a setup function has no component.
+    fs.writeFileSync(
+      path.join(dir, "src", "__stories__", "App.stories.ts"),
+      "export default { title: 'Chat', render: () => ({}) };\nexport const Full = { args: {} };\n",
+    );
+
+    const report = await inspectProject(dir);
+    const printed = formatInitReport(report);
+
+    expect(report.suggestions.filter((s) => s.kind === "contract")).toEqual([]);
+    expect(report.emptyContracts).toEqual([
+      {
+        name: "storybook",
+        because: `Storybook stories under ${path.join("src", "__stories__")}`,
+        reason: "the storybook reader found nothing it reads there",
+      },
+    ]);
+    expect(printed).not.toContain("suss contract");
+    expect(printed).toContain("Contracts with nothing to read");
+  });
+
+  it("says why it prints no command for a contract its reader cannot parse", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.writeFileSync(path.join(dir, "openapi.json"), "{ not json");
+
+    const report = await inspectProject(dir);
+
+    expect(report.suggestions.filter((s) => s.kind === "contract")).toEqual([]);
+    expect(report.emptyContracts?.[0]?.reason).toMatch(
+      /^the openapi reader could not read it: /,
+    );
   });
 
   it("gives two files read by one reader their own output", async () => {

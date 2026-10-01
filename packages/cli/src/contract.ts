@@ -42,6 +42,8 @@ export interface ContractOptions {
   codeScopes?: Record<string, string>;
 }
 
+export type ContractReadOptions = Omit<ContractOptions, "output">;
+
 /**
  * `source` is the label recorded on every summary, and the CLI sets it
  * only for a spec fetched from a URL. For a file on disk the reader labels
@@ -51,7 +53,7 @@ export interface ContractOptions {
 type ContractLoader = (
   specPath: string,
   source: string | undefined,
-  options: ContractOptions,
+  options: ContractReadOptions,
 ) => Promise<BehavioralSummary[]>;
 
 const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
@@ -192,6 +194,27 @@ async function resolveSpec(
 export async function contract(
   options: ContractOptions,
 ): Promise<BehavioralSummary[]> {
+  const summaries = await readContract(options);
+
+  if (options.output !== undefined) {
+    const outPath = path.resolve(options.output);
+    await writeJson({ value: summaries, indent: 2, file: outPath });
+    process.stderr.write(
+      summaries.length === 0
+        ? `${options.spec} declares no boundaries suss could read.\n`
+        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
+    );
+  } else {
+    await writeJson({ value: summaries, indent: 2 });
+  }
+
+  return summaries;
+}
+
+/** The summaries the reader for `options.from` gives, without writing them anywhere. */
+export async function readContract(
+  options: ContractReadOptions,
+): Promise<BehavioralSummary[]> {
   const loader = CONTRACT_LOADERS[options.from];
   if (loader === undefined) {
     throw new Error(
@@ -212,18 +235,5 @@ export async function contract(
   } finally {
     resolved.cleanup?.();
   }
-
-  if (options.output !== undefined) {
-    const outPath = path.resolve(options.output);
-    await writeJson({ value: summaries, indent: 2, file: outPath });
-    process.stderr.write(
-      summaries.length === 0
-        ? `${options.spec} declares no boundaries suss could read.\n`
-        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
-    );
-  } else {
-    await writeJson({ value: summaries, indent: 2 });
-  }
-
   return summaries;
 }
