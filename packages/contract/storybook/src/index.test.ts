@@ -159,6 +159,28 @@ describe("the module a story's component comes from", () => {
     expect(story?.componentImport).toBeUndefined();
   });
 
+  it("records no module for a component reached through a namespace member", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Icons.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "Icons.Star.Default",
+    ]);
+    const story = readStorybookMetadata(summaries[0] as BehavioralSummary);
+    expect(story?.componentModule).toBeUndefined();
+    expect(story?.componentImport).toBeUndefined();
+    expect(story?.args).toEqual({ size: "sm" });
+  });
+
+  it("names an anonymous default export by the story's spelling", () => {
+    expect(storybookOf("src/Divider.stories.tsx")?.componentModule).toEqual({
+      workspace: "ui-kit",
+      file: "src/divider.tsx",
+      name: "Divider",
+    });
+  });
+
   it("records no module when the import does not lead to a file", () => {
     const story = storybookOf("src/Missing.stories.tsx");
     expect(story?.component).toBe("Badge");
