@@ -175,24 +175,42 @@ export function shapeFromName(
   if (DICT_NAMES.has(name)) {
     return { type: "dictionary", values: { type: "unknown" } };
   }
-  const binding = resolveName(scope, name);
-  if (binding?.kind === "classDef") {
-    return recordShapeRef(name, binding.node, ctx);
-  }
-  if (binding?.kind === "import" || binding?.kind === "importFrom") {
-    const imported = ctx.importedDefinition?.(scope, name) ?? null;
-    if (imported?.node.type === "class_definition") {
-      if (!ctx.scopeMaps.includes(imported.scopeFor)) {
-        ctx.scopeMaps.push(imported.scopeFor);
-      }
-      return recordShapeRef(name, imported.node, ctx);
-    }
+  const classNode = projectClassNamed(name, scope, ctx);
+  if (classNode !== null) {
+    return recordShapeRef(name, classNode, ctx);
   }
   const alias = aliasValueOf(name, scope, ctx);
   if (alias !== null) {
     return shapeFromAliasValue(name, alias, ctx);
   }
   return { type: "ref", name };
+}
+
+/**
+ * The class a name is bound to when the project defines it, in this file
+ * or an imported one. An imported class's file adds its scopes, so names
+ * inside its body resolve too.
+ */
+function projectClassNamed(
+  name: string,
+  scope: Scope,
+  ctx: AnnotationContext,
+): PyNode | null {
+  const binding = resolveName(scope, name);
+  if (binding?.kind === "classDef") {
+    return binding.node;
+  }
+  if (binding?.kind !== "import" && binding?.kind !== "importFrom") {
+    return null;
+  }
+  const imported = ctx.importedDefinition?.(scope, name) ?? null;
+  if (imported?.node.type !== "class_definition") {
+    return null;
+  }
+  if (!ctx.scopeMaps.includes(imported.scopeFor)) {
+    ctx.scopeMaps.push(imported.scopeFor);
+  }
+  return imported.node;
 }
 
 /** `SessionDep = Annotated[Session, ...]` gives a parameter the shape `Session` has; any other value is read as an expression. */
@@ -369,15 +387,55 @@ function recordShapeRef(
   // itself finds its own key already there and stops instead of recursing
   // forever.
   ctx.definitions.set(key, null);
+  ctx.definitions.set(key, {
+    type: "record",
+    properties: classFields(classNode, ctx, new Set()),
+  });
+  return ref;
+}
+
+/**
+ * The fields a class declares, after the ones each project base class
+ * declares, since a Pydantic model or a dataclass has its bases' fields
+ * too. A later declaration of a name wins, as it does at runtime.
+ */
+function classFields(
+  classNode: PyNode,
+  ctx: AnnotationContext,
+  visiting: Set<number>,
+): Record<string, TypeShape> {
   const bodyNode = field(classNode, "body");
   const classScope = scopeOfNode(ctx, classNode);
-  ctx.definitions.set(
-    key,
-    bodyNode !== null && classScope !== undefined
-      ? recordShapeOf(bodyNode, classScope, ctx)
-      : { type: "record", properties: {} },
+  if (
+    bodyNode === null ||
+    classScope === undefined ||
+    visiting.has(classNode.id)
+  ) {
+    return {};
+  }
+  visiting.add(classNode.id);
+  const inherited = baseClassNames(classNode).flatMap((name) => {
+    const base = projectClassNamed(name, classScope, ctx);
+    return base === null ? [] : [classFields(base, ctx, visiting)];
+  });
+  const own = recordShapeOf(bodyNode, classScope, ctx);
+  return Object.assign(
+    {},
+    ...inherited.reverse(),
+    own.type === "record" ? own.properties : {},
   );
-  return ref;
+}
+
+/**
+ * The bases a class statement lists by a plain name, first to last. A
+ * keyword such as `metaclass=` and a generic such as `Generic[T]` give
+ * no fields.
+ */
+function baseClassNames(classNode: PyNode): string[] {
+  const superclasses = field(classNode, "superclasses");
+  return (superclasses?.namedChildren ?? []).flatMap((child) =>
+    child !== null && child.type === "identifier" ? [child.text] : [],
+  );
 }
 
 /** Only annotated assignments become fields, which is also all Pydantic counts as model fields. */
@@ -400,6 +458,10 @@ export function recordShapeOf(
     const left = field(assignment, "left");
     const typeNode = field(assignment, "type");
     if (left === null || left.type !== "identifier" || typeNode === null) {
+      continue;
+    }
+    // A `ClassVar` belongs to the class, and no instance serializes it.
+    if (typeNameOf(typeNode) === "ClassVar") {
       continue;
     }
     properties[left.text] = annotationToShape(typeNode, classScope, ctx);

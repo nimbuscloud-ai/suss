@@ -48,7 +48,7 @@ Both options make the effects this pack records pair with the schema reader. Pas
 }
 ```
 
-- `storageSystem`: the storage system the matched calls target, one of `"postgresql"`, `"mysql"` or `"sqlite"`. It has to match the `storageSystem` on the schema reader's provider summaries, or the pairing keys will not match. The default is `"postgresql"`, since most Prisma projects run on Postgres.
+- `storageSystem`: the storage system the matched calls target, one of `"postgresql"`, `"mysql"` or `"sqlite"`. It has to match the `storageSystem` on the schema reader's provider summaries, or the pairing keys will not match. When it is unset, the pack reads the `provider` of the datasource in the calling file's project schema, found where Prisma looks for it, so an example app on SQLite and a main app on Postgres in one repo stay apart. A project with no schema to read gets `"postgresql"`, since most Prisma projects run on Postgres.
 - `scope`: the scope label, which has to match the schema reader's scope. The default is `"default"`, to line up with `prismaSchemaToSummaries`.
 
 ## Not covered yet

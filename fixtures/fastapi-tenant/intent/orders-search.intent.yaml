@@ -20,3 +20,7 @@ transitions:
       - reads: postgresql:Order
         by: [tenant_id]
         from: { tenant_id: input.headers.x-tenant-id }
+  - id: invalid
+    when: the body or a header does not validate
+    response:
+      status: 422

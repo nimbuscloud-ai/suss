@@ -97,6 +97,32 @@ function recognizeAll(
   return effects;
 }
 
+/** What the pack's access recognizers, the raw SQL ones, find in a file. */
+function accessEffectsIn(sourceFile: SourceFile): Effect[] {
+  const recognizers = prismaFramework().accessRecognizers ?? [];
+  const effects: Effect[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (
+      !Node.isCallExpression(node) &&
+      !Node.isTaggedTemplateExpression(node)
+    ) {
+      return;
+    }
+    for (const recognizer of recognizers) {
+      const emitted = recognizer(node, {
+        access: node,
+        sourceFile,
+        resolveWrittenValue: () => null,
+        ops: callOpsFor(node),
+      });
+      if (emitted !== null) {
+        effects.push(...emitted);
+      }
+    }
+  });
+  return effects;
+}
+
 /**
  * A small EffectArg builder, mirroring the adapter's extractArg closely enough
  * for what the recognizer needs: object literals, property access, identifiers,
@@ -935,31 +961,103 @@ describe("a client a generator wrote into the project", () => {
   });
 });
 
+describe("the storage system a project's schema declares", () => {
+  let root: string;
+
+  const CLIENT_TYPES = `
+    export interface AccountDelegate {
+      findUnique(args: { where: { id?: number }; select?: Record<string, boolean> }): Promise<unknown>;
+    }
+    export declare class PrismaClient {
+      readonly account: AccountDelegate;
+      $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
+    }`;
+
+  const CALLER = `
+    import { PrismaClient } from "@prisma/client";
+    const db = new PrismaClient();
+    export const read = () => db.account.findUnique({ where: { id: 1 }, select: { id: true } });
+    export const raw = () => db.$queryRaw\`SELECT id FROM accounts\`;`;
+
+  function writeProject(dir: string, schema: string | null): void {
+    fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+    fs.mkdirSync(path.join(dir, "node_modules/@prisma/client"), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.writeFileSync(
+      path.join(dir, "node_modules/@prisma/client/index.d.ts"),
+      CLIENT_TYPES,
+    );
+    fs.writeFileSync(path.join(dir, "src/api.ts"), CALLER);
+    if (schema !== null) {
+      fs.mkdirSync(path.join(dir, "prisma"), { recursive: true });
+      fs.writeFileSync(path.join(dir, "prisma/schema.prisma"), schema);
+    }
+  }
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prisma-datasource-"));
+    writeProject(
+      path.join(root, "example"),
+      `datasource db {
+         provider = "sqlite"
+         url      = "file:./dev.db"
+       }
+       model Account {
+         id Int @id
+       }`,
+    );
+    writeProject(path.join(root, "unschemed"), null);
+
+    // A schema folder that package.json points at, with a subfolder whose
+    // name ends in .prisma beside the file that has the datasource.
+    const split = path.join(root, "split");
+    writeProject(split, null);
+    fs.writeFileSync(
+      path.join(split, "package.json"),
+      JSON.stringify({ prisma: { schema: "db" } }),
+    );
+    fs.mkdirSync(path.join(split, "db/archive.prisma"), { recursive: true });
+    fs.writeFileSync(
+      path.join(split, "db/main.prisma"),
+      `datasource db {\n  provider = "mysql"\n}`,
+    );
+  });
+
+  function systemsIn(project: string): (string | null)[] {
+    const fixture = createFixtureProject(path.join(root, project), "src/*.ts");
+    const sourceFile = fixture.getSourceFileOrThrow(
+      path.join(root, project, "src/api.ts"),
+    );
+    const effects = [
+      ...recognizeAll(sourceFile),
+      ...accessEffectsIn(sourceFile),
+    ];
+    return effects.map((effect) =>
+      effect.type === "interaction" &&
+      effect.binding.semantics.name === "storage"
+        ? effect.binding.semantics.storageSystem
+        : "none",
+    );
+  }
+
+  it("binds typed and raw calls to the datasource the schema declares", () => {
+    expect(systemsIn("example")).toEqual(["sqlite", "sqlite"]);
+  });
+
+  it("falls back to postgresql in a project with no schema", () => {
+    expect(systemsIn("unschemed")).toEqual(["postgresql", "postgresql"]);
+  });
+
+  it("reads the datasource out of a schema folder, past an entry it cannot read", () => {
+    expect(systemsIn("split")).toEqual(["mysql", "mysql"]);
+  });
+});
+
 describe("prisma raw SQL", () => {
   function rawEffects(source: string): Effect[] {
-    const sourceFile = makeProject(source);
-    const recognizers = prismaFramework().accessRecognizers ?? [];
-    const effects: Effect[] = [];
-    sourceFile.forEachDescendant((node) => {
-      if (
-        !Node.isCallExpression(node) &&
-        !Node.isTaggedTemplateExpression(node)
-      ) {
-        return;
-      }
-      for (const recognizer of recognizers) {
-        const emitted = recognizer(node, {
-          access: node,
-          sourceFile,
-          resolveWrittenValue: () => null,
-          ops: callOpsFor(node),
-        });
-        if (emitted !== null) {
-          effects.push(...emitted);
-        }
-      }
-    });
-    return effects;
+    return accessEffectsIn(makeProject(source));
   }
 
   function storageOf(effect: Effect) {

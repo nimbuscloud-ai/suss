@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   prismaSchemaFileToSummaries,
   prismaSchemaToSummaries,
+  prismaStorageSystem,
 } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -580,5 +581,24 @@ describe("prismaSchemaFileToSummaries", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("prismaStorageSystem", () => {
+  it("reads the datasource provider, with postgres spelled either way", () => {
+    expect(
+      prismaStorageSystem(`datasource db {\n  provider = "postgres"\n}`),
+    ).toBe("postgresql");
+    expect(
+      prismaStorageSystem(`datasource db {\n  provider = "sqlite"\n}`),
+    ).toBe("sqlite");
+  });
+
+  it("gives null for a document store, no datasource, or text that does not parse", () => {
+    expect(
+      prismaStorageSystem(`datasource db {\n  provider = "mongodb"\n}`),
+    ).toBeNull();
+    expect(prismaStorageSystem("model Account {\n  id Int @id\n}")).toBeNull();
+    expect(prismaStorageSystem("datasource {")).toBeNull();
   });
 });

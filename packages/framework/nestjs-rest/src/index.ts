@@ -37,6 +37,31 @@ const REQUEST_METHODS: Record<number, string> = {
   7: "HEAD",
 };
 
+// The status each exception class `@nestjs/common` exports sends.
+const NEST_EXCEPTION_STATUSES: Record<string, number> = {
+  BadRequestException: 400,
+  UnauthorizedException: 401,
+  ForbiddenException: 403,
+  NotFoundException: 404,
+  MethodNotAllowedException: 405,
+  NotAcceptableException: 406,
+  RequestTimeoutException: 408,
+  ConflictException: 409,
+  GoneException: 410,
+  PreconditionFailedException: 412,
+  PayloadTooLargeException: 413,
+  UnsupportedMediaTypeException: 415,
+  ImATeapotException: 418,
+  MisdirectedException: 421,
+  UnprocessableEntityException: 422,
+  InternalServerErrorException: 500,
+  NotImplementedException: 501,
+  BadGatewayException: 502,
+  ServiceUnavailableException: 503,
+  GatewayTimeoutException: 504,
+  HttpVersionNotSupportedException: 505,
+};
+
 export function nestjsRestFramework(
   options: NestjsRestPackOptions = {},
 ): PatternPack {
@@ -100,12 +125,15 @@ export function nestjsRestFramework(
         },
       },
       {
-        // `throw new BadRequestException()`: NestJS turns the exception
-        // into a response. The throw records the exception type, and the
-        // contract check pairs it with the status NestJS would send.
+        // `throw new BadRequestException()`: NestJS's exception filter
+        // sends the status that class is for. Any other throw keeps no
+        // status and stays a throw.
         kind: "throw",
         match: { type: "throwExpression" },
-        extraction: {},
+        extraction: {
+          statusCode: { from: "constructor", codes: NEST_EXCEPTION_STATUSES },
+        },
+        producesResponse: true,
       },
       {
         // A method that runs off the end returns undefined, and Nest
