@@ -21,6 +21,7 @@ function makeComponent(
       file: `src/${name}.tsx`,
       range: { start: 1, end: 10 },
       exportName: name,
+      workspace: "web",
     },
     identity: {
       name,
@@ -81,9 +82,34 @@ function makeStory(
         storybook: {
           story: storyName,
           component: componentName,
+          componentModule: {
+            workspace: "web",
+            file: `src/${componentName}.tsx`,
+            name: componentName,
+          },
           args,
           provenance: "independent",
         },
+      },
+    },
+  };
+}
+
+/** The same story, with its import leading to another module. */
+function importingFrom(
+  story: BehavioralSummary,
+  module: { workspace: string; file: string; name: string } | undefined,
+): BehavioralSummary {
+  const component = story.metadata?.component as {
+    storybook: Record<string, unknown>;
+  };
+  const { componentModule: _left, ...rest } = component.storybook;
+  return {
+    ...story,
+    metadata: {
+      component: {
+        storybook:
+          module === undefined ? rest : { ...rest, componentModule: module },
       },
     },
   };
@@ -112,54 +138,47 @@ function truthinessOnInput(name: string, negated = false): Predicate {
   };
 }
 
-/** The same summary, moved to another directory. */
-function inDirectory(
+/** The same summary, extracted from another workspace. */
+function inWorkspace(
   summary: BehavioralSummary,
-  dir: string,
+  workspace: string,
 ): BehavioralSummary {
-  const base = summary.location.file.slice(
-    summary.location.file.lastIndexOf("/") + 1,
-  );
-  return {
-    ...summary,
-    location: { ...summary.location, file: `${dir}/${base}` },
-  };
+  return { ...summary, location: { ...summary.location, workspace } };
 }
 
 describe("two components sharing one name", () => {
-  it("checks a story against the component in its own directory", () => {
-    const wanted = inDirectory(
+  it("checks a story against the component its import leads to", () => {
+    const wanted = inWorkspace(
       makeComponent("Button", [{ name: "label" }]),
-      "src/design",
+      "design",
     );
-    const other = inDirectory(
-      makeComponent("Button", [{ name: "caption" }]),
-      "src/legacy",
-    );
-    const story = inDirectory(
+    const other = makeComponent("Button", [{ name: "caption" }]);
+    const story = importingFrom(
       makeStory("Primary", "Button", { label: "Hi" }),
-      "src/design",
+      { workspace: "design", file: "src/Button.tsx", name: "Button" },
     );
     expect(checkComponentStoryAgreement([wanted, other, story])).toEqual([]);
   });
 
-  it("says nothing when the name stays ambiguous", () => {
-    const first = inDirectory(
-      makeComponent("Button", [{ name: "label" }]),
-      "src/design",
+  it("says nothing when the import leads to a component the run did not extract", () => {
+    const other = makeComponent("Chip", [{ name: "label" }]);
+    const story = importingFrom(
+      makeStory("Default", "Chip", { size: '"sm"' }),
+      { workspace: "ui", file: "src/Chip/Chip.tsx", name: "Chip" },
     );
-    const second = inDirectory(
-      makeComponent("Button", [{ name: "caption" }]),
-      "src/legacy",
-    );
-    const story = inDirectory(
-      makeStory("Primary", "Button", { nonsense: "x" }),
-      "src/elsewhere",
-    );
-    expect(checkComponentStoryAgreement([first, second, story])).toEqual([]);
+    expect(checkComponentStoryAgreement([other, story])).toEqual([]);
   });
 
-  it("still flags an unknown arg against the one component of that name", () => {
+  it("never pairs by name a story whose import was not followed", () => {
+    const only = makeComponent("Chip", [{ name: "label" }]);
+    const story = importingFrom(
+      makeStory("Default", "Chip", { size: '"sm"' }),
+      undefined,
+    );
+    expect(checkComponentStoryAgreement([only, story])).toEqual([]);
+  });
+
+  it("still flags an unknown arg against the component its import leads to", () => {
     const only = makeComponent("Card", [{ name: "title" }]);
     const story = makeStory("Basic", "Card", { subtitle: "x" });
     const findings = checkComponentStoryAgreement([only, story]);

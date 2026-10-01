@@ -10,6 +10,8 @@ This package builds suss `BehavioralSummary[]` from [Storybook](https://storyboo
 
 The default export gives the component under test. The reader walks the declarations of the default export's symbol, looking for an object literal with a `component` property. That covers `export default { component: Button }`, `const meta = { component: Button }; export default meta;` and `export default { ... } satisfies Meta<typeof Button>`. Parentheses, `as` expressions, and an identifier that points at a local variable are followed through to the literal. A file whose default export never resolves to such an object is skipped, and the rest of the run continues.
 
+The `component` identifier is followed through its import, any renames and any barrel re-exports, to the file that declares it. Each story file is read under the tsconfig nearest to it, so an import through one of its path aliases (`@ui/Chip/Chip`) resolves. The declaring file is written relative to the root an extract of that file's project measures from, with that project's workspace name, so the checker can find the extracted component by its own location. When the import leads to no file, for example because the module is generated or comes from a package that is not installed, no module is recorded, and the checker leaves the story unpaired.
+
 Every other named export whose initializer resolves to an object literal is a story. Its `args` object literal becomes the story's arguments, and each property's value is recorded as the source text you wrote. A shorthand property (`{ disabled }`) records its own name.
 
 ## What it produces
@@ -19,7 +21,7 @@ One `component`-kind summary per named story export:
 - `identity.name` is `Component.Story`, with `exportPath` set to the story's export name, and a function-call boundary binding with `transport: "in-process"`, `recognition: "react"`, and the component identifier as the export name.
 - One input per arg. The input's `role` is the arg name, and its shape is a `ref` whose name is the arg's source text, so a reader can see the value that was written.
 - One default transition whose output is a render of the component. The reader does not evaluate the render, so the rendered tree is left unset.
-- `metadata.component.storybook` with the story name, the component name, the args map, and `provenance: "independent"`. The provenance is what lets a story act as a check on an inferred component summary, since it was written separately from the component.
+- `metadata.component.storybook` with the story name, the component name, the component's module (`componentModule`, with `workspace`, `file` and `name`) and the specifier it is imported from (`componentImport`), the args map, and `provenance: "independent"`. The provenance is what lets a story act as a check on an inferred component summary, since it was written separately from the component.
 - Confidence is `derived` at `medium`. People write stories, and a story is authoritative about what it covers, but stories do not list everything a component does.
 
 ## What it does not read
@@ -28,7 +30,7 @@ One `component`-kind summary per named story export:
 - **`argTypes`.** Control types and option lists per arg could support stricter type checking, but they are not read today.
 - **`decorators` and `parameters`.** These are Storybook runtime setup and do not describe the component's behavior.
 - **CSF1 and MDX stories.** CSF3 is the supported format.
-- **The component's own module.** The reader keeps the `component` identifier as written and does not follow the import to where the component is defined.
+- **A `component` that is not a plain identifier**, such as `Icons.Chip`. No module is recorded for it.
 - **Arg values as structured shapes.** An arg's value stays as source text inside a `ref` shape, and is not parsed into a `TypeShape`.
 
 ## Worked example

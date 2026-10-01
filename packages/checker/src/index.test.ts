@@ -297,6 +297,7 @@ describe("checkAll, what it lists as unpaired", () => {
           storybook: {
             story: "Primary",
             component: "Card",
+            componentModule: { file: "src/Card.ts", name: "Card" },
             args: { subtitle: "x" },
           },
         },

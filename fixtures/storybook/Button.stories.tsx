@@ -2,7 +2,7 @@
 // Used by @suss/contract-storybook to verify story extraction produces one
 // BehavioralSummary per named export with args surfaced as inputs.
 
-import type { Button } from "../react/Button";
+import Button from "../react/Button";
 
 const meta = {
   component: Button,

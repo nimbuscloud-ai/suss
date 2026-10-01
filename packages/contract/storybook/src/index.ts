@@ -13,22 +13,29 @@
 import path from "node:path";
 
 import {
+  type Identifier,
   Node as N,
   type Node,
   type ObjectLiteralExpression,
   Project,
   type SourceFile,
+  SyntaxKind,
 } from "ts-morph";
 
 import {
   exportedDeclarationsOf,
+  findNearestTsconfig,
   objectLiteralOf,
   propertiesOf,
   propertyNameOf,
   propertyOf,
   propertyValueOf,
   ResolutionStore,
+  resolveAliasedSymbol,
   stringValueOf,
+  symbolBehind,
+  workspaceNameFor,
+  workspaceRootFor,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
@@ -57,39 +64,77 @@ export function generateSummariesFromStories(
   filePaths: string[],
   options: StorybookStubOptions = {},
 ): BehavioralSummary[] {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-      allowJs: true,
-      jsx: 4,
-    },
-  });
-  for (const fp of filePaths) {
-    project.addSourceFileAtPath(fp);
-  }
-
   const projectRoot = options.projectRoot ?? process.cwd();
-  const summaries: BehavioralSummary[] = [];
-  const resolution = new ResolutionStore();
+  const byFile = new Map<string, BehavioralSummary[]>();
 
-  for (const sf of project.getSourceFiles()) {
-    const absPath = sf.getFilePath();
-    const relPath = path.relative(projectRoot, absPath);
-    const meta = extractMeta(sf, resolution);
-    if (meta === null) {
-      continue;
-    }
-    const stories = extractStories(sf, resolution);
-    for (const story of stories) {
-      summaries.push(buildSummary(story, meta, relPath));
+  for (const [tsconfig, files] of filesByTsconfig(filePaths)) {
+    const project = projectFor(tsconfig);
+    const resolution = new ResolutionStore();
+    for (const sf of files.map((fp) => project.addSourceFileAtPath(fp))) {
+      const relPath = path.relative(projectRoot, sf.getFilePath());
+      const meta = extractMeta(sf, resolution);
+      if (meta === null) {
+        continue;
+      }
+      byFile.set(
+        sf.getFilePath(),
+        extractStories(sf, resolution).map((story) =>
+          buildSummary(story, meta, relPath),
+        ),
+      );
     }
   }
 
-  return summaries;
+  return filePaths.flatMap(
+    (fp) => byFile.get(path.resolve(fp).replace(/\\/g, "/")) ?? [],
+  );
+}
+
+/**
+ * Story files grouped by the tsconfig nearest each one. A story imports
+ * its component through the path aliases that tsconfig declares, so the
+ * import only resolves under it.
+ */
+function filesByTsconfig(filePaths: string[]): Map<string | null, string[]> {
+  const groups = new Map<string | null, string[]>();
+  for (const fp of filePaths) {
+    const tsconfig = findNearestTsconfig(path.dirname(fp));
+    const group = groups.get(tsconfig) ?? [];
+    group.push(fp);
+    groups.set(tsconfig, group);
+  }
+  return groups;
+}
+
+const COMPILER_OPTIONS = {
+  target: 99,
+  module: 99,
+  moduleResolution: 100,
+  skipLibCheck: true,
+  allowJs: true,
+  jsx: 4,
+  // Ambient types say nothing about a story, and a missing types folder
+  // makes every program build fail.
+  types: [],
+};
+
+function projectFor(tsconfig: string | null): Project {
+  if (tsconfig !== null) {
+    try {
+      return new Project({
+        tsConfigFilePath: tsconfig,
+        skipAddingFilesFromTsConfig: true,
+        compilerOptions: { allowJs: true, jsx: 4, types: [] },
+      });
+    } catch {
+      // A tsconfig that does not parse leaves the defaults below, which
+      // still follow a relative import.
+    }
+  }
+  return new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: COMPILER_OPTIONS,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +144,14 @@ export function generateSummariesFromStories(
 interface MetaInfo {
   /** The `component` identifier as written, such as `Button`. */
   componentName: string;
+  componentModule: ComponentModule | undefined;
+  componentImport: string | undefined;
+}
+
+interface ComponentModule {
+  workspace?: string;
+  file: string;
+  name: string;
 }
 
 function extractMeta(
@@ -110,15 +163,92 @@ function extractMeta(
     if (meta === null) {
       continue;
     }
-    // Usually an identifier. Its text is kept and the import is never
-    // followed.
     const component = propertyOf(meta, "component", resolution);
     if (component !== null) {
-      return { componentName: component.getText() };
+      return {
+        componentName: component.getText(),
+        componentModule: declaredModuleOf(component),
+        componentImport: importSpecifierOf(component),
+      };
     }
   }
 
   return null;
+}
+
+/**
+ * The file and name the component is declared under, followed through
+ * imports and re-exports. The file is spelled from the root an extract of
+ * that file's project measures from, so the two can be compared.
+ */
+function declaredModuleOf(component: Node): ComponentModule | undefined {
+  if (!N.isIdentifier(component)) {
+    return undefined;
+  }
+  const declaration = componentDeclarationOf(component);
+  if (declaration === undefined) {
+    return undefined;
+  }
+  const file = declaration.getSourceFile().getFilePath();
+  const tsconfig = findNearestTsconfig(path.dirname(file));
+  const root = workspaceRootFor(
+    tsconfig === null ? path.dirname(file) : path.dirname(tsconfig),
+  );
+  const workspace = workspaceNameFor(root);
+  return {
+    ...(workspace === null ? {} : { workspace }),
+    file: path.relative(root, file).replace(/\\/g, "/"),
+    name: declaredNameOf(declaration) ?? component.getText(),
+  };
+}
+
+function componentDeclarationOf(component: Identifier): Node | undefined {
+  const symbol = symbolBehind(component);
+  if (symbol === undefined) {
+    return undefined;
+  }
+  const target = symbol.isAlias() ? resolveAliasedSymbol(symbol) : symbol;
+  // An import whose module did not resolve lands on a symbol with no
+  // declarations, or on the import itself.
+  return target
+    ?.getDeclarations()
+    .find((declaration) => !isImportBinding(declaration));
+}
+
+function isImportBinding(node: Node): boolean {
+  return (
+    N.isImportSpecifier(node) ||
+    N.isImportClause(node) ||
+    N.isNamespaceImport(node) ||
+    N.isImportEqualsDeclaration(node)
+  );
+}
+
+function declaredNameOf(declaration: Node): string | undefined {
+  if (
+    N.isVariableDeclaration(declaration) ||
+    N.isFunctionDeclaration(declaration) ||
+    N.isClassDeclaration(declaration)
+  ) {
+    return declaration.getName();
+  }
+  return undefined;
+}
+
+/** The module the story file imports the component from, as written. */
+function importSpecifierOf(component: Node): string | undefined {
+  if (!N.isIdentifier(component)) {
+    return undefined;
+  }
+  for (const declaration of symbolBehind(component)?.getDeclarations() ?? []) {
+    const imported = declaration.getFirstAncestorByKind(
+      SyntaxKind.ImportDeclaration,
+    );
+    if (imported !== undefined) {
+      return imported.getModuleSpecifierValue();
+    }
+  }
+  return undefined;
 }
 
 /** The object literal a declaration or expression resolves to, or null. */
@@ -254,6 +384,12 @@ function buildSummary(
         storybook: {
           story: story.name,
           component: meta.componentName,
+          ...(meta.componentModule === undefined
+            ? {}
+            : { componentModule: meta.componentModule }),
+          ...(meta.componentImport === undefined
+            ? {}
+            : { componentImport: meta.componentImport }),
           args: story.args,
           provenance: "independent",
         },

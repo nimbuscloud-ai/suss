@@ -88,7 +88,7 @@ export {
 } from "./stubEvidence.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
-export { workspaceRootFor } from "./summaryIdentity.js";
+export { workspaceNameFor, workspaceRootFor } from "./summaryIdentity.js";
 export {
   type WrittenPayload,
   writtenPayloadOf,

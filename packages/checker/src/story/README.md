@@ -4,7 +4,7 @@ The story check compares Storybook stories with the component summaries suss inf
 
 ## Place in the pipeline
 
-`checkAll()` runs it as a separate pass. It splits the summaries on whether `metadata.component.storybook` is present: stories have the marker and components do not. It pairs them by component name and emits two findings. `boundaryFieldUnknown` means a story supplies an arg the component does not declare. `scenarioCoverageGap` means the component branches on a prop that no story provides.
+`checkAll()` runs it as a separate pass. It splits the summaries on whether `metadata.component.storybook` is present: stories have the marker and components do not. A story is paired with the component declared under `componentModule.name` in the file `componentModule` gives, compared with each component's `location.workspace` and `location.file`. A story without a `componentModule` stays unpaired, because two packages often have components with the same name. The pass emits two findings. `boundaryFieldUnknown` means a story supplies an arg the component does not declare. `scenarioCoverageGap` means the component branches on a prop that no story provides.
 
 ## Key files
 
@@ -23,5 +23,5 @@ The story check compares Storybook stories with the component summaries suss inf
 
 ## Sibling modules
 
-- `pairing/pairing.ts` is not used here. The story check pairs components by name inline and does not go through `boundaryKey`.
+- `pairing/pairing.ts` is not used here. The story check pairs components by their declaring module inline and does not go through `boundaryKey`.
 - `coverage/responseMatch.ts` provides `makeSide`, which builds the location strings on findings the same way the rest of the checker does.

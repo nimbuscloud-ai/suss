@@ -41,7 +41,7 @@ export function checkComponentStoryAgreement(
     return [];
   }
 
-  const componentsByName = new Map<string, BehavioralSummary[]>();
+  const componentsByModule = new Map<string, BehavioralSummary[]>();
   for (const s of summaries) {
     if (s.kind !== "component") {
       continue;
@@ -49,9 +49,10 @@ export function checkComponentStoryAgreement(
     if (storyMeta(s) !== null) {
       continue;
     }
-    const bucket = componentsByName.get(s.identity.name) ?? [];
+    const key = moduleKey(s.location.workspace, s.location.file);
+    const bucket = componentsByModule.get(key) ?? [];
     bucket.push(s);
-    componentsByName.set(s.identity.name, bucket);
+    componentsByModule.set(key, bucket);
   }
 
   // Resolve each story to one component summary once, so both passes
@@ -59,14 +60,7 @@ export function checkComponentStoryAgreement(
   const componentOfStory = new Map<BehavioralSummary, BehavioralSummary>();
   const storiesByComponent = new Map<BehavioralSummary, BehavioralSummary[]>();
   for (const story of stories) {
-    const meta = storyMeta(story);
-    if (meta?.component === undefined) {
-      continue;
-    }
-    const component = resolveComponent(
-      componentsByName.get(meta.component) ?? [],
-      story,
-    );
+    const component = componentOfModule(storyMeta(story), componentsByModule);
     if (component === null) {
       continue;
     }
@@ -124,28 +118,28 @@ export function checkComponentStoryAgreement(
   return findings;
 }
 
-/**
- * The component a story is about. A story states an identifier name
- * and never follows the import, so two components sharing a name are
- * told apart by the story's own directory, which is where Storybook
- * keeps them. An ambiguous name gets no answer, since checking
- * against the wrong component invents findings (#121).
- */
-function resolveComponent(
-  candidates: BehavioralSummary[],
-  story: BehavioralSummary,
-): BehavioralSummary | null {
-  if (candidates.length <= 1) {
-    return candidates[0] ?? null;
-  }
+function moduleKey(workspace: string | undefined, file: string): string {
+  return `${workspace ?? ""}::${file}`;
+}
 
-  const storyDir = directoryOf(story.location.file);
-  const sameDirectory = candidates.filter(
-    (c) => directoryOf(c.location.file) === storyDir,
-  );
-  return sameDirectory.length === 1
-    ? (sameDirectory[0] as BehavioralSummary)
-    : null;
+/**
+ * The component a story is about: the one declared under that name in
+ * the module the story's import leads to. Components in other packages
+ * share names, so a story whose import was not followed gets no answer,
+ * since checking against the wrong component invents findings (#121).
+ */
+function componentOfModule(
+  meta: StorybookMetadata | null,
+  componentsByModule: ReadonlyMap<string, BehavioralSummary[]>,
+): BehavioralSummary | null {
+  const module = meta?.componentModule;
+  if (module === undefined) {
+    return null;
+  }
+  const declared = (
+    componentsByModule.get(moduleKey(module.workspace, module.file)) ?? []
+  ).filter((c) => c.identity.name === module.name);
+  return declared.length === 1 ? (declared[0] as BehavioralSummary) : null;
 }
 
 /**
@@ -166,11 +160,6 @@ function declaredProps(component: BehavioralSummary): Set<string> | null {
     names.add(input.role ?? input.name);
   }
   return names;
-}
-
-function directoryOf(file: string): string {
-  const at = file.lastIndexOf("/");
-  return at === -1 ? "" : file.slice(0, at);
 }
 
 function storyMeta(summary: BehavioralSummary): StorybookMetadata | null {

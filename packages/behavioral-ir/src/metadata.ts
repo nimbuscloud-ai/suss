@@ -1259,6 +1259,19 @@ export function readTestMetadata(
 const StorybookMetadataSchema = z.object({
   story: z.string().optional(),
   component: z.string().optional(),
+  /**
+   * Where the component is declared, by workspace and path, as an extract
+   * spells it. Absent when the story's import could not be followed.
+   */
+  componentModule: z
+    .object({
+      workspace: z.string().optional(),
+      file: z.string(),
+      name: z.string(),
+    })
+    .optional(),
+  /** The module specifier the story imports the component from. */
+  componentImport: z.string().optional(),
   args: z.record(z.string(), z.string()).optional(),
   provenance: z.string().optional(),
 });
