@@ -72,10 +72,12 @@ export function checkComponentStoryAgreement(
 
   const findings: Finding[] = [];
 
-  // Args a story passes that its component does not declare.
+  // Args a story passes that its component does not declare. A decorator
+  // or a render function can take an arg the component never sees, so a
+  // story with either says nothing about its args.
   for (const story of stories) {
     const meta = storyMeta(story);
-    if (meta?.component === undefined) {
+    if (meta?.component === undefined || (meta.argReaders ?? []).length > 0) {
       continue;
     }
     const component = componentOfStory.get(story);
@@ -93,10 +95,11 @@ export function checkComponentStoryAgreement(
     }
   }
 
-  // Props a component branches on that none of its stories supply.
+  // Props a component branches on that none of its stories supply. A
+  // render function can pass the component a prop no arg names.
   for (const [component, componentStories] of storiesByComponent) {
     const gatingProps = collectGatingProps(component);
-    if (gatingProps.size === 0) {
+    if (gatingProps.size === 0 || componentStories.some(rendersItself)) {
       continue;
     }
     const allStoryArgKeys = new Set<string>();
@@ -164,6 +167,10 @@ function declaredProps(component: BehavioralSummary): Set<string> | null {
 
 function storyMeta(summary: BehavioralSummary): StorybookMetadata | null {
   return readStorybookMetadata(summary) ?? null;
+}
+
+function rendersItself(story: BehavioralSummary): boolean {
+  return storyMeta(story)?.argReaders?.includes("render") === true;
 }
 
 /**

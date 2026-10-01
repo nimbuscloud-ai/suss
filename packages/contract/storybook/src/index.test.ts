@@ -183,6 +183,27 @@ describe("args on the meta", () => {
     expect(argsOf("Chip.Plain")).toEqual({ label: "Shared", size: "sm" });
     expect(argsOf("Chip.Medium")).toEqual({ label: "Shared", size: "md" });
   });
+
+  it("records the decorators and render functions that receive the args first", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipWrapped.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const readersOf = (name: string) =>
+      readStorybookMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.argReaders;
+
+    expect(readersOf("Chip.Routed")).toEqual(["decorators"]);
+    expect(readersOf("Chip.Custom")).toEqual(["decorators", "render"]);
+    const [plain] = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/Chip.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    expect(
+      readStorybookMetadata(plain as BehavioralSummary)?.argReaders,
+    ).toBeUndefined();
+  });
 });
 
 describe("generateSummariesFromStories — shape variants", () => {

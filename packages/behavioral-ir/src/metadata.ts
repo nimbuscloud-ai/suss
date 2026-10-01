@@ -1273,6 +1273,11 @@ const StorybookMetadataSchema = z.object({
   /** The module specifier the story imports the component from. */
   componentImport: z.string().optional(),
   args: z.record(z.string(), z.string()).optional(),
+  /**
+   * The story's or its meta's `decorators` and `render`, which receive the
+   * args before the component and which the reader does not follow.
+   */
+  argReaders: z.array(z.enum(["decorators", "render"])).optional(),
   provenance: z.string().optional(),
 });
 

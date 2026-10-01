@@ -115,6 +115,22 @@ function importingFrom(
   };
 }
 
+/** The same story, with a decorator or render function receiving its args. */
+function withArgReaders(
+  story: BehavioralSummary,
+  argReaders: Array<"decorators" | "render">,
+): BehavioralSummary {
+  const component = story.metadata?.component as {
+    storybook: Record<string, unknown>;
+  };
+  return {
+    ...story,
+    metadata: {
+      component: { storybook: { ...component.storybook, argReaders } },
+    },
+  };
+}
+
 function conditionalTransition(
   id: string,
   predicate: Predicate,
@@ -212,6 +228,21 @@ describe("checkComponentStoryAgreement — unknown arg", () => {
     expect(findings[0].description).toContain("Broken");
   });
 
+  it("says nothing about the args of a story a decorator or render function receives first", () => {
+    const component = makeComponent("Dropdown", [{ name: "label" }]);
+    const decorated = withArgReaders(
+      makeStory("Default", "Dropdown", { label: '"x"', menuId: '"story"' }),
+      ["decorators"],
+    );
+    const rendered = withArgReaders(
+      makeStory("Custom", "Dropdown", { label: '"x"', theme: '"dark"' }),
+      ["render"],
+    );
+    expect(
+      checkComponentStoryAgreement([component, decorated, rendered]),
+    ).toEqual([]);
+  });
+
   it("skips stories that reference a component not in the summaries set", () => {
     const orphan = makeStory("Default", "Missing", { label: '"x"' });
     const findings = checkComponentStoryAgreement([orphan]);
@@ -254,6 +285,18 @@ describe("checkComponentStoryAgreement — coverage gap", () => {
     expect(gapFinding).toBeDefined();
     expect(gapFinding?.description).toContain("user");
     expect(gapFinding?.description).toContain("UserCard");
+  });
+
+  it("does not flag a coverage gap when a story's render function can pass the prop", () => {
+    const component = makeComponent(
+      "CopyField",
+      [{ name: "disabled" }],
+      [conditionalTransition("off", truthinessOnInput("disabled"))],
+    );
+    const story = withArgReaders(makeStory("Disabled", "CopyField", {}), [
+      "render",
+    ]);
+    expect(checkComponentStoryAgreement([component, story])).toEqual([]);
   });
 
   it("does not flag coverage gaps when stories supply the gating prop", () => {

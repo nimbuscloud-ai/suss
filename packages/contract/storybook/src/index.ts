@@ -78,7 +78,7 @@ export function generateSummariesFromStories(
       }
       byFile.set(
         sf.getFilePath(),
-        extractStories(sf, resolution, meta.args).map((story) =>
+        extractStories(sf, resolution, meta).map((story) =>
           buildSummary(story, meta, relPath),
         ),
       );
@@ -148,6 +148,24 @@ interface MetaInfo {
   componentImport: string | undefined;
   /** Args on the default export, which Storybook gives every story in the file. */
   args: Record<string, string>;
+  argReaders: ArgReader[];
+}
+
+/**
+ * The parts of a story or its meta that receive the story's args before
+ * the component does. The reader does not follow either, so it cannot say
+ * which args reach the component.
+ */
+const ARG_READERS = ["decorators", "render"] as const;
+type ArgReader = (typeof ARG_READERS)[number];
+
+function argReadersOf(
+  storyOrMeta: ObjectLiteralExpression,
+  resolution: ResolutionStore,
+): ArgReader[] {
+  return ARG_READERS.filter(
+    (name) => propertyOf(storyOrMeta, name, resolution) !== null,
+  );
 }
 
 interface ComponentModule {
@@ -172,6 +190,7 @@ function extractMeta(
         componentModule: declaredModuleOf(component),
         componentImport: importSpecifierOf(component),
         args: argsOf(meta, resolution),
+        argReaders: argReadersOf(meta, resolution),
       };
     }
   }
@@ -272,13 +291,14 @@ function objectBehind(
 interface StoryInfo {
   name: string;
   args: Record<string, string>;
+  argReaders: ArgReader[];
   line: number;
 }
 
 function extractStories(
   sf: SourceFile,
   resolution: ResolutionStore,
-  metaArgs: Record<string, string>,
+  meta: MetaInfo,
 ): StoryInfo[] {
   const results: StoryInfo[] = [];
 
@@ -295,9 +315,14 @@ function extractStories(
       }
 
       // A story's own arg replaces the one of the same name on the meta.
+      const ownReaders = argReadersOf(story, resolution);
       results.push({
         name,
-        args: { ...metaArgs, ...argsOf(story, resolution) },
+        args: { ...meta.args, ...argsOf(story, resolution) },
+        argReaders: ARG_READERS.filter(
+          (reader) =>
+            meta.argReaders.includes(reader) || ownReaders.includes(reader),
+        ),
         line: decl.getStartLineNumber(),
       });
     }
@@ -397,6 +422,9 @@ function buildSummary(
             ? {}
             : { componentImport: meta.componentImport }),
           args: story.args,
+          ...(story.argReaders.length === 0
+            ? {}
+            : { argReaders: story.argReaders }),
           provenance: "independent",
         },
       },

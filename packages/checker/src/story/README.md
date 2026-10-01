@@ -4,7 +4,7 @@ The story check compares Storybook stories with the component summaries suss inf
 
 ## Place in the pipeline
 
-`checkAll()` runs it as a separate pass. It splits the summaries on whether `metadata.component.storybook` is present: stories have the marker and components do not. A story is paired with the component declared under `componentModule.name` in the file `componentModule` gives, compared with each component's `location.workspace` and `location.file`. A story without a `componentModule` stays unpaired, because two packages often have components with the same name. The pass emits two findings. `boundaryFieldUnknown` means a story supplies an arg the component does not declare. `scenarioCoverageGap` means the component branches on a prop that no story provides.
+`checkAll()` runs it as a separate pass. It splits the summaries on whether `metadata.component.storybook` is present: stories have the marker and components do not. A story is paired with the component declared under `componentModule.name` in the file `componentModule` gives, compared with each component's `location.workspace` and `location.file`. A story without a `componentModule` stays unpaired, because two packages often have components with the same name. The pass emits two findings. A story whose `argReaders` lists `decorators` or `render` gets no unknown-arg finding, since either can take an arg the component never sees. A component with a story that has its own `render` gets no coverage gap, since the render function can pass a prop no arg names. `boundaryFieldUnknown` means a story supplies an arg the component does not declare. `scenarioCoverageGap` means the component branches on a prop that no story provides.
 
 ## Key files
 

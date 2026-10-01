@@ -21,14 +21,14 @@ One `component`-kind summary per named story export:
 - `identity.name` is `Component.Story`, with `exportPath` set to the story's export name, and a function-call boundary binding with `transport: "in-process"`, `recognition: "react"`, and the component identifier as the export name.
 - One input per arg. The input's `role` is the arg name, and its shape is a `ref` whose name is the arg's source text, so a reader can see the value that was written.
 - One default transition whose output is a render of the component. The reader does not evaluate the render, so the rendered tree is left unset.
-- `metadata.component.storybook` with the story name, the component name, the component's module (`componentModule`, with `workspace`, `file` and `name`) and the specifier it is imported from (`componentImport`), the args map, and `provenance: "independent"`. The provenance is what lets a story act as a check on an inferred component summary, since it was written separately from the component.
+- `metadata.component.storybook` with the story name, the component name, the component's module (`componentModule`, with `workspace`, `file` and `name`) and the specifier it is imported from (`componentImport`), the args map, `argReaders` when the story or its meta has `decorators` or a `render` function, and `provenance: "independent"`. A decorator or a render function receives the args before the component does, and the reader does not follow either, so the checker does not judge those args against the component. The provenance is what lets a story act as a check on an inferred component summary, since it was written separately from the component.
 - Confidence is `derived` at `medium`. People write stories, and a story is authoritative about what it covers, but stories do not list everything a component does.
 
 ## What it does not read
 
 - **`play` functions.** The sequence of events that drives an interactive story is not recorded.
 - **`argTypes`.** Control types and option lists per arg could support stricter type checking, but they are not read today.
-- **`decorators` and `parameters`.** These are Storybook runtime setup and do not describe the component's behavior.
+- **What `decorators`, `render` and `parameters` do.** Their presence is recorded, as above, and their bodies are not read. Decorators set in `.storybook/preview` apply to every story and are not seen at all.
 - **CSF1 and MDX stories.** CSF3 is the supported format.
 - **A `component` that is not a plain identifier**, such as `Icons.Chip`. No module is recorded for it.
 - **Arg values as structured shapes.** An arg's value stays as source text inside a `ref` shape, and is not parsed into a `TypeShape`.
