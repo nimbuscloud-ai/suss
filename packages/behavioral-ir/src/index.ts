@@ -603,5 +603,6 @@ export {
   type ReadSetResult,
   readPathOf,
   readSetOf,
+  readsBesideTheRequest,
   type StandDown,
 } from "./receive/inputContract.js";

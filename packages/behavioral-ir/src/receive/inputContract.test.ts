@@ -19,6 +19,7 @@ import {
   messageBodyReadSet,
   readPathOf,
   readSetOf,
+  readsBesideTheRequest,
 } from "./inputContract.js";
 
 import type { BehavioralSummary, Input } from "../index.js";
@@ -617,6 +618,85 @@ describe("boundaryInputPathOf", () => {
       { type: "input", inputRef: "row", path: ["id"] },
     );
     expect(path).toBeNull();
+  });
+});
+
+describe("readsBesideTheRequest", () => {
+  const propertyChain = (input: string, ...path: string[]) =>
+    path.reduce<Parameters<typeof readsBesideTheRequest>[1]>(
+      (from, property) => ({
+        type: "derived",
+        from,
+        derivation: { type: "propertyAccess", property },
+      }),
+      { type: "input", inputRef: input, path: [] },
+    );
+
+  it("says a field middleware put on the request is beside it", () => {
+    expect(
+      readsBesideTheRequest(
+        route([]),
+        propertyChain("req", "sanitizedQuery", "export"),
+      ),
+    ).toBe(true);
+  });
+
+  it("says state on the response object is beside the request", () => {
+    expect(
+      readsBesideTheRequest(
+        route([]),
+        propertyChain("res", "locals", "payload"),
+      ),
+    ).toBe(true);
+  });
+
+  it("reads a field of a request section as part of the request", () => {
+    expect(
+      readsBesideTheRequest(route([]), propertyChain("req", "query", "export")),
+    ).toBe(false);
+  });
+
+  it("follows an index read and a destructure the same as a property read", () => {
+    const indexed = {
+      type: "derived" as const,
+      from: propertyChain("res", "locals"),
+      derivation: { type: "indexAccess" as const, index: "payload" },
+    };
+    const destructured = {
+      type: "derived" as const,
+      from: { type: "input" as const, inputRef: "req", path: [] },
+      derivation: { type: "destructured" as const, field: "sanitizedQuery" },
+    };
+    expect([
+      readsBesideTheRequest(route([]), indexed),
+      readsBesideTheRequest(route([]), destructured),
+    ]).toEqual([true, true]);
+  });
+
+  it("says nothing for a value that does not start at a parameter", () => {
+    const fromDependency = {
+      type: "derived" as const,
+      from: { type: "dependency" as const, name: "getUser", accessChain: [] },
+      derivation: { type: "propertyAccess" as const, property: "locals" },
+    };
+    const throughACall = {
+      type: "derived" as const,
+      from: propertyChain("res", "locals"),
+      derivation: { type: "methodCall" as const, method: "get", args: [] },
+    };
+    expect([
+      readsBesideTheRequest(route([]), fromDependency),
+      readsBesideTheRequest(route([]), throughACall),
+    ]).toEqual([false, true]);
+  });
+
+  it("says nothing for a handler whose pack declared no sections", () => {
+    expect(
+      readsBesideTheRequest(
+        receiver({ inputs: [parameter("req", "request")] }),
+        propertyChain("req", "anything"),
+      ),
+    ).toBe(false);
   });
 });
 
