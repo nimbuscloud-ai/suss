@@ -51,6 +51,7 @@ export function requestsClient(): PythonPack {
           // Every verb but HEAD follows redirects unless the call passes
           // `allow_redirects=False`.
           redirectDelivery: "followed",
+          redirectOption: { name: "allow_redirects", handsBack: [false] },
         },
       },
     ],

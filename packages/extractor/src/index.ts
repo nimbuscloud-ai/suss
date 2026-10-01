@@ -107,6 +107,7 @@ export {
   valueToReadFurtherFrom,
   writtenReading,
 } from "./reading.js";
+export { redirectDeliveryWhenSet } from "./redirectOption.js";
 export { isListedTestFile, matchesTestFileName } from "./testFiles.js";
 export {
   type SourceSpelling,
@@ -135,6 +136,7 @@ export type {
   ParameterSupplier,
   PatternPack,
   RedirectDelivery,
+  RedirectOption,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,
   TerminalExtraction,

@@ -1,5 +1,3 @@
-import { isCatchEntry } from "@suss/behavioral-ir";
-
 import {
   failureDeliveryFor,
   redirectDeliveryFor,
@@ -50,10 +48,9 @@ const FOLLOWED_REDIRECTS: ReadonlySet<number> = new Set([
  * can send. Four things count, and the README beside this file says why
  * each one does: a branch that admits the status, a fall-through over
  * the 2xx class, a guard on a body field only the failing status
- * returns, and a catch on a client that throws rather than returning a
- * response.
+ * returns, and a client that throws rather than returning a response.
  */
-function coverageOf(
+export function coverageOf(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
 ): (status: number) => boolean {
@@ -73,16 +70,19 @@ function coverageOf(
     provider,
     consumer,
   );
-  const catchesThrownFailures =
-    failureDeliveryFor(consumer) === "exception" &&
-    consumer.transitions.some((ct) => ct.conditions.some(isCatchEntry));
+  // A client that throws on failure sends it to this consumer's catch,
+  // or out of the function to a caller this pair does not include.
+  // Neither path drops the status in a branch written for a success.
+  const throwsFailuresElsewhere = failureDeliveryFor(consumer) === "exception";
 
   return (status) => {
     if (isSuccessStatus(status)) {
       return handles(status) || runsOnSuccess;
     }
     return (
-      handles(status) || discriminatesByContent(status) || catchesThrownFailures
+      handles(status) ||
+      discriminatesByContent(status) ||
+      throwsFailuresElsewhere
     );
   };
 }

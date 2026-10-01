@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import { readHttpMetadata, withHttpMetadata } from "@suss/behavioral-ir";
 
 import {
+  catchEntry,
   consumer,
   negated,
   provider,
   response,
   statusEq,
   statusInRange,
+  throwsOnFailure,
   transition,
   unhandledCaseGap,
   unreadOutcomeGap,
@@ -150,6 +152,33 @@ describe("checkContractConsistency", () => {
     expect(unhandled).toHaveLength(1);
     expect(unhandled[0].description).toContain("500");
     expect(unhandled[0].severity).toBe("warning");
+  });
+
+  it("counts a catch on a client that throws on failure as handling every declared failure", () => {
+    const p = withContract(
+      provider("getUser", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      [200, 401, 404],
+    );
+    // axios rejects on a non-2xx, so the caller's catch takes every failure.
+    const c = throwsOnFailure(
+      consumer("UserPage", [
+        transition("ct-catch", {
+          conditions: [catchEntry()],
+          output: { type: "return", value: null },
+        }),
+        transition("ct-default", {
+          output: { type: "return", value: null },
+          isDefault: true,
+        }),
+      ]),
+    );
+    expect(
+      checkContractConsistency(p, c).filter(
+        (f) => f.kind === "consumerContractViolation",
+      ),
+    ).toEqual([]);
   });
 
   it("treats consumer default branch as handling declared 2xx statuses", () => {

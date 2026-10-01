@@ -250,6 +250,23 @@ describe("checkProviderCoverage", () => {
     expect(checkProviderCoverage(p, followsRedirects(c))).toEqual([]);
   });
 
+  it("leaves a failure on a throwing client with no catch to the caller", () => {
+    const p = provider("getUser", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    // `const { data } = await api.get(url)`: a 404 rejects out of here.
+    const c = throwsOnFailure(
+      consumer("loadUser", [
+        transition("ct-default", {
+          output: { type: "return", value: null },
+          isDefault: true,
+        }),
+      ]),
+    );
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
   it("does not count a catch when the client returns the failing response", () => {
     const p = provider("getUser", [
       transition("t-404", { output: response(404) }),

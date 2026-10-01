@@ -50,10 +50,26 @@ export const optionsSchema = z
 
 export type AxiosPackOptions = z.infer<typeof optionsSchema>;
 
+/** Where each verb method takes its config: after the URL, or after the body. */
+const CONFIG_POSITION: Record<(typeof HTTP_METHODS)[number], number> = {
+  get: 1,
+  delete: 1,
+  head: 1,
+  options: 1,
+  post: 2,
+  put: 2,
+  patch: 2,
+};
+
 function discoveryForVerb(
   verb: (typeof HTTP_METHODS)[number],
   factories: AxiosClientFactory[],
 ): DiscoveryPattern[] {
+  const bindingExtraction: DiscoveryPattern["bindingExtraction"] = {
+    method: { type: "literal", value: verb.toUpperCase() },
+    path: { type: "fromArgument", position: 0 },
+    options: { position: CONFIG_POSITION[verb] },
+  };
   const patterns: DiscoveryPattern[] = [
     {
       // Matches `axios.<verb>(path)` and `api.<verb>(path)`. factoryMethods
@@ -68,10 +84,7 @@ function discoveryForVerb(
         factoryMethods: ["create"],
         basePathOption: "baseURL",
       },
-      bindingExtraction: {
-        method: { type: "literal", value: verb.toUpperCase() },
-        path: { type: "fromArgument", position: 0 },
-      },
+      bindingExtraction,
       requiresImport: ["axios"],
     },
   ];
@@ -89,10 +102,7 @@ function discoveryForVerb(
         methodFilter: [verb],
         basePathOption: "baseURL",
       },
-      bindingExtraction: {
-        method: { type: "literal", value: verb.toUpperCase() },
-        path: { type: "fromArgument", position: 0 },
-      },
+      bindingExtraction,
       // Each importing file spells a relative path differently, so the
       // import-text prefilter cannot match one and a path-shaped factory
       // walks every file. The README has the details.
@@ -124,6 +134,7 @@ function configCallDiscovery(
       default: "GET",
     },
     path: { type: "fromArgumentProperty", position: 0, property: "url" },
+    options: { position: 0 },
   };
   const patterns: DiscoveryPattern[] = [
     {
@@ -203,8 +214,10 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
     // caller's catch block instead of coming back as a response.
     failureDelivery: "exception",
 
-    // axios follows redirects unless the call sets `maxRedirects: 0`.
+    // axios follows redirects unless the call or the instance sets
+    // `maxRedirects: 0`.
     redirectDelivery: "followed",
+    redirectOption: { name: "maxRedirects", handsBack: [0] },
   };
 }
 

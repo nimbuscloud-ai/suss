@@ -1,18 +1,18 @@
 import { bodyShapesMatch } from "../body/bodyMatch.js";
+import { coverageOf } from "../coverage/providerCoverage.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
-  isSuccessStatus,
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
-import { consumerHandlesStatus } from "../coverage/statusRanges.js";
 import {
   contractDeclaresStatus,
   type DeclaredContract,
   readDeclaredContract,
   statusAccessorsFor,
 } from "./declaredContract.js";
+import { reachedThroughUnreadCondition } from "./partlyRead.js";
 
 import type {
   BehavioralSummary,
@@ -66,22 +66,17 @@ export function checkContractConsistency(
   const statusAccessors = statusAccessorsFor(consumer);
 
   const consumerExplicit = new Set<number>();
-  let consumerHasDefault = false;
   for (const ct of consumer.transitions) {
-    if (ct.isDefault) {
-      consumerHasDefault = true;
-    }
     for (const s of consumerExpectedStatuses(ct, statusAccessors)) {
       consumerExplicit.add(s);
     }
   }
-  const consumerHandles = consumerHandlesStatus(consumer);
+  // The same rule the coverage check uses, so a catch on a client that
+  // throws on failure counts here as it does there.
+  const covers = coverageOf(provider, consumer);
 
   for (const declared of declaredStatuses) {
-    if (consumerHandles(declared)) {
-      continue;
-    }
-    if (consumerHasDefault && isSuccessStatus(declared)) {
+    if (covers(declared)) {
       continue;
     }
     findings.push({
@@ -100,10 +95,7 @@ export function checkContractConsistency(
   for (const range of contract.responseRanges) {
     const someMemberHandled = (): boolean => {
       for (let status = range.min; status <= range.max; status++) {
-        if (consumerHandles(status)) {
-          return true;
-        }
-        if (consumerHasDefault && isSuccessStatus(status)) {
+        if (covers(status)) {
           return true;
         }
       }
@@ -169,7 +161,10 @@ export function checkBodiesAgainstDeclared(
       continue;
     }
     for (const pt of provider.transitions) {
-      if (pt.output.type !== "response") {
+      if (
+        pt.output.type !== "response" ||
+        reachedThroughUnreadCondition(provider, pt)
+      ) {
         continue;
       }
       const status = extractResponseStatus(pt);
