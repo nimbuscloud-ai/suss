@@ -4,6 +4,7 @@ import {
   statusAccessorsFor,
   successAccessorsFor,
 } from "../contract/declaredContract.js";
+import { catchIsUncertain } from "../contract/partlyRead.js";
 import { predicatesMatch } from "../match.js";
 import { consumerDiscriminatesByContent } from "./contentDiscrimination.js";
 import {
@@ -108,6 +109,11 @@ export function checkProviderCoverage(
   const providerByStatus = new Map<number, Transition[]>();
 
   for (const pt of provider.transitions) {
+    // The provider may never send it, so a consumer is not asked to handle it.
+    if (catchIsUncertain(pt)) {
+      continue;
+    }
+
     if (hasOpaqueStatus(pt)) {
       findings.push({
         kind: "lowConfidence",
