@@ -23,7 +23,7 @@ Repositories run one at a time, and every command runs under `timeout 900`.
 1. Fetches the pinned commit and its parent into `<work>/repos/<name>` with depth 2. A second run reuses the clone and its `node_modules`, and removes everything else an earlier run wrote.
 2. Installs dependencies with the manager the lockfile says, with lifecycle scripts off. A root lockfile covers the workspace; without one it installs each client folder that has its own.
 3. Runs `suss init --write` at the root.
-4. Runs every `suss` command init printed except `check`, each in the project folder given in its section heading. When init prints a pack config for the user to write, it writes the example init printed, the way a newcomer following the instructions would. All outputs go to one folder, so one `check` sees both sides.
+4. Runs every `suss` command init printed except `check`. A command whose paths start from the root, with `--dir` on an extract or the project's folder at the start of a contract's path, runs at the root. Releases up to 0.34.0 printed paths relative to each project, so their commands run in the project folder given in the section heading. When init prints a pack config for the user to write, it writes the example init printed, the way a newcomer following the instructions would. All outputs go to one folder, so one `check` sees both sides.
 5. Runs `suss check --dir` over that folder twice, once with `--json` for the counts and once for the text a person reads.
 6. Checks out the parent commit, re-runs the extract commands, and runs `suss inspect --diff` between the two, the way the pull request comment does.
 

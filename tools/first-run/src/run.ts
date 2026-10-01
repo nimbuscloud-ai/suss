@@ -23,6 +23,7 @@ import {
   type PlannedCommand,
   parseInitOutput,
   planCommands,
+  startsFromRoot,
 } from "./initPlan.js";
 import { planInstall } from "./installPlan.js";
 import { formatLog, type Measured, runMeasured } from "./measure.js";
@@ -274,7 +275,9 @@ function writeSuggestedConfigs(
   const written: string[] = [];
   for (const project of projects) {
     for (const config of project.configs) {
-      const file = path.resolve(cloneDir, project.dir, config.file);
+      const file = startsFromRoot(config.file, project.dir)
+        ? path.resolve(cloneDir, config.file)
+        : path.resolve(cloneDir, project.dir, config.file);
       if (fs.existsSync(file)) {
         continue;
       }

@@ -72,6 +72,7 @@ export const declares: PackDeclaration = {
   package: "@suss/client-net-http",
   dependencies: [],
   shippedWith: "ruby",
+  sourcePattern: /\bNet::HTTP\b/,
   reads:
     "Net::HTTP call sites (Ruby): the module methods that send on their own, and a request object built with \`Net::HTTP::Get\` and its siblings, with the URL read through \`URI\`.",
 };

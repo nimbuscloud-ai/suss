@@ -52,6 +52,17 @@ describe("what init writes down", () => {
     });
   });
 
+  it("says which folder a project below the root is in, with its tsconfig counted from the root", () => {
+    const [extract] = projectFileFor(report(), "apps/api")?.read ?? [];
+    expect(extract).toEqual({
+      kind: "extract",
+      language: "typescript",
+      dir: "apps/api",
+      project: path.join("apps/api", "tsconfig.app.json"),
+      packs: ["express"],
+    });
+  });
+
   it("writes nothing for a project with nothing to read", () => {
     expect(projectFileFor(report({ suggestions: [] }))).toBeNull();
   });

@@ -13,6 +13,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { SOURCE_SUFFIXES } from "@suss/adapter-typescript";
+
 export type Language = "typescript" | "python" | "ruby";
 
 export const LANGUAGES: readonly Language[] = ["typescript", "python", "ruby"];
@@ -56,7 +58,7 @@ interface LanguageMarkers {
 const MARKERS: Record<Language, LanguageMarkers> = {
   typescript: {
     projectFiles: ["package.json", "tsconfig.json", "jsconfig.json"],
-    sourceSuffixes: [".ts", ".tsx"],
+    sourceSuffixes: SOURCE_SUFFIXES,
   },
   python: {
     projectFiles: [

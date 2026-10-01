@@ -22,6 +22,8 @@ import {
   declaredPacks,
   formatInitReport,
   inspectProject,
+  languageOf,
+  readCommands,
   recognizedWithoutPackSentence,
   unnamedLanguageSentence,
   unnamedLanguages,
@@ -29,11 +31,13 @@ import {
 import { run } from "./processRun.js";
 import { PROJECT_FILE, projectFileFor } from "./projectFile.js";
 import { writeProjectSetup } from "./projectSetup.js";
-import { isProjectIn, projectsBelow } from "./projectsBelow.js";
+import { hasProjectSource } from "./projectSource.js";
+import { filesBelow, isProjectIn, projectsBelow } from "./projectsBelow.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
 import type { InitReport, PackSuggestion } from "./init.js";
+import type { Language } from "./language.js";
 import type { SetupLine } from "./projectSetup.js";
 import type { Workspace } from "./workspaces.js";
 
@@ -96,6 +100,7 @@ export async function initInteractive(
     return 0;
   }
 
+  reportRecognizedWithoutPack(targets);
   reportUnread(targets);
 
   const chosen = await chooseTargets(withPacks);
@@ -124,38 +129,152 @@ export async function initInteractive(
 
 async function findTargets(root: string): Promise<Target[]> {
   const workspace = readWorkspace(root);
-  const directories: Array<Pick<Target, "directory" | "label">> =
-    workspace.packages.length === 0
-      ? [{ directory: ".", label: path.basename(root) }]
-      : (workspace.packages as Workspace[]).map((pkg) => ({
-          directory: pkg.directory,
-          label: pkg.name ?? pkg.directory,
-        }));
-
-  // An npm workspace file never lists a Python or Ruby service next to
-  // the packages, or a root that is itself a Rails app, so look for those.
-  for (const directory of projectDirectoriesAtOrBelow(root)) {
+  const inWorkspace = workspace.packages.length > 0;
+  const directories: Array<Omit<Target, "report">> = inWorkspace
+    ? (workspace.packages as Workspace[]).map((pkg) => ({
+        directory: pkg.directory,
+        label: pkg.name ?? pkg.directory,
+      }))
+    : [{ directory: ".", label: path.basename(root) }];
+  const add = (directory: string): void => {
     if (!directories.some((known) => known.directory === directory)) {
       directories.push({ directory, label: directory });
     }
+  };
+
+  // A workspace file never lists a Python or Ruby service next to the
+  // packages, and a server and a client folder often sit side by side
+  // with no workspace file at all, so look for every project below.
+  for (const directory of pythonAndRubyProjectsAtOrBelow(root)) {
+    add(directory);
+  }
+
+  for (const manifest of filesBelow(root, ["package.json"])) {
+    add(path.dirname(manifest));
   }
 
   const targets: Target[] = [];
-  for (const { directory, label } of directories) {
+  for (const known of directories) {
     targets.push({
-      directory,
-      label,
-      report: await inspectProject(path.join(root, directory)),
+      ...known,
+      report: await inspectProject(path.join(root, known.directory)),
     });
   }
 
-  return withoutLanguagesCoveredBelow(targets).filter((target) =>
-    worthReporting(target.report),
+  if (inWorkspace && !directories.some((known) => known.directory === ".")) {
+    targets.push(await workspaceRootContracts(root));
+  }
+
+  const reported = withoutLanguagesCoveredBelow(
+    withoutContractsOfProjectsBelow(targets),
+  ).filter(isWorthReporting);
+  return withRepositoryNotesOnce(reported);
+}
+
+/**
+ * Whether a target has anything to report. Below the root, a folder often
+ * has a manifest for tooling of its own, such as a Gemfile for a mobile
+ * build or a package.json for docs. A folder there is reported when
+ * something in it can be read, or when its own manifest could not be read
+ * and it has source of its own that the manifest may have hidden packs for.
+ */
+function isWorthReporting(target: Target): boolean {
+  const { report } = target;
+  if (target.directory === ".") {
+    return worthReporting(report);
+  }
+
+  if (readsSomething(report)) {
+    return true;
+  }
+
+  const ownUnread = (report.unread ?? []).some(
+    (entry) => entry.aboutRepository !== true,
+  );
+  return (
+    ownUnread &&
+    (report.languages ?? []).some((language) =>
+      hasProjectSource(report.root, language),
+    )
   );
 }
 
+/**
+ * The root finds the specs in the folders one level down, and each of
+ * those folders is a target of its own now, so the root leaves them to
+ * it. Read twice, one spec would look like two providers of every route.
+ */
+function withoutContractsOfProjectsBelow(targets: Target[]): Target[] {
+  const below = targets
+    .map((target) => target.directory)
+    .filter((directory) => directory !== ".");
+  return targets.map((target) =>
+    target.directory === "."
+      ? {
+          ...target,
+          report: {
+            ...target.report,
+            suggestions: target.report.suggestions.filter(
+              (suggestion) =>
+                suggestion.file === undefined ||
+                !below.some((directory) =>
+                  suggestion.file?.startsWith(`${directory}${path.sep}`),
+                ),
+            ),
+          },
+        }
+      : target,
+  );
+}
+
+/** A note about the whole repository goes on the first project that has it, rather than on every one. */
+function withRepositoryNotesOnce(targets: Target[]): Target[] {
+  const said = new Set<string>();
+  return targets.map((target) => ({
+    ...target,
+    report: {
+      ...target.report,
+      unread: (target.report.unread ?? []).filter((entry) => {
+        if (entry.aboutRepository !== true) {
+          return true;
+        }
+
+        const key = `${entry.where}\n${entry.reason}`;
+        if (said.has(key)) {
+          return false;
+        }
+
+        said.add(key);
+        return true;
+      }),
+    },
+  }));
+}
+
+/**
+ * A spec kept in a folder of its own at a workspace root belongs to no
+ * package. The root's code is the packages', which have their own
+ * targets, so from the root only the contracts are read.
+ */
+async function workspaceRootContracts(root: string): Promise<Target> {
+  const report = await inspectProject(root);
+  return {
+    directory: ".",
+    label: path.basename(root),
+    report: {
+      ...report,
+      suggestions: report.suggestions.filter(
+        (suggestion) => suggestion.kind === "contract",
+      ),
+      languages: [],
+      unread: [],
+      recognizedWithoutPack: [],
+    },
+  };
+}
+
 /** The root and the directories below it that declare a Python or Ruby project of their own. */
-function projectDirectoriesAtOrBelow(root: string): string[] {
+function pythonAndRubyProjectsAtOrBelow(root: string): string[] {
   const found = new Set<string>();
   for (const language of ["python", "ruby"] as const) {
     if (isProjectIn(root, language)) {
@@ -171,14 +290,16 @@ function projectDirectoriesAtOrBelow(root: string): string[] {
 /**
  * The root's report counts source files in every project below it. Drop
  * from the root the languages a project below already has packs for, or
- * the root would report them as languages suss could not place.
+ * the root would report them as languages suss could not place. When
+ * nothing at the root declares a pack in such a language, its packs go
+ * too: an extract at the root would read the projects below a second time.
  */
 function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
   const coveredBelow = new Set(
     targets
       .filter((target) => target.directory !== ".")
       .flatMap((target) => declaredPacks(target.report))
-      .map((suggestion) => suggestion.language ?? "typescript"),
+      .map(languageOf),
   );
   return targets.map((target) =>
     target.directory === "."
@@ -189,22 +310,40 @@ function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
             languages: (target.report.languages ?? []).filter(
               (language) => !coveredBelow.has(language),
             ),
+            suggestions: target.report.suggestions.filter(
+              (suggestion) =>
+                suggestion.kind === "contract" ||
+                !coveredBelow.has(languageOf(suggestion)) ||
+                declaredAtRoot(target.report, languageOf(suggestion)),
+            ),
           },
         }
       : target,
   );
 }
 
+/** Whether a manifest at the root, rather than a call in a file, led to a pack in this language. */
+const declaredAtRoot = (report: InitReport, language: Language): boolean =>
+  report.suggestions.some(
+    (suggestion) =>
+      languageOf(suggestion) === language &&
+      suggestion.kind !== "contract" &&
+      suggestion.shippedWithLanguage !== true,
+  );
+
 /**
- * Whether a target has anything to report. A Python directory with no
+ * Whether the root has anything to report. A Python root with no
  * requirements file gets no suggestions and has no unread manifest, but
  * the user still needs to hear about it.
  */
 const worthReporting = (report: InitReport): boolean =>
-  declaredPacks(report).length > 0 ||
+  readsSomething(report) ||
   (report.unread ?? []).length > 0 ||
-  (report.recognizedWithoutPack ?? []).length > 0 ||
   unnamedLanguages(report).length > 0;
+
+const readsSomething = (report: InitReport): boolean =>
+  declaredPacks(report).length > 0 ||
+  (report.recognizedWithoutPack ?? []).length > 0;
 
 function reportRecognizedWithoutPack(targets: Target[]): void {
   const names = new Set(
@@ -219,7 +358,7 @@ function reportUnread(targets: Target[]): void {
   for (const target of targets) {
     for (const entry of target.report.unread ?? []) {
       const where =
-        target.directory === "."
+        target.directory === "." || entry.aboutRepository === true
           ? entry.where
           : path.join(target.directory, entry.where);
       p.log.warn(`${where}: ${entry.reason}`);
@@ -283,7 +422,7 @@ function printable(root: string, targets: Target[]): string {
   return targets
     .map(
       (t) =>
-        `${"═".repeat(4)} ${t.directory} ${"═".repeat(4)}\n\n${formatInitReport(t.report)}`,
+        `${"═".repeat(4)} ${t.directory} ${"═".repeat(4)}\n\n${formatInitReport(t.report, t.directory)}`,
     )
     .join("\n");
 }
@@ -492,68 +631,18 @@ interface RunnableCommand {
   needsConfig?: string[];
 }
 
+/** The same commands the printed form shows, minus an extract that would come back empty. */
 function runCommandsFor(target: Target): RunnableCommand[] {
-  const commands: RunnableCommand[] = [];
-  const prefix = target.directory === "." ? "" : `${target.directory}/`;
-  const out = (name: string) => `summaries/${prefix}${name}.json`;
-
-  const code = target.report.suggestions.filter((s) => s.kind !== "contract");
-  const languages = [...new Set(code.map((s) => s.language ?? "typescript"))];
-  for (const language of languages) {
-    // One command per language, because each pack works with one
-    // language's adapter.
-    const args = ["extract"];
-    if (target.directory !== ".") {
-      args.push("--dir", target.directory);
-    }
-    if (language !== "typescript") {
-      args.push("--lang", language);
-    }
-    for (const item of code.filter(
-      (s) => (s.language ?? "typescript") === language,
-    )) {
-      args.push(
-        "-f",
-        item.configuration === undefined
-          ? item.name
-          : `${item.name}=${item.configuration.file}`,
-      );
-    }
-    args.push("-o", out(languages.length === 1 ? "code" : language));
-    const needsConfig = code
-      .filter((s) => (s.language ?? "typescript") === language)
-      .filter((s) => s.configuration?.required === true)
-      .map((s) => path.join(target.directory, s.configuration?.file ?? ""));
-    commands.push({
+  return readCommands(target.report, target.directory)
+    .filter((command) => !command.effectsOnly)
+    .map((command) => ({
       bin: "npx",
-      args: ["suss", ...args],
-      display: `suss ${args.join(" ")}`,
-      ...(needsConfig.length > 0 ? { needsConfig } : {}),
-    });
-  }
-
-  for (const item of target.report.suggestions.filter(
-    (s) => s.kind === "contract",
-  )) {
-    if (item.file === undefined) {
-      continue;
-    }
-    const args = [
-      "contract",
-      "--from",
-      item.name,
-      path.join(target.directory === "." ? "" : target.directory, item.file),
-      "-o",
-      out(item.name),
-    ];
-    commands.push({
-      bin: "npx",
-      args: ["suss", ...args],
-      display: `suss ${args.join(" ")}`,
-    });
-  }
-
-  return commands;
+      args: ["suss", ...command.args],
+      display: `suss ${command.args.join(" ")}`,
+      ...(command.needsConfig.length > 0
+        ? { needsConfig: command.needsConfig }
+        : {}),
+    }));
 }
 
 /**

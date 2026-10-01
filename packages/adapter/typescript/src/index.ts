@@ -5,9 +5,11 @@ export {
   extractCodeStructure,
 } from "./adapter.js";
 export { extractRawBranches } from "./assembly.js";
+export { readTsconfigFileList } from "./bootstrap/lazyProjectInit.js";
 export {
   createProjectWithoutTsconfig,
   findNearestTsconfig,
+  SOURCE_SUFFIXES,
   TSCONFIG_NAMES,
 } from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches } from "./conditions.js";

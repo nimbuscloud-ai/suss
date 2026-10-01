@@ -14,7 +14,8 @@ import {
   ScriptTarget,
 } from "ts-morph";
 
-const SOURCE_EXTENSIONS = new Set([
+/** The suffixes this adapter reads, JavaScript included. */
+export const SOURCE_SUFFIXES = [
   ".ts",
   ".tsx",
   ".mts",
@@ -23,7 +24,9 @@ const SOURCE_EXTENSIONS = new Set([
   ".jsx",
   ".mjs",
   ".cjs",
-]);
+] as const;
+
+const SOURCE_EXTENSIONS = new Set<string>(SOURCE_SUFFIXES);
 
 const SKIP_DIRECTORIES = new Set([
   "node_modules",

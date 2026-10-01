@@ -118,6 +118,25 @@ describe("readPythonDependencies", () => {
     expect(names()).toEqual(["fastapi", "flask-restx", "pytest"]);
   });
 
+  it("reads the dependency groups and the optional extras", () => {
+    write(
+      "pyproject.toml",
+      [
+        "[project]",
+        'name = "svc"',
+        'dependencies = ["httpx"]',
+        "",
+        "[project.optional-dependencies]",
+        'postgres = ["psycopg>=3"]',
+        "",
+        "[dependency-groups]",
+        'prod = ["django[argon2]==5.2.*", "jinja2"]',
+        'dev = [{ include-group = "prod" }, "pytest"]',
+      ].join("\n"),
+    );
+    expect(names()).toEqual(["django", "httpx", "jinja2", "psycopg", "pytest"]);
+  });
+
   it("says so when a project declares its dependencies dynamic", () => {
     write(
       "pyproject.toml",
