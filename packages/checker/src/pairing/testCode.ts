@@ -30,7 +30,6 @@ const TEST_FOLDERS_ANYWHERE = new Set([
   "__stories__",
   ".storybook",
   "testing",
-  "fixtures",
   "stories",
 ]);
 

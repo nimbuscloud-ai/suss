@@ -31,6 +31,7 @@ describe("isTestFile", () => {
     "src/testing-library.ts",
     "app/controllers/specs_controller.rb",
     "src/contest.py",
+    "fixtures/react-router/routes.tsx",
   ])("reads %s as production code", (file) => {
     expect(isTestFile(file)).toBe(false);
   });

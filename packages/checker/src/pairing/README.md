@@ -21,7 +21,7 @@ This directory has the base pairing code that every per-domain checker builds on
 
 - **Test code, stories and fixtures take no part in pairing.** A test that calls `fetch("https://test.local/")`, a server a test starts, or a Storybook decorator that mounts a router on `*` summarizes like production code, and pairing it compares a stand-in with the app. `testCode.ts:isTestCode` counts a summary of the `test` kind, a Storybook story, and any file that one of these names matches:
   - file names `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.stories.*`, `*.story.*`, `*.fixture(s).*`, `*.mock.*`, `test_*.py`, `*_test.py`, `*_test.rb`, `*_test.go`, `*_spec.rb` and `conftest.py`;
-  - a folder anywhere named `__tests__`, `__mocks__`, `__fixtures__`, `__stories__`, `.storybook`, `testing`, `fixtures` or `stories`;
+  - a folder anywhere named `__tests__`, `__mocks__`, `__fixtures__`, `__stories__`, `.storybook`, `testing` or `stories`. A plain `fixtures` folder is left alone, because projects keep sample apps there that should pair like any other code;
   - a `test`, `tests`, `spec` or `e2e` folder at the top of the project. Deeper folders with those names are left alone, because an application can serve a route from `app/api/test/route.ts`.
 
   `pairSummaries` lists those summaries under `unmatched.unpairable` with the reason `testCode`, and `checkAll` leaves them out of every other pass except the one that compares stories with their components.
