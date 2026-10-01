@@ -18,17 +18,20 @@ import {
 import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { withSlotSources } from "./provenance.js";
 import { responseBranches } from "./responseStatus.js";
+import { constantRefCandidates } from "./scope.js";
 import { stringValueOf } from "./values/evaluator.js";
 import { namesOf } from "./values/literals.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type { RawBranch, RawCodeStructure, RawTerminal } from "@suss/extractor";
 import type { Ancestry, BodyReading, MethodLookup } from "./ancestry.js";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
 import type { RbNode } from "./parser.js";
+import type { HandlerClasses } from "./raisedStatuses.js";
 import type { RespondingHelper } from "./responseStatus.js";
+import type { ConstantRef } from "./scope.js";
 
 /** One filter the ancestry declares, resolved to its method. */
 export interface ControllerFilter {
@@ -39,12 +42,25 @@ export interface ControllerFilter {
   /** Absolute path of the file that `def` is written in. */
   readonly file: string;
   readonly enclosingQualifiedName: string;
+  /** `Module.nesting` inside the class body the method is written in. */
+  readonly nesting: readonly string[];
   /** The actions it covers. Null means every action of the controller. */
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
-  /** For a handler the library runs after a raise, the exception classes it is declared for, as written. */
-  readonly rescues: readonly string[];
+  readonly rescues: Rescues;
 }
+
+/**
+ * For a handler the library runs after a raise, the exception classes it
+ * is declared for. `someUnread` says one of them is not a constant the
+ * run can read, such as `*NETWORK_ERRORS`, so the handler may catch anything.
+ */
+export interface Rescues {
+  readonly refs: readonly ConstantRef[];
+  readonly someUnread: boolean;
+}
+
+const RESCUES_NOTHING: Rescues = { refs: [], someUnread: false };
 
 /** A filter declaration, before its method has been looked up. */
 interface Declaration {
@@ -52,7 +68,7 @@ interface Declaration {
   readonly methodName: string;
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
-  readonly rescues: readonly string[];
+  readonly rescues: Rescues;
 }
 
 /** A `skip_before_action`, which takes a filter off some or all of the actions. */
@@ -65,8 +81,8 @@ interface Skip {
 
 /**
  * Every filter a controller runs, in the order the library runs them:
- * as declared, ancestors first, with the ones that run only after a
- * raise last.
+ * as declared, ancestors first. The ones that run only after a raise
+ * come last, in the order the library tries them, last declared first.
  */
 export function controllerFilters(
   pattern: ControllerActions,
@@ -90,17 +106,23 @@ export function controllerFilters(
   // ancestors first. A method declared again moves to the end with its
   // new options, and a skip changes only what is in the chain so far.
   let declared: Declaration[] = [];
-  for (const { statement } of inheritedStatements(ancestry)) {
+  for (const { block, statement } of inheritedStatements(ancestry)) {
     const called = calledName(statement);
     if (called === null) {
       continue;
     }
     const form = byName.get(called);
     if (form !== undefined) {
-      for (const declaration of declarationsOf(statement, form, read.facts)) {
+      for (const declaration of declarationsOf(
+        statement,
+        form,
+        block.info.bodyNesting,
+        read.facts,
+      )) {
+        const earlier = declared.find((one) => sameFilter(one, declaration));
         declared = [
-          ...declared.filter((earlier) => !sameFilter(earlier, declaration)),
-          declaration,
+          ...declared.filter((one) => one !== earlier),
+          withEarlierRescues(declaration, earlier),
         ];
       }
       continue;
@@ -123,6 +145,7 @@ export function controllerFilters(
       method: found.method,
       file: found.block.file,
       enclosingQualifiedName: found.block.info.qualifiedName,
+      nesting: found.block.info.bodyNesting,
       only: declaration.only,
       except: declaration.except,
       rescues: declaration.rescues,
@@ -131,7 +154,7 @@ export function controllerFilters(
 
   return [
     ...resolved.filter((one) => one.filter.onThrow !== true),
-    ...resolved.filter((one) => one.filter.onThrow === true),
+    ...resolved.filter((one) => one.filter.onThrow === true).reverse(),
   ];
 }
 
@@ -163,15 +186,28 @@ export function filterCoversAction(
   return filter.only === null || filter.only.has(actionName);
 }
 
-/** The reference an action records, which points at the filter's own unit. */
+/**
+ * The reference an action records, which points at the filter's own
+ * unit. `caught` gives a handler's exception classes as the run read them.
+ */
 export function filterReference(
   filter: ControllerFilter,
   displayPath: string,
+  caught?: HandlerClasses,
 ): WrapperReference {
   return {
     file: displayPath,
     name: filter.methodName,
     ...(filter.filter.onThrow === true ? { onThrow: true } : {}),
+    ...(caught === undefined
+      ? {}
+      : {
+          catches: caught.classes.map((one) => one.name),
+          ...(caught.classes.some((one) => one.inheritableByUnread)
+            ? { mayCatchUnreadClasses: true }
+            : {}),
+          ...(caught.someUnread ? { mayCatchAny: true } : {}),
+        }),
   };
 }
 
@@ -183,20 +219,30 @@ export interface FilterBody {
   bodyContent?: RawCodeStructure["bodyContent"];
 }
 
+/** What reading a filter's body needs besides the body. */
+export interface FilterReading {
+  facts?: Database | undefined;
+  respondingHelper?: RespondingHelper;
+  /** What each raise written in the filter ends with. */
+  raiseTerminal?: (call: RbNode) => RawTerminal;
+  /** The branches for exceptions the filter's model calls raise. */
+  raised?: readonly RawBranch[];
+}
+
 /**
  * The unit for one filter method. A path that responds ends the
- * request, and every other path hands it on as a `delegate` branch.
+ * request, a path that raises ends it with what the raise ends with, and
+ * every other path hands it on as a `delegate` branch.
  */
 export function filterUnit(
   filter: ControllerFilter,
   pattern: ControllerActions,
   displayPath: string,
   body: FilterBody,
-  facts?: Database | undefined,
-  respondingHelper?: RespondingHelper,
-  raised: readonly RawBranch[] = [],
+  reading: FilterReading = {},
 ): RawCodeStructure {
   const range = rangeOf(filter.method);
+  const { respondingHelper, raiseTerminal } = reading;
   const branches = responseBranches(
     filter.method,
     pattern,
@@ -204,8 +250,9 @@ export function filterUnit(
     body.extraEffects,
     {
       fallthrough: "handOn",
-      facts,
+      facts: reading.facts,
       ...(respondingHelper === undefined ? {} : { respondingHelper }),
+      ...(raiseTerminal === undefined ? {} : { raiseTerminal }),
     },
   );
   return {
@@ -222,7 +269,7 @@ export function filterUnit(
     boundaryBinding: null,
     parameters: [],
     branches: withSlotSources(
-      [...(branches ?? [handsOn(range, body)]), ...raised],
+      [...(branches ?? [handsOn(range, body)]), ...(reading.raised ?? [])],
       body.provenance,
     ),
     bodyContent: body.bodyContent ?? "absent",
@@ -268,6 +315,7 @@ function calledName(statement: RbNode): string | null {
 function declarationsOf(
   statement: RbNode,
   filter: RbControllerFilter,
+  nesting: readonly string[],
   facts: Database | undefined,
 ): Declaration[] {
   const args = readCallArgs(field(statement, "arguments"));
@@ -282,12 +330,8 @@ function declarationsOf(
       : actionsUnder(args.keyword[keywords.exclude], facts);
   const rescues =
     filter.onThrow === true
-      ? args.positional.flatMap((arg) =>
-          arg.type === "constant" || arg.type === "scope_resolution"
-            ? [arg.text.replace(/^::/, "")]
-            : [],
-        )
-      : [];
+      ? rescuedClasses(args, nesting, facts)
+      : RESCUES_NOTHING;
   return methodNamesOf(statement, args, filter, facts).map((methodName) => ({
     filter,
     methodName,
@@ -295,6 +339,32 @@ function declarationsOf(
     except: except ?? new Set<string>(),
     rescues,
   }));
+}
+
+/**
+ * The classes a handler is declared for, each written as a constant or,
+ * as Rails also accepts, as a string with the class's name.
+ */
+function rescuedClasses(
+  args: ReturnType<typeof readCallArgs>,
+  nesting: readonly string[],
+  facts: Database | undefined,
+): Rescues {
+  const refs: ConstantRef[] = [];
+  let someUnread = args.positional.length === 0;
+  for (const arg of args.positional) {
+    const candidates = constantRefCandidates(arg, nesting);
+    const named = candidates.length === 0 ? stringValueOf(arg, facts) : null;
+    if (candidates.length === 0 && named === null) {
+      someUnread = true;
+      continue;
+    }
+    refs.push({
+      text: arg.text,
+      candidates: named === null ? candidates : [named],
+    });
+  }
+  return { refs, someUnread };
 }
 
 function methodNamesOf(
@@ -365,6 +435,24 @@ function skipsOf(
     .map((arg) => stringValueOf(arg, facts))
     .filter((name): name is string => name !== null)
     .map((methodName) => ({ filterName, methodName, actions }));
+}
+
+/**
+ * A handler registered again for other exceptions still catches the ones
+ * it was registered for before, since Rails keeps every registration.
+ */
+function withEarlierRescues(
+  declaration: Declaration,
+  earlier: Declaration | undefined,
+): Declaration {
+  if (earlier === undefined || declaration.filter.onThrow !== true) {
+    return declaration;
+  }
+  const rescues = {
+    refs: [...earlier.rescues.refs, ...declaration.rescues.refs],
+    someUnread: earlier.rescues.someUnread || declaration.rescues.someUnread,
+  };
+  return { ...declaration, rescues };
 }
 
 /** Whether two declarations register the same method through the same call. */

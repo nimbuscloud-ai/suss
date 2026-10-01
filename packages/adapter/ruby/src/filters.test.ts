@@ -267,10 +267,45 @@ end
 `);
 
     expect(filters.map((one) => one.methodName)).toEqual([
-      "render_denied",
       "render_limit",
+      "render_denied",
     ]);
     expect(filters.every((one) => one.filter.onThrow === true)).toBe(true);
+  });
+
+  it("lists handlers in the order Rails tries them, last declared first, and keeps every class a handler is registered for", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  rescue_from AccessDenied, with: :render_denied
+  rescue_from "Billing::LimitReached", with: :render_limit
+  rescue_from Locked, with: :render_denied
+  rescue_from error_class, with: :render_other
+
+  def render_denied(error)
+    head :forbidden
+  end
+
+  def render_limit
+    head :too_many_requests
+  end
+
+  def render_other
+    head :conflict
+  end
+end
+`);
+
+    expect(
+      filters.map((one) => [
+        one.methodName,
+        one.rescues.refs.map((ref) => ref.candidates.at(-1)),
+        one.rescues.someUnread,
+      ]),
+    ).toEqual([
+      ["render_other", [], true],
+      ["render_denied", ["AccessDenied", "Locked"], false],
+      ["render_limit", ["Billing::LimitReached"], false],
+    ]);
   });
 
   it("takes a single symbol where only: usually gives a list", async () => {
@@ -458,5 +493,106 @@ end
       name: "not_found",
       onThrow: true,
     });
+  });
+
+  it("lists the classes a handler catches, and says when an unread class may inherit from one", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  rescue_from Locked, StandardError, with: :refuse
+
+  def refuse(error)
+  end
+end
+`);
+
+    expect(
+      filterReference(filters[0] as never, "app/controllers/orders.rb", {
+        classes: [
+          {
+            name: "Locked",
+            ancestors: ["StandardError", "Exception"],
+            incomplete: false,
+            inheritableByUnread: false,
+          },
+          {
+            name: "StandardError",
+            ancestors: ["Exception"],
+            incomplete: false,
+            inheritableByUnread: true,
+          },
+        ],
+        someUnread: false,
+      }),
+    ).toEqual({
+      file: "app/controllers/orders.rb",
+      name: "refuse",
+      onThrow: true,
+      catches: ["Locked", "StandardError"],
+      mayCatchUnreadClasses: true,
+    });
+  });
+
+  it("says a handler may catch any throw when one of its classes is not a constant", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  rescue_from(*NETWORK_ERRORS, with: :unavailable)
+
+  def unavailable
+  end
+end
+`);
+
+    expect(
+      filterReference(filters[0] as never, "app/controllers/orders.rb", {
+        classes: [],
+        someUnread: filters[0]?.rescues.someUnread ?? false,
+      }),
+    ).toEqual({
+      file: "app/controllers/orders.rb",
+      name: "unavailable",
+      onThrow: true,
+      catches: [],
+      mayCatchAny: true,
+    });
+  });
+
+  it("throws on the path through a filter that raises", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action :forbid_tokens
+
+  def forbid_tokens
+    return unless params[:token]
+
+    raise AccessDenied, "tokens may not do this"
+  end
+end
+`);
+
+    const unit = filterUnit(
+      filters[0] as never,
+      controllerActionsPattern(RAILS_LIKE),
+      "app/controllers/orders.rb",
+      { bodyContent: "statements" },
+      {
+        raiseTerminal: (call) => ({
+          kind: "throw",
+          statusCode: null,
+          body: null,
+          exceptionType: call.text,
+          message: null,
+          component: null,
+          renderTree: null,
+          delegateTarget: null,
+          emitEvent: null,
+          location: { start: 1, end: 1 },
+        }),
+      },
+    );
+
+    expect(unit.branches.map((branch) => branch.terminal.kind)).toEqual([
+      "delegate",
+      "throw",
+    ]);
   });
 });

@@ -771,6 +771,103 @@ describe("discoverUnits: controller actions", () => {
     expect(statuses("index")).toEqual([404, 200]);
   });
 
+  it("ends a path at a raise with the class it raises, and lists the classes each handler catches", async () => {
+    const pack = railsTestPack({
+      routeFor: () => null,
+      filters: [
+        {
+          name: "before_action",
+          methodFrom: "argument",
+          actionKeywords: { include: "only", exclude: "except" },
+        },
+        { name: "rescue_from", methodFrom: "withKeyword", onThrow: true },
+      ],
+      responseStatusCalls: [{ name: "head", statusArgument: 0 }],
+      statusCodeNames: { forbidden: 403, gone: 410 },
+      libraryExceptions: {
+        "Store::NotFound": { status: 404, ancestors: ["StandardError"] },
+      },
+    });
+    const units = await discoverActions(
+      [
+        "class OrdersController < ApplicationController",
+        "  class Locked < StandardError; end",
+        "  before_action :check_token",
+        "  rescue_from Locked, with: :refuse",
+        "  rescue_from(*NETWORK_ERRORS, with: :unavailable)",
+        "  def index",
+        "    raise Locked if locked?",
+        "    raise Store::NotFound unless found?",
+        "    raise Exception if broken?",
+        "    raise error_for(params) if odd?",
+        "    head :ok",
+        "  end",
+        "  def check_token",
+        '    raise "no token" unless token',
+        "  end",
+        "  def refuse",
+        "    head :forbidden",
+        "  end",
+        "  def unavailable",
+        "    head :gone",
+        "  end",
+        "end",
+      ].join("\n"),
+      pack,
+    );
+    const ends = (name: string) =>
+      units
+        .find((unit) => unit.identity.name === name)
+        ?.branches.map((branch) => [
+          branch.terminal.kind,
+          branch.terminal.exceptionType ??
+            (branch.terminal.statusCode as { value?: number } | null)?.value ??
+            null,
+          branch.terminal.exceptionAncestry ?? null,
+        ]);
+    const notFound = ["throw", "Store::NotFound"];
+    expect(ends("index")).toEqual([
+      ["response", null, null],
+      [
+        "throw",
+        "OrdersController::Locked",
+        { ancestors: ["StandardError", "Exception"], incomplete: false },
+      ],
+      [...notFound, { ancestors: ["StandardError"], incomplete: false }],
+      ["throw", "Exception", { ancestors: [], incomplete: false }],
+      ["throw", null, null],
+    ]);
+    expect(ends("check_token")).toEqual([
+      ["delegate", null, null],
+      [
+        "throw",
+        "RuntimeError",
+        {
+          ancestors: ["StandardError", "Exception"],
+          incomplete: false,
+        },
+      ],
+    ]);
+    const index = units.find((unit) => unit.identity.name === "index");
+    expect(
+      index?.wrappers?.filter((reference) => reference.onThrow === true),
+    ).toEqual([
+      {
+        file: "controllers/orders_controller.rb",
+        name: "unavailable",
+        onThrow: true,
+        catches: [],
+        mayCatchAny: true,
+      },
+      {
+        file: "controllers/orders_controller.rb",
+        name: "refuse",
+        onThrow: true,
+        catches: ["OrdersController::Locked"],
+      },
+    ]);
+  });
+
   it("leaves a helper's status unread when the call passes one that does not settle", async () => {
     const pack = railsTestPack({
       routeFor: () => null,

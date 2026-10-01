@@ -1,3 +1,5 @@
+import type { LibraryException } from "@suss/adapter-ruby";
+
 /**
  * A copy of Rack's `Rack::Utils::SYMBOL_TO_STATUS_CODE`, which Rails uses
  * to turn a status symbol into a number.
@@ -74,27 +76,75 @@ export const RACK_STATUS_CODE_NAMES: Record<string, number> = {
   network_authentication_required: 511,
 };
 
+const STANDARD_ERROR = ["StandardError", "Exception"];
+const ACTION_CONTROLLER_ERROR = [
+  "ActionController::ActionControllerError",
+  ...STANDARD_ERROR,
+];
 const ACTIVE_RECORD_ERROR = [
   "ActiveRecord::ActiveRecordError",
-  "StandardError",
-  "Exception",
+  ...STANDARD_ERROR,
 ];
+const INDEX_ERROR = ["IndexError", ...STANDARD_ERROR];
 
 /**
- * The entries ActiveRecord's railtie adds to Rails' `rescue_responses`
- * for the exceptions a model call raises, with the classes each one
- * inherits from.
+ * The exceptions Rails and ActiveRecord raise in a controller, with the
+ * classes each one inherits from. `status` is the entry Rails, and
+ * ActiveRecord's railtie, add to `rescue_responses`.
  */
-export const RESCUE_RESPONSES: Record<
-  string,
-  { status: number; ancestors: string[] }
-> = {
+export const LIBRARY_EXCEPTIONS: Record<string, LibraryException> = {
+  "ActionController::ActionControllerError": { ancestors: STANDARD_ERROR },
+  "ActionController::BadRequest": {
+    status: 400,
+    ancestors: ACTION_CONTROLLER_ERROR,
+  },
+  "ActionController::ParameterMissing": {
+    status: 400,
+    ancestors: ["KeyError", ...INDEX_ERROR],
+  },
+  "ActionController::UnpermittedParameters": { ancestors: INDEX_ERROR },
+  "ActionController::RoutingError": {
+    status: 404,
+    ancestors: ACTION_CONTROLLER_ERROR,
+  },
+  "AbstractController::ActionNotFound": {
+    status: 404,
+    ancestors: STANDARD_ERROR,
+  },
+  "ActionController::MethodNotAllowed": {
+    status: 405,
+    ancestors: ACTION_CONTROLLER_ERROR,
+  },
+  "ActionController::NotImplemented": {
+    status: 501,
+    ancestors: [
+      "ActionController::MethodNotAllowed",
+      ...ACTION_CONTROLLER_ERROR,
+    ],
+  },
+  "ActionController::UnknownFormat": {
+    status: 406,
+    ancestors: ACTION_CONTROLLER_ERROR,
+  },
+  "ActionController::InvalidAuthenticityToken": {
+    status: 422,
+    ancestors: ACTION_CONTROLLER_ERROR,
+  },
+  "ActiveRecord::ActiveRecordError": { ancestors: STANDARD_ERROR },
   "ActiveRecord::RecordNotFound": {
     status: 404,
     ancestors: ACTIVE_RECORD_ERROR,
   },
   "ActiveRecord::RecordInvalid": {
     status: 422,
+    ancestors: ACTIVE_RECORD_ERROR,
+  },
+  "ActiveRecord::RecordNotSaved": {
+    status: 422,
+    ancestors: ACTIVE_RECORD_ERROR,
+  },
+  "ActiveRecord::StaleObjectError": {
+    status: 409,
     ancestors: ACTIVE_RECORD_ERROR,
   },
 };

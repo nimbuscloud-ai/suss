@@ -30,6 +30,7 @@ import {
   predicateOf,
 } from "./paths/predicates.js";
 import { guardInputs } from "./provenance.js";
+import { escapingRaises } from "./raises.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
@@ -313,6 +314,8 @@ export interface BranchOptions {
   respondingHelper?: RespondingHelper;
   /** The status a helper's caller passed for each of the helper's parameters, when the body read is a helper. */
   boundStatuses?: ReadonlyMap<string, number>;
+  /** What each raise that leaves the body ends with. Without it, a path that raises is left out. */
+  raiseTerminal?: (call: RbNode) => RawTerminal;
 }
 
 /**
@@ -560,7 +563,14 @@ export function responseBranches(
   };
   const responses = collectResponseCalls(body, responders, []);
   const returns = collectReturns(body, []);
-  const lowered = lowerRubyBody(body, returns, responses, pattern.formatSwitch);
+  const raises =
+    options.raiseTerminal === undefined ? [] : escapingRaises(method);
+  const lowered = lowerRubyBody(
+    body,
+    [...returns, ...raises],
+    responses,
+    pattern.formatSwitch,
+  );
 
   // A `return` written on its own responds with whatever Rails renders
   // implicitly, so it is an outcome of its own. One written around a
@@ -576,7 +586,7 @@ export function responseBranches(
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
     },
-    terminals,
+    [...terminals, ...raises],
   );
 
   const statusNames = pattern.statusCodeNames ?? {};
@@ -614,10 +624,30 @@ export function responseBranches(
     });
   }
 
-  if (outcomes.length === 0) {
+  const raised = raises.flatMap((call) => {
+    const terminal = options.raiseTerminal?.(call);
+    return terminal === undefined
+      ? []
+      : (enumerated.byTerminal.get(call) ?? []).map((path): RawBranch => {
+          const conditions = conditionsOf(path);
+          return {
+            conditions,
+            terminal,
+            effects: effectsReaching(effects, conditions),
+            ...(extraEffects === undefined ? {} : { extraEffects }),
+            location: terminal.location,
+            isDefault: false,
+          };
+        });
+  });
+
+  if (outcomes.length === 0 && raised.length === 0) {
     return null;
   }
-  return outcomes.map((outcome) =>
-    branchOf(outcome, pattern, effects, extraEffects, options),
-  );
+  return [
+    ...outcomes.map((outcome) =>
+      branchOf(outcome, pattern, effects, extraEffects, options),
+    ),
+    ...raised,
+  ];
 }

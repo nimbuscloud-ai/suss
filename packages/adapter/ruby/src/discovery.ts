@@ -29,6 +29,7 @@ import {
   instanceMethodsByName,
   instanceMethodVisibility,
   methodHasStatements,
+  NodeMap,
   rangeOf,
   readCallArgs,
   runStatements,
@@ -38,6 +39,7 @@ import {
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
 import { envReadEffects } from "./envReads.js";
+import { exceptionReader } from "./exceptionClasses.js";
 import {
   controllerFilters,
   filterCoversAction,
@@ -50,7 +52,12 @@ import {
   slotProvenance,
   withSlotSources,
 } from "./provenance.js";
-import { raisedStatusBranches } from "./raisedStatuses.js";
+import {
+  raisedStatusBranches,
+  raisedTerminal,
+  rescuedBy,
+} from "./raisedStatuses.js";
+import { escapingRaises, raisedClassRef } from "./raises.js";
 import {
   boundStatusArguments,
   helperResponse,
@@ -82,6 +89,7 @@ import type {
   RawEffect,
   RawParameter,
   RawProvenance,
+  RawTerminal,
   Reading,
 } from "@suss/extractor";
 import type {
@@ -95,6 +103,8 @@ import type { BlockConfigures, BodyBlocks, CallArgs, Range } from "./ast.js";
 import type { ClientCallOptions } from "./clientCalls.js";
 import type { ConstantFileCache } from "./constantPath.js";
 import type { DynamicNames } from "./defineMethod.js";
+import type { ExceptionClass, ExceptionReader } from "./exceptionClasses.js";
+import type { ControllerFilter } from "./filters.js";
 import type {
   ControllerActions,
   GraphqlObjectFields,
@@ -103,6 +113,7 @@ import type {
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
+import type { HandlerClasses, Rescued } from "./raisedStatuses.js";
 import type { RespondingHelper } from "./responseStatus.js";
 import type { ClassInfo } from "./scope.js";
 import type { SharedGroupIndex } from "./testSharedGroups.js";
@@ -497,27 +508,48 @@ async function controllerActionUnits(
   );
 
   const respondingHelper = respondingHelpersOf(ancestry, pattern, options);
-  const rescuedAnywhere = new Set(filters.flatMap((filter) => filter.rescues));
+  const readException = exceptionReader(
+    lookup,
+    pattern.libraryExceptions ?? {},
+  );
+  const caught = await handlerClasses(filters, readException);
+  const rescuedAround = (actionName: string | null): Rescued =>
+    rescuedBy(
+      filters
+        .filter(
+          (filter) =>
+            actionName === null || filterCoversAction(filter, actionName),
+        )
+        .flatMap((filter) => {
+          const classes = caught.get(filter);
+          return classes === undefined ? [] : [classes];
+        }),
+    );
+  const rescuedAnywhere = rescuedAround(null);
   for (const filter of filters) {
     const displayPath = options.displayPathOf?.(filter.file) ?? filter.file;
     const body = bodyOfMethod(filter.method, filter.file, options);
-    const raw = filterUnit(
-      filter,
-      pattern,
-      displayPath,
-      body,
-      options.facts,
+    const handler = filter.filter.onThrow === true;
+    const raw = filterUnit(filter, pattern, displayPath, body, {
+      facts: options.facts,
       respondingHelper,
-      filter.filter.onThrow === true
-        ? []
-        : raisedStatusBranches(
-            pattern,
-            options.storage?.patterns ?? [],
-            body.extraEffects,
-            rescuedAnywhere,
-            rangeOf(filter.method),
-          ),
-    );
+      ...(handler
+        ? {}
+        : {
+            raiseTerminal: raiseTerminalOf(
+              pattern,
+              await raisedClasses(filter.method, filter.nesting, readException),
+              rescuedAnywhere,
+            ),
+            raised: raisedStatusBranches(
+              pattern,
+              options.storage?.patterns ?? [],
+              body.extraEffects,
+              rescuedAnywhere,
+              rangeOf(filter.method),
+            ),
+          }),
+    });
     units.push(raw);
     options.onReachSeed?.(raw, {
       file: filter.file,
@@ -526,7 +558,7 @@ async function controllerActionUnits(
     });
   }
 
-  const emitAction = (
+  const emitAction = async (
     actionName: string,
     method: RbNode,
     block: ReachedBody,
@@ -537,8 +569,10 @@ async function controllerActionUnits(
         filterReference(
           filter,
           options.displayPathOf?.(filter.file) ?? filter.file,
+          caught.get(filter),
         ),
       );
+    const rescued = rescuedAround(actionName);
     const raw = buildControllerActionUnit(
       pack,
       pattern,
@@ -555,10 +589,11 @@ async function controllerActionUnits(
       options,
       around,
       respondingHelper,
-      new Set(
-        filters
-          .filter((filter) => filterCoversAction(filter, actionName))
-          .flatMap((filter) => filter.rescues),
+      rescued,
+      raiseTerminalOf(
+        pattern,
+        await raisedClasses(method, block.info.bodyNesting, readException),
+        rescued,
       ),
     );
     units.push(raw);
@@ -570,9 +605,49 @@ async function controllerActionUnits(
   };
 
   for (const [actionName, method, block] of actions) {
-    emitAction(actionName, method, block);
+    await emitAction(actionName, method, block);
   }
   return units;
+}
+
+/** The exception classes each handler is registered for. */
+async function handlerClasses(
+  filters: readonly ControllerFilter[],
+  readException: ExceptionReader,
+): Promise<Map<ControllerFilter, HandlerClasses>> {
+  const caught = new Map<ControllerFilter, HandlerClasses>();
+  for (const filter of filters) {
+    if (filter.filter.onThrow === true) {
+      caught.set(filter, {
+        classes: await Promise.all(filter.rescues.refs.map(readException)),
+        someUnread: filter.rescues.someUnread,
+      });
+    }
+  }
+  return caught;
+}
+
+/** The class each raise in a method raises, or null for one the source computes. */
+async function raisedClasses(
+  method: RbNode,
+  nesting: readonly string[],
+  readException: ExceptionReader,
+): Promise<NodeMap<ExceptionClass | null>> {
+  const classes = new NodeMap<ExceptionClass | null>();
+  for (const call of escapingRaises(method)) {
+    const ref = raisedClassRef(call, nesting);
+    classes.set(call, ref === null ? null : await readException(ref));
+  }
+  return classes;
+}
+
+function raiseTerminalOf(
+  pattern: ControllerActions,
+  classes: NodeMap<ExceptionClass | null>,
+  rescued: Rescued,
+): (call: RbNode) => RawTerminal {
+  return (call) =>
+    raisedTerminal(pattern, classes.get(call) ?? null, rescued, rangeOf(call));
 }
 
 /**
@@ -683,9 +758,10 @@ function buildControllerActionUnit(
   method: RbNode,
   file: { display: string; absolute: string },
   bodyRead: BodyReadOptions,
-  wrappers: readonly WrapperReference[] = [],
-  respondingHelper?: RespondingHelper,
-  rescued: ReadonlySet<string> = new Set(),
+  wrappers: readonly WrapperReference[],
+  respondingHelper: RespondingHelper,
+  rescued: Rescued,
+  raiseTerminal: (call: RbNode) => RawTerminal,
 ): RawCodeStructure {
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
@@ -697,7 +773,8 @@ function buildControllerActionUnit(
     body.extraEffects,
     {
       facts: bodyRead.facts,
-      ...(respondingHelper === undefined ? {} : { respondingHelper }),
+      respondingHelper,
+      raiseTerminal,
     },
   );
   return {

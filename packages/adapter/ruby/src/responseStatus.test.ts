@@ -19,7 +19,12 @@ import { findRubyFiles } from "./project.js";
 import { responseBranches } from "./responseStatus.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
-import type { RawBranch, RawEffect, Reading } from "@suss/extractor";
+import type {
+  RawBranch,
+  RawEffect,
+  RawTerminal,
+  Reading,
+} from "@suss/extractor";
 import type { ControllerActions } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { EvaluatedFile } from "./values/evaluator.js";
@@ -445,5 +450,52 @@ describe("responseBranches, effects per branch", () => {
         { type: "stateChange", variable: "counter" },
       ]);
     }
+  });
+});
+
+describe("responseBranches, reading a raise", () => {
+  const throwAt = (call: RbNode): RawTerminal => ({
+    kind: "throw",
+    statusCode: null,
+    body: null,
+    exceptionType: call.text,
+    message: null,
+    component: null,
+    renderTree: null,
+    delegateTarget: null,
+    emitEvent: null,
+    location: { start: 1, end: 1 },
+  });
+
+  it("ends a path at a raise with what the caller says the raise ends with", async () => {
+    const method = await actionMethod(
+      "    raise Denied if locked?\n    head :created",
+    );
+    const branches = responseBranches(
+      method,
+      controllerActionsPattern(RAILS_LIKE),
+      [],
+      undefined,
+      { raiseTerminal: throwAt },
+    );
+    expect(
+      branches?.map((branch) => [
+        branch.terminal.kind,
+        branch.terminal.exceptionType,
+        branch.conditions.map((condition) => condition.polarity),
+      ]),
+    ).toEqual([
+      ["response", null, ["negative"]],
+      ["throw", "raise Denied", ["positive"]],
+    ]);
+  });
+
+  it("leaves a path that raises out when the caller does not ask for raises", async () => {
+    const branches = await branchesOf(
+      "    raise Denied if locked?\n    head :created",
+    );
+    expect(branches.map((branch) => branch.terminal.kind)).toEqual([
+      "response",
+    ]);
   });
 });

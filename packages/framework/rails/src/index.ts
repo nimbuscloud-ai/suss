@@ -23,7 +23,7 @@ import {
 } from "./engines.js";
 import { inflectionFiles, readInflections } from "./inflections.js";
 import { drawDirectoryOf, readRoutes } from "./routes.js";
-import { RACK_STATUS_CODE_NAMES, RESCUE_RESPONSES } from "./statusCodes.js";
+import { LIBRARY_EXCEPTIONS, RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
 import type {
   ControllerActions,
@@ -302,7 +302,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     responseStatusCalls: RESPONSE_STATUS_CALLS,
     statusCodeNames: RACK_STATUS_CODE_NAMES,
     formatSwitch: { name: "respond_to", matchesEvery: "any" },
-    exceptionStatuses: RESCUE_RESPONSES,
+    libraryExceptions: LIBRARY_EXCEPTIONS,
     inheritedMethodNames: [
       ...RAILS_CONTROLLER_METHODS,
       ...(options.inheritedMethodNames ?? []),
