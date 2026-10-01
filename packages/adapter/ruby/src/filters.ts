@@ -19,7 +19,7 @@ import { namesOf } from "./values/literals.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type { RawBranch, RawCodeStructure, Reading } from "@suss/extractor";
 import type { Ancestry, BodyReading } from "./ancestry.js";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
@@ -167,6 +167,7 @@ export function filterUnit(
   displayPath: string,
   body: FilterBody,
   facts?: Database | undefined,
+  respondingHelper?: (name: string) => Reading<number> | null,
 ): RawCodeStructure {
   const range = rangeOf(filter.method);
   const branches = responseBranches(
@@ -174,7 +175,11 @@ export function filterUnit(
     pattern,
     body.effects ?? [],
     body.extraEffects,
-    { fallthrough: "handOn", facts },
+    {
+      fallthrough: "handOn",
+      facts,
+      ...(respondingHelper === undefined ? {} : { respondingHelper }),
+    },
   );
   return {
     identity: {
