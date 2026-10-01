@@ -220,6 +220,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
       successAccessors: ["ok"],
       failureDelivery: "response",
       redirectDelivery: "followed",
+      declaredStatuses: [400, 401],
       graphqlDocument: "query Q { me { id } }",
       graphqlSchemaSdl: "type Query { me: User }",
       sourceDocumentLabel: "server.ts",
@@ -244,6 +245,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
       successAccessors: ["ok"],
       failureDelivery: "response",
       redirectDelivery: "followed",
+      declaredStatuses: [400, 401],
     });
     expect(summary.metadata?.graphql).toMatchObject({
       document: "query Q { me { id } }",
