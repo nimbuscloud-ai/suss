@@ -302,6 +302,14 @@ export type DiscoveryMatch =
        * `app.enableVersioning()`.
        */
       versioning?: RouteVersioning;
+      /**
+       * Decorators, on the route's method or its class, that list a
+       * status the route can respond with, such as `@nestjs/swagger`'s
+       * `@ApiNotFoundResponse()`. A generated spec declares these
+       * statuses because of the decorators, so a check does not expect a
+       * path to produce them.
+       */
+      declaredStatuses?: DeclaredStatusDecorators;
     }
   | {
       /**
@@ -714,6 +722,18 @@ export interface GlobalPrefixCall {
     methodKey: string;
     methods: Record<number, string>;
   };
+}
+
+/** Decorators that list a status a route can respond with. */
+export interface DeclaredStatusDecorators {
+  /** The modules the decorators are imported from. */
+  importModule: string | string[];
+  /**
+   * The status each decorator declares, or null for one that reads the
+   * status from `statusKey` in its options object, `@ApiResponse({ status })`.
+   */
+  decorators: Readonly<Record<string, number | null>>;
+  statusKey: string;
 }
 
 /**

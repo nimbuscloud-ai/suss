@@ -50,13 +50,13 @@ const LIBRARY = `
   export const Version: (version: unknown) => MethodDecorator;
 `;
 
-const MATCH = {
+const MATCH: Extract<DiscoveryPattern["match"], { type: "decoratedRoute" }> = {
   type: "decoratedRoute",
   importModule: "@acme/web",
   classDecorators: ["Controller"],
   methodDecoratorRouteMap: { Get: "GET" },
   versioning: VERSIONING,
-} as const;
+};
 
 const PACK = {
   name: "acme",
@@ -102,14 +102,7 @@ function routesIn(files: Record<string, string>): string[] {
   );
   return sourceFiles
     .flatMap((file) =>
-      discoverDecoratedRoutes(
-        file,
-        MATCH as Extract<DiscoveryPattern["match"], { type: "decoratedRoute" }>,
-        "handler",
-        store,
-        undefined,
-        index,
-      ),
+      discoverDecoratedRoutes(file, MATCH, "handler", store, undefined, index),
     )
     .map(
       (unit) =>

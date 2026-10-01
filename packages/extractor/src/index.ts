@@ -123,6 +123,7 @@ export type {
   ContractPattern,
   DeclaredBinding,
   DeclaredMatch,
+  DeclaredStatusDecorators,
   DiscoveredCustomUnit,
   DiscoveredSubUnit,
   DiscoveredSubUnitParent,

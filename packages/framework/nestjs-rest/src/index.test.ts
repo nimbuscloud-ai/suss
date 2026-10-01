@@ -3,6 +3,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readHttpMetadata } from "@suss/behavioral-ir";
 import { createDecoratorFixtureProject } from "@suss/test-project";
 
 import { nestjsRestFramework } from "./index.js";
@@ -60,6 +61,12 @@ async function runAdapter(
      export const Next: (...args: unknown[]) => ParameterDecorator;
      export class HttpException { constructor(...args: unknown[]); }
      export class BadRequestException extends HttpException {}`,
+  );
+  project.createSourceFile(
+    path.join(dir, "node_modules/@nestjs/swagger/index.d.ts"),
+    `export const ApiResponse: (options: { status: number; description?: string }) => MethodDecorator & ClassDecorator;
+     export const ApiNotFoundResponse: () => MethodDecorator & ClassDecorator;
+     export const ApiUnauthorizedResponse: () => MethodDecorator & ClassDecorator;`,
   );
   project.createSourceFile(
     path.join(dir, "node_modules/@nestjs/core/index.d.ts"),
@@ -364,6 +371,24 @@ describe("nestjsRestFramework: a bootstrap that imports only @nestjs/core", () =
     );
     expect(routesOf(summaries)).toEqual({
       "OrdersController.list": "GET /v2/orders",
+    });
+  }, 60_000);
+});
+
+describe("nestjsRestFramework: statuses the swagger decorators declare", () => {
+  it("records them on the route, from the method and the class", async () => {
+    const summaries = await runAdapter(
+      path.resolve(__dirname, "../../../../fixtures/nestjs-rest-declared"),
+    );
+    const declared = Object.fromEntries(
+      summaries.map((s) => [
+        s.identity.name,
+        readHttpMetadata(s)?.declaredStatuses ?? [],
+      ]),
+    );
+    expect(declared).toEqual({
+      "InvoicesController.show": [401, 404],
+      "InvoicesController.upload": [200, 201, 401],
     });
   }, 60_000);
 });

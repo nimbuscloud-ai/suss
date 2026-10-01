@@ -1412,6 +1412,9 @@ function extractFromSourceFile(
       if (unit.unreadBinding !== undefined) {
         raw.unreadBinding = unit.unreadBinding;
       }
+      if (unit.declaredStatuses !== undefined) {
+        raw.declaredStatuses = unit.declaredStatuses;
+      }
       stampWrappers(raw, unit, wrappers);
 
       const matchedPattern =
