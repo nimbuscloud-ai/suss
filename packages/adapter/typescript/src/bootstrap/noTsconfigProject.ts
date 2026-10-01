@@ -14,6 +14,8 @@ import {
   ScriptTarget,
 } from "ts-morph";
 
+import { pinAutomaticTypes } from "./automaticTypes.js";
+
 /** The suffixes this adapter reads, JavaScript included. */
 export const SOURCE_SUFFIXES = [
   ".ts",
@@ -98,6 +100,7 @@ export function createProjectWithoutTsconfig(rootDir: string): {
       jsx: 4, // ReactJSX, so .jsx and .tsx parse without configuration
     },
   });
+  pinAutomaticTypes(project);
 
   const files = findSourceFiles(rootDir);
   for (const file of files) {
