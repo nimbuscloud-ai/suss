@@ -1009,6 +1009,20 @@ describe("the storage system a project's schema declares", () => {
        }`,
     );
     writeProject(path.join(root, "unschemed"), null);
+
+    // A schema folder that package.json points at, with a subfolder whose
+    // name ends in .prisma beside the file that has the datasource.
+    const split = path.join(root, "split");
+    writeProject(split, null);
+    fs.writeFileSync(
+      path.join(split, "package.json"),
+      JSON.stringify({ prisma: { schema: "db" } }),
+    );
+    fs.mkdirSync(path.join(split, "db/archive.prisma"), { recursive: true });
+    fs.writeFileSync(
+      path.join(split, "db/main.prisma"),
+      `datasource db {\n  provider = "mysql"\n}`,
+    );
   });
 
   function systemsIn(project: string): (string | null)[] {
@@ -1034,6 +1048,10 @@ describe("the storage system a project's schema declares", () => {
 
   it("falls back to postgresql in a project with no schema", () => {
     expect(systemsIn("unschemed")).toEqual(["postgresql", "postgresql"]);
+  });
+
+  it("reads the datasource out of a schema folder, past an entry it cannot read", () => {
+    expect(systemsIn("split")).toEqual(["mysql", "mysql"]);
   });
 });
 
