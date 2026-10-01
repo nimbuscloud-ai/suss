@@ -54,6 +54,14 @@ describe("normalizePath", () => {
     expect(normalizePath("/files/:rest+")).toBe("/files/{rest+}");
     expect(normalizePath("/files/:rest*")).toBe("/files/{rest*}");
   });
+  it("reads a parameter with a pattern as the parameter", () => {
+    expect(
+      normalizePath("/Extensions/:pk([0-9a-f]{8}-[0-9a-f]{4}(?:x|y)\\))"),
+    ).toBe("/extensions/{pk}");
+    expect(normalizePath("/files/:id(\\d+)?/raw")).toBe("/files/{id?}/raw");
+    expect(normalizePath("/files/(Raw)/:id")).toBe("/files/(raw)/{id}");
+    expect(normalizePath("/files/:id(\\d+")).toBe("/files/{id}(\\d+");
+  });
 });
 
 describe("boundaryKey", () => {
