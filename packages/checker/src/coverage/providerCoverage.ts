@@ -76,14 +76,10 @@ function coverageOf(
   const catchesThrownFailures =
     failureDeliveryFor(consumer) === "exception" &&
     consumer.transitions.some((ct) => ct.conditions.some(isCatchEntry));
-  const followsRedirects = redirectDeliveryFor(consumer) === "followed";
 
   return (status) => {
     if (isSuccessStatus(status)) {
       return handles(status) || runsOnSuccess;
-    }
-    if (followsRedirects && FOLLOWED_REDIRECTS.has(status)) {
-      return true;
     }
     return (
       handles(status) || discriminatesByContent(status) || catchesThrownFailures
@@ -107,6 +103,7 @@ export function checkProviderCoverage(
   const successAccessors = successAccessorsFor(consumer);
 
   const covers = coverageOf(provider, consumer);
+  const followsRedirects = redirectDeliveryFor(consumer) === "followed";
 
   const providerByStatus = new Map<number, Transition[]>();
 
@@ -139,6 +136,11 @@ export function checkProviderCoverage(
           severity: "warning",
         });
       }
+      continue;
+    }
+
+    // The client goes on to the next URL, so the caller never sees this one.
+    if (followsRedirects && FOLLOWED_REDIRECTS.has(status)) {
       continue;
     }
 

@@ -219,6 +219,37 @@ describe("checkProviderCoverage", () => {
     expect(checkProviderCoverage(p, c)).toHaveLength(3);
   });
 
+  it("does not ask a client that follows redirects to tell two redirects apart", () => {
+    const signedOut: Predicate = {
+      type: "truthinessCheck",
+      subject: { type: "dependency", name: "currentUser", accessChain: [] },
+      negated: true,
+    };
+    const p = provider("requireLogin", [
+      transition("t-301-signed-out", {
+        conditions: [signedOut],
+        output: response(301),
+      }),
+      transition("t-301-moved", {
+        conditions: [negated(signedOut)],
+        output: response(301),
+      }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = consumer("loadPage", [
+      transition("ct-ok", {
+        conditions: [statusInRange(200, 299)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-failed", {
+        conditions: [negated(statusInRange(200, 299))],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    expect(checkProviderCoverage(p, followsRedirects(c))).toEqual([]);
+  });
+
   it("does not count a catch when the client returns the failing response", () => {
     const p = provider("getUser", [
       transition("t-404", { output: response(404) }),
