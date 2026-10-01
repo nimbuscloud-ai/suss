@@ -1,0 +1,13 @@
+operationId: getAccount
+responses:
+  "200":
+    description: ok
+    content:
+      application/json:
+        schema:
+          $ref: "#/components/schemas/account"
+  "404":
+    description: missing
+    content:
+      application/json:
+        schema:

@@ -233,6 +233,38 @@ describe("contract CLI command", () => {
     expect(parsed).toHaveLength(1);
   });
 
+  it("fails when suss reads no boundary from the file, unless --allow-empty", async () => {
+    const emptySpec = path.join(tmpDir, "empty.yaml");
+    fs.writeFileSync(
+      emptySpec,
+      "openapi: 3.0.3\npaths:\n  /x:\n    $ref: gone.yaml\n",
+    );
+    const outFile = path.join(tmpDir, "empty.json");
+
+    const failed = await capture([
+      "contract",
+      "--from",
+      "openapi",
+      emptySpec,
+      "-o",
+      outFile,
+    ]);
+    expect(failed.exit).toBe(1);
+    expect(failed.stderr).toContain("could not read gone.yaml");
+    expect(failed.stderr).toContain("Pass --allow-empty");
+
+    const allowed = await capture([
+      "contract",
+      "--from",
+      "openapi",
+      emptySpec,
+      "-o",
+      outFile,
+      "--allow-empty",
+    ]);
+    expect(allowed.exit).toBe(0);
+  });
+
   it("rejects an unknown --from value", async () => {
     await expect(
       contract({

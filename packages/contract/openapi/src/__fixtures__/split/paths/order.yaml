@@ -1,0 +1,13 @@
+parameters:
+  - $ref: "../openapi.yaml#/components/parameters/Id"
+get:
+  operationId: getOrder
+  responses:
+    "200":
+      description: ok
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/Order"
+    "404":
+      $ref: "../openapi.yaml#/components/responses/NotFound"

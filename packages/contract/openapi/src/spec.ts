@@ -33,9 +33,16 @@ export interface OpenApiSpec {
   basePath?: string;
   /** OpenAPI 3 puts the prefix in the first server's URL instead. */
   servers?: Array<{ url?: string }>;
-  paths?: Record<string, PathItem | undefined>;
+  /**
+   * OpenAPI allows a ref only on each path item, and some split documents
+   * write the whole map as one ref to an index file, which is read too.
+   */
+  paths?: Record<string, PathItem | Reference | undefined> | Reference;
   /** Swagger 2.0 keeps its named schemas here, where 3.x uses `components.schemas`. */
   definitions?: Record<string, OpenApiSchema | undefined>;
+  /** Swagger 2.0's shared parameters and responses, where 3.x uses `components`. */
+  parameters?: Record<string, OpenApiParameter | undefined>;
+  responses?: Record<string, OpenApiResponse | undefined>;
   components?: {
     schemas?: Record<string, OpenApiSchema | undefined>;
     parameters?: Record<string, OpenApiParameter | undefined>;
@@ -44,18 +51,27 @@ export interface OpenApiSpec {
   };
 }
 
+/**
+ * A pointer to an object written elsewhere, in the same document or in
+ * another file. A path item, a parameter, a request body, a response and
+ * a schema can each be written as one.
+ */
+export interface Reference {
+  $ref: string;
+}
+
 export type PathItem = {
-  parameters?: OpenApiParameter[];
-} & Partial<Record<HttpMethod, OpenApiOperation>>;
+  parameters?: Array<OpenApiParameter | Reference>;
+} & Partial<Record<HttpMethod, OpenApiOperation | Reference>>;
 
 export interface OpenApiOperation {
   operationId?: string;
   summary?: string;
   description?: string;
   tags?: string[];
-  parameters?: OpenApiParameter[];
-  requestBody?: OpenApiRequestBody;
-  responses?: Record<string, OpenApiResponse | undefined>;
+  parameters?: Array<OpenApiParameter | Reference>;
+  requestBody?: OpenApiRequestBody | Reference;
+  responses?: Record<string, OpenApiResponse | Reference | undefined>;
 }
 
 export interface OpenApiParameter {

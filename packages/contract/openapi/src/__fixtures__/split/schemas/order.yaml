@@ -1,0 +1,12 @@
+type: object
+required: [id, status]
+properties:
+  id:
+    type: string
+  status:
+    type: string
+    enum: [open, shipped]
+  customer:
+    $ref: "customer.yaml#/Customer"
+  replaces:
+    $ref: "./order.yaml"
