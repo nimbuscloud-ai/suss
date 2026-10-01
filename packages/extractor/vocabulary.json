@@ -16,6 +16,7 @@
   "argument": "expression kind the extractor records",
   "argumentConstructor": "suss: TerminalExtraction source tag",
   "argumentProperty": "suss: TerminalExtraction source tag",
+  "any": "suss: value-language row tag for a method that applies whatever kind of value receives it",
   "array": "JavaScript value kind",
   "aws_sqs": "OpenTelemetry semconv: messaging.system value, Amazon SQS",
   "body": "suss: ResponsePropertyMeaning tag",

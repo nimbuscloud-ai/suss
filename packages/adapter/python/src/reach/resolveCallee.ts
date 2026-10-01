@@ -122,7 +122,43 @@ export function resolveCallee(
   const outcome =
     read?.outcomes.get(spelling.key) ??
     calleeOutcomeOf(ctx.facts, spelling.key);
+  if (selfCallInMixin(call, outcome, site, ctx)) {
+    return { kind: "stopped", reason: "selfCallInMixin" };
+  }
   return asCallee(outcome, site.owner, ctx);
+}
+
+/**
+ * Whether the call reads a method straight off the receiver of a method
+ * in a class with no bases, which does not define it. Only a subclass can
+ * supply that method, so the call runs whatever the class that mixes this
+ * one in provides. A class with a base is left alone, since the base may
+ * come from a library.
+ */
+function selfCallInMixin(
+  call: PyNode,
+  outcome: CalleeOutcome,
+  site: CallSite,
+  ctx: ResolveContext,
+): boolean {
+  if (
+    outcome.kind !== "callerSupplied" ||
+    !outcome.key.startsWith(`${site.owner}#`)
+  ) {
+    return false;
+  }
+  const callee = readThrough(field(call, "function"));
+  const receiver =
+    callee?.type === "attribute" ? field(callee, "object") : null;
+  if (receiver?.type !== "identifier") {
+    return false;
+  }
+  if (outcome.key !== `${site.owner}#${receiver.text}`) {
+    return false;
+  }
+  return ctx.facts
+    .lookup("instanceOf", 0, outcome.key)
+    .some((row) => ctx.facts.has("plainClass", [String(row[1])]));
 }
 
 /**

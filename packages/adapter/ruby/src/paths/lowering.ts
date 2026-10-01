@@ -14,6 +14,7 @@ import type {
   StatementBlock,
   StructuredStatement,
 } from "@suss/extractor";
+import type { RbFormatSwitch } from "../pack.js";
 import type { RbNode } from "../parser.js";
 
 /** `raise` is an ordinary method call in Ruby, and not a keyword. */
@@ -116,6 +117,66 @@ function blockStatements(block: RbNode | null): RbNode[] {
   return block === null ? [] : children(block);
 }
 
+/** One `format.json { ... }` in a format switch. */
+interface FormatArm {
+  format: string;
+  /** The arm as written up to its block, `format.json`. */
+  header: string;
+  block: RbNode | null;
+}
+
+function attachedBlockOf(call: RbNode): RbNode | null {
+  return (
+    call.namedChildren.find(
+      (child): child is RbNode =>
+        child !== null && (child.type === "do_block" || child.type === "block"),
+    ) ?? null
+  );
+}
+
+/** The one parameter a block takes, `format` in `do |format|`. */
+function soleBlockParameter(block: RbNode): string | null {
+  const names = (field(block, "parameters")?.namedChildren ?? []).filter(
+    (child): child is RbNode => child !== null && child.type === "identifier",
+  );
+  return names.length === 1 ? (names[0] as RbNode).text : null;
+}
+
+/** A block's statements, without its parameter list. */
+function blockBodyStatements(block: RbNode): RbNode[] {
+  const body = field(block, "body");
+  if (body !== null) {
+    return children(body);
+  }
+  return children(block).filter((child) => child.type !== "block_parameters");
+}
+
+/** The node whose statements an arm's block runs. */
+function armBody(block: RbNode): RbNode {
+  return field(block, "body") ?? block;
+}
+
+/** The arm a statement is when it is a call on the block's parameter, or null. */
+function formatArmOf(statement: RbNode, parameter: string): FormatArm | null {
+  if (statement.type !== "call") {
+    return null;
+  }
+  const receiver = field(statement, "receiver");
+  const format = field(statement, "method")?.text;
+  if (receiver?.text !== parameter || format === undefined) {
+    return null;
+  }
+  const block = attachedBlockOf(statement);
+  return {
+    format,
+    header:
+      block === null
+        ? statement.text
+        : callHeaderOf(statement, block).sourceText,
+    block,
+  };
+}
+
 class Lowerer {
   readonly terminalsByStmt = new Map<
     StructuredStatement<RbNode>,
@@ -126,6 +187,7 @@ class Lowerer {
   constructor(
     private readonly terminals: ReadonlyMap<number, RbNode>,
     private readonly responseCalls: NodeSet,
+    private readonly formatSwitch: RbFormatSwitch | undefined,
   ) {}
 
   private attachTerminals(
@@ -280,6 +342,59 @@ class Lowerer {
     return { kind: "switch", groups, exitKind: exitKindOf(node) };
   }
 
+  /**
+   * `respond_to do |format| ... end` runs one arm per request, picked by
+   * the format the request accepts, so it lowers to a switch with an arm
+   * per `format.x`. The arm that accepts every format is the default.
+   * Without one, a request no arm accepts makes the library raise. Null
+   * when the block contains anything besides those arms.
+   */
+  private lowerFormatSwitch(
+    node: RbNode,
+    block: RbNode,
+  ): StructuredStatement<RbNode> | null {
+    const declared = this.formatSwitch;
+    if (
+      declared === undefined ||
+      node.type !== "call" ||
+      field(node, "receiver") !== null ||
+      field(node, "method")?.text !== declared.name
+    ) {
+      return null;
+    }
+    const parameter = soleBlockParameter(block);
+    if (parameter === null) {
+      return null;
+    }
+    const arms = blockBodyStatements(block).map((statement) =>
+      formatArmOf(statement, parameter),
+    );
+    if (arms.length === 0 || arms.some((arm) => arm === null)) {
+      return null;
+    }
+    const groups = (arms as FormatArm[]).map(
+      (arm): CaseGroup<RbNode> => ({
+        condition:
+          arm.format === declared.matchesEvery
+            ? null
+            : { sourceText: arm.header, expression: null },
+        hasTrailingBreak: true,
+        body: arm.block === null ? [] : this.lowerBlock(armBody(arm.block)),
+      }),
+    );
+    const named = groups.filter((group) => group.condition !== null);
+    const fallback = groups.find((group) => group.condition === null) ?? {
+      condition: null,
+      hasTrailingBreak: true,
+      body: [{ kind: "exit", exit: "throw", exitKind: "throw" }],
+    };
+    return {
+      kind: "switch",
+      groups: [...named, fallback],
+      exitKind: exitKindOf(node),
+    };
+  }
+
   lower(node: RbNode): StructuredStatement<RbNode> {
     const exit = exitOf(node);
     if (exit !== null) {
@@ -316,11 +431,16 @@ class Lowerer {
     // `items.each do |i| ... end` runs its block once per item, and a
     // return inside it returns from the method. The engine treats a loop
     // the same way.
-    const attachedBlock = node.namedChildren.find(
-      (child): child is RbNode =>
-        child !== null && (child.type === "do_block" || child.type === "block"),
-    );
-    if (node.type === "call" && attachedBlock !== undefined) {
+    const attachedBlock = attachedBlockOf(node);
+    const formatSwitch =
+      attachedBlock === null
+        ? null
+        : this.lowerFormatSwitch(node, attachedBlock);
+    if (formatSwitch !== null) {
+      return this.attach(formatSwitch, [node]);
+    }
+
+    if (node.type === "call" && attachedBlock !== null) {
       return this.attach(
         {
           kind: "loop",
@@ -367,10 +487,12 @@ export function lowerRubyBody(
   body: RbNode | null,
   terminals: readonly RbNode[],
   responseCalls: readonly RbNode[] = [],
+  formatSwitch?: RbFormatSwitch,
 ): RubyLowering {
   const lowerer = new Lowerer(
     new Map(terminals.map((terminal) => [terminal.id, terminal])),
     new NodeSet(responseCalls),
+    formatSwitch,
   );
   return {
     statements: lowerer.lowerBlock(body),

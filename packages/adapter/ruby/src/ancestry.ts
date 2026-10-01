@@ -418,6 +418,24 @@ function definedInProjectAfter(
     );
 }
 
+/**
+ * The method `name` resolves to with the ancestors this run did not read
+ * passed over. A caller uses it where the project registers the method by
+ * name itself, as `before_action :check_access` does, since a library
+ * module in between is unlikely to define a method the project wrote.
+ */
+export function methodPastUnreadAncestors(
+  ancestry: Ancestry,
+  name: string,
+  read: BodyReading = {},
+): MethodLookup {
+  return methodInAncestry(
+    ancestry.filter((entry) => entry.type !== "unfollowed"),
+    name,
+    read,
+  );
+}
+
 /** What one ancestor's blocks show about `name`: its last definition, since a later `def` replaces an earlier one, and what the `define_method` calls in them define. */
 function definitionIn(
   blocks: readonly ReachedBody[],

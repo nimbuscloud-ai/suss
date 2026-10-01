@@ -208,6 +208,56 @@ describe("the functions a route reaches", () => {
     ]);
   });
 
+  it("gaps a call on self in a mixin that leaves the method to the class that mixes it in", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class AuthMixin:",
+      "    def check(self, token):",
+      "        if not token:",
+      "            self.deny('no token')",
+      "        return token",
+      "",
+      "class Service(AuthMixin):",
+      "    def deny(self, message):",
+      "        raise ValueError(message)",
+      "",
+      '@app.get("/items")',
+      "def items(token: str):",
+      "    return Service().check(token)",
+    ]);
+
+    const summaries = await extract();
+    expect(unitNamed(summaries, "check").gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "self.deny",
+        description: expect.stringContaining("is made on self in a mixin"),
+      }),
+    );
+  });
+
+  it("leaves a call on self alone in a class with a base, which may define it", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from django.views import View",
+      "",
+      "class Page(View):",
+      "    def render(self):",
+      "        return self.http_method_not_allowed()",
+      "",
+      '@app.get("/page")',
+      "def page():",
+      "    return Page().render()",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "render").gaps.filter(
+        (gap) => gap.type === "unfollowedCall",
+      ),
+    ).toEqual([]);
+  });
+
   it("stops at a call on a parameter and on a name a loop rebinds, saying which", async () => {
     write("app/main.py", [
       ...APP_HEADER,
