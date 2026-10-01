@@ -96,6 +96,7 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         statusCodeConstants: STATUS_CONSTANTS,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
+        responsesKeyword: "responses",
         // FastAPI re-exports Starlette's class, and a project may import
         // it from either module.
         responseStatusCalls: [

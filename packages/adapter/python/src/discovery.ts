@@ -46,6 +46,7 @@ import { clientCallReceivers, clientCallUnits } from "./clientCalls.js";
 import {
   classifyDecorator,
   decoratorReceiver,
+  readCallArguments,
   unwrapDecorator,
 } from "./decorators.js";
 import { routeOnDroppedApp } from "./droppedApps.js";
@@ -66,7 +67,11 @@ import { askFileSources, slotProvenance } from "./provenance.js";
 import { rawSqlCallIds, rawSqlOptionsOf } from "./rawSql.js";
 import { bodyStorage, type StorageLookup, storageCallIds } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
-import { askWrittenValues, evaluatedValue } from "./values/evaluator.js";
+import {
+  askWrittenValues,
+  evaluatedValue,
+  moduleOf,
+} from "./values/evaluator.js";
 
 import type {
   DispatchTable,
@@ -1148,6 +1153,14 @@ function functionRouteUnits(
   );
   const dependencyParameters =
     options.wrappers?.dependencyParameterNames(wrappers) ?? new Set<string>();
+  const declaredStatuses = declaredStatusesOf(
+    pattern,
+    pack,
+    classification,
+    functionNode,
+    module,
+    options,
+  );
   return readRoutePaths(
     pattern,
     readPathArgument(classification, options),
@@ -1161,6 +1174,7 @@ function functionRouteUnits(
         name: functionName,
         exportPath: [functionName],
         dependencyParameters,
+        declaredStatuses,
         method: verb,
         routePath: entry.routePath,
         ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
@@ -1221,6 +1235,56 @@ function wrappersAround(
   });
 }
 
+/**
+ * The statuses the route's own code lists through the pattern's
+ * `responsesKeyword`: on its decorator, and on each call the wrapper index
+ * finds above it. A key that does not come to a number is left out.
+ */
+function declaredStatusesOf(
+  pattern: DecoratedFunctionRoute,
+  pack: PythonPack,
+  classification: DecoratorClassification,
+  definitionNode: PyNode,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): number[] {
+  const keyword = pattern.responsesKeyword;
+  if (keyword === undefined) {
+    return [];
+  }
+  const above =
+    options.wrappers?.callsAbove({
+      pack,
+      pattern,
+      file: options.absoluteFile ?? options.filePath,
+      module,
+      classification,
+      definitionNode,
+    }) ?? [];
+  const dictionaries = [
+    classification.keywordArgs[keyword]?.node,
+    ...above.map(
+      (call) =>
+        readCallArguments(field(call, "arguments")).keywordArgs[keyword]?.node,
+    ),
+  ].filter((node): node is PyNode => node?.type === "dictionary");
+  const statuses = dictionaries.flatMap((dictionary) =>
+    dictionary.namedChildren.flatMap((pair) => {
+      const key = pair?.type === "pair" ? field(pair, "key") : null;
+      const status =
+        key === null
+          ? null
+          : statusNumberOf(key, {
+              module: moduleOf(key),
+              facts: options.facts,
+              constants: pattern.statusCodeConstants ?? {},
+            });
+      return status === null ? [] : [status];
+    }),
+  );
+  return [...new Set(statuses)].sort((a, b) => a - b);
+}
+
 interface BuildRouteUnitOptions {
   pack: PythonPack;
   name: string;
@@ -1235,6 +1299,8 @@ interface BuildRouteUnitOptions {
   wrappers?: WrapperReference[];
   /** The parameters the route's dependencies declare, which the library reads off the request too. */
   dependencyParameters?: ReadonlySet<string>;
+  /** Statuses the route's own code lists as possible responses. */
+  declaredStatuses?: number[];
   /** The library's own callables that end the request with a status. Empty when its pack declares none. */
   responseStatusCalls: readonly PyStatusCall[];
   /** The project's facts, so a status written as a name resolves the same way a path does. */
@@ -1487,14 +1553,13 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     ...(pack.requestSpelling === undefined
       ? {}
       : { requestSpelling: pack.requestSpelling }),
+    ...(options.declaredStatuses !== undefined &&
+    options.declaredStatuses.length > 0
+      ? { declaredStatuses: options.declaredStatuses }
+      : {}),
   };
 }
 
-/**
- * The response the library sends on its own when a request input the
- * route reads fails validation. The body never runs on that path, so the
- * branch has no effects. None when the route reads nothing off the request.
- */
 /**
  * Whether the route reads anything the library validates first: one of
  * its own parameters, or a parameter of its path that a dependency
@@ -1513,6 +1578,11 @@ function readsTheRequest(
   );
 }
 
+/**
+ * The response the library sends on its own when a request input the
+ * route reads fails validation. The body never runs on that path, so the
+ * branch has no effects. None when the route reads nothing off the request.
+ */
 function validationFailureBranches(
   pattern: PythonDiscoveryPattern,
   readsRequest: boolean,

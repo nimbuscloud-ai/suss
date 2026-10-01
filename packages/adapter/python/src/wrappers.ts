@@ -41,6 +41,7 @@ import { raisedResponses } from "./paths/raisedResponses.js";
 import { functionNamed } from "./reach/resolveCallee.js";
 import { boundModuleAt, constructionOf, constructorCalled } from "./routers.js";
 import { resolveName } from "./scope.js";
+import { nodeOfResolutionKey } from "./values/evaluator.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -142,8 +143,13 @@ export class PythonWrapperIndex {
   /** By construction key: what a router or a blueprint registered. */
   private readonly ownRoutes = new Map<string, Registered[]>();
   private readonly unitsByKey = new Map<string, RawCodeStructure>();
+  /** By pack name: the app constructions its routes run under. */
+  private readonly appCalls = new Map<
+    string,
+    { call: PyNode; file: string }[]
+  >();
   /** By wrapper reference: the parameter names a dependency function declares, and its file. */
-  private readonly dependencyParameters = new Map<
+  private readonly dependencyParameterTable = new Map<
     string,
     { file: string; names: string[] }
   >();
@@ -244,7 +250,7 @@ export class PythonWrapperIndex {
       ...(isThrowForm(declared.form) ? { onThrow: true } : {}),
     };
     if (declared.form.type === "dependency") {
-      this.dependencyParameters.set(referenceKey(reference), {
+      this.dependencyParameterTable.set(referenceKey(reference), {
         file: target.file.file,
         names: parameterNamesOf(target.node),
       });
@@ -262,7 +268,7 @@ export class PythonWrapperIndex {
   ): ReadonlySet<string> {
     const names = new Set<string>();
     for (const reference of references) {
-      const found = this.dependencyParameters.get(referenceKey(reference));
+      const found = this.dependencyParameterTable.get(referenceKey(reference));
       if (found === undefined) {
         continue;
       }
@@ -386,6 +392,21 @@ export class PythonWrapperIndex {
   private ownRoutesOf(
     query: RouteWrapperQuery,
   ): { key: string; registered: readonly Registered[] } | null {
+    const match = this.ownRouterOf(query);
+    return match === null
+      ? null
+      : {
+          key: match.key,
+          registered: this.noted(
+            OWN_ROUTES,
+            match.key,
+            this.ownRoutes.get(match.key),
+          ),
+        };
+  }
+
+  /** The construction call of the router a route is decorated on, when a registrar reads it. */
+  private ownRouterOf(query: RouteWrapperQuery): RegistrarMatch | null {
     const site = this.objectSiteOf(query);
     const bound = site === null ? undefined : this.filesByPath.get(site.file);
     if (site === null || bound === undefined) {
@@ -404,17 +425,54 @@ export class PythonWrapperIndex {
         { pack: query.pack, pattern: query.pattern, form },
       );
       if (match !== null && match.registrar.covers === "ownRoutes") {
-        return {
-          key: match.key,
-          registered: this.noted(
-            OWN_ROUTES,
-            match.key,
-            this.ownRoutes.get(match.key),
-          ),
-        };
+        return match;
       }
     }
     return null;
+  }
+
+  /** Records the app a pack's routes run under, for the keywords written on its construction. */
+  recordApp(pack: string, call: PyNode, file: string): void {
+    const calls = this.appCalls.get(pack) ?? [];
+    if (!calls.some((one) => one.call === call)) {
+      calls.push({ call, file });
+    }
+    this.appCalls.set(pack, calls);
+  }
+
+  /**
+   * Every call that registers something for a route on the way to it:
+   * the app's construction, the mount calls and the routers they mount
+   * onto, and the route's own router. A caller reads a keyword off each.
+   */
+  callsAbove(query: RouteWrapperQuery): PyNode[] {
+    const own = this.ownRouterOf(query);
+    const hops =
+      own === null
+        ? []
+        : (this.options.routers?.mountsAbove(query.pattern, own.key) ?? []);
+    const parents = hops.flatMap((hop) => {
+      const node =
+        hop.parentKey === null
+          ? null
+          : nodeOfResolutionKey(hop.parentKey, this.options.facts);
+      return node === null ? [] : [node];
+    });
+    const files = [
+      ...(this.appCalls.get(query.pack.name) ?? []).map((one) => one.file),
+      ...hops.map((hop) => hop.file),
+    ];
+    if (this.options.facts !== undefined) {
+      for (const file of files) {
+        noteKeyRead(this.options.facts, file);
+      }
+    }
+    return [
+      ...(this.appCalls.get(query.pack.name) ?? []).map((one) => one.call),
+      ...hops.map((hop) => hop.call),
+      ...parents,
+      ...(own === null ? [] : [own.call]),
+    ];
   }
 
   /**
@@ -599,6 +657,9 @@ function registerConstructorDependencies(
     );
     if (match === null) {
       continue;
+    }
+    if (match.registrar.covers === "everyRoute") {
+      index.recordApp(declared.pack.name, match.call, file.file);
     }
     const { keywordArgs } = readCallArguments(field(match.call, "arguments"));
     const listed = keywordArgs[form.keyword];

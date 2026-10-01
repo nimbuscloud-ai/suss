@@ -141,6 +141,26 @@ describe("checkContractImplementation", () => {
     );
   });
 
+  it("leaves a declared status alone when the handler's own code declares it too", () => {
+    const base = handler("GET", "/users/{id}", [
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const findings = checkContractImplementation([
+      document("GET", "/users/{id}", [
+        { statusCode: 200 },
+        { statusCode: 400 },
+        { statusCode: 410 },
+      ]),
+      {
+        ...base,
+        metadata: withHttpMetadata(base.metadata, { declaredStatuses: [400] }),
+      },
+    ]);
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "The openapi document declares response 410, and no path in the handler produces it",
+    ]);
+  });
+
   it("leaves a declared 5XX alone when the handler never produces it", () => {
     const findings = checkContractImplementation([
       document("GET", "/users", [{ statusCode: 200 }, { statusCode: 500 }]),

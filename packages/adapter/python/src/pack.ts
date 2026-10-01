@@ -556,6 +556,13 @@ export interface DecoratedFunctionRoute extends RouteConventions {
   /** Unset leaves the return annotation as the only source for the response shape. */
   responseModelKeyword?: string;
   statusCodeKeyword?: string;
+  /**
+   * The keyword whose dictionary lists statuses a route may respond
+   * with, FastAPI's `responses`, on the route decorator, its router, a
+   * mount call above it or the app. Its keys become the route's declared
+   * statuses.
+   */
+  responsesKeyword?: string;
 }
 
 /**

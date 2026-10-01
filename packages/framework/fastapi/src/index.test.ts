@@ -40,6 +40,7 @@ describe("fastapiFramework", () => {
         }),
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
+        responsesKeyword: "responses",
         responseStatusCalls: [
           {
             callee: "fastapi.HTTPException",

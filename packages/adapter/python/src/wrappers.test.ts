@@ -419,6 +419,49 @@ describe("FastAPI wrappers", () => {
     ]);
   });
 
+  it("lists the statuses responses= declares on the app, the mounts, the routers and the route", async () => {
+    const declaring: PythonPack = {
+      ...fastapiLike,
+      discovery: [
+        {
+          ...fastapiLike.discovery[0],
+          responsesKeyword: "responses",
+        } as PythonPack["discovery"][number],
+      ],
+    };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wrappers-"));
+    fs.writeFileSync(
+      path.join(dir, "main.py"),
+      [
+        "from fastapi import APIRouter, FastAPI",
+        "",
+        "app = FastAPI(responses={500: {}})",
+        "api = APIRouter(responses={400: {}, 401: {}})",
+        "orders = APIRouter()",
+        "",
+        '@orders.get("/orders", responses={409: {}, "default": {}})',
+        "def list_orders():",
+        "    return []",
+        "",
+        "api.include_router(orders, responses={403: {}})",
+        'app.include_router(api, prefix="/v1")',
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractPythonProject({
+      files: findPythonFiles(dir),
+      roots: [dir],
+      packs: [declaring],
+      workspaceRoot: dir,
+    });
+
+    const route = routeFor(summaries, "GET", "/v1/orders");
+    expect(
+      (route.metadata?.http as { declaredStatuses?: number[] })
+        .declaredStatuses,
+    ).toEqual([400, 401, 403, 409, 500]);
+  });
+
   it("gives a router mounted two ways none of the dependencies above it", async () => {
     const summaries = await extractWritten({
       "app/main.py": [
