@@ -359,6 +359,8 @@ export type MethodLookup =
       type: "unsettled";
       reason: string;
       cause: "unreadAncestor" | "dynamicDefine";
+      /** True when an ancestor past the unread one defines it in the project. */
+      definedLater?: boolean;
     }
   | { type: "none" };
 
@@ -371,7 +373,7 @@ export function methodInAncestry(
   name: string,
   read: BodyReading = {},
 ): MethodLookup {
-  for (const entry of ancestry) {
+  for (const [index, entry] of ancestry.entries()) {
     if (entry.type === "root") {
       return { type: "none" };
     }
@@ -380,6 +382,7 @@ export function methodInAncestry(
         type: "unsettled",
         reason: `inherited from ${entry.name}, which this run did not read`,
         cause: "unreadAncestor",
+        definedLater: definedInProjectAfter(ancestry, index, name, read),
       };
     }
 
@@ -396,6 +399,23 @@ export function methodInAncestry(
     }
   }
   return { type: "none" };
+}
+
+/** Whether an ancestor past `index` defines `name` in code the run read. */
+function definedInProjectAfter(
+  ancestry: Ancestry,
+  index: number,
+  name: string,
+  read: BodyReading,
+): boolean {
+  return ancestry
+    .slice(index + 1)
+    .some(
+      (entry) =>
+        entry.type !== "root" &&
+        entry.type !== "unfollowed" &&
+        definitionIn(entry.blocks, name, read).method !== null,
+    );
 }
 
 /** What one ancestor's blocks show about `name`: its last definition, since a later `def` replaces an earlier one, and what the `define_method` calls in them define. */

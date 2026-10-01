@@ -37,7 +37,12 @@ import { calleeMethodName } from "../paths/effects.js";
 import type { UnfollowedReason } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { CalleeOutcome } from "@suss/resolution";
-import type { AncestorLookup, Ancestry, ReachedBody } from "../ancestry.js";
+import type {
+  AncestorLookup,
+  Ancestry,
+  MethodLookup,
+  ReachedBody,
+} from "../ancestry.js";
 import type { BodyBlocks } from "../ast.js";
 import type { DynamicNames } from "../defineMethod.js";
 import type { RbLoaderPattern } from "../pack.js";
@@ -609,13 +614,24 @@ function methodOnAncestryOf(
     return followed(reachedMethod(found.method, found.block, methodName));
   }
   if (found.type === "unsettled") {
-    // An ancestor this run never indexed is a class the project does not
-    // define, so the call is treated like a call into a dependency.
-    return stop(
-      found.cause === "dynamicDefine" ? "definedAtLoadTime" : "outsideRun",
-    );
+    return stop(unsettledReason(found));
   }
   return NO_DECLARATION;
+}
+
+/**
+ * An ancestor this run never indexed is a class the project does not
+ * define, so the call is treated like a call into a dependency, unless
+ * the project defines the method further along. Then what runs there is
+ * likely the project's own method, and the stop is worth a gap.
+ */
+function unsettledReason(
+  found: Extract<MethodLookup, { type: "unsettled" }>,
+): UnfollowedReason {
+  if (found.cause === "dynamicDefine") {
+    return "definedAtLoadTime";
+  }
+  return found.definedLater === true ? "behindUnreadAncestor" : "outsideRun";
 }
 
 function reachedMethod(
