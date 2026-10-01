@@ -781,6 +781,50 @@ describe("extract over a TypeScript project with a tsconfig, given --files", () 
   });
 });
 
+describe("extract --dir under a tsconfig that covers the whole repository", () => {
+  function handlerReading(table: string): string {
+    return [
+      'import type { SQSEvent } from "aws-lambda";',
+      'import { Pool } from "pg";',
+      "const pool = new Pool();",
+      "export const handler = async (event: SQSEvent) => {",
+      `  await pool.query("SELECT id FROM ${table} WHERE id = $1", [event.Records[0].body]);`,
+      "};",
+      "",
+    ].join("\n");
+  }
+
+  it("walks only the directory it was pointed at", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-walk-under-"));
+    fs.writeFileSync(
+      path.join(root, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { target: "ESNext", module: "ESNext", noEmit: true },
+      }),
+    );
+    for (const [name, table] of [
+      ["orders", "orders"],
+      ["billing", "dim_account"],
+    ]) {
+      fs.mkdirSync(path.join(root, "packages", name), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, "packages", name, "handler.ts"),
+        handlerReading(table),
+      );
+    }
+
+    const summaries = await extract({
+      dir: path.join(root, "packages", "orders"),
+      frameworks: ["aws-lambda", "pg"],
+      noCache: true,
+      allowEmpty: true,
+    });
+
+    const files = [...new Set(summaries.map((s) => s.location.file))];
+    expect(files).toEqual([path.join("packages", "orders", "handler.ts")]);
+  });
+});
+
 describe("the note a run writes beside its summaries", () => {
   function projectMissingItsSubmodule(): string {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-missing-sub-"));

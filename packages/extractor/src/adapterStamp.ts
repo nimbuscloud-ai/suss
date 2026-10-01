@@ -204,6 +204,8 @@ export interface ExtractionConfig {
   importRoots?: readonly string[] | undefined;
   /** The modules the project lists, which decide which units discovery finds. */
   modules?: readonly SettledModule[] | undefined;
+  /** The directory the run walks when it walks only part of its project. */
+  walkedDirectory?: string | undefined;
 }
 
 /**
@@ -219,6 +221,7 @@ export function extractionConfigStamp(config: ExtractionConfig): string {
     ["projectRoot", config.projectRoot],
     ["importRoots", config.importRoots?.join(path.delimiter)],
     ["modules", modulesStamp(config.modules)],
+    ["walkedDirectory", config.walkedDirectory],
   ];
   return parts
     .flatMap(([name, value]) =>

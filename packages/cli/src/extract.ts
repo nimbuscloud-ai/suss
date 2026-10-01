@@ -61,7 +61,10 @@ import { UsageError } from "./usageError.js";
 
 import type { PythonPack, UnreadManifest } from "@suss/adapter-python";
 import type { RubyPack } from "@suss/adapter-ruby";
-import type { TypeScriptAdapter } from "@suss/adapter-typescript";
+import type {
+  TypeScriptAdapter,
+  TypeScriptAdapterConfig,
+} from "@suss/adapter-typescript";
 import type {
   BehavioralSummary,
   RenderNode,
@@ -744,8 +747,8 @@ async function importPack(specifier: string): Promise<PackModule | null> {
 export interface ExtractOptions {
   /**
    * Path to the tsconfig covering the code to read. Without one, suss
-   * uses the nearest tsconfig or jsconfig above the working directory,
-   * or reads the directory itself when there is none.
+   * uses the nearest tsconfig or jsconfig at or above `dir`, reading only
+   * the files under `dir`, or reads the directory when there is none.
    */
   tsconfig?: string;
   /** Directory to read when no tsconfig is given. Defaults to cwd. */
@@ -795,9 +798,14 @@ export interface ExtractOptions {
   kept?: KeptAdapters;
 }
 
-/** Where the code to read comes from. A tsconfig is preferred when one exists, because it has the path aliases. */
+/**
+ * Where the code to read comes from. A tsconfig is preferred when one
+ * exists, because it has the path aliases. A tsconfig found above the
+ * directory asked for may include the whole repository below it, so the
+ * run walks only that directory's files and loads the rest on demand.
+ */
 export type Source =
-  | { kind: "tsconfig"; path: string; root: string }
+  | { kind: "tsconfig"; path: string; root: string; walkedDirectory?: string }
   | { kind: "directory"; root: string };
 
 export function resolveSource(
@@ -815,10 +823,36 @@ export function resolveSource(
 
   const root = path.resolve(options.dir ?? process.cwd());
   const nearest = findNearestTsconfig(root);
-  if (nearest !== null) {
-    return { kind: "tsconfig", path: nearest, root: path.dirname(nearest) };
+  if (nearest === null) {
+    return { kind: "directory", root };
   }
-  return { kind: "directory", root };
+  const tsconfigRoot = path.dirname(nearest);
+  return tsconfigRoot === root
+    ? { kind: "tsconfig", path: nearest, root: tsconfigRoot }
+    : {
+        kind: "tsconfig",
+        path: nearest,
+        root: tsconfigRoot,
+        walkedDirectory: root,
+      };
+}
+
+/** The part of the adapter's config that says which files it reads. */
+export function adapterSourceOf(
+  source: Source,
+): Pick<
+  TypeScriptAdapterConfig,
+  "tsConfigFilePath" | "walkedDirectory" | "project"
+> {
+  if (source.kind === "directory") {
+    return { project: createProjectWithoutTsconfig(source.root).project };
+  }
+  return source.walkedDirectory === undefined
+    ? { tsConfigFilePath: source.path }
+    : {
+        tsConfigFilePath: source.path,
+        walkedDirectory: source.walkedDirectory,
+      };
 }
 
 interface LanguageRun {
@@ -917,9 +951,7 @@ async function runTypeScript(
   const make = (): ReportingAdapter => {
     const reports = clearReports({});
     const adapter = createTypeScriptAdapter({
-      ...(source.kind === "tsconfig"
-        ? { tsConfigFilePath: source.path }
-        : { project: createProjectWithoutTsconfig(source.root).project }),
+      ...adapterSourceOf(source),
       projectRoot: runRoot,
       frameworks: packs,
       modules,
@@ -953,6 +985,7 @@ async function runTypeScript(
             modules,
             gaps: options.gaps ?? null,
             noCache: options.noCache === true,
+            walkedDirectory: source.walkedDirectory ?? null,
           }),
           make,
           ({ adapter: held }) => held.loadProgram(),
