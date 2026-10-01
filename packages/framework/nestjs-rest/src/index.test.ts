@@ -22,7 +22,7 @@ const appFixturesDir = path.resolve(
 
 async function runAdapter(
   dir = fixturesDir,
-  { declaresHttpStatus = true } = {},
+  { declaresHttpStatus = true, declaresVersioningType = true } = {},
 ): Promise<BehavioralSummary[]> {
   const project = createDecoratorFixtureProject(dir, "*.ts");
   // Stub `@nestjs/common` so ts-morph import resolution succeeds.
@@ -31,11 +31,14 @@ async function runAdapter(
   project.createSourceFile(
     path.join(dir, "node_modules/@nestjs/common/index.d.ts"),
     `${declaresHttpStatus ? "export declare enum HttpStatus { OK = 200, CREATED = 201, ACCEPTED = 202, NO_CONTENT = 204 }" : ""}
+     ${declaresVersioningType ? "export declare enum VersioningType { URI = 0, HEADER = 1, MEDIA_TYPE = 2, CUSTOM = 3 }" : ""}
      export declare enum RequestMethod { GET = 0, POST = 1, PUT = 2, DELETE = 3, PATCH = 4, ALL = 5 }
      export interface INestApplication {
        setGlobalPrefix(prefix: string, options?: { exclude?: Array<string | { path: string; method: RequestMethod }> }): this;
        listen(port: number): Promise<void>;
      }
+     export declare const VERSION_NEUTRAL: unique symbol;
+     export const Version: (version: unknown) => MethodDecorator;
      export const HttpCode: (status: number) => MethodDecorator;
      export const Controller: (...args: unknown[]) => ClassDecorator;
      export const Get: (...args: unknown[]) => MethodDecorator;
@@ -64,6 +67,7 @@ async function runAdapter(
     // importing only `@nestjs/core` does not reach the controllers' module.
     `interface NestApplication {
        setGlobalPrefix(prefix: string, options?: unknown): this;
+       enableVersioning(options?: unknown): this;
        listen(port: number): Promise<void>;
      }
      export declare class NestFactory {
@@ -361,5 +365,73 @@ describe("nestjsRestFramework: a bootstrap that imports only @nestjs/core", () =
     expect(routesOf(summaries)).toEqual({
       "OrdersController.list": "GET /v2/orders",
     });
+  }, 60_000);
+});
+
+describe("nestjsRestFramework: API versions", () => {
+  const versionedDir = (name: string) =>
+    path.resolve(__dirname, "../../../../fixtures/nestjs-rest-versioned", name);
+
+  function routeList(summaries: BehavioralSummary[]): string[] {
+    return summaries
+      .filter((s) => s.kind === "handler")
+      .map((s) => {
+        const semantics = s.identity.boundaryBinding?.semantics;
+        const route =
+          semantics?.name === "rest"
+            ? `${semantics.method} ${semantics.path}`
+            : "none";
+        return `${s.identity.name.split("#")[0]}: ${route}`;
+      })
+      .sort();
+  }
+
+  it("puts each version a route serves in its path under URI versioning", async () => {
+    const summaries = await runAdapter(versionedDir("uri"));
+    expect(routeList(summaries)).toEqual([
+      "InvoicesController.list: GET /api/v2/invoices",
+      "InvoicesController.list: GET /api/v3/invoices",
+      "InvoicesController.show: GET /api/v4/invoices/:id",
+      "InvoicesController.status: GET /api/invoices/status",
+      "ReceiptsController.create: POST /api/v1/receipts",
+    ]);
+  }, 60_000);
+
+  it("reads VersioningType.URI when @nestjs/common is not installed to declare it", async () => {
+    const summaries = await runAdapter(versionedDir("uri"), {
+      declaresVersioningType: false,
+    });
+    expect(routeList(summaries)).toContain(
+      "InvoicesController.show: GET /api/v4/invoices/:id",
+    );
+  }, 60_000);
+
+  it("leaves the path alone when a header picks the version", async () => {
+    const summaries = await runAdapter(versionedDir("header"));
+    expect(routeList(summaries)).toEqual([
+      "InvoicesV1Controller.show: GET /invoices/:id",
+      "InvoicesV2Controller.show: GET /invoices/:id",
+    ]);
+  }, 60_000);
+
+  it("claims no path for a versioned route when the versioning type does not read", async () => {
+    const summaries = await runAdapter(versionedDir("unread"));
+    expect(routeList(summaries)).toEqual([
+      "InvoicesController.show: GET null",
+      "ReceiptsController.list: GET /receipts",
+    ]);
+    const show = summaries.find(
+      (s) => s.identity.name === "InvoicesController.show",
+    );
+    expect(show?.gaps.map((gap) => gap.description).join(" ")).toContain(
+      "API version",
+    );
+  }, 60_000);
+
+  it("ignores the version a controller states when nothing turns versioning on", async () => {
+    const summaries = await runAdapter(versionedDir("off"));
+    expect(routeList(summaries)).toEqual([
+      "InvoicesController.show: GET /invoices/:id",
+    ]);
   }, 60_000);
 });
