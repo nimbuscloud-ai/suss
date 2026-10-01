@@ -22,6 +22,7 @@ export {
   importedNamesOf,
   importedRootsOf,
   namedImportsOf,
+  specifierImportedAs,
 } from "./discovery/importScan.js";
 export { discoverUnits } from "./discovery/index.js";
 // What a value at a position turns out to be. A pack calls these

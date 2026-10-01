@@ -19,10 +19,10 @@ import {
   type ObjectLiteralExpression,
   Project,
   type SourceFile,
-  SyntaxKind,
 } from "ts-morph";
 
 import {
+  declarationsBehind,
   exportedDeclarationsOf,
   findNearestTsconfig,
   objectLiteralOf,
@@ -31,7 +31,7 @@ import {
   propertyOf,
   propertyValueOf,
   ResolutionStore,
-  resolveAliasedSymbol,
+  specifierImportedAs,
   stringValueOf,
   symbolBehind,
   workspaceNameFor,
@@ -228,17 +228,11 @@ function declaredModuleOf(component: Node): ComponentModule | undefined {
   };
 }
 
+/** An import whose module did not resolve leaves only the import itself. */
 function componentDeclarationOf(component: Identifier): Node | undefined {
-  const symbol = symbolBehind(component);
-  if (symbol === undefined) {
-    return undefined;
-  }
-  const target = symbol.isAlias() ? resolveAliasedSymbol(symbol) : symbol;
-  // An import whose module did not resolve lands on a symbol with no
-  // declarations, or on the import itself.
-  return target
-    ?.getDeclarations()
-    .find((declaration) => !isImportBinding(declaration));
+  return declarationsBehind(symbolBehind(component)).find(
+    (declaration) => !isImportBinding(declaration),
+  );
 }
 
 function isImportBinding(node: Node): boolean {
@@ -266,15 +260,10 @@ function importSpecifierOf(component: Node): string | undefined {
   if (!N.isIdentifier(component)) {
     return undefined;
   }
-  for (const declaration of symbolBehind(component)?.getDeclarations() ?? []) {
-    const imported = declaration.getFirstAncestorByKind(
-      SyntaxKind.ImportDeclaration,
-    );
-    if (imported !== undefined) {
-      return imported.getModuleSpecifierValue();
-    }
-  }
-  return undefined;
+  return (
+    specifierImportedAs(component.getSourceFile(), component.getText()) ??
+    undefined
+  );
 }
 
 /** The object literal a declaration or expression resolves to, or null. */
