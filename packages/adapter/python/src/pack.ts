@@ -12,6 +12,7 @@
  */
 
 import type { RequestSpellingMetadata } from "@suss/behavioral-ir";
+import type { RedirectOption } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 
 export interface PythonPack {
@@ -360,6 +361,12 @@ export interface PyClientResponse {
   failureDelivery?: "response" | "exception";
   /** Whether the client follows a redirect itself or hands the 3xx back. */
   redirectDelivery?: "followed" | "response";
+  /**
+   * The keyword argument one call passes to change `redirectDelivery`
+   * for itself: `allow_redirects` for requests, `follow_redirects` for
+   * httpx.
+   */
+  redirectOption?: RedirectOption;
 }
 
 /** An object a module exports that a route reads the request off. */

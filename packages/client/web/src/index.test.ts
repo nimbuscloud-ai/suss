@@ -3,9 +3,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readHttpMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { webFetchPack } from "./index.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 describe("webFetchPack — pack shape", () => {
   it("exposes a consumer discovery pattern for global fetch", async () => {
@@ -74,6 +77,48 @@ describe("webFetchPack — integration", () => {
       expect(sem.method).toBe("POST");
       expect(sem.path).toBe("/users");
     }
+  });
+
+  it("reads whether one call follows redirects off its options", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      const manual = { redirect: "manual" } as const;
+
+      export async function handBack() {
+        return fetch("/login", { redirect: "manual" });
+      }
+
+      export async function handBackThroughAName() {
+        return fetch("/login", manual);
+      }
+
+      export async function follow() {
+        return fetch("/login", { redirect: "follow" });
+      }
+
+      export async function byDefault() {
+        return fetch("/login");
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const deliveryOf = (name: string) =>
+      readHttpMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.redirectDelivery;
+
+    expect([
+      deliveryOf("handBack"),
+      deliveryOf("handBackThroughAName"),
+      deliveryOf("follow"),
+      deliveryOf("byDefault"),
+    ]).toEqual(["response", "response", "followed", "followed"]);
   });
 
   it("reads the global through globalThis or window the same as bare fetch", async () => {

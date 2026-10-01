@@ -14,6 +14,7 @@ import {
   piecesOf,
   record,
   SET_CAP,
+  scalarOf,
   sequence,
   string,
   text,
@@ -148,6 +149,24 @@ describe("constantOf and truthOf", () => {
     expect(truthOf(text("a"))).toBe(true);
     expect(truthOf(hole("flag"))).toBeNull();
     expect(truthOf({ kind: "constant", options: [true, false] })).toBeNull();
+  });
+});
+
+describe("scalarOf", () => {
+  it("settles on one string, number or boolean", () => {
+    expect([
+      scalarOf(text("manual")),
+      scalarOf(constant(0)),
+      scalarOf(constant(false)),
+    ]).toEqual(["manual", 0, false]);
+  });
+
+  it("gives null for a value with no single scalar", () => {
+    expect([
+      scalarOf(hole("redirect")),
+      scalarOf(constant(null)),
+      scalarOf({ kind: "constant", options: [0, 5] }),
+    ]).toEqual([null, null, null]);
   });
 });
 

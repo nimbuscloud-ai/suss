@@ -507,6 +507,59 @@ function offTheRequest(
     : null;
 }
 
+/**
+ * Whether a reference reads one of the handler's parameters somewhere
+ * other than the request sections its pack declared: a field middleware
+ * put on the request, or state on the response object. Code outside the
+ * handler set that value, so a branch on it says nothing about the
+ * request. False for a handler whose pack declared no sections.
+ */
+export function readsBesideTheRequest(
+  summary: BehavioralSummary,
+  ref: ValueRef,
+): boolean {
+  const spelling = readRequestSpellingMetadata(summary);
+  if (spelling === undefined) {
+    return false;
+  }
+  const sections = sectionsOf(spelling);
+  const path = requestPathOf(summary, asInputRead(ref), sections);
+  return path !== null && underSection(path, sections) === null;
+}
+
+/**
+ * A chain of reads off an input, written as the input and the path, the
+ * form `readPathOf` follows. A value that does not start at an input
+ * comes back as it was.
+ */
+function asInputRead(ref: ValueRef): ValueRef {
+  if (ref.type !== "derived") {
+    return ref;
+  }
+  const inner = asInputRead(ref.from);
+  if (inner.type !== "input") {
+    return ref;
+  }
+  // A step with no name, such as a call, ends the path where it is.
+  const step = stepNamed(ref.derivation);
+  return step === null ? inner : { ...inner, path: [...inner.path, step] };
+}
+
+function stepNamed(
+  derivation: Extract<ValueRef, { type: "derived" }>["derivation"],
+): string | null {
+  if (derivation.type === "propertyAccess") {
+    return derivation.property;
+  }
+  if (derivation.type === "destructured") {
+    return derivation.field;
+  }
+  if (derivation.type === "indexAccess") {
+    return typeof derivation.index === "string" ? derivation.index : null;
+  }
+  return null;
+}
+
 type BoundaryInputSpellings = {
   [K in Semantics["name"]]: (
     summary: BehavioralSummary,

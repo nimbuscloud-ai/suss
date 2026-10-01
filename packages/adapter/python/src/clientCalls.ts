@@ -12,7 +12,8 @@
  */
 
 import { hasNameHole, restBinding } from "@suss/behavioral-ir";
-import { pathOf } from "@suss/values";
+import { redirectDeliveryWhenSet } from "@suss/extractor";
+import { pathOf, scalarOf } from "@suss/values";
 
 import {
   children,
@@ -32,7 +33,11 @@ import {
 import { originOf } from "./values/origin.js";
 
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type {
+  RawBranch,
+  RawCodeStructure,
+  RedirectDelivery,
+} from "@suss/extractor";
 import type { PyClientCall, PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { TerminalBranch } from "./paths/bodyBranches.js";
@@ -43,6 +48,8 @@ interface RequestCall {
   method: string;
   path: string;
   range: ReturnType<typeof rangeOf>;
+  /** What this call does with a redirect, when it passes the pack's option. */
+  redirectDelivery?: RedirectDelivery;
 }
 
 export interface ClientCallOptions {
@@ -168,6 +175,44 @@ function requestCall(
   options: ClientCallOptions,
   site?: string,
 ): RequestCall | null {
+  const stated = methodAndPath(call, attribute, pattern, options, site);
+  if (stated === null) {
+    return null;
+  }
+  const redirectDelivery = redirectDeliveryAt(call, pattern, options, site);
+  return redirectDelivery === undefined
+    ? stated
+    : { ...stated, redirectDelivery };
+}
+
+/**
+ * What the call does with a redirect when it passes the pack's redirect
+ * option with a value the evaluator settles, as `allow_redirects=False`
+ * does. Undefined leaves the pack's default.
+ */
+function redirectDeliveryAt(
+  call: PyNode,
+  pattern: PyClientCall,
+  options: ClientCallOptions,
+  site?: string,
+): RedirectDelivery | undefined {
+  const option = pattern.response?.redirectOption;
+  const argument =
+    option === undefined ? null : argumentAt(call, null, option.name);
+  if (option === undefined || argument === null) {
+    return undefined;
+  }
+  const value = scalarOf(evaluatedValue(argument, options.facts, site));
+  return value === null ? undefined : redirectDeliveryWhenSet(option, value);
+}
+
+function methodAndPath(
+  call: PyNode,
+  attribute: string,
+  pattern: PyClientCall,
+  options: ClientCallOptions,
+  site?: string,
+): RequestCall | null {
   const verb = pattern.verbAttributeNames[attribute];
   if (verb !== undefined) {
     const path = urlAt(
@@ -266,10 +311,13 @@ function urlAt(
   return pathOf(evaluatedValue(argument, options.facts, site)) ?? null;
 }
 
-/** The argument at a position, or the one written under a keyword. */
+/**
+ * The argument written under a keyword, or the one at a position. A null
+ * position reads the keyword only.
+ */
 function argumentAt(
   call: PyNode,
-  position: number,
+  position: number | null,
   keyword?: string,
 ): PyNode | null {
   const args = field(call, "arguments");
@@ -287,7 +335,7 @@ function argumentAt(
     }
     positional.push(child);
   }
-  return positional[position] ?? null;
+  return position === null ? null : (positional[position] ?? null);
 }
 
 /**
@@ -413,6 +461,9 @@ function clientUnit(
     parameters: [],
     branches: callerBranches(definition, range, options.facts),
     ...responseAccessors(pattern),
+    ...(request.redirectDelivery === undefined
+      ? {}
+      : { redirectDelivery: request.redirectDelivery }),
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,

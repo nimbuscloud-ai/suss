@@ -285,6 +285,34 @@ describe("a function that calls a request function", () => {
     });
   });
 
+  it("reads whether one call follows redirects off the pack's keyword", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def check_session():",
+        '    return httpclient.get("/session", allow_redirects=False)',
+        "",
+        "def load():",
+        '    return httpclient.get("/orders")',
+      ].join("\n"),
+      {
+        ...REQUEST_CALLS,
+        response: {
+          redirectDelivery: "followed",
+          redirectOption: { name: "allow_redirects", handsBack: [false] },
+        },
+      },
+    );
+
+    const deliveryOf = (name: string) =>
+      units.find((unit) => unit.identity.name === name)?.redirectDelivery;
+    expect([deliveryOf("check_session"), deliveryOf("load")]).toEqual([
+      "response",
+      "followed",
+    ]);
+  });
+
   it("gives one branch per path the caller takes after the call", async () => {
     const units = await unitsIn(
       [

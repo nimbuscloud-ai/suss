@@ -72,6 +72,7 @@ export {
   type Range,
   record,
   SET_CAP,
+  scalarOf,
   sequence,
   string,
   text,

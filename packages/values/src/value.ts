@@ -229,6 +229,18 @@ export function constantOf(value: Value): Constant | undefined {
   return forced.options[0];
 }
 
+/** The one string, number or boolean a value settles on, or null. */
+export function scalarOf(value: Value): string | number | boolean | null {
+  const text = literalOf(value);
+  if (text !== null) {
+    return text;
+  }
+  const settled = constantOf(value);
+  return typeof settled === "number" || typeof settled === "boolean"
+    ? settled
+    : null;
+}
+
 /** Whether a condition is settled, and which way, or null when it is not. */
 export function truthOf(value: Value): boolean | null {
   const forced = force(value);

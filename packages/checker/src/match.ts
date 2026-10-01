@@ -53,7 +53,7 @@ const CONTAINS_OPAQUE: PredicateTests = {
   call: () => false,
 };
 
-function predicateContainsOpaque(p: Predicate): boolean {
+export function predicateContainsOpaque(p: Predicate): boolean {
   return (CONTAINS_OPAQUE[p.type] as (q: Predicate) => boolean)(p);
 }
 

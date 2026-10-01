@@ -3,6 +3,7 @@
   "request": "requests: requests.request, which takes the method as its first argument",
   "method": "requests: the keyword requests.request takes the method under",
   "url": "requests: the keyword every request function takes the URL under",
+  "allow_redirects": "requests: the keyword that turns following redirects off for one call",
   "Session": "requests: the constructor for a session, whose instances take the same calls",
   "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python",
   "status_code": "requests: Response.status_code, the status the server sent",

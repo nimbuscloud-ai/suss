@@ -9,6 +9,10 @@ import {
   type DeclaredContract,
   readDeclaredContract,
 } from "./declaredContract.js";
+import {
+  failuresSussCouldNotRead,
+  reachedThroughUnreadCondition,
+} from "./partlyRead.js";
 
 import type {
   BehavioralSummary,
@@ -99,7 +103,11 @@ function checkHandlerAgainstDocument(
       continue;
     }
     produced.add(status);
-    if (contractDeclaresStatus(contract, status)) {
+    // Only a path suss read in full shows the handler can send it.
+    if (
+      contractDeclaresStatus(contract, status) ||
+      reachedThroughUnreadCondition(handler, transition)
+    ) {
       continue;
     }
     findings.push({
@@ -112,8 +120,12 @@ function checkHandlerAgainstDocument(
     });
   }
 
+  const failuresUnread = failuresSussCouldNotRead(handler);
   for (const declared of contract.responses) {
     if (produced.has(declared.statusCode) || declared.statusCode >= 500) {
+      continue;
+    }
+    if (declared.statusCode >= 400 && failuresUnread) {
       continue;
     }
     findings.push({

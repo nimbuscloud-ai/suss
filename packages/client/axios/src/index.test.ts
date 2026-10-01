@@ -72,6 +72,50 @@ describe("axiosPack — integration", () => {
     });
   });
 
+  it("reads maxRedirects off the call's config and off the instance's", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios from "axios";
+
+      const strict = axios.create({ baseURL: "/api", maxRedirects: 0 });
+
+      export async function checkSession() {
+        return axios.get("/session", { maxRedirects: 0 });
+      }
+
+      export async function login(body: unknown) {
+        return axios.post("/login", body, { maxRedirects: 0 });
+      }
+
+      export async function loadProfile() {
+        return strict.get("/profile");
+      }
+
+      export async function loadFeed() {
+        return axios.get("/feed", { maxRedirects: 5 });
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const deliveryOf = (name: string) =>
+      readHttpMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.redirectDelivery;
+
+    expect([
+      deliveryOf("checkSession"),
+      deliveryOf("login"),
+      deliveryOf("loadProfile"),
+      deliveryOf("loadFeed"),
+    ]).toEqual(["response", "response", "response", "followed"]);
+  });
+
   it("distinguishes verbs by the called method name", async () => {
     const project = createTestProject();
     project.createSourceFile(

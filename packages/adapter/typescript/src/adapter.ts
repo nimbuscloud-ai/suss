@@ -25,6 +25,7 @@ import {
 } from "ts-morph";
 
 import {
+  BOUNDARY_ROLE,
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
@@ -99,6 +100,10 @@ import {
   createSourceFileLookup,
   type SourceFileLookup,
 } from "./bootstrap/sourceFileLookup.js";
+import {
+  clientResponseFieldsOfPack,
+  clientResponseFieldsThroughWrapper,
+} from "./clientResponseFields.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import {
   createDependencySink,
@@ -178,6 +183,7 @@ import {
   expandReachableClosure,
   recognizerOnlyRoots,
 } from "./resolve/reachableClosure.js";
+import { redirectDeliveryAtCall } from "./resolve/redirectDelivery.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { pathFromArgument, pathFromProperty } from "./resolve/routePath.js";
 import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
@@ -694,45 +700,6 @@ function unreadUnitStructure(
   };
 }
 
-function responseAccessorNames(
-  pack: PatternPack,
-  kind: ResponsePropertyMapping["semantics"]["type"],
-): string[] | undefined {
-  return pack.responseSemantics
-    ?.filter((m) => m.semantics.type === kind)
-    .map((m) => m.name);
-}
-
-/**
- * The pack's response properties, grouped the way the checker asks for
- * them: how a consumer reaches the body, the status, and the success
- * flag. A kind the pack declares nothing for is left out entirely, so
- * the checker never sees an empty list and reads it as "this pack has no
- * accessors" when it means "this pack did not say".
- */
-const ACCESSOR_FIELD_SEMANTICS = {
-  bodyAccessors: "body",
-  statusAccessors: "statusCode",
-  successAccessors: "statusRange",
-} as const satisfies Record<
-  string,
-  ResponsePropertyMapping["semantics"]["type"]
->;
-
-function responseAccessors(
-  pack: PatternPack,
-): Partial<Record<keyof typeof ACCESSOR_FIELD_SEMANTICS, string[]>> {
-  const out: Partial<Record<keyof typeof ACCESSOR_FIELD_SEMANTICS, string[]>> =
-    {};
-  for (const [field, kind] of Object.entries(ACCESSOR_FIELD_SEMANTICS)) {
-    const names = responseAccessorNames(pack, kind);
-    if (names !== undefined && names.length > 0) {
-      out[field as keyof typeof ACCESSOR_FIELD_SEMANTICS] = names;
-    }
-  }
-  return out;
-}
-
 /**
  * A function that ends without returning still ends. Whether that
  * counts as a terminal is the pack's call, and an HTTP handler says no,
@@ -960,7 +927,8 @@ function readCodeStructure(
     }
   }
 
-  const accessors = unit.callSite !== undefined ? responseAccessors(pack) : {};
+  const responseFields =
+    unit.callSite !== undefined ? clientResponseFieldsOfPack(pack) : {};
 
   return {
     identity: {
@@ -987,13 +955,7 @@ function readCodeStructure(
     dependencyCalls: depCalls,
     declaredContract: null,
     ...(paramReads.length > 0 ? { extraInputReads: paramReads } : {}),
-    ...accessors,
-    ...(unit.callSite !== undefined && pack.failureDelivery !== undefined
-      ? { failureDelivery: pack.failureDelivery }
-      : {}),
-    ...(unit.callSite !== undefined && pack.redirectDelivery !== undefined
-      ? { redirectDelivery: pack.redirectDelivery }
-      : {}),
+    ...responseFields,
   };
 }
 
@@ -1558,6 +1520,15 @@ function extractFromSourceFile(
           pack,
           resolution,
         );
+        const redirect = redirectDeliveryAtCall(
+          unit.callSite,
+          matchedPattern,
+          pack,
+          resolution,
+        );
+        if (redirect !== undefined) {
+          raw.redirectDelivery = redirect;
+        }
         if (binding !== null) {
           raw.boundaryBinding = binding;
           // The summary already records the crossing, so a call whose
@@ -2249,6 +2220,7 @@ function buildCallerSummary(
     path: underBasePath(wrapper.sink.basePath, reading.path),
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
+  Object.assign(raw, clientResponseFieldsThroughWrapper(wrapper.summary));
 
   const summary = assembleSummary(raw, options);
   summary.metadata = {
@@ -3604,6 +3576,24 @@ function synthesizeSubUnits(
   return [...summaries, ...synthesized];
 }
 
+/**
+ * A sub-unit runs as part of a unit that serves or runs, so it takes
+ * that binding whole. A caller's binding is the call it makes, and that
+ * call is in the caller's own body, never in a callback inside it, so a
+ * callback there is internal code the same as a function the closure
+ * walk reaches.
+ */
+function subUnitBinding(parent: BehavioralSummary): BoundaryBinding | null {
+  const binding = parent.identity.boundaryBinding;
+  if (binding === null || BOUNDARY_ROLE[parent.kind] === "provider") {
+    return binding;
+  }
+  return functionCallBinding({
+    transport: "in-process",
+    recognition: "reachable",
+  });
+}
+
 const DEFAULT_SUB_UNIT_TERMINALS: TerminalPattern[] = [
   { kind: "return", match: { type: "returnStatement" }, extraction: {} },
   { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
@@ -3658,11 +3648,7 @@ function buildSubUnitSummary(
     everyUnit,
   );
 
-  // A sub-unit runs on the parent's runtime, so it takes the parent's
-  // binding whole and a pack never redeclares identity for one.
-  if (parent.identity.boundaryBinding !== null) {
-    raw.boundaryBinding = parent.identity.boundaryBinding;
-  }
+  raw.boundaryBinding = subUnitBinding(parent);
 
   const summary = assembleSummary(raw, options);
   if (

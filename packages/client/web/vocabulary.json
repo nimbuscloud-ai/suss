@@ -1,6 +1,9 @@
 {
   "fetch": "WHATWG Fetch: the global request function",
   "method": "WHATWG Fetch: RequestInit key naming the HTTP method",
+  "redirect": "WHATWG Fetch: RequestInit key saying what to do with a redirect",
+  "manual": "WHATWG Fetch: RequestRedirect value handing the redirect back",
+  "error": "WHATWG Fetch: RequestRedirect value rejecting on a redirect",
   "ok": "WHATWG Fetch: Response field, true for a 2xx status",
   "status": "WHATWG Fetch: Response field holding the status code",
   "json": "WHATWG Fetch: Response method reading the body as JSON",
