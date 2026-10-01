@@ -13,6 +13,7 @@ import {
   readDeclaredContract,
   statusAccessorsFor,
 } from "./declaredContract.js";
+import { reachedThroughUnreadCondition } from "./partlyRead.js";
 
 import type {
   BehavioralSummary,
@@ -169,7 +170,10 @@ export function checkBodiesAgainstDeclared(
       continue;
     }
     for (const pt of provider.transitions) {
-      if (pt.output.type !== "response") {
+      if (
+        pt.output.type !== "response" ||
+        reachedThroughUnreadCondition(provider, pt)
+      ) {
         continue;
       }
       const status = extractResponseStatus(pt);
