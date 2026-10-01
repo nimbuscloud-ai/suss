@@ -4,6 +4,7 @@ import {
   summaryIdentifier,
   wrapperIndex,
 } from "@suss/behavioral-ir";
+import { operationKey } from "@suss/ir-core";
 
 import { extractResponseStatus, makeSide } from "../coverage/responseMatch.js";
 import { boundaryKey } from "../pairing/pairing.js";
@@ -52,7 +53,7 @@ export function checkContractImplementation(
     if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
       continue;
     }
-    const key = boundaryKey(binding);
+    const key = operationKey(binding);
     if (key === null) {
       continue;
     }
@@ -66,8 +67,8 @@ export function checkContractImplementation(
 
   const wrappers = wrapperIndex(summaries);
   const findings: Finding[] = [];
-  for (const [key, stubs] of stubsByKey) {
-    const handlers = handlersByKey.get(key);
+  for (const [operation, stubs] of stubsByKey) {
+    const handlers = handlersByKey.get(operation);
     if (handlers === undefined) {
       continue;
     }
@@ -85,7 +86,7 @@ export function checkContractImplementation(
           ),
         );
         compared?.push({
-          key,
+          key: boundaryKeyOfHandler(handler) ?? operation,
           provider: summaryIdentifier(handler),
           consumer: summaryIdentifier(stub),
         });
@@ -158,6 +159,11 @@ function checkHandlerAgainstDocument(
     ...checkBodiesAgainstDeclared(handler, contract, boundary, document),
   );
   return findings;
+}
+
+function boundaryKeyOfHandler(handler: BehavioralSummary): string | null {
+  const binding = handler.identity.boundaryBinding;
+  return binding === null ? null : boundaryKey(binding);
 }
 
 function addUnder(

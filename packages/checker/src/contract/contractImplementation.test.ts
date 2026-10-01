@@ -161,6 +161,24 @@ describe("checkContractImplementation", () => {
     ]);
   });
 
+  it("compares a handler with the document when the two name the parameter differently", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkContractImplementation(
+      [
+        document("DELETE", "/teams/{team_id}", [{ statusCode: 204 }]),
+        handler("DELETE", "/teams/:id", [
+          transition("t-200", { output: response(200), isDefault: true }),
+        ]),
+      ],
+      compared,
+    );
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "Handler produces status 200 which the openapi document does not declare",
+      "The openapi document declares response 204, and no path in the handler produces it",
+    ]);
+    expect(compared.map((pair) => pair.key)).toEqual(["DELETE /teams/{id}"]);
+  });
+
   it("leaves a declared 5XX alone when the handler never produces it", () => {
     const findings = checkContractImplementation([
       document("GET", "/users", [{ statusCode: 200 }, { statusCode: 500 }]),
