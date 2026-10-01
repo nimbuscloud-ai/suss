@@ -52,8 +52,10 @@ async function ancestryOfSource(source: string): Promise<Ancestry> {
     ancestryRootClassNames: ["ActionController::Base"],
     constantFiles: createConstantFileCache(),
     parsedFile: async () => null,
-    localDefinition: (name) =>
-      blocks.filter((block) => block.info.qualifiedName === name),
+    localDefinition: (name) => {
+      const found = blocks.filter((block) => block.info.qualifiedName === name);
+      return found.length === 0 ? null : found;
+    },
   });
 }
 
