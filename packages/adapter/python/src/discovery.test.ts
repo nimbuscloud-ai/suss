@@ -121,6 +121,11 @@ const fastapiWithInjection: PythonPack = {
     {
       ...fastapiLike.discovery[0],
       injectedParameterCallees: ["Depends", "Security"],
+      injectedParameterTypes: [
+        "fastapi.Response",
+        "fastapi.BackgroundTasks",
+        "starlette.requests.Request",
+      ],
     } as PythonPack["discovery"][number],
   ],
 };
@@ -739,6 +744,67 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       ["annotated_user", null],
       ["scoped", null],
     ]);
+  });
+
+  it("gives no role to a parameter annotated with a class the library supplies", async () => {
+    const injected = [
+      "import fastapi",
+      "from fastapi import BackgroundTasks, FastAPI, Response",
+      "from starlette.requests import Request as IncomingRequest",
+      "from myapp.models import Response as StoredResponse",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@app.get("/theme")',
+      "def get_theme(",
+      "    resp: Response,",
+      "    request: IncomingRequest,",
+      "    tasks: BackgroundTasks,",
+      "    qualified: fastapi.Response,",
+      "    stored: StoredResponse,",
+      "    dark: bool = False,",
+      "):",
+      "    pass",
+      "",
+    ].join("\n");
+
+    const units = await unitsOf(injected, [fastapiWithInjection]);
+    const theme = units.find((u) => u.identity.name === "get_theme");
+    expect(theme?.parameters?.map((p) => [p.name, p.role])).toEqual([
+      ["resp", null],
+      ["request", null],
+      ["tasks", null],
+      ["qualified", null],
+      ["stored", "queryParams"],
+      ["dark", "queryParams"],
+    ]);
+  });
+
+  it("adds no validation response to a route whose only parameter the library supplies", async () => {
+    const validating: PythonPack = {
+      ...fastapiWithInjection,
+      discovery: [
+        {
+          ...fastapiWithInjection.discovery[0],
+          validationFailureStatus: 422,
+        } as PythonPack["discovery"][number],
+      ],
+    };
+    const source = [
+      "from fastapi import FastAPI, Response",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@app.get("/theme")',
+      "def get_theme(resp: Response):",
+      '    return {"dark": True}',
+      "",
+    ].join("\n");
+    const units = await unitsOf(source, [validating]);
+    const theme = units.find((u) => u.identity.name === "get_theme");
+    expect(outcomesOf(theme).map(([status]) => status)).not.toContain("422");
   });
 
   it("still reads an injected parameter as a request body for a pack that declares no injectors", async () => {

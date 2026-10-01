@@ -390,6 +390,13 @@ export interface RouteConventions {
    */
   injectedParameterCallees?: string[];
   /**
+   * Classes the library supplies a parameter for when the parameter is
+   * annotated with one, by dotted path, such as FastAPI's
+   * `fastapi.Request` and `fastapi.BackgroundTasks`. The client sends
+   * nothing for such a parameter either.
+   */
+  injectedParameterTypes?: string[];
+  /**
    * What the library serves when a composed path has repeated slashes.
    * Werkzeug serves the merged path and redirects the written one, so Flask
    * needs "merged". The default, "kept", matches Starlette.
