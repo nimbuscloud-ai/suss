@@ -1252,6 +1252,32 @@ describe("relativizeRenderTargets", () => {
         : undefined,
     ).toBe("src/badge.tsx");
   });
+
+  it("rewrites a target once when two transitions share its subtree", () => {
+    const shared: RenderNode = {
+      type: "element",
+      tag: "Avatar",
+      target: { file: "/repo/apps/web/src/avatar.tsx", name: "Avatar" },
+      children: [],
+    };
+    const summary = {
+      location: {
+        file: "/repo/apps/web/src/page.tsx",
+        range: { start: 1, end: 2 },
+      },
+      transitions: [
+        { output: { type: "render", component: "Page", root: shared } },
+        { output: { type: "render", component: "Page", root: shared } },
+      ],
+      identity: { name: "Page", exportPath: ["Page"], boundaryBinding: null },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo/apps/web");
+
+    expect(shared.type === "element" ? shared.target?.file : undefined).toBe(
+      "src/avatar.tsx",
+    );
+  });
 });
 
 describe("what a run writes", () => {

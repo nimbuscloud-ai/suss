@@ -1730,11 +1730,14 @@ export function relativizeSummaryPaths(
   summary: BehavioralSummary,
   projectRoot: string,
 ): void {
-  summary.location.file = relativeTo(projectRoot, summary.location.file);
+  summary.location.file = relativeIfAbsolute(
+    projectRoot,
+    summary.location.file,
+  );
   const binding = summary.identity.boundaryBinding;
   if (binding !== null && binding !== undefined) {
     summary.identity.boundaryBinding = withRewrittenPaths(binding, (one) =>
-      path.isAbsolute(one) ? relativeTo(projectRoot, one) : one,
+      relativeIfAbsolute(projectRoot, one),
     );
   }
   for (const transition of summary.transitions) {
@@ -1747,7 +1750,7 @@ export function relativizeSummaryPaths(
     summary.metadata = {
       ...summary.metadata,
       moduleImports: moduleImports.map((file) =>
-        typeof file === "string" ? relativeTo(projectRoot, file) : file,
+        typeof file === "string" ? relativeIfAbsolute(projectRoot, file) : file,
       ),
     };
   }
@@ -1858,12 +1861,7 @@ function relativizeWrapper(
   wrapper: WrapperReference,
   projectRoot: string,
 ): WrapperReference {
-  return {
-    ...wrapper,
-    file: path.isAbsolute(wrapper.file)
-      ? relativeTo(projectRoot, wrapper.file)
-      : wrapper.file,
-  };
+  return { ...wrapper, file: relativeIfAbsolute(projectRoot, wrapper.file) };
 }
 
 const relativeByRoot = new Map<string, Map<string, string>>();
@@ -1887,6 +1885,14 @@ function relativeTo(projectRoot: string, file: string): string {
   return relative;
 }
 
+/**
+ * Summaries and transitions share objects, such as one render subtree, so
+ * the same path can come through twice. A path already relative stays put.
+ */
+function relativeIfAbsolute(projectRoot: string, file: string): string {
+  return path.isAbsolute(file) ? relativeTo(projectRoot, file) : file;
+}
+
 export function relativizeRenderTargets(
   root: RenderNode,
   projectRoot: string,
@@ -1902,7 +1908,7 @@ export function relativizeRenderTargets(
     return;
   }
   if (root.target !== undefined) {
-    root.target.file = relativeTo(projectRoot, root.target.file);
+    root.target.file = relativeIfAbsolute(projectRoot, root.target.file);
   }
   for (const child of root.children) {
     relativizeRenderTargets(child, projectRoot);

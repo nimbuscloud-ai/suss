@@ -4,8 +4,9 @@
  * A call in a build script, a config file or a test says nothing about
  * what the application does, so it does not count.
  *
- * For TypeScript and JavaScript, a file counts when the project's
- * tsconfig includes it. Without a tsconfig, as in a Rails app's
+ * For TypeScript and JavaScript, a file counts when the tsconfig an
+ * extract would use, the project's own or the nearest one above it,
+ * includes it. Without a tsconfig, as in a Rails app's
  * `app/javascript`, and in Python and Ruby, any file in the project
  * counts. In every language, tooling, tests, build output, dependencies,
  * `*.config.*` files, type declarations and bundles are left out. A
@@ -15,7 +16,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { readTsconfigFileList, TSCONFIG_NAMES } from "@suss/adapter-typescript";
+import {
+  findNearestTsconfig,
+  readTsconfigFileList,
+} from "@suss/adapter-typescript";
 
 import {
   languageOfFile,
@@ -127,11 +131,34 @@ export function* projectSourceFiles(
   }
 }
 
+/**
+ * Whether an extract of `root` in `language` would have a file to read.
+ * A folder with no tsconfig of its own is read through the nearest one
+ * above it, and that one may include nothing in the folder.
+ */
+export function extractReadsAnything(
+  root: string,
+  language: Language,
+): boolean {
+  const candidates =
+    language === "typescript"
+      ? typescriptCandidates(root)
+      : filesInProject(root, root, language, 0);
+  for (const file of candidates) {
+    if (
+      !path.relative(root, file).startsWith("..") &&
+      languageOfFile(file) === language
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The files an extract of `root` walks, before it keeps the ones under `root`. */
 function typescriptCandidates(root: string): Iterable<string> {
-  const tsconfig = TSCONFIG_NAMES.map((name) => path.join(root, name)).find(
-    (candidate) => fs.existsSync(candidate),
-  );
-  if (tsconfig !== undefined) {
+  const tsconfig = findNearestTsconfig(root);
+  if (tsconfig !== null) {
     return readTsconfigFileList(tsconfig);
   }
   return filesInProject(root, root, "typescript", 0);
