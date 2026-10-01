@@ -1151,8 +1151,9 @@ function functionRouteUnits(
     module,
     options,
   );
-  const dependencyParameters =
-    options.wrappers?.dependencyParameterNames(wrappers) ?? new Set<string>();
+  const dependencyParameters = options.wrappers?.dependencyParameters(
+    wrappers,
+  ) ?? { names: new Set<string>(), declaresSource: false };
   const declaredStatuses = declaredStatusesOf(
     pattern,
     pack,
@@ -1298,7 +1299,10 @@ interface BuildRouteUnitOptions {
   /** What the route's own decorator and parameters register around it, or nothing when the pack declares no wrapper forms. */
   wrappers?: WrapperReference[];
   /** The parameters the route's dependencies declare, which the library reads off the request too. */
-  dependencyParameters?: ReadonlySet<string>;
+  dependencyParameters?: {
+    names: ReadonlySet<string>;
+    declaresSource: boolean;
+  };
   /** Statuses the route's own code lists as possible responses. */
   declaredStatuses?: number[];
   /** The library's own callables that end the request with a status. Empty when its pack declares none. */
@@ -1505,7 +1509,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
         readsTheRequest(
           parameters,
           template,
-          options.dependencyParameters ?? new Set(),
+          options.dependencyParameters ?? {
+            names: new Set(),
+            declaresSource: false,
+          },
         ),
         rangeOf(definitionNode),
       ),
@@ -1562,19 +1569,22 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
 
 /**
  * Whether the route reads anything the library validates first: one of
- * its own parameters, or a parameter of its path that a dependency
- * declares. A path parameter nothing declares is not validated.
+ * its own parameters, or one a dependency declares as a source or as a
+ * parameter of the route's path. A path parameter nothing declares is not.
  */
 function readsTheRequest(
   parameters: readonly RawParameter[],
   template: PathTemplateReading | null,
-  dependencyParameters: ReadonlySet<string>,
+  dependencies: { names: ReadonlySet<string>; declaresSource: boolean },
 ): boolean {
-  if (parameters.some((parameter) => parameter.role !== null)) {
+  if (
+    dependencies.declaresSource ||
+    parameters.some((parameter) => parameter.role !== null)
+  ) {
     return true;
   }
   return [...(template?.paramNames ?? [])].some((name) =>
-    dependencyParameters.has(name),
+    dependencies.names.has(name),
   );
 }
 

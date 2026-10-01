@@ -148,10 +148,10 @@ export class PythonWrapperIndex {
     string,
     { call: PyNode; file: string }[]
   >();
-  /** By wrapper reference: the parameter names a dependency function declares, and its file. */
+  /** By wrapper reference: the parameters a dependency function declares, and its file. */
   private readonly dependencyParameterTable = new Map<
     string,
-    { file: string; names: string[] }
+    { file: string; names: string[]; declaresSource: boolean }
   >();
   private readonly unitsByFile = new Map<string, RawCodeStructure[]>();
   /** Told about every registration, so a cache can repeat the ones a file's discovery made. */
@@ -253,20 +253,27 @@ export class PythonWrapperIndex {
       this.dependencyParameterTable.set(referenceKey(reference), {
         file: target.file.file,
         names: parameterNamesOf(target.node),
+        declaresSource: declaresSourcedParameter(
+          target.node,
+          Object.keys(declared.pattern.parameterSources ?? {}),
+        ),
       });
     }
     return { reference, form: declared.form };
   }
 
   /**
-   * The parameters the dependencies among these wrappers declare. The
-   * library fills each one from the request and validates it, the same
-   * as one the route declares.
+   * The parameters the dependencies among these wrappers declare, and
+   * whether one is declared through a parameter source such as `Query()`.
+   * The library fills those from the request and validates them, the same
+   * as parameters the route declares.
    */
-  dependencyParameterNames(
-    references: readonly WrapperReference[],
-  ): ReadonlySet<string> {
+  dependencyParameters(references: readonly WrapperReference[]): {
+    names: ReadonlySet<string>;
+    declaresSource: boolean;
+  } {
     const names = new Set<string>();
+    let declaresSource = false;
     for (const reference of references) {
       const found = this.dependencyParameterTable.get(referenceKey(reference));
       if (found === undefined) {
@@ -278,8 +285,9 @@ export class PythonWrapperIndex {
       for (const name of found.names) {
         names.add(name);
       }
+      declaresSource ||= found.declaresSource;
     }
-    return names;
+    return { names, declaresSource };
   }
 
   wrappersFor(query: RouteWrapperQuery): WrapperReference[] {
@@ -536,6 +544,28 @@ function parameterNamesOf(definition: PyNode): string[] {
     (parameter) => {
       const named = parameter === null ? null : parameterNameAndType(parameter);
       return named === null ? [] : [named.name];
+    },
+  );
+}
+
+/**
+ * Whether a parameter defaults to a call to one of the library's
+ * parameter sources, `page: int = Query(1)`. One written inside
+ * `Annotated[...]` is not read here.
+ */
+function declaresSourcedParameter(
+  definition: PyNode,
+  sources: readonly string[],
+): boolean {
+  return (field(definition, "parameters")?.namedChildren ?? []).some(
+    (parameter) => {
+      const value = parameter === null ? null : field(parameter, "value");
+      const callee = value?.type === "call" ? field(value, "function") : null;
+      const name =
+        callee?.type === "attribute"
+          ? field(callee, "attribute")?.text
+          : callee?.text;
+      return name !== undefined && sources.includes(name);
     },
   );
 }

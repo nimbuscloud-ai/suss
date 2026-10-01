@@ -373,6 +373,7 @@ describe("FastAPI wrappers", () => {
         {
           ...fastapiLike.discovery[0],
           validationFailureStatus: 422,
+          parameterSources: { Query: { role: "queryParams" } },
         } as PythonPack["discovery"][number],
       ],
     };
@@ -381,7 +382,7 @@ describe("FastAPI wrappers", () => {
     fs.writeFileSync(
       path.join(dir, "app/main.py"),
       [
-        "from fastapi import APIRouter, Depends, FastAPI, HTTPException",
+        "from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query",
         "",
         "def tenant_exists(tenant: str):",
         "    if tenant == 'gone':",
@@ -390,6 +391,13 @@ describe("FastAPI wrappers", () => {
         "app = FastAPI()",
         'checked = APIRouter(prefix="/{tenant}", dependencies=[Depends(tenant_exists)])',
         'unchecked = APIRouter(prefix="/{region}")',
+        "",
+        "def paging(page: int = Query(1)):",
+        "    return page",
+        "",
+        '@unchecked.get("/history", dependencies=[Depends(paging)])',
+        "def list_history():",
+        "    return []",
         "",
         '@checked.get("/orders")',
         "def list_orders():",
@@ -417,6 +425,9 @@ describe("FastAPI wrappers", () => {
     expect(statusesOf(routeFor(summaries, "GET", "/{region}/stock"))).toEqual([
       200,
     ]);
+    expect(statusesOf(routeFor(summaries, "GET", "/{region}/history"))).toEqual(
+      [200, 422],
+    );
   });
 
   it("lists the statuses responses= declares on the app, the mounts, the routers and the route", async () => {
