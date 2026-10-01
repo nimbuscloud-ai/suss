@@ -112,14 +112,17 @@ function composeOne(
 
 /**
  * The unit's own outcomes with the wrappers' beside them, outermost
- * first. An error handler runs only where a path ends by throwing.
+ * first. An error handler runs only where a path ends by throwing, in
+ * the unit or in a wrapper in front of it.
  */
 function beside(
   summary: BehavioralSummary,
   responses: readonly Transition[],
   handled: readonly Transition[],
 ): Transition[] {
-  const throws = summary.transitions.some((t) => t.output.type === "throw");
+  const throws = [...responses, ...summary.transitions].some(
+    (t) => t.output.type === "throw",
+  );
   const onThrow = throws ? handled : [];
   if (responses.length === 0 && onThrow.length === 0) {
     return summary.transitions;
