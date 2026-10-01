@@ -421,6 +421,12 @@ export interface RouteConventions {
   parameterAliasKeyword?: string;
   /** The ways the library runs a project's own function around a route. DESIGN.md lists what each one covers. */
   wrappers?: PyWrapperForm[];
+  /**
+   * The status the library itself responds with, before the handler runs,
+   * when a request input the route declares does not validate. FastAPI
+   * sends 422. Unset means the library checks nothing on its own.
+   */
+  validationFailureStatus?: number;
 }
 
 /** The part of the request a parameter declared with one callable is read from. */

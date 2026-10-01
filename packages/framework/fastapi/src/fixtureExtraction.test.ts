@@ -94,7 +94,21 @@ describe("extraction over fixtures/python-fastapi", () => {
     ).toEqual([
       [{ type: "literal", value: 404 }, ["comparison"]],
       [{ type: "literal", value: 200 }, ["negation"]],
+      // FastAPI's own response to an `item_id` that is not an int.
+      [{ type: "literal", value: 422 }, ["opaque"]],
     ]);
+  });
+
+  it("gives no validation response to a route that reads nothing off the request", async () => {
+    const { summaries } = await extractFixture();
+    const health = summaries.find((s) => s.identity.name === "health");
+    expect(
+      health?.transitions.map((transition) =>
+        transition.output.type === "response"
+          ? transition.output.statusCode
+          : null,
+      ),
+    ).not.toContainEqual({ type: "literal", value: 422 });
   });
 
   it("composes the mount prefix and the router's own prefix into the route path", async () => {

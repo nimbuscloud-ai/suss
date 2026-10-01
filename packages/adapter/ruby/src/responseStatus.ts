@@ -448,6 +448,9 @@ export function responseBranches(
         conditions: conditionsOf(path),
         reading,
         location: rangeOf(terminal),
+        // A bare `return` wrote no response, so a filter that takes it
+        // hands the request on the same as one that reaches its end.
+        ...(declaration === undefined ? { fellThrough: true } : {}),
       });
     }
   }

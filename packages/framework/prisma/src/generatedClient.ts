@@ -1,6 +1,6 @@
 /**
- * Where a project's Prisma generators write the client, read from the
- * project's own schema.
+ * Where a project's Prisma generators write the client, and which
+ * database its datasource is, read from the project's own schema.
  *
  * Prisma 7's `prisma-client` generator writes no copy of the schema
  * beside the client, so the directory has nothing in it the pack could
@@ -18,6 +18,10 @@ import path from "node:path";
 import { getSchema } from "@mrleebo/prisma-ast";
 import { ts } from "ts-morph";
 
+import { prismaStorageSystem } from "@suss/contract-prisma";
+
+import type { PrismaStorageSystem } from "@suss/contract-prisma";
+
 const CONFIG_FILES = [
   "prisma.config.ts",
   "prisma.config.mts",
@@ -32,6 +36,7 @@ const DEFAULT_SCHEMAS = [path.join("prisma", "schema.prisma"), "schema.prisma"];
 
 interface ReadProject {
   dirs: readonly string[];
+  storageSystem: PrismaStorageSystem | null;
   /** The files the answer was read from, with when each last changed. */
   readFrom: ReadonlyMap<string, number>;
 }
@@ -46,22 +51,52 @@ const readProjects = new Map<string, ReadProject>();
  * from `fromDir` with a package.json or a Prisma config in it.
  */
 export function generatedClientDirs(fromDir: string): readonly string[] {
+  return readProjectAt(fromDir)?.dirs ?? [];
+}
+
+/**
+ * The storage system the datasource of that same project's schema says,
+ * or null when the project has no schema to read.
+ */
+export function schemaStorageSystem(
+  fromDir: string,
+): PrismaStorageSystem | null {
+  return readProjectAt(fromDir)?.storageSystem ?? null;
+}
+
+function readProjectAt(fromDir: string): ReadProject | null {
   const root = projectRootOf(fromDir);
   if (root === null) {
-    return [];
+    return null;
   }
   const known = readProjects.get(root);
   if (known !== undefined && unchanged(known.readFrom)) {
-    return known.dirs;
+    return known;
   }
   const schemaFiles = schemaFilesOf(root);
   const readFrom = new Map<string, number>();
   for (const file of [...projectFilesOf(root), ...schemaFiles]) {
     readFrom.set(file, changedAt(file));
   }
-  const dirs = schemaFiles.flatMap(outputDirsIn);
-  readProjects.set(root, { dirs, readFrom });
-  return dirs;
+  const sources = schemaFiles.map((file) => ({ file, text: textOf(file) }));
+  const project: ReadProject = {
+    dirs: sources.flatMap(outputDirsIn),
+    storageSystem:
+      sources
+        .map(({ text }) => prismaStorageSystem(text))
+        .find((system) => system !== null) ?? null,
+    readFrom,
+  };
+  readProjects.set(root, project);
+  return project;
+}
+
+function textOf(file: string): string {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 /** Whether a file is in a directory a generator of its own project writes to. */
@@ -224,12 +259,11 @@ function packageJsonSchema(root: string): string | null {
 }
 
 /** The `output` of every generator block in one schema file. */
-function outputDirsIn(schemaFile: string): string[] {
+function outputDirsIn(schema: { file: string; text: string }): string[] {
+  const schemaFile = schema.file;
   let list: unknown[];
   try {
-    list = (
-      getSchema(fs.readFileSync(schemaFile, "utf8")) as { list: unknown[] }
-    ).list;
+    list = (getSchema(schema.text) as { list: unknown[] }).list;
   } catch {
     return [];
   }

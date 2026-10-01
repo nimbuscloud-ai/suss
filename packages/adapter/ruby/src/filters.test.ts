@@ -314,6 +314,36 @@ end
     ]);
   });
 
+  it("hands on at a bare return, which writes no response", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action :require_login
+
+  def require_login
+    return if session[:user_id].present?
+    head :unauthorized
+  end
+end
+`);
+
+    const unit = filterUnit(
+      filters[0] as never,
+      controllerActionsPattern(RAILS_LIKE),
+      "app/controllers/orders.rb",
+      { bodyContent: "statements" },
+    );
+
+    expect(
+      unit.branches.map((branch) => [
+        branch.terminal.kind,
+        branch.conditions.map((condition) => condition.polarity),
+      ]),
+    ).toEqual([
+      ["response", ["negative"]],
+      ["delegate", ["positive"]],
+    ]);
+  });
+
   it("hands on down every path when the method responds nowhere", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController
