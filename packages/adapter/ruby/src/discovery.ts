@@ -50,6 +50,7 @@ import {
   slotProvenance,
   withSlotSources,
 } from "./provenance.js";
+import { raisedStatusBranches } from "./raisedStatuses.js";
 import { helperResponse, responseBranches } from "./responseStatus.js";
 import {
   constantRefCandidates,
@@ -491,15 +492,26 @@ async function controllerActionUnits(
   );
 
   const respondingHelper = respondingHelpersOf(ancestry, pattern, options);
+  const rescuedAnywhere = new Set(filters.flatMap((filter) => filter.rescues));
   for (const filter of filters) {
     const displayPath = options.displayPathOf?.(filter.file) ?? filter.file;
+    const body = bodyOfMethod(filter.method, filter.file, options);
     const raw = filterUnit(
       filter,
       pattern,
       displayPath,
-      bodyOfMethod(filter.method, filter.file, options),
+      body,
       options.facts,
       respondingHelper,
+      filter.filter.onThrow === true
+        ? []
+        : raisedStatusBranches(
+            pattern,
+            options.storage?.patterns ?? [],
+            body.extraEffects,
+            rescuedAnywhere,
+            rangeOf(filter.method),
+          ),
     );
     units.push(raw);
     options.onReachSeed?.(raw, {
@@ -538,6 +550,11 @@ async function controllerActionUnits(
       options,
       around,
       respondingHelper,
+      new Set(
+        filters
+          .filter((filter) => filterCoversAction(filter, actionName))
+          .flatMap((filter) => filter.rescues),
+      ),
     );
     units.push(raw);
     options.onReachSeed?.(raw, {
@@ -658,6 +675,7 @@ function buildControllerActionUnit(
   bodyRead: BodyReadOptions,
   wrappers: readonly WrapperReference[] = [],
   respondingHelper?: (name: string) => Reading<number> | null,
+  rescued: ReadonlySet<string> = new Set(),
 ): RawCodeStructure {
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
@@ -722,6 +740,14 @@ function buildControllerActionUnit(
         },
       ],
       body.provenance,
+    ).concat(
+      raisedStatusBranches(
+        pattern,
+        bodyRead.storage?.patterns ?? [],
+        body.extraEffects,
+        rescued,
+        range,
+      ),
     ),
     bodyContent: body.bodyContent ?? "absent",
     dependencyCalls: [],

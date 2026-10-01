@@ -37,6 +37,8 @@ export interface ControllerFilter {
   /** The actions it covers. Null means every action of the controller. */
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
+  /** For a handler the library runs after a raise, the exception classes it is declared for, as written. */
+  readonly rescues: readonly string[];
 }
 
 /** A filter declaration, before its method has been looked up. */
@@ -45,6 +47,7 @@ interface Declaration {
   readonly methodName: string;
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
+  readonly rescues: readonly string[];
 }
 
 /** A `skip_before_action`, which takes a filter off some or all of the actions. */
@@ -117,6 +120,7 @@ export function controllerFilters(
       enclosingQualifiedName: found.block.info.qualifiedName,
       only: declaration.only,
       except: declaration.except,
+      rescues: declaration.rescues,
     });
   }
 
@@ -168,6 +172,7 @@ export function filterUnit(
   body: FilterBody,
   facts?: Database | undefined,
   respondingHelper?: (name: string) => Reading<number> | null,
+  raised: readonly RawBranch[] = [],
 ): RawCodeStructure {
   const range = rangeOf(filter.method);
   const branches = responseBranches(
@@ -195,7 +200,7 @@ export function filterUnit(
     boundaryBinding: null,
     parameters: [],
     branches: withSlotSources(
-      branches ?? [handsOn(range, body)],
+      [...(branches ?? [handsOn(range, body)]), ...raised],
       body.provenance,
     ),
     bodyContent: body.bodyContent ?? "absent",
@@ -253,11 +258,20 @@ function declarationsOf(
     keywords === undefined
       ? null
       : actionsUnder(args.keyword[keywords.exclude], facts);
+  const rescues =
+    filter.onThrow === true
+      ? args.positional.flatMap((arg) =>
+          arg.type === "constant" || arg.type === "scope_resolution"
+            ? [arg.text.replace(/^::/, "")]
+            : [],
+        )
+      : [];
   return methodNamesOf(statement, args, filter, facts).map((methodName) => ({
     filter,
     methodName,
     only,
     except: except ?? new Set<string>(),
+    rescues,
   }));
 }
 

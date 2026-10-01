@@ -397,6 +397,8 @@ export interface RbStoragePattern {
   scopes?: string[];
   /** Which database is behind the connection. The project decides this, so the pack passes it in. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
+  /** The exception each of these methods raises when the row is missing or does not save, ActiveRecord's `RecordNotFound` from `find`. */
+  raises?: Array<{ exception: string; methods: string[] }>;
 }
 
 /**
@@ -557,6 +559,12 @@ export interface ControllerActions {
   root: string;
   /** Other directories the project autoloads constants from, each read as the top of the namespace, after `root`. */
   autoloadRoots?: string[];
+  /**
+   * The status the library sends for an exception an action raises and
+   * no handler rescues, Rails' `rescue_responses`, with the exceptions
+   * each one is a kind of, so a handler for a base class counts.
+   */
+  exceptionStatuses?: Record<string, { status: number; ancestors: string[] }>;
   pathConvention: ConstantPathConvention;
   /** Acronyms the project registers with the inflector. The path convention keeps each one as one word: `ActivityPub` becomes `activitypub`. */
   acronyms?: string[];
