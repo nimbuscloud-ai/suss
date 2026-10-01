@@ -657,7 +657,7 @@ async function summariesOf(
 }
 
 describe("reactFramework, the props a component's handlers and effects use", () => {
-  it("records them on the component, beside the props its render reads", async () => {
+  it("records them on the handler's and the effect's own summaries", async () => {
     const summaries = await summariesOf({
       "/src/swatch.tsx": `
         import { useEffect } from "react";
@@ -670,12 +670,13 @@ describe("reactFramework, the props a component's handlers and effects use", () 
         }
       `,
     });
-    const swatch = summaries.find((s) => s.identity.name === "Swatch");
-    expect(swatch?.inputReads?.map((read) => read.input).sort()).toEqual([
-      "color",
-      "label",
-      "onChange",
-    ]);
+    const readsOf = (name: string) =>
+      summaries
+        .find((s) => s.identity.name === name)
+        ?.inputReads?.map((read) => read.input);
+    expect(readsOf("Swatch")).toEqual(["color"]);
+    expect(readsOf("Swatch.effect#0")).toEqual(["label"]);
+    expect(readsOf("Swatch.button.onClick")).toEqual(["onChange"]);
   });
 });
 

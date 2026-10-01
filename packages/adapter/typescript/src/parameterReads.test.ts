@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
-import { parameterReads } from "./parameterReads.js";
+import { enclosingParameterReads, parameterReads } from "./parameterReads.js";
 
 import type { FunctionRoot } from "./conditions.js";
 
@@ -73,20 +73,43 @@ describe("parameterReads", () => {
     ]);
   });
 
-  it("counts a parameter a nested handler uses as the parent's read, and not the handler's own parameter", () => {
+  it("leaves a claimed sub-unit's reads off the parent", () => {
     const func = functionNamed(
       `
-      function Panel({ title, onSave }: { title: string; onSave: (id: string) => void }) {
-        const handler = (event: { id: string }) => onSave(event.id);
+      function Panel({ title, onSave }: { title: string; onSave: () => void }) {
+        const handler = () => onSave();
         return <button onClick={handler}>{title}</button>;
       }
     `,
       "Panel",
     );
-    expect(parameterReads(func, ["title", "onSave", "event"])).toEqual([
-      { input: "onSave", path: [] },
-      { input: "title", path: [] },
-    ]);
+    const claimed = new Set<unknown>();
+    func.forEachDescendant((node) => {
+      if (node.getKindName() === "ArrowFunction") {
+        claimed.add(node);
+      }
+    });
+    expect(parameterReads(func, ["title", "onSave"], claimed as never)).toEqual(
+      [{ input: "title", path: [] }],
+    );
+  });
+
+  it("gives the sub-unit the reads it makes of the enclosing unit's parameters", () => {
+    const func = functionNamed(
+      `
+      function Panel({ title, onSave }: { title: string; onSave: (id: string) => void }) {
+        const handler = (title: { id: string }) => onSave(title.id);
+        return <button onClick={handler}>{title}</button>;
+      }
+    `,
+      "Panel",
+    );
+    const handler = func.getFirstDescendant(
+      (node) => node.getKindName() === "ArrowFunction",
+    ) as unknown as FunctionRoot;
+    expect(enclosingParameterReads(handler, func, ["title", "onSave"])).toEqual(
+      [{ input: "onSave", path: [] }],
+    );
   });
 
   it("never attributes a shadowing inner binding to the parameter", () => {
