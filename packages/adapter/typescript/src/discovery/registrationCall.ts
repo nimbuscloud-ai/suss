@@ -16,7 +16,7 @@ import { joinMountedPath, staysInItsFunction } from "@suss/resolution";
 
 import { nodeId } from "../facts/extract.js";
 import { createPerFileCache } from "../perFileCache.js";
-import { pathFromArgument } from "../resolve/routePath.js";
+import { routePatternFromArgument } from "../resolve/routePath.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import { importDeclarationsOf } from "./importScan.js";
 import { importedReferenceSpellings } from "./resolveImport.js";
@@ -1083,6 +1083,8 @@ function extractRouteInfoFromBinding(
     | Node
     | undefined;
   const path =
-    pathArg === undefined ? undefined : pathFromArgument(pathArg, resolution);
+    pathArg === undefined
+      ? undefined
+      : routePatternFromArgument(pathArg, resolution);
   return path === undefined ? null : { method, path };
 }

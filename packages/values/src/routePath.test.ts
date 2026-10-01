@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { isLocalUrl, pathOf } from "./routePath.js";
+import { isLocalUrl, pathOf, routePatternOf } from "./routePath.js";
 import { constant, hole, holePiece, string, text, textPiece } from "./value.js";
+
+describe("routePatternOf", () => {
+  it("keeps the ? that marks an optional parameter", () => {
+    expect(routePatternOf(text("/:pk/:filename?"))).toBe("/:pk/:filename?");
+    expect(
+      routePatternOf(string([holePiece("base"), textPiece(["/:id?/raw"])])),
+    ).toBe("{base}/:id?/raw");
+  });
+
+  it("reads everything else the way pathOf does", () => {
+    expect(routePatternOf(text("https://api.example.com/users"))).toBe(
+      "/users",
+    );
+    expect(routePatternOf(text(""))).toBeUndefined();
+    expect(routePatternOf(constant(404))).toBeUndefined();
+  });
+});
 
 describe("pathOf on one literal", () => {
   it("keeps a plain path as written", () => {

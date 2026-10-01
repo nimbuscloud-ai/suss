@@ -195,6 +195,31 @@ describe("honoFramework \u2014 zod-openapi registration", () => {
   });
 });
 
+describe("honoFramework, an optional parameter", () => {
+  it("keeps the ? so the route serves the path with and without it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const app = new Hono();
+        app.get("/receipts/:id/:format?", (c) => c.json({ ok: true }));
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries.map((s) => {
+      const sem = s.identity.boundaryBinding?.semantics;
+      return sem?.name === "rest" ? sem.path : null;
+    });
+    expect(paths).toEqual(["/receipts/:id/:format?"]);
+  });
+});
+
 describe("honoFramework, app.route mount prefix", () => {
   it("composes a sub-app's mount prefix into its routes, across a file boundary", async () => {
     const project = createTestProject();
