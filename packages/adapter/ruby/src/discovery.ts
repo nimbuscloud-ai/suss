@@ -29,6 +29,7 @@ import {
   instanceMethodsByName,
   instanceMethodVisibility,
   methodHasStatements,
+  NodeMap,
   rangeOf,
   readCallArgs,
   runStatements,
@@ -38,6 +39,7 @@ import {
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
 import { envReadEffects } from "./envReads.js";
+import { ExceptionReader } from "./exceptionClasses.js";
 import {
   controllerFilters,
   filterCoversAction,
@@ -51,6 +53,7 @@ import {
   withSlotSources,
 } from "./provenance.js";
 import { raisedStatusBranches } from "./raisedStatuses.js";
+import { escapingRaises, raisedClassRef } from "./raises.js";
 import {
   boundStatusArguments,
   helperResponse,
@@ -95,6 +98,8 @@ import type { BlockConfigures, BodyBlocks, CallArgs, Range } from "./ast.js";
 import type { ClientCallOptions } from "./clientCalls.js";
 import type { ConstantFileCache } from "./constantPath.js";
 import type { DynamicNames } from "./defineMethod.js";
+import type { ExceptionClass } from "./exceptionClasses.js";
+import type { ControllerFilter } from "./filters.js";
 import type {
   ControllerActions,
   GraphqlObjectFields,
@@ -103,6 +108,7 @@ import type {
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
+import type { HandlerClasses, RaisesRead } from "./raisedStatuses.js";
 import type { RespondingHelper } from "./responseStatus.js";
 import type { ClassInfo } from "./scope.js";
 import type { SharedGroupIndex } from "./testSharedGroups.js";
@@ -497,27 +503,49 @@ async function controllerActionUnits(
   );
 
   const respondingHelper = respondingHelpersOf(ancestry, pattern, options);
-  const rescuedAnywhere = new Set(filters.flatMap((filter) => filter.rescues));
+  const exceptions = new ExceptionReader(
+    lookup,
+    pattern.libraryExceptions ?? {},
+  );
+  const caught = await handlerClasses(filters, exceptions);
+  const handlersAround = (actionName: string | null): HandlerClasses[] =>
+    filters
+      .filter(
+        (filter) =>
+          actionName === null || filterCoversAction(filter, actionName),
+      )
+      .flatMap((filter) => {
+        const classes = caught.get(filter);
+        return classes === undefined ? [] : [classes];
+      });
+  const everyHandler = handlersAround(null);
   for (const filter of filters) {
     const displayPath = options.displayPathOf?.(filter.file) ?? filter.file;
     const body = bodyOfMethod(filter.method, filter.file, options);
-    const raw = filterUnit(
-      filter,
-      pattern,
-      displayPath,
-      body,
-      options.facts,
+    const handler = filter.filter.onThrow === true;
+    const raw = filterUnit(filter, pattern, displayPath, body, {
+      facts: options.facts,
       respondingHelper,
-      filter.filter.onThrow === true
-        ? []
-        : raisedStatusBranches(
-            pattern,
-            options.storage?.patterns ?? [],
-            body.extraEffects,
-            rescuedAnywhere,
-            rangeOf(filter.method),
-          ),
-    );
+      ...(handler
+        ? {}
+        : {
+            raises: {
+              classes: await raisedClasses(
+                filter.method,
+                filter.nesting,
+                exceptions,
+              ),
+              handlers: everyHandler,
+            },
+            raised: raisedStatusBranches(
+              pattern,
+              options.storage?.patterns ?? [],
+              body.extraEffects,
+              everyHandler,
+              rangeOf(filter.method),
+            ),
+          }),
+    });
     units.push(raw);
     options.onReachSeed?.(raw, {
       file: filter.file,
@@ -526,7 +554,7 @@ async function controllerActionUnits(
     });
   }
 
-  const emitAction = (
+  const emitAction = async (
     actionName: string,
     method: RbNode,
     block: ReachedBody,
@@ -537,8 +565,10 @@ async function controllerActionUnits(
         filterReference(
           filter,
           options.displayPathOf?.(filter.file) ?? filter.file,
+          caught.get(filter),
         ),
       );
+    const handlers = handlersAround(actionName);
     const raw = buildControllerActionUnit(
       pack,
       pattern,
@@ -555,11 +585,14 @@ async function controllerActionUnits(
       options,
       around,
       respondingHelper,
-      new Set(
-        filters
-          .filter((filter) => filterCoversAction(filter, actionName))
-          .flatMap((filter) => filter.rescues),
-      ),
+      {
+        classes: await raisedClasses(
+          method,
+          block.info.bodyNesting,
+          exceptions,
+        ),
+        handlers,
+      },
     );
     units.push(raw);
     options.onReachSeed?.(raw, {
@@ -570,9 +603,43 @@ async function controllerActionUnits(
   };
 
   for (const [actionName, method, block] of actions) {
-    emitAction(actionName, method, block);
+    await emitAction(actionName, method, block);
   }
   return units;
+}
+
+/** The exception classes each handler is registered for. */
+async function handlerClasses(
+  filters: readonly ControllerFilter[],
+  exceptions: ExceptionReader,
+): Promise<Map<ControllerFilter, HandlerClasses>> {
+  const caught = new Map<ControllerFilter, HandlerClasses>();
+  for (const filter of filters) {
+    if (filter.filter.onThrow !== true) {
+      continue;
+    }
+
+    const classes: ExceptionClass[] = [];
+    for (const ref of filter.rescues.refs) {
+      classes.push(await exceptions.read(ref));
+    }
+    caught.set(filter, { classes, someUnread: filter.rescues.someUnread });
+  }
+  return caught;
+}
+
+/** The class each raise in a method raises, or null for one the source computes. */
+async function raisedClasses(
+  method: RbNode,
+  nesting: readonly string[],
+  exceptions: ExceptionReader,
+): Promise<NodeMap<ExceptionClass | null>> {
+  const classes = new NodeMap<ExceptionClass | null>();
+  for (const call of escapingRaises(method)) {
+    const ref = raisedClassRef(call, nesting);
+    classes.set(call, ref === null ? null : await exceptions.read(ref));
+  }
+  return classes;
 }
 
 /**
@@ -683,9 +750,9 @@ function buildControllerActionUnit(
   method: RbNode,
   file: { display: string; absolute: string },
   bodyRead: BodyReadOptions,
-  wrappers: readonly WrapperReference[] = [],
-  respondingHelper?: RespondingHelper,
-  rescued: ReadonlySet<string> = new Set(),
+  wrappers: readonly WrapperReference[],
+  respondingHelper: RespondingHelper,
+  raises: RaisesRead,
 ): RawCodeStructure {
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
@@ -697,7 +764,8 @@ function buildControllerActionUnit(
     body.extraEffects,
     {
       facts: bodyRead.facts,
-      ...(respondingHelper === undefined ? {} : { respondingHelper }),
+      respondingHelper,
+      raises,
     },
   );
   return {
@@ -755,7 +823,7 @@ function buildControllerActionUnit(
         pattern,
         bodyRead.storage?.patterns ?? [],
         body.extraEffects,
-        rescued,
+        raises.handlers,
         range,
       ),
     ),

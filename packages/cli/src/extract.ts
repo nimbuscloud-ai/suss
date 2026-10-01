@@ -1844,12 +1844,13 @@ function relativizeWrapperPaths(
     });
   }
   for (const transition of summary.transitions) {
-    const from = readWrapperMetadata(transition)?.from;
-    if (from === undefined) {
+    const recorded = readWrapperMetadata(transition);
+    if (recorded?.from === undefined) {
       continue;
     }
     transition.metadata = withWrapperMetadata(transition.metadata, {
-      from: relativizeWrapper(from, projectRoot),
+      ...recorded,
+      from: relativizeWrapper(recorded.from, projectRoot),
     });
   }
 }

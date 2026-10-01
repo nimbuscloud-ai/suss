@@ -560,11 +560,12 @@ export interface ControllerActions {
   /** Other directories the project autoloads constants from, each read as the top of the namespace, after `root`. */
   autoloadRoots?: string[];
   /**
-   * The status the library sends for an exception an action raises and
-   * no handler rescues, Rails' `rescue_responses`, with the exceptions
-   * each one is a kind of, so a handler for a base class counts.
+   * The library's own exception classes, with the classes each one
+   * inherits from, so a handler for a base class counts. `status` is
+   * what the library sends when an action raises one and no handler
+   * rescues it, Rails' `rescue_responses`.
    */
-  exceptionStatuses?: Record<string, { status: number; ancestors: string[] }>;
+  libraryExceptions?: Record<string, LibraryException>;
   pathConvention: ConstantPathConvention;
   /** Acronyms the project registers with the inflector. The path convention keeps each one as one word: `ActivityPub` becomes `activitypub`. */
   acronyms?: string[];
@@ -639,6 +640,14 @@ export interface RbStatusCall {
    * so a default declared here takes precedence over `defaultStatusCode`.
    */
   defaultStatusCode?: number;
+}
+
+/** One of a library's exception classes. */
+export interface LibraryException {
+  /** Every class it inherits from, nearest first, up to `Exception`. */
+  ancestors: string[];
+  /** The status the library responds with when nothing rescues it. */
+  status?: number;
 }
 
 /**

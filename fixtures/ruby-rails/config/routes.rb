@@ -22,5 +22,9 @@ Rails.application.routes.draw do
     resources :audits, only: [:index]
   end
 
+  namespace :api do
+    resource :settings, only: [:show, :update]
+  end
+
   mount Sidekiq::Web => "/sidekiq"
 end

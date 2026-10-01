@@ -49,7 +49,7 @@ export interface RubyLowering {
 }
 
 /** Whether this call is a raise, which is Ruby's throw. */
-function isRaise(node: RbNode): boolean {
+export function isRaise(node: RbNode): boolean {
   if (node.type !== "call") {
     return false;
   }

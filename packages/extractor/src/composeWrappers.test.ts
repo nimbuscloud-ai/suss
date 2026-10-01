@@ -666,3 +666,153 @@ describe("composeWrappers and the declared contract", () => {
     ]);
   });
 });
+
+describe("composeWrappers and the classes an error handler catches", () => {
+  function raises(
+    exceptionType: string | null,
+    ancestors?: string[],
+    ancestryIncomplete?: boolean,
+  ): Transition {
+    return {
+      id: `raise-${exceptionType}`,
+      conditions: [guard("denied")],
+      output: {
+        type: "throw",
+        exceptionType,
+        message: null,
+        ...(ancestors === undefined ? {} : { exceptionAncestors: ancestors }),
+        ...(ancestryIncomplete === true ? { ancestryIncomplete } : {}),
+      },
+      effects: [],
+      location: { start: 1, end: 1 },
+      isDefault: false,
+    };
+  }
+
+  function handler(
+    name: string,
+    catches: string[] | undefined,
+    mayCatchUnreadClasses = false,
+  ): WrapperReference {
+    return {
+      file: "app/controllers/base.rb",
+      name,
+      onThrow: true,
+      ...(catches === undefined ? {} : { catches }),
+      ...(mayCatchUnreadClasses ? { mayCatchUnreadClasses } : {}),
+    };
+  }
+
+  const MISSING = handler("respond_missing", ["RecordNotFound"]);
+  const LIMIT = handler("respond_limit", ["LimitReached"]);
+  const DENIED = handler("respond_denied", ["AccessDenied"], true);
+  const ANY_ERROR = handler("respond_error", ["StandardError"], true);
+
+  const handlerUnits = [
+    unit("respond_missing", "app/controllers/base.rb", [responds("m", 404)]),
+    unit("respond_limit", "app/controllers/base.rb", [responds("l", 402)]),
+    unit("respond_denied", "app/controllers/base.rb", [responds("d", 403)]),
+    unit("respond_error", "app/controllers/base.rb", [responds("e", 500)]),
+  ];
+
+  /** The handler outcomes composition added, each with whether the catch is uncertain. */
+  function caught(
+    thrown: Transition,
+    handlers: WrapperReference[],
+  ): Array<[string | undefined, boolean]> {
+    const route = unit("update", "app/controllers/settings.rb", [thrown], {
+      wrappers: handlers,
+    });
+    const [composed] = composeWrappers([route, ...handlerUnits]);
+    return composed.transitions
+      .filter((transition) => fromOf(transition) !== undefined)
+      .map((transition) => [
+        fromOf(transition),
+        readWrapperMetadata(transition)?.catchUncertain === true,
+      ]);
+  }
+
+  it("adds only the handler registered for the class thrown or one of its ancestors", () => {
+    expect(
+      caught(raises("LimitReached", ["StandardError", "Exception"]), [
+        MISSING,
+        LIMIT,
+      ]),
+    ).toEqual([["respond_limit", false]]);
+  });
+
+  it("stops at the first handler, in the order listed, that catches the throw", () => {
+    expect(
+      caught(raises("LimitReached", ["StandardError", "Exception"]), [
+        LIMIT,
+        ANY_ERROR,
+      ]),
+    ).toEqual([["respond_limit", false]]);
+    expect(
+      caught(raises("LimitReached", ["StandardError", "Exception"]), [
+        ANY_ERROR,
+        LIMIT,
+      ]),
+    ).toEqual([["respond_error", false]]);
+  });
+
+  it("matches a class the run did not read by name, and leaves out handlers it cannot inherit from", () => {
+    expect(
+      caught(raises("AccessDenied", ["Exception"], true), [
+        MISSING,
+        LIMIT,
+        DENIED,
+      ]),
+    ).toEqual([["respond_denied", false]]);
+  });
+
+  it("marks a handler a class the run did not read may inherit from as uncertain, and the one after it too", () => {
+    expect(
+      caught(raises("AccessDenied", ["Exception"], true), [ANY_ERROR, DENIED]),
+    ).toEqual([
+      ["respond_error", true],
+      ["respond_denied", true],
+    ]);
+  });
+
+  it("keeps a StandardError handler on a throw of a class the run did not read, as uncertain, and an Exception handler as sure", () => {
+    const gemError = raises("Gatekeeper::AccessDenied", ["Exception"], true);
+    expect(caught(gemError, [MISSING, LIMIT, ANY_ERROR])).toEqual([
+      ["respond_error", true],
+    ]);
+    const anyException = handler("respond_error", ["Exception"], true);
+    expect(caught(gemError, [MISSING, anyException])).toEqual([
+      ["respond_error", false],
+    ]);
+  });
+
+  it("marks every handler that lists classes as uncertain for a throw with no class", () => {
+    expect(caught(raises(null), [MISSING, LIMIT])).toEqual([
+      ["respond_missing", true],
+      ["respond_limit", true],
+    ]);
+  });
+
+  it("marks a handler whose classes the run could not all read as uncertain, and the one after it too", () => {
+    const network: WrapperReference = {
+      ...handler("respond_error", []),
+      mayCatchAny: true,
+    };
+    expect(
+      caught(raises("LimitReached", ["StandardError", "Exception"]), [
+        network,
+        LIMIT,
+      ]),
+    ).toEqual([
+      ["respond_error", true],
+      ["respond_limit", true],
+    ]);
+  });
+
+  it("adds a handler that lists no classes for any throw, as before", () => {
+    const onError = handler("respond_error", undefined);
+    expect(
+      caught(raises("LimitReached", ["StandardError"]), [onError, MISSING]),
+    ).toEqual([["respond_error", false]]);
+  });
+});
