@@ -265,6 +265,9 @@ Options (contract):
                    container's image was built from, so check has
                    nothing to pair the unit's code against until you
                    say where it is
+  --allow-empty    When suss doesn't read a boundary from the file, the
+                   command exits non-zero by default; this opts back into
+                   exiting 0
   -o, --output     Write JSON to a file instead of stdout
 
 Options (corroborate):
@@ -1218,6 +1221,7 @@ async function runContract(args: string[]): Promise<number> {
       from: { type: "string" },
       output: { type: "string", short: "o" },
       "code-scope": { type: "string", multiple: true },
+      "allow-empty": { type: "boolean" },
     },
     allowPositionals: true,
   });
@@ -1263,12 +1267,20 @@ async function runContract(args: string[]): Promise<number> {
     return 1;
   }
 
-  await contract({
+  const summaries = await contract({
     from,
     spec: positionals[0],
     ...(values.output !== undefined ? { output: values.output } : {}),
     ...(Object.keys(codeScopes).length > 0 ? { codeScopes } : {}),
   });
+  // An empty file would reach check as a side with nothing on it, and
+  // check would report no findings as if both sides agreed.
+  if (summaries.length === 0 && values["allow-empty"] !== true) {
+    process.stderr.write(
+      `Failing because suss didn't read a boundary from ${positionals[0]}. Pass --allow-empty when that is expected.\n`,
+    );
+    return 1;
+  }
   return 0;
 }
 
