@@ -794,6 +794,39 @@ describe("a reader that walks a directory", () => {
 
     expect(read).toEqual(["graphql-documents"]);
   });
+
+  it("finds operations kept well down the tree, next to the screens that send them", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    const deep = path.join(dir, "src", "helpers", "backend", "gql", "queries");
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(
+      path.join(deep, "Orders.graphql"),
+      "query Orders { orders { id } }\n",
+    );
+
+    const report = await inspectProject(dir);
+    const read = report.suggestions
+      .filter((s) => s.kind === "contract")
+      .map((s) => `${s.name} ${s.file}`);
+
+    expect(read).toEqual([
+      `graphql-documents ${path.join("src", "helpers", "backend", "gql", "queries")}`,
+    ]);
+  });
+
+  it("leaves out a schema kept as a test fixture", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    const fixture = path.join(dir, "src", "generate", "__tests__", "fixture");
+    fs.mkdirSync(fixture, { recursive: true });
+    fs.writeFileSync(
+      path.join(fixture, "schema.graphql"),
+      "type Query { ledger: String }\n",
+    );
+
+    const report = await inspectProject(dir);
+
+    expect(report.suggestions.filter((s) => s.kind === "contract")).toEqual([]);
+  });
 });
 
 /** An OpenAPI document with one GET per path. */
