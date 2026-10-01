@@ -957,7 +957,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       "",
       "app = FastAPI()",
       "",
-      "CODE = 201",
+      "CODE = pick_code()",
       "",
       "",
       "class TodoResponse:",
@@ -974,7 +974,55 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     expect(createItem?.branches).toHaveLength(1);
     expect(claimedStatusOf(createItem)).toBeNull();
     expect(claimedBodyOf(createItem)?.type).toBe("ref");
-    expect(unreadTextOf(createItem)).toContain("not a literal number");
+    expect(unreadTextOf(createItem)).toContain("does not come to a number");
+  });
+
+  it("reads a status written as a constant, and as a library constant the pack lists", async () => {
+    const withConstants: PythonPack = {
+      ...fastapiWithRaises,
+      discovery: [
+        {
+          ...fastapiWithRaises.discovery[0],
+          statusCodeConstants: {
+            "fastapi.status.HTTP_201_CREATED": 201,
+            "fastapi.status.HTTP_404_NOT_FOUND": 404,
+            "starlette.status.HTTP_409_CONFLICT": 409,
+          },
+        } as PythonPack["discovery"][number],
+      ],
+    };
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, HTTPException, status",
+        "from starlette.status import HTTP_409_CONFLICT",
+        "",
+        "app = FastAPI()",
+        "CODE = 202",
+        "MISSING = HTTPException(status_code=status.HTTP_404_NOT_FOUND)",
+        "",
+        "",
+        '@app.post("/items/{item_id}", status_code=status.HTTP_201_CREATED)',
+        "def create_item(item_id: int):",
+        "    if item_id > 10:",
+        "        raise MISSING",
+        "    if item_id < 0:",
+        "        raise HTTPException(HTTP_409_CONFLICT)",
+        "    return {}",
+        "",
+        "",
+        '@app.post("/other", status_code=CODE)',
+        "def other():",
+        "    return {}",
+        "",
+      ].join("\n"),
+      [withConstants],
+    );
+    const statuses = (name: string) =>
+      outcomesOf(units.find((u) => u.identity.name === name))?.map(
+        ([status]) => status,
+      );
+    expect(statuses("create_item")).toEqual(["404", "409", "201"]);
+    expect(statuses("other")).toEqual(["202"]);
   });
 
   it("takes the status its pack declares as the library's default when the route states none", async () => {

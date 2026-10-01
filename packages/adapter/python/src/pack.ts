@@ -436,6 +436,12 @@ export interface RouteConventions {
    * sends 422. Unset means the library checks nothing on its own.
    */
   validationFailureStatus?: number;
+  /**
+   * The number each of the library's status constants is, keyed by the
+   * module and name it is imported as (`fastapi.status.HTTP_404_NOT_FOUND`),
+   * for a project read without the library installed.
+   */
+  statusCodeConstants?: Record<string, number>;
 }
 
 /** The part of the request a parameter declared with one callable is read from. */

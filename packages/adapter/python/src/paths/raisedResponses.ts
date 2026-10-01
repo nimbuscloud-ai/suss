@@ -15,7 +15,11 @@
 import { constantOf } from "@suss/values";
 
 import { field, rangeOf, stringLiteralValue } from "../ast.js";
-import { evaluatedValue } from "../values/evaluator.js";
+import {
+  evaluatedValue,
+  moduleOf,
+  writtenNodeOf,
+} from "../values/evaluator.js";
 import { originOf } from "../values/origin.js";
 
 import type { Database } from "@suss/datalog";
@@ -36,6 +40,27 @@ export interface RaisedResponseOptions {
   readonly calls: readonly PyStatusCall[];
   readonly module: ModuleBinding;
   readonly facts: Database | undefined;
+  /** The library's status constants, from the pattern's `statusCodeConstants`. */
+  readonly constants?: Readonly<Record<string, number>>;
+}
+
+/**
+ * The number a status argument comes to: what the evaluator settles it
+ * to, or else the library constant it is imported as. Null for anything
+ * else.
+ */
+export function statusNumberOf(
+  node: PyNode,
+  options: Pick<RaisedResponseOptions, "module" | "facts" | "constants">,
+): number | null {
+  const value = constantOf(evaluatedValue(node, options.facts));
+  if (typeof value === "number") {
+    return value;
+  }
+  const origin = originOf(node, options.module);
+  return origin === null
+    ? null
+    : (options.constants?.[`${origin.module}.${origin.name}`] ?? null);
 }
 
 /** A body written in one of these belongs to the function it declares. */
@@ -91,6 +116,20 @@ function raisedResponseOf(
   }
 
   const thrownByCall = statement.type !== "raise_statement";
+  const prebuilt = thrownByCall ? null : prebuiltCallOf(expression, options);
+  if (prebuilt !== null) {
+    return {
+      statement,
+      thrownByCall,
+      terminal: terminalOf(
+        statement,
+        calleeOf(prebuilt.call, prebuilt.call),
+        prebuilt.call,
+        prebuilt.declared,
+        prebuilt.options,
+      ),
+    };
+  }
   const call = expression.type === "call" ? expression : null;
   const callee = calleeOf(expression, call);
   const declared = declaredCallFor(callee, options);
@@ -103,8 +142,35 @@ function raisedResponseOf(
   return {
     statement,
     thrownByCall,
-    terminal: terminalOf(statement, callee, call, declared, options.facts),
+    terminal: terminalOf(statement, callee, call, declared, options),
   };
+}
+
+/**
+ * `raise CredentialsError` where the name was assigned `HTTPException(401)`
+ * once, at the top of some module: the call that built it, read in the
+ * scope of the file it is written in. Null for anything else.
+ */
+function prebuiltCallOf(
+  expression: PyNode,
+  options: RaisedResponseOptions,
+): {
+  call: PyNode;
+  declared: PyStatusCall;
+  options: RaisedResponseOptions;
+} | null {
+  if (expression.type !== "identifier" && expression.type !== "attribute") {
+    return null;
+  }
+  const written = writtenNodeOf(expression, options.facts);
+  if (written === null || written.type !== "call") {
+    return null;
+  }
+  const inItsFile = { ...options, module: moduleOf(written) };
+  const declared = declaredCallFor(calleeOf(written, written), inItsFile);
+  return declared === undefined
+    ? null
+    : { call: written, declared, options: inItsFile };
 }
 
 /**
@@ -131,9 +197,7 @@ export function returnedResponseStatus(
     return null;
   }
   const declared = declaredCallFor(callee, options);
-  return declared === undefined
-    ? null
-    : statusOf(declared, returned, options.facts);
+  return declared === undefined ? null : statusOf(declared, returned, options);
 }
 
 /** The name being called, which for a class written without parentheses is the class itself. */
@@ -160,11 +224,12 @@ function terminalOf(
   callee: PyNode,
   call: PyNode | null,
   declared: PyStatusCall | undefined,
-  facts: Database | undefined,
+  options: RaisedResponseOptions,
 ): RawTerminal {
   return {
     kind: "throw",
-    statusCode: declared === undefined ? null : statusOf(declared, call, facts),
+    statusCode:
+      declared === undefined ? null : statusOf(declared, call, options),
     body: null,
     exceptionType: lastSegmentOf(declared?.callee ?? callee.text),
     message: call === null ? null : writtenMessageOf(call),
@@ -190,7 +255,7 @@ function lastSegmentOf(dotted: string): string | null {
 function statusOf(
   declared: PyStatusCall,
   call: PyNode | null,
-  facts: Database | undefined,
+  options: RaisedResponseOptions,
 ): RawTerminal["statusCode"] {
   const written = call === null ? null : statusArgumentOf(declared, call);
   if (written === null) {
@@ -199,11 +264,10 @@ function statusOf(
       : { type: "literal", value: declared.defaultStatusCode };
   }
 
-  const value = constantOf(evaluatedValue(written, facts));
-  if (typeof value === "number") {
-    return { type: "literal", value };
-  }
-  return { type: "dynamic", sourceText: written.text };
+  const value = statusNumberOf(written, options);
+  return value === null
+    ? { type: "dynamic", sourceText: written.text }
+    : { type: "literal", value };
 }
 
 function argumentsOf(call: PyNode): PyNode[] {

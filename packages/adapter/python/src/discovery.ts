@@ -59,6 +59,7 @@ import { invocationEffects } from "./paths/effects.js";
 import {
   raisedResponses,
   returnedResponseStatus,
+  statusNumberOf,
 } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { askFileSources, slotProvenance } from "./provenance.js";
@@ -735,10 +736,11 @@ function readRouterPrefix(
   return absentReading;
 }
 
-/** If the status keyword is written as anything but a literal number, falling back to the library's default would claim a status the running app does not return. */
+/** If the status keyword does not come to a number, falling back to the library's default would claim a status the running app does not return. */
 function readStatusCode(
   pattern: DecoratedFunctionRoute,
   classification: DecoratorClassification,
+  options: { module: ModuleBinding; facts: Database | undefined },
 ): Reading<number> {
   if (pattern.statusCodeKeyword === undefined) {
     return absentReading;
@@ -749,12 +751,16 @@ function readStatusCode(
     return absentReading;
   }
 
-  if (arg.kind === "number") {
-    return writtenReading(arg.value, classification.range);
+  const status = statusNumberOf(arg.node, {
+    ...options,
+    constants: pattern.statusCodeConstants ?? {},
+  });
+  if (status !== null) {
+    return writtenReading(status, classification.range);
   }
 
   return unreadableReading(
-    "The status this route's decorator states is not a literal number, so the response claims no status",
+    "The status this route's decorator states does not come to a number here, so the response claims no status",
     classification.range,
   );
 }
@@ -939,6 +945,7 @@ function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
     calls: options.responseStatusCalls,
     module: options.ctx.module,
     facts: options.ctx.facts,
+    constants: options.ctx.pattern.statusCodeConstants ?? {},
   });
   const terminals = bodyTerminals(body, raised);
   // A lone `return {"status": "ok"}` says what the response is even though
@@ -974,6 +981,7 @@ function statusOfReturnIn(
     calls: pattern.responseConstructors ?? [],
     module: options.module,
     facts: options.facts,
+    constants: pattern.statusCodeConstants ?? {},
   });
   if (constructed !== null) {
     return constructed.type === "literal"
@@ -1159,7 +1167,10 @@ function functionRouteUnits(
         responseShape: readResponseModel(pattern, classification, module, ctx),
         statusCode: defaultedStatus(
           declaredOrReturnedStatus(
-            readStatusCode(pattern, classification),
+            readStatusCode(pattern, classification, {
+              module,
+              facts: options.facts,
+            }),
             readReturnedStatus(pattern, functionNode, {
               module,
               facts: options.facts,

@@ -34,6 +34,10 @@ describe("fastapiFramework", () => {
         parameterAliasKeyword: "alias",
         defaultStatusCode: 200,
         validationFailureStatus: 422,
+        statusCodeConstants: expect.objectContaining({
+          "fastapi.status.HTTP_404_NOT_FOUND": 404,
+          "starlette.status.HTTP_422_UNPROCESSABLE_CONTENT": 422,
+        }),
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
         responseStatusCalls: [

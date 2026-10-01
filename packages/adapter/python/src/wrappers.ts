@@ -643,6 +643,7 @@ function wrapperUnit(
     calls: declared.pattern.responseStatusCalls ?? [],
     module: file.module,
     facts: options.facts,
+    constants: declared.pattern.statusCodeConstants ?? {},
   });
   const continuations = continuationStatements(node, declared.form);
   const terminals = bodyTerminals(body, raised, continuations);
