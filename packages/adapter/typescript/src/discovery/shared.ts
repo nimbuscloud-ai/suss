@@ -166,6 +166,8 @@ export interface DiscoveredUnit {
    * pack's response terminals for this unit alone.
    */
   defaultStatusCode?: number;
+  /** Statuses the route's own decorators list as possible responses. */
+  declaredStatuses?: number[];
   /**
    * Populated by a pack's `discoverUnits` callback for a message-bus
    * consumer whose channel the code gives (a handler factory whose

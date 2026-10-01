@@ -16,7 +16,7 @@ import { joinMountedPath, staysInItsFunction } from "@suss/resolution";
 
 import { nodeId } from "../facts/extract.js";
 import { createPerFileCache } from "../perFileCache.js";
-import { pathFromArgument } from "../resolve/routePath.js";
+import { routePatternFromArgument } from "../resolve/routePath.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import { importDeclarationsOf } from "./importScan.js";
 import { importedReferenceSpellings } from "./resolveImport.js";
@@ -37,6 +37,7 @@ import type {
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 import type { GlobalPrefix } from "./globalPrefix.js";
+import type { AppVersioning } from "./routeVersioning.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
@@ -65,6 +66,8 @@ export interface MountPrefixIndex {
    * puts in front of its routes. A key with no entry has none.
    */
   globalPrefixes?: ReadonlyMap<string, GlobalPrefix>;
+  /** How the run's applications serve API versions, keyed by `routeVersioningKey`. */
+  versionings?: ReadonlyMap<string, AppVersioning>;
 }
 
 /** One mount call this file states, before it's folded into the index. */
@@ -1080,6 +1083,8 @@ function extractRouteInfoFromBinding(
     | Node
     | undefined;
   const path =
-    pathArg === undefined ? undefined : pathFromArgument(pathArg, resolution);
+    pathArg === undefined
+      ? undefined
+      : routePatternFromArgument(pathArg, resolution);
   return path === undefined ? null : { method, path };
 }

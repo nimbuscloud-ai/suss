@@ -656,6 +656,30 @@ async function summariesOf(
   return await adapter.extractAll();
 }
 
+describe("reactFramework, the props a component's handlers and effects use", () => {
+  it("records them on the handler's and the effect's own summaries", async () => {
+    const summaries = await summariesOf({
+      "/src/swatch.tsx": `
+        import { useEffect } from "react";
+        type SwatchProps = { color: string; onChange: (c: string) => void; width: number; label: string };
+        export function Swatch({ color, onChange, width, label }: SwatchProps) {
+          useEffect(() => {
+            document.title = label;
+          });
+          return <button onClick={() => onChange("red")}>{color}</button>;
+        }
+      `,
+    });
+    const readsOf = (name: string) =>
+      summaries
+        .find((s) => s.identity.name === name)
+        ?.inputReads?.map((read) => read.input);
+    expect(readsOf("Swatch")).toEqual(["color"]);
+    expect(readsOf("Swatch.effect#0")).toEqual(["label"]);
+    expect(readsOf("Swatch.button.onClick")).toEqual(["onChange"]);
+  });
+});
+
 const PANEL_SOURCE = `
 export function Panel() {
   return <div/>;

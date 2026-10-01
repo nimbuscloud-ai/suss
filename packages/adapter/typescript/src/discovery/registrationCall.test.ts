@@ -58,6 +58,27 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     expect(units[0].routeInfo).toEqual({ method: "GET", path: "/users/:id" });
   });
 
+  it("keeps the ? on an optional parameter, written out or built from a constant", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const OPTIONAL_NAME = "/:filename?";
+      const r = Router();
+      r.get("/:pk/:filename?", (req, res) => { res.json({}); });
+      r.post(\`/:pk\${OPTIONAL_NAME}\`, (req, res) => { res.json({}); });
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+      new ResolutionStore(),
+    );
+    expect(units.map((unit) => unit.routeInfo)).toEqual([
+      { method: "GET", path: "/:pk/:filename?" },
+      { method: "POST", path: "/:pk/:filename?" },
+    ]);
+  });
+
   it("finds a subject built as a property of the default import", () => {
     const sf = sourceFile(`
       import express from "express";

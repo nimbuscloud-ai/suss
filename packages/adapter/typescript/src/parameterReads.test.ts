@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
-import { parameterReads } from "./parameterReads.js";
+import { enclosingParameterReads, parameterReads } from "./parameterReads.js";
 
 import type { FunctionRoot } from "./conditions.js";
 
@@ -91,6 +91,24 @@ describe("parameterReads", () => {
     });
     expect(parameterReads(func, ["title", "onSave"], claimed as never)).toEqual(
       [{ input: "title", path: [] }],
+    );
+  });
+
+  it("gives the sub-unit the reads it makes of the enclosing unit's parameters", () => {
+    const func = functionNamed(
+      `
+      function Panel({ title, onSave }: { title: string; onSave: (id: string) => void }) {
+        const handler = (title: { id: string }) => onSave(title.id);
+        return <button onClick={handler}>{title}</button>;
+      }
+    `,
+      "Panel",
+    );
+    const handler = func.getFirstDescendant(
+      (node) => node.getKindName() === "ArrowFunction",
+    ) as unknown as FunctionRoot;
+    expect(enclosingParameterReads(handler, func, ["title", "onSave"])).toEqual(
+      [{ input: "onSave", path: [] }],
     );
   });
 

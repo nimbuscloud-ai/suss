@@ -102,6 +102,16 @@ export function pairingKey(binding: BoundaryBinding): string | null {
   return (behavior.pairingKey ?? behavior.identityKey)(binding.semantics);
 }
 
+/**
+ * The key a handler and a document describing the same operation share.
+ * The contract checks match providers to each other on it, since two
+ * providers never go through pairing.
+ */
+export function operationKey(binding: BoundaryBinding): string | null {
+  const behavior = behaviorOf(binding.semantics);
+  return (behavior.operationKey ?? behavior.identityKey)(binding.semantics);
+}
+
 export function semanticsAgree(a: Semantics, b: Semantics): boolean {
   if (a.name !== b.name) {
     return false;

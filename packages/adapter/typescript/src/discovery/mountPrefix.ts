@@ -38,11 +38,21 @@ import {
   methodsRegisteredOn,
   registrationSubjectIdsOf,
 } from "./registrationCall.js";
+import {
+  type AppVersioning,
+  agreedVersioning,
+  describeVersioning,
+  isRouteVersioningKey,
+  routeVersioningKey,
+  type VersioningInFile,
+  versioningIn,
+} from "./routeVersioning.js";
 
 import type {
   DiscoveryPattern,
   GlobalPrefixCall,
   PatternPack,
+  RouteVersioning,
 } from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
@@ -67,6 +77,12 @@ type RegistrationMatch = Extract<
 interface GlobalPrefixWork {
   sourceFile: SourceFile;
   call: GlobalPrefixCall;
+}
+
+interface VersioningWork {
+  sourceFile: SourceFile;
+  versioning: RouteVersioning;
+  modules: string[];
 }
 
 interface MountPattern {
@@ -102,6 +118,7 @@ export function buildMountPrefixIndex(
   const mountWorkByPack = new Map<string, PackMountWork[]>();
   const ownMethodsByPack = new Map<string, Set<string>>();
   const globalPrefixWork: GlobalPrefixWork[] = [];
+  const versioningWork: VersioningWork[] = [];
 
   for (const [sourceFile, packs] of packsByFile) {
     for (const pack of packs) {
@@ -118,6 +135,16 @@ export function buildMountPrefixIndex(
           globalPrefixWork.push({
             sourceFile,
             call: pattern.match.globalPrefix,
+          });
+        }
+        if (
+          pattern.match.type === "decoratedRoute" &&
+          pattern.match.versioning !== undefined
+        ) {
+          versioningWork.push({
+            sourceFile,
+            versioning: pattern.match.versioning,
+            modules: [pattern.match.importModule].flat(),
           });
         }
         if (pattern.match.type !== "registrationCall") {
@@ -174,7 +201,12 @@ export function buildMountPrefixIndex(
   }
 
   const globalPrefixes = agreedGlobalPrefixes(globalPrefixWork, resolution);
-  if (edgesByChild.size === 0 && globalPrefixes.size === 0) {
+  const versionings = agreedVersionings(versioningWork, resolution);
+  if (
+    edgesByChild.size === 0 &&
+    globalPrefixes.size === 0 &&
+    versionings.size === 0
+  ) {
     return NO_MOUNTS;
   }
 
@@ -188,12 +220,49 @@ export function buildMountPrefixIndex(
       recordMountPrefix(childId, prefix);
       return prefix;
     },
-    prefixForId: (id) =>
-      isGlobalPrefixKey(id)
-        ? describeGlobalPrefix(globalPrefixes.get(id) ?? null)
-        : byId(id),
+    prefixForId: (id) => recordedPrefixFor(id),
     globalPrefixes,
+    versionings,
   };
+
+  function recordedPrefixFor(id: string): string {
+    if (isGlobalPrefixKey(id)) {
+      return describeGlobalPrefix(globalPrefixes.get(id) ?? null);
+    }
+    if (isRouteVersioningKey(id)) {
+      return describeVersioning(versionings.get(id) ?? null);
+    }
+    return byId(id);
+  }
+}
+
+/**
+ * How each pattern's applications serve versions, across every file the
+ * pack applies to. Every pattern that declares versioning gets an entry,
+ * since finding no call at all is an answer too.
+ */
+function agreedVersionings(
+  work: readonly VersioningWork[],
+  resolution: ResolutionStore,
+): Map<string, AppVersioning> {
+  const foundByKey = new Map<string, VersioningInFile[]>();
+  const scanned = new Set<string>();
+  for (const { sourceFile, versioning, modules } of work) {
+    const key = routeVersioningKey(versioning);
+    const scanKey = `${key}|${sourceFile.getFilePath()}`;
+    if (scanned.has(scanKey)) {
+      continue;
+    }
+    scanned.add(scanKey);
+    const found = foundByKey.get(key) ?? [];
+    found.push(versioningIn(sourceFile, versioning, modules, resolution));
+    foundByKey.set(key, found);
+  }
+  const agreed = new Map<string, AppVersioning>();
+  for (const [key, found] of foundByKey) {
+    agreed.set(key, agreedVersioning(found));
+  }
+  return agreed;
 }
 
 /**

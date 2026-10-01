@@ -161,6 +161,59 @@ describe("checkContractImplementation", () => {
     ]);
   });
 
+  it("compares a handler with the document when the two name the parameter differently", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkContractImplementation(
+      [
+        document("DELETE", "/teams/{team_id}", [{ statusCode: 204 }]),
+        handler("DELETE", "/teams/:id", [
+          transition("t-200", { output: response(200), isDefault: true }),
+        ]),
+      ],
+      compared,
+    );
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "Handler produces status 200 which the openapi document does not declare",
+      "The openapi document declares response 204, and no path in the handler produces it",
+    ]);
+    expect(compared.map((pair) => pair.key)).toEqual(["DELETE /teams/{id}"]);
+  });
+
+  it("compares neither handler when two functions serve one operation", () => {
+    const v1 = handler("GET", "/invoices/:id", [
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const v2 = handler("GET", "/invoices/:id", [
+      transition("t-201", { output: response(201), isDefault: true }),
+    ]);
+    const findings = checkContractImplementation([
+      document("GET", "/invoices/{invoice_id}", [{ statusCode: 200 }]),
+      v1,
+      {
+        ...v2,
+        location: { ...v2.location, file: "src/invoicesV2.ts" },
+      },
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("compares one function registered under two paths that key alike", () => {
+    const listed = handler("GET", "/invoices", [
+      transition("t-201", { output: response(201), isDefault: true }),
+    ]);
+    const findings = checkContractImplementation([
+      document("GET", "/invoices", [{ statusCode: 200 }]),
+      listed,
+      {
+        ...listed,
+        identity: { ...listed.identity, name: "GET /invoices/" },
+      },
+    ]);
+    expect(findings.map((finding) => finding.description)).toContain(
+      "Handler produces status 201 which the openapi document does not declare",
+    );
+  });
+
   it("leaves a declared 5XX alone when the handler never produces it", () => {
     const findings = checkContractImplementation([
       document("GET", "/users", [{ statusCode: 200 }, { statusCode: 500 }]),
