@@ -139,6 +139,13 @@ const UNSETTLED_ON_SELF: CalleeResolution = {
   matchByName: true,
 };
 
+/** The same call inside a module's instance method, where the including class decides what runs. */
+const SELF_CALL_IN_MIXIN: CalleeResolution = {
+  kind: "stopped",
+  reason: "selfCallInMixin",
+  matchByName: true,
+};
+
 function followed(target: ReachedFunction): CalleeResolution {
   return { kind: "followed", target };
 }
@@ -515,27 +522,50 @@ function resolveImplicitSelf(
   site: CallSite,
   ctx: ReachContext,
 ): CalleeResolution {
-  if (site.enclosingQualifiedName !== null) {
-    const onClass = methodOnSelf(
-      site,
-      site.enclosingQualifiedName,
-      methodName,
-      ctx,
-    );
-    if (
-      onClass.kind === "followed" ||
-      !leavesRoomForATopLevelMethod(onClass.reason)
-    ) {
-      return onClass;
-    }
+  const onClass =
+    site.enclosingQualifiedName === null
+      ? null
+      : methodOnSelf(site, site.enclosingQualifiedName, methodName, ctx);
+  if (
+    onClass !== null &&
+    (onClass.kind === "followed" ||
+      !leavesRoomForATopLevelMethod(onClass.reason))
+  ) {
+    return onClass;
   }
+  const readWholeAncestry =
+    onClass?.kind === "stopped" && onClass.reason === "noDeclaration";
   const topLevel = resolveTopLevelName(methodName, ctx);
   if (topLevel.kind === "followed" || topLevel.reason !== "noDeclaration") {
     return topLevel;
   }
-  return declaredForTheOtherSelf(site, methodName, ctx)
-    ? NO_DECLARATION
+  if (declaredForTheOtherSelf(site, methodName, ctx)) {
+    return NO_DECLARATION;
+  }
+  return readWholeAncestry && inModuleInstanceMethod(site, ctx)
+    ? SELF_CALL_IN_MIXIN
     : UNSETTLED_ON_SELF;
+}
+
+/**
+ * Whether the call is in an instance method of a module. There `self` is
+ * an instance of whichever class includes the module, so a name the
+ * module and its own ancestors do not define is that class's to supply.
+ */
+function inModuleInstanceMethod(site: CallSite, ctx: ReachContext): boolean {
+  const qualifiedName = site.enclosingQualifiedName;
+  if (
+    qualifiedName === null ||
+    site.method === null ||
+    inClassMethod(site, ctx)
+  ) {
+    return false;
+  }
+  const own = ctx.ancestries.get(qualifiedName)?.[0];
+  return (
+    own?.type === "bodies" &&
+    own.blocks.every((block) => block.info.kind === "module")
+  );
 }
 
 /**

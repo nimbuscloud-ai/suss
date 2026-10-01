@@ -18,6 +18,7 @@ describe("unfollowed calls", () => {
       unresolvedWrapper: true,
       definedAtLoadTime: true,
       behindUnreadAncestor: true,
+      selfCallInMixin: true,
     };
     for (const [reason, expected] of Object.entries(recorded)) {
       expect(worthRecording(reason as UnfollowedReason)).toBe(expected);
@@ -39,6 +40,7 @@ describe("unfollowed calls", () => {
       definedAtLoadTime:
         "lands on a method the project defines with define_method",
       behindUnreadAncestor: "could land in an ancestor this run did not read",
+      selfCallInMixin: "runs whatever the class that mixes it in provides",
     };
     for (const [reason, fragment] of Object.entries(sentences)) {
       const gap = unfollowedCallGap({
