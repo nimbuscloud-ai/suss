@@ -6,7 +6,7 @@
     "internal": 5088,
     "consumers": 2667,
     "pairs": 2656,
-    "unfollowedCalls": 525,
+    "unfollowedCalls": 528,
     "findingErrors": 0
   },
   "packages": {
@@ -442,7 +442,7 @@
       "exports": 4,
       "internal": 41,
       "consumers": 14,
-      "unfollowedCalls": 4
+      "unfollowedCalls": 6
     },
     "packages/framework/pytest": {
       "name": "@suss/framework-pytest",
@@ -568,7 +568,7 @@
       "exports": 67,
       "internal": 225,
       "consumers": 0,
-      "unfollowedCalls": 7
+      "unfollowedCalls": 8
     },
     "packages/recognize": {
       "name": "@suss/recognize",
