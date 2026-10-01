@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { readHttpMetadata, safeParseSummaries } from "@suss/behavioral-ir";
 
@@ -46,12 +46,27 @@ function bodyAt(
     : undefined;
 }
 
-function readSplit(): { summaries: BehavioralSummary[]; unread: string[] } {
+/** The summaries a file gives, and each line the reader wrote to stderr. */
+function readReporting(file: string): {
+  summaries: BehavioralSummary[];
+  unread: string[];
+} {
   const unread: string[] = [];
-  const summaries = openApiFileToSummaries(SPLIT, {
-    onUnread: (message) => unread.push(message),
-  });
-  return { summaries, unread };
+  const write = vi
+    .spyOn(process.stderr, "write")
+    .mockImplementation((chunk: string | Uint8Array) => {
+      unread.push(String(chunk).trimEnd());
+      return true;
+    });
+  try {
+    return { summaries: openApiFileToSummaries(file), unread };
+  } finally {
+    write.mockRestore();
+  }
+}
+
+function readSplit(): { summaries: BehavioralSummary[]; unread: string[] } {
+  return readReporting(SPLIT);
 }
 
 describe("a document split across files", () => {
@@ -157,16 +172,15 @@ describe("a document split across files", () => {
         "          description: ok",
       ].join("\n"),
     );
-    const unread: string[] = [];
+    let read: ReturnType<typeof readReporting>;
     try {
-      const summaries = openApiFileToSummaries(file, {
-        onUnread: (message) => unread.push(message),
-      });
-      expect(summaries.map((s) => s.identity.name)).toEqual(["ping"]);
-      expect(summaries[0].inputs).toEqual([]);
+      read = readReporting(file);
     } finally {
       fs.rmSync(tmp, { recursive: true });
     }
+    const { summaries, unread } = read;
+    expect(summaries.map((s) => s.identity.name)).toEqual(["ping"]);
+    expect(summaries[0].inputs).toEqual([]);
     expect(unread).toHaveLength(2);
     expect(unread[0]).toContain("could not read paths/missing.yaml");
     expect(unread[1]).toContain(
@@ -187,9 +201,9 @@ describe("a document split across files", () => {
         paths: { "/x": { get: { parameters, responses: {} } } },
       }),
     );
-    const unread: string[] = [];
+    let unread: string[];
     try {
-      openApiFileToSummaries(file, { onUnread: (m) => unread.push(m) });
+      unread = readReporting(file).unread;
     } finally {
       fs.rmSync(tmp, { recursive: true });
     }
@@ -202,14 +216,14 @@ describe("a document split across files", () => {
     const file = path.join(tmp, "openapi.yaml");
     fs.writeFileSync(file, "openapi: 3.0.3\npaths:\n  /a:\n    $ref: a.json\n");
     fs.writeFileSync(path.join(tmp, "a.json"), "{ not json");
-    const unread: string[] = [];
+    let read: ReturnType<typeof readReporting>;
     try {
-      expect(
-        openApiFileToSummaries(file, { onUnread: (m) => unread.push(m) }),
-      ).toEqual([]);
+      read = readReporting(file);
     } finally {
       fs.rmSync(tmp, { recursive: true });
     }
+    const { summaries, unread } = read;
+    expect(summaries).toEqual([]);
     expect(unread).toHaveLength(1);
     expect(unread[0]).toContain("could not read a.json");
   });
@@ -227,10 +241,7 @@ describe("a document whose maps are each one ref to an index file", () => {
     named: Map<string, BehavioralSummary>;
     unread: string[];
   } {
-    const unread: string[] = [];
-    const summaries = openApiFileToSummaries(INDEXED, {
-      onUnread: (message) => unread.push(message),
-    });
+    const { summaries, unread } = readReporting(INDEXED);
     return { named: byName(summaries), unread };
   }
 

@@ -16,16 +16,6 @@ export interface OpenApiToSummariesOptions {
   source?: string;
 }
 
-export interface OpenApiFileToSummariesOptions
-  extends OpenApiToSummariesOptions {
-  /**
-   * Called once for each file a `$ref` points to that could not be read,
-   * and for each ref that points at nothing. Defaults to printing a line
-   * on stderr.
-   */
-  onUnread?: (message: string) => void;
-}
-
 /** More unresolved refs than this are counted rather than listed. */
 const UNRESOLVED_LISTED = 10;
 
@@ -52,7 +42,7 @@ export function openApiToSummaries(
  */
 export function openApiFileToSummaries(
   specPath: string,
-  options: OpenApiFileToSummariesOptions = {},
+  options: OpenApiToSummariesOptions = {},
 ): BehavioralSummary[] {
   const resolved = path.resolve(specPath);
   if (!fs.existsSync(resolved)) {
@@ -68,11 +58,8 @@ export function openApiFileToSummaries(
     documents: files.documents,
     unresolved,
   });
-  const report =
-    options.onUnread ??
-    ((message: string) => process.stderr.write(`[suss] openapi: ${message}\n`));
   for (const message of unreadMessages(specPath, files, unresolved)) {
-    report(message);
+    process.stderr.write(`[suss] openapi: ${message}\n`);
   }
   return summaries;
 }
