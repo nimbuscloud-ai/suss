@@ -1,6 +1,6 @@
 /**
  * Converts an OpenAPI Schema object into a TypeShape. A `$ref` resolves
- * against the document's named schemas. A ref met again while it is still
+ * against the document and the files it refers to. A ref met again while it is still
  * being resolved becomes a `ref` placeholder, so a recursive schema does
  * not loop.
  *
@@ -9,7 +9,10 @@
  * of each variant to the value that selects it.
  */
 
+import { lookupRef } from "./refs.js";
+
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { RefScope } from "./refs.js";
 import type {
   OpenApiDiscriminator,
   OpenApiSchema,
@@ -18,20 +21,25 @@ import type {
 } from "./spec.js";
 
 export interface SchemaContext {
-  spec: OpenApiSpec;
-  /** Names of refs currently being resolved, used for cycle detection. */
+  refs: RefScope;
+  /** Refs currently being resolved, used for cycle detection. */
   resolving: Set<string>;
 }
 
-export function newContext(spec: OpenApiSpec): SchemaContext {
-  return { spec, resolving: new Set() };
+export function newContext(
+  spec: OpenApiSpec,
+  documents: ReadonlyMap<string, unknown> = new Map(),
+  unresolved: Set<string> = new Set(),
+): SchemaContext {
+  return { refs: { root: spec, documents, unresolved }, resolving: new Set() };
 }
 
 export function schemaToShape(
   schema: OpenApiSchema | undefined,
   ctx: SchemaContext,
 ): TypeShape {
-  if (schema === undefined) {
+  // A YAML key with nothing after it parses to null.
+  if (typeof schema !== "object" || schema === null) {
     return { type: "unknown" };
   }
 
@@ -236,31 +244,33 @@ function wrapNullable(shape: TypeShape, nullable: boolean): TypeShape {
 }
 
 function resolveRef(ref: string, ctx: SchemaContext): TypeShape {
-  // 3.x keeps named schemas under components and 2.0 under definitions.
-  // Any other ref stays a named placeholder, so a reader can still see
-  // what it pointed at.
-  const match = /^#\/(?:components\/schemas|definitions)\/(.+)$/.exec(ref);
-  if (match === null) {
-    return { type: "ref", name: ref };
-  }
-  const name = match[1];
-
-  if (ctx.resolving.has(name)) {
+  const name = placeholderName(ref);
+  if (ctx.resolving.has(ref)) {
     // A recursive schema stops at a named ref, which a reader can follow
     // through its own map of named schemas.
     return { type: "ref", name };
   }
 
-  const target =
-    ctx.spec.components?.schemas?.[name] ?? ctx.spec.definitions?.[name];
-  if (target === undefined) {
+  const target = lookupRef(ctx.refs, ref);
+  if (typeof target !== "object" || target === null) {
+    ctx.refs.unresolved.add(ref);
     return { type: "ref", name };
   }
 
-  ctx.resolving.add(name);
+  ctx.resolving.add(ref);
   try {
-    return schemaToShape(target, ctx);
+    return schemaToShape(target as OpenApiSchema, ctx);
   } finally {
-    ctx.resolving.delete(name);
+    ctx.resolving.delete(ref);
   }
+}
+
+/**
+ * 3.x keeps named schemas under components and 2.0 under definitions, and
+ * a placeholder for one of those has only the schema's name. Any other
+ * ref keeps its whole text, so a reader can still see what it pointed at.
+ */
+function placeholderName(ref: string): string {
+  const match = /^#\/(?:components\/schemas|definitions)\/([^/]+)$/.exec(ref);
+  return match === null ? ref : match[1];
 }

@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info:
+  title: orders
+  version: "1"
+paths:
+  /orders:
+    $ref: "./paths/orders.yaml"
+  /orders/{id}:
+    $ref: "paths/order.yaml"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    Limit:
+      $ref: "./parameters/limit.yaml"
+  responses:
+    NotFound:
+      $ref: "./responses/notFound.yaml"
+  schemas:
+    Order:
+      $ref: "./schemas/order.yaml"

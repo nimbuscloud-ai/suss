@@ -1,0 +1,4 @@
+operationId: deleteAccount
+responses:
+  "204":
+    description: deleted

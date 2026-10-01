@@ -1,0 +1,7 @@
+/accounts/{account_id}:
+  parameters:
+    - $ref: "#/components/parameters/account_id"
+  get:
+    $ref: ./accounts/show.yaml
+  delete:
+    $ref: ./accounts/delete.yaml

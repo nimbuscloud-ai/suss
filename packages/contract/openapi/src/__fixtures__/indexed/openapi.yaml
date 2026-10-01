@@ -1,0 +1,11 @@
+openapi: 3.1.0
+info:
+  title: accounts
+  version: "1"
+paths:
+  $ref: ./paths/index.yaml
+components:
+  parameters:
+    $ref: ./parameters/index.yaml
+  schemas:
+    $ref: ./schemas/index.yaml

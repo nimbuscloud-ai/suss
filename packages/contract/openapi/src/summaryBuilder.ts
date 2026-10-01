@@ -3,6 +3,7 @@
 
 import { restBinding, withHttpMetadata } from "@suss/behavioral-ir";
 
+import { dereferenced } from "./refs.js";
 import { newContext, schemaToShape } from "./schemaToShape.js";
 import { isHttpMethod } from "./spec.js";
 
@@ -17,9 +18,12 @@ import type {
   HttpMethod,
   OpenApiOperation,
   OpenApiParameter,
+  OpenApiRequestBody,
+  OpenApiResponse,
   OpenApiSchema,
   OpenApiSpec,
   PathItem,
+  Reference,
 } from "./spec.js";
 
 export interface BuildOptions {
@@ -28,7 +32,13 @@ export interface BuildOptions {
    * `openapi:<info.title>`, or `openapi` when the document has no title.
    */
   source?: string;
+  /** The other files the document refers to, keyed the way refs.ts looks them up. */
+  documents?: ReadonlyMap<string, unknown>;
+  /** Collects each ref that points at nothing. */
+  unresolved?: Set<string>;
 }
+
+type Context = ReturnType<typeof newContext>;
 
 export function specToSummaries(
   spec: OpenApiSpec,
@@ -38,9 +48,15 @@ export function specToSummaries(
   const sourceFile =
     options.source ??
     (spec.info?.title !== undefined ? `openapi:${spec.info.title}` : "openapi");
+  const ctx = newContext(spec, options.documents, options.unresolved);
 
-  const paths = spec.paths ?? {};
-  for (const [path, item] of Object.entries(paths)) {
+  const paths =
+    dereferenced<Record<string, PathItem | Reference | undefined>>(
+      spec.paths,
+      ctx.refs,
+    ) ?? {};
+  for (const [path, written] of Object.entries(paths)) {
+    const item = dereferenced<PathItem>(written, ctx.refs);
     if (item === undefined) {
       continue;
     }
@@ -48,12 +64,14 @@ export function specToSummaries(
       if (!isHttpMethod(verb)) {
         continue;
       }
-      const op = item[verb as HttpMethod];
+      // OpenAPI has no ref on an operation, but hand-split documents
+      // write one, and what it points at is still the operation.
+      const op = dereferenced<OpenApiOperation>(item[verb], ctx.refs);
       if (op === undefined) {
         continue;
       }
       summaries.push(
-        buildSummary(spec, servedPath(spec, path), verb, op, item, sourceFile),
+        buildSummary(ctx, servedPath(spec, path), verb, op, item, sourceFile),
       );
     }
   }
@@ -88,20 +106,22 @@ function statedPrefix(spec: OpenApiSpec): string {
 }
 
 function buildSummary(
-  spec: OpenApiSpec,
+  ctx: Context,
   path: string,
   method: HttpMethod,
   op: OpenApiOperation,
   pathItem: PathItem,
   sourceFile: string,
 ): BehavioralSummary {
-  const ctx = newContext(spec);
   const upper = method.toUpperCase();
   const name = op.operationId ?? `${upper} ${path}`;
 
   // Path-level parameters apply to every operation. An operation's own
   // parameter with the same name and location replaces the path's.
-  const params = mergeParameters(pathItem.parameters, op.parameters);
+  const params = mergeParameters(
+    namedParameters(pathItem.parameters, ctx),
+    namedParameters(op.parameters, ctx),
+  );
 
   const inputs = buildInputs(params, op, ctx);
   const transitions = buildTransitions(op, ctx);
@@ -152,7 +172,7 @@ function buildSummary(
  */
 function buildDeclaredContract(
   op: OpenApiOperation,
-  ctx: ReturnType<typeof newContext>,
+  ctx: Context,
 ): HttpDeclaredContract & { provenance: "derived" } {
   const responses: Array<{ statusCode: number; body: TypeShape | null }> = [];
   const responseRanges: Array<{
@@ -163,11 +183,7 @@ function buildDeclaredContract(
   }> = [];
   let defaultResponse: { body: TypeShape | null } | undefined;
 
-  for (const [code, response] of Object.entries(op.responses ?? {})) {
-    if (response === undefined) {
-      continue;
-    }
-
+  for (const [code, response] of declaredResponses(op, ctx)) {
     if (code === "default") {
       defaultResponse = { body: bodyShape(response, ctx) };
       continue;
@@ -203,18 +219,61 @@ function buildDeclaredContract(
   };
 }
 
+/**
+ * A response whose ref points at nothing still declares its status, so
+ * it stays in with no body.
+ */
+function declaredResponses(
+  op: OpenApiOperation,
+  ctx: Context,
+): Array<[string, OpenApiResponse]> {
+  const declared: Array<[string, OpenApiResponse]> = [];
+  for (const [code, written] of Object.entries(op.responses ?? {})) {
+    if (written === undefined) {
+      continue;
+    }
+    declared.push([
+      code,
+      dereferenced<OpenApiResponse>(written, ctx.refs) ?? {},
+    ]);
+  }
+  return declared;
+}
+
+/**
+ * A parameter whose ref points at nothing has no name to pair on, so it
+ * is left out, and the ref is recorded as unresolved.
+ */
+function namedParameters(
+  written: Array<OpenApiParameter | Reference> | undefined,
+  ctx: Context,
+): OpenApiParameter[] {
+  const named: OpenApiParameter[] = [];
+  for (const entry of written ?? []) {
+    const parameter = dereferenced<OpenApiParameter>(entry, ctx.refs);
+    if (
+      parameter !== undefined &&
+      typeof parameter.name === "string" &&
+      typeof parameter.in === "string"
+    ) {
+      named.push(parameter);
+    }
+  }
+  return named;
+}
+
 function mergeParameters(
-  pathLevel: OpenApiParameter[] | undefined,
-  opLevel: OpenApiParameter[] | undefined,
+  pathLevel: OpenApiParameter[],
+  opLevel: OpenApiParameter[],
 ): OpenApiParameter[] {
   const seen = new Set<string>();
   const merged: OpenApiParameter[] = [];
   // Operation-level wins, so add them first.
-  for (const p of opLevel ?? []) {
+  for (const p of opLevel) {
     seen.add(`${p.in}:${p.name}`);
     merged.push(p);
   }
-  for (const p of pathLevel ?? []) {
+  for (const p of pathLevel) {
     const key = `${p.in}:${p.name}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -227,7 +286,7 @@ function mergeParameters(
 function buildInputs(
   params: OpenApiParameter[],
   op: OpenApiOperation,
-  ctx: ReturnType<typeof newContext>,
+  ctx: Context,
 ): Input[] {
   const inputs: Input[] = [];
 
@@ -243,7 +302,7 @@ function buildInputs(
 
   // requestBody becomes one input with role "requestBody", carrying
   // the schema of the media type a caller is most likely to send.
-  const body = op.requestBody;
+  const body = dereferenced<OpenApiRequestBody>(op.requestBody, ctx.refs);
   if (body !== undefined) {
     const firstContent = chosenContent(body.content);
     inputs.push({
@@ -298,18 +357,10 @@ function locationToRole(loc: OpenApiParameter["in"]): string {
   }
 }
 
-function buildTransitions(
-  op: OpenApiOperation,
-  ctx: ReturnType<typeof newContext>,
-): Transition[] {
-  const responses = op.responses ?? {};
+function buildTransitions(op: OpenApiOperation, ctx: Context): Transition[] {
   const transitions: Transition[] = [];
 
-  for (const [code, response] of Object.entries(responses)) {
-    if (response === undefined) {
-      continue;
-    }
-
+  for (const [code, response] of declaredResponses(op, ctx)) {
     const body = bodyShape(response, ctx);
 
     if (code === "default") {
@@ -376,7 +427,7 @@ function buildTransitions(
 function chosenContent<T extends { schema?: unknown }>(
   content: Record<string, T> | undefined,
 ): T | undefined {
-  if (content === undefined) {
+  if (typeof content !== "object" || content === null) {
     return undefined;
   }
   const mediaTypes = Object.keys(content);
@@ -387,13 +438,7 @@ function chosenContent<T extends { schema?: unknown }>(
   return chosen === undefined ? undefined : content[chosen];
 }
 
-function bodyShape(
-  response: NonNullable<OpenApiOperation["responses"]>[string],
-  ctx: ReturnType<typeof newContext>,
-): TypeShape | null {
-  if (response === undefined) {
-    return null;
-  }
+function bodyShape(response: OpenApiResponse, ctx: Context): TypeShape | null {
   // Swagger 2.0 writes the schema on the response, 3.x inside a media type.
   const schema =
     response.content === undefined

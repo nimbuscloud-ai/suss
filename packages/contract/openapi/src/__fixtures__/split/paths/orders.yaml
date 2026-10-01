@@ -1,0 +1,31 @@
+get:
+  operationId: listOrders
+  parameters:
+    - $ref: "../openapi.yaml#/components/parameters/Limit"
+  responses:
+    "200":
+      description: ok
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: "../schemas/order.yaml"
+post:
+  operationId: createOrder
+  requestBody:
+    $ref: "#/shared/NewOrder"
+  responses:
+    "201":
+      description: created
+shared:
+  NewOrder:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [customer]
+          properties:
+            customer:
+              $ref: "../schemas/customer.yaml#/Customer"
