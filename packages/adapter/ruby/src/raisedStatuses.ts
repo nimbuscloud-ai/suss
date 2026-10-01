@@ -21,12 +21,9 @@ import {
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { RawBranch, RawTerminal } from "@suss/extractor";
-import type { Range } from "./ast.js";
+import type { NodeMap, Range } from "./ast.js";
 import type { ExceptionClass } from "./exceptionClasses.js";
 import type { ControllerActions, RbStoragePattern } from "./pack.js";
-
-/** Whether a handler covering the code catches the exception, or may. */
-export type Rescued = (exception: ExceptionClass) => boolean;
 
 /**
  * The classes a handler is registered for, as the run read them.
@@ -38,34 +35,43 @@ export interface HandlerClasses {
   someUnread: boolean;
 }
 
-export function rescuedBy(handlers: readonly HandlerClasses[]): Rescued {
-  return (exception) => {
-    const classes = new Set(classesOf(exception));
-    return handlers.some(
-      (caught) =>
-        caught.someUnread ||
-        caught.classes.some(
-          (one) =>
-            classes.has(one.name) ||
-            (exception.incomplete && one.inheritableByUnread),
-        ),
-    );
-  };
+/** What the raises in one body raise, and the handlers covering that body. */
+export interface RaisesRead {
+  /** The class each raise raises, or null for one the source computes. */
+  classes: NodeMap<ExceptionClass | null>;
+  handlers: readonly HandlerClasses[];
+}
+
+/** Whether one of the handlers covering the code catches the exception, or may. */
+export function rescuedBy(
+  handlers: readonly HandlerClasses[],
+  exception: ExceptionClass,
+): boolean {
+  const classes = new Set(classesOf(exception));
+  return handlers.some(
+    (caught) =>
+      caught.someUnread ||
+      caught.classes.some(
+        (one) =>
+          classes.has(one.name) ||
+          (exception.incomplete && one.inheritableByUnread),
+      ),
+  );
 }
 
 /**
- * The library's response, when nothing rescues the exception and the
- * library has one for it, or else the throw. Null for an exception the
- * source computes, which throws with no class.
+ * The library's response, when no handler covering the code rescues the
+ * exception and the library has one for it, or else the throw. Null for
+ * an exception the source computes, which throws with no class.
  */
 export function raisedTerminal(
   pattern: ControllerActions,
   exception: ExceptionClass | null,
-  rescued: Rescued,
+  handlers: readonly HandlerClasses[],
   location: Range,
 ): RawTerminal {
   const status =
-    exception === null || rescued(exception)
+    exception === null || rescuedBy(handlers, exception)
       ? undefined
       : pattern.libraryExceptions?.[exception.name]?.status;
   return {
@@ -100,7 +106,7 @@ export function raisedStatusBranches(
   pattern: ControllerActions,
   storage: readonly RbStoragePattern[],
   effects: readonly Effect[] | undefined,
-  rescued: Rescued,
+  handlers: readonly HandlerClasses[],
   location: Range,
 ): RawBranch[] {
   const operations = new Set(
@@ -125,8 +131,8 @@ export function raisedStatusBranches(
     const exception =
       listedException(name, pattern.libraryExceptions ?? {}) ??
       unreadException(name);
-    const terminal = raisedTerminal(pattern, exception, rescued, location);
-    if (terminal.kind === "throw" && !rescued(exception)) {
+    const terminal = raisedTerminal(pattern, exception, handlers, location);
+    if (terminal.kind === "throw" && !rescuedBy(handlers, exception)) {
       return [];
     }
     return [

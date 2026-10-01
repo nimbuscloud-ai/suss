@@ -3,14 +3,11 @@ import { describe, expect, it } from "vitest";
 import { storageBinding } from "@suss/behavioral-ir";
 
 import { controllerActionsPattern } from "./__fixtures__/railsControllerPattern.js";
-import {
-  raisedStatusBranches,
-  raisedTerminal,
-  rescuedBy,
-} from "./raisedStatuses.js";
+import { raisedStatusBranches, raisedTerminal } from "./raisedStatuses.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { RbStoragePattern } from "./pack.js";
+import type { HandlerClasses } from "./raisedStatuses.js";
 
 const PATTERN = controllerActionsPattern({
   libraryExceptions: {
@@ -24,15 +21,11 @@ const PATTERN = controllerActionsPattern({
 function rescuing(
   names: string[],
   inheritableByUnread = false,
-): ReturnType<typeof rescuedBy> {
-  return rescuedBy(
-    names.map((name) => ({
-      classes: [
-        { name, ancestors: [], incomplete: false, inheritableByUnread },
-      ],
-      someUnread: false,
-    })),
-  );
+): HandlerClasses[] {
+  return names.map((name) => ({
+    classes: [{ name, ancestors: [], incomplete: false, inheritableByUnread }],
+    someUnread: false,
+  }));
 }
 
 const STORAGE = [
@@ -134,7 +127,7 @@ describe("raisedStatusBranches", () => {
   });
 
   it("counts a handler whose classes the run could not read as rescuing everything", () => {
-    const rescued = rescuedBy([{ classes: [], someUnread: true }]);
+    const rescued = [{ classes: [], someUnread: true }];
     expect(
       raisedTerminal(
         PATTERN,

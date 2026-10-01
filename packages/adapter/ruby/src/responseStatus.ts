@@ -30,6 +30,7 @@ import {
   predicateOf,
 } from "./paths/predicates.js";
 import { guardInputs } from "./provenance.js";
+import { raisedTerminal } from "./raisedStatuses.js";
 import { escapingRaises } from "./raises.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
@@ -45,6 +46,7 @@ import type {
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbStatusCall } from "./pack.js";
 import type { RbNode } from "./parser.js";
+import type { RaisesRead } from "./raisedStatuses.js";
 
 /** The argument giving this call's status, or null when the call writes none. */
 function statusArgumentOf(
@@ -314,8 +316,8 @@ export interface BranchOptions {
   respondingHelper?: RespondingHelper;
   /** The status a helper's caller passed for each of the helper's parameters, when the body read is a helper. */
   boundStatuses?: ReadonlyMap<string, number>;
-  /** What each raise that leaves the body ends with. Without it, a path that raises is left out. */
-  raiseTerminal?: (call: RbNode) => RawTerminal;
+  /** What the raises that leave the body raise. Without it, a path that raises is left out. */
+  raises?: RaisesRead;
 }
 
 /**
@@ -563,8 +565,7 @@ export function responseBranches(
   };
   const responses = collectResponseCalls(body, responders, []);
   const returns = collectReturns(body, []);
-  const raises =
-    options.raiseTerminal === undefined ? [] : escapingRaises(method);
+  const raises = options.raises === undefined ? [] : escapingRaises(method);
   const lowered = lowerRubyBody(
     body,
     [...returns, ...raises],
@@ -624,21 +625,25 @@ export function responseBranches(
     });
   }
 
+  const read = options.raises;
   const raised = raises.flatMap((call) => {
-    const terminal = options.raiseTerminal?.(call);
-    return terminal === undefined
-      ? []
-      : (enumerated.byTerminal.get(call) ?? []).map((path): RawBranch => {
-          const conditions = conditionsOf(path);
-          return {
-            conditions,
-            terminal,
-            effects: effectsReaching(effects, conditions),
-            ...(extraEffects === undefined ? {} : { extraEffects }),
-            location: terminal.location,
-            isDefault: false,
-          };
-        });
+    const terminal = raisedTerminal(
+      pattern,
+      read?.classes.get(call) ?? null,
+      read?.handlers ?? [],
+      rangeOf(call),
+    );
+    return (enumerated.byTerminal.get(call) ?? []).map((path): RawBranch => {
+      const conditions = conditionsOf(path);
+      return {
+        conditions,
+        terminal,
+        effects: effectsReaching(effects, conditions),
+        ...(extraEffects === undefined ? {} : { extraEffects }),
+        location: terminal.location,
+        isDefault: false,
+      };
+    });
   });
 
   if (outcomes.length === 0 && raised.length === 0) {

@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createConstantFileCache } from "./constantPath.js";
-import { exceptionReader } from "./exceptionClasses.js";
+import { ExceptionReader } from "./exceptionClasses.js";
 import { parseRuby } from "./parser.js";
 
 import type { AncestorLookup } from "./ancestry.js";
@@ -30,7 +30,7 @@ function write(relative: string, source: string): void {
   fs.writeFileSync(file, source);
 }
 
-function reader() {
+function reader(): ExceptionReader {
   const lookup: AncestorLookup = {
     root: appRoot,
     pathConvention: "railsUnderscore",
@@ -40,7 +40,7 @@ function reader() {
       (await parseRuby(fs.readFileSync(file, "utf8")))
         .rootNode as unknown as RbNode,
   };
-  return exceptionReader(lookup, {
+  return new ExceptionReader(lookup, {
     "Store::RecordNotFound": {
       status: 404,
       ancestors: ["Store::StoreError", "StandardError", "Exception"],
@@ -49,7 +49,7 @@ function reader() {
 }
 
 const read = (candidates: string[]) =>
-  reader()({ text: candidates.at(-1) ?? "", candidates });
+  reader().read({ text: candidates.at(-1) ?? "", candidates });
 
 describe("what an exception class inherits from", () => {
   it("lists Ruby's own exception classes up to Exception", async () => {

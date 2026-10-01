@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { controllerActionsPattern } from "./__fixtures__/railsControllerPattern.js";
-import { field, instanceMethodsByName } from "./ast.js";
+import { field, instanceMethodsByName, NodeMap } from "./ast.js";
 import {
   collectFileConstants,
   emitConstantBindings,
@@ -16,15 +16,12 @@ import { emitValueFacts } from "./facts/values.js";
 import { emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
 import { findRubyFiles } from "./project.js";
+import { escapingRaises } from "./raises.js";
 import { responseBranches } from "./responseStatus.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
-import type {
-  RawBranch,
-  RawEffect,
-  RawTerminal,
-  Reading,
-} from "@suss/extractor";
+import type { RawBranch, RawEffect, Reading } from "@suss/extractor";
+import type { ExceptionClass } from "./exceptionClasses.js";
 import type { ControllerActions } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { EvaluatedFile } from "./values/evaluator.js";
@@ -454,29 +451,25 @@ describe("responseBranches, effects per branch", () => {
 });
 
 describe("responseBranches, reading a raise", () => {
-  const throwAt = (call: RbNode): RawTerminal => ({
-    kind: "throw",
-    statusCode: null,
-    body: null,
-    exceptionType: call.text,
-    message: null,
-    component: null,
-    renderTree: null,
-    delegateTarget: null,
-    emitEvent: null,
-    location: { start: 1, end: 1 },
-  });
-
-  it("ends a path at a raise with what the caller says the raise ends with", async () => {
+  it("ends a path at a raise with a throw of the class the caller read for it", async () => {
     const method = await actionMethod(
       "    raise Denied if locked?\n    head :created",
     );
+    const classes = new NodeMap<ExceptionClass | null>();
+    for (const call of escapingRaises(method)) {
+      classes.set(call, {
+        name: "Denied",
+        ancestors: ["StandardError", "Exception"],
+        incomplete: false,
+        inheritableByUnread: false,
+      });
+    }
     const branches = responseBranches(
       method,
       controllerActionsPattern(RAILS_LIKE),
       [],
       undefined,
-      { raiseTerminal: throwAt },
+      { raises: { classes, handlers: [] } },
     );
     expect(
       branches?.map((branch) => [
@@ -486,7 +479,7 @@ describe("responseBranches, reading a raise", () => {
       ]),
     ).toEqual([
       ["response", null, ["negative"]],
-      ["throw", "raise Denied", ["positive"]],
+      ["throw", "Denied", ["positive"]],
     ]);
   });
 

@@ -24,12 +24,12 @@ import { namesOf } from "./values/literals.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure, RawTerminal } from "@suss/extractor";
+import type { RawBranch, RawCodeStructure } from "@suss/extractor";
 import type { Ancestry, BodyReading, MethodLookup } from "./ancestry.js";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
 import type { RbNode } from "./parser.js";
-import type { HandlerClasses } from "./raisedStatuses.js";
+import type { HandlerClasses, RaisesRead } from "./raisedStatuses.js";
 import type { RespondingHelper } from "./responseStatus.js";
 import type { ConstantRef } from "./scope.js";
 
@@ -223,8 +223,8 @@ export interface FilterBody {
 export interface FilterReading {
   facts?: Database | undefined;
   respondingHelper?: RespondingHelper;
-  /** What each raise written in the filter ends with. */
-  raiseTerminal?: (call: RbNode) => RawTerminal;
+  /** What the raises written in the filter raise. */
+  raises?: RaisesRead;
   /** The branches for exceptions the filter's model calls raise. */
   raised?: readonly RawBranch[];
 }
@@ -242,7 +242,7 @@ export function filterUnit(
   reading: FilterReading = {},
 ): RawCodeStructure {
   const range = rangeOf(filter.method);
-  const { respondingHelper, raiseTerminal } = reading;
+  const { respondingHelper, raises } = reading;
   const branches = responseBranches(
     filter.method,
     pattern,
@@ -252,7 +252,7 @@ export function filterUnit(
       fallthrough: "handOn",
       facts: reading.facts,
       ...(respondingHelper === undefined ? {} : { respondingHelper }),
-      ...(raiseTerminal === undefined ? {} : { raiseTerminal }),
+      ...(raises === undefined ? {} : { raises }),
     },
   );
   return {

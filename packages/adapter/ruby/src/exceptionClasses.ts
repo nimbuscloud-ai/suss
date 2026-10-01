@@ -73,36 +73,39 @@ export interface ExceptionClass {
   inheritableByUnread: boolean;
 }
 
-/** Reads the class a constant refers to, once per reference. */
-export type ExceptionReader = (ref: ConstantRef) => Promise<ExceptionClass>;
-
 /**
- * A reader over one controller's lookup. `library` is what the pack
- * lists. The walk of a project class stops at any of those, or at one of
- * Ruby's own, and takes the rest of the ancestry from the list.
+ * Reads the class a constant refers to, once per reference, over one
+ * controller's lookup. `library` is what the pack lists. The walk of a
+ * project class stops at any of those, or at one of Ruby's own, and takes
+ * the rest of the ancestry from the list.
  */
-export function exceptionReader(
-  lookup: AncestorLookup,
-  library: Readonly<Record<string, LibraryException>>,
-): ExceptionReader {
-  const walking: AncestorLookup = {
-    ...lookup,
-    ancestryRootClassNames: [
-      ...Object.keys(library),
-      ...Object.keys(RUBY_EXCEPTION_PARENTS),
-      ROOT_EXCEPTION,
-    ],
-  };
-  const read = new Map<string, Promise<ExceptionClass>>();
-  return (ref) => {
+export class ExceptionReader {
+  private readonly walking: AncestorLookup;
+  private readonly known = new Map<string, Promise<ExceptionClass>>();
+
+  constructor(
+    lookup: AncestorLookup,
+    private readonly library: Readonly<Record<string, LibraryException>>,
+  ) {
+    this.walking = {
+      ...lookup,
+      ancestryRootClassNames: [
+        ...Object.keys(library),
+        ...Object.keys(RUBY_EXCEPTION_PARENTS),
+        ROOT_EXCEPTION,
+      ],
+    };
+  }
+
+  read(ref: ConstantRef): Promise<ExceptionClass> {
     const key = [ref.text, ...ref.candidates].join("\0");
-    let found = read.get(key);
+    let found = this.known.get(key);
     if (found === undefined) {
-      found = readException(ref, walking, library);
-      read.set(key, found);
+      found = readException(ref, this.walking, this.library);
+      this.known.set(key, found);
     }
     return found;
-  };
+  }
 }
 
 /** The exception class a library or Ruby itself defines, by its full name. */

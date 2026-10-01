@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { controllerActionsPattern } from "./__fixtures__/railsControllerPattern.js";
 import { ancestryOf } from "./ancestry.js";
+import { NodeMap } from "./ast.js";
 import { createConstantFileCache } from "./constantPath.js";
 import {
   controllerFilters,
@@ -574,20 +575,7 @@ end
       controllerActionsPattern(RAILS_LIKE),
       "app/controllers/orders.rb",
       { bodyContent: "statements" },
-      {
-        raiseTerminal: (call) => ({
-          kind: "throw",
-          statusCode: null,
-          body: null,
-          exceptionType: call.text,
-          message: null,
-          component: null,
-          renderTree: null,
-          delegateTarget: null,
-          emitEvent: null,
-          location: { start: 1, end: 1 },
-        }),
-      },
+      { raises: { classes: new NodeMap(), handlers: [] } },
     );
 
     expect(unit.branches.map((branch) => branch.terminal.kind)).toEqual([
