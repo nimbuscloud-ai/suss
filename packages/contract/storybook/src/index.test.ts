@@ -6,7 +6,7 @@ import { readStorybookMetadata } from "@suss/behavioral-ir";
 
 import { generateSummariesFromStories } from "./index.js";
 
-import type { StorybookMetadata } from "@suss/behavioral-ir";
+import type { BehavioralSummary, StorybookMetadata } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/storybook");
 const repoRoot = path.resolve(__dirname, "../../../..");
@@ -164,6 +164,24 @@ describe("the module a story's component comes from", () => {
     expect(story?.component).toBe("Badge");
     expect(story?.componentModule).toBeUndefined();
     expect(story?.componentImport).toBe("@ui/Badge/Badge");
+  });
+});
+
+describe("args on the meta", () => {
+  const importsDir = path.resolve(fixturesDir, "../storybook-imports");
+
+  it("gives every story the meta's args, under the story's own", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipMeta.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const argsOf = (name: string) =>
+      readStorybookMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.args;
+
+    expect(argsOf("Chip.Plain")).toEqual({ label: "Shared", size: "sm" });
+    expect(argsOf("Chip.Medium")).toEqual({ label: "Shared", size: "md" });
   });
 });
 

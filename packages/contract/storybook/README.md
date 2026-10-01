@@ -12,7 +12,7 @@ The default export gives the component under test. The reader walks the declarat
 
 The `component` identifier is followed through its import, any renames and any barrel re-exports, to the file that declares it. Each story file is read under the tsconfig nearest to it, so an import through one of its path aliases (`@ui/Chip/Chip`) resolves. The declaring file is written relative to the root an extract of that file's project measures from, with that project's workspace name, so the checker can find the extracted component by its own location. When the import leads to no file, for example because the module is generated or comes from a package that is not installed, no module is recorded, and the checker leaves the story unpaired.
 
-Every other named export whose initializer resolves to an object literal is a story. Its `args` object literal becomes the story's arguments, and each property's value is recorded as the source text you wrote. A shorthand property (`{ disabled }`) records its own name.
+Every other named export whose initializer resolves to an object literal is a story. Its `args` object literal becomes the story's arguments, and each property's value is recorded as the source text you wrote. A shorthand property (`{ disabled }`) records its own name. Storybook gives every story the `args` set on the default export, so those are recorded on each story too, and a story's own arg replaces the meta's arg of the same name.
 
 ## What it produces
 

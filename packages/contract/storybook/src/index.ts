@@ -78,7 +78,7 @@ export function generateSummariesFromStories(
       }
       byFile.set(
         sf.getFilePath(),
-        extractStories(sf, resolution).map((story) =>
+        extractStories(sf, resolution, meta.args).map((story) =>
           buildSummary(story, meta, relPath),
         ),
       );
@@ -146,6 +146,8 @@ interface MetaInfo {
   componentName: string;
   componentModule: ComponentModule | undefined;
   componentImport: string | undefined;
+  /** Args on the default export, which Storybook gives every story in the file. */
+  args: Record<string, string>;
 }
 
 interface ComponentModule {
@@ -169,6 +171,7 @@ function extractMeta(
         componentName: component.getText(),
         componentModule: declaredModuleOf(component),
         componentImport: importSpecifierOf(component),
+        args: argsOf(meta, resolution),
       };
     }
   }
@@ -275,6 +278,7 @@ interface StoryInfo {
 function extractStories(
   sf: SourceFile,
   resolution: ResolutionStore,
+  metaArgs: Record<string, string>,
 ): StoryInfo[] {
   const results: StoryInfo[] = [];
 
@@ -290,9 +294,10 @@ function extractStories(
         continue;
       }
 
+      // A story's own arg replaces the one of the same name on the meta.
       results.push({
         name,
-        args: storyArgs(story, resolution),
+        args: { ...metaArgs, ...argsOf(story, resolution) },
         line: decl.getStartLineNumber(),
       });
     }
@@ -302,16 +307,17 @@ function extractStories(
 }
 
 /**
- * An arg that evaluates to a string gives that string, so a constant or a
- * template gives the same value as a quoted literal. Anything else, such
- * as a number or JSX, keeps its source text.
+ * The `args` of a story or of the meta. An arg that evaluates to a string
+ * gives that string, so a constant or a template gives the same value as
+ * a quoted literal. Anything else, such as a number or JSX, keeps its
+ * source text.
  */
-function storyArgs(
-  story: ObjectLiteralExpression,
+function argsOf(
+  storyOrMeta: ObjectLiteralExpression,
   resolution: ResolutionStore,
 ): Record<string, string> {
   const args: Record<string, string> = {};
-  const written = propertyOf(story, "args", resolution);
+  const written = propertyOf(storyOrMeta, "args", resolution);
   const object = written === null ? null : objectLiteralOf(written, resolution);
   if (object === null) {
     return args;
