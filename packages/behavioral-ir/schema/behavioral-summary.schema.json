@@ -671,6 +671,15 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "exceptionAncestors": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "ancestryIncomplete": {
+                      "type": "boolean"
                     }
                   },
                   "required": ["type", "exceptionType", "message"],

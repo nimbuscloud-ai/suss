@@ -106,6 +106,21 @@ function own(summary: BehavioralSummary): BehavioralSummary["transitions"] {
   );
 }
 
+/** Each outcome as its status, or its kind when it has none, beside the wrapper that added it. */
+function outcomes(summary: BehavioralSummary): Array<[unknown, unknown]> {
+  return summary.transitions.map((transition) => {
+    const { output } = transition;
+    const status =
+      output.type === "response" && output.statusCode?.type === "literal"
+        ? output.statusCode.value
+        : output.type;
+    const from = (
+      transition.metadata?.wrappers as { from?: { name: string } } | undefined
+    )?.from?.name;
+    return [status, from ?? null];
+  });
+}
+
 describe("extraction over fixtures/ruby-rails", () => {
   it("discovers every action a controller defines, routed or not", async () => {
     const { summaries } = await extractFixture();
@@ -125,6 +140,8 @@ describe("extraction over fixtures/ruby-rails", () => {
         "show",
         "show",
         "show",
+        "show",
+        "update",
         "update",
         "update",
         "archive",
@@ -647,6 +664,34 @@ describe("extraction over fixtures/ruby-rails", () => {
       file: expect.stringContaining("application_controller.rb"),
       name: "not_found",
       onThrow: true,
+      catches: ["ActiveRecord::RecordNotFound"],
+    });
+  });
+
+  it("composes the handler registered for the class a filter raises, and no other", async () => {
+    const { summaries } = await extractFixture();
+    const show = action(summaries, "api/settings_controller", "show");
+    expect(outcomes(show)).toEqual([
+      ["throw", "forbid_token_users"],
+      [200, null],
+      [403, "respond_with_denied"],
+    ]);
+  });
+
+  it("composes the handler for a project exception an action raises, found in its namespace's file", async () => {
+    const { summaries } = await extractFixture();
+    const update = action(summaries, "api/settings_controller", "update");
+    expect(outcomes(update)).toEqual([
+      ["throw", "forbid_token_users"],
+      [200, null],
+      ["throw", null],
+      [402, "respond_with_limit"],
+      [403, "respond_with_denied"],
+    ]);
+    const raised = own(update).find((t) => t.output.type === "throw");
+    expect(raised?.output).toMatchObject({
+      exceptionType: "Billing::LimitReached",
+      exceptionAncestors: ["StandardError", "Exception"],
     });
   });
 

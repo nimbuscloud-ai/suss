@@ -97,6 +97,7 @@ export type {
 export type {
   ControllerActions,
   GraphqlObjectFields,
+  LibraryException,
   RbAddressingCall,
   RbArgumentPlace,
   RbBodyBlock,

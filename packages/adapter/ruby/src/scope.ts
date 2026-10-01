@@ -38,6 +38,13 @@ export function qualifyConstantRef(
   return null;
 }
 
+/** A constant as written, with every qualified name it could mean. */
+export interface ConstantRef {
+  text: string;
+  /** In the order Ruby tries them. Empty for anything but a constant path, and then a caller uses the text. */
+  candidates: readonly string[];
+}
+
 /**
  * Every qualified name a constant reference could mean, in the order Ruby
  * tries them. `module Api; class UsersController < ApplicationController`

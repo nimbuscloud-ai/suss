@@ -92,7 +92,8 @@ function composeOne(
   }
 
   const responses = respondedInstead(wrappers);
-  const handled = handledThrows(wrappers);
+  const own = [...responses, ...summary.transitions];
+  const handled = handledThrows(wrappers, thrownBy(own));
   const transitions = beside(summary, responses, handled);
   if (!keepGaps) {
     return transitions === summary.transitions
@@ -101,8 +102,8 @@ function composeOne(
   }
   const gaps = withContractStatusGaps(
     summary,
-    [...responses, ...summary.transitions],
-    handled,
+    own,
+    everyHandlerOutcome(wrappers),
   );
   if (transitions === summary.transitions && gaps === summary.gaps) {
     return narrowed;
@@ -120,14 +121,10 @@ function beside(
   responses: readonly Transition[],
   handled: readonly Transition[],
 ): Transition[] {
-  const throws = [...responses, ...summary.transitions].some(
-    (t) => t.output.type === "throw",
-  );
-  const onThrow = throws ? handled : [];
-  if (responses.length === 0 && onThrow.length === 0) {
+  if (responses.length === 0 && handled.length === 0) {
     return summary.transitions;
   }
-  return withDistinctIds([...responses, ...summary.transitions, ...onThrow]);
+  return withDistinctIds([...responses, ...summary.transitions, ...handled]);
 }
 
 /**
@@ -149,13 +146,121 @@ function respondedInstead(wrappers: readonly ResolvedWrapper[]): Transition[] {
   );
 }
 
-/** What the wrappers the framework calls with a throw respond with. */
-function handledThrows(wrappers: readonly ResolvedWrapper[]): Transition[] {
+type Thrown = Extract<Transition["output"], { type: "throw" }>;
+
+function thrownBy(transitions: readonly Transition[]): Thrown[] {
+  return transitions.flatMap((t) =>
+    t.output.type === "throw" ? [t.output] : [],
+  );
+}
+
+/** Every outcome of every wrapper the framework calls with a throw. */
+function everyHandlerOutcome(
+  wrappers: readonly ResolvedWrapper[],
+): Transition[] {
   return wrappers.flatMap((wrapper) =>
     wrapper.reference.onThrow === true
       ? attribute(wrapper.summary.transitions, wrapper.reference)
       : [],
   );
+}
+
+/**
+ * What the error handlers that catch one of these throws respond with.
+ * A handler that lists no classes catches any throw. One that may catch
+ * a throw, and may not, has each outcome marked as such.
+ */
+function handledThrows(
+  wrappers: readonly ResolvedWrapper[],
+  thrown: readonly Thrown[],
+): Transition[] {
+  const caught = catchesAny(wrappers, thrown);
+  return wrappers.flatMap((wrapper) => {
+    const how = caught.get(wrapper);
+    return how === undefined
+      ? []
+      : attribute(
+          wrapper.summary.transitions,
+          wrapper.reference,
+          how === "uncertain",
+        );
+  });
+}
+
+type Catch = "sure" | "uncertain";
+
+function catchesAny(
+  wrappers: readonly ResolvedWrapper[],
+  thrown: readonly Thrown[],
+): Map<ResolvedWrapper, Catch> {
+  const caught = new Map<ResolvedWrapper, Catch>();
+  if (thrown.length === 0) {
+    return caught;
+  }
+
+  const handlers = wrappers.filter(
+    (wrapper) => wrapper.reference.onThrow === true,
+  );
+  for (const handler of handlers) {
+    if (handler.reference.catches === undefined) {
+      caught.set(handler, "sure");
+    }
+  }
+
+  const listing = handlers.filter(
+    (handler) => handler.reference.catches !== undefined,
+  );
+  for (const one of thrown) {
+    for (const [handler, how] of catchersOf(listing, one)) {
+      if (caught.get(handler) !== "sure") {
+        caught.set(handler, how);
+      }
+    }
+  }
+  return caught;
+}
+
+/**
+ * The handlers that may catch one throw, tried in the order they are
+ * listed. The first that surely catches it ends the search, and is
+ * itself uncertain when a handler tried before it may catch the throw.
+ */
+function catchersOf(
+  handlers: readonly ResolvedWrapper[],
+  thrown: Thrown,
+): Array<[ResolvedWrapper, Catch]> {
+  const found: Array<[ResolvedWrapper, Catch]> = [];
+  for (const handler of handlers) {
+    const match = catchMatch(handler.reference, thrown);
+    if (match === "yes") {
+      found.push([handler, found.length === 0 ? "sure" : "uncertain"]);
+      return found;
+    }
+
+    if (match === "maybe") {
+      found.push([handler, "uncertain"]);
+    }
+  }
+  return found;
+}
+
+/** Whether a handler registered for some classes catches this throw. */
+function catchMatch(
+  reference: WrapperReference,
+  thrown: Thrown,
+): "yes" | "maybe" | "no" {
+  const ancestors = thrown.exceptionAncestors;
+  if (thrown.exceptionType === null || ancestors === undefined) {
+    return "maybe";
+  }
+  const classes = new Set([thrown.exceptionType, ...ancestors]);
+  if ((reference.catches ?? []).some((name) => classes.has(name))) {
+    return "yes";
+  }
+  const unread =
+    thrown.ancestryIncomplete === true &&
+    reference.mayCatchUnreadClasses === true;
+  return unread || reference.mayCatchAny === true ? "maybe" : "no";
 }
 
 /**
@@ -225,10 +330,14 @@ function coversUnit(
 function attribute(
   transitions: readonly Transition[],
   reference: WrapperReference,
+  catchUncertain = false,
 ): Transition[] {
   return transitions.map((transition) => ({
     ...transition,
-    metadata: withWrapperMetadata(transition.metadata, { from: reference }),
+    metadata: withWrapperMetadata(transition.metadata, {
+      from: reference,
+      ...(catchUncertain ? { catchUncertain } : {}),
+    }),
   }));
 }
 

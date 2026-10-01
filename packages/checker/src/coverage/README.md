@@ -74,6 +74,7 @@ The range algebra complements a guard only on an arm the consumer wrote. `Status
 - **Sub-case discrimination is one-sided.** Provider conditions describe server-side state, and consumer conditions describe response fields. The check does not compare the two for equivalence, since flagging content mismatches is the body checker's job. A sub-case finding fires when the provider has several branches for one status and the consumer has a single catch-all for that status, which means the consumer ignored the distinction.
 - **Default branches absorb 2xx without a finding.** The check treats a consumer with an `isDefault` transition as covering all 2xx statuses. Unusual cases, such as a provider returning 207 Multi-Status, also come out covered when the default is there.
 - **Predicate matching has three states.** `predicatesMatch` returns `match` / `nomatch` / `unknown`. An `unknown` result, from an opaque or unresolved predicate, turns into `lowConfidence` and does not commit in either direction.
+- **An uncertain catch asks nothing of the consumer.** An error handler's status that composition marked `catchUncertain` may never be sent, because the run could not tell whether that handler catches the throw. The consumer is not asked to handle it.
 
 ## Sibling modules
 

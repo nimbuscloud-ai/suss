@@ -3,17 +3,30 @@ import { describe, expect, it } from "vitest";
 import { storageBinding } from "@suss/behavioral-ir";
 
 import { controllerActionsPattern } from "./__fixtures__/railsControllerPattern.js";
-import { raisedStatusBranches } from "./raisedStatuses.js";
+import { raisedStatusBranches, raisedTerminal } from "./raisedStatuses.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { RbStoragePattern } from "./pack.js";
+import type { HandlerClasses } from "./raisedStatuses.js";
 
 const PATTERN = controllerActionsPattern({
-  exceptionStatuses: {
+  libraryExceptions: {
+    StoreError: { ancestors: ["StandardError"] },
     RecordNotFound: { status: 404, ancestors: ["StoreError", "StandardError"] },
     RecordInvalid: { status: 422, ancestors: ["StoreError", "StandardError"] },
   },
 });
+
+/** A handler registered for each of these classes, as the run read them. */
+function rescuing(
+  names: string[],
+  inheritableByUnread = false,
+): HandlerClasses[] {
+  return names.map((name) => ({
+    classes: [{ name, ancestors: [], incomplete: false, inheritableByUnread }],
+    someUnread: false,
+  }));
+}
 
 const STORAGE = [
   {
@@ -51,7 +64,7 @@ function statuses(effects: Effect[], rescued: string[] = []): unknown[] {
     PATTERN,
     STORAGE,
     effects,
-    new Set(rescued),
+    rescuing(rescued),
     AT,
   ).map((branch) => branch.terminal.statusCode);
 }
@@ -76,7 +89,7 @@ describe("raisedStatusBranches", () => {
         PATTERN,
         STORAGE,
         [storageCall("find")],
-        new Set(rescued),
+        rescuing(rescued),
         AT,
       ).map((branch) => [branch.terminal.kind, branch.terminal.exceptionType]);
     expect(thrown(["RecordNotFound"])).toEqual([["throw", "RecordNotFound"]]);
@@ -84,17 +97,56 @@ describe("raisedStatusBranches", () => {
     expect(thrown(["OtherError"])).toEqual([["response", null]]);
   });
 
+  it("gives the throw the ancestry the pack lists, so composition can match the handler", () => {
+    const [branch] = raisedStatusBranches(
+      PATTERN,
+      STORAGE,
+      [storageCall("find")],
+      rescuing(["StoreError"]),
+      AT,
+    );
+    expect(branch?.terminal.exceptionAncestry).toEqual({
+      ancestors: ["StoreError", "StandardError"],
+      incomplete: false,
+    });
+  });
+
   it("throws an exception the library sends no status for only when the controller rescues it", () => {
-    const kinds = (rescued: string[]) =>
+    const kinds = (rescued: Parameters<typeof raisedStatusBranches>[3]) =>
       raisedStatusBranches(
         PATTERN,
         STORAGE,
         [storageCall("lock!")],
-        new Set(rescued),
+        rescued,
         AT,
       ).map((branch) => branch.terminal.kind);
-    expect(kinds(["LockWaitTimeout"])).toEqual(["throw"]);
-    expect(kinds([])).toEqual([]);
+    expect(kinds(rescuing(["LockWaitTimeout"]))).toEqual(["throw"]);
+    expect(kinds(rescuing(["StandardError"], true))).toEqual(["throw"]);
+    expect(kinds(rescuing(["StoreError"]))).toEqual([]);
+    expect(kinds(rescuing([]))).toEqual([]);
+  });
+
+  it("counts a handler whose classes the run could not read as rescuing everything", () => {
+    const rescued = [{ classes: [], someUnread: true }];
+    expect(
+      raisedTerminal(
+        PATTERN,
+        {
+          name: "RecordNotFound",
+          ancestors: [],
+          incomplete: false,
+          inheritableByUnread: false,
+        },
+        rescued,
+        AT,
+      ).kind,
+    ).toBe("throw");
+  });
+
+  it("throws with no class for an exception the source computes", () => {
+    const terminal = raisedTerminal(PATTERN, null, rescuing([]), AT);
+    expect([terminal.kind, terminal.exceptionType]).toEqual(["throw", null]);
+    expect(terminal.exceptionAncestry).toBeUndefined();
   });
 
   it("adds nothing for a body that makes no raising call", () => {

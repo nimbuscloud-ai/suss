@@ -58,12 +58,24 @@ function conditionUnread(handler: BehavioralSummary, p: Predicate): boolean {
   return refsOf(p).some((ref) => readsBesideTheRequest(handler, ref));
 }
 
-/** Whether a path is gated on at least one condition suss could not read. */
+/** Whether an error handler added this outcome without the run knowing it catches the throw. */
+export function catchIsUncertain(transition: Transition): boolean {
+  return readWrapperMetadata(transition)?.catchUncertain === true;
+}
+
+/**
+ * Whether a path is gated on at least one condition suss could not read.
+ * An error handler's outcome is gated on the handler catching the throw,
+ * which counts when the run could not tell whether it does.
+ */
 export function reachedThroughUnreadCondition(
   handler: BehavioralSummary,
   transition: Transition,
 ): boolean {
-  return transition.conditions.some((p) => conditionUnread(handler, p));
+  return (
+    catchIsUncertain(transition) ||
+    transition.conditions.some((p) => conditionUnread(handler, p))
+  );
 }
 
 /**

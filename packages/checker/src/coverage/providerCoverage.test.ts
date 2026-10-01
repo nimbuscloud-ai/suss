@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { withWrapperMetadata } from "@suss/behavioral-ir";
+
 import {
   bodyFieldTruthy,
   catchEntry,
@@ -62,6 +64,27 @@ describe("checkProviderCoverage", () => {
     expect(findings[0].severity).toBe("warning");
     expect(findings[0].description).toContain("410");
     expect(findings[0].provider.transitionId).toBe("t-410");
+  });
+
+  it("asks nothing about an error handler's status when the run could not tell whether it catches the throw", () => {
+    const uncertain = {
+      ...transition("t-403", { output: response(403) }),
+      metadata: withWrapperMetadata(undefined, {
+        from: { file: "app/controllers/base.rb", name: "refuse", onThrow: true },
+        catchUncertain: true,
+      }),
+    };
+    const p = provider("getUser", [
+      uncertain,
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
   });
 
   it("treats a consumer default branch as covering 2xx statuses", () => {

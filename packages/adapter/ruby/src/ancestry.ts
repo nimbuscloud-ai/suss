@@ -25,7 +25,7 @@ import type {
 } from "./constantPath.js";
 import type { DynamicNames } from "./defineMethod.js";
 import type { RbNode } from "./parser.js";
-import type { ClassInfo } from "./scope.js";
+import type { ClassInfo, ConstantRef } from "./scope.js";
 
 /** One class or module body a walk reached, with the definitions its own file makes, since a bare constant is shadowed per file. */
 export interface ReachedBody {
@@ -84,17 +84,38 @@ export interface AncestorLookup {
 }
 
 /**
- * Every block a file defines under `qualifiedName`, or null when the
- * constant-to-path convention points at no file, no file is there, or
- * the file defines nothing by that name.
+ * Every block a file defines under `qualifiedName`, or null when no file
+ * the constant-to-path convention points at defines it. A class nested
+ * in its namespace's own file, `Order::NotPaid` written inside
+ * `order.rb`, is found there, since loading `Order` defines it.
  */
 export async function reachDefinition(
   qualifiedName: string,
   lookup: AncestorLookup,
 ): Promise<ReachedBody[] | null> {
+  const segments = qualifiedName.split("::");
+  for (let length = segments.length; length > 0; length--) {
+    const found = await definedInFileOf(
+      segments.slice(0, length).join("::"),
+      qualifiedName,
+      lookup,
+    );
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/** The blocks defining `qualifiedName` in the file the convention gives for `fileConstant`. */
+async function definedInFileOf(
+  fileConstant: string,
+  qualifiedName: string,
+  lookup: AncestorLookup,
+): Promise<ReachedBody[] | null> {
   const filePath = resolveConstantFile(
     lookup.root,
-    qualifiedName,
+    fileConstant,
     lookup.pathConvention,
     lookup.acronyms,
     lookup.constantFiles,
@@ -298,12 +319,8 @@ async function mixinEntries(
   );
 }
 
-/** One argument to an `include` or `prepend` call. `candidates` is empty for anything but a constant path, and the walk then uses the text as written. */
-interface ModuleRef {
-  text: string;
-  /** Every name the constant could mean, in the order Ruby tries them. */
-  candidates: readonly string[];
-}
+/** One argument to an `include` or `prepend` call. */
+type ModuleRef = ConstantRef;
 
 /**
  * The modules one kind of mixin call lists, in the order Ruby mixes them
