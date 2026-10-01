@@ -23,6 +23,7 @@ import {
   NOTHING_DEPLOYED,
   nameReference,
   normalizePath,
+  operationKey,
   pairingKey,
   reportsUnpairedItself,
   restBinding,
@@ -133,6 +134,25 @@ describe("boundaryKey", () => {
       channel: null,
     });
     expect(pairingKey(unnamed)).toBeNull();
+  });
+
+  it("keys an operation on its method and its parameters' positions", () => {
+    const route = (method: string, path: string): BoundaryBinding =>
+      restBinding({ transport: "http", method, path, recognition: "x" });
+    expect(operationKey(route("delete", "/teams/{team_id}"))).toBe(
+      operationKey(route("DELETE", "/teams/:id")),
+    );
+    expect(operationKey(route("get", "/teams/:id"))).toBe("GET /teams/{}");
+    expect(operationKey(route("*", "/teams/:id"))).toBe("* /teams/{}");
+    expect(operationKey(route("get", "/teams/{tenant?}"))).toBe(
+      "GET /teams/{?}",
+    );
+    const bus = messageBusBinding({
+      recognition: "x",
+      messageBus: "aws_sqs",
+      channel: "orders",
+    });
+    expect(operationKey(bus)).toBe(boundaryKey(bus));
   });
 
   it("buckets a route on its parameters' positions and ranges, and says when it spans other buckets", () => {

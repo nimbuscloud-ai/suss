@@ -1,7 +1,7 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
+import { operationKey } from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
-import { boundaryKey } from "../pairing/pairing.js";
 import { readDeclaredContract } from "./declaredContract.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
@@ -29,7 +29,7 @@ export function checkContractCompleteness(
     if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
       continue;
     }
-    const key = boundaryKey(binding);
+    const key = operationKey(binding);
     if (key === null) {
       continue;
     }
@@ -71,7 +71,7 @@ export function checkContractCompleteness(
 
 function stubKey(stub: BehavioralSummary): string | null {
   const binding = stub.identity.boundaryBinding;
-  return binding === null ? null : boundaryKey(binding);
+  return binding === null ? null : operationKey(binding);
 }
 
 function unimplementedFinding(
