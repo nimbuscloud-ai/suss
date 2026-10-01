@@ -80,6 +80,7 @@ import {
   countUnmatchedReturns,
   extractRawBranches,
 } from "./assembly.js";
+import { pinAutomaticTypes } from "./bootstrap/automaticTypes.js";
 import {
   admitListedFiles,
   createLazyProject,
@@ -2384,8 +2385,8 @@ export function createTypeScriptAdapter(
     ],
   };
 
-  const newProject = (): Project =>
-    new Project(
+  const newProject = (): Project => {
+    const made = new Project(
       config.tsConfigFilePath !== undefined
         ? {
             tsConfigFilePath: config.tsConfigFilePath,
@@ -2393,6 +2394,9 @@ export function createTypeScriptAdapter(
           }
         : { skipAddingFilesFromTsConfig: true },
     );
+    pinAutomaticTypes(made);
+    return made;
+  };
   let project = config.project ?? newProject();
   // An adapter that made its project from a tsconfig picks the files it
   // walks on every run, so a later run on a kept project walks the same
