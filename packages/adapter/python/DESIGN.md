@@ -561,6 +561,8 @@ A pack declares each way its library attaches something around a route, in `wrap
 
 Each form declares which constructions register it and how far the registration reaches. A registrar with `covers: "everyRoute"` (the app) reaches every route the pack discovers. One with `covers: "ownRoutes"` (a router or namespace) reaches the routes decorated on that same object, told apart by where the object was constructed. The adapter reads a registration only where it recognizes the object the same way it recognizes a route decorator's object. So `app = FastAPI(...)` in one module and `@app.middleware` in another are joined through the import, the same way a route on an imported router is.
 
+A router's routes also get what is registered above it on the way to the app: the `dependencies` an `include_router` call lists, and those of each router it is mounted onto. The router index says where each router is mounted. When a router on the way is mounted more than once, a request through one mount does not run the other mount's dependencies, so the route gets none of the registrations above that router.
+
 How the adapter reads a wrapper's body depends on the form:
 
 - A `dependency` runs to completion before the handler. Each `raise` of a response status is a response of its own, and every `return` passes control on to the route.
@@ -568,11 +570,12 @@ How the adapter reads a wrapper's body depends on the form:
 - A `decoratedWrapper` with `returnedValueResponds` (Flask's `before_request`) responds with whatever it returns, and passes control on only where it returns nothing.
 - A `decoratedWrapper` with `throwParam` (an exception handler) runs only for a request that raised. Its responses replace each of the route's paths that end in a `raise` the pack does not read as a response. A raised `HTTPException` or `abort` already has a status, so no handler applies to it.
 
-Wrappers run in the order the library runs them: middleware first, then dependencies from the app, the router and the route in that order, then exception handlers over whatever raised. Two registrations of the same function are one wrapper.
+Wrappers run in the order the library runs them: middleware first, then dependencies from the app, the mounts and routers outermost first, and the route, then exception handlers over whatever raised. Two registrations of the same function are one wrapper.
 
 Not read yet:
 
-- `include_router(router, dependencies=[...])` and `add_middleware(SomeClass)`. A dependency at the mount and a middleware given as a class are missed.
+- `add_middleware(SomeClass)`. A middleware given as a class is missed.
+- `Depends(SomeClass(...))`, a dependency given as a callable instance rather than a function's name.
 - Which exception type a handler is for. Every handler applies to every unread raise, so a route with two handlers reports both statuses on the paths that raise.
 - A dependency's own dependencies. `Depends(f)` where `f` takes `g: str = Depends(g)` reads `f` only.
 - A parameter default that refers to something other than a function at module scope, such as a method or a variable bound inside a function.

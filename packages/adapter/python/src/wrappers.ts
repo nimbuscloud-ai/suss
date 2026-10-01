@@ -9,14 +9,20 @@
  *
  * A registration on the app reaches every route of the pack in the run,
  * because the run treats a pack's app as the only one. A registration on
- * a router reaches the routes decorated on that same router object, and
- * nothing mounted onto it.
+ * a router reaches its own routes, and with a mount call's own list it
+ * reaches those below it when each router on the way is mounted once.
  */
 
 import { absentReading, walkDescendants } from "@suss/extractor";
 import { noteKeyRead, noteLookup } from "@suss/resolution";
 
-import { field, rangeOf, spanOf, stripDecorators } from "./ast.js";
+import {
+  field,
+  parameterNameAndType,
+  rangeOf,
+  spanOf,
+  stripDecorators,
+} from "./ast.js";
 import { decoratorReceiver, readCallArguments } from "./decorators.js";
 import {
   bodyContentOf,
@@ -51,7 +57,7 @@ import type {
 import type { PyNode } from "./parser.js";
 import type { BodyTerminal, TerminalBranch } from "./paths/bodyBranches.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
-import type { BoundPythonFile } from "./routers.js";
+import type { BoundPythonFile, RouterIndex } from "./routers.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 import type { StorageLookup } from "./storage.js";
 
@@ -62,6 +68,8 @@ export interface WrapperIndexOptions {
   /** The function each function key was read from. */
   definitions: ReadonlyMap<string, PyNode>;
   storageFor: (file: BoundPythonFile) => StorageLookup | undefined;
+  /** Where each router is mounted, so a dependency registered on the way reaches the routes below it. */
+  routers?: RouterIndex;
 }
 
 /** The route asking which wrappers reach it: the decorator it was found by, and where that decorator was read. */
@@ -90,6 +98,8 @@ export interface FormOf {
 
 const EVERY_ROUTE = "wrapEvery ";
 const OWN_ROUTES = "wrapOwn ";
+const MOUNTED = "wrapMounted ";
+const MOUNTED_SEPARATOR = "\u0000";
 
 function describeRegistered(found: readonly Registered[] | undefined): string {
   return (found ?? [])
@@ -132,6 +142,11 @@ export class PythonWrapperIndex {
   /** By construction key: what a router or a blueprint registered. */
   private readonly ownRoutes = new Map<string, Registered[]>();
   private readonly unitsByKey = new Map<string, RawCodeStructure>();
+  /** By wrapper reference: the parameter names a dependency function declares, and its file. */
+  private readonly dependencyParameters = new Map<
+    string,
+    { file: string; names: string[] }
+  >();
   private readonly unitsByFile = new Map<string, RawCodeStructure[]>();
   /** Told about every registration, so a cache can repeat the ones a file's discovery made. */
   onRegistered: ((target: ReachedFunction, declared: FormOf) => void) | null =
@@ -156,6 +171,16 @@ export class PythonWrapperIndex {
       return describeRegistered(
         this.ownRoutes.get(id.slice(OWN_ROUTES.length)),
       );
+    }
+    if (id.startsWith(MOUNTED)) {
+      const [packName, position, key] = id
+        .slice(MOUNTED.length)
+        .split(MOUNTED_SEPARATOR);
+      const pack = this.options.packs.find((one) => one.name === packName);
+      const pattern = pack?.discovery[Number(position)];
+      return pack === undefined || pattern === undefined || key === undefined
+        ? describeRegistered([])
+        : describeRegistered(this.registeredAbove(pack, pattern, key));
     }
     return null;
   }
@@ -213,14 +238,42 @@ export class PythonWrapperIndex {
       inFile.push(unit);
       this.unitsByFile.set(target.file.file, inFile);
     }
-    return {
-      reference: {
-        file: target.file.displayPath,
-        name: target.name,
-        ...(isThrowForm(declared.form) ? { onThrow: true } : {}),
-      },
-      form: declared.form,
+    const reference: WrapperReference = {
+      file: target.file.displayPath,
+      name: target.name,
+      ...(isThrowForm(declared.form) ? { onThrow: true } : {}),
     };
+    if (declared.form.type === "dependency") {
+      this.dependencyParameters.set(referenceKey(reference), {
+        file: target.file.file,
+        names: parameterNamesOf(target.node),
+      });
+    }
+    return { reference, form: declared.form };
+  }
+
+  /**
+   * The parameters the dependencies among these wrappers declare. The
+   * library fills each one from the request and validates it, the same
+   * as one the route declares.
+   */
+  dependencyParameterNames(
+    references: readonly WrapperReference[],
+  ): ReadonlySet<string> {
+    const names = new Set<string>();
+    for (const reference of references) {
+      const found = this.dependencyParameters.get(referenceKey(reference));
+      if (found === undefined) {
+        continue;
+      }
+      if (this.options.facts !== undefined) {
+        noteKeyRead(this.options.facts, found.file);
+      }
+      for (const name of found.names) {
+        names.add(name);
+      }
+    }
+    return names;
   }
 
   wrappersFor(query: RouteWrapperQuery): WrapperReference[] {
@@ -234,13 +287,15 @@ export class PythonWrapperIndex {
       return [];
     }
 
+    const own = this.ownRoutesOf(query);
     const found: Registered[] = [
       ...this.noted(
         EVERY_ROUTE,
         query.pack.name,
         this.everyRoute.get(query.pack.name),
       ),
-      ...this.ownRoutesOf(query),
+      ...(own === null ? [] : this.mountedAbove(query, own.key)),
+      ...(own?.registered ?? []),
     ];
     for (const declared of forms) {
       if (declared.form.type !== "dependency") {
@@ -275,11 +330,66 @@ export class PythonWrapperIndex {
     return ordered;
   }
 
-  private ownRoutesOf(query: RouteWrapperQuery): Registered[] {
+  /**
+   * What the mounts above the route's router register on the way down:
+   * the dependencies an `include_router` call lists, and those of each
+   * router it is mounted onto, outermost first, the order they run in.
+   */
+  private mountedAbove(query: RouteWrapperQuery, key: string): Registered[] {
+    const position = query.pack.discovery.indexOf(query.pattern);
+    return [
+      ...this.noted(
+        MOUNTED,
+        [query.pack.name, position, key].join(MOUNTED_SEPARATOR),
+        this.registeredAbove(query.pack, query.pattern, key),
+      ),
+    ];
+  }
+
+  private registeredAbove(
+    pack: PythonPack,
+    pattern: PythonDiscoveryPattern,
+    key: string,
+  ): Registered[] {
+    const hops = this.options.routers?.mountsAbove(pattern, key) ?? null;
+    if (hops === null) {
+      return [];
+    }
+    const forms = (pattern.wrappers ?? []).flatMap((form) =>
+      form.type === "dependency" ? [{ pack, pattern, form }] : [],
+    );
+    const found: Registered[] = [];
+    for (const hop of [...hops].reverse()) {
+      found.push(
+        ...(hop.parentKey === null
+          ? []
+          : (this.ownRoutes.get(hop.parentKey) ?? [])),
+      );
+      const { keywordArgs } = readCallArguments(field(hop.call, "arguments"));
+      for (const declared of forms) {
+        const listed = keywordArgs[declared.form.keyword];
+        const names =
+          listed === undefined
+            ? []
+            : dependencyNamesIn(listed.node, declared.form);
+        for (const name of names) {
+          const target = this.functionCalled(hop.file, name);
+          if (target !== null) {
+            found.push(this.registered(target, declared));
+          }
+        }
+      }
+    }
+    return found;
+  }
+
+  private ownRoutesOf(
+    query: RouteWrapperQuery,
+  ): { key: string; registered: readonly Registered[] } | null {
     const site = this.objectSiteOf(query);
     const bound = site === null ? undefined : this.filesByPath.get(site.file);
     if (site === null || bound === undefined) {
-      return [];
+      return null;
     }
     // The registrar is read out of the syntax where the object was built.
     if (this.options.facts !== undefined) {
@@ -294,12 +404,17 @@ export class PythonWrapperIndex {
         { pack: query.pack, pattern: query.pattern, form },
       );
       if (match !== null && match.registrar.covers === "ownRoutes") {
-        return [
-          ...this.noted(OWN_ROUTES, match.key, this.ownRoutes.get(match.key)),
-        ];
+        return {
+          key: match.key,
+          registered: this.noted(
+            OWN_ROUTES,
+            match.key,
+            this.ownRoutes.get(match.key),
+          ),
+        };
       }
     }
-    return [];
+    return null;
   }
 
   /**
@@ -352,6 +467,19 @@ export class PythonWrapperIndex {
   unitsIn(file: string): RawCodeStructure[] {
     return this.unitsByFile.get(file) ?? [];
   }
+}
+
+function referenceKey(reference: WrapperReference): string {
+  return `${reference.file}::${reference.name}`;
+}
+
+function parameterNamesOf(definition: PyNode): string[] {
+  return (field(definition, "parameters")?.namedChildren ?? []).flatMap(
+    (parameter) => {
+      const named = parameter === null ? null : parameterNameAndType(parameter);
+      return named === null ? [] : [named.name];
+    },
+  );
 }
 
 function isThrowForm(form: PyWrapperForm): boolean {

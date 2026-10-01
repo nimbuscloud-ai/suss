@@ -316,6 +316,135 @@ describe("FastAPI wrappers", () => {
     expect(statusesOf(audit)).toEqual([429, 401, 400, 200]);
   });
 
+  it("gives a route the dependencies of each include_router above it and of the routers it is mounted onto", async () => {
+    const summaries = await extractWritten({
+      "app/auth.py": [
+        "from fastapi import HTTPException",
+        "",
+        "Unauthenticated = HTTPException(status_code=401)",
+        "",
+        "def current_user(token: str):",
+        "    if not token:",
+        "        raise Unauthenticated",
+        "    return token",
+        "",
+        "def tenant_exists(tenant: str):",
+        "    if tenant == 'gone':",
+        "        raise HTTPException(status_code=404)",
+        "",
+      ].join("\n"),
+      "app/orders.py": [
+        "from fastapi import APIRouter",
+        "",
+        "router = APIRouter()",
+        "",
+        '@router.get("/orders")',
+        "def list_orders():",
+        "    return []",
+        "",
+      ].join("\n"),
+      "app/main.py": [
+        "from fastapi import APIRouter, Depends, FastAPI",
+        "from app.auth import current_user, tenant_exists",
+        "from app.orders import router as orders_router",
+        "",
+        "app = FastAPI()",
+        'tenant_router = APIRouter(prefix="/{tenant}", dependencies=[Depends(tenant_exists)])',
+        "tenant_router.include_router(orders_router)",
+        "app.include_router(tenant_router, dependencies=[Depends(current_user)])",
+        "",
+      ].join("\n"),
+    });
+
+    const orders = routeFor(summaries, "GET", "/{tenant}/orders");
+    expect(wrappersOf(orders)).toEqual({
+      applied: [
+        { file: "app/auth.py", name: "current_user" },
+        { file: "app/auth.py", name: "tenant_exists" },
+      ],
+    });
+    expect(statusesOf(orders)).toEqual([401, 404, 200]);
+  });
+
+  it("adds the validation response for a path parameter only a dependency declares", async () => {
+    const validating: PythonPack = {
+      ...fastapiLike,
+      discovery: [
+        {
+          ...fastapiLike.discovery[0],
+          validationFailureStatus: 422,
+        } as PythonPack["discovery"][number],
+      ],
+    };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wrappers-"));
+    fs.mkdirSync(path.join(dir, "app"));
+    fs.writeFileSync(
+      path.join(dir, "app/main.py"),
+      [
+        "from fastapi import APIRouter, Depends, FastAPI, HTTPException",
+        "",
+        "def tenant_exists(tenant: str):",
+        "    if tenant == 'gone':",
+        "        raise HTTPException(status_code=404)",
+        "",
+        "app = FastAPI()",
+        'checked = APIRouter(prefix="/{tenant}", dependencies=[Depends(tenant_exists)])',
+        'unchecked = APIRouter(prefix="/{region}")',
+        "",
+        '@checked.get("/orders")',
+        "def list_orders():",
+        "    return []",
+        "",
+        '@unchecked.get("/stock")',
+        "def list_stock():",
+        "    return []",
+        "",
+        "app.include_router(checked)",
+        "app.include_router(unchecked)",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractPythonProject({
+      files: findPythonFiles(dir),
+      roots: [dir],
+      packs: [validating],
+      workspaceRoot: dir,
+    });
+
+    expect(statusesOf(routeFor(summaries, "GET", "/{tenant}/orders"))).toEqual([
+      404, 200, 422,
+    ]);
+    expect(statusesOf(routeFor(summaries, "GET", "/{region}/stock"))).toEqual([
+      200,
+    ]);
+  });
+
+  it("gives a router mounted two ways none of the dependencies above it", async () => {
+    const summaries = await extractWritten({
+      "app/main.py": [
+        "from fastapi import APIRouter, Depends, FastAPI, HTTPException",
+        "",
+        "def current_user(token: str):",
+        "    if not token:",
+        "        raise HTTPException(status_code=401)",
+        "",
+        "app = FastAPI()",
+        "router = APIRouter()",
+        "",
+        '@router.get("/orders")',
+        "def list_orders():",
+        "    return []",
+        "",
+        'app.include_router(router, prefix="/a", dependencies=[Depends(current_user)])',
+        'app.include_router(router, prefix="/b")',
+        "",
+      ].join("\n"),
+    });
+
+    const open = routeFor(summaries, "GET", "/b/orders");
+    expect(wrappersOf(open)).toBeUndefined();
+  });
+
   it("reads a dependency written inside Annotated[...] the same as one written as a default", async () => {
     const summaries = await extract("wrapped-routes-fastapi", fastapiLike);
 
