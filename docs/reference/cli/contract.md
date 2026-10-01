@@ -18,13 +18,14 @@ suss contract --from <source> <spec> [-o <output.json>]
 | `--from <source>` | required | Which kind of source to read. One of the sources below. |
 | `<spec>` | required | A local path or an `http(s)` URL. |
 | `--code-scope <instance>=<dir>` | none | Where a deployable unit's code is. Repeatable. Terraform only. |
+| `--allow-empty` | off | Exit 0 when suss doesn't read a boundary from the file. |
 | `-o`, `--output <path>` | stdout | Write the summary JSON to a file. |
 
 ## Sources
 
 | `--from` | What the path points at |
 |---|---|
-| `openapi` | An OpenAPI 3.x document, JSON or YAML. |
+| `openapi` | An OpenAPI 3.x or Swagger 2.0 document, JSON or YAML. A document split across files is read whole: each `$ref` to another file is resolved relative to the file it is written in. |
 | `cloudformation` | A CloudFormation or SAM template, JSON or YAML: API Gateway routes, SQS event source mappings, Lambda environment. |
 | `terraform` | One `.tf` file, or the directory a module lives in, since a module states its resources across several files. AWS and Google resources are both read. |
 | `serverless` | A Serverless Framework service file, or the directory it is in. `${self:...}` resolves against the document; a reference a deploy supplies keeps its token. |
@@ -67,7 +68,11 @@ A summary read from a URL is labelled with that URL, so it still points at where
 
 ## What it writes
 
-Without `-o`, the summary JSON goes to stdout. With `-o`, the JSON goes to the file and one line goes to stderr: `Wrote 19 summaries to /path/provider.json`. A source that declares nothing suss could read writes `<spec> declares no boundaries suss could read.` instead.
+Without `-o`, the summary JSON goes to stdout. With `-o`, the JSON goes to the file and one line goes to stderr: `Wrote 19 summaries to /path/provider.json`.
+
+When suss doesn't read a boundary from the source, it still writes the empty list, says so on stderr, and exits 1, because an empty file would reach `check` as a side with nothing to compare. Pass `--allow-empty` when that is expected.
+
+For an OpenAPI document, stderr also lists each file a `$ref` points to that could not be read, and each `$ref` that points at nothing. A path item behind one of those is left out, and so is a parameter, since it has no name to pair on. A response keeps its status and loses its body.
 
 ## Example
 
