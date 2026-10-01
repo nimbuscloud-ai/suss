@@ -29,22 +29,8 @@ import {
 
 import type { Language } from "./language.js";
 
-/** Folders of tests and the fixtures they read, which describe no service of the project's own. */
-export const TEST_DIRECTORIES = new Set([
-  "test",
-  "tests",
-  "__tests__",
-  "__mocks__",
-  "__fixtures__",
-  "fixtures",
-  "e2e",
-  "e2e-tests",
-  "cypress",
-]);
-
 /** On top of `SKIP_DIRECTORIES`, which has the dependency and build output folders. */
 const NOT_SOURCE_DIRECTORIES = new Set([
-  ...TEST_DIRECTORIES,
   "public",
   "builds",
   "generated",
@@ -53,7 +39,14 @@ const NOT_SOURCE_DIRECTORIES = new Set([
   "script",
   "tools",
   "config",
+  "test",
+  "tests",
+  "__tests__",
+  "__mocks__",
   "spec",
+  "e2e",
+  "e2e-tests",
+  "cypress",
 ]);
 
 /** `orders.test.ts`, `orders.spec.js`, `orders_test.py`, `orders_spec.rb`, `test_orders.py`. */
@@ -83,12 +76,8 @@ const isSourceDirectoryName = (name: string): boolean =>
   !SKIP_DIRECTORIES.has(name) &&
   !name.startsWith(".");
 
-/**
- * How many folders down a walk of one project goes. Init's walk for
- * contract files goes as deep, so a spec next to the code is found.
- */
-export const PROJECT_WALK_DEPTH = 10;
-/** How many files the search for a call looks at before it gives up. */
+/** How far and how wide the search looks before it gives up. */
+const MATCH_DEPTH = 10;
 const MATCH_FILES = 5000;
 /** A file this large is a bundle or generated code, not something the project wrote. */
 const MATCH_FILE_BYTES = 512 * 1024;
@@ -182,7 +171,7 @@ function* filesInProject(
   language: Language,
   depth: number,
 ): Generator<string> {
-  if (depth > PROJECT_WALK_DEPTH) {
+  if (depth > MATCH_DEPTH) {
     return;
   }
   if (dir !== root && projectFilesOf(dir, language).length > 0) {

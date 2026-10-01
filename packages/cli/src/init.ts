@@ -37,12 +37,7 @@ import {
   projectFilesOf,
   SKIP_DIRECTORIES,
 } from "./language.js";
-import {
-  extractReadsAnything,
-  firstSourceMatching,
-  PROJECT_WALK_DEPTH,
-  TEST_DIRECTORIES,
-} from "./projectSource.js";
+import { extractReadsAnything, firstSourceMatching } from "./projectSource.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
 
 import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
@@ -764,10 +759,9 @@ function* filesUnder(
   submodules: ReadonlySet<string>,
   depth = 0,
 ): Generator<string> {
-  // Projects keep GraphQL operations next to the screens that send them,
-  // well down the tree. A folder with its own package.json or repository
-  // is skipped below, so the walk stays inside this project.
-  if (depth > PROJECT_WALK_DEPTH) {
+  // A SAM template or a schema is near the top of a service. If suss is
+  // run from a home directory, a deeper walk reports other projects.
+  if (depth > 3) {
     return;
   }
   let entries: fs.Dirent[];
@@ -782,10 +776,6 @@ function* filesUnder(
     }
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (TEST_DIRECTORIES.has(entry.name)) {
-        continue;
-      }
-
       // A directory with its own package.json is a separate project.
       if (depth > 0 && fs.existsSync(path.join(full, "package.json"))) {
         continue;
