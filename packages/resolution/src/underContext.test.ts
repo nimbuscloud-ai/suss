@@ -266,6 +266,57 @@ describe("a run that has spent its rows on questions", () => {
   });
 });
 
+describe("a parameter of a method called off a construction", () => {
+  // class Sender { send(body) {} }, then `s = new Sender(); s.send(payload)`
+  // at module level, beside `unrelated` other calls of plain functions.
+  function senderDb(unrelated: number): Database {
+    const facts: Array<[string, ...string[]]> = [
+      ["objectValue", "Sender"],
+      ["holdsProperty", "Sender", "send", "sendFn"],
+      ["func", "sendFn"],
+      ["paramOf", "sendFn", "0", "body"],
+      ["binds", "SenderRef", "Sender"],
+      ["call", "sSite", "SenderRef"],
+      ["callOutsideMethod", "sSite"],
+      ["binds", "s", "sSite"],
+      ["readsProperty", "sendCallee", "s", "send"],
+      ["call", "sendCall", "sendCallee"],
+      ["callOutsideMethod", "sendCall"],
+      ["callArg", "sendCall", "0", "payload"],
+      ["writtenValue", "payload"],
+    ];
+    for (let i = 0; i < unrelated; i++) {
+      facts.push(
+        ["func", `helper${i}`],
+        ["binds", `helperRef${i}`, `helper${i}`],
+        ["call", `helperCall${i}`, `helperRef${i}`],
+        ["callOutsideMethod", `helperCall${i}`],
+      );
+    }
+    const db = new Database();
+    for (const [relation, ...tuple] of facts) {
+      db.add(relation, tuple);
+    }
+    return db;
+  }
+
+  function askBody(db: Database): number {
+    askResolutionUnder(db, [["body", "sSite"]], resolutionUnderProgram());
+    return underQuestionSpend(db).rows;
+  }
+
+  it("arrives at the argument the call under that site passes", () => {
+    const db = senderDb(0);
+    askBody(db);
+
+    expect(isWrittenAsUnder(db, "body", "sSite")).toEqual(["payload"]);
+  });
+
+  it("reads the same rows however many other calls the project makes", () => {
+    expect(askBody(senderDb(200))).toBe(askBody(senderDb(10)));
+  });
+});
+
 describe("where a class was made", () => {
   function sitesIn(facts: Array<[string, ...string[]]>): string[] {
     const db = new Database();
