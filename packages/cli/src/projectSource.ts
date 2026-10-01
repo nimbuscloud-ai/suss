@@ -5,12 +5,11 @@
  * what the application does, so it does not count.
  *
  * For TypeScript and JavaScript, a file counts when the project's
- * tsconfig includes it, or when it is under `src/` and there is no
- * tsconfig. Python and Ruby have no such file, so any file in the project
- * counts. In every language, files under a scripts, tools, config or test
- * directory are left out, and so are `*.config.*` files, tests, type
- * declarations and minified bundles. A folder that declares a project of
- * its own is left to that project.
+ * tsconfig includes it. Without a tsconfig, as in a Rails app's
+ * `app/javascript`, and in Python and Ruby, any file in the project
+ * counts. In every language, tooling, tests, build output, dependencies,
+ * `*.config.*` files, type declarations and bundles are left out. A
+ * folder that declares a project of its own is left to that project.
  */
 
 import fs from "node:fs";
@@ -26,8 +25,12 @@ import {
 
 import type { Language } from "./language.js";
 
-/** Directories whose files support the project rather than make it up. */
+/** On top of `SKIP_DIRECTORIES`, which has the dependency and build output folders. */
 const NOT_SOURCE_DIRECTORIES = new Set([
+  "public",
+  "builds",
+  "generated",
+  "__generated__",
   "scripts",
   "script",
   "tools",
@@ -48,8 +51,9 @@ const TEST_FILE = /[._](test|spec)\.[a-z]+$|^test_[^.]+\.py$/;
 /** `vite.config.ts`, `jest.config.cjs`. */
 const CONFIG_FILE = /\.config\.[^.]+$/;
 
-/** A type declaration or a minified copy of a library. */
-const DECLARATION_OR_BUNDLE = /\.d\.[cm]?ts$|\.min\.[cm]?js$/;
+/** A type declaration, or a minified, bundled or generated build of some code. */
+const DECLARATION_OR_BUNDLE =
+  /\.d\.[cm]?ts$|[.-](min|bundle|chunk)\.[cm]?js$|\.generated\.[cm]?[jt]sx?$/;
 
 /** Whether a path, relative to its project, is one of the project's own source files. */
 export function isProjectSourcePath(relative: string): boolean {
@@ -130,7 +134,7 @@ function typescriptCandidates(root: string): Iterable<string> {
   if (tsconfig !== undefined) {
     return readTsconfigFileList(tsconfig);
   }
-  return filesInProject(root, path.join(root, "src"), "typescript", 1);
+  return filesInProject(root, root, "typescript", 0);
 }
 
 /** Every file under `dir`, stopping at a folder that declares a project of its own in `language`. */

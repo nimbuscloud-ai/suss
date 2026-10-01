@@ -251,6 +251,30 @@ describe("suss init, guided", () => {
       expect(text).toContain("install_requires is computed");
     });
 
+    it("reads a Rails app's client code in app/javascript beside the Ruby", async () => {
+      write("Gemfile", 'source "https://rubygems.org"\ngem "rails"\n');
+      write(
+        "Gemfile.lock",
+        "GEM\n  specs:\n    rails (7.1.0)\n\nDEPENDENCIES\n  rails\n",
+      );
+      write(
+        "app/controllers/orders_controller.rb",
+        "class OrdersController < ApplicationController\nend\n",
+      );
+      write(
+        "app/javascript/orders.js",
+        "export const load = () => fetch('/orders.json');\n",
+      );
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text).toContain(
+        `fetch is called in ${path.join("app", "javascript", "orders.js")}`,
+      );
+      expect(text).toMatch(/suss extract --lang ruby .*-f rails/);
+      expect(text).toContain("suss extract --lang typescript -f fetch");
+    });
+
     it("sets up no project for a build script that calls fetch", async () => {
       project("dashboard", "dashboard", []);
       write(

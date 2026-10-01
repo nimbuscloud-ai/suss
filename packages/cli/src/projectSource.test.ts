@@ -26,6 +26,9 @@ describe("isProjectSourcePath", () => {
       "vite.config.ts",
       "src/orders.d.ts",
       "public/vendor.min.js",
+      "app/javascript/application-bundle.js",
+      "dist/index.js",
+      "coverage/lcov-report/prettify.js",
     ]) {
       expect(isProjectSourcePath(relative), relative).toBe(false);
     }
@@ -49,14 +52,22 @@ describe("firstSourceMatching", () => {
     fs.writeFileSync(file, contents);
   }
 
-  it("reads only src/ when there is no tsconfig", () => {
-    write("package.json", "{}");
-    write("release.js", "await fetch('/releases');\n");
+  it("reads a Rails app's client code, which has no tsconfig", () => {
+    write("Gemfile", "source 'https://rubygems.org'\ngem 'rails'\n");
+    write("scripts/release.js", "await fetch('/releases');\n");
+    write("public/assets/application.js", "fetch('/compiled');\n");
+    write("app/assets/builds/application.js", "fetch('/bundled');\n");
+    write("node_modules/lib/index.js", "fetch('/dependency');\n");
+    write("vendor/javascript/chart.js", "fetch('/vendored');\n");
+    write("app/javascript/legacy.min.js", "fetch('/minified');\n");
     expect(firstSourceMatching(dir, "typescript", FETCH)).toBeNull();
 
-    write("src/orders.js", "export const load = () => fetch('/orders');\n");
+    write(
+      "app/javascript/orders.js",
+      "export const load = () => fetch('/orders.json');\n",
+    );
     expect(firstSourceMatching(dir, "typescript", FETCH)).toBe(
-      path.join("src", "orders.js"),
+      path.join("app", "javascript", "orders.js"),
     );
   });
 

@@ -24,7 +24,7 @@ It reads `package.json`, the Python manifests and the Gemfile for dependencies, 
 
 Every folder below the root with its own `package.json`, `pyproject.toml` or `Gemfile` is a project of its own, whether or not a workspace file lists it, so a server folder and a client folder side by side each get their commands. A folder below the root is shown when a pack matched there, or when its own manifest could not be read and it has source of its own. A Gemfile that only drives a mobile build, for example, does not get a section.
 
-fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in the project's own source calls the library, and the report says which file. For TypeScript and JavaScript, the project's own source is what its tsconfig includes, or `src/` when there is no tsconfig. In every language, files under a scripts, tools, config or test directory don't count, and neither do `*.config.*` files or tests.
+fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in the project's own source calls the library, and the report says which file. For TypeScript and JavaScript, the project's own source is what its tsconfig includes. Without a tsconfig, as in a Rails app's `app/javascript`, every file in the project counts. In every language, files under a scripts, tools, config, test, `public`, `node_modules`, `vendor`, `dist`, `build` or `coverage` directory don't count, and neither do `*.config.*` files, tests, or minified and bundled files.
 
 When the project depends on a framework suss knows and has no pack for, such as Django, tRPC or Grape, the report says so, including when other packs matched.
 
