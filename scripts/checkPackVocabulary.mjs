@@ -70,6 +70,7 @@ const KEYED_BY_IDENTIFIER = new Set([
   "methodDecoratorTypeMap",
   "knownProperties",
   "codes",
+  "decorators",
   "scalars",
   "means",
   "addressing",

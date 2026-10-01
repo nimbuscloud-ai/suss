@@ -21,6 +21,8 @@ import {
 import {
   libraryExportPathsOf,
   numberValueOf,
+  objectLiteralOf,
+  propertyOf,
   stringValueOf,
 } from "./resolveValue.js";
 import { routeVersionsReader } from "./routeVersioning.js";
@@ -28,8 +30,10 @@ import { routeVersionsReader } from "./routeVersioning.js";
 import type {
   ChannelSource,
   DeclaredBinding,
+  DeclaredStatusDecorators,
   DiscoveryPattern,
 } from "@suss/extractor";
+import type { Decorator, MethodDeclaration } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 import type { MountPrefixIndex } from "./registrationCall.js";
 import type { DiscoveredUnit } from "./shared.js";
@@ -187,6 +191,73 @@ function libraryConstantOf(
   return null;
 }
 
+interface DeclaredStatuses {
+  on(cls: ClassDeclaration, routeDecorator: Node): number[];
+}
+
+/**
+ * The statuses a route's decorators list, on its method and on its
+ * class, read through the decorators this file imports under any local
+ * name. A status that does not settle to a number is left out.
+ */
+function declaredStatusesReader(
+  sourceFile: SourceFile,
+  declared: DeclaredStatusDecorators,
+  constants: LibraryConstants,
+  resolution: ResolutionStore | undefined,
+): DeclaredStatuses {
+  const locals = importedDecoratorLocals(
+    sourceFile,
+    [declared.importModule].flat(),
+    Object.keys(declared.decorators),
+  );
+  const statusesOf = (decorated: ClassDeclaration | MethodDeclaration) =>
+    [...locals].flatMap(([local, name]) =>
+      decorated.getDecorators().flatMap((decorator) => {
+        if (decorator.getName() !== local) {
+          return [];
+        }
+        const status =
+          declared.decorators[name] ??
+          statusInOptions(decorator, declared.statusKey, constants, resolution);
+        return status === null || status === undefined ? [] : [status];
+      }),
+    );
+  return {
+    on(cls, routeDecorator) {
+      if (locals.size === 0) {
+        return [];
+      }
+      const member = routeDecorator.getParent();
+      const own =
+        member !== undefined && Node.isMethodDeclaration(member)
+          ? statusesOf(member)
+          : [];
+      return [...new Set([...statusesOf(cls), ...own])].sort((a, b) => a - b);
+    },
+  };
+}
+
+function statusInOptions(
+  decorator: Decorator,
+  statusKey: string,
+  constants: LibraryConstants,
+  resolution: ResolutionStore | undefined,
+): number | null {
+  const [options] = decorator.getArguments();
+  const object =
+    options === undefined ? null : objectLiteralOf(options, resolution);
+  const status =
+    object === null ? null : propertyOf(object, statusKey, resolution);
+  if (status === null) {
+    return null;
+  }
+  return (
+    numberValueOf(status, resolution) ??
+    libraryConstantOf(status, constants, resolution)
+  );
+}
+
 export function discoverDecoratedRoutes(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "decoratedRoute" }>,
@@ -230,6 +301,18 @@ export function discoverDecoratedRoutes(
           acceptedModules,
           resolution,
           mountPrefixes,
+        );
+  const declaredStatuses =
+    match.declaredStatuses === undefined
+      ? null
+      : declaredStatusesReader(
+          sourceFile,
+          match.declaredStatuses,
+          {
+            modules: acceptedModules,
+            values: match.statusCodeConstants ?? {},
+          },
+          resolution,
         );
 
   const results: DiscoveredUnit[] = [];
@@ -280,11 +363,16 @@ export function discoverDecoratedRoutes(
           { modules: acceptedModules, values: match.statusCodeConstants ?? {} },
           resolution,
         ) ?? match.defaultStatusCodes?.[verbDecorator];
+      const declared =
+        declaredStatuses === null
+          ? []
+          : declaredStatuses.on(cls as ClassDeclaration, handler.decorator);
       const unit = {
         func: handler.func,
         kind,
         name: `${className}.${handler.name}`,
         ...(status === undefined ? {} : { defaultStatusCode: status }),
+        ...(declared.length === 0 ? {} : { declaredStatuses: declared }),
       };
 
       if (pathPrefix === null || pathSuffix === null) {

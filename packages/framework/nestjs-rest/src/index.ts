@@ -70,6 +70,37 @@ const NEST_EXCEPTION_STATUSES: Record<string, number> = {
   HttpVersionNotSupportedException: 505,
 };
 
+// The status each response decorator `@nestjs/swagger` exports declares.
+// `ApiResponse` reads it from its options.
+const SWAGGER_RESPONSE_DECORATORS: Record<string, number | null> = {
+  ApiResponse: null,
+  ApiOkResponse: 200,
+  ApiCreatedResponse: 201,
+  ApiAcceptedResponse: 202,
+  ApiNoContentResponse: 204,
+  ApiMovedPermanentlyResponse: 301,
+  ApiFoundResponse: 302,
+  ApiBadRequestResponse: 400,
+  ApiUnauthorizedResponse: 401,
+  ApiForbiddenResponse: 403,
+  ApiNotFoundResponse: 404,
+  ApiMethodNotAllowedResponse: 405,
+  ApiNotAcceptableResponse: 406,
+  ApiRequestTimeoutResponse: 408,
+  ApiConflictResponse: 409,
+  ApiGoneResponse: 410,
+  ApiPreconditionFailedResponse: 412,
+  ApiPayloadTooLargeResponse: 413,
+  ApiUnsupportedMediaTypeResponse: 415,
+  ApiUnprocessableEntityResponse: 422,
+  ApiTooManyRequestsResponse: 429,
+  ApiInternalServerErrorResponse: 500,
+  ApiNotImplementedResponse: 501,
+  ApiBadGatewayResponse: 502,
+  ApiServiceUnavailableResponse: 503,
+  ApiGatewayTimeoutResponse: 504,
+};
+
 export function nestjsRestFramework(
   options: NestjsRestPackOptions = {},
 ): PatternPack {
@@ -113,6 +144,13 @@ export function nestjsRestFramework(
               methodKey: "method",
               methods: REQUEST_METHODS,
             },
+          },
+          // A spec `@nestjs/swagger` generates declares these statuses
+          // because of the decorators, whether or not a path sends them.
+          declaredStatuses: {
+            importModule: "@nestjs/swagger",
+            decorators: SWAGGER_RESPONSE_DECORATORS,
+            statusKey: "status",
           },
           // `app.enableVersioning()` with no options is URI versioning,
           // which serves version 1 of a route at `/v1/...`.
