@@ -27,6 +27,12 @@ export const optionsSchema = z
 
 export type NestjsRestPackOptions = z.infer<typeof optionsSchema>;
 
+const NEST_APPLICATION = {
+  importModule: "@nestjs/core",
+  importName: "NestFactory",
+  factory: "create",
+};
+
 // The numbers `RequestMethod` in `@nestjs/common` gives each verb.
 const REQUEST_METHODS: Record<number, string> = {
   0: "GET",
@@ -64,6 +70,37 @@ const NEST_EXCEPTION_STATUSES: Record<string, number> = {
   HttpVersionNotSupportedException: 505,
 };
 
+// The status each response decorator `@nestjs/swagger` exports declares.
+// `ApiResponse` reads it from its options.
+const SWAGGER_RESPONSE_DECORATORS: Record<string, number | null> = {
+  ApiResponse: null,
+  ApiOkResponse: 200,
+  ApiCreatedResponse: 201,
+  ApiAcceptedResponse: 202,
+  ApiNoContentResponse: 204,
+  ApiMovedPermanentlyResponse: 301,
+  ApiFoundResponse: 302,
+  ApiBadRequestResponse: 400,
+  ApiUnauthorizedResponse: 401,
+  ApiForbiddenResponse: 403,
+  ApiNotFoundResponse: 404,
+  ApiMethodNotAllowedResponse: 405,
+  ApiNotAcceptableResponse: 406,
+  ApiRequestTimeoutResponse: 408,
+  ApiConflictResponse: 409,
+  ApiGoneResponse: 410,
+  ApiPreconditionFailedResponse: 412,
+  ApiPayloadTooLargeResponse: 413,
+  ApiUnsupportedMediaTypeResponse: 415,
+  ApiUnprocessableEntityResponse: 422,
+  ApiTooManyRequestsResponse: 429,
+  ApiInternalServerErrorResponse: 500,
+  ApiNotImplementedResponse: 501,
+  ApiBadGatewayResponse: 502,
+  ApiServiceUnavailableResponse: 503,
+  ApiGatewayTimeoutResponse: 504,
+};
+
 export function nestjsRestFramework(
   options: NestjsRestPackOptions = {},
 ): PatternPack {
@@ -98,11 +135,7 @@ export function nestjsRestFramework(
           statusCodeConstants: HTTP_STATUS_CONSTANTS,
           globalPrefix: {
             method: "setGlobalPrefix",
-            application: {
-              importModule: "@nestjs/core",
-              importName: "NestFactory",
-              factory: "create",
-            },
+            application: NEST_APPLICATION,
             // An exclusion is a path, or a `RouteInfo` whose method is a
             // member of Nest's `RequestMethod` enum.
             exclude: {
@@ -111,6 +144,37 @@ export function nestjsRestFramework(
               methodKey: "method",
               methods: REQUEST_METHODS,
             },
+          },
+          // A spec `@nestjs/swagger` generates declares these statuses
+          // because of the decorators, whether or not a path sends them.
+          declaredStatuses: {
+            importModule: "@nestjs/swagger",
+            decorators: SWAGGER_RESPONSE_DECORATORS,
+            statusKey: "status",
+          },
+          // `app.enableVersioning()` with no options is URI versioning,
+          // which serves version 1 of a route at `/v1/...`.
+          versioning: {
+            option: "version",
+            decorator: "Version",
+            neutral: "VERSION_NEUTRAL",
+            call: { method: "enableVersioning", application: NEST_APPLICATION },
+            typeKey: "type",
+            types: {
+              "VersioningType.URI": "path",
+              "VersioningType.HEADER": "outsidePath",
+              "VersioningType.MEDIA_TYPE": "outsidePath",
+              "VersioningType.CUSTOM": "outsidePath",
+            },
+            typeNumbers: {
+              0: "path",
+              1: "outsidePath",
+              2: "outsidePath",
+              3: "outsidePath",
+            },
+            defaultType: "path",
+            pathPrefix: { key: "prefix", default: "v" },
+            defaultVersionKey: "defaultVersion",
           },
         },
         requiresImport: ["@nestjs/common"],

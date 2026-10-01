@@ -5,7 +5,7 @@
  * as one in any other language.
  */
 
-import { force, isLocalUrl, pathOf } from "@suss/values";
+import { force, isLocalUrl, pathOf, routePatternOf } from "@suss/values";
 
 import { evaluatedValue } from "../values/evaluator.js";
 
@@ -26,6 +26,18 @@ export function pathFromArgument(
   site?: string,
 ): string | undefined {
   return pathOf(evaluatedValue(arg, resolution, site));
+}
+
+/**
+ * The route pattern a server registers at a call site, such as Express's
+ * `router.get("/:pk/:filename?", ...)`, where a `?` marks an optional
+ * parameter rather than a query.
+ */
+export function routePatternFromArgument(
+  arg: Node,
+  resolution?: ResolutionStore,
+): string | undefined {
+  return routePatternOf(evaluatedValue(arg, resolution));
 }
 
 /**

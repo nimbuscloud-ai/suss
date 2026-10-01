@@ -134,13 +134,31 @@ export function pathUnderGlobalPrefix(
   return route === "" ? base : `${base}/${route}`;
 }
 
+/** How many applications the factory makes in this file. */
+export function applicationsMadeIn(
+  sourceFile: SourceFile,
+  call: Pick<GlobalPrefixCall, "application">,
+  resolution: ResolutionStore,
+): number {
+  if (!sourceFile.getFullText().includes(call.application.importName)) {
+    return 0;
+  }
+  let made = 0;
+  sourceFile.forEachDescendant((node) => {
+    if (isFactoryCall(node, call, resolution)) {
+      made += 1;
+    }
+  });
+  return made;
+}
+
 /**
  * Whether the receiver is an application the factory made: written as
  * the factory's call, or a parameter every caller passes one to.
  */
 function isApplication(
   receiver: Node,
-  call: GlobalPrefixCall,
+  call: Pick<GlobalPrefixCall, "application">,
   resolution: ResolutionStore,
 ): boolean {
   const parameter = parameterNamedBy(receiver);
@@ -161,7 +179,7 @@ function isApplication(
 
 function madeByFactory(
   value: Node,
-  call: GlobalPrefixCall,
+  call: Pick<GlobalPrefixCall, "application">,
   resolution: ResolutionStore,
 ): boolean {
   const written = writtenNodeOf(value, resolution);
@@ -170,7 +188,7 @@ function madeByFactory(
 
 function isFactoryCall(
   value: Node,
-  call: GlobalPrefixCall,
+  call: Pick<GlobalPrefixCall, "application">,
   resolution: ResolutionStore,
 ): boolean {
   if (!Node.isCallExpression(value)) {

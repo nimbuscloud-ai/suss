@@ -23,6 +23,7 @@ import {
   NOTHING_DEPLOYED,
   nameReference,
   normalizePath,
+  operationKey,
   pairingKey,
   reportsUnpairedItself,
   restBinding,
@@ -52,6 +53,14 @@ describe("normalizePath", () => {
     );
     expect(normalizePath("/files/:rest+")).toBe("/files/{rest+}");
     expect(normalizePath("/files/:rest*")).toBe("/files/{rest*}");
+  });
+  it("reads a parameter with a pattern as the parameter", () => {
+    expect(
+      normalizePath("/Extensions/:pk([0-9a-f]{8}-[0-9a-f]{4}(?:x|y)\\))"),
+    ).toBe("/extensions/{pk}");
+    expect(normalizePath("/files/:id(\\d+)?/raw")).toBe("/files/{id?}/raw");
+    expect(normalizePath("/files/(Raw)/:id")).toBe("/files/(raw)/{id}");
+    expect(normalizePath("/files/:id(\\d+")).toBe("/files/{id}(\\d+");
   });
 });
 
@@ -133,6 +142,35 @@ describe("boundaryKey", () => {
       channel: null,
     });
     expect(pairingKey(unnamed)).toBeNull();
+  });
+
+  it("keys an operation on its method and its parameters' positions", () => {
+    const route = (method: string, path: string): BoundaryBinding =>
+      restBinding({ transport: "http", method, path, recognition: "x" });
+    expect(operationKey(route("delete", "/teams/{team_id}"))).toBe(
+      operationKey(route("DELETE", "/teams/:id")),
+    );
+    expect(operationKey(route("get", "/teams/:id"))).toBe("GET /teams/{}");
+    expect(operationKey(route("*", "/teams/:id"))).toBe("* /teams/{}");
+    expect(operationKey(route("get", "/teams/{tenant?}"))).toBe(
+      "GET /teams/{?}",
+    );
+    const bus = messageBusBinding({
+      recognition: "x",
+      messageBus: "aws_sqs",
+      channel: "orders",
+    });
+    expect(operationKey(bus)).toBe(boundaryKey(bus));
+    expect(
+      operationKey(
+        restBinding({
+          transport: "http",
+          method: null,
+          path: "/teams/:id",
+          recognition: "x",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("buckets a route on its parameters' positions and ranges, and says when it spans other buckets", () => {

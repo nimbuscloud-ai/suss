@@ -169,7 +169,7 @@ import {
 } from "./moduleExports.js";
 import { moduleInitSummary, unreadModuleInitSummary } from "./moduleInit.js";
 import { moduleSurfacePack, settleTypeScriptModules } from "./moduleSurface.js";
-import { parameterReads } from "./parameterReads.js";
+import { enclosingParameterReads, parameterReads } from "./parameterReads.js";
 import { reportReadFailure } from "./readFailure.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import { clientBasePath, underBasePath } from "./resolve/clientBasePath.js";
@@ -1411,6 +1411,9 @@ function extractFromSourceFile(
       }
       if (unit.unreadBinding !== undefined) {
         raw.unreadBinding = unit.unreadBinding;
+      }
+      if (unit.declaredStatuses !== undefined) {
+        raw.declaredStatuses = unit.declaredStatuses;
       }
       stampWrappers(raw, unit, wrappers);
 
@@ -3574,6 +3577,7 @@ function synthesizeSubUnits(
       const summary = buildSubUnitSummary(
         subUnit,
         parent,
+        parentFunc,
         { invocation: allInvocationRecognizers, access: allAccessRecognizers },
         everyUnit,
         options,
@@ -3620,6 +3624,7 @@ const DEFAULT_SUB_UNIT_INPUT_MAPPING: InputMappingPattern = {
 function buildSubUnitSummary(
   subUnit: DiscoveredSubUnit,
   parent: BehavioralSummary,
+  parentFunc: FunctionRoot,
   recognizers: {
     invocation: InvocationRecognizer[];
     access: AccessRecognizer[];
@@ -3661,6 +3666,16 @@ function buildSubUnitSummary(
   );
 
   raw.boundaryBinding = subUnitBinding(parent);
+  const parentReads = enclosingParameterReads(
+    func,
+    parentFunc,
+    parent.inputs.flatMap((input) =>
+      input.type === "parameter" ? [input.name] : [],
+    ),
+  );
+  if (parentReads.length > 0) {
+    raw.extraInputReads = [...(raw.extraInputReads ?? []), ...parentReads];
+  }
 
   const summary = assembleSummary(raw, options);
   if (

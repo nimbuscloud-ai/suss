@@ -335,6 +335,29 @@ export function stringValueOf(
   return literalOf(evaluatedValue(value, resolution));
 }
 
+/**
+ * The library exports this value is, each as its path from the module
+ * (`HttpStatus.NO_CONTENT`). A member read is looked up as a member of
+ * the export it reads, so this still works when the library is not
+ * installed and its declarations cannot say what the member is.
+ */
+export function libraryExportPathsOf(
+  value: Node,
+  modules: string[],
+  resolution: ResolutionStore | undefined,
+): string[] {
+  if (resolution === undefined || modules.length === 0) {
+    return [];
+  }
+  const written = writtenNodeOf(value, resolution) ?? value;
+  const [asked, member] = Node.isPropertyAccessExpression(written)
+    ? [written.getExpression(), [written.getName()]]
+    : [written, []];
+  return resolution
+    .importOriginsOf(asked, modules)
+    .map((origin) => [...origin.path, ...member].join("."));
+}
+
 /** The number this value comes to, or null when it does not settle to one. */
 export function numberValueOf(
   value: Node,
@@ -390,6 +413,14 @@ export function arrayLiteralOf(
     (node): node is ArrayLiteralExpression =>
       Node.isArrayLiteralExpression(node),
   );
+}
+
+/** The elements of the array literal this value is, or null when it is no array literal. */
+export function arrayElementsOf(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): Node[] | null {
+  return arrayLiteralOf(value, resolution)?.getElements() ?? null;
 }
 
 function literalValueOf<T extends Node>(

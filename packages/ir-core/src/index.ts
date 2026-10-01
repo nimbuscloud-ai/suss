@@ -137,6 +137,7 @@ export {
   labelWithDetail,
   leavesTheProcess,
   nameReference,
+  operationKey,
   pairingKey,
   reportsUnpairedItself,
   semanticsAgree,

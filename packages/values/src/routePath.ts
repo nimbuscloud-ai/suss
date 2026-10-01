@@ -9,7 +9,8 @@
  * `{name}`, or `{name*}` when it is a joined list. A piece that is one
  * of a few texts is written `(v1|v2)`. An absolute URL loses its origin,
  * because the host identifies the deployable unit and only the path
- * goes into the boundary. A query string ends the path.
+ * goes into the boundary. A query string ends a request URL's path, and
+ * a route pattern keeps its `?`.
  */
 
 import { patternHole, rangedHole, setPiece } from "@suss/ir-core";
@@ -41,8 +42,22 @@ function stripOriginManually(text: string): string {
   return text;
 }
 
-function stripQueryAndFragment(text: string): string {
-  const idx = text.search(/[?#]/);
+/**
+ * Where the path ends in a URL a request goes to: at the query or the
+ * fragment. A route pattern a server registers has neither, and a `?`
+ * there marks an optional parameter, `/:pk/:filename?`.
+ */
+type PathEnd = RegExp | null;
+
+const REQUEST_PATH_END: PathEnd = /[?#]/;
+const ROUTE_PATTERN_END: PathEnd = null;
+
+function endOfPath(text: string, end: PathEnd): number {
+  return end === null ? -1 : text.search(end);
+}
+
+function stripQueryAndFragment(text: string, end: PathEnd): string {
+  const idx = endOfPath(text, end);
   return idx === -1 ? text : text.slice(0, idx);
 }
 
@@ -72,8 +87,9 @@ function originEndOf(flattened: string): number {
 function appendPathText(
   path: string,
   text: string,
+  end: PathEnd,
 ): { path: string; stop: boolean } {
-  const idx = text.search(/[?#]/);
+  const idx = endOfPath(text, end);
   if (idx === -1) {
     return { path: path + text, stop: false };
   }
@@ -104,15 +120,15 @@ function pathnameOfAbsoluteLiteral(text: string): string {
   }
   // `new URL` rejects some strings that do start with a scheme or a
   // protocol-relative "//", a bare "https://" among them.
-  return stripQueryAndFragment(stripOriginManually(text));
+  return stripQueryAndFragment(stripOriginManually(text), REQUEST_PATH_END);
 }
 
 // Undefined rather than "" when the literal has no path: an empty string
 // is invalid in the IR and `restBinding` throws on one.
-function pathFromLiteralUrl(text: string): string | undefined {
+function pathFromLiteralUrl(text: string, end: PathEnd): string | undefined {
   const path = isAbsoluteUrlLiteral(text)
     ? pathnameOfAbsoluteLiteral(text)
-    : stripQueryAndFragment(text);
+    : stripQueryAndFragment(text, end);
   return path === "" ? undefined : path;
 }
 
@@ -139,7 +155,10 @@ function openPiece(piece: Piece): string {
 // A string with holes in it: `/pet/{id}` for `` `/pet/${id}` ``. A hole
 // before the authority's closing "/" is part of the authority whatever
 // it is, and a hole after the path ends is not part of anything.
-function pathFromPieces(pieces: readonly Piece[]): string | undefined {
+function pathFromPieces(
+  pieces: readonly Piece[],
+  end: PathEnd,
+): string | undefined {
   const originEnd = originEndOf(pieces.map(flattenedPiece).join(""));
   let path = "";
   let stop = false;
@@ -159,6 +178,7 @@ function pathFromPieces(pieces: readonly Piece[]): string | undefined {
       const appended = appendPathText(
         path,
         flattened.slice(Math.max(0, originEnd - at)),
+        end,
       );
       path = appended.path;
       stop = appended.stop;
@@ -196,11 +216,24 @@ export function isLocalUrl(value: Value): boolean {
  * instead of guessing one.
  */
 export function pathOf(value: Value): string | undefined {
+  return pathEndingAt(value, REQUEST_PATH_END);
+}
+
+/**
+ * The path a server registers a route under, read the way `pathOf` reads
+ * a request URL, except that a `?` stays in it: Express, Hono and the
+ * routers modelled on them write an optional parameter as `:name?`.
+ */
+export function routePatternOf(value: Value): string | undefined {
+  return pathEndingAt(value, ROUTE_PATTERN_END);
+}
+
+function pathEndingAt(value: Value, end: PathEnd): string | undefined {
   if (value.kind !== "string" || isLocalUrl(value)) {
     return undefined;
   }
   const literal = literalOf(value);
   return literal === null
-    ? pathFromPieces(value.pieces)
-    : pathFromLiteralUrl(literal);
+    ? pathFromPieces(value.pieces, end)
+    : pathFromLiteralUrl(literal, end);
 }
