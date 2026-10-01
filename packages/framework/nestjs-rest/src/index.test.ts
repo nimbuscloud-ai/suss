@@ -20,14 +20,17 @@ const appFixturesDir = path.resolve(
   "../../../../fixtures/nestjs-rest-app",
 );
 
-async function runAdapter(dir = fixturesDir): Promise<BehavioralSummary[]> {
+async function runAdapter(
+  dir = fixturesDir,
+  { declaresHttpStatus = true } = {},
+): Promise<BehavioralSummary[]> {
   const project = createDecoratorFixtureProject(dir, "*.ts");
   // Stub `@nestjs/common` so ts-morph import resolution succeeds.
   // Discovery only needs the decorator names + import module to
   // match: runtime behaviour is irrelevant to static analysis.
   project.createSourceFile(
     path.join(dir, "node_modules/@nestjs/common/index.d.ts"),
-    `export declare enum HttpStatus { OK = 200, CREATED = 201, ACCEPTED = 202, NO_CONTENT = 204 }
+    `${declaresHttpStatus ? "export declare enum HttpStatus { OK = 200, CREATED = 201, ACCEPTED = 202, NO_CONTENT = 204 }" : ""}
      export declare enum RequestMethod { GET = 0, POST = 1, PUT = 2, DELETE = 3, PATCH = 4, ALL = 5 }
      export interface INestApplication {
        setGlobalPrefix(prefix: string, options?: { exclude?: Array<string | { path: string; method: RequestMethod }> }): this;
@@ -334,6 +337,20 @@ describe("nestjsRestFramework: the status a route sends", () => {
       { type: "literal", value: 204 },
     ]);
   });
+
+  it("reads HttpStatus.NO_CONTENT when @nestjs/common is not installed to declare it", async () => {
+    const uninstalled = await runAdapter(appFixturesDir, {
+      declaresHttpStatus: false,
+    });
+    const remove = uninstalled.find(
+      (s) => s.identity.name === "OrdersController.remove",
+    );
+    expect(
+      remove?.transitions.map((t) =>
+        t.output.type === "response" ? t.output.statusCode : null,
+      ),
+    ).toEqual([{ type: "literal", value: 204 }]);
+  }, 60_000);
 });
 
 describe("nestjsRestFramework: a bootstrap that imports only @nestjs/core", () => {

@@ -412,6 +412,8 @@ export interface RawCodeStructure {
   failureDelivery?: FailureDelivery;
   /** Whether this client follows a redirect or hands the 3xx back. */
   redirectDelivery?: RedirectDelivery;
+  /** Statuses the handler's own code lists as possible responses, such as FastAPI's `responses=`. */
+  declaredStatuses?: number[];
   /** Left exactly as written, because the extractor does not depend on
    * graphql-js. The parsing happens at check time. */
   graphqlDocument?: string;
@@ -829,6 +831,9 @@ function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
   }
   if (raw.redirectDelivery !== undefined) {
     http.redirectDelivery = raw.redirectDelivery;
+  }
+  if (raw.declaredStatuses !== undefined && raw.declaredStatuses.length > 0) {
+    http.declaredStatuses = raw.declaredStatuses;
   }
   return Object.keys(http).length > 0 ? http : null;
 }

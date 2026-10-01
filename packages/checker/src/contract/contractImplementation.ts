@@ -1,4 +1,8 @@
-import { BOUNDARY_ROLE, summaryIdentifier } from "@suss/behavioral-ir";
+import {
+  BOUNDARY_ROLE,
+  readHttpMetadata,
+  summaryIdentifier,
+} from "@suss/behavioral-ir";
 
 import { extractResponseStatus, makeSide } from "../coverage/responseMatch.js";
 import { boundaryKey } from "../pairing/pairing.js";
@@ -121,8 +125,15 @@ function checkHandlerAgainstDocument(
   }
 
   const failuresUnread = failuresSussCouldNotRead(handler);
+  // A status the handler's own code declares is in a generated document
+  // because of that declaration, which says nothing about a path.
+  const declaredInCode = new Set(readHttpMetadata(handler)?.declaredStatuses);
   for (const declared of contract.responses) {
-    if (produced.has(declared.statusCode) || declared.statusCode >= 500) {
+    if (
+      produced.has(declared.statusCode) ||
+      declared.statusCode >= 500 ||
+      declaredInCode.has(declared.statusCode)
+    ) {
       continue;
     }
     if (declared.statusCode >= 400 && failuresUnread) {

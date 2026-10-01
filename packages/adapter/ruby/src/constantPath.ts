@@ -83,6 +83,7 @@ export function createConstantFileCache(): ConstantFileCache {
  * `app/models/concerns/archivable.rb`. The root is tried first, then the
  * directories under it in name order, then their `concerns` directories
  * in the same order. Rails' own autoload glob lists them in that order.
+ * Paths a project adds, such as `lib`, come last.
  */
 export function resolveConstantFile(
   root: string,
@@ -90,14 +91,15 @@ export function resolveConstantFile(
   convention: ConstantPathConvention,
   acronyms: readonly string[] = [],
   cache: ConstantFileCache = createConstantFileCache(),
+  autoloadRoots: readonly string[] = [],
 ): string | null {
   const relative = `${PATH_CONVENTIONS[convention](qualifiedName, acronyms)}.rb`;
-  const key = `${root}\0${relative}`;
+  const key = [root, ...autoloadRoots, relative].join("\0");
   const known = cache.resolved.get(key);
   if (known !== undefined) {
     return known;
   }
-  const found = firstExisting(root, relative, cache);
+  const found = firstExisting(root, relative, cache, autoloadRoots);
   cache.resolved.set(key, found);
   return found;
 }
@@ -106,8 +108,13 @@ function firstExisting(
   root: string,
   relative: string,
   cache: ConstantFileCache,
+  autoloadRoots: readonly string[],
 ): string | null {
-  for (const candidate of [root, ...autoloadDirectoriesOf(root, cache)]) {
+  for (const candidate of [
+    root,
+    ...autoloadDirectoriesOf(root, cache),
+    ...autoloadRoots,
+  ]) {
     const file = path.join(candidate, relative);
     if (fs.existsSync(file)) {
       return file;

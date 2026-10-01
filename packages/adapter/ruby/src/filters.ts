@@ -19,7 +19,7 @@ import { namesOf } from "./values/literals.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type { RawBranch, RawCodeStructure, Reading } from "@suss/extractor";
 import type { Ancestry, BodyReading } from "./ancestry.js";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
@@ -37,6 +37,8 @@ export interface ControllerFilter {
   /** The actions it covers. Null means every action of the controller. */
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
+  /** For a handler the library runs after a raise, the exception classes it is declared for, as written. */
+  readonly rescues: readonly string[];
 }
 
 /** A filter declaration, before its method has been looked up. */
@@ -45,6 +47,7 @@ interface Declaration {
   readonly methodName: string;
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
+  readonly rescues: readonly string[];
 }
 
 /** A `skip_before_action`, which takes a filter off some or all of the actions. */
@@ -117,6 +120,7 @@ export function controllerFilters(
       enclosingQualifiedName: found.block.info.qualifiedName,
       only: declaration.only,
       except: declaration.except,
+      rescues: declaration.rescues,
     });
   }
 
@@ -167,6 +171,8 @@ export function filterUnit(
   displayPath: string,
   body: FilterBody,
   facts?: Database | undefined,
+  respondingHelper?: (name: string) => Reading<number> | null,
+  raised: readonly RawBranch[] = [],
 ): RawCodeStructure {
   const range = rangeOf(filter.method);
   const branches = responseBranches(
@@ -174,7 +180,11 @@ export function filterUnit(
     pattern,
     body.effects ?? [],
     body.extraEffects,
-    { fallthrough: "handOn", facts },
+    {
+      fallthrough: "handOn",
+      facts,
+      ...(respondingHelper === undefined ? {} : { respondingHelper }),
+    },
   );
   return {
     identity: {
@@ -190,7 +200,7 @@ export function filterUnit(
     boundaryBinding: null,
     parameters: [],
     branches: withSlotSources(
-      branches ?? [handsOn(range, body)],
+      [...(branches ?? [handsOn(range, body)]), ...raised],
       body.provenance,
     ),
     bodyContent: body.bodyContent ?? "absent",
@@ -248,25 +258,67 @@ function declarationsOf(
     keywords === undefined
       ? null
       : actionsUnder(args.keyword[keywords.exclude], facts);
-  return methodNamesOf(args, filter, facts).map((methodName) => ({
+  const rescues =
+    filter.onThrow === true
+      ? args.positional.flatMap((arg) =>
+          arg.type === "constant" || arg.type === "scope_resolution"
+            ? [arg.text.replace(/^::/, "")]
+            : [],
+        )
+      : [];
+  return methodNamesOf(statement, args, filter, facts).map((methodName) => ({
     filter,
     methodName,
     only,
     except: except ?? new Set<string>(),
+    rescues,
   }));
 }
 
 function methodNamesOf(
+  statement: RbNode,
   args: ReturnType<typeof readCallArgs>,
   filter: RbControllerFilter,
   facts: Database | undefined,
 ): string[] {
   if (filter.methodFrom === "withKeyword") {
     const named = args.keyword.with;
-    const value = named === undefined ? null : stringValueOf(named, facts);
+    if (named === undefined) {
+      const called = blockHandlerName(statement);
+      return called === null ? [] : [called];
+    }
+    const value = stringValueOf(named, facts);
     return value === null ? [] : [value];
   }
   return symbolArgumentNames(args, facts);
+}
+
+/**
+ * The method a block given in place of `with:` hands the error to, when
+ * the block is one call with no receiver: `{ |e| render_denied e }`. A
+ * block that does anything more is not read, and registers no handler.
+ */
+function blockHandlerName(statement: RbNode): string | null {
+  const block = field(statement, "block");
+  if (block === null) {
+    return null;
+  }
+  const statements = (field(block, "body")?.namedChildren ?? []).filter(
+    (child): child is RbNode => child !== null && child.type !== "comment",
+  );
+  const only = statements.length === 1 ? statements[0] : undefined;
+  if (only === undefined) {
+    return null;
+  }
+  const parameters = new Set(
+    (field(block, "parameters")?.namedChildren ?? []).map(
+      (parameter) => parameter?.text,
+    ),
+  );
+  if (only.type === "identifier") {
+    return parameters.has(only.text) ? null : only.text;
+  }
+  return calledName(only);
 }
 
 /** The method names a class body call passes as leading symbols, `:a` and `:b` in `before_action :a, :b`. */

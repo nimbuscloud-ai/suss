@@ -5,6 +5,7 @@
   "prefix": "FastAPI: the path-prefix keyword on APIRouter(...) and include_router(...)",
   "response_model": "FastAPI: route-decorator keyword naming the declared response body model",
   "status_code": "FastAPI: route-decorator keyword naming the declared response status",
+  "responses": "FastAPI: keyword on a route decorator, APIRouter, include_router or FastAPI listing extra responses by status",
   "Depends": "FastAPI: the callable that declares a parameter the framework resolves and passes in, rather than reads off the request",
   "Security": "FastAPI: Depends with scopes, declared the same way and injected the same way",
   "Header": "FastAPI: the parameter function that reads a header, converting the parameter's underscores to hyphens",

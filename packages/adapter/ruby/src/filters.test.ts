@@ -245,6 +245,32 @@ end
     expect(filters[1]?.filter.onThrow).toBe(true);
   });
 
+  it("reads the method a rescue_from block hands the error to, and leaves a longer block out", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  rescue_from(AccessDenied) { |e| render_denied e }
+  rescue_from LimitReached do
+    render_limit
+  end
+  rescue_from(Timeout) { |e| log(e); render_denied e }
+
+  def render_denied(error)
+    head :forbidden
+  end
+
+  def render_limit
+    head :too_many_requests
+  end
+end
+`);
+
+    expect(filters.map((one) => one.methodName)).toEqual([
+      "render_denied",
+      "render_limit",
+    ]);
+    expect(filters.every((one) => one.filter.onThrow === true)).toBe(true);
+  });
+
   it("takes a single symbol where only: usually gives a list", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController

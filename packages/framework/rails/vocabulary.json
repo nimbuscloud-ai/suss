@@ -63,5 +63,7 @@
   "prepended": "Rails: ActiveSupport::Concern#prepended, the same for a module that is prepended",
   "class_methods": "Rails: ActiveSupport::Concern#class_methods, whose block defines methods on the including class itself",
   "concerning": "Rails: Module#concerning, which evaluates its block against a new module and mixes that module into the class",
-  "with_options": "Rails: Object#with_options, which runs its block with extra keywords on whatever it is written in"
+  "with_options": "Rails: Object#with_options, which runs its block with extra keywords on whatever it is written in",
+  "StandardError": "Ruby: the base class of every exception rescue_from catches by default",
+  "Exception": "Ruby: the root of the exception hierarchy"
 }
