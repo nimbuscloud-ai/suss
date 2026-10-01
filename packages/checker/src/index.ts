@@ -276,16 +276,16 @@ function twoServicesServeIt(ambiguous: AmbiguousPairing): Finding {
  * providers describing one boundary produce one finding between them,
  * with `sources` set; `checkPair` on its own does no such collapsing.
  */
-export function checkAll(all: BehavioralSummary[]): CheckAllResult {
+export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const {
     pairs: restPairs,
     unmatched: restUnmatched,
     ambiguous: restAmbiguous,
-  } = pairSummaries(all);
+  } = pairSummaries(summaries);
   // REST pairing lists test code as unpairable, and every other pass
   // leaves it out the same way.
-  const summaries = all.filter((summary) => !isTestCode(summary));
-  const graphql = pairGraphqlOperations(summaries);
+  const production = summaries.filter((summary) => !isTestCode(summary));
+  const graphql = pairGraphqlOperations(production);
 
   const findings: Finding[] = [
     ...graphql.findings,
@@ -327,26 +327,29 @@ export function checkAll(all: BehavioralSummary[]): CheckAllResult {
 
   // These compare each boundary's declared contracts against each other
   // and never look at consumers, so they run outside pairing.
-  findings.push(...checkContractAgreement(summaries));
-  findings.push(...checkContractCompleteness(summaries));
-  findings.push(...checkContractImplementation(summaries, pairInfo));
-  findings.push(...checkGraphqlContractAgreement(summaries));
+  findings.push(...checkContractAgreement(production));
+  findings.push(...checkContractCompleteness(production));
+  findings.push(...checkContractImplementation(production, pairInfo));
+  findings.push(...checkGraphqlContractAgreement(production));
   // Stories are left out of pairing, and comparing them with the
   // components they render is this pass's whole job.
   findings.push(
-    ...checkComponentStoryAgreement([...summaries, ...all.filter(isStory)]),
+    ...checkComponentStoryAgreement([
+      ...production,
+      ...summaries.filter(isStory),
+    ]),
   );
-  findings.push(...checkRenderProps(summaries));
+  findings.push(...checkRenderProps(production));
 
   // Indexed once and shared: each pass would otherwise walk every
   // transition's effects itself, and the walks add up per pass.
-  const interactionIndex = buildInteractionIndex(summaries);
+  const interactionIndex = buildInteractionIndex(production);
 
-  findings.push(...checkRuntimeConfig(summaries, interactionIndex, pairInfo));
-  findings.push(...checkStorage(summaries, interactionIndex, pairInfo));
-  findings.push(...checkMessageBus(summaries, interactionIndex, pairInfo));
-  findings.push(...checkUnitInvocation(summaries, interactionIndex, pairInfo));
-  findings.push(...checkMetric(summaries, interactionIndex));
+  findings.push(...checkRuntimeConfig(production, interactionIndex, pairInfo));
+  findings.push(...checkStorage(production, interactionIndex, pairInfo));
+  findings.push(...checkMessageBus(production, interactionIndex, pairInfo));
+  findings.push(...checkUnitInvocation(production, interactionIndex, pairInfo));
+  findings.push(...checkMetric(production, interactionIndex));
 
   // Pairing matches on method and path, so it lists a store or a queue as
   // unpaired even after the pass for that protocol compared it.
