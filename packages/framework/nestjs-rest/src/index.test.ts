@@ -231,6 +231,25 @@ describe("nestjsRestFramework — integration", () => {
     expect(outputs[1]).toMatchObject(response);
   });
 
+  it("sends the status of a Nest exception the handler throws, and leaves any other throw a throw", () => {
+    const outputsOf = (name: string) =>
+      summaries
+        .find((s) => s.identity.name === name)
+        ?.transitions.map((t) =>
+          t.output.type === "response"
+            ? t.output.statusCode
+            : `${t.output.type} ${t.output.type === "throw" ? t.output.exceptionType : ""}`,
+        );
+    expect(outputsOf("UsersController.one")).toEqual([
+      { type: "literal", value: 400 },
+      { type: "literal", value: 200 },
+    ]);
+    // HttpException takes its status second, which this reading leaves out.
+    expect(outputsOf("UsersController.remove")).toEqual([
+      "throw HttpException",
+    ]);
+  });
+
   it("handles bare @Controller() (no prefix) by mounting at root", () => {
     const ping = summaries.find(
       (s) => s.identity.name === "HealthController.ping",
