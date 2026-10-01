@@ -24,6 +24,7 @@ import type { Gap } from "./index.js";
  * `unboundParameter`: a parameter that no caller in the run passes a function to by name.
  * `unresolvedWrapper`: a registration whose function the run could not resolve.
  * `definedAtLoadTime`: a method the project defines while the file loads.
+ * `behindUnreadAncestor`: an ancestor the run did not read comes before the project's own definition.
  */
 export type UnfollowedReason =
   | "noBody"
@@ -35,7 +36,8 @@ export type UnfollowedReason =
   | "multipleReceivers"
   | "unboundParameter"
   | "unresolvedWrapper"
-  | "definedAtLoadTime";
+  | "definedAtLoadTime"
+  | "behindUnreadAncestor";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
@@ -65,6 +67,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   unboundParameter: true,
   unresolvedWrapper: true,
   definedAtLoadTime: true,
+  behindUnreadAncestor: true,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -95,6 +98,8 @@ const STOP_SENTENCE: Record<
     `The call to ${callee} registers middleware this run could not follow to one function, so whatever it does around this route is missing from this summary`,
   definedAtLoadTime: ({ callee }) =>
     `The call to ${callee} lands on a method the project defines with define_method, which this reader does not follow, so whatever runs there is missing from this summary`,
+  behindUnreadAncestor: ({ callee }) =>
+    `The call to ${callee} could land in an ancestor this run did not read, which comes before the project's own definition, so whatever runs there is missing from this summary`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {

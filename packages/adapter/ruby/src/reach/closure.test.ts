@@ -314,6 +314,58 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
+  it("gaps a call whose lookup meets an unread module before the project's own definition", async () => {
+    write("app/graphql/concerns/rendering.rb", [
+      "module Rendering",
+      "  def render_unauthorized(message)",
+      "    message",
+      "  end",
+      "end",
+    ]);
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  include Rendering",
+      "  include Authorization::Gem",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      '    render_unauthorized("no")',
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(field.gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "render_unauthorized",
+        description: expect.stringContaining(
+          "could land in an ancestor this run did not read",
+        ),
+      }),
+    );
+  });
+
+  it("leaves a call that only an unread module could define as a call into a dependency", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  include Authorization::Gem",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    authorize(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(field.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
+  });
+
   it("follows a build past a class whose define_method loop defines no initialize", async () => {
     writeQueryType("orders", ["Form::AdminSettings.new(current_user)"]);
     write("app/forms/admin_settings.rb", [

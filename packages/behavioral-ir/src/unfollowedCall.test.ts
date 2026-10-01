@@ -17,6 +17,7 @@ describe("unfollowed calls", () => {
       unboundParameter: true,
       unresolvedWrapper: true,
       definedAtLoadTime: true,
+      behindUnreadAncestor: true,
     };
     for (const [reason, expected] of Object.entries(recorded)) {
       expect(worthRecording(reason as UnfollowedReason)).toBe(expected);
@@ -37,6 +38,7 @@ describe("unfollowed calls", () => {
         "registers middleware this run could not follow to one function",
       definedAtLoadTime:
         "lands on a method the project defines with define_method",
+      behindUnreadAncestor: "could land in an ancestor this run did not read",
     };
     for (const [reason, fragment] of Object.entries(sentences)) {
       const gap = unfollowedCallGap({
