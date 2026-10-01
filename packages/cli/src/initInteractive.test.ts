@@ -4,6 +4,10 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/** One operation, since init suggests a spec only when its reader finds something in it. */
+const OPENAPI_PATHS_JSON =
+  '"paths": { "/orders": { "get": { "responses": { "200": {} } } } }';
+
 const answers: unknown[] = [];
 /** What the next spawned command should pretend to have done. */
 const runResults: Array<{ code: number; output: string }> = [];
@@ -181,7 +185,7 @@ describe("suss init, guided", () => {
       project("packages/api", "@acme/api", ["hono"]);
       write(
         "open-api/acme-openapi-specs.json",
-        '{\n  "openapi": "3.0.0",\n  "paths": {}\n}\n',
+        `{\n  "openapi": "3.0.0",\n  ${OPENAPI_PATHS_JSON}\n}\n`,
       );
 
       const text = await printedBy(() => initInteractive({ dir, plain: true }));
@@ -198,7 +202,10 @@ describe("suss init, guided", () => {
         '[project]\nname = "app"\ndependencies = ["fastapi"]\n',
       );
       project("docs", "docs", ["react"]);
-      write("docs/static/openapi.json", '{ "openapi": "3.1.0", "paths": {} }');
+      write(
+        "docs/static/openapi.json",
+        `{ "openapi": "3.1.0", ${OPENAPI_PATHS_JSON} }`,
+      );
 
       const text = await printedBy(() => initInteractive({ dir, plain: true }));
 
@@ -649,7 +656,7 @@ describe("suss init, guided", () => {
     it("reads a schema file through contract rather than extract", async () => {
       write(
         "template.yaml",
-        "AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n",
+        "AWSTemplateFormatVersion: '2010-09-09'\nResources:\n  Orders:\n    Type: AWS::DynamoDB::Table\n    Properties:\n      TableName: orders\n",
       );
       answers.push(true, true, false, false);
 
@@ -732,7 +739,10 @@ describe("suss init, guided", () => {
         JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
       );
       project("packages/api", "@acme/api", ["hono"]);
-      write("packages/api/openapi.yaml", "openapi: 3.0.0\npaths: {}\n");
+      write(
+        "packages/api/openapi.yaml",
+        `{ "openapi": "3.0.0", ${OPENAPI_PATHS_JSON} }`,
+      );
       project("packages/web", "@acme/web", ["@apollo/client"]);
 
       await printedBy(() => initInteractive({ dir, write: true }));

@@ -42,6 +42,14 @@ export interface ContractOptions {
   codeScopes?: Record<string, string>;
 }
 
+export interface ContractReadOptions extends Omit<ContractOptions, "output"> {
+  /**
+   * Collects what a reader would otherwise print on stderr, such as a
+   * `$ref` it could not follow. Readers that print nothing ignore it.
+   */
+  warnings?: string[];
+}
+
 /**
  * `source` is the label recorded on every summary, and the CLI sets it
  * only for a spec fetched from a URL. For a file on disk the reader labels
@@ -51,18 +59,19 @@ export interface ContractOptions {
 type ContractLoader = (
   specPath: string,
   source: string | undefined,
-  options: ContractOptions,
+  options: ContractReadOptions,
 ) => Promise<BehavioralSummary[]>;
 
 const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
-  openapi: async (specPath) => {
+  openapi: async (specPath, _source, options) => {
     const mod = await import("@suss/contract-openapi");
-    return mod.openApiFileToSummaries(specPath);
+    return mod.openApiFileToSummaries(specPath, warningsOf(options));
   },
-  cloudformation: async (specPath, source) => {
+  cloudformation: async (specPath, source, options) => {
     const mod = await import("@suss/contract-cloudformation");
     return mod.cloudFormationFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
+      ...warningsOf(options),
     });
   },
   terraform: async (specPath, _source, options) => {
@@ -81,10 +90,14 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
         : {}),
     });
   },
-  serverless: async (specPath, source) => {
+  serverless: async (specPath, source, options) => {
     const mod = await import("@suss/contract-serverless");
+    const { warnings } = options;
     return mod.serverlessFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
+      ...(warnings !== undefined
+        ? { onUnread: (wiring) => warnings.push(unreadWiringLine(wiring)) }
+        : {}),
     });
   },
   storybook: async (specPath) => {
@@ -115,6 +128,22 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     return mod.graphqlDocumentsPathToSummaries(specPath);
   },
 };
+
+function warningsOf(options: ContractReadOptions): { warnings?: string[] } {
+  return options.warnings === undefined ? {} : { warnings: options.warnings };
+}
+
+function unreadWiringLine(wiring: {
+  functionName: string | null;
+  kind: string;
+  reason: string;
+}): string {
+  const where =
+    wiring.functionName === null
+      ? wiring.kind
+      : `${wiring.functionName}.${wiring.kind}`;
+  return `${where}: ${wiring.reason}`;
+}
 
 function expandStoryPaths(spec: string): string[] {
   const absolute = path.resolve(spec);
@@ -192,6 +221,27 @@ async function resolveSpec(
 export async function contract(
   options: ContractOptions,
 ): Promise<BehavioralSummary[]> {
+  const summaries = await readContract(options);
+
+  if (options.output !== undefined) {
+    const outPath = path.resolve(options.output);
+    await writeJson({ value: summaries, indent: 2, file: outPath });
+    process.stderr.write(
+      summaries.length === 0
+        ? `${options.spec} declares no boundaries suss could read.\n`
+        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
+    );
+  } else {
+    await writeJson({ value: summaries, indent: 2 });
+  }
+
+  return summaries;
+}
+
+/** The summaries the reader for `options.from` gives, without writing them anywhere. */
+export async function readContract(
+  options: ContractReadOptions,
+): Promise<BehavioralSummary[]> {
   const loader = CONTRACT_LOADERS[options.from];
   if (loader === undefined) {
     throw new Error(
@@ -212,18 +262,5 @@ export async function contract(
   } finally {
     resolved.cleanup?.();
   }
-
-  if (options.output !== undefined) {
-    const outPath = path.resolve(options.output);
-    await writeJson({ value: summaries, indent: 2, file: outPath });
-    process.stderr.write(
-      summaries.length === 0
-        ? `${options.spec} declares no boundaries suss could read.\n`
-        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
-    );
-  } else {
-    await writeJson({ value: summaries, indent: 2 });
-  }
-
   return summaries;
 }

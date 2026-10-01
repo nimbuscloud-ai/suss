@@ -95,6 +95,12 @@ export interface CloudFormationToSummariesOptions {
   recognition?: string;
 }
 
+export interface CloudFormationFileToSummariesOptions
+  extends CloudFormationToSummariesOptions {
+  /** Collects each child template that could not be opened. Without it, each goes to stderr. */
+  warnings?: string[];
+}
+
 // Resource types whose `Body` or `DefinitionBody` usually contains an
 // OpenAPI definition.
 const API_RESOURCE_BODIES: Record<string, "Body" | "DefinitionBody"> = {
@@ -1086,13 +1092,17 @@ function parseStatus(value: unknown): number | null {
  */
 export function cloudFormationFileToSummaries(
   templatePath: string,
-  options: CloudFormationToSummariesOptions = {},
+  options: CloudFormationFileToSummariesOptions = {},
 ): BehavioralSummary[] {
   const tree = loadTemplateTree(templatePath);
   for (const stack of tree.unfollowed) {
-    process.stderr.write(
-      `[suss] cloudformation: ${unfollowedStackMessage(stack)}\n`,
-    );
+    const message = unfollowedStackMessage(stack);
+    if (options.warnings !== undefined) {
+      options.warnings.push(message);
+      continue;
+    }
+
+    process.stderr.write(`[suss] cloudformation: ${message}\n`);
   }
   const rootLabel =
     options.source ?? documentSourceLabel("cloudformation", templatePath);

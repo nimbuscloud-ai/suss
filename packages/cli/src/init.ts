@@ -20,6 +20,7 @@ import { describesOperations, describesTypes } from "@suss/contract-graphql";
 import { isConfigurationFile } from "@suss/contract-wrangler";
 import { commonDirectoryOf } from "@suss/extractor";
 
+import { readContract } from "./contract.js";
 import {
   readPythonDependencies,
   readRubyDependencies,
@@ -36,6 +37,7 @@ import { firstSourceMatching } from "./projectSource.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
 
 import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
+import type { ContractSource } from "./contract.js";
 import type { UnreadDependencies } from "./dependencyManifests.js";
 import type { Language } from "./language.js";
 
@@ -81,6 +83,16 @@ export interface InitReport {
   unread?: UnreadDependencies[];
   /** Frameworks the project depends on that suss recognises but has no pack for. */
   recognizedWithoutPack?: string[];
+  /** Contract files whose reader found nothing in them, so no command reads them. Only `withReadableContracts` fills it. */
+  emptyContracts?: EmptyContract[];
+}
+
+export interface EmptyContract {
+  name: string;
+  because: string;
+  reason: string;
+  /** What the reader said while it read, such as a `$ref` it could not follow. */
+  warnings: string[];
 }
 
 type Ecosystem = "npm" | "pypi" | "rubygems";
@@ -387,23 +399,104 @@ export async function inspectProject(root: string): Promise<InitReport> {
     ),
   ];
 
-  // A pack that comes with the language says nothing about a project in
-  // which no pack of that language counts, so it is left out there.
-  const languagesThatCount = new Set(
-    suggestions.filter(countsForProject).map(languageOf),
-  );
   return {
     root: resolved,
     tsconfig: tsconfig ?? null,
-    suggestions: suggestions.filter(
-      (suggestion) =>
-        suggestion.kind === "contract" ||
-        languagesThatCount.has(languageOf(suggestion)),
-    ),
+    suggestions: withoutIdleShippedPacks(suggestions),
     languages,
     unread: declared.unread,
     recognizedWithoutPack,
   };
+}
+
+/**
+ * A pack that comes with the language says nothing about a project in
+ * which no pack of that language counts, so it is left out there.
+ */
+function withoutIdleShippedPacks(
+  suggestions: ReadonlyArray<PackSuggestion>,
+): PackSuggestion[] {
+  const languagesThatCount = new Set(
+    suggestions.filter(countsForProject).map(languageOf),
+  );
+  return suggestions.filter(
+    (suggestion) =>
+      suggestion.kind === "contract" ||
+      languagesThatCount.has(languageOf(suggestion)),
+  );
+}
+
+/**
+ * The report with each contract whose reader finds nothing in its file
+ * moved out of the suggestions, with why. The file looked like a contract
+ * by its name or first lines, and only the reader can say whether anything
+ * in it is readable.
+ *
+ * Only `init` asks this, because it prints commands for a person to run.
+ * A bare `check` and `--out-dir` run the readers anyway and keep to a
+ * time budget, so they take the report as `inspectProject` gives it.
+ */
+export async function withReadableContracts(
+  report: InitReport,
+): Promise<InitReport> {
+  const emptyContracts: EmptyContract[] = [];
+  const empty = new Set<PackSuggestion>();
+  for (const suggestion of report.suggestions) {
+    if (suggestion.kind !== "contract" || suggestion.file === undefined) {
+      continue;
+    }
+    const why = await whyNothingIsRead(
+      suggestion.name as ContractSource,
+      path.join(report.root, suggestion.file),
+    );
+    if (why === null) {
+      continue;
+    }
+    empty.add(suggestion);
+    emptyContracts.push({
+      name: suggestion.name,
+      because: suggestion.because,
+      ...why,
+    });
+  }
+  if (emptyContracts.length === 0) {
+    return report;
+  }
+
+  return {
+    ...report,
+    suggestions: withoutIdleShippedPacks(
+      report.suggestions.filter((suggestion) => !empty.has(suggestion)),
+    ),
+    emptyContracts: [...(report.emptyContracts ?? []), ...emptyContracts],
+  };
+}
+
+/**
+ * Null when the reader gives a summary. What the reader would print on
+ * stderr is collected, since it belongs to the `contract` run.
+ */
+async function whyNothingIsRead(
+  from: ContractSource,
+  spec: string,
+): Promise<{ reason: string; warnings: string[] } | null> {
+  const warnings: string[] = [];
+  try {
+    const summaries = await readContract({ from, spec, warnings });
+    if (summaries.length > 0) {
+      return null;
+    }
+
+    return {
+      reason: `the ${from} reader found nothing it reads there`,
+      warnings,
+    };
+  } catch (error) {
+    return {
+      reason: `the ${from} reader could not read it: ${error instanceof Error ? error.message : String(error)}`,
+      warnings,
+    };
+  }
 }
 
 interface DeclaredLibrary {
@@ -780,6 +873,7 @@ export function formatInitReport(report: InitReport, directory = "."): string {
     lines.push(dim("  Run `suss --help` for the built-in list."));
     lines.push(...recognizedWithoutPackLines(report));
     lines.push(...unreadLines(report));
+    lines.push(...emptyContractLines(report));
     lines.push(...unnamedLanguageLines(report));
     return `${lines.join("\n")}\n`;
   }
@@ -892,6 +986,7 @@ export function formatInitReport(report: InitReport, directory = "."): string {
 
   lines.push(...recognizedWithoutPackLines(report));
   lines.push(...unreadLines(report));
+  lines.push(...emptyContractLines(report));
   lines.push(...unnamedLanguageLines(report));
 
   return `${lines.join("\n")}\n`;
@@ -1014,6 +1109,37 @@ function unreadLines(report: InitReport): string[] {
     dim(
       "    A library named only in one of these is a pack suss cannot suggest.",
     ),
+  );
+  return lines;
+}
+
+/** A skipped contract's reader warnings past this many are counted rather than listed. */
+const WARNINGS_SHOWN = 3;
+
+function emptyContractLines(report: InitReport): string[] {
+  const empty = report.emptyContracts ?? [];
+  if (empty.length === 0) {
+    return [];
+  }
+
+  const lines = [
+    "",
+    `  ${yellow("!")} ${bold("Contracts with nothing to read")}`,
+  ];
+  const indent = `    ${"".padEnd(16)} `;
+  for (const entry of empty) {
+    lines.push(`    ${cyan(entry.name.padEnd(16))} ${dim(entry.because)}`);
+    lines.push(`${indent}${dim(entry.reason)}`);
+    for (const warning of entry.warnings.slice(0, WARNINGS_SHOWN)) {
+      lines.push(`${indent}${dim(`  ${warning}`)}`);
+    }
+    const more = entry.warnings.length - WARNINGS_SHOWN;
+    if (more > 0) {
+      lines.push(`${indent}${dim(`  and ${more} more`)}`);
+    }
+  }
+  lines.push(
+    dim("    suss prints no command for these, since each would read nothing."),
   );
   return lines;
 }

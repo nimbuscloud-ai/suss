@@ -20,7 +20,7 @@ suss init [<directory>] [--plain | --write [--overwrite]]
 
 ## What it reads
 
-It reads `package.json`, the Python manifests and the Gemfile for dependencies, and the directory for schemas and deploy templates. An OpenAPI document is found by its name, `openapi.yaml` or `swagger.json`, or by the version line at its top. At a monorepo root it also reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and asks which packages to set up.
+It reads `package.json`, the Python manifests and the Gemfile for dependencies, and the directory for schemas and deploy templates. An OpenAPI document is found by its name, `openapi.yaml` or `swagger.json`, or by the version line at its top. Before it prints a `contract` command, `init` runs that contract's reader on the file or folder, and leaves the command out when the reader finds nothing it can read there, such as a folder of stories whose default export has no `component`. The report lists those files under "Contracts with nothing to read", with the reason. At a monorepo root it also reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and asks which packages to set up.
 
 Every folder below the root with its own `package.json`, `pyproject.toml` or `Gemfile` is a project of its own, whether or not a workspace file lists it, so a server folder and a client folder side by side each get their commands. A folder below the root is shown when a pack matched there, or when its own manifest could not be read and it has source of its own. A Gemfile that only drives a mobile build, for example, does not get a section.
 
