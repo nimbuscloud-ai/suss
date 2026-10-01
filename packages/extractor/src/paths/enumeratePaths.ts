@@ -260,6 +260,15 @@ function chargeBudget(
   }
 }
 
+/** Throws once more paths are open at one point than the budget allows. */
+function limitOpenPaths(paths: readonly unknown[]): void {
+  if (paths.length > MAX_PATHS) {
+    throw new PathBudgetExceeded(
+      `path budget exceeded, more than ${MAX_PATHS} paths`,
+    );
+  }
+}
+
 function recordTerminal<Cond, Terminal>(
   ctx: Ctx<Cond, Terminal>,
   terminal: Terminal,
@@ -505,11 +514,13 @@ function stepStatement<Cond, Terminal>(
   stmt: StructuredStatement<Cond>,
   path: PathCond<Cond>[],
 ): PathCond<Cond>[][] {
-  // The callbacks run first, so a statement that ends the path, such as
-  // `return chain.then(cb)`, still gets what the callback decided.
+  // The callbacks run first, so `return chain.then(cb)` still gets what the
+  // callback decided. Each one multiplies the paths, so a long chain is
+  // checked after every link instead of once the statement is done.
   let paths: PathCond<Cond>[][] = [path];
   for (const body of stmt.callbacks ?? []) {
     paths = paths.flatMap((each) => stepCallback(ctx, body, each));
+    limitOpenPaths(paths);
   }
 
   const ownTerminals = ctx.terminalsByStmt.get(stmt) ?? [];
@@ -644,11 +655,7 @@ function enumerate<Cond, Terminal>(
       nextFrontiers.push(...stepStatement(ctx, stmt, path));
     }
     frontiers = nextFrontiers;
-    if (frontiers.length > MAX_PATHS) {
-      throw new PathBudgetExceeded(
-        `path budget exceeded, more than ${MAX_PATHS} paths`,
-      );
-    }
+    limitOpenPaths(frontiers);
     if (frontiers.length === 0) {
       break; // every path exited, the rest is unreachable
     }
