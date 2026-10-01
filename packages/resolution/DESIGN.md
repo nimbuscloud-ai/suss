@@ -814,6 +814,16 @@ context-free ones:
   name runs under the site the body around it has. Every other call
   runs with no site, which takes every caller the way `argument` does.
 
+For a method call, `methodCallUnder` puts the call, the property read
+that gives the method's name, and the sites the call is made under into
+one relation, and the rule joins it before the receiver. The rewrite
+joins the literal with the most bound columns first. Written as
+separate literals, the receiver walk wins that count and asks about the
+receiver under every site in the project. Answering that derives every
+allocation site, which walks the callee of every call. On a large Rails
+app one such question read 16 million rows, and joined this way it
+reads under half a million.
+
 `callsNamed` is the half of `callsFunction` that finds a callee through
 a name it binds to. The other half finds it through a property read off
 a receiver. Both halves produce `callsFunction` rows, so nothing
