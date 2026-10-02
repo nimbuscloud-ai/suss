@@ -4,7 +4,8 @@
  * `before_action :require_login` tells the library to call a method
  * before the action, and the request ends there when that method
  * responds. `rescue_from SomeError, with: :not_found` gives a method it
- * calls when the action raised. Both are written in the class body,
+ * calls when the action raised, or a block in place of `with:` gives the
+ * code itself. Both are written in the class body,
  * inherited by subclasses, narrowed by `only:` and `except:`, and removed
  * again by `skip_before_action`. Each filter method gets a unit of its
  * own, and each action it covers records a reference to that unit.
@@ -25,7 +26,12 @@ import { namesOf } from "./values/literals.js";
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
-import type { Ancestry, BodyReading, MethodLookup } from "./ancestry.js";
+import type {
+  Ancestry,
+  BodyReading,
+  MethodLookup,
+  ReachedBody,
+} from "./ancestry.js";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -36,8 +42,10 @@ import type { ConstantRef } from "./scope.js";
 /** One filter the ancestry declares, resolved to its method. */
 export interface ControllerFilter {
   readonly filter: RbControllerFilter;
+  /** The method's name, or for a handler written as a block, a label made up from the declaration. */
   readonly methodName: string;
-  /** The `def` of the filter's method. */
+  readonly nameKind: "binding" | "label";
+  /** The `def` of the filter's method, or the block a handler is written as. */
   readonly method: RbNode;
   /** Absolute path of the file that `def` is written in. */
   readonly file: string;
@@ -69,6 +77,14 @@ interface Declaration {
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
   readonly rescues: Rescues;
+  /** The block given in place of `with:`, read as the handler when no method by that name is found. */
+  readonly inline?: InlineHandler;
+}
+
+interface InlineHandler {
+  readonly block: RbNode;
+  readonly label: string;
+  readonly declaredIn: ReachedBody;
 }
 
 /** A `skip_before_action`, which takes a filter off some or all of the actions. */
@@ -106,6 +122,7 @@ export function controllerFilters(
   // ancestors first. A method declared again moves to the end with its
   // new options, and a skip changes only what is in the chain so far.
   let declared: Declaration[] = [];
+  const inlineSeen = new Map<string, number>();
   for (const { block, statement } of inheritedStatements(ancestry)) {
     const called = calledName(statement);
     if (called === null) {
@@ -113,12 +130,19 @@ export function controllerFilters(
     }
     const form = byName.get(called);
     if (form !== undefined) {
-      for (const declaration of declarationsOf(
+      const inlineKey = `${block.file}\u0000${block.info.qualifiedName}\u0000${form.name}`;
+      const ordinal = inlineSeen.get(inlineKey) ?? 0;
+      const declarations = declarationsOf(
         statement,
         form,
-        block.info.bodyNesting,
+        block,
         read.facts,
-      )) {
+        ordinal,
+      );
+      if (declarations.some((one) => one.inline !== undefined)) {
+        inlineSeen.set(inlineKey, ordinal + 1);
+      }
+      for (const declaration of declarations) {
         // A handler named in a second `rescue_from` keeps its first
         // registration where it was, since the library tries each in turn.
         const earlier =
@@ -137,17 +161,16 @@ export function controllerFilters(
 
   const resolved: ControllerFilter[] = [];
   for (const declaration of declared) {
-    const found = filterMethod(ancestry, declaration.methodName, read);
-    if (found.type !== "found") {
+    const written = writtenAt(
+      declaration,
+      filterMethod(ancestry, declaration.methodName, read),
+    );
+    if (written === null) {
       continue;
     }
     resolved.push({
       filter: declaration.filter,
-      methodName: declaration.methodName,
-      method: found.method,
-      file: found.block.file,
-      enclosingQualifiedName: found.block.info.qualifiedName,
-      nesting: found.block.info.bodyNesting,
+      ...written,
       only: declaration.only,
       except: declaration.except,
       rescues: declaration.rescues,
@@ -158,6 +181,50 @@ export function controllerFilters(
     ...resolved.filter((one) => one.filter.onThrow !== true),
     ...resolved.filter((one) => one.filter.onThrow === true).reverse(),
   ];
+}
+
+type WrittenAt = Pick<
+  ControllerFilter,
+  | "methodName"
+  | "nameKind"
+  | "method"
+  | "file"
+  | "enclosingQualifiedName"
+  | "nesting"
+>;
+
+/**
+ * Where the code a filter runs is written: the method the declaration
+ * gives, or the block a handler was declared with when no method by that
+ * name is found.
+ */
+function writtenAt(
+  declaration: Declaration,
+  found: MethodLookup,
+): WrittenAt | null {
+  if (found.type === "found") {
+    return {
+      methodName: declaration.methodName,
+      nameKind: "binding",
+      method: found.method,
+      file: found.block.file,
+      enclosingQualifiedName: found.block.info.qualifiedName,
+      nesting: found.block.info.bodyNesting,
+    };
+  }
+
+  const inline = declaration.inline;
+  if (inline === undefined) {
+    return null;
+  }
+  return {
+    methodName: inline.label,
+    nameKind: "label",
+    method: inline.block,
+    file: inline.declaredIn.file,
+    enclosingQualifiedName: inline.declaredIn.info.qualifiedName,
+    nesting: inline.declaredIn.info.bodyNesting,
+  };
 }
 
 /**
@@ -260,12 +327,12 @@ export function filterUnit(
   return {
     identity: {
       name: filter.methodName,
-      nameKind: "binding",
+      nameKind: filter.nameKind,
       kind: "middleware",
       file: displayPath,
       range,
       span: spanOf(filter.method),
-      exportName: filter.methodName,
+      exportName: filter.nameKind === "binding" ? filter.methodName : null,
       exportPath: [filter.enclosingQualifiedName, filter.methodName],
     },
     boundaryBinding: null,
@@ -317,8 +384,9 @@ function calledName(statement: RbNode): string | null {
 function declarationsOf(
   statement: RbNode,
   filter: RbControllerFilter,
-  nesting: readonly string[],
+  declaredIn: ReachedBody,
   facts: Database | undefined,
+  inlineOrdinal: number,
 ): Declaration[] {
   const args = readCallArgs(field(statement, "arguments"));
   const keywords = filter.actionKeywords;
@@ -332,15 +400,50 @@ function declarationsOf(
       : actionsUnder(args.keyword[keywords.exclude], facts);
   const rescues =
     filter.onThrow === true
-      ? rescuedClasses(args, nesting, facts)
+      ? rescuedClasses(args, declaredIn.info.bodyNesting, facts)
       : RESCUES_NOTHING;
-  return methodNamesOf(statement, args, filter, facts).map((methodName) => ({
+  const inline = inlineHandler(
+    statement,
+    args,
     filter,
-    methodName,
-    only,
-    except: except ?? new Set<string>(),
-    rescues,
-  }));
+    declaredIn,
+    inlineOrdinal,
+  );
+  return methodNamesOf(statement, args, filter, facts, inline).map(
+    (methodName) => ({
+      filter,
+      methodName,
+      only,
+      except: except ?? new Set<string>(),
+      rescues,
+      ...(inline === undefined ? {} : { inline }),
+    }),
+  );
+}
+
+/**
+ * The block a handler is declared with in place of `with:`. It has no
+ * name of its own, so its label counts the blocks declared that way in
+ * the class, `rescue_from#0` for the first, and stays the same when the
+ * classes it rescues are renamed.
+ */
+function inlineHandler(
+  statement: RbNode,
+  args: ReturnType<typeof readCallArgs>,
+  filter: RbControllerFilter,
+  declaredIn: ReachedBody,
+  ordinal: number,
+): InlineHandler | undefined {
+  const block = field(statement, "block");
+  if (
+    filter.methodFrom !== "withKeyword" ||
+    args.keyword.with !== undefined ||
+    block === null ||
+    blockStatements(block).length === 0
+  ) {
+    return undefined;
+  }
+  return { block, label: `${filter.name}#${ordinal}`, declaredIn };
 }
 
 /**
@@ -374,11 +477,12 @@ function methodNamesOf(
   args: ReturnType<typeof readCallArgs>,
   filter: RbControllerFilter,
   facts: Database | undefined,
+  inline: InlineHandler | undefined,
 ): string[] {
   if (filter.methodFrom === "withKeyword") {
     const named = args.keyword.with;
     if (named === undefined) {
-      const called = blockHandlerName(statement);
+      const called = blockHandlerName(statement) ?? inline?.label ?? null;
       return called === null ? [] : [called];
     }
     const value = stringValueOf(named, facts);
@@ -387,19 +491,24 @@ function methodNamesOf(
   return symbolArgumentNames(args, facts);
 }
 
+function blockStatements(block: RbNode): RbNode[] {
+  return (field(block, "body")?.namedChildren ?? []).filter(
+    (child): child is RbNode => child !== null && child.type !== "comment",
+  );
+}
+
 /**
  * The method a block given in place of `with:` hands the error to, when
- * the block is one call with no receiver: `{ |e| render_denied e }`. A
- * block that does anything more is not read, and registers no handler.
+ * the block is one call with no receiver: `{ |e| render_denied e }`.
+ * When no method by that name is found, or the block does more, the
+ * block itself is read as the handler.
  */
 function blockHandlerName(statement: RbNode): string | null {
   const block = field(statement, "block");
   if (block === null) {
     return null;
   }
-  const statements = (field(block, "body")?.namedChildren ?? []).filter(
-    (child): child is RbNode => child !== null && child.type !== "comment",
-  );
+  const statements = blockStatements(block);
   const only = statements.length === 1 ? statements[0] : undefined;
   if (only === undefined) {
     return null;
