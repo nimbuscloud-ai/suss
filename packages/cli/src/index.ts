@@ -7,6 +7,7 @@ export {
   functionOf,
   readCallFacts,
 } from "@suss/checker";
+export { makeIgnoredDirectory } from "@suss/extractor";
 
 export {
   type AskOptions,

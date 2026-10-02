@@ -17,7 +17,7 @@ async def fetch_order(order_id: str) -> dict:
 
 `fetch_order` comes back as a client of `GET /orders/{order_id}`, which pairs with whatever serves that route in the same run.
 
-- **The session methods**: `get`, `post`, `put`, `patch`, `delete`, `head` and `options`, each taking the URL first or as `url=`, and `session.request("PATCH", url)`.
+- **The session methods**: `get`, `post`, `put`, `patch`, `delete`, `head` and `options`, each taking the URL first or as `url=`, and `session.request("PATCH", url)`. `head` hands a 3xx back to the caller unless the call passes `allow_redirects=True`, and every other call follows the redirect unless it passes `allow_redirects=False`, which is what aiohttp does.
 - **The session**: `aiohttp.ClientSession()`, opened with `async with` or kept in a plain assignment, in the same function that makes the call.
 - **The URL**: read through the same value evaluator a route's path goes through.
 
