@@ -1278,6 +1278,13 @@ const StorybookMetadataSchema = z.object({
    * args before the component and which the reader does not follow.
    */
   argReaders: z.array(z.enum(["decorators", "render"])).optional(),
+  /**
+   * The props the story's `render` function passes the component as
+   * attributes or JSX children of its own, besides the args it spreads in. Absent when
+   * there is no render function or the reader could not tell what it
+   * passes.
+   */
+  renderProps: z.array(z.string()).optional(),
   provenance: z.string().optional(),
 });
 

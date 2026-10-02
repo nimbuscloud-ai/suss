@@ -90,22 +90,31 @@ export function checkComponentStoryAgreement(
     }
     for (const argName of Object.keys(meta.args ?? {})) {
       if (!inputNames.has(argName)) {
-        findings.push(makeUnknownArgFinding(story, component, argName, meta));
+        findings.push(
+          makeUnknownArgFinding(story, component, argName, meta, inputNames),
+        );
       }
     }
   }
 
   // Props a component branches on that none of its stories supply. A
-  // render function can pass the component a prop no arg names.
+  // render function can pass the component a prop no arg lists, and one
+  // the reader could not follow may pass any of them.
   for (const [component, componentStories] of storiesByComponent) {
     const gatingProps = collectGatingProps(component);
-    if (gatingProps.size === 0 || componentStories.some(rendersItself)) {
+    if (
+      gatingProps.size === 0 ||
+      componentStories.some(rendersWithUnreadProps)
+    ) {
       continue;
     }
     const allStoryArgKeys = new Set<string>();
     for (const story of componentStories) {
       const meta = storyMeta(story);
-      for (const argName of Object.keys(meta?.args ?? {})) {
+      for (const argName of [
+        ...Object.keys(meta?.args ?? {}),
+        ...(meta?.renderProps ?? []),
+      ]) {
         allStoryArgKeys.add(argName);
       }
     }
@@ -169,8 +178,12 @@ function storyMeta(summary: BehavioralSummary): StorybookMetadata | null {
   return readStorybookMetadata(summary) ?? null;
 }
 
-function rendersItself(story: BehavioralSummary): boolean {
-  return storyMeta(story)?.argReaders?.includes("render") === true;
+function rendersWithUnreadProps(story: BehavioralSummary): boolean {
+  const meta = storyMeta(story);
+  return (
+    meta?.argReaders?.includes("render") === true &&
+    meta.renderProps === undefined
+  );
 }
 
 /**
@@ -299,12 +312,23 @@ function isReservedWord(name: string): boolean {
   return RESERVED.has(name);
 }
 
+/**
+ * The props a component takes come from the names its parameter
+ * destructures, so an arg missing from them may still be in the props
+ * type. The message says the component never reads it, which is true
+ * either way, and lists the props it does take.
+ */
 function makeUnknownArgFinding(
   story: BehavioralSummary,
   component: BehavioralSummary,
   argName: string,
   meta: StorybookMetadata,
+  taken: ReadonlySet<string>,
 ): Finding {
+  const takes =
+    taken.size === 0
+      ? "it takes no props"
+      : `it takes only ${[...taken].map((name) => `"${name}"`).join(", ")}`;
   return {
     kind: "boundaryFieldUnknown",
     aspect: "construct",
@@ -317,7 +341,7 @@ function makeUnknownArgFinding(
       summary: summaryRef(story),
       location: story.location,
     },
-    description: `Story "${meta.story ?? story.identity.name}" provides arg "${argName}" but component "${component.identity.name}" does not declare it as an input.`,
+    description: `Story "${meta.story ?? story.identity.name}" provides arg "${argName}" but component "${component.identity.name}" never reads it: ${takes}.`,
     severity: "warning",
   };
 }

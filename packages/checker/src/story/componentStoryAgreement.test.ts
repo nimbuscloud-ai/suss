@@ -131,6 +131,23 @@ function withArgReaders(
   };
 }
 
+/** The same story, with a render function that passes these props itself. */
+function withRenderProps(
+  story: BehavioralSummary,
+  renderProps: string[],
+): BehavioralSummary {
+  const rendered = withArgReaders(story, ["render"]);
+  const component = rendered.metadata?.component as {
+    storybook: Record<string, unknown>;
+  };
+  return {
+    ...rendered,
+    metadata: {
+      component: { storybook: { ...component.storybook, renderProps } },
+    },
+  };
+}
+
 function conditionalTransition(
   id: string,
   predicate: Predicate,
@@ -299,6 +316,34 @@ describe("checkComponentStoryAgreement — coverage gap", () => {
     expect(checkComponentStoryAgreement([component, story])).toEqual([]);
   });
 
+  describe("a render function whose props the reader followed", () => {
+    const component = makeComponent(
+      "CopyField",
+      [{ name: "value" }, { name: "disabled" }],
+      [conditionalTransition("off", truthinessOnInput("disabled"))],
+    );
+
+    it("counts a prop it passes as supplied", () => {
+      // render: (args) => <CopyField {...args} disabled />
+      const story = withRenderProps(
+        makeStory("Disabled", "CopyField", { value: '"abc"' }),
+        ["disabled"],
+      );
+      expect(checkComponentStoryAgreement([component, story])).toEqual([]);
+    });
+
+    it("still reports a gating prop it only spreads in from the args", () => {
+      // render: (args) => <Provider><CopyField {...args} /></Provider>
+      const story = withRenderProps(
+        makeStory("Default", "CopyField", { value: '"abc"' }),
+        [],
+      );
+      const findings = checkComponentStoryAgreement([component, story]);
+      expect(findings.map((f) => f.kind)).toEqual(["scenarioCoverageGap"]);
+      expect(findings[0]?.description).toContain('prop "disabled"');
+    });
+  });
+
   it("does not flag coverage gaps when stories supply the gating prop", () => {
     const component = makeComponent(
       "UserCard",
@@ -423,8 +468,23 @@ describe("checkComponentStoryAgreement — coverage gap", () => {
     const story = makeStory("Default", "Clock", { zone: '"UTC"', now: "0" });
     const findings = checkComponentStoryAgreement([component, story]);
     expect(findings.map((f) => f.description)).toEqual([
-      'Story "Default" provides arg "now" but component "Clock" does not declare it as an input.',
+      'Story "Default" provides arg "now" but component "Clock" never reads it: it takes only "zone".',
     ]);
+  });
+
+  it("says a prop the component declares and never destructures goes unread", () => {
+    // `({ backgroundColor }: { email: string; backgroundColor?: string })`
+    const component = makeComponent("SignupDone", [
+      { name: "backgroundColor" },
+    ]);
+    const story = makeStory("Full", "SignupDone", {
+      email: '"someone@example.com"',
+      backgroundColor: '"#eee"',
+    });
+    const [finding] = checkComponentStoryAgreement([component, story]);
+    expect(finding?.description).toBe(
+      'Story "Full" provides arg "email" but component "SignupDone" never reads it: it takes only "backgroundColor".',
+    );
   });
 
   it("reads a renamed prop under the name the story passes", () => {

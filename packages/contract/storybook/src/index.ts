@@ -17,8 +17,10 @@ import {
   Node as N,
   type Node,
   type ObjectLiteralExpression,
+  type ParameterDeclaration,
   Project,
   type SourceFile,
+  SyntaxKind,
 } from "ts-morph";
 
 import {
@@ -27,6 +29,7 @@ import {
   findNearestTsconfig,
   objectLiteralOf,
   propertiesOf,
+  propertyFunctionOf,
   propertyNameOf,
   propertyOf,
   propertyValueOf,
@@ -149,6 +152,8 @@ interface MetaInfo {
   /** Args on the default export, which Storybook gives every story in the file. */
   args: Record<string, string>;
   argReaders: ArgReader[];
+  /** What the meta's render function passes the component, from `renderPropsOf`. */
+  renderProps: string[] | null;
 }
 
 /**
@@ -170,6 +175,91 @@ function argReadersOf(
     ),
   );
   return ARG_READERS.filter((name) => names.has(name));
+}
+
+/**
+ * The props a `render` function passes the story's component by name,
+ * besides the args it spreads in. Null when that cannot be said: there
+ * is no render function, it cannot be read, it never renders the
+ * component's element itself, or it spreads something other than its
+ * args into it.
+ */
+function renderPropsOf(
+  storyOrMeta: ObjectLiteralExpression,
+  componentName: string,
+  resolution: ResolutionStore,
+): string[] | null {
+  const property = propertiesOf(storyOrMeta, resolution).find(
+    (candidate) => propertyNameOf(candidate) === "render",
+  );
+  const render =
+    property === undefined ? null : propertyFunctionOf(property, resolution);
+  if (render === null) {
+    return null;
+  }
+  const argNames = argNamesOf(render.getParameters()[0]);
+  const elements = [
+    ...render.getDescendantsOfKind(SyntaxKind.JsxOpeningElement),
+    ...render.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement),
+  ].filter((element) => element.getTagNameNode().getText() === componentName);
+  if (elements.length === 0) {
+    return null;
+  }
+  const passed = new Set<string>();
+  if (elements.some(hasJsxChildren)) {
+    passed.add("children");
+  }
+  for (const attribute of elements.flatMap((e) => e.getAttributes())) {
+    if (N.isJsxAttribute(attribute)) {
+      passed.add(attribute.getNameNode().getText());
+      continue;
+    }
+    if (!argNames.has(attribute.getExpression().getText())) {
+      return null;
+    }
+  }
+  return [...passed].sort();
+}
+
+/** Whether anything between the element's tags reaches it as `children`. */
+function hasJsxChildren(element: Node): boolean {
+  const parent = element.getParent();
+  if (!N.isJsxOpeningElement(element) || !N.isJsxElement(parent)) {
+    return false;
+  }
+  return parent
+    .getJsxChildren()
+    .some(
+      (child) => !(N.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces()),
+    );
+}
+
+/**
+ * What a render function's first parameter calls the args, or the rest
+ * of them after a destructure. Spreading one of these passes the
+ * component only args the story already lists.
+ */
+function argNamesOf(parameter: ParameterDeclaration | undefined): Set<string> {
+  const names = new Set<string>();
+  const nameNode = parameter?.getNameNode();
+  if (nameNode === undefined) {
+    return names;
+  }
+  if (N.isIdentifier(nameNode)) {
+    names.add(nameNode.getText());
+    return names;
+  }
+  const elements = N.isObjectBindingPattern(nameNode)
+    ? nameNode
+        .getDescendantsOfKind(SyntaxKind.BindingElement)
+        .filter((element) => element.getParent() === nameNode)
+    : [];
+  for (const element of elements) {
+    if (element.getDotDotDotToken() !== undefined) {
+      names.add(element.getName());
+    }
+  }
+  return names;
 }
 
 interface ComponentModule {
@@ -195,6 +285,7 @@ function extractMeta(
         componentImport: importSpecifierOf(component),
         args: argsOf(meta, resolution),
         argReaders: argReadersOf(meta, resolution),
+        renderProps: renderPropsOf(meta, component.getText(), resolution),
       };
     }
   }
@@ -285,6 +376,7 @@ interface StoryInfo {
   name: string;
   args: Record<string, string>;
   argReaders: ArgReader[];
+  renderProps: string[] | null;
   line: number;
 }
 
@@ -307,7 +399,7 @@ function extractStories(
         continue;
       }
 
-      // A story's own arg replaces the one of the same name on the meta.
+      // A story's own arg, or its own render function, replaces the meta's.
       const ownReaders = argReadersOf(story, resolution);
       results.push({
         name,
@@ -316,6 +408,9 @@ function extractStories(
           (reader) =>
             meta.argReaders.includes(reader) || ownReaders.includes(reader),
         ),
+        renderProps: ownReaders.includes("render")
+          ? renderPropsOf(story, meta.componentName, resolution)
+          : meta.renderProps,
         line: decl.getStartLineNumber(),
       });
     }
@@ -418,6 +513,9 @@ function buildSummary(
           ...(story.argReaders.length === 0
             ? {}
             : { argReaders: story.argReaders }),
+          ...(story.renderProps === null
+            ? {}
+            : { renderProps: story.renderProps }),
           provenance: "independent",
         },
       },
