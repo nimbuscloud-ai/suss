@@ -29,12 +29,18 @@ import {
   stringLiteralValue,
 } from "./ast.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
-import { bodyCalls, invocationEffects } from "./paths/effects.js";
+import { bodyCalls, invocationSites } from "./paths/effects.js";
 import { predicateOf } from "./paths/predicates.js";
+import { raisesIn } from "./paths/raisedResponses.js";
+import {
+  type HandOffOptions,
+  throughResponseHelpers,
+} from "./responseHandOff.js";
 import {
   constructionBehind,
   constructionSitesOf,
   evaluatedValue,
+  moduleOf,
 } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
@@ -42,6 +48,7 @@ import type { Database } from "@suss/datalog";
 import type {
   RawBranch,
   RawCodeStructure,
+  RawEffect,
   RedirectDelivery,
 } from "@suss/extractor";
 import type { PyClientCall, PythonPack } from "./pack.js";
@@ -54,6 +61,8 @@ interface RequestCall {
   method: string;
   path: string;
   range: ReturnType<typeof rangeOf>;
+  /** The call itself, so a helper the caller hands the response to can be told apart. */
+  node: PyNode;
   /** What this call does with a redirect, when it passes the pack's option. */
   redirectDelivery?: RedirectDelivery;
 }
@@ -228,7 +237,9 @@ function methodAndPath(
       options,
       site,
     );
-    return path === null ? null : { method: verb, path, range: rangeOf(call) };
+    return path === null
+      ? null
+      : { method: verb, path, range: rangeOf(call), node: call };
   }
 
   const methodCall = pattern.methodCall;
@@ -253,7 +264,7 @@ function methodAndPath(
   );
   return path === null
     ? null
-    : { method: method.toUpperCase(), path, range: rangeOf(call) };
+    : { method: method.toUpperCase(), path, range: rangeOf(call), node: call };
 }
 
 /**
@@ -353,31 +364,46 @@ function argumentAt(
  */
 function callerBranches(
   definition: PyNode,
-  range: ReturnType<typeof rangeOf>,
-  facts: Database | undefined,
-  statusMembers: ReadonlySet<string>,
+  reading: CallerReading,
 ): RawBranch[] {
+  const range = rangeOf(definition);
   const body = field(definition, "body");
-  const effects = invocationEffects(definition, facts);
+  const sites = invocationSites(definition, reading.facts);
+  const effects = sites.map((site) => site.effect);
   if (body === null) {
     return [handsBack(range, effects)];
   }
-  const terminals = bodyTerminals(body, []);
+  const raised = raisesIn(body, {
+    calls: [],
+    module: moduleOf(definition),
+    facts: reading.facts,
+  });
   const branches = enumerateBodyBranches({
     body,
-    terminals,
-    raised: [],
+    terminals: bodyTerminals(body, raised),
+    raised,
     effects,
     branchOf: (found) =>
       found.type === "raise"
         ? { terminal: found.terminal, location: rangeOf(found.statement) }
         : handsBackAt(rangeOf(found.statement)),
     fallthrough: handsBackAt(range),
-    facts,
+    facts: reading.facts,
     keepsArms: (condition) =>
-      testsStatus(predicateOf(condition, facts), statusMembers),
+      testsStatus(predicateOf(condition, reading.facts), reading.statusMembers),
   });
-  return branches.length === 0 ? [handsBack(range, effects)] : branches;
+  const found = branches.length === 0 ? [handsBack(range, effects)] : branches;
+  return reading.handOff === undefined
+    ? found
+    : throughResponseHelpers(found, sites, reading.handOff);
+}
+
+/** What reading a caller's paths needs beyond its body. */
+interface CallerReading {
+  facts: Database | undefined;
+  statusMembers: ReadonlySet<string>;
+  /** Unset for a helper, whose own hand-offs are not followed. */
+  handOff?: HandOffOptions;
 }
 
 /** What a caller does at the end of a path: it hands back whatever it got. */
@@ -402,7 +428,7 @@ function handsBackAt(range: ReturnType<typeof rangeOf>): TerminalBranch {
 /** The one branch of a caller whose body writes no exit of its own. */
 function handsBack(
   range: ReturnType<typeof rangeOf>,
-  effects: ReturnType<typeof invocationEffects>,
+  effects: RawEffect[],
 ): RawBranch {
   return {
     ...handsBackAt(range),
@@ -452,6 +478,18 @@ function clientUnit(
 ): RawCodeStructure {
   const range = rangeOf(definition);
   const accessors = responseAccessors(pattern);
+  const statusMembers = statusMembersOf(accessors);
+  const reading: CallerReading = {
+    facts: options.facts,
+    statusMembers,
+    handOff: {
+      request: request.node,
+      bodyMethods: accessors.bodyAccessors ?? [],
+      facts: options.facts,
+      readHelper: (helper) =>
+        callerBranches(helper, { facts: options.facts, statusMembers }),
+    },
+  };
   return {
     identity: {
       name,
@@ -470,12 +508,7 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: callerBranches(
-      definition,
-      range,
-      options.facts,
-      statusMembersOf(accessors),
-    ),
+    branches: callerBranches(definition, reading),
     ...accessors,
     ...(request.redirectDelivery === undefined
       ? {}

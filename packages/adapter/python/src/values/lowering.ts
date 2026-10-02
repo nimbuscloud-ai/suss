@@ -578,7 +578,8 @@ function functionOf(node: PyNode): FunctionShape<PyNode> | null {
   };
 }
 
-function isMethod(fn: PyNode): boolean {
+/** Whether a definition is written in a class body, so its first parameter is the receiver a call never writes. */
+export function isMethod(fn: PyNode): boolean {
   const owner =
     fn.parent?.type === "decorated_definition" ? fn.parent.parent : fn.parent;
   return owner?.type === "block" && owner.parent?.type === "class_definition";
