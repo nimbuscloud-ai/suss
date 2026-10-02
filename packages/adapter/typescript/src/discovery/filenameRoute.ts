@@ -109,9 +109,10 @@ function isGrouping(segment: string): boolean {
 }
 
 /**
- * The parameter a segment declares, or null when it declares none.
- * A catch-all (`[...slug]`) comes out as the plain name, so a route
- * matching many segments looks like one matching a single segment.
+ * The parameter a segment declares, or null when it declares none. A
+ * catch-all (`[...slug]`) takes one or more segments and comes out as
+ * `{slug+}`. An optional catch-all (`[[...slug]]`) takes any number,
+ * the folder's own path included, and comes out as `{slug*}`.
  */
 function parameterName(
   segment: string,
@@ -122,7 +123,10 @@ function parameterName(
     if (inner === segment) {
       return null;
     }
-    return `{${inner.replace(/^\.\.\./, "")}}`;
+    if (!inner.startsWith("...")) {
+      return `{${inner}}`;
+    }
+    return `{${inner.slice(3)}${segment.startsWith("[[") ? "*" : "+"}}`;
   }
   if (convention.dynamic === "dollarPrefix" && segment.startsWith("$")) {
     return `{${segment.slice(1)}}`;

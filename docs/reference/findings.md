@@ -18,7 +18,7 @@ The behavioral findings go under `findings` in the JSON, and each one reports th
 | `kind` | string | Which failure mode this is, one of the values below. |
 | `severity` | `error` \| `warning` \| `info` | The default. A `.sussignore` rule can downgrade it. |
 | `boundary` | `BoundaryBinding` | Which boundary this is about: a REST endpoint, a table, a channel, a runtime's config, and so on. |
-| `provider` | `FindingSide` | The provider's summary, as `{ summary, transitionId?, location }`, where `summary` reads `${file}::${name}`. |
+| `provider` | `FindingSide` | The provider's summary, as `{ summary, transitionId?, transitionIds?, location }`, where `summary` reads `${file}::${name}`. `transitionIds` is set when several transitions give the one finding, such as two filters that each send a status the document leaves out, and `transitionId` is the first of them. |
 | `consumer` | `FindingSide` | The consumer's summary. Always set, even where the finding is about a provider against its own contract; there the two often resolve to the same summary. |
 | `description` | string | One line of human-readable text. |
 | `aspect` | `BoundaryAspect?` | Which side of the field this concerns: `read`, `write`, `send`, `receive`, `construct` or `selector`. Absent where the aspect is irrelevant or spans several. |
@@ -158,6 +158,8 @@ You cannot name an input and a wrong result here. The fall-through may be exactl
 
 A provider response declared as a range, such as an OpenAPI `4XX`, is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member, whether that is a branch on 404, a `!res.ok` guard, or a catch on a throwing client. When nothing covers any member it reports once, saying `Provider produces statuses in the 4XX range but no consumer branch handles any of them`.
 
+A consumer suss read only in part, where no pack terminal matched some of what it does, gets one `lowConfidence` finding at info instead, since the part it did not read may be where it handles the status. That includes a consumer whose read threw.
+
 **Legitimate when:** the consumer does not care, because it has a `try`/`catch` or because the throw path is right.
 
 **A bug when:** the consumer ignores the status. Add a branch, such as `if (res.status === 404) return null`.
@@ -228,7 +230,11 @@ The other direction is a warning, because a document routinely declares the 401 
   The openapi document declares response 410, and no path in the handler produces it
 ```
 
-Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all.
+Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all. A status that several paths send, such as two filters that each refuse with 403, is reported once, and the description says which code sends it.
+
+A handler suss could not read at all is not compared with the document, and gets one `lowConfidence` finding at info instead. A handler suss read in part, where part of what it returns or one of its statuses could not be read, is never said to leave out a declared status of any class. Behind a filter suss could not fully read, it is never said to leave out a declared redirect or failure. A handler that throws something no error handler on the route surely catches is never said to leave out a declared 4xx.
+
+When two functions serve one operation's route, such as two API versions a header picks between, an operation named after one of them, the way a generator writes `OrdersController_2024_06_11_getOrder`, is compared with that one. Otherwise each function is compared, and only a finding every one of them shows is reported.
 
 Every `unhandledCase` gap on the provider is reported here. An `unreadOutcome` gap is not. It comes out as `lowConfidence` at info, because the pack has no pattern for what the handler returns.
 
@@ -286,6 +292,8 @@ A contract source declares an operation and no extracted provider implements it.
 ```
 
 The handler may be in a repository suss did not read, so no outcome can be stated.
+
+An operation meets a route of the same shape however each side spells the parameter, so `/orders/{order_id}` is served by `/orders/:pk`. The exception is a route that describes a different resource: when the parameter names disagree and the code serves the document's other methods for that path only at a longer path below the route, as `/relations/:collection/:field` does for a document's `/relations/{id}`, the operation is reported.
 
 **Legitimate when:** the handler is in another repository or another service. Suppress.
 
@@ -501,6 +509,8 @@ One consumer matched two providers where at most one of them can be right.
   GraphQL operation "GetUser" selects "Query.user", which 2 resolvers implement across 2 services (accounts-service, directory-service). The pairing key has no endpoint identity, so this operation pairs with all of them and some of those pairs are wrong.
   boundary: graphql-documents (http-graphql)
 ```
+
+REST pairing reports it when routes in two different functions match one call equally well, such as two catch-all routes `/:username/:view` and `/:feed_type/:timeframe` for a call to `/admin/stats`. The framework picks one by the order the routes are declared, which suss does not read, so the call pairs with neither.
 
 Storage reports it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` both cover `prod-orders-blue`, and each states as much of its own name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and the finding says which two were in the way. Where one states more of its name, that one takes the access and no finding is emitted.
 

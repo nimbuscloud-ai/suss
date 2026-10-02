@@ -5,6 +5,7 @@ import {
   graphqlResolverBinding,
   messageBusBinding,
   restBinding,
+  withHttpMetadata,
 } from "@suss/behavioral-ir";
 
 import {
@@ -403,7 +404,18 @@ describe("pairSummaries", () => {
       providerWithPath("getUser", "GET", "/users/{id}"),
       "shop",
     );
-    const declared = providerWithPath("getUser", "GET", "/users/{id}");
+    const spec = providerWithPath("getUser", "GET", "/users/{id}");
+    const declared = {
+      ...spec,
+      location: { ...spec.location, file: "openapi:openapi.yaml" },
+      metadata: withHttpMetadata(undefined, {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: [{ statusCode: 200 }],
+        },
+      }),
+    };
     const client = inService(
       consumerWithPath("UserPage", "GET", "/users/{id}"),
       "shop",
@@ -495,14 +507,81 @@ describe("pairSummaries", () => {
     expect(result.pairs).toHaveLength(1);
   });
 
-  it("produces N x M pairs when multiple providers/consumers share a path", () => {
+  it("pairs every consumer of a path with every summary of the one function serving it", () => {
     const p1 = providerWithPath("getUser", "GET", "/users/:id");
-    const p2 = providerWithPath("getUserV2", "GET", "/users/:id");
+    // The same function registered under a second spelling of the path.
+    const p2 = {
+      ...providerWithPath("getUser", "GET", "/users/:userId"),
+      location: p1.location,
+    };
     const c1 = consumerWithPath("UserPage", "GET", "/users/:id");
     const c2 = consumerWithPath("UserCard", "GET", "/users/:id");
 
     const result = pairSummaries([p1, p2, c1, c2]);
     expect(result.pairs).toHaveLength(4);
+    expect(result.ambiguous).toEqual([]);
+  });
+
+  it("pairs nothing when two functions serve one path for one method", () => {
+    const p1 = providerWithPath("getUser", "GET", "/users/:id");
+    const p2 = providerWithPath("getUserV2", "GET", "/users/:id");
+    const c1 = consumerWithPath("UserPage", "GET", "/users/:id");
+
+    const result = pairSummaries([p1, p2, c1]);
+    expect(result.pairs).toEqual([]);
+    expect(result.ambiguous).toHaveLength(1);
+    expect(result.ambiguous[0]?.providers).toEqual([p1, p2]);
+  });
+
+  it("pairs a URL with every component a client-side router renders there", () => {
+    const asComponent = (summary: BehavioralSummary): BehavioralSummary => ({
+      ...summary,
+      kind: "component",
+    });
+    const layout = asComponent(providerWithPath("Shell", "GET", "/billing"));
+    const index = asComponent(providerWithPath("Billing", "GET", "/billing"));
+    const caller = consumerWithPath("loadBilling", "GET", "/billing");
+
+    const result = pairSummaries([layout, index, caller]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([layout, index]);
+    expect(result.ambiguous).toEqual([]);
+  });
+
+  it("calls a request two catch-all routes match equally ambiguous", () => {
+    // Under an optional locale scope, so each route spans more than one shape.
+    const profile = providerWithPath(
+      "profile",
+      "GET",
+      "/(|locale/:locale/):username/:view",
+    );
+    const feed = providerWithPath(
+      "feed",
+      "GET",
+      "/(|locale/:locale/):feed_type/:timeframe",
+    );
+    const stats = consumerWithPath("fetchStats", "GET", "/admin/stats");
+
+    const result = pairSummaries([profile, feed, stats]);
+    expect(result.pairs).toEqual([]);
+    expect(result.ambiguous).toHaveLength(1);
+  });
+
+  it("pairs a request with the route that matches it more closely than a catch-all", () => {
+    const anything = providerWithPath("proxy", "GET", "/api/{path*}");
+    const one = providerWithPath("getOrder", "GET", "/api/orders/:id");
+    const client = consumerWithPath("loadOrder", "GET", "/api/orders/{id}");
+    const other = consumerWithPath("loadUser", "GET", "/api/users/{id}");
+
+    const result = pairSummaries([anything, one, client, other]);
+    expect(
+      result.pairs.map((pair) => [
+        pair.consumer.identity.name,
+        pair.provider.identity.name,
+      ]),
+    ).toEqual([
+      ["loadOrder", "getOrder"],
+      ["loadUser", "proxy"],
+    ]);
   });
 
   it("does not pair different methods", () => {

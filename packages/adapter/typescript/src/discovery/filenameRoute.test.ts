@@ -52,16 +52,16 @@ describe("routePathFromFile: Next.js app directory", () => {
     expect(routePathFromFile("/src/app/page.tsx", nextApp)).toBe("/");
   });
 
-  it("names a catch-all after its parameter", () => {
+  it("reads a catch-all as one or more segments", () => {
     expect(routePathFromFile("/src/app/docs/[...slug]/page.tsx", nextApp)).toBe(
-      "/docs/{slug}",
+      "/docs/{slug+}",
     );
   });
 
-  it("names an optional catch-all the same way", () => {
+  it("reads an optional catch-all as any number of segments", () => {
     expect(
       routePathFromFile("/src/app/docs/[[...slug]]/page.tsx", nextApp),
-    ).toBe("/docs/{slug}");
+    ).toBe("/docs/{slug*}");
   });
 
   it("keeps a route segment that happens to be named like the root", () => {

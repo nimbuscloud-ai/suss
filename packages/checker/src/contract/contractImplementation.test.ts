@@ -4,9 +4,15 @@ import {
   readHttpMetadata,
   restBinding,
   withHttpMetadata,
+  withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
-import { recordBody, response, transition } from "../__fixtures__/pairs.js";
+import {
+  recordBody,
+  response,
+  transition,
+  unreadOutcomeGap,
+} from "../__fixtures__/pairs.js";
 import { checkContractImplementation } from "./contractImplementation.js";
 
 import type {
@@ -179,7 +185,7 @@ describe("checkContractImplementation", () => {
     expect(compared.map((pair) => pair.key)).toEqual(["DELETE /teams/{id}"]);
   });
 
-  it("compares neither handler when two functions serve one operation", () => {
+  it("holds back a finding only one of two functions serving an operation shows", () => {
     const v1 = handler("GET", "/invoices/:id", [
       transition("t-200", { output: response(200), isDefault: true }),
     ]);
@@ -195,6 +201,94 @@ describe("checkContractImplementation", () => {
       },
     ]);
     expect(findings).toEqual([]);
+  });
+
+  it("judges only the function an operation is named after when two serve its route", () => {
+    const named = (summary: BehavioralSummary, name: string, file: string) => ({
+      ...summary,
+      identity: { ...summary.identity, name },
+      location: { ...summary.location, file },
+    });
+    const v1 = named(
+      handler("GET", "/invoices/:id", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      "InvoicesController_v1.getInvoice",
+      "src/v1.ts",
+    );
+    const v2 = named(
+      handler("GET", "/invoices/:id", [
+        transition("t-201", { output: response(201), isDefault: true }),
+      ]),
+      "InvoicesController_v2.getInvoice",
+      "src/v2.ts",
+    );
+    const spec = {
+      ...document("GET", "/invoices/{invoice_id}", [{ statusCode: 200 }]),
+    };
+    const findings = checkContractImplementation([
+      {
+        ...spec,
+        identity: {
+          ...spec.identity,
+          name: "InvoicesController_v2_getInvoice",
+        },
+      },
+      v1,
+      v2,
+    ]);
+    expect(
+      findings.map((f) => [f.provider.location.file, f.description]),
+    ).toEqual([
+      [
+        "src/v2.ts",
+        "Handler produces status 201 which the openapi document does not declare",
+      ],
+      [
+        "src/v2.ts",
+        "The openapi document declares response 200, and no path in the handler produces it",
+      ],
+    ]);
+  });
+
+  it("reports a finding every function serving an operation shows, once for each", () => {
+    // Whichever version the document describes, neither ever sends its 410.
+    const v1 = handler("GET", "/invoices/:id", [
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const v2 = {
+      ...handler("GET", "/invoices/:id", [
+        transition("t-404", { output: response(404) }),
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      location: { ...v1.location, file: "src/invoicesV2.ts" },
+    };
+    const compared: ComparedPair[] = [];
+    const findings = checkContractImplementation(
+      [
+        document("GET", "/invoices/{invoice_id}", [
+          { statusCode: 200 },
+          { statusCode: 404 },
+          { statusCode: 410 },
+        ]),
+        v1,
+        v2,
+      ],
+      compared,
+    );
+    expect(
+      findings.map((f) => [f.provider.location.file, f.description]),
+    ).toEqual([
+      [
+        "src/app.ts",
+        "The openapi document declares response 410, and no path in the handler produces it",
+      ],
+      [
+        "src/invoicesV2.ts",
+        "The openapi document declares response 410, and no path in the handler produces it",
+      ],
+    ]);
+    expect(compared).toHaveLength(2);
   });
 
   it("compares one function registered under two paths that key alike", () => {
@@ -274,6 +368,32 @@ describe("checkContractImplementation", () => {
       ]),
     ]);
     expect(findings).toEqual([]);
+  });
+
+  it("reports a status several pieces of code send once, saying which", () => {
+    const fromFilter = (id: string, name: string): Transition => ({
+      ...transition(id, { output: response(403) }),
+      metadata: withWrapperMetadata(undefined, {
+        from: { file: "src/filters.rb", name },
+      }),
+    });
+    const findings = checkContractImplementation([
+      document("GET", "/accounts/{id}", [{ statusCode: 200 }]),
+      handler("GET", "/accounts/{id}", [
+        fromFilter("check_token:response:403", "check_token"),
+        fromFilter("check_mfa:response:403", "check_mfa"),
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toBe(
+      "Handler produces status 403 which the openapi document does not declare. It comes from check_token and check_mfa",
+    );
+    expect(findings[0].provider.transitionId).toBe("check_token:response:403");
+    expect(findings[0].provider.transitionIds).toEqual([
+      "check_token:response:403",
+      "check_mfa:response:403",
+    ]);
   });
 
   it("records the handler and the document as a compared pair", () => {
@@ -524,6 +644,189 @@ describe("checkContractImplementation, on a handler suss read in part", () => {
     ]);
     expect(findings.map((f) => f.description)).toEqual([
       "The openapi document declares response 429, and no path in the handler produces it",
+    ]);
+  });
+
+  it("still claims a declared success is never sent past middleware suss read in part", () => {
+    // A filter that stops a request sends a failure or a redirect, so only those are in doubt.
+    const findings = checkContractImplementation([
+      document("GET", "/users", [
+        { statusCode: 200 },
+        { statusCode: 204 },
+        { statusCode: 302 },
+        { statusCode: 401 },
+      ]),
+      routedThrough,
+      requireUser([unreadOutcomeGap("No terminal matched a return")]),
+    ]);
+    expect(findings.map((f) => f.description)).toEqual([
+      "The openapi document declares response 204, and no path in the handler produces it",
+    ]);
+  });
+
+  describe("an error handler suss read in part", () => {
+    const onLimit = {
+      file: "src/errors.rb",
+      name: "render_limit",
+      onThrow: true,
+      catches: ["LimitExceeded"],
+    };
+    const limitHandler = {
+      ...requireUser([unreadOutcomeGap("The status does not settle")]),
+      identity: {
+        name: "render_limit",
+        exportPath: null,
+        boundaryBinding: null,
+      },
+      location: {
+        file: "src/errors.rb",
+        range: { start: 1, end: 4 },
+        exportName: null,
+      },
+      transitions: [
+        transition("limit", {
+          output: {
+            type: "response",
+            statusCode: null,
+            body: null,
+            headers: {},
+          },
+          isDefault: true,
+        }),
+      ],
+    };
+    const route = (transitions: Transition[]) => ({
+      ...handler("GET", "/users", transitions),
+      metadata: withWrapperMetadata(undefined, { applied: [onLimit] }),
+    });
+
+    it("leaves a route alone where no path throws what the handler catches", () => {
+      const findings = checkContractImplementation([
+        document("GET", "/users", [{ statusCode: 200 }, { statusCode: 404 }]),
+        route([
+          transition("t-200", { output: response(200), isDefault: true }),
+        ]),
+        limitHandler,
+      ]);
+      expect(findings.map((f) => f.description)).toEqual([
+        "The openapi document declares response 404, and no path in the handler produces it",
+      ]);
+    });
+
+    it("counts the route as read in part where composition added the handler's outcome", () => {
+      const findings = checkContractImplementation([
+        document("GET", "/users", [{ statusCode: 200 }, { statusCode: 404 }]),
+        route([
+          transition("t-200", { output: response(200), isDefault: true }),
+          {
+            ...transition("limit", {
+              output: {
+                type: "response",
+                statusCode: null,
+                body: null,
+                headers: {},
+              },
+            }),
+            metadata: withWrapperMetadata(undefined, { from: onLimit }),
+          },
+        ]),
+        limitHandler,
+      ]);
+      expect(findings).toEqual([]);
+    });
+  });
+
+  it("claims a declared failure is never sent past middleware whose unfollowed call returns a value", () => {
+    // `user = current_user` hands a value back to the filter, so the filter does not respond there.
+    const findings = checkContractImplementation([
+      document("GET", "/users", [{ statusCode: 200 }, { statusCode: 401 }]),
+      routedThrough,
+      requireUser([
+        {
+          type: "unfollowedCall",
+          conditions: [],
+          consequence: "unknown",
+          description: "The call to current_user could not be followed",
+          callee: "current_user",
+          usedAsValue: true,
+        },
+      ]),
+    ]);
+    expect(findings.map((f) => f.description)).toEqual([
+      "The openapi document declares response 401, and no path in the handler produces it",
+    ]);
+  });
+
+  it("compares nothing with a handler suss could not read, and says so", () => {
+    const unread = {
+      ...handler("GET", "/users", []),
+      gaps: [unreadOutcomeGap("Reading this unit threw: boom")],
+    };
+    const findings = checkContractImplementation([
+      document("GET", "/users", [
+        { statusCode: 200 },
+        { statusCode: 302 },
+        { statusCode: 404 },
+      ]),
+      unread,
+    ]);
+    expect(findings).toEqual([
+      expect.objectContaining({
+        kind: "lowConfidence",
+        severity: "info",
+        description:
+          "The handler could not be read, so it was not compared with the openapi document",
+      }),
+    ]);
+  });
+
+  it("does not claim a declared success or redirect is never sent by a handler suss read in part", () => {
+    const partly = {
+      ...handler("GET", "/users", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      gaps: [unreadOutcomeGap("No terminal matched a return in the handler")],
+    };
+    const findings = checkContractImplementation([
+      document("GET", "/users", [
+        { statusCode: 200 },
+        { statusCode: 201 },
+        { statusCode: 302 },
+      ]),
+      partly,
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("claims a declared failure is never sent when an error handler surely catches the handler's throw", () => {
+    const findings = checkContractImplementation([
+      document("GET", "/users", [
+        { statusCode: 200 },
+        { statusCode: 403 },
+        { statusCode: 404 },
+      ]),
+      handler("GET", "/users", [
+        {
+          ...transition("t-throw", {
+            output: {
+              type: "throw",
+              exceptionType: "AccessDenied",
+              message: null,
+            },
+          }),
+          metadata: withWrapperMetadata(undefined, { caught: true }),
+        },
+        transition("t-200", { output: response(200), isDefault: true }),
+        {
+          ...transition("t-403", { output: response(403) }),
+          metadata: withWrapperMetadata(undefined, {
+            from: { file: "src/app.rb", name: "refuse", onThrow: true },
+          }),
+        },
+      ]),
+    ]);
+    expect(findings.map((f) => f.description)).toEqual([
+      "The openapi document declares response 404, and no path in the handler produces it",
     ]);
   });
 

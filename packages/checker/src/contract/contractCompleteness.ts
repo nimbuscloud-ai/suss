@@ -8,6 +8,7 @@ import {
 
 import { makeSide } from "../coverage/responseMatch.js";
 import { readDeclaredContract } from "./declaredContract.js";
+import { handlersServing } from "./operationMatch.js";
 
 import type {
   BehavioralSummary,
@@ -31,7 +32,7 @@ export function checkContractCompleteness(
   summaries: BehavioralSummary[],
 ): Finding[] {
   const stubsBySource = new Map<string, BehavioralSummary[]>();
-  const implementedKeys = new Set<string>();
+  const implemented: BehavioralSummary[] = [];
   const spanning: BoundaryBinding[] = [];
 
   for (const summary of summaries) {
@@ -55,7 +56,7 @@ export function checkContractCompleteness(
       continue;
     }
 
-    implementedKeys.add(key);
+    implemented.push(summary);
     if (spansBuckets(binding)) {
       spanning.push(binding);
     }
@@ -63,18 +64,15 @@ export function checkContractCompleteness(
 
   const findings: Finding[] = [];
   for (const [source, stubs] of stubsBySource) {
-    const overlaps = stubs.some((s) => implementedKeys.has(stubKey(s) ?? ""));
-    if (!overlaps) {
+    const served = handlersServing(stubs, implemented);
+    const isServed = (stub: BehavioralSummary): boolean =>
+      (served.get(stub) ?? []).length > 0;
+    if (!stubs.some(isServed)) {
       continue;
     }
 
     for (const stub of stubs) {
-      const key = stubKey(stub);
-      if (
-        key === null ||
-        implementedKeys.has(key) ||
-        servedBySpanningRoute(stub, spanning)
-      ) {
+      if (isServed(stub) || servedBySpanningRoute(stub, spanning)) {
         continue;
       }
       const finding = unimplementedFinding(source, stub);
@@ -103,11 +101,6 @@ function servedBySpanningRoute(
         semanticsAgree(route.semantics, binding.semantics),
     )
   );
-}
-
-function stubKey(stub: BehavioralSummary): string | null {
-  const binding = stub.identity.boundaryBinding;
-  return binding === null ? null : operationKey(binding);
 }
 
 function unimplementedFinding(

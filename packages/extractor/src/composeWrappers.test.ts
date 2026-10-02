@@ -901,5 +901,39 @@ describe("composeWrappers and the classes an error handler catches", () => {
         [500, "respond_error", true],
       ]);
     });
+
+    /** Whether each throw left on the composed route is marked as caught. */
+    function throwsCaught(handlers: WrapperReference[]): boolean[] {
+      const route = unit(
+        "show",
+        "app/controllers/posts.rb",
+        [responds("ok", 200)],
+        { wrappers: [loadAccount, ...handlers] },
+      );
+      const filter = unit("load_account", loadAccount.file, [
+        notFound,
+        continues("on"),
+      ]);
+      const [composed] = composeWrappers([route, filter, ...handlerUnits]);
+      return composed.transitions
+        .filter((transition) => transition.output.type === "throw")
+        .map((transition) => readWrapperMetadata(transition)?.caught === true);
+    }
+
+    it("marks a throw a handler surely catches as caught", () => {
+      const gone = handler("respond_limit", ["RecordNotFound"]);
+      expect(throwsCaught([gone])).toEqual([true]);
+      expect(throwsCaught([handler("respond_error", undefined)])).toEqual([
+        true,
+      ]);
+    });
+
+    it("leaves a throw unmarked where a handler only may catch it", () => {
+      const network: WrapperReference = {
+        ...handler("respond_error", []),
+        mayCatchAny: true,
+      };
+      expect(throwsCaught([network])).toEqual([false]);
+    });
   });
 });

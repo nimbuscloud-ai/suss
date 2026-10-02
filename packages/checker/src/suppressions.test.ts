@@ -210,6 +210,35 @@ describe("applySuppressions", () => {
     expect(out.suppressed).toBeUndefined();
   });
 
+  it("matches a rule for any of the provider transitions one finding covers", () => {
+    const grouped = finding({
+      kind: "providerContractViolation",
+      provider: {
+        ...finding().provider,
+        transitionId: "check_token:response:403",
+        transitionIds: ["check_token:response:403", "check_mfa:response:403"],
+      },
+    });
+    const ruleFor = (transitionId: string) =>
+      SuppressionRuleSchema.parse({
+        kind: "providerContractViolation",
+        provider: { transitionId },
+        reason: transitionId,
+      });
+
+    const [second] = applySuppressions(
+      [grouped],
+      [ruleFor("check_mfa:response:403")],
+    );
+    expect(second.suppressed?.reason).toBe("check_mfa:response:403");
+
+    const [other] = applySuppressions(
+      [grouped],
+      [ruleFor("check_admin:response:403")],
+    );
+    expect(other.suppressed).toBeUndefined();
+  });
+
   it("matches on provider.transitionId, and only that provider transition", () => {
     const providerFinding = finding({
       kind: "unhandledProviderCase",

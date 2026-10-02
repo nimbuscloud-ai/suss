@@ -6,6 +6,7 @@ import {
 } from "../contract/declaredContract.js";
 import {
   catchIsUncertain,
+  consumerReadInPart,
   reachedThroughUnreadCondition,
 } from "../contract/partlyRead.js";
 import { predicatesMatch } from "../match.js";
@@ -99,6 +100,11 @@ export function checkProviderCoverage(
   // pair does not include that caller.
   if (handsResponseToCaller(consumer)) {
     return [];
+  }
+
+  const readInPart = consumerReadInPart(provider, consumer);
+  if (readInPart !== null) {
+    return [readInPart];
   }
 
   const findings: Finding[] = [];

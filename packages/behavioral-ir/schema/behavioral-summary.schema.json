@@ -1723,6 +1723,9 @@
             },
             "callee": {
               "type": "string"
+            },
+            "usedAsValue": {
+              "type": "boolean"
             }
           },
           "required": ["type", "conditions", "consequence", "description"],
