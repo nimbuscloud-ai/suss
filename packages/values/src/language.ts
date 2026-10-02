@@ -97,6 +97,11 @@ export type Statement<N> =
     }
   | { readonly kind: "loop"; readonly body: readonly N[] }
   | { readonly kind: "return"; readonly value: N | null }
+  /**
+   * A throw that nothing in the same function catches. It ends the
+   * statement list it is in and gives the function no value.
+   */
+  | { readonly kind: "throw" }
   | { readonly kind: "block"; readonly body: readonly N[] }
   | { readonly kind: "opaque" };
 

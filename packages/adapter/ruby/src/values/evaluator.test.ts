@@ -272,6 +272,51 @@ describe("branches and choices", () => {
     ).toBe("{base}/{prefix}/archive.tar.gz");
   });
 
+  it("leaves out a value only an arm that raises keeps", async () => {
+    expect(
+      await route(
+        [
+          'base = ""',
+          "case kind",
+          "when :shipping",
+          '  base = "/shipping/v3"',
+          "when :returns",
+          '  base = "/returns/v2"',
+          "else",
+          '  raise ArgumentError, "unsupported"',
+          "end",
+          'subject = base + "/orders"',
+        ].join("\n"),
+      ),
+    ).toBe("(/returns/v2|/shipping/v3)/orders");
+  });
+
+  it("gives a method only the values of the paths that do not raise", async () => {
+    expect(
+      await literal(
+        'def pick(flag)\n  return "/on" if flag\n  raise "off"\nend\nsubject = pick(x)',
+      ),
+    ).toBe("/on");
+  });
+
+  it("keeps running after a raise a rescue in the same method catches", async () => {
+    expect(
+      await literal(
+        [
+          "def pick",
+          "  begin",
+          '    raise "retry"',
+          "  rescue StandardError",
+          "    nil",
+          "  end",
+          '  "/after"',
+          "end",
+          "subject = pick()",
+        ].join("\n"),
+      ),
+    ).toBe("/after");
+  });
+
   it("follows an elsif chain", async () => {
     expect(
       await literal(

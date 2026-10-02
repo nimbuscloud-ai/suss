@@ -3807,6 +3807,70 @@ describe("consumer extraction", () => {
     expect(paths).toEqual(["{base}/{versionPrefix}/archive.tar.gz"]);
   });
 
+  it("leaves out a value only a throwing case of a switch keeps", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadOrders(kind: string) {
+        let base = "";
+        switch (kind) {
+          case "shipping":
+            base = "/shipping/v3";
+            break;
+          case "returns":
+            base = "/returns/v2";
+            break;
+          default: {
+            throw new Error(\`unsupported \${kind}\`);
+          }
+        }
+        return fetch(\`\${base}/orders\`);
+      }
+      export async function loadLabels(kind: string) {
+        let base = "";
+        switch (kind) {
+          case "draft":
+          case "open":
+            base = "/labels/open";
+            break;
+          default:
+            throw new Error("closed");
+        }
+        return fetch(base);
+      }
+      function pick(): string {
+        try {
+          throw new Error("retry");
+        } catch {
+          // A caught throw does not end the function.
+        }
+        return "/after";
+      }
+      export async function loadAfter() {
+        return fetch(pick());
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .flatMap((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? [sem.path] : [];
+      })
+      .sort();
+    expect(paths).toEqual([
+      "(/returns/v2|/shipping/v3)/orders",
+      "/after",
+      "/labels/open",
+    ]);
+  });
+
   it("extracts a consumer summary from a function with fetch()", async () => {
     const project = createTestProject();
     project.createSourceFile(

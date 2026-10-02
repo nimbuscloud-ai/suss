@@ -245,6 +245,55 @@ describe("branches and choices", () => {
     ).toBe("{base}/{prefix}/archive.tar.gz");
   });
 
+  it("leaves out a value only an arm that raises keeps", async () => {
+    expect(
+      await route(
+        [
+          'base = ""',
+          'if kind == "shipping":',
+          '    base = "/shipping/v3"',
+          'elif kind == "returns":',
+          '    base = "/returns/v2"',
+          "else:",
+          "    raise ValueError(kind)",
+          'subject = base + "/orders"',
+        ].join("\n"),
+      ),
+    ).toBe("(/returns/v2|/shipping/v3)/orders");
+  });
+
+  it("keeps running after a raise an except in the same function catches", async () => {
+    const { subject } = await projectValues({
+      "app.py": [
+        "def pick():",
+        "    try:",
+        "        raise ValueError()",
+        "    except ValueError:",
+        "        pass",
+        '    return "/after"',
+        "",
+        "subject = pick()",
+        "",
+      ].join("\n"),
+    });
+    expect(literalOf(subject("app.py"))).toBe("/after");
+  });
+
+  it("gives a function only the values of the paths that do not raise", async () => {
+    const { subject } = await projectValues({
+      "app.py": [
+        "def pick(flag):",
+        "    if flag:",
+        '        return "/on"',
+        '    raise ValueError("off")',
+        "",
+        "subject = pick(x)",
+        "",
+      ].join("\n"),
+    });
+    expect(literalOf(subject("app.py"))).toBe("/on");
+  });
+
   it("follows an elif chain", async () => {
     expect(
       await literal(

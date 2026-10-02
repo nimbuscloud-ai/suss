@@ -17,6 +17,7 @@ import {
   bodyStatements,
   field,
   hashKeySymbolName,
+  isRaiseCall,
   stringLiteralValue,
   symbolValue,
 } from "../ast.js";
@@ -501,9 +502,40 @@ function statementOf(node: RbNode): Statement<RbNode> {
   if (appending !== null) {
     return appending;
   }
+  if (isRaiseCall(node) && !rescuedInSameFunction(node)) {
+    return { kind: "throw" };
+  }
   return isTailExpression(node)
     ? { kind: "return", value: node }
     : { kind: "expression", value: node };
+}
+
+const RESCUING_TYPES = new Set(["begin", "body_statement"]);
+
+/** The parts of a `begin` that its own `rescue` does not cover. */
+const UNRESCUED_PARTS = new Set(["rescue", "else", "ensure"]);
+
+/**
+ * Whether a `rescue` in the same method or block surrounds the
+ * statement. A `begin` lowers to its main statements and its `ensure`,
+ * and leaves the `rescue` out, so a raise inside one stays opaque and
+ * the statements after it still run.
+ */
+function rescuedInSameFunction(node: RbNode): boolean {
+  let child = node;
+  let parent = node.parent;
+  while (parent !== null && !isRoot(parent)) {
+    if (
+      RESCUING_TYPES.has(parent.type) &&
+      !UNRESCUED_PARTS.has(child.type) &&
+      parent.namedChildren.some((part) => part.type === "rescue")
+    ) {
+      return true;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return false;
 }
 
 /** `a << b` on its own line rebinds `a`, which matters when `a` is a string. */

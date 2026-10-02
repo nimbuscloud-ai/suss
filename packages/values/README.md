@@ -84,7 +84,8 @@ expression at each level of nesting.
 - A loop runs its body once, then widens the state from before the loop
   against the state after it.
 - A return ends the statement list it is in, and contributes to the
-  value of an inlined call.
+  value of an inlined call. A throw that nothing in the same function
+  catches ends it too, and contributes nothing.
 - A call is looked up in the rows first. If no row matches and the
   lowering can resolve the callee to a project function without a loop,
   the body is inlined, up to a depth cap. A keyword argument binds its

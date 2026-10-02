@@ -390,6 +390,8 @@ const STATEMENT_TYPES: Record<string, (node: PyNode) => Statement<PyNode>> = {
     kind: "return",
     value: children(node)[0] ?? null,
   }),
+  raise_statement: (node) =>
+    caughtInSameFunction(node) ? OPAQUE : { kind: "throw" },
   try_statement: (node) => ({
     kind: "block",
     body: [
@@ -495,6 +497,31 @@ function blockStatements(block: PyNode | null): PyNode[] {
 
 function isRoot(node: PyNode): boolean {
   return ROOT_TYPES.has(node.type);
+}
+
+const EXCEPT_CLAUSE_TYPES = new Set(["except_clause", "except_group_clause"]);
+
+/**
+ * Whether a `try` with an `except` in the same function surrounds the
+ * statement. A `try` lowers to its body and its `finally`, and leaves
+ * the handlers out, so a raise inside one stays opaque and the
+ * statements after the `try` still run.
+ */
+function caughtInSameFunction(node: PyNode): boolean {
+  let child = node;
+  let parent = node.parent;
+  while (parent !== null && !isRoot(parent)) {
+    if (
+      parent.type === "try_statement" &&
+      field(parent, "body")?.id === child.id &&
+      children(parent).some((clause) => EXCEPT_CLAUSE_TYPES.has(clause.type))
+    ) {
+      return true;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return false;
 }
 
 /**
