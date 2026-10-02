@@ -16,7 +16,7 @@ import { isContractDocument } from "./contract/declaredContract.js";
 import { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { checkResponseMisread } from "./coverage/responseMisread.js";
-import { dedupeFindings } from "./dedupe.js";
+import { dedupeFindings, findingPerConsumerPath } from "./dedupe.js";
 import { buildInteractionIndex } from "./interactions/dispatcher.js";
 import { checkMessageBus } from "./message-bus/messageBusPairing.js";
 import { checkMetric } from "./metric/metricPairing.js";
@@ -223,7 +223,7 @@ function checkSpelledOutPair(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
 ): Finding[] {
-  return [
+  return findingPerConsumerPath([
     ...checkProviderCoverage(provider, consumer),
     ...checkResponseMisread(provider, consumer),
     ...checkConsumerSatisfaction(provider, consumer),
@@ -231,7 +231,7 @@ function checkSpelledOutPair(
     ...checkConsumerContract(provider, consumer),
     ...checkBodyCompatibility(provider, consumer),
     ...checkSemanticBridging(provider, consumer),
-  ];
+  ]);
 }
 
 export interface CheckAllResult {
