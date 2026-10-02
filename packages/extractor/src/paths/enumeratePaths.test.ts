@@ -172,6 +172,51 @@ describe("enumerateStructuredPaths, if/else", () => {
     expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
   });
 
+  it("keeps each arm of a test the caller names after the arms rejoin", () => {
+    const status = { sourceText: "status == 200", expression: "status" };
+    const statements = [
+      mkIf(status, [opq()], [opq()]),
+      mkIf({ sourceText: "a", expression: "a" }, [opq()], null),
+      opq(),
+    ];
+    const t0 = ret();
+    const keepsArms = (condition: string): boolean => condition === "status";
+
+    const result = enumerateStructuredPaths({
+      statements: [...statements, t0],
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+      keepsArms,
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      "negative:explicit:status == 200",
+      "positive:explicit:status == 200",
+    ]);
+  });
+
+  it("gives the fallthrough the rejoined path and each kept arm, with or without an else", () => {
+    const statements = [
+      mkIf(
+        { sourceText: "status == 404", expression: "status" },
+        [opq()],
+        null,
+      ),
+      opq(),
+    ];
+
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map(),
+      keepsArms: (condition: string) => condition === "status",
+    });
+
+    expect(pathSigs(result.fallthrough)).toEqual([
+      "<unconditional>",
+      "negative:explicit:status == 404",
+      "positive:explicit:status == 404",
+    ]);
+  });
+
   it("nested guard: the fallthrough gets one branch per real path", () => {
     const t0 = ret(); // if (a) { if (b) { return } }
     const t1 = ret(); // return (after the outer if)

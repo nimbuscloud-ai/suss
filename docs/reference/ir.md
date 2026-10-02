@@ -405,7 +405,7 @@ The handler may well be responding correctly, in a form the pack has no pattern 
 
 A call into a dependency is unfollowable too, and suss doesn't record a gap for it. The run already describes that as a boundary crossing, and a gap on every `JSON.parse` would bury the stops you can actually do something about. So a gap here always means a call whose callee the project itself declares. `suss inspect` prints these under `Could not follow:`.
 
-`usedAsValue` is true when every place the unit makes the call uses what it returns: assigns it, compares or tests it, passes it on, or calls a method on it. Such a call hands a value back, so it is not where the unit sends a response, and the checker still judges a filter that makes it as read. The Ruby adapter sets it.
+`usedAsValue` is true when every place the unit makes the call uses what it returns: assigns it, compares or tests it, passes it on, or calls a method on it. Such a call hands a value back, so it is not where the unit sends a response, and the checker still judges a filter or a dependency that makes it as read. The Ruby and Python adapters set it.
 
 **`consequence`** records what happens in the unhandled case. `frameworkDefault` means the framework produces something (Express serves a 500 page). `implicitThrow` means an unhandled rejection propagates up. `fallthrough` means control passes to the next middleware or handler. `unknown` means the extractor could not tell.
 

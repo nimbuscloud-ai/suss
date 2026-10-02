@@ -537,9 +537,11 @@ Where the walk stops, and the reason the gap gives:
 | a name assigned inside an `if`, `try`, or `with` block, or by unpacking | the value could not be settled |
 | `from a import *` and `from b import *` when both define the name | more than one possible source |
 | an import that resolves under two roots | more than one possible source |
-| `self.deny()` in a class with no bases that does not define `deny` | made on self in a mixin, so the class that mixes it in supplies it |
+| `self.deny()` in a class with no bases that does not define `deny`, assign `self.deny`, or define `__getattr__` | made on self in a mixin, so the class that mixes it in supplies it |
 | a call into a package whose source is not in the run | outside the run (no gap) |
 | a value's attribute, `order.save()`, or a call on a call's result | no declaration to follow (no gap) |
+
+A gap whose call has its result used everywhere the body makes it, assigned, compared, tested, passed, or read an attribute off, gets `usedAsValue`. `user = self.current_user()` hands a value back to the dependency, so the checker still counts a dependency that makes the call as read. A call written as a statement or returned does not count, since that is where a function can hand back a response.
 
 When one callee spelling resolves to two definitions in one body, for example `load()` under a class body that imports its own `load`, the call is placed on neither.
 

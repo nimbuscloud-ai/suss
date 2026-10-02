@@ -11,7 +11,12 @@
  * Both are skipped here.
  */
 
-import { hasNameHole, restBinding } from "@suss/behavioral-ir";
+import {
+  hasNameHole,
+  restBinding,
+  statusMembersOf,
+  testsStatus,
+} from "@suss/behavioral-ir";
 import { redirectDeliveryWhenSet } from "@suss/extractor";
 import { pathOf, scalarOf } from "@suss/values";
 
@@ -25,6 +30,7 @@ import {
 } from "./ast.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
+import { predicateOf } from "./paths/predicates.js";
 import {
   constructionBehind,
   constructionSitesOf,
@@ -342,19 +348,21 @@ function argumentAt(
  * One branch per path the caller takes after the call, so a test on the
  * response shows which statuses this caller handles. The conditions come
  * from the same walk as a route's, so the checker can read the status a
- * guard tests.
+ * guard tests. Each arm of a test on a status member stays a branch of
+ * its own, even in a body that never returns.
  */
 function callerBranches(
   definition: PyNode,
   range: ReturnType<typeof rangeOf>,
   facts: Database | undefined,
+  statusMembers: ReadonlySet<string>,
 ): RawBranch[] {
   const body = field(definition, "body");
   const effects = invocationEffects(definition, facts);
-  const terminals = bodyTerminals(body, []);
-  if (body === null || terminals.length === 0) {
+  if (body === null) {
     return [handsBack(range, effects)];
   }
+  const terminals = bodyTerminals(body, []);
   const branches = enumerateBodyBranches({
     body,
     terminals,
@@ -366,6 +374,8 @@ function callerBranches(
         : handsBackAt(rangeOf(found.statement)),
     fallthrough: handsBackAt(range),
     facts,
+    keepsArms: (condition) =>
+      testsStatus(predicateOf(condition, facts), statusMembers),
   });
   return branches.length === 0 ? [handsBack(range, effects)] : branches;
 }
@@ -441,6 +451,7 @@ function clientUnit(
   options: ClientCallOptions,
 ): RawCodeStructure {
   const range = rangeOf(definition);
+  const accessors = responseAccessors(pattern);
   return {
     identity: {
       name,
@@ -459,8 +470,13 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: callerBranches(definition, range, options.facts),
-    ...responseAccessors(pattern),
+    branches: callerBranches(
+      definition,
+      range,
+      options.facts,
+      statusMembersOf(accessors),
+    ),
+    ...accessors,
     ...(request.redirectDelivery === undefined
       ? {}
       : { redirectDelivery: request.redirectDelivery }),

@@ -236,6 +236,88 @@ describe("the functions a route reaches", () => {
     );
   });
 
+  it("marks a mixin call whose result the method uses as a value", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class AuthMixin:",
+      "    def check(self, token):",
+      "        account = self.current_account()",
+      "        if self.load_user(token) is None:",
+      "            raise ValueError(token)",
+      "        self.record_visit(account)",
+      "        allowed = self.verify(token)",
+      "        self.verify(token)",
+      "        return allowed",
+      "",
+      "class Service(AuthMixin):",
+      "    pass",
+      "",
+      '@app.get("/items")',
+      "def items(token: str):",
+      "    return Service().check(token)",
+    ]);
+
+    const summaries = await extract();
+    const gaps = unitNamed(summaries, "check").gaps;
+    const gapFor = (callee: string) =>
+      gaps.find(
+        (gap) => gap.type === "unfollowedCall" && gap.callee === callee,
+      );
+    expect(gapFor("self.current_account")?.usedAsValue).toBe(true);
+    expect(gapFor("self.load_user")?.usedAsValue).toBe(true);
+    // A statement can be where the method responds, so it stays unmarked.
+    expect(gapFor("self.record_visit")).toBeDefined();
+    expect(gapFor("self.record_visit")?.usedAsValue).toBeUndefined();
+    expect(gapFor("self.verify")).toBeDefined();
+    expect(gapFor("self.verify")?.usedAsValue).toBeUndefined();
+  });
+
+  it("leaves a call on self alone when the class assigns that attribute", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class Notifier:",
+      "    def __init__(self, send):",
+      "        self.send = send",
+      "",
+      "    def notify(self, message):",
+      "        self.send(message)",
+      "",
+      '@app.get("/notify")',
+      "def notify_route(message: str):",
+      "    return Notifier(print).notify(message)",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "notify").gaps.filter((gap) =>
+        gap.description.includes("in a mixin"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a call on self alone when the class defines __getattr__", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class Proxy:",
+      "    def __getattr__(self, name):",
+      "        return name",
+      "",
+      "    def forward(self, message):",
+      "        self.deliver(message)",
+      "",
+      '@app.get("/forward")',
+      "def forward_route(message: str):",
+      "    return Proxy().forward(message)",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "forward").gaps.filter((gap) =>
+        gap.description.includes("in a mixin"),
+      ),
+    ).toEqual([]);
+  });
+
   it("leaves a call on self alone in a class with a base, which may define it", async () => {
     write("app/main.py", [
       ...APP_HEADER,

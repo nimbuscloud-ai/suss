@@ -260,6 +260,14 @@ export {
   rootDocumentLabel,
 } from "./routing.js";
 export {
+  DEFAULT_STATUS_ACCESSORS,
+  DEFAULT_SUCCESS_ACCESSORS,
+  predicateRefs,
+  refEndsInMember,
+  statusMembersOf,
+  testsStatus,
+} from "./statusTests.js";
+export {
   disambiguateSummaryIds,
   renderTargetKey,
   type SummaryIdParts,
@@ -269,6 +277,7 @@ export {
   unsettledSummaryId,
 } from "./summaryId.js";
 export {
+  StopList,
   type UnfollowedCall,
   type UnfollowedReason,
   unfollowedCallGap,

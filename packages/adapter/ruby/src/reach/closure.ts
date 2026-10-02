@@ -18,6 +18,7 @@ import {
   placeCalls,
   ReceiverClasses,
   recordParameterGaps,
+  StopList,
   TargetPlacements,
   unfollowedCallGap,
   worthRecording,
@@ -744,8 +745,7 @@ function scanBody(
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
 
   const followed: ReachedFunction[] = [];
-  const stops: UnfollowedCall[] = [];
-  const stopIndex = new Map<string, number>();
+  const stops = new StopList();
   const placements = new TargetPlacements();
   const receiverClasses = new ReceiverClasses();
   const parameterCalls: ParameterCall[] = [];
@@ -852,7 +852,7 @@ function scanBody(
         options.storage !== undefined &&
         storageClaims(call, callSite.file, options.storage, callSite.method);
       if (!claimed && worthRecording(outcome.reason)) {
-        recordStop(stops, stopIndex, {
+        stops.add({
           callee,
           reason: outcome.reason,
           ...(resultUsedAsValue(call) ? { usedAsValue: true } : {}),
@@ -884,7 +884,7 @@ function scanBody(
 
   return {
     followed,
-    stops,
+    stops: stops.stops,
     targets: placements.targets,
     argTargets: placements.argTargets,
     parameterCalls,
@@ -892,29 +892,6 @@ function scanBody(
     propertyReads: propertyReadsAmong(read.argless, calls, keptArgless),
     receiverClasses: receiverClasses.settled,
   };
-}
-
-/**
- * Adds a stop once per reason and callee. It stays `usedAsValue` only
- * while every one of those calls uses the result as a value.
- */
-function recordStop(
-  stops: UnfollowedCall[],
-  indexOf: Map<string, number>,
-  stop: UnfollowedCall,
-): void {
-  const key = `${stop.reason}:${stop.callee}`;
-  const at = indexOf.get(key);
-  if (at === undefined) {
-    indexOf.set(key, stops.length);
-    stops.push(stop);
-    return;
-  }
-
-  const earlier = stops[at] as UnfollowedCall;
-  if (earlier.usedAsValue === true && stop.usedAsValue !== true) {
-    stops[at] = { callee: earlier.callee, reason: earlier.reason };
-  }
 }
 
 /**

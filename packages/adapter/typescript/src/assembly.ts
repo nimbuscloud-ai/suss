@@ -8,7 +8,7 @@
  * attached to the branch they fire on.
  */
 
-import { type CallExpression, Node } from "ts-morph";
+import { type CallExpression, type Expression, Node } from "ts-morph";
 
 import { guardsHoldOn, runsBefore } from "@suss/extractor";
 
@@ -41,6 +41,7 @@ import type {
   AccessRecognizer,
   BodyContent,
   InvocationRecognizer,
+  KeepsArms,
   RawBranch,
   RawCondition,
   RawEffect,
@@ -256,6 +257,7 @@ export function extractRawBranches(
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
   collectCallAccounting = false,
+  keepsArms?: KeepsArms<Expression>,
 ): RawBranchResult {
   const terminals = findTerminals(
     func,
@@ -298,6 +300,7 @@ export function extractRawBranches(
     terminals.map(({ node }) => node),
     barriers,
     endings,
+    keepsArms,
   );
 
   // Synthesise a fall-through terminal when (a) the pack opted in by
@@ -331,6 +334,7 @@ export function extractRawBranches(
         [synthetic.node],
         barriers,
         endings,
+        keepsArms,
       );
       byTerminal.set(
         synthetic.node,

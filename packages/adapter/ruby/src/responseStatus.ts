@@ -37,6 +37,7 @@ import { evaluatedValue } from "./values/evaluator.js";
 import type { Database } from "@suss/datalog";
 import type {
   ConditionInfo,
+  KeepsArms,
   RawBranch,
   RawCondition,
   RawEffect,
@@ -466,6 +467,7 @@ export function returnPathBranches(
   effects: readonly RawEffect[],
   exits: readonly EndingCall[] = [],
   facts?: Database,
+  keepsArms?: KeepsArms<RbNode>,
 ): RawBranch[] | null {
   const body = field(method, "body");
   if (body === null) {
@@ -478,6 +480,7 @@ export function returnPathBranches(
     {
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
+      ...(keepsArms === undefined ? {} : { keepsArms }),
     },
     [...returns, ...exitCalls],
   );

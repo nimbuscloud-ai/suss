@@ -6,7 +6,7 @@
     "internal": 5324,
     "consumers": 2749,
     "pairs": 1553,
-    "unfollowedCalls": 532,
+    "unfollowedCalls": 536,
     "findingErrors": 0
   },
   "packages": {
@@ -15,14 +15,14 @@
       "exports": 63,
       "internal": 677,
       "consumers": 326,
-      "unfollowedCalls": 77
+      "unfollowedCalls": 78
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 74,
       "internal": 745,
       "consumers": 286,
-      "unfollowedCalls": 103
+      "unfollowedCalls": 105
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -204,7 +204,7 @@
       "exports": 82,
       "internal": 118,
       "consumers": 31,
-      "unfollowedCalls": 18
+      "unfollowedCalls": 19
     },
     "packages/framework/activerecord": {
       "name": "@suss/framework-activerecord",

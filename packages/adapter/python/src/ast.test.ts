@@ -9,6 +9,7 @@ import {
   parameterIdentifier,
   parameterNameAndType,
   rangeOf,
+  resultUsedAsValue,
   stringLiteralValue,
   stripDecorators,
 } from "./ast.js";
@@ -200,5 +201,53 @@ describe("parameterIdentifier / parameterNameAndType", () => {
       undefined,
       "c",
     ]);
+  });
+});
+
+describe("resultUsedAsValue", () => {
+  /** Whether the first call to `probe` in the source has its result used. */
+  async function probeUsed(source: string): Promise<boolean> {
+    const root = await moduleOf(source);
+    const probe = root
+      .descendantsOfType("call")
+      .find((node) => node?.childForFieldName("function")?.text === "probe");
+    if (probe === undefined || probe === null) {
+      throw new Error("no call to probe");
+    }
+    return resultUsedAsValue(probe);
+  }
+
+  it.each([
+    ["an assignment", "x = probe()"],
+    ["an augmented assignment", "x += probe()"],
+    ["a walrus", "if (x := probe()):\n    pass"],
+    ["an attribute read", "probe().account"],
+    ["a chained call", "probe().save()"],
+    ["an argument", "track(probe())"],
+    ["a keyword argument", "track(user=probe())"],
+    ["a comparison", "x = probe() is None"],
+    ["a not", "x = not probe()"],
+    ["an if condition", "if probe():\n    deny()"],
+    ["an operand of or under an if", "if probe() or other():\n    deny()"],
+    ["an awaited assignment", "async def f():\n    x = await probe()"],
+    ["the test of a conditional", "x = 1 if probe() else 2"],
+    ["an iterable", "for row in probe():\n    pass"],
+    ["a with item", "with probe() as conn:\n    pass"],
+    ["an assert", "assert probe()"],
+  ])("counts %s", async (_label, source) => {
+    expect(await probeUsed(source)).toBe(true);
+  });
+
+  it.each([
+    ["a statement", "probe()\nother()"],
+    ["a returned value", "def f():\n    return probe()"],
+    ["an awaited statement", "async def f():\n    await probe()"],
+    ["an operand of or as a statement", "probe() or other()"],
+    [
+      "an arm of a conditional that is returned",
+      "def f(a):\n    return probe() if a else other()",
+    ],
+  ])("does not count %s", async (_label, source) => {
+    expect(await probeUsed(source)).toBe(false);
   });
 });
