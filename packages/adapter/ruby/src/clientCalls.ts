@@ -13,11 +13,18 @@
  * objects built in the call itself.
  */
 
-import { hasNameHole, namesNothing, restBinding } from "@suss/behavioral-ir";
+import {
+  hasNameHole,
+  namesNothing,
+  restBinding,
+  statusMembersOf,
+  testsStatus,
+} from "@suss/behavioral-ir";
 import { pathOf } from "@suss/values";
 
 import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
+import { predicateOf } from "./paths/predicates.js";
 import { returnPathBranches } from "./responseStatus.js";
 import { compoundName } from "./scope.js";
 import {
@@ -415,6 +422,7 @@ function clientUnit(
   options: ClientCallOptions,
 ): RawCodeStructure {
   const range = rangeOf(method);
+  const accessors = responseAccessors(pattern);
   return {
     identity: {
       name,
@@ -433,8 +441,13 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: callerBranches(method, range, options.facts),
-    ...responseAccessors(pattern),
+    branches: callerBranches(
+      method,
+      range,
+      options.facts,
+      statusMembersOf(accessors),
+    ),
+    ...accessors,
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,
@@ -443,16 +456,21 @@ function clientUnit(
 
 /**
  * One branch per path the caller takes after the call, so a test it
- * writes on the response says which statuses it handles.
+ * writes on the response says which statuses it handles. Each arm of a
+ * test on a status member stays a branch of its own, even when neither
+ * arm returns.
  */
 function callerBranches(
   method: RbNode,
   range: Range,
   facts: Database | undefined,
+  statusMembers: ReadonlySet<string>,
 ): RawBranch[] {
   const effects = invocationEffects(method, undefined, undefined, facts);
+  const keepsArms = (condition: RbNode): boolean =>
+    testsStatus(predicateOf(condition), statusMembers);
   return (
-    returnPathBranches(method, effects, [], facts) ?? [
+    returnPathBranches(method, effects, [], facts, keepsArms) ?? [
       returnBranch(range, effects),
     ]
   );

@@ -54,6 +54,7 @@ import { type Expression, Node } from "ts-morph";
 
 import {
   enumerateStructuredPaths,
+  type KeepsArms,
   PathBudgetExceeded,
   type StructuredStatement,
   UnmodeledFlow,
@@ -160,6 +161,7 @@ export function computePathConditions(
   terminalNodes: readonly Node[],
   barriers: DescentBarriers = NO_BARRIERS,
   endings: ReadonlySet<Node> = NO_ENDINGS,
+  keepsArms?: KeepsArms<Expression>,
 ): PathConditionsResult {
   const body = func.getBody();
   if (body === undefined) {
@@ -177,6 +179,7 @@ export function computePathConditions(
     const result = enumerateStructuredPaths({
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
+      ...(keepsArms === undefined ? {} : { keepsArms }),
     });
     return composeExpressionLevel(func, result, lowered.terminalHomeRaw);
   } catch (error) {

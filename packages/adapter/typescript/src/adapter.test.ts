@@ -4715,6 +4715,45 @@ describe("response property semantics", () => {
     expect(statusBranch).toBeDefined();
   });
 
+  it("gives each arm of a status test a branch when neither arm returns and the body goes on", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      declare function setPassed(passed: boolean): void;
+      declare function setLoading(loading: boolean): void;
+      declare function track(event: string): void;
+      export async function checkKey(apiKey: string) {
+        const res = await fetch("/keys/check", { method: "POST", body: apiKey });
+        if (res.status === 200) {
+          setPassed(true);
+        } else {
+          setPassed(false);
+        }
+        if (apiKey.length > 8) {
+          track("long key");
+        }
+        setLoading(false);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [{ ...fetchPackWithSemantics, terminals: [] }],
+    });
+    const [summary] = await adapter.extractAll();
+    const conditions = (summary?.transitions ?? []).map((t) =>
+      JSON.stringify(t.conditions),
+    );
+
+    // The test on the key's length gets no branches of its own.
+    expect(conditions).toHaveLength(3);
+    expect(conditions.filter((c) => c.includes('"status"'))).toHaveLength(2);
+    expect(conditions.some((c) => c.includes('"negation"'))).toBe(true);
+    expect(conditions).toContain("[]");
+  });
+
   it("does not resolve when pack has no responseSemantics", async () => {
     const { responseSemantics: _, ...packWithoutSemantics } =
       fetchPackWithSemantics;

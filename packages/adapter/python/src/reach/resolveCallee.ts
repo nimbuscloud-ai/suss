@@ -15,6 +15,7 @@ import {
   calleeOutcomeOf,
   calleeOutcomes,
   noteKeyRead,
+  RECEIVER_STORE_NAME,
   writtenSourcesOf,
 } from "@suss/resolution";
 
@@ -133,7 +134,8 @@ export function resolveCallee(
  * in a class with no bases, which does not define it. Only a subclass can
  * supply that method, so the call runs whatever the class that mixes this
  * one in provides. A class with a base is left alone, since the base may
- * come from a library.
+ * come from a library. So is a class that gives its instances the name
+ * some other way, by assigning `self.<name>` or through `__getattr__`.
  */
 function selfCallInMixin(
   call: PyNode,
@@ -150,15 +152,46 @@ function selfCallInMixin(
   const callee = readThrough(field(call, "function"));
   const receiver =
     callee?.type === "attribute" ? field(callee, "object") : null;
-  if (receiver?.type !== "identifier") {
+  const name = callee === null ? null : field(callee, "attribute")?.text;
+  if (receiver?.type !== "identifier" || name === undefined || name === null) {
     return false;
   }
   if (outcome.key !== `${site.owner}#${receiver.text}`) {
     return false;
   }
-  return ctx.facts
-    .lookup("instanceOf", 0, outcome.key)
-    .some((row) => ctx.facts.has("plainClass", [String(row[1])]));
+  return ctx.facts.lookup("instanceOf", 0, outcome.key).some((row) => {
+    const classKey = String(row[1]);
+    return (
+      ctx.facts.has("plainClass", [classKey]) &&
+      !instancesHaveAttribute(ctx.facts, classKey, name)
+    );
+  });
+}
+
+/** The method Python calls for an attribute an instance does not have. */
+const FALLBACK_ATTRIBUTE = "__getattr__";
+
+/**
+ * Whether the class gives its instances the attribute without defining a
+ * method by that name: one of its methods assigns `self.<name>`, or it
+ * defines `__getattr__`, which can answer for any name.
+ */
+function instancesHaveAttribute(
+  facts: Database,
+  classKey: string,
+  name: string,
+): boolean {
+  return facts.lookup("holdsProperty", 0, classKey).some((member) => {
+    if (String(member[1]) === FALLBACK_ATTRIBUTE) {
+      return true;
+    }
+    return facts
+      .lookup("storesProperty", 0, String(member[2]))
+      .some(
+        (store) =>
+          String(store[1]) === name && store[3] === RECEIVER_STORE_NAME,
+      );
+  });
 }
 
 /**

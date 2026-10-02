@@ -226,6 +226,90 @@ export function stripDecorators(node: PyNode): {
   return { definition, decorators };
 }
 
+const isChild =
+  (fieldName: string) =>
+  (parent: PyNode, child: PyNode): boolean =>
+    field(parent, fieldName)?.id === child.id;
+
+const always = (): boolean => true;
+const asCondition = isChild("condition");
+
+/** The test of `a if test else b`, which the grammar gives no field name. */
+const isConditionalTest = (parent: PyNode, child: PyNode): boolean =>
+  parent.namedChildren[1]?.id === child.id;
+
+/**
+ * For each kind of parent, whether a child in that place has its value
+ * used. A parent missing from the table, such as a statement on its own
+ * line or a `return`, uses nothing the call returns.
+ */
+const VALUE_USED_UNDER: Record<
+  string,
+  (parent: PyNode, child: PyNode) => boolean
+> = {
+  assignment: isChild("right"),
+  augmented_assignment: isChild("right"),
+  named_expression: isChild("value"),
+  attribute: isChild("object"),
+  subscript: always,
+  argument_list: always,
+  keyword_argument: isChild("value"),
+  pair: always,
+  list: always,
+  tuple: always,
+  set: always,
+  dictionary: always,
+  interpolation: always,
+  comparison_operator: always,
+  binary_operator: always,
+  unary_operator: always,
+  not_operator: always,
+  if_statement: asCondition,
+  elif_clause: asCondition,
+  while_statement: asCondition,
+  conditional_expression: isConditionalTest,
+  assert_statement: always,
+  for_statement: isChild("right"),
+  for_in_clause: isChild("right"),
+  with_item: always,
+  as_pattern: always,
+};
+
+/**
+ * Parents that pass a value on to their own parent unchanged, so whether
+ * it is used depends on where they sit. `a() or b()` is used when the
+ * whole expression is, and an arm of `a if test else b` likewise.
+ */
+const PASSES_VALUE_ON: Record<
+  string,
+  (parent: PyNode, child: PyNode) => boolean
+> = {
+  parenthesized_expression: always,
+  await: always,
+  boolean_operator: always,
+  conditional_expression: (parent, child) => !isConditionalTest(parent, child),
+};
+
+/**
+ * Whether the code uses what a call returns: assigns it, compares or
+ * tests it, passes it, or reads an attribute off it. A call written as a
+ * statement or returned does not count, since that is where a function
+ * can hand back a response.
+ */
+export function resultUsedAsValue(node: PyNode): boolean {
+  let child = node;
+  let parent = node.parent;
+  while (
+    parent !== null &&
+    PASSES_VALUE_ON[parent.type]?.(parent, child) === true
+  ) {
+    child = parent;
+    parent = parent.parent;
+  }
+  const used = parent === null ? undefined : VALUE_USED_UNDER[parent.type];
+  return parent !== null && used !== undefined && used(parent, child);
+}
+
 /**
  * A set of nodes keyed on the node id. tree-sitter returns a new wrapper
  * each time a child is read, so two reads of one node are never `===`.

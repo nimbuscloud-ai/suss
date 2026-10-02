@@ -18,6 +18,7 @@ import { type GuardInputs, operandsOf, predicateOf } from "./predicates.js";
 import type { Database } from "@suss/datalog";
 import type {
   ConditionInfo,
+  KeepsArms,
   RawBranch,
   RawCondition,
   RawEffect,
@@ -108,6 +109,8 @@ export interface EnumerateBodyOptions {
   fallthrough?: TerminalBranch;
   /** The project's facts, so a condition over a named constant reads the value that constant was written as. */
   facts?: Database | undefined;
+  /** The tests whose arms stay separate branches after they rejoin. */
+  keepsArms?: KeepsArms<PyNode>;
 }
 
 /**
@@ -155,6 +158,9 @@ export function enumerateBodyBranches(
     {
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
+      ...(options.keepsArms === undefined
+        ? {}
+        : { keepsArms: options.keepsArms }),
     },
     statements,
   );

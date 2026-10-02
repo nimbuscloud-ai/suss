@@ -1,4 +1,8 @@
-import { readHttpMetadata, summaryRef } from "@suss/behavioral-ir";
+import {
+  readHttpMetadata,
+  refEndsInMember,
+  summaryRef,
+} from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
@@ -164,31 +168,14 @@ function asStatusLiteral(
  * is one of the given names.
  *
  * Provider coverage uses this too, to leave status comparisons out of
- * its sub-case discriminators, so both agree on what a status read is.
+ * its sub-case discriminators, and the adapters read a caller's status
+ * tests the same way, so all of them agree on what a status read is.
  */
 export function refLooksLikeStatus(
   v: ValueRef,
   accessors: StatusAccessors,
 ): boolean {
-  if (v.type === "derived") {
-    // `const { status } = await call()` makes a later `status === 404`
-    // a destructured derivation.
-    if (v.derivation.type === "destructured") {
-      return accessors.has(v.derivation.field);
-    }
-    if (v.derivation.type === "propertyAccess") {
-      return accessors.has(v.derivation.property);
-    }
-  }
-  if (v.type === "input") {
-    const last = v.path[v.path.length - 1];
-    return last !== undefined && accessors.has(last);
-  }
-  if (v.type === "dependency") {
-    const last = v.accessChain[v.accessChain.length - 1];
-    return last !== undefined && accessors.has(last);
-  }
-  return false;
+  return refEndsInMember(v, accessors);
 }
 
 export function makeSide(

@@ -13,6 +13,7 @@
  */
 
 import {
+  predicateRefs,
   readsBesideTheRequest,
   readWrapperMetadata,
   wrapperFor,
@@ -29,31 +30,9 @@ import type {
   Finding,
   Predicate,
   Transition,
-  ValueRef,
   WrapperIndex,
   WrapperReference,
 } from "@suss/behavioral-ir";
-
-/** A new predicate kind without an entry here fails the build (decision 8). */
-type PredicateRefs = {
-  [K in Predicate["type"]]: (p: Extract<Predicate, { type: K }>) => ValueRef[];
-};
-
-const REFS_OF: PredicateRefs = {
-  nullCheck: (p) => [p.subject],
-  truthinessCheck: (p) => [p.subject],
-  typeCheck: (p) => [p.subject],
-  propertyExists: (p) => [p.subject],
-  comparison: (p) => [p.left, p.right],
-  call: (p) => p.args,
-  compound: (p) => p.operands.flatMap(refsOf),
-  negation: (p) => refsOf(p.operand),
-  opaque: () => [],
-};
-
-function refsOf(p: Predicate): ValueRef[] {
-  return (REFS_OF[p.type] as (q: Predicate) => ValueRef[])(p);
-}
 
 /**
  * Whether a condition tests state some other code set, so the path runs
@@ -61,7 +40,7 @@ function refsOf(p: Predicate): ValueRef[] {
  * runs, never whether it can, so it does not count.
  */
 function conditionUnread(handler: BehavioralSummary, p: Predicate): boolean {
-  return refsOf(p).some((ref) => readsBesideTheRequest(handler, ref));
+  return predicateRefs(p).some((ref) => readsBesideTheRequest(handler, ref));
 }
 
 /**

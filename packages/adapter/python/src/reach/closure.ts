@@ -17,6 +17,7 @@ import {
   placeCalleeParameters,
   placeCalls,
   recordParameterGaps,
+  StopList,
   TargetPlacements,
   unfollowedCallGap,
   worthRecording,
@@ -38,6 +39,7 @@ import {
   field,
   isModule,
   rangeOf,
+  resultUsedAsValue,
   runsAtModuleLoad,
   spanOf,
 } from "../ast.js";
@@ -681,7 +683,7 @@ function scanBody(
   implied: readonly ImpliedCall[],
 ): Scan {
   const followed: ReachedFunction[] = [];
-  const stops: UnfollowedCall[] = [];
+  const stops = new StopList();
   const placements = new TargetPlacements();
   const parameterCalls: ParameterCall[] = [];
   const passedPositions = new Set<string>();
@@ -743,17 +745,14 @@ function scanBody(
       outcome.kind === "followed" ? keyOf(outcome.target) : null,
     );
 
-    // One record per callee, however many times the body calls it. A call
-    // that storage recognition already read is not reported as a stop.
+    // A call that storage recognition already read is not reported as a stop.
     if (outcome.kind === "stopped") {
-      const stopKey = `${outcome.reason}:${callee}`;
-      if (
-        !seen.has(stopKey) &&
-        !recognized.has(call.id) &&
-        worthRecording(outcome.reason)
-      ) {
-        seen.add(stopKey);
-        stops.push({ callee, reason: outcome.reason });
+      if (!recognized.has(call.id) && worthRecording(outcome.reason)) {
+        stops.add({
+          callee,
+          reason: outcome.reason,
+          ...(resultUsedAsValue(call) ? { usedAsValue: true } : {}),
+        });
       }
       if (
         outcome.reason === "callerSupplied" &&
@@ -791,7 +790,7 @@ function scanBody(
 
   return {
     followed,
-    stops,
+    stops: stops.stops,
     targets: placements.targets,
     argTargets: placements.argTargets,
     parameterCalls,

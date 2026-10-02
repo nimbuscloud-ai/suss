@@ -353,6 +353,34 @@ describe("a function that calls a request function", () => {
     expect(units[0]?.branches[0]?.isDefault).toBe(true);
   });
 
+  it("gives each arm of a status test a branch in a caller that never returns", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def refresh(orders):",
+        '    response = httpclient.get("/orders")',
+        "    if response.status_code == 404:",
+        "        orders.clear()",
+        "    if orders:",
+        "        orders.sort()",
+        "    orders.mark_loaded()",
+      ].join("\n"),
+      { ...REQUEST_CALLS, response: { statusCode: ["status_code"] } },
+    );
+
+    const conditions = (units[0]?.branches ?? []).map((branch) =>
+      branch.conditions.map(
+        (condition) => `${condition.polarity} ${condition.sourceText}`,
+      ),
+    );
+    expect(conditions).toEqual([
+      [],
+      ["positive response.status_code == 404"],
+      ["negative response.status_code == 404"],
+    ]);
+  });
+
   it("keeps one branch for a caller that tests nothing", async () => {
     const units = await unitsIn(
       [

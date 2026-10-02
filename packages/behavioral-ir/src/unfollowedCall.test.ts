@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { unfollowedCallGap, worthRecording } from "./unfollowedCall.js";
+import {
+  StopList,
+  unfollowedCallGap,
+  worthRecording,
+} from "./unfollowedCall.js";
 
 import type { UnfollowedReason } from "./unfollowedCall.js";
 
@@ -64,5 +68,21 @@ describe("unfollowed calls", () => {
       reason: "multipleReceivers",
     });
     expect(gap.description).toContain("several different values");
+  });
+});
+
+describe("StopList", () => {
+  it("keeps one stop per reason and callee, used as a value only while every call is", () => {
+    const list = new StopList();
+    list.add({ callee: "load", reason: "noBody", usedAsValue: true });
+    list.add({ callee: "load", reason: "noBody", usedAsValue: true });
+    list.add({ callee: "deny", reason: "noBody", usedAsValue: true });
+    list.add({ callee: "deny", reason: "noBody" });
+    list.add({ callee: "deny", reason: "noBody", usedAsValue: true });
+
+    expect(list.stops).toEqual([
+      { callee: "load", reason: "noBody", usedAsValue: true },
+      { callee: "deny", reason: "noBody" },
+    ]);
   });
 });
