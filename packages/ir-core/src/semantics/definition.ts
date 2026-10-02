@@ -160,6 +160,13 @@ export interface BoundaryBehavior<S extends { name: string }> {
   nameReference?(semantics: S): Reference | null;
 
   /**
+   * The semantics with a host the project says it serves left out of
+   * the name, or null when the name has none of them. A protocol whose
+   * names never carry a host leaves this undefined.
+   */
+  withoutOwnHost?(semantics: S, ownHosts: ReadonlySet<string>): S | null;
+
+  /**
    * Whether a provider produces a status and a body that a consumer
    * reads back. It is required, so a new protocol cannot end up in the
    * HTTP-style checks because nobody remembered to exclude it.

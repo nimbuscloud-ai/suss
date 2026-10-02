@@ -144,6 +144,7 @@ export {
   servesRequest,
   spansBuckets,
   withinScope,
+  withoutOwnHost,
   withRewrittenPaths,
 } from "./boundaryKey.js";
 export {

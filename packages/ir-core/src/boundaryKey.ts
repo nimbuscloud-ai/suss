@@ -54,6 +54,23 @@ export function withRewrittenPaths(
 }
 
 /**
+ * The binding with a host the project serves left out, so a call to
+ * the project's public host pairs with its routes.
+ */
+export function withoutOwnHost(
+  binding: BoundaryBinding,
+  ownHosts: ReadonlySet<string>,
+): BoundaryBinding {
+  const semantics = behaviorOf(binding.semantics).withoutOwnHost?.(
+    binding.semantics,
+    ownHosts,
+  );
+  return semantics === undefined || semantics === null
+    ? binding
+    : { ...binding, semantics };
+}
+
+/**
  * The pairing key after the deployment's values are filled into the
  * boundary's name.
  *

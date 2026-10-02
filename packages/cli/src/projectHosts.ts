@@ -12,6 +12,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { withoutOwnHost } from "@suss/behavioral-ir";
+
 import { nearestProjectFile } from "./projectModules.js";
 import { UsageError } from "./usageError.js";
 
@@ -47,25 +49,13 @@ export function projectHosts(start: string): ReadonlySet<string> {
   return new Set(hosts.map((host: string) => host.toLowerCase()));
 }
 
-/** Leaves the host off a call to one the project serves, with or without its port. */
+/** Leaves the host off a call to one the project serves. */
 export function forgetOwnHosts(
   summary: BehavioralSummary,
   hosts: ReadonlySet<string>,
 ): void {
   const binding = summary.identity.boundaryBinding;
-  const semantics = binding?.semantics;
-  if (
-    binding === null ||
-    binding === undefined ||
-    semantics?.name !== "rest" ||
-    semantics.host === undefined
-  ) {
-    return;
+  if (binding !== null && binding !== undefined && hosts.size > 0) {
+    summary.identity.boundaryBinding = withoutOwnHost(binding, hosts);
   }
-  const host = semantics.host;
-  if (!hosts.has(host) && !hosts.has(host.replace(/:\d+$/, ""))) {
-    return;
-  }
-  const { host: _own, ...rest } = semantics;
-  summary.identity.boundaryBinding = { ...binding, semantics: rest };
 }
