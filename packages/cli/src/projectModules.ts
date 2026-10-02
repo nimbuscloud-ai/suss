@@ -41,7 +41,8 @@ export function projectModules(start: string): DeclaredModule[] {
   return listed.map((entry) => declaredModule(entry, dir));
 }
 
-function nearestProjectFile(start: string): string | null {
+/** The nearest `suss.json` at or above `start`, or null when there is none. */
+export function nearestProjectFile(start: string): string | null {
   let dir = start;
   for (;;) {
     const candidate = path.join(dir, PROJECT_FILE);
