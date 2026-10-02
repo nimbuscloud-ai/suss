@@ -34,6 +34,7 @@ import {
   writtenNodeOf,
 } from "./values/evaluator.js";
 
+import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
 import type { CallArgs, Range } from "./ast.js";
@@ -475,7 +476,7 @@ function callerBranches(
   method: RbNode,
   range: Range,
   facts: Database | undefined,
-  statusMembers: ReadonlySet<string>,
+  statusMembers: StatusMembers,
 ): RawBranch[] {
   const effects = invocationEffects(method, undefined, undefined, facts);
   const keepsArms = (condition: RbNode): boolean =>

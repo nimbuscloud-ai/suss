@@ -29,6 +29,7 @@ import {
   isSuccessStatus,
   makeBoundary,
   makeSide,
+  type StatusAccessors,
 } from "./responseMatch.js";
 import { branchHandlesStatus, guardsForBranch } from "./statusRanges.js";
 
@@ -189,8 +190,8 @@ function fieldAbsent(shape: TypeShape, field: string): boolean {
 function branchAdmitsStatus(
   ct: Transition,
   status: number,
-  statusAccessors: ReadonlySet<string>,
-  successAccessors: ReadonlySet<string>,
+  statusAccessors: StatusAccessors,
+  successAccessors: StatusAccessors,
 ): boolean {
   if (ct.isDefault && isSuccessStatus(status)) {
     return true;
@@ -206,8 +207,8 @@ function branchAdmitsStatus(
 function branchAdmitsResponse(
   ct: Transition,
   r: ProviderResponse,
-  statusAccessors: ReadonlySet<string>,
-  successAccessors: ReadonlySet<string>,
+  statusAccessors: StatusAccessors,
+  successAccessors: StatusAccessors,
 ): boolean {
   for (let status = r.min; status <= r.max; status++) {
     if (branchAdmitsStatus(ct, status, statusAccessors, successAccessors)) {
@@ -255,8 +256,8 @@ export function checkResponseMisread(
     failureOnlyBodyFields(provider).flatMap((entry) => [...entry.fields]),
   );
   const guardSkip = new Set([
-    ...statusAccessors,
-    ...successAccessors,
+    ...statusAccessors.members,
+    ...successAccessors.members,
     ...accessors,
   ]);
 

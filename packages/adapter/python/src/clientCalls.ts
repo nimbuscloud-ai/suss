@@ -38,6 +38,7 @@ import {
 } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
+import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   RawBranch,
@@ -364,7 +365,7 @@ function callerBranches(
   definition: PyNode,
   range: ReturnType<typeof rangeOf>,
   facts: Database | undefined,
-  statusMembers: ReadonlySet<string>,
+  statusMembers: StatusMembers,
 ): RawBranch[] {
   const body = field(definition, "body");
   const effects = invocationEffects(definition, facts);

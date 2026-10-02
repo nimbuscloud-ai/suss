@@ -64,6 +64,8 @@ describe("testsStatus", () => {
 });
 
 describe("refEndsInMember", () => {
+  const fetchReads = statusMembersOf({ bodyAccessors: ["json", "body"] });
+
   it("counts a destructured field as a read of that field", () => {
     const status: ValueRef = {
       type: "derived",
@@ -71,7 +73,45 @@ describe("refEndsInMember", () => {
       derivation: { type: "destructured", field: "status" },
     };
 
-    expect(refEndsInMember(status, new Set(["status"]))).toBe(true);
+    expect(refEndsInMember(status, fetchReads)).toBe(true);
+  });
+
+  it("does not count a status field read off the parsed body", () => {
+    const bodyStatus: ValueRef = {
+      type: "derived",
+      from: { type: "dependency", name: "response.json", accessChain: [] },
+      derivation: { type: "propertyAccess", property: "status" },
+    };
+    const axiosBodyStatus: ValueRef = {
+      type: "dependency",
+      name: "res",
+      accessChain: ["data", "status"],
+    };
+
+    expect(refEndsInMember(bodyStatus, fetchReads)).toBe(false);
+    expect(
+      refEndsInMember(
+        axiosBodyStatus,
+        statusMembersOf({ bodyAccessors: ["data"] }),
+      ),
+    ).toBe(false);
+    expect(refEndsInMember(fetchStatus, fetchReads)).toBe(true);
+  });
+
+  it("does not count a call or an index as a member read", () => {
+    const called: ValueRef = {
+      type: "derived",
+      from: { type: "dependency", name: "res", accessChain: [] },
+      derivation: { type: "methodCall", method: "status", args: [] },
+    };
+    const awaited: ValueRef = {
+      type: "derived",
+      from: fetchStatus,
+      derivation: { type: "awaited" },
+    };
+
+    expect(refEndsInMember(called, fetchReads)).toBe(false);
+    expect(refEndsInMember(awaited, fetchReads)).toBe(false);
   });
 });
 

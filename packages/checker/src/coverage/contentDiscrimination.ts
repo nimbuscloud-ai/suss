@@ -188,8 +188,8 @@ export function bodyFieldsConsumerTests(
     }
   }
   for (const name of [
-    ...statusAccessorsFor(consumer),
-    ...successAccessorsFor(consumer),
+    ...statusAccessorsFor(consumer).members,
+    ...successAccessorsFor(consumer).members,
     ...bodyAccessorsFor(consumer),
   ]) {
     out.delete(name);
