@@ -150,6 +150,21 @@ export const METHOD_TYPES = new Set(["method", "singleton_method"]);
 /** `->(x) { ... }`, a function that can be assigned to a name and called later. */
 export const LAMBDA_TYPE = "lambda";
 
+/** `raise` is an ordinary method call in Ruby, and not a keyword. */
+const RAISING_METHODS = new Set(["raise", "fail"]);
+
+/** `raise`, `raise "..."` or `fail Error`, called on `self`. */
+export function isRaiseCall(node: RbNode): boolean {
+  if (node.type === "identifier") {
+    return RAISING_METHODS.has(node.text);
+  }
+  return (
+    node.type === "call" &&
+    field(node, "receiver") === null &&
+    RAISING_METHODS.has(field(node, "method")?.text ?? "")
+  );
+}
+
 /**
  * The nearest method or lambda a node is written inside, or null outside
  * both. Parameter reads are keyed under it, so this has to stop where the
