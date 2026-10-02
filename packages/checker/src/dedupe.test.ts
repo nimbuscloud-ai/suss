@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { functionCallBinding, restBinding } from "@suss/behavioral-ir";
 
-import { dedupeFindings } from "./dedupe.js";
+import { dedupeFindings, mergedSideOf } from "./dedupe.js";
 
 import type { Finding } from "@suss/behavioral-ir";
 
@@ -230,6 +230,99 @@ describe("dedupeFindings", () => {
     const out = dedupeFindings([pre, fresh]);
     expect(out).toHaveLength(1);
     expect(out[0].sources).toEqual(["a::x", "b::y", "c::z"]);
+  });
+
+  describe("findings whose consumer side is a contract document", () => {
+    const handler = {
+      summary: "src/handlers/pet.ts::getPet",
+      transitionId: "t-403",
+      location: {
+        file: "src/handlers/pet.ts",
+        range: { start: 1, end: 20 },
+        exportName: "getPet",
+      },
+    };
+    const documentSide = (file: string) => ({
+      summary: `openapi:${file}::getPet`,
+      location: {
+        file: `openapi:${file}`,
+        range: { start: 1, end: 1 },
+        exportName: null,
+      },
+    });
+    const undeclared = (file: string, provider = handler): Finding =>
+      finding({
+        kind: "providerContractViolation",
+        provider,
+        consumer: documentSide(file),
+        description:
+          "Handler produces status 403 which the openapi document does not declare",
+        severity: "error",
+      });
+    const documents = new Set([
+      "openapi:bundle.json::getPet",
+      "openapi:pets.yml::getPet",
+    ]);
+
+    it("reports one finding and lists every document it came from", () => {
+      const out = dedupeFindings(
+        [undeclared("bundle.json"), undeclared("pets.yml")],
+        documents,
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]?.consumer.summary).toBe("openapi:bundle.json::getPet");
+      expect(out[0]?.sources).toEqual([
+        "openapi:bundle.json::getPet",
+        "openapi:pets.yml::getPet",
+      ]);
+      expect(mergedSideOf(out[0] as Finding)).toBe("consumer");
+    });
+
+    it("keeps two handlers apart when both are judged against the documents", () => {
+      const other = { ...handler, summary: "src/handlers/pet.ts::getPetV2" };
+      const out = dedupeFindings(
+        [undeclared("bundle.json"), undeclared("pets.yml", other)],
+        documents,
+      );
+      expect(out).toHaveLength(2);
+    });
+
+    it("reports an operation no handler serves once across the documents", () => {
+      const unimplemented = (file: string): Finding =>
+        finding({
+          kind: "contractOperationUnimplemented",
+          provider: documentSide(file),
+          consumer: documentSide(file),
+          description:
+            "The openapi contract declares GET /pet/{id} and no extracted provider implements it.",
+        });
+      const out = dedupeFindings(
+        [unimplemented("bundle.json"), unimplemented("pets.yml")],
+        documents,
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]?.sources).toEqual([
+        "openapi:bundle.json::getPet",
+        "openapi:pets.yml::getPet",
+      ]);
+    });
+
+    it("keeps the documents apart when nothing says they are documents", () => {
+      const out = dedupeFindings([
+        undeclared("bundle.json"),
+        undeclared("pets.yml"),
+      ]);
+      expect(out).toHaveLength(2);
+    });
+  });
+
+  it("says a merge of providers lists providers", () => {
+    const fromCfn = finding({
+      provider: { ...finding().provider, summary: "template.yaml::getPet" },
+    });
+    const [merged] = dedupeFindings([finding(), fromCfn]);
+    expect(mergedSideOf(merged as Finding)).toBe("provider");
+    expect(mergedSideOf(finding())).toBeNull();
   });
 
   it("preserves input order for representatives across unrelated groups", () => {

@@ -146,6 +146,7 @@ export {
 export {
   buildModuleGraph,
   entryClosure,
+  entryFileAmong,
   type ModuleGraph,
 } from "./deployment/entryClosure.js";
 export {

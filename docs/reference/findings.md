@@ -22,7 +22,7 @@ The behavioral findings go under `findings` in the JSON, and each one reports th
 | `consumer` | `FindingSide` | The consumer's summary. Always set, even where the finding is about a provider against its own contract; there the two often resolve to the same summary. |
 | `description` | string | One line of human-readable text. |
 | `aspect` | `BoundaryAspect?` | Which side of the field this concerns: `read`, `write`, `send`, `receive`, `construct` or `selector`. Absent where the aspect is irrelevant or spans several. |
-| `sources` | `string[]?` | Set only when the dedupe pass collapsed identical findings from several providers. |
+| `sources` | `string[]?` | Set only when the dedupe pass collapsed identical findings. It lists the providers, or, when one handler was judged against several contract documents that describe the same operation, the documents. |
 | `suppressed` | `FindingSuppression?` | Set only when a `.sussignore` rule matched. See [Accept a finding](/guides/accept-a-finding). |
 
 ## How a kind gets its severity

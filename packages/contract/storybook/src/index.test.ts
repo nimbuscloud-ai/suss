@@ -227,6 +227,23 @@ describe("args on the meta", () => {
       readStorybookMetadata(plain as BehavioralSummary)?.argReaders,
     ).toBeUndefined();
   });
+
+  it("records the props a render function passes the component itself", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipRendered.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const renderPropsOf = (name: string) =>
+      readStorybookMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.renderProps;
+
+    expect(renderPropsOf("Chip.Spread")).toEqual([]);
+    expect(renderPropsOf("Chip.Sized")).toEqual(["size"]);
+    expect(renderPropsOf("Chip.Wrapping")).toEqual(["children", "label"]);
+    expect(renderPropsOf("Chip.Elsewhere")).toBeUndefined();
+    expect(renderPropsOf("Chip.Extra")).toBeUndefined();
+  });
 });
 
 describe("generateSummariesFromStories — shape variants", () => {

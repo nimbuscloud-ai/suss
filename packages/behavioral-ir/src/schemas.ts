@@ -831,8 +831,10 @@ export const FindingSchema = z.object({
   severity: FindingSeveritySchema,
   aspect: BoundaryAspectSchema.optional(),
   /**
-   * Every provider that contributed, when identical findings from several
-   * of them were collapsed into one. `provider` above is one of them.
+   * Every summary that contributed, when identical findings were
+   * collapsed into one. They are providers, unless the finding judged
+   * one provider against several contract documents that describe the
+   * same operation, and then they are the documents on the consumer side.
    */
   sources: z.array(z.string()).optional(),
   suppressed: FindingSuppressionSchema.optional(),

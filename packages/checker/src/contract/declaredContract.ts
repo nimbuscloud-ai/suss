@@ -83,6 +83,15 @@ export function readDeclaredContract(
 }
 
 /**
+ * Whether the summary is a contract document's own operation, such as
+ * an OpenAPI stub, whose contract comes from the same place as its
+ * transitions.
+ */
+export function isContractDocument(summary: BehavioralSummary): boolean {
+  return readDeclaredContract(summary)?.provenance === "derived";
+}
+
+/**
  * Whether a contract declares `status`: as a literal, inside a range,
  * or through the catch-all default, which covers every status the
  * other entries leave out.

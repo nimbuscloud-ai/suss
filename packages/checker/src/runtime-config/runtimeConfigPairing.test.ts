@@ -977,6 +977,69 @@ describe("checkRuntimeConfig", () => {
       expect(unknown).toHaveLength(0);
     });
   });
+
+  describe("a runtime whose entry file the run did not read", () => {
+    // `main = ".build/worker.js"`: a build step writes the entry, and it
+    // bundles code from outside the source that reads the variables.
+    const runtime = makeRuntimeProvider({
+      instanceName: "report-site",
+      envVars: ["REPORT_BUCKET", "SITE_NAME", "BUILD_SLOT"],
+      codeScope: {
+        kind: "codeUri",
+        path: "site/",
+        entry: "site/.build/worker",
+      },
+    });
+    const page = makeCodeSummary({
+      name: "reportPage",
+      file: "site/src/page.ts",
+      envReads: ["SITE_NAME", "MISSING_VAR"],
+    });
+
+    it("says which variables went unchecked instead of calling them unused", () => {
+      const findings = checkRuntimeConfig([runtime, page]);
+      const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
+      expect(unused).toHaveLength(1);
+      expect(unused[0]?.severity).toBe("info");
+      expect(unused[0]?.description).toBe(
+        "report-site runs site/.build/worker, which is not among the files this run read, so whether it reads BUILD_SLOT and REPORT_BUCKET was not checked. A build step usually writes that file, and code it bundles from outside the source can read them.",
+      );
+    });
+
+    it("still reports a read in the source the runtime does not supply", () => {
+      const findings = checkRuntimeConfig([runtime, page]);
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown.map((f) => f.description)).toEqual([
+        expect.stringContaining("MISSING_VAR"),
+      ]);
+    });
+
+    it("still calls a variable unused when the entry file was read and imports nothing", () => {
+      const readRuntime = makeRuntimeProvider({
+        instanceName: "report-job",
+        envVars: ["REPORT_BUCKET"],
+        codeScope: { kind: "codeUri", path: "jobs/", entry: "jobs/report" },
+      });
+      const job = makeCodeSummary({
+        name: "handler",
+        file: "jobs/report.ts",
+        envReads: ["REPORT_REGION"],
+      });
+      const unused = checkRuntimeConfig([readRuntime, job]).filter(
+        (f) => f.kind === "boundaryFieldUnused",
+      );
+      expect(unused.map((f) => f.severity)).toEqual(["warning"]);
+    });
+
+    it("says nothing when the source reads every variable", () => {
+      const readsAll = makeCodeSummary({
+        name: "reportPage",
+        file: "site/src/page.ts",
+        envReads: ["REPORT_BUCKET", "SITE_NAME", "BUILD_SLOT"],
+      });
+      expect(checkRuntimeConfig([runtime, readsAll])).toEqual([]);
+    });
+  });
 });
 
 describe("a runtime whose code reads its configuration off an argument", () => {

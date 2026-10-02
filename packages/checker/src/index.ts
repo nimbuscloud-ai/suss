@@ -12,6 +12,7 @@ import { checkContractAgreement } from "./contract/contractAgreement.js";
 import { checkContractCompleteness } from "./contract/contractCompleteness.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
 import { checkContractImplementation } from "./contract/contractImplementation.js";
+import { isContractDocument } from "./contract/declaredContract.js";
 import { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { checkResponseMisread } from "./coverage/responseMisread.js";
@@ -96,7 +97,7 @@ export {
 export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { checkResponseMisread } from "./coverage/responseMisread.js";
-export { dedupeFindings } from "./dedupe.js";
+export { dedupeFindings, mergedSideOf } from "./dedupe.js";
 export {
   buildFlowChains,
   type FlowCertainty,
@@ -373,7 +374,10 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   };
 
   return {
-    findings: dedupeFindings(findings),
+    findings: dedupeFindings(
+      findings,
+      new Set(production.filter(isContractDocument).map(summaryRef)),
+    ),
     pairs: pairInfo,
     unmatched: {
       providers: unmatched.providers
