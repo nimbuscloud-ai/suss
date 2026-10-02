@@ -32,6 +32,17 @@ A route found here pairs with a client that calls the same URL. It also
 pairs with a provider in another framework that serves it, since
 `/api/orders/{id}` and `/api/orders/:id` compare equal.
 
+## A handler the route file does not write
+
+A route file can export a handler from another module, as `export { GET }
+from "./handlers"` or `export { listOrders as GET }`, or export what a
+factory returns, as `export const GET = withAuth({ handler })`. The route
+still comes from the route file's path and the name it exports. The
+summary reads the function the export comes down to: the handler itself,
+or the function the factory returns when the factory wraps its argument
+in a function of its own. One handler exported as both `GET` and `POST`
+gives two routes.
+
 ## Pages handlers and server actions
 
 A `pages/api` handler is one default export that switches on

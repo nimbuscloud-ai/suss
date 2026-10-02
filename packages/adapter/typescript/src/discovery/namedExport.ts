@@ -161,10 +161,10 @@ export function discoverNamedExports(
     }
 
     // The export is a wrapper call, an imported name, or a .bind, so
-    // ask the fact layer which function it comes down to. The unit is
-    // still this export; only the body being read lives elsewhere.
+    // ask the fact layer which function a call through it runs: the one
+    // it comes down to, or else the one a factory call gives back.
     if (resolution !== undefined) {
-      const resolved = resolution.resolveCallable(init);
+      const resolved = resolution.resolveCalledFunction(init);
       const fn = resolved === null ? null : toFunctionRoot(resolved);
       if (fn !== null) {
         results.push({ func: fn, kind, name });
@@ -306,6 +306,6 @@ function resolutionToFunctionRoot(
   if (!couldStillNameAFunction(value)) {
     return null;
   }
-  const resolved = resolution.resolveCallable(value);
+  const resolved = resolution.resolveCalledFunction(value);
   return resolved === null ? null : toFunctionRoot(resolved);
 }

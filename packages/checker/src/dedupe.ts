@@ -39,11 +39,11 @@ function keyFor(f: Finding, documents: ReadonlySet<string>): Keyed {
   // Descriptions that differ only in whitespace still collapse.
   const desc = normalizedDescription(f);
   if (documents.has(f.consumer.summary) && key !== null) {
-    // A finding about the document alone has it on both sides.
+    // A finding about the document alone has it on both sides. Two paths
+    // of one handler that earn the same text against a document are one
+    // finding, so the provider's transition stays out of the key.
     const provider =
-      f.provider.summary === f.consumer.summary
-        ? ""
-        : `${f.provider.summary}|${f.provider.transitionId ?? ""}`;
+      f.provider.summary === f.consumer.summary ? "" : f.provider.summary;
     return {
       key: `${f.kind}|${key}|${desc}|document|${provider}`,
       source: f.consumer.summary,
