@@ -1821,6 +1821,61 @@ describe("createTypeScriptAdapter: componentProps roles", () => {
       ["rest", "rest"],
     ]);
   });
+
+  it("reads a prop destructured again as a field of that prop", async () => {
+    const pack: PatternPack = {
+      name: "test-components",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        { kind: "component", match: { type: "namedExport", names: ["Nav"] } },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "componentProps", paramPosition: 0 },
+    };
+    const project = createTestProject();
+    project.createSourceFile(
+      "nav.tsx",
+      `
+      type NavProps = {
+        data: { menu: string[]; brand_name: string; extra: number; more: number };
+        pair: [string, string];
+        compact: boolean;
+      };
+      export function Nav({
+        data: { menu, brand_name: brandName, ...others },
+        pair: [first],
+        compact,
+      }: NavProps) {
+        return <nav>{menu.length}{brandName}{first}{String(others)}</nav>;
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [pack] });
+    const summaries = await adapter.extractAll();
+    const nav = summaries.find((one) => one.identity.name === "Nav");
+    expect(
+      nav?.inputs.flatMap((input) =>
+        input.type === "parameter"
+          ? [[input.name, input.role, input.field ?? null]]
+          : [],
+      ),
+    ).toEqual([
+      ["menu", "data", "menu"],
+      ["brandName", "data", "brand_name"],
+      ["others", "data", null],
+      ["first", "pair", null],
+      ["compact", "compact", null],
+    ]);
+    expect(nav?.inputReads?.map((read) => read.input).sort()).toEqual([
+      "brandName",
+      "first",
+      "menu",
+      "others",
+    ]);
+  });
 });
 
 describe("createTypeScriptAdapter: reachable closure", () => {

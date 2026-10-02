@@ -17,6 +17,8 @@ Rails.application.routes.draw do
   resources :accounts, only: [:show]
   resources :reports, only: [:show]
   resources :notes, only: [:show]
+  resources :invoices, only: [:show]
+  resources :members, only: [:show]
   namespace :api do
     resources :posts, only: [:show]
   end
@@ -107,6 +109,39 @@ class NotesController < ApplicationController
 
   def oops
     head :internal_server_error
+  end
+end
+`,
+  "app/controllers/invoices_controller.rb": `
+class InvoicesController < ApplicationController
+  class Closed < StandardError; end
+
+  skip_before_action :load_account
+  rescue_from Closed do
+    respond_to do |format|
+      format.json { head :gone }
+    end
+  end
+
+  def show
+    raise Closed if closed?
+    head :ok
+  end
+end
+`,
+  "app/controllers/members_controller.rb": `
+class MembersController < ApplicationController
+  skip_before_action :load_account
+  before_action(only: [:show]) { load_member }
+
+  def show
+    render json: @member
+  end
+
+  private
+
+  def load_member
+    @member = Account.find(params[:id])
   end
 end
 `,
@@ -202,6 +237,23 @@ describe("rescue_from composed onto each route", () => {
       ["throw", null, false],
       [404, null, false],
       [503, "unavailable", true],
+    ]);
+  });
+
+  it("adds what a rescue_from block responds with to the route that raises", async () => {
+    const summaries = await extract("asListed");
+    expect(outcomesOfShow(summaries, "InvoicesController")).toEqual([
+      [200, null, false],
+      ["throw", null, false],
+      [410, "rescue_from#0", false],
+    ]);
+  });
+
+  it("sends Rails' 404 for a finder in a before_action written as a block", async () => {
+    const summaries = await extract("asListed");
+    expect(outcomesOfShow(summaries, "MembersController")).toEqual([
+      [404, "load_member", false],
+      [200, null, false],
     ]);
   });
 

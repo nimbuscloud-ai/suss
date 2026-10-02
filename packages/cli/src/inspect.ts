@@ -42,6 +42,7 @@ import {
 import { labelWithDetail } from "@suss/ir-core";
 
 import { interactionDetail } from "./boundaryReach.js";
+import { changeNoClientSees } from "./caughtThrowChange.js";
 import { declarationChanges } from "./declaredEnvironment.js";
 import {
   hasModuleChanges,
@@ -1868,6 +1869,8 @@ export interface OutcomeLine {
   readonly fields?: readonly string[];
   /** The wrapper whose body produced this outcome, if one did. */
   readonly wrapper: WrapperReference | undefined;
+  /** Set when no client of the boundary sees the change, such as a caught throw's new class. */
+  readonly unseenByClient?: true;
 }
 
 /** Something a boundary started or stopped doing, in the words the report uses. */
@@ -1936,6 +1939,15 @@ function countsOf(diff: SummaryDiff): ChangeCounts {
   }
 
   return { outcomes, effects };
+}
+
+/** How many of these changed lines `countsOf` counted as moved outcomes. */
+function countedOutcomes(lines: readonly OutcomeLine[]): number {
+  return lines.filter(
+    (line) =>
+      line.previous !== undefined &&
+      outcomeMoved(line.previous, line.transition),
+  ).length;
 }
 
 function countsOfWholeUnit(summary: BehavioralSummary): ChangeCounts {
@@ -2247,6 +2259,20 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
     const spellDefault = defaultGuardMoved(b, a);
     const beforeLine = renderTransitionShort(b, spellDefault, alone);
     const afterLine = renderTransitionShort(a, spellDefault, alone);
+    if (changeNoClientSees(b, a)) {
+      lines.push({
+        change: "changed",
+        transition: a,
+        previous: b,
+        outcome: afterLine,
+        ...(beforeLine === afterLine
+          ? { fields: fieldChanges(b, a) }
+          : { was: beforeLine }),
+        wrapper: undefined,
+        unseenByClient: true,
+      });
+      continue;
+    }
     const marked = markedBody(b, a);
     const status = statusWord(a);
     // When only the body's fields changed, one line with the fields
@@ -2467,6 +2493,7 @@ function boundaryBlocks(
       continue;
     }
     const boundary = unit.boundary ?? unit.name;
+    const unseen = unit.outcomes.filter((line) => line.unseenByClient);
     blocks.set(entrypointKey(unit.file, unit.name, boundary), {
       change: unit.change,
       does: boundaryVerb(unit),
@@ -2474,9 +2501,9 @@ function boundaryBlocks(
       binding: unit.binding,
       unit: unit.name,
       file: unit.file,
-      outcomes: [...unit.outcomes],
+      outcomes: unit.outcomes.filter((line) => !line.unseenByClient),
       effects: [...unit.effects],
-      outcomeChanges: unit.counts.outcomes,
+      outcomeChanges: unit.counts.outcomes - countedOutcomes(unseen),
     });
   }
 
