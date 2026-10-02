@@ -6,7 +6,7 @@
     "internal": 5383,
     "consumers": 2806,
     "pairs": 1586,
-    "unfollowedCalls": 537,
+    "unfollowedCalls": 539,
     "findingErrors": 0
   },
   "packages": {
@@ -547,7 +547,7 @@
       "exports": 92,
       "internal": 31,
       "consumers": 0,
-      "unfollowedCalls": 15
+      "unfollowedCalls": 16
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
@@ -582,7 +582,7 @@
       "exports": 79,
       "internal": 87,
       "consumers": 165,
-      "unfollowedCalls": 19
+      "unfollowedCalls": 20
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",

@@ -54,6 +54,23 @@ export function withRewrittenPaths(
 }
 
 /**
+ * The binding with a host the project serves left out, so a call to
+ * the project's public host pairs with its routes.
+ */
+export function withoutOwnHost(
+  binding: BoundaryBinding,
+  ownHosts: ReadonlySet<string>,
+): BoundaryBinding {
+  const semantics = behaviorOf(binding.semantics).withoutOwnHost?.(
+    binding.semantics,
+    ownHosts,
+  );
+  return semantics === undefined || semantics === null
+    ? binding
+    : { ...binding, semantics };
+}
+
+/**
  * The pairing key after the deployment's values are filled into the
  * boundary's name.
  *
@@ -136,9 +153,20 @@ export function bucketsMeet(a: BoundaryBinding, b: BoundaryBinding): boolean {
   return meet !== undefined && meet(a.semantics, b.semantics);
 }
 
-/** How narrowly the binding's bucket states what it serves; see `compareRanks`. */
-export function bucketRank(binding: BoundaryBinding): readonly number[] {
-  return behaviorOf(binding.semantics).bucketRank?.(binding.semantics) ?? [];
+/**
+ * How well a provider fits what a consumer states, or null when they do
+ * not pair; see `compareRanks`. A protocol that does not rank gives
+ * every provider the same rank.
+ */
+export function pairRank(
+  provider: BoundaryBinding,
+  consumer: BoundaryBinding,
+): readonly number[] | null {
+  if (provider.semantics.name !== consumer.semantics.name) {
+    return null;
+  }
+  const rank = behaviorOf(provider.semantics).pairRank;
+  return rank === undefined ? [] : rank(provider.semantics, consumer.semantics);
 }
 
 export function boundaryLabel(binding: BoundaryBinding): string | null {

@@ -10,7 +10,7 @@
  * none gets the ones fetch uses.
  */
 
-import type { Predicate, ValueRef } from "./index.js";
+import type { Derivation, Predicate, ValueRef } from "./index.js";
 
 /** The members a status is read from when the client's pack lists none. */
 export const DEFAULT_STATUS_ACCESSORS: readonly string[] = [
@@ -43,55 +43,99 @@ export function predicateRefs(p: Predicate): ValueRef[] {
   return (REFS_OF[p.type] as (q: Predicate) => ValueRef[])(p);
 }
 
+/** The members a body is read through when the client's pack lists none. */
+export const DEFAULT_BODY_ACCESSORS: readonly string[] = ["body"];
+
 /**
- * Whether the last member `v` reads is one of `members`. A destructured
- * name counts as a read of the field it was taken from, so
- * `const { status } = await call()` makes a later `status === 404` a read
- * of `status`.
+ * The members a caller reads a status from, and the members it reads the
+ * body through. A status member read off the body, as in
+ * `(await res.json()).status`, is a field the provider wrote, so it never
+ * counts as the HTTP status.
  */
-export function refEndsInMember(
-  v: ValueRef,
-  members: ReadonlySet<string>,
-): boolean {
-  if (v.type === "derived") {
-    if (v.derivation.type === "destructured") {
-      return members.has(v.derivation.field);
-    }
-    if (v.derivation.type === "propertyAccess") {
-      return members.has(v.derivation.property);
-    }
-  }
-  if (v.type === "input") {
-    const last = v.path[v.path.length - 1];
-    return last !== undefined && members.has(last);
-  }
-  if (v.type === "dependency") {
-    const last = v.accessChain[v.accessChain.length - 1];
-    return last !== undefined && members.has(last);
-  }
-  return false;
+export interface StatusMembers {
+  readonly members: ReadonlySet<string>;
+  readonly body: ReadonlySet<string>;
 }
 
-/** The members a caller reads a status or a success flag from, with the defaults for a list the pack left out. */
+/**
+ * Every member `v` reads, from the value it starts at to the last one.
+ * A dependency's name spells the members after its first segment, as
+ * `res.json` does for the body of `res`.
+ */
+function membersRead(v: ValueRef): readonly string[] {
+  if (v.type === "dependency") {
+    return [...v.name.split(".").slice(1), ...v.accessChain];
+  }
+  if (v.type === "input") {
+    return v.path;
+  }
+  if (v.type !== "derived") {
+    return [];
+  }
+  const before = membersRead(v.from);
+  const step = DERIVATION_MEMBER[v.derivation.type](v.derivation as never);
+  return step === null ? before : [...before, step];
+}
+
+/** A new derivation kind without an entry here fails the build (decision 8). */
+const DERIVATION_MEMBER: {
+  [K in Derivation["type"]]: (
+    d: Extract<Derivation, { type: K }>,
+  ) => string | null;
+} = {
+  propertyAccess: (d) => d.property,
+  destructured: (d) => d.field,
+  methodCall: (d) => d.method,
+  indexAccess: (d) => String(d.index),
+  awaited: () => null,
+};
+
+/**
+ * Whether `v` reads one of the status members off the response itself.
+ * The last member read has to be a status member, read off a property, a
+ * destructured name or a member chain, and no member before it may be
+ * one the body is read through. A destructured name counts as a read of
+ * the field it was taken from, so `const { status } = await call()` makes
+ * a later `status === 404` a read of `status`.
+ */
+export function refEndsInMember(v: ValueRef, reads: StatusMembers): boolean {
+  const lastIsMember =
+    v.type === "derived"
+      ? v.derivation.type === "propertyAccess" ||
+        v.derivation.type === "destructured"
+      : v.type === "input" || v.type === "dependency";
+  const members = membersRead(v);
+  const last = members[members.length - 1];
+  if (!lastIsMember || last === undefined || !reads.members.has(last)) {
+    return false;
+  }
+  return !members.slice(0, -1).some((member) => reads.body.has(member));
+}
+
+/** The list a pack gave, or the default when it gave none. */
+function named(
+  given: readonly string[] | undefined,
+  fallback: readonly string[],
+): readonly string[] {
+  return given === undefined || given.length === 0 ? fallback : given;
+}
+
+/** The members a caller reads a status or a success flag from, and the body through, with the defaults for a list the pack left out. */
 export function statusMembersOf(accessors: {
   statusAccessors?: readonly string[] | undefined;
   successAccessors?: readonly string[] | undefined;
-}): ReadonlySet<string> {
-  const named = (
-    given: readonly string[] | undefined,
-    fallback: readonly string[],
-  ): readonly string[] =>
-    given === undefined || given.length === 0 ? fallback : given;
-  return new Set([
-    ...named(accessors.statusAccessors, DEFAULT_STATUS_ACCESSORS),
-    ...named(accessors.successAccessors, DEFAULT_SUCCESS_ACCESSORS),
-  ]);
+  bodyAccessors?: readonly string[] | undefined;
+}): StatusMembers {
+  return {
+    members: new Set([
+      ...named(accessors.statusAccessors, DEFAULT_STATUS_ACCESSORS),
+      ...named(accessors.successAccessors, DEFAULT_SUCCESS_ACCESSORS),
+    ]),
+    body: new Set(named(accessors.bodyAccessors, DEFAULT_BODY_ACCESSORS)),
+  };
 }
 
-/** Whether a condition reads one of these status members. */
-export function testsStatus(
-  p: Predicate,
-  members: ReadonlySet<string>,
-): boolean {
-  return predicateRefs(p).some((ref) => refEndsInMember(ref, members));
+/** Whether a condition reads one of these status members off the response. */
+export function testsStatus(p: Predicate, reads: StatusMembers): boolean {
+  return predicateRefs(p).some((ref) => refEndsInMember(ref, reads));
 }

@@ -36,6 +36,8 @@ const MAX_WRAPPER_DEPTH = 3;
 export interface SinkReading {
   path: string;
   method: string;
+  /** The host when the URL the caller settles is absolute. */
+  host?: string;
 }
 
 /**

@@ -6,9 +6,18 @@ import {
   hasOpaqueStatus,
 } from "./responseMatch.js";
 
-import type { Predicate, Transition } from "@suss/behavioral-ir";
+import type {
+  Predicate,
+  StatusMembers,
+  Transition,
+} from "@suss/behavioral-ir";
 
-const DEFAULT_STATUS: ReadonlySet<string> = new Set(["status", "statusCode"]);
+const readsOf = (...members: string[]): StatusMembers => ({
+  members: new Set(members),
+  body: new Set(["json", "body"]),
+});
+
+const DEFAULT_STATUS = readsOf("status", "statusCode");
 
 function txn(conditions: Predicate[]): Transition {
   return {
@@ -252,7 +261,7 @@ describe("consumerExpectedStatuses", () => {
     expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([]);
     // With the pack's accessors, recognised
     expect(
-      consumerExpectedStatuses(txn([pred]), new Set(["responseStatus"])),
+      consumerExpectedStatuses(txn([pred]), readsOf("responseStatus")),
     ).toEqual([418]);
   });
 
@@ -273,12 +282,28 @@ describe("consumerExpectedStatuses", () => {
       op: "eq",
       right: { type: "literal", value: 503 },
     };
-    const accessors = new Set(["code"]);
+    const accessors = readsOf("code");
     expect(consumerExpectedStatuses(txn([destructured]), accessors)).toEqual([
       503,
     ]);
     expect(consumerExpectedStatuses(txn([dependencyChain]), accessors)).toEqual(
       [503],
+    );
+  });
+
+  it("does not read a status field on the parsed body as the response status", () => {
+    const bodyStatus: Predicate = {
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: { type: "dependency", name: "response.json", accessChain: [] },
+        derivation: { type: "propertyAccess", property: "status" },
+      },
+      op: "eq",
+      right: { type: "literal", value: 422 },
+    };
+    expect(consumerExpectedStatuses(txn([bodyStatus]), DEFAULT_STATUS)).toEqual(
+      [],
     );
   });
 });

@@ -96,6 +96,22 @@ The name is the key, so moving a module's folder renames no boundary. A name can
 
 suss enforces nothing about how modules call each other. [`inspect --diff`](/reference/cli/inspect#module-lines) says when a change adds a module that writes a store, or a call that enters another module somewhere other than its public exports, and [`suss ask`](/reference/cli/ask#spelling-the-subject) takes a module's name as a subject.
 
+## Hosts the project serves
+
+A client call to an absolute URL records the URL's host. A call to a host that could be the project itself pairs with the project's routes: `localhost`, a private address, a name with no dot such as a container's service name, or a name under `.local`, `.internal`, `.test` or the example domains. A call to any other host goes to another company's API and pairs with nothing here.
+
+When a client calls the project by its public name, list that host in `suss.json`, and `extract` records the call with no host so it pairs the way a relative URL does:
+
+```json
+{
+  "version": 1,
+  "read": [],
+  "hosts": ["api.example.com"]
+}
+```
+
+A listed host matches with or without a port.
+
 ## Pack names
 
 `-f` takes these 56 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.

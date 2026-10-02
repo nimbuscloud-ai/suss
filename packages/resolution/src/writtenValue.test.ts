@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import {
+  answersFromTestsLeftOut,
   writtenValueOf,
   writtenValuesByKey,
   writtenValuesOf,
@@ -49,6 +50,43 @@ describe("the expression a key was written as", () => {
     db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:7-12"]);
     db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:14-19"]);
     expect(writtenValueOf(db, "f.py:1-5", () => {})).toBeNull();
+  });
+});
+
+describe("a production value a test also passes", () => {
+  const isTestFile = (file: string): boolean => file.startsWith("test_");
+  const read = (db: Database, key: string): string | null =>
+    writtenValueOf(
+      db,
+      key,
+      () => {},
+      undefined,
+      answersFromTestsLeftOut(key, isTestFile),
+    );
+
+  it("takes the production caller's value and leaves the test's out", () => {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["app.py:1-5", "main.py:7-12"]);
+    db.add("wantedIsWrittenAs", ["app.py:1-5", "test_app.py:3-9"]);
+    expect(read(db, "app.py:1-5")).toBe("main.py:7-12");
+  });
+
+  it("settles on nothing when only a test passes one", () => {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["app.py:1-5", "test_app.py:3-9"]);
+    expect(read(db, "app.py:1-5")).toBeNull();
+  });
+
+  it("lets a test's own value come from the test", () => {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["test_app.py:1-5", "test_app.py:3-9"]);
+    expect(read(db, "test_app.py:1-5")).toBe("test_app.py:3-9");
+  });
+
+  it("keeps an answer that is not a node", () => {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["app.py:1-5", "os.environ"]);
+    expect(read(db, "app.py:1-5")).toBe("os.environ");
   });
 });
 

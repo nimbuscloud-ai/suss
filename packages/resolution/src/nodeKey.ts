@@ -14,6 +14,11 @@ export interface SpannedNode<N> {
 
 const SPAN_KEY = /^(.*):(\d+)-(\d+)$/;
 
+/** The file a node key is in, or null for a key that is not a node. */
+export function spanFileOf(key: string): string | null {
+  return key.match(SPAN_KEY)?.[1] ?? null;
+}
+
 /**
  * The node a key refers to: the smallest node over the span, walked up
  * to the one whose span matches. A key that is not a node, such as a

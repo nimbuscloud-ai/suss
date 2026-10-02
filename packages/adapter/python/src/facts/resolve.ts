@@ -4,8 +4,10 @@
  * Python value is followed the same way a TypeScript one is.
  */
 
+import { isTestFile } from "@suss/behavioral-ir";
 import {
   allocationSitesOf,
+  answersFromTestsLeftOut,
   askResolution,
   askResolutionUnder,
   askSources,
@@ -129,7 +131,13 @@ export function constructionSites(db: Database, classKey: string): string[] {
 /** The single expression a value was written as, asking the rules about `key` first. */
 export function writtenValueOf(db: Database, key: string): string | null {
   resolveWritten(db, [key]);
-  return sharedWrittenValueOf(db, key, (keys) => resolveWritten(db, keys));
+  return sharedWrittenValueOf(
+    db,
+    key,
+    (keys) => resolveWritten(db, keys),
+    undefined,
+    answersFromTestsLeftOut(key, isTestFile),
+  );
 }
 
 /** Every expression a value was written as, for a caller that handles more than one. */

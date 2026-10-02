@@ -78,6 +78,49 @@ export function mergedSideOf(f: Finding): "provider" | "consumer" | null {
 }
 
 /**
+ * One finding for each thing a pair disagrees about, with every consumer
+ * path that shows it listed on the consumer side. A consumer that tests
+ * a status on 40 paths through one callback gets one finding for that
+ * status instead of 40, and a `.sussignore` rule for any of its paths
+ * still matches it.
+ */
+export function findingPerConsumerPath(findings: Finding[]): Finding[] {
+  const merged = new Map<string, Finding>();
+  for (const f of findings) {
+    const key = [
+      f.kind,
+      normalizedDescription(f),
+      f.provider.summary,
+      f.provider.transitionId ?? "",
+      (f.provider.transitionIds ?? []).join(","),
+      f.consumer.summary,
+    ].join("|");
+    const existing = merged.get(key);
+    if (existing === undefined) {
+      merged.set(key, f);
+      continue;
+    }
+    const paths = new Set([
+      ...pathsOf(existing.consumer),
+      ...pathsOf(f.consumer),
+    ]);
+    merged.set(key, {
+      ...existing,
+      severity: moreSevere(existing.severity, f.severity),
+      consumer: { ...existing.consumer, transitionIds: [...paths] },
+    });
+  }
+  return [...merged.values()];
+}
+
+function pathsOf(side: Finding["consumer"]): string[] {
+  return (
+    side.transitionIds ??
+    (side.transitionId === undefined ? [] : [side.transitionId])
+  );
+}
+
+/**
  * Collapse identical findings across overlapping sources. `documents`
  * lists the contract documents in the run, by summary reference, so a
  * finding whose consumer side is one of them collapses across them.

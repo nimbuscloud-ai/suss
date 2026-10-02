@@ -47,6 +47,7 @@
   "string_array": "suss: tree-sitter-ruby node type for a %w[] word list",
   "symbol_array": "suss: tree-sitter-ruby node type for a %i[] symbol list",
   "bare_symbol": "suss: tree-sitter-ruby node type for one element of a %i[] list",
+  "false": "suss: tree-sitter-ruby node type for the literal false, as in a route's format: false",
   "all": "Rails routing DSL: the via: value on match that routes every HTTP method",
   "mount": "Rails routing DSL: ActionDispatch::Routing::Mapper::Base#mount, serving an engine's route set under a path",
   "routes": "Rails: Rails::Engine#routes, the route set an app or engine draws into",

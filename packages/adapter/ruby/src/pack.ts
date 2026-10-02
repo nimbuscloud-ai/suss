@@ -548,6 +548,8 @@ export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;
 export interface ControllerRoute {
   method: string;
   path: string;
+  /** True for a route served with no `.{format}` in a framework that adds one; see `ControllerActions.optionalFormat`. */
+  formatless?: true;
 }
 
 /**
@@ -602,6 +604,12 @@ export interface ControllerActions {
     controllerQualifiedName: string,
     actionName: string,
   ) => readonly ControllerRoute[];
+  /**
+   * Whether the framework also serves a route with `.{format}` after its
+   * path, as Rails serves `/search.json` from `get "search"`. A route
+   * marked `formatless`, and one whose path ends in a slash, get none.
+   */
+  optionalFormat?: boolean;
   /** One message for each kind of routing declaration the pattern could not read. Calling it again returns the same list. */
   routingGaps?: () => readonly string[];
   /** The class-level calls that run one of the controller's own methods around its actions, Rails' `before_action` and `rescue_from`. */

@@ -101,6 +101,7 @@ export {
   unitIdentityKey,
   unitInvocationBinding,
   withinScope,
+  withoutOwnHost,
   withRewrittenPaths,
 } from "@suss/ir-core";
 
@@ -260,10 +261,12 @@ export {
   rootDocumentLabel,
 } from "./routing.js";
 export {
+  DEFAULT_BODY_ACCESSORS,
   DEFAULT_STATUS_ACCESSORS,
   DEFAULT_SUCCESS_ACCESSORS,
   predicateRefs,
   refEndsInMember,
+  type StatusMembers,
   statusMembersOf,
   testsStatus,
 } from "./statusTests.js";
@@ -276,6 +279,7 @@ export {
   summaryIdFromParts,
   unsettledSummaryId,
 } from "./summaryId.js";
+export { isTestFile } from "./testFiles.js";
 export {
   StopList,
   type UnfollowedCall,
