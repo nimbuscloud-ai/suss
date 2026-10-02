@@ -59,6 +59,7 @@ import {
   type InputMappingPattern,
   type InvocationRecognizer,
   type LanguageAdapter,
+  mergeReadShapes,
   type PartialPlan,
   type PatternPack,
   type RawBranch,
@@ -190,6 +191,10 @@ import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { pathFromArgument, pathFromProperty } from "./resolve/routePath.js";
 import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
 import { unfollowedCallGap } from "./resolve/unfollowedCall.js";
+import {
+  bodyCalleesOf,
+  type ResponseHandOffOptions,
+} from "./responseHandOff.js";
 import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 import { stableTypeText } from "./shapes/typeText.js";
@@ -906,9 +911,28 @@ function readCodeStructure(
     unit.inputMapping ??
       rolesPastFrameworkValue(pack.inputMapping, frameworkValueAt(unit)),
   );
+  const terminals = terminalsFor(unit, pack, everyUnit.terminals);
+  const keepsArms =
+    unit.callSite === undefined
+      ? undefined
+      : keepsStatusArms(clientResponseFieldsOfPack(pack));
+  const handOff: ResponseHandOffOptions | undefined =
+    unit.callSite === undefined || resolution === undefined
+      ? undefined
+      : {
+          responseCallee: unit.callSite.callExpression
+            .getExpression()
+            .getText(),
+          bodyCallees: bodyCalleesOf(
+            unit.callSite.callExpression,
+            pack.responseSemantics,
+          ),
+          responseSemantics: pack.responseSemantics,
+          resolution,
+        };
   const extracted = extractRawBranches(
     func,
-    terminalsFor(unit, pack, everyUnit.terminals),
+    terminals,
     invocationRecognizers,
     accessRecognizers,
     barriers,
@@ -917,9 +941,8 @@ function readCodeStructure(
     anchorCallsOf,
     resolveCallee,
     false,
-    unit.callSite === undefined
-      ? undefined
-      : keepsStatusArms(clientResponseFieldsOfPack(pack)),
+    keepsArms,
+    handOff,
   );
   let branches = extracted.branches;
   const unmatchedReturns = countUnmatchedReturns(
@@ -959,9 +982,13 @@ function readCodeStructure(
       pack.responseSemantics,
     );
     for (let i = 0; i < branches.length; i++) {
-      const access = fieldAccesses[i];
-      if (access?.expectedInput != null) {
-        branches[i] = { ...branches[i], expectedInput: access.expectedInput };
+      const branch = branches[i] as RawBranch;
+      const expectedInput = mergeReadShapes(
+        branch.expectedInput ?? null,
+        fieldAccesses[i]?.expectedInput ?? null,
+      );
+      if (expectedInput !== null) {
+        branches[i] = { ...branch, expectedInput };
       }
     }
   }
