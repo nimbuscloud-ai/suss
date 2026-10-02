@@ -533,6 +533,20 @@ describe("pairSummaries", () => {
     expect(result.ambiguous[0]?.providers).toEqual([p1, p2]);
   });
 
+  it("pairs a URL with every component a client-side router renders there", () => {
+    const asComponent = (summary: BehavioralSummary): BehavioralSummary => ({
+      ...summary,
+      kind: "component",
+    });
+    const layout = asComponent(providerWithPath("Shell", "GET", "/billing"));
+    const index = asComponent(providerWithPath("Billing", "GET", "/billing"));
+    const caller = consumerWithPath("loadBilling", "GET", "/billing");
+
+    const result = pairSummaries([layout, index, caller]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([layout, index]);
+    expect(result.ambiguous).toEqual([]);
+  });
+
   it("calls a request two catch-all routes match equally ambiguous", () => {
     // Under an optional locale scope, so each route spans more than one shape.
     const profile = providerWithPath(

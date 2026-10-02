@@ -180,6 +180,7 @@ function routesTie(providers: readonly BehavioralSummary[]): boolean {
     providers
       .filter(
         (provider) =>
+          servesOneRequestAlone(provider) &&
           provider.identity.boundaryBinding !== null &&
           exchangesHttpResponses(provider.identity.boundaryBinding) &&
           !isContractDocument(provider),
@@ -187,6 +188,15 @@ function routesTie(providers: readonly BehavioralSummary[]): boolean {
       .map(servingFunction),
   );
   return functions.size > 1;
+}
+
+/**
+ * Whether a server picks this unit alone for a request. A client-side
+ * router renders a layout and its index route together at one URL, and
+ * runs every matching loader, so components and loaders never tie.
+ */
+function servesOneRequestAlone(provider: BehavioralSummary): boolean {
+  return provider.kind === "handler";
 }
 
 /**
