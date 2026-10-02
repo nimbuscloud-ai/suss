@@ -3768,6 +3768,118 @@ describe("consumer extraction", () => {
     ]);
   });
 
+  it("keeps a segment one branch builds around holes to one segment", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      function prefixOf(version: string): string {
+        const match = version.match(/^(\\d+)\\.(\\d+)/);
+        if (!match) return "latest";
+        return \`v\${match[1]}.\${match[2]}\`;
+      }
+      export class ArchiveClient {
+        private readonly base: string;
+        private readonly versionPrefix: string;
+        constructor(base: string, version: string) {
+          this.base = base;
+          this.versionPrefix = prefixOf(version);
+        }
+        private channelPrefix(channel: string): string {
+          return channel === "exact" ? this.versionPrefix : "latest";
+        }
+        async load(channel: string) {
+          return fetch(\`\${this.base}/\${this.channelPrefix(channel)}/archive.tar.gz\`);
+        }
+      }
+      export async function loadEvents(base: string, query: Record<string, string>) {
+        const params = new URLSearchParams(query).toString();
+        return fetch(\`\${base}/events\${params ? \`?\${params}\` : ""}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .flatMap((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? [sem.path] : [];
+      })
+      .sort();
+    expect(paths).toEqual([
+      "{base}/events{value?}",
+      "{base}/{value}/archive.tar.gz",
+    ]);
+  });
+
+  it("leaves out a value only a throwing case of a switch keeps", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadOrders(kind: string) {
+        let base = "";
+        switch (kind) {
+          case "shipping":
+            base = "/shipping/v3";
+            break;
+          case "returns":
+            base = "/returns/v2";
+            break;
+          default: {
+            throw new Error(\`unsupported \${kind}\`);
+          }
+        }
+        return fetch(\`\${base}/orders\`);
+      }
+      export async function loadLabels(kind: string) {
+        let base = "";
+        switch (kind) {
+          case "draft":
+          case "open":
+            base = "/labels/open";
+            break;
+          default:
+            throw new Error("closed");
+        }
+        return fetch(base);
+      }
+      function pick(): string {
+        try {
+          throw new Error("retry");
+        } catch {
+          // A caught throw does not end the function.
+        }
+        return "/after";
+      }
+      export async function loadAfter() {
+        return fetch(pick());
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .flatMap((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? [sem.path] : [];
+      })
+      .sort();
+    expect(paths).toEqual([
+      "(/returns/v2|/shipping/v3)/orders",
+      "/after",
+      "/labels/open",
+    ]);
+  });
+
   it("extracts a consumer summary from a function with fetch()", async () => {
     const project = createTestProject();
     project.createSourceFile(

@@ -237,6 +237,71 @@ describe("branches and choices", () => {
     ).toBe("(/a|/b)");
   });
 
+  it("keeps a segment one arm builds around holes to one segment", async () => {
+    expect(
+      await route(
+        'prefix = "latest" if flag else f"v{major}.{minor}"\nsubject = f"{base}/{prefix}/archive.tar.gz"',
+      ),
+    ).toBe("{base}/{value}/archive.tar.gz");
+  });
+
+  it("reads an optional query string as a hole that may be empty", async () => {
+    expect(
+      await route(
+        "subject = f\"{base}/events{'?' + params if params else ''}\"",
+      ),
+    ).toBe("{base}/events{value?}");
+  });
+
+  it("leaves out a value only an arm that raises keeps", async () => {
+    expect(
+      await route(
+        [
+          'base = ""',
+          'if kind == "shipping":',
+          '    base = "/shipping/v3"',
+          'elif kind == "returns":',
+          '    base = "/returns/v2"',
+          "else:",
+          "    raise ValueError(kind)",
+          'subject = base + "/orders"',
+        ].join("\n"),
+      ),
+    ).toBe("(/returns/v2|/shipping/v3)/orders");
+  });
+
+  it("keeps running after a raise an except in the same function catches", async () => {
+    const { subject } = await projectValues({
+      "app.py": [
+        "def pick():",
+        "    try:",
+        "        raise ValueError()",
+        "    except ValueError:",
+        "        pass",
+        '    return "/after"',
+        "",
+        "subject = pick()",
+        "",
+      ].join("\n"),
+    });
+    expect(literalOf(subject("app.py"))).toBe("/after");
+  });
+
+  it("gives a function only the values of the paths that do not raise", async () => {
+    const { subject } = await projectValues({
+      "app.py": [
+        "def pick(flag):",
+        "    if flag:",
+        '        return "/on"',
+        '    raise ValueError("off")',
+        "",
+        "subject = pick(x)",
+        "",
+      ].join("\n"),
+    });
+    expect(literalOf(subject("app.py"))).toBe("/on");
+  });
+
   it("follows an elif chain", async () => {
     expect(
       await literal(

@@ -51,8 +51,9 @@ deferred    a value nothing has asked the content of yet
 
 `join` in `lattice.ts` computes the value after two branches. It keeps
 the pieces that two strings share at both ends, and turns the middle
-into a set or a hole. It lines sequence elements up by position, and it
-unions record fields. `widen` computes the value after a loop has run
+into a set or a hole. When no one piece covers a middle that can span
+path segments, the whole string is a hole. It lines sequence elements
+up by position, and it unions record fields. `widen` computes the value after a loop has run
 some number of times. A sequence that grew becomes unbounded, a record
 that gained a field becomes open, and a string keeps the prefix the loop
 did not change.
@@ -83,7 +84,8 @@ expression at each level of nesting.
 - A loop runs its body once, then widens the state from before the loop
   against the state after it.
 - A return ends the statement list it is in, and contributes to the
-  value of an inlined call.
+  value of an inlined call. A throw that nothing in the same function
+  catches ends it too, and contributes nothing.
 - A call is looked up in the rows first. If no row matches and the
   lowering can resolve the callee to a project function without a loop,
   the body is inlined, up to a depth cap. A keyword argument binds its

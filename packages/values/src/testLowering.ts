@@ -212,6 +212,7 @@ export const ret = (value: TestNode | null): TestNode =>
   node({ kind: "return", value });
 export const block = (body: TestNode[]): TestNode =>
   node({ kind: "block", body });
+export const throws = (): TestNode => node({ kind: "throw" });
 
 /** Links every node to its parent and returns the module node. */
 export function module(body: TestNode[]): TestNode {
