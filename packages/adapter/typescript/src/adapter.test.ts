@@ -5100,6 +5100,47 @@ describe("the base an instance sends every request under", () => {
     expect(found.getPet).toBe("/api/v3/pet/1");
   });
 
+  it("keeps the host of the base, and lets an absolute URL replace the base", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "https://pets.example.net/api/v3" });
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+        export async function getMirror() {
+          return api.get("https://mirror.example.org/pet/1");
+        }
+        export async function getRelative() {
+          return axios.get("/pet/1");
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [basedPack],
+    });
+    const summaries = await adapter.extractAll();
+    const targets = Object.fromEntries(
+      summaries.map((s) => {
+        const semantics = s.identity.boundaryBinding?.semantics;
+        return [
+          s.identity.name,
+          semantics?.name === "rest"
+            ? [semantics.path, semantics.host ?? null]
+            : null,
+        ];
+      }),
+    );
+    expect(targets).toEqual({
+      getPet: ["/api/v3/pet/1", "pets.example.net"],
+      getMirror: ["/pet/1", "mirror.example.org"],
+      getRelative: ["/pet/1", null],
+    });
+  });
+
   it("joins a base written with a trailing slash without doubling it", async () => {
     const found = await pathsOf({
       "consumer.ts": `

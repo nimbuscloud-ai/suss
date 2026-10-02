@@ -20,7 +20,7 @@ import {
   statusMembersOf,
   testsStatus,
 } from "@suss/behavioral-ir";
-import { pathOf } from "@suss/values";
+import { hostOf, pathOf } from "@suss/values";
 
 import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { invocationSites } from "./paths/effects.js";
@@ -46,9 +46,14 @@ import type { RbClientCall, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
 /** What one request call states about the boundary it reaches. */
-interface RequestCall {
+interface RequestCall extends Target {
   method: string;
+}
+
+/** Where a URL goes: its path, and its host when it is absolute. */
+interface Target {
   path: string;
+  host: string | undefined;
 }
 
 export interface ClientCallOptions {
@@ -214,7 +219,7 @@ function requestCalls(
     requestCall(
       call,
       called,
-      receiverPrefix(receiver, pattern, options, site),
+      receiverBase(receiver, pattern, options, site),
       pattern,
       options,
       site,
@@ -231,7 +236,10 @@ function requestCalls(
   for (const site of constructionSitesOf(call, options.facts)) {
     const stated = read(site);
     if (stated !== null) {
-      byBoundary.set(`${stated.method} ${stated.path}`, stated);
+      byBoundary.set(
+        `${stated.method} ${stated.host ?? ""} ${stated.path}`,
+        stated,
+      );
     }
   }
   if (byBoundary.size > 0) {
@@ -244,7 +252,7 @@ function requestCalls(
 function requestCall(
   call: RbNode,
   called: string,
-  prefix: string,
+  base: Target | null,
   pattern: RbClientCall,
   options: ClientCallOptions,
   site?: string,
@@ -253,8 +261,10 @@ function requestCall(
 
   const verb = pattern.verbMethodNames[called];
   if (verb !== undefined) {
-    const path = urlIn(args, pattern, options, site);
-    return path === null ? null : { method: verb, path: prefix + path };
+    const target = targetAt(urlNodeIn(args, pattern), options, site);
+    return target === null
+      ? null
+      : { method: verb, ...underBase(base, target) };
   }
 
   const sent = pattern.requestObject;
@@ -265,8 +275,21 @@ function requestCall(
   if (built === null) {
     return null;
   }
-  const path = pathAt(built.url, options, site);
-  return path === null ? null : { method: built.method, path: prefix + path };
+  const target = targetAt(built.url, options, site);
+  return target === null
+    ? null
+    : { method: built.method, ...underBase(base, target) };
+}
+
+/**
+ * A request's own URL under the base its connection was built with. An
+ * absolute URL replaces the base, the way Faraday and Net::HTTP send it.
+ */
+function underBase(base: Target | null, target: Target): Target {
+  if (base === null || target.host !== undefined) {
+    return target;
+  }
+  return { path: base.path + target.path, host: base.host };
 }
 
 /**
@@ -310,19 +333,18 @@ function isLibraryReceiver(
 }
 
 /**
- * The path that goes in front of a call's own path. It is empty for a
- * call on the library's constant, and the builder's base URL for a call
- * on what a builder returned.
+ * The base URL a builder gave the receiver, whose path goes in front of
+ * a call's own path. Null for a call on the library's constant.
  */
-function receiverPrefix(
+function receiverBase(
   receiver: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
   site?: string,
-): string {
+): Target | null {
   const built = builderCallBehind(receiver, pattern, options.facts);
   if (built === null) {
-    return "";
+    return null;
   }
   const args = readCallArgs(field(built, "arguments"));
   const keyword = pattern.builderUrlKeyword;
@@ -330,11 +352,11 @@ function receiverPrefix(
   const base =
     (keyword === undefined ? undefined : args.keyword[keyword]) ??
     args.positional[0];
-  const path =
-    base === undefined
-      ? null
-      : pathOf(evaluatedValue(base, options.facts, undefined, site));
-  return path === undefined || path === null ? "" : trimmed(path);
+  if (base === undefined) {
+    return null;
+  }
+  const value = evaluatedValue(base, options.facts, undefined, site);
+  return { path: trimmed(pathOf(value) ?? ""), host: hostOf(value) };
 }
 
 /** A trailing slash on the base would double the one the call's own path starts with. */
@@ -382,16 +404,6 @@ function builderCallBehind(
     : null;
 }
 
-/** The path the URL argument states, or null when it does not settle on one. */
-function urlIn(
-  args: CallArgs,
-  pattern: RbClientCall,
-  options: ClientCallOptions,
-  site?: string,
-): string | null {
-  return pathAt(urlNodeIn(args, pattern), options, site);
-}
-
 /** The URL argument, under the pack's keyword when it gives one and at the pack's position otherwise. */
 function urlNodeIn(args: CallArgs, pattern: RbClientCall): RbNode | undefined {
   const keyword = pattern.url.keyword;
@@ -402,22 +414,26 @@ function urlNodeIn(args: CallArgs, pattern: RbClientCall): RbNode | undefined {
 }
 
 /**
- * The path one node gives. A URL passed as an object instead of a
- * string, such as `URI("...")`, comes back from the value tables as the
- * string it was built from, so nothing here needs to unwrap it.
+ * Where one node's URL goes, or null when it settles on no path. A URL
+ * passed as an object instead of a string, such as `URI("...")`, comes
+ * back from the value tables as the string it was built from, so
+ * nothing here needs to unwrap it.
  */
-function pathAt(
+function targetAt(
   written: RbNode | undefined,
   options: ClientCallOptions,
   site?: string,
-): string | null {
+): Target | null {
   if (written === undefined) {
     return null;
   }
   // A URL passed in whole evaluates to a single hole. That path cannot
   // match any route, so it is dropped.
-  const path = pathOf(evaluatedValue(written, options.facts, undefined, site));
-  return path === undefined || namesNothing(path) ? null : path;
+  const value = evaluatedValue(written, options.facts, undefined, site);
+  const path = pathOf(value);
+  return path === undefined || namesNothing(path)
+    ? null
+    : { path, host: hostOf(value) };
 }
 
 /** The unit for the method the call is written in. */
@@ -458,6 +474,7 @@ function clientUnit(
       transport: pack.protocol,
       method: request.method,
       path: request.path,
+      host: request.host,
       recognition: pack.name,
     }),
     parameters: [],
