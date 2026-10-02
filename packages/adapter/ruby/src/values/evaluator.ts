@@ -130,6 +130,19 @@ export function writtenNodeOf(
 }
 
 /**
+ * The project method a call runs, as the rules settle it. Null when they
+ * settle on none or on more than one, and for a database with no
+ * project bound.
+ */
+export function calledDefinition(
+  call: RbNode,
+  db: Database | undefined,
+): RbNode | null {
+  const context = db === undefined ? undefined : contexts.get(db);
+  return context === undefined ? null : context.callable(call);
+}
+
+/**
  * Settles what each of these nodes was written as, in one question.
  *
  * The rules run over the whole project's facts either way, so one

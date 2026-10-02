@@ -2,6 +2,8 @@
 
 import { type Expression, Node, SyntaxKind } from "ts-morph";
 
+import { replacePredicateRefs } from "@suss/behavioral-ir";
+
 import { resolveCallableBody } from "./resolve/astResolve.js";
 import { resolveSubject } from "./subjects.js";
 import { peelParens } from "./walk/unwrap.js";
@@ -381,66 +383,12 @@ function tryInlineCallPredicate(
 // Parameter substitution
 // ---------------------------------------------------------------------------
 
-/**
- * One substituter per predicate kind. A Record keyed on the
- * discriminant fails to compile when a new predicate kind lands without
- * an entry here, which a switch does not (decision 8).
- */
-type PredicateSubstituters = {
-  [K in Predicate["type"]]: (
-    pred: Extract<Predicate, { type: K }>,
-    subs: Map<string, ValueRef>,
-  ) => Predicate;
-};
-
-const SUBSTITUTE_PREDICATE: PredicateSubstituters = {
-  truthinessCheck: (pred, subs) => ({
-    ...pred,
-    subject: substituteValueRef(pred.subject, subs),
-  }),
-  nullCheck: (pred, subs) => ({
-    ...pred,
-    subject: substituteValueRef(pred.subject, subs),
-  }),
-  comparison: (pred, subs) => ({
-    ...pred,
-    left: substituteValueRef(pred.left, subs),
-    right: substituteValueRef(pred.right, subs),
-  }),
-  typeCheck: (pred, subs) => ({
-    ...pred,
-    subject: substituteValueRef(pred.subject, subs),
-  }),
-  propertyExists: (pred, subs) => ({
-    ...pred,
-    subject: substituteValueRef(pred.subject, subs),
-  }),
-  negation: (pred, subs) => ({
-    ...pred,
-    operand: substitutePredicate(pred.operand, subs),
-  }),
-  compound: (pred, subs) => ({
-    ...pred,
-    operands: pred.operands.map((op) => substitutePredicate(op, subs)),
-  }),
-  call: (pred, subs) => ({
-    ...pred,
-    args: pred.args.map((arg) => substituteValueRef(arg, subs)),
-  }),
-  // An opaque predicate is only source text, so there is nothing to
-  // substitute into.
-  opaque: (pred) => pred,
-};
-
-function substitutePredicate(
+/** The predicate with each parameter named in `subs` replaced by the value given for it. */
+export function substitutePredicate(
   pred: Predicate,
   subs: Map<string, ValueRef>,
 ): Predicate {
-  const substitute = SUBSTITUTE_PREDICATE[pred.type] as (
-    p: Predicate,
-    s: Map<string, ValueRef>,
-  ) => Predicate;
-  return substitute(pred, subs);
+  return replacePredicateRefs(pred, (ref) => substituteValueRef(ref, subs));
 }
 
 function substituteValueRef(

@@ -10,12 +10,13 @@
 
 import { type CallExpression, type Expression, Node } from "ts-morph";
 
-import { guardsHoldOn, runsBefore } from "@suss/extractor";
+import { guardsHoldOn, runsBefore, splitAtHandOffs } from "@suss/extractor";
 
 import {
   type ConditionInfo,
   conditionInfoToRawCondition,
 } from "./conditions.js";
+import { lineRangeOf } from "./lines.js";
 import { computePathConditions } from "./paths/pathConditions.js";
 import { recordProvenance } from "./provenance.js";
 import {
@@ -23,6 +24,7 @@ import {
   runAccessRecognizers,
   runInvocationRecognizers,
 } from "./resolve/invocationEffects.js";
+import { helperPathsFor, responseHandedAt } from "./responseHandOff.js";
 import {
   type FoundTerminal,
   findTerminals,
@@ -40,6 +42,7 @@ import type { Effect } from "@suss/behavioral-ir";
 import type {
   AccessRecognizer,
   BodyContent,
+  HandOffSite,
   InvocationRecognizer,
   KeepsArms,
   RawBranch,
@@ -55,6 +58,7 @@ import type {
   OriginatesFrom,
   RecognizedEffectLocation,
 } from "./resolve/invocationEffects.js";
+import type { ResponseHandOffOptions } from "./responseHandOff.js";
 import type { ResolveCallee } from "./terminals/helperResolution.js";
 
 // ---------------------------------------------------------------------------
@@ -258,6 +262,7 @@ export function extractRawBranches(
   resolveCallee?: ResolveCallee,
   collectCallAccounting = false,
   keepsArms?: KeepsArms<Expression>,
+  handOff?: ResponseHandOffOptions,
 ): RawBranchResult {
   const terminals = findTerminals(
     func,
@@ -420,8 +425,22 @@ export function extractRawBranches(
     recordProvenance(func, firing, resolution);
   }
 
+  const sites =
+    handOff === undefined
+      ? []
+      : handOffSites(invocations, terminalNodes, handOff, {
+          terminalPatterns,
+          resolution,
+          originatesFrom,
+          anchorCallsOf,
+          resolveCallee,
+          keepsArms,
+        });
   return {
-    branches: distinctBranches,
+    branches:
+      sites.length === 0
+        ? distinctBranches
+        : distinctBranches.flatMap((branch) => splitAtHandOffs(branch, sites)),
     terminals,
     ...(collectCallAccounting
       ? {
@@ -431,6 +450,64 @@ export function extractRawBranches(
         }
       : {}),
   };
+}
+
+/** What the caller's own paths were read with, so a helper's are read the same way. */
+interface HelperReading {
+  terminalPatterns: TerminalPattern[];
+  resolution: ResolutionStore | undefined;
+  originatesFrom: OriginatesFrom | undefined;
+  anchorCallsOf: AnchorCallsOf | undefined;
+  resolveCallee: ResolveCallee | undefined;
+  keepsArms: KeepsArms<Expression> | undefined;
+}
+
+/** The calls that hand a helper the response, with the helper's paths, as the shared splitter takes them. */
+function handOffSites(
+  invocations: readonly InvocationEffectLocation[],
+  terminalNodes: ReadonlySet<Node>,
+  handOff: ResponseHandOffOptions,
+  reading: HelperReading,
+): HandOffSite[] {
+  const sites: HandOffSite[] = [];
+  for (const site of invocations) {
+    if (writesTerminal(site.node, terminalNodes)) {
+      continue;
+    }
+    const handed = responseHandedAt(site.node, handOff);
+    const helper =
+      handed === null
+        ? null
+        : helperPathsFor(handed, readHelper(handed.helper, reading), handOff);
+    if (helper === null) {
+      continue;
+    }
+    sites.push({
+      helper,
+      preconditions: preconditionsOf(site.effect),
+      line: site.line,
+      at: lineRangeOf(site.node),
+      alwaysRuns: site.alwaysRuns,
+    });
+  }
+  return sites;
+}
+
+/** A helper's paths, with none of its own effects or hand-offs. */
+function readHelper(helper: FunctionRoot, reading: HelperReading): RawBranch[] {
+  return extractRawBranches(
+    helper,
+    reading.terminalPatterns,
+    [],
+    [],
+    NO_BARRIERS,
+    reading.resolution,
+    reading.originatesFrom,
+    reading.anchorCallsOf,
+    reading.resolveCallee,
+    false,
+    reading.keepsArms,
+  ).branches;
 }
 
 /**

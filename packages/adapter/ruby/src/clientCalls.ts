@@ -23,8 +23,13 @@ import {
 import { pathOf } from "@suss/values";
 
 import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
-import { invocationEffects } from "./paths/effects.js";
+import { invocationSites } from "./paths/effects.js";
 import { predicateOf } from "./paths/predicates.js";
+import {
+  type HandOffOptions,
+  raiseEndings,
+  throughResponseHelpers,
+} from "./responseHandOff.js";
 import { returnPathBranches } from "./responseStatus.js";
 import { compoundName } from "./scope.js";
 import {
@@ -35,7 +40,7 @@ import {
 } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type { RawBranch, RawCodeStructure, RawEffect } from "@suss/extractor";
 import type { CallArgs, Range } from "./ast.js";
 import type { RbClientCall, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -69,7 +74,16 @@ export function clientCallUnits(
     }
     for (const call of callsUnder(method)) {
       for (const request of requestCalls(call, pattern, options)) {
-        units.push(clientUnit(method, name, request, pattern, pack, options));
+        units.push(
+          clientUnit(
+            method,
+            name,
+            { ...request, call },
+            pattern,
+            pack,
+            options,
+          ),
+        );
       }
     }
   }
@@ -410,13 +424,25 @@ function pathAt(
 function clientUnit(
   method: RbNode,
   name: string,
-  request: RequestCall,
+  request: RequestCall & { call: RbNode },
   pattern: RbClientCall,
   pack: RubyPack,
   options: ClientCallOptions,
 ): RawCodeStructure {
   const range = rangeOf(method);
   const accessors = responseAccessors(pattern);
+  const statusMembers = statusMembersOf(accessors);
+  const reading: CallerReading = {
+    facts: options.facts,
+    statusMembers,
+    handOff: {
+      request: request.call,
+      bodyMethods: accessors.bodyAccessors ?? [],
+      facts: options.facts,
+      readHelper: (helper) =>
+        callerBranches(helper, { facts: options.facts, statusMembers }),
+    },
+  };
   return {
     identity: {
       name,
@@ -435,12 +461,7 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: callerBranches(
-      method,
-      range,
-      options.facts,
-      statusMembersOf(accessors),
-    ),
+    branches: callerBranches(method, reading),
     ...accessors,
     bodyContent: "statements",
     dependencyCalls: [],
@@ -454,20 +475,30 @@ function clientUnit(
  * test on a status member stays a branch of its own, even when neither
  * arm returns.
  */
-function callerBranches(
-  method: RbNode,
-  range: Range,
-  facts: Database | undefined,
-  statusMembers: ReadonlySet<string>,
-): RawBranch[] {
-  const effects = invocationEffects(method, undefined, undefined, facts);
+function callerBranches(method: RbNode, reading: CallerReading): RawBranch[] {
+  const sites = invocationSites(method, undefined, undefined, reading.facts);
+  const effects = sites.map((site) => site.effect);
   const keepsArms = (condition: RbNode): boolean =>
-    testsStatus(predicateOf(condition), statusMembers);
-  return (
-    returnPathBranches(method, effects, [], facts, keepsArms) ?? [
-      returnBranch(range, effects),
-    ]
-  );
+    testsStatus(predicateOf(condition), reading.statusMembers);
+  const found = returnPathBranches(
+    method,
+    effects,
+    [],
+    reading.facts,
+    keepsArms,
+    raiseEndings(method),
+  ) ?? [returnBranch(rangeOf(method), effects)];
+  return reading.handOff === undefined
+    ? found
+    : throughResponseHelpers(found, sites, reading.handOff);
+}
+
+/** What reading a caller's paths needs beyond its body. */
+interface CallerReading {
+  facts: Database | undefined;
+  statusMembers: ReadonlySet<string>;
+  /** Unset for a helper, whose own hand-offs are not followed. */
+  handOff?: HandOffOptions;
 }
 
 /** The response members the pack declares for the body, the status and the success flag. */
@@ -501,7 +532,7 @@ function responseAccessors(pattern: RbClientCall): {
 
 function returnBranch(
   range: Range,
-  effects: ReturnType<typeof invocationEffects>,
+  effects: RawEffect[],
 ): RawCodeStructure["branches"][number] {
   return {
     conditions: [],
