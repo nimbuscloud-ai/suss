@@ -11,6 +11,10 @@
 
 import { statusAccessorsFor } from "../contract/declaredContract.js";
 import {
+  findDistinguishingFields,
+  findDistinguishingLiterals,
+} from "../coverage/bodyDifferences.js";
+import {
   consumerExpectedStatuses,
   extractResponseStatus,
   isSuccessStatus,
@@ -23,150 +27,8 @@ import type {
   Finding,
   Predicate,
   Transition,
-  TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
-
-interface DistinguishingLiteral {
-  /** Property path from the body root, e.g. ["status"] or ["user", "role"] */
-  path: string[];
-  value: string | number | boolean;
-}
-
-/** Every literal-valued field in a shape, with its path. */
-function collectBodyLiterals(
-  shape: TypeShape,
-  pathPrefix: string[] = [],
-): DistinguishingLiteral[] {
-  if (shape.type === "literal") {
-    return [{ path: pathPrefix, value: shape.value }];
-  }
-  if (shape.type === "record") {
-    const results: DistinguishingLiteral[] = [];
-    for (const [key, value] of Object.entries(shape.properties)) {
-      results.push(...collectBodyLiterals(value, [...pathPrefix, key]));
-    }
-    return results;
-  }
-  return [];
-}
-
-/**
- * The literal body fields that tell `transition` apart from its
- * siblings with the same status: some sibling has a different literal
- * at the same path, or does not have the path at all.
- */
-function findDistinguishingLiterals(
-  transition: Transition,
-  siblings: Transition[],
-): DistinguishingLiteral[] {
-  if (
-    transition.output.type !== "response" ||
-    transition.output.body === null
-  ) {
-    return [];
-  }
-
-  const myLiterals = collectBodyLiterals(transition.output.body);
-  if (myLiterals.length === 0) {
-    return [];
-  }
-
-  return myLiterals.filter((lit) =>
-    siblings.some((sibling) => {
-      if (sibling.id === transition.id) {
-        return false;
-      }
-      const siblingValue = readAtPath(sibling, lit.path);
-      if (siblingValue === "absent") {
-        return true;
-      }
-      return (
-        siblingValue?.type === "literal" && siblingValue.value !== lit.value
-      );
-    }),
-  );
-}
-
-interface DistinguishingField {
-  /** Property path from the body root, e.g. ["deletedAt"] */
-  path: string[];
-  /** True when this transition has the field and a sibling does not. */
-  present: boolean;
-}
-
-/**
- * The fields this transition has that at least one sibling with the
- * same status lacks. A field this transition lacks is not reported,
- * since the transition has nothing to point a finding at.
- */
-function findDistinguishingFields(
-  transition: Transition,
-  siblings: Transition[],
-): DistinguishingField[] {
-  if (
-    transition.output.type !== "response" ||
-    transition.output.body === null ||
-    transition.output.body.type !== "record"
-  ) {
-    return [];
-  }
-
-  return collectFieldPaths(transition.output.body)
-    .filter((fieldPath) =>
-      siblings.some(
-        (sibling) =>
-          sibling.id !== transition.id &&
-          readAtPath(sibling, fieldPath) === "absent",
-      ),
-    )
-    .map((path) => ({ path, present: true }));
-}
-
-/**
- * The top-level field paths of a record. Nested records are not walked,
- * since top-level presence is the usual discriminator.
- */
-function collectFieldPaths(
-  shape: TypeShape,
-  prefix: string[] = [],
-): string[][] {
-  if (shape.type !== "record") {
-    return [];
-  }
-  const paths: string[][] = [];
-  for (const key of Object.keys(shape.properties)) {
-    paths.push([...prefix, key]);
-  }
-  return paths;
-}
-
-/**
- * What a sibling's body has at `path`: the shape there, "absent" when a
- * record with no spreads lacks it, or null when the body was not read
- * that far. Only "absent" or a different literal tells two cases apart,
- * so a body suss could not read is never counted as one without the field.
- */
-function readAtPath(
-  sibling: Transition,
-  path: string[],
-): TypeShape | "absent" | null {
-  if (sibling.output.type !== "response" || sibling.output.body === null) {
-    return null;
-  }
-  let current: TypeShape = sibling.output.body;
-  for (const segment of path) {
-    if (current.type !== "record") {
-      return null;
-    }
-    const next = current.properties[segment];
-    if (next === undefined) {
-      return (current.spreads?.length ?? 0) > 0 ? null : "absent";
-    }
-    current = next;
-  }
-  return current;
-}
 
 type ConsumerFieldTest =
   | {
