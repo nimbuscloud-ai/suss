@@ -466,6 +466,34 @@ describe("pairSummaries", () => {
     ]);
   });
 
+  it("pairs a call with a spec and a handler that rank equal from different buckets", () => {
+    const handler = providerWithPath(
+      "index",
+      "GET",
+      "/(|locale/:locale/)api/teams",
+    );
+    const spec = providerWithPath("index", "GET", "/api/teams");
+    const declared = {
+      ...spec,
+      location: { ...spec.location, file: "openapi:api.json" },
+      metadata: withHttpMetadata(undefined, {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: [{ statusCode: 200 }],
+        },
+      }),
+    };
+    const client = consumerWithPath("loadTeams", "GET", "/api/teams");
+
+    const result = pairSummaries([handler, declared, client]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([
+      declared,
+      handler,
+    ]);
+    expect(result.ambiguous).toEqual([]);
+  });
+
   it("takes the provider in the caller's own service over a stranger's", () => {
     const mine = inService(
       providerWithPath("getUser", "GET", "/users/{id}"),

@@ -346,16 +346,13 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       if (agreeing.length === 0) {
         continue;
       }
-      // A route with a hole spanning segments serves what a more exact
-      // route serves too, so the highest ranked bucket is the one the
-      // consumer reaches, and a tie is ambiguous.
+      // The highest ranked buckets are the ones the consumer reaches. A
+      // tie across buckets is judged as one bucket is, so a spec still
+      // pairs beside the handler it describes.
       const winners = highestRanked(agreeing);
-      const chosen =
-        winners.length === 1
-          ? servedBy(consumer, winners[0]?.summaries ?? [])
-          : null;
+      const providers = winners.flatMap((bucket) => bucket.summaries);
+      const chosen = servedBy(consumer, providers);
       if (chosen === null || routesTie(chosen)) {
-        const providers = winners.flatMap((providers) => providers.summaries);
         ambiguous.push({
           consumer,
           providers,
