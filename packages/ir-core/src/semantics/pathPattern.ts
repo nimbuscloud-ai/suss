@@ -55,6 +55,8 @@ type Item =
       readonly test: RegExp;
       /** The text the segment spells when every hole in it is empty, or null when one cannot be. */
       readonly bare: string | null;
+      /** How many characters of the segment are text rather than holes. */
+      readonly textLength: number;
     }
   | { readonly kind: "one" }
   | { readonly kind: "optional" }
@@ -129,13 +131,15 @@ function shapedItem(segment: string): Item {
     })
     .join("");
   const holes = segment.match(/\{[^}]*\}|\*/g) ?? [];
+  const text = segment.replace(/\{[^}]*\}|\*/g, "");
   return {
     kind: "shaped",
     shape: segment.replace(/\{[^}]*\}/g, "{}"),
     test: new RegExp(`^${source}$`),
     bare: holes.every((hole) => hole === "*" || /[?*]\}$/.test(hole))
-      ? segment.replace(/\{[^}]*\}|\*/g, "")
+      ? text
       : null,
+    textLength: text.length,
   };
 }
 
@@ -363,7 +367,16 @@ function segmentFit(route: Item, request: Item): SegmentFit {
     : "guess";
 }
 
-type Fit = readonly [stated: number, shaped: number];
+/**
+ * How much of the request a pattern segment spells out, counted in
+ * characters, so `recover.{format}` fits `recover.json` better than
+ * `{id}.{format}` does.
+ */
+function shapedText(item: Item): number {
+  return item.kind === "shaped" ? item.textLength : 0;
+}
+
+type Fit = readonly [stated: number, shapedText: number];
 
 function betterFit(a: Fit | undefined, b: Fit): boolean {
   return a === undefined || compareRanks(b, a) > 0;
@@ -423,7 +436,7 @@ function bestFit(route: readonly Item[], request: readonly Item[]): Fit | null {
         right.kind === "star" ? j : j + 1,
         [
           fit[0] + (kind === "stated" ? 1 : 0),
-          fit[1] + (kind === "shaped" ? 1 : 0),
+          fit[1] + (kind === "shaped" ? shapedText(left) : 0),
         ],
       );
     }
@@ -434,7 +447,7 @@ function bestFit(route: readonly Item[], request: readonly Item[]): Fit | null {
 /**
  * How well a route fits a request path, as a rank to compare
  * lexicographically: how many of the segments the request spells out
- * the route spells out too, then how many its patterns match, then how
+ * the route spells out too, then how much text its patterns match, then how
  * narrowly the reading of the route that fits states what it serves. A
  * route with several readings ranks by the one that fits, so an optional
  * locale prefix neither helps nor hurts a call that leaves it out.

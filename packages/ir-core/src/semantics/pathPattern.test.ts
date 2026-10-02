@@ -147,6 +147,16 @@ describe("requestRank", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("ranks a pattern that spells more of the segment higher", () => {
+    expect(
+      compareFor(
+        "/t/{id}/recover.json",
+        "/t/{topic_id}/recover(|.{format})",
+        "/t/{slug}/{topic_id}(|.{format})",
+      ),
+    ).toBeGreaterThan(0);
+  });
+
   it("ranks a route by the reading that fits the request", () => {
     expect(compareFor("/api/orders", "/api/orders", "/api(/v2|)/orders")).toBe(
       0,
