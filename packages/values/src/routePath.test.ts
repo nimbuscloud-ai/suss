@@ -180,6 +180,13 @@ describe("hostOf", () => {
     expect(hostOf(text("//cdn.example.org/a.js"))).toBe("cdn.example.org");
   });
 
+  it("reads the host by hand when the URL parser rejects the text", () => {
+    expect(hostOf(text("https://bad host.example.com/x"))).toBe(
+      "bad host.example.com",
+    );
+    expect(hostOf(text("https://"))).toBeUndefined();
+  });
+
   it("leaves out the user and password", () => {
     expect(hostOf(text("https://user:secret@db.example.com/x"))).toBe(
       "db.example.com",
