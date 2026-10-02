@@ -429,4 +429,34 @@ describe("rules against deduped sources", () => {
     const [out] = applySuppressions([collapsed], [withTransition]);
     expect(out.suppressed).toBeUndefined();
   });
+
+  describe("a finding merged across the documents on its consumer side", () => {
+    const collapsed = finding({
+      consumer: {
+        summary: "openapi:bundle.json::getPet",
+        location: {
+          file: "openapi:bundle.json",
+          range: { start: 1, end: 1 },
+          exportName: null,
+        },
+      },
+      sources: ["openapi:bundle.json::getPet", "openapi:pets.yml::getPet"],
+    });
+
+    it("suppresses via any document listed in sources", () => {
+      const byDocument = rule({
+        consumer: { summary: "openapi:pets.yml::getPet" },
+      });
+      const [out] = applySuppressions([collapsed], [byDocument]);
+      expect(out.suppressed).toBeDefined();
+    });
+
+    it("does not read the documents as providers", () => {
+      const asProvider = rule({
+        provider: { summary: "openapi:pets.yml::getPet" },
+      });
+      const [out] = applySuppressions([collapsed], [asProvider]);
+      expect(out.suppressed).toBeUndefined();
+    });
+  });
 });

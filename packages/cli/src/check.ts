@@ -13,6 +13,7 @@ import {
   checkPair,
   countsForThreshold,
   findingIdentity,
+  mergedSideOf,
   normalizedDescription,
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
@@ -1030,16 +1031,17 @@ export function renderFindings(
         `  suppressed (${f.suppressed.effect}): ${f.suppressed.reason}`,
       );
     }
+    // A finding merged from several sources lists the others under the
+    // side they replace, so a reviewer can see every summary behind it.
+    const mergedSide = mergedSideOf(f);
     lines.push(`  provider: ${formatSide(f.provider, confidence)}`);
-    // A finding merged from several providers lists the other sources,
-    // so a reviewer can see every provider that produced it.
-    if (f.sources !== undefined && f.sources.length > 1) {
-      const others = f.sources.filter((s) => s !== f.provider.summary);
-      for (const other of others) {
-        lines.push(`    also from: ${other}`);
-      }
+    if (mergedSide === "provider") {
+      lines.push(...alsoFromLines(f, f.provider.summary));
     }
     lines.push(`  consumer: ${formatSide(f.consumer, confidence)}`);
+    if (mergedSide === "consumer") {
+      lines.push(...alsoFromLines(f, f.consumer.summary));
+    }
     lines.push(
       `  boundary: ${f.boundary.recognition} (${f.boundary.transport})${formatRoute(f.boundary)}`,
     );
@@ -1054,6 +1056,12 @@ export function renderFindings(
   lines.push(...notShownLines(findings, shown));
 
   return `${lines.join("\n")}\n`;
+}
+
+function alsoFromLines(f: Finding, shown: string): string[] {
+  return (f.sources ?? [])
+    .filter((s) => s !== shown)
+    .map((other) => `    also from: ${other}`);
 }
 
 /**
