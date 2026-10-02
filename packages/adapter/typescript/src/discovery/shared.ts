@@ -6,7 +6,13 @@
 // the simple "walk-to-enclosing-function" helper that two unrelated
 // handlers: clientCall and packageImport: both need).
 
-import { type CallExpression, Node, type ParameterDeclaration } from "ts-morph";
+import {
+  type CallExpression,
+  Node,
+  type ParameterDeclaration,
+  type SourceFile,
+  type VariableDeclaration,
+} from "ts-morph";
 
 import type {
   DeployableUnit,
@@ -160,6 +166,12 @@ export interface DiscoveredUnit {
     path: string | null;
   };
   /**
+   * The file a file convention found this unit in. Its path and export
+   * name decide the route, even when the function it exports was written
+   * in another module or returned by a factory.
+   */
+  routeFile?: SourceFile;
+  /**
    * The status the framework sends for a response this unit's body
    * states none for, when the route declares one: `@HttpCode(204)`, or
    * the 201 NestJS sends for `@Post`. It replaces the default on the
@@ -297,6 +309,9 @@ export function unitDedupKey(unit: DiscoveredUnit): string {
 
 /** One function exported under two names is two boundaries, so each name keeps its unit. */
 function exportIdentityOf(unit: DiscoveredUnit): string {
+  if (unit.routeFile !== undefined) {
+    return `${unit.routeFile.getFilePath()}::${unit.name}`;
+  }
   if (unit.packageExportInfo !== undefined) {
     return `${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`;
   }
@@ -371,6 +386,11 @@ export function couldResolveToFunction(value: Node): boolean {
  * a null. One hop is enough to tell: what the declaration is set to.
  */
 export function couldStillNameAFunction(value: Node): boolean {
+  // A module's export table gives the declaration itself for a name it
+  // re-exports, `export { GET }`, so the declaration gets the same hop.
+  if (Node.isVariableDeclaration(value)) {
+    return declarationCouldHoldAFunction(value);
+  }
   if (!couldResolveToFunction(value)) {
     return false;
   }
@@ -381,6 +401,12 @@ export function couldStillNameAFunction(value: Node): boolean {
   if (declaration === undefined || !Node.isVariableDeclaration(declaration)) {
     return true;
   }
+  return declarationCouldHoldAFunction(declaration);
+}
+
+function declarationCouldHoldAFunction(
+  declaration: VariableDeclaration,
+): boolean {
   const written = declaration.getInitializer();
   return (
     written === undefined ||

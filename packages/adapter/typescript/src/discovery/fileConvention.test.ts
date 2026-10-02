@@ -101,6 +101,141 @@ describe("discoverFileConventions", () => {
   });
 });
 
+describe("a route whose function the route file does not write", () => {
+  const routePack: PatternPack = {
+    name: "convention-test",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "handler",
+        match: {
+          type: "fileConvention",
+          filePattern: ROUTE_FILES,
+          exportNames: ["GET", "POST", "DELETE"],
+        },
+        bindingExtraction: {
+          method: { type: "fromExportName" },
+          path: { type: "fromFilename", root: "app", dropBasenames: ["route"] },
+        },
+      },
+      {
+        kind: "handler",
+        match: {
+          type: "fileConvention",
+          filePattern: "**/pages/api/**/*.ts",
+          exportNames: ["default"],
+        },
+        bindingExtraction: {
+          method: { type: "literal", value: "*" },
+          path: { type: "fromFilename", root: "pages" },
+        },
+      },
+    ],
+    terminals: [
+      {
+        kind: "response",
+        match: { type: "returnStatement" },
+        extraction: { defaultStatusCode: 200 },
+      },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+
+  /** Each route summary as `name method path`, sorted. */
+  async function routesIn(files: Record<string, string>): Promise<string[]> {
+    const project = createTestProject();
+    for (const [filePath, source] of Object.entries(files)) {
+      project.createSourceFile(filePath, source);
+    }
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [routePack],
+    });
+    const routes: string[] = [];
+    for (const summary of await adapter.extractAll()) {
+      const semantics = summary.identity.boundaryBinding?.semantics;
+      if (semantics?.name === "rest") {
+        routes.push(
+          `${summary.identity.name} ${semantics.method} ${semantics.path}`,
+        );
+      }
+    }
+    return routes.sort();
+  }
+
+  it("takes the route from the file that re-exports a handler", async () => {
+    const routes = await routesIn({
+      "/src/modules/accounts/handlers.ts": [
+        "export const GET = async (req: Request) => ({ accounts: [] });",
+        "export async function listMembers(req: Request) { return { members: [] }; }",
+      ].join("\n"),
+      "/src/app/accounts/route.ts": [
+        'import { GET } from "../../modules/accounts/handlers";',
+        "export { GET };",
+      ].join("\n"),
+      "/src/app/teams/route.ts":
+        'export { GET } from "../../modules/accounts/handlers";',
+      "/src/app/members/route.ts": [
+        'import { listMembers } from "../../modules/accounts/handlers";',
+        "export { listMembers as GET };",
+      ].join("\n"),
+    });
+    expect(routes).toEqual([
+      "GET GET /accounts",
+      "GET GET /members",
+      "GET GET /teams",
+    ]);
+  });
+
+  it("reads the function a factory with a block body returns", async () => {
+    const routes = await routesIn({
+      "/src/lib/withAudit.ts": `
+export const withAudit = (options: { handler: () => Promise<unknown> }) => {
+  const { handler } = options;
+  return async (req: Request) => {
+    const result = await handler();
+    return { result };
+  };
+};`,
+      "/src/app/orders/route.ts": `
+import { withAudit } from "../../lib/withAudit";
+export const GET = withAudit({ handler: async () => ({ orders: [] }) });
+export const DELETE = withAudit({ handler: async () => ({ deleted: true }) });`,
+    });
+    expect(routes).toEqual(["DELETE DELETE /orders", "GET GET /orders"]);
+  });
+
+  it("keeps one route for each name a handler is exported under", async () => {
+    const routes = await routesIn({
+      "/src/app/reports/route.ts": `
+const handler = async (req: Request) => { return { ok: true }; };
+export const GET = handler;
+export const POST = handler;`,
+    });
+    expect(routes).toEqual(["GET GET /reports", "POST POST /reports"]);
+  });
+
+  it("reads a default export a factory with a block body returns", async () => {
+    const routes = await routesIn({
+      "/src/lib/responder.ts": `
+declare function traced<T>(fn: T, name: string): T;
+export function responder(fn: (req: Request) => Promise<unknown>, name: string) {
+  const run = traced(fn, name);
+  return async (req: Request) => {
+    const result = await run(req);
+    return { result };
+  };
+}`,
+      "/src/pages/api/orders/export.ts": `
+import { responder } from "../../../lib/responder";
+async function exportOrders(req: Request) { return { file: "orders.csv" }; }
+export default responder(exportOrders, "orders.export");`,
+    });
+    expect(routes).toEqual(["default * /api/orders/export"]);
+  });
+});
+
 describe("a route the file cannot supply", () => {
   it("leaves a unit unbound when its file sits outside the root", async () => {
     // The pattern still matches, since a project can keep an app

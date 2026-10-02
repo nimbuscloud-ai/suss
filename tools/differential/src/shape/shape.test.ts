@@ -102,6 +102,7 @@ const SOUND_COMPONENT_ROUTES = new Set([
   "defaultDeclaration",
   "defaultOfName",
   "throughProperty",
+  "throughFactoryArg",
   "barrel",
   "twoBarrels",
 ]);
@@ -191,31 +192,34 @@ const PLAIN_COMPONENT_BODY = {
   root: { type: "element" as const, tag: "div", children: [] },
 };
 
-describe("shape fuzzer, bugs that are still in the tree", () => {
-  for (const gap of COMPONENT_BUGS) {
-    it(
-      `still broken, ${gap.dimension}=${gap.value}: ${gap.wrong}`,
-      { timeout: 60_000 },
-      async () => {
-        const spec = repairComponentShape({
-          form: "declaration",
-          binding: "const",
-          route: "namedBinding",
-          body: PLAIN_COMPONENT_BODY,
-          [gap.dimension]: gap.value,
-        } as ComponentShapeSpec);
-        const result = await runComponentShapeDifferential(spec, REACT_PACK);
-        // Asserting the broken behaviour on purpose: this test fails
-        // the moment the bug is fixed, which is when the dimension
-        // value belongs in the sound tier instead.
-        expect(
-          [...signaturesOf(result)],
-          `${gap.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${gap.dimension}=${gap.value} into the sound tier above and delete this entry.\n${formatShapeFailure(result)}`,
-        ).toContain(gap.signature);
-      },
-    );
-  }
-});
+describe.skipIf(COMPONENT_BUGS.length === 0)(
+  "shape fuzzer, bugs that are still in the tree",
+  () => {
+    for (const gap of COMPONENT_BUGS) {
+      it(
+        `still broken, ${gap.dimension}=${gap.value}: ${gap.wrong}`,
+        { timeout: 60_000 },
+        async () => {
+          const spec = repairComponentShape({
+            form: "declaration",
+            binding: "const",
+            route: "namedBinding",
+            body: PLAIN_COMPONENT_BODY,
+            [gap.dimension]: gap.value,
+          } as ComponentShapeSpec);
+          const result = await runComponentShapeDifferential(spec, REACT_PACK);
+          // Asserting the broken behaviour on purpose: this test fails
+          // the moment the bug is fixed, which is when the dimension
+          // value belongs in the sound tier instead.
+          expect(
+            [...signaturesOf(result)],
+            `${gap.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${gap.dimension}=${gap.value} into the sound tier above and delete this entry.\n${formatShapeFailure(result)}`,
+          ).toContain(gap.signature);
+        },
+      );
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // The registration gap, which the reach dimension is entirely inside

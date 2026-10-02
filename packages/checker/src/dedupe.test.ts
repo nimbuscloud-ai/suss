@@ -287,6 +287,24 @@ describe("dedupeFindings", () => {
       expect(out).toHaveLength(2);
     });
 
+    it("reports two paths of one handler with the same text once", () => {
+      const otherPath = { ...handler, transitionId: "t-403-again" };
+      const out = dedupeFindings(
+        [
+          undeclared("bundle.json"),
+          undeclared("bundle.json", otherPath),
+          undeclared("pets.yml", otherPath),
+        ],
+        documents,
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]?.provider.transitionId).toBe("t-403");
+      expect(out[0]?.sources).toEqual([
+        "openapi:bundle.json::getPet",
+        "openapi:pets.yml::getPet",
+      ]);
+    });
+
     it("reports an operation no handler serves once across the documents", () => {
       const unimplemented = (file: string): Finding =>
         finding({
