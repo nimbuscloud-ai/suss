@@ -129,6 +129,42 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
   },
 };
 
+/**
+ * Readers that can say whether a path has anything to read without
+ * reading all of it. Reading every story in a large app under its
+ * tsconfig takes seconds per folder, and `init` only needs to know
+ * whether a `contract` command there would read anything.
+ */
+const SAMPLE_LOADERS: Partial<Record<ContractSource, ContractLoader>> = {
+  storybook: async (specPath) => {
+    const mod = await import("@suss/contract-storybook");
+    return firstBatchWithSummaries(expandStoryPaths(specPath), (files) =>
+      mod.generateSummariesFromStories(files, { componentModules: false }),
+    );
+  },
+};
+
+/**
+ * The summaries of the first batch of files that gives any. The batches
+ * double in size, so a folder whose first file reads costs one file, and
+ * a folder where nothing reads costs about one read of every file.
+ */
+export function firstBatchWithSummaries(
+  files: ReadonlyArray<string>,
+  read: (batch: string[]) => BehavioralSummary[],
+): BehavioralSummary[] {
+  let start = 0;
+  for (let size = 1; start < files.length; size *= 2) {
+    const summaries = read(files.slice(start, start + size));
+    if (summaries.length > 0) {
+      return summaries;
+    }
+
+    start += size;
+  }
+  return [];
+}
+
 function warningsOf(options: ContractReadOptions): { warnings?: string[] } {
   return options.warnings === undefined ? {} : { warnings: options.warnings };
 }
@@ -249,6 +285,34 @@ export async function readContract(
     );
   }
 
+  return readWith(loader, options);
+}
+
+export interface ContractSample {
+  summaries: BehavioralSummary[];
+  /** True when these are every summary a `contract` run would write. */
+  whole: boolean;
+}
+
+/**
+ * Enough of what the reader for `options.from` gives to say whether it
+ * reads anything there. Most readers read the whole file anyway.
+ */
+export async function sampleContract(
+  options: ContractReadOptions,
+): Promise<ContractSample> {
+  const sample = SAMPLE_LOADERS[options.from];
+  if (sample === undefined) {
+    return { summaries: await readContract(options), whole: true };
+  }
+
+  return { summaries: await readWith(sample, options), whole: false };
+}
+
+async function readWith(
+  loader: ContractLoader,
+  options: ContractReadOptions,
+): Promise<BehavioralSummary[]> {
   const resolved = await resolveSpec(options.spec);
   // The temp file's name is random, so a fetched spec is labelled by its
   // URL instead.
