@@ -14,6 +14,7 @@ import {
   graphqlResolverBinding,
   groundBinding,
   groundedPairingKey,
+  hostCanBeOwn,
   labelWithDetail,
   leavesTheProcess,
   messageBusBinding,
@@ -27,6 +28,7 @@ import {
   pairRank,
   reportsUnpairedItself,
   restBinding,
+  routePathsMeet,
   semanticsAgree,
   spansBuckets,
   storageBinding,
@@ -270,6 +272,32 @@ describe("boundaryKey", () => {
     ).toEqual(getAt("/orders").semantics);
     const other = getAt("/orders", "maps.example.org");
     expect(withoutOwnHost(other, own)).toBe(other);
+    const relative = getAt("/orders");
+    expect(withoutOwnHost(relative, own)).toBe(relative);
+  });
+
+  it("treats loopback, private and unqualified hosts as ones the project can run on", () => {
+    for (const host of [
+      "localhost:3000",
+      "127.0.0.1",
+      "10.1.2.3:8080",
+      "[::1]:4000",
+      "orders-service",
+      "api.internal",
+      "web.test",
+    ]) {
+      expect(hostCanBeOwn(host), host).toBe(true);
+    }
+    for (const host of ["www.googleapis.com", "8.8.8.8", "meta.example.co"]) {
+      expect(hostCanBeOwn(host), host).toBe(false);
+    }
+  });
+
+  it("says two declared route paths meet when they share a request", () => {
+    expect(routePathsMeet("/(|locale/:locale/)articles", "/articles")).toBe(
+      true,
+    );
+    expect(routePathsMeet("/articles/:id", "/users/1")).toBe(false);
   });
 
   it("reads an open base URL in the key as the origin", () => {
