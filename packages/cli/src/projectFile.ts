@@ -58,6 +58,8 @@ export interface ProjectFile {
   read: Array<ExtractEntry | ContractEntry>;
   /** Read by `suss extract`, which keys each module's public exports by its name. */
   modules?: ModuleEntry[];
+  /** Hosts the project serves, so a call written out to one pairs with its routes. */
+  hosts?: string[];
 }
 
 /**
