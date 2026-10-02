@@ -55,7 +55,7 @@ Wrangler replaces a whole block instead of merging it, so an environment that de
 
 ## Code scope
 
-The Worker's code is the directory the document is in, and `main` gives the entry file. `main` often points at a bundle that a build step writes, outside the source. If the entry matches no file, the directory alone decides the code scope, so the code is placed correctly either way.
+The Worker's code is the directory the document is in, and `main` gives the entry file. `main` often points at a bundle that a build step writes, outside the source. If the entry matches no file, the directory alone decides the code scope, so the code is placed correctly either way. The bundle can also contain code from outside the source, such as a framework adapter that reads its own variables, so the checker does not call a variable unused for a Worker whose entry it never read. It lists those variables in one info finding instead.
 
 ## Out of scope for now
 

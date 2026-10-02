@@ -4,7 +4,10 @@ import {
   statusAccessorsFor,
   successAccessorsFor,
 } from "../contract/declaredContract.js";
-import { catchIsUncertain } from "../contract/partlyRead.js";
+import {
+  catchIsUncertain,
+  reachedThroughUnreadCondition,
+} from "../contract/partlyRead.js";
 import { predicatesMatch } from "../match.js";
 import { consumerDiscriminatesByContent } from "./contentDiscrimination.js";
 import {
@@ -161,6 +164,13 @@ export function checkProviderCoverage(
         // repository does not state, so a person judges it (#471).
         severity: "warning",
       });
+      continue;
+    }
+
+    // A path gated on state other code set, such as a field a middleware
+    // put on the request, may never run on this route, so it does not
+    // count as one of the situations a consumer should tell apart.
+    if (reachedThroughUnreadCondition(provider, pt)) {
       continue;
     }
 

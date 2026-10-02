@@ -19,6 +19,7 @@ import {
   ruleBoundaryMatchesKey,
 } from "@suss/ir-core";
 
+import { mergedSideOf } from "./dedupe.js";
 import { boundaryKey } from "./pairing/pairing.js";
 
 import type { Finding } from "@suss/behavioral-ir";
@@ -82,17 +83,23 @@ function ruleSideMatches(
 }
 
 /**
- * Dedupe keeps one finding per group and lists the other providers in
- * `sources`, so a rule that gives any of them matches.
+ * Dedupe keeps one finding per group and lists the other summaries on
+ * the side that differed in `sources`, so a rule that gives any of them
+ * for that side matches.
  */
-function providerSideMatches(
+function mergedSideMatches(
   side: SuppressionRule["provider"],
   finding: Finding,
+  which: "provider" | "consumer",
 ): boolean {
-  if (ruleSideMatches(side, finding.provider)) {
+  if (ruleSideMatches(side, finding[which])) {
     return true;
   }
-  if (side?.summary === undefined || side.transitionId !== undefined) {
+  if (
+    side?.summary === undefined ||
+    side.transitionId !== undefined ||
+    mergedSideOf(finding) !== which
+  ) {
     return false;
   }
 
@@ -115,8 +122,8 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
     return false;
   }
   return (
-    ruleSideMatches(rule.consumer, finding.consumer) &&
-    providerSideMatches(rule.provider, finding)
+    mergedSideMatches(rule.consumer, finding, "consumer") &&
+    mergedSideMatches(rule.provider, finding, "provider")
   );
 }
 

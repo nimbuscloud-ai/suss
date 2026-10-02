@@ -3,5 +3,6 @@
   "args": "Storybook CSF: story key holding the props a story renders with",
   "decorators": "Storybook CSF: story or meta key listing functions that wrap the story and receive its args",
   "render": "Storybook CSF: story or meta key for the function that renders the component from the args",
+  "children": "React: the prop JSX children between an element's tags arrive as",
   "ref": "suss: marker for a component the story refers to"
 }

@@ -15,9 +15,11 @@
 
 import {
   contestedFiles,
+  entryFileAmong,
   isRuntimeConfigProvider,
   type LibraryEnvReads,
   placeRuntimes,
+  readCodeScope,
   readLibraryEnvReads,
   readRuntimeContractMetadata,
   runsIn,
@@ -56,6 +58,12 @@ interface ScopedRuntime {
    * is never reported as unused.
    */
   readNames: Set<string>;
+  /**
+   * The entry file the runtime says it runs, when no file in the run
+   * matches it. A build step usually writes it, and what it bundles from
+   * outside the source can read any of the variables.
+   */
+  unreadEntry: string | undefined;
 }
 
 export interface EnvVarRead {
@@ -157,6 +165,7 @@ export function checkRuntimeConfig(
     findings.push(makeScopeUnknownFinding(runtime, binding));
   }
   const placed = placement.placed;
+  const filesRead = new Set(summaries.map((s) => s.location.file));
 
   const scoped: ScopedRuntime[] = [];
   for (const { runtime, binding, scope } of placed) {
@@ -178,12 +187,17 @@ export function checkRuntimeConfig(
       findings.push(makeUnprovidedFinding(runtime, binding, read));
     }
 
+    const entry = readCodeScope(runtime).entry;
     scoped.push({
       runtime,
       binding,
       provided,
       sources: readEnvVarSources(runtime),
       readNames: new Set(inScope.map((r) => r.name)),
+      unreadEntry:
+        entry !== undefined && entryFileAmong(entry, filesRead) === undefined
+          ? entry
+          : undefined,
     });
   }
 
@@ -351,6 +365,10 @@ function unusedFindings(
   const reported = new Set<string>();
 
   for (const entry of scoped) {
+    if (entry.unreadEntry !== undefined) {
+      findings.push(...unreadEntryFindings(entry, entry.unreadEntry));
+      continue;
+    }
     const document = entry.runtime.location.file;
     for (const name of entry.provided) {
       if (entry.readNames.has(name) || entry.sources[name] === "platform") {
@@ -622,6 +640,41 @@ function makeUnusedFinding(
     description: `${semantics.instanceName} declares environment variable ${varName} but no code in its codeScope reads ${readSpelling(semantics, varName)}.`,
     severity: "warning",
   };
+}
+
+/**
+ * One info finding for a runtime whose entry file the run never read,
+ * listing the variables no code it did read uses. Calling them unused
+ * would be a claim about the code that file bundles.
+ */
+function unreadEntryFindings(
+  entry: ScopedRuntime,
+  unreadEntry: string,
+): Finding[] {
+  const unseen = entry.provided
+    .filter(
+      (name) =>
+        !entry.readNames.has(name) && entry.sources[name] !== "platform",
+    )
+    .sort();
+  if (unseen.length === 0) {
+    return [];
+  }
+  const listed =
+    unseen.length === 1
+      ? unseen[0]
+      : `${unseen.slice(0, -1).join(", ")} and ${unseen.at(-1)}`;
+  const semantics = entry.binding.semantics as RuntimeConfigSemantics;
+  return [
+    {
+      kind: "boundaryFieldUnused",
+      boundary: entry.binding,
+      provider: makeSide(entry.runtime),
+      consumer: makeSide(entry.runtime),
+      description: `${semantics.instanceName} runs ${unreadEntry}, which is not among the files this run read, so whether it reads ${listed} was not checked. A build step usually writes that file, and code it bundles from outside the source can read them.`,
+      severity: "info",
+    },
+  ];
 }
 
 function makeDocumentUnusedFinding(
