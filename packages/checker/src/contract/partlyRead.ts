@@ -31,6 +31,7 @@ import type {
   Transition,
   ValueRef,
   WrapperIndex,
+  WrapperReference,
 } from "@suss/behavioral-ir";
 
 /** A new predicate kind without an entry here fails the build (decision 8). */
@@ -107,38 +108,82 @@ export function reachedThroughUnreadCondition(
 }
 
 /**
- * Whether the handler can end with a failing status no transition names:
- * a wrapper in front of it was not read, it throws something the
- * framework turns into a status, a status could not be read, or no pack
- * terminal matched part of what it produces. A call the walk could not
- * follow is left out, since a dependency it calls does not send the
- * response.
+ * The lowest status the handler may send on a path no transition
+ * describes, so every status from it up is in doubt. Any status, when no
+ * pack terminal matched part of what it produces or one of its statuses
+ * could not be read. A redirect or a failure, when a wrapper in front of
+ * it was not read, since a filter that stops a request does not send a
+ * success. A failure, when it throws something no error handler on the
+ * route surely catches, since the framework turns that into a status.
+ * A call the walk could not follow in the handler itself is left out,
+ * since a dependency it calls does not send the response. Infinity when
+ * every path was read.
  */
-export function failuresSussCouldNotRead(
+export function lowestStatusSentUnread(
   handler: BehavioralSummary,
   wrappers: WrapperIndex,
-): boolean {
-  if (handler.gaps.some((gap) => gap.type === "unreadOutcome")) {
-    return true;
+): number {
+  if (
+    handler.gaps.some((gap) => gap.type === "unreadOutcome") ||
+    handler.transitions.some(hasOpaqueStatus)
+  ) {
+    return 0;
   }
 
   const unreadWrapper = (readWrapperMetadata(handler)?.applied ?? []).some(
-    (reference) => wrapperUnread(wrapperFor(wrappers, reference)),
+    (reference) =>
+      runsOnARoutePath(handler, reference, wrappers) &&
+      wrapperUnread(wrapperFor(wrappers, reference)),
   );
   if (unreadWrapper) {
+    return 300;
+  }
+  return handler.transitions.some(reachesTheFramework)
+    ? 400
+    : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Whether a wrapper runs on some path suss read. Middleware and filters
+ * run on every request. An error handler registered for some exception
+ * classes runs only for a throw of one of them, and composition added
+ * its outcomes to the route exactly where some path throws one it may
+ * catch. Where it added none, the handler could run only for a throw
+ * from a call suss did not follow, which does not count here either.
+ */
+function runsOnARoutePath(
+  handler: BehavioralSummary,
+  reference: WrapperReference,
+  wrappers: WrapperIndex,
+): boolean {
+  if (reference.onThrow !== true || reference.catches === undefined) {
     return true;
   }
+  const own = wrapperFor(wrappers, reference);
+  // With no outcomes to add, composition leaves no trace either way.
+  if (own === undefined || own.transitions.length === 0) {
+    return handler.transitions.some((t) => t.output.type === "throw");
+  }
+  return handler.transitions.some((transition) => {
+    const from = readWrapperMetadata(transition)?.from;
+    return from !== undefined && wrapperFor(wrappers, from) === own;
+  });
+}
 
-  return handler.transitions.some(
-    (t) => t.output.type === "throw" || hasOpaqueStatus(t),
+/** Whether a path ends in a throw that no error handler on the route surely catches. */
+function reachesTheFramework(transition: Transition): boolean {
+  return (
+    transition.output.type === "throw" &&
+    readWrapperMetadata(transition)?.caught !== true
   );
 }
 
 /**
  * Whether a wrapper's outcomes are missing from the route it was
  * composed into: the run has no summary for it, part of it went unread,
- * or it calls something suss could not follow. A filter that responds
- * through a helper often does it in that call.
+ * or it makes a call suss could not follow where that call could send
+ * the response. A filter that responds through a helper often does it
+ * in that call.
  */
 function wrapperUnread(wrapper: BehavioralSummary | undefined): boolean {
   if (wrapper === undefined) {
@@ -146,7 +191,9 @@ function wrapperUnread(wrapper: BehavioralSummary | undefined): boolean {
   }
   return (
     wrapper.gaps.some(
-      (gap) => gap.type === "unreadOutcome" || gap.type === "unfollowedCall",
+      (gap) =>
+        gap.type === "unreadOutcome" ||
+        (gap.type === "unfollowedCall" && gap.usedAsValue !== true),
     ) || wrapper.transitions.some(hasOpaqueStatus)
   );
 }

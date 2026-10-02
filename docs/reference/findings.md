@@ -230,7 +230,11 @@ The other direction is a warning, because a document routinely declares the 401 
   The openapi document declares response 410, and no path in the handler produces it
 ```
 
-Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all.
+Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all. A status that several paths send, such as two filters that each refuse with 403, is reported once, and the description says which code sends it.
+
+A handler suss could not read at all is not compared with the document, and gets one `lowConfidence` finding at info instead. A handler suss read in part, where part of what it returns or one of its statuses could not be read, is never said to leave out a declared status of any class. Behind a filter suss could not fully read, it is never said to leave out a declared redirect or failure. A handler that throws something no error handler on the route surely catches is never said to leave out a declared 4xx.
+
+When two functions serve one operation's route, such as two API versions a header picks between, an operation named after one of them, the way a generator writes `OrdersController_2024_06_11_getOrder`, is compared with that one. Otherwise each function is compared, and only a finding every one of them shows is reported.
 
 Every `unhandledCase` gap on the provider is reported here. An `unreadOutcome` gap is not. It comes out as `lowConfidence` at info, because the pack has no pattern for what the handler returns.
 
