@@ -101,4 +101,45 @@ describe("shapeFromNodeType", () => {
       });
     });
   });
+
+  describe("a call to an overloaded function", () => {
+    const formatter = {
+      "/formatter.ts": [
+        "export interface OrderRow { id: number }",
+        "export interface OrderView { id: string }",
+        "export declare class OrderFormatter {",
+        "  format(rows: OrderRow[]): OrderView[];",
+        "  format(row: OrderRow): OrderView;",
+        "}",
+      ].join("\n"),
+    };
+    const callWith = (argument: string): Node =>
+      lastInitializer(
+        formatter,
+        [
+          'import { OrderFormatter, type OrderRow } from "./formatter.js";',
+          "declare const formatter: OrderFormatter;",
+          argument,
+          "const value = formatter.format(row);",
+        ].join("\n"),
+      );
+
+    it("reads the overload the argument picks", () => {
+      expect(
+        shapeFromNodeType(callWith("declare const row: OrderRow;")),
+      ).toEqual({ type: "record", properties: { id: { type: "text" } } });
+    });
+
+    it("says nothing when an argument typed any could pick any overload", () => {
+      expect(shapeFromNodeType(callWith("declare const row: any;"))).toEqual({
+        type: "unknown",
+      });
+    });
+
+    it("says nothing when the argument is typed never", () => {
+      expect(shapeFromNodeType(callWith("declare const row: never;"))).toEqual({
+        type: "unknown",
+      });
+    });
+  });
 });

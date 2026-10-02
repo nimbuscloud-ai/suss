@@ -24,7 +24,7 @@
 
 import { createHash } from "node:crypto";
 
-import { TypeFormatFlags } from "ts-morph";
+import { Node, TypeFormatFlags } from "ts-morph";
 
 import { definitionsInProgress } from "./definitions.js";
 import {
@@ -35,7 +35,7 @@ import {
 } from "./typeText.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
-import type { Node, SourceFile, Symbol as TsSymbol, Type } from "ts-morph";
+import type { SourceFile, Symbol as TsSymbol, Type } from "ts-morph";
 
 /**
  * Maximum recursion depth when expanding object properties. Beyond this we
@@ -79,11 +79,44 @@ interface ConvertContext {
  * uninformative to bother representing (e.g. `any`).
  */
 export function shapeFromNodeType(node: Node): TypeShape | null {
+  if (overloadIsAGuess(node)) {
+    return { type: "unknown" };
+  }
   const type = node.getType();
   return typeToShape(type, {
     enclosing: node,
     depth: 0,
     seen: new Set(),
+  });
+}
+
+/**
+ * Whether the checker's type for a call comes from an overload it picked
+ * without knowing the argument.
+ *
+ * The checker takes the first overload whose parameters accept the
+ * arguments, and an argument typed `any` or `never` is accepted by every
+ * one. That happens when a type the project imports could not be read,
+ * so the first overload wins even where the code means another, and a
+ * body built from that guess would be compared as though it were known.
+ */
+function overloadIsAGuess(node: Node): boolean {
+  if (!Node.isCallExpression(node)) {
+    return false;
+  }
+  const signatures = node.getExpression().getType().getCallSignatures();
+  if (signatures.length < 2) {
+    return false;
+  }
+  const returns = new Set(
+    signatures.map((signature) => signature.getReturnType().getText(node)),
+  );
+  if (returns.size < 2) {
+    return false;
+  }
+  return node.getArguments().some((argument) => {
+    const type = argument.getType();
+    return type.isAny() || type.isNever();
   });
 }
 
