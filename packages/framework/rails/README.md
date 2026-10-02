@@ -28,6 +28,7 @@ Framework pack for [Rails](https://rubyonrails.org/) controller actions and the 
   ```
 
   reports two transitions: 201 when `item.save` succeeds, and 422 when it does not. A call written in one branch goes only on that branch's transition. A path that reaches the end of the body, or ends in a `return` with no response call, is Rails' implicit render, and is reported at 200.
+- **Response body**: `render json: { error: "name is required" }, status: 422` reports a body with an `error` key whose value is that string. The hash can be written in place, built in a local variable, or returned by a project method, and `.to_json` or `.as_json` with no arguments on it gives the same body. A body that is not a hash or an array, such as a model, a serializer object or a string of JSON text, is left unread, so a client is never told a field is missing from a body suss could not see.
 - **Filters**: `before_action :require_login` runs a method before the action, and the request ends there if that method renders, heads or redirects. The pack declares `before_action` and `rescue_from`, and the adapter gives each named method a unit of its own. That unit records what the method responds with on the paths where it responds, and passes the request on along the others. Every action the filter covers records it, and the action reports the two combined:
 
   ```ruby
