@@ -54,7 +54,7 @@ export function isRaise(node: RbNode): boolean {
     return false;
   }
   const receiver = field(node, "receiver");
-  const method = field(node, "method") ?? node.namedChildren[0] ?? null;
+  const method = field(node, "method") ?? node.namedChild(0) ?? null;
   return receiver === null && method !== null && RAISE_NAMES.has(method.text);
 }
 
@@ -71,7 +71,7 @@ function exitOf(
 function exitKindOf(node: RbNode): ExitKind {
   let sawReturn = false;
   const raises = (current: RbNode): boolean => {
-    for (const child of current.namedChildren) {
+    for (const child of children(current)) {
       if (child === null || CAPTURES_RETURN.has(child.type)) {
         continue;
       }
@@ -127,7 +127,7 @@ interface FormatArm {
 
 function attachedBlockOf(call: RbNode): RbNode | null {
   return (
-    call.namedChildren.find(
+    children(call).find(
       (child): child is RbNode =>
         child !== null && (child.type === "do_block" || child.type === "block"),
     ) ?? null
@@ -136,8 +136,8 @@ function attachedBlockOf(call: RbNode): RbNode | null {
 
 /** The one parameter a block takes, `format` in `do |format|`. */
 function soleBlockParameter(block: RbNode): string | null {
-  const names = (field(block, "parameters")?.namedChildren ?? []).filter(
-    (child): child is RbNode => child !== null && child.type === "identifier",
+  const names = children(field(block, "parameters")).filter(
+    (child) => child.type === "identifier",
   );
   return names.length === 1 ? (names[0] as RbNode).text : null;
 }
@@ -226,7 +226,7 @@ class Lowerer {
       found.push(own);
       return found;
     }
-    for (const child of node.namedChildren) {
+    for (const child of children(node)) {
       if (child !== null && !OWN_BODY_TYPES.has(child.type)) {
         this.responsesIn(child, found);
       }
@@ -291,14 +291,10 @@ class Lowerer {
   }
 
   private lowerBegin(node: RbNode): StructuredStatement<RbNode> {
-    const rescues = node.namedChildren.filter(
-      (child): child is RbNode => child !== null && child.type === "rescue",
-    );
+    const rescues = children(node).filter((child) => child.type === "rescue");
     const ensureClause =
-      node.namedChildren.find(
-        (child): child is RbNode => child !== null && child.type === "ensure",
-      ) ?? null;
-    const tryBody = node.namedChildren.filter(
+      children(node).find((child) => child.type === "ensure") ?? null;
+    const tryBody = children(node).filter(
       (child): child is RbNode =>
         child !== null &&
         child.type !== "rescue" &&
@@ -320,10 +316,7 @@ class Lowerer {
 
   private lowerCase(node: RbNode): StructuredStatement<RbNode> {
     const groups: CaseGroup<RbNode>[] = [];
-    for (const child of node.namedChildren) {
-      if (child === null) {
-        continue;
-      }
+    for (const child of children(node)) {
       if (child.type === "when") {
         groups.push({
           condition: handleOf(field(child, "pattern")),

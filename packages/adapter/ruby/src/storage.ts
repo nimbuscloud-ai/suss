@@ -792,10 +792,7 @@ function recognizeMethodStorage(
 }
 
 function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(node)) {
     if (child.type === "call") {
       found.push(child);
     }

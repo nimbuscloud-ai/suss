@@ -54,7 +54,7 @@ import {
   walkRecordsByFile,
 } from "@suss/resolution";
 
-import { field, isFunction, rangeOf } from "./ast.js";
+import { children, field, isFunction, rangeOf } from "./ast.js";
 import {
   buildPythonExtractionReport,
   createPackTallies,
@@ -1164,7 +1164,7 @@ function indexDefinitions(
   if (isFunction(node)) {
     into.set(nodeId(file, node), node);
   }
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (child !== null) {
       indexDefinitions(into, file, child);
     }

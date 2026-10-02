@@ -14,6 +14,7 @@ import path from "node:path";
 
 import {
   bodyStatements,
+  children,
   field,
   hashKeySymbolName,
   nestedStatements,
@@ -935,10 +936,8 @@ function routeDeclarations(
       found.push(declaration);
       return;
     }
-    for (const child of node.namedChildren) {
-      if (child !== null) {
-        visit(child);
-      }
+    for (const child of children(node)) {
+      visit(child);
     }
   };
   visit(root);

@@ -94,7 +94,7 @@ export function shapeOfReturned(node: PyNode, depth = 0): TypeShape {
  * return writes nothing with a readable shape.
  */
 export function returnedBodyShape(statement: PyNode): TypeShape | null {
-  const returned = statement.namedChildren[0];
+  const returned = statement.namedChild(0);
   if (returned == null) {
     return null;
   }

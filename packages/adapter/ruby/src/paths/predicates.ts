@@ -45,12 +45,12 @@ const JOINING = new Set(["&&", "||", "and", "or"]);
 /** What one condition tests. */
 export function predicateOf(node: RbNode, inputs?: GuardInputs): Predicate {
   if (node.type === "parenthesized_statements") {
-    const inner = node.namedChildren[0];
+    const inner = node.namedChild(0);
     return inner == null ? opaqueOf(node) : predicateOf(inner, inputs);
   }
 
   if (node.type === "unary" && field(node, "operator")?.text === "!") {
-    const operand = field(node, "operand") ?? node.namedChildren[0];
+    const operand = field(node, "operand") ?? node.namedChild(0);
     return operand == null
       ? opaqueOf(node)
       : { type: "negation", operand: predicateOf(operand, inputs) };
@@ -93,11 +93,11 @@ export function predicateOf(node: RbNode, inputs?: GuardInputs): Predicate {
  */
 export function operandsOf(node: RbNode): RbNode[] {
   if (node.type === "parenthesized_statements") {
-    const inner = node.namedChildren[0];
+    const inner = node.namedChild(0);
     return inner == null ? [] : operandsOf(inner);
   }
   if (node.type === "unary" && field(node, "operator")?.text === "!") {
-    const operand = field(node, "operand") ?? node.namedChildren[0];
+    const operand = field(node, "operand") ?? node.namedChild(0);
     return operand == null ? [] : operandsOf(operand);
   }
   if (node.type === "binary") {

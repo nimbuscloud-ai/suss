@@ -13,6 +13,7 @@
 
 import {
   bodyStatements,
+  children,
   field,
   fields,
   isType,
@@ -163,7 +164,7 @@ function bindWithStatement(
 
 /** Every `<expression> as <name>` the with clause writes. */
 function asPatternsIn(stmt: PyNode, found: PyNode[] = []): PyNode[] {
-  for (const child of stmt.namedChildren) {
+  for (const child of children(stmt)) {
     if (child === null || child.type === "block") {
       continue;
     }
@@ -196,12 +197,12 @@ function bindDeleteStatement(stmt: PyNode, scope: Scope): void {
       return;
     }
     if (node.type === "expression_list") {
-      for (const child of node.namedChildren) {
+      for (const child of children(node)) {
         unbind(child);
       }
     }
   };
-  for (const child of stmt.namedChildren) {
+  for (const child of children(stmt)) {
     unbind(child);
   }
 }
@@ -250,10 +251,7 @@ function relativeImportParts(node: PyNode): {
 } {
   let relativeLevel = 0;
   let module = "";
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(node)) {
     if (child.type === "import_prefix") {
       relativeLevel += child.text.length;
       continue;
@@ -279,8 +277,8 @@ function bindImportFromStatement(
       ? relativeImportParts(moduleNode)
       : { module: moduleNode.text, relativeLevel: 0 };
 
-  const hasWildcard = stmt.namedChildren.some(
-    (child) => child !== null && child.type === "wildcard_import",
+  const hasWildcard = children(stmt).some(
+    (child) => child.type === "wildcard_import",
   );
   if (hasWildcard) {
     ctx.openImports.push(
@@ -352,10 +350,7 @@ function bindFunctionDefinition(
 }
 
 function bindParameters(parametersNode: PyNode, functionScope: Scope): void {
-  for (const param of parametersNode.namedChildren) {
-    if (param === null) {
-      continue;
-    }
+  for (const param of children(parametersNode)) {
     const name = parameterName(param);
     if (name !== null) {
       bindName(functionScope, name, { kind: "parameter" });
@@ -377,9 +372,7 @@ function parameterName(param: PyNode): string | null {
   ) {
     // A typed_parameter's name is an unnamed identifier child, since its only
     // field is `type`. Splat patterns wrap it the same way.
-    const inner = param.namedChildren.find(
-      (child) => child !== null && child.type === "identifier",
-    );
+    const inner = children(param).find((child) => child.type === "identifier");
     return inner?.text ?? null;
   }
   if (isType(param, "default_parameter", "typed_default_parameter")) {
@@ -413,8 +406,8 @@ function bindClassDefinition(
 }
 
 function bindExpressionStatement(stmt: PyNode, scope: Scope): void {
-  const assignment = stmt.namedChildren.find(
-    (child) => child !== null && child.type === "assignment",
+  const assignment = children(stmt).find(
+    (child) => child.type === "assignment",
   );
   if (assignment === undefined || assignment === null) {
     return;
@@ -434,16 +427,16 @@ function bindExpressionStatement(stmt: PyNode, scope: Scope): void {
 }
 
 function bindGlobalStatement(stmt: PyNode, scope: Scope): void {
-  for (const child of stmt.namedChildren) {
-    if (child !== null && child.type === "identifier") {
+  for (const child of children(stmt)) {
+    if (child.type === "identifier") {
       scope.bindings.set(child.text, { kind: "global" });
     }
   }
 }
 
 function bindNonlocalStatement(stmt: PyNode, scope: Scope): void {
-  for (const child of stmt.namedChildren) {
-    if (child !== null && child.type === "identifier") {
+  for (const child of children(stmt)) {
+    if (child.type === "identifier") {
       scope.bindings.set(child.text, { kind: "nonlocal" });
     }
   }

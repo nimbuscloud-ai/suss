@@ -8,7 +8,7 @@
  * take the spellings from here so they agree on what counts as a read.
  */
 
-import { field, readCallArgs, stringLiteralValue } from "./ast.js";
+import { children, field, readCallArgs, stringLiteralValue } from "./ast.js";
 
 import type { RbNode } from "./parser.js";
 
@@ -46,9 +46,7 @@ function elementSite(node: RbNode): EnvSpelling | null {
   if (object === null || !isEnv(object) || isAssignedTo(node)) {
     return null;
   }
-  const index = node.namedChildren.find(
-    (child): child is RbNode => child !== null && child.id !== object.id,
-  );
+  const index = children(node).find((child) => child.id !== object.id);
   if (index === undefined) {
     return null;
   }

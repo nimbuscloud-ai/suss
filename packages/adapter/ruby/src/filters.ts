@@ -16,7 +16,7 @@ import {
   methodInAncestry,
   methodPastUnreadAncestors,
 } from "./ancestry.js";
-import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
+import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { withSlotSources } from "./provenance.js";
 import { responseBranches } from "./responseStatus.js";
 import { constantRefCandidates } from "./scope.js";
@@ -512,8 +512,8 @@ function blockInPlaceOfMethod(
 }
 
 function blockStatements(block: RbNode): RbNode[] {
-  return (field(block, "body")?.namedChildren ?? []).filter(
-    (child): child is RbNode => child !== null && child.type !== "comment",
+  return children(field(block, "body")).filter(
+    (child) => child.type !== "comment",
   );
 }
 
@@ -530,9 +530,7 @@ function blockHandlerName(block: RbNode): string | null {
     return null;
   }
   const parameters = new Set(
-    (field(block, "parameters")?.namedChildren ?? []).map(
-      (parameter) => parameter?.text,
-    ),
+    children(field(block, "parameters")).map((parameter) => parameter.text),
   );
   if (only.type === "identifier") {
     return parameters.has(only.text) ? null : only.text;

@@ -13,6 +13,7 @@ import path from "node:path";
 
 import {
   bodyStatements,
+  children,
   field,
   parseRubySync,
   underscoreConstantPath,
@@ -136,10 +137,7 @@ function engineClassesIn(
   enclosing: readonly string[] = [],
 ): Omit<RailsEngine, "routesFile">[] {
   const found: Omit<RailsEngine, "routesFile">[] = [];
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(node)) {
     if (child.type === "class" && extendsEngine(child)) {
       const name = definedName(child);
       if (name !== undefined) {
@@ -166,12 +164,10 @@ function definedName(definition: RbNode): string | undefined {
 
 function extendsEngine(classNode: RbNode): boolean {
   const superclass = field(classNode, "superclass");
-  const base = superclass?.namedChildren.find(
-    (child) => child !== null && CONSTANT_TYPES.has(child.type),
+  const base = children(superclass).find((child) =>
+    CONSTANT_TYPES.has(child.type),
   );
-  return (
-    base !== undefined && base !== null && ENGINE_BASE_NAMES.has(base.text)
-  );
+  return base !== undefined && ENGINE_BASE_NAMES.has(base.text);
 }
 
 /** The module `isolate_namespace Name` puts the engine's controllers under, as a routing key prefix. */

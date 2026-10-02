@@ -11,7 +11,7 @@
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { field, runsAtModuleLoad } from "../ast.js";
+import { children, field, runsAtModuleLoad } from "../ast.js";
 import { guardInputs } from "../provenance.js";
 import { askWrittenValues, evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
@@ -46,7 +46,7 @@ function literalArgOf(
 
 /** Every call written in this function's own body, in source order. */
 export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (child === null || NESTED_DEFINITION_TYPES.has(child.type)) {
       continue;
     }
@@ -60,7 +60,7 @@ export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
 
 /** Every call the module makes as it loads, in source order. */
 export function moduleLoadCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (child === null || !runsAtModuleLoad(child)) {
       continue;
     }
@@ -106,13 +106,11 @@ function argumentNodes(call: PyNode): PyNode[] {
   if (args === null) {
     return [];
   }
-  return args.namedChildren
-    .filter((child): child is PyNode => child !== null)
-    .map((child) =>
-      child.type === "keyword_argument"
-        ? (field(child, "value") ?? child)
-        : child,
-    );
+  return children(args).map((child) =>
+    child.type === "keyword_argument"
+      ? (field(child, "value") ?? child)
+      : child,
+  );
 }
 
 function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
@@ -159,7 +157,7 @@ function askedNodesUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
   if (ASKED_ABOUT_TYPES.has(node.type)) {
     found.push(node);
   }
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (child !== null && !NESTED_DEFINITION_TYPES.has(child.type)) {
       askedNodesUnder(child, found);
     }

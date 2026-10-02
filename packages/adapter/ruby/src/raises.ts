@@ -5,7 +5,7 @@
  * path engine already walks, so it is left out.
  */
 
-import { field, OWN_BODY_TYPES, readCallArgs } from "./ast.js";
+import { children, field, OWN_BODY_TYPES, readCallArgs } from "./ast.js";
 import { MESSAGE_ONLY_EXCEPTION } from "./exceptionClasses.js";
 import { isRaise } from "./paths/lowering.js";
 import { constantRefCandidates } from "./scope.js";
@@ -27,7 +27,7 @@ export function escapingRaises(method: RbNode): RbNode[] {
   }
   const found: RbNode[] = [];
   const visit = (node: RbNode): void => {
-    for (const child of node.namedChildren) {
+    for (const child of children(node)) {
       if (child === null || OWN_BODY_TYPES.has(child.type)) {
         continue;
       }
@@ -65,7 +65,7 @@ function rescues(parent: RbNode, child: RbNode): boolean {
   return (
     RESCUING_BODIES.has(parent.type) &&
     !AFTER_CATCH.has(child.type) &&
-    parent.namedChildren.some((one) => one?.type === "rescue")
+    children(parent).some((one) => one?.type === "rescue")
   );
 }
 

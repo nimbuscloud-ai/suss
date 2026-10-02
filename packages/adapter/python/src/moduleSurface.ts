@@ -22,7 +22,7 @@ import {
 } from "@suss/extractor";
 import { noteKeyRead } from "@suss/resolution";
 
-import { field, isFunction, stripDecorators } from "./ast.js";
+import { children, field, isFunction, stripDecorators } from "./ast.js";
 import { originsOf } from "./facts/resolve.js";
 import { libraryUnit } from "./reach/closure.js";
 
@@ -154,7 +154,7 @@ function exportsOf(
   if (node.type !== "class_definition" || body === null) {
     return [];
   }
-  return body.namedChildren.flatMap((child) => {
+  return children(body).flatMap((child) => {
     if (child === null) {
       return [];
     }

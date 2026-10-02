@@ -10,7 +10,7 @@
 
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
-import { field, readCallArgs, stringLiteralValue } from "./ast.js";
+import { children, field, readCallArgs, stringLiteralValue } from "./ast.js";
 
 import type { InputRead } from "@suss/extractor";
 import type { RbNode } from "./parser.js";
@@ -52,7 +52,7 @@ export function optionParserFlagReads(
 }
 
 function walkBody(body: RbNode, at: (node: RbNode) => void): void {
-  walkDescendants<RbNode, null>(body, null, {
+  walkDescendants<RbNode, null>(body, null, children, {
     at,
     into: (node) => (DEFERRED_BODY_TYPES.has(node.type) ? SKIP_CHILDREN : null),
   });
@@ -76,7 +76,7 @@ function flagsDeclaredIn(construction: RbNode): string[] {
     return [];
   }
   const flags: string[] = [];
-  walkDescendants<RbNode, null>(block, null, {
+  walkDescendants<RbNode, null>(block, null, children, {
     at: (node) => {
       if (node.type !== "call" || field(node, "method")?.text !== "on") {
         return;

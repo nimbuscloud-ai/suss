@@ -20,7 +20,7 @@ import {
 import { exitCodeFunctions } from "@suss/resolution";
 import { constantOf } from "@suss/values";
 
-import { field, rangeOf, readCallArgs } from "./ast.js";
+import { children, field, rangeOf, readCallArgs } from "./ast.js";
 import { nodeId } from "./facts/values.js";
 import { returnPathBranches } from "./responseStatus.js";
 import { evaluatedValue } from "./values/evaluator.js";
@@ -51,7 +51,7 @@ export interface ExitSite {
 /** Every call under `root` that ends the process, `root` itself left out. */
 export function exitSites(root: RbNode): ExitSite[] {
   const found: ExitSite[] = [];
-  walkDescendants<RbNode, null>(root, null, {
+  walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       const site = node.type === "call" ? exitSiteAt(node) : null;
       if (site !== null) {

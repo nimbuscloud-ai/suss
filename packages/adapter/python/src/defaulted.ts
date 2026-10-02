@@ -11,7 +11,7 @@
  * `os.environ["X"]`, is defaulted only by a test that runs before it.
  */
 
-import { enclosingFunction, field, fields } from "./ast.js";
+import { children, enclosingFunction, field, fields } from "./ast.js";
 import { envReadSpellingAt, isEnviron, isSameName } from "./envSpellings.js";
 import { readKey } from "./facts/values.js";
 
@@ -171,7 +171,7 @@ function isTestedAt(
 /** The test an `if`, an `elif`, a loop or a conditional expression branches on. */
 function conditionOf(node: PyNode): PyNode | null {
   if (node.type === "conditional_expression") {
-    return node.namedChildren[1] ?? null;
+    return node.namedChild(1) ?? null;
   }
   return CONDITIONED_TYPES.has(node.type) ? field(node, "condition") : null;
 }
@@ -211,7 +211,7 @@ function isBranchWherePresent(
   subject: ReadSubject,
 ): boolean {
   if (parent.type === "conditional_expression") {
-    const [whenTrue, test, whenFalse] = parent.namedChildren;
+    const [whenTrue, test, whenFalse] = children(parent);
     return (
       test !== undefined &&
       test !== null &&
@@ -283,7 +283,7 @@ function followsExitWhenAbsent(
   if (parent.type !== "block" && parent.type !== "module") {
     return false;
   }
-  const statements = parent.namedChildren;
+  const statements = children(parent);
   const at = statements.findIndex((statement) => statement?.id === child.id);
   return statements
     .slice(0, at)
@@ -363,7 +363,7 @@ function continuationRaises(from: PyNode): boolean {
   let parent = current.parent;
   while (parent !== null) {
     if (parent.type === "block" || parent.type === "module") {
-      const statements = parent.namedChildren;
+      const statements = children(parent);
       const at = statements.findIndex((one) => one?.id === current.id);
       const exit = firstExit(statements.slice(at + 1));
       if (exit !== null) {
@@ -415,7 +415,7 @@ function exitOf(statement: PyNode): Exit | null {
   if (LEAVING_TYPES.has(statement.type)) {
     return "leave";
   }
-  return statement.type === "block" ? firstExit(statement.namedChildren) : null;
+  return statement.type === "block" ? firstExit(children(statement)) : null;
 }
 
 /**
@@ -488,7 +488,7 @@ function comparisonParts(
   comparison: PyNode,
 ): { left: PyNode; operator: string; right: PyNode } | null {
   const operators = fields(comparison, "operators");
-  const operands = comparison.namedChildren.filter(
+  const operands = children(comparison).filter(
     (child): child is PyNode =>
       child !== null && !operators.some((one) => one.id === child.id),
   );
@@ -529,7 +529,7 @@ const NONE_OPERATORS = new Set(["is", "is not", "==", "!="]);
 
 function peelParens(node: PyNode): PyNode {
   const inner =
-    node.type === "parenthesized_expression" ? node.namedChildren[0] : null;
+    node.type === "parenthesized_expression" ? node.namedChild(0) : null;
   return inner === null || inner === undefined ? node : peelParens(inner);
 }
 

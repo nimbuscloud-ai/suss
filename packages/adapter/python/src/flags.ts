@@ -9,7 +9,7 @@
 
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
-import { field, stringLiteralValue } from "./ast.js";
+import { children, field, stringLiteralValue } from "./ast.js";
 import { callArguments } from "./facts/values.js";
 import { isStdlibMember } from "./stdlibNames.js";
 
@@ -30,7 +30,7 @@ export function argparseFlagReads(
   const parsers = new Map<string, string[]>();
   const handedTo = new Map<string, string>();
   const startScope = module.scopeFor.get(definition.id) ?? module.moduleScope;
-  walkDescendants<PyNode, Scope>(definition, startScope, {
+  walkDescendants<PyNode, Scope>(definition, startScope, children, {
     at: (node, scope) => {
       noteParser(node, scope, parsers);
       noteArgument(node, parsers);

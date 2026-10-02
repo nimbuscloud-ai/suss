@@ -13,7 +13,13 @@ import path from "node:path";
 
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
-import { field, rangeOf, readCallArgs, stringLiteralValue } from "./ast.js";
+import {
+  children,
+  field,
+  rangeOf,
+  readCallArgs,
+  stringLiteralValue,
+} from "./ast.js";
 import { parseRuby } from "./parser.js";
 import { findRubyFiles } from "./project.js";
 import { walkClasses } from "./scope.js";
@@ -91,7 +97,7 @@ function requireTarget(node: RbNode): string | null {
 /** Every `require`/`require_relative` in the file, wherever it is written. */
 function requireSitesIn(root: RbNode, file: string): RubyRequireSite[] {
   const found: RubyRequireSite[] = [];
-  walkDescendants<RbNode, null>(root, null, {
+  walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       const target = requireTarget(node);
       if (target !== null) {

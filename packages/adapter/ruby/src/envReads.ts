@@ -17,6 +17,7 @@ import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 import { noteLookup } from "@suss/resolution";
 
 import {
+  children,
   enclosingDefinition,
   field,
   NodeMap,
@@ -99,7 +100,7 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
   // The calls are resolved in one batch after the walk, so the walk keeps
   // a slot for each one to preserve source order.
   const slots: Slot[] = [];
-  walkDescendants<RbNode, null>(root, null, {
+  walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       const read = envReadAt(node);
       if (read !== null) {
@@ -227,7 +228,7 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
  * naming. Also records the fallback flag the rules do not carry.
  */
 export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
-  walkDescendants<RbNode, null>(root, null, {
+  walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       if (isEnv(node) && handsOnward(node)) {
         db.add("environmentObject", [

@@ -10,6 +10,7 @@
  */
 
 import {
+  allChildren,
   children,
   field,
   stringContentValue,
@@ -272,9 +273,7 @@ function stringExpression(node: PyNode): Expression<PyNode> {
 /** `a == b` lowers to the operator; a chain like `a < b < c` is left opaque. */
 function comparisonExpression(node: PyNode): Expression<PyNode> {
   const operands = children(node);
-  const operators = node.children.filter(
-    (child): child is PyNode => child !== null && !child.isNamed,
-  );
+  const operators = allChildren(node).filter((child) => !child.isNamed);
   const operator = operators[0];
   if (
     operands.length !== 2 ||

@@ -149,7 +149,7 @@ function decoratedNodes(
   root: PyNode,
 ): { stmt: PyNode; decorators: PyNode[] }[] {
   const found: { stmt: PyNode; decorators: PyNode[] }[] = [];
-  walkDescendants<PyNode, null>(root, null, {
+  walkDescendants<PyNode, null>(root, null, children, {
     at: (node) => {
       if (node.type !== "decorated_definition") {
         return;
@@ -801,12 +801,15 @@ function statusOfReturn(
   | { kind: "status"; value: number }
   | { kind: "none" }
   | { kind: "unreadable" } {
-  const returned = statement.namedChildren[0];
+  const returned = statement.namedChild(0);
   if (returned?.type !== "expression_list") {
     return { kind: "none" };
   }
 
-  const status = statusFromReturnedValue(returned.namedChildren[1], facts);
+  const status = statusFromReturnedValue(
+    returned.namedChild(1) ?? undefined,
+    facts,
+  );
   return status === null
     ? { kind: "unreadable" }
     : { kind: "status", value: status };
@@ -1271,7 +1274,7 @@ function declaredStatusesOf(
     ),
   ].filter((node): node is PyNode => node?.type === "dictionary");
   const statuses = dictionaries.flatMap((dictionary) =>
-    dictionary.namedChildren.flatMap((pair) => {
+    children(dictionary).flatMap((pair) => {
       const key = pair?.type === "pair" ? field(pair, "key") : null;
       const status =
         key === null
@@ -1758,10 +1761,7 @@ function readParameters(
 
   const out: RawParameter[] = [];
   let position = 0;
-  for (const param of parametersNode.namedChildren) {
-    if (param === null) {
-      continue;
-    }
+  for (const param of children(parametersNode)) {
     if (skipReceiverParam && position === 0 && isReceiverParam(param)) {
       position += 1;
       continue;
@@ -1954,7 +1954,7 @@ function isInjectedType(
   }
   // The grammar wraps an annotation's expression in a `type` node.
   const written =
-    typeNode.type === "type" ? (typeNode.namedChildren[0] ?? null) : typeNode;
+    typeNode.type === "type" ? (typeNode.namedChild(0) ?? null) : typeNode;
   const origin = written === null ? null : originOf(written, reading.module);
   return (
     origin !== null &&

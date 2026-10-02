@@ -4,12 +4,15 @@ import { SKIP_CHILDREN, walkDescendants } from "./nodeWalk.js";
 
 interface Node {
   readonly type: string;
-  readonly namedChildren: ReadonlyArray<Node | null>;
+  readonly named: ReadonlyArray<Node | null>;
 }
 
-function node(type: string, ...namedChildren: Array<Node | null>): Node {
-  return { type, namedChildren };
+function node(type: string, ...named: Array<Node | null>): Node {
+  return { type, named };
 }
+
+const childrenOf = (parent: Node): Node[] =>
+  parent.named.filter((child): child is Node => child !== null);
 
 /** Every node reached, named by type, with the depth the walk carried into it. */
 function reached(
@@ -17,7 +20,7 @@ function reached(
   keepsItsOwnBody: (node: Node) => boolean = () => false,
 ): string[] {
   const seen: string[] = [];
-  walkDescendants<Node, number>(root, 0, {
+  walkDescendants<Node, number>(root, 0, childrenOf, {
     at: (child, depth) => seen.push(`${child.type}@${depth}`),
     into: (child, depth) =>
       keepsItsOwnBody(child) ? SKIP_CHILDREN : depth + 1,
@@ -45,7 +48,7 @@ describe("walkDescendants", () => {
     ]);
   });
 
-  it("passes over an absent child rather than stopping", () => {
+  it("reads children only through the accessor it was given", () => {
     const tree = node("body", null, node("call"));
 
     expect(reached(tree)).toEqual(["call@0"]);

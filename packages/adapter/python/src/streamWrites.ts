@@ -13,7 +13,7 @@
 import { ioBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
-import { field } from "./ast.js";
+import { children, field } from "./ast.js";
 import { callArguments } from "./facts/values.js";
 import { shapeOfReturned } from "./paths/returnedShape.js";
 import { isBuiltin, isStdlibMember, isStdlibModule } from "./stdlibNames.js";
@@ -36,7 +36,7 @@ export function streamWriteEffects(
 ): Effect[] {
   const found: Effect[] = [];
   const startScope = module.scopeFor.get(root.id) ?? module.moduleScope;
-  walkDescendants<PyNode, Scope>(root, startScope, {
+  walkDescendants<PyNode, Scope>(root, startScope, children, {
     at: (node, scope) => {
       if (node.type !== "call") {
         return;

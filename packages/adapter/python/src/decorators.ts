@@ -14,6 +14,7 @@
 import { dispatchByType } from "@suss/behavioral-ir";
 
 import {
+  children,
   enclosingFunction,
   field,
   rangeOf,
@@ -156,9 +157,7 @@ function argShapeOf(node: PyNode): DecoratorArgShape {
   if (node.type === "list") {
     return {
       kind: "list",
-      items: node.namedChildren
-        .filter((child): child is PyNode => child !== null)
-        .map(readArg),
+      items: children(node).map(readArg),
     };
   }
   return { kind: "other" };
@@ -174,10 +173,7 @@ export function readCallArguments(argumentList: PyNode | null): {
   if (argumentList === null) {
     return { args, keywordArgs };
   }
-  for (const child of argumentList.namedChildren) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(argumentList)) {
     if (child.type === "keyword_argument") {
       const nameNode = field(child, "name");
       const valueNode = field(child, "value");
@@ -384,14 +380,13 @@ export function unwrapDecorator(
 /** Whether the inner call's positional arguments are the def's parameters, in order. */
 function passesParametersThrough(def: PyNode, inner: PyNode): boolean {
   const params = field(def, "parameters");
-  const names = (params?.namedChildren ?? [])
-    .filter((child): child is PyNode => child?.type === "identifier")
+  const names = children(params)
+    .filter((child) => child.type === "identifier")
     .map((child) => child.text);
 
   const argumentList = field(inner, "arguments");
-  const positional = (argumentList?.namedChildren ?? []).filter(
-    (child): child is PyNode =>
-      child !== null && child.type !== "keyword_argument",
+  const positional = children(argumentList).filter(
+    (child) => child.type !== "keyword_argument",
   );
   return (
     positional.length === names.length &&

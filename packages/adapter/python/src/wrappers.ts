@@ -17,6 +17,7 @@ import { absentReading, walkDescendants } from "@suss/extractor";
 import { noteKeyRead, noteLookup } from "@suss/resolution";
 
 import {
+  children,
   field,
   parameterNameAndType,
   rangeOf,
@@ -540,12 +541,10 @@ function referenceKey(reference: WrapperReference): string {
 }
 
 function parameterNamesOf(definition: PyNode): string[] {
-  return (field(definition, "parameters")?.namedChildren ?? []).flatMap(
-    (parameter) => {
-      const named = parameter === null ? null : parameterNameAndType(parameter);
-      return named === null ? [] : [named.name];
-    },
-  );
+  return children(field(definition, "parameters")).flatMap((parameter) => {
+    const named = parameterNameAndType(parameter);
+    return named === null ? [] : [named.name];
+  });
 }
 
 /**
@@ -557,17 +556,15 @@ function declaresSourcedParameter(
   definition: PyNode,
   sources: readonly string[],
 ): boolean {
-  return (field(definition, "parameters")?.namedChildren ?? []).some(
-    (parameter) => {
-      const value = parameter === null ? null : field(parameter, "value");
-      const callee = value?.type === "call" ? field(value, "function") : null;
-      const name =
-        callee?.type === "attribute"
-          ? field(callee, "attribute")?.text
-          : callee?.text;
-      return name !== undefined && sources.includes(name);
-    },
-  );
+  return children(field(definition, "parameters")).some((parameter) => {
+    const value = field(parameter, "value");
+    const callee = value?.type === "call" ? field(value, "function") : null;
+    const name =
+      callee?.type === "attribute"
+        ? field(callee, "attribute")?.text
+        : callee?.text;
+    return name !== undefined && sources.includes(name);
+  });
 }
 
 function isThrowForm(form: PyWrapperForm): boolean {
@@ -666,10 +663,10 @@ function registerConstructorDependencies(
   index: PythonWrapperIndex,
 ): void {
   const scope = file.module.moduleScope;
-  for (const stmt of file.root.namedChildren) {
+  for (const stmt of children(file.root)) {
     const assignment =
       stmt?.type === "expression_statement"
-        ? stmt.namedChildren.find((child) => child?.type === "assignment")
+        ? children(stmt).find((child) => child?.type === "assignment")
         : undefined;
     const left =
       assignment === undefined || assignment === null
@@ -721,7 +718,7 @@ function registerDecorated(
   form: PyDecoratedWrapperForm,
   index: PythonWrapperIndex,
 ): void {
-  walkDescendants<PyNode, Scope>(file.root, file.module.moduleScope, {
+  walkDescendants<PyNode, Scope>(file.root, file.module.moduleScope, children, {
     at: (node, scope) => {
       if (node.type !== "decorated_definition") {
         return;
@@ -763,7 +760,7 @@ function registerDecorated(
 
 /** The function names inside `[Depends(a), Security(b)]`, or inside one such call on its own. */
 function dependencyNamesIn(node: PyNode, form: PyDependencyForm): string[] {
-  const calls = node.type === "list" ? node.namedChildren : [node];
+  const calls = node.type === "list" ? children(node) : [node];
   const names: string[] = [];
   for (const call of calls) {
     const name = call === null ? null : dependencyNameOf(call, form);
@@ -789,7 +786,7 @@ function dependencyNameOf(node: PyNode, form: PyDependencyForm): string | null {
   if (calleeName === null || !form.callees.includes(calleeName)) {
     return null;
   }
-  const first = field(node, "arguments")?.namedChildren[0];
+  const first = field(node, "arguments")?.namedChild(0);
   return first?.type === "identifier" ? first.text : null;
 }
 
@@ -819,7 +816,7 @@ function parameterDependencies(
     if (direct !== null) {
       return direct;
     }
-    for (const child of node.namedChildren) {
+    for (const child of children(node)) {
       const found = findIn(child, depth + 1);
       if (found !== null) {
         return found;
@@ -827,11 +824,7 @@ function parameterDependencies(
     }
     return null;
   };
-  for (const param of field(definitionNode, "parameters")?.namedChildren ??
-    []) {
-    if (param === null) {
-      continue;
-    }
+  for (const param of children(field(definitionNode, "parameters"))) {
     const inDefault = field(param, "value");
     const found =
       inDefault === null
@@ -956,7 +949,7 @@ function returnHandsOn(statement: PyNode, form: PyWrapperForm): boolean {
     return false;
   }
   if (form.returnedValueResponds === true) {
-    const returned = statement.namedChildren[0];
+    const returned = statement.namedChild(0);
     return (
       returned === undefined || returned === null || returned.type === "none"
     );
@@ -976,9 +969,7 @@ function continuationStatements(node: PyNode, form: PyWrapperForm): PyNode[] {
   ) {
     return [];
   }
-  const params = (field(node, "parameters")?.namedChildren ?? []).filter(
-    (param): param is PyNode => param !== null,
-  );
+  const params = children(field(node, "parameters"));
   const param = params[form.continuationParam];
   const continuation =
     param === undefined

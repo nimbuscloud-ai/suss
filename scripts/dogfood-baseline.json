@@ -6,7 +6,7 @@
     "internal": 5324,
     "consumers": 2749,
     "pairs": 1553,
-    "unfollowedCalls": 536,
+    "unfollowedCalls": 537,
     "findingErrors": 0
   },
   "packages": {
@@ -204,7 +204,7 @@
       "exports": 82,
       "internal": 118,
       "consumers": 31,
-      "unfollowedCalls": 19
+      "unfollowedCalls": 20
     },
     "packages/framework/activerecord": {
       "name": "@suss/framework-activerecord",
