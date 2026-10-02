@@ -24,6 +24,7 @@ import {
   resolveFramework,
   resolvePythonPack,
   resolveRubyPack,
+  resolveSource,
 } from "./extract.js";
 import { stubOverlayOf } from "./stubs.js";
 
@@ -794,7 +795,7 @@ describe("extract --dir under a tsconfig that covers the whole repository", () =
     ].join("\n");
   }
 
-  it("walks only the directory it was pointed at", async () => {
+  function twoPackagesUnderOneTsconfig(): string {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-walk-under-"));
     fs.writeFileSync(
       path.join(root, "tsconfig.json"),
@@ -812,6 +813,15 @@ describe("extract --dir under a tsconfig that covers the whole repository", () =
         handlerReading(table),
       );
     }
+    return root;
+  }
+
+  function filesOf(summaries: BehavioralSummary[]): string[] {
+    return [...new Set(summaries.map((s) => s.location.file))];
+  }
+
+  it("walks only the directory it was pointed at", async () => {
+    const root = twoPackagesUnderOneTsconfig();
 
     const summaries = await extract({
       dir: path.join(root, "packages", "orders"),
@@ -820,8 +830,40 @@ describe("extract --dir under a tsconfig that covers the whole repository", () =
       allowEmpty: true,
     });
 
-    const files = [...new Set(summaries.map((s) => s.location.file))];
-    expect(files).toEqual([path.join("packages", "orders", "handler.ts")]);
+    expect(filesOf(summaries)).toEqual([
+      path.join("packages", "orders", "handler.ts"),
+    ]);
+  });
+
+  it("walks only the directory --dir names when -p names the tsconfig", async () => {
+    const root = twoPackagesUnderOneTsconfig();
+
+    const summaries = await extract({
+      tsconfig: path.join(root, "tsconfig.json"),
+      dir: path.join(root, "packages", "orders"),
+      frameworks: ["aws-lambda", "pg"],
+      noCache: true,
+      allowEmpty: true,
+    });
+
+    expect(filesOf(summaries)).toEqual([
+      path.join("packages", "orders", "handler.ts"),
+    ]);
+  });
+
+  it("walks every file when --dir is above the tsconfig -p names", async () => {
+    const root = twoPackagesUnderOneTsconfig();
+
+    expect(
+      resolveSource({
+        tsconfig: path.join(root, "tsconfig.json"),
+        dir: path.dirname(root),
+      }),
+    ).toEqual({
+      kind: "tsconfig",
+      path: path.join(root, "tsconfig.json"),
+      root,
+    });
   });
 });
 

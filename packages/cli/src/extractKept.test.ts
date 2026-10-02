@@ -47,6 +47,27 @@ function expressProject(): string {
   return root;
 }
 
+class CountingKeptAdapters extends KeptAdapters {
+  made = 0;
+
+  override keep<T>(
+    slot: string,
+    key: string,
+    make: () => T,
+    prepare?: (value: T) => Promise<void>,
+  ): T {
+    return super.keep(
+      slot,
+      key,
+      () => {
+        this.made += 1;
+        return make();
+      },
+      prepare,
+    );
+  }
+}
+
 function routes(summaries: Awaited<ReturnType<typeof extract>>): unknown[] {
   return summaries.map(
     (summary) => summary.identity.boundaryBinding?.semantics,
@@ -76,6 +97,34 @@ describe("extract with kept adapters", () => {
     expect(kept.size).toBe(1);
     expect(routes(kept2)).toEqual(routes(fresh));
     expect(JSON.stringify(routes(kept2))).toContain("/invoices");
+  }, 60_000);
+
+  it("keeps one adapter per directory read under one tsconfig", async () => {
+    const root = expressProject();
+    for (const name of ["orders", "billing"]) {
+      fs.mkdirSync(path.join(root, "src", name));
+      fs.copyFileSync(
+        path.join(root, "src", "app.ts"),
+        path.join(root, "src", name, "app.ts"),
+      );
+    }
+    const kept = new CountingKeptAdapters();
+    const run = (name: string) =>
+      extract({
+        dir: path.join(root, "src", name),
+        frameworks: ["express"],
+        output: path.join(root, `${name}.json`),
+        noCache: true,
+        kept,
+      });
+
+    for (const name of ["orders", "billing", "orders", "billing"]) {
+      kept.startRead();
+      await run(name);
+    }
+
+    expect(kept.size).toBe(2);
+    expect(kept.made).toBe(2);
   }, 60_000);
 
   it("reads a directory with no tsconfig afresh each run, so an edit shows", async () => {

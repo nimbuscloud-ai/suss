@@ -2275,7 +2275,10 @@ export interface TypeScriptAdapterConfig {
   onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
   /** Not called on a cache hit, where no stage ran. */
   onExtractionReport?: (report: ExtractionReport) => void;
-  /** Absolute. `.suss/cache/` beside the tsconfig; `null` turns it off. */
+  /**
+   * Absolute. `.suss/cache/` in `walkedDirectory` when set, otherwise
+   * beside the tsconfig; `null` turns it off.
+   */
   cacheDir?: string | null;
   /** The modules the project lists in `suss.json`, with absolute paths. */
   modules?: readonly DeclaredModule[];
@@ -2367,6 +2370,25 @@ interface TsCacheMeta {
   mountPrefixes: Record<string, string>;
 }
 
+/**
+ * `.suss/cache/` in the walked directory, or beside the tsconfig when the
+ * run walks all of it. A cache directory keeps only a couple of entries,
+ * so packages read one at a time under one tsconfig each need their own.
+ * Without a tsconfig there is no directory to keep it in, so a caller that
+ * supplies a bare project passes a cache directory or runs without one.
+ */
+function defaultCacheDir(config: TypeScriptAdapterConfig): string | null {
+  if (config.walkedDirectory !== undefined) {
+    return path.join(config.walkedDirectory, ".suss", "cache");
+  }
+
+  if (config.tsConfigFilePath !== undefined) {
+    return path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache");
+  }
+
+  return null;
+}
+
 export function createTypeScriptAdapter(
   suppliedConfig: TypeScriptAdapterConfig,
 ): TypeScriptAdapter {
@@ -2431,16 +2453,10 @@ export function createTypeScriptAdapter(
     programLoaded = false;
   };
 
-  // Without a tsconfig there is no directory to keep the cache beside,
-  // so a caller that supplies a bare project passes a cache directory or
-  // runs without one.
   const cacheDir = declineWhenRunFromSource(
     config.cacheDir === null
       ? null
-      : (config.cacheDir ??
-          (config.tsConfigFilePath !== undefined
-            ? path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache")
-            : null)),
+      : (config.cacheDir ?? defaultCacheDir(config)),
   );
   const cache: CacheLayer<TsCacheMeta, ScanRecord> = createCacheLayer<
     TsCacheMeta,

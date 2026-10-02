@@ -135,16 +135,19 @@ function ordersFile(trailer: string): string {
 /** Runs one extract and returns what it wrote and what it said about the cache. */
 function extract(
   label: string,
-  options: { noCache?: boolean } = {},
+  options: { noCache?: boolean; dir?: string } = {},
 ): { written: string; cacheLine: string } {
   const out = path.join(tmpDir, "out", `${label}.json`);
+  const source =
+    options.dir === undefined
+      ? ["-p", path.join(tmpDir, "tsconfig.json")]
+      : ["--dir", path.join(tmpDir, options.dir)];
   const result = spawnSync(
     process.execPath,
     [
       BIN,
       "extract",
-      "-p",
-      path.join(tmpDir, "tsconfig.json"),
+      ...source,
       "-f",
       "express",
       "--timing",
@@ -223,5 +226,37 @@ describe("the extraction cache through the built binary", () => {
 
     expect(warm.cacheLine).toContain("cache: partial");
     expect(warm.written).toBe(fresh.written);
+  });
+
+  it("hits for each of three directories read in turn under one tsconfig", () => {
+    wrappedRouteProject();
+    const packages = ["orders", "billing", "accounts"];
+    for (const name of packages) {
+      write(
+        `src/${name}/app.ts`,
+        fs.readFileSync(path.join(tmpDir, "src", "app.ts"), "utf8"),
+      );
+      write(
+        `src/${name}/requireCaller.ts`,
+        fs.readFileSync(path.join(tmpDir, "src", "requireCaller.ts"), "utf8"),
+      );
+    }
+
+    const cold = packages.map((name) =>
+      extract(`${name}-cold`, { dir: `src/${name}` }),
+    );
+    const warm = packages.map((name) =>
+      extract(`${name}-warm`, { dir: `src/${name}` }),
+    );
+
+    expect(cold.map((run) => run.cacheLine)).toEqual(
+      packages.map(() => expect.stringContaining("cache: miss")),
+    );
+    expect(warm.map((run) => run.cacheLine)).toEqual(
+      packages.map(() => expect.stringContaining("cache: hit")),
+    );
+    expect(warm.map((run) => run.written)).toEqual(
+      cold.map((run) => run.written),
+    );
   });
 });
