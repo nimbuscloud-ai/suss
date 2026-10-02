@@ -101,6 +101,7 @@ export {
   unitIdentityKey,
   unitInvocationBinding,
   withinScope,
+  withoutOwnHost,
   withRewrittenPaths,
 } from "@suss/ir-core";
 

@@ -42,6 +42,7 @@ import {
 import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
+import { forgetOwnHosts, projectHosts } from "./projectHosts.js";
 import { projectModules } from "./projectModules.js";
 import { isSameOrUnder } from "./projectSource.js";
 import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
@@ -1302,8 +1303,10 @@ export async function extract(
   const { summaries, timingReport, cacheDiagnostic, extractionReport } = run;
 
   const projectRoot = run.root;
+  const ownHosts = projectHosts(projectRoot);
   for (const summary of summaries) {
     relativizeSummaryPaths(summary, projectRoot);
+    forgetOwnHosts(summary, ownHosts);
     summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
 

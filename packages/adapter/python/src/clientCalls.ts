@@ -18,7 +18,7 @@ import {
   testsStatus,
 } from "@suss/behavioral-ir";
 import { redirectDeliveryWhenSet } from "@suss/extractor";
-import { pathOf, scalarOf } from "@suss/values";
+import { hostOf, pathOf, scalarOf } from "@suss/values";
 
 import {
   children,
@@ -49,10 +49,15 @@ import type { PyNode } from "./parser.js";
 import type { TerminalBranch } from "./paths/bodyBranches.js";
 import type { ModuleBinding } from "./scope.js";
 
-/** What one request call states about the boundary it reaches. */
-interface RequestCall {
-  method: string;
+/** Where a URL goes: its path, and its host when it is absolute. */
+interface Target {
   path: string;
+  host: string | undefined;
+}
+
+/** What one request call states about the boundary it reaches. */
+interface RequestCall extends Target {
+  method: string;
   range: ReturnType<typeof rangeOf>;
   /** What this call does with a redirect, when it passes the pack's option. */
   redirectDelivery?: RedirectDelivery;
@@ -162,7 +167,7 @@ function requestCalls(
     if (stated === null) {
       continue;
     }
-    const key = `${stated.method} ${stated.path}`;
+    const key = `${stated.method} ${stated.host ?? ""} ${stated.path}`;
     if (!byBoundary.has(key)) {
       byBoundary.set(key, stated);
     }
@@ -221,14 +226,16 @@ function methodAndPath(
 ): RequestCall | null {
   const verb = pattern.verbAttributeNames[attribute];
   if (verb !== undefined) {
-    const path = urlAt(
+    const target = urlAt(
       call,
       pattern.url.position,
       pattern.url.keyword,
       options,
       site,
     );
-    return path === null ? null : { method: verb, path, range: rangeOf(call) };
+    return target === null
+      ? null
+      : { method: verb, ...target, range: rangeOf(call) };
   }
 
   const methodCall = pattern.methodCall;
@@ -244,16 +251,16 @@ function methodAndPath(
   if (method === null) {
     return null;
   }
-  const path = urlAt(
+  const target = urlAt(
     call,
     methodCall.urlPosition,
     pattern.url.keyword,
     options,
     site,
   );
-  return path === null
+  return target === null
     ? null
-    : { method: method.toUpperCase(), path, range: rangeOf(call) };
+    : { method: method.toUpperCase(), ...target, range: rangeOf(call) };
 }
 
 /**
@@ -302,19 +309,21 @@ function receiverConstructor(
   return importModule.includes(origin.module) ? origin.name : null;
 }
 
-/** The path the URL argument states, or null when it does not settle on one. */
+/** Where the URL argument goes, or null when it settles on no path. */
 function urlAt(
   call: PyNode,
   position: number,
   keyword: string,
   options: ClientCallOptions,
   site?: string,
-): string | null {
+): Target | null {
   const argument = argumentAt(call, position, keyword);
   if (argument === null) {
     return null;
   }
-  return pathOf(evaluatedValue(argument, options.facts, site)) ?? null;
+  const value = evaluatedValue(argument, options.facts, site);
+  const path = pathOf(value);
+  return path === undefined ? null : { path, host: hostOf(value) };
 }
 
 /**
@@ -467,6 +476,7 @@ function clientUnit(
       transport: pack.protocol,
       method: request.method,
       path: request.path,
+      host: request.host,
       recognition: pack.name,
     }),
     parameters: [],

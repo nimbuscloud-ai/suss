@@ -125,7 +125,7 @@ interface BoundaryBinding {
 
 ```ts
 type Semantics =
-  | { name: "rest"; method: string | null; path: string | null; declaredResponses?: number[] }
+  | { name: "rest"; method: string | null; path: string | null; declaredResponses?: number[]; host?: string; optionalFormat?: boolean }
   | { name: "function-call"; module?: string; exportName?: string; package?: string; exportPath?: string[] }
   | { name: "graphql-resolver"; typeName: string | null; fieldName: string }
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
@@ -157,6 +157,20 @@ semantic bridging all read `semantics.name === "rest"` and narrow to
 one, and `boundaryKey` returns `null` for these, which keeps them out of
 automatic pairing. A `"*"` method groups by path and pairs with whatever
 method each consumer uses.
+
+A client that writes out an absolute URL keeps the host in `host`. A
+host that can be the project's own, such as `localhost:3000` or a
+container's service name, is dropped before pairing. Any other host
+stays in the pairing key, so a call to another company's API never
+meets the project's routes, a catch-all included. A client whose host
+or base URL suss could not read still pairs on its path, but never with
+a catch-all route such as `/{url+}`.
+
+When a call meets several routes, the route that spells out more of the
+segments the call spells out wins. A route that spells out a word where
+the call has a hole, such as `/follows/bulk_show` for a call to
+`/follows/{id}`, meets the call only if the id is that word, so it does
+not pair at all.
 
 **`function-call`** handles in-process units (React components, bare function
 exports, Storybook contract components) that don't take part in REST pairing.
@@ -417,7 +431,8 @@ template says what that variable is. Two more behaviors cover that:
 - `nameReference`: where to look up this boundary's name, or null when
   the source stated a name outright.
 - `groundName`: the same boundary with the deployment's values filled
-  in. REST puts a base URL back into the front of a path,
+  in. REST puts a base URL back into the front of a path and drops a
+  host that can be the project's own,
   unit-invocation swaps the callee for the resource the template points
   the variable at, and storage swaps the container for the string the
   deployment sets it to.

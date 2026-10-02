@@ -742,6 +742,18 @@ function respondingHelpersOf(
   };
 }
 
+/** Rails, like a framework modelled on it, adds no format to a path that ends in a slash. */
+function servesFormat(
+  pattern: ControllerActions,
+  route: ControllerRoute,
+): boolean {
+  return (
+    pattern.optionalFormat === true &&
+    route.formatless !== true &&
+    !route.path.endsWith("/")
+  );
+}
+
 function buildControllerActionUnit(
   pack: RubyPack,
   pattern: ControllerActions,
@@ -787,6 +799,7 @@ function buildControllerActionUnit(
             method: route.method,
             path: route.path,
             recognition: pack.name,
+            optionalFormat: servesFormat(pattern, route),
           }),
     parameters: [],
     branches: withSlotSources(

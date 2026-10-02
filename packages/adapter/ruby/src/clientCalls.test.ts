@@ -146,6 +146,57 @@ describe("a method that calls a request method", () => {
     expect(boundary(units).path).toBe("/orders");
   });
 
+  it("keeps the host of an absolute URL, from the call or from the builder", async () => {
+    const units = await unitsIn(
+      [
+        "class SearchClient",
+        "  def search(query)",
+        '    HttpClient.get("https://www.example.net/customsearch/v1?q=#{query}")',
+        "  end",
+        "  def keys",
+        '    conn = HttpClient.build(base: "https://keys.example.org")',
+        '    conn.get("/auth/keys")',
+        "  end",
+        "  def mirror",
+        '    conn = HttpClient.build(base: "https://keys.example.org/v2")',
+        '    conn.get("https://mirror.example.org/auth/keys")',
+        "  end",
+        "  def local",
+        '    HttpClient.get("/orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(
+      units.map((unit) => {
+        const semantics = unit.boundaryBinding?.semantics;
+        return semantics?.name === "rest"
+          ? [semantics.path, semantics.host ?? null]
+          : null;
+      }),
+    ).toEqual([
+      ["/customsearch/v1", "www.example.net"],
+      ["/auth/keys", "keys.example.org"],
+      ["/auth/keys", "mirror.example.org"],
+      ["/orders", null],
+    ]);
+  });
+
+  it("finds no path in a URL whose scheme and authority are both holes", async () => {
+    const units = await unitsIn(
+      [
+        "class UploadCheck",
+        "  def verify(upload)",
+        '    HttpClient.get("#{scheme}:#{upload.url}")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
   it("says nothing about a receiver the library did not build", async () => {
     const units = await unitsIn(
       [

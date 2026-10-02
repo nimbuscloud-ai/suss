@@ -740,6 +740,23 @@ describe("railsFramework", () => {
       expect(routeFor(source, "UsersController", "show")).toBeNull();
     });
 
+    it("marks a route that says format: false", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  get "search", to: "search#show", format: false\n' +
+        '  get "feed", to: "search#feed"\n' +
+        "end\n";
+      expect(routeFor(source, "SearchController", "show")).toEqual({
+        method: "GET",
+        path: "/search",
+        formatless: true,
+      });
+      expect(routeFor(source, "SearchController", "feed")).toEqual({
+        method: "GET",
+        path: "/feed",
+      });
+    });
+
     it("binds root to: to a GET on /", () => {
       const source =
         'Rails.application.routes.draw do\n  root to: "welcome#index"\nend\n';

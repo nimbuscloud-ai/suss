@@ -152,6 +152,13 @@
                             "items": {
                               "type": "number"
                             }
+                          },
+                          "host": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "optionalFormat": {
+                            "type": "boolean"
                           }
                         },
                         "required": ["name", "method", "path"],
@@ -1033,6 +1040,13 @@
                                     "items": {
                                       "type": "number"
                                     }
+                                  },
+                                  "host": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "optionalFormat": {
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": ["name", "method", "path"],

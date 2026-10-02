@@ -6,7 +6,7 @@
     "internal": 5383,
     "consumers": 2806,
     "pairs": 1586,
-    "unfollowedCalls": 537,
+    "unfollowedCalls": 538,
     "findingErrors": 0
   },
   "packages": {
@@ -547,7 +547,7 @@
       "exports": 92,
       "internal": 31,
       "consumers": 0,
-      "unfollowedCalls": 15
+      "unfollowedCalls": 16
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",

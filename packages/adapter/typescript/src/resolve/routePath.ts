@@ -5,7 +5,13 @@
  * as one in any other language.
  */
 
-import { force, isLocalUrl, pathOf, routePatternOf } from "@suss/values";
+import {
+  force,
+  hostOf,
+  isLocalUrl,
+  pathOf,
+  routePatternOf,
+} from "@suss/values";
 
 import { evaluatedValue } from "../values/evaluator.js";
 
@@ -54,6 +60,23 @@ export function pathFromProperty(
 ): string | undefined {
   const value = propertyValueAt(arg, property, resolution, site);
   return value === undefined ? undefined : pathOf(value);
+}
+
+/**
+ * The host the URL at the argument, or at one of its properties, is
+ * written with, or undefined for a relative URL. See `hostOf`.
+ */
+export function hostFromArgument(
+  arg: Node,
+  property: string | undefined,
+  resolution?: ResolutionStore,
+  site?: string,
+): string | undefined {
+  const value =
+    property === undefined
+      ? evaluatedValue(arg, resolution, site)
+      : propertyValueAt(arg, property, resolution, site);
+  return value === undefined ? undefined : hostOf(value);
 }
 
 /**

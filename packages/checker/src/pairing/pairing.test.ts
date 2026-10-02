@@ -428,6 +428,72 @@ describe("pairSummaries", () => {
     expect(result.pairs.map((pair) => pair.provider)).toContain(declared);
   });
 
+  it("keeps a contract beside a route that also serves a format, and pairs a call with the format", () => {
+    const base = providerWithPath("search", "GET", "/search");
+    const route = {
+      ...base,
+      identity: {
+        ...base.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path: "/search",
+          recognition: "rails",
+          optionalFormat: true,
+        }),
+      },
+    };
+    const spec = providerWithPath("search", "GET", "/search");
+    const declared = {
+      ...spec,
+      location: { ...spec.location, file: "openapi:openapi.yaml" },
+      metadata: withHttpMetadata(undefined, {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: [{ statusCode: 200 }],
+        },
+      }),
+    };
+    const plain = consumerWithPath("search", "GET", "/search");
+    const json = consumerWithPath("searchJson", "GET", "/search.json");
+
+    const result = pairSummaries([route, declared, plain, json]);
+    expect(result.pairs.map((pair) => [pair.consumer, pair.provider])).toEqual([
+      [plain, route],
+      [plain, declared],
+      [json, route],
+    ]);
+  });
+
+  it("pairs a call with a spec and a handler that rank equal from different buckets", () => {
+    const handler = providerWithPath(
+      "index",
+      "GET",
+      "/(|locale/:locale/)api/teams",
+    );
+    const spec = providerWithPath("index", "GET", "/api/teams");
+    const declared = {
+      ...spec,
+      location: { ...spec.location, file: "openapi:api.json" },
+      metadata: withHttpMetadata(undefined, {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: [{ statusCode: 200 }],
+        },
+      }),
+    };
+    const client = consumerWithPath("loadTeams", "GET", "/api/teams");
+
+    const result = pairSummaries([handler, declared, client]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([
+      declared,
+      handler,
+    ]);
+    expect(result.ambiguous).toEqual([]);
+  });
+
   it("takes the provider in the caller's own service over a stranger's", () => {
     const mine = inService(
       providerWithPath("getUser", "GET", "/users/{id}"),
@@ -564,6 +630,33 @@ describe("pairSummaries", () => {
     const result = pairSummaries([profile, feed, stats]);
     expect(result.pairs).toEqual([]);
     expect(result.ambiguous).toHaveLength(1);
+  });
+
+  it("lets an optional prefix the call leaves out neither help nor hurt a route", () => {
+    const profile = providerWithPath(
+      "profile",
+      "GET",
+      "/(|locale/:locale/):username/:view",
+    );
+    const plain = providerWithPath("story", "GET", "/:org_slug/:slug");
+    const story = {
+      ...plain,
+      identity: {
+        ...plain.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path: "/:org_slug/:slug",
+          recognition: "rails",
+          optionalFormat: true,
+        }),
+      },
+    };
+    const stats = consumerWithPath("fetchStats", "GET", "/admin/stats");
+
+    const result = pairSummaries([profile, story, stats]);
+    expect(result.pairs).toEqual([]);
+    expect(result.ambiguous[0]?.providers).toEqual([profile, story]);
   });
 
   it("pairs a request with the route that matches it more closely than a catch-all", () => {
@@ -864,5 +957,88 @@ describe("pairSummaries across buckets", () => {
 
     const result = pairSummaries([p, c]);
     expect(result.pairs).toHaveLength(1);
+  });
+
+  it("takes the route with a parameter where the caller has a hole over one that spells a word there", () => {
+    const show = providerWithPath(
+      "show",
+      "GET",
+      "/(|locale/:locale/)follows/:id",
+    );
+    const bulk = providerWithPath(
+      "bulkShow",
+      "GET",
+      "/(|locale/:locale/)follows/bulk_show",
+    );
+    const c = consumerWithPath("fetchStatus", "GET", "/follows/{id}");
+
+    const result = pairSummaries([bulk, show, c]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([show]);
+    expect(result.ambiguous).toEqual([]);
+  });
+
+  it("pairs nothing when every route that meets the call spells a word where it has a hole", () => {
+    const settings = providerWithPath("settings", "PUT", "/users/settings");
+    const notifications = providerWithPath(
+      "notifications",
+      "PUT",
+      "/users/notification_settings",
+    );
+    const c = consumerWithPath("saveUser", "PUT", "/users/{userId}");
+
+    const result = pairSummaries([settings, notifications, c]);
+    expect(result.pairs).toEqual([]);
+    expect(result.ambiguous).toEqual([]);
+    expect(result.unmatched.consumers).toEqual([c]);
+  });
+});
+
+describe("pairSummaries and the host a call names", () => {
+  const atHost = (path: string, host: string): BehavioralSummary => {
+    const c = consumerWithPath("search", "GET", path);
+    return {
+      ...c,
+      identity: {
+        ...c.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path,
+          recognition: "net-http",
+          host,
+        }),
+      },
+    };
+  };
+
+  it("never pairs a call to a public host with the app's routes", () => {
+    const permalink = providerWithPath("permalink", "GET", "/:url+");
+    const search = providerWithPath("search", "GET", "/customsearch/v1");
+    const c = atHost("/customsearch/v1", "www.googleapis.com");
+
+    const result = pairSummaries([permalink, search, c]);
+    expect(result.pairs).toEqual([]);
+    expect(result.unmatched.consumers).toEqual([c]);
+  });
+
+  it("pairs a call to a host the app can run on", () => {
+    const orders = providerWithPath("orders", "GET", "/orders");
+    const c = atHost("/orders", "localhost:3000");
+
+    const result = pairSummaries([orders, c]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([orders]);
+  });
+
+  it("keeps a call whose host it could not read off a catch-all and on the route it names", () => {
+    const permalink = providerWithPath("permalink", "GET", "/:url+");
+    const health = providerWithPath("health", "GET", "/health");
+    const named = atHost("/health", "{target}:{port}");
+    const other = atHost("/status", "{target}:{port}");
+
+    const result = pairSummaries([permalink, health, named, other]);
+    expect(result.pairs.map((pair) => [pair.consumer, pair.provider])).toEqual([
+      [named, health],
+    ]);
+    expect(result.unmatched.consumers).toEqual([other]);
   });
 });

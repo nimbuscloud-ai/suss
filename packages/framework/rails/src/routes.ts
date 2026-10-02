@@ -31,6 +31,8 @@ import type { RailsEngine } from "./engines.js";
 export interface Route {
   method: string;
   path: string;
+  /** True for a route that says `format: false`, which Rails serves with no `.:format` after its path. */
+  formatless?: true;
 }
 
 export interface RouteTable {
@@ -289,7 +291,11 @@ class RouteAccumulator {
     if (
       !routes.some((one) => one.method === route.method && one.path === path)
     ) {
-      routes.push({ method: route.method, path });
+      routes.push({
+        method: route.method,
+        path,
+        ...(route.formatless === true ? { formatless: true } : {}),
+      });
     }
     this.byKey.set(key, routes);
   }
@@ -474,6 +480,7 @@ function handleVerb(
   const base =
     ctx.resource === undefined ? ctx.pathPrefix : baseForOn(ctx.resource, on);
   const target = readRouteTarget(args, ctx);
+  const format = formatOf(args);
   if (target !== null) {
     const literalPath = args.positional[0]
       ? textValue(args.positional[0], ctx)
@@ -483,6 +490,7 @@ function handleVerb(
       out.add(joinKey(ctx.modulePrefix, target.controllerKey), target.action, {
         method,
         path: joinPath(base, path),
+        ...format,
       });
     }
     return;
@@ -505,7 +513,16 @@ function handleVerb(
   if (controllerKey === undefined) {
     return;
   }
-  out.add(controllerKey, action, { method, path: joinPath(base, segment) });
+  out.add(controllerKey, action, {
+    method,
+    path: joinPath(base, segment),
+    ...format,
+  });
+}
+
+/** `format: false` turns off the `.:format` Rails adds to a route. */
+function formatOf(args: SimpleArgs): Pick<Route, "formatless"> {
+  return args.keyword.format?.type === "false" ? { formatless: true } : {};
 }
 
 function handleRoot(

@@ -7,10 +7,10 @@
  * a joined path, or a name assigned in a branch comes out the same in
  * each language. A hole the evaluator could not fill is written
  * `{name}`, or `{name*}` when it is a joined list. A piece that is one
- * of a few texts is written `(v1|v2)`. An absolute URL loses its origin,
- * because the host identifies the deployable unit and only the path
- * goes into the boundary. A query string ends a request URL's path, and
- * a route pattern keeps its `?`.
+ * of a few texts is written `(v1|v2)`. The path leaves out an absolute
+ * URL's origin, and `hostOf` reads the host on its own, so pairing can
+ * tell a call to the app from a call to another company's API. A query
+ * string ends a request URL's path, and a route pattern keeps its `?`.
  */
 
 import { patternHole, rangedHole, setPiece } from "@suss/ir-core";
@@ -70,16 +70,38 @@ const SUBSTITUTION = "\uFFFF";
 // and a bare "//" starts an authority with no scheme at all.
 const AUTHORITY_OPENER = /^(?:[-+.\uFFFFa-zA-Z0-9]+:\/\/|\/\/)/;
 
+/** Where the authority starts and ends in the flattened text, or null for a relative URL. */
+interface Authority {
+  start: number;
+  end: number;
+}
+
+function authorityOf(flattened: string, end: PathEnd): Authority | null {
+  const opener = AUTHORITY_OPENER.exec(flattened);
+  if (opener !== null) {
+    const slash = flattened.indexOf("/", opener[0].length);
+    return {
+      start: opener[0].length,
+      end: slash === -1 ? flattened.length : slash,
+    };
+  }
+  if (end !== REQUEST_PATH_END) {
+    return null;
+  }
+  // A relative URL cannot have a colon in its first segment. With a hole
+  // there too, as in `${scheme}:${url}` or `${host}:${port}/x`, the hole
+  // hides the authority, so the whole segment is the authority.
+  const slash = flattened.indexOf("/");
+  const head = slash === -1 ? flattened : flattened.slice(0, slash);
+  return head.includes(":") && head.includes(SUBSTITUTION)
+    ? { start: 0, end: head.length }
+    : null;
+}
+
 // Zero when the string is not an absolute URL, so all of it is path.
 // The whole length when the authority never ends, so none of it is.
-function originEndOf(flattened: string): number {
-  const opener = AUTHORITY_OPENER.exec(flattened);
-  if (opener === null) {
-    return 0;
-  }
-
-  const slash = flattened.indexOf("/", opener[0].length);
-  return slash === -1 ? flattened.length : slash;
+function originEndOf(flattened: string, end: PathEnd): number {
+  return authorityOf(flattened, end)?.end ?? 0;
 }
 
 // A query string can start partway through a piece of text. Nothing
@@ -159,7 +181,7 @@ function pathFromPieces(
   pieces: readonly Piece[],
   end: PathEnd,
 ): string | undefined {
-  const originEnd = originEndOf(pieces.map(flattenedPiece).join(""));
+  const originEnd = originEndOf(pieces.map(flattenedPiece).join(""), end);
   let path = "";
   let stop = false;
   // Where the piece currently being read starts in the flattened text.
@@ -217,6 +239,66 @@ export function isLocalUrl(value: Value): boolean {
  */
 export function pathOf(value: Value): string | undefined {
   return pathEndingAt(value, REQUEST_PATH_END);
+}
+
+/**
+ * The host written in an absolute URL, with its port, as `api.example.com:8443`.
+ * A piece of the authority the evaluator could not read is written
+ * `{name}`, so a host suss read can be told from one it could not.
+ * Undefined for a relative URL, which goes wherever the page or the
+ * client's base sends it.
+ */
+export function hostOf(value: Value): string | undefined {
+  if (value.kind !== "string" || isLocalUrl(value)) {
+    return undefined;
+  }
+  const literal = literalOf(value);
+  const host =
+    literal === null ? hostFromPieces(value.pieces) : hostFromLiteral(literal);
+  return host === "" ? undefined : host;
+}
+
+function hostFromLiteral(text: string): string | undefined {
+  if (!isAbsoluteUrlLiteral(text)) {
+    return undefined;
+  }
+  const parsed = parseAbsoluteUrl(text);
+  if (parsed !== undefined) {
+    return parsed.host;
+  }
+  const authority = text.replace(/^[a-zA-Z][a-zA-Z\d+.-]*:/, "").slice(2);
+  return withoutUserInfo(authority.split(/[/?#]/)[0] ?? "").toLowerCase();
+}
+
+function hostFromPieces(pieces: readonly Piece[]): string | undefined {
+  const authority = authorityOf(
+    pieces.map(flattenedPiece).join(""),
+    REQUEST_PATH_END,
+  );
+  if (authority === null) {
+    return undefined;
+  }
+  let host = "";
+  let at = 0;
+  for (const piece of pieces) {
+    const flattened = flattenedPiece(piece);
+    const from = Math.max(authority.start - at, 0);
+    const to = Math.min(authority.end - at, flattened.length);
+    at += flattened.length;
+    if (from >= to) {
+      continue;
+    }
+    host +=
+      flattened === SUBSTITUTION
+        ? patternHole(piece.kind === "hole" ? piece.name : "value")
+        : flattened.slice(from, to).toLowerCase();
+  }
+  return withoutUserInfo(host);
+}
+
+// `user:secret@host` names the host after the last "@".
+function withoutUserInfo(authority: string): string {
+  return authority.slice(authority.lastIndexOf("@") + 1);
 }
 
 /**
