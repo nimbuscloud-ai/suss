@@ -7,7 +7,11 @@
  * their own namespace, such as `metadata.graphql`.
  */
 
-import { readHttpMetadata } from "@suss/behavioral-ir";
+import {
+  DEFAULT_STATUS_ACCESSORS,
+  DEFAULT_SUCCESS_ACCESSORS,
+  readHttpMetadata,
+} from "@suss/behavioral-ir";
 
 import type { BehavioralSummary, TypeShape } from "@suss/behavioral-ir";
 
@@ -158,7 +162,7 @@ export function statusAccessorsFor(
   if (fromMetadata !== undefined && fromMetadata.length > 0) {
     return new Set(fromMetadata);
   }
-  return new Set(["status", "statusCode"]);
+  return new Set(DEFAULT_STATUS_ACCESSORS);
 }
 
 /**
@@ -175,7 +179,7 @@ export function successAccessorsFor(
   if (fromMetadata !== undefined && fromMetadata.length > 0) {
     return new Set(fromMetadata);
   }
-  return new Set(["ok"]);
+  return new Set(DEFAULT_SUCCESS_ACCESSORS);
 }
 
 /**
