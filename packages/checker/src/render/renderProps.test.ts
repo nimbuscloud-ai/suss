@@ -320,6 +320,55 @@ describe("checkRenderProps", () => {
     expect(checkRenderProps([parent, child])).toHaveLength(2);
   });
 
+  it("counts a read made inside a callback a hook in the child calls", () => {
+    const listTarget = { file: "src/list.tsx", name: "PagedList" };
+    const parent = component({
+      name: "Orders",
+      file: "src/orders.tsx",
+      root: rendering("PagedList", listTarget, {
+        fetchPage: "load",
+        pageSize: "20",
+        ghost: "x",
+      }),
+    });
+    const child = component({
+      name: "PagedList",
+      file: "src/list.tsx",
+      inputs: [param("fetchPage"), param("pageSize"), param("ghost")],
+    });
+    child.location.span = { start: 100, end: 900 };
+    // `useQuery({ queryFn: () => fetchPage({ limit: pageSize }) })` is a
+    // unit of its own with no React metadata, written inside the child.
+    const callback = {
+      ...component({
+        name: "PagedList.useQuery#0",
+        file: "src/list.tsx",
+        inputReads: [
+          { input: "fetchPage", path: [] },
+          { input: "pageSize", path: [] },
+        ],
+      }),
+      kind: "scheduled-callback",
+    } as BehavioralSummary;
+    callback.location = {
+      ...callback.location,
+      span: { start: 300, end: 420 },
+    };
+    const outside = {
+      ...callback,
+      location: { ...callback.location, span: { start: 950, end: 990 } },
+      inputReads: [{ input: "ghost", path: [] }],
+    } as BehavioralSummary;
+
+    expect(
+      checkRenderProps([parent, child, callback, outside]).map(
+        (f) => f.description,
+      ),
+    ).toEqual([
+      'Orders passes "ghost" to PagedList, and nothing in PagedList reads it.',
+    ]);
+  });
+
   it("skips the edge when the child was not read as a component", () => {
     const parent = component({
       name: "Settings",

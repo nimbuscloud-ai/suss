@@ -120,26 +120,55 @@ function parameterNames(summary: BehavioralSummary): Set<string> {
   );
 }
 
-/** Each component's handlers and effects, by the component they are declared in. */
-function subUnitsByComponent(
+/**
+ * The units declared inside a component. Its handlers and effects say
+ * which component they belong to. Any other callback written in its
+ * body, such as the function a data hook calls, is found by where it is.
+ */
+function subUnitsFinder(
   summaries: readonly BehavioralSummary[],
-): Map<string, BehavioralSummary[]> {
-  const byComponent = new Map<string, BehavioralSummary[]>();
+): (component: BehavioralSummary) => BehavioralSummary[] {
+  const fileOf = (summary: BehavioralSummary): string =>
+    `${summary.location.workspace ?? ""}\u0000${summary.location.file}`;
+  const byFile = new Map<string, BehavioralSummary[]>();
   for (const summary of summaries) {
-    const component = readReactMetadata(summary)?.component;
-    if (component === undefined) {
+    const key = fileOf(summary);
+    const inFile = byFile.get(key);
+    if (inFile === undefined) {
+      byFile.set(key, [summary]);
       continue;
     }
-    const { workspace, file } = summary.location;
-    const key = renderTargetKey(workspace, file, component);
-    byComponent.set(key, [...(byComponent.get(key) ?? []), summary]);
+
+    inFile.push(summary);
   }
-  return byComponent;
+  return (component) =>
+    (byFile.get(fileOf(component)) ?? []).filter(
+      (summary) =>
+        summary !== component &&
+        (readReactMetadata(summary)?.component === component.identity.name ||
+          declaredInside(summary, component)),
+    );
+}
+
+function declaredInside(
+  inner: BehavioralSummary,
+  outer: BehavioralSummary,
+): boolean {
+  const within = inner.location.span;
+  const around = outer.location.span;
+  if (within === undefined || around === undefined) {
+    return false;
+  }
+  return (
+    around.start <= within.start &&
+    within.end <= around.end &&
+    within.end - within.start < around.end - around.start
+  );
 }
 
 export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
   const findings: Finding[] = [];
-  const subUnitsOf = subUnitsByComponent(summaries);
+  const subUnitsOf = subUnitsFinder(summaries);
   const childByKey = new Map<string, BehavioralSummary>();
   for (const summary of summaries) {
     const { workspace, file } = summary.location;
@@ -172,16 +201,7 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
       // about which prop was used.
       const used =
         child.kind === "component"
-          ? propsUsedBy(
-              child,
-              subUnitsOf.get(
-                renderTargetKey(
-                  child.location.workspace,
-                  child.location.file,
-                  child.identity.name,
-                ),
-              ) ?? [],
-            )
+          ? propsUsedBy(child, subUnitsOf(child))
           : null;
       if (used === null) {
         continue;
