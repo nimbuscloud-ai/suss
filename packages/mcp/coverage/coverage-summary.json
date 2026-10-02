@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 389,
-      "covered": 380,
+      "total": 388,
+      "covered": 379,
       "skipped": 0,
       "pct": 97.68
     },
     "statements": {
-      "total": 408,
-      "covered": 394,
+      "total": 407,
+      "covered": 393,
       "skipped": 0,
       "pct": 96.56
     },
@@ -85,10 +85,10 @@
   },
   "src/liveSocket.ts": {
     "lines": {
-      "total": 158,
-      "covered": 153,
+      "total": 157,
+      "covered": 152,
       "skipped": 0,
-      "pct": 96.83
+      "pct": 96.81
     },
     "functions": {
       "total": 42,
@@ -97,10 +97,10 @@
       "pct": 97.61
     },
     "statements": {
-      "total": 163,
-      "covered": 157,
+      "total": 162,
+      "covered": 156,
       "skipped": 0,
-      "pct": 96.31
+      "pct": 96.29
     },
     "branches": {
       "total": 69,

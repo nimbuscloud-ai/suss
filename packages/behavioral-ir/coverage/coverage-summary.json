@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1048,
-      "covered": 1044,
+      "total": 1089,
+      "covered": 1085,
       "skipped": 0,
-      "pct": 99.61
+      "pct": 99.63
     },
     "statements": {
-      "total": 1080,
-      "covered": 1075,
+      "total": 1121,
+      "covered": 1116,
       "skipped": 0,
-      "pct": 99.53
+      "pct": 99.55
     },
     "functions": {
-      "total": 304,
-      "covered": 302,
+      "total": 321,
+      "covered": 319,
       "skipped": 0,
-      "pct": 99.34
+      "pct": 99.37
     },
     "branches": {
-      "total": 709,
-      "covered": 671,
+      "total": 735,
+      "covered": 695,
       "skipped": 0,
-      "pct": 94.64
+      "pct": 94.55
     },
     "branchesTrue": {
       "total": 0,
@@ -317,6 +317,32 @@
       "pct": 100
     }
   },
+  "src/statusTests.ts": {
+    "lines": {
+      "total": 29,
+      "covered": 29,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 15,
+      "covered": 15,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 30,
+      "covered": 30,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 18,
+      "covered": 17,
+      "skipped": 0,
+      "pct": 94.44
+    }
+  },
   "src/summaryId.ts": {
     "lines": {
       "total": 24,
@@ -345,28 +371,28 @@
   },
   "src/unfollowedCall.ts": {
     "lines": {
-      "total": 16,
-      "covered": 16,
+      "total": 28,
+      "covered": 28,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 14,
-      "covered": 14,
+      "total": 15,
+      "covered": 15,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 16,
-      "covered": 16,
+      "total": 28,
+      "covered": 28,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 2,
-      "covered": 2,
+      "total": 10,
+      "covered": 9,
       "skipped": 0,
-      "pct": 100
+      "pct": 90
     }
   },
   "src/wrapperChain.ts": {
@@ -507,14 +533,14 @@
       "pct": 100
     },
     "functions": {
-      "total": 6,
-      "covered": 6,
+      "total": 7,
+      "covered": 7,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 27,
-      "covered": 27,
+      "total": 26,
+      "covered": 26,
       "skipped": 0,
       "pct": 100
     },
