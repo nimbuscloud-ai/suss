@@ -522,4 +522,80 @@ describe("expectedInput on client transitions", () => {
       expect(input.properties).not.toHaveProperty("headers");
     }
   });
+
+  /** The body fields each client summary expects, as `name: field,field`. */
+  async function expectedBodyFields(source: string): Promise<string[]> {
+    const project = createProject();
+    project.createSourceFile("consumer.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webPack],
+    });
+    const fields: string[] = [];
+    for (const summary of await adapter.extractAll()) {
+      const read = new Set<string>();
+      for (const transition of summary.transitions) {
+        const input = transition.expectedInput;
+        const body =
+          input?.type === "record" ? input.properties.json : undefined;
+        for (const name of body?.type === "record"
+          ? Object.keys(body.properties)
+          : []) {
+          read.add(name);
+        }
+      }
+      const binding = summary.identity.boundaryBinding?.semantics;
+      const path = binding?.name === "rest" ? binding.path : "";
+      fields.push(
+        `${summary.identity.name} ${path}: ${[...read].sort().join(",")}`,
+      );
+    }
+    return fields.sort();
+  }
+
+  it("keeps a nested function's reads out of the function it is declared in", async () => {
+    const fields = await expectedBodyFields(`
+      export function initToggle(id: string) {
+        function unblock() {
+          fetch("/blocks/" + id, { method: "DELETE" })
+            .then((response) => response.json())
+            .then((response) => {
+              if (response.result === "unblocked") {
+                return;
+              }
+              alert(response.error);
+            });
+        }
+        fetch("/blocks/" + id)
+          .then((response) => response.json())
+          .then((response) => {
+            if (response.result === "blocking") {
+              document.body.addEventListener("click", unblock);
+            }
+          });
+      }
+    `);
+
+    expect(fields).toEqual([
+      "initToggle /blocks/{id}: result",
+      "unblock /blocks/{id}: error,result",
+    ]);
+  });
+
+  it("keeps two calls in one function apart when their callbacks reuse a name", async () => {
+    const fields = await expectedBodyFields(`
+      export function loadBoth(id: string) {
+        fetch("/orders/" + id)
+          .then((response) => response.json())
+          .then((response) => console.log(response.total));
+        fetch("/users/" + id)
+          .then((response) => response.json())
+          .then((response) => console.log(response.email));
+      }
+    `);
+
+    // The callback that reads `email` belongs to the other call.
+    expect(fields).not.toContainEqual(expect.stringContaining("email"));
+    expect(fields).toContain("loadBoth /orders/{id}: total");
+  });
 });
