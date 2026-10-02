@@ -215,6 +215,26 @@ describe("a client caller that hands its response to a helper", () => {
     expect(outline(clients.get("getOrder"))).toEqual(["return []"]);
   });
 
+  it("leaves a helper alone when it is handed a field read off the body", async () => {
+    const clients = await clientsIn({
+      "client.ts": `
+        function formatTotal(value: number) {
+          if (!Number.isFinite(value)) {
+            throw new Error("not a number");
+          }
+          return value.toFixed(2);
+        }
+        export async function getTotal(id: string) {
+          const res = await fetch(\`/api/orders/\${id}\`);
+          const payload = await res.json();
+          return formatTotal(payload.total);
+        }
+      `,
+    });
+
+    expect(outline(clients.get("getTotal"))).toHaveLength(1);
+  });
+
   it("leaves a helper call alone when it is handed something else", async () => {
     const clients = await clientsIn({
       "client.ts": `

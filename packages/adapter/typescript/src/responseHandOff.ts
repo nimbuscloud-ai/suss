@@ -77,7 +77,7 @@ export function responseHandedAt(
     .some(
       (argument) =>
         Node.isExpression(argument) &&
-        isFromResponse(resolveSubject(argument), options),
+        isResponseValue(resolveSubject(argument), options),
     );
   if (!handsResponse) {
     return null;
@@ -89,7 +89,7 @@ export function responseHandedAt(
     return null;
   }
   const passed = parametersPassed(helper, call, options.resolution);
-  if (![...passed.values()].some((ref) => isFromResponse(ref, options))) {
+  if (![...passed.values()].some((ref) => isResponseValue(ref, options))) {
     return null;
   }
   recordFileDependency(helper.getSourceFile().getFilePath());
@@ -249,6 +249,18 @@ function readsResponse(
   options: ResponseHandOffOptions,
 ): boolean {
   return predicateRefs(predicate).some((ref) => isFromResponse(ref, options));
+}
+
+/**
+ * Whether a value is the response or its parsed body itself. A field read
+ * off one, such as a URL handed to a formatter, does not make the callee
+ * a reader of the response.
+ */
+function isResponseValue(
+  ref: ValueRef,
+  options: ResponseHandOffOptions,
+): boolean {
+  return ref.type === "dependency" && isFromResponse(ref, options);
 }
 
 /** Whether a value is the response or its parsed body, or read off one of them. */
