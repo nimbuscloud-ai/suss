@@ -39,6 +39,7 @@ import {
   writtenNodeOf,
 } from "./values/evaluator.js";
 
+import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure, RawEffect } from "@suss/extractor";
 import type { CallArgs, Range } from "./ast.js";
@@ -513,7 +514,7 @@ function callerBranches(method: RbNode, reading: CallerReading): RawBranch[] {
 /** What reading a caller's paths needs beyond its body. */
 interface CallerReading {
   facts: Database | undefined;
-  statusMembers: ReadonlySet<string>;
+  statusMembers: StatusMembers;
   /** Unset for a helper, whose own hand-offs are not followed. */
   handOff?: HandOffOptions;
 }

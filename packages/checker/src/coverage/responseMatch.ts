@@ -9,6 +9,7 @@ import type {
   BoundaryBinding,
   FindingSide,
   Predicate,
+  StatusMembers,
   Transition,
   ValueRef,
 } from "@suss/behavioral-ir";
@@ -94,11 +95,11 @@ export function hasOpaqueStatus(t: Transition): boolean {
 }
 
 /**
- * The property names a consumer reads a status from, as returned by
- * `statusAccessorsFor`. The consumer's pack records them, so a client
- * with its own names needs no change here.
+ * The properties a consumer reads a status from, and the ones it reads
+ * the body through, as returned by `statusAccessorsFor`. The consumer's
+ * pack lists them, so a client with its own names needs no change here.
  */
-export type StatusAccessors = ReadonlySet<string>;
+export type StatusAccessors = StatusMembers;
 
 export function consumerExpectedStatuses(
   t: Transition,

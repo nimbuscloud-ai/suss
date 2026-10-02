@@ -24,6 +24,7 @@ import { parseConditionExpression } from "./predicates.js";
 import type {
   BehavioralSummary,
   Predicate,
+  StatusMembers,
   Transition,
   ValueRef,
 } from "@suss/behavioral-ir";
@@ -181,11 +182,14 @@ function wrapperTerminal(transition: Transition): RawTerminal {
 function throwsEveryFailure(wrapper: BehavioralSummary): boolean {
   const http = readHttpMetadata(wrapper) ?? {};
   const members = statusMembersOf(http);
-  const flags = new Set(
-    http.successAccessors !== undefined && http.successAccessors.length > 0
-      ? http.successAccessors
-      : DEFAULT_SUCCESS_ACCESSORS,
-  );
+  const flags: StatusMembers = {
+    members: new Set(
+      http.successAccessors !== undefined && http.successAccessors.length > 0
+        ? http.successAccessors
+        : DEFAULT_SUCCESS_ACCESSORS,
+    ),
+    body: members.body,
+  };
   const throws = wrapper.transitions.filter((t) => t.output.type === "throw");
   return (
     throws.some((t) => t.conditions.some((p) => testsStatus(p, members))) &&
@@ -200,8 +204,8 @@ function throwsEveryFailure(wrapper: BehavioralSummary): boolean {
 /** Whether a condition is true only for a 2xx status, as `res.ok` or `status === 200` are. */
 function admitsOnlySuccess(
   p: Predicate,
-  members: ReadonlySet<string>,
-  flags: ReadonlySet<string>,
+  members: StatusMembers,
+  flags: StatusMembers,
 ): boolean {
   if (p.type === "negation" && p.operand.type === "negation") {
     return admitsOnlySuccess(p.operand.operand, members, flags);
