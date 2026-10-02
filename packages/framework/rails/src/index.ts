@@ -296,6 +296,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
         : conventionalRoutes(key, actionName);
     },
     routingGaps: () => routeTable().gaps,
+    optionalFormat: true,
   };
 
   return {
