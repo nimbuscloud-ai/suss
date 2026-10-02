@@ -776,6 +776,13 @@ export const GapSchema = z.object({
    * only in prose that nothing should parse.
    */
   callee: z.string().optional(),
+  /**
+   * True when every place the unit makes an `unfollowedCall` uses its
+   * result as a value: assigned, compared, tested, passed or called on.
+   * Such a call returns something to the unit, so it is not where the
+   * unit sends a response.
+   */
+  usedAsValue: z.boolean().optional(),
 });
 
 export const BehavioralSummarySchema = z.object({

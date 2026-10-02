@@ -809,6 +809,81 @@ export function readCallArgs(argumentList: RbNode | null): CallArgs {
   return { positional, keyword };
 }
 
+/** Operators whose operands run like statements, as in `redirect_to path and return`. */
+const CONTROL_OPERATORS: ReadonlySet<string> = new Set([
+  "and",
+  "or",
+  "&&",
+  "||",
+]);
+
+/** Keywords that hand their argument on instead of using it. */
+const HANDS_ON: ReadonlySet<string> = new Set(["return", "next", "break"]);
+
+const isChild =
+  (fieldName: string) =>
+  (parent: RbNode, child: RbNode): boolean =>
+    field(parent, fieldName)?.id === child.id;
+
+const always = (): boolean => true;
+const asCondition = isChild("condition");
+
+/**
+ * For each kind of parent, whether a child in that place has its value
+ * used. A parent missing from the table, such as a method body, uses
+ * nothing its statements return.
+ */
+const VALUE_USED_UNDER: Record<
+  string,
+  (parent: RbNode, child: RbNode) => boolean
+> = {
+  assignment: isChild("right"),
+  operator_assignment: isChild("right"),
+  call: isChild("receiver"),
+  element_reference: always,
+  argument_list: (parent) => !HANDS_ON.has(parent.parent?.type ?? ""),
+  pair: always,
+  array: always,
+  hash: always,
+  interpolation: always,
+  unary: always,
+  binary: (parent) =>
+    !CONTROL_OPERATORS.has(field(parent, "operator")?.text ?? ""),
+  if: asCondition,
+  unless: asCondition,
+  while: asCondition,
+  until: asCondition,
+  if_modifier: asCondition,
+  unless_modifier: asCondition,
+  while_modifier: asCondition,
+  until_modifier: asCondition,
+  conditional: asCondition,
+  case: isChild("value"),
+};
+
+/**
+ * Whether the code uses what a call returns: assigns it, compares or
+ * tests it, passes it, or calls a method on it. A call written as a
+ * statement, returned, or used as an operand of `and` or `or` does not
+ * count, since that is where a method can send its response.
+ */
+export function resultUsedAsValue(node: RbNode): boolean {
+  let child = node;
+  let parent = node.parent;
+  while (
+    parent !== null &&
+    parent.type === "parenthesized_statements" &&
+    parent.namedChildCount === 1
+  ) {
+    child = parent;
+    parent = parent.parent;
+  }
+  if (parent === null) {
+    return false;
+  }
+  return VALUE_USED_UNDER[parent.type]?.(parent, child) ?? false;
+}
+
 /**
  * A set of nodes keyed on node id. tree-sitter returns a new wrapper
  * object each time a child is read, so two reads of one node are never

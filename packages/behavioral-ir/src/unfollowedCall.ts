@@ -48,6 +48,8 @@ export interface UnfollowedCall {
   readonly reason: UnfollowedReason;
   /** How many candidates the walk reached where it needed exactly one. */
   readonly candidates?: number;
+  /** True when every place the unit makes this call uses its result as a value. */
+  readonly usedAsValue?: boolean;
 }
 
 /**
@@ -114,5 +116,6 @@ export function unfollowedCallGap(stop: UnfollowedCall): Gap {
     consequence: "unknown",
     description: STOP_SENTENCE[stop.reason](stop),
     callee: stop.callee,
+    ...(stop.usedAsValue === true ? { usedAsValue: true } : {}),
   };
 }
