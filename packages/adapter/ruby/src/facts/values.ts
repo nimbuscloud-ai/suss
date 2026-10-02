@@ -897,9 +897,7 @@ function emitKeyedElement(
   if (object === null || isWriteTarget(node, parent)) {
     return;
   }
-  const index = node.namedChildren.find(
-    (child): child is RbNode => child !== null && child.id !== object.id,
-  );
+  const index = children(node).find((child) => child.id !== object.id);
   if (index !== undefined) {
     emitKeyedRead(emitter, node, object, index, node);
     emitWrittenKeyRead(emitter, node, object, index);

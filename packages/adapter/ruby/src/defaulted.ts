@@ -13,6 +13,7 @@
  */
 
 import {
+  children,
   enclosingDefinition,
   field,
   isRaiseCall,
@@ -288,7 +289,7 @@ function followsExitWhenAbsent(
   if (!STATEMENT_LIST_TYPES.has(parent.type)) {
     return false;
   }
-  const statements = parent.namedChildren;
+  const statements = children(parent);
   const at = statements.findIndex((statement) => statement?.id === child.id);
   return statements
     .slice(0, at)
@@ -371,7 +372,7 @@ function continuationRaises(from: RbNode): boolean {
   let parent = current.parent;
   while (parent !== null) {
     if (STATEMENT_LIST_TYPES.has(parent.type)) {
-      const statements = parent.namedChildren;
+      const statements = children(parent);
       const at = statements.findIndex((one) => one?.id === current.id);
       const exit = firstExit(statements.slice(at + 1));
       if (exit !== null) {
@@ -422,7 +423,7 @@ function exitOf(statement: RbNode): Exit | null {
     return "leave";
   }
   return STATEMENT_LIST_TYPES.has(statement.type)
-    ? firstExit(statement.namedChildren)
+    ? firstExit(children(statement))
     : null;
 }
 
@@ -546,7 +547,7 @@ function isNilCheckOn(call: RbNode, receiver: RbNode): boolean {
 function peelParens(node: RbNode): RbNode {
   const inner =
     node.type === "parenthesized_statements" && node.namedChildCount === 1
-      ? node.namedChildren[0]
+      ? node.namedChild(0)
       : null;
   return inner === null || inner === undefined ? node : peelParens(inner);
 }

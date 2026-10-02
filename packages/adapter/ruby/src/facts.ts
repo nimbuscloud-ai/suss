@@ -11,7 +11,7 @@ import path from "node:path";
 
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
-import { field, readCallArgs, stringLiteralValue } from "./ast.js";
+import { children, field, readCallArgs, stringLiteralValue } from "./ast.js";
 
 import type { Database } from "@suss/datalog";
 import type { RbNode } from "./parser.js";
@@ -23,7 +23,7 @@ export function emitRequireFacts(
   root: RbNode,
   known: ReadonlySet<string>,
 ): void {
-  walkDescendants<RbNode, null>(root, null, {
+  walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       const target = requiredRelativePath(node);
       if (target === null) {

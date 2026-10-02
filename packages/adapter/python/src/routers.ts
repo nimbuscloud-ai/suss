@@ -16,6 +16,7 @@ import { type MountEdge, mountPathsOf } from "@suss/resolution";
 
 import {
   bodyStatements,
+  children,
   enclosingFunction,
   field,
   nestedStatements,
@@ -821,8 +822,8 @@ function constructionStatement(
     return null;
   }
 
-  const assignment = stmt.namedChildren.find(
-    (child): child is PyNode => child !== null && child.type === "assignment",
+  const assignment = children(stmt).find(
+    (child) => child.type === "assignment",
   );
   if (assignment === undefined) {
     return null;
@@ -954,7 +955,7 @@ function collectReturnedConstructions(
       if (inner.type !== "return_statement") {
         continue;
       }
-      const returned = inner.namedChildren[0];
+      const returned = inner.namedChild(0);
       if (returned?.type !== "call") {
         continue;
       }
@@ -1261,7 +1262,7 @@ function sequenceElementNames(node: PyNode | null): string[] | null {
   }
 
   const names: string[] = [];
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (child?.type !== "identifier") {
       return null;
     }

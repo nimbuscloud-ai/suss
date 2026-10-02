@@ -10,7 +10,7 @@
 
 import { enumerateOrDegrade, guardsHoldOn } from "@suss/extractor";
 
-import { NodeSet } from "../ast.js";
+import { children, NodeSet } from "../ast.js";
 import { guardInputs } from "../provenance.js";
 import { lowerPythonBody } from "./lowering.js";
 import { type GuardInputs, operandsOf, predicateOf } from "./predicates.js";
@@ -47,10 +47,7 @@ export function returnStatements(
   node: PyNode | null,
   found: PyNode[] = [],
 ): PyNode[] {
-  for (const child of node?.namedChildren ?? []) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(node)) {
     if (child.type === "function_definition" || child.type === "lambda") {
       continue;
     }

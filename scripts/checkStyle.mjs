@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // checkStyle.mjs: the conventions Biome has no rule for.
 //
-// Biome covers formatting and most lint rules. Two conventions in
-// design/docs-internal/style.md it cannot express live here instead, so they
-// fail a build rather than waiting for someone to spot them in review.
+// Biome covers formatting and most lint rules. The conventions it cannot
+// express live here instead, so they fail a build rather than waiting for
+// someone to spot them in review.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -59,6 +59,17 @@ const RULES = [
       "key on the node id through NodeSet or NodeMap; a plain Set or Map keyed on a tree-sitter node matches nothing",
     appliesTo: (file) => file.endsWith(".ts") || file.endsWith(".tsx"),
   },
+  {
+    name: "tree-sitter-cached-children",
+    // web-tree-sitter's `namedChildren` and `children` getters keep the
+    // array they build on the node. A run keeps every root to the end, so
+    // every node a walk ever read stays in memory with it.
+    pattern: /(?<=[\w)\]?])\.(?:namedChildren|children)\b/g,
+    message:
+      "read children through the adapter's `children` or `allChildren`, which leave nothing cached on the node",
+    appliesTo: (file) => file.endsWith(".ts") && !file.endsWith(".test.ts"),
+    appliesToContents: (contents) => /\b(?:PyNode|RbNode)\b/.test(contents),
+  },
 ];
 
 function* sourceFiles(dir) {
@@ -86,6 +97,9 @@ for (const file of sourceFiles(path.join(ROOT, "packages"))) {
   const lines = contents.split("\n");
 
   for (const rule of applicable) {
+    if (rule.appliesToContents?.(contents) === false) {
+      continue;
+    }
     for (const [index, line] of lines.entries()) {
       rule.pattern.lastIndex = 0;
       if (!rule.pattern.test(line)) {

@@ -147,10 +147,7 @@ export function stringLiteralValue(node: PyNode): string | null {
     return null;
   }
   let content = "";
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(node)) {
     if (child.type === "string_content") {
       content += stringContentValue(child);
       continue;
@@ -172,9 +169,38 @@ export function booleanLiteralValue(node: PyNode): boolean | null {
   return null;
 }
 
-/** tree-sitter types a named child as nullable. Dropping the nulls here saves every walk a check. */
-export function children(node: PyNode): PyNode[] {
-  return node.namedChildren.filter((child): child is PyNode => child !== null);
+/**
+ * A node's named children, and nothing for an absent node. Every read of
+ * children in this adapter goes through here or `allChildren`, because the
+ * library's `namedChildren` and `children` getters keep the array on the
+ * node, and the run keeps every root to the end.
+ */
+export function children(node: PyNode | null | undefined): PyNode[] {
+  if (node === null || node === undefined) {
+    return [];
+  }
+  const found: PyNode[] = [];
+  const count = node.namedChildCount;
+  for (let index = 0; index < count; index++) {
+    const child = node.namedChild(index);
+    if (child !== null) {
+      found.push(child);
+    }
+  }
+  return found;
+}
+
+/** Every child, the unnamed ones such as an operator's token included. */
+export function allChildren(node: PyNode): PyNode[] {
+  const found: PyNode[] = [];
+  const count = node.childCount;
+  for (let index = 0; index < count; index++) {
+    const child = node.child(index);
+    if (child !== null) {
+      found.push(child);
+    }
+  }
+  return found;
 }
 
 export function bodyStatements(body: PyNode): PyNode[] {
@@ -220,8 +246,8 @@ export function stripDecorators(node: PyNode): {
   if (definition === null) {
     throw new Error("decorated_definition with no definition field");
   }
-  const decorators = node.namedChildren.filter(
-    (child): child is PyNode => child !== null && child.type === "decorator",
+  const decorators = children(node).filter(
+    (child) => child.type === "decorator",
   );
   return { definition, decorators };
 }
@@ -236,7 +262,7 @@ const asCondition = isChild("condition");
 
 /** The test of `a if test else b`, which the grammar gives no field name. */
 const isConditionalTest = (parent: PyNode, child: PyNode): boolean =>
-  parent.namedChildren[1]?.id === child.id;
+  parent.namedChild(1)?.id === child.id;
 
 /**
  * For each kind of parent, whether a child in that place has its value

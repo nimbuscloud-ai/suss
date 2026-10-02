@@ -21,7 +21,13 @@ import {
 } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { field, OWN_BODY_TYPES, rangeOf, readCallArgs } from "./ast.js";
+import {
+  children,
+  field,
+  OWN_BODY_TYPES,
+  rangeOf,
+  readCallArgs,
+} from "./ast.js";
 import { isBareMethodCall, localNamesIn } from "./paths/bareCalls.js";
 import { lowerRubyBody } from "./paths/lowering.js";
 import {
@@ -186,7 +192,7 @@ function collectResponseCalls(
   responders: Responders,
   found: RbNode[],
 ): RbNode[] {
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (child === null || OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
@@ -201,7 +207,7 @@ function collectResponseCalls(
 
 /** Every `return` written in a body, in source order. */
 function collectReturns(node: RbNode, found: RbNode[]): RbNode[] {
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (child === null || OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
@@ -332,8 +338,8 @@ export function boundStatusArguments(
   pattern: ControllerActions,
   facts: Database | undefined,
 ): ReadonlyMap<string, number> {
-  const parameters = (field(helper, "parameters")?.namedChildren ?? []).filter(
-    (child): child is RbNode => child !== null && child.type === "identifier",
+  const parameters = children(field(helper, "parameters")).filter(
+    (child) => child.type === "identifier",
   );
   const args =
     call.type === "call"

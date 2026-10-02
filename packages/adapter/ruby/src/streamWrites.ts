@@ -12,6 +12,7 @@ import { ioBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
 import {
+  children,
   field,
   hashKeySymbolName,
   readCallArgs,
@@ -48,7 +49,7 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
 /** The write effects for every print under `root`, in source order. */
 export function streamWriteEffects(root: RbNode): Effect[] {
   const found: Effect[] = [];
-  walkDescendants<RbNode, null>(root, null, {
+  walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       const write = node.type === "call" ? streamWriteAt(node) : null;
       if (write !== null) {
@@ -168,7 +169,7 @@ function writtenShapeOf(node: RbNode): TypeShape {
     return hashShape(node);
   }
   if (node.type === "array") {
-    const first = node.namedChildren.find((child) => child !== null);
+    const first = children(node).find((child) => child !== null);
     return {
       type: "array",
       items: first ? writtenShapeOf(first) : { type: "unknown" },
@@ -180,7 +181,7 @@ function writtenShapeOf(node: RbNode): TypeShape {
 /** A hash written with symbol or string keys is a record of them. */
 function hashShape(node: RbNode): TypeShape {
   const properties: Record<string, TypeShape> = {};
-  for (const pair of node.namedChildren) {
+  for (const pair of children(node)) {
     if (pair?.type !== "pair") {
       continue;
     }

@@ -16,7 +16,12 @@ import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 import { noteLookup } from "@suss/resolution";
 
-import { enclosingFunction, field, stringLiteralValue } from "./ast.js";
+import {
+  children,
+  enclosingFunction,
+  field,
+  stringLiteralValue,
+} from "./ast.js";
 import { isDefaultedAt } from "./defaulted.js";
 import { envReadSpellingAt, isEnviron } from "./envSpellings.js";
 import {
@@ -71,7 +76,7 @@ export function envReadEffects(
   // call, so the calls are not collected at all.
   const readsHelpers = facts !== undefined && sitesByDb.has(facts);
   const startScope = module.scopeFor.get(root.id) ?? module.moduleScope;
-  walkDescendants<PyNode, Scope>(root, startScope, {
+  walkDescendants<PyNode, Scope>(root, startScope, children, {
     at: (node, scope) => {
       const syntax = envReadSyntaxAt(node, scope);
       if (syntax !== null) {
@@ -176,7 +181,7 @@ export function envFactsIn(
   module: ModuleBinding,
 ): EnvFileFacts {
   const found: EnvFileFacts = { sites: [], objects: [] };
-  walkDescendants<PyNode, Scope>(root, module.moduleScope, {
+  walkDescendants<PyNode, Scope>(root, module.moduleScope, children, {
     at: (node, scope) => {
       if (isEnviron(node, scope) && handsOnward(node)) {
         found.objects.push(keyOf(filePath, node));

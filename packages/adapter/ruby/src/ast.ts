@@ -43,9 +43,38 @@ export function isType(node: RbNode, ...types: string[]): boolean {
   return types.includes(node.type);
 }
 
-/** tree-sitter types a named child as nullable. Dropping the nulls here saves every walk a check. */
-export function children(node: RbNode): RbNode[] {
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
+/**
+ * A node's named children, and nothing for an absent node. Every read of
+ * children in this adapter goes through here or `allChildren`, because the
+ * library's `namedChildren` and `children` getters keep the array on the
+ * node, and the run keeps every root to the end.
+ */
+export function children(node: RbNode | null | undefined): RbNode[] {
+  if (node === null || node === undefined) {
+    return [];
+  }
+  const found: RbNode[] = [];
+  const count = node.namedChildCount;
+  for (let index = 0; index < count; index++) {
+    const child = node.namedChild(index);
+    if (child !== null) {
+      found.push(child);
+    }
+  }
+  return found;
+}
+
+/** Every child, the unnamed ones such as an operator's token included. */
+export function allChildren(node: RbNode): RbNode[] {
+  const found: RbNode[] = [];
+  const count = node.childCount;
+  for (let index = 0; index < count; index++) {
+    const child = node.child(index);
+    if (child !== null) {
+      found.push(child);
+    }
+  }
+  return found;
 }
 
 export function bodyStatements(body: RbNode): RbNode[] {
@@ -343,7 +372,7 @@ export function runStatements(
     }
     return !(node.type === "call" && blockConfigures(node));
   };
-  walkDescendants<RbNode, null>(body, null, {
+  walkDescendants<RbNode, null>(body, null, children, {
     at: (node) => {
       found.push(node);
     },

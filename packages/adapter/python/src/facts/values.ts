@@ -22,6 +22,7 @@ import {
 
 import { annotationTarget, typeNameOf } from "../annotations.js";
 import {
+  allChildren,
   children,
   enclosingFunction,
   FUNCTION_TYPES,
@@ -897,10 +898,10 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
  * gives null.
  */
 function yieldedValue(node: PyNode): PyNode | null {
-  if (node.children.some((child) => child?.type === "from")) {
+  if (allChildren(node).some((child) => child.type === "from")) {
     return null;
   }
-  return node.namedChildren.find((child) => child?.type !== "comment") ?? null;
+  return children(node).find((child) => child?.type !== "comment") ?? null;
 }
 
 /** The class a method belongs to, and what that method calls its receiver. */
@@ -1009,7 +1010,7 @@ function emitFunctionFacts(
   const stores = new Map<string, ReceiverWrite[]>();
   const visit = (child: PyNode, type: string): void => {
     if (type === "return_statement") {
-      const returned = child.namedChildren[0];
+      const returned = child.namedChild(0);
       if (returned != null) {
         add(inside, "returnsValue", funcKey, valueKey(inside, returned));
         statesReturn = true;

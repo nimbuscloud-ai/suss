@@ -22,7 +22,7 @@ import {
 } from "@suss/behavioral-ir";
 import { pathOf } from "@suss/values";
 
-import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
+import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
 import { predicateOf } from "./paths/predicates.js";
 import { returnPathBranches } from "./responseStatus.js";
@@ -157,10 +157,7 @@ function requestArgument(
 
 /** Every method this file defines, in a class or outside one. */
 function methodDefinitions(node: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(node)) {
     if (child.type === "method" || child.type === "singleton_method") {
       found.push(child);
     }
@@ -171,10 +168,7 @@ function methodDefinitions(node: RbNode, found: RbNode[] = []): RbNode[] {
 
 /** Every call written under a node. */
 function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
+  for (const child of children(node)) {
     if (child.type === "call") {
       found.push(child);
     }

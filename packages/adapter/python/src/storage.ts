@@ -8,7 +8,7 @@
 import { storageBinding } from "@suss/ir-core";
 import { answersFor } from "@suss/resolution";
 
-import { children, enclosingFunction, field } from "./ast.js";
+import { allChildren, children, enclosingFunction, field } from "./ast.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { bodyCalls } from "./paths/effects.js";
@@ -374,7 +374,7 @@ function columnComparisons(
     const args = field(node, "arguments");
     return (args === null ? [] : children(args)).flatMap(columnComparisons);
   }
-  const operator = node.children.find((child) => !child?.isNamed);
+  const operator = allChildren(node).find((child) => !child.isNamed);
   const [left, right, ...rest] = children(node);
   if (
     node.type !== "comparison_operator" ||

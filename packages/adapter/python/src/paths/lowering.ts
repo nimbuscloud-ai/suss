@@ -4,7 +4,7 @@
  * package's DESIGN.md, under "What a body lowers to".
  */
 
-import { field, NodeMap, NodeSet } from "../ast.js";
+import { children, field, NodeMap, NodeSet } from "../ast.js";
 
 import type {
   CaseGroup,
@@ -36,7 +36,7 @@ export interface PythonLowering {
 function exitKindOf(node: PyNode, thrown: NodeSet): ExitKind {
   let sawReturn = false;
   const raises = (current: PyNode): boolean => {
-    for (const child of current.namedChildren) {
+    for (const child of children(current)) {
       if (child === null || NESTED_FUNCTION_TYPES.has(child.type)) {
         continue;
       }
@@ -69,15 +69,11 @@ function blockStatements(block: PyNode | null): PyNode[] {
   if (block === null) {
     return [];
   }
-  return block.namedChildren.filter((child): child is PyNode => child !== null);
+  return children(block);
 }
 
 function childBlock(node: PyNode): PyNode | null {
-  return (
-    node.namedChildren.find(
-      (child): child is PyNode => child !== null && child.type === "block",
-    ) ?? null
-  );
+  return children(node).find((child) => child.type === "block") ?? null;
 }
 
 class Lowerer {
@@ -140,7 +136,7 @@ class Lowerer {
   }
 
   private lowerIf(node: PyNode): StructuredStatement<PyNode> {
-    const clauses = node.namedChildren.filter(
+    const clauses = children(node).filter(
       (child): child is PyNode =>
         child !== null &&
         (child.type === "elif_clause" || child.type === "else_clause"),
@@ -155,14 +151,14 @@ class Lowerer {
   }
 
   private lowerTry(node: PyNode): StructuredStatement<PyNode> {
-    const excepts = node.namedChildren.filter(
+    const excepts = children(node).filter(
       (child): child is PyNode =>
         child !== null &&
         (child.type === "except_clause" ||
           child.type === "except_group_clause"),
     );
     const finallyClause =
-      node.namedChildren.find(
+      children(node).find(
         (child): child is PyNode =>
           child !== null && child.type === "finally_clause",
       ) ?? null;
@@ -188,7 +184,7 @@ class Lowerer {
     );
     const groups: CaseGroup<PyNode>[] = cases.map((clause) => {
       const pattern =
-        clause.namedChildren.find(
+        children(clause).find(
           (child): child is PyNode =>
             child !== null && child.type === "case_pattern",
         ) ?? null;
