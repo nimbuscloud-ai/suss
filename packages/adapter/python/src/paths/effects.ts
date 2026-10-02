@@ -130,7 +130,23 @@ export function calleeText(call: PyNode): string {
 export function invocationEffects(
   definitionNode: PyNode,
   facts?: Database | undefined,
-): Extract<RawEffect, { type: "invocation" }>[] {
+): InvocationEffect[] {
+  return invocationSites(definitionNode, facts).map((site) => site.effect);
+}
+
+type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
+
+/** One call a body makes, beside the effect recorded for it. */
+export interface InvocationSite {
+  call: PyNode;
+  effect: InvocationEffect;
+}
+
+/** The same, keeping each effect's call, for a reader that has to go back to it. */
+export function invocationSites(
+  definitionNode: PyNode,
+  facts?: Database | undefined,
+): InvocationSite[] {
   const body = field(definitionNode, "body");
   if (body === null) {
     return [];
@@ -145,8 +161,12 @@ export function invocationEffects(
 export function moduleLoadInvocationEffects(
   moduleNode: PyNode,
   facts?: Database | undefined,
-): Extract<RawEffect, { type: "invocation" }>[] {
-  return invocationEffectsIn(moduleNode, moduleLoadCalls(moduleNode), facts);
+): InvocationEffect[] {
+  return invocationEffectsIn(
+    moduleNode,
+    moduleLoadCalls(moduleNode),
+    facts,
+  ).map((site) => site.effect);
 }
 
 /** The evaluator asks the rules about a name, a member read or a call, and works out anything else from its parts. */
@@ -222,7 +242,7 @@ function invocationEffectsIn(
   body: PyNode,
   written: readonly PyNode[],
   facts: Database | undefined,
-): Extract<RawEffect, { type: "invocation" }>[] {
+): InvocationSite[] {
   // A call finishes after everything written inside it, so ordering by end
   // puts a call in argument position before the call it feeds.
   const calls = [...written].sort((a, b) => a.endIndex - b.endIndex);
@@ -273,11 +293,14 @@ function invocationEffectsIn(
       predicateOf(condition, facts, inputs),
     );
     return {
-      type: "invocation",
-      callee: calleeText(call),
-      args: argsOf(call, facts),
-      async: false,
-      ...(conditions.length > 0 ? { preconditions: conditions } : {}),
+      call,
+      effect: {
+        type: "invocation",
+        callee: calleeText(call),
+        args: argsOf(call, facts),
+        async: false,
+        ...(conditions.length > 0 ? { preconditions: conditions } : {}),
+      },
     };
   });
 }

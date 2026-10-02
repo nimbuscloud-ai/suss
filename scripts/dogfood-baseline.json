@@ -6,7 +6,7 @@
     "internal": 5383,
     "consumers": 2806,
     "pairs": 1586,
-    "unfollowedCalls": 537,
+    "unfollowedCalls": 539,
     "findingErrors": 0
   },
   "packages": {
@@ -15,14 +15,14 @@
       "exports": 63,
       "internal": 681,
       "consumers": 331,
-      "unfollowedCalls": 78
+      "unfollowedCalls": 79
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 75,
       "internal": 752,
       "consumers": 289,
-      "unfollowedCalls": 105
+      "unfollowedCalls": 106
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",

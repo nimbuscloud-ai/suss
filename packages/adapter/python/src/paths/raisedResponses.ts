@@ -75,7 +75,22 @@ export function raisedResponses(
   body: PyNode | null,
   options: RaisedResponseOptions,
 ): RaisedResponse[] {
-  if (body === null || options.calls.length === 0) {
+  if (options.calls.length === 0) {
+    return [];
+  }
+  return raisesIn(body, options);
+}
+
+/**
+ * The same, with every raise kept when the pack declares no status calls.
+ * A client caller that raises on a failed response ends there the same
+ * way a route does, with no status claimed.
+ */
+export function raisesIn(
+  body: PyNode | null,
+  options: RaisedResponseOptions,
+): RaisedResponse[] {
+  if (body === null) {
     return [];
   }
 

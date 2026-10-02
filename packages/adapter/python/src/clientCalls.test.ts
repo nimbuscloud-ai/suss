@@ -65,6 +65,16 @@ function boundary(units: RawCodeStructure[]): {
   return { method: semantics.method, path: semantics.path };
 }
 
+/** Each branch of a unit as its terminal kind and the conditions on it. */
+function outline(unit: RawCodeStructure | undefined): string[] {
+  return (unit?.branches ?? []).map(
+    (branch) =>
+      `${branch.terminal.kind} ${branch.conditions
+        .map((condition) => `${condition.polarity} ${condition.sourceText}`)
+        .join(" & ")}`,
+  );
+}
+
 describe("a function that calls a request function", () => {
   it("is a client of the boundary the call states", async () => {
     const units = await unitsIn(
@@ -393,6 +403,112 @@ describe("a function that calls a request function", () => {
 
     expect(units[0]?.branches).toHaveLength(1);
     expect(units[0]?.branches[0]?.isDefault).toBe(true);
+  });
+
+  it("ends a path where the caller raises on a failed response", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def load():",
+        '    response = httpclient.get("/orders")',
+        "    if response.status_code >= 400:",
+        '        raise RuntimeError("request failed")',
+        "    return response.json()",
+      ].join("\n"),
+    );
+
+    expect(outline(units[0])).toEqual([
+      "throw positive response.status_code >= 400",
+      "return negative response.status_code >= 400",
+    ]);
+    expect(units[0]?.branches[0]?.terminal.exceptionType).toBe("RuntimeError");
+  });
+
+  it("reads the status test in a helper the caller hands the response to", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def check_response(resp):",
+        "    if resp.status_code >= 400:",
+        '        raise RuntimeError("request failed")',
+        "    return resp.json()",
+        "",
+        "def load():",
+        '    response = httpclient.get("/orders")',
+        "    return check_response(response)",
+      ].join("\n"),
+    );
+
+    const thrown = units[0]?.branches.find(
+      (branch) => branch.terminal.kind === "throw",
+    );
+    expect(thrown?.conditions[0]?.structured).toEqual({
+      type: "comparison",
+      left: {
+        type: "dependency",
+        name: "response",
+        accessChain: ["status_code"],
+      },
+      op: "gte",
+      right: { type: "literal", value: 400 },
+    });
+    expect(thrown?.location).toEqual({ start: 10, end: 10 });
+    expect(units[0]?.branches).toHaveLength(2);
+  });
+
+  it("follows a helper handed the response by keyword, or its parsed body", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    def unwrap(self, payload):",
+        "        if payload.error:",
+        "            raise RuntimeError(payload.error)",
+        "        return payload.data",
+        "",
+        "    def ensure_ok(self, label, resp=None):",
+        "        if resp.status_code >= 500:",
+        '            raise RuntimeError("server error")',
+        "",
+        "    def load(self):",
+        '        response = httpclient.get("/orders")',
+        '        self.ensure_ok("orders", resp=response)',
+        "        payload = response.json()",
+        "        return self.unwrap(payload)",
+      ].join("\n"),
+      { ...REQUEST_CALLS, response: { body: ["json"] } },
+    );
+
+    expect(outline(units[0])).toEqual([
+      "throw positive resp.status_code >= 500",
+      "throw negative resp.status_code >= 500 & positive payload.error",
+      "return negative resp.status_code >= 500 & negative payload.error",
+    ]);
+    const tested = JSON.stringify(units[0]?.branches[1]?.conditions);
+    expect(tested).toContain('"name":"response"');
+    expect(tested).toContain('"name":"payload"');
+  });
+
+  it("leaves the caller alone when the helper never tests what it got", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def record(resp, label):",
+        "    if label:",
+        '        raise RuntimeError("no label")',
+        "",
+        "def load():",
+        '    response = httpclient.get("/orders")',
+        '    record(response, "orders")',
+        "    return response",
+      ].join("\n"),
+    );
+
+    expect(outline(units[0])).toEqual(["return "]);
   });
 
   it("reads a call inside a method of a class", async () => {

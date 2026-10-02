@@ -116,6 +116,19 @@ export function writtenNodeOf(
 }
 
 /**
+ * The project function a call runs, as the rules settle it. Null when
+ * they settle on none or on more than one, and until a project has been
+ * bound.
+ */
+export function calledDefinition(
+  call: PyNode,
+  db: Database | undefined,
+): PyNode | null {
+  const bound = db === undefined ? undefined : projects.get(db);
+  return bound?.context.callable(call) ?? null;
+}
+
+/**
  * The key the rules join a read of this expression on, for a caller that
  * has a node and no file path. Null until a project has been bound, and
  * for a node in a file the run did not cover.
