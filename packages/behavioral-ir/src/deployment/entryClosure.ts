@@ -32,16 +32,7 @@ export function entryClosure(
   entry: string,
   graph: ModuleGraph,
 ): ReadonlySet<string> | null {
-  const files = new Set<string>();
-  for (const file of graph.keys()) {
-    files.add(file);
-  }
-
-  const entryFile =
-    [...files].find((file) => stripExtension(file) === entry) ??
-    [...files].find(
-      (file) => stripExtension(file) === asModuleDirectory(entry),
-    );
+  const entryFile = entryFileAmong(entry, graph.keys());
   if (entryFile === undefined) {
     return null;
   }
@@ -65,6 +56,22 @@ export function entryClosure(
     }
   }
   return reached;
+}
+
+/**
+ * The file among these that a template's entry, written without an
+ * extension, refers to: `src/confirm` or the Python-style
+ * `src/handlers.confirm`. Undefined when none does.
+ */
+export function entryFileAmong(
+  entry: string,
+  candidates: Iterable<string>,
+): string | undefined {
+  const files = [...candidates];
+  return (
+    files.find((file) => stripExtension(file) === entry) ??
+    files.find((file) => stripExtension(file) === asModuleDirectory(entry))
+  );
 }
 
 function stripExtension(file: string): string {
