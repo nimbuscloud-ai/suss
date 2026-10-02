@@ -6,7 +6,7 @@
     "internal": 5383,
     "consumers": 2806,
     "pairs": 1586,
-    "unfollowedCalls": 538,
+    "unfollowedCalls": 539,
     "findingErrors": 0
   },
   "packages": {
@@ -582,7 +582,7 @@
       "exports": 79,
       "internal": 87,
       "consumers": 165,
-      "unfollowedCalls": 19
+      "unfollowedCalls": 20
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
