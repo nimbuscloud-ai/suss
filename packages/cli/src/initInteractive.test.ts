@@ -217,6 +217,45 @@ describe("suss init, guided", () => {
       );
     });
 
+    function pythonServiceWithSpec(directory: string): void {
+      write(
+        `${directory}/pyproject.toml`,
+        `[project]\nname = "${directory}"\ndependencies = ["fastapi"]\n`,
+      );
+      write(`${directory}/app.py`, "from fastapi import FastAPI\n");
+      write(
+        `${directory}/openapi.json`,
+        `{ "openapi": "3.1.0", ${OPENAPI_PATHS_JSON} }`,
+      );
+    }
+
+    it("reads a spec once when a Python service below the root has a copy of it", async () => {
+      write(
+        "docs/openapi.json",
+        `{ "openapi": "3.1.0", ${OPENAPI_PATHS_JSON} }`,
+      );
+      pythonServiceWithSpec("service");
+
+      const text = await printedBy(() => initInteractive({ dir, plain: true }));
+
+      expect(text.match(/suss contract --from openapi/g)).toHaveLength(1);
+    });
+
+    it("reads a spec at the root once when a Python service has a copy of it", async () => {
+      write("openapi.json", `{ "openapi": "3.1.0", ${OPENAPI_PATHS_JSON} }`);
+      pythonServiceWithSpec("api");
+
+      await printedBy(() => initInteractive({ dir, write: true }));
+
+      const { read } = JSON.parse(
+        fs.readFileSync(path.join(dir, "suss.json"), "utf8"),
+      ) as { read: Array<Record<string, unknown>> };
+      const contracts = read.filter((entry) => entry.kind === "contract");
+      expect(contracts).toEqual([
+        { kind: "contract", from: "openapi", file: "openapi.json" },
+      ]);
+    });
+
     it("leaves out a folder below the root whose only manifest is for tooling", async () => {
       project("web", "web", ["react"]);
       write("mobile/android/Gemfile", 'source "https://rubygems.org"\n');

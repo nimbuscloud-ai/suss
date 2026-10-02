@@ -199,3 +199,37 @@ describe("a class given its path prefix when it was made", () => {
     ).toEqual(["/orders", "/users"]);
   });
 });
+
+describe("what a call does with a redirect", () => {
+  async function deliveryOf(call: string): Promise<unknown> {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        "def probe():",
+        "    session = requests.Session()",
+        `    return ${call}`,
+      ].join("\n"),
+    );
+    expect(units).toHaveLength(1);
+    return units[0]?.redirectDelivery;
+  }
+
+  it("hands a redirect back from head, whose allow_redirects defaults to False", async () => {
+    expect(await deliveryOf('requests.head("/orders")')).toBe("response");
+    expect(await deliveryOf('session.head("/orders")')).toBe("response");
+  });
+
+  it("follows a redirect from head when the call allows it", async () => {
+    expect(
+      await deliveryOf('requests.head("/orders", allow_redirects=True)'),
+    ).toBe("followed");
+  });
+
+  it("follows a redirect from every other call, request with HEAD included", async () => {
+    expect(await deliveryOf('requests.get("/orders")')).toBe("followed");
+    expect(await deliveryOf('requests.request("HEAD", "/orders")')).toBe(
+      "followed",
+    );
+  });
+});
