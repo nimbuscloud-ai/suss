@@ -134,11 +134,12 @@ function beside(
 }
 
 /**
- * The transitions with each throw the framework responds to by itself,
- * such as a missing record Rails sends as 404, turned into that response
- * where no error handler on the route catches it. Where a handler only
- * may catch it, the throw and the response both stay. The same array
- * comes back when nothing changed.
+ * The transitions with each throw settled against the route's error
+ * handlers. A throw one of them surely catches is marked `caught`. A
+ * throw the framework responds to by itself, such as a missing record
+ * Rails sends as 404, is turned into that response where no handler
+ * catches it. Where a handler only may catch it, the throw and the
+ * response both stay. The same array comes back when nothing changed.
  */
 function settledUncaught(
   transitions: Transition[],
@@ -150,12 +151,17 @@ function settledUncaught(
   let changed = false;
   const settled = transitions.flatMap((transition): Transition[] => {
     const { output } = transition;
-    if (output.type !== "throw" || output.statusWhenUncaught === undefined) {
+    if (output.type !== "throw") {
       return [transition];
     }
 
     const caught = caughtOnRoute(handlers, output);
     if (caught === "sure") {
+      changed = true;
+      return [markedCaught(transition)];
+    }
+
+    if (output.statusWhenUncaught === undefined) {
       return [transition];
     }
 
@@ -172,6 +178,16 @@ function settledUncaught(
     return caught === "uncertain" ? [transition, response] : [response];
   });
   return changed ? settled : transitions;
+}
+
+function markedCaught(transition: Transition): Transition {
+  return {
+    ...transition,
+    metadata: withWrapperMetadata(transition.metadata, {
+      ...readWrapperMetadata(transition),
+      caught: true,
+    }),
+  };
 }
 
 /** Whether one of the route's error handlers surely catches the throw, may catch it, or cannot. */

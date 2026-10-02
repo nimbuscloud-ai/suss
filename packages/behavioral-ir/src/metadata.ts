@@ -200,6 +200,12 @@ const WrapperMetadataSchema = z.object({
    * handler catches the throw, so the outcome may never happen.
    */
   catchUncertain: z.boolean().optional(),
+  /**
+   * Set on a throw that an error handler on the route surely catches.
+   * The caller gets that handler's response, which composition added
+   * beside the throw, and never the throw itself.
+   */
+  caught: z.boolean().optional(),
 });
 
 export type WrapperMetadata = z.infer<typeof WrapperMetadataSchema>;

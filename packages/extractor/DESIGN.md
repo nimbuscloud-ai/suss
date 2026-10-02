@@ -21,6 +21,8 @@ A handler whose reference lists the classes it `catches` runs only for a throw o
 
 A throw can say the status the framework sends by itself when nothing catches it, in `statusWhenUncaught`. Rails sends 404 for a `RecordNotFound` no `rescue_from` covers. A filter has one summary however many controllers inherit it, and each controller has its own handlers, so the Ruby adapter leaves the filter's raise as a throw with that status and composition settles it on each route. Where no handler on the route catches the throw, it becomes that response. Where a handler only may catch it, the throw and the response both stay. Where a handler surely catches it, the throw stays and the handler's outcomes are added beside it.
 
+Any throw a handler on the route surely catches, with a `statusWhenUncaught` or without one, is marked `wrappers.caught`. The caller gets the handler's response and never the throw, so the checker counts that path as read. A throw no handler surely catches stays unmarked, and the checker counts it as a status the framework may send that no transition gives.
+
 Every transition a wrapper contributed records which wrapper under `wrappers.from`, so a reader asking why a route returns 401 lands in the middleware.
 
 For everything else, a reader follows the chain in `wrappers.applied`. The effects along a whole request come from the wrapper summaries the chain points at. Those are what `inspect` prints under `Reaches:` and what `inspect --diff` compares. The CLI records a `wraps` call fact for each link, so the same reach walk that follows a call out of a route also follows the framework's call into a filter. Counting effects there counts each filter once, however many routes it covers.
