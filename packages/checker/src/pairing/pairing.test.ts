@@ -604,6 +604,33 @@ describe("pairSummaries", () => {
     expect(result.ambiguous).toHaveLength(1);
   });
 
+  it("lets an optional prefix the call leaves out neither help nor hurt a route", () => {
+    const profile = providerWithPath(
+      "profile",
+      "GET",
+      "/(|locale/:locale/):username/:view",
+    );
+    const plain = providerWithPath("story", "GET", "/:org_slug/:slug");
+    const story = {
+      ...plain,
+      identity: {
+        ...plain.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path: "/:org_slug/:slug",
+          recognition: "rails",
+          optionalFormat: true,
+        }),
+      },
+    };
+    const stats = consumerWithPath("fetchStats", "GET", "/admin/stats");
+
+    const result = pairSummaries([profile, story, stats]);
+    expect(result.pairs).toEqual([]);
+    expect(result.ambiguous[0]?.providers).toEqual([profile, story]);
+  });
+
   it("pairs a request with the route that matches it more closely than a catch-all", () => {
     const anything = providerWithPath("proxy", "GET", "/api/{path*}");
     const one = providerWithPath("getOrder", "GET", "/api/orders/:id");
