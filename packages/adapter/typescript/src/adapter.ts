@@ -308,16 +308,49 @@ function componentPropsParameters(
       },
     ];
   }
-  return nameNode.getElements().map((element) => {
-    const name = element.getName();
-    const typeText = stableTypeText(element.getType(), element);
-    return {
-      name,
-      position: mapping.paramPosition,
-      role: bindingRole(element, name),
-      typeText: typeText.length > 0 ? typeText : null,
-    };
+  return nameNode.getElements().flatMap((element) => {
+    const role = bindingRole(element, element.getName());
+    return namesBoundUnder(element).map(({ binding, field }) => {
+      const typeText = stableTypeText(binding.getType(), binding);
+      return {
+        name: binding.getName(),
+        position: mapping.paramPosition,
+        role,
+        ...(field === undefined ? {} : { field }),
+        typeText: typeText.length > 0 ? typeText : null,
+      };
+    });
   });
+}
+
+/**
+ * The names a destructured prop binds. A prop destructured again,
+ * `data: { menu, brand }`, binds `menu` and `brand`, each a field of the
+ * `data` prop, and its reads come back under those names.
+ */
+function namesBoundUnder(
+  element: BindingElement,
+  field?: string,
+): Array<{ binding: BindingElement; field: string | undefined }> {
+  const inner = element.getNameNode();
+  if (Node.isObjectBindingPattern(inner)) {
+    return inner.getElements().flatMap((nested) => {
+      const property =
+        nested.getDotDotDotToken() === undefined
+          ? bindingRole(nested, nested.getName())
+          : undefined;
+      return namesBoundUnder(nested, field ?? property);
+    });
+  }
+
+  if (Node.isArrayBindingPattern(inner)) {
+    return inner
+      .getElements()
+      .flatMap((nested) =>
+        Node.isBindingElement(nested) ? namesBoundUnder(nested, field) : [],
+      );
+  }
+  return [{ binding: element, field }];
 }
 
 /**

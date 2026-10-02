@@ -320,6 +320,93 @@ describe("checkRenderProps", () => {
     expect(checkRenderProps([parent, child])).toHaveLength(2);
   });
 
+  it("counts a read made inside a callback a hook in the child calls", () => {
+    const listTarget = { file: "src/list.tsx", name: "PagedList" };
+    const parent = component({
+      name: "Orders",
+      file: "src/orders.tsx",
+      root: rendering("PagedList", listTarget, {
+        fetchPage: "load",
+        pageSize: "20",
+        ghost: "x",
+      }),
+    });
+    const child = component({
+      name: "PagedList",
+      file: "src/list.tsx",
+      inputs: [param("fetchPage"), param("pageSize"), param("ghost")],
+    });
+    child.location.span = { start: 100, end: 900 };
+    // `useQuery({ queryFn: () => fetchPage({ limit: pageSize }) })` is a
+    // unit of its own with no React metadata, written inside the child.
+    const callback = {
+      ...component({
+        name: "PagedList.useQuery#0",
+        file: "src/list.tsx",
+        inputReads: [
+          { input: "fetchPage", path: [] },
+          { input: "pageSize", path: [] },
+        ],
+      }),
+      kind: "scheduled-callback",
+    } as BehavioralSummary;
+    callback.location = {
+      ...callback.location,
+      span: { start: 300, end: 420 },
+    };
+    const outside = {
+      ...callback,
+      location: { ...callback.location, span: { start: 950, end: 990 } },
+      inputReads: [{ input: "ghost", path: [] }],
+    } as BehavioralSummary;
+
+    expect(
+      checkRenderProps([parent, child, callback, outside]).map(
+        (f) => f.description,
+      ),
+    ).toEqual([
+      'Orders passes "ghost" to PagedList, and nothing in PagedList reads it.',
+    ]);
+  });
+
+  it("counts css as read when the child reads className", () => {
+    const parent = component({
+      name: "Page",
+      file: "src/page.tsx",
+      root: rendering(
+        "Spinner",
+        { file: "src/spinner.tsx", name: "Spinner" },
+        {
+          css: "styles",
+          size: "s",
+        },
+      ),
+    });
+    const styled = component({
+      name: "Spinner",
+      file: "src/spinner.tsx",
+      inputs: [param("className"), param("size")],
+      inputReads: [{ input: "className", path: [] }],
+    });
+    const unstyled = component({
+      name: "Spinner",
+      file: "src/spinner.tsx",
+      inputs: [param("size")],
+      inputReads: [{ input: "size", path: [] }],
+    });
+
+    expect(
+      checkRenderProps([parent, styled]).map((f) => f.description),
+    ).toEqual([
+      'Page passes "size" to Spinner, and nothing in Spinner reads it.',
+    ]);
+    expect(
+      checkRenderProps([parent, unstyled]).map((f) => f.description),
+    ).toEqual([
+      'Page passes "css" to Spinner, and nothing in Spinner reads it.',
+    ]);
+  });
+
   it("skips the edge when the child was not read as a component", () => {
     const parent = component({
       name: "Settings",
