@@ -627,3 +627,75 @@ describe("checkSemanticBridging", () => {
     expect(finding?.description).not.toContain("other transitions lack");
   });
 });
+
+describe("checkSemanticBridging, a sibling whose body was not read", () => {
+  const handlesOk = consumer("BlockButton", [
+    transition("ct-200", {
+      conditions: [statusEq(200)],
+      output: { type: "return", value: null },
+    }),
+  ]);
+
+  it("does not count a body it could not read as one without the literal or the field", () => {
+    const p = provider("block", [
+      transition("t-200-blocked", {
+        output: response(
+          200,
+          record({ result: literal("blocked"), url: text }),
+        ),
+      }),
+      transition("t-200-filter", { output: response(200, null) }),
+      transition("t-200-model", {
+        output: response(200, { type: "ref", name: "UserBlock" }),
+        isDefault: true,
+      }),
+    ]);
+    expect(checkSemanticBridging(p, handlesOk)).toEqual([]);
+  });
+
+  it("does not count a record with a spread as one without the field", () => {
+    const p = provider("block", [
+      transition("t-200-blocked", {
+        output: response(200, record({ result: literal("blocked") })),
+      }),
+      transition("t-200-merged", {
+        output: response(200, {
+          type: "record",
+          properties: {},
+          spreads: [{ sourceText: "..." }],
+        }),
+        isDefault: true,
+      }),
+    ]);
+    expect(checkSemanticBridging(p, handlesOk)).toEqual([]);
+  });
+
+  it("does not count a field it read only as text as a different literal", () => {
+    const p = provider("block", [
+      transition("t-200-blocked", {
+        output: response(200, record({ result: literal("blocked") })),
+      }),
+      transition("t-200-other", {
+        output: response(200, record({ result: text })),
+        isDefault: true,
+      }),
+    ]);
+    expect(checkSemanticBridging(p, handlesOk)).toEqual([]);
+  });
+
+  it("still reports a literal when another sibling it did read lacks it", () => {
+    const p = provider("block", [
+      transition("t-200-blocked", {
+        output: response(200, record({ result: literal("blocked") })),
+      }),
+      transition("t-200-filter", { output: response(200, null) }),
+      transition("t-200-error", {
+        output: response(200, record({ error: text })),
+        isDefault: true,
+      }),
+    ]);
+    expect(
+      checkSemanticBridging(p, handlesOk).map((f) => f.provider.transitionId),
+    ).toEqual(["t-200-blocked", "t-200-error"]);
+  });
+});

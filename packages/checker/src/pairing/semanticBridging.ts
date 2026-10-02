@@ -72,24 +72,20 @@ function findDistinguishingLiterals(
     return [];
   }
 
-  return myLiterals.filter((lit) => {
-    for (const sibling of siblings) {
+  return myLiterals.filter((lit) =>
+    siblings.some((sibling) => {
       if (sibling.id === transition.id) {
-        continue;
+        return false;
       }
-      if (sibling.output.type !== "response" || sibling.output.body === null) {
+      const siblingValue = readAtPath(sibling, lit.path);
+      if (siblingValue === "absent") {
         return true;
       }
-      const siblingValue = getValueAtPath(sibling.output.body, lit.path);
-      if (siblingValue === undefined) {
-        return true;
-      }
-      if (siblingValue.type !== "literal" || siblingValue.value !== lit.value) {
-        return true;
-      }
-    }
-    return false;
-  });
+      return (
+        siblingValue?.type === "literal" && siblingValue.value !== lit.value
+      );
+    }),
+  );
 }
 
 interface DistinguishingField {
@@ -116,27 +112,15 @@ function findDistinguishingFields(
     return [];
   }
 
-  const myFields = collectFieldPaths(transition.output.body);
-  const results: DistinguishingField[] = [];
-
-  for (const fieldPath of myFields) {
-    for (const sibling of siblings) {
-      if (sibling.id === transition.id) {
-        continue;
-      }
-      if (sibling.output.type !== "response" || sibling.output.body === null) {
-        results.push({ path: fieldPath, present: true });
-        break;
-      }
-      const siblingValue = getValueAtPath(sibling.output.body, fieldPath);
-      if (siblingValue === undefined) {
-        results.push({ path: fieldPath, present: true });
-        break;
-      }
-    }
-  }
-
-  return results;
+  return collectFieldPaths(transition.output.body)
+    .filter((fieldPath) =>
+      siblings.some(
+        (sibling) =>
+          sibling.id !== transition.id &&
+          readAtPath(sibling, fieldPath) === "absent",
+      ),
+    )
+    .map((path) => ({ path, present: true }));
 }
 
 /**
@@ -157,18 +141,27 @@ function collectFieldPaths(
   return paths;
 }
 
-function getValueAtPath(
-  shape: TypeShape,
+/**
+ * What a sibling's body has at `path`: the shape there, "absent" when a
+ * record with no spreads lacks it, or null when the body was not read
+ * that far. Only "absent" or a different literal tells two cases apart,
+ * so a body suss could not read is never counted as one without the field.
+ */
+function readAtPath(
+  sibling: Transition,
   path: string[],
-): TypeShape | undefined {
-  let current: TypeShape = shape;
+): TypeShape | "absent" | null {
+  if (sibling.output.type !== "response" || sibling.output.body === null) {
+    return null;
+  }
+  let current: TypeShape = sibling.output.body;
   for (const segment of path) {
     if (current.type !== "record") {
-      return undefined;
+      return null;
     }
     const next = current.properties[segment];
     if (next === undefined) {
-      return undefined;
+      return (current.spreads?.length ?? 0) > 0 ? null : "absent";
     }
     current = next;
   }
