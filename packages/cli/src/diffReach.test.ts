@@ -210,6 +210,42 @@ describe("what a boundary reaches, between two runs", () => {
     ]);
   });
 
+  it("leaves the other route of an action routed twice out of what each reaches", () => {
+    const routedAs = (method: string): BehavioralSummary => {
+      const one = route([CALLS_STORE]);
+      return {
+        ...one,
+        identity: {
+          ...one.identity,
+          boundaryBinding: restBinding({
+            transport: "http",
+            recognition: "rails",
+            method,
+            path: "/profile",
+          }),
+          id: `test::src/routes.ts::show#${method}`,
+        },
+      };
+    };
+    const after = [
+      routedAs("PATCH"),
+      routedAs("PUT"),
+      unit("loadOrder", "src/store.ts", [readsOrders()]),
+    ];
+
+    const changes = reachChanges([], after);
+
+    expect(changes.map((change) => change.boundary).sort()).toEqual([
+      "PATCH /profile",
+      "PUT /profile",
+    ]);
+    for (const change of changes) {
+      expect(change.gained.map((effect) => effect.label)).toEqual([
+        "aws.dynamodb:orders",
+      ]);
+    }
+  });
+
   it("takes one route bound to a boundary twice as one route", () => {
     const twice = [
       route([CALLS_STORE]),

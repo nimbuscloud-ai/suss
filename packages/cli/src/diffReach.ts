@@ -117,13 +117,11 @@ function adjacency(edges: readonly CallEdge[]): Map<FunctionKey, CallEdge[]> {
 }
 
 /**
- * Every boundary reachable from one function, with the shortest chain
- * of calls to each. The boundary the start function serves is left out,
- * because a route does not reach itself.
+ * Every boundary reachable from one function, with the shortest chain of
+ * calls to each. The routes that function serves are left out.
  */
 function reachedFrom(
   start: FunctionKey,
-  own: string,
   out: ReadonlyMap<FunctionKey, CallEdge[]>,
   units: ReadonlyMap<FunctionKey, BehavioralSummary[]>,
 ): Map<string, ReachedEffect> {
@@ -142,7 +140,7 @@ function reachedFrom(
         for (const touch of boundariesTouchedBy(summary)) {
           if (
             !leavesTheProcess(touch.binding) ||
-            (touch.label === own && touch.relation === "provides")
+            (fn === start && touch.relation === "provides")
           ) {
             continue;
           }
@@ -214,12 +212,7 @@ export function boundaryReach(
       continue;
     }
     const boundary = boundarySpelling(binding);
-    const reached = reachedFrom(
-      functionOf(summary),
-      boundary,
-      out,
-      facts.units,
-    );
+    const reached = reachedFrom(functionOf(summary), out, facts.units);
     for (const effect of environments.get(summary) ?? []) {
       reached.set(effectKey(effect.relation, effect.label), effect);
     }
