@@ -18,7 +18,7 @@ The behavioral findings go under `findings` in the JSON, and each one reports th
 | `kind` | string | Which failure mode this is, one of the values below. |
 | `severity` | `error` \| `warning` \| `info` | The default. A `.sussignore` rule can downgrade it. |
 | `boundary` | `BoundaryBinding` | Which boundary this is about: a REST endpoint, a table, a channel, a runtime's config, and so on. |
-| `provider` | `FindingSide` | The provider's summary, as `{ summary, transitionId?, location }`, where `summary` reads `${file}::${name}`. |
+| `provider` | `FindingSide` | The provider's summary, as `{ summary, transitionId?, transitionIds?, location }`, where `summary` reads `${file}::${name}`. `transitionIds` is set when several transitions give the one finding, such as two filters that each send a status the document leaves out, and `transitionId` is the first of them. |
 | `consumer` | `FindingSide` | The consumer's summary. Always set, even where the finding is about a provider against its own contract; there the two often resolve to the same summary. |
 | `description` | string | One line of human-readable text. |
 | `aspect` | `BoundaryAspect?` | Which side of the field this concerns: `read`, `write`, `send`, `receive`, `construct` or `selector`. Absent where the aspect is irrelevant or spans several. |

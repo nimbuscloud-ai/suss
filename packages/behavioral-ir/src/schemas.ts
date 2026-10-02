@@ -813,6 +813,12 @@ export const BehavioralSummaryArraySchema = z.array(BehavioralSummarySchema);
 export const FindingSideSchema = z.object({
   summary: z.string(),
   transitionId: z.string().optional(),
+  /**
+   * Every transition on this side that gives the finding, when more than
+   * one does, such as two filters that each send one status.
+   * `transitionId` is the first of them.
+   */
+  transitionIds: z.array(z.string()).optional(),
   location: SourceLocationSchema,
 });
 
