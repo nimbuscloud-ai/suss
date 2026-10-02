@@ -153,11 +153,16 @@ function joinStrings(a: readonly Piece[], b: readonly Piece[]): Value {
     a.slice(prefix, a.length - suffix),
     b.slice(prefix, b.length - suffix),
   );
+  // A hole over any number of segments here would let the string match
+  // routes that neither branch can reach, so the string is unknown.
+  if (middle === null) {
+    return hole("value");
+  }
   return string([...a.slice(0, prefix), middle, ...a.slice(a.length - suffix)]);
 }
 
-/** The one piece that covers what two strings differ by. */
-function joinMiddle(a: readonly Piece[], b: readonly Piece[]): Piece {
+/** The one piece that covers what two strings differ by, or null when no one piece does. */
+function joinMiddle(a: readonly Piece[], b: readonly Piece[]): Piece | null {
   if (a.length === 0 || b.length === 0) {
     return optionalPiece(a.length === 0 ? b : a);
   }
@@ -176,14 +181,14 @@ function joinMiddle(a: readonly Piece[], b: readonly Piece[]): Piece {
       return holePiece(left.name, joinRange(left.range, right.range));
     }
   }
-  return holePiece("value", "any");
+  return null;
 }
 
 /** What a run of pieces is when one branch wrote it and the other did not. */
-function optionalPiece(pieces: readonly Piece[]): Piece {
+function optionalPiece(pieces: readonly Piece[]): Piece | null {
   const only = pieces[0];
   if (pieces.length !== 1 || only === undefined) {
-    return holePiece("value", "any");
+    return null;
   }
   if (only.kind === "text") {
     return textPiece([...only.options, ""]);

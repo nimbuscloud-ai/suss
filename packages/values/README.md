@@ -51,8 +51,9 @@ deferred    a value nothing has asked the content of yet
 
 `join` in `lattice.ts` computes the value after two branches. It keeps
 the pieces that two strings share at both ends, and turns the middle
-into a set or a hole. It lines sequence elements up by position, and it
-unions record fields. `widen` computes the value after a loop has run
+into a set or a hole. When no one piece covers the middle, the string
+is a hole. It lines sequence elements up by position, and it unions
+record fields. `widen` computes the value after a loop has run
 some number of times. A sequence that grew becomes unbounded, a record
 that gained a field becomes open, and a string keeps the prefix the loop
 did not change.

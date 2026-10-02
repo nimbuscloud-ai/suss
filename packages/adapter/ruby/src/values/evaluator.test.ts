@@ -264,6 +264,14 @@ describe("branches and choices", () => {
     ).toBe("(/off|/on)");
   });
 
+  it("keeps a segment one arm builds around holes to one segment", async () => {
+    expect(
+      await route(
+        'prefix = flag ? "latest" : "v#{major}.#{minor}"\nsubject = "#{base}/#{prefix}/archive.tar.gz"',
+      ),
+    ).toBe("{base}/{prefix}/archive.tar.gz");
+  });
+
   it("follows an elsif chain", async () => {
     expect(
       await literal(

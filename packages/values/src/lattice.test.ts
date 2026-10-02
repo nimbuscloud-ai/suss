@@ -67,7 +67,30 @@ describe("join", () => {
         string([holePiece("base"), holePiece("a"), textPiece(["/x"])]),
         string([holePiece("base"), textPiece(["b"]), holePiece("c")]),
       ),
-    ).toEqual(string([holePiece("base"), holePiece("value", "any")]));
+    ).toEqual(hole("value"));
+  });
+
+  it("gives up on a literal against a string built around holes", () => {
+    const versioned = string([
+      textPiece(["v"]),
+      holePiece("major"),
+      textPiece(["."]),
+      holePiece("minor"),
+    ]);
+    expect(join(text("latest"), versioned)).toEqual(hole("value"));
+    expect(join(versioned, text("latest"))).toEqual(hole("value"));
+  });
+
+  it("gives up on a run of pieces only one side wrote", () => {
+    expect(
+      join(
+        string([textPiece(["/a?"]), holePiece("query")]),
+        string([textPiece(["/a"])]),
+      ),
+    ).toEqual(hole("value"));
+    expect(
+      join(string([textPiece(["?"]), holePiece("query")]), text("")),
+    ).toEqual(hole("value"));
   });
 
   it("unions constants up to a cap", () => {
