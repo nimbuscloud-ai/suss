@@ -113,6 +113,20 @@ describe("refEndsInMember", () => {
     expect(refEndsInMember(called, fetchReads)).toBe(false);
     expect(refEndsInMember(awaited, fetchReads)).toBe(false);
   });
+
+  it("reads the status of one response out of a list", () => {
+    const first: ValueRef = {
+      type: "derived",
+      from: {
+        type: "derived",
+        from: { type: "dependency", name: "responses", accessChain: [] },
+        derivation: { type: "indexAccess", index: 0 },
+      },
+      derivation: { type: "propertyAccess", property: "status" },
+    };
+
+    expect(refEndsInMember(first, fetchReads)).toBe(true);
+  });
 });
 
 describe("predicateRefs", () => {
