@@ -14,6 +14,7 @@
 
 import { Node } from "ts-morph";
 
+import { isTestFile } from "@suss/behavioral-ir";
 import {
   clearRelations,
   Database,
@@ -1750,9 +1751,17 @@ export class ResolutionStore {
 
     const candidates = new Set<Node>();
     const key = nodeId(value);
+    const fromProduction = !inTestFile(value);
+    let fromTests = 0;
     for (const target of writtenAnswersFor(this.db, "wantedIsWrittenAs", key)) {
       const node = this.table.byId.get(target);
       if (node === undefined || !Node.isExpression(node)) {
+        continue;
+      }
+      // A test passing a stand-in value never decides what production
+      // code reads, the same rule pairing keeps for test code.
+      if (fromProduction && inTestFile(node)) {
+        fromTests += 1;
         continue;
       }
       candidates.add(node);
@@ -1761,13 +1770,21 @@ export class ResolutionStore {
     if (candidates.size === 1) {
       return [...candidates][0] as Node;
     }
+    if (candidates.size === 0 && fromTests > 0) {
+      return null;
+    }
     const fallback = fallbackWrittenAs(this.db, key, (keys) => {
       for (const behind of keys) {
         this.wantKey("wantedWritten", behind);
       }
       this.derive();
     });
-    return fallback === null ? null : (this.table.byId.get(fallback) ?? null);
+    const node = fallback === null ? null : this.table.byId.get(fallback);
+    return node === undefined ||
+      node === null ||
+      (fromProduction && inTestFile(node))
+      ? null
+      : node;
   }
 
   /** The one class among what a value is written as, under the same policy. */
@@ -1982,6 +1999,10 @@ function namesPackage(moduleKey: string, packages: string[]): boolean {
     [moduleKey, ...packagesDeclaring(moduleKey)],
     packages,
   );
+}
+
+function inTestFile(node: Node): boolean {
+  return isTestFile(node.getSourceFile().getFilePath());
 }
 
 /** A value that refers to nothing speaks for itself. */
