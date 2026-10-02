@@ -31,6 +31,7 @@ import {
   spansBuckets,
   storageBinding,
   unitInvocationBinding,
+  withoutOwnHost,
   withRewrittenPaths,
 } from "./index.js";
 
@@ -259,6 +260,16 @@ describe("boundaryKey", () => {
     expect(pairingKey(groundBinding(local, NOTHING_DEPLOYED))).toBe(
       "rest /orders",
     );
+  });
+
+  it("leaves out a host the project says it serves", () => {
+    const own = new Set(["api.example.com"]);
+    const semanticsOf = (binding: BoundaryBinding) => binding.semantics;
+    expect(
+      semanticsOf(withoutOwnHost(getAt("/orders", "API.example.com:443"), own)),
+    ).toEqual(getAt("/orders").semantics);
+    const other = getAt("/orders", "maps.example.org");
+    expect(withoutOwnHost(other, own)).toBe(other);
   });
 
   it("reads an open base URL in the key as the origin", () => {

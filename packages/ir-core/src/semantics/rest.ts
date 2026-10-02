@@ -395,6 +395,16 @@ export const restSemantics = defineBoundarySemantics({
      * and reading the path back out gets the right one either way, and
      * a base the deployment sets counts as the app's own.
      */
+    /** A listed host matches with or without the port the call gives. */
+    withoutOwnHost(semantics, ownHosts) {
+      const host = semantics.host?.toLowerCase();
+      if (host === undefined) {
+        return null;
+      }
+      return ownHosts.has(host) || ownHosts.has(host.replace(/:\d+$/, ""))
+        ? withoutHost(semantics)
+        : null;
+    },
     groundName(semantics, deployment) {
       const based = groundedBaseUrl(semantics, deployment);
       const grounded = based ?? semantics;
