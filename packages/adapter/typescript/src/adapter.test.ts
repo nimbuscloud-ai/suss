@@ -4189,6 +4189,41 @@ describe("consumer extraction", () => {
     expect(restPathOf(summaries[0])).toBe("/api/x");
   });
 
+  it("does not take a production parameter's value from a test that calls it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "lib/google.ts",
+      `
+      export async function authorize(workspaceId: string, apiHost: string) {
+        const res = await fetch(\`\${apiHost}/api/google-sheet\`, {
+          headers: { workspaceId },
+        });
+        return res.json();
+      }
+    `,
+    );
+    project.createSourceFile(
+      "lib/google.test.ts",
+      `
+      import { authorize } from "./google";
+      const apiHost = "http://test.com";
+      export async function run() {
+        await fetch(\`\${apiHost}/health\`);
+        return authorize("ws", apiHost);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const authorize = summaries.find((s) => s.identity.name === "authorize");
+    const semantics = authorize?.identity.boundaryBinding?.semantics;
+    expect(semantics?.name === "rest" ? semantics.host : null).toBeUndefined();
+  });
+
   it("drops the host remainder when a template literal's substitution sits in the middle of the host", async () => {
     const project = createTestProject();
     project.createSourceFile(
