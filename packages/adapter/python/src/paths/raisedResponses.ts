@@ -14,7 +14,7 @@
 
 import { constantOf } from "@suss/values";
 
-import { field, rangeOf, stringLiteralValue } from "../ast.js";
+import { children, field, rangeOf, stringLiteralValue } from "../ast.js";
 import {
   evaluatedValue,
   moduleOf,
@@ -81,7 +81,7 @@ export function raisedResponses(
 
   const found: RaisedResponse[] = [];
   const walk = (node: PyNode): void => {
-    for (const child of node.namedChildren) {
+    for (const child of children(node)) {
       if (child === null || NESTED_DEFINITION_TYPES.has(child.type)) {
         continue;
       }
@@ -99,9 +99,9 @@ export function raisedResponses(
 /** The expression a statement ends the request with, per statement kind. */
 const ENDING_EXPRESSION: Record<string, (statement: PyNode) => PyNode | null> =
   {
-    raise_statement: (statement) => statement.namedChildren[0] ?? null,
+    raise_statement: (statement) => statement.namedChild(0) ?? null,
     expression_statement: (statement) => {
-      const only = statement.namedChildren[0];
+      const only = statement.namedChild(0);
       return only?.type === "call" ? only : null;
     },
   };
@@ -183,7 +183,7 @@ export function returnedResponseStatus(
   statement: PyNode,
   options: RaisedResponseOptions,
 ): RawTerminal["statusCode"] | null {
-  const returned = statement.namedChildren[0];
+  const returned = statement.namedChild(0);
   if (
     options.calls.length === 0 ||
     returned === undefined ||
@@ -271,9 +271,7 @@ function statusOf(
 }
 
 function argumentsOf(call: PyNode): PyNode[] {
-  return (field(call, "arguments")?.namedChildren ?? []).filter(
-    (child): child is PyNode => child !== null,
-  );
+  return children(field(call, "arguments"));
 }
 
 function statusArgumentOf(declared: PyStatusCall, call: PyNode): PyNode | null {

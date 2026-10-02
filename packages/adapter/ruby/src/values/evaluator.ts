@@ -14,7 +14,7 @@
 import { nodeOfKey, noteKeyRead, writtenValuesByKey } from "@suss/resolution";
 import { Evaluator, force, literalOf, text } from "@suss/values";
 
-import { enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
+import { children, enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
 import {
   constructionSites,
   resolveValues,
@@ -244,7 +244,7 @@ export function methodDefinitionsIn(
     if (METHOD_TYPES.has(node.type)) {
       found.set(nodeId(file, node), node);
     }
-    for (const child of node.namedChildren) {
+    for (const child of children(node)) {
       if (child !== null) {
         visit(child);
       }

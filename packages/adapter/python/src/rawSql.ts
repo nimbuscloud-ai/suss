@@ -277,7 +277,7 @@ function importedFunctionMatch(
     return null;
   }
   const args = field(call, "arguments");
-  const first = args?.namedChildren.find((child) => child !== null) ?? null;
+  const first = children(args)[0] ?? null;
   const statement =
     first === null ? null : writtenStatement(first, undefined, options.facts);
   if (statement === null) {

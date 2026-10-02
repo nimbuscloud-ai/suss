@@ -9,7 +9,7 @@
 
 import { constantOf, literalOf } from "@suss/values";
 
-import { field } from "../ast.js";
+import { allChildren, children, field } from "../ast.js";
 import { evaluatedValue } from "../values/evaluator.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
@@ -29,8 +29,8 @@ const COMPARISONS: Record<string, ComparisonOp> = {
 
 /** Joined with a space so `is not` and `not in` come out as one operator. */
 function operatorText(node: PyNode): string {
-  return node.children
-    .filter((child) => child !== null && !child.isNamed)
+  return allChildren(node)
+    .filter((child) => !child.isNamed)
     .map((child) => child.text)
     .join(" ");
 }
@@ -118,7 +118,7 @@ function comparisonOf(
   facts: Database | undefined,
   inputs: GuardInputs | undefined,
 ): Predicate {
-  const [left, right] = node.namedChildren.filter(
+  const [left, right] = children(node).filter(
     (child): child is PyNode => child !== null,
   );
   if (left === undefined || right === undefined) {
@@ -156,7 +156,7 @@ export function predicateOf(
   inputs?: GuardInputs | undefined,
 ): Predicate {
   if (node.type === "parenthesized_expression") {
-    const inner = node.namedChildren[0];
+    const inner = node.namedChild(0);
     return inner == null ? opaqueOf(node) : predicateOf(inner, facts, inputs);
   }
 
@@ -165,7 +165,7 @@ export function predicateOf(
   }
 
   if (node.type === "not_operator") {
-    const operand = field(node, "argument") ?? node.namedChildren[0];
+    const operand = field(node, "argument") ?? node.namedChild(0);
     return operand == null
       ? opaqueOf(node)
       : { type: "negation", operand: predicateOf(operand, facts, inputs) };
@@ -198,11 +198,11 @@ export function operandsOf(node: PyNode): PyNode[] {
     node.type === "parenthesized_expression" ||
     node.type === "not_operator"
   ) {
-    const inner = field(node, "argument") ?? node.namedChildren[0];
+    const inner = field(node, "argument") ?? node.namedChild(0);
     return inner == null ? [] : operandsOf(inner);
   }
   if (node.type === "comparison_operator") {
-    return node.namedChildren.filter(
+    return children(node).filter(
       (child): child is PyNode =>
         child !== null && SUBJECT_TYPES.has(child.type),
     );

@@ -71,7 +71,7 @@ export function pickedSource(
   }
 
   const args = field(pick, "arguments");
-  const given = args === null ? undefined : args.namedChildren[source.at];
+  const given = args === null ? undefined : args.namedChild(source.at);
   return given?.type === "constant" || given?.type === "scope_resolution"
     ? given
     : null;

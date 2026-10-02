@@ -70,7 +70,7 @@ function statedBy(statement: PyNode, name: string): PyNode | null {
   if (statement.type === "as_pattern") {
     const alias = field(statement, "alias");
     // The grammar gives the alias a field and leaves the value bare.
-    const value = statement.namedChildren[0] ?? null;
+    const value = statement.namedChild(0) ?? null;
     const callee = value?.type === "call" ? field(value, "function") : null;
     return alias?.text === name ? callee : null;
   }

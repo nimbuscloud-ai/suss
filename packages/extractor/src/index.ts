@@ -159,7 +159,7 @@ export type {
 } from "./paths/enumeratePaths.js";
 export type { Identified } from "./paths/nodeIdentity.js";
 export type { ParsedNode } from "./paths/nodeReads.js";
-export type { NodeVisitor, WalkableNode } from "./paths/nodeWalk.js";
+export type { ChildrenOf, NodeVisitor } from "./paths/nodeWalk.js";
 export type {
   CaseGroup,
   ConditionHandle,

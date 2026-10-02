@@ -20,6 +20,7 @@ export {
 export {
   bodyStatements,
   booleanLiteralValue,
+  children,
   field,
   hashKeySymbolName,
   nestedStatements,

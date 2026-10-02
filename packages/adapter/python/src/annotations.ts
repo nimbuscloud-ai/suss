@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 
-import { field, fields, stringLiteralValue } from "./ast.js";
+import { children, field, fields, stringLiteralValue } from "./ast.js";
 import { resolveName } from "./scope.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -259,8 +259,9 @@ function shapeFromSubscript(
  * `X | None`, and the outer name of any other generic.
  */
 export function annotationTarget(annotation: PyNode): PyNode | null {
-  if (annotation.type === "type" && annotation.namedChildren[0]) {
-    return annotationTarget(annotation.namedChildren[0]);
+  const inner = annotation.type === "type" ? annotation.namedChild(0) : null;
+  if (inner !== null) {
+    return annotationTarget(inner);
   }
   if (annotation.type === "binary_operator") {
     const named = [field(annotation, "left"), field(annotation, "right")].find(
@@ -271,7 +272,7 @@ export function annotationTarget(annotation: PyNode): PyNode | null {
       : annotationTarget(named);
   }
   if (annotation.type === "generic_type") {
-    const outer = annotation.namedChildren[0];
+    const outer = annotation.namedChild(0);
     const first = genericTypeArgs(annotation)[0];
     if (
       (outer?.text === "Annotated" || outer?.text === "Optional") &&
@@ -297,14 +298,10 @@ export function typeNameOf(annotation: PyNode): string | null {
 
 /** The `type` nodes inside the brackets of `Outer[A, B]`. */
 export function genericTypeArgs(node: PyNode): PyNode[] {
-  const typeParameter = node.namedChildren.find(
-    (child) => child !== null && child.type === "type_parameter",
+  const typeParameter = children(node).find(
+    (child) => child.type === "type_parameter",
   );
-  return (
-    typeParameter?.namedChildren.filter(
-      (child): child is PyNode => child !== null && child.type === "type",
-    ) ?? []
-  );
+  return children(typeParameter).filter((child) => child.type === "type");
 }
 
 function shapeFromGenericType(
@@ -433,8 +430,8 @@ function classFields(
  */
 function baseClassNames(classNode: PyNode): string[] {
   const superclasses = field(classNode, "superclasses");
-  return (superclasses?.namedChildren ?? []).flatMap((child) =>
-    child !== null && child.type === "identifier" ? [child.text] : [],
+  return children(superclasses).flatMap((child) =>
+    child.type === "identifier" ? [child.text] : [],
   );
 }
 
@@ -445,12 +442,12 @@ export function recordShapeOf(
   ctx: AnnotationContext,
 ): TypeShape {
   const properties: Record<string, TypeShape> = {};
-  for (const stmt of bodyNode.namedChildren) {
+  for (const stmt of children(bodyNode)) {
     if (stmt === null || stmt.type !== "expression_statement") {
       continue;
     }
-    const assignment = stmt.namedChildren.find(
-      (child) => child !== null && child.type === "assignment",
+    const assignment = children(stmt).find(
+      (child) => child.type === "assignment",
     );
     if (assignment === undefined || assignment === null) {
       continue;

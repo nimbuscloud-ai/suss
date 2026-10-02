@@ -14,7 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { field, fields, rangeOf } from "./ast.js";
+import { children, field, fields, rangeOf } from "./ast.js";
 import { parsePython } from "./parser.js";
 import { findPythonFiles } from "./project.js";
 
@@ -103,7 +103,7 @@ function importSitesIn(
       }
     }
 
-    for (const child of node.namedChildren) {
+    for (const child of children(node)) {
       if (child !== null) {
         visit(child);
       }

@@ -35,6 +35,7 @@ import {
 } from "@suss/resolution";
 
 import {
+  children,
   enclosingFunction,
   field,
   isModule,
@@ -666,7 +667,7 @@ function passedNameKeys(file: BoundPythonFile, call: PyNode): string[] {
   if (args === null) {
     return [];
   }
-  return args.namedChildren.flatMap((arg) => {
+  return children(args).flatMap((arg) => {
     const key = passedNameKeyOf(file, arg);
     return key === null ? [] : [key];
   });
@@ -711,7 +712,7 @@ function scanBody(
     if (args === null) {
       return;
     }
-    args.namedChildren.forEach((arg, position) => {
+    children(args).forEach((arg, position) => {
       const nameKey = passedNameKeyOf(file, arg);
       if (nameKey === null) {
         return;
@@ -807,7 +808,7 @@ function callsWritten(
   limit: { descendsInto: (node: PyNode) => boolean },
 ): { call: PyNode; site: CallSite }[] {
   const found: { call: PyNode; site: CallSite }[] = [];
-  walkDescendants<PyNode, Scope>(body, outer, {
+  walkDescendants<PyNode, Scope>(body, outer, children, {
     at: (child, scope) => {
       if (child.type === "call") {
         found.push({ call: child, site: { file, scope, owner } });
@@ -839,7 +840,7 @@ function identifiersUnder(node: PyNode, found: string[] = []): string[] {
     found.push(node.text);
     return found;
   }
-  for (const child of node.namedChildren) {
+  for (const child of children(node)) {
     if (
       child !== null &&
       child.type !== "attribute" &&
@@ -961,10 +962,7 @@ function positionalParameters(node: PyNode, isMethod: boolean): RawParameter[] {
   }
   const out: RawParameter[] = [];
   let position = 0;
-  for (const param of parameters.namedChildren) {
-    if (param === null) {
-      continue;
-    }
+  for (const param of children(parameters)) {
     const name = parameterName(param);
     if (name === null) {
       continue;
@@ -992,10 +990,7 @@ function callParameterNames(node: PyNode, isMethod: boolean): string[] {
     return [];
   }
   const names: string[] = [];
-  for (const param of parameters.namedChildren) {
-    if (param === null) {
-      continue;
-    }
+  for (const param of children(parameters)) {
     const name = parameterName(param);
     if (name === null) {
       continue;

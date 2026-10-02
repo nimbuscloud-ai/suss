@@ -14,7 +14,9 @@
  */
 
 import {
+  allChildren,
   bodyStatements,
+  children,
   field,
   hashKeySymbolName,
   isRaiseCall,
@@ -253,9 +255,7 @@ const EXPRESSION_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
     ),
   unary: (node) => {
     const operand = field(node, "operand");
-    const operator = node.children.find(
-      (child): child is RbNode => child !== null && !child.isNamed,
-    );
+    const operator = allChildren(node).find((child) => !child.isNamed);
     if (operand === null || operator === undefined) {
       return OPAQUE;
     }
@@ -528,7 +528,7 @@ function rescuedInSameFunction(node: RbNode): boolean {
     if (
       RESCUING_TYPES.has(parent.type) &&
       !UNRESCUED_PARTS.has(child.type) &&
-      parent.namedChildren.some((part) => part.type === "rescue")
+      children(parent).some((part) => part.type === "rescue")
     ) {
       return true;
     }

@@ -20,7 +20,7 @@ import {
 import { exitCodeFunctions } from "@suss/resolution";
 import { constantOf } from "@suss/values";
 
-import { field, rangeOf, stringLiteralValue } from "./ast.js";
+import { children, field, rangeOf, stringLiteralValue } from "./ast.js";
 import { callArguments, nodeId } from "./facts/values.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
@@ -50,7 +50,7 @@ const DEFERRED_BODY_TYPES = new Set(["function_definition", "lambda"]);
 export function exitSites(root: PyNode, module: ModuleBinding): ExitSite[] {
   const found: ExitSite[] = [];
   const startScope = module.scopeFor.get(root.id) ?? module.moduleScope;
-  walkDescendants<PyNode, Scope>(root, startScope, {
+  walkDescendants<PyNode, Scope>(root, startScope, children, {
     at: (node, scope) => {
       const site = exitSiteAt(node, scope);
       if (site !== null) {
@@ -68,7 +68,7 @@ export function exitSites(root: PyNode, module: ModuleBinding): ExitSite[] {
 }
 
 function exitSiteAt(statement: PyNode, scope: Scope): ExitSite | null {
-  const expression = statement.namedChildren[0] ?? null;
+  const expression = statement.namedChild(0) ?? null;
   if (expression === null) {
     return null;
   }
