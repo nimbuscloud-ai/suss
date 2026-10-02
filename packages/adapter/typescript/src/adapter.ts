@@ -70,6 +70,7 @@ import {
   type RootRecord,
   runDigest,
   type SettledModule,
+  splitAtHandOffs,
   stampModuleImports,
   stampModules,
   type TerminalPattern,
@@ -106,6 +107,7 @@ import {
   clientResponseFieldsOfPack,
   clientResponseFieldsThroughWrapper,
   keepsStatusArms,
+  wrapperStatusPaths,
 } from "./clientResponseFields.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import {
@@ -162,7 +164,7 @@ import {
 import { ResolutionStore } from "./facts/store.js";
 import { flagReads } from "./flagReads.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
-import { endLineOf, startLineOf } from "./lines.js";
+import { endLineOf, lineRangeOf, startLineOf } from "./lines.js";
 import {
   forgetUnreadableExportFiles,
   noteUnreadableExports,
@@ -2283,6 +2285,17 @@ function buildCallerSummary(
   };
 
   const raw = extractCodeStructure(unit, syntheticPack);
+  const wrapperPaths = wrapperStatusPaths(wrapper.summary);
+  if (wrapperPaths !== null) {
+    const site = {
+      helper: wrapperPaths,
+      line: startLineOf(callExpr),
+      at: lineRangeOf(callExpr),
+    };
+    raw.branches = raw.branches.flatMap((branch) =>
+      splitAtHandOffs(branch, [site]),
+    );
+  }
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
     method: reading.method,

@@ -235,6 +235,59 @@ describe("a client caller that hands its response to a helper", () => {
     expect(outline(clients.get("getTotal"))).toHaveLength(1);
   });
 
+  it("gives a caller of a wrapper that throws on every failure the wrapper's throw", async () => {
+    const clients = await clientsIn({
+      "client.ts": `
+        async function request<T>(url: string, init: RequestInit): Promise<T> {
+          const response = await fetch(url, init);
+          if (!response.ok) {
+            throw new Error("request failed");
+          }
+          return ((await response.json()) as { data: T }).data;
+        }
+        export async function getOrders(accountId: string) {
+          return request<string[]>(\`/api/orders?account=\${accountId}\`, {
+            method: "GET",
+          });
+        }
+      `,
+    });
+
+    const caller = clients.get("getOrders");
+    expect(caller?.metadata?.http).toMatchObject({
+      failureDelivery: "exception",
+    });
+    const thrown = caller?.transitions.find((t) => t.output.type === "throw");
+    expect(thrown?.conditions.some(testsFetchStatus)).toBe(true);
+  });
+
+  it("leaves failures with a wrapper's caller when the wrapper returns on one", async () => {
+    const clients = await clientsIn({
+      "client.ts": `
+        async function request<T>(url: string): Promise<T | null> {
+          const response = await fetch(url, { method: "GET" });
+          if (response.status === 404) {
+            return null;
+          }
+          if (!response.ok) {
+            throw new Error("request failed");
+          }
+          return (await response.json()) as T;
+        }
+        export async function getOrder(id: string) {
+          return request<string>(\`/api/orders/\${id}\`);
+        }
+      `,
+    });
+
+    const caller = clients.get("getOrder");
+    expect(caller).toBeDefined();
+    expect(JSON.stringify(caller?.metadata)).not.toContain("failureDelivery");
+    expect(
+      caller?.transitions.filter((t) => t.output.type === "return"),
+    ).toHaveLength(2);
+  });
+
   it("leaves a helper call alone when it is handed something else", async () => {
     const clients = await clientsIn({
       "client.ts": `
