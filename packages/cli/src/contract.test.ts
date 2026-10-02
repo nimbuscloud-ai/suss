@@ -7,7 +7,12 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { contract } from "./contract.js";
+import {
+  contract,
+  firstBatchWithSummaries,
+  readContract,
+  sampleContract,
+} from "./contract.js";
 import { runCli } from "./run.js";
 
 import type { AddressInfo } from "node:net";
@@ -541,5 +546,68 @@ queue = "greeting-events"
       summaries.map((s) => s.identity.boundaryBinding?.semantics.name).sort(),
     ).toEqual(["message-bus", "runtime-config"]);
     expect(JSON.parse(fs.readFileSync(out, "utf8"))).toHaveLength(2);
+  });
+});
+
+describe("sampling a contract", () => {
+  const storiesDir = path.resolve(
+    __dirname,
+    "../../../fixtures/storybook-imports/src",
+  );
+  const storybookOf = (summary: BehavioralSummary) =>
+    (
+      summary.metadata?.component as
+        | { storybook?: { componentModule?: unknown } }
+        | undefined
+    )?.storybook;
+
+  it("stops at the first story file the reader reads, without following the component", async () => {
+    const sample = await sampleContract({
+      from: "storybook",
+      spec: storiesDir,
+    });
+    const whole = await readContract({ from: "storybook", spec: storiesDir });
+
+    expect(sample.whole).toBe(false);
+    expect(new Set(sample.summaries.map((s) => s.location.file)).size).toBe(1);
+    expect(
+      sample.summaries.every((s) => !storybookOf(s)?.componentModule),
+    ).toBe(true);
+    expect(new Set(whole.map((s) => s.location.file)).size).toBeGreaterThan(1);
+  });
+
+  it("reads the whole file for a reader with no cheaper way to ask", async () => {
+    const spec = path.resolve(__dirname, "../../../fixtures/graphql-documents");
+    const sample = await sampleContract({ from: "graphql-documents", spec });
+
+    expect(sample.whole).toBe(true);
+    expect(sample.summaries).toEqual(
+      await readContract({ from: "graphql-documents", spec }),
+    );
+  });
+
+  it("reads batches that double in size until one gives a summary", () => {
+    const batches: string[][] = [];
+    const found = firstBatchWithSummaries(
+      ["a", "b", "c", "d", "e", "f", "g", "h"],
+      (batch) => {
+        batches.push(batch);
+        return batch.includes("e") ? [{} as BehavioralSummary] : [];
+      },
+    );
+
+    expect(found).toHaveLength(1);
+    expect(batches).toEqual([["a"], ["b", "c"], ["d", "e", "f", "g"]]);
+  });
+
+  it("gives nothing when no batch reads", () => {
+    const batches: string[][] = [];
+    const found = firstBatchWithSummaries(["a", "b", "c"], (batch) => {
+      batches.push(batch);
+      return [];
+    });
+
+    expect(found).toEqual([]);
+    expect(batches).toEqual([["a"], ["b", "c"]]);
   });
 });

@@ -54,7 +54,7 @@ A finding that points at one transition prints a `.sussignore` rule for it, read
 
 ## What a run prints
 
-A run opens with how many boundaries paired, out of every boundary it read, and counts the ones that went unpaired on each side. Then it prints every error and warning in full, and counts the info findings by kind. Over the [quickstart](/start/quickstart) project:
+A run opens with how many boundaries paired, out of every boundary it read, and counts the ones that went unpaired on each side. Then it prints every error and warning in full, and counts the info findings by kind. A `lowConfidence` finding says only that suss could not compare something it read, so the run leaves it out of the finding count as well and counts it on the `Not shown:` line. Over the [quickstart](/start/quickstart) project:
 
 ```
 $ suss check --dir summaries/
