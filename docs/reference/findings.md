@@ -502,6 +502,8 @@ One consumer matched two providers where at most one of them can be right.
   boundary: graphql-documents (http-graphql)
 ```
 
+REST pairing reports it when routes in two different functions match one call equally well, such as two catch-all routes `/:username/:view` and `/:feed_type/:timeframe` for a call to `/admin/stats`. The framework picks one by the order the routes are declared, which suss does not read, so the call pairs with neither.
+
 Storage reports it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` both cover `prod-orders-blue`, and each states as much of its own name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and the finding says which two were in the way. Where one states more of its name, that one takes the access and no finding is emitted.
 
 **Legitimate when:** the two providers are the same route in two documents, so whichever the consumer reaches behaves the same.
