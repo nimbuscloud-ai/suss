@@ -1547,7 +1547,7 @@ function extractFromSourceFile(
         matchedPattern?.bindingExtraction?.path.type === "fromFilename"
       ) {
         const binding = fileRouteBinding(
-          raw.identity.file,
+          unit.routeFile?.getFilePath() ?? raw.identity.file,
           unit,
           matchedPattern.bindingExtraction,
           pack,

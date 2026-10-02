@@ -55,5 +55,5 @@ export function discoverFileConventions(
     { type: "namedExport", names: match.exportNames },
     kind,
     resolution,
-  );
+  ).map((unit) => ({ ...unit, routeFile: sourceFile }));
 }
