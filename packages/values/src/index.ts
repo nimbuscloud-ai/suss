@@ -53,6 +53,7 @@ export {
   stripped,
 } from "./operations.js";
 export { isLocalUrl, pathOf, routePatternOf } from "./routePath.js";
+export { shapeOfValue } from "./typeShape.js";
 export {
   type Constant,
   concat,

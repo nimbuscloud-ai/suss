@@ -649,6 +649,14 @@ export interface RbStatusCall {
    * so a default declared here takes precedence over `defaultStatusCode`.
    */
   defaultStatusCode?: number;
+  /** The keyword whose value the library sends as a JSON body, `json` for Rails' `render json:`. */
+  bodyKeyword?: string;
+  /**
+   * Methods that turn the value they are called on into that same JSON,
+   * so `render json: { ok: true }.to_json` sends the hash. Only a call
+   * with no arguments counts, since `as_json(only: ...)` drops keys.
+   */
+  bodySerializers?: string[];
 }
 
 /** One of a library's exception classes. */
