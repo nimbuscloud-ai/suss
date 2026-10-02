@@ -104,6 +104,7 @@ import {
 import {
   clientResponseFieldsOfPack,
   clientResponseFieldsThroughWrapper,
+  keepsStatusArms,
 } from "./clientResponseFields.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import {
@@ -882,6 +883,10 @@ function readCodeStructure(
     originatesFrom,
     anchorCallsOf,
     resolveCallee,
+    false,
+    unit.callSite === undefined
+      ? undefined
+      : keepsStatusArms(clientResponseFieldsOfPack(pack)),
   );
   let branches = extracted.branches;
   const unmatchedReturns = countUnmatchedReturns(

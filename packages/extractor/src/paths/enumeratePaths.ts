@@ -242,6 +242,7 @@ interface Ctx<Cond, Terminal> {
     StructuredStatement<Cond>,
     readonly Terminal[]
   >;
+  readonly keepsArms: KeepsArms<Cond>;
   readonly state: EngineState<Cond, Terminal>;
   readonly isAncestorOrSelf: (
     a: StructuredStatement<Cond>,
@@ -553,6 +554,7 @@ function stepStatement<Cond, Terminal>(
 function soleDisagreement<Cond>(
   left: PathCond<Cond>[],
   right: PathCond<Cond>[],
+  keepsArms: KeepsArms<Cond>,
 ): number | null {
   if (left.length !== right.length) {
     return null;
@@ -578,7 +580,8 @@ function soleDisagreement<Cond>(
     }
     found = at;
   }
-  return found;
+  const test = found === null ? null : (left[found]?.info.expression ?? null);
+  return test !== null && keepsArms(test) ? null : found;
 }
 
 /**
@@ -588,9 +591,13 @@ function soleDisagreement<Cond>(
  * and keep their conditions. This keeps a run of guards from multiplying:
  * nine that each rejoin are one path into the next statement rather than
  * five hundred and twelve. It is not applied to the paths a body returns,
- * since no statement follows those.
+ * since no statement follows those. A test whose arms the caller keeps
+ * is not merged over, so each arm goes on as a path of its own.
  */
-function mergeRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
+function mergeRejoined<Cond>(
+  paths: PathCond<Cond>[][],
+  keepsArms: KeepsArms<Cond> = KEEPS_NO_ARMS,
+): PathCond<Cond>[][] {
   let current = paths;
   for (let round = 0; round < current.length; round++) {
     const out: PathCond<Cond>[][] = [];
@@ -605,7 +612,11 @@ function mergeRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
         if (taken.has(j)) {
           continue;
         }
-        const at = soleDisagreement(combined, current[j] as PathCond<Cond>[]);
+        const at = soleDisagreement(
+          combined,
+          current[j] as PathCond<Cond>[],
+          keepsArms,
+        );
         if (at === null) {
           continue;
         }
@@ -651,7 +662,7 @@ function enumerate<Cond, Terminal>(
 
   for (const stmt of stmts) {
     const nextFrontiers: PathCond<Cond>[][] = [];
-    for (const path of mergeRejoined(frontiers)) {
+    for (const path of mergeRejoined(frontiers, ctx.keepsArms)) {
       nextFrontiers.push(...stepStatement(ctx, stmt, path));
     }
     frontiers = nextFrontiers;
@@ -679,7 +690,20 @@ export interface StructuredPathConditionsInput<Cond, Terminal> {
    * where a terminal is.
    */
   terminalsByStmt: ReadonlyMap<StructuredStatement<Cond>, readonly Terminal[]>;
+  /**
+   * The tests whose arms go on as separate paths after they rejoin, so
+   * a terminal later in the body is reached once under each arm. A
+   * client's caller keeps the arms of a test on the response status,
+   * since which statuses it handles is the point of reading it, even
+   * when neither arm returns. Every other test is merged away as usual.
+   */
+  keepsArms?: KeepsArms<Cond>;
 }
+
+/** Whether the arms of the test written as this condition go on as separate paths. */
+export type KeepsArms<Cond> = (condition: Cond) => boolean;
+
+const KEEPS_NO_ARMS = (): boolean => false;
 
 export interface StructuredPathConditionsResult<Cond, Terminal> {
   /** The paths to each terminal, keyed by the caller's own terminal handle. */
@@ -744,6 +768,7 @@ export function enumerateStructuredPaths<Cond, Terminal>(
   };
   const ctx: Ctx<Cond, Terminal> = {
     terminalsByStmt: input.terminalsByStmt,
+    keepsArms: input.keepsArms ?? KEEPS_NO_ARMS,
     state,
     isAncestorOrSelf,
   };

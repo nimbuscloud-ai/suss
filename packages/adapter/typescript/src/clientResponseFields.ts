@@ -9,14 +9,23 @@
  * `metadata.http` the same way.
  */
 
-import { isCatchEntry, readHttpMetadata } from "@suss/behavioral-ir";
+import {
+  isCatchEntry,
+  readHttpMetadata,
+  statusMembersOf,
+  testsStatus,
+} from "@suss/behavioral-ir";
+
+import { parseConditionExpression } from "./predicates.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
+  KeepsArms,
   PatternPack,
   RawCodeStructure,
   ResponsePropertyMapping,
 } from "@suss/extractor";
+import type { Expression } from "ts-morph";
 
 export type ClientResponseFields = Pick<
   RawCodeStructure,
@@ -64,6 +73,22 @@ export function clientResponseFieldsOfPack(
     ...(pack.redirectDelivery === undefined
       ? {}
       : { redirectDelivery: pack.redirectDelivery }),
+  };
+}
+
+/**
+ * Which of a caller's tests go on as separate paths: the ones on the
+ * response status or success flag. Each arm of such a test is a branch
+ * on that status even when neither arm returns, so the checker sees
+ * which statuses the caller handles.
+ */
+export function keepsStatusArms(
+  fields: ClientResponseFields,
+): KeepsArms<Expression> {
+  const members = statusMembersOf(fields);
+  return (condition) => {
+    const test = parseConditionExpression(condition);
+    return test !== null && testsStatus(test, members);
   };
 }
 

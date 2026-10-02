@@ -153,6 +153,7 @@ export type {
 } from "./framework.js";
 export type { LanguageAdapter } from "./languageAdapter.js";
 export type {
+  KeepsArms,
   StructuredPathConditionsInput,
   StructuredPathConditionsResult,
 } from "./paths/enumeratePaths.js";

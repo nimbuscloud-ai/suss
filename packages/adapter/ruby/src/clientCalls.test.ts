@@ -228,6 +228,36 @@ describe("a method that calls a request method", () => {
     });
   });
 
+  it("gives each arm of a success test a branch when neither arm returns", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def refresh",
+        '    response = HttpClient.get("/orders")',
+        "    if response.success?",
+        "      @orders = response.body",
+        "    else",
+        "      @orders = []",
+        "    end",
+        "    @loaded = true",
+        "  end",
+        "end",
+      ].join("\n"),
+      { ...REQUEST_CALLS, response: { success: ["success?"] } },
+    );
+
+    const conditions = (units[0]?.branches ?? []).map((branch) =>
+      branch.conditions.map(
+        (condition) => `${condition.polarity} ${condition.sourceText}`,
+      ),
+    );
+    expect(conditions).toEqual([
+      [],
+      ["positive response.success?"],
+      ["negative response.success?"],
+    ]);
+  });
+
   it("says nothing about a receiverless call of the same name", async () => {
     const units = await unitsIn(
       [
