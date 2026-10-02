@@ -27,13 +27,13 @@ import {
   recognizedWithoutPackSentence,
   unnamedLanguageSentence,
   unnamedLanguages,
+  withContractsReadOnce,
   withReadableCode,
-  withReadableContracts,
 } from "./init.js";
 import { run } from "./processRun.js";
 import { PROJECT_FILE, projectFileFor } from "./projectFile.js";
 import { writeProjectSetup } from "./projectSetup.js";
-import { hasProjectSource } from "./projectSource.js";
+import { hasProjectSource, isSameOrUnder } from "./projectSource.js";
 import { filesBelow, isProjectIn, projectsBelow } from "./projectsBelow.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
@@ -155,25 +155,33 @@ async function findTargets(root: string): Promise<Target[]> {
     add(path.dirname(manifest));
   }
 
-  const targets: Target[] = [];
+  const inspected: Target[] = [];
   for (const known of directories) {
-    targets.push({
+    inspected.push({
       ...known,
-      report: withReadableCode(
-        await withReadableContracts(
-          await inspectProject(path.join(root, known.directory)),
-        ),
-      ),
+      report: await inspectProject(path.join(root, known.directory)),
     });
   }
 
   if (inWorkspace && !directories.some((known) => known.directory === ".")) {
-    targets.push(await workspaceRootContracts(root));
+    inspected.push(await workspaceRootContracts(root));
   }
 
-  const reported = withoutLanguagesCoveredBelow(
-    withoutContractsOfProjectsBelow(targets),
-  ).filter(isWorthReporting);
+  // A folder leaves the specs in the folders below it to them before any
+  // spec is read. Copies are then compared across every folder, since one
+  // check reads all of their summaries.
+  const below = withoutContractsOfProjectsBelow(inspected);
+  const reports = await withContractsReadOnce(
+    root,
+    below.map((target) => target.report),
+  );
+  const targets = below.map((target, index) => ({
+    ...target,
+    report: withReadableCode(reports[index] ?? target.report),
+  }));
+
+  const reported =
+    withoutLanguagesCoveredBelow(targets).filter(isWorthReporting);
   return withRepositoryNotesOnce(reported);
 }
 
@@ -207,31 +215,42 @@ function isWorthReporting(target: Target): boolean {
 }
 
 /**
- * The root finds the specs in the folders one level down, and each of
- * those folders is a target of its own now, so the root leaves them to
- * it. Read twice, one spec would look like two providers of every route.
+ * A folder's walk finds the specs in the Python and Ruby projects below
+ * it, and each of those is a target of its own, so the folder leaves
+ * them to it. Read twice, one spec would look like two providers of
+ * every route.
  */
 function withoutContractsOfProjectsBelow(targets: Target[]): Target[] {
-  const below = targets
-    .map((target) => target.directory)
-    .filter((directory) => directory !== ".");
-  return targets.map((target) =>
-    target.directory === "."
-      ? {
-          ...target,
-          report: {
-            ...target.report,
-            suggestions: target.report.suggestions.filter(
-              (suggestion) =>
-                suggestion.file === undefined ||
-                !below.some((directory) =>
-                  suggestion.file?.startsWith(`${directory}${path.sep}`),
-                ),
+  const directories = targets.map((target) => target.directory);
+  return targets.map((target) => {
+    const below = directories.filter((directory) =>
+      isBelow(directory, target.directory),
+    );
+    if (below.length === 0) {
+      return target;
+    }
+
+    return {
+      ...target,
+      report: {
+        ...target.report,
+        suggestions: target.report.suggestions.filter(
+          (suggestion) =>
+            suggestion.file === undefined ||
+            !below.some((directory) =>
+              isSameOrUnder(
+                path.join(target.directory, suggestion.file ?? ""),
+                directory,
+              ),
             ),
-          },
-        }
-      : target,
-  );
+        ),
+      },
+    };
+  });
+}
+
+function isBelow(directory: string, ancestor: string): boolean {
+  return directory !== ancestor && isSameOrUnder(directory, ancestor);
 }
 
 /** A note about the whole repository goes on the first project that has it, rather than on every one. */
@@ -268,7 +287,7 @@ async function workspaceRootContracts(root: string): Promise<Target> {
   return {
     directory: ".",
     label: path.basename(root),
-    report: await withReadableContracts({
+    report: {
       ...report,
       suggestions: report.suggestions.filter(
         (suggestion) => suggestion.kind === "contract",
@@ -276,7 +295,7 @@ async function workspaceRootContracts(root: string): Promise<Target> {
       languages: [],
       unread: [],
       recognizedWithoutPack: [],
-    }),
+    },
   };
 }
 

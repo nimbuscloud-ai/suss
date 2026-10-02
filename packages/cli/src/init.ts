@@ -95,7 +95,7 @@ export interface InitReport {
   recognizedWithoutPack?: string[];
   /** Contract files whose reader found nothing in them, so no command reads them. Only `withReadableContracts` fills it. */
   emptyContracts?: EmptyContract[];
-  /** Contract files whose every boundary another file here also declares. Only `withReadableContracts` fills it. */
+  /** Contract files whose every boundary another file here, or in another project `init` sets up, also declares. Only `withReadableContracts` and `withContractsReadOnce` fill it. */
   coveredContracts?: CoveredContract[];
   /** Languages whose extract would have no file to read here, so no command reads them. Only `withReadableCode` fills it. */
   emptyExtracts?: EmptyExtract[];
@@ -112,7 +112,7 @@ export interface EmptyContract {
 export interface CoveredContract {
   name: string;
   because: string;
-  /** The file, relative to the project, whose command reads the same boundaries. */
+  /** The file, relative to this project, whose command reads the same boundaries. */
   coveredBy: string;
 }
 
@@ -467,33 +467,112 @@ function withoutIdleShippedPacks(
 export async function withReadableContracts(
   report: InitReport,
 ): Promise<InitReport> {
-  const emptyContracts: EmptyContract[] = [];
-  const dropped = new Set<PackSuggestion>();
-  const contentRead = new Map<PackSuggestion, ContentByBoundary | null>();
+  const [read] = await withContractsReadOnce(report.root, [report]);
+  return read ?? report;
+}
+
+/**
+ * Each report as `withReadableContracts` gives it, and with a file moved
+ * out when a file in any of the reports declares its boundaries the same
+ * way. The reports are of folders at or below `root`, whose summaries one
+ * check reads together, so a spec copied into two of them would provide
+ * every boundary twice.
+ */
+export async function withContractsReadOnce(
+  root: string,
+  reports: ReadonlyArray<InitReport>,
+): Promise<InitReport[]> {
+  const reads: ContractsRead[] = [];
+  for (const report of reports) {
+    reads.push(await readContractsOf(report));
+  }
+
+  const everyFile = new Map<RootContractFile, ContentByBoundary | null>();
+  for (const [index, read] of reads.entries()) {
+    const directory = path.relative(root, read.report.root);
+    for (const { suggestion, file, content } of read.readable) {
+      everyFile.set(
+        {
+          name: suggestion.name,
+          file: path.join(directory, file),
+          suggestion,
+          index,
+        },
+        content,
+      );
+    }
+  }
+  const covered = contractsCoveredByAnother(root, everyFile);
+
+  return reads.map((read, index) =>
+    withContractsMovedOut(
+      read,
+      covered
+        .filter(({ suggestion }) => suggestion.index === index)
+        .map(({ suggestion, coveredBy }) => ({
+          suggestion: suggestion.suggestion,
+          coveredBy: path.relative(
+            read.report.root,
+            path.join(root, coveredBy),
+          ),
+        })),
+    ),
+  );
+}
+
+/** A contract file named by its path from the root every report is under. */
+interface RootContractFile {
+  name: string;
+  file: string;
+  suggestion: PackSuggestion;
+  /** Which report the file is in. */
+  index: number;
+}
+
+interface ContractsRead {
+  report: InitReport;
+  readable: Array<{
+    suggestion: PackSuggestion;
+    file: string;
+    content: ContentByBoundary | null;
+  }>;
+  empty: Array<{ suggestion: PackSuggestion; entry: EmptyContract }>;
+}
+
+async function readContractsOf(report: InitReport): Promise<ContractsRead> {
+  const read: ContractsRead = { report, readable: [], empty: [] };
   for (const suggestion of report.suggestions) {
     if (suggestion.kind !== "contract" || suggestion.file === undefined) {
       continue;
     }
-    const read = await readForInit(
+    const result = await readForInit(
       suggestion.name as ContractSource,
       path.join(report.root, suggestion.file),
     );
-    if ("content" in read) {
-      contentRead.set(suggestion, read.content);
+    if ("content" in result) {
+      read.readable.push({
+        suggestion,
+        file: suggestion.file,
+        content: result.content,
+      });
       continue;
     }
-    dropped.add(suggestion);
-    emptyContracts.push({
-      name: suggestion.name,
-      because: suggestion.because,
-      ...read,
+    read.empty.push({
+      suggestion,
+      entry: { name: suggestion.name, because: suggestion.because, ...result },
     });
   }
+  return read;
+}
 
-  const coveredContracts = contractsCoveredByAnother(report.root, contentRead);
-  for (const { suggestion } of coveredContracts) {
-    dropped.add(suggestion);
-  }
+function withContractsMovedOut(
+  { report, empty }: ContractsRead,
+  covered: ReadonlyArray<{ suggestion: PackSuggestion; coveredBy: string }>,
+): InitReport {
+  const dropped = new Set([
+    ...empty.map(({ suggestion }) => suggestion),
+    ...covered.map(({ suggestion }) => suggestion),
+  ]);
   if (dropped.size === 0) {
     return report;
   }
@@ -503,10 +582,13 @@ export async function withReadableContracts(
     suggestions: withoutIdleShippedPacks(
       report.suggestions.filter((suggestion) => !dropped.has(suggestion)),
     ),
-    emptyContracts: [...(report.emptyContracts ?? []), ...emptyContracts],
+    emptyContracts: [
+      ...(report.emptyContracts ?? []),
+      ...empty.map(({ entry }) => entry),
+    ],
     coveredContracts: [
       ...(report.coveredContracts ?? []),
-      ...coveredContracts.map(({ suggestion, coveredBy }) => ({
+      ...covered.map(({ suggestion, coveredBy }) => ({
         name: suggestion.name,
         because: suggestion.because,
         coveredBy,
