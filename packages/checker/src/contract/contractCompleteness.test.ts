@@ -120,6 +120,46 @@ describe("checkContractCompleteness", () => {
     ]);
   });
 
+  it("leaves an operation unserved by a route of its shape that keys the resource deeper", () => {
+    // The code reads and changes a relation at /relations/:collection/:field,
+    // and /relations/:collection lists a collection's relations.
+    const findings = checkContractCompleteness([
+      stub("GET", "/relations"),
+      stub("GET", "/relations/{id}"),
+      stub("PATCH", "/relations/{id}"),
+      implemented("GET", "/relations"),
+      implemented("GET", "/relations/:collection"),
+      implemented("GET", "/relations/:collection/:field"),
+      implemented("PATCH", "/relations/:collection/:field"),
+    ]);
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "The openapi contract declares GET /relations/{id} and no extracted provider implements it.",
+      "The openapi contract declares PATCH /relations/{id} and no extracted provider implements it.",
+    ]);
+  });
+
+  it("counts a route of the operation's shape that serves its methods, whatever it calls the parameter", () => {
+    const findings = checkContractCompleteness([
+      stub("GET", "/collections/{id}"),
+      stub("PATCH", "/collections/{id}"),
+      implemented("GET", "/collections/:collection"),
+      implemented("PATCH", "/collections/:collection"),
+      implemented("PATCH", "/collections/:collection/fields/:field"),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("counts a route that only lacks one of the document's methods as serving the others", () => {
+    const findings = checkContractCompleteness([
+      stub("GET", "/orders/{id}"),
+      stub("DELETE", "/orders/{id}"),
+      implemented("GET", "/orders/:pk"),
+    ]);
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "The openapi contract declares DELETE /orders/{id} and no extracted provider implements it.",
+    ]);
+  });
+
   it("says nothing when every declared operation is implemented", () => {
     const findings = checkContractCompleteness([
       stub("POST", "/v1/provision"),

@@ -287,6 +287,8 @@ A contract source declares an operation and no extracted provider implements it.
 
 The handler may be in a repository suss did not read, so no outcome can be stated.
 
+An operation meets a route of the same shape however each side spells the parameter, so `/orders/{order_id}` is served by `/orders/:pk`. The exception is a route that describes a different resource: when the parameter names disagree and the code serves the document's other methods for that path only at a longer path below the route, as `/relations/:collection/:field` does for a document's `/relations/{id}`, the operation is reported.
+
 **Legitimate when:** the handler is in another repository or another service. Suppress.
 
 **A bug when:** the operation was removed from the code and the contract still declares it. Take it out of the contract.
