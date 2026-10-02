@@ -996,18 +996,37 @@ function printedSeverity(failOn: FailOn | undefined): number {
 }
 
 /**
+ * The kind of finding that says suss could not compare something it read,
+ * as when a body is typed in a way the checker does not compare. A reader
+ * has nothing to act on in one, so a report that does not print it leaves
+ * it out of the tally as well.
+ */
+const NOTE_KINDS: ReadonlySet<Finding["kind"]> = new Set(["lowConfidence"]);
+
+/**
  * Renders the findings for a person. Errors, warnings and anything else
  * that fails the run print in full, and the rest are counted by kind,
  * unless `scope.all` is set.
  * `--json` output does not go through here.
  */
 export function renderFindings(
-  findings: Finding[],
+  allFindings: Finding[],
   confidence: ConfidenceLookup,
   scope: ReportScope = {},
 ): string {
+  const printed = printedSeverity(scope.failOn);
+  const shown =
+    scope.all === true
+      ? allFindings
+      : allFindings.filter((f) => SEVERITY_ORDER[f.severity] <= printed);
+  const printedOut = new Set(shown);
+  const notes = new Set(
+    allFindings.filter((f) => NOTE_KINDS.has(f.kind) && !printedOut.has(f)),
+  );
+  const findings = allFindings.filter((f) => !notes.has(f));
   if (findings.length === 0) {
-    return "No findings.\n";
+    const lines = ["No findings.", ...notShownLines([], shown, notes.size)];
+    return `${lines.join("\n")}\n`;
   }
 
   const lines: string[] = [];
@@ -1016,11 +1035,6 @@ export function renderFindings(
     counts[f.severity] += 1;
   }
 
-  const printed = printedSeverity(scope.failOn);
-  const shown =
-    scope.all === true
-      ? findings
-      : findings.filter((f) => SEVERITY_ORDER[f.severity] <= printed);
   for (const f of shown) {
     lines.push(`${"─".repeat(60)}`);
     const sevLabel = formatSeverityHeader(f);
@@ -1053,7 +1067,7 @@ export function renderFindings(
   lines.push(
     `${findings.length} finding${findings.length === 1 ? "" : "s"}: ${counts.error} error, ${counts.warning} warning, ${counts.info} info`,
   );
-  lines.push(...notShownLines(findings, shown));
+  lines.push(...notShownLines(findings, shown, notes.size));
 
   return `${lines.join("\n")}\n`;
 }
@@ -1065,16 +1079,17 @@ function alsoFromLines(f: Finding, shown: string): string[] {
 }
 
 /**
- * A count, by kind, of the findings the report did not print. Empty
- * when every finding was printed.
+ * A count, by kind, of the findings the report did not print, and of the
+ * notes it left out. Empty when it printed everything.
  */
 function notShownLines(
   findings: ReadonlyArray<Finding>,
   shown: ReadonlyArray<Finding>,
+  notes: number,
 ): string[] {
   const printedOut = new Set(shown);
   const hidden = findings.filter((f) => !printedOut.has(f));
-  if (hidden.length === 0) {
+  if (hidden.length + notes === 0) {
     return [];
   }
 
@@ -1085,12 +1100,18 @@ function notShownLines(
   }
   const spelled = [...perKind]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([key, count]) => `${count} ${key}`)
-    .join(", ");
+    .map(([key, count]) => `${count} ${key}`);
+  const parts = notes === 0 ? spelled : [...spelled, notesLeftOut(notes)];
   return [
     "",
-    `Not shown: ${spelled}. Run the same command with --all to see ${hidden.length === 1 ? "it" : "them"}.`,
+    `Not shown: ${parts.join(", ")}. Run the same command with --all to see ${hidden.length + notes === 1 ? "it" : "them"}.`,
   ];
+}
+
+function notesLeftOut(notes: number): string {
+  return notes === 1
+    ? "1 lowConfidence note on something suss read but could not compare"
+    : `${notes} lowConfidence notes on things suss read but could not compare`;
 }
 
 function formatSeverityHeader(f: Finding): string {

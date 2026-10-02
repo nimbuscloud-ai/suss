@@ -187,6 +187,18 @@ describe("the module a story's component comes from", () => {
     expect(story?.componentModule).toBeUndefined();
     expect(story?.componentImport).toBe("@ui/Badge/Badge");
   });
+
+  it("reads the same stories with no module when asked to leave modules out", () => {
+    const [summary] = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/Chip.stories.tsx")],
+      { projectRoot: importsDir, componentModules: false },
+    );
+    const story =
+      summary === undefined ? undefined : readStorybookMetadata(summary);
+    expect(summary?.identity.name).toBe("Chip.Default");
+    expect(story?.componentModule).toBeUndefined();
+    expect(story?.componentImport).toBe("@ui/Chip/Chip");
+  });
 });
 
 describe("args on the meta", () => {

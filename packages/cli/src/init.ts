@@ -20,7 +20,7 @@ import { describesOperations, describesTypes } from "@suss/contract-graphql";
 import { isConfigurationFile } from "@suss/contract-wrangler";
 import { commonDirectoryOf } from "@suss/extractor";
 
-import { readContract } from "./contract.js";
+import { sampleContract } from "./contract.js";
 import {
   contentByBoundary,
   contractsCoveredByAnother,
@@ -610,9 +610,10 @@ async function readForInit(
 > {
   const warnings: string[] = [];
   try {
-    const summaries = await readContract({ from, spec, warnings });
+    const { summaries, whole } = await sampleContract({ from, spec, warnings });
     if (summaries.length > 0) {
-      return { content: contentByBoundary(summaries) };
+      // Part of a file cannot be compared with another file for copies.
+      return { content: whole ? contentByBoundary(summaries) : null };
     }
 
     return {

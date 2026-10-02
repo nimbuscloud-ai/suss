@@ -2201,41 +2201,86 @@ describe("the collapsed report", () => {
     expect(output).not.toContain("Not shown:");
   });
 
-  it("counts an info finding it leaves out, and names the flag that shows it", () => {
-    const findings: Finding[] = [
-      {
-        kind: "lowConfidence",
-        severity: "info",
-        description: "The provider summary was read with low confidence",
-        provider: {
-          summary: "src/a.ts::a",
-          location: {
-            file: "src/a.ts",
-            range: { start: 1, end: 2 },
-            exportName: "a",
-          },
-        },
-        consumer: {
-          summary: "src/b.ts::b",
-          location: {
-            file: "src/b.ts",
-            range: { start: 1, end: 2 },
-            exportName: "b",
-          },
-        },
-        boundary: {
-          transport: "http",
-          semantics: { name: "function-call" },
-          recognition: "ts-rest",
+  function infoFinding(kind: Finding["kind"], name: string): Finding {
+    return {
+      kind,
+      severity: "info",
+      description: `An info finding on ${name}`,
+      provider: {
+        summary: `src/${name}.ts::${name}`,
+        location: {
+          file: `src/${name}.ts`,
+          range: { start: 1, end: 2 },
+          exportName: name,
         },
       },
-    ];
-    const output = renderFindings(findings, new Map());
+      consumer: {
+        summary: "src/b.ts::b",
+        location: {
+          file: "src/b.ts",
+          range: { start: 1, end: 2 },
+          exportName: "b",
+        },
+      },
+      boundary: {
+        transport: "http",
+        semantics: { name: "function-call" },
+        recognition: "ts-rest",
+      },
+    };
+  }
+
+  it("counts an info finding it leaves out, and names the flag that shows it", () => {
+    const output = renderFindings(
+      [infoFinding("boundaryFieldUnused", "orders")],
+      new Map(),
+    );
 
     expect(output).not.toContain("[INFO]");
+    expect(output).toContain("1 finding: 0 error, 0 warning, 1 info");
     expect(output).toContain(
-      "Not shown: 1 lowConfidence (info). Run the same command with --all to see it.",
+      "Not shown: 1 boundaryFieldUnused (info). Run the same command with --all to see it.",
     );
+  });
+
+  it("leaves a lowConfidence note out of the tally and says it left it out", () => {
+    const output = renderFindings(
+      [infoFinding("lowConfidence", "orders")],
+      new Map(),
+    );
+
+    expect(output).not.toContain("[INFO]");
+    expect(output).not.toContain("1 finding");
+    expect(output).toBe(
+      "No findings.\n\nNot shown: 1 lowConfidence note on something suss read but could not compare. Run the same command with --all to see it.\n",
+    );
+  });
+
+  it("names the notes after the findings it did not print", () => {
+    const output = renderFindings(
+      [
+        infoFinding("lowConfidence", "orders"),
+        infoFinding("lowConfidence", "accounts"),
+        infoFinding("boundaryFieldUnused", "invoices"),
+      ],
+      new Map(),
+    );
+
+    expect(output).toContain("1 finding: 0 error, 0 warning, 1 info");
+    expect(output).toContain(
+      "Not shown: 1 boundaryFieldUnused (info), 2 lowConfidence notes on things suss read but could not compare. Run the same command with --all to see them.",
+    );
+  });
+
+  it("prints and counts a lowConfidence note under --all and when --fail-on reaches it", () => {
+    const findings = [infoFinding("lowConfidence", "orders")];
+
+    for (const scope of [{ all: true }, { failOn: "info" as const }]) {
+      const output = renderFindings(findings, new Map(), scope);
+      expect(output).toContain("[INFO] lowConfidence");
+      expect(output).toContain("1 finding: 0 error, 0 warning, 1 info");
+      expect(output).not.toContain("Not shown:");
+    }
   });
 
   it("writes both out under --all", () => {

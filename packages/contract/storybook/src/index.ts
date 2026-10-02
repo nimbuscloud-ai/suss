@@ -56,6 +56,13 @@ export interface StorybookStubOptions {
    * on every machine. Defaults to the working directory.
    */
   projectRoot?: string;
+  /**
+   * False leaves out `componentModule`, the file each component is
+   * declared in. Finding it means reading the story under its tsconfig,
+   * whose path aliases make the type checker load most of the app, so a
+   * caller that only asks whether a file has stories passes false.
+   */
+  componentModules?: boolean;
 }
 
 /**
@@ -68,14 +75,18 @@ export function generateSummariesFromStories(
   options: StorybookStubOptions = {},
 ): BehavioralSummary[] {
   const projectRoot = options.projectRoot ?? process.cwd();
+  const componentModules = options.componentModules ?? true;
   const byFile = new Map<string, BehavioralSummary[]>();
+  const groups: Map<string | null, string[]> = componentModules
+    ? filesByTsconfig(filePaths)
+    : new Map([[null, filePaths]]);
 
-  for (const [tsconfig, files] of filesByTsconfig(filePaths)) {
+  for (const [tsconfig, files] of groups) {
     const project = projectFor(tsconfig);
     const resolution = new ResolutionStore();
     for (const sf of files.map((fp) => project.addSourceFileAtPath(fp))) {
       const relPath = path.relative(projectRoot, sf.getFilePath());
-      const meta = extractMeta(sf, resolution);
+      const meta = extractMeta(sf, resolution, componentModules);
       if (meta === null) {
         continue;
       }
@@ -271,6 +282,7 @@ interface ComponentModule {
 function extractMeta(
   sf: SourceFile,
   resolution: ResolutionStore,
+  componentModules: boolean,
 ): MetaInfo | null {
   for (const exported of resolution.exportsOf(sf).get("default") ?? []) {
     const meta = objectBehind(exported, resolution);
@@ -281,7 +293,9 @@ function extractMeta(
     if (component !== null) {
       return {
         componentName: component.getText(),
-        componentModule: declaredModuleOf(component),
+        componentModule: componentModules
+          ? declaredModuleOf(component)
+          : undefined,
         componentImport: importSpecifierOf(component),
         args: argsOf(meta, resolution),
         argReaders: argReadersOf(meta, resolution),
