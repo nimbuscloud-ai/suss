@@ -88,4 +88,27 @@ describe("predicateRefs", () => {
 
     expect(predicateRefs(test)).toEqual([pythonStatus]);
   });
+
+  it("collects the subject of a null, type and property check", () => {
+    const test: Predicate = {
+      type: "compound",
+      op: "or",
+      operands: [
+        { type: "nullCheck", subject: pythonStatus, negated: false },
+        { type: "typeCheck", subject: fetchStatus, expectedType: "number" },
+        {
+          type: "propertyExists",
+          subject: pythonStatus,
+          property: "code",
+          negated: false,
+        },
+      ],
+    };
+
+    expect(predicateRefs(test)).toEqual([
+      pythonStatus,
+      fetchStatus,
+      pythonStatus,
+    ]);
+  });
 });
