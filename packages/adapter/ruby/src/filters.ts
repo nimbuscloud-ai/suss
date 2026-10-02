@@ -564,11 +564,22 @@ function skipsOf(
     .map((methodName) => ({ filterName, methodName, actions }));
 }
 
-/** Whether two declarations register the same method through the same call. */
+/**
+ * Whether two declarations register the same method through the same call.
+ * Rails keys a callback by its symbol, so a block that calls the method is
+ * a callback of its own, and declaring it neither moves nor replaces one.
+ */
 function sameFilter(one: Declaration, other: Declaration): boolean {
   return (
-    one.filter.name === other.filter.name && one.methodName === other.methodName
+    namedBySymbol(one) &&
+    namedBySymbol(other) &&
+    one.filter.name === other.filter.name &&
+    one.methodName === other.methodName
   );
+}
+
+function namedBySymbol(declaration: Declaration): boolean {
+  return declaration.inline === undefined;
 }
 
 /**
@@ -583,6 +594,7 @@ function applySkips(
   for (const declaration of declared) {
     const reaching = skips.filter(
       (skip) =>
+        namedBySymbol(declaration) &&
         skip.filterName === declaration.filter.name &&
         skip.methodName === declaration.methodName,
     );

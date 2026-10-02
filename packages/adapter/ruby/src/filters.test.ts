@@ -323,6 +323,40 @@ end
     ]);
   });
 
+  it("keeps a block that calls a filter method apart from the symbol registration of that method", async () => {
+    const filters = await filtersOf(`
+class ApplicationController < ActionController::Base
+  before_action :load_order, only: [:show, :update]
+  before_action :audit
+end
+
+class OrdersController < ApplicationController
+  before_action(only: [:refund]) { load_order }
+  before_action(except: [:index]) { audit }
+  skip_before_action :audit
+
+  def load_order
+    @order = Order.find(params[:id])
+  end
+
+  def audit
+  end
+end
+`);
+
+    expect(
+      filters.map((one) => [
+        one.methodName,
+        one.only === null ? null : [...one.only],
+        [...one.except],
+      ]),
+    ).toEqual([
+      ["load_order", ["show", "update"], []],
+      ["load_order", ["refund"], []],
+      ["audit", null, ["index"]],
+    ]);
+  });
+
   it("reads a rescue_from block that responds in place, with a label that keeps through a class rename", async () => {
     const source = (closed: string) => `
 class OrdersController < ApplicationController
