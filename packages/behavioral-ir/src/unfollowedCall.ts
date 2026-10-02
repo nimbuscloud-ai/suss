@@ -79,6 +79,33 @@ export function worthRecording(reason: UnfollowedReason): boolean {
   return RECORDED[reason];
 }
 
+/**
+ * The calls one body stops at, one entry per reason and callee however
+ * many times the body makes the call. An entry keeps `usedAsValue` only
+ * while every one of those calls uses the result as a value, since one
+ * call written as a statement may be where the unit sends its response.
+ */
+export class StopList {
+  readonly stops: UnfollowedCall[] = [];
+  private readonly indexOf = new Map<string, number>();
+
+  add(stop: UnfollowedCall): void {
+    const key = `${stop.reason}:${stop.callee}`;
+    const at = this.indexOf.get(key);
+    if (at === undefined) {
+      this.indexOf.set(key, this.stops.length);
+      this.stops.push(stop);
+      return;
+    }
+
+    const earlier = this.stops[at] as UnfollowedCall;
+    if (earlier.usedAsValue === true && stop.usedAsValue !== true) {
+      const { usedAsValue: _, ...asStatement } = earlier;
+      this.stops[at] = asStatement;
+    }
+  }
+}
+
 const STOP_SENTENCE: Record<
   UnfollowedReason,
   (stop: UnfollowedCall) => string

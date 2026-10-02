@@ -277,6 +277,7 @@ export {
   unsettledSummaryId,
 } from "./summaryId.js";
 export {
+  StopList,
   type UnfollowedCall,
   type UnfollowedReason,
   unfollowedCallGap,

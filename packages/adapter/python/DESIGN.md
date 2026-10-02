@@ -541,6 +541,8 @@ Where the walk stops, and the reason the gap gives:
 | a call into a package whose source is not in the run | outside the run (no gap) |
 | a value's attribute, `order.save()`, or a call on a call's result | no declaration to follow (no gap) |
 
+A gap whose call has its result used everywhere the body makes it, assigned, compared, tested, passed, or read an attribute off, gets `usedAsValue`. `user = self.current_user()` hands a value back to the dependency, so the checker still counts a dependency that makes the call as read. A call written as a statement or returned does not count, since that is where a function can hand back a response.
+
 When one callee spelling resolves to two definitions in one body, for example `load()` under a class body that imports its own `load`, the call is placed on neither.
 
 A bare name that nothing declares is left unplaced, and the link step then looks for a summary of that name in the caller's own file. A method call that nothing declares, `order.save()`, is placed at its own call instead, so it links to nothing. A module function called `save` in the same file is never what a method call runs.

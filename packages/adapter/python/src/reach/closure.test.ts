@@ -236,6 +236,42 @@ describe("the functions a route reaches", () => {
     );
   });
 
+  it("marks a mixin call whose result the method uses as a value", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class AuthMixin:",
+      "    def check(self, token):",
+      "        account = self.current_account()",
+      "        if self.load_user(token) is None:",
+      "            raise ValueError(token)",
+      "        self.record_visit(account)",
+      "        allowed = self.verify(token)",
+      "        self.verify(token)",
+      "        return allowed",
+      "",
+      "class Service(AuthMixin):",
+      "    pass",
+      "",
+      '@app.get("/items")',
+      "def items(token: str):",
+      "    return Service().check(token)",
+    ]);
+
+    const summaries = await extract();
+    const gaps = unitNamed(summaries, "check").gaps;
+    const gapFor = (callee: string) =>
+      gaps.find(
+        (gap) => gap.type === "unfollowedCall" && gap.callee === callee,
+      );
+    expect(gapFor("self.current_account")?.usedAsValue).toBe(true);
+    expect(gapFor("self.load_user")?.usedAsValue).toBe(true);
+    // A statement can be where the method responds, so it stays unmarked.
+    expect(gapFor("self.record_visit")).toBeDefined();
+    expect(gapFor("self.record_visit")?.usedAsValue).toBeUndefined();
+    expect(gapFor("self.verify")).toBeDefined();
+    expect(gapFor("self.verify")?.usedAsValue).toBeUndefined();
+  });
+
   it("leaves a call on self alone in a class with a base, which may define it", async () => {
     write("app/main.py", [
       ...APP_HEADER,
