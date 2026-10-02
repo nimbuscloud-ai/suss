@@ -8,6 +8,8 @@
   "render": "Rails: the controller method that writes a response body, and its status under the status: keyword",
   "head": "Rails: the controller method that writes a response with a status and no body, the status given first",
   "status": "Rails: the keyword render and head both take the response status under",
+  "to_json": "language: Ruby's json library defines Object#to_json and ActiveSupport extends it; on a hash it encodes the same JSON render json: sends for it",
+  "as_json": "ActiveSupport: Object#as_json, which with no options gives back a hash unchanged for render json: to encode",
   "params": "Rails: ActionController::Metal#params, the request parameters every controller reads",
   "request": "Rails: ActionController::Metal#request, the inbound request object",
   "response": "Rails: ActionController::Metal#response, the outbound response object",
