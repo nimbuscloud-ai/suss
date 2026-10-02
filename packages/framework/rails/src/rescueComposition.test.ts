@@ -18,6 +18,7 @@ Rails.application.routes.draw do
   resources :reports, only: [:show]
   resources :notes, only: [:show]
   resources :invoices, only: [:show]
+  resources :members, only: [:show]
   namespace :api do
     resources :posts, only: [:show]
   end
@@ -128,6 +129,22 @@ class InvoicesController < ApplicationController
   end
 end
 `,
+  "app/controllers/members_controller.rb": `
+class MembersController < ApplicationController
+  skip_before_action :load_account
+  before_action(only: [:show]) { load_member }
+
+  def show
+    render json: @member
+  end
+
+  private
+
+  def load_member
+    @member = Account.find(params[:id])
+  end
+end
+`,
 };
 
 let dir: string | undefined;
@@ -229,6 +246,14 @@ describe("rescue_from composed onto each route", () => {
       [200, null, false],
       ["throw", null, false],
       [410, "rescue_from#0", false],
+    ]);
+  });
+
+  it("sends Rails' 404 for a finder in a before_action written as a block", async () => {
+    const summaries = await extract("asListed");
+    expect(outcomesOfShow(summaries, "MembersController")).toEqual([
+      [404, "load_member", false],
+      [200, null, false],
     ]);
   });
 

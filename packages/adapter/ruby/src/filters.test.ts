@@ -277,6 +277,52 @@ end
     expect(filters.every((one) => one.filter.onThrow === true)).toBe(true);
   });
 
+  it("reads a before_action block or lambda in place of a symbol, with its only: and except:", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action(only: [:show, :refund]) { load_order }
+  before_action -> { check_access(Order) }, except: [:index]
+  before_action(only: :refund) do
+    head :forbidden unless current_user.admin?
+  end
+
+  def load_order
+    @order = Order.find(params[:id])
+  end
+
+  def check_access(model)
+  end
+end
+`);
+
+    expect(
+      filters.map((one) => [
+        one.methodName,
+        one.nameKind,
+        one.only === null ? null : [...one.only],
+        [...one.except],
+      ]),
+    ).toEqual([
+      ["load_order", "binding", ["show", "refund"], []],
+      ["check_access", "binding", null, ["index"]],
+      ["before_action#2", "label", ["refund"], []],
+    ]);
+
+    const unit = filterUnit(
+      filters[2] as never,
+      controllerActionsPattern({
+        ...RAILS_LIKE,
+        statusCodeNames: { ...RAILS_LIKE.statusCodeNames, forbidden: 403 },
+      }),
+      "app/controllers/orders.rb",
+      { bodyContent: "statements" },
+    );
+    expect(unit.branches.map((branch) => branch.terminal.kind)).toEqual([
+      "response",
+      "delegate",
+    ]);
+  });
+
   it("reads a rescue_from block that responds in place, with a label that keeps through a class rename", async () => {
     const source = (closed: string) => `
 class OrdersController < ApplicationController

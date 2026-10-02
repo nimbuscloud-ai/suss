@@ -4,8 +4,8 @@
  * `before_action :require_login` tells the library to call a method
  * before the action, and the request ends there when that method
  * responds. `rescue_from SomeError, with: :not_found` gives a method it
- * calls when the action raised, or a block in place of `with:` gives the
- * code itself. Both are written in the class body,
+ * calls when the action raised. Either can take a block in place of the
+ * method, which then runs instead. Both are written in the class body,
  * inherited by subclasses, narrowed by `only:` and `except:`, and removed
  * again by `skip_before_action`. Each filter method gets a unit of its
  * own, and each action it covers records a reference to that unit.
@@ -77,7 +77,7 @@ interface Declaration {
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
   readonly rescues: Rescues;
-  /** The block given in place of `with:`, read as the handler when no method by that name is found. */
+  /** The block given in place of a method, read as the filter when no method by that name is found. */
   readonly inline?: InlineHandler;
 }
 
@@ -409,20 +409,18 @@ function declarationsOf(
     declaredIn,
     inlineOrdinal,
   );
-  return methodNamesOf(statement, args, filter, facts, inline).map(
-    (methodName) => ({
-      filter,
-      methodName,
-      only,
-      except: except ?? new Set<string>(),
-      rescues,
-      ...(inline === undefined ? {} : { inline }),
-    }),
-  );
+  return methodNamesOf(args, filter, facts, inline).map((methodName) => ({
+    filter,
+    methodName,
+    only,
+    except: except ?? new Set<string>(),
+    rescues,
+    ...(inline === undefined ? {} : { inline }),
+  }));
 }
 
 /**
- * The block a handler is declared with in place of `with:`. It has no
+ * The block a filter is declared with in place of a method. It has no
  * name of its own, so its label counts the blocks declared that way in
  * the class, `rescue_from#0` for the first, and stays the same when the
  * classes it rescues are renamed.
@@ -434,13 +432,8 @@ function inlineHandler(
   declaredIn: ReachedBody,
   ordinal: number,
 ): InlineHandler | undefined {
-  const block = field(statement, "block");
-  if (
-    filter.methodFrom !== "withKeyword" ||
-    args.keyword.with !== undefined ||
-    block === null ||
-    blockStatements(block).length === 0
-  ) {
+  const block = blockInPlaceOfMethod(statement, args, filter);
+  if (block === null || blockStatements(block).length === 0) {
     return undefined;
   }
   return { block, label: `${filter.name}#${ordinal}`, declaredIn };
@@ -473,22 +466,49 @@ function rescuedClasses(
 }
 
 function methodNamesOf(
-  statement: RbNode,
   args: ReturnType<typeof readCallArgs>,
   filter: RbControllerFilter,
   facts: Database | undefined,
   inline: InlineHandler | undefined,
 ): string[] {
-  if (filter.methodFrom === "withKeyword") {
-    const named = args.keyword.with;
-    if (named === undefined) {
-      const called = blockHandlerName(statement) ?? inline?.label ?? null;
-      return called === null ? [] : [called];
-    }
-    const value = stringValueOf(named, facts);
-    return value === null ? [] : [value];
+  const named =
+    filter.methodFrom === "withKeyword"
+      ? withKeywordName(args, facts)
+      : symbolArgumentNames(args, facts);
+  if (named.length > 0 || inline === undefined) {
+    return named;
   }
-  return symbolArgumentNames(args, facts);
+  return [blockHandlerName(inline.block) ?? inline.label];
+}
+
+function withKeywordName(
+  args: ReturnType<typeof readCallArgs>,
+  facts: Database | undefined,
+): string[] {
+  const named = args.keyword.with;
+  const value = named === undefined ? null : stringValueOf(named, facts);
+  return value === null ? [] : [value];
+}
+
+/**
+ * The block a filter is declared with in place of a method: a block in
+ * place of `rescue_from`'s `with:`, or a block or lambda in place of a
+ * `before_action` symbol.
+ */
+function blockInPlaceOfMethod(
+  statement: RbNode,
+  args: ReturnType<typeof readCallArgs>,
+  filter: RbControllerFilter,
+): RbNode | null {
+  if (filter.methodFrom === "withKeyword") {
+    return args.keyword.with === undefined ? field(statement, "block") : null;
+  }
+
+  const lambda = args.positional.find((arg) => arg.type === "lambda");
+  if (lambda !== undefined) {
+    return field(lambda, "body");
+  }
+  return args.positional.length === 0 ? field(statement, "block") : null;
 }
 
 function blockStatements(block: RbNode): RbNode[] {
@@ -498,16 +518,12 @@ function blockStatements(block: RbNode): RbNode[] {
 }
 
 /**
- * The method a block given in place of `with:` hands the error to, when
- * the block is one call with no receiver: `{ |e| render_denied e }`.
- * When no method by that name is found, or the block does more, the
- * block itself is read as the handler.
+ * The method a filter's block hands on to, when the block is one call
+ * with no receiver: `{ |e| render_denied e }`. When no method by that
+ * name is found, or the block does more, the block itself is read as the
+ * filter.
  */
-function blockHandlerName(statement: RbNode): string | null {
-  const block = field(statement, "block");
-  if (block === null) {
-    return null;
-  }
+function blockHandlerName(block: RbNode): string | null {
   const statements = blockStatements(block);
   const only = statements.length === 1 ? statements[0] : undefined;
   if (only === undefined) {
