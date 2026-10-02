@@ -3792,6 +3792,10 @@ describe("consumer extraction", () => {
           return fetch(\`\${this.base}/\${this.channelPrefix(channel)}/archive.tar.gz\`);
         }
       }
+      export async function loadEvents(base: string, query: Record<string, string>) {
+        const params = new URLSearchParams(query).toString();
+        return fetch(\`\${base}/events\${params ? \`?\${params}\` : ""}\`);
+      }
     `,
     );
 
@@ -3800,11 +3804,16 @@ describe("consumer extraction", () => {
       frameworks: [fetchPack],
     });
     const summaries = await adapter.extractAll();
-    const paths = summaries.flatMap((s) => {
-      const sem = s.identity.boundaryBinding?.semantics;
-      return sem?.name === "rest" ? [sem.path] : [];
-    });
-    expect(paths).toEqual(["{base}/{versionPrefix}/archive.tar.gz"]);
+    const paths = summaries
+      .flatMap((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? [sem.path] : [];
+      })
+      .sort();
+    expect(paths).toEqual([
+      "{base}/events{value?}",
+      "{base}/{value}/archive.tar.gz",
+    ]);
   });
 
   it("leaves out a value only a throwing case of a switch keeps", async () => {

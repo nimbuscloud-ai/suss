@@ -70,27 +70,43 @@ describe("join", () => {
     ).toEqual(hole("value"));
   });
 
-  it("gives up on a literal against a string built around holes", () => {
+  it("keeps a difference inside one segment as a hole over that segment", () => {
     const versioned = string([
       textPiece(["v"]),
       holePiece("major"),
       textPiece(["."]),
       holePiece("minor"),
     ]);
-    expect(join(text("latest"), versioned)).toEqual(hole("value"));
-    expect(join(versioned, text("latest"))).toEqual(hole("value"));
+    expect(join(text("latest"), versioned)).toEqual(
+      string([holePiece("value")]),
+    );
+    expect(join(versioned, text("latest"))).toEqual(
+      string([holePiece("value")]),
+    );
   });
 
-  it("gives up on a run of pieces only one side wrote", () => {
+  it("gives up on a difference that can span segments", () => {
+    expect(
+      join(string([textPiece(["/v"]), holePiece("major")]), text("/latest/v1")),
+    ).toEqual(hole("value"));
     expect(
       join(
-        string([textPiece(["/a?"]), holePiece("query")]),
-        string([textPiece(["/a"])]),
+        string([textPiece(["/"]), holePiece("rest", "many")]),
+        text("/latest"),
+      ),
+    ).toEqual(hole("value"));
+  });
+
+  it("makes an optional query string a hole that may be empty", () => {
+    expect(
+      join(
+        string([holePiece("base"), textPiece(["/a?"]), holePiece("query")]),
+        string([holePiece("base"), textPiece(["/a"])]),
       ),
     ).toEqual(hole("value"));
     expect(
       join(string([textPiece(["?"]), holePiece("query")]), text("")),
-    ).toEqual(hole("value"));
+    ).toEqual(string([holePiece("value", "optional")]));
   });
 
   it("unions constants up to a cap", () => {

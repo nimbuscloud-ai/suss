@@ -181,19 +181,34 @@ function joinMiddle(a: readonly Piece[], b: readonly Piece[]): Piece | null {
       return holePiece(left.name, joinRange(left.range, right.range));
     }
   }
-  return null;
+  return staysInOneSegment(a) && staysInOneSegment(b)
+    ? holePiece("value")
+    : null;
 }
 
 /** What a run of pieces is when one branch wrote it and the other did not. */
 function optionalPiece(pieces: readonly Piece[]): Piece | null {
   const only = pieces[0];
   if (pieces.length !== 1 || only === undefined) {
-    return null;
+    return staysInOneSegment(pieces) ? holePiece("value", "optional") : null;
   }
   if (only.kind === "text") {
     return textPiece([...only.options, ""]);
   }
   return holePiece(only.name, joinRange(only.range, "optional"));
+}
+
+/**
+ * Whether a run of pieces can only change the text of one path segment:
+ * no literal in it has a slash, and no hole in it covers more than one
+ * segment. An optional query string such as `?${params}` is one.
+ */
+function staysInOneSegment(pieces: readonly Piece[]): boolean {
+  return pieces.every((piece) =>
+    piece.kind === "text"
+      ? piece.options.every((option) => !option.includes("/"))
+      : piece.range === "one" || piece.range === "optional",
+  );
 }
 
 const RANGE_ORDER: Record<Range, number> = {

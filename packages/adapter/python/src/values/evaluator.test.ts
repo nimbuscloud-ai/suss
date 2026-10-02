@@ -242,7 +242,15 @@ describe("branches and choices", () => {
       await route(
         'prefix = "latest" if flag else f"v{major}.{minor}"\nsubject = f"{base}/{prefix}/archive.tar.gz"',
       ),
-    ).toBe("{base}/{prefix}/archive.tar.gz");
+    ).toBe("{base}/{value}/archive.tar.gz");
+  });
+
+  it("reads an optional query string as a hole that may be empty", async () => {
+    expect(
+      await route(
+        "subject = f\"{base}/events{'?' + params if params else ''}\"",
+      ),
+    ).toBe("{base}/events{value?}");
   });
 
   it("leaves out a value only an arm that raises keeps", async () => {
