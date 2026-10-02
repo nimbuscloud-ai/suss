@@ -73,7 +73,7 @@ import {
   stampModules,
   type TerminalPattern,
 } from "@suss/extractor";
-import { force, literalOf, pathOf, type Value } from "@suss/values";
+import { force, hostOf, literalOf, pathOf, type Value } from "@suss/values";
 
 import {
   bodyContentOf,
@@ -173,7 +173,11 @@ import { moduleSurfacePack, settleTypeScriptModules } from "./moduleSurface.js";
 import { enclosingParameterReads, parameterReads } from "./parameterReads.js";
 import { reportReadFailure } from "./readFailure.js";
 import { createReferenceIndex } from "./referencedFiles.js";
-import { clientBasePath, underBasePath } from "./resolve/clientBasePath.js";
+import {
+  clientBaseHost,
+  clientBasePath,
+  underBasePath,
+} from "./resolve/clientBasePath.js";
 import {
   closureUnitRecords,
   type RecordedScan,
@@ -187,7 +191,11 @@ import {
 } from "./resolve/reachableClosure.js";
 import { redirectDeliveryAtCall } from "./resolve/redirectDelivery.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
-import { pathFromArgument, pathFromProperty } from "./resolve/routePath.js";
+import {
+  hostFromArgument,
+  pathFromArgument,
+  pathFromProperty,
+} from "./resolve/routePath.js";
 import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
 import { unfollowedCallGap } from "./resolve/unfollowedCall.js";
 import { withDefinitions } from "./shapes/definitions.js";
@@ -1015,15 +1023,15 @@ function extractConsumerBinding(
   }
 
   const method = extractBindingMethod(binding, callSite, pack, resolution);
+  // An absolute URL replaces the client's base, the way axios sends it.
+  const ownHost = extractBindingHost(binding, callSite, resolution);
+  const call = callSite.callExpression;
   // The base goes on after a path made only of holes has already been
   // dropped, so a forwarding wrapper still states no route of its own.
   const path = underBasePath(
-    clientBasePath(
-      callSite.callExpression,
-      pattern.match,
-      resolution,
-      callSite.under,
-    ),
+    ownHost === undefined
+      ? clientBasePath(call, pattern.match, resolution, callSite.under)
+      : undefined,
     statedPath(extractBindingPath(binding, callSite, pack, resolution)),
   );
 
@@ -1033,8 +1041,32 @@ function extractConsumerBinding(
     transport: pack.protocol,
     method: method ?? null,
     path: path ?? null,
+    host:
+      ownHost ??
+      clientBaseHost(call, pattern.match, resolution, callSite.under),
     recognition: pack.name,
   });
+}
+
+/** The host the call's own URL is written with, read where the pack reads the path. */
+function extractBindingHost(
+  binding: BindingExtraction,
+  callSite: NonNullable<DiscoveredUnit["callSite"]>,
+  resolution?: ResolutionStore,
+): string | undefined {
+  const p = binding.path;
+  if (p.type !== "fromArgument" && p.type !== "fromArgumentProperty") {
+    return undefined;
+  }
+  const arg = callSite.callExpression.getArguments()[p.position];
+  return arg === undefined
+    ? undefined
+    : hostFromArgument(
+        arg,
+        p.type === "fromArgumentProperty" ? p.property : undefined,
+        resolution,
+        callSite.under,
+      );
 }
 
 function fileRouteBinding(
@@ -1969,6 +2001,8 @@ interface WrapperSink {
    * wrapper on the first round.
    */
   basePath: string | undefined;
+  /** The host in that base, for a caller whose own URL is relative. */
+  baseHost: string | undefined;
 }
 
 function expandWrapperCallers(
@@ -2075,6 +2109,12 @@ function sinkIn(
         resolution,
         unit.callSite.under,
       ),
+      baseHost: clientBaseHost(
+        unit.callSite.callExpression,
+        pattern?.match,
+        resolution,
+        unit.callSite.under,
+      ),
     };
   }
   return null;
@@ -2086,12 +2126,16 @@ function sinkReading(
   bindings: ReadonlyMap<string, Value>,
   resolution: ResolutionStore,
 ): SinkReading | null {
-  const path = sinkPath(sink, bindings, resolution);
-  if (path === undefined) {
+  const url = sinkUrl(sink, bindings, resolution);
+  const path = url === undefined ? undefined : statedPath(pathOf(url));
+  if (url === undefined || path === undefined) {
     return null;
   }
   const method = sinkMethod(sink, bindings, resolution);
-  return method === undefined ? null : { path, method };
+  const host = hostOf(url);
+  return method === undefined
+    ? null
+    : { path, method, ...(host === undefined ? {} : { host }) };
 }
 
 function sinkArgumentValue(
@@ -2117,20 +2161,18 @@ function fieldValue(
   return field === undefined ? undefined : force(field.value);
 }
 
-function sinkPath(
+function sinkUrl(
   sink: WrapperSink,
   bindings: ReadonlyMap<string, Value>,
   resolution: ResolutionStore,
-): string | undefined {
+): Value | undefined {
   const p = sink.extraction.path;
   if (p.type === "fromArgument") {
-    const value = sinkArgumentValue(sink, p.position, bindings, resolution);
-    return value === undefined ? undefined : statedPath(pathOf(value));
+    return sinkArgumentValue(sink, p.position, bindings, resolution);
   }
   if (p.type === "fromArgumentProperty") {
     const record = sinkArgumentValue(sink, p.position, bindings, resolution);
-    const value = fieldValue(record, p.property);
-    return value === undefined ? undefined : statedPath(pathOf(value));
+    return fieldValue(record, p.property);
   }
   return undefined;
 }
@@ -2259,7 +2301,11 @@ function buildCallerSummary(
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
     method: reading.method,
-    path: underBasePath(wrapper.sink.basePath, reading.path),
+    path: underBasePath(
+      reading.host === undefined ? wrapper.sink.basePath : undefined,
+      reading.path,
+    ),
+    host: reading.host ?? wrapper.sink.baseHost,
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
   Object.assign(raw, clientResponseFieldsThroughWrapper(wrapper.summary));

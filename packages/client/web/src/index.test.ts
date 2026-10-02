@@ -240,9 +240,8 @@ describe("webFetchPack — integration", () => {
 describe("webFetchPack — fixtures", () => {
   it("summarizes the ALB fixture's client on the order path, not the absolute URL it calls", async () => {
     // fetchOrder.ts calls `fetch("https://shop.example.com/api/orders/123")`.
-    // Only a summary keyed on /api/orders/123 can ever pair with the ECS
-    // service that serves it, since the provider side never gives the
-    // scheme or host.
+    // The provider side never gives the scheme or host, so the path is
+    // read on its own, and the host goes beside it.
     const fixturesDir = path.resolve(__dirname, "../../../../fixtures/aws-alb");
     const project = createFixtureProject(fixturesDir, "src/client/*.ts");
     const adapter = createTypeScriptAdapter({
@@ -253,7 +252,12 @@ describe("webFetchPack — fixtures", () => {
     const fetchOrder = summaries.find((s) => s.identity.name === "fetchOrder");
     expect(fetchOrder?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/api/orders/123" },
+      semantics: {
+        name: "rest",
+        method: "GET",
+        path: "/api/orders/123",
+        host: "shop.example.com",
+      },
       recognition: "fetch",
     });
   });

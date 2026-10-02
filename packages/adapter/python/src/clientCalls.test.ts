@@ -82,6 +82,32 @@ describe("a function that calls a request function", () => {
     expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 
+  it("keeps the host of an absolute URL beside its path", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def photos(page):",
+        '    return httpclient.get(f"https://photos.example.net/v2/list?page={page}")',
+        "",
+        "def orders():",
+        '    return httpclient.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(
+      units.map((unit) => {
+        const semantics = unit.boundaryBinding?.semantics;
+        return semantics?.name === "rest"
+          ? [semantics.path, semantics.host ?? null]
+          : null;
+      }),
+    ).toEqual([
+      ["/v2/list", "photos.example.net"],
+      ["/orders", null],
+    ]);
+  });
+
   it("reads the URL written under the keyword", async () => {
     const units = await unitsIn(
       [
