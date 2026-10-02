@@ -126,21 +126,43 @@ describe("raisedStatusBranches", () => {
     expect(kinds(rescuing([]))).toEqual([]);
   });
 
-  it("counts a handler whose classes the run could not read as rescuing everything", () => {
+  it("throws where a handler whose classes the run could not read may catch it, keeping the library's status for the route", () => {
     const rescued = [{ classes: [], someUnread: true }];
+    const terminal = raisedTerminal(
+      PATTERN,
+      {
+        name: "RecordNotFound",
+        ancestors: [],
+        incomplete: false,
+        inheritableByUnread: false,
+      },
+      rescued,
+      AT,
+    );
+    expect([terminal.kind, terminal.statusWhenUncaught]).toEqual([
+      "throw",
+      404,
+    ]);
+  });
+
+  it("throws from a filter, whose handlers differ by route, with the library's status for the route", () => {
+    const branches = raisedStatusBranches(
+      PATTERN,
+      STORAGE,
+      [storageCall("find"), storageCall("lock!")],
+      "eachRoute",
+      AT,
+    );
     expect(
-      raisedTerminal(
-        PATTERN,
-        {
-          name: "RecordNotFound",
-          ancestors: [],
-          incomplete: false,
-          inheritableByUnread: false,
-        },
-        rescued,
-        AT,
-      ).kind,
-    ).toBe("throw");
+      branches.map((branch) => [
+        branch.terminal.kind,
+        branch.terminal.exceptionType,
+        branch.terminal.statusWhenUncaught,
+      ]),
+    ).toEqual([
+      ["throw", "RecordNotFound", 404],
+      ["throw", "LockWaitTimeout", undefined],
+    ]);
   });
 
   it("throws with no class for an exception the source computes", () => {

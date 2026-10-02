@@ -91,10 +91,11 @@ function composeOne(
     return narrowed;
   }
 
-  const responses = respondedInstead(wrappers);
-  const own = [...responses, ...summary.transitions];
+  const responses = settledUncaught(respondedInstead(wrappers), wrappers);
+  const unitOwn = settledUncaught(summary.transitions, wrappers);
+  const own = [...responses, ...unitOwn];
   const handled = handledThrows(wrappers, thrownBy(own));
-  const transitions = beside(summary, responses, handled);
+  const transitions = beside(summary, unitOwn, responses, handled);
   if (!keepGaps) {
     return transitions === summary.transitions
       ? narrowed
@@ -118,13 +119,76 @@ function composeOne(
  */
 function beside(
   summary: BehavioralSummary,
+  unitOwn: Transition[],
   responses: readonly Transition[],
   handled: readonly Transition[],
 ): Transition[] {
-  if (responses.length === 0 && handled.length === 0) {
+  if (
+    responses.length === 0 &&
+    handled.length === 0 &&
+    unitOwn === summary.transitions
+  ) {
     return summary.transitions;
   }
-  return withDistinctIds([...responses, ...summary.transitions, ...handled]);
+  return withDistinctIds([...responses, ...unitOwn, ...handled]);
+}
+
+/**
+ * The transitions with each throw the framework responds to by itself,
+ * such as a missing record Rails sends as 404, turned into that response
+ * where no error handler on the route catches it. Where a handler only
+ * may catch it, the throw and the response both stay. The same array
+ * comes back when nothing changed.
+ */
+function settledUncaught(
+  transitions: Transition[],
+  wrappers: readonly ResolvedWrapper[],
+): Transition[] {
+  const handlers = wrappers.filter(
+    (wrapper) => wrapper.reference.onThrow === true,
+  );
+  let changed = false;
+  const settled = transitions.flatMap((transition): Transition[] => {
+    const { output } = transition;
+    if (output.type !== "throw" || output.statusWhenUncaught === undefined) {
+      return [transition];
+    }
+
+    const caught = caughtOnRoute(handlers, output);
+    if (caught === "sure") {
+      return [transition];
+    }
+
+    changed = true;
+    const response: Transition = {
+      ...transition,
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: output.statusWhenUncaught },
+        body: null,
+        headers: {},
+      },
+    };
+    return caught === "uncertain" ? [transition, response] : [response];
+  });
+  return changed ? settled : transitions;
+}
+
+/** Whether one of the route's error handlers surely catches the throw, may catch it, or cannot. */
+function caughtOnRoute(
+  handlers: readonly ResolvedWrapper[],
+  thrown: Thrown,
+): Catch | "no" {
+  if (handlers.some((handler) => handler.reference.catches === undefined)) {
+    return "sure";
+  }
+  const matches = handlers.map((handler) =>
+    catchMatch(handler.reference, thrown),
+  );
+  if (matches.includes("yes")) {
+    return "sure";
+  }
+  return matches.includes("maybe") ? "uncertain" : "no";
 }
 
 /**
