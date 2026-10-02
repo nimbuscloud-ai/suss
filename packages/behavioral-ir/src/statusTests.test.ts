@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   predicateRefs,
   refEndsInMember,
+  replacePredicateRefs,
   statusMembersOf,
   testsStatus,
 } from "./statusTests.js";
@@ -110,5 +111,57 @@ describe("predicateRefs", () => {
       fetchStatus,
       pythonStatus,
     ]);
+  });
+});
+
+describe("replacePredicateRefs", () => {
+  const helperStatus: ValueRef = {
+    type: "input",
+    inputRef: "resp",
+    path: ["status_code"],
+  };
+  const toCaller = (ref: ValueRef): ValueRef =>
+    ref.type === "input" && ref.inputRef === "resp" ? pythonStatus : ref;
+
+  it("replaces every value under each kind of test, and leaves the rest", () => {
+    const test: Predicate = {
+      type: "negation",
+      operand: {
+        type: "compound",
+        op: "or",
+        operands: [
+          {
+            type: "comparison",
+            left: helperStatus,
+            op: "gte",
+            right: literal(400),
+          },
+          { type: "nullCheck", subject: helperStatus, negated: false },
+          { type: "truthinessCheck", subject: helperStatus, negated: true },
+          { type: "typeCheck", subject: helperStatus, expectedType: "number" },
+          {
+            type: "propertyExists",
+            subject: helperStatus,
+            property: "code",
+            negated: false,
+          },
+          { type: "call", callee: "check", args: [helperStatus] },
+          { type: "opaque", sourceText: "x", reason: "complexExpression" },
+        ],
+      },
+    };
+
+    const replaced = replacePredicateRefs(test, toCaller);
+
+    expect(predicateRefs(replaced)).toEqual([
+      pythonStatus,
+      literal(400),
+      pythonStatus,
+      pythonStatus,
+      pythonStatus,
+      pythonStatus,
+      pythonStatus,
+    ]);
+    expect(predicateRefs(test)).toContainEqual(helperStatus);
   });
 });

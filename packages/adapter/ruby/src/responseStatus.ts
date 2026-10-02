@@ -474,6 +474,7 @@ export function returnPathBranches(
   exits: readonly EndingCall[] = [],
   facts?: Database,
   keepsArms?: KeepsArms<RbNode>,
+  raises: readonly EndingCall[] = [],
 ): RawBranch[] | null {
   const body = field(method, "body");
   if (body === null) {
@@ -481,14 +482,21 @@ export function returnPathBranches(
   }
   const returns = collectReturns(body, []);
   const exitCalls = exits.map((exit) => exit.call);
-  const lowered = lowerRubyBody(body, [...returns, ...exitCalls], exitCalls);
+  const terminals = [
+    ...returns,
+    ...exitCalls,
+    ...raises.map((raise) => raise.call),
+  ];
+  // The lowering already knows a raise leaves the method, so only an
+  // exit call is passed as one that ends it.
+  const lowered = lowerRubyBody(body, terminals, exitCalls);
   const enumerated = enumerateOrDegrade(
     {
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
       ...(keepsArms === undefined ? {} : { keepsArms }),
     },
-    [...returns, ...exitCalls],
+    terminals,
   );
 
   const inputs = conditionInputs(
@@ -521,8 +529,8 @@ export function returnPathBranches(
       returnTerminal(rangeOf(statement)),
     );
   }
-  for (const exit of exits) {
-    push(enumerated.byTerminal.get(exit.call) ?? [], exit.terminal);
+  for (const ending of [...exits, ...raises]) {
+    push(enumerated.byTerminal.get(ending.call) ?? [], ending.terminal);
   }
   push(enumerated.fallthrough, returnTerminal(rangeOf(method)));
   return branches.length === 0 ? null : branches;

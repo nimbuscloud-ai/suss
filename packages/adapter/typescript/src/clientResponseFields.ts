@@ -10,19 +10,29 @@
  */
 
 import {
+  DEFAULT_SUCCESS_ACCESSORS,
   isCatchEntry,
   readHttpMetadata,
+  refEndsInMember,
   statusMembersOf,
   testsStatus,
 } from "@suss/behavioral-ir";
+import { MAX_HELPER_PATHS } from "@suss/extractor";
 
 import { parseConditionExpression } from "./predicates.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Predicate,
+  Transition,
+  ValueRef,
+} from "@suss/behavioral-ir";
 import type {
   KeepsArms,
   PatternPack,
+  RawBranch,
   RawCodeStructure,
+  RawTerminal,
   ResponsePropertyMapping,
 } from "@suss/extractor";
 import type { Expression } from "ts-morph";
@@ -96,7 +106,9 @@ export function keepsStatusArms(
  * What still applies to a caller of a wrapper around the client. The
  * wrapper has already read the body, so its accessors do not carry over.
  * A redirect is followed inside the client either way. A failure reaches
- * the caller the same way only when the wrapper does not catch it.
+ * the caller the same way only when the wrapper does not catch it, and a
+ * wrapper that throws on every failure hands each one to its caller as an
+ * exception, whatever its client does.
  */
 export function clientResponseFieldsThroughWrapper(
   wrapper: BehavioralSummary,
@@ -105,12 +117,125 @@ export function clientResponseFieldsThroughWrapper(
   const catches = wrapper.transitions.some((t) =>
     t.conditions.some(isCatchEntry),
   );
+  const failureDelivery = throwsEveryFailure(wrapper)
+    ? "exception"
+    : http?.failureDelivery;
   return {
-    ...(http?.failureDelivery === undefined || catches
-      ? {}
-      : { failureDelivery: http.failureDelivery }),
+    ...(failureDelivery === undefined || catches ? {} : { failureDelivery }),
     ...(http?.redirectDelivery === undefined
       ? {}
       : { redirectDelivery: http.redirectDelivery }),
   };
+}
+
+/**
+ * The wrapper's paths as a caller of it takes them, for a wrapper that
+ * tests the status: `if (!res.ok) throw ...` becomes a throw on the
+ * caller's own path. Null for a wrapper that never tests it.
+ */
+export function wrapperStatusPaths(
+  wrapper: BehavioralSummary,
+): RawBranch[] | null {
+  const members = statusMembersOf(readHttpMetadata(wrapper) ?? {});
+  const testsTheStatus = wrapper.transitions.some((t) =>
+    t.conditions.some((p) => testsStatus(p, members)),
+  );
+  if (!testsTheStatus || wrapper.transitions.length > MAX_HELPER_PATHS) {
+    return null;
+  }
+  return wrapper.transitions.map((transition) => ({
+    conditions: transition.conditions.map((structured) => ({
+      sourceText: JSON.stringify(structured),
+      structured,
+      polarity: "positive",
+      source: "explicit",
+    })),
+    terminal: wrapperTerminal(transition),
+    effects: [],
+    location: transition.location,
+    isDefault: transition.isDefault,
+  }));
+}
+
+function wrapperTerminal(transition: Transition): RawTerminal {
+  const output = transition.output;
+  return {
+    kind: output.type === "throw" ? "throw" : "return",
+    statusCode: null,
+    body: null,
+    exceptionType: output.type === "throw" ? output.exceptionType : null,
+    message: output.type === "throw" ? output.message : null,
+    component: null,
+    renderTree: null,
+    delegateTarget: null,
+    emitEvent: null,
+    location: transition.location,
+  };
+}
+
+/**
+ * Whether the wrapper throws on a failure status and every path that
+ * does not throw is gated on a success. A path the reading cannot tie to
+ * a success counts against it, so the answer is no when in doubt.
+ */
+function throwsEveryFailure(wrapper: BehavioralSummary): boolean {
+  const http = readHttpMetadata(wrapper) ?? {};
+  const members = statusMembersOf(http);
+  const flags = new Set(
+    http.successAccessors !== undefined && http.successAccessors.length > 0
+      ? http.successAccessors
+      : DEFAULT_SUCCESS_ACCESSORS,
+  );
+  const throws = wrapper.transitions.filter((t) => t.output.type === "throw");
+  return (
+    throws.some((t) => t.conditions.some((p) => testsStatus(p, members))) &&
+    wrapper.transitions.every(
+      (t) =>
+        t.output.type === "throw" ||
+        t.conditions.some((p) => admitsOnlySuccess(p, members, flags)),
+    )
+  );
+}
+
+/** Whether a condition is true only for a 2xx status, as `res.ok` or `status === 200` are. */
+function admitsOnlySuccess(
+  p: Predicate,
+  members: ReadonlySet<string>,
+  flags: ReadonlySet<string>,
+): boolean {
+  if (p.type === "negation" && p.operand.type === "negation") {
+    return admitsOnlySuccess(p.operand.operand, members, flags);
+  }
+  if (p.type === "truthinessCheck") {
+    return !p.negated && refEndsInMember(p.subject, flags);
+  }
+  if (p.type === "comparison") {
+    return (
+      p.op === "eq" &&
+      refEndsInMember(p.left, members) &&
+      isSuccessLiteral(p.right, 200, 299)
+    );
+  }
+  if (p.type === "compound" && p.op === "and") {
+    const bounds = p.operands.filter(
+      (o): o is Extract<Predicate, { type: "comparison" }> =>
+        o.type === "comparison" && refEndsInMember(o.left, members),
+    );
+    return (
+      bounds.some(
+        (b) => b.op === "gte" && isSuccessLiteral(b.right, 200, 299),
+      ) &&
+      bounds.some((b) => b.op === "lte" && isSuccessLiteral(b.right, 200, 299))
+    );
+  }
+  return false;
+}
+
+function isSuccessLiteral(ref: ValueRef, min: number, max: number): boolean {
+  return (
+    ref.type === "literal" &&
+    typeof ref.value === "number" &&
+    ref.value >= min &&
+    ref.value <= max
+  );
 }

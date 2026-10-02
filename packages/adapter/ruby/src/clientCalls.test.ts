@@ -39,6 +39,16 @@ async function unitsIn(
   });
 }
 
+/** Each branch of a unit as its terminal kind and the conditions on it. */
+function outline(unit: RawCodeStructure | undefined): string[] {
+  return (unit?.branches ?? []).map(
+    (branch) =>
+      `${branch.terminal.kind} ${branch.conditions
+        .map((condition) => `${condition.polarity} ${condition.sourceText}`)
+        .join(" & ")}`,
+  );
+}
+
 /** The method and path of the first unit. */
 function boundary(units: RawCodeStructure[]): {
   method: string | null;
@@ -256,6 +266,116 @@ describe("a method that calls a request method", () => {
       ["positive response.success?"],
       ["negative response.success?"],
     ]);
+  });
+
+  it("ends a path where the caller raises on a failed response", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    response = HttpClient.get("/orders")',
+        '    raise NotFound, "no orders" if response.status == 404',
+        "    begin",
+        '      raise "caught here"',
+        "    rescue StandardError",
+        "      nil",
+        "    end",
+        "    response.body",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    // The raise in the begin block is caught there, so it ends no path.
+    expect(outline(units[0])).toEqual([
+      "throw positive response.status == 404",
+      "return negative response.status == 404 & positive catch",
+    ]);
+    expect(units[0]?.branches[0]?.terminal).toMatchObject({
+      exceptionType: "NotFound",
+      message: "no orders",
+    });
+  });
+
+  it("reads the status test in a helper the caller hands the response to", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def check_response(resp)",
+        '    raise "request failed" if resp.status >= 400',
+        "    resp.body",
+        "  end",
+        "",
+        "  def load",
+        '    response = HttpClient.get("/orders")',
+        "    check_response(response)",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(outline(units[0])).toEqual([
+      "throw positive resp.status >= 400",
+      "return negative resp.status >= 400",
+    ]);
+    expect(units[0]?.branches[0]?.conditions[0]?.structured).toMatchObject({
+      left: { type: "dependency", name: "response", accessChain: ["status"] },
+    });
+    expect(units[0]?.branches[0]?.terminal).toMatchObject({
+      exceptionType: "RuntimeError",
+      location: { start: 9, end: 9 },
+    });
+  });
+
+  it("follows a helper handed the response by keyword, or its parsed body", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def unwrap(payload)",
+        "    raise payload.error if payload.error",
+        "    payload.data",
+        "  end",
+        "",
+        "  def ensure_ok(label, resp:)",
+        '    raise "server error" if resp.status >= 500',
+        "  end",
+        "",
+        "  def load",
+        '    response = HttpClient.get("/orders")',
+        '    ensure_ok("orders", resp: response)',
+        "    payload = response.body",
+        "    unwrap(payload)",
+        "  end",
+        "end",
+      ].join("\n"),
+      { ...REQUEST_CALLS, response: { body: ["body"] } },
+    );
+
+    expect(outline(units[0])).toEqual([
+      "throw positive resp.status >= 500",
+      "throw negative resp.status >= 500 & positive payload.error",
+      "return negative resp.status >= 500 & negative payload.error",
+    ]);
+  });
+
+  it("leaves the caller alone when the helper never tests what it got", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def record(resp, label)",
+        '    raise "no label" if label.nil?',
+        "  end",
+        "",
+        "  def load",
+        '    response = HttpClient.get("/orders")',
+        '    record(response, "orders")',
+        "    response",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(outline(units[0])).toEqual(["return "]);
   });
 
   it("says nothing about a receiverless call of the same name", async () => {

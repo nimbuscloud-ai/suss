@@ -43,6 +43,54 @@ export function predicateRefs(p: Predicate): ValueRef[] {
   return (REFS_OF[p.type] as (q: Predicate) => ValueRef[])(p);
 }
 
+type RefReplacers = {
+  [K in Predicate["type"]]: (
+    p: Extract<Predicate, { type: K }>,
+    replace: (ref: ValueRef) => ValueRef,
+  ) => Predicate;
+};
+
+const REPLACE_REFS: RefReplacers = {
+  nullCheck: (p, replace) => ({ ...p, subject: replace(p.subject) }),
+  truthinessCheck: (p, replace) => ({ ...p, subject: replace(p.subject) }),
+  typeCheck: (p, replace) => ({ ...p, subject: replace(p.subject) }),
+  propertyExists: (p, replace) => ({ ...p, subject: replace(p.subject) }),
+  comparison: (p, replace) => ({
+    ...p,
+    left: replace(p.left),
+    right: replace(p.right),
+  }),
+  call: (p, replace) => ({ ...p, args: p.args.map(replace) }),
+  compound: (p, replace) => ({
+    ...p,
+    operands: p.operands.map((operand) =>
+      replacePredicateRefs(operand, replace),
+    ),
+  }),
+  negation: (p, replace) => ({
+    ...p,
+    operand: replacePredicateRefs(p.operand, replace),
+  }),
+  opaque: (p) => p,
+};
+
+/**
+ * The same condition with each value it compares or checks passed
+ * through `replace`, which is how a helper's test on its parameter
+ * becomes a test on the value its caller passed.
+ */
+export function replacePredicateRefs(
+  p: Predicate,
+  replace: (ref: ValueRef) => ValueRef,
+): Predicate {
+  return (
+    REPLACE_REFS[p.type] as (
+      q: Predicate,
+      r: (ref: ValueRef) => ValueRef,
+    ) => Predicate
+  )(p, replace);
+}
+
 /**
  * Whether the last member `v` reads is one of `members`. A destructured
  * name counts as a read of the field it was taken from, so

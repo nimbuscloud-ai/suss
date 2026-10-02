@@ -18,6 +18,7 @@ import {
   thenLikeCall,
   thenParameterLink,
 } from "../promiseThen.js";
+import { isDescentStop } from "../walk/descent.js";
 import { peelValue } from "../walk/unwrap.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -47,7 +48,7 @@ import type { ResponsePropertyMapping } from "@suss/extractor";
 export type ResponseAccessor =
   | { kind: "identifier"; name: string }
   | { kind: "destructured"; bindings: Map<string, string> }
-  | { kind: "thenChain"; bindings: Map<string, string[]> };
+  | { kind: "thenChain"; bindings: Map<ParameterDeclaration, string[]> };
 
 /**
  * Given a call expression like `fetch(url)` or `client.getUser(params)`,
@@ -123,20 +124,19 @@ function buildThenChainAccessor(
   callExpr: CallExpression,
   func: Node,
 ): ResponseAccessor | null {
-  const bindings = new Map<string, string[]>();
-  func.forEachDescendant((node) => {
-    if (!Node.isParameterDeclaration(node)) {
-      return;
-    }
-    const nameNode = node.getNameNode();
-    if (!Node.isIdentifier(nameNode)) {
-      return;
+  const bindings = new Map<ParameterDeclaration, string[]>();
+  for (const node of ownDescendants(func)) {
+    if (
+      !Node.isParameterDeclaration(node) ||
+      !Node.isIdentifier(node.getNameNode())
+    ) {
+      continue;
     }
     const prefix = prefixOfThenParam(node, callExpr, 0);
     if (prefix !== null) {
-      bindings.set(nameNode.getText(), prefix);
+      bindings.set(node, prefix);
     }
-  });
+  }
   if (bindings.size === 0) {
     return null;
   }
@@ -321,9 +321,9 @@ function collectPropertyAccesses(
 
   if (accessor.kind === "identifier") {
     const varName = accessor.name;
-    subtree.forEachDescendant((node) => {
+    for (const node of ownDescendants(subtree)) {
       if (!Node.isPropertyAccessExpression(node)) {
-        return;
+        continue;
       }
       const chain: string[] = [];
       let current: Node = node;
@@ -334,34 +334,34 @@ function collectPropertyAccesses(
       if (Node.isIdentifier(current) && current.getText() === varName) {
         pushChain(chain);
       }
-    });
+    }
     return paths;
   }
 
-  // Destructured and thenChain accessors both map local names (a
-  // destructured binding, or a `.then` callback parameter) to a property
-  // prefix rooted at the response. Walk every Identifier matching a local
-  // name and extend its prefix with the property chain read off it.
+  // Destructured and thenChain accessors both map a local binding to a
+  // property prefix rooted at the response. Walk every Identifier that
+  // reads one and extend its prefix with the property chain read off it.
   const prefixOf =
     accessor.kind === "destructured"
-      ? (name: string): string[] | undefined => {
-          const source = accessor.bindings.get(name);
+      ? (read: Node): string[] | undefined => {
+          const source = accessor.bindings.get(read.getText());
           return source === undefined ? undefined : [source];
         }
-      : (name: string): string[] | undefined => accessor.bindings.get(name);
+      : (read: Node): string[] | undefined =>
+          thenParameterRead(read, accessor.bindings);
 
-  subtree.forEachDescendant((node) => {
+  for (const node of ownDescendants(subtree)) {
     if (!Node.isIdentifier(node)) {
-      return;
+      continue;
     }
-    const prefix = prefixOf(node.getText());
+    const prefix = prefixOf(node);
     if (prefix === undefined) {
-      return;
+      continue;
     }
     // Skip the binding's own declaration site (a destructured element or a
     // callback parameter name): it isn't a read of the response.
     if (isBindingDeclarationSite(node)) {
-      return;
+      continue;
     }
     // Find the topmost property-access chain rooted on this identifier
     // (so for `data.id.name`, walk from the bare identifier up through both
@@ -385,7 +385,7 @@ function collectPropertyAccesses(
     }
     segments.reverse();
     pushChain([...prefix, ...segments]);
-  });
+  }
   return paths;
 }
 
@@ -423,6 +423,44 @@ function isInsideObjectBindingPattern(node: Node): boolean {
     current = current.getParent();
   }
   return false;
+}
+
+/**
+ * Every descendant of `root` that belongs to the same unit. A function
+ * declared inside it is a unit of its own, with its own client calls, so
+ * a read in there is never this unit's read of its response.
+ */
+function ownDescendants(root: Node): Node[] {
+  const found: Node[] = [];
+  root.forEachDescendant((node, traversal) => {
+    if (isDescentStop(node, root)) {
+      traversal.skip();
+      return;
+    }
+    found.push(node);
+  });
+  return found;
+}
+
+/**
+ * The prefix of the `.then` parameter an identifier reads. Two callbacks
+ * often reuse one parameter name for different values, so the read is
+ * matched to the parameter it refers to, and never by its name alone.
+ */
+function thenParameterRead(
+  read: Node,
+  bindings: ReadonlyMap<ParameterDeclaration, string[]>,
+): string[] | undefined {
+  const name = read.getText();
+  const candidates = [...bindings.keys()].filter(
+    (parameter) => parameter.getName() === name,
+  );
+  if (candidates.length === 0) {
+    return undefined;
+  }
+  const declared = read.getSymbol()?.getDeclarations() ?? [];
+  const parameter = candidates.find((one) => declared.includes(one));
+  return parameter === undefined ? undefined : bindings.get(parameter);
 }
 
 // ---------------------------------------------------------------------------
@@ -604,6 +642,44 @@ export function collectClientFieldAccesses(
   // to a variable (`fetch(url).then(res => res.json()).then(...)`).
   const accessor =
     findResponseAccessor(callExpr) ?? buildThenChainAccessor(callExpr, func);
+  return accessesPerBranch(
+    accessor,
+    [],
+    func,
+    branchLocations,
+    responseSemantics,
+  );
+}
+
+/**
+ * The fields a helper reads off the parameter it was handed the response
+ * in, for each of its branches. `prefix` says where that value is in the
+ * response: empty for the response itself, `["json"]` for the body
+ * `res.json()` parsed.
+ */
+export function collectParameterFieldAccesses(
+  parameter: string,
+  prefix: readonly string[],
+  func: Node,
+  branchLocations: Array<{ start: number; end: number }>,
+  responseSemantics?: ResponsePropertyMapping[],
+): BranchFieldAccesses[] {
+  return accessesPerBranch(
+    { kind: "identifier", name: parameter },
+    prefix,
+    func,
+    branchLocations,
+    responseSemantics,
+  );
+}
+
+function accessesPerBranch(
+  accessor: ResponseAccessor | null,
+  prefix: readonly string[],
+  func: Node,
+  branchLocations: Array<{ start: number; end: number }>,
+  responseSemantics?: ResponsePropertyMapping[],
+): BranchFieldAccesses[] {
   if (accessor === null) {
     return branchLocations.map((loc) => ({
       terminalLocation: loc,
@@ -611,20 +687,20 @@ export function collectClientFieldAccesses(
     }));
   }
 
-  // Build the set of non-body property names from pack semantics.
-  // Any property with statusCode, statusRange, or headers semantics
-  // is filtered out; body-typed and unknown properties pass through.
-  const nonBodyProps = buildNonBodyPropertySet(responseSemantics);
+  // A status, success flag or header read off the response is not a body
+  // field. Off the parsed body, every name is one.
+  const nonBodyProps =
+    prefix.length === 0
+      ? buildNonBodyPropertySet(responseSemantics)
+      : new Set<string>();
 
   const byLineRange = nodesByLineRange(func);
 
   return branchLocations.map((loc) => {
     const subtree = findBranchSubtree(func, byLineRange, loc.start, loc.end);
-    const accesses = collectPropertyAccesses(subtree, accessor);
-
-    const bodyAccesses = accesses.filter(
-      (a) => a.chain.length > 0 && !nonBodyProps.has(a.chain[0]),
-    );
+    const bodyAccesses = collectPropertyAccesses(subtree, accessor)
+      .filter((a) => a.chain.length > 0 && !nonBodyProps.has(a.chain[0]))
+      .map((a) => ({ chain: [...prefix, ...a.chain] }));
 
     const expectedInput = buildShapeFromPaths(bodyAccesses);
     return { terminalLocation: loc, expectedInput };

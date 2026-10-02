@@ -264,6 +264,7 @@ export {
   DEFAULT_SUCCESS_ACCESSORS,
   predicateRefs,
   refEndsInMember,
+  replacePredicateRefs,
   statusMembersOf,
   testsStatus,
 } from "./statusTests.js";

@@ -299,6 +299,27 @@ export function invocationEffects(
   keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
   facts?: Database | undefined,
 ): InvocationEffect[] {
+  return invocationSites(
+    definitionNode,
+    inherited,
+    keepsArglessCall,
+    facts,
+  ).map((site) => site.effect);
+}
+
+/** One call a body makes, beside the effect recorded for it. */
+export interface InvocationSite {
+  call: RbNode;
+  effect: InvocationEffect;
+}
+
+/** The same, keeping each effect's call, for a reader that has to go back to it. */
+export function invocationSites(
+  definitionNode: RbNode,
+  inherited: InheritedMethods = NO_INHERITED_METHODS,
+  keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
+  facts?: Database | undefined,
+): InvocationSite[] {
   const read = methodBody(definitionNode);
   if (read === null) {
     return [];
@@ -318,7 +339,7 @@ export function moduleScopeInvocationEffects(
     inherited,
     keepsArglessCall,
     facts,
-  );
+  ).map((site) => site.effect);
 }
 
 function effectsOfBody(
@@ -326,7 +347,7 @@ function effectsOfBody(
   inherited: InheritedMethods,
   keepsArglessCall: (call: RbNode) => boolean,
   facts: Database | undefined,
-): InvocationEffect[] {
+): InvocationSite[] {
   const body = read.body;
   const calls = callsReported(bodyCalls(read, inherited), keepsArglessCall);
   if (calls.length === 0) {
@@ -366,11 +387,14 @@ function effectsOfBody(
         : enumerated.byTerminal.get(statement),
     );
     return {
-      type: "invocation",
-      callee: calleeText(call),
-      args: argsOf(call, facts),
-      async: false,
-      ...(conditions.length > 0 ? { preconditions: conditions } : {}),
+      call,
+      effect: {
+        type: "invocation",
+        callee: calleeText(call),
+        args: argsOf(call, facts),
+        async: false,
+        ...(conditions.length > 0 ? { preconditions: conditions } : {}),
+      },
     };
   });
 }
