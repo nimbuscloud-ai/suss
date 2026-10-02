@@ -195,6 +195,60 @@ describe("checkAll, which pairs get the response-shaped checks", () => {
   });
 });
 
+describe("checkAll, when routes in one service tie", () => {
+  it("reports a call two catch-all routes match equally well, naming the routes", () => {
+    const route = (name: string, path: string): BehavioralSummary => {
+      const p = provider(name, [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]);
+      return {
+        ...p,
+        identity: {
+          ...p.identity,
+          boundaryBinding: restBinding({
+            transport: "http",
+            method: "GET",
+            path,
+            recognition: "rails",
+          }),
+        },
+      };
+    };
+    const c = consumer("fetchStats", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const stats = {
+      ...c,
+      identity: {
+        ...c.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path: "/admin/stats",
+          recognition: "fetch",
+        }),
+      },
+    };
+
+    const result = checkAll([
+      route("profile", "/(|locale/:locale/):username/:view"),
+      route("feed", "/(|locale/:locale/):feed_type/:timeframe"),
+      stats,
+    ]);
+
+    expect(result.pairs).toEqual([]);
+    expect(result.findings.map((f) => [f.kind, f.description])).toEqual([
+      [
+        "ambiguousProvider",
+        "src/ui/fetchStats.ts::fetchStats calls GET /admin/stats, and 2 handlers serve it at routes that match it equally well (GET /(|locale/{locale}/){username}/{view}, GET /(|locale/{locale}/){feed_type}/{timeframe}). The framework picks one by the order the routes are declared, which suss does not read, so no pair was checked.",
+      ],
+    ]);
+  });
+});
+
 describe("checkAll, what it lists as unpaired", () => {
   const ordersTable = (): ReturnType<typeof storageBinding> =>
     storageBinding({

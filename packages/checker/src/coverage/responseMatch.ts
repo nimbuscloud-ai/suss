@@ -205,6 +205,18 @@ export function makeSide(
   return side;
 }
 
+/** A finding side for several transitions of one summary that give the same finding. */
+export function makeSideOfEach(
+  summary: BehavioralSummary,
+  transitionIds: readonly string[],
+): FindingSide {
+  const side = makeSide(summary, transitionIds[0]);
+  if (transitionIds.length > 1) {
+    side.transitionIds = [...transitionIds];
+  }
+  return side;
+}
+
 export function makeBoundary(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,

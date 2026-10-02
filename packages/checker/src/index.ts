@@ -21,7 +21,7 @@ import { buildInteractionIndex } from "./interactions/dispatcher.js";
 import { checkMessageBus } from "./message-bus/messageBusPairing.js";
 import { checkMetric } from "./metric/metricPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
-import { pairSummaries } from "./pairing/pairing.js";
+import { pairSummaries, servingFunction } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
 import { isStory, isTestCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
@@ -259,17 +259,45 @@ function twoServicesServeIt(ambiguous: AmbiguousPairing): Finding {
   const { consumer, providers, services } = ambiguous;
   const first = providers[0] as BehavioralSummary;
   const binding = consumer.identity.boundaryBinding as BoundaryBinding;
-  const named = services.map((service) =>
-    service === "" ? "(unnamed)" : service,
-  );
   return {
     kind: "ambiguousProvider",
     boundary: binding,
     provider: { summary: summaryRef(first), location: first.location },
     consumer: { summary: summaryRef(consumer), location: consumer.location },
-    description: `${summaryIdentifier(consumer)} calls ${describeBinding(binding)}, and ${services.length} services serve it (${named.join(", ")}). Nothing here says which one it reaches, so no pair was checked. Give the client the base URL it calls, or check one service at a time.`,
+    description:
+      services.length > 1
+        ? servicesTieDescription(consumer, binding, services)
+        : routesTieDescription(consumer, binding, providers),
     severity: "warning",
   };
+}
+
+function servicesTieDescription(
+  consumer: BehavioralSummary,
+  binding: BoundaryBinding,
+  services: readonly string[],
+): string {
+  const named = services.map((service) =>
+    service === "" ? "(unnamed)" : service,
+  );
+  return `${summaryIdentifier(consumer)} calls ${describeBinding(binding)}, and ${services.length} services serve it (${named.join(", ")}). Nothing here says which one it reaches, so no pair was checked. Give the client the base URL it calls, or check one service at a time.`;
+}
+
+/** Two routes in one service match the call, such as two catch-alls, and neither is more specific. */
+function routesTieDescription(
+  consumer: BehavioralSummary,
+  binding: BoundaryBinding,
+  providers: readonly BehavioralSummary[],
+): string {
+  const handlers = new Set(providers.map(servingFunction)).size;
+  const routes = [
+    ...new Set(
+      providers.map((provider) =>
+        describeBinding(provider.identity.boundaryBinding as BoundaryBinding),
+      ),
+    ),
+  ];
+  return `${summaryIdentifier(consumer)} calls ${describeBinding(binding)}, and ${handlers} handlers serve it at routes that match it equally well (${routes.join(", ")}). The framework picks one by the order the routes are declared, which suss does not read, so no pair was checked.`;
 }
 
 /**

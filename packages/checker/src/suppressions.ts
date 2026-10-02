@@ -75,7 +75,8 @@ function ruleSideMatches(
   }
   if (
     side.transitionId !== undefined &&
-    side.transitionId !== findingSide.transitionId
+    side.transitionId !== findingSide.transitionId &&
+    !(findingSide.transitionIds ?? []).includes(side.transitionId)
   ) {
     return false;
   }

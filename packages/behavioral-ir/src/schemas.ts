@@ -776,6 +776,13 @@ export const GapSchema = z.object({
    * only in prose that nothing should parse.
    */
   callee: z.string().optional(),
+  /**
+   * True when every place the unit makes an `unfollowedCall` uses its
+   * result as a value: assigned, compared, tested, passed or called on.
+   * Such a call returns something to the unit, so it is not where the
+   * unit sends a response.
+   */
+  usedAsValue: z.boolean().optional(),
 });
 
 export const BehavioralSummarySchema = z.object({
@@ -806,6 +813,12 @@ export const BehavioralSummaryArraySchema = z.array(BehavioralSummarySchema);
 export const FindingSideSchema = z.object({
   summary: z.string(),
   transitionId: z.string().optional(),
+  /**
+   * Every transition on this side that gives the finding, when more than
+   * one does, such as two filters that each send one status.
+   * `transitionId` is the first of them.
+   */
+  transitionIds: z.array(z.string()).optional(),
   location: SourceLocationSchema,
 });
 

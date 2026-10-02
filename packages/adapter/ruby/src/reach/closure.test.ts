@@ -319,6 +319,68 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ).toEqual([]);
   });
 
+  it("marks a mixin call whose result the method uses as a value", async () => {
+    write("app/graphql/concerns/guard.rb", [
+      "module Guard",
+      "  def ensure_user(user)",
+      "    account = current_account",
+      "    raise ArgumentError if load_user(user).nil?",
+      "    record_visit(account)",
+      "  end",
+      "end",
+    ]);
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  include Guard",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    ensure_user(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const gaps = unitNamed(summaries, "ensure_user").gaps;
+    const gapFor = (callee: string) =>
+      gaps.find(
+        (gap) => gap.type === "unfollowedCall" && gap.callee === callee,
+      );
+    expect(gapFor("current_account")?.usedAsValue).toBe(true);
+    expect(gapFor("load_user")?.usedAsValue).toBe(true);
+    // A statement can be where the method responds, so it stays unmarked.
+    expect(gapFor("record_visit")).toBeDefined();
+    expect(gapFor("record_visit")?.usedAsValue).toBeUndefined();
+  });
+
+  it("leaves a mixin call unmarked when one of its uses is a statement", async () => {
+    write("app/graphql/concerns/guard.rb", [
+      "module Guard",
+      "  def ensure_user(user)",
+      "    allowed = check_access(user)",
+      "    check_access(user) unless allowed",
+      "  end",
+      "end",
+    ]);
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  include Guard",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    ensure_user(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const gap = unitNamed(summaries, "ensure_user").gaps.find(
+      (g) => g.type === "unfollowedCall" && g.callee === "check_access",
+    );
+    expect(gap).toBeDefined();
+    expect(gap?.usedAsValue).toBeUndefined();
+  });
+
   it("leaves a call in a module's method alone when every object has the method", async () => {
     write("app/graphql/concerns/guard.rb", [
       "module Guard",

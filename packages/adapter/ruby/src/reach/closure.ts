@@ -37,6 +37,7 @@ import {
   field,
   PROGRAM_TYPE,
   rangeOf,
+  resultUsedAsValue,
   spanOf,
 } from "../ast.js";
 import { bodyOfMethod } from "../discovery.js";
@@ -744,6 +745,7 @@ function scanBody(
 
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
+  const stopIndex = new Map<string, number>();
   const placements = new TargetPlacements();
   const receiverClasses = new ReceiverClasses();
   const parameterCalls: ParameterCall[] = [];
@@ -844,15 +846,17 @@ function scanBody(
     );
 
     if (outcome.kind === "stopped") {
-      const stopKey = `${outcome.reason}:${callee}`;
       // A call the storage recognizer records is already in the summary as
       // database work, so it is not reported as a gap.
       const claimed =
         options.storage !== undefined &&
         storageClaims(call, callSite.file, options.storage, callSite.method);
-      if (!seen.has(stopKey) && !claimed && worthRecording(outcome.reason)) {
-        seen.add(stopKey);
-        stops.push({ callee, reason: outcome.reason });
+      if (!claimed && worthRecording(outcome.reason)) {
+        recordStop(stops, stopIndex, {
+          callee,
+          reason: outcome.reason,
+          ...(resultUsedAsValue(call) ? { usedAsValue: true } : {}),
+        });
       }
       if (
         outcome.reason === "callerSupplied" &&
@@ -888,6 +892,29 @@ function scanBody(
     propertyReads: propertyReadsAmong(read.argless, calls, keptArgless),
     receiverClasses: receiverClasses.settled,
   };
+}
+
+/**
+ * Adds a stop once per reason and callee. It stays `usedAsValue` only
+ * while every one of those calls uses the result as a value.
+ */
+function recordStop(
+  stops: UnfollowedCall[],
+  indexOf: Map<string, number>,
+  stop: UnfollowedCall,
+): void {
+  const key = `${stop.reason}:${stop.callee}`;
+  const at = indexOf.get(key);
+  if (at === undefined) {
+    indexOf.set(key, stops.length);
+    stops.push(stop);
+    return;
+  }
+
+  const earlier = stops[at] as UnfollowedCall;
+  if (earlier.usedAsValue === true && stop.usedAsValue !== true) {
+    stops[at] = { callee: earlier.callee, reason: earlier.reason };
+  }
 }
 
 /**

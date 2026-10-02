@@ -13,6 +13,7 @@ import {
   nestedStatements,
   rangeOf,
   readCallArgs,
+  resultUsedAsValue,
   runStatements,
   singletonMethodsByName,
   symbolValue,
@@ -585,5 +586,42 @@ describe("methodHasStatements", () => {
     expect(
       methodHasStatements(must(instanceMethodsByName(body).get("a"))),
     ).toBe(false);
+  });
+});
+
+describe("resultUsedAsValue", () => {
+  /** Whether the first identifier spelled `probe` in the source has its value used. */
+  async function probeUsed(source: string): Promise<boolean> {
+    const tree = await parseRuby(source);
+    const probe = tree.rootNode
+      .descendantsOfType("identifier")
+      .find((node) => node?.text === "probe");
+    return resultUsedAsValue(must(probe));
+  }
+
+  it.each([
+    ["an assignment", "x = probe"],
+    ["an operator assignment", "@x ||= probe"],
+    ["a receiver", "probe.account"],
+    ["an argument", "track(probe)"],
+    ["a hash value", "track(user: probe)"],
+    ["a comparison", "probe == nil"],
+    ["a negation", "x = !probe"],
+    ["a modifier condition", "deny unless probe"],
+    ["an if condition", "if probe\n  deny\nend"],
+    ["a parenthesised condition", "deny if (probe)"],
+  ])("counts %s", async (_label, source) => {
+    expect(await probeUsed(source)).toBe(true);
+  });
+
+  it.each([
+    ["a statement", "probe\nother"],
+    ["the last expression", "other\nprobe"],
+    ["a returned value", "return probe"],
+    ["an operand of and", "probe and return"],
+    ["an operand of ||", "probe || other"],
+    ["a modifier body", "probe if allowed"],
+  ])("does not count %s", async (_label, source) => {
+    expect(await probeUsed(source)).toBe(false);
   });
 });

@@ -4,10 +4,12 @@ import {
   bucketRank,
   bucketsMeet,
   compareRanks,
+  exchangesHttpResponses,
   semanticsAgree,
   spansBuckets,
 } from "@suss/ir-core";
 
+import { isContractDocument } from "../contract/declaredContract.js";
 import { groundedKeys } from "./groundedPath.js";
 import { isTestCode } from "./testCode.js";
 
@@ -165,6 +167,46 @@ export function servicesOf(summaries: readonly BehavioralSummary[]): string[] {
   return [...new Set(stated)].sort();
 }
 
+/**
+ * Whether the providers a consumer reaches are routes in more than one
+ * function, all equally specific. One request reaches one handler, so
+ * when `/:username/:view` and `/:feed_type/:timeframe` both match
+ * `/admin/stats`, the framework picks by the order it was given, which
+ * the run cannot see. A contract document describes a route and serves
+ * nothing, so it is never a rival.
+ */
+function routesTie(providers: readonly BehavioralSummary[]): boolean {
+  const functions = new Set(
+    providers
+      .filter(
+        (provider) =>
+          servesOneRequestAlone(provider) &&
+          provider.identity.boundaryBinding !== null &&
+          exchangesHttpResponses(provider.identity.boundaryBinding) &&
+          !isContractDocument(provider),
+      )
+      .map(servingFunction),
+  );
+  return functions.size > 1;
+}
+
+/**
+ * Whether a server picks this unit alone for a request. A client-side
+ * router renders a layout and its index route together at one URL, and
+ * runs every matching loader, so components and loaders never tie.
+ */
+function servesOneRequestAlone(provider: BehavioralSummary): boolean {
+  return provider.kind === "handler";
+}
+
+/**
+ * The function a summary describes. Two summaries of one function, one
+ * per route it is registered under, give the same answer.
+ */
+export function servingFunction({ location }: BehavioralSummary): string {
+  return `${location.workspace ?? ""}|${location.file}:${location.range.start}`;
+}
+
 /** One side's summaries under one pairing key. */
 interface Bucket {
   key: string;
@@ -302,7 +344,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
         winners.length === 1
           ? servedBy(consumer, winners[0]?.summaries ?? [])
           : null;
-      if (chosen === null) {
+      if (chosen === null || routesTie(chosen)) {
         const providers = winners.flatMap((providers) => providers.summaries);
         ambiguous.push({
           consumer,
