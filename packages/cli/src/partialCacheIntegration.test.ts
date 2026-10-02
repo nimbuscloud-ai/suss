@@ -211,7 +211,10 @@ function names(run: Run): string[] {
 function recordedFiles(): string[] {
   const cacheDir = path.join(tmpDir, ".suss", "cache");
   const files: string[] = [];
-  for (const entry of fs.readdirSync(cacheDir)) {
+  const entries = fs
+    .readdirSync(cacheDir)
+    .filter((name) => name.startsWith("key-"));
+  for (const entry of entries) {
     const manifest = JSON.parse(
       fs.readFileSync(path.join(cacheDir, entry, "manifest.json"), "utf8"),
     ) as { depPaths?: string[]; units?: Array<{ file: number }> };

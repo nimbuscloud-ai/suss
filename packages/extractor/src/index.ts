@@ -1169,6 +1169,7 @@ export {
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
+export { makeIgnoredDirectory } from "./ignoredDirectory.js";
 export { KeptParses } from "./keptParses.js";
 export {
   evaluatePackHealth,

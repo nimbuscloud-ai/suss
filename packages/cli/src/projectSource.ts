@@ -131,15 +131,20 @@ export function* projectSourceFiles(
       ? typescriptCandidates(root)
       : filesInProject(root, root, language, 0);
   for (const file of candidates) {
-    const relative = path.relative(root, file);
     if (
-      !relative.startsWith("..") &&
+      isSameOrUnder(file, root) &&
       languageOfFile(file) === language &&
-      isProjectSourcePath(relative)
+      isProjectSourcePath(path.relative(root, file))
     ) {
       yield file;
     }
   }
+}
+
+/** Whether `file` is `directory` itself or anywhere below it. */
+export function isSameOrUnder(file: string, directory: string): boolean {
+  const relative = path.relative(directory, file);
+  return !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 /**
@@ -156,10 +161,7 @@ export function extractReadsAnything(
       ? typescriptCandidates(root)
       : filesInProject(root, root, language, 0);
   for (const file of candidates) {
-    if (
-      !path.relative(root, file).startsWith("..") &&
-      languageOfFile(file) === language
-    ) {
+    if (isSameOrUnder(file, root) && languageOfFile(file) === language) {
       return true;
     }
   }

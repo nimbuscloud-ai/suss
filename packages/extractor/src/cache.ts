@@ -25,6 +25,7 @@ import {
   startRun,
   stillMatches,
 } from "./cacheStamps.js";
+import { makeIgnoredDirectory } from "./ignoredDirectory.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { FileStamp, RunStart } from "./cacheStamps.js";
@@ -376,6 +377,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         summaries,
         ...(attribution === undefined ? {} : encodeAttribution(attribution)),
       };
+      makeIgnoredDirectory(cacheDir);
       await fs.mkdir(entryDir, { recursive: true });
       await fs.writeFile(
         path.join(entryDir, "manifest.json"),

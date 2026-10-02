@@ -11,49 +11,68 @@
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
-const VERB_FUNCTIONS: Record<string, string> = {
+type PyClientCall = NonNullable<PythonPack["clients"]>[number];
+type RedirectDelivery = NonNullable<
+  NonNullable<PyClientCall["response"]>["redirectDelivery"]
+>;
+
+const VERB_FUNCTIONS_THAT_FOLLOW: Record<string, string> = {
   get: "GET",
   post: "POST",
   put: "PUT",
   patch: "PATCH",
   delete: "DELETE",
-  head: "HEAD",
   options: "OPTIONS",
 };
+
+/**
+ * The verb calls in `verbs`, on the module or a `Session`, which do
+ * `redirectDelivery` with a redirect unless the call passes
+ * `allow_redirects` to say otherwise.
+ */
+function verbCalls(
+  verbs: Record<string, string>,
+  redirectDelivery: RedirectDelivery,
+): PyClientCall {
+  return {
+    type: "clientCall",
+    importModule: ["requests"],
+    verbAttributeNames: verbs,
+    url: { position: 0, keyword: "url" },
+    receiverConstructors: ["Session"],
+    // A caller's condition on one of these members shows which
+    // statuses it handles.
+    response: {
+      statusCode: ["status_code"],
+      success: ["ok"],
+      body: ["json", "text", "content"],
+      failureDelivery: "response",
+      redirectDelivery,
+      redirectOption: { name: "allow_redirects", handsBack: [false] },
+    },
+  };
+}
 
 export function requestsClient(): PythonPack {
   return {
     name: "requests",
     protocol: "http",
     discovery: [],
+    // `head` defaults `allow_redirects` to False, and every other call,
+    // `request("HEAD", url)` included, defaults it to True.
     clients: [
       {
-        type: "clientCall",
-        importModule: ["requests"],
-        verbAttributeNames: VERB_FUNCTIONS,
+        ...verbCalls(VERB_FUNCTIONS_THAT_FOLLOW, "followed"),
         // The verb functions take the URL first and `request` takes it
         // second. All of them accept it as `url=`.
-        url: { position: 0, keyword: "url" },
         methodCall: {
           attribute: "request",
           methodPosition: 0,
           methodKeyword: "method",
           urlPosition: 1,
         },
-        receiverConstructors: ["Session"],
-        // A caller's condition on one of these members shows which
-        // statuses it handles.
-        response: {
-          statusCode: ["status_code"],
-          success: ["ok"],
-          body: ["json", "text", "content"],
-          failureDelivery: "response",
-          // Every verb but HEAD follows redirects unless the call passes
-          // `allow_redirects=False`.
-          redirectDelivery: "followed",
-          redirectOption: { name: "allow_redirects", handsBack: [false] },
-        },
       },
+      verbCalls({ head: "HEAD" }, "response"),
     ],
     // `Session.__enter__` returns the session, so `with
     // requests.Session() as s` puts the constructed session in s.

@@ -43,6 +43,7 @@ import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
 import { projectModules } from "./projectModules.js";
+import { isSameOrUnder } from "./projectSource.js";
 import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
 import {
   retiredOptionRefusal,
@@ -818,7 +819,9 @@ export function resolveSource(
         `No tsconfig at ${resolved}. Leave -p off to read the current directory instead.`,
       );
     }
-    return { kind: "tsconfig", path: resolved, root: path.dirname(resolved) };
+    return options.dir === undefined
+      ? { kind: "tsconfig", path: resolved, root: path.dirname(resolved) }
+      : tsconfigSource(resolved, path.resolve(options.dir));
   }
 
   const root = path.resolve(options.dir ?? process.cwd());
@@ -826,14 +829,22 @@ export function resolveSource(
   if (nearest === null) {
     return { kind: "directory", root };
   }
-  const tsconfigRoot = path.dirname(nearest);
-  return tsconfigRoot === root
-    ? { kind: "tsconfig", path: nearest, root: tsconfigRoot }
+  return tsconfigSource(nearest, root);
+}
+
+/**
+ * A tsconfig's files, walking only those under `walked`. A directory at or
+ * above the tsconfig's own narrows nothing, so the run walks every file.
+ */
+function tsconfigSource(tsconfig: string, walked: string): Source {
+  const tsconfigRoot = path.dirname(tsconfig);
+  return isSameOrUnder(tsconfigRoot, walked)
+    ? { kind: "tsconfig", path: tsconfig, root: tsconfigRoot }
     : {
         kind: "tsconfig",
-        path: nearest,
+        path: tsconfig,
         root: tsconfigRoot,
-        walkedDirectory: root,
+        walkedDirectory: walked,
       };
 }
 
@@ -972,20 +983,20 @@ async function runTypeScript(
   // Only a project made from a tsconfig can be refreshed, so an adapter
   // reading a bare directory is made again each run.
   const kept = source.kind === "tsconfig" ? options.kept : undefined;
-  // Everything that changes what the adapter was built from goes in the
-  // key. A pack's version stamp covers its code, its config and its stubs.
+  // Each directory read under one tsconfig keeps its own adapter. The key
+  // has everything else that changes what the adapter was built from, and
+  // a pack's version stamp covers its code, its config and its stubs.
   const { adapter, reports } =
     kept === undefined || source.kind !== "tsconfig"
       ? make()
       : kept.keep(
-          `typescript ${source.path}`,
+          `typescript ${source.path} ${source.walkedDirectory ?? source.root}`,
           JSON.stringify({
             runRoot,
             packs: packs.map((pack) => [pack.name, pack.version]),
             modules,
             gaps: options.gaps ?? null,
             noCache: options.noCache === true,
-            walkedDirectory: source.walkedDirectory ?? null,
           }),
           make,
           ({ adapter: held }) => held.loadProgram(),

@@ -10,41 +10,60 @@
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
-const VERB_METHODS: Record<string, string> = {
+type PyClientCall = NonNullable<PythonPack["clients"]>[number];
+type RedirectDelivery = NonNullable<
+  NonNullable<PyClientCall["response"]>["redirectDelivery"]
+>;
+
+const VERB_METHODS_THAT_FOLLOW: Record<string, string> = {
   get: "GET",
   post: "POST",
   put: "PUT",
   patch: "PATCH",
   delete: "DELETE",
-  head: "HEAD",
   options: "OPTIONS",
 };
+
+/**
+ * The verb methods in `verbs` on a `ClientSession`, which do
+ * `redirectDelivery` with a redirect unless the call passes
+ * `allow_redirects` to say otherwise.
+ */
+function verbCalls(
+  verbs: Record<string, string>,
+  redirectDelivery: RedirectDelivery,
+): PyClientCall {
+  return {
+    type: "clientCall",
+    importModule: ["aiohttp"],
+    verbAttributeNames: verbs,
+    url: { position: 0, keyword: "url" },
+    receiverConstructors: ["ClientSession"],
+    response: {
+      redirectDelivery,
+      redirectOption: { name: "allow_redirects", handsBack: [false] },
+    },
+  };
+}
 
 export function aiohttpClient(): PythonPack {
   return {
     name: "aiohttp",
     protocol: "http",
     discovery: [],
+    // `head` defaults `allow_redirects` to False, and every other call,
+    // `request("HEAD", url)` included, defaults it to True.
     clients: [
       {
-        type: "clientCall",
-        importModule: ["aiohttp"],
-        verbAttributeNames: VERB_METHODS,
-        url: { position: 0, keyword: "url" },
+        ...verbCalls(VERB_METHODS_THAT_FOLLOW, "followed"),
         methodCall: {
           attribute: "request",
           methodPosition: 0,
           methodKeyword: "method",
           urlPosition: 1,
         },
-        receiverConstructors: ["ClientSession"],
-        // aiohttp follows redirects unless the call passes
-        // `allow_redirects=False`.
-        response: {
-          redirectDelivery: "followed",
-          redirectOption: { name: "allow_redirects", handsBack: [false] },
-        },
       },
+      verbCalls({ head: "HEAD" }, "response"),
     ],
     // `ClientSession.__aenter__` returns the session, so `async with
     // aiohttp.ClientSession() as s` puts the constructed session in s.
