@@ -17,7 +17,7 @@ def fetch_order(order_id: str) -> dict:
 
 `fetch_order` comes back as a client of `GET /orders/{order_id}`. It pairs with whatever serves that route in the same run. That can be a FastAPI route in this project, a handler in another repository whose summaries are in the same folder, or an OpenAPI document read with `suss contract`.
 
-- **The seven verb functions**: `get`, `post`, `put`, `patch`, `delete`, `head` and `options`. The function name gives the method, and the URL comes first or as `url=`.
+- **The seven verb functions**: `get`, `post`, `put`, `patch`, `delete`, `head` and `options`. The function name gives the method, and the URL comes first or as `url=`. `head` hands a 3xx back to the caller unless the call passes `allow_redirects=True`, and every other call follows the redirect unless it passes `allow_redirects=False`, which is what requests does.
 - **`requests.request("PATCH", url)`**: the method is the first argument and the URL the second, and either can be written as `method=` and `url=`.
 - **A session**: `session = requests.Session()` accepts the same calls, and a call on it is read the same way.
 - **The URL**: read through the same value evaluator a route's path goes through, so an f-string, a name defined elsewhere in the project, and a concatenation all resolve to the path they produce. A URL with a host is reported by its path alone, since a route does not declare a host.

@@ -87,3 +87,31 @@ describe("a function that calls aiohttp", () => {
     expect(units).toEqual([]);
   });
 });
+
+describe("what a session call does with a redirect", () => {
+  async function deliveryOf(call: string): Promise<unknown> {
+    const units = await unitsIn(
+      [
+        "import aiohttp",
+        "",
+        "async def probe():",
+        "    session = aiohttp.ClientSession()",
+        `    return await session.${call}`,
+      ].join("\n"),
+    );
+    expect(units).toHaveLength(1);
+    return units[0]?.redirectDelivery;
+  }
+
+  it("hands a redirect back from head, whose allow_redirects defaults to False", async () => {
+    expect(await deliveryOf('head("/orders")')).toBe("response");
+    expect(await deliveryOf('head("/orders", allow_redirects=True)')).toBe(
+      "followed",
+    );
+  });
+
+  it("follows a redirect from every other call, request with HEAD included", async () => {
+    expect(await deliveryOf('get("/orders")')).toBe("followed");
+    expect(await deliveryOf('request("HEAD", "/orders")')).toBe("followed");
+  });
+});
