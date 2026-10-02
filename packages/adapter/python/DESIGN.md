@@ -537,7 +537,7 @@ Where the walk stops, and the reason the gap gives:
 | a name assigned inside an `if`, `try`, or `with` block, or by unpacking | the value could not be settled |
 | `from a import *` and `from b import *` when both define the name | more than one possible source |
 | an import that resolves under two roots | more than one possible source |
-| `self.deny()` in a class with no bases that does not define `deny` | made on self in a mixin, so the class that mixes it in supplies it |
+| `self.deny()` in a class with no bases that does not define `deny`, assign `self.deny`, or define `__getattr__` | made on self in a mixin, so the class that mixes it in supplies it |
 | a call into a package whose source is not in the run | outside the run (no gap) |
 | a value's attribute, `order.save()`, or a call on a call's result | no declaration to follow (no gap) |
 

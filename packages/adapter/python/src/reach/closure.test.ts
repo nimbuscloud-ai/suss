@@ -272,6 +272,52 @@ describe("the functions a route reaches", () => {
     expect(gapFor("self.verify")?.usedAsValue).toBeUndefined();
   });
 
+  it("leaves a call on self alone when the class assigns that attribute", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class Notifier:",
+      "    def __init__(self, send):",
+      "        self.send = send",
+      "",
+      "    def notify(self, message):",
+      "        self.send(message)",
+      "",
+      '@app.get("/notify")',
+      "def notify_route(message: str):",
+      "    return Notifier(print).notify(message)",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "notify").gaps.filter((gap) =>
+        gap.description.includes("in a mixin"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a call on self alone when the class defines __getattr__", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class Proxy:",
+      "    def __getattr__(self, name):",
+      "        return name",
+      "",
+      "    def forward(self, message):",
+      "        self.deliver(message)",
+      "",
+      '@app.get("/forward")',
+      "def forward_route(message: str):",
+      "    return Proxy().forward(message)",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "forward").gaps.filter((gap) =>
+        gap.description.includes("in a mixin"),
+      ),
+    ).toEqual([]);
+  });
+
   it("leaves a call on self alone in a class with a base, which may define it", async () => {
     write("app/main.py", [
       ...APP_HEADER,
