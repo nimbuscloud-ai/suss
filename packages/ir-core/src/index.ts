@@ -127,7 +127,6 @@ export {
   bindingIs,
   boundaryKey,
   boundaryLabel,
-  bucketRank,
   bucketsMeet,
   canPair,
   displayLabel,
@@ -139,6 +138,7 @@ export {
   nameReference,
   operationKey,
   pairingKey,
+  pairRank,
   reportsUnpairedItself,
   semanticsAgree,
   servesRequest,
@@ -222,7 +222,7 @@ export {
 } from "./suppressions.js";
 export { TEST_TITLE_SEPARATOR, testUnitName } from "./testName.js";
 export { bodyShapesMatch, type MatchResult } from "./typeShapeMatch.js";
-export { pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
+export { hostCanBeOwn, pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
 
 // ---------------------------------------------------------------------------
 // Boundary binding constructors
@@ -257,6 +257,10 @@ export function restBinding(opts: {
   path: string | null;
   recognition: string;
   declaredResponses?: number[];
+  /** The host of an absolute URL a client calls; see `RestSemantics`. */
+  host?: string | undefined;
+  /** True for a route also served with `.{format}` after its path. */
+  optionalFormat?: boolean;
 }): BoundaryBinding {
   const method = namedOrNull(opts.method, "rest method");
   return {
@@ -268,6 +272,10 @@ export function restBinding(opts: {
       ...(opts.declaredResponses !== undefined
         ? { declaredResponses: opts.declaredResponses }
         : {}),
+      ...(opts.host !== undefined && opts.host !== ""
+        ? { host: opts.host }
+        : {}),
+      ...(opts.optionalFormat === true ? { optionalFormat: true } : {}),
     },
     recognition: opts.recognition,
   };

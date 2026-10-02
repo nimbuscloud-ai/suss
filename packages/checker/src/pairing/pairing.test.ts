@@ -865,4 +865,87 @@ describe("pairSummaries across buckets", () => {
     const result = pairSummaries([p, c]);
     expect(result.pairs).toHaveLength(1);
   });
+
+  it("takes the route with a parameter where the caller has a hole over one that spells a word there", () => {
+    const show = providerWithPath(
+      "show",
+      "GET",
+      "/(|locale/:locale/)follows/:id",
+    );
+    const bulk = providerWithPath(
+      "bulkShow",
+      "GET",
+      "/(|locale/:locale/)follows/bulk_show",
+    );
+    const c = consumerWithPath("fetchStatus", "GET", "/follows/{id}");
+
+    const result = pairSummaries([bulk, show, c]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([show]);
+    expect(result.ambiguous).toEqual([]);
+  });
+
+  it("pairs nothing when every route that meets the call spells a word where it has a hole", () => {
+    const settings = providerWithPath("settings", "PUT", "/users/settings");
+    const notifications = providerWithPath(
+      "notifications",
+      "PUT",
+      "/users/notification_settings",
+    );
+    const c = consumerWithPath("saveUser", "PUT", "/users/{userId}");
+
+    const result = pairSummaries([settings, notifications, c]);
+    expect(result.pairs).toEqual([]);
+    expect(result.ambiguous).toEqual([]);
+    expect(result.unmatched.consumers).toEqual([c]);
+  });
+});
+
+describe("pairSummaries and the host a call names", () => {
+  const atHost = (path: string, host: string): BehavioralSummary => {
+    const c = consumerWithPath("search", "GET", path);
+    return {
+      ...c,
+      identity: {
+        ...c.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path,
+          recognition: "net-http",
+          host,
+        }),
+      },
+    };
+  };
+
+  it("never pairs a call to a public host with the app's routes", () => {
+    const permalink = providerWithPath("permalink", "GET", "/:url+");
+    const search = providerWithPath("search", "GET", "/customsearch/v1");
+    const c = atHost("/customsearch/v1", "www.googleapis.com");
+
+    const result = pairSummaries([permalink, search, c]);
+    expect(result.pairs).toEqual([]);
+    expect(result.unmatched.consumers).toEqual([c]);
+  });
+
+  it("pairs a call to a host the app can run on", () => {
+    const orders = providerWithPath("orders", "GET", "/orders");
+    const c = atHost("/orders", "localhost:3000");
+
+    const result = pairSummaries([orders, c]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([orders]);
+  });
+
+  it("keeps a call whose host it could not read off a catch-all and on the route it names", () => {
+    const permalink = providerWithPath("permalink", "GET", "/:url+");
+    const health = providerWithPath("health", "GET", "/health");
+    const named = atHost("/health", "{target}:{port}");
+    const other = atHost("/status", "{target}:{port}");
+
+    const result = pairSummaries([permalink, health, named, other]);
+    expect(result.pairs.map((pair) => [pair.consumer, pair.provider])).toEqual([
+      [named, health],
+    ]);
+    expect(result.unmatched.consumers).toEqual([other]);
+  });
 });
