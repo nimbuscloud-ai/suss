@@ -10,9 +10,9 @@ import { describe, expect, it } from "vitest";
 import {
   compareRanks,
   pathSpansShapes,
-  pathSpecificity,
   pathsMeet,
   patternAdmits,
+  requestRank,
 } from "./pathPattern.js";
 
 describe("pathsMeet", () => {
@@ -115,37 +115,55 @@ describe("pathSpansShapes", () => {
   });
 });
 
-describe("pathSpecificity", () => {
-  const outranks = (a: string, b: string): boolean =>
-    compareRanks(pathSpecificity(a), pathSpecificity(b)) > 0;
+describe("requestRank", () => {
+  const compareFor = (request: string, a: string, b: string): number =>
+    compareRanks(requestRank(a, request) ?? [], requestRank(b, request) ?? []);
 
-  it("ranks the path with more fixed segments higher", () => {
-    expect(outranks("/users/me", "/users/{id}")).toBe(true);
-    expect(outranks("/api/orders/*", "/api/{a}/{b}")).toBe(true);
-  });
-
-  it("ranks the path that lets fewer segments vary in number higher", () => {
-    expect(outranks("/api/{v}/orders/{id}", "/api/{v}/{t?}/orders/{id}")).toBe(
-      true,
+  it("ranks the route that spells out more of the request higher", () => {
+    expect(compareFor("/users/me", "/users/me", "/users/{id}")).toBeGreaterThan(
+      0,
     );
-    expect(outranks("/api/orders/{id}", "/api/orders/*")).toBe(true);
-  });
-
-  it("ranks a segment with text around its hole above a bare hole", () => {
-    expect(outranks("/files/{name}.json", "/files/{name}")).toBe(true);
-  });
-
-  it("ranks a path by its loosest reading, then by how few it has", () => {
-    expect(outranks("/api/orders", "/api(/v2|)/orders")).toBe(true);
-    expect(outranks("/api/(v1|v2)/orders", "/api/{v}/orders")).toBe(true);
-  });
-
-  it("ranks two paths of one shape equal", () => {
     expect(
-      compareRanks(
-        pathSpecificity("/orders/{id}"),
-        pathSpecificity("/orders/{orderId}"),
+      compareFor("/api/orders/7", "/api/orders/*", "/api/{a}/{b}"),
+    ).toBeGreaterThan(0);
+  });
+
+  it("ranks the route that lets fewer segments vary in number higher", () => {
+    expect(
+      compareFor(
+        "/api/v1/orders/7",
+        "/api/{v}/orders/{id}",
+        "/api/{v}/{t?}/orders/{id}",
       ),
-    ).toBe(0);
+    ).toBeGreaterThan(0);
+    expect(
+      compareFor("/api/orders/7", "/api/orders/{id}", "/api/orders/*"),
+    ).toBeGreaterThan(0);
+  });
+
+  it("ranks a segment whose pattern matches above a bare hole", () => {
+    expect(
+      compareFor("/files/a.json", "/files/{name}.json", "/files/{name}"),
+    ).toBeGreaterThan(0);
+  });
+
+  it("ranks a route by the reading that fits the request", () => {
+    expect(compareFor("/api/orders", "/api/orders", "/api(/v2|)/orders")).toBe(
+      0,
+    );
+    expect(
+      compareFor("/api/v1/orders", "/api/(v1|v2)/orders", "/api/{v}/orders"),
+    ).toBeGreaterThan(0);
+  });
+
+  it("ranks two routes of one shape equal", () => {
+    expect(compareFor("/orders/{x}", "/orders/{id}", "/orders/{orderId}")).toBe(
+      0,
+    );
+  });
+
+  it("gives no rank to a route that spells a word where the request has a hole", () => {
+    expect(requestRank("/users/settings", "/users/{userId}")).toBeNull();
+    expect(requestRank("/users/{id}", "/users/{userId}")).not.toBeNull();
   });
 });

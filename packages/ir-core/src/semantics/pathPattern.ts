@@ -320,25 +320,13 @@ function countOf(
   return items.filter((item) => kinds.includes(item.kind)).length;
 }
 
-/**
- * How narrowly the path states which requests it serves, as a rank to
- * compare lexicographically: fixed segments first, then segments with
- * some text in them, then how few segments it lets vary in number, then
- * how few readings a set gives it. A path with several readings ranks
- * by its loosest one. When two paths serve one request, the one
- * ranking higher is the one a caller meant.
- */
-export function pathSpecificity(path: string): readonly number[] {
-  const alternatives = patternOf(path);
-  const ranks = alternatives.map((items) => [
+/** How narrowly one reading of a route states what it serves: fixed segments, then segments with text in them, then fewest that vary in number. */
+function readingSpecificity(items: readonly Item[]): readonly number[] {
+  return [
     countOf(items, ["text"]),
     countOf(items, ["shaped"]),
     -countOf(items, ["optional", "star"]),
-  ]);
-  const loosest = ranks.reduce((low, rank) =>
-    compareRanks(rank, low) < 0 ? rank : low,
-  );
-  return [...loosest, 1 - alternatives.length];
+  ];
 }
 
 /**
@@ -445,23 +433,29 @@ function bestFit(route: readonly Item[], request: readonly Item[]): Fit | null {
 
 /**
  * How well a route fits a request path, as a rank to compare
- * lexicographically: how many of the segments the request spells out the
- * route spells out too, then how many its patterns match. A caller
- * breaks a tie with `pathSpecificity`. Null when the two meet only where
- * the route spells out a segment the request leaves as a hole: a request
- * to `/follows/{id}` reaches `/follows/bulk_show` only if the id is the
- * word `bulk_show`, so that route is not one the caller meant.
+ * lexicographically: how many of the segments the request spells out
+ * the route spells out too, then how many its patterns match, then how
+ * narrowly the reading of the route that fits states what it serves. A
+ * route with several readings ranks by the one that fits, so an optional
+ * locale prefix neither helps nor hurts a call that leaves it out.
+ *
+ * Null when the two meet only where the route spells out a segment the
+ * request leaves as a hole: a request to `/follows/{id}` reaches
+ * `/follows/bulk_show` only if the id is the word `bulk_show`, so that
+ * route is not one the caller meant.
  */
-export function requestFit(
+export function requestRank(
   route: string,
   request: string,
 ): readonly number[] | null {
-  let found: Fit | null = null;
+  let found: readonly number[] | null = null;
   for (const routeItems of patternOf(route)) {
     for (const requestItems of patternOf(request)) {
       const fit = bestFit(routeItems, requestItems);
-      if (fit !== null && (found === null || compareRanks(fit, found) > 0)) {
-        found = fit;
+      const rank =
+        fit === null ? null : [...fit, ...readingSpecificity(routeItems)];
+      if (rank !== null && (found === null || compareRanks(rank, found) > 0)) {
+        found = rank;
       }
     }
   }

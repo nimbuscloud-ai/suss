@@ -22,10 +22,9 @@ import {
   isCatchAll,
   pathAfterBaseUrl,
   pathSpansShapes,
-  pathSpecificity,
   pathsMeet,
   patternAdmits,
-  requestFit,
+  requestRank,
 } from "./pathPattern.js";
 
 import type { Reference } from "../boundaryName.js";
@@ -334,13 +333,10 @@ export const restSemantics = defineBoundarySemantics({
       if (hostUnread(consumer) && isCatchAll(route)) {
         return null;
       }
-      const fit = requestFit(
+      return requestRank(
         servedPath(provider, provider.path),
         normalizePath(consumer.path),
       );
-      // The tie breaks on the route as written, so the format Rails adds
-      // never ranks a route below a spec that documents the same path.
-      return fit === null ? null : [...fit, ...pathSpecificity(route)];
     },
     /**
      * The identity key, with a missing half still readable: `ANY` when
