@@ -226,6 +226,8 @@ export interface RawTerminal {
   exceptionType: string | null;
   /** On a throw, what the exception inherits from, where the adapter read it. */
   exceptionAncestry?: { ancestors: string[]; incomplete: boolean };
+  /** On a throw, the status the framework sends when no handler catches it. */
+  statusWhenUncaught?: number;
   message: string | null;
   /** Set on a throw whose pack declared the thrown status is the wire response. */
   producesResponse?: boolean;
@@ -1069,6 +1071,9 @@ const terminalConverters: Record<
             exceptionAncestors: ancestry.ancestors,
             ...(ancestry.incomplete ? { ancestryIncomplete: true } : {}),
           }),
+      ...(t.statusWhenUncaught === undefined
+        ? {}
+        : { statusWhenUncaught: t.statusWhenUncaught }),
     };
   },
   render: (t) => ({

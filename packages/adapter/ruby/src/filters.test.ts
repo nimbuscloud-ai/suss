@@ -274,7 +274,7 @@ end
     expect(filters.every((one) => one.filter.onThrow === true)).toBe(true);
   });
 
-  it("lists handlers in the order Rails tries them, last declared first, and keeps every class a handler is registered for", async () => {
+  it("lists every registration in the order Rails tries them, last declared first, with a handler registered twice in both places", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController
   rescue_from AccessDenied, with: :render_denied
@@ -304,8 +304,9 @@ end
       ]),
     ).toEqual([
       ["render_other", [], true],
-      ["render_denied", ["AccessDenied", "Locked"], false],
+      ["render_denied", ["Locked"], false],
       ["render_limit", ["Billing::LimitReached"], false],
+      ["render_denied", ["AccessDenied"], false],
     ]);
   });
 
