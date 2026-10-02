@@ -428,6 +428,44 @@ describe("pairSummaries", () => {
     expect(result.pairs.map((pair) => pair.provider)).toContain(declared);
   });
 
+  it("keeps a contract beside a route that also serves a format, and pairs a call with the format", () => {
+    const base = providerWithPath("search", "GET", "/search");
+    const route = {
+      ...base,
+      identity: {
+        ...base.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "GET",
+          path: "/search",
+          recognition: "rails",
+          optionalFormat: true,
+        }),
+      },
+    };
+    const spec = providerWithPath("search", "GET", "/search");
+    const declared = {
+      ...spec,
+      location: { ...spec.location, file: "openapi:openapi.yaml" },
+      metadata: withHttpMetadata(undefined, {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: [{ statusCode: 200 }],
+        },
+      }),
+    };
+    const plain = consumerWithPath("search", "GET", "/search");
+    const json = consumerWithPath("searchJson", "GET", "/search.json");
+
+    const result = pairSummaries([route, declared, plain, json]);
+    expect(result.pairs.map((pair) => [pair.consumer, pair.provider])).toEqual([
+      [plain, route],
+      [plain, declared],
+      [json, route],
+    ]);
+  });
+
   it("takes the provider in the caller's own service over a stranger's", () => {
     const mine = inService(
       providerWithPath("getUser", "GET", "/users/{id}"),

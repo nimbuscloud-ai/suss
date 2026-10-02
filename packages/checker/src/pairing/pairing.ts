@@ -329,12 +329,16 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
         ...meeting,
       ]) {
         const rank = pairRank(providers.binding, called);
-        const summaries = providers.summaries.filter((provider) =>
-          bindingsPair(
-            groundedBinding.get(provider) ?? providers.binding,
-            called,
-          ),
-        );
+        // Summaries share a bucket by path shape alone, so one in a bucket
+        // that meets the call can still serve none of it, as a spec for
+        // `/search` does not serve the `/search.json` a route also takes.
+        const summaries = providers.summaries.filter((provider) => {
+          const binding = groundedBinding.get(provider) ?? providers.binding;
+          return (
+            bindingsPair(binding, called) &&
+            (providers === exact || bucketsMeet(binding, called))
+          );
+        });
         if (rank !== null && summaries.length > 0) {
           agreeing.push({ ...providers, rank, summaries });
         }

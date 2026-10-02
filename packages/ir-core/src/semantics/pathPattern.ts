@@ -445,14 +445,14 @@ function bestFit(route: readonly Item[], request: readonly Item[]): Fit | null {
 
 /**
  * How well a route fits a request path, as a rank to compare
- * lexicographically: first how many of the segments the request spells
- * out the route spells out too, then how many its patterns match, then
- * `pathSpecificity` of the route. Null when the two meet only where the
- * route spells out a segment the request leaves as a hole: a request to
- * `/follows/{id}` reaches `/follows/bulk_show` only if the id is the
+ * lexicographically: how many of the segments the request spells out the
+ * route spells out too, then how many its patterns match. A caller
+ * breaks a tie with `pathSpecificity`. Null when the two meet only where
+ * the route spells out a segment the request leaves as a hole: a request
+ * to `/follows/{id}` reaches `/follows/bulk_show` only if the id is the
  * word `bulk_show`, so that route is not one the caller meant.
  */
-export function requestRank(
+export function requestFit(
   route: string,
   request: string,
 ): readonly number[] | null {
@@ -465,7 +465,7 @@ export function requestRank(
       }
     }
   }
-  return found === null ? null : [...found, ...pathSpecificity(route)];
+  return found;
 }
 
 /**
