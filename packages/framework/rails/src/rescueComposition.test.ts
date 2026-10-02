@@ -121,9 +121,9 @@ afterEach(() => {
   }
 });
 
-/** The project's summaries, with its files read in the order `order` puts them. */
+/** The project's summaries, with its files read in path order, or in reverse. */
 async function extract(
-  order: (files: string[]) => string[] = (files) => files,
+  order: "asListed" | "reversed",
 ): Promise<BehavioralSummary[]> {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-rescue-"));
   for (const [relative, source] of Object.entries({
@@ -142,8 +142,9 @@ async function extract(
     }),
     { storageSystem: "postgresql" },
   );
+  const files = findRubyFiles(appRoot).sort();
   const { summaries } = await extractRubyProject({
-    files: order(findRubyFiles(appRoot).sort()),
+    files: order === "reversed" ? files.reverse() : files,
     packs: [pack],
     workspaceRoot: dir,
   });
@@ -175,26 +176,27 @@ function outcomesOfShow(
 }
 
 describe("rescue_from composed onto each route", () => {
+  function expectEachControllersOwnHandler(
+    summaries: readonly BehavioralSummary[],
+  ): void {
+    expect(outcomesOfShow(summaries, "Api::PostsController")).toEqual([
+      ["throw", "load_account", false],
+      [200, null, false],
+      [410, "gone", false],
+    ]);
+    expect(outcomesOfShow(summaries, "AccountsController")).toEqual([
+      [404, "load_account", false],
+      [200, null, false],
+    ]);
+  }
+
   it("gives an inherited filter's raise each controller's own handler, whichever controller is read first", async () => {
-    for (const order of [
-      (files: string[]) => files,
-      (files: string[]) => [...files].reverse(),
-    ]) {
-      const summaries = await extract(order);
-      expect(outcomesOfShow(summaries, "Api::PostsController")).toEqual([
-        ["throw", "load_account", false],
-        [200, null, false],
-        [410, "gone", false],
-      ]);
-      expect(outcomesOfShow(summaries, "AccountsController")).toEqual([
-        [404, "load_account", false],
-        [200, null, false],
-      ]);
-    }
+    expectEachControllersOwnHandler(await extract("asListed"));
+    expectEachControllersOwnHandler(await extract("reversed"));
   });
 
   it("keeps Rails' own 404 beside a handler that only may catch the raise", async () => {
-    const summaries = await extract();
+    const summaries = await extract("asListed");
     expect(outcomesOfShow(summaries, "ReportsController")).toEqual([
       [200, null, false],
       ["throw", null, false],
@@ -204,7 +206,7 @@ describe("rescue_from composed onto each route", () => {
   });
 
   it("tries a handler registered twice at each place it was registered", async () => {
-    const summaries = await extract();
+    const summaries = await extract("asListed");
     expect(outcomesOfShow(summaries, "NotesController")).toEqual([
       [200, null, false],
       ["throw", null, false],
