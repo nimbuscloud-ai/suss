@@ -97,12 +97,16 @@ export const RAILS_ROOT_CLASS_NAMES: readonly string[] = [
 ];
 
 /**
- * `render` takes the status as `status:`, `head` takes it first or as the
- * keyword, and both redirects take the keyword. A redirect with no status
- * sends 302, where `render` and `head` default to 200.
+ * A redirect with no status sends 302, where `render` and `head` send 200.
+ * `to_json` and `as_json` on a hash leave it as `render json:` sends it.
  */
 const RESPONSE_STATUS_CALLS = [
-  { name: "render", statusKeyword: "status" },
+  {
+    name: "render",
+    statusKeyword: "status",
+    bodyKeyword: "json",
+    bodySerializers: ["to_json", "as_json"],
+  },
   { name: "head", statusArgument: 0, statusKeyword: "status" },
   { name: "redirect_to", statusKeyword: "status", defaultStatusCode: 302 },
   { name: "redirect_back", statusKeyword: "status", defaultStatusCode: 302 },

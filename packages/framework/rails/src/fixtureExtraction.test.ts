@@ -223,6 +223,24 @@ describe("extraction over fixtures/ruby-rails", () => {
     ]);
   });
 
+  it("reads the JSON body render writes as a hash, and leaves one it cannot read unknown", async () => {
+    const { summaries } = await extractFixture();
+    const update = action(summaries, "items_controller", "update");
+    expect(own(update).map((transition) => transition.output)).toMatchObject([
+      {
+        body: {
+          type: "record",
+          properties: {
+            error: { type: "literal", value: "name is required" },
+          },
+        },
+      },
+      { body: { type: "record", properties: {} } },
+    ]);
+    const create = action(summaries, "items_controller", "create");
+    expect(own(create)[0]?.output).toMatchObject({ body: null });
+  });
+
   it("gates each of those transitions on the test the action branched on", async () => {
     const { summaries } = await extractFixture();
     const update = action(summaries, "items_controller", "update");

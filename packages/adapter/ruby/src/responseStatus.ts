@@ -38,8 +38,10 @@ import {
 import { guardInputs } from "./provenance.js";
 import { raisedTerminal } from "./raisedStatuses.js";
 import { escapingRaises } from "./raises.js";
+import { bodyReadingOfCall } from "./responseBody.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
+import type { TypeShape } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   ConditionInfo,
@@ -310,6 +312,7 @@ function conditionInputs(
 interface Outcome {
   conditions: RawCondition[];
   reading: Reading<number>;
+  body?: Reading<TypeShape>;
   location: Range;
   /** True for a path that reached no response call of its own. */
   fellThrough?: boolean;
@@ -428,6 +431,9 @@ function branchOf(
       reading: outcome.reading,
       libraryDefault: pattern.defaultStatusCode,
     },
+    ...(outcome.body === undefined
+      ? {}
+      : { bodyShapeReading: { reading: outcome.body } }),
     effects: effectsReaching(effects, outcome.conditions),
     ...(extraEffects === undefined ? {} : { extraEffects }),
     location: outcome.location,
@@ -614,10 +620,15 @@ export function responseBranches(
       responder === undefined
         ? absentReading
         : readingOfResponder(terminal, responder, statusNames, options);
+    const body =
+      responder?.kind === "declared"
+        ? bodyReadingOfCall(terminal, responder.declaration, options.facts)
+        : undefined;
     for (const path of enumerated.byTerminal.get(terminal) ?? []) {
       outcomes.push({
         conditions: conditionsOf(path),
         reading,
+        ...(body === undefined ? {} : { body }),
         location: rangeOf(terminal),
         // A bare `return` wrote no response, so a filter that takes it
         // hands the request on the same as one that reaches its end.
