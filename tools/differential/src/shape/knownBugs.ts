@@ -36,21 +36,11 @@ export interface ReproducedBug {
 }
 
 /**
- * Wrong behaviour at the render boundary. How a component is written,
- * how its name is bound, and every way it leaves the module all resolve
- * now, so the sound tier covers those three dimensions. What is left is
- * the one route that hands the component to a factory, where the value
- * arrives inside an object argument and no rule reads it back out.
+ * How a component is written, how its name is bound, and every way it
+ * leaves the module now resolve, factory arguments included, so the
+ * sound tier covers all three dimensions and nothing is listed here.
  */
-export const COMPONENT_BUGS: ReproducedBug[] = [
-  {
-    dimension: "route",
-    value: "throughFactoryArg",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a component handed to a factory in an object argument is not discovered",
-  },
-];
+export const COMPONENT_BUGS: ReproducedBug[] = [];
 
 /**
  * The reach paths a registration call follows to the handler behind it.

@@ -64,9 +64,13 @@ export const SIMPLEST_COMPONENT_SHAPE: Omit<ComponentShapeSpec, "body"> = {
 /**
  * Routes that rename what they export. The exported name is then a
  * defensible value for the summary's name as well as the source name,
- * so the "a named unit keeps its name" invariant skips them.
+ * so the "a named unit keeps its name" invariant skips them. A factory
+ * route exports the name its result is bound to, `built`.
  */
-export const RENAMING_ROUTES = new Set<ExportRoute>(["aliasedNamed"]);
+export const RENAMING_ROUTES = new Set<ExportRoute>([
+  "aliasedNamed",
+  "throughFactoryArg",
+]);
 
 // ---------------------------------------------------------------------------
 // Rendering
