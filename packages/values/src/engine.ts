@@ -378,6 +378,9 @@ export class Evaluator<N extends object> {
         completes: false,
       };
     }
+    if (shape.kind === "throw") {
+      return { returns: [], completes: false };
+    }
     if (shape.kind === "block") {
       return this.run(shape.body, state, root, depth);
     }

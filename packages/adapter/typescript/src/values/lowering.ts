@@ -372,10 +372,18 @@ function statementOf(node: Node): Statement<Node> {
     };
   }
   if (Node.isSwitchStatement(node)) {
+    // An empty clause falls through into the next one, so it is no arm
+    // of its own.
+    const clauses = node.getClauses();
     return {
       kind: "branch",
       condition: null,
-      arms: node.getClauses().map((clause) => clause.getStatements()),
+      arms: clauses
+        .filter(
+          (clause, at) =>
+            clause.getStatements().length > 0 || at === clauses.length - 1,
+        )
+        .map((clause) => clause.getStatements()),
     };
   }
   if (Node.isIterationStatement(node)) {
@@ -383,6 +391,9 @@ function statementOf(node: Node): Statement<Node> {
   }
   if (Node.isReturnStatement(node)) {
     return { kind: "return", value: node.getExpression() ?? null };
+  }
+  if (Node.isThrowStatement(node) && !caughtInSameFunction(node)) {
+    return { kind: "throw" };
   }
   if (Node.isBlock(node)) {
     return { kind: "block", body: node.getStatements() };
@@ -397,6 +408,29 @@ function statementOf(node: Node): Statement<Node> {
     };
   }
   return { kind: "opaque" };
+}
+
+/**
+ * Whether a `try` with a `catch` in the same function surrounds the
+ * statement. A `try` lowers to its body and its `finally`, and leaves
+ * the `catch` out, so a throw inside one stays opaque and the statements
+ * after the `try` still run.
+ */
+function caughtInSameFunction(node: Node): boolean {
+  let child = node;
+  let parent = node.getParent();
+  while (parent !== undefined && !isRoot(parent)) {
+    if (
+      Node.isTryStatement(parent) &&
+      parent.getCatchClause() !== undefined &&
+      parent.getTryBlock() === child
+    ) {
+      return true;
+    }
+    child = parent;
+    parent = parent.getParent();
+  }
+  return false;
 }
 
 /** The statements of an `if` arm or a loop body, braced or not. */

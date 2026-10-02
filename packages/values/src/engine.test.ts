@@ -26,6 +26,7 @@ import {
   type TestNode,
   template,
   testLowering,
+  throws,
 } from "./testLowering.js";
 import {
   force,
@@ -183,6 +184,40 @@ describe("Evaluator", () => {
         ),
       ]);
       expect(literalOf(evaluate(target))).toBe("/b");
+    });
+
+    it("leaves out the write an arm makes before it throws", () => {
+      const target = name("base");
+      module([
+        declare({ base: lit("") }),
+        branch(
+          null,
+          [assign(name("base"), lit("/a"))],
+          [assign(name("base"), lit("/b"))],
+          [throws()],
+        ),
+        expr(target),
+      ]);
+      expect(piecesOf(evaluate(target))).toEqual([
+        { kind: "text", options: ["/a", "/b"] },
+      ]);
+    });
+
+    it("takes an inlined call's value only from the paths that return", () => {
+      const helper = fn(
+        ["flag"],
+        [branch(name("flag"), [ret(lit("/x"))], [throws()])],
+      );
+      const target = call(null, "helper", [name("input")], { calls: helper });
+      module([helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/x");
+    });
+
+    it("gives a function that always throws no value", () => {
+      const helper = fn([], [throws()]);
+      const target = call(null, "helper", [], { calls: helper });
+      module([helper, expr(target)]);
+      expect(evaluate(target)).toEqual(hole("value"));
     });
   });
 

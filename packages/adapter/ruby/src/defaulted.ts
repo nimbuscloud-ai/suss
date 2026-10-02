@@ -12,7 +12,12 @@
  * to their own syntax.
  */
 
-import { enclosingDefinition, field, readCallArgs } from "./ast.js";
+import {
+  enclosingDefinition,
+  field,
+  isRaiseCall,
+  readCallArgs,
+} from "./ast.js";
 import { envSpellingAt, isEnv, isSameName } from "./envSpellings.js";
 import { ownerOfName } from "./facts/locals.js";
 import { readKey } from "./facts/values.js";
@@ -410,7 +415,7 @@ function firstExit(statements: readonly (RbNode | null)[]): Exit | null {
  * `break`, either by itself or as the first exit in a statement list.
  */
 function exitOf(statement: RbNode): Exit | null {
-  if (isRaise(statement)) {
+  if (isRaiseCall(statement)) {
     return "raise";
   }
   if (LEAVING_TYPES.has(statement.type)) {
@@ -419,20 +424,6 @@ function exitOf(statement: RbNode): Exit | null {
   return STATEMENT_LIST_TYPES.has(statement.type)
     ? firstExit(statement.namedChildren)
     : null;
-}
-
-const RAISING_METHODS = new Set(["raise", "fail"]);
-
-/** `raise`, `raise "..."` or `fail Error`, called on `self`. */
-function isRaise(node: RbNode): boolean {
-  if (node.type === "identifier") {
-    return RAISING_METHODS.has(node.text);
-  }
-  return (
-    node.type === "call" &&
-    field(node, "receiver") === null &&
-    RAISING_METHODS.has(field(node, "method")?.text ?? "")
-  );
 }
 
 /**
