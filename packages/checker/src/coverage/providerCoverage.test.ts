@@ -21,7 +21,13 @@ import {
 } from "../__fixtures__/pairs.js";
 import { checkProviderCoverage } from "./providerCoverage.js";
 
-import type { Predicate, TypeShape } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Predicate,
+  Transition,
+  TypeShape,
+  ValueRef,
+} from "@suss/behavioral-ir";
 
 describe("checkProviderCoverage", () => {
   it("reports no findings when consumer explicitly handles every provider status", () => {
@@ -447,6 +453,76 @@ describe("checkProviderCoverage — sub-case analysis", () => {
     expect(subcaseFindings).toHaveLength(1);
     expect(subcaseFindings[0].provider.transitionId).toBe("t-200-deleted");
     expect(subcaseFindings[0].description).toContain("2 different situations");
+  });
+
+  describe("a shared middleware that branches on state other code set", () => {
+    const readOf = (input: string, ...path: string[]): ValueRef =>
+      path.reduce<ValueRef>(
+        (from, property) => ({
+          type: "derived",
+          from,
+          derivation: { type: "propertyAccess", property },
+        }),
+        { type: "input", inputRef: input, path: [] },
+      );
+    const truthy = (subject: ValueRef): Predicate => ({
+      type: "truthinessCheck",
+      subject,
+      negated: false,
+    });
+    /** `respond(req, res)`, which every route ends in. */
+    const respond = (transitions: Transition[]): BehavioralSummary => ({
+      ...provider("respond", transitions),
+      inputs: [
+        { type: "parameter", name: "req", position: 0, role: "request", shape: null },
+        { type: "parameter", name: "res", position: 1, role: "response", shape: null },
+      ],
+      metadata: {
+        requestSpelling: {
+          query: { path: ["request", "query"], saysWhichField: true },
+        },
+      },
+    });
+    const page = consumer("ItemPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-204", {
+        conditions: [statusEq(204)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    it("does not count paths gated on a field middleware set as situations", () => {
+      const p = respond([
+        // `if (req.sanitizedQuery.export) return res.status(200).send(file)`
+        transition("t-200-export", {
+          conditions: [truthy(readOf("req", "sanitizedQuery", "export"))],
+          output: response(200),
+        }),
+        // `if (!res.locals.payload) return res.status(204).end()`
+        transition("t-204-empty", {
+          conditions: [truthy(readOf("res", "locals", "payload"))],
+          output: response(204),
+        }),
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]);
+      expect(checkProviderCoverage(p, page)).toEqual([]);
+    });
+
+    it("still reports situations a request field decides", () => {
+      const p = respond([
+        transition("t-200-csv", {
+          conditions: [truthy(readOf("req", "query", "csv"))],
+          output: response(200),
+        }),
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]);
+      expect(
+        checkProviderCoverage(p, page).map((f) => f.provider.transitionId),
+      ).toEqual(["t-200-csv"]);
+    });
   });
 
   it("does not emit sub-case warnings when provider has only one transition per status", () => {
