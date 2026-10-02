@@ -18,6 +18,7 @@ import {
   successFlag,
   throwsOnFailure,
   transition,
+  unreadOutcomeGap,
 } from "../__fixtures__/pairs.js";
 import { checkProviderCoverage } from "./providerCoverage.js";
 
@@ -333,6 +334,39 @@ describe("checkProviderCoverage", () => {
     const findings = checkProviderCoverage(p, c);
     expect(findings).toHaveLength(1);
     expect(findings[0].description).toContain("404");
+  });
+
+  it("calls no status unhandled by a consumer suss could not read", () => {
+    const p = provider("getUser", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const crashed = {
+      ...consumer("UserPage", []),
+      gaps: [unreadOutcomeGap("Reading this unit threw: boom")],
+    };
+    const findings = checkProviderCoverage(p, crashed);
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: "lowConfidence", severity: "info" }),
+    ]);
+  });
+
+  it("calls no status unhandled by a consumer suss read in part", () => {
+    const p = provider("getUser", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const partly = {
+      ...consumer("UserPage", [
+        transition("ct-200", { output: response(200), isDefault: true }),
+      ]),
+      gaps: [unreadOutcomeGap("No terminal matched a return in UserPage")],
+    };
+    expect(
+      checkProviderCoverage(p, partly).filter(
+        (f) => f.kind === "unhandledProviderCase",
+      ),
+    ).toEqual([]);
   });
 
   it("emits a lowConfidence finding for opaque provider statuses", () => {

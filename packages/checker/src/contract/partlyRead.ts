@@ -18,10 +18,15 @@ import {
   wrapperFor,
 } from "@suss/behavioral-ir";
 
-import { hasOpaqueStatus } from "../coverage/responseMatch.js";
+import {
+  hasOpaqueStatus,
+  makeBoundary,
+  makeSide,
+} from "../coverage/responseMatch.js";
 
 import type {
   BehavioralSummary,
+  Finding,
   Predicate,
   Transition,
   ValueRef,
@@ -56,6 +61,29 @@ function refsOf(p: Predicate): ValueRef[] {
  */
 function conditionUnread(handler: BehavioralSummary, p: Predicate): boolean {
   return refsOf(p).some((ref) => readsBesideTheRequest(handler, ref));
+}
+
+/**
+ * The finding a consumer gets in place of coverage findings when no pack
+ * terminal matched part of what it does. The part suss did not read may
+ * be where it handles a status, so no status is called unhandled.
+ */
+export function consumerReadInPart(
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
+): Finding | null {
+  if (!consumer.gaps.some((gap) => gap.type === "unreadOutcome")) {
+    return null;
+  }
+  return {
+    kind: "lowConfidence",
+    boundary: makeBoundary(provider, consumer),
+    provider: makeSide(provider),
+    consumer: makeSide(consumer),
+    description:
+      "Part of the consumer could not be read, so whether it handles each status the provider sends cannot be confirmed",
+    severity: "info",
+  };
 }
 
 /** Whether an error handler added this outcome without the run knowing it catches the throw. */

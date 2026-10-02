@@ -12,7 +12,10 @@ import {
   readDeclaredContract,
   statusAccessorsFor,
 } from "./declaredContract.js";
-import { reachedThroughUnreadCondition } from "./partlyRead.js";
+import {
+  consumerReadInPart,
+  reachedThroughUnreadCondition,
+} from "./partlyRead.js";
 
 import type {
   BehavioralSummary,
@@ -62,7 +65,6 @@ export function checkContractConsistency(
     }
   }
 
-  const declaredStatuses = new Set(contract.responses.map((r) => r.statusCode));
   const statusAccessors = statusAccessorsFor(consumer);
 
   const consumerExplicit = new Set<number>();
@@ -71,11 +73,56 @@ export function checkContractConsistency(
       consumerExplicit.add(s);
     }
   }
+  // The coverage check leaves a consumer suss read in part alone the same
+  // way, since the part it did not read may handle the status.
+  const readInPart = consumerReadInPart(provider, consumer);
+  findings.push(
+    ...(readInPart === null
+      ? declaredButUnhandled(provider, consumer, contract, boundary)
+      : [readInPart]),
+  );
+
+  for (const expected of consumerExplicit) {
+    if (contractDeclaresStatus(contract, expected)) {
+      continue;
+    }
+    findings.push({
+      kind: "consumerContractViolation",
+      boundary,
+      provider: makeSide(provider),
+      consumer: makeSide(consumer),
+      description: `Consumer handles status ${expected} but contract does not declare it`,
+      // If the contract is right the branch never runs, and nothing is
+      // misread either way, so this is a warning like deadConsumerBranch
+      // (#471).
+      severity: "warning",
+    });
+  }
+
+  if (skipSelfComparison) {
+    return findings;
+  }
+
+  findings.push(
+    ...checkBodiesAgainstDeclared(provider, contract, boundary, consumer),
+  );
+
+  return findings;
+}
+
+/** Each status or range the contract declares that the consumer does not handle. */
+function declaredButUnhandled(
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
+  contract: DeclaredContract,
+  boundary: BoundaryBinding,
+): Finding[] {
+  const findings: Finding[] = [];
   // The same rule the coverage check uses, so a catch on a client that
   // throws on failure counts here as it does there.
   const covers = coverageOf(provider, consumer);
 
-  for (const declared of declaredStatuses) {
+  for (const declared of new Set(contract.responses.map((r) => r.statusCode))) {
     if (covers(declared)) {
       continue;
     }
@@ -113,32 +160,6 @@ export function checkContractConsistency(
       severity: "warning",
     });
   }
-
-  for (const expected of consumerExplicit) {
-    if (contractDeclaresStatus(contract, expected)) {
-      continue;
-    }
-    findings.push({
-      kind: "consumerContractViolation",
-      boundary,
-      provider: makeSide(provider),
-      consumer: makeSide(consumer),
-      description: `Consumer handles status ${expected} but contract does not declare it`,
-      // If the contract is right the branch never runs, and nothing is
-      // misread either way, so this is a warning like deadConsumerBranch
-      // (#471).
-      severity: "warning",
-    });
-  }
-
-  if (skipSelfComparison) {
-    return findings;
-  }
-
-  findings.push(
-    ...checkBodiesAgainstDeclared(provider, contract, boundary, consumer),
-  );
-
   return findings;
 }
 

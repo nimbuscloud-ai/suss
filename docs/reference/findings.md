@@ -158,6 +158,8 @@ You cannot name an input and a wrong result here. The fall-through may be exactl
 
 A provider response declared as a range, such as an OpenAPI `4XX`, is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member, whether that is a branch on 404, a `!res.ok` guard, or a catch on a throwing client. When nothing covers any member it reports once, saying `Provider produces statuses in the 4XX range but no consumer branch handles any of them`.
 
+A consumer suss read only in part, where no pack terminal matched some of what it does, gets one `lowConfidence` finding at info instead, since the part it did not read may be where it handles the status. That includes a consumer whose read threw.
+
 **Legitimate when:** the consumer does not care, because it has a `try`/`catch` or because the throw path is right.
 
 **A bug when:** the consumer ignores the status. Add a branch, such as `if (res.status === 404) return null`.

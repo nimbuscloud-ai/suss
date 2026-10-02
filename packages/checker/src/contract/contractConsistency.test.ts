@@ -65,6 +65,25 @@ describe("checkContractConsistency", () => {
     expect(noted[0].severity).toBe("info");
   });
 
+  it("calls no declared status unhandled by a consumer suss could not read", () => {
+    const p = withContract(
+      provider("getUser", [
+        transition("t-404", { output: response(404) }),
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      [200, 404],
+    );
+    const crashed = {
+      ...consumer("UserPage", []),
+      gaps: [unreadOutcomeGap("Reading this unit threw: boom")],
+    };
+    const findings = checkContractConsistency(p, crashed);
+    expect(
+      findings.filter((f) => f.kind === "consumerContractViolation"),
+    ).toEqual([]);
+    expect(findings.filter((f) => f.kind === "lowConfidence")).toHaveLength(1);
+  });
+
   it("surfaces each provider summary.gaps entry as a providerContractViolation finding", () => {
     const p = withContract(
       provider("getUser", [
