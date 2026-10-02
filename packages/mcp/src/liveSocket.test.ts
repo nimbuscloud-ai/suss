@@ -128,6 +128,12 @@ describe("LiveSocket", () => {
     expect(
       JSON.parse(fs.readFileSync(path.join(root, LIVE_RECORD), "utf8")),
     ).toEqual({ socket: at, pid: process.pid });
+    expect(
+      fs.readFileSync(
+        path.join(root, path.dirname(LIVE_RECORD), ".gitignore"),
+        "utf8",
+      ),
+    ).toBe("*\n");
   });
 
   it("serves extract --out-dir with what the tree says now", async () => {

@@ -239,6 +239,36 @@ describe("createCacheLayer", () => {
     });
   });
 
+  it("keeps the directory it writes out of version control", async () => {
+    const root = await makeTempDir();
+    const cacheDir = path.join(root, "packages", "orders", ".suss", "cache");
+    const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+    const input = { files: paths, adapterPacksDigest: "test@1" };
+
+    await createCacheLayer(cacheDir).write(input, [fakeSummary]);
+
+    expect(await fs.readFile(path.join(cacheDir, ".gitignore"), "utf8")).toBe(
+      "*\n",
+    );
+  });
+
+  it("keeps a .gitignore the cache directory already has, through eviction", async () => {
+    const cacheDir = await makeTempDir();
+    await fs.writeFile(path.join(cacheDir, ".gitignore"), "manifest.json\n");
+    const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+    const cache = createCacheLayer(cacheDir);
+
+    for (let index = 0; index <= MAX_ENTRIES; index += 1) {
+      await cache.write({ files: paths, adapterPacksDigest: `test@${index}` }, [
+        fakeSummary,
+      ]);
+    }
+
+    expect(await fs.readFile(path.join(cacheDir, ".gitignore"), "utf8")).toBe(
+      "manifest.json\n",
+    );
+  });
+
   it("returns a no-op layer when cacheDir is null", async () => {
     const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(null);
@@ -274,7 +304,10 @@ describe("createCacheLayer", () => {
         await new Promise((r) => setTimeout(r, 10));
       }
 
-      expect((await fs.readdir(cacheDir)).length).toBe(MAX_ENTRIES);
+      const entries = (await fs.readdir(cacheDir)).filter((name) =>
+        name.startsWith("key-"),
+      );
+      expect(entries).toHaveLength(MAX_ENTRIES);
       expect(
         await cache.tryHit({ files: paths, adapterPacksDigest: "test@1" }),
       ).toBeNull();

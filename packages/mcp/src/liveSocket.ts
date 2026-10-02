@@ -21,7 +21,12 @@ import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { checkDir, checkDirectory, clearEarlierReads } from "@suss/cli";
+import {
+  checkDir,
+  checkDirectory,
+  clearEarlierReads,
+  makeIgnoredDirectory,
+} from "@suss/cli";
 
 import type { BuildReport, Project } from "./project.js";
 
@@ -133,8 +138,7 @@ export class LiveSocket {
     }
     this.project.buildElsewhere(null);
     const record = path.join(this.project.root, LIVE_RECORD);
-    fs.mkdirSync(path.dirname(record), { recursive: true });
-    fs.writeFileSync(path.join(path.dirname(record), ".gitignore"), "*\n");
+    makeIgnoredDirectory(path.dirname(record));
     const temporary = `${record}.${process.pid}`;
     fs.writeFileSync(
       temporary,
