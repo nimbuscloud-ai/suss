@@ -8,7 +8,7 @@
  * one, so this pass reports only a prop that arrives and is never read.
  * It skips an edge whenever the read set could be incomplete: no
  * `inputReads`, or props forwarded whole. `key`, `ref` and `children`
- * never count.
+ * never count, and `css` counts as read when the child reads `className`.
  */
 
 import {
@@ -27,6 +27,18 @@ import type {
 } from "@suss/behavioral-ir";
 
 const PLUMBING = new Set(["key", "ref", "children"]);
+
+/**
+ * Props a JSX runtime turns into another prop before the child sees them.
+ * Emotion and styled-components compile `css` into a `className`, so a
+ * child that reads `className` gets the styles.
+ */
+const FOLDED_INTO: Readonly<Record<string, string>> = { css: "className" };
+
+function usedOrFolded(name: string, used: ReadonlySet<string>): boolean {
+  const folded = FOLDED_INTO[name];
+  return used.has(name) || (folded !== undefined && used.has(folded));
+}
 
 interface RenderEdge {
   parent: BehavioralSummary;
@@ -208,7 +220,7 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
       }
 
       for (const name of edge.attrNames) {
-        if (PLUMBING.has(name) || used.has(name)) {
+        if (PLUMBING.has(name) || usedOrFolded(name, used)) {
           continue;
         }
         findings.push({

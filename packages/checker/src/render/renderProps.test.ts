@@ -369,6 +369,44 @@ describe("checkRenderProps", () => {
     ]);
   });
 
+  it("counts css as read when the child reads className", () => {
+    const parent = component({
+      name: "Page",
+      file: "src/page.tsx",
+      root: rendering(
+        "Spinner",
+        { file: "src/spinner.tsx", name: "Spinner" },
+        {
+          css: "styles",
+          size: "s",
+        },
+      ),
+    });
+    const styled = component({
+      name: "Spinner",
+      file: "src/spinner.tsx",
+      inputs: [param("className"), param("size")],
+      inputReads: [{ input: "className", path: [] }],
+    });
+    const unstyled = component({
+      name: "Spinner",
+      file: "src/spinner.tsx",
+      inputs: [param("size")],
+      inputReads: [{ input: "size", path: [] }],
+    });
+
+    expect(
+      checkRenderProps([parent, styled]).map((f) => f.description),
+    ).toEqual([
+      'Page passes "size" to Spinner, and nothing in Spinner reads it.',
+    ]);
+    expect(
+      checkRenderProps([parent, unstyled]).map((f) => f.description),
+    ).toEqual([
+      'Page passes "css" to Spinner, and nothing in Spinner reads it.',
+    ]);
+  });
+
   it("skips the edge when the child was not read as a component", () => {
     const parent = component({
       name: "Settings",
