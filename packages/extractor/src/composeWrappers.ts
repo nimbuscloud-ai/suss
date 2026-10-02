@@ -239,16 +239,40 @@ function handledThrows(
   thrown: readonly Thrown[],
 ): Transition[] {
   const caught = catchesAny(wrappers, thrown);
-  return wrappers.flatMap((wrapper) => {
+  return [...oncePerHandler(wrappers, caught)].flatMap(([wrapper, how]) =>
+    attribute(
+      wrapper.summary.transitions,
+      wrapper.reference,
+      how === "uncertain",
+    ),
+  );
+}
+
+/**
+ * Each handler that catches a throw once, however many times it was
+ * registered, through the registration that catches surely if one does.
+ * Rails runs one handler per raise.
+ */
+function oncePerHandler(
+  wrappers: readonly ResolvedWrapper[],
+  caught: ReadonlyMap<ResolvedWrapper, Catch>,
+): Map<ResolvedWrapper, Catch> {
+  const byHandler = new Map<BehavioralSummary, [ResolvedWrapper, Catch]>();
+  for (const wrapper of wrappers) {
     const how = caught.get(wrapper);
-    return how === undefined
-      ? []
-      : attribute(
-          wrapper.summary.transitions,
-          wrapper.reference,
-          how === "uncertain",
-        );
-  });
+    if (how === undefined) {
+      continue;
+    }
+
+    const earlier = byHandler.get(wrapper.summary);
+    if (
+      earlier === undefined ||
+      (earlier[1] === "uncertain" && how === "sure")
+    ) {
+      byHandler.set(wrapper.summary, [wrapper, how]);
+    }
+  }
+  return new Map(byHandler.values());
 }
 
 type Catch = "sure" | "uncertain";

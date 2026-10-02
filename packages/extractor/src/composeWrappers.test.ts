@@ -816,6 +816,24 @@ describe("composeWrappers and the classes an error handler catches", () => {
     ).toEqual([["respond_error", false]]);
   });
 
+  it("adds a handler registered twice once, through the registration that surely catches", () => {
+    const network: WrapperReference = {
+      ...handler("respond_error", []),
+      mayCatchAny: true,
+    };
+    const anyError = handler("respond_error", ["StandardError"]);
+    const thrown = raises("LimitReached", ["StandardError", "Exception"]);
+    expect(caught(thrown, [network, network])).toEqual([
+      ["respond_error", true],
+    ]);
+    expect(caught(thrown, [network, anyError])).toEqual([
+      ["respond_error", true],
+    ]);
+    expect(caught(thrown, [anyError, network])).toEqual([
+      ["respond_error", false],
+    ]);
+  });
+
   describe("a throw the framework sends a status for when nothing catches it", () => {
     const loadAccount: WrapperReference = {
       file: "app/controllers/base.rb",
