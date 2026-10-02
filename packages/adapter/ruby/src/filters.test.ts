@@ -248,7 +248,7 @@ end
     expect(filters[1]?.filter.onThrow).toBe(true);
   });
 
-  it("reads the method a rescue_from block hands the error to, and leaves a longer block out", async () => {
+  it("reads the method a rescue_from block hands the error to, and reads a longer block in place", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController
   rescue_from(AccessDenied) { |e| render_denied e }
@@ -267,11 +267,160 @@ class OrdersController < ApplicationController
 end
 `);
 
-    expect(filters.map((one) => one.methodName)).toEqual([
-      "render_limit",
-      "render_denied",
+    expect(
+      filters.map((one) => [one.methodName, one.nameKind, one.method.type]),
+    ).toEqual([
+      ["rescue_from#2", "label", "block"],
+      ["render_limit", "binding", "method"],
+      ["render_denied", "binding", "method"],
     ]);
     expect(filters.every((one) => one.filter.onThrow === true)).toBe(true);
+  });
+
+  it("reads a before_action block or lambda in place of a symbol, with its only: and except:", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action(only: [:show, :refund]) { load_order }
+  before_action -> { check_access(Order) }, except: [:index]
+  before_action(only: :refund) do
+    head :forbidden unless current_user.admin?
+  end
+
+  def load_order
+    @order = Order.find(params[:id])
+  end
+
+  def check_access(model)
+  end
+end
+`);
+
+    expect(
+      filters.map((one) => [
+        one.methodName,
+        one.nameKind,
+        one.only === null ? null : [...one.only],
+        [...one.except],
+      ]),
+    ).toEqual([
+      ["load_order", "binding", ["show", "refund"], []],
+      ["check_access", "binding", null, ["index"]],
+      ["before_action#2", "label", ["refund"], []],
+    ]);
+
+    const unit = filterUnit(
+      filters[2] as never,
+      controllerActionsPattern({
+        ...RAILS_LIKE,
+        statusCodeNames: { ...RAILS_LIKE.statusCodeNames, forbidden: 403 },
+      }),
+      "app/controllers/orders.rb",
+      { bodyContent: "statements" },
+    );
+    expect(unit.branches.map((branch) => branch.terminal.kind)).toEqual([
+      "response",
+      "delegate",
+    ]);
+  });
+
+  it("keeps a block that calls a filter method apart from the symbol registration of that method", async () => {
+    const filters = await filtersOf(`
+class ApplicationController < ActionController::Base
+  before_action :load_order, only: [:show, :update]
+  before_action :audit
+end
+
+class OrdersController < ApplicationController
+  before_action(only: [:refund]) { load_order }
+  before_action(except: [:index]) { audit }
+  skip_before_action :audit
+
+  def load_order
+    @order = Order.find(params[:id])
+  end
+
+  def audit
+  end
+end
+`);
+
+    expect(
+      filters.map((one) => [
+        one.methodName,
+        one.only === null ? null : [...one.only],
+        [...one.except],
+      ]),
+    ).toEqual([
+      ["load_order", ["show", "update"], []],
+      ["load_order", ["refund"], []],
+      ["audit", null, ["index"]],
+    ]);
+  });
+
+  it("reads a rescue_from block that responds in place, with a label that keeps through a class rename", async () => {
+    const source = (closed: string) => `
+class OrdersController < ApplicationController
+  rescue_from ActiveRecord::RecordNotFound do
+    render template: "errors/missing", status: :not_found
+  end
+
+  rescue_from ${closed} do
+    respond_to do |format|
+      format.any { redirect_back fallback_location: root_path }
+      format.json { head :gone }
+    end
+  end
+end
+`;
+    const before = await filtersOf(source("Billing::AccountClosed"));
+    const after = await filtersOf(source("Billing::Errors::AccountClosed"));
+
+    expect(
+      before.map((one) => [
+        one.methodName,
+        one.rescues.refs.map((ref) => ref.text),
+      ]),
+    ).toEqual([
+      ["rescue_from#1", ["Billing::AccountClosed"]],
+      ["rescue_from#0", ["ActiveRecord::RecordNotFound"]],
+    ]);
+    expect(after.map((one) => one.methodName)).toEqual(
+      before.map((one) => one.methodName),
+    );
+
+    const pattern = controllerActionsPattern({
+      ...RAILS_LIKE,
+      responseStatusCalls: [
+        ...(RAILS_LIKE.responseStatusCalls ?? []),
+        {
+          name: "redirect_back",
+          statusKeyword: "status",
+          defaultStatusCode: 302,
+        },
+      ],
+      statusCodeNames: { ...RAILS_LIKE.statusCodeNames, gone: 410 },
+      formatSwitch: { name: "respond_to", matchesEvery: "any" },
+    });
+    const [closed, missing] = before.map((one) =>
+      filterUnit(one, pattern, "app/controllers/orders.rb", {
+        bodyContent: "statements",
+      }),
+    );
+    expect(closed?.identity).toMatchObject({
+      name: "rescue_from#1",
+      nameKind: "label",
+      exportName: null,
+      exportPath: ["OrdersController", "rescue_from#1"],
+    });
+    const statuses = (unit: typeof closed) =>
+      unit?.branches.map((branch) => {
+        const status = branch.statusCodeReading;
+        return status?.reading.kind === "written"
+          ? status.reading.value
+          : status?.libraryDefault;
+      });
+    expect(statuses(closed)).toEqual([302, 410]);
+    expect(statuses(missing)).toEqual([404]);
   });
 
   it("lists every registration in the order Rails tries them, last declared first, with a handler registered twice in both places", async () => {
