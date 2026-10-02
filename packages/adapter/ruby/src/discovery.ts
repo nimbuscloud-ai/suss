@@ -509,17 +509,13 @@ async function controllerActionUnits(
     pattern.libraryExceptions ?? {},
   );
   const caught = await handlerClasses(filters, exceptions);
-  const handlersAround = (actionName: string | null): HandlerClasses[] =>
+  const handlersAround = (actionName: string): HandlerClasses[] =>
     filters
-      .filter(
-        (filter) =>
-          actionName === null || filterCoversAction(filter, actionName),
-      )
+      .filter((filter) => filterCoversAction(filter, actionName))
       .flatMap((filter) => {
         const classes = caught.get(filter);
         return classes === undefined ? [] : [classes];
       });
-  const everyHandler = handlersAround(null);
   for (const filter of filters) {
     const displayPath = options.displayPathOf?.(filter.file) ?? filter.file;
     const body = bodyOfMethod(filter.method, filter.file, options);
@@ -536,13 +532,13 @@ async function controllerActionUnits(
                 filter.nesting,
                 exceptions,
               ),
-              handlers: everyHandler,
+              handlers: "eachRoute",
             },
             raised: raisedStatusBranches(
               pattern,
               options.storage?.patterns ?? [],
               body.extraEffects,
-              everyHandler,
+              "eachRoute",
               rangeOf(filter.method),
             ),
           }),

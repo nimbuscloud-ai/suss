@@ -92,6 +92,23 @@ function sharedCount(
   return count;
 }
 
+const ENDS_IN_PARAMETER = /:[A-Za-z_]\w*$/;
+
+/**
+ * How many leading segments can stay in front of the set. A set opened
+ * straight after a parameter, `/:id(|/:tab)`, reads as the pattern
+ * Express lets a parameter carry, `/:id(\d+)`, and route matching drops
+ * that, so a segment ending in a parameter goes inside the set instead.
+ */
+function headBeforeSet(lists: readonly string[][], shortest: number): number {
+  const first = lists[0] ?? [];
+  let count = sharedCount(lists, shortest, false);
+  while (count > 0 && ENDS_IN_PARAMETER.test(first[count - 1] ?? "")) {
+    count -= 1;
+  }
+  return count;
+}
+
 /**
  * The paths written as one, with the segments they all share kept
  * outside the set: `/api(|/v1)/users` rather than a set of two whole
@@ -100,7 +117,7 @@ function sharedCount(
 function asOnePath(paths: readonly string[]): string | null {
   const lists = paths.map(segmentsOf);
   const shortest = Math.min(...lists.map((list) => list.length));
-  const headCount = sharedCount(lists, shortest, false);
+  const headCount = headBeforeSet(lists, shortest);
   const tailCount = sharedCount(lists, shortest - headCount, true);
   const first = lists[0] ?? [];
   const head = first.slice(0, headCount).join("/");

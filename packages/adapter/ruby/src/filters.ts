@@ -119,11 +119,13 @@ export function controllerFilters(
         block.info.bodyNesting,
         read.facts,
       )) {
-        const earlier = declared.find((one) => sameFilter(one, declaration));
-        declared = [
-          ...declared.filter((one) => one !== earlier),
-          withEarlierRescues(declaration, earlier),
-        ];
+        // A handler named in a second `rescue_from` keeps its first
+        // registration where it was, since the library tries each in turn.
+        const earlier =
+          declaration.filter.onThrow === true
+            ? undefined
+            : declared.find((one) => sameFilter(one, declaration));
+        declared = [...declared.filter((one) => one !== earlier), declaration];
       }
       continue;
     }
@@ -435,24 +437,6 @@ function skipsOf(
     .map((arg) => stringValueOf(arg, facts))
     .filter((name): name is string => name !== null)
     .map((methodName) => ({ filterName, methodName, actions }));
-}
-
-/**
- * A handler registered again for other exceptions still catches the ones
- * it was registered for before, since Rails keeps every registration.
- */
-function withEarlierRescues(
-  declaration: Declaration,
-  earlier: Declaration | undefined,
-): Declaration {
-  if (earlier === undefined || declaration.filter.onThrow !== true) {
-    return declaration;
-  }
-  const rescues = {
-    refs: [...earlier.rescues.refs, ...declaration.rescues.refs],
-    someUnread: earlier.rescues.someUnread || declaration.rescues.someUnread,
-  };
-  return { ...declaration, rescues };
 }
 
 /** Whether two declarations register the same method through the same call. */

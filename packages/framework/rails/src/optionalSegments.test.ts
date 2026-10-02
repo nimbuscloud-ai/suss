@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { bucketsMeet, normalizePath, restBinding } from "@suss/ir-core";
+
 import { pathWithOptionalGroups } from "./optionalSegments.js";
 
 describe("pathWithOptionalGroups", () => {
@@ -36,8 +38,33 @@ describe("pathWithOptionalGroups", () => {
   it("reads a glob as a hole that takes one segment or more", () => {
     expect(pathWithOptionalGroups("/files/*rest")).toBe("/files/:rest+");
     expect(pathWithOptionalGroups("/media/:id/(*any)")).toBe(
-      "/media/:id(|/:any+)",
+      "/media(/:id|/:id/:any+)",
     );
+  });
+
+  it("opens the set before a parameter, where route matching keeps it", () => {
+    expect(pathWithOptionalGroups("/users/:id(/:tab)")).toBe(
+      "/users(/:id|/:id/:tab)",
+    );
+    expect(pathWithOptionalGroups("/:a/:b(.:format)")).toBe(
+      "/(:a/:b|:a/:b.:format)",
+    );
+    expect(normalizePath(pathWithOptionalGroups("/media/:id/(*any)"))).toBe(
+      "/media(/{id}|/{id}/{any+})",
+    );
+    const route = (path: string) =>
+      restBinding({
+        transport: "http",
+        method: "GET",
+        path,
+        recognition: "test",
+      });
+    expect(
+      bucketsMeet(
+        route(pathWithOptionalGroups("/media/:id/(*any)")),
+        route("/media/{id}/a/b"),
+      ),
+    ).toBe(true);
   });
 
   it("leaves a path whose parentheses do not balance as it is", () => {

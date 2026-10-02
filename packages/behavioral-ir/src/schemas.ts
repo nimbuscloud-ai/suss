@@ -449,6 +449,11 @@ export const OutputSchema = z.discriminatedUnion("type", [
     exceptionAncestors: z.array(z.string()).optional(),
     /** True when the ancestry reaches a class the run did not read. */
     ancestryIncomplete: z.boolean().optional(),
+    /**
+     * The status the framework itself responds with when no error handler
+     * catches the throw, as Rails does for a record `find` did not find.
+     */
+    statusWhenUncaught: z.number().int().optional(),
   }),
   z.object({
     type: z.literal("render"),

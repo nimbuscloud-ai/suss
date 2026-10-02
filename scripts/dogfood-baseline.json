@@ -20,7 +20,7 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 74,
-      "internal": 746,
+      "internal": 745,
       "consumers": 286,
       "unfollowedCalls": 103
     },

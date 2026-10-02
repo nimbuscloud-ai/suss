@@ -815,4 +815,91 @@ describe("composeWrappers and the classes an error handler catches", () => {
       caught(raises("LimitReached", ["StandardError"]), [onError, MISSING]),
     ).toEqual([["respond_error", false]]);
   });
+
+  it("adds a handler registered twice once, through the registration that surely catches", () => {
+    const network: WrapperReference = {
+      ...handler("respond_error", []),
+      mayCatchAny: true,
+    };
+    const anyError = handler("respond_error", ["StandardError"]);
+    const thrown = raises("LimitReached", ["StandardError", "Exception"]);
+    expect(caught(thrown, [network, network])).toEqual([
+      ["respond_error", true],
+    ]);
+    expect(caught(thrown, [network, anyError])).toEqual([
+      ["respond_error", true],
+    ]);
+    expect(caught(thrown, [anyError, network])).toEqual([
+      ["respond_error", false],
+    ]);
+  });
+
+  describe("a throw the framework sends a status for when nothing catches it", () => {
+    const loadAccount: WrapperReference = {
+      file: "app/controllers/base.rb",
+      name: "load_account",
+    };
+    const notFound: Transition = {
+      ...raises("RecordNotFound", ["StandardError", "Exception"]),
+      output: {
+        type: "throw",
+        exceptionType: "RecordNotFound",
+        message: null,
+        exceptionAncestors: ["StandardError", "Exception"],
+        statusWhenUncaught: 404,
+      },
+    };
+
+    /** Each outcome of the composed route as its status or its kind, beside the wrapper that added it. */
+    function outcomes(handlers: WrapperReference[]): unknown[] {
+      const route = unit(
+        "show",
+        "app/controllers/posts.rb",
+        [responds("ok", 200)],
+        { wrappers: [loadAccount, ...handlers] },
+      );
+      const filter = unit("load_account", loadAccount.file, [
+        notFound,
+        continues("on"),
+      ]);
+      const [composed] = composeWrappers([route, filter, ...handlerUnits]);
+      return composed.transitions.map((transition) => [
+        transition.output.type === "response" &&
+        transition.output.statusCode?.type === "literal"
+          ? transition.output.statusCode.value
+          : transition.output.type,
+        fromOf(transition) ?? null,
+        readWrapperMetadata(transition)?.catchUncertain === true,
+      ]);
+    }
+
+    it("sends that status on a route where no handler catches the throw", () => {
+      expect(outcomes([LIMIT])).toEqual([
+        [404, "load_account", false],
+        [200, null, false],
+      ]);
+    });
+
+    it("keeps the throw, and the handler's response, where a handler catches it", () => {
+      const gone = handler("respond_limit", ["RecordNotFound"]);
+      expect(outcomes([gone])).toEqual([
+        ["throw", "load_account", false],
+        [200, null, false],
+        [402, "respond_limit", false],
+      ]);
+    });
+
+    it("keeps the throw and the status both where a handler only may catch it", () => {
+      const network: WrapperReference = {
+        ...handler("respond_error", []),
+        mayCatchAny: true,
+      };
+      expect(outcomes([network])).toEqual([
+        ["throw", "load_account", false],
+        [404, "load_account", false],
+        [200, null, false],
+        [500, "respond_error", true],
+      ]);
+    });
+  });
 });

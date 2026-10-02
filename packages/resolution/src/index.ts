@@ -806,9 +806,9 @@ const STATED_RULES = [
     ],
     "construction enters its constructor",
   ),
-  // Written first so the rewrite joins it first: the receiver is then read
-  // under the sites the call is made under, instead of under every site in
-  // the project with the call's own sites filtered out afterwards.
+  // When methodCallUnder and objectOfUnder bind as many columns, as they do
+  // once contains has run, the rewrite joins the one written first. This
+  // order reads the receiver under the call's own sites, not every site.
   rule(
     "entersUnder",
     [v("r"), v("f"), v("site"), v("caller")],
