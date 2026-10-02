@@ -1,10 +1,10 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
 import {
   boundaryKey,
-  bucketRank,
   bucketsMeet,
   compareRanks,
   exchangesHttpResponses,
+  pairRank,
   semanticsAgree,
   spansBuckets,
 } from "@suss/ir-core";
@@ -75,21 +75,14 @@ export interface PairingResult {
  * one side records more precisely goes through the semantics variant's
  * own agreement rule: buses have to agree on a message-bus bucket, and
  * methods on a REST bucket. The method rule lets a `"*"` route meet
- * consumers that each use one method.
+ * consumers that each use one method. Both bindings are the ones the
+ * deployment grounded, so a host it treats as the app's own is gone.
  */
 function bindingsPair(
-  provider: BehavioralSummary,
-  consumer: BehavioralSummary,
+  provider: BoundaryBinding,
+  consumer: BoundaryBinding,
 ): boolean {
-  const providerSemantics = provider.identity.boundaryBinding?.semantics;
-  const consumerSemantics = consumer.identity.boundaryBinding?.semantics;
-  if (providerSemantics === undefined || consumerSemantics === undefined) {
-    // A summary with no binding never gets a key, so only a direct call
-    // lands here, and it pairs.
-    return true;
-  }
-
-  return semanticsAgree(providerSemantics, consumerSemantics);
+  return semanticsAgree(provider.semantics, consumer.semantics);
 }
 
 /**
@@ -213,14 +206,17 @@ interface Bucket {
   binding: BoundaryBinding;
   /** Whether this bucket meets buckets with other keys too. */
   spans: boolean;
-  /** How narrowly the key states what it serves, from `bucketRank`. */
-  rank: readonly number[];
   summaries: BehavioralSummary[];
 }
 
+/** A provider bucket, ranked by how well it fits one consumer's call. */
+interface RankedBucket extends Bucket {
+  rank: readonly number[];
+}
+
 /** The buckets that no other bucket in the list outranks. */
-function highestRanked(buckets: Bucket[]): Bucket[] {
-  let winners: Bucket[] = [];
+function highestRanked(buckets: RankedBucket[]): RankedBucket[] {
+  let winners: RankedBucket[] = [];
   for (const bucket of buckets) {
     const first = winners[0];
     const order =
@@ -254,6 +250,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
   // path it reaches, so it meets the provider that serves it. What the
   // summary records is untouched.
   const keyOf = groundedKeys(summaries);
+  const groundedBinding = new Map<BehavioralSummary, BoundaryBinding>();
 
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
@@ -281,6 +278,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       unpairable.push({ summary, reason: "unknownKind" });
       continue;
     }
+    groundedBinding.set(summary, grounded.binding);
     const buckets = role === "provider" ? providersByKey : consumersByKey;
     const bucket = buckets.get(grounded.key);
     if (bucket !== undefined) {
@@ -290,7 +288,6 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
         key: grounded.key,
         binding: grounded.binding,
         spans: spansBuckets(grounded.binding),
-        rank: bucketRank(grounded.binding),
         summaries: [summary],
       });
     }
@@ -325,14 +322,23 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
     }
 
     for (const consumer of consumers.summaries) {
-      const agreeing = [...(exact === undefined ? [] : [exact]), ...meeting]
-        .map((providers) => ({
-          ...providers,
-          summaries: providers.summaries.filter((provider) =>
-            bindingsPair(provider, consumer),
+      const called = groundedBinding.get(consumer) ?? consumers.binding;
+      const agreeing: RankedBucket[] = [];
+      for (const providers of [
+        ...(exact === undefined ? [] : [exact]),
+        ...meeting,
+      ]) {
+        const rank = pairRank(providers.binding, called);
+        const summaries = providers.summaries.filter((provider) =>
+          bindingsPair(
+            groundedBinding.get(provider) ?? providers.binding,
+            called,
           ),
-        }))
-        .filter((providers) => providers.summaries.length > 0);
+        );
+        if (rank !== null && summaries.length > 0) {
+          agreeing.push({ ...providers, rank, summaries });
+        }
+      }
       if (agreeing.length === 0) {
         continue;
       }

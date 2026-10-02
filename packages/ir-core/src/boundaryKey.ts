@@ -136,9 +136,20 @@ export function bucketsMeet(a: BoundaryBinding, b: BoundaryBinding): boolean {
   return meet !== undefined && meet(a.semantics, b.semantics);
 }
 
-/** How narrowly the binding's bucket states what it serves; see `compareRanks`. */
-export function bucketRank(binding: BoundaryBinding): readonly number[] {
-  return behaviorOf(binding.semantics).bucketRank?.(binding.semantics) ?? [];
+/**
+ * How well a provider fits what a consumer states, or null when they do
+ * not pair; see `compareRanks`. A protocol that does not rank gives
+ * every provider the same rank.
+ */
+export function pairRank(
+  provider: BoundaryBinding,
+  consumer: BoundaryBinding,
+): readonly number[] | null {
+  if (provider.semantics.name !== consumer.semantics.name) {
+    return null;
+  }
+  const rank = behaviorOf(provider.semantics).pairRank;
+  return rank === undefined ? [] : rank(provider.semantics, consumer.semantics);
 }
 
 export function boundaryLabel(binding: BoundaryBinding): string | null {

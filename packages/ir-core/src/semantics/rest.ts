@@ -16,16 +16,19 @@
 import { z } from "zod";
 
 import { patternHole, referenceFromName } from "../boundaryName.js";
-import { pathAfterOrigin } from "../urlPath.js";
+import { hostCanBeOwn, pathAfterOrigin } from "../urlPath.js";
 import { defineBoundarySemantics } from "./definition.js";
 import {
+  isCatchAll,
+  pathAfterBaseUrl,
   pathSpansShapes,
-  pathSpecificity,
   pathsMeet,
   patternAdmits,
+  requestRank,
 } from "./pathPattern.js";
 
 import type { Reference } from "../boundaryName.js";
+import type { Deployment } from "../deployment.js";
 
 export const RestSemanticsSchema = z.object({
   name: z.literal("rest"),
@@ -44,6 +47,17 @@ export const RestSemanticsSchema = z.object({
    * metadata. Absent or empty for an inferred source.
    */
   declaredResponses: z.array(z.number()).optional(),
+  /**
+   * The host a client wrote in an absolute URL, with its port
+   * (`api.example.com:8443`). A piece suss could not read is written
+   * `{name}`. Absent for a relative URL and for a route.
+   */
+  host: z.string().min(1).optional(),
+  /**
+   * True for a route the framework also serves with `.{format}` after
+   * its path, the way Rails serves `/search.json` from `get "search"`.
+   */
+  optionalFormat: z.boolean().optional(),
 });
 
 export type RestSemantics = z.infer<typeof RestSemanticsSchema>;
@@ -183,6 +197,59 @@ export function routePathsMeet(a: string, b: string): boolean {
   return pathsMeet(normalizePath(a), normalizePath(b));
 }
 
+/** The host when suss read all of it, and undefined otherwise. */
+function readHost(semantics: RestSemantics): string | undefined {
+  const host = semantics.host;
+  return host === undefined || /[{(]/.test(host) ? undefined : host;
+}
+
+/**
+ * Whether the sides name one host. A side with no host, or with one suss
+ * could not read, can be anywhere, so two such sides agree.
+ */
+function hostsAgree(a: RestSemantics, b: RestSemantics): boolean {
+  return readHost(a) === readHost(b);
+}
+
+/** Whether the client left open where the call goes: in its host, or in a base URL. */
+function hostUnread(semantics: RestSemantics): boolean {
+  if (semantics.host !== undefined) {
+    return readHost(semantics) === undefined;
+  }
+  return baseUrlReference(semantics) !== null;
+}
+
+/** The paths a route serves, with the `.{format}` a framework adds. */
+function servedPath(semantics: RestSemantics, path: string): string {
+  const normalized = normalizePath(path);
+  return semantics.optionalFormat === true
+    ? `${normalized}(|.{format})`
+    : normalized;
+}
+
+function withoutHost(semantics: RestSemantics): RestSemantics {
+  const { host: _host, ...rest } = semantics;
+  return rest;
+}
+
+/** The semantics with a base URL the deployment sets filled in, or null. */
+function groundedBaseUrl(
+  semantics: RestSemantics,
+  deployment: Deployment,
+): RestSemantics | null {
+  const reference = baseUrlReference(semantics);
+  if (reference === null) {
+    return null;
+  }
+  const base = deployment.setTo(reference);
+  if (base === null) {
+    return null;
+  }
+  const rest = OPENING_HOLE.exec(semantics.path ?? "")?.[2] ?? "";
+  const grounded = pathAfterOrigin(`${base}${rest}`);
+  return { ...semantics, path: grounded === "" ? "/" : grounded };
+}
+
 export const restSemantics = defineBoundarySemantics({
   name: "rest",
   schema: RestSemanticsSchema,
@@ -221,7 +288,9 @@ export const restSemantics = defineBoundarySemantics({
       if (semantics.method === null || semantics.path === null) {
         return null;
       }
-      return `rest ${pathShape(semantics.path)}`;
+      const shape = pathShape(pathAfterBaseUrl(normalizePath(semantics.path)));
+      const host = readHost(semantics);
+      return host === undefined ? `rest ${shape}` : `rest //${host}${shape}`;
     },
     /**
      * A spec writes `/teams/{team_id}` where the route that serves it
@@ -235,23 +304,38 @@ export const restSemantics = defineBoundarySemantics({
       return `${semantics.method.toUpperCase()} ${pathShape(semantics.path)}`;
     },
     sidesAgree(a, b) {
-      return methodsAgree(a.method, b.method);
+      return methodsAgree(a.method, b.method) && hostsAgree(a, b);
     },
     spansBuckets(semantics) {
       return (
         semantics.path !== null &&
-        pathSpansShapes(normalizePath(semantics.path))
+        (semantics.optionalFormat === true ||
+          pathSpansShapes(normalizePath(semantics.path)))
       );
     },
     bucketsMeet(a, b) {
       return (
-        a.path !== null && b.path !== null && routePathsMeet(a.path, b.path)
+        a.path !== null &&
+        b.path !== null &&
+        hostsAgree(a, b) &&
+        pathsMeet(servedPath(a, a.path), servedPath(b, b.path))
       );
     },
-    bucketRank(semantics) {
-      return semantics.path === null
-        ? []
-        : pathSpecificity(normalizePath(semantics.path));
+    /**
+     * A catch-all route never takes a call whose host suss could not
+     * read, since nothing else ties that call to this app.
+     */
+    pairRank(provider, consumer) {
+      if (provider.path === null || consumer.path === null) {
+        return [];
+      }
+      if (hostUnread(consumer) && isCatchAll(normalizePath(provider.path))) {
+        return null;
+      }
+      return requestRank(
+        servedPath(provider, provider.path),
+        normalizePath(consumer.path),
+      );
     },
     /**
      * The identity key, with a missing half still readable: `ANY` when
@@ -296,27 +380,23 @@ export const restSemantics = defineBoundarySemantics({
     },
     /**
      * A call whose base URL the deployment fills in, resolved to the
-     * path it reaches.
+     * path it reaches, and a call to a host that can be the project's
+     * own, with the host left out so it meets the route.
      *
-     * The source cannot settle this on its own, so the adapter leaves
-     * the hole in. `API_BASE` could be `http://backend.internal`, and
-     * then the path is `/orders`. It could equally be `/api/v2`, and
+     * The source cannot settle a base URL on its own, so the adapter
+     * leaves the hole in. `API_BASE` could be `http://backend.internal`,
+     * and then the path is `/orders`. It could equally be `/api/v2`, and
      * then the path is `/api/v2/orders`. Filling in the deployed value
-     * and reading the path back out gets the right one either way.
-     * `baseUrlReference` finds the hole that is the base URL.
+     * and reading the path back out gets the right one either way, and
+     * a base the deployment sets counts as the app's own.
      */
     groundName(semantics, deployment) {
-      const reference = baseUrlReference(semantics);
-      if (reference === null) {
-        return null;
-      }
-      const base = deployment.setTo(reference);
-      if (base === null) {
-        return null;
-      }
-      const rest = OPENING_HOLE.exec(semantics.path ?? "")?.[2] ?? "";
-      const grounded = pathAfterOrigin(`${base}${rest}`);
-      return { ...semantics, path: grounded === "" ? "/" : grounded };
+      const based = groundedBaseUrl(semantics, deployment);
+      const grounded = based ?? semantics;
+      const host = readHost(grounded);
+      return host !== undefined && hostCanBeOwn(host)
+        ? withoutHost(grounded)
+        : based;
     },
     nameReference: baseUrlReference,
     ruleBoundary: {

@@ -126,7 +126,8 @@ Each protocol is one module under `packages/ir-core/src/semantics`, which define
 ```typescript
 type Semantics =
   | { name: "rest"; method: string | null; path: string | null;
-      declaredResponses?: number[] }
+      declaredResponses?: number[]; host?: string;
+      optionalFormat?: boolean }
   | { name: "function-call"; module?: string; exportName?: string;
       package?: string; exportPath?: string[] }
   | { name: "graphql-resolver"; typeName: string | null; fieldName: string }
@@ -149,6 +150,8 @@ type MessageBus =
 ```
 
 An identity field is null when the source does not say what it is. The empty string is invalid there, because every empty string would pair with every other. REST's `method` also takes `"*"`, for a handler that serves every method, and it pairs with whatever method each consumer uses.
+
+A REST client that writes out an absolute URL keeps its host in `host`, such as `api.example.com:8443`, with a piece suss could not read written `{name}`. A call to a loopback or private address, a name with no dot, or a name under a suffix kept for private networks or examples pairs with the project's routes. A call to any other host does not, unless `suss.json` lists the host under `hosts`. `optionalFormat` is true on a route the framework also serves with `.{format}` after its path, the way Rails serves `/search.json` from `get "search"`.
 
 `runtime-config` and `unit-invocation` both take their two fields from `DeployableUnit`, because the pairing key is a deployed unit, and one deployed unit has both of those boundaries on it. `unit-invocation` makes `instanceName` nullable, since only the provider side always has the name.
 
