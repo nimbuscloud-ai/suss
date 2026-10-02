@@ -202,4 +202,13 @@ describe("rescue_from composed onto each route", () => {
       [503, "unavailable", true],
     ]);
   });
+
+  it("tries a handler registered twice at each place it was registered", async () => {
+    const summaries = await extract();
+    expect(outcomesOfShow(summaries, "NotesController")).toEqual([
+      [200, null, false],
+      ["throw", null, false],
+      [500, "oops", false],
+    ]);
+  });
 });
