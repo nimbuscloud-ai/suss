@@ -2,11 +2,11 @@
   "totals": {
     "packages": 87,
     "packagesWithExports": 87,
-    "exports": 1281,
-    "internal": 5455,
-    "consumers": 2829,
-    "pairs": 1609,
-    "unfollowedCalls": 538,
+    "exports": 1287,
+    "internal": 5468,
+    "consumers": 2851,
+    "pairs": 1621,
+    "unfollowedCalls": 540,
     "findingErrors": 0
   },
   "packages": {
@@ -14,35 +14,35 @@
       "name": "@suss/adapter-python",
       "exports": 63,
       "internal": 691,
-      "consumers": 333,
+      "consumers": 335,
       "unfollowedCalls": 79
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 75,
-      "internal": 760,
-      "consumers": 291,
+      "internal": 761,
+      "consumers": 294,
       "unfollowedCalls": 106
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 140,
-      "internal": 1183,
-      "consumers": 315,
+      "internal": 1185,
+      "consumers": 318,
       "unfollowedCalls": 119
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 167,
-      "internal": 90,
+      "exports": 169,
+      "internal": 91,
       "consumers": 22,
       "unfollowedCalls": 14
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 60,
-      "internal": 276,
-      "consumers": 278,
+      "internal": 277,
+      "consumers": 285,
       "unfollowedCalls": 24
     },
     "packages/checker-intent": {
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 62,
-      "internal": 861,
-      "consumers": 482,
+      "internal": 862,
+      "consumers": 484,
       "unfollowedCalls": 41
     },
     "packages/client/aiohttp": {
@@ -544,10 +544,10 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 92,
-      "internal": 31,
+      "exports": 94,
+      "internal": 32,
       "consumers": 0,
-      "unfollowedCalls": 15
+      "unfollowedCalls": 16
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
@@ -579,10 +579,10 @@
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 79,
-      "internal": 87,
-      "consumers": 165,
-      "unfollowedCalls": 19
+      "exports": 80,
+      "internal": 90,
+      "consumers": 169,
+      "unfollowedCalls": 20
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
@@ -614,9 +614,9 @@
     },
     "packages/values": {
       "name": "@suss/values",
-      "exports": 51,
-      "internal": 76,
-      "consumers": 3,
+      "exports": 52,
+      "internal": 79,
+      "consumers": 4,
       "unfollowedCalls": 27
     }
   }
