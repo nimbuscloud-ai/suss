@@ -13,6 +13,10 @@ import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 
+import { documentPieces, writeSummaryFile } from "@suss/behavioral-ir/files";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+
 /**
  * A value that renders to at most this many characters is written as one
  * string, and a larger one is split into its elements or properties. The
@@ -274,12 +278,39 @@ interface WriteJsonOptions {
 export async function writeJson(options: WriteJsonOptions): Promise<void> {
   const sink =
     options.file === undefined ? stdoutSink() : fileSink(options.file);
+  await writePieces(
+    endingInNewline(jsonPieces(options.value, options.indent ?? 0)),
+    sink,
+  );
+}
+
+function* endingInNewline(pieces: Iterable<string>): Generator<string> {
+  yield* pieces;
+  yield "\n";
+}
+
+/**
+ * Writes summaries one per line, in the layout every summaries file has.
+ * A file goes through the shared writer, which replaces it only once the
+ * write is complete. Without a file the summaries go to stdout.
+ */
+export async function writeSummaries(
+  summaries: readonly BehavioralSummary[],
+  file?: string,
+): Promise<void> {
+  if (file !== undefined) {
+    writeSummaryFile(file, summaries);
+    return;
+  }
+  await writePieces(documentPieces(summaries), stdoutSink());
+}
+
+async function writePieces(pieces: Iterable<string>, sink: Sink) {
   const out = batched(sink.write);
   try {
-    for (const piece of jsonPieces(options.value, options.indent ?? 0)) {
+    for (const piece of pieces) {
       await out.add(piece);
     }
-    await out.add("\n");
     await out.flush();
   } finally {
     sink.close();

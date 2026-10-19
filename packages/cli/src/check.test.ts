@@ -1526,7 +1526,7 @@ describe("checkDir", () => {
     expect(changed.summaries[0]?.transitions[0]?.id).toBe("t-404");
   });
 
-  it("reads each file of a folder it has not seen once", () => {
+  it("opens each file of a folder it has not seen once to hash it and once to parse it", () => {
     for (const name of ["api.json", "web.json"]) {
       fs.writeFileSync(
         path.join(tmpDir, name),
@@ -1537,13 +1537,13 @@ describe("checkDir", () => {
         ]),
       );
     }
-    const read = vi.spyOn(fs, "readFileSync");
+    const read = vi.spyOn(fs, "openSync");
     try {
       checkDirectory({ dir: tmpDir });
       const inFolder = read.mock.calls.filter(
         ([file]) => typeof file === "string" && file.startsWith(tmpDir),
       );
-      expect(inFolder).toHaveLength(2);
+      expect(inFolder).toHaveLength(4);
     } finally {
       read.mockRestore();
     }

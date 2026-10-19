@@ -1,35 +1,67 @@
 /** Reads one summaries file, with an error that says what is wrong with it. */
 
-import { safeParseSummaries } from "@suss/behavioral-ir";
+import { JsonFileError, readSummaryFile } from "@suss/behavioral-ir/files";
 
 import { UsageError } from "./usageError.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-export function parseSummaryFile(
+/**
+ * How a command words a file that is not summaries. `inspect` and the
+ * commands built on it say the file is invalid, and `check` says what the
+ * file should have been.
+ */
+export type SummaryFileWording = "invalid" | "expectedOutput";
+
+const NOT_SUMMARIES: Record<
+  SummaryFileWording,
+  (file: string, issues: string) => string
+> = {
+  invalid: (file, issues) => `Invalid summary file ${file}:\n${issues}`,
+  expectedOutput: (file, issues) =>
+    `suss could not read ${file} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${issues}`,
+};
+
+/**
+ * Reads and validates a summaries file of any layout, turning a bad file
+ * into a `UsageError`. A file the system cannot read keeps its stack,
+ * since callers check that the path exists first.
+ */
+export function readSummaries(
   filePath: string,
-  content: string,
+  wording: SummaryFileWording = "invalid",
 ): BehavioralSummary[] {
-  let json: unknown;
   try {
-    json = JSON.parse(content) as unknown;
+    return readSummaryFile(filePath);
   } catch (error) {
-    throw new UsageError(
-      `${filePath} is not JSON suss can read: ${firstLineOf(error)}`,
-    );
+    if (!(error instanceof JsonFileError) || error.problem === "unreadable") {
+      throw error;
+    }
+    throw new UsageError(explained(error, wording));
   }
-  const result = safeParseSummaries(json);
-  if (!result.success) {
-    const issues = result.error.issues
-      .slice(0, 10)
-      .map((i) => `  - ${i.path.join(".") || "<root>"}: ${i.message}`)
-      .join("\n");
-    throw new UsageError(`Invalid summary file ${filePath}:\n${issues}`);
+}
+
+function explained(error: JsonFileError, wording: SummaryFileWording): string {
+  if (error.problem === "notSummaries") {
+    return NOT_SUMMARIES[wording](error.file, formatIssues(error.issues));
   }
-  return result.data;
+  if (error.problem === "notJson" && wording === "invalid") {
+    return `${error.file} is not JSON suss can read: ${firstLineOf(error.detail)}`;
+  }
+  return error.message;
+}
+
+function formatIssues(
+  issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>,
+): string {
+  return issues
+    .slice(0, 10)
+    .map((i) => `  - ${i.path.map(String).join(".") || "<root>"}: ${i.message}`)
+    .join("\n");
 }
 
 /** The first line of an error's message, for a report that lists several. */
 export function firstLineOf(error: unknown): string {
-  return error instanceof Error ? error.message.split("\n")[0] : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  return message.split("\n")[0];
 }

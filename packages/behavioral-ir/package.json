@@ -36,6 +36,11 @@
       "import": "./dist/schemas.js",
       "require": "./dist/schemas.cjs"
     },
+    "./files": {
+      "types": "./dist/files.d.ts",
+      "import": "./dist/files.js",
+      "require": "./dist/files.cjs"
+    },
     "./schema/behavioral-summary.schema.json": "./schema/behavioral-summary.schema.json",
     "./package.json": "./package.json"
   },
