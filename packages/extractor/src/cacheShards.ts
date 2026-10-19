@@ -1,14 +1,15 @@
 /**
- * The extraction cache's summaries, one source file to a shard.
+ * The extraction cache's summaries, one source file to a shard, and each
+ * walked file's adapter record in a file of its own.
  *
- * A shard has the summaries whose `location.file` is that file, and the
- * adapter's record for the file when the run walked it. It is named by a
- * hash of its own text, so a write skips every shard whose content did
- * not change, and an edited file replaces only the shards it changed.
- * Conditions and effects repeat heavily within one file, so a shard keeps
- * each distinct one once, in `intern`, and its units refer to them by
- * position. The manifest says which shard has each file, where each unit
- * comes in the run's order, and which walked files own it.
+ * A shard has the summaries whose `location.file` is that file. A record
+ * is the `meta` an adapter keeps for a walked file, which only a partial
+ * run reads, so a hit opens the shards alone. Both are named by a hash of
+ * their own text, so a write skips every one whose content did not
+ * change. Conditions and effects repeat heavily within one file, so a
+ * shard keeps each distinct one once, in `intern`, and its units refer
+ * to them by position. The manifest says which shard has each file and
+ * which record each walked file has.
  */
 
 import { createHash } from "node:crypto";
@@ -24,14 +25,13 @@ import {
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const SHARDS_DIR = "shards";
-const SHARD_ID = /^[0-9a-f]{32}\.json$/;
+const RECORDS_DIR = "records";
+const STORED_ID = /^[0-9a-f]{32}\.json$/;
 
 /** What one shard says about one source file. */
-export interface ShardContent<Meta> {
+export interface ShardContent {
   file: string;
   units: BehavioralSummary[];
-  /** Present when the run walked the file and kept a record for it. */
-  record?: { meta: Meta };
 }
 
 /** A shard as it is on disk, with conditions and effects replaced by positions in `intern`. */
@@ -39,85 +39,103 @@ interface StoredShard {
   file: string;
   intern: unknown[];
   units: Record<string, unknown>[];
-  record?: { meta: unknown };
 }
 
 /** Writes the shard unless one with the same text is there already, and returns its id. */
-export function writeShard<Meta>(
-  entryDir: string,
-  content: ShardContent<Meta>,
-): string {
-  const pieces = [...documentPieces(interned(content))];
-  const hash = createHash("sha256");
-  for (const piece of pieces) {
-    hash.update(piece);
-  }
-  const id = hash.digest("hex").slice(0, 32);
-  const file = shardPath(entryDir, id);
-  if (!fs.existsSync(file)) {
-    writeFileAtomically(file, pieces);
-  }
-  return id;
+export function writeShard(entryDir: string, content: ShardContent): string {
+  return writeOnce(path.join(entryDir, SHARDS_DIR), interned(content));
 }
 
 /** The shard's content with fresh copies of every interned value, or null when it cannot be read. */
-export function readShard<Meta>(
+export function readShard(
   entryDir: string,
   id: string,
   file: string,
-): ShardContent<Meta> | null {
-  let stored: StoredShard;
-  try {
-    stored = readJsonFile(shardPath(entryDir, id)) as StoredShard;
-  } catch {
-    return null;
-  }
-  if (stored.file !== file || !Array.isArray(stored.units)) {
+): ShardContent | null {
+  const stored = readStored(path.join(entryDir, SHARDS_DIR), id) as
+    | StoredShard
+    | undefined;
+  if (stored?.file !== file || !Array.isArray(stored.units)) {
     return null;
   }
   const take = takerFor(stored.intern ?? []);
   return {
     file: stored.file,
     units: stored.units.map((unit) => expanded(unit, take)),
-    ...(stored.record === undefined
-      ? {}
-      : { record: stored.record as { meta: Meta } }),
   };
 }
 
+/** Writes a walked file's meta unless an equal one is there already, and returns its id. */
+export function writeRecord(entryDir: string, meta: unknown): string {
+  return writeOnce(path.join(entryDir, RECORDS_DIR), { meta });
+}
+
+/** The meta stored under `id`, or null when it cannot be read. */
+export function readRecord<Meta>(
+  entryDir: string,
+  id: string,
+): { meta: Meta } | null {
+  const stored = readStored(path.join(entryDir, RECORDS_DIR), id);
+  return typeof stored === "object" && stored !== null
+    ? (stored as { meta: Meta })
+    : null;
+}
+
 /**
- * Deletes every shard outside `keep`. A reader that opened the previous
- * manifest may still be reading its shards, so a caller keeps those too.
+ * Deletes every shard and record outside `keep`. A reader that opened the
+ * previous manifest may still be reading what it lists, so a caller keeps
+ * those too.
  */
-export function removeShardsOutside(
+export function removeStoredOutside(
   entryDir: string,
   keep: ReadonlySet<string>,
 ): void {
-  const root = path.join(entryDir, SHARDS_DIR);
-  let fanout: string[];
-  try {
-    fanout = fs.readdirSync(root);
-  } catch {
-    return;
-  }
-  for (const prefix of fanout) {
-    const dir = path.join(root, prefix);
-    let names: string[];
-    try {
-      names = fs.readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      if (SHARD_ID.test(name) && !keep.has(name.slice(0, -".json".length))) {
-        fs.rmSync(path.join(dir, name), { force: true });
+  for (const kind of [SHARDS_DIR, RECORDS_DIR]) {
+    const root = path.join(entryDir, kind);
+    for (const prefix of namesIn(root)) {
+      const dir = path.join(root, prefix);
+      for (const name of namesIn(dir)) {
+        if (STORED_ID.test(name) && !keep.has(name.slice(0, -".json".length))) {
+          fs.rmSync(path.join(dir, name), { force: true });
+        }
       }
     }
   }
 }
 
-function shardPath(entryDir: string, id: string): string {
-  return path.join(entryDir, SHARDS_DIR, id.slice(0, 2), `${id}.json`);
+function namesIn(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/** Writes `value` in the line layout under the hash of its text, unless that file exists. */
+function writeOnce(root: string, value: unknown): string {
+  const pieces = [...documentPieces(value)];
+  const hash = createHash("sha256");
+  for (const piece of pieces) {
+    hash.update(piece);
+  }
+  const id = hash.digest("hex").slice(0, 32);
+  const file = storedPath(root, id);
+  if (!fs.existsSync(file)) {
+    writeFileAtomically(file, pieces);
+  }
+  return id;
+}
+
+function readStored(root: string, id: string): unknown {
+  try {
+    return readJsonFile(storedPath(root, id));
+  } catch {
+    return undefined;
+  }
+}
+
+function storedPath(root: string, id: string): string {
+  return path.join(root, id.slice(0, 2), `${id}.json`);
 }
 
 /**
@@ -125,7 +143,7 @@ function shardPath(entryDir: string, id: string): string {
  * same object met twice is looked up by identity first, which spares
  * stringifying an effect the walk put on several branches.
  */
-function interned<Meta>(content: ShardContent<Meta>): StoredShard {
+function interned(content: ShardContent): StoredShard {
   const intern: unknown[] = [];
   const byText = new Map<string, number>();
   const byObject = new Map<unknown, number>();
@@ -164,7 +182,6 @@ function interned<Meta>(content: ShardContent<Meta>): StoredShard {
     file: content.file,
     intern,
     units,
-    ...(content.record === undefined ? {} : { record: content.record }),
   };
 }
 

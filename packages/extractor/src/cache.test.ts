@@ -1060,8 +1060,8 @@ describe("the store of shards", () => {
       );
       return path.join(cacheDir, entry ?? "");
     };
-    const shardFiles = async (): Promise<string[]> => {
-      const root = path.join(await entryDir(), "shards");
+    const storedIn = async (kind: string): Promise<string[]> => {
+      const root = path.join(await entryDir(), kind);
       const found: string[] = [];
       for (const prefix of await fs.readdir(root)) {
         for (const name of await fs.readdir(path.join(root, prefix))) {
@@ -1074,10 +1074,19 @@ describe("the store of shards", () => {
       JSON.parse(
         await fs.readFile(path.join(await entryDir(), "index.json"), "utf8"),
       );
-    return { cache, input, dir, write, entryDir, shardFiles, index };
+    return {
+      cache,
+      input,
+      dir,
+      write,
+      entryDir,
+      shardFiles: () => storedIn("shards"),
+      recordFiles: () => storedIn("records"),
+      index,
+    };
   }
 
-  it("keeps each file's units and record in a shard, and none of them in the manifest", async () => {
+  it("keeps each file's units in a shard and its record in a file of its own, and neither in the manifest", async () => {
     const store = await storeOf({
       "a.ts": "export const a = 1;",
       "b.ts": "export const b = 2;",
@@ -1090,6 +1099,7 @@ describe("the store of shards", () => {
     ]);
 
     expect(await store.shardFiles()).toHaveLength(2);
+    expect(await store.recordFiles()).toHaveLength(2);
     const manifest = await fs.readFile(
       path.join(await store.entryDir(), "manifest.json"),
       "utf8",
@@ -1170,16 +1180,50 @@ describe("the store of shards", () => {
     expect(await store.shardFiles()).toEqual([second[a], second[b]].sort());
   });
 
-  it("serves a hit when a walked file has a record and no units", async () => {
+  it("serves a hit without opening a record, and plans only with every record", async () => {
     const store = await storeOf({
       "a.ts": "export const a = 1;",
       "b.ts": "export const b = 2;",
     });
     const written = [unitIn(path.join(store.dir, "a.ts"), "first")];
     await store.write(written);
+    expect(await store.shardFiles()).toHaveLength(1);
+    await fs.rm(path.join(await store.entryDir(), "records"), {
+      recursive: true,
+    });
 
-    expect(await store.shardFiles()).toHaveLength(2);
     expect(await store.cache.tryHit(store.input)).toEqual(written);
+    expect(await store.cache.plan(store.input)).toBeNull();
+  });
+
+  it("writes one record for walked files whose meta is the same", async () => {
+    const cacheDir = await makeTempDir();
+    const { paths } = await writeFiles({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const cache = createCacheLayer(cacheDir);
+    const input = { files: paths, adapterPacksDigest: "test@1" };
+    await cache.write(input, [], {
+      roots: paths.map((p) => ({
+        path: p,
+        cacheable: true,
+        deps: [],
+        claims: [],
+        meta: { mountPrefixes: {} },
+        packs: [],
+      })),
+      owners: [],
+    });
+
+    const [entry] = (await fs.readdir(cacheDir)).filter((name) =>
+      name.startsWith("key-"),
+    );
+    const records = await fs.readdir(
+      path.join(cacheDir, entry ?? "", "records"),
+      { recursive: true },
+    );
+    expect(records.filter((name) => name.endsWith(".json"))).toHaveLength(1);
   });
 
   it("misses when a shard says it is another file", async () => {

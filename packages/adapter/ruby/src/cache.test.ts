@@ -546,7 +546,7 @@ describe("extractRubyProject's on-disk cache", () => {
       expect(diagnostics[1]?.kind).toBe("partial");
     });
 
-    /** Changes by hand the file records the runs so far stored in their shards. */
+    /** Changes by hand the file records the runs so far stored. */
     function editRecords(
       edit: (metas: ReturnType<typeof JSON.parse>[]) => void,
     ): void {
@@ -554,20 +554,19 @@ describe("extractRubyProject's on-disk cache", () => {
       const entry = fs
         .readdirSync(cacheDir)
         .find((name) => name.startsWith("key-")) as string;
-      const shards = fs
-        .readdirSync(path.join(cacheDir, entry, "shards"), {
+      const records = fs
+        .readdirSync(path.join(cacheDir, entry, "records"), {
           recursive: true,
           withFileTypes: true,
         })
         .filter((found) => found.isFile())
         .map((found) => {
           const file = path.join(found.parentPath, found.name);
-          return { file, shard: JSON.parse(fs.readFileSync(file, "utf8")) };
-        })
-        .filter(({ shard }) => shard.record !== undefined);
-      edit(shards.map(({ shard }) => shard.record.meta));
-      for (const { file, shard } of shards) {
-        fs.writeFileSync(file, JSON.stringify(shard));
+          return { file, record: JSON.parse(fs.readFileSync(file, "utf8")) };
+        });
+      edit(records.map(({ record }) => record.meta));
+      for (const { file, record } of records) {
+        fs.writeFileSync(file, JSON.stringify(record));
       }
     }
 

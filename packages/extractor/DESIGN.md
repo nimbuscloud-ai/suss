@@ -122,18 +122,19 @@ A file's record can also list the files it imports, in the order the adapter's l
 
 ### Where the summaries are kept
 
-An entry directory has a manifest, an index and a folder of shards:
+An entry directory has a manifest, an index, a folder of shards and a folder of records:
 
 ```
 key-04b06afa04ac7344/
-  manifest.json            file stamps, each file's record, and which shard has each file
+  manifest.json            file stamps, each walked file's record, and which shard has each file
   index.json               files, boundaries and call spellings, each to units in shards
-  shards/3f/3fa9c2….json   one source file's units, and the adapter's meta for the file
+  shards/3f/3fa9c2….json   one source file's units
+  records/8d/8d04e1….json  the adapter's meta for one walked file
 ```
 
-A summary goes to the shard for its `location.file`, and a walked file's `meta` goes to the shard for its path. The manifest lists, for each shard, where each of its units comes in the run's summary list and which walked files own each one, so a hit gives back the list in the order the run wrote it. A shard keeps each distinct condition and effect once, in a table at its top, and its transitions and gaps refer to them by position. Effects repeat across a file's branches: interning takes trpc's summaries from 194 MB to 167 MB, and directus's from 195 MB to 10 MB. Reading a shard gives back a separate copy for every place a value was interned, because a caller may change one transition's effect.
+A summary goes to the shard for its `location.file`. A walked file's `meta` goes to a record of its own, because only a partial run reads it: a hit opens the shards alone. Walked files whose meta is the same share one record, which on a TypeScript project is most of them. The manifest lists, for each shard, where each of its units comes in the run's summary list and which walked files own each one, so a hit gives back the list in the order the run wrote it. A shard keeps each distinct condition and effect once, in a table at its top, and its transitions and gaps refer to them by position. Effects repeat across a file's branches: interning takes trpc's summaries from 194 MB to 167 MB, and directus's from 195 MB to 10 MB. Reading a shard gives back a separate copy for every place a value was interned, because a caller may change one transition's effect.
 
-A shard is named by a hash of its own text. A write skips every shard that is already there, so a run after an edit writes only the shards whose content moved, and the index copies the entries of every shard whose name is unchanged. After the new manifest is in place, the write deletes every shard that neither it nor the previous manifest lists. A reader that opened the previous manifest can still read its shards. A shard that cannot be read makes the entry a miss, and a partial plan returns null.
+Shards and records are named by a hash of their own text. A write skips every one that is already there, so a run after an edit writes only the files whose content moved, and the index copies the entries of every shard whose name is unchanged. After the new manifest is in place, the write deletes every shard and record that neither it nor the previous manifest lists. A reader that opened the previous manifest can still read what it lists. A shard that cannot be read makes the entry a miss, and a shard or record that cannot be read makes a partial plan return null.
 
 The index maps a boundary, by the label a report prints for it, to the units that serve it or call it, and a callee's spelling to the units with an invocation of it. A unit there is its file's position in `files` and its own position in that file's shard. The index describes the summaries as stored, before wrappers are composed.
 

@@ -8,7 +8,7 @@
  * the files each summary belongs to, and the other files each walk read.
  * The summaries are in one shard per source file, beside an index of the
  * boundaries and calls in each. An adapter's own data on a file's record,
- * `meta`, goes in that file's shard, and the cache never reads it. The
+ * `meta`, goes in a file of its own, and the cache never reads it. The
  * package's design notes describe the cache in full.
  */
 
@@ -25,7 +25,13 @@ import {
   readStoreIndex,
   writeStoreIndex,
 } from "./cacheIndex.js";
-import { readShard, removeShardsOutside, writeShard } from "./cacheShards.js";
+import {
+  readRecord,
+  readShard,
+  removeStoredOutside,
+  writeRecord,
+  writeShard,
+} from "./cacheShards.js";
 import {
   fileStampEquals,
   filesStillMatch,
@@ -105,8 +111,10 @@ export interface CacheAttribution<Meta = unknown, UnitData = unknown> {
   units?: UnitRecord<UnitData>[];
 }
 
-/** A root's record without its `meta`, which is in the shard for the root's path. */
+/** A root's record, with its `meta` in a file of its own. */
 interface StoredRootMeta {
+  /** The id of the file with the root's meta. Absent when there is none. */
+  record?: string;
   cacheable: boolean;
   /** Indices into the manifest's depPaths table. */
   deps: number[];
@@ -139,7 +147,7 @@ interface Manifest<UnitData> {
   configStamp: FileStamp | null;
   files: FileStamp[];
   summaryCount: number;
-  /** One per source file that has units or a record, sorted by file. */
+  /** One per source file that has units, sorted by file. */
   shards: ManifestShard[];
   /** The per-file layer. Absent when written without attribution. */
   roots?: string[];
@@ -322,12 +330,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
     if (!(await filesStillMatch(manifest.files, run))) {
       return missDiag("files-changed");
     }
-    const shards = readShards<Meta, UnitData>(
-      entryDir,
-      manifest,
-      (shard) => shard.order.length > 0,
-    );
-    const summaries = shards === null ? null : inRunOrder(manifest, shards);
+    const summaries = storedSummaries(entryDir, manifest);
     if (summaries === null) {
       // Another process may have replaced the entry between the two reads.
       return missDiag("no-manifest");
@@ -379,14 +382,14 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       ) {
         return null;
       }
-      // Every unchanged file's record is checked again, so every shard is read.
-      const shards = readShards<Meta, UnitData>(entryDir, manifest, () => true);
-      const summaries = shards === null ? null : inRunOrder(manifest, shards);
-      if (shards === null || summaries === null) {
+      const summaries = storedSummaries(entryDir, manifest);
+      // Every unchanged file's record is checked again, so every record is read.
+      const records = storedRecords<Meta, UnitData>(entryDir, manifest);
+      if (summaries === null || records === null) {
         return null;
       }
       await markUsed(entryDir);
-      return buildPlan(manifest, shards, summaries, run);
+      return buildPlan(manifest, records, summaries, run);
     },
     async write(
       input: CacheInput,
@@ -394,7 +397,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       attribution?: CacheAttribution<Meta, UnitData>,
     ): Promise<void> {
       const entryDir = entryDirFor(cacheDir, input);
-      // Only the file stamps and shard ids are read from the previous entry.
+      // Only the file stamps and stored ids are read from the previous entry.
       const previous = await manifests.readAgain(path.join(entryDir, MANIFEST));
       manifests.forget();
       // A write with no lookup before it stats the files now, after they
@@ -417,11 +420,15 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       );
       const files = recorded.filter((stamp) => stamp !== null);
       const encoded =
-        attribution === undefined ? null : encodeAttribution(attribution);
+        attribution === undefined
+          ? null
+          : encodeAttribution(attribution, (meta) =>
+              writeRecord(entryDir, meta),
+            );
       makeIgnoredDirectory(cacheDir);
-      // The shards and the index go first, so a manifest on disk only
-      // ever points at shards that are there.
-      const shards = writeShards(entryDir, summaries, attribution, encoded);
+      // The records, shards and index go first, so a manifest on disk
+      // only ever lists files that are there.
+      const shards = writeShards(entryDir, summaries, encoded);
       const manifest: Manifest<UnitData> = {
         schemaVersion: SCHEMA_VERSION,
         adapterPacksDigest: input.adapterPacksDigest,
@@ -432,60 +439,58 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         ...(encoded === null ? {} : encoded.stored),
       };
       writeDocumentFile(path.join(entryDir, MANIFEST), manifest);
-      removeShardsOutside(
+      removeStoredOutside(
         entryDir,
-        new Set(
-          [...shards, ...(previous?.shards ?? [])].map((shard) => shard.id),
-        ),
+        new Set([...storedIds(manifest), ...storedIds(previous)]),
       );
       await evictOldEntries(cacheDir, entryDir);
     },
   };
 }
 
+/** The shards and records a manifest lists. */
+function storedIds<UnitData>(manifest: Manifest<UnitData> | null): string[] {
+  return [
+    ...(manifest?.shards ?? []).map((shard) => shard.id),
+    ...(manifest?.rootMeta ?? []).flatMap((root) =>
+      root.record === undefined ? [] : [root.record],
+    ),
+  ];
+}
+
 /**
  * Writes one shard per source file, each unit going to the shard for its
- * `location.file` and each root's meta to the shard for its path, then
- * the index over them. Returns the manifest's list of shards.
+ * `location.file`, then the index over them. Returns the manifest's list
+ * of shards.
  */
-function writeShards<Meta, UnitData>(
+function writeShards<UnitData>(
   entryDir: string,
   summaries: readonly BehavioralSummary[],
-  attribution: CacheAttribution<Meta, UnitData> | undefined,
   encoded: EncodedAttribution<UnitData> | null,
 ): ManifestShard[] {
   const byFile = new Map<
     string,
-    { content: ShardContent<Meta>; order: number[]; owners: number[][] }
+    { content: ShardContent; order: number[]; owners: number[][] }
   >();
-  const shardFor = (file: string) => {
-    const known = byFile.get(file);
-    if (known !== undefined) {
-      return known;
-    }
-    const created = {
-      content: { file, units: [] } as ShardContent<Meta>,
-      order: [] as number[],
-      owners: [] as number[][],
-    };
-    byFile.set(file, created);
-    return created;
-  };
   summaries.forEach((summary, position) => {
-    const shard = shardFor(summary.location?.file ?? "");
+    const file = summary.location?.file ?? "";
+    const shard = byFile.get(file) ?? {
+      content: { file, units: [] },
+      order: [],
+      owners: [],
+    };
+    byFile.set(file, shard);
     shard.content.units.push(summary);
     shard.order.push(position);
     shard.owners.push(encoded?.owners[position] ?? []);
   });
-  for (const root of attribution?.roots ?? []) {
-    shardFor(root.path).content.record = { meta: root.meta };
-  }
 
   const indexFile = path.join(entryDir, INDEX);
   const before = readStoreIndex(indexFile);
   const known = before === null ? new Map() : entriesByShard(before);
-  const written = [...byFile.keys()].sort().map((file) => {
-    const { content, order, owners } = shardFor(file);
+  // Map keys are distinct, so no two compare equal.
+  const sorted = [...byFile].sort(([a], [b]) => (a < b ? -1 : 1));
+  const written = sorted.map(([file, { content, order, owners }]) => {
     const id = writeShard(entryDir, content);
     return {
       shard: {
@@ -511,40 +516,21 @@ function writeShards<Meta, UnitData>(
 }
 
 /**
- * The shards `wanted` picks, read by file. Null when one of them cannot
- * be read, which a caller treats as no entry at all.
+ * Every stored summary, read from its shard and put back in the order
+ * the run wrote them. Null when a shard cannot be read or leaves a slot
+ * empty, which a caller treats as no entry at all.
  */
-function readShards<Meta, UnitData>(
+function storedSummaries<UnitData>(
   entryDir: string,
   manifest: Manifest<UnitData>,
-  wanted: (shard: ManifestShard) => boolean,
-): Map<string, ShardContent<Meta>> | null {
-  const shards = new Map<string, ShardContent<Meta>>();
-  for (const shard of manifest.shards ?? []) {
-    if (!wanted(shard)) {
-      continue;
-    }
-    const content = readShard<Meta>(entryDir, shard.id, shard.file);
-    if (content === null || content.units.length !== shard.order.length) {
-      return null;
-    }
-    shards.set(shard.file, content);
-  }
-  return shards;
-}
-
-/** Every stored summary in the order the run wrote them, or null when a slot is missing. */
-function inRunOrder<Meta, UnitData>(
-  manifest: Manifest<UnitData>,
-  shards: ReadonlyMap<string, ShardContent<Meta>>,
 ): BehavioralSummary[] | null {
   const summaries = new Array<BehavioralSummary | undefined>(
     manifest.summaryCount,
   );
-  for (const shard of manifest.shards ?? []) {
-    const content = shards.get(shard.file);
-    if (content === undefined) {
-      continue;
+  for (const shard of manifest.shards) {
+    const content = readShard(entryDir, shard.id, shard.file);
+    if (content === null || content.units.length !== shard.order.length) {
+      return null;
     }
     shard.order.forEach((position, i) => {
       summaries[position] = content.units[i];
@@ -558,6 +544,27 @@ function inRunOrder<Meta, UnitData>(
   return summaries as BehavioralSummary[];
 }
 
+/** Each root's meta, by the root's path. Null when one cannot be read. */
+function storedRecords<Meta, UnitData>(
+  entryDir: string,
+  manifest: Manifest<UnitData>,
+): Map<string, Meta> | null {
+  const records = new Map<string, Meta>();
+  const roots = manifest.roots ?? [];
+  for (const [i, root] of (manifest.rootMeta ?? []).entries()) {
+    const rootPath = roots[i];
+    if (rootPath === undefined || root.record === undefined) {
+      continue;
+    }
+    const record = readRecord<Meta>(entryDir, root.record);
+    if (record === null) {
+      return null;
+    }
+    records.set(rootPath, record.meta);
+  }
+  return records;
+}
+
 /**
  * Compare the stored per-file records against the run's stamps. A file
  * whose stamp moved, or whose entry asks for it, is hashed, so a touch
@@ -566,7 +573,7 @@ function inRunOrder<Meta, UnitData>(
  */
 async function buildPlan<Meta, UnitData>(
   manifest: Manifest<UnitData>,
-  shards: ReadonlyMap<string, ShardContent<Meta>>,
+  records: ReadonlyMap<string, Meta>,
   stored: BehavioralSummary[],
   run: RunStart,
 ): Promise<PartialPlan<Meta, UnitData>> {
@@ -594,7 +601,7 @@ async function buildPlan<Meta, UnitData>(
       cacheable: record.cacheable,
       deps: pathsOf(record.deps),
       claims: record.claims,
-      meta: shards.get(rootPath)?.record?.meta as Meta,
+      meta: records.get(rootPath) as Meta,
       packs: record.packs,
       ...(record.imports === undefined
         ? {}
@@ -758,6 +765,7 @@ interface EncodedAttribution<UnitData> {
 
 function encodeAttribution<Meta, UnitData>(
   attribution: CacheAttribution<Meta, UnitData>,
+  storeRecord: (meta: Meta) => string,
 ): EncodedAttribution<UnitData> {
   const roots = attribution.roots.map((r) => r.path);
   const rootIndex = new Map(roots.map((p, i) => [p, i]));
@@ -774,6 +782,7 @@ function encodeAttribution<Meta, UnitData>(
     return id;
   };
   const rootMeta: StoredRootMeta[] = attribution.roots.map((r) => ({
+    ...(r.meta === undefined ? {} : { record: storeRecord(r.meta) }),
     cacheable: r.cacheable,
     deps: r.deps.map(depIdOf),
     claims: r.claims,
