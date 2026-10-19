@@ -67,7 +67,9 @@ describe("pair a TypeScript client against a Python provider", () => {
     const check = runSuss(["check", "--dir", summaries]);
 
     expect(check.status).toBe(0);
-    expect(check.stdout).toContain("0 error, 2 warning");
+    // The 503 branch shows on two of the client's paths, and one finding
+    // lists both.
+    expect(check.stdout).toContain("0 error, 1 warning");
   });
 
   it("fails the run when the same findings are gated harder", () => {

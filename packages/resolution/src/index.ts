@@ -107,6 +107,7 @@ export {
 } from "./underContext.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
+  answersFromTestsLeftOut,
   fallbackWrittenAs,
   writtenValueOf,
   writtenValuesByKey,

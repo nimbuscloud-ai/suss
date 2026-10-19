@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isLocalUrl, pathOf, routePatternOf } from "./routePath.js";
+import { hostOf, isLocalUrl, pathOf, routePatternOf } from "./routePath.js";
 import { constant, hole, holePiece, string, text, textPiece } from "./value.js";
 
 describe("routePatternOf", () => {
@@ -140,5 +140,93 @@ describe("pathOf on a string with holes", () => {
     expect(
       pathOf(string([textPiece(["/users?page="]), holePiece("page")])),
     ).toBe("/users");
+  });
+
+  it("finds no path when a hole hides the authority behind a scheme", () => {
+    expect(
+      pathOf(string([holePiece("scheme"), textPiece([":"]), holePiece("url")])),
+    ).toBeUndefined();
+    expect(
+      pathOf(
+        string([
+          holePiece("host"),
+          textPiece([":"]),
+          holePiece("port"),
+          textPiece(["/health"]),
+        ]),
+      ),
+    ).toBe("/health");
+  });
+
+  it("keeps a colon later in a path", () => {
+    expect(
+      pathOf(
+        string([
+          textPiece(["/operations/"]),
+          holePiece("id"),
+          textPiece([":cancel"]),
+        ]),
+      ),
+    ).toBe("/operations/{id}:cancel");
+  });
+});
+
+describe("hostOf", () => {
+  it("reads the host and port of an absolute URL", () => {
+    expect(hostOf(text("https://API.Example.com/users?q=1"))).toBe(
+      "api.example.com",
+    );
+    expect(hostOf(text("http://localhost:3000/users"))).toBe("localhost:3000");
+    expect(hostOf(text("//cdn.example.org/a.js"))).toBe("cdn.example.org");
+  });
+
+  it("reads the host by hand when the URL parser rejects the text", () => {
+    expect(hostOf(text("https://bad host.example.com/x"))).toBe(
+      "bad host.example.com",
+    );
+    expect(hostOf(text("https://"))).toBeUndefined();
+  });
+
+  it("leaves out the user and password", () => {
+    expect(hostOf(text("https://user:secret@db.example.com/x"))).toBe(
+      "db.example.com",
+    );
+  });
+
+  it("has no host for a relative URL or a local one", () => {
+    expect(hostOf(text("/users"))).toBeUndefined();
+    expect(hostOf(text("users/1"))).toBeUndefined();
+    expect(hostOf(text("data:text/plain,hi"))).toBeUndefined();
+    expect(hostOf(constant(1))).toBeUndefined();
+  });
+
+  it("writes a piece of the authority it could not read as a hole", () => {
+    expect(
+      hostOf(
+        string([
+          textPiece(["https://"]),
+          holePiece("tenant"),
+          textPiece([".example.com/orders/"]),
+          holePiece("id"),
+        ]),
+      ),
+    ).toBe("{tenant}.example.com");
+    expect(
+      hostOf(string([holePiece("base"), textPiece(["/orders"])])),
+    ).toBeUndefined();
+    expect(
+      hostOf(string([holePiece("scheme"), textPiece([":"]), holePiece("url")])),
+    ).toBe("{scheme}:{url}");
+  });
+
+  it("reads a literal host written before a hole in the path", () => {
+    expect(
+      hostOf(
+        string([
+          textPiece(["https://www.example.net/search?q="]),
+          holePiece("q"),
+        ]),
+      ),
+    ).toBe("www.example.net");
   });
 });

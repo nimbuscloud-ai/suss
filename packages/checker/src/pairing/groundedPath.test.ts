@@ -135,13 +135,28 @@ describe("a consumer whose base URL the deployment fills in", () => {
     expect(keys).toHaveLength(1);
   });
 
-  it("leaves the path alone when no runtime sets the variable", () => {
+  it("reads the base as the origin when no runtime sets the variable", () => {
+    // Pairing reads an open base URL the way `pathsMeet` does. Keyed any
+    // other way, the call met a route with a wider hole and never the
+    // route that spells out its whole path.
     const keys = pairedKeys([
       backend("/orders"),
       forwarder("{API_BASE}/orders"),
     ]);
 
-    expect(keys).toHaveLength(0);
+    expect(keys).toEqual(["GET {API_BASE}/orders"]);
+  });
+
+  it("prefers the route that spells out the path to one with a wider hole", () => {
+    const bulk = backend("/orders/bulk/delete_dialog");
+    bulk.location = { ...bulk.location, file: "backend/src/bulk.ts" };
+    const result = pairSummaries([
+      backend("/orders(/{id}|/{id}/{tab})"),
+      bulk,
+      forwarder("{staticBase}/orders/bulk/delete_dialog"),
+    ]);
+
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([bulk]);
   });
 
   it("reads the variable through the argument the runtime fills in", () => {

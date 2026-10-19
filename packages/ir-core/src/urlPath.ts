@@ -34,3 +34,51 @@ export function pathAfterOrigin(text: string): string {
 export function statesAnOrigin(text: string): boolean {
   return SCHEME_ORIGIN.test(text) || PROTOCOL_RELATIVE_ORIGIN.test(text);
 }
+
+// Suffixes kept for private networks and for examples. A name under one
+// of them is never someone else's public API.
+const PRIVATE_SUFFIXES = [
+  "local",
+  "internal",
+  "localhost",
+  "lan",
+  "home.arpa",
+  "svc",
+  "test",
+  "example",
+  "invalid",
+  "example.com",
+  "example.net",
+  "example.org",
+];
+
+const PRIVATE_IPV4 =
+  /^(?:127\.|10\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.|0\.0\.0\.0$)/;
+
+/** The host without its port, lowercased, with no trailing dot. */
+function hostnameOf(host: string): string {
+  const lower = host.toLowerCase();
+  const name = lower.startsWith("[")
+    ? lower.slice(0, lower.indexOf("]") + 1)
+    : (lower.split(":")[0] ?? lower);
+  return name.replace(/\.$/, "");
+}
+
+/**
+ * Whether a host a client wrote out can belong to the project itself: a
+ * loopback or private address, a name with no dot such as a container's
+ * service name, or a name under a suffix kept for private networks or
+ * examples. Any other name is a public host the project does not serve.
+ */
+export function hostCanBeOwn(host: string): boolean {
+  const name = hostnameOf(host);
+  if (name === "[::1]" || /^\[f[cd]/.test(name) || PRIVATE_IPV4.test(name)) {
+    return true;
+  }
+  if (!name.includes(".")) {
+    return true;
+  }
+  return PRIVATE_SUFFIXES.some(
+    (suffix) => name === suffix || name.endsWith(`.${suffix}`),
+  );
+}

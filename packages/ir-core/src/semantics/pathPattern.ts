@@ -49,7 +49,15 @@ export function setPiece(options: readonly string[]): string | null {
 /** One segment of a pattern, after the wide holes are split up. */
 type Item =
   | { readonly kind: "text"; readonly text: string }
-  | { readonly kind: "shaped"; readonly shape: string; readonly test: RegExp }
+  | {
+      readonly kind: "shaped";
+      readonly shape: string;
+      readonly test: RegExp;
+      /** The text the segment spells when every hole in it is empty, or null when one cannot be. */
+      readonly bare: string | null;
+      /** How many characters of the segment are text rather than holes. */
+      readonly textLength: number;
+    }
   | { readonly kind: "one" }
   | { readonly kind: "optional" }
   | { readonly kind: "star" };
@@ -122,10 +130,16 @@ function shapedItem(segment: string): Item {
       return escapedForRegex(part);
     })
     .join("");
+  const holes = segment.match(/\{[^}]*\}|\*/g) ?? [];
+  const text = segment.replace(/\{[^}]*\}|\*/g, "");
   return {
     kind: "shaped",
     shape: segment.replace(/\{[^}]*\}/g, "{}"),
     test: new RegExp(`^${source}$`),
+    bare: holes.every((hole) => hole === "*" || /[?*]\}$/.test(hole))
+      ? text
+      : null,
+    textLength: text.length,
   };
 }
 
@@ -167,10 +181,43 @@ function patternSegmentsOf(alternative: string): string[] {
   return opensWithBaseUrl ? segments.slice(1) : segments;
 }
 
+/**
+ * The path less a base URL hole at the front, `/links/count` for
+ * `{baseUrl}/links/count`, so a key reads the hole as the origin the
+ * same way `pathsMeet` does. A path that is only the hole is kept.
+ */
+export function pathAfterBaseUrl(path: string): string {
+  const segments = segmentsOf(path);
+  const first = segments[0];
+  if (
+    path.startsWith("/") ||
+    first === undefined ||
+    segments.length < 2 ||
+    !HOLE_SEGMENT.test(first)
+  ) {
+    return path;
+  }
+  return `/${segments.slice(1).join("/")}`;
+}
+
+// Pairing compares one path against many, and a large app has thousands
+// of routes, so each path is split into items once.
+const PATTERNS = new Map<string, Item[][]>();
+const PATTERN_CACHE_LIMIT = 50_000;
+
 function patternOf(path: string): Item[][] {
-  return alternativesOf(path).map((alternative) =>
+  const known = PATTERNS.get(path);
+  if (known !== undefined) {
+    return known;
+  }
+  const pattern = alternativesOf(path).map((alternative) =>
     patternSegmentsOf(alternative).flatMap(itemsOf),
   );
+  if (PATTERNS.size >= PATTERN_CACHE_LIMIT) {
+    PATTERNS.clear();
+  }
+  PATTERNS.set(path, pattern);
+  return pattern;
 }
 
 /** The segments of a concrete request path, each one text. */
@@ -277,25 +324,168 @@ function countOf(
   return items.filter((item) => kinds.includes(item.kind)).length;
 }
 
-/**
- * How narrowly the path states which requests it serves, as a rank to
- * compare lexicographically: fixed segments first, then segments with
- * some text in them, then how few segments it lets vary in number, then
- * how few readings a set gives it. A path with several readings ranks
- * by its loosest one. When two paths serve one request, the one
- * ranking higher is the one a caller meant.
- */
-export function pathSpecificity(path: string): readonly number[] {
-  const alternatives = patternOf(path);
-  const ranks = alternatives.map((items) => [
+/** How narrowly one reading of a route states what it serves: fixed segments, then segments with text in them, then fewest that vary in number. */
+function readingSpecificity(items: readonly Item[]): readonly number[] {
+  return [
     countOf(items, ["text"]),
     countOf(items, ["shaped"]),
     -countOf(items, ["optional", "star"]),
-  ]);
-  const loosest = ranks.reduce((low, rank) =>
-    compareRanks(rank, low) < 0 ? rank : low,
+  ];
+}
+
+/**
+ * How a route's item lines up with the request's item on one segment.
+ * `stated` counts a request segment the route spells out too, `shaped`
+ * one the route's pattern matches. `guess` means the route spells out
+ * a segment where the request has a hole, so the two meet only when the
+ * runtime value happens to equal the route's text.
+ */
+type SegmentFit = "stated" | "shaped" | "free" | "guess" | "apart";
+
+function segmentFit(route: Item, request: Item): SegmentFit {
+  if (!meetOnOneSegment(route, request)) {
+    return "apart";
+  }
+  if (request.kind === "text") {
+    if (route.kind === "text") {
+      return "stated";
+    }
+    return route.kind === "shaped" ? "shaped" : "free";
+  }
+  if (absorbsAnything(route)) {
+    return "free";
+  }
+  if (request.kind !== "shaped") {
+    return "guess";
+  }
+  if (route.kind === "shaped") {
+    return "free";
+  }
+  // `count{query*}` spells `count` when the query is empty.
+  return route.kind === "text" && request.bare === route.text
+    ? "stated"
+    : "guess";
+}
+
+/**
+ * How much of the request a pattern segment spells out, counted in
+ * characters, so `recover.{format}` fits `recover.json` better than
+ * `{id}.{format}` does.
+ */
+function shapedText(item: Item): number {
+  return item.kind === "shaped" ? item.textLength : 0;
+}
+
+type Fit = readonly [stated: number, shapedText: number];
+
+function betterFit(a: Fit | undefined, b: Fit): boolean {
+  return a === undefined || compareRanks(b, a) > 0;
+}
+
+/**
+ * The best way one route alternative lines up with one request
+ * alternative, never putting the route's text over a request hole.
+ * Every step moves forward on at least one side, so the table fills in
+ * order of how far the two have got.
+ */
+function bestFit(route: readonly Item[], request: readonly Item[]): Fit | null {
+  const width = request.length + 1;
+  const best: (Fit | undefined)[] = new Array((route.length + 1) * width);
+  best[0] = [0, 0];
+  const offer = (i: number, j: number, fit: Fit): void => {
+    const at = i * width + j;
+    if (betterFit(best[at], fit)) {
+      best[at] = fit;
+    }
+  };
+  for (
+    let reached = 0;
+    reached <= route.length + request.length;
+    reached += 1
+  ) {
+    for (
+      let i = Math.max(0, reached - request.length);
+      i <= Math.min(route.length, reached);
+      i += 1
+    ) {
+      const j = reached - i;
+      const fit = best[i * width + j];
+      if (fit === undefined) {
+        continue;
+      }
+      const left = route[i];
+      const right = request[j];
+      if (left !== undefined && skippable(left)) {
+        offer(i + 1, j, fit);
+      }
+      if (right !== undefined && skippable(right)) {
+        offer(i, j + 1, fit);
+      }
+      if (left === undefined || right === undefined) {
+        continue;
+      }
+      if (left.kind === "star" && right.kind === "star") {
+        continue;
+      }
+      const kind = segmentFit(left, right);
+      if (kind === "apart" || kind === "guess") {
+        continue;
+      }
+      offer(
+        left.kind === "star" ? i : i + 1,
+        right.kind === "star" ? j : j + 1,
+        [
+          fit[0] + (kind === "stated" ? 1 : 0),
+          fit[1] + (kind === "shaped" ? shapedText(left) : 0),
+        ],
+      );
+    }
+  }
+  return best[route.length * width + request.length] ?? null;
+}
+
+/**
+ * How well a route fits a request path, as a rank to compare
+ * lexicographically: how many of the segments the request spells out
+ * the route spells out too, then how much text its patterns match, then how
+ * narrowly the reading of the route that fits states what it serves. A
+ * route with several readings ranks by the one that fits, so an optional
+ * locale prefix neither helps nor hurts a call that leaves it out.
+ *
+ * Null when the two meet only where the route spells out a segment the
+ * request leaves as a hole: a request to `/follows/{id}` reaches
+ * `/follows/bulk_show` only if the id is the word `bulk_show`, so that
+ * route is not one the caller meant.
+ */
+export function requestRank(
+  route: string,
+  request: string,
+): readonly number[] | null {
+  let found: readonly number[] | null = null;
+  for (const routeItems of patternOf(route)) {
+    for (const requestItems of patternOf(request)) {
+      const fit = bestFit(routeItems, requestItems);
+      const rank =
+        fit === null ? null : [...fit, ...readingSpecificity(routeItems)];
+      if (rank !== null && (found === null || compareRanks(rank, found) > 0)) {
+        found = rank;
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Whether the route takes every path: some reading of it is all holes,
+ * and one of them takes any number of segments, as in `/*` or `/{url+}`.
+ */
+export function isCatchAll(route: string): boolean {
+  return patternOf(route).some(
+    (items) =>
+      items.length > 0 &&
+      items.every(absorbsAnything) &&
+      items.some((item) => item.kind === "star"),
   );
-  return [...loosest, 1 - alternatives.length];
 }
 
 /** Negative when `a` ranks below `b`, positive above, zero when equal. */

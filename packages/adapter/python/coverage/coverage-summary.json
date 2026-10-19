@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 6335,
-      "covered": 6169,
+      "total": 6338,
+      "covered": 6172,
       "skipped": 0,
-      "pct": 97.37
+      "pct": 97.38
     },
     "statements": {
-      "total": 6444,
-      "covered": 6276,
+      "total": 6446,
+      "covered": 6278,
       "skipped": 0,
       "pct": 97.39
     },
@@ -19,8 +19,8 @@
       "pct": 99.08
     },
     "branches": {
-      "total": 5197,
-      "covered": 4628,
+      "total": 5199,
+      "covered": 4630,
       "skipped": 0,
       "pct": 89.05
     },
@@ -85,10 +85,10 @@
   },
   "src/clientCalls.ts": {
     "lines": {
-      "total": 121,
-      "covered": 116,
+      "total": 123,
+      "covered": 118,
       "skipped": 0,
-      "pct": 95.86
+      "pct": 95.93
     },
     "functions": {
       "total": 20,
@@ -97,16 +97,16 @@
       "pct": 95
     },
     "statements": {
-      "total": 122,
-      "covered": 117,
+      "total": 124,
+      "covered": 119,
       "skipped": 0,
-      "pct": 95.9
+      "pct": 95.96
     },
     "branches": {
-      "total": 113,
-      "covered": 103,
+      "total": 115,
+      "covered": 105,
       "skipped": 0,
-      "pct": 91.15
+      "pct": 91.3
     }
   },
   "src/decorators.ts": {
@@ -969,10 +969,10 @@
   },
   "src/facts/resolve.ts": {
     "lines": {
-      "total": 69,
-      "covered": 67,
+      "total": 70,
+      "covered": 68,
       "skipped": 0,
-      "pct": 97.1
+      "pct": 97.14
     },
     "functions": {
       "total": 32,
