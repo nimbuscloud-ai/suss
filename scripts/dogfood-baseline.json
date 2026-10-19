@@ -2,11 +2,11 @@
   "totals": {
     "packages": 87,
     "packagesWithExports": 87,
-    "exports": 1276,
-    "internal": 5425,
-    "consumers": 2826,
-    "pairs": 1606,
-    "unfollowedCalls": 541,
+    "exports": 1281,
+    "internal": 5455,
+    "consumers": 2829,
+    "pairs": 1609,
+    "unfollowedCalls": 538,
     "findingErrors": 0
   },
   "packages": {
@@ -33,10 +33,10 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 162,
-      "internal": 64,
+      "exports": 167,
+      "internal": 90,
       "consumers": 22,
-      "unfollowedCalls": 13
+      "unfollowedCalls": 14
     },
     "packages/checker": {
       "name": "@suss/checker",
@@ -55,9 +55,9 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 62,
-      "internal": 856,
-      "consumers": 481,
-      "unfollowedCalls": 43
+      "internal": 861,
+      "consumers": 482,
+      "unfollowedCalls": 41
     },
     "packages/client/aiohttp": {
       "name": "@suss/client-aiohttp",
@@ -202,8 +202,8 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 87,
-      "internal": 123,
-      "consumers": 37,
+      "internal": 122,
+      "consumers": 39,
       "unfollowedCalls": 20
     },
     "packages/framework/activerecord": {
@@ -547,7 +547,7 @@
       "exports": 92,
       "internal": 31,
       "consumers": 0,
-      "unfollowedCalls": 16
+      "unfollowedCalls": 15
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
@@ -582,7 +582,7 @@
       "exports": 79,
       "internal": 87,
       "consumers": 165,
-      "unfollowedCalls": 20
+      "unfollowedCalls": 19
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
