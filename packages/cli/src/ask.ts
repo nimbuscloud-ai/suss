@@ -12,7 +12,6 @@
  * one, so the answer lists it as what code here does.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 
 import {
@@ -38,10 +37,11 @@ import {
   WHY_SHAPES,
 } from "./askWhy.js";
 import { writeReport } from "./check.js";
-import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
+import { readSummariesFromDir } from "./inspect.js";
 import { loadedSummaries } from "./loadedSummaries.js";
 import { reachTargetOf } from "./reachTarget.js";
 import { sentenceList } from "./sentenceList.js";
+import { readSummaries } from "./summaryFile.js";
 import {
   ambiguousBoundarySpelling,
   collapseTouches,
@@ -255,9 +255,7 @@ function loadSummaries(options: AskOptions): LoadedSummaries {
     return loadedSummaries(readSummariesFromDir(options.dir));
   }
   if (options.file !== undefined) {
-    return loadedSummaries(
-      parseSummaryFile(options.file, fs.readFileSync(options.file, "utf-8")),
-    );
+    return loadedSummaries(readSummaries(options.file));
   }
   throw new UsageError(
     "ask needs summaries to read. Try: suss ask 'what reads aws.dynamodb:editions' --dir summaries/",

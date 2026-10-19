@@ -38,9 +38,10 @@ import { whatWouldKeyIt } from "@suss/checker-intent";
 import { loadIntentDoc } from "@suss/contract-intent";
 import { EVERY_FIELD } from "@suss/ir-core";
 
-import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
+import { readSummariesFromDir } from "./inspect.js";
 import { draftedReceives } from "./intentReceives.js";
 import { draftedWhen } from "./intentWhen.js";
+import { readSummaries } from "./summaryFile.js";
 import { UsageError } from "./usageError.js";
 
 import type {
@@ -747,7 +748,7 @@ export function readSummariesFile(from: string): BehavioralSummary[] {
 
   const read = fs.statSync(resolved).isDirectory()
     ? readSummariesFromDir(resolved)
-    : parseSummaryFile(resolved, fs.readFileSync(resolved, "utf-8"));
+    : readSummaries(resolved);
   return read.map(summaryWithDefinitionsInlined);
 }
 

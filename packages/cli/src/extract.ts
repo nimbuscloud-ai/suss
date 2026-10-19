@@ -39,7 +39,7 @@ import {
   formatMissingSubmodules,
   readSubmodules,
 } from "./gitSubmodules.js";
-import { writeJson } from "./jsonStream.js";
+import { writeJson, writeSummaries } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
 import { forgetOwnHosts, projectHosts } from "./projectHosts.js";
@@ -1312,7 +1312,7 @@ export async function extract(
 
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
-    await writeJson({ value: summaries, indent: 2, file: outPath });
+    await writeSummaries(summaries, outPath);
     await writeIncompleteness({
       outPath,
       projectRoot,
@@ -1325,7 +1325,7 @@ export async function extract(
         : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}${formatTimingTotal(timingReport)}\n`,
     );
   } else {
-    await writeJson({ value: summaries, indent: 2 });
+    await writeSummaries(summaries);
   }
 
   if (options.timing === true && timingReport !== null) {

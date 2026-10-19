@@ -13,14 +13,14 @@
  * missing route.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 
 import { dispatchByType, displayLabel, summaryRef } from "@suss/behavioral-ir";
 import { analyzeFlow } from "@suss/checker";
 
-import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
+import { readSummariesFromDir } from "./inspect.js";
 import { writeJson } from "./jsonStream.js";
+import { readSummaries } from "./summaryFile.js";
 
 import type {
   BehavioralSummary,
@@ -451,7 +451,7 @@ function renderFlow(
 // The command
 // ---------------------------------------------------------------------------
 
-function readSummaries(options: FlowOptions): BehavioralSummary[] | null {
+function summariesToFollow(options: FlowOptions): BehavioralSummary[] | null {
   if (options.dir !== undefined) {
     return readSummariesFromDir(options.dir);
   }
@@ -460,8 +460,7 @@ function readSummaries(options: FlowOptions): BehavioralSummary[] | null {
     return null;
   }
 
-  const file = path.resolve(options.file);
-  return parseSummaryFile(file, fs.readFileSync(file, "utf-8"));
+  return readSummaries(path.resolve(options.file));
 }
 
 /**
@@ -476,7 +475,7 @@ export async function inspectFlow(options: FlowOptions): Promise<number> {
     return 1;
   }
 
-  const summaries = readSummaries(options);
+  const summaries = summariesToFollow(options);
   if (summaries === null) {
     process.stderr.write(
       '--flow reads summaries the way the rest of inspect does. Pass a file or a folder: suss inspect --flow "GET /api/orders/1" summaries/infra.json\n',
