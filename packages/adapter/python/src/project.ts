@@ -36,6 +36,7 @@ import {
   KeptParses,
   moduleInitStructure,
   noopTimer,
+  ownersWhereWritten,
   runDigest,
   stampModuleImports,
   stampModules,
@@ -393,11 +394,17 @@ export async function extractPythonProject(
   const lookup = await timer.timeAsync("cache.lookup", () =>
     layer.lookup(input),
   );
+  // The cache stores summaries before their wrappers are composed, so a
+  // stored route stays its own, and every path composes on the way out.
+  const composed = (stored: readonly BehavioralSummary[]) =>
+    composeWrappers(stored, {
+      gapHandling: options.gapHandling ?? "permissive",
+    });
   if (lookup.kind === "hit") {
     options.onCacheDiagnostic?.(lookup.diagnostic);
     options.onTiming?.(timer.report());
     return {
-      summaries: lookup.summaries,
+      summaries: composed(lookup.summaries),
       facts: new Database(),
       roots,
       unreadManifests,
@@ -419,7 +426,7 @@ export async function extractPythonProject(
     options.onCacheDiagnostic?.({ kind: "hit" });
     options.onTiming?.(timer.report());
     return {
-      summaries: plan.allSummaries(),
+      summaries: composed(plan.allSummaries()),
       facts: new Database(),
       roots,
       unreadManifests,
@@ -1002,21 +1009,25 @@ async function runPython(
     return composeWrappers(summaries, { gapHandling });
   });
 
+  const walkedFiles = new Map(
+    bound.map(({ file, displayPath }) => [displayPath, file]),
+  );
   await timer.timeAsync("cache.write", async () => {
     // An empty result is never cached. Serving one would skip the
     // stages that fill the funnel, so a misconfigured project would
     // get "0 summaries" with no explanation ever after.
-    if (cacheDir === null || composed.length === 0) {
+    if (cacheDir === null || summaries.length === 0) {
       return;
     }
     try {
       await cache.layer.write(
         cache.input,
-        composed,
+        summaries,
         log === null || ledger === null || overBudget
           ? undefined
           : pythonAttribution({
-              composed,
+              summaries,
+              walkedFileOf: (locationFile) => walkedFiles.get(locationFile),
               discoveries,
               charges,
               unitDrafts,
@@ -1082,7 +1093,9 @@ async function runPython(
 
 /** Every file's record for the entry this run writes. */
 function pythonAttribution(args: {
-  composed: readonly BehavioralSummary[];
+  /** What the entry stores: every summary, before wrappers are composed. */
+  summaries: readonly BehavioralSummary[];
+  walkedFileOf: (locationFile: string) => string | undefined;
   discoveries: ReadonlyMap<string, FileDiscovery>;
   /** What each file discovered in this run depended on, by the end of the run. */
   charges: ReadonlyMap<string, Dependencies>;
@@ -1125,7 +1138,10 @@ function pythonAttribution(args: {
       },
     };
   });
-  return { roots, owners: args.composed.map(() => []) };
+  return {
+    roots,
+    owners: ownersWhereWritten(args.summaries, args.walkedFileOf),
+  };
 }
 
 const SKIPPED_DIRECTORIES = new Set([
