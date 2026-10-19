@@ -168,6 +168,15 @@ describe("extraction over fixtures/ruby-rails", () => {
     });
   });
 
+  it("says Rails also serves a route with a format after its path", async () => {
+    const { summaries } = await extractFixture();
+    const index = action(summaries, "orders_controller", "index");
+    expect(index.identity.boundaryBinding?.semantics).toMatchObject({
+      path: "/orders",
+      optionalFormat: true,
+    });
+  });
+
   it("binds show, the other conventional action the controller defines", async () => {
     const { summaries } = await extractFixture();
     const show = action(summaries, "orders_controller", "show");

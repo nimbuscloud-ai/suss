@@ -4,7 +4,6 @@ import {
   bindingIs,
   boundaryKey,
   boundaryLabel,
-  bucketRank,
   bucketsMeet,
   canPair,
   compareRanks,
@@ -15,6 +14,7 @@ import {
   graphqlResolverBinding,
   groundBinding,
   groundedPairingKey,
+  hostCanBeOwn,
   labelWithDetail,
   leavesTheProcess,
   messageBusBinding,
@@ -25,16 +25,29 @@ import {
   normalizePath,
   operationKey,
   pairingKey,
+  pairRank,
   reportsUnpairedItself,
   restBinding,
+  routePathsMeet,
   semanticsAgree,
   spansBuckets,
   storageBinding,
   unitInvocationBinding,
+  withoutOwnHost,
   withRewrittenPaths,
 } from "./index.js";
 
 import type { BoundaryBinding, Deployment } from "./index.js";
+
+function getAt(path: string, host?: string): BoundaryBinding {
+  return restBinding({
+    transport: "http",
+    method: "GET",
+    path,
+    recognition: "x",
+    host,
+  });
+}
 
 describe("normalizePath", () => {
   it("converts :param to {param} and lowercases static segments", () => {
@@ -199,12 +212,111 @@ describe("boundaryKey", () => {
         route("/api/v1/acme/eu/orders/:id"),
       ),
     ).toBe(false);
+    const call = route("/api/v1/orders/{orderId}");
     expect(
       compareRanks(
-        bucketRank(route("/api/v1/orders/:id")),
-        bucketRank(route("/api/{version}/{tenant?}/orders/{id}")),
+        pairRank(route("/api/v1/orders/:id"), call) ?? [],
+        pairRank(route("/api/{version}/{tenant?}/orders/{id}"), call) ?? [],
       ),
     ).toBeGreaterThan(0);
+  });
+
+  it("ranks a route by the segments the call spells out", () => {
+    const call = getAt("/follows/{id}");
+    expect(pairRank(getAt("/follows/:id"), call)).not.toBeNull();
+    // The call has an id where `bulk_show` is spelled out, so only an id
+    // equal to that word would reach it.
+    expect(pairRank(getAt("/follows/bulk_show"), call)).toBeNull();
+    expect(
+      compareRanks(
+        pairRank(getAt("/(|locale/{locale}/)follows/{id}"), call) ?? [],
+        pairRank(getAt("/(|locale/{locale}/){username}/{view}"), call) ?? [],
+      ),
+    ).toBeGreaterThan(0);
+    expect(
+      pairRank(getAt("/links/count"), getAt("{baseUrl}/links/count{query*}")),
+    ).not.toBeNull();
+  });
+
+  it("keeps a call whose host it could not read off a catch-all route", () => {
+    const catchAll = getAt("/{url+}");
+    expect(pairRank(catchAll, getAt("/posts/{id}"))).not.toBeNull();
+    expect(pairRank(catchAll, getAt("{base}/health"))).toBeNull();
+    expect(pairRank(catchAll, getAt("/health", "{target}:{port}"))).toBeNull();
+    expect(pairRank(getAt("/health"), getAt("{base}/health"))).not.toBeNull();
+  });
+
+  it("keys a call to another host apart from the app's routes", () => {
+    const foreign = getAt("/customsearch/v1", "www.googleapis.com");
+    expect(pairingKey(foreign)).toBe(
+      "rest //www.googleapis.com/customsearch/v1",
+    );
+    expect(bucketsMeet(getAt("/{url+}"), foreign)).toBe(false);
+    expect(
+      semanticsAgree(getAt("/customsearch/v1").semantics, foreign.semantics),
+    ).toBe(false);
+    expect(pairingKey(groundBinding(foreign, NOTHING_DEPLOYED))).toBe(
+      "rest //www.googleapis.com/customsearch/v1",
+    );
+    const local = getAt("/orders", "localhost:3000");
+    expect(pairingKey(groundBinding(local, NOTHING_DEPLOYED))).toBe(
+      "rest /orders",
+    );
+  });
+
+  it("leaves out a host the project says it serves", () => {
+    const own = new Set(["api.example.com"]);
+    const semanticsOf = (binding: BoundaryBinding) => binding.semantics;
+    expect(
+      semanticsOf(withoutOwnHost(getAt("/orders", "API.example.com:443"), own)),
+    ).toEqual(getAt("/orders").semantics);
+    const other = getAt("/orders", "maps.example.org");
+    expect(withoutOwnHost(other, own)).toBe(other);
+    const relative = getAt("/orders");
+    expect(withoutOwnHost(relative, own)).toBe(relative);
+  });
+
+  it("treats loopback, private and unqualified hosts as ones the project can run on", () => {
+    for (const host of [
+      "localhost:3000",
+      "127.0.0.1",
+      "10.1.2.3:8080",
+      "[::1]:4000",
+      "orders-service",
+      "api.internal",
+      "web.test",
+    ]) {
+      expect(hostCanBeOwn(host), host).toBe(true);
+    }
+    for (const host of ["www.googleapis.com", "8.8.8.8", "meta.example.co"]) {
+      expect(hostCanBeOwn(host), host).toBe(false);
+    }
+  });
+
+  it("says two declared route paths meet when they share a request", () => {
+    expect(routePathsMeet("/(|locale/:locale/)articles", "/articles")).toBe(
+      true,
+    );
+    expect(routePathsMeet("/articles/:id", "/users/1")).toBe(false);
+  });
+
+  it("reads an open base URL in the key as the origin", () => {
+    expect(pairingKey(getAt("{API_BASE}/orders/{id}"))).toBe("rest /orders/{}");
+    expect(pairingKey(getAt("{API_BASE}"))).toBe("rest {}");
+  });
+
+  it("meets a route Rails also serves with a format after it", () => {
+    const search = restBinding({
+      transport: "http",
+      recognition: "rails",
+      method: "GET",
+      path: "/search",
+      optionalFormat: true,
+    });
+    expect(spansBuckets(search)).toBe(true);
+    expect(bucketsMeet(search, getAt("/search.json"))).toBe(true);
+    expect(pairRank(search, getAt("/search.json"))).not.toBeNull();
+    expect(bucketsMeet(getAt("/search"), getAt("/search.json"))).toBe(false);
   });
 
   it("agrees methods the way buses agree: equal, or a wildcard on either side", () => {

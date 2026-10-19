@@ -2,12 +2,20 @@ import { describe, expect, it } from "vitest";
 
 import { branchStatusRanges, fallthroughGuards } from "./statusRanges.js";
 
-import type { Predicate, ValueRef } from "@suss/behavioral-ir";
+import type {
+  Predicate,
+  StatusMembers,
+  ValueRef,
+} from "@suss/behavioral-ir";
 
-const STATUS: StatusAccessorsArg = new Set(["status"]);
-const SUCCESS: StatusAccessorsArg = new Set(["ok"]);
-
-type StatusAccessorsArg = ReadonlySet<string>;
+const STATUS: StatusMembers = {
+  members: new Set(["status"]),
+  body: new Set(["body"]),
+};
+const SUCCESS: StatusMembers = {
+  members: new Set(["ok"]),
+  body: new Set(["body"]),
+};
 
 const statusRef: ValueRef = {
   type: "derived",

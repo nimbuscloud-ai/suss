@@ -1,3 +1,4 @@
+import { spanFileOf } from "./nodeKey.js";
 import { writtenAnswersFor, writtenAnswersUnder } from "./singleAnswer.js";
 
 import type { Database } from "@suss/datalog";
@@ -22,12 +23,41 @@ export function writtenValueOf(
   key: string,
   ask: Ask,
   relation: string = WRITTEN_AS,
+  keep: (answer: string) => boolean = () => true,
 ): string | null {
-  const answers = settledByKey(db, [key], ask, relation).get(key) ?? [];
+  const settled = settledByKey(db, [key], ask, relation).get(key) ?? [];
+  const answers = settled.filter(keep);
   if (answers.length === 1) {
     return answers[0] as string;
   }
-  return relation === WRITTEN_AS ? fallbackWrittenAs(db, key, ask) : null;
+  // Every answer it had was one the caller set aside, so nothing is left
+  // for a fallback to choose between.
+  if (answers.length === 0 && settled.length > 0) {
+    return null;
+  }
+  const fallback =
+    relation === WRITTEN_AS ? fallbackWrittenAs(db, key, ask) : null;
+  return fallback !== null && keep(fallback) ? fallback : null;
+}
+
+/**
+ * Whether an answer can decide a value read at `key`: an answer in test
+ * code never decides a value production code reads, so a test calling
+ * `authorize(id, "https://test.com")` leaves `authorize`'s parameter as
+ * open as it was. The adapter says which files are test code.
+ */
+export function answersFromTestsLeftOut(
+  key: string,
+  isTestFile: (file: string) => boolean,
+): (answer: string) => boolean {
+  const asked = spanFileOf(key);
+  if (asked === null || isTestFile(asked)) {
+    return () => true;
+  }
+  return (answer) => {
+    const file = spanFileOf(answer);
+    return file === null || !isTestFile(file);
+  };
 }
 
 /** Where a plain `wanted` question puts the fallbacks a value passes. */

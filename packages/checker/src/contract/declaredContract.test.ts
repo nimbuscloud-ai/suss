@@ -31,19 +31,19 @@ function summary(
 describe("statusAccessorsFor", () => {
   it("returns the historical names by default", () => {
     const result = statusAccessorsFor(summary());
-    expect([...result].sort()).toEqual(["status", "statusCode"]);
+    expect([...result.members].sort()).toEqual(["status", "statusCode"]);
   });
 
   it("uses the metadata names when present", () => {
     const result = statusAccessorsFor(
       summary({ statusAccessors: ["responseStatus", "code"] }),
     );
-    expect([...result].sort()).toEqual(["code", "responseStatus"]);
+    expect([...result.members].sort()).toEqual(["code", "responseStatus"]);
   });
 
   it("falls back when metadata.http.statusAccessors is empty", () => {
     const result = statusAccessorsFor(summary({ statusAccessors: [] }));
-    expect([...result].sort()).toEqual(["status", "statusCode"]);
+    expect([...result.members].sort()).toEqual(["status", "statusCode"]);
   });
 
   it("ignores unscoped flat keys (migration guard)", () => {
@@ -52,7 +52,7 @@ describe("statusAccessorsFor", () => {
     const result = statusAccessorsFor(
       summary(undefined, { statusAccessors: ["responseStatus"] }),
     );
-    expect([...result].sort()).toEqual(["status", "statusCode"]);
+    expect([...result.members].sort()).toEqual(["status", "statusCode"]);
   });
 
   it("falls back to the historical names when an entry doesn't parse", () => {
@@ -61,7 +61,7 @@ describe("statusAccessorsFor", () => {
     const result = statusAccessorsFor(
       summary({ statusAccessors: ["status", 42, null, "code"] }),
     );
-    expect([...result].sort()).toEqual(["status", "statusCode"]);
+    expect([...result.members].sort()).toEqual(["status", "statusCode"]);
   });
 });
 

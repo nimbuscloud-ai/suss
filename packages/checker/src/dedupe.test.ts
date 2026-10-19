@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { functionCallBinding, restBinding } from "@suss/behavioral-ir";
 
-import { dedupeFindings, mergedSideOf } from "./dedupe.js";
+import {
+  dedupeFindings,
+  findingPerConsumerPath,
+  mergedSideOf,
+} from "./dedupe.js";
 
 import type { Finding } from "@suss/behavioral-ir";
 
@@ -37,6 +41,33 @@ function finding(overrides: Partial<Finding> = {}): Finding {
   };
   return { ...base, ...overrides };
 }
+
+describe("findingPerConsumerPath", () => {
+  const onPath = (transitionId: string, severity: Finding["severity"]) => {
+    const base = finding({ severity });
+    return finding({
+      severity,
+      consumer: { ...base.consumer, transitionId },
+    });
+  };
+
+  it("gives one finding for a status the consumer tests on several paths", () => {
+    const out = findingPerConsumerPath([
+      onPath("ct-a", "info"),
+      onPath("ct-b", "warning"),
+      onPath("ct-a", "info"),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.consumer.transitionId).toBe("ct-a");
+    expect(out[0]?.consumer.transitionIds).toEqual(["ct-a", "ct-b"]);
+    expect(out[0]?.severity).toBe("warning");
+  });
+
+  it("keeps findings that say different things apart", () => {
+    const other = finding({ description: "Consumer expects status 401" });
+    expect(findingPerConsumerPath([finding(), other])).toHaveLength(2);
+  });
+});
 
 describe("dedupeFindings", () => {
   it("passes single-source findings through untouched (no sources field)", () => {

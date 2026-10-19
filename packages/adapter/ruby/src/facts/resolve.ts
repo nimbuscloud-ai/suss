@@ -4,10 +4,12 @@
  * the same shared rules.
  */
 
+import { isTestFile } from "@suss/behavioral-ir";
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 import {
   allocationSitesOf,
   alsoSteps,
+  answersFromTestsLeftOut,
   askResolution,
   askResolutionUnder,
   askSources,
@@ -108,7 +110,13 @@ export function resolveEnvObjects(
  */
 export function writtenValueOf(db: Database, key: string): string | null {
   resolveValues(db, [key]);
-  return sharedWrittenValueOf(db, key, (keys) => resolveValues(db, keys));
+  return sharedWrittenValueOf(
+    db,
+    key,
+    (keys) => resolveValues(db, keys),
+    undefined,
+    answersFromTestsLeftOut(key, isTestFile),
+  );
 }
 
 /**

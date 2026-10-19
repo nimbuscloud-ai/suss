@@ -16,7 +16,7 @@ import { Node } from "ts-morph";
 import { hasNameHole } from "@suss/behavioral-ir";
 
 import { clientConstructionCall } from "../discovery/clientCall.js";
-import { pathFromProperty } from "./routePath.js";
+import { hostFromArgument, pathFromProperty } from "./routePath.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { CallExpression } from "ts-morph";
@@ -45,6 +45,22 @@ export function clientBasePath(
   // A base with a hole in it was computed at runtime, and guessing at
   // one would move every path under it to a route nobody serves.
   return base === undefined || hasNameHole(base) ? undefined : base;
+}
+
+/** The host the instance behind this call was given in its base, read the way `clientBasePath` reads the path. */
+export function clientBaseHost(
+  call: CallExpression,
+  match: DiscoveryPattern["match"] | undefined,
+  resolution: ResolutionStore | undefined,
+  site?: string,
+): string | undefined {
+  if (match?.type !== "clientCall" || match.basePathOption === undefined) {
+    return undefined;
+  }
+  const config = clientConstructionConfig(call, match, resolution);
+  return config === undefined
+    ? undefined
+    : hostFromArgument(config, match.basePathOption, resolution, site);
 }
 
 /**

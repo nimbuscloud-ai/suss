@@ -13,7 +13,11 @@ import {
   readHttpMetadata,
 } from "@suss/behavioral-ir";
 
-import type { BehavioralSummary, TypeShape } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  StatusMembers,
+  TypeShape,
+} from "@suss/behavioral-ir";
 
 export type ContractProvenance = "derived" | "independent";
 
@@ -155,14 +159,16 @@ export function unwrapBodyField(
  * summary, or an older one without them, gets `status` and
  * `statusCode`.
  */
-export function statusAccessorsFor(
-  summary: BehavioralSummary,
-): ReadonlySet<string> {
+export function statusAccessorsFor(summary: BehavioralSummary): StatusMembers {
   const fromMetadata = readHttpMetadata(summary)?.statusAccessors;
-  if (fromMetadata !== undefined && fromMetadata.length > 0) {
-    return new Set(fromMetadata);
-  }
-  return new Set(DEFAULT_STATUS_ACCESSORS);
+  return {
+    members: new Set(
+      fromMetadata !== undefined && fromMetadata.length > 0
+        ? fromMetadata
+        : DEFAULT_STATUS_ACCESSORS,
+    ),
+    body: new Set(bodyAccessorsFor(summary)),
+  };
 }
 
 /**
@@ -172,14 +178,16 @@ export function statusAccessorsFor(
  * kept apart from the status accessors because only a status accessor
  * compares against a number.
  */
-export function successAccessorsFor(
-  summary: BehavioralSummary,
-): ReadonlySet<string> {
+export function successAccessorsFor(summary: BehavioralSummary): StatusMembers {
   const fromMetadata = readHttpMetadata(summary)?.successAccessors;
-  if (fromMetadata !== undefined && fromMetadata.length > 0) {
-    return new Set(fromMetadata);
-  }
-  return new Set(DEFAULT_SUCCESS_ACCESSORS);
+  return {
+    members: new Set(
+      fromMetadata !== undefined && fromMetadata.length > 0
+        ? fromMetadata
+        : DEFAULT_SUCCESS_ACCESSORS,
+    ),
+    body: new Set(bodyAccessorsFor(summary)),
+  };
 }
 
 /**

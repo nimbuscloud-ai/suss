@@ -85,12 +85,13 @@ export interface BoundaryBehavior<S extends { name: string }> {
   bucketsMeet?(a: S, b: S): boolean;
 
   /**
-   * How narrowly this bucket states what it serves, compared
-   * lexicographically. When a consumer meets more than one bucket, it
-   * reaches the one ranked highest, and a tie is reported instead of
-   * paired.
+   * How well a provider fits what a consumer states, compared
+   * lexicographically. When a consumer meets more than one provider
+   * bucket, it reaches the one ranked highest, and a tie is reported
+   * instead of paired. Null when the two meet only by a guess the
+   * consumer gives no ground for, so they do not pair.
    */
-  bucketRank?(semantics: S): readonly number[];
+  pairRank?(provider: S, consumer: S): readonly number[] | null;
 
   /** The label a reader sees for this boundary. Defaults to `identityKey`. */
   displayLabel?(semantics: S): string | null;
@@ -157,6 +158,13 @@ export interface BoundaryBehavior<S extends { name: string }> {
    * `groundName` looks up the same reference.
    */
   nameReference?(semantics: S): Reference | null;
+
+  /**
+   * The semantics with a host the project says it serves left out of
+   * the name, or null when the name has none of them. A protocol whose
+   * names never carry a host leaves this undefined.
+   */
+  withoutOwnHost?(semantics: S, ownHosts: ReadonlySet<string>): S | null;
 
   /**
    * Whether a provider produces a status and a body that a consumer
