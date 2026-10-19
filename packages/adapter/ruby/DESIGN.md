@@ -16,6 +16,8 @@ Each branch records its own `statusCodeReading`, and the pattern's `defaultStatu
 - A status argument goes through the shared value evaluator. A number, a status name, and a local variable whose value settles on either one all give the same result.
 - When a status argument does not settle on a number, as with `params[:code]` or a name the pack does not declare, the branch reports no status and gets one gap recording why. The other branches are unaffected.
 
+An entry can also say which keyword gives the JSON body, `json` for Rails' `render json:`, and which methods serialize a value without changing it, such as `to_json`. The adapter reads that keyword's value through the evaluator, so a hash built in a local variable or returned by a project method gives the same body as one written in place. A hash becomes a record with the keys it writes, and a literal value stays a literal. An array becomes an array. Anything else, such as a model, a serializer object or a string that is already JSON text, leaves the body unread, and the summary reports it as `null`. The checker treats a `null` body as unknown, so an unread body never looks like one that lacks a field. A serializer method called with arguments, as in `as_json(only: [:id])`, also leaves the body unread, since the arguments change which keys come out.
+
 A branch also lists the calls made on the way to it. `guardsHoldOn` from `@suss/extractor` works that out by comparing the conditions around each call with the conditions around the branch. The Python and TypeScript adapters use the same test.
 
 ## What runs around an action
