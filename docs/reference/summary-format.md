@@ -13,6 +13,17 @@ A summary file is a JSON array of objects, one per code unit:
 ]
 ```
 
+The file has one summary per line and no indentation. The `[` and the `]` are on lines of their own, and each line in between is one summary followed by a comma, except the last:
+
+```
+[
+{"schemaVersion":6,"kind":"handler","identity":{},"transitions":[]},
+{"schemaVersion":6,"kind":"client","identity":{},"transitions":[]}
+]
+```
+
+Any JSON parser reads it. A tool that reads a file too large for one string can read it a line at a time and parse each line, after dropping the trailing comma. For indented output to read, run `jq . summaries.json`. suss writes the file under a temporary name and renames it into place at the end, so a run killed while writing leaves the previous file. Files written by releases before 0.34.1 are indented, and suss still reads them when they are under about 512 MB.
+
 `suss extract` writes one, `suss contract` writes one from a schema or a deploy template, and `suss check`, `suss inspect` and `suss ask` all read them. The zod schemas in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) are the one place the format is written by hand. [IR types](/reference/ir) goes through every type field by field.
 
 ## Top-level fields

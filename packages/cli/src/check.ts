@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { safeParseSummaries, summaryRef } from "@suss/behavioral-ir";
+import { summaryRef } from "@suss/behavioral-ir";
 import {
   applySuppressions,
   boundaryCollisions,
@@ -30,6 +30,7 @@ import {
   readProjectFile,
   unreadArtifacts,
 } from "./projectFile.js";
+import { readSummaries } from "./summaryFile.js";
 import {
   DEFAULT_SUPPRESSIONS_FILENAMES,
   loadSuppressionsOrEmpty,
@@ -149,8 +150,8 @@ export interface CheckResult {
 }
 
 export function check(options: CheckOptions): CheckResult {
-  const providerSummaries = readSummaries(options.providerFile);
-  const consumerSummaries = readSummaries(options.consumerFile);
+  const providerSummaries = readSummaryPair(options.providerFile);
+  const consumerSummaries = readSummaryPair(options.consumerFile);
 
   const rawFindings: Finding[] = [];
   for (const provider of providerSummaries) {
@@ -335,9 +336,9 @@ const checkedFolders = new Map<string, CheckedFiles>();
 const FOLDERS_KEPT = 2;
 
 function checkedFiles(dir: string, files: readonly string[]): CheckedFiles {
-  // Each file is read once. The bytes that decide whether the folder is
-  // one read before are the bytes parsed when it is not.
-  const reads = files.map((file) => readFolderFile(dir, file));
+  // The hash streams through each file, so a file larger than one string
+  // is still recognised, and parsing reads it a second time on a miss.
+  const reads = files.map((file) => hashFolderFile(dir, file));
   const key = folderIdentity(reads);
   const known = key === null ? undefined : checkedFolders.get(key);
   if (key !== null && known !== undefined) {
@@ -355,16 +356,33 @@ function checkedFiles(dir: string, files: readonly string[]): CheckedFiles {
   return checked;
 }
 
-/** One file of a summaries folder: its bytes, or why they could not be read. */
+/** One file of a summaries folder: a hash of its content, or why it could not be read. */
 type FolderFile =
-  | { file: string; bytes: Buffer }
+  | { file: string; digest: string }
   | { file: string; error: unknown };
 
-function readFolderFile(dir: string, file: string): FolderFile {
+const HASH_CHUNK_BYTES = 4 * 1024 * 1024;
+
+function hashFolderFile(dir: string, file: string): FolderFile {
+  let fd: number | null = null;
   try {
-    return { file, bytes: fs.readFileSync(path.join(dir, file)) };
+    fd = fs.openSync(path.join(dir, file), "r");
+    const hash = createHash("sha1");
+    const chunk = Buffer.allocUnsafe(HASH_CHUNK_BYTES);
+    for (
+      let read = fs.readSync(fd, chunk, 0, HASH_CHUNK_BYTES, null);
+      read > 0;
+      read = fs.readSync(fd, chunk, 0, HASH_CHUNK_BYTES, null)
+    ) {
+      hash.update(chunk.subarray(0, read));
+    }
+    return { file, digest: hash.digest("hex") };
   } catch (error) {
     return { file, error };
+  } finally {
+    if (fd !== null) {
+      fs.closeSync(fd);
+    }
   }
 }
 
@@ -372,11 +390,10 @@ function readFolderFile(dir: string, file: string): FolderFile {
 function folderIdentity(reads: readonly FolderFile[]): string | null {
   const parts: string[] = [];
   for (const read of reads) {
-    if (!("bytes" in read)) {
+    if (!("digest" in read)) {
       return null;
     }
-    const digest = createHash("sha1").update(read.bytes).digest("hex");
-    parts.push(`${read.file}\0${digest}`);
+    parts.push(`${read.file}\0${read.digest}`);
   }
   return parts.join("\n");
 }
@@ -406,15 +423,12 @@ function summariesOf(
   dir: string,
   one: FolderFile,
 ): BehavioralSummary[] | { error: unknown } {
-  if (!("bytes" in one)) {
+  if (!("digest" in one)) {
     return one;
   }
 
   try {
-    return summariesFromText(
-      path.resolve(dir, one.file),
-      one.bytes.toString("utf-8"),
-    );
+    return summariesForChecking(path.resolve(dir, one.file));
   } catch (error) {
     return { error };
   }
@@ -925,46 +939,21 @@ function reasonOf(error: unknown): string {
   return message.split("\n").join("\n    ");
 }
 
-function readSummaries(file: string): BehavioralSummary[] {
+function readSummaryPair(file: string): BehavioralSummary[] {
   const resolved = path.resolve(file);
   if (!fs.existsSync(resolved)) {
     throw new UsageError(`No file at ${resolved}.`);
   }
-  return summariesFromText(resolved, fs.readFileSync(resolved, "utf-8"));
+  return summariesForChecking(resolved);
 }
 
-/** Parses a summaries file already read, naming `resolved` in any error. */
-function summariesFromText(
-  resolved: string,
-  text: string,
-): BehavioralSummary[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text) as unknown;
-  } catch (error) {
-    throw new UsageError(
-      `${resolved} is not JSON suss can read: ${reasonOf(error)}`,
-    );
-  }
-  const result = safeParseSummaries(parsed);
-  if (!result.success) {
-    throw new UsageError(
-      `suss could not read ${resolved} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${formatParseIssues(result.error.issues)}`,
-    );
-  }
+function summariesForChecking(resolved: string): BehavioralSummary[] {
   // A summary writes a named type once and refers to it by name after
   // that. Inline the definitions here so the checker compares the types'
   // structure and not two names.
-  return result.data.map(summaryWithDefinitionsInlined);
-}
-
-function formatParseIssues(
-  issues: Array<{ path: PropertyKey[]; message: string }>,
-): string {
-  return issues
-    .slice(0, 10)
-    .map((i) => `  - ${i.path.join(".") || "<root>"}: ${i.message}`)
-    .join("\n");
+  return readSummaries(resolved, "expectedOutput").map(
+    summaryWithDefinitionsInlined,
+  );
 }
 
 /** How much of a report is printed in full. The rest is only counted. */

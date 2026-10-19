@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -915,7 +916,7 @@ describe("per-file plan", () => {
     it("parses it once for the lookup, the plan and the write of one run", async () => {
       const { cache, input, dir } = await writeTwoFileEntry();
       await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
-      const reads = vi.spyOn(fs, "readFile");
+      const reads = vi.spyOn(fsSync, "openSync");
       try {
         expect((await cache.lookup(input)).kind).toBe("miss");
         const plan = await cache.plan(input);
@@ -957,7 +958,7 @@ describe("per-file plan", () => {
       const { cache, input, dir } = await writeTwoFileEntry();
       await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
       await cache.lookup(input);
-      const reads = vi.spyOn(fs, "readFile");
+      const reads = vi.spyOn(fsSync, "openSync");
       try {
         await cache.lookup(input);
         expect(manifestReads(reads)).toBe(1);

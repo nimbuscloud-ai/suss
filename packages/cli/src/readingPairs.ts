@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { parseSummaryFile } from "./summaryFile.js";
+import { readSummaries } from "./summaryFile.js";
 import { UsageError } from "./usageError.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -73,8 +73,4 @@ function jsonFilesIn(dir: string): string[] {
     .readdirSync(dir)
     .filter((name) => name.endsWith(".json"))
     .sort();
-}
-
-function readSummaries(file: string) {
-  return parseSummaryFile(file, fs.readFileSync(file, "utf-8"));
 }
