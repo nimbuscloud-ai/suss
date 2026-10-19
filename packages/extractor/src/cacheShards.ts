@@ -71,14 +71,31 @@ export function writeRecord(entryDir: string, meta: unknown): string {
 }
 
 /** The meta stored under `id`, or null when it cannot be read. */
-export function readRecord<Meta>(
-  entryDir: string,
-  id: string,
-): { meta: Meta } | null {
+function readRecord<Meta>(entryDir: string, id: string): { meta: Meta } | null {
   const stored = readStored(path.join(entryDir, RECORDS_DIR), id);
   return typeof stored === "object" && stored !== null
     ? (stored as { meta: Meta })
     : null;
+}
+
+/**
+ * A reader that opens each record once and gives every later caller a
+ * copy, since many walked files can share one record and an adapter may
+ * change the meta it is handed.
+ */
+export function recordReader<Meta>(
+  entryDir: string,
+): (id: string) => { meta: Meta } | null {
+  const opened = new Map<string, { meta: Meta } | null>();
+  return (id) => {
+    if (!opened.has(id)) {
+      const record = readRecord<Meta>(entryDir, id);
+      opened.set(id, record);
+      return record;
+    }
+    const record = opened.get(id) ?? null;
+    return record === null ? null : (copyOfJson(record) as { meta: Meta });
+  };
 }
 
 /**

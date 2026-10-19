@@ -1224,6 +1224,12 @@ describe("the store of shards", () => {
       { recursive: true },
     );
     expect(records.filter((name) => name.endsWith(".json"))).toHaveLength(1);
+
+    const plan = await cache.plan(input);
+    const [first, second] = paths.map((p) => plan?.roots.get(p)?.meta);
+    expect(first).toEqual({ mountPrefixes: {} });
+    expect(second).toEqual(first);
+    expect(second).not.toBe(first);
   });
 
   it("misses when a shard says it is another file", async () => {

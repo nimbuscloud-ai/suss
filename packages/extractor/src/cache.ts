@@ -26,8 +26,8 @@ import {
   writeStoreIndex,
 } from "./cacheIndex.js";
 import {
-  readRecord,
   readShard,
+  recordReader,
   removeStoredOutside,
   writeRecord,
   writeShard,
@@ -551,12 +551,13 @@ function storedRecords<Meta, UnitData>(
 ): Map<string, Meta> | null {
   const records = new Map<string, Meta>();
   const roots = manifest.roots ?? [];
+  const readRecord = recordReader<Meta>(entryDir);
   for (const [i, root] of (manifest.rootMeta ?? []).entries()) {
     const rootPath = roots[i];
     if (rootPath === undefined || root.record === undefined) {
       continue;
     }
-    const record = readRecord<Meta>(entryDir, root.record);
+    const record = readRecord(root.record);
     if (record === null) {
       return null;
     }
