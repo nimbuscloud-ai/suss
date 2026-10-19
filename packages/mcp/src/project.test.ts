@@ -76,7 +76,7 @@ function routesIn(loaded: LoadedSummaries): string[] {
     .filter((one) => one !== "");
 }
 
-/** How many times a spied `readFileSync` read a file under `dir`. */
+/** How many times a spied `openSync` opened a file under `dir`. */
 function summaryReads(
   read: { mock: { calls: unknown[][] } },
   dir: string,
@@ -175,7 +175,7 @@ describe("Project", () => {
     const project = new Project({ root, watch: false });
     await project.start();
 
-    const read = vi.spyOn(fs, "readFileSync");
+    const read = vi.spyOn(fs, "openSync");
     const first = project.summaries();
     const readsForFirst = summaryReads(read, project.summaryDir);
     const second = project.summaries();

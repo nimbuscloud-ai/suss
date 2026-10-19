@@ -16,6 +16,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { readJsonFile, writeDocumentFile } from "@suss/behavioral-ir/files";
+
 import {
   fileStampEquals,
   filesStillMatch,
@@ -378,11 +380,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         ...(attribution === undefined ? {} : encodeAttribution(attribution)),
       };
       makeIgnoredDirectory(cacheDir);
-      await fs.mkdir(entryDir, { recursive: true });
-      await fs.writeFile(
-        path.join(entryDir, "manifest.json"),
-        JSON.stringify(manifest),
-      );
+      writeDocumentFile(path.join(entryDir, "manifest.json"), manifest);
       await evictOldEntries(cacheDir, entryDir);
     },
   };
@@ -755,8 +753,7 @@ async function readManifest<Meta, UnitData>(
   manifestPath: string,
 ): Promise<Manifest<Meta, UnitData> | null> {
   try {
-    const raw = await fs.readFile(manifestPath, "utf-8");
-    return JSON.parse(raw) as Manifest<Meta, UnitData>;
+    return readJsonFile(manifestPath) as Manifest<Meta, UnitData>;
   } catch {
     // A missing, unparseable or unreadable manifest is a miss. The worst
     // case is an extraction the cache could have saved.

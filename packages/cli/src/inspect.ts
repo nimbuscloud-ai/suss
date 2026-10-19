@@ -53,11 +53,9 @@ import {
 import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
 import { readingPairs, wholeReadings } from "./readingPairs.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
-import { firstLineOf, parseSummaryFile } from "./summaryFile.js";
+import { firstLineOf, readSummaries } from "./summaryFile.js";
 import { UsageError } from "./usageError.js";
 import { differenceTexts } from "./valueDiff.js";
-
-export { parseSummaryFile } from "./summaryFile.js";
 
 import type {
   BehavioralSummary,
@@ -1371,11 +1369,7 @@ export function inspect(options: InspectOptions): void {
     throw new UsageError(`File not found: ${filePath}`);
   }
 
-  const content = fs.readFileSync(filePath, "utf-8");
-  const summaries = spelledOutIfAsked(
-    parseSummaryFile(filePath, content),
-    options.types,
-  );
+  const summaries = spelledOutIfAsked(readSummaries(filePath), options.types);
   const ctx = buildRenderCtx(summaries);
 
   // Files print in the order the extractor walked them, and the summaries
@@ -3174,9 +3168,8 @@ export function readSummariesFromDir(dir: string): BehavioralSummary[] {
   const skipped: string[] = [];
   for (const file of files) {
     const filePath = path.join(resolved, file);
-    const content = fs.readFileSync(filePath, "utf-8");
     try {
-      all.push(...parseSummaryFile(filePath, content));
+      all.push(...readSummaries(filePath));
     } catch (error) {
       // A folder of summaries can pick up other JSON, most often a report
       // written back into it. The file is listed as skipped and the rest
