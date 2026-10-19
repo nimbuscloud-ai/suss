@@ -546,13 +546,29 @@ describe("extractRubyProject's on-disk cache", () => {
       expect(diagnostics[1]?.kind).toBe("partial");
     });
 
-    /** The entry the runs so far wrote, to change by hand. */
-    function manifestPath(): string {
+    /** Changes by hand the file records the runs so far stored in their shards. */
+    function editRecords(
+      edit: (metas: ReturnType<typeof JSON.parse>[]) => void,
+    ): void {
       const cacheDir = path.join(tmpDir, ".suss", "cache");
       const entry = fs
         .readdirSync(cacheDir)
         .find((name) => name.startsWith("key-")) as string;
-      return path.join(cacheDir, entry, "manifest.json");
+      const shards = fs
+        .readdirSync(path.join(cacheDir, entry, "shards"), {
+          recursive: true,
+          withFileTypes: true,
+        })
+        .filter((found) => found.isFile())
+        .map((found) => {
+          const file = path.join(found.parentPath, found.name);
+          return { file, shard: JSON.parse(fs.readFileSync(file, "utf8")) };
+        })
+        .filter(({ shard }) => shard.record !== undefined);
+      edit(shards.map(({ shard }) => shard.record.meta));
+      for (const { file, shard } of shards) {
+        fs.writeFileSync(file, JSON.stringify(shard));
+      }
     }
 
     it.each([
@@ -564,29 +580,30 @@ describe("extractRubyProject's on-disk cache", () => {
         const { files, packs } = shopProject();
         const diagnostics: CacheDiagnostic[] = [];
         await bothRuns(files(), packs, diagnostics);
-        const file = manifestPath();
-        const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
-        const moved = new Set<string>();
-        for (const meta of manifest.rootMeta) {
-          for (const unit of part === "seed" ? meta.meta.units : []) {
-            if (unit.seed !== undefined) {
-              moved.add(unit.seed.key);
-              unit.seed.key = `${unit.seed.key}9`;
+        editRecords((metas) => {
+          const moved = new Set<string>();
+          for (const meta of metas) {
+            for (const unit of part === "seed" ? meta.units : []) {
+              if (unit.seed !== undefined) {
+                moved.add(unit.seed.key);
+                unit.seed.key = `${unit.seed.key}9`;
+              }
             }
           }
-        }
-        for (const meta of manifest.rootMeta) {
-          for (const walk of meta.meta.walked) {
-            for (const target of part === "walked" ? walk.scan.followed : []) {
-              target.key = `${target.key}9`;
-            }
-            // The walk record moves with the seed, so the record still replays.
-            if (moved.has(walk.key)) {
-              walk.key = `${walk.key}9`;
+          for (const meta of metas) {
+            for (const walk of meta.walked) {
+              for (const target of part === "walked"
+                ? walk.scan.followed
+                : []) {
+                target.key = `${target.key}9`;
+              }
+              // The walk record moves with the seed, so the record still replays.
+              if (moved.has(walk.key)) {
+                walk.key = `${walk.key}9`;
+              }
             }
           }
-        }
-        fs.writeFileSync(file, JSON.stringify(manifest));
+        });
         write(
           "app/controllers/items_controller.rb",
           "class ItemsController < ApplicationController\n  def index\n    Item.where(open: true)\n  end\nend\n",

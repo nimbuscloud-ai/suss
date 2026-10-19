@@ -445,13 +445,29 @@ describe("extractPythonProject's on-disk cache", () => {
       },
     );
 
-    /** The entry the runs so far wrote, to change by hand. */
-    function manifestPath(): string {
+    /** Changes by hand the file records the runs so far stored in their shards. */
+    function editRecords(
+      edit: (metas: ReturnType<typeof JSON.parse>[]) => void,
+    ): void {
       const cacheDir = path.join(tmpDir, ".suss", "cache");
       const entry = fs
         .readdirSync(cacheDir)
         .find((name) => name.startsWith("key-")) as string;
-      return path.join(cacheDir, entry, "manifest.json");
+      const shards = fs
+        .readdirSync(path.join(cacheDir, entry, "shards"), {
+          recursive: true,
+          withFileTypes: true,
+        })
+        .filter((found) => found.isFile())
+        .map((found) => {
+          const file = path.join(found.parentPath, found.name);
+          return { file, shard: JSON.parse(fs.readFileSync(file, "utf8")) };
+        })
+        .filter(({ shard }) => shard.record !== undefined);
+      edit(shards.map(({ shard }) => shard.record.meta));
+      for (const { file, shard } of shards) {
+        fs.writeFileSync(file, JSON.stringify(shard));
+      }
     }
 
     it.each([
@@ -463,21 +479,20 @@ describe("extractPythonProject's on-disk cache", () => {
         const files = shopProject();
         const diagnostics: CacheDiagnostic[] = [];
         await bothRuns(files, diagnostics);
-        const file = manifestPath();
-        const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
-        for (const meta of manifest.rootMeta) {
-          for (const walk of part === "walked" ? meta.meta.walked : []) {
-            for (const target of walk.scan.followed) {
-              target.key = `${target.key}9`;
+        editRecords((metas) => {
+          for (const meta of metas) {
+            for (const walk of part === "walked" ? meta.walked : []) {
+              for (const target of walk.scan.followed) {
+                target.key = `${target.key}9`;
+              }
+            }
+            for (const registration of part === "registration"
+              ? meta.registrations
+              : []) {
+              registration.key = `${registration.key}9`;
             }
           }
-          for (const registration of part === "registration"
-            ? meta.meta.registrations
-            : []) {
-            registration.key = `${registration.key}9`;
-          }
-        }
-        fs.writeFileSync(file, JSON.stringify(manifest));
+        });
         write("app/helpers.py", "def unrelated():\n    return 2\n");
 
         const { cached, cold } = await bothRuns(files, diagnostics);
