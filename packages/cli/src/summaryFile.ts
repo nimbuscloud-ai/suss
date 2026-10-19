@@ -22,7 +22,11 @@ const NOT_SUMMARIES: Record<
     `suss could not read ${file} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${issues}`,
 };
 
-/** Reads and validates a summaries file of any layout, turning a bad file into a `UsageError`. */
+/**
+ * Reads and validates a summaries file of any layout, turning a bad file
+ * into a `UsageError`. A file the system cannot read keeps its stack,
+ * since callers check that the path exists first.
+ */
 export function readSummaries(
   filePath: string,
   wording: SummaryFileWording = "invalid",
@@ -30,7 +34,7 @@ export function readSummaries(
   try {
     return readSummaryFile(filePath);
   } catch (error) {
-    if (!(error instanceof JsonFileError)) {
+    if (!(error instanceof JsonFileError) || error.problem === "unreadable") {
       throw error;
     }
     throw new UsageError(explained(error, wording));
