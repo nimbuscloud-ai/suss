@@ -203,7 +203,7 @@ describe("LiveSocket", () => {
 
     // A folder the check already knows is read once, to hash it, and
     // not a second time to parse it.
-    const reads = vi.spyOn(fs, "readFileSync");
+    const reads = vi.spyOn(fs, "openSync");
     try {
       checkDirectory({ dir: out });
       const summaryReads = reads.mock.calls.filter(([file]) =>

@@ -24,7 +24,7 @@ import {
   resolveFramework,
   resolveSource,
 } from "./extract.js";
-import { writeJson } from "./jsonStream.js";
+import { writeSummaries } from "./jsonStream.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -207,7 +207,7 @@ export async function corroborate(
 
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
-    await writeJson({ value: summaries, indent: 2, file: outPath });
+    await writeSummaries(summaries, outPath);
     process.stderr.write(`Wrote annotated summaries to ${outPath}\n`);
   }
 

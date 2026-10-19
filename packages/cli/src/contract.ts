@@ -13,7 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { writeJson } from "./jsonStream.js";
+import { writeSummaries } from "./jsonStream.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -261,14 +261,14 @@ export async function contract(
 
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
-    await writeJson({ value: summaries, indent: 2, file: outPath });
+    await writeSummaries(summaries, outPath);
     process.stderr.write(
       summaries.length === 0
         ? `${options.spec} declares no boundaries suss could read.\n`
         : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
     );
   } else {
-    await writeJson({ value: summaries, indent: 2 });
+    await writeSummaries(summaries);
   }
 
   return summaries;
