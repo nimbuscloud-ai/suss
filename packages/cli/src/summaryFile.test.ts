@@ -56,8 +56,9 @@ describe("readSummaries", () => {
     );
   });
 
-  it("says a missing file cannot be read", () => {
+  it("keeps the stack of a file the system cannot read", () => {
     const file = path.join(os.tmpdir(), "suss-cli-no-such-summaries.json");
-    expect(messageOf(() => readSummaries(file))).toContain("Could not read");
+    expect(() => readSummaries(file)).toThrow("Could not read");
+    expect(() => readSummaries(file)).not.toThrow(UsageError);
   });
 });
