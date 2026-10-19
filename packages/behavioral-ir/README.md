@@ -28,6 +28,19 @@ function firstTransition(summary: BehavioralSummary): Transition | undefined {
 }
 ```
 
+## Reading and writing summary files
+
+`@suss/behavioral-ir/files` has the reader and writer every suss command uses. It needs Node's file system, so it is a separate entry point.
+
+```ts
+import { readSummaryFile, writeSummaryFile } from "@suss/behavioral-ir/files";
+
+const summaries = readSummaryFile(".suss/code.json");
+writeSummaryFile(".suss/copy.json", summaries);
+```
+
+`writeSummaryFile` writes one summary per line with no indentation, to a temporary file that it renames over the target once the write is complete. `readSummaryFile` reads that layout a line at a time, so a file larger than one JavaScript string (about 512 MB) still reads, and it validates each summary as it goes. It also reads an indented file small enough to fit in one string. Either way the result equals what `parseSummaries` returns for the same JSON. A file that cannot be read throws a `JsonFileError`, whose `problem` says whether the file was missing, was not JSON, was too large to read whole, or was not summaries. `readJsonFile` and `writeDocumentFile` do the same for any JSON document, without the summary schema. The extraction cache writes its manifest through them.
+
 ## More
 
 - [Documentation](https://suss.sh/)

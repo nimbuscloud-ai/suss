@@ -278,7 +278,8 @@ export function normalizeLegacySummary(input: unknown): unknown {
   return normalizeOne(input).value;
 }
 
-function normalizeOne(input: unknown): {
+/** One element of an artifact, normalized in place, for a reader that parses elements one at a time. */
+export function normalizeOne(input: unknown): {
   value: unknown;
   idBackfilled: boolean;
 } {
