@@ -142,7 +142,7 @@ A contract with no `metadata.storageContract.identifies` is not checked, and nei
 
 ### `unhandledProviderCase`
 
-**Severity:** warning.
+**Severity:** warning, or info for several situations under one status.
 
 The provider produces a status, or a body case within a status, that no consumer branch tells apart. The consumer hits its fall-through path, throwing, returning undefined, or ignoring the answer.
 
@@ -157,6 +157,8 @@ The provider produces a status, or a body case within a status, that no consumer
 You cannot name an input and a wrong result here. The fall-through may be exactly what the author intended, and over the pinned corpus this kind was wrong far more often than right. The narrower case, a path that will misread a response, is `misreadProviderResponse` below, and that one is an error.
 
 A provider response declared as a range, such as an OpenAPI `4XX`, is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member, whether that is a branch on 404, a `!res.ok` guard, or a catch on a throwing client. When nothing covers any member it reports once, saying `Provider produces statuses in the 4XX range but no consumer branch handles any of them`.
+
+When the provider returns one status under several conditions and the consumer has a single branch for it, the finding says `Provider returns status 200 in 3 different situations, and the consumer treats them all the same`, at info. It appears only when suss read every one of those bodies and they differ in a field or a literal, because that difference is the only thing a client could tell them apart by. Bodies that match, or one suss could not read, give nothing to tell apart, and no finding.
 
 A consumer suss read only in part, where no pack terminal matched some of what it does, gets one `lowConfidence` finding at info instead, since the part it did not read may be where it handles the status. That includes a consumer whose read threw.
 

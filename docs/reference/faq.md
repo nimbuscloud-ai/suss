@@ -135,13 +135,13 @@ suss check --dir summaries/
 
 ```
 [WARNING] unhandledProviderCase
-  Provider returns status 200 in 2 different situations, and the consumer treats them all the same
+  Provider transition getAccount:response:200:fa2650f for status 200 produces body with closed = true, but no consumer branch tests for this value
   provider: src/handler.ts::getAccount (src/handler.ts:11)
   consumer: src/billingPanel.ts::loadPlan (src/billingPanel.ts:1)
   boundary: ts-rest (http) GET /accounts/:id
 ```
 
-Both 200 branches match `{ id: string; plan: string; closed: boolean }`, so the compiler has nothing to say. The panel shows `"none"` as the plan of a closed account, because it never reads `closed`.
+Both 200 branches match `{ id: string; plan: string; closed: boolean }`, so the compiler has nothing to say. suss reports each 200 body the panel treats the same, the one with `closed = true` first. The panel shows `"none"` as the plan of a closed account, because it never reads `closed`.
 
 <!-- suss:unchecked the rest of this page shows output from projects it does not build -->
 

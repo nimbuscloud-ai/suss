@@ -10,6 +10,7 @@ import {
   reachedThroughUnreadCondition,
 } from "../contract/partlyRead.js";
 import { predicatesMatch } from "../match.js";
+import { bodiesTellApart } from "./bodyDifferences.js";
 import { consumerDiscriminatesByContent } from "./contentDiscrimination.js";
 import {
   type DeclaredStatusRange,
@@ -218,23 +219,24 @@ export function checkProviderCoverage(
     );
 
     // A consumer with no condition beyond the status treats every
-    // sub-case the same way.
+    // sub-case the same way. That matters only when the bodies give it
+    // something to tell them apart by, and suss read all of them.
     if (consumerNonStatusPredicates.length === 0) {
-      const conditionalProviderTransitions = providerTransitions.filter(
-        (pt) => !pt.isDefault && pt.conditions.length > 0,
-      );
-
-      if (conditionalProviderTransitions.length > 0) {
-        for (const pt of conditionalProviderTransitions) {
-          findings.push({
-            kind: "unhandledProviderCase",
-            boundary,
-            provider: makeSide(provider, pt.id),
-            consumer: makeSide(consumer),
-            description: `Provider returns status ${status} in ${providerTransitions.length} different situations, and the consumer treats them all the same`,
-            severity: "warning",
-          });
+      if (!bodiesTellApart(providerTransitions)) {
+        continue;
+      }
+      for (const pt of providerTransitions) {
+        if (pt.isDefault || pt.conditions.length === 0) {
+          continue;
         }
+        findings.push({
+          kind: "unhandledProviderCase",
+          boundary,
+          provider: makeSide(provider, pt.id),
+          consumer: makeSide(consumer),
+          description: `Provider returns status ${status} in ${providerTransitions.length} different situations, and the consumer treats them all the same`,
+          severity: "info",
+        });
       }
       continue;
     }

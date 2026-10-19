@@ -459,15 +459,23 @@ describe("checkProviderCoverage — sub-case analysis", () => {
     negated: false,
   };
 
-  it("emits warnings when provider has multiple 200 transitions but consumer only has one branch", () => {
-    // Provider: returns 200 in two cases, active user (default) and deleted user
+  const deletedBody: TypeShape = {
+    type: "record",
+    properties: { status: { type: "literal", value: "deleted" } },
+  };
+  const activeBody: TypeShape = {
+    type: "record",
+    properties: { status: { type: "literal", value: "active" } },
+  };
+
+  it("notes a provider with two 200s whose bodies differ when the consumer has one branch", () => {
     const p = provider("getUser", [
       transition("t-200-deleted", {
         conditions: [userDeleted],
-        output: response(200),
+        output: response(200, deletedBody),
       }),
       transition("t-200-default", {
-        output: response(200),
+        output: response(200, activeBody),
         isDefault: true,
       }),
     ]);
@@ -480,13 +488,65 @@ describe("checkProviderCoverage — sub-case analysis", () => {
     ]);
 
     const findings = checkProviderCoverage(p, c);
-    // Should warn about the conditional 200 (deleted user) that consumer ignores
     const subcaseFindings = findings.filter(
-      (f) => f.kind === "unhandledProviderCase" && f.severity === "warning",
+      (f) => f.kind === "unhandledProviderCase" && f.severity === "info",
     );
     expect(subcaseFindings).toHaveLength(1);
     expect(subcaseFindings[0].provider.transitionId).toBe("t-200-deleted");
     expect(subcaseFindings[0].description).toContain("2 different situations");
+  });
+
+  describe("situations the client has nothing to tell apart by", () => {
+    const oneBranch = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    const situations = (deleted: TypeShape | null, active: TypeShape | null) =>
+      checkProviderCoverage(
+        provider("getUser", [
+          transition("t-200-deleted", {
+            conditions: [userDeleted],
+            output: response(200, deleted),
+          }),
+          transition("t-200-default", {
+            output: response(200, active),
+            isDefault: true,
+          }),
+        ]),
+        oneBranch,
+      );
+
+    it("stays quiet when one of the bodies was not read", () => {
+      expect(situations(deletedBody, null)).toEqual([]);
+      expect(situations(deletedBody, { type: "ref", name: "User" })).toEqual(
+        [],
+      );
+    });
+
+    it("stays quiet when the bodies are the same", () => {
+      expect(situations(activeBody, activeBody)).toEqual([]);
+    });
+
+    it("stays quiet when a body differs only where the other was not read", () => {
+      expect(
+        situations(deletedBody, {
+          type: "record",
+          properties: {},
+          spreads: [{ sourceText: "...user" }],
+        }),
+      ).toEqual([]);
+    });
+
+    it("notes bodies that differ in which fields they have", () => {
+      expect(
+        situations(
+          { type: "record", properties: { deletedAt: { type: "text" } } },
+          { type: "record", properties: {} },
+        ).map((f) => [f.provider.transitionId, f.severity]),
+      ).toEqual([["t-200-deleted", "info"]]);
+    });
   });
 
   describe("a shared middleware that branches on state other code set", () => {
@@ -549,9 +609,15 @@ describe("checkProviderCoverage — sub-case analysis", () => {
       const p = respond([
         transition("t-200-csv", {
           conditions: [truthy(readOf("req", "query", "csv"))],
-          output: response(200),
+          output: response(200, {
+            type: "record",
+            properties: { csv: { type: "text" } },
+          }),
         }),
-        transition("t-200", { output: response(200), isDefault: true }),
+        transition("t-200", {
+          output: response(200, activeBody),
+          isDefault: true,
+        }),
       ]);
       expect(
         checkProviderCoverage(p, page).map((f) => f.provider.transitionId),
@@ -602,8 +668,11 @@ describe("checkProviderCoverage — sub-case analysis", () => {
     ).toHaveLength(0);
   });
 
-  it("emits warnings for each conditional sub-case beyond the default", () => {
-    // Provider: 3 ways to return 404
+  it("notes each conditional sub-case beyond the default", () => {
+    const reason = (value: string): TypeShape => ({
+      type: "record",
+      properties: { reason: { type: "literal", value } },
+    });
     const p = provider("getUser", [
       transition("t-404-no-id", {
         conditions: [
@@ -613,15 +682,15 @@ describe("checkProviderCoverage — sub-case analysis", () => {
             negated: true,
           },
         ],
-        output: response(404),
+        output: response(404, reason("no id")),
       }),
       transition("t-404-not-found", {
         conditions: [userNull],
-        output: response(404),
+        output: response(404, reason("not found")),
       }),
       transition("t-404-deleted", {
         conditions: [userDeleted],
-        output: response(404),
+        output: response(404, reason("deleted")),
       }),
       transition("t-200", { output: response(200), isDefault: true }),
     ]);
@@ -638,7 +707,7 @@ describe("checkProviderCoverage — sub-case analysis", () => {
 
     const findings = checkProviderCoverage(p, c);
     const subcaseFindings = findings.filter(
-      (f) => f.kind === "unhandledProviderCase" && f.severity === "warning",
+      (f) => f.kind === "unhandledProviderCase" && f.severity === "info",
     );
     // All three 404 transitions have conditions, consumer doesn't distinguish
     expect(subcaseFindings).toHaveLength(3);
