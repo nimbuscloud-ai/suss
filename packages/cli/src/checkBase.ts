@@ -13,9 +13,11 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 
 import {
   commandFor,
@@ -105,6 +107,8 @@ async function baseFolder(
   fs.mkdirSync(tree);
   writeRevision(top, revision.commit, work, tree);
   shareDependencies(top, tree);
+  // Readers that measure a path from the repository look for this folder.
+  fs.mkdirSync(path.join(tree, ".git"));
 
   const baseRoot = path.join(tree, path.relative(top, project));
   const present = reads.reads.filter((entry) =>
@@ -134,7 +138,62 @@ async function baseFolder(
       `Reading ${revision.ref} failed, and every unit those reads cover would look new:\n${report.failed.map((line) => `  ${line}`).join("\n")}`,
     );
   }
+  await placeAtCheckout(summaryDir, tree, top);
   return summaryDir;
+}
+
+/**
+ * A contract reader writes its file's path relative to the working
+ * directory, which for the base points into the temporary folder. Each
+ * such path is rewritten to the one the same file has in the checkout,
+ * or the unit would look removed at one path and added at another.
+ * The folder's name is random, so it appears in nothing else.
+ */
+async function placeAtCheckout(
+  summaryDir: string,
+  tree: string,
+  top: string,
+): Promise<void> {
+  const real = path.join(
+    fs.realpathSync(path.dirname(tree)),
+    path.basename(tree),
+  );
+  const atTop = relativeSpelling(top);
+  // Longest first, since an absolute spelling is part of a relative one.
+  const replacements = [...new Set([tree, real])]
+    .flatMap(
+      (spelling): Array<[string, string]> => [
+        [`${relativeSpelling(spelling)}/`, atTop === "" ? "" : `${atTop}/`],
+        [`${spelling}/`, `${top}/`],
+      ],
+    )
+    .sort(([a], [b]) => b.length - a.length);
+  for (const name of fs.readdirSync(summaryDir)) {
+    const file = path.join(summaryDir, name);
+    const rewritten = `${file}.rewritten`;
+    const out = fs.createWriteStream(rewritten);
+    const lines = readline.createInterface({
+      input: fs.createReadStream(file),
+      crlfDelay: Number.POSITIVE_INFINITY,
+    });
+    for await (const line of lines) {
+      const placed = replacements.reduce(
+        (text, [from, to]) => text.replaceAll(from, to),
+        line,
+      );
+      if (!out.write(`${placed}\n`)) {
+        await once(out, "drain");
+      }
+    }
+    out.end();
+    await once(out, "finish");
+    fs.renameSync(rewritten, file);
+  }
+}
+
+/** A path as a reader that measures from the working directory writes it. */
+function relativeSpelling(target: string): string {
+  return path.relative(process.cwd(), target).split(path.sep).join("/");
 }
 
 /** The folder an extract reads, or the file a contract reads, relative to the project root. */

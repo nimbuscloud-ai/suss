@@ -221,6 +221,38 @@ describe("check --base", () => {
     expect(git("worktree", "list")).toBe(worktrees);
   });
 
+  it("gives a contract's units the path they have in the checkout", async () => {
+    fs.mkdirSync(path.join(project, "prisma"));
+    fs.writeFileSync(
+      path.join(project, "prisma", "schema.prisma"),
+      [
+        'datasource db {\n  provider = "postgresql"\n  url = env("DATABASE_URL")\n}',
+        "model Order {\n  id String @id\n  sku String\n  quantity Int\n}",
+      ].join("\n\n"),
+    );
+    const config = JSON.parse(
+      fs.readFileSync(path.join(project, "suss.json"), "utf8"),
+    );
+    // The prisma reader writes its file relative to the working directory.
+    config.read.push({
+      kind: "contract",
+      from: "prisma",
+      file: "prisma/schema.prisma",
+    });
+    fs.writeFileSync(path.join(project, "suss.json"), JSON.stringify(config));
+    commit("base with a contract");
+    edit(ADD_409);
+
+    const { report } = await againstBase();
+
+    const units = report.changedBoundaries.flatMap(
+      (boundary: { units: string[] }) => boundary.units,
+    );
+    expect(units).toEqual(["src/orders/create.ts::post"]);
+    expect(report.resolved).toEqual([]);
+    expect(report.resolvedElsewhere).toEqual([]);
+  });
+
   it("does not fail on a finding the base already had", async () => {
     edit(ADD_409);
     commit("base with the 409");
