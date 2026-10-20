@@ -38,7 +38,7 @@ In a host that reads a config file:
 | Tool | What to use it for |
 |---|---|
 | `suss_ask` | One question about one boundary. The question forms are in the tool description. |
-| `suss_check` | Compare both sides of every boundary and report where they disagree. Takes a boundary to narrow to. |
+| `suss_check` | Compare both sides of every boundary and report where they disagree. Takes a boundary to narrow to, or a git `base` such as `origin/main` to keep the findings the change since that branch introduced. |
 | `suss_boundaries` | The boundaries, split into the ones with both sides and the ones with only one. |
 | `suss_stub_draft` | A draft stub for a package suss cannot read into, built from how this project calls it. |
 | `suss_intent_outcomes` | Every outcome the boundary intent documents declare, as the `link` a PRD scenario writes. |

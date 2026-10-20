@@ -16,8 +16,10 @@ import {
   answerQuestion,
   checkAt,
   checkDir,
+  findingInOneLine,
   intentOutcomes,
   preloadForQuestion,
+  readBase,
   stubDraftResult,
   whereReadsCameFrom,
 } from "@suss/cli";
@@ -63,7 +65,9 @@ Three lists come back and they mean different things.
 
 Severity says how the run would exit, not what to do. Read the finding's own text before acting, because several kinds have no universal fix. "unhandledProviderCase" fires when a provider can return something no consumer handles, and whether to change the consumer, change the provider, or leave it depends on whether that branch is reachable in this deployment, which suss cannot see. "boundaryFieldUnknown" at warning usually means the contract is behind the code rather than the code being wrong.
 
-Pass a boundary to narrow to one thing when a whole-project report is too much.`;
+Pass a boundary to narrow to one thing when a whole-project report is too much.
+
+Pass base, a git ref such as "origin/main", to review a change: suss reads the commit the branch left it at and keeps the findings that are new since then and touch a file the change edited, a unit whose behavior moved, or a boundary that changed. "resolved" lists the findings the change made go away. Each finding names the file and line on both sides.`;
 
 export const INSPECT_DESCRIPTION = `List the boundaries in this codebase, split into the ones with both sides and the ones with only one.
 
@@ -116,14 +120,69 @@ export async function askTool(
 
 export async function checkTool(
   project: Project,
-  args: { boundary?: string },
+  args: { boundary?: string; base?: string },
 ): Promise<ToolResult> {
+  if (args.boundary !== undefined && args.base !== undefined) {
+    return failure(
+      "Pass boundary or base, not both. base reports what one change did across the whole project, and boundary narrows to one thing.",
+    );
+  }
+
   await project.settled();
+  if (args.base !== undefined) {
+    return said(await sinceBase(project, args.base));
+  }
   const payload =
     args.boundary === undefined
       ? wholeProject(project.summaryDir)
       : oneBoundary(project.summaryDir, args.boundary);
   return said(payload);
+}
+
+/**
+ * The findings the change since `base` introduced, in full, and the ones
+ * it resolved as one line each, since a reviewer reads the first and only
+ * needs to know about the second.
+ */
+async function sinceBase(
+  project: Project,
+  ref: string,
+): Promise<Record<string, unknown>> {
+  const { summaryDir, changedFiles, ...base } = await readBase(
+    project.root,
+    ref,
+  );
+  const result = checkDir({
+    dir: project.summaryDir,
+    since: summaryDir,
+    changedFiles,
+    base,
+    json: true,
+    output: NOWHERE,
+  });
+  const change = result.since?.change;
+  const trimmed = trim(result.findings, (one) => one.kind);
+  const resolved = result.since?.resolved ?? [];
+  return {
+    base,
+    changedFiles: changedFiles.length,
+    findings: trimmed.shown,
+    findingCounts: trimmed.byKind,
+    total: result.findings.length,
+    ...(trimmed.omitted > 0
+      ? {
+          omitted: trimmed.omitted,
+          note: `Showing ${SHOWN} of ${result.findings.length}. findingCounts has every kind and how many of each.`,
+        }
+      : {}),
+    resolved: resolved.map(findingInOneLine),
+    leftOut: {
+      added: change?.addedElsewhere.length ?? 0,
+      resolved: change?.resolvedElsewhere.length ?? 0,
+      note: "Findings that are new or gone since the base but touch no file the change edited, no unit whose behavior moved, and no boundary that changed. They usually come from reading the two revisions differently.",
+    },
+    ...(result.run !== undefined ? { run: result.run } : {}),
+  };
 }
 
 function wholeProject(dir: string): Record<string, unknown> {
