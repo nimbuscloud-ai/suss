@@ -7,6 +7,80 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.34.1 (2026-10-19)
+
+0.34.1 makes a first run on someone else's code report a sixth as many findings, and lets suss read back summary files of any size.
+
+### Changes a run shows
+
+- A summaries file is written one summary per line. It is still one JSON array, so a program that parses it sees the same value, but a script that greps the indented text or diffs files by line sees a different layout. 0.34.1 reads files that earlier releases wrote, and asks you to extract again when one is too large to read whole. ([#1273](https://github.com/nimbuscloud-ai/suss/pull/1273))
+- A default `suss check` counts `lowConfidence` notes on its `Not shown:` line instead of in the finding count, so a run with only those notes prints "No findings". `--all`, `--json` and a `--fail-on` that reaches info work as before. ([#1263](https://github.com/nimbuscloud-ai/suss/pull/1263))
+- `suss init` prints one section per project it finds, and every command runs from the folder you ran `init` in. Each extract writes its own file, named after its project. ([#1242](https://github.com/nimbuscloud-ai/suss/pull/1242))
+- `suss contract` exits 1 when it cannot read a single boundary from a document, where it used to exit 0. ([#1246](https://github.com/nimbuscloud-ai/suss/pull/1246))
+
+### A first run on 30 public apps
+
+The first-run harness in `tools/first-run` runs `suss init` on 30 public apps that keep a server and its client in one repository, then runs every command `init` prints and `suss check --dir` over what they wrote. Each app is pinned to one commit and its dependencies are not installed. On the same commits:
+
+| | 0.34.0 | 0.34.1 |
+|---|---:|---:|
+| Apps where an extract wrote summaries | 27 | 29 |
+| Apps where `check` paired a client with its server or spec | 15 | 19 |
+| Findings | 3,266 | 515 |
+| Errors among them | 105 | 226 |
+| `lowConfidence` notes, which 0.34.1 leaves out of the count | 165 | 520 |
+
+Findings fell on every app where 0.34.0 reported more than a handful, such as dispatch from 1,087 to 86 and twenty from 1,013 to 59. Errors went up because more boundaries pair: on chatwoot, 0.34.0 paired one route with the app's Swagger document and 0.34.1 pairs 151, and 59 of chatwoot's 109 errors are one Rails filter that sends a 403 the document does not declare. ([#1240](https://github.com/nimbuscloud-ai/suss/pull/1240))
+
+### Summary files past 512 MB read back
+
+A large project could write a summaries file that `check --dir` and `inspect --diff` then could not read, stopping with "Cannot create a string longer than 0x1fffffe8 characters". suss now writes one summary per line and reads the file a line at a time. directus `api/` went from 671 MB to 180 MB and reads back in 2.4 seconds with `check --dir`, where 0.34.0 could not read it. cal.com `packages/trpc` went from 533 MB to 179 MB, and `inspect --diff` of it against itself peaks at 1.9 GB instead of 5.3 GB. A file an earlier release wrote still reads when it fits in one string. ([#1273](https://github.com/nimbuscloud-ai/suss/pull/1273))
+
+### Calls to another company's API stay off your routes
+
+A client call to someone else's host, such as `fetch("https://api.github.com/users/" + login)`, used to pair with any route of your app that had the same path, and drew findings about statuses your app sends and that host never does. That call now stays unpaired. A call to your app's own public name pairs when `suss.json` lists that name under `hosts`. A call goes to the route that spells out more of what the call spells, and a Rails route also serves the optional `.:format`. ([#1270](https://github.com/nimbuscloud-ai/suss/pull/1270))
+
+### Rails filters and JSON bodies
+
+A `before_action` that returns early no longer claims a 200 for every route behind it, and `render json:` bodies are read, so each response lists the keys it renders. Filters written as blocks, `rescue_from` handlers a `raise` reaches, the 404 for a missing record, inherited filter statuses, and a filter that responds through a method the including controller supplies are read too. ([#1244](https://github.com/nimbuscloud-ai/suss/pull/1244), [#1253](https://github.com/nimbuscloud-ai/suss/pull/1253), [#1257](https://github.com/nimbuscloud-ai/suss/pull/1257), [#1261](https://github.com/nimbuscloud-ai/suss/pull/1261), [#1265](https://github.com/nimbuscloud-ai/suss/pull/1265), [#1271](https://github.com/nimbuscloud-ai/suss/pull/1271))
+
+### init sets up every project in a repository
+
+At the root of a Python API with a TypeScript client beside it, `init` prints a section for each project, with commands that run from where you ran it. 0.34.0 printed a TypeScript extract that the root refused because it reads as Python. `init` also prints a contract command only when that contract's reader finds something in the file. ([#1242](https://github.com/nimbuscloud-ai/suss/pull/1242), [#1247](https://github.com/nimbuscloud-ai/suss/pull/1247), [#1258](https://github.com/nimbuscloud-ai/suss/pull/1258), [#1260](https://github.com/nimbuscloud-ai/suss/pull/1260), [#1263](https://github.com/nimbuscloud-ai/suss/pull/1263))
+
+### OpenAPI documents split across files
+
+`suss contract --from openapi` resolves every `$ref` against the file it is written in, so a document that keeps its paths in other files reads. 0.34.0 read such a document as empty. ([#1246](https://github.com/nimbuscloud-ai/suss/pull/1246))
+
+### Performance
+
+Each number is the median of three alternating cold runs of 0.34.0 and 0.34.1 on the same corpora, with the same summary counts from both:
+
+| Corpus | 0.34.0 | 0.34.1 | Change |
+|---|---:|---:|---:|
+| twenty-server, with the packs `suss init` picks | 78.0s | 77.5s | within run-to-run spread |
+| twenty-server, with the benchmark packs | 36.6s | 37.6s | +2.8% |
+| twenty-front | 84.1s | 79.5s | -5.4% |
+| directus `api/` | 73.6s | 72.5s | -1.6% |
+| saleor-dashboard | 39.3s | 40.0s | within run-to-run spread |
+| saleor-storefront | 6.2s | 6.1s | within run-to-run spread |
+
+twenty-server with the benchmark packs is about one second slower, a little more than the 1.7% the runs vary by. On twenty-front the rules engine went from 14.2 s to 7.0 s, which accounts for the gain there.
+
+### Fixes
+
+- A finding is left out when the checker read one side only in part, and a filter suss read in full counts as the handler's own code. ([#1245](https://github.com/nimbuscloud-ai/suss/pull/1245), [#1248](https://github.com/nimbuscloud-ai/suss/pull/1248), [#1251](https://github.com/nimbuscloud-ai/suss/pull/1251), [#1264](https://github.com/nimbuscloud-ai/suss/pull/1264))
+- Test code no longer pairs with the app, a value that only test code writes no longer decides one production code reads, and a spec whose parameter names differ from the route's still pairs. ([#1245](https://github.com/nimbuscloud-ai/suss/pull/1245), [#1256](https://github.com/nimbuscloud-ai/suss/pull/1256), [#1270](https://github.com/nimbuscloud-ai/suss/pull/1270))
+- False findings from shared middleware, built Workers, duplicate specs and stories, duplicate document notes and a guessed overload. ([#1262](https://github.com/nimbuscloud-ai/suss/pull/1262), [#1269](https://github.com/nimbuscloud-ai/suss/pull/1269))
+- Findings on one pair that say the same thing merge into one, and "several situations under one status" fires only when the bodies differ. ([#1270](https://github.com/nimbuscloud-ai/suss/pull/1270), [#1271](https://github.com/nimbuscloud-ai/suss/pull/1271))
+- A client that hands its response to a helper of its own gets the helper's status tests, and a status test with no return in either arm keeps both arms. ([#1266](https://github.com/nimbuscloud-ai/suss/pull/1266), [#1272](https://github.com/nimbuscloud-ai/suss/pull/1272))
+- A URL suss cannot pin down no longer pairs with routes it cannot reach, and route paths are written so the other side can meet them. ([#1243](https://github.com/nimbuscloud-ai/suss/pull/1243), [#1267](https://github.com/nimbuscloud-ai/suss/pull/1267))
+- Statuses FastAPI, NestJS and Nest exception classes send, the database a Prisma schema says, and the redirect `head` hands back in requests and aiohttp. ([#1244](https://github.com/nimbuscloud-ai/suss/pull/1244), [#1249](https://github.com/nimbuscloud-ai/suss/pull/1249), [#1256](https://github.com/nimbuscloud-ai/suss/pull/1256), [#1260](https://github.com/nimbuscloud-ai/suss/pull/1260))
+- Next.js routes a route file re-exports or wraps, Storybook stories through path aliases, and props read in render props and hook callbacks. ([#1259](https://github.com/nimbuscloud-ai/suss/pull/1259), [#1265](https://github.com/nimbuscloud-ai/suss/pull/1265), [#1269](https://github.com/nimbuscloud-ai/suss/pull/1269))
+- One unit that cannot be read no longer ends a TypeScript extract, `extract --dir` reads only the directory it was given, and a chain of callbacks stays inside the path budget. ([#1241](https://github.com/nimbuscloud-ai/suss/pull/1241), [#1250](https://github.com/nimbuscloud-ai/suss/pull/1250), [#1252](https://github.com/nimbuscloud-ai/suss/pull/1252))
+- Resolution questions about a call's receiver and an argument's parameter no longer walk the whole project, and the Ruby and Python adapters keep fewer syntax nodes in memory. ([#1254](https://github.com/nimbuscloud-ai/suss/pull/1254), [#1255](https://github.com/nimbuscloud-ai/suss/pull/1255), [#1268](https://github.com/nimbuscloud-ai/suss/pull/1268))
+- The extraction cache hits again for three or more packages under one tsconfig, and `inspect --diff` no longer reports a PATCH route's twin PUT or a renamed exception the controller still rescues. ([#1260](https://github.com/nimbuscloud-ai/suss/pull/1260), [#1261](https://github.com/nimbuscloud-ai/suss/pull/1261), [#1265](https://github.com/nimbuscloud-ai/suss/pull/1265))
+
 ## 0.34.0 (2026-09-28)
 
 0.34.0 lets a coding agent's edits be checked as it makes them, and lets an intent document say where a value has to come from.
