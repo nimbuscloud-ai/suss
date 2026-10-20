@@ -100,6 +100,64 @@ both pass.
 request touched. When a large change moves the behavior of one unit, you
 get a report about that one unit.
 
+<!-- suss:unchecked check --base reads git history, and the example runner works in a folder that is not a repository -->
+
+## The findings it introduced
+
+`inspect --diff` says what moved. `check --base` says which of those
+moves break something on the other side of a boundary. Say the project
+also has a client for the route, in `src/web/profile.ts`:
+
+```ts
+export async function loadProfile(id: string) {
+  const res = await fetch(`/users/${id}`);
+
+  if (res.status === 404) {
+    return null;
+  }
+
+  if (res.status === 410) {
+    return { deleted: true };
+  }
+
+  const user = await res.json();
+  return { name: user.name, email: user.email };
+}
+```
+
+On the pull request's branch, `check --base` reads the commit the branch
+started from and reports the findings that are new since then:
+
+```bash
+npx @suss/cli check --base origin/main
+```
+
+```
+Compared with eb902e5, where this branch left origin/main. 1 file changed:
+  1 boundary changed: GET /users/{id}
+  4 new findings, 0 resolved.
+
+────────────────────────────────────────────────────────────
+[WARNING] deadConsumerBranch
+  Consumer expects status 410 but provider never produces it
+  provider: src/routes/users.ts::get (src/routes/users.ts:8)
+  consumer: src/web/profile.ts::loadProfile (src/web/profile.ts:1)
+  boundary: hono (http) GET /users/:id
+```
+
+The client still waits for a `410` that the route stopped sending, and
+the report goes on to say that nothing in the client tells the new
+`status: "deleted"` body apart from a live account. Each finding gives
+the file and line on both sides. The findings the base already had are
+left out, and so are the ones that touch nothing the branch changed.
+Findings the branch fixed are listed after the new ones, one line each.
+
+The checkout is left alone: the base is written out of git into a
+temporary folder and read there with the same packs. An agent reviewing
+the branch gets the same result from the MCP server's `suss_check` with
+`base: "origin/main"`. [`suss check`](/reference/cli/check#checking-a-pull-request)
+says which findings count as part of the change.
+
 ## Put it on every pull request
 
 The action runs those two extracts for you, one on the base commit and
@@ -134,7 +192,7 @@ tag pins it to code you have read.
 
 The action reads the packs from your `suss.json`, the file `suss init`
 writes. If you do not have one, it picks the packs `init` would have
-picked. Four inputs cover most projects:
+picked. Five inputs cover most projects:
 
 - `extract` takes the arguments you would pass to `suss extract` after the
   command, so you can choose your own packs: `-p tsconfig.json -f hono -f
@@ -145,6 +203,9 @@ picked. Four inputs cover most projects:
   checkout, such as `pnpm install --frozen-lockfile`. If you leave it
   empty, the base checkout shares the head checkout's `node_modules`, and
   that works as long as the pull request does not change dependencies.
+- `findings` adds the findings the pull request introduced to the
+  comment, after the diff, the way `check --base` reports them. It is
+  `false` by default.
 - `comment` is `true` by default. A pull request from a fork gets a
   read-only token, so the comment step fails there. You can still read the
   diff in the job log and in the run's artifact, so if you would rather

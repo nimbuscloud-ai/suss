@@ -22,7 +22,10 @@ suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
 suss check --dir <directory> --at <file[:line] | boundary | summary-id> [--json] [-o <output>]
 
 # What changed since an earlier folder of summaries
-suss check --dir <directory> --since <earlier-directory> [--json] [-o <output>]
+suss check --dir <directory> --since <earlier-directory> [--changed-files <file>] [--json] [-o <output>]
+
+# What this branch introduced since it left a git ref
+suss check [--dir <directory>] --base <git ref> [--json] [-o <output>]
 
 # The project in the working directory, read first
 suss check [--at <target>] [--since <earlier-directory>] [--intent <intent-dir>] ...
@@ -38,6 +41,8 @@ Given no files and no `--dir`, `check` reads the project it is run in: every ent
 | `--at <target>` | none | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Takes `--dir` or no files at all, and does not run with `--intent`. |
 | `--intent <path>` | none | A folder of intent docs (`*.intent.yaml`, `.yml`, `.json`, and the same three for `*.prd`), each paired against the summaries in `--dir`. Takes `--dir` or no files at all. |
 | `--since <path>` | none | A folder of summaries from an earlier run. The report narrows to what changed since then, and the run fails only on new findings. See [Comparing with an earlier run](#comparing-with-an-earlier-run). Takes `--dir` or no files at all, and does not run with `--at` or `--intent`. |
+| `--changed-files <file>` | none | With `--since`, a file listing the paths a change touched, one per line, the way `git diff --name-only` writes them. The report keeps the findings the change touched. See [Checking a pull request](#checking-a-pull-request). |
+| `--base <git ref>` | none | Reads the commit the current branch left this ref at into a temporary folder and checks against it, with the files changed since then as the list. See [Checking a pull request](#checking-a-pull-request). Does not run with `--since`, `--changed-files`, `--at` or `--intent`. |
 | `--all` | off | Write out every finding and every list. See [What a run prints](#what-a-run-prints). |
 | `--json` | off | Write findings as JSON instead of text. |
 | `-o`, `--output <path>` | stdout | Write the report to a file. |
@@ -153,6 +158,51 @@ Since /home/dana/shop/.suss/before:
 
 The exit code counts only the new findings, so a CI job can pass `--since` with the base branch's summaries and fail a pull request on what it introduced, while the findings already on the base branch wait.
 
+## Checking a pull request
+
+`--base` reports the findings a branch introduced, in one command:
+
+```
+$ suss check --base origin/main
+Compared with 9020c28, where this branch left origin/main. 1 file changed:
+  1 boundary changed: POST /orders
+  1 new finding, 0 resolved.
+
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 409 but no consumer branch handles it
+  provider: src/orders/create.ts::post (src/orders/create.ts:10)
+  consumer: web/orders/submitOrder.ts::submitOrder (web/orders/submitOrder.ts:1)
+  boundary: express (http) POST /orders
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "POST /orders"
+      provider: { transitionId: "post:response:409:4b7ea21" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+1 finding: 0 error, 1 warning, 0 info
+```
+
+The base is the commit `git merge-base origin/main HEAD` gives, so commits that landed on `origin/main` after the branch left it are not counted as the branch's. In a shallow clone git cannot find that commit, and the run compares with the ref itself and says so. `git archive` writes the base into a temporary folder, so your checkout, its index and its list of worktrees are left alone. The base shares the working tree's `node_modules` folders and pack config files, and it is read with the same reads as the working tree: what `suss.json` lists, or what `init` would pick. A read whose folder did not exist at the base is skipped. A read that fails there stops the run, because every unit it covers would otherwise look new. The working tree comes from `--dir` when you pass one, and is read the way a bare `check` reads it when you don't.
+
+The changed files are what `git diff --name-only` lists against the base, plus untracked files, so an edit you have not committed counts. A new finding is reported when any of these is true:
+
+- a summary on either side is in a changed file,
+- a summary on either side is a unit that was added, removed or behaves differently, which catches a route that changed because a helper in another file did,
+- its boundary is one the code changed at, which catches a finding between two unchanged summaries that a third unit's new read or write produced.
+
+The same test applies to the resolved findings. The rest of what moved is counted on a `Left out` line and listed under `addedElsewhere` and `resolvedElsewhere` in the JSON. Those findings touch nothing the change edited, and they usually come from reading the two revisions differently, such as a generated file the working tree has and the base does not.
+
+A finding keeps its identity when only its lines moved, so lines added above a route leave its findings alone. The report prints the errors and warnings in full, counts the info findings, and lists each resolved finding in one line with the file and line on both sides. The pairing counts and unpaired lists describe the whole repository, so they are left out. The run fails only on new findings at the `--fail-on` severity.
+
+`--since` with `--changed-files` gives the same report when you already have both folders of summaries, which is how the [pull request action](/guides/ci-integration) runs it:
+
+```
+suss check --dir .suss/after --since .suss/before --changed-files changed.txt
+```
+
+Reading the base costs as much as a full extract, since nothing it reads is in the per-file cache yet. The MCP server's `suss_check` takes the same `base` and reads each base commit once while it runs.
+
 ## JSON output
 
 `--dir --json` writes one object:
@@ -174,6 +224,8 @@ with `intent` added when `--intent` was passed. Two positional files write the b
 | `atChangedBoundary` | Whether that boundary is in `changedBoundaries`. |
 | `rule` | The `.sussignore` rule that accepts this finding and no other, without its `reason`. Absent when the finding points at no transition, since a rule without one would accept more. |
 
-`findingIdentity`, `findingsSince` and `changedBoundaries` in `@suss/checker` compute the same things from a program.
+`--changed-files --json` and `--base --json` add four keys. `changedFiles` is the list the report narrowed to, `addedElsewhere` and `resolvedElsewhere` are the findings it left out, described the same way, and each finding gets `touchedByChange`, the parts of it the change touched: any of `provider`, `consumer` and `boundary`. `--base` writes `base`, as `{ ref, commit, branchPoint }`, in place of `since`, because the folder it read is gone by the time the report is read. `branchPoint` is false when git could not find where the branch left the ref.
+
+`findingIdentity`, `findingsSince`, `changedBoundaries` and `changesWithin` in `@suss/checker` compute the same things from a program.
 
 [Exit codes](/reference/cli/exit-codes) lists what `check` returns to the shell, and how a suppression changes the count.
