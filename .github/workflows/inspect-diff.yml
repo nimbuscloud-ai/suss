@@ -32,5 +32,6 @@ jobs:
         with:
           working-directory: examples/petstore-axios-openapi
           extract: -p tsconfig.json -f axios
+          findings: "true"
       - name: Report
         run: echo "${{ steps.suss.outputs.changed }} units changed behavior"

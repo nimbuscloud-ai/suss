@@ -68,6 +68,7 @@ The comment looks like this:
 | `version` | `latest` | The version of `@suss/cli` to install. |
 | `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty, the base checkout shares the head's `node_modules` directories, which works when the pull request does not change dependencies. |
 | `comment` | `true` | Whether to post the comment. Set it to `false` to read the outputs and do something else with them. |
+| `findings` | `false` | Whether to add the findings the pull request introduced to the comment, after the diff: what `suss check --since` reports for the two summary files, narrowed with `--changed-files`. Errors and warnings print in full and info findings are counted. The whole report is `findings.txt` in the run's artifact. |
 | `artifact-name` | `suss-diff` | The name of the run artifact that keeps both summary files and the diff. Two uses of the action in one workflow need two names. |
 | `cache` | `true` | Whether to keep suss's per-file cache and each commit's summaries in the repository's actions cache. See [Caching](#caching). |
 | `token` | `github.token` | The token used to post the comment. It needs `pull-requests: write`. |
