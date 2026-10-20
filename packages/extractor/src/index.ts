@@ -1174,6 +1174,12 @@ export {
   runDigest,
 } from "./adapterStamp.js";
 export { createCacheLayer, MAX_ENTRIES } from "./cache.js";
+export {
+  CACHE_DIR_ENV,
+  chosenCacheRoot,
+  extractionCacheDirFor,
+  liveRecordFor,
+} from "./cacheLocation.js";
 export { stampMayMissAWrite } from "./cacheStamps.js";
 export {
   buildUngatedExtractionReport,

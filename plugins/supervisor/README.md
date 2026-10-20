@@ -84,7 +84,7 @@ Beside the session folders, `.suss/session/current.json` says which session a sl
 
 `scripts/suss.mjs` looks for `@suss/cli` in `node_modules` from the project directory upward, and uses it when its version is at least the plugin's. Otherwise it looks the same way from the plugin's directory, and then falls back to `npx --yes --package=@suss/cli@<plugin version> suss`. The MCP server is found the same way, as `@suss/mcp`.
 
-Before starting the CLI, `runSuss` asks the MCP server. The server that keeps the project's program writes its socket's path to `.suss/live/server.json`, and it runs `extract --out-dir` and `check --since --json` itself, returning what the CLI would have printed. It keeps the program between edits, so a read after an edit parses only the files that changed and starts no process. When no server is up, or it does not serve the command, the CLI runs as before.
+Before starting the CLI, `runSuss` asks the MCP server. The server that keeps the project's program writes its socket's path to `.suss/live/server.json` (under `SUSS_CACHE_DIR` when that is set), and it runs `extract --out-dir` and `check --since --json` itself, returning what the CLI would have printed. It keeps the program between edits, so a read after an edit parses only the files that changed and starts no process. When no server is up, or it does not serve the command, the CLI runs as before.
 
 The plugin's version in `plugin.json` moves with every suss release, because `scripts/preparePublish.mjs` sets it when `npm run bump` runs.
 

@@ -31,6 +31,7 @@ import {
   createCacheLayer,
   createTimer,
   effectToIR,
+  extractionCacheDirFor,
   extractionConfigStamp,
   KeptParses,
   moduleInitStructure,
@@ -153,7 +154,7 @@ export interface ExtractPythonOptions {
   onExtractionReport?: (report: ExtractionReport) => void;
   /** Called once with what the cache decided, for `suss extract --timing`. */
   onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
-  /** Absolute. `<projectRoot>/.suss/cache` by default; `null` turns it off. */
+  /** Absolute. `<projectRoot>/.suss/cache` by default, or under `SUSS_CACHE_DIR`; `null` turns it off. */
   cacheDir?: string | null;
   /** The modules the project lists in `suss.json`, with absolute paths. */
   modules?: readonly DeclaredModule[];
@@ -364,7 +365,7 @@ export async function extractPythonProject(
       ? null
       : (options.cacheDir ??
           (options.projectRoot !== undefined
-            ? path.join(options.projectRoot, ".suss", "cache")
+            ? extractionCacheDirFor(options.projectRoot)
             : null)),
   );
   const layer = createCacheLayer<PythonFileRecord>(cacheDir);

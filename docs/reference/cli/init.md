@@ -17,6 +17,7 @@ suss init [<directory>] [--plain | --write [--overwrite]]
 | `--plain` | off | Print the commands instead of asking. Piped output and CI print either way. |
 | `--write` | off | Print the commands, then write `suss.json` and each pack's config file without asking. A coding agent has no terminal to answer the questions in, so this is how it finishes setting a project up. When a `suss.json` is already there, `init` leaves it alone and says so. |
 | `--overwrite` | off | With `--write`, replace a `suss.json` that is already there with what `init` found. `init` refuses it without `--write`. |
+| `--cache-dir <path>` | `.suss/cache` under the project, or `SUSS_CACHE_DIR` | Where any extraction `init` runs keeps its cache. See [Where suss writes](/reference/cli/#where-suss-writes). |
 
 ## What it reads
 

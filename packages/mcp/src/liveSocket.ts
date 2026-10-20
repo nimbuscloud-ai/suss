@@ -25,12 +25,16 @@ import {
   checkDir,
   checkDirectory,
   clearEarlierReads,
+  liveRecordFor,
   makeIgnoredDirectory,
 } from "@suss/cli";
 
 import type { BuildReport, Project } from "./project.js";
 
-/** Where the server that keeps the programs says how to reach it. */
+/**
+ * Where the server that keeps the programs says how to reach it, relative
+ * to the project. `SUSS_CACHE_DIR` moves it out of the project.
+ */
 export const LIVE_RECORD = path.join(".suss", "live", "server.json");
 
 /**
@@ -89,7 +93,7 @@ export class LiveSocket {
     }
     const server = this.server;
     this.server = null;
-    const record = path.join(this.project.root, LIVE_RECORD);
+    const record = liveRecordFor(this.project.root);
     if (readRecord(record)?.pid === process.pid) {
       fs.rmSync(record, { force: true });
     }
@@ -137,7 +141,7 @@ export class LiveSocket {
       this.socketInode = fs.statSync(this.socketPath).ino;
     }
     this.project.buildElsewhere(null);
-    const record = path.join(this.project.root, LIVE_RECORD);
+    const record = liveRecordFor(this.project.root);
     makeIgnoredDirectory(path.dirname(record));
     const temporary = `${record}.${process.pid}`;
     fs.writeFileSync(

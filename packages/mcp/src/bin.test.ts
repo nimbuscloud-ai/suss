@@ -81,4 +81,51 @@ describe("suss-mcp", () => {
     expect(fs.existsSync(record)).toBe(false);
     expect(fs.existsSync(socket)).toBe(false);
   }, 60_000);
+
+  it.each([
+    { how: "the --cache-dir argument", viaArgument: true },
+    { how: "SUSS_CACHE_DIR", viaArgument: false },
+  ])(
+    "writes its cache and live record under $how and nothing into the project",
+    async ({ viaArgument }) => {
+      const root = projectWithOneRoute();
+      fs.writeFileSync(
+        path.join(root, "suss.json"),
+        JSON.stringify({
+          version: 1,
+          read: [
+            {
+              kind: "extract",
+              language: "typescript",
+              project: "tsconfig.json",
+              packs: ["express"],
+            },
+          ],
+        }),
+      );
+      const state = fs.mkdtempSync(path.join(os.tmpdir(), "suss-bin-state-"));
+      cleanups.push(() => fs.rmSync(state, { recursive: true, force: true }));
+      const args = viaArgument
+        ? [BIN, root, "--cache-dir", state]
+        : [BIN, root];
+      const server = spawn(process.execPath, args, {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: viaArgument
+          ? process.env
+          : { ...process.env, SUSS_CACHE_DIR: state },
+      });
+      cleanups.push(() => server.kill("SIGKILL"));
+
+      await waitFor(
+        () =>
+          fs.existsSync(path.join(state, "live")) &&
+          fs.existsSync(path.join(state, "cache")),
+        30_000,
+      );
+      server.stdin.end();
+
+      expect(fs.existsSync(path.join(root, ".suss"))).toBe(false);
+    },
+    60_000,
+  );
 });

@@ -40,6 +40,7 @@ Given nothing, `inspect` reads the project it is run in: every entry in `suss.js
 | `--flow "<METHOD> <url>"` | none | Work out who serves one request. See [`suss inspect --flow`](#suss-inspect-flow). |
 | `--entry <name>` | the only way in | With `--flow`, which node the request comes in by, when the summaries contain more than one. |
 | `--scope <document>` | none | With `--flow`, which document's node, when two documents declare that name. |
+| `--cache-dir <path>` | `.suss/cache` under the project, or `SUSS_CACHE_DIR` | Where the extraction cache goes when `inspect` reads the project itself. See [Where suss writes](/reference/cli/#where-suss-writes). |
 
 ## Example
 
