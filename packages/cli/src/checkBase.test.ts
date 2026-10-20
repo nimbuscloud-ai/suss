@@ -1,0 +1,275 @@
+// `suss check --base` over the orders fixture, an Express route and a fetch
+// client, committed to git. Each test edits the working tree the way a pull
+// request would and asks what the edit introduced.
+
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { runCli } from "./run.js";
+
+const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
+
+const ADD_409 = {
+  file: "src/orders/create.ts",
+  from: "  const created = await orders.insert({ sku, quantity });",
+  to: [
+    "  const open = await orders.findOpen(sku);",
+    "  if (open) {",
+    '    res.status(409).json({ error: "an open order for this sku exists" });',
+    "    return;",
+    "  }",
+    "  const created = await orders.insert({ sku, quantity });",
+  ].join("\n"),
+};
+
+const LINES_ABOVE_THE_ROUTE = {
+  file: "src/orders/create.ts",
+  from: "export const ordersRouter = Router();",
+  to: [
+    "// Orders are keyed by sku, and a sku has at most one open order.",
+    "export function describeOrder(order: { sku: string; quantity: number }) {",
+    '  return order.quantity + " x " + order.sku;',
+    "}",
+    "",
+    "export const ordersRouter = Router();",
+  ].join("\n"),
+};
+
+const HANDLE_409 = {
+  file: "web/orders/submitOrder.ts",
+  from: "  if (res.status === 400) {",
+  to: [
+    "  if (res.status === 409) {",
+    '    throw new Error("an open order for this sku already exists");',
+    "  }",
+    "  if (res.status === 400) {",
+  ].join("\n"),
+};
+
+let work: string;
+let project: string;
+let startedIn: string;
+
+beforeEach(() => {
+  startedIn = process.cwd();
+  work = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "suss-base-test-")),
+  );
+  project = path.join(work, "orders-app");
+  fs.cpSync(FIXTURE, project, {
+    recursive: true,
+    filter: (source) => !source.split(path.sep).includes(".suss"),
+  });
+  fs.writeFileSync(path.join(project, ".gitignore"), "node_modules\n.suss\n");
+  git("init", "--quiet");
+});
+
+afterEach(() => {
+  process.chdir(startedIn);
+  fs.rmSync(work, { recursive: true, force: true });
+});
+
+function git(...args: string[]): string {
+  return execFileSync(
+    "git",
+    [
+      "-c",
+      "user.email=suss@example.com",
+      "-c",
+      "user.name=suss",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
+    { cwd: project, encoding: "utf8" },
+  );
+}
+
+function commit(message: string): void {
+  git("add", "-A");
+  git("commit", "--quiet", "-m", message);
+}
+
+function edit(change: { file: string; from: string; to: string }): void {
+  const file = path.join(project, change.file);
+  const before = fs.readFileSync(file, "utf8");
+  expect(before).toContain(change.from);
+  fs.writeFileSync(file, before.replace(change.from, change.to));
+}
+
+async function quietly(
+  args: string[],
+): Promise<{ exit: number; stdout: string; stderr: string }> {
+  const out: string[] = [];
+  const err: string[] = [];
+  const writeOut = process.stdout.write.bind(process.stdout);
+  const writeErr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((chunk: string) => {
+    out.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string) => {
+    err.push(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    process.chdir(project);
+    const exit = await runCli(args);
+    return { exit, stdout: out.join(""), stderr: err.join("") };
+  } finally {
+    process.stdout.write = writeOut;
+    process.stderr.write = writeErr;
+  }
+}
+
+async function againstBase(ref = "HEAD", extra: string[] = []) {
+  const run = await quietly(["check", "--base", ref, "--json", ...extra]);
+  return { exit: run.exit, report: JSON.parse(run.stdout) };
+}
+
+describe("check --base", () => {
+  it("reports the finding an edit introduced, with the file and line on both sides", async () => {
+    commit("base");
+    edit(ADD_409);
+
+    const { exit, report } = await againstBase();
+
+    expect(exit).toBe(0);
+    expect(report.base).toEqual({
+      ref: "HEAD",
+      commit: git("rev-parse", "HEAD").trim(),
+      branchPoint: true,
+    });
+    expect(report.changedFiles).toEqual(["src/orders/create.ts"]);
+    expect(report.findings).toHaveLength(1);
+    const [finding] = report.findings;
+    expect(finding.kind).toBe("unhandledProviderCase");
+    expect(finding.touchedByChange).toEqual(["provider", "boundary"]);
+    expect(finding.provider.location.file).toBe("src/orders/create.ts");
+    expect(finding.consumer.location.file).toBe("web/orders/submitOrder.ts");
+    expect(report.resolved).toEqual([]);
+    expect(report.addedElsewhere).toEqual([]);
+  });
+
+  it("does not report a finding as new when lines were added above it", async () => {
+    edit(ADD_409);
+    commit("base with the 409");
+    edit(LINES_ABOVE_THE_ROUTE);
+
+    const { report } = await againstBase();
+
+    expect(report.changedFiles).toEqual(["src/orders/create.ts"]);
+    expect(report.findings).toEqual([]);
+    expect(report.resolved).toEqual([]);
+    expect(report.addedElsewhere).toEqual([]);
+  });
+
+  it("lists a finding the change fixed as resolved, in one line with both sides", async () => {
+    edit(ADD_409);
+    commit("base with the 409");
+    edit(HANDLE_409);
+
+    const run = await quietly(["check", "--base", "HEAD"]);
+
+    expect(run.exit).toBe(0);
+    expect(run.stdout).toContain("1 file changed:");
+    expect(run.stdout).toContain("0 new findings, 1 resolved.");
+    expect(run.stdout).toMatch(
+      /^ {2}unhandledProviderCase at POST \/orders: Provider produces status 409 but no consumer branch handles it \(src\/orders\/create\.ts:\d+ and web\/orders\/submitOrder\.ts:\d+\)$/m,
+    );
+  });
+
+  it("compares with the commit the branch left the ref at", async () => {
+    commit("base");
+    git("branch", "trunk");
+    git("checkout", "--quiet", "-b", "feature");
+    edit(ADD_409);
+    commit("add a 409");
+    git("checkout", "--quiet", "trunk");
+    edit(HANDLE_409);
+    commit("the trunk moved on");
+    git("checkout", "--quiet", "feature");
+
+    const { report } = await againstBase("trunk");
+
+    expect(report.base.commit).toBe(
+      git("merge-base", "trunk", "feature").trim(),
+    );
+    expect(report.changedFiles).toEqual(["src/orders/create.ts"]);
+    expect(report.findings.map((f: { kind: string }) => f.kind)).toEqual([
+      "unhandledProviderCase",
+    ]);
+  });
+
+  it("counts an untracked file as changed, and leaves the checkout as it was", async () => {
+    commit("base");
+    fs.writeFileSync(
+      path.join(project, "src", "orders", "notes.ts"),
+      "export const NOTE = 1;\n",
+    );
+    const status = git("status", "--porcelain");
+    const worktrees = git("worktree", "list");
+
+    const { report } = await againstBase();
+
+    expect(report.changedFiles).toEqual(["src/orders/notes.ts"]);
+    expect(git("status", "--porcelain")).toBe(status);
+    expect(git("worktree", "list")).toBe(worktrees);
+  });
+
+  it("does not fail on a finding the base already had", async () => {
+    edit(ADD_409);
+    commit("base with the 409");
+    edit(LINES_ABOVE_THE_ROUTE);
+
+    const { exit } = await againstBase("HEAD", ["--fail-on", "warning"]);
+
+    expect(exit).toBe(0);
+  });
+
+  it("says what to fetch when git does not know the ref", async () => {
+    commit("base");
+
+    const run = await quietly(["check", "--base", "origin/nowhere"]);
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain("git does not know origin/nowhere");
+  });
+
+  it("refuses --since and --changed-files, which it takes the place of", async () => {
+    commit("base");
+
+    const withSince = await quietly([
+      "check",
+      "--base",
+      "HEAD",
+      "--since",
+      work,
+    ]);
+    const withList = await quietly([
+      "check",
+      "--base",
+      "HEAD",
+      "--changed-files",
+      path.join(work, "changed.txt"),
+    ]);
+
+    expect(withSince.exit).toBe(1);
+    expect(withSince.stderr).toContain("takes the place of --since");
+    expect(withList.exit).toBe(1);
+    expect(withList.stderr).toContain("takes the place of --changed-files");
+  });
+
+  it("says to compare two folders with --since outside a git repository", async () => {
+    fs.rmSync(path.join(project, ".git"), { recursive: true, force: true });
+
+    const run = await quietly(["check", "--base", "main"]);
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain("is not inside a git repository");
+  });
+});

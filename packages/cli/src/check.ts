@@ -9,6 +9,7 @@ import {
   boundaryKey,
   boundaryKeyOf,
   changesSince,
+  changesWithin,
   checkAll,
   checkPair,
   countsForThreshold,
@@ -16,6 +17,7 @@ import {
   mergedSideOf,
   normalizedDescription,
   summaryWithDefinitionsInlined,
+  touchedByChange,
 } from "@suss/checker";
 import {
   applyIntentSuppressions,
@@ -45,6 +47,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   BoundaryCollision,
+  ChangeScope,
   ChangesSince,
   CheckAllResult,
   CheckedRun,
@@ -53,6 +56,7 @@ import type {
 } from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 import type { PackConfigNeed } from "@suss/extractor";
+import type { BaseRevision } from "./checkBase.js";
 
 /**
  * Each summary's confidence, keyed by `summaryRef`. The checker writes
@@ -136,6 +140,14 @@ export interface CheckDirOptions {
    * run fails only on new findings.
    */
   since?: string;
+  /**
+   * The paths a change edited, relative to the repository or the
+   * project. With `since`, the new and resolved findings narrow to the
+   * ones the change touched, as `changesWithin` decides.
+   */
+  changedFiles?: readonly string[];
+  /** The git revision `since` was read from, when `check --base` read it. */
+  base?: BaseRevision;
 }
 
 export interface CheckResult {
@@ -477,11 +489,17 @@ function summariesOf(
 export function checkDir(options: CheckDirOptions): CheckResult & {
   result: CheckAllResult;
   collisions: BoundaryCollision[];
+  /** What moved since the earlier run, when `since` was given. */
+  since?: SinceReport;
 } {
   if (options.since !== undefined && options.intent !== undefined) {
     throw new UsageError(
       "--since reports what changed between two runs and --intent scores the code against your intent docs, so they cannot run together. Run them one at a time.",
     );
+  }
+
+  if (options.changedFiles !== undefined && options.since === undefined) {
+    throw new UsageError(CHANGED_FILES_NEED_SINCE);
   }
 
   const {
@@ -539,9 +557,16 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     summariesWithGaps,
     collisions,
   };
-  const rendered = options.json
-    ? `${JSON.stringify(since === null ? { findings: result.findings, ...rest } : { ...sinceJson(since), ...rest }, null, 2)}\n`
-    : renderDirHuman(
+  const rendered = (): string => {
+    if (options.json) {
+      return `${JSON.stringify(since === null ? { findings: result.findings, ...rest } : { ...sinceJson(since), ...rest }, null, 2)}\n`;
+    }
+
+    if (since?.change !== undefined) {
+      return renderChange(since, confidence, scopeOf(options), run);
+    }
+    return (
+      renderDirHuman(
         result,
         confidence,
         scopeOf(options),
@@ -553,9 +578,11 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
       renderCollisions(collisions) +
       renderUnreadArtifacts(sourceFile, result.unmatched) +
       renderIntentSection(intent) +
-      renderRunFindings(run);
+      renderRunFindings(run)
+    );
+  };
 
-  writeReport(rendered, options.output);
+  writeReport(rendered(), options.output);
 
   const failOn = options.failOn ?? "error";
   return {
@@ -568,13 +595,28 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
       run.some((finding) => finding.severity === "error"),
     result,
     collisions,
+    ...(since !== null ? { since } : {}),
   };
 }
 
+export const CHANGED_FILES_NEED_SINCE =
+  "--changed-files narrows the findings that are new since an earlier run, so it needs --since. Try: suss check --dir .suss/after --since .suss/before --changed-files changed.txt";
+
 /** What moved since an earlier run, for `check --since`. */
-interface SinceReport extends ChangesSince {
+export interface SinceReport extends ChangesSince {
   /** The earlier run's directory, resolved. */
   dir: string;
+  /** Present when the report narrows to one change, with `--changed-files` or `--base`. */
+  change?: ChangeReport;
+}
+
+/** The part of a narrowed report that the narrowing left out, and what it narrowed to. */
+interface ChangeReport {
+  files: string[];
+  base: BaseRevision | null;
+  addedElsewhere: Finding[];
+  resolvedElsewhere: Finding[];
+  scope: ChangeScope;
 }
 
 /**
@@ -587,13 +629,28 @@ function compareWithEarlierRun(
   options: CheckDirOptions,
   later: CheckedRun,
 ): SinceReport {
-  const earlier = checkDirectory({ ...options, dir });
+  const checked = checkDirectory({ ...options, dir });
+  const earlier = {
+    summaries: checked.summaries,
+    findings: checked.result.findings,
+  };
+  if (options.changedFiles === undefined) {
+    return { dir: path.resolve(dir), ...changesSince(earlier, later) };
+  }
+
+  const within = changesWithin(earlier, later, options.changedFiles);
   return {
     dir: path.resolve(dir),
-    ...changesSince(
-      { summaries: earlier.summaries, findings: earlier.result.findings },
-      later,
-    ),
+    added: within.added,
+    resolved: within.resolved,
+    changedBoundaries: within.changedBoundaries,
+    change: {
+      files: within.changedFiles,
+      base: options.base ?? null,
+      addedElsewhere: within.addedElsewhere,
+      resolvedElsewhere: within.resolvedElsewhere,
+      scope: within.scope,
+    },
   };
 }
 
@@ -601,10 +658,13 @@ function compareWithEarlierRun(
  * The `--since` part of the JSON report. Each finding also gets its
  * identity, its boundary key, whether that boundary is one the code
  * changed at, and the `.sussignore` rule that would accept it, so a
- * program acting on the report does not have to work those out.
+ * program acting on the report does not have to work those out. A
+ * report narrowed to a change also says which parts of each finding the
+ * change touched, and lists the findings it left out.
  */
 function sinceJson(since: SinceReport): Record<string, unknown> {
   const changedKeys = new Set(since.changedBoundaries.map((b) => b.key));
+  const { change } = since;
   const described = (findings: readonly Finding[]) =>
     findings.map((finding) => {
       const rule = acceptingRule(finding);
@@ -614,13 +674,27 @@ function sinceJson(since: SinceReport): Record<string, unknown> {
         identity: findingIdentity(finding),
         boundaryKey: key,
         atChangedBoundary: changedKeys.has(key),
+        ...(change !== undefined
+          ? { touchedByChange: touchedByChange(finding, change.scope) }
+          : {}),
         ...(rule !== null ? { rule } : {}),
       };
     });
+  // With --base the earlier folder is a temporary one, gone by the time
+  // anybody reads the report, so the report gives the revision instead.
   return {
-    since: since.dir,
+    ...(change !== undefined && change.base !== null
+      ? { base: change.base }
+      : { since: since.dir }),
+    ...(change !== undefined ? { changedFiles: change.files } : {}),
     findings: described(since.added),
     resolved: described(since.resolved),
+    ...(change !== undefined
+      ? {
+          addedElsewhere: described(change.addedElsewhere),
+          resolvedElsewhere: described(change.resolvedElsewhere),
+        }
+      : {}),
     changedBoundaries: since.changedBoundaries,
   };
 }
@@ -633,11 +707,12 @@ function renderSince(
 ): string[] {
   const changed = since.changedBoundaries;
   const lines = [
-    `Since ${since.dir}:`,
+    ...sinceHeading(since),
     changed.length === 0
       ? "  No boundary changed."
       : `  ${changed.length} boundar${changed.length === 1 ? "y" : "ies"} changed: ${changed.map((b) => b.key).join(", ")}`,
     `  ${since.added.length} new finding${since.added.length === 1 ? "" : "s"}, ${since.resolved.length} resolved.`,
+    ...elsewhereLines(since.change),
   ];
   if (since.added.length > 0) {
     lines.push("", renderFindings(since.added, confidence, scope).trimEnd());
@@ -646,12 +721,66 @@ function renderSince(
   if (since.resolved.length > 0) {
     lines.push("", "Resolved:");
     for (const finding of since.resolved) {
-      lines.push(
-        `  ${finding.kind} at ${boundaryKeyOf(finding.boundary)}: ${normalizedDescription(finding)}`,
-      );
+      lines.push(`  ${findingInOneLine(finding)}`);
     }
   }
   return lines;
+}
+
+/** A finding as one line, with the file and line on each side. */
+export function findingInOneLine(finding: Finding): string {
+  return `${finding.kind} at ${boundaryKeyOf(finding.boundary)}: ${normalizedDescription(finding)} (${sideAt(finding.provider)} and ${sideAt(finding.consumer)})`;
+}
+
+/**
+ * A report narrowed to one change. The pairing counts and unpaired lists
+ * describe the whole repository, which a review of one change has no use
+ * for, so they are left out.
+ */
+function renderChange(
+  since: SinceReport,
+  confidence: ConfidenceLookup,
+  scope: ReportScope,
+  run: RunFinding[],
+): string {
+  return `${renderSince(since, confidence, scope).join("\n")}\n${renderRunFindings(run)}`;
+}
+
+function sinceHeading(since: SinceReport): string[] {
+  const change = since.change;
+  if (change === undefined) {
+    return [`Since ${since.dir}:`];
+  }
+
+  const files = `${change.files.length} file${change.files.length === 1 ? "" : "s"} changed`;
+  if (change.base === null) {
+    return [`Since ${since.dir}, narrowed to what touches the ${files}:`];
+  }
+
+  const commit = change.base.commit.slice(0, 7);
+  const where = change.base.branchPoint
+    ? `${commit}, where this branch left ${change.base.ref}`
+    : `${change.base.ref} at ${commit}`;
+  return [`Compared with ${where}. ${files}:`];
+}
+
+/** How many moved findings the narrowing left out, so leaving them out is never silent. */
+function elsewhereLines(change: ChangeReport | undefined): string[] {
+  if (change === undefined) {
+    return [];
+  }
+  const added = change.addedElsewhere.length;
+  const resolved = change.resolvedElsewhere.length;
+  if (added + resolved === 0) {
+    return [];
+  }
+  return [
+    `  Left out ${added} new and ${resolved} resolved finding${added + resolved === 1 ? "" : "s"} that touch nothing the change edited. --json lists them under addedElsewhere and resolvedElsewhere.`,
+  ];
+}
+
+function sideAt(side: Finding["provider"]): string {
+  return `${side.location.file}:${side.location.range.start}`;
 }
 
 /**
@@ -1163,7 +1292,7 @@ function formatSide(
   side: Finding["provider"],
   confidence: ConfidenceLookup,
 ): string {
-  const loc = `${side.location.file}:${side.location.range.start}`;
+  const loc = sideAt(side);
   const info = confidence.get(side.summary);
   // Mention confidence only when it is below `high`, since that is when a
   // reviewer should weigh the finding. It never changes the severity.
