@@ -7,7 +7,7 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
-## 0.34.1 (2026-10-19)
+## 0.34.1 (2026-10-20)
 
 0.34.1 makes a first run on someone else's code report a sixth as many findings, and lets suss read back summary files of any size.
 
