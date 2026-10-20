@@ -125,7 +125,7 @@ Options (init, extract, inspect, check, ask):
                    flag wins. Use it to read a checkout you may not write to.
 
 Options (init):
-  --plain         Print the commands instead of asking, even in a terminal
+  --plain          Print the commands instead of asking, even in a terminal
   --write          Print the commands, then write suss.json and each pack's
                    config file without asking, so an agent can finish
                    setting a project up. A suss.json that is already there

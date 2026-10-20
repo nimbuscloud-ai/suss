@@ -77,7 +77,7 @@ function liveSocketOf(projectDir) {
  * @param {string} projectDir
  * @returns {string}
  */
-function liveRecordOf(projectDir) {
+export function liveRecordOf(projectDir) {
   const chosen = process.env.SUSS_CACHE_DIR;
   if (chosen === undefined || chosen === "") {
     return path.join(projectDir, ".suss", "live", "server.json");

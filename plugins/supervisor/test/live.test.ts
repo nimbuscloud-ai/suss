@@ -5,7 +5,9 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { askLiveServer } from "../scripts/live.mjs";
+import { liveRecordFor } from "@suss/extractor";
+
+import { askLiveServer, liveRecordOf } from "../scripts/live.mjs";
 import { Session } from "../scripts/session.mjs";
 import { runSuss } from "../scripts/suss.mjs";
 
@@ -155,5 +157,28 @@ describe("asking the MCP server to run a command", () => {
 
     expect(Date.now() - started).toBeLessThan(2500);
     expect(run.failure).toBeDefined();
+  });
+});
+
+describe("where the server's record is found", () => {
+  it("is the path the server writes, even through a symlink", () => {
+    const link = `${project}-link`;
+    fs.symlinkSync(project, link);
+    const state = path.join(project, "state");
+    const before = process.env.SUSS_CACHE_DIR;
+    process.env.SUSS_CACHE_DIR = state;
+    try {
+      const viaLink = liveRecordOf(link);
+      expect(viaLink).toBe(liveRecordOf(project));
+      expect(viaLink).toBe(liveRecordFor(fs.realpathSync(project)));
+      expect(liveRecordFor(link)).toBe(viaLink);
+    } finally {
+      if (before === undefined) {
+        delete process.env.SUSS_CACHE_DIR;
+      } else {
+        process.env.SUSS_CACHE_DIR = before;
+      }
+      fs.rmSync(link, { force: true });
+    }
   });
 });

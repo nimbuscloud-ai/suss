@@ -14,6 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 
 export const CACHE_DIR_ENV = "SUSS_CACHE_DIR";
@@ -27,9 +28,22 @@ export function chosenCacheRoot(): string | null {
   return path.resolve(chosen);
 }
 
+/**
+ * Hashes the real path, so a project reached through a symlink (macOS
+ * keeps /tmp under /private) has one key however it is named. The plugin's
+ * hook script computes the same key and has a test that they agree.
+ */
+function realPathOrSelf(dir: string): string {
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return dir;
+  }
+}
+
 function projectKey(projectDir: string): string {
   return createHash("sha256")
-    .update(path.resolve(projectDir))
+    .update(realPathOrSelf(path.resolve(projectDir)))
     .digest("hex")
     .slice(0, 16);
 }
