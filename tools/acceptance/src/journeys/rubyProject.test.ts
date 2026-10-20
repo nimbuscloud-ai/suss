@@ -31,7 +31,9 @@ describe("read a graphql-ruby schema", () => {
     });
 
     expect(extract.status).toBe(1);
-    expect(extract.output).toContain("needs `root`");
+    expect(extract.output).toContain(
+      'no-config  graphql-ruby  reads nothing until root is set, for example {"root":"app/graphql"}',
+    );
     expect(extract.output).toContain("-f graphql-ruby=<config.json>");
     expect(extract.output).not.toContain("    at ");
   });

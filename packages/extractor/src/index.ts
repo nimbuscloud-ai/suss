@@ -1194,6 +1194,7 @@ export { KeptParses } from "./keptParses.js";
 export {
   evaluatePackHealth,
   formatPackHealth,
+  packConfigCheck,
   packGradients,
 } from "./packHealth.js";
 export { createTimer, noopTimer } from "./timing.js";
@@ -1236,6 +1237,7 @@ export type {
 export type {
   HealthCheck,
   HealthViolation,
+  PackConfigNeed,
   PackGradient,
 } from "./packHealth.js";
 export type { Timer, TimingReport } from "./timing.js";

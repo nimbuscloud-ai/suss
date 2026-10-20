@@ -30,7 +30,11 @@ import {
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
-import { evaluatePackHealth, formatPackHealth } from "@suss/extractor";
+import {
+  evaluatePackHealth,
+  formatPackHealth,
+  packConfigCheck,
+} from "@suss/extractor";
 
 import { testFilesListedIn } from "./coveringTests.js";
 import { renderDiagnosis } from "./diagnosis.js";
@@ -76,6 +80,7 @@ import type {
   CacheDiagnostic,
   EmptyStage,
   ExtractionReport,
+  PackConfigNeed,
   PatternPack,
   TimingReport,
 } from "@suss/extractor";
@@ -97,6 +102,7 @@ type PackFactory = (...args: never[]) => PatternPack;
 interface PackModule {
   default: PackFactory;
   optionsSchema?: z.ZodObject<z.ZodRawShape>;
+  declares?: PackDeclaration;
 }
 
 export { UsageError };
@@ -345,7 +351,7 @@ export function parseFrameworkSpec(spec: string): {
 
   const resolved = path.resolve(configPath);
   if (!fs.existsSync(resolved)) {
-    throw new Error(
+    throw new UsageError(
       `No pack config at ${resolved}, named by -f ${name}=${configPath}.`,
     );
   }
@@ -358,7 +364,9 @@ export function parseFrameworkSpec(spec: string): {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`The pack config at ${resolved} is not JSON: ${message}`);
+    throw new UsageError(
+      `The pack config at ${resolved} is not JSON: ${message}`,
+    );
   }
 }
 
@@ -449,6 +457,8 @@ interface LoadedFactory {
   specifier: string;
   /** Whether the pack takes a `files` list, as a test pack does. */
   takesFiles: boolean;
+  /** What the pack says about the config it needs, for a run that gave it none. */
+  unmetConfig: PackConfigNeed | null;
 }
 
 /**
@@ -603,6 +613,7 @@ async function loadPackFactory(
       factory: mod.default,
       specifier,
       takesFiles: mod.optionsSchema?.shape.files !== undefined,
+      unmetConfig: unmetConfigOf(name, mod, options),
     };
   };
 
@@ -628,6 +639,53 @@ async function loadPackFactory(
       `Built in: ${Object.keys(BUILTIN_FRAMEWORKS).join(", ")}`,
     ].join("\n"),
   );
+}
+
+/**
+ * The option a pack cannot read anything without, when it declares its
+ * config required and the run gave it none. A config file that is there
+ * and wrong still fails the run, since that is a mistake to fix.
+ */
+function unmetConfigOf(
+  name: string,
+  mod: PackModule,
+  options: unknown,
+): PackConfigNeed | null {
+  const configuration = mod.declares?.configuration;
+  if (options !== undefined || configuration?.required !== true) {
+    return null;
+  }
+
+  const firstMissing = mod.optionsSchema?.safeParse({}).error?.issues[0]
+    ?.path[0];
+  const option = String(firstMissing ?? Object.keys(configuration.example)[0]);
+  const value =
+    configuration.defaults?.[option] ?? configuration.example[option];
+  return { pack: name, option, example: JSON.stringify({ [option]: value }) };
+}
+
+/**
+ * Splits the packs a run asked for into those it can read with and those
+ * that need an option the run did not give. A pack in the second list is
+ * reported by the pack health block instead of stopping the run.
+ */
+async function leaveOutUnconfigured(
+  specs: readonly string[],
+  language: Language,
+  projectRoot: string,
+): Promise<{ configured: string[]; needs: PackConfigNeed[] }> {
+  const configured: string[] = [];
+  const needs: PackConfigNeed[] = [];
+  for (const spec of specs) {
+    const loaded = await loadPackFactory(spec, projectRoot);
+    assertPackLanguage(loaded.name, language);
+    if (loaded.unmetConfig === null) {
+      configured.push(spec);
+      continue;
+    }
+    needs.push(loaded.unmetConfig);
+  }
+  return { configured, needs };
 }
 
 function assertPackLanguage(name: string, language: Language): void {
@@ -888,6 +946,8 @@ interface LanguageRun {
    * missing funnel does not mean the result came from the cache.
    */
   explicitFiles: boolean;
+  /** Packs the run asked for and left out, because an option they need was not given. */
+  packsNeedingConfig: PackConfigNeed[];
 }
 
 /** What the adapter's callbacks reported during the current run. */
@@ -949,8 +1009,13 @@ async function runTypeScript(
   const runRoot = workspaceRootFor(source.root);
   const stubOverlay = stubOverlayOf(loadStubs(runRoot));
   const testFiles = testFilesFor(options);
+  const { configured, needs } = await leaveOutUnconfigured(
+    options.frameworks,
+    "typescript",
+    runRoot,
+  );
   const packs = await Promise.all(
-    options.frameworks.map((one) =>
+    configured.map((one) =>
       resolveFramework(one, stubOverlay, runRoot, testFiles),
     ),
   );
@@ -1032,14 +1097,20 @@ async function runTypeScript(
         (p) => p.discovery.length === 0 && p.discoverUnits === undefined,
       ),
     explicitFiles,
+    packsNeedingConfig: needs,
   };
 }
 
 async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
   const testFiles = testFilesFor(runOptions.options);
+  const { configured, needs } = await leaveOutUnconfigured(
+    runOptions.options.frameworks,
+    "python",
+    runOptions.root,
+  );
   const packs = await Promise.all(
-    runOptions.options.frameworks.map((one) =>
+    configured.map((one) =>
       resolvePythonPack(one, stubOverlay, runOptions.root, testFiles),
     ),
   );
@@ -1095,6 +1166,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     timingReport,
     extractionReport,
     cacheDiagnostic,
+    needs,
   );
 }
 
@@ -1118,8 +1190,13 @@ export function formatUnreadManifests(
 async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
   const testFiles = testFilesFor(runOptions.options);
+  const { configured, needs } = await leaveOutUnconfigured(
+    runOptions.options.frameworks,
+    "ruby",
+    runOptions.root,
+  );
   const packs = await Promise.all(
-    runOptions.options.frameworks.map((one) =>
+    configured.map((one) =>
       resolveRubyPack(one, stubOverlay, runOptions.root, testFiles),
     ),
   );
@@ -1170,6 +1247,7 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     timingReport,
     extractionReport,
     cacheDiagnostic,
+    needs,
   );
 }
 
@@ -1208,6 +1286,7 @@ function languageRun(
   timingReport: TimingReport | null,
   extractionReport: ExtractionReport | null,
   cacheDiagnostic: CacheDiagnostic | null,
+  packsNeedingConfig: PackConfigNeed[],
 ): LanguageRun {
   return {
     summaries,
@@ -1220,6 +1299,7 @@ function languageRun(
     // Python and Ruby build a report even with --files, so downstream
     // code has no reason to tell the two kinds of run apart.
     explicitFiles: false,
+    packsNeedingConfig,
   };
 }
 
@@ -1300,7 +1380,13 @@ export async function extract(
       ? await profileEvaluationAsync(runExtraction)
       : null;
   const run = profiled === null ? await runExtraction() : profiled.result;
-  const { summaries, timingReport, cacheDiagnostic, extractionReport } = run;
+  const {
+    summaries,
+    timingReport,
+    cacheDiagnostic,
+    extractionReport,
+    packsNeedingConfig,
+  } = run;
 
   const projectRoot = run.root;
   const ownHosts = projectHosts(projectRoot);
@@ -1318,6 +1404,7 @@ export async function extract(
       projectRoot,
       report: extractionReport,
       missingSubmodules,
+      packsNeedingConfig,
     });
     process.stderr.write(
       summaries.length === 0
@@ -1348,7 +1435,10 @@ export async function extract(
 
   if (extractionReport !== null) {
     const report = extractionReport as ExtractionReport;
-    if (options.explain === true || report.summaries === 0) {
+    // With every pack left out, a funnel of zeroes would blame the code
+    // for what the missing option caused, and the health block says it.
+    const nothingRead = packsNeedingConfig.length === options.frameworks.length;
+    if (options.explain === true || (report.summaries === 0 && !nothingRead)) {
       process.stderr.write(
         formatExtractionReport(
           report,
@@ -1357,15 +1447,6 @@ export async function extract(
       );
     }
 
-    // Problems the user can fix always print. Problems only a pack's
-    // author can fix print with `--explain`.
-    process.stderr.write(
-      formatPackHealth(
-        evaluatePackHealth(report),
-        options.explain === true ? ["run", "pack"] : ["run"],
-      ),
-    );
-
     const threw = report.packs.filter((p) => p.failures.length > 0);
     if (options.failOnPackError === true && threw.length > 0) {
       process.stderr.write(
@@ -1373,6 +1454,27 @@ export async function extract(
       );
       process.exitCode = 1;
     }
+  }
+
+  // Problems the user can fix always print. Problems only a pack's
+  // author can fix print with `--explain`.
+  process.stderr.write(
+    formatPackHealth(
+      [
+        ...(extractionReport === null
+          ? []
+          : evaluatePackHealth(extractionReport)),
+        packConfigCheck(packsNeedingConfig),
+      ],
+      options.explain === true ? ["run", "pack"] : ["run"],
+    ),
+  );
+
+  if (options.failOnPackError === true && packsNeedingConfig.length > 0) {
+    process.stderr.write(
+      `Failing because ${listOf(packsNeedingConfig.map((need) => need.pack))} could not read without an option (--fail-on-pack-error).\n`,
+    );
+    process.exitCode = 1;
   }
 
   if (extractionReport === null && summaries.length === 0) {
@@ -1443,10 +1545,15 @@ async function writeIncompleteness(args: {
   projectRoot: string;
   report: ExtractionReport | null;
   missingSubmodules: readonly string[];
+  packsNeedingConfig: readonly PackConfigNeed[];
 }): Promise<void> {
   const notePath = incompletenessPathFor(args.outPath);
   const unreadable = args.report?.filesWithUnreadableExports ?? [];
-  if (unreadable.length === 0 && args.missingSubmodules.length === 0) {
+  if (
+    unreadable.length === 0 &&
+    args.missingSubmodules.length === 0 &&
+    args.packsNeedingConfig.length === 0
+  ) {
     fs.rmSync(notePath, { force: true });
     return;
   }
@@ -1463,6 +1570,9 @@ async function writeIncompleteness(args: {
         : {}),
       ...(args.missingSubmodules.length > 0
         ? { submodulesNotCheckedOut: [...args.missingSubmodules] }
+        : {}),
+      ...(args.packsNeedingConfig.length > 0
+        ? { packsNeedingConfig: [...args.packsNeedingConfig] }
         : {}),
     },
     indent: 2,

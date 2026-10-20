@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   evaluatePackHealth,
   formatPackHealth,
+  packConfigCheck,
   packGradients,
 } from "./packHealth.js";
 
@@ -440,5 +441,30 @@ describe("the no-files check", () => {
 
   it("stays quiet for an ungated pack, which is handed every file anyway", () => {
     expect(noFiles([funnel({ candidateFiles: 0, gates: [] })])).toEqual([]);
+  });
+});
+
+describe("the pack config check", () => {
+  it("prints one line naming the pack, the option and an example", () => {
+    const text = formatPackHealth(
+      [
+        packConfigCheck([
+          {
+            pack: "graphql-ruby",
+            option: "root",
+            example: '{"root":"app/graphql"}',
+          },
+        ]),
+      ],
+      ["run"],
+    );
+
+    expect(text).toContain("no-config  graphql-ruby  reads nothing until root");
+    expect(text).toContain('{"root":"app/graphql"}');
+    expect(text).toContain("-f graphql-ruby=<config.json>");
+  });
+
+  it("prints nothing when no pack is missing its option", () => {
+    expect(formatPackHealth([packConfigCheck([])], ["run"])).toBe("");
   });
 });

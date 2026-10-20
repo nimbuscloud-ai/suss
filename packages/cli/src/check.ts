@@ -52,6 +52,7 @@ import type {
   SuppressionRule,
 } from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
+import type { PackConfigNeed } from "@suss/extractor";
 
 /**
  * Each summary's confidence, keyed by `summaryRef`. The checker writes
@@ -238,6 +239,43 @@ export interface CheckedDirectory {
   result: CheckAllResult;
   suppressions: SuppressionRule[];
   confidence: ConfidenceLookup;
+  /** Packs an extract into this directory left out for want of an option. */
+  packsNeedingConfig: PackConfigNeed[];
+}
+
+/**
+ * The packs an extract's note says it left out, from every note in the
+ * directory. A note that does not parse is skipped, since the note's job
+ * is to warn and a bad one should not stop the check.
+ */
+function packsNeedingConfigIn(
+  dir: string,
+  notes: readonly string[],
+): PackConfigNeed[] {
+  return notes.flatMap((note) => {
+    try {
+      const parsed = JSON.parse(
+        fs.readFileSync(path.join(dir, note), "utf8"),
+      ) as { packsNeedingConfig?: PackConfigNeed[] };
+      return parsed.packsNeedingConfig ?? [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * A `packNeedsConfig` finding for each pack an extract left out. It is a
+ * warning, because the run that follows fails on its own account when the
+ * missing pack left nothing to compare.
+ */
+function packConfigFindings(needs: readonly PackConfigNeed[]): RunFinding[] {
+  return needs.map((need) => ({
+    kind: "packNeedsConfig",
+    severity: "warning",
+    description: `The ${need.pack} pack reads nothing until ${need.option} is set, for example ${need.example}, so its boundaries are missing from these summaries.`,
+    remedy: `Write that to a JSON file, pass it as -f ${need.pack}=<config.json> to the extract, and run the check again.`,
+  }));
 }
 
 /**
@@ -272,7 +310,8 @@ export function checkDirectory(options: {
   // Extract writes this note beside its output when it could not read
   // every export. Agreement over those summaries covers only part of the
   // code, so the user has to hear about it.
-  for (const note of entries.filter((f) => f.endsWith(".incomplete.json"))) {
+  const notes = entries.filter((f) => f.endsWith(".incomplete.json"));
+  for (const note of notes) {
     process.stderr.write(
       `${note} says the extract that wrote these summaries was incomplete, so agreement here covers only what it could read. Fix what the note lists, re-extract, and it disappears.\n`,
     );
@@ -311,6 +350,7 @@ export function checkDirectory(options: {
     },
     suppressions,
     confidence: buildConfidenceLookup(summaries),
+    packsNeedingConfig: packsNeedingConfigIn(resolved, notes),
   };
 }
 
@@ -451,6 +491,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     result,
     suppressions,
     confidence,
+    packsNeedingConfig,
   } = checkDirectory(options);
 
   const since =
@@ -483,6 +524,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
       allSummaries,
       result,
     ),
+    ...packConfigFindings(packsNeedingConfig),
     ...unreadableFindings(options.failOnUnreadable === true, skipped),
     ...unpairedFindings(options.failOnUnpaired, result),
   ];
@@ -523,7 +565,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     hasErrors:
       meetsThreshold(reported, failOn) ||
       intentMeetsThreshold(intent?.findings ?? [], failOn) ||
-      run.length > 0,
+      run.some((finding) => finding.severity === "error"),
     result,
     collisions,
   };
