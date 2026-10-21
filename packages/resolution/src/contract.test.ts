@@ -33,6 +33,25 @@ function conformingFacts(): Database {
   db.add("extendsNamed", ["class:2", "Loader"]);
   db.add("binds", ["f#job", "call:1"]);
   db.add("storesProperty", ["f#job", "retries", "lit:3", "name"]);
+  db.add("objectValue", ["table:1"]);
+  db.add("holdsProperty", ["table:1", "created", "f#on_created"]);
+  db.add("holdsProperty", ["table:1", "deleted", "f#on_deleted"]);
+  db.add("binds", ["f#TABLE", "table:1"]);
+  db.add("choosesEntry", ["read:1", "f#TABLE"]);
+  db.add("objectValue", ["registry:1"]);
+  db.add("binds", ["f#REGISTRY", "registry:1"]);
+  db.add("paramOf", ["fn:register", "1", "fn:register#handler"]);
+  db.add("holdsUnderKey", ["f#REGISTRY", "fn:register#handler"]);
+  return db;
+}
+
+/** The same facts less the two tables, for a case that counts every object or entry. */
+function withoutTables(db: Database): Database {
+  db.retract("objectValue", [["table:1"], ["registry:1"]]);
+  db.retract("holdsProperty", [
+    ["table:1", "created", "f#on_created"],
+    ["table:1", "deleted", "f#on_deleted"],
+  ]);
   return db;
 }
 
@@ -45,6 +64,38 @@ const everyCase = Object.fromEntries(
 describe("the fact contract", () => {
   it("passes an adapter that keys everything the way the rules expect", async () => {
     expect(await checkFactContract(everyCase, conformingFacts)).toEqual([]);
+  });
+
+  it("catches a table entry written with its quotes, and a read at a computed key with no choice of entry", async () => {
+    const quoted = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("holdsProperty", [["table:1", "created", "f#on_created"]]);
+      db.add("holdsProperty", ["table:1", '"created"', "f#on_created"]);
+      return db;
+    });
+    expect(quoted.map((f) => f.problem).join(" ")).toContain(
+      "written without quotes",
+    );
+
+    const unread = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("choosesEntry", [["read:1", "f#TABLE"]]);
+      return db;
+    });
+    expect(unread.map((f) => f.problem).join(" ")).toContain(
+      "not written down as choosesEntry",
+    );
+  });
+
+  it("catches a write into a table that is not keyed to it", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("binds", [["f#REGISTRY", "registry:1"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain(
+      "a function written into a table under a computed key",
+    );
   });
 
   it("catches two parameters sharing a key", async () => {
@@ -61,7 +112,7 @@ describe("the fact contract", () => {
 
   it("catches a class that is not an object value", async () => {
     const failures = await checkFactContract(everyCase, () => {
-      const db = conformingFacts();
+      const db = withoutTables(conformingFacts());
       db.retract("objectValue", [["class:1"], ["class:2"], ["list:1"]]);
       return db;
     });
@@ -402,7 +453,7 @@ describe("the fact contract", () => {
 
   it("says a sequence keeps no elements when it is an object with none", async () => {
     const failures = await checkFactContract(everyCase, () => {
-      const db = conformingFacts();
+      const db = withoutTables(conformingFacts());
       db.retract("holdsProperty", [
         ["list:1", "0", "f#first"],
         ["list:1", "1", "f#second"],

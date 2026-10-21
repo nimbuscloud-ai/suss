@@ -48,11 +48,28 @@ holdsUnderKey(o, x)         o is given x under a key the source computes,
                             comprehension, or Ruby's apps << x. A spread
                             of x into o, a JSX element given x as a prop
                             or a child, and Ruby's foo(&x) are stated
-                            this way too. Only passedOn reads it
+                            this way too, and so is a TypeScript map's
+                            set(k, x). passedOn reads it, and a table
+                            read finds x as one of the entries
 readsEntry(site, o, n)      site reads the entry of o under the key n,
                             which the source writes out, as
-                            params[:id]. Only the source walk reads it
-                            (Python, Ruby)
+                            params[:id]. The source walk reads it, and
+                            so does a call that takes its function from
+                            a table (Python, Ruby)
+choosesEntry(site, o)       site reads one entry of o, or one of its
+                            members, by a key the program works out at
+                            run time: o[k], a map's get(k), Python's
+                            getattr(o, k), or Ruby's send(k). Any entry
+                            can be the one
+choosesNamedEntry(site, o, n)  the same read, where the source says the
+                            key is n or another name the site has a row
+                            for: a key typed as a union of literals
+                            (TypeScript), or a name written out in send
+                            or getattr (Python, Ruby). An adapter states
+                            this in place of choosesEntry
+collectionValue(c)          c builds a collection the program fills
+                            through its methods, as new Map() does
+                            (TypeScript)
 converts(r, a, n)           the call r converts a to another type with
                             the language's own n, as Number(x), int(x)
                             or x.to_i. Only the source walk reads it
@@ -150,6 +167,8 @@ callKeywordArg(r, n, a)     r passes a under the keyword n
 callArgCount(r, k)          r is written with k arguments, keyword ones
                             and a splat included (Python)
 callOutsideMethod(r)        the call r is outside every method body
+callsChosenEntry(r)         the call r runs the member its own entry read
+                            chooses, as Ruby's send(k) does (Ruby)
 bodyCalls(f, c)             f's body calls the callee c, keyed the way
                             call keys that call's callee
 makesCall(f, r)             the call r is written in f's own body
@@ -1171,6 +1190,76 @@ function computing `failed` is not one of them.
 The question starts from a parameter on purpose. Everything the walk
 passes after that is a return or a call, and the seed is a handful of
 values in the few files that write the exit code.
+
+A call that takes its function out of a table runs one of the table's
+functions, and the walk follows it through `dispatchesTo`, described
+next. `reaches` takes no step through such a call, so the question
+starts again from what each of those functions returns: `exitStart`
+gets a row for each return, and `exitReached` runs `reaches` from it.
+A command that hands its code on to another function is followed the
+same way it would be if `dispatch` called it by name.
+
+## A call that takes its function from a table
+
+```ts
+const COMMANDS: Record<string, (args: string[]) => Promise<number>> = {
+  init: runInit,
+  check: runCheck,
+};
+
+const run = COMMANDS[command];
+return await withCacheDir(cacheDir, () => run(rest));
+```
+
+The call `run(rest)` runs `runInit` or `runCheck`, and the source does
+not say which. Python writes the same thing as a dict of functions or
+`getattr(self, kind)()`, and Ruby as a hash of lambdas or `send(kind)`.
+`dispatchesTo(r, f)` lists every function the call `r` may run.
+
+The adapter states the read the call takes its function from. A read
+whose key nothing narrows is `choosesEntry(site, o)`, and it can come
+back with any entry of `o`. A read whose key the source narrows is
+`choosesNamedEntry(site, o, n)`, one row per name: a TypeScript key
+typed as `"init" | "check"`, or a symbol written out in Ruby's
+`send(:init)`. Python's and Ruby's `readsEntry`, a key written out in
+the source, narrows a read the same way. A rule cannot say "any entry,
+unless the key is narrowed", since the demand rewrite refuses negation,
+so the adapter states one fact or the other and never both.
+
+`entryAt(site, held)` is what the read can come back with: an entry
+under a name the read allows, or a value written into the container
+under a key the program computes. That second kind is a registry. A
+`register(name, handler)` function that does `REGISTRY[name] = handler`
+is stated as `holdsUnderKey(REGISTRY, handler)`, and the argument step
+takes `handler` to every function the callers of `register` pass. The
+same goes for a map filled through `set`, which the TypeScript adapter
+states as `collectionValue` for the `new Map()` and `holdsUnderKey` for
+each `set`. A write under a computed key could be under any name, so a
+read narrowed to one name still finds it.
+
+The functions are kept out of `stepsTo`. A step there would make every
+entry of a table the value of `T[k]`, and every value question would
+then read a table lookup as all of its entries at once: a status read
+out of a table would be every status in it. So `dispatchesTo` is its
+own relation, and only the questions about calls read it: the exit code
+above, and `wantedDispatch`, which a walk asks about a call it could not
+follow.
+
+Whether the call runs exactly one function is a count, which a rule
+cannot make. `dispatchOutcomes` makes it: the call runs one function
+when every read it goes through is narrowed to the same single name,
+the entry there is one function, and no write under a computed key
+could be the one instead. Every other call may run any of the functions
+listed. A walk records those as `possibleSummaries` on the call's
+effect, beside the `summary` a call it can follow gets, so a reader can
+tell "calls" from "may call". A check that needs certainty, such as
+whether a test covers a scenario, counts only the calls with a
+`summary`, and lists a test that reaches its subject only through a
+possible call as unchecked.
+
+An entry that is a lambda has no summary. `wantedDispatchThrough`
+lists what each function the call may run calls in its own body, so an
+adapter can step past a lambda to the functions it calls.
 
 ## Where a value came from
 

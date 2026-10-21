@@ -218,6 +218,36 @@ describe("a scenario covered by a test", () => {
     expect(finding.message).toContain("which never reaches cancelOrder");
   });
 
+  it("reports a test as unchecked when it reaches the subject only through a call that picks one function of several", () => {
+    const dispatch = fn("dispatch", "src/dispatch.ts", 1, [
+      {
+        ...calls("HANDLERS[kind]"),
+        possibleSummaries: [
+          cancelOrder.identity.id ?? "",
+          refund.identity.id ?? "",
+        ],
+      } as Effect,
+    ]);
+    const code = [
+      cancelOrder,
+      refund,
+      dispatch,
+      testUnit("cancels", [calls("dispatch", dispatch)]),
+    ];
+    const result = check([covered("cancel", "cancels")], code);
+
+    expect(result.findings).toEqual([]);
+    expect(result.unchecked).toEqual([
+      expect.objectContaining({ reason: "possibleCall" }),
+    ]);
+    expect(result.unchecked[0]?.detail).toContain(
+      "it reaches cancelOrder only through HANDLERS[kind], which picks one of several functions at run time",
+    );
+    expect(result.checked).toContainEqual(
+      expect.objectContaining({ covered: 0 }),
+    );
+  });
+
   it("reports a test as unchecked when it calls something with the subject's name that suss could not follow", () => {
     const code = [cancelOrder, testUnit("cancels", [calls("cancelOrder")])];
     const result = check([covered("cancel", "cancels")], code);

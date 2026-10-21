@@ -654,6 +654,8 @@ const HOP_LINE: Record<CallRecord, (hop: WhyHop) => string> = {
     `${hop.from.identity.name} (${locationClause(hop.from)}) passes ${hop.to?.identity.name} to ${hop.callee}:`,
   wraps: (hop) =>
     `${hop.callee} (${hop.to === null ? "" : locationClause(hop.to)}) is registered around ${hop.from.identity.name} (${locationClause(hop.from)}), so it runs on the way in:`,
+  possible: (hop) =>
+    `${hop.from.identity.name} (${locationClause(hop.from)}) calls ${hop.callee}, which picks a function at run time, and one it may run is ${hop.to?.identity.name} (${hop.to === null ? "" : locationClause(hop.to)}):`,
 };
 
 function hopLine(hop: WhyHop): string {

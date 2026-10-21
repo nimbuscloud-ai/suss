@@ -285,6 +285,56 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
+    name: "a table of functions called by a key worked out at run time",
+    requires:
+      "a module-level table written out with a function under the name created and another under deleted, and a function that calls the table's entry under its parameter, `TABLE[kind](payload)` or the language's own spelling",
+    // The rules take the entries off the object the read's container
+    // leads to, so the container has to be keyed the way `binds` keys it,
+    // and each entry under the name the source writes, without quotes.
+    check: (facts) => {
+      const entries = facts("holdsProperty");
+      const tables = new Set(
+        entries
+          .filter((row) => row[1] === "created")
+          .map((row) => row[0] ?? "")
+          .filter((table) =>
+            entries.some((row) => row[0] === table && row[1] === "deleted"),
+          ),
+      );
+      if (tables.size === 0) {
+        return "no object contains a function under created and another under deleted, written without quotes";
+      }
+      const reads = facts("choosesEntry");
+      if (reads.length === 0) {
+        return "the read at a key worked out at run time is not written down as choosesEntry, so no call through it finds the table's functions";
+      }
+      return reads.some((row) => leadsToOneOf(facts, row[1] ?? "", tables))
+        ? null
+        : "the read's container is keyed so that nothing leads from it to the table";
+    },
+  },
+  {
+    name: "a function written into a table under a computed key",
+    requires:
+      "a module-level empty table, and a function that writes its second parameter into it under its first, `REGISTRY[name] = handler` or the language's own spelling",
+    // A registry fills its table from a function its callers pass handlers
+    // to, so the write has to say the parameter went in, keyed so that
+    // `binds` leads from where it went to the table.
+    check: (facts) => {
+      const params = new Set(facts("paramOf").map((row) => row[2] ?? ""));
+      const writes = facts("holdsUnderKey").filter((row) =>
+        leadsToOneOf(facts, row[1] ?? "", params),
+      );
+      if (writes.length === 0) {
+        return "the write of a parameter into a table under a computed key is not written down as holdsUnderKey";
+      }
+      const objects = new Set(facts("objectValue").map((row) => row[0] ?? ""));
+      return writes.some((row) => leadsToOneOf(facts, row[0] ?? "", objects))
+        ? null
+        : "the write is keyed so that nothing leads from it to the table";
+    },
+  },
+  {
     name: "a value another file declares",
     requires:
       "two files, one declaring a value and the other reading it by name",
