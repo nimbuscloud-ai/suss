@@ -1,0 +1,8 @@
+{
+  "name": "node-runtime-fixture",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "report": "./src/cli.ts"
+  }
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "saas-starter",
+    "url": "https://github.com/nextjs/saas-starter.git",
+    "commit": "6e33e58b1e553a41fe22e6b941a7229a002de361",
+    "stack": "typescript",
+    "sides": "Next.js route handlers and server actions over Drizzle in app/ and lib/db, React client in app/ calling them with SWR and fetch"
+  },
+  {
+    "name": "saas",
+    "url": "https://github.com/async-labs/saas.git",
+    "commit": "4b27b6a0a4bb876562da6de93f0c0dd509fd5ffe",
+    "stack": "typescript",
+    "sides": "Express API over Mongoose models in saas/api, Next.js client in saas/app calling it through fetch wrappers in lib/api"
+  },
+  {
+    "name": "di-account-management-backend",
+    "url": "https://github.com/govuk-one-login/di-account-management-backend.git",
+    "commit": "541552e841aac5253c0ddcb15534f55245c0c3c3",
+    "stack": "typescript",
+    "sides": "SAM Lambda handlers in src/ fed by SQS queues and DynamoDB streams, writing to DynamoDB; no client in the repository"
+  }
+]
