@@ -16,7 +16,6 @@ import {
   parseRubyAhead,
 } from "@suss/adapter-ruby";
 import {
-  computeContentHash,
   createProjectWithoutTsconfig,
   createTypeScriptAdapter,
   findNearestTsconfig,
@@ -34,6 +33,7 @@ import {
   evaluatePackHealth,
   formatPackHealth,
   packConfigCheck,
+  processCodeHasher,
 } from "@suss/extractor";
 
 import { testFilesListedIn } from "./coveringTests.js";
@@ -148,18 +148,10 @@ function instantiatePack<T extends { version?: string }>(
   return { ...pack, version: stamp.join("+") };
 }
 
-const packCodeHashes = new Map<string, string>();
-
 /** Empty when the specifier resolves to no file, as when a host bundles the pack. */
 function packCodeHash(specifier: string): string {
-  const cached = packCodeHashes.get(specifier);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const hash = computeContentHash(resolvePackFile(specifier));
-  packCodeHashes.set(specifier, hash);
-  return hash;
+  const file = resolvePackFile(specifier);
+  return file === null ? "" : processCodeHasher.codeHash(file);
 }
 
 /**
@@ -167,11 +159,11 @@ function packCodeHash(specifier: string): string {
  * did. Do not fall back to `createRequire`, which can resolve to a
  * different build than the one the run loaded and hash that instead.
  */
-function resolvePackFile(specifier: string): string[] {
+function resolvePackFile(specifier: string): string | null {
   try {
-    return [fileURLToPath(import.meta.resolve(specifier))];
+    return fileURLToPath(import.meta.resolve(specifier));
   } catch {
-    return [];
+    return null;
   }
 }
 
