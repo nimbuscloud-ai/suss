@@ -431,7 +431,7 @@ function settleThroughDispatch(
     const answer = answers.get(one.node);
     return answer === undefined || one.outcome.kind !== "stopped"
       ? one
-      : { ...one, outcome: dispatchOutcome(answer, one.outcome.stop) };
+      : { ...one, outcome: dispatchOutcome(answer, one.outcome) };
   });
 }
 
@@ -460,15 +460,16 @@ function mayDispatch(one: FoundCall): boolean {
  */
 function dispatchOutcome(
   answer: DispatchedCall,
-  stopped: UnfollowedCall,
+  stopped: Extract<CallOutcome, { kind: "stopped" }>,
 ): CallOutcome {
+  const { callee } = stopped.stop;
   const candidates = answer.functions.flatMap((func) => {
-    const candidate = resolveDecl(func, entryNameOf(func) ?? stopped.callee);
+    const candidate = resolveDecl(func, entryNameOf(func) ?? callee);
     return candidate === null ? [] : [candidate];
   });
   const [only] = candidates;
   if (only === undefined) {
-    return { kind: "stopped", stop: stopped, declaration: null };
+    return stopped;
   }
   if (answer.certain && candidates.length === 1) {
     return { kind: "followed", candidate: only };
@@ -477,7 +478,7 @@ function dispatchOutcome(
     kind: "possible",
     candidates,
     ...(answer.unresolved > 0
-      ? { stop: { callee: stopped.callee, reason: "unsettledValue" as const } }
+      ? { stop: { callee, reason: "unsettledValue" as const } }
       : {}),
   };
 }
