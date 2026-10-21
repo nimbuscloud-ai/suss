@@ -163,12 +163,91 @@ describe("createCodeHasher", () => {
     expect(relativeFiles(root, "dist/index.js")).toEqual(["dist/index.js"]);
   });
 
+  it("leaves out a package that is missing or has no build for the import", () => {
+    const root = writeTree({
+      "dist/index.js": [
+        'import "@suss/absent";',
+        'import "@suss/single/sub";',
+        'import "@suss/required";',
+        'import "@suss/hidden/internal";',
+        'import "@suss/browser";',
+      ].join("\n"),
+      "node_modules/@suss/browser/package.json": manifest("@suss/browser", {
+        ".": [{ browser: "./dist/web.js" }],
+      }),
+      "node_modules/@suss/single/package.json": manifest(
+        "@suss/single",
+        "./dist/index.js",
+      ),
+      "node_modules/@suss/required/package.json": manifest("@suss/required", {
+        ".": { require: "./dist/index.cjs" },
+      }),
+      "node_modules/@suss/hidden/package.json": manifest("@suss/hidden", {
+        ".": "./dist/index.js",
+        "./internal": null,
+      }),
+    });
+
+    expect(relativeFiles(root, "dist/index.js")).toEqual(["dist/index.js"]);
+  });
+
+  it("reads main when a package has no exports, and takes list and nested targets", () => {
+    const root = writeTree({
+      "dist/index.js": [
+        'import "@suss/plain";',
+        'import "@suss/listed";',
+        'import "@suss/nested";',
+      ].join("\n"),
+      "node_modules/@suss/plain/package.json": JSON.stringify({
+        name: "@suss/plain",
+        main: "lib/main.js",
+      }),
+      "node_modules/@suss/plain/lib/main.js": "export {};",
+      "node_modules/@suss/listed/package.json": manifest("@suss/listed", {
+        ".": [{ browser: "./dist/web.js" }, "./dist/node.js"],
+      }),
+      "node_modules/@suss/listed/dist/node.js": "export {};",
+      "node_modules/@suss/nested/package.json": manifest("@suss/nested", {
+        ".": { node: { import: "./dist/node.js" } },
+      }),
+      "node_modules/@suss/nested/dist/node.js": "export {};",
+    });
+
+    expect(relativeFiles(root, "dist/index.js")).toEqual([
+      "dist/index.js",
+      "node_modules/@suss/plain/lib/main.js",
+      "node_modules/@suss/listed/dist/node.js",
+      "node_modules/@suss/nested/dist/node.js",
+    ]);
+  });
+
+  it("reads a file once when two imports reach it", () => {
+    const root = writeTree({
+      "dist/index.js": [
+        'import "./chunk-A.js";',
+        'import { b } from "./chunk-B.js";',
+        'export * from "./chunk-B.js";',
+      ].join("\n"),
+      "dist/chunk-A.js": 'import "./chunk-B.js";',
+      "dist/chunk-B.js": "export const b = 1;",
+    });
+
+    expect(relativeFiles(root, "dist/index.js")).toEqual([
+      "dist/index.js",
+      "dist/chunk-A.js",
+      "dist/chunk-B.js",
+    ]);
+  });
+
   it("answers empty when the entry cannot be read", () => {
     const hasher = createCodeHasher();
     const absent = path.join(os.tmpdir(), "suss-absent-entry.js");
+    const directory = path.join(writeTree({}), "index.js");
+    fs.mkdirSync(directory);
 
     expect(hasher.codeHash(absent)).toBe("");
     expect(hasher.codeFiles(absent)).toEqual([]);
+    expect(hasher.codeHash(directory)).toBe("");
   });
 
   it("keeps the first answer, since a process loads a module only once", () => {
