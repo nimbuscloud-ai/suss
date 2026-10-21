@@ -1,0 +1,4 @@
+{
+  "src/processSurface.ts": "recognizeElementAccess reads the numeric index of a process.argv access, not a value",
+  "src/envVars.ts": "bracketRead, bindingRead, destructuredReads, and forwardedParameter, which takes the declaration behind a symbol the facility already resolved"
+}
