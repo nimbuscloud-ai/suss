@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { CACHE_DIR_ENV } from "@suss/extractor";
 
-import { takeCacheDirFlag, withCacheDir } from "./cacheDirFlag.js";
+import { takeCacheDirFlag } from "./cacheDirFlag.js";
+import { runCli } from "./run.js";
 import { UsageError } from "./usageError.js";
 
 describe("takeCacheDirFlag", () => {
@@ -34,41 +35,21 @@ describe("takeCacheDirFlag", () => {
   });
 });
 
-describe("withCacheDir", () => {
-  it("sets the variable for the run and puts it back after", async () => {
-    process.env[CACHE_DIR_ENV] = "/from/env";
-
-    const seen = await withCacheDir(
-      "/from/flag",
-      async () => process.env[CACHE_DIR_ENV],
-    );
-
-    expect(seen).toBe("/from/flag");
-    expect(process.env[CACHE_DIR_ENV]).toBe("/from/env");
-    delete process.env[CACHE_DIR_ENV];
-  });
-
-  it("leaves the variable alone when there is no flag", async () => {
-    process.env[CACHE_DIR_ENV] = "/from/env";
-
-    const seen = await withCacheDir(
-      undefined,
-      async () => process.env[CACHE_DIR_ENV],
-    );
-
-    expect(seen).toBe("/from/env");
-    delete process.env[CACHE_DIR_ENV];
-  });
-
-  it("removes the variable it set, even when the run throws", async () => {
+describe("a command line with --cache-dir", () => {
+  it("does not leave the variable set for the next command line", async () => {
     delete process.env[CACHE_DIR_ENV];
 
-    await expect(
-      withCacheDir("/from/flag", async () => {
-        throw new Error("boom");
-      }),
-    ).rejects.toThrow("boom");
+    await runCli(["ask", "--cache-dir", "/from/flag"]);
 
     expect(process.env[CACHE_DIR_ENV]).toBeUndefined();
+  });
+
+  it("puts back a value that was already set", async () => {
+    process.env[CACHE_DIR_ENV] = "/from/env";
+
+    await runCli(["ask", "--cache-dir", "/from/flag"]);
+
+    expect(process.env[CACHE_DIR_ENV]).toBe("/from/env");
+    delete process.env[CACHE_DIR_ENV];
   });
 });

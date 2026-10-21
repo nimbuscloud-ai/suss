@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 7211,
-      "covered": 6823,
+      "total": 7224,
+      "covered": 6837,
       "skipped": 0,
-      "pct": 94.61
+      "pct": 94.64
     },
     "statements": {
-      "total": 7431,
-      "covered": 7039,
+      "total": 7443,
+      "covered": 7052,
       "skipped": 0,
-      "pct": 94.72
+      "pct": 94.74
     },
     "functions": {
-      "total": 1868,
-      "covered": 1783,
+      "total": 1866,
+      "covered": 1782,
       "skipped": 0,
-      "pct": 95.44
+      "pct": 95.49
     },
     "branches": {
-      "total": 5184,
-      "covered": 4422,
+      "total": 5200,
+      "covered": 4438,
       "skipped": 0,
-      "pct": 85.3
+      "pct": 85.34
     },
     "branchesTrue": {
       "total": 0,
@@ -215,26 +215,26 @@
   },
   "src/cacheDirFlag.ts": {
     "lines": {
-      "total": 30,
-      "covered": 29,
+      "total": 25,
+      "covered": 25,
       "skipped": 0,
-      "pct": 96.66
+      "pct": 100
     },
     "functions": {
       "total": 3,
-      "covered": 2,
+      "covered": 3,
       "skipped": 0,
-      "pct": 66.66
+      "pct": 100
     },
     "statements": {
-      "total": 31,
-      "covered": 30,
+      "total": 26,
+      "covered": 26,
       "skipped": 0,
-      "pct": 96.77
+      "pct": 100
     },
     "branches": {
-      "total": 14,
-      "covered": 14,
+      "total": 12,
+      "covered": 12,
       "skipped": 0,
       "pct": 100
     }
@@ -1411,28 +1411,28 @@
   },
   "src/run.ts": {
     "lines": {
-      "total": 326,
-      "covered": 320,
+      "total": 344,
+      "covered": 338,
       "skipped": 0,
-      "pct": 98.15
+      "pct": 98.25
     },
     "functions": {
-      "total": 44,
-      "covered": 44,
+      "total": 42,
+      "covered": 42,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 331,
-      "covered": 325,
+      "total": 348,
+      "covered": 342,
       "skipped": 0,
-      "pct": 98.18
+      "pct": 98.27
     },
     "branches": {
-      "total": 435,
-      "covered": 389,
+      "total": 453,
+      "covered": 407,
       "skipped": 0,
-      "pct": 89.42
+      "pct": 89.84
     }
   },
   "src/sentenceList.ts": {

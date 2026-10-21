@@ -19,9 +19,11 @@ import { parseArgs } from "node:util";
 
 import { ask, preloadForQuestion } from "./ask.js";
 import {
+  CACHE_DIR_ENV,
   COMMANDS_WITH_CACHE_DIR,
+  restoreCacheDir,
+  setCacheDir,
   takeCacheDirFlag,
-  withCacheDir,
 } from "./cacheDirFlag.js";
 import { check, checkDir } from "./check.js";
 import { checkAt } from "./checkAt.js";
@@ -356,6 +358,9 @@ SUSS_NO_UPDATE_NOTICE turns it off everywhere.
  * calls process.exit, so a test can call it in process.
  */
 export async function runCli(args: string[]): Promise<number> {
+  // A test runs several command lines in one process, and a --cache-dir
+  // from one must not carry into the next.
+  const cacheDirBefore = process.env[CACHE_DIR_ENV];
   try {
     const code = await dispatch(args);
     await printUpdateNoticeIfBehind();
@@ -374,6 +379,8 @@ export async function runCli(args: string[]): Promise<number> {
 
     process.stderr.write(`${sentence}\n`);
     return 1;
+  } finally {
+    restoreCacheDir(cacheDirBefore);
   }
 }
 
@@ -409,35 +416,49 @@ async function dispatch(args: string[]): Promise<number> {
     return 0;
   }
 
-  const command = args[0] as string;
-  const run = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
-  if (run === undefined) {
-    process.stderr.write(
-      `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, infer, and intent.\n`,
-    );
-    process.stderr.write(`${USAGE}\n`);
-    return 1;
+  const command = args[0];
+  let rest = args.slice(1);
+  if (command !== undefined && COMMANDS_WITH_CACHE_DIR.has(command)) {
+    const taken = takeCacheDirFlag(rest);
+    rest = taken.args;
+    if (taken.cacheDir !== undefined) {
+      setCacheDir(taken.cacheDir);
+    }
   }
 
-  if (!COMMANDS_WITH_CACHE_DIR.has(command)) {
-    return await run(args.slice(1));
+  if (command === "init") {
+    return await runInit(rest);
   }
-
-  const { args: rest, cacheDir } = takeCacheDirFlag(args.slice(1));
-  return await withCacheDir(cacheDir, () => run(rest));
+  if (command === "extract") {
+    return await runExtract(rest);
+  }
+  if (command === "inspect") {
+    return await runInspect(rest);
+  }
+  if (command === "check") {
+    return await runCheck(rest);
+  }
+  if (command === "ask") {
+    return await runAsk(rest);
+  }
+  if (command === "contract") {
+    return await runContract(rest);
+  }
+  if (command === "corroborate") {
+    return await runCorroborate(rest);
+  }
+  if (command === "infer") {
+    return await runInfer(rest);
+  }
+  if (command === "intent") {
+    return runIntent(rest);
+  }
+  process.stderr.write(
+    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, infer, and intent.\n`,
+  );
+  process.stderr.write(`${USAGE}\n`);
+  return 1;
 }
-
-const COMMANDS: Record<string, (args: string[]) => Promise<number>> = {
-  init: runInit,
-  extract: runExtract,
-  inspect: runInspect,
-  check: runCheck,
-  ask: runAsk,
-  contract: runContract,
-  corroborate: runCorroborate,
-  infer: runInfer,
-  intent: async (args) => runIntent(args),
-};
 
 /** Where `--` ends the flags, or the end of the arguments. */
 function endOfFlags(args: string[]): number {

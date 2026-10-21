@@ -2,7 +2,7 @@
  * The `--cache-dir <path>` flag, for the commands that extract.
  *
  * Every adapter reads `SUSS_CACHE_DIR` to decide where its cache goes, so
- * the flag works by setting that variable for the length of the command.
+ * the flag works by setting that variable before the command runs.
  * It is taken out of the arguments before the command parses them, which
  * keeps it out of five separate option tables.
  */
@@ -58,33 +58,18 @@ export function takeCacheDirFlag(args: readonly string[]): {
   return { args: kept, cacheDir };
 }
 
-/** For a long-running process, such as the MCP server, to set it once. */
+export { CACHE_DIR_ENV };
+
+/** Sets the variable the adapters read. */
 export function setCacheDir(cacheDir: string): void {
   process.env[CACHE_DIR_ENV] = cacheDir;
 }
 
-/**
- * Runs `run` with `SUSS_CACHE_DIR` set to the flag's path, then puts the
- * variable back. Without the flag, a value already in the environment is
- * used as it is.
- */
-export async function withCacheDir<T>(
-  cacheDir: string | undefined,
-  run: () => Promise<T>,
-): Promise<T> {
-  if (cacheDir === undefined) {
-    return await run();
+/** Puts the variable back as it was before a command set it. */
+export function restoreCacheDir(before: string | undefined): void {
+  if (before === undefined) {
+    delete process.env[CACHE_DIR_ENV];
+    return;
   }
-
-  const before = process.env[CACHE_DIR_ENV];
-  process.env[CACHE_DIR_ENV] = cacheDir;
-  try {
-    return await run();
-  } finally {
-    if (before === undefined) {
-      delete process.env[CACHE_DIR_ENV];
-    } else {
-      process.env[CACHE_DIR_ENV] = before;
-    }
-  }
+  process.env[CACHE_DIR_ENV] = before;
 }
