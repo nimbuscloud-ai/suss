@@ -1,0 +1,11 @@
+# The stub as the teach-a-dependency guide writes it: a bare exported
+# function with the subject and payload positions. The SQS pack doesn't
+# read these keys yet, so it doesn't record a send from this stub.
+package: "@acme/ledger-native"
+authored: agent
+from: crate source at 1.4.2
+statements:
+  - kind: performs-call
+    export: publishEntry
+    system: aws.sqs
+    spec: { subject: { at: 0 }, payload: { at: 1 } }

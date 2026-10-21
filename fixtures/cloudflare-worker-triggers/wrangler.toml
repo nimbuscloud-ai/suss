@@ -1,0 +1,24 @@
+# The deployment for the Workers under src/. Invented fixture.
+
+name = "edge-triggers"
+main = "src/allTriggers.ts"
+compatibility_date = "2026-01-01"
+
+[vars]
+GREETING = "hello"
+GREETING_TABLE = "greetings"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "edge-sessions"
+
+[[r2_buckets]]
+binding = "ARCHIVE"
+bucket_name = "edge-archive"
+
+[[d1_databases]]
+binding = "LEDGER"
+database_name = "edge-ledger"
+
+[triggers]
+crons = ["0 * * * *"]

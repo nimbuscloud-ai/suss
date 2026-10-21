@@ -2,7 +2,7 @@
 
 This package runs a published suss release over public repositories the way a newcomer would, and records what each first run produced. The question behind it is how often does a first run on somebody else's code tell them something true and useful?
 
-`repos.json` lists the repositories. Each one keeps a server and the client that calls it in one repository, and each is pinned to a full commit so a rerun reads the same code.
+`repos.json` lists the repositories. Most keep a server and the client that calls it in one repository. saas-starter, saas and di-account-management-backend are there because they use Drizzle, Mongoose, and SQS with SAM, which no other entry does, and `npm run byte-check` reads them. Each repository is pinned to a full commit so a rerun reads the same code.
 
 ## Running it
 

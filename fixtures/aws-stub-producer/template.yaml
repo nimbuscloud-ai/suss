@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Handlers that send through the project's own wrappers, which suss can
+  only see through the stubs under suss/stubs. Invented fixture.
+
+Resources:
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  LedgerQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: ledger-queue
+
+  PlaceOrder:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/
+      Handler: handlers/placeOrder.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          ORDERS_QUEUE_URL: !Ref OrdersQueue
+      Events:
+        Place:
+          Type: Api
+          Properties:
+            Path: /orders
+            Method: post
+
+  AnnounceUser:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/
+      Handler: handlers/announceUser.handler
+      Runtime: nodejs20.x
+      Events:
+        Delete:
+          Type: Api
+          Properties:
+            Path: /users/{id}
+            Method: delete
+
+  RecordEntry:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/
+      Handler: handlers/recordEntry.handler
+      Runtime: nodejs20.x
+      Events:
+        Record:
+          Type: Api
+          Properties:
+            Path: /ledger
+            Method: post

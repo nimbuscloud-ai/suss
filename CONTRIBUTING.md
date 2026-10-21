@@ -41,6 +41,24 @@ Keep a pull request to a single intent. If you find yourself writing "and also" 
 
 `npm run bench` runs `suss extract` over the five public corpora under `dogfood-targets/` and reports wall clock, how much of that time was datalog, and the spread across repeats. `npm run bench -- --against <commit>` compares two builds, alternating between them so a busy stretch cannot fall entirely on one side. When the machine is busy it reports nothing at all, because load moves these numbers by more than most changes do. Five targets at three repeats takes about five minutes; `--subset` takes about a minute and a half over saleor-dashboard, saleor-storefront and directus/api. Nothing in CI enforces a time budget yet.
 
+## Proving a change writes the same summaries
+
+A change that should not alter what suss reports, such as a refactor or a pack moving onto `@suss/recognize`, has to write the same summaries as main, byte for byte. `npm run byte-check` checks that. It builds origin/main in a worktree of its own under the temp directory, or reuses the one it built last time. Then it extracts every input with that build and with this checkout's, both with `--no-cache`, and compares the two outputs. Each input gets a line with its summary count, each build's time and peak memory, and whether the outputs match. The run exits non-zero when any input differs or fails, and the summaries stay on disk for a diff.
+
+The inputs are listed in `scripts/byteCheckInputs.mjs`:
+
+- Every directory under `fixtures/`, with the packs its tests use. The script refuses to run while a fixture has no entry, so a new fixture needs one.
+- Five of suss's own packages: `@suss/cli`, `mcp`, `checker`, `datalog` and `behavioral-ir`. Both builds read them from main's checkout, so a package the branch edits does not differ by its own edit.
+- Three field apps: cal.com's `apps/web`, dispatch and mastodon. `--quick` leaves them out. `--extra all` adds four apps that each exercise one library: Drizzle in saas-starter, Mongoose in saas, SQS with SAM in di-account-management-backend, and DynamoDB in ToolJet's plugin.
+
+The field apps are read from the first-run clones in `~/.cache/suss-first-run/repos`, at the commits in `tools/first-run/repos.json`. saas-starter, saas and di-account-management-backend are listed in `tools/first-run/libraryRepos.json` instead, so the first-run scorecard keeps its 30 apps. ToolJet is already a scorecard app. `npx tsx tools/first-run/src/run.ts --work <dir> --cli <suss> --only <name>` makes a clone when `<dir>/repos` points at that folder; add `--repos tools/first-run/libraryRepos.json` for a library app. A first-run checks out the parent commit partway through, so the script reads a clone only while it is at its pinned commit, and reports it as not checked otherwise.
+
+Before you trust a result:
+
+- After a rebase, run `npm run build` here and pass `--fetch`, so main's build is the commit you rebased onto. Building one package alone is not enough: the CLI loads each pack from `@suss/packs`, so a pack edit needs the pack, then `packages/packs`, then `packages/cli` rebuilt.
+- Pass `--expect <text>` with an identifier only the branch's code has. The script refuses to start unless the branch's dist contains it and main's does not. A silent build failure once made a comparison read the branch against itself.
+- `node scripts/byteCheck.mjs --self` runs main's build against itself. A difference there means extraction is nondeterministic on that input, whatever the branch does.
+
 ## Landing a branch that has gone stale
 
 The nightly regenerate workflow refreshes the dogfood baseline, the coverage summaries and the badges on `main`. So a branch that passed its checks yesterday can conflict on those files today, even though nothing is wrong with it. `npm run land` rebases the branch and regenerates those files for you:

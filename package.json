@@ -48,6 +48,7 @@
     "bench": "node scripts/benchmark.mjs",
     "build": "turbo build",
     "bump": "node scripts/bumpVersion.mjs",
+    "byte-check": "node scripts/byteCheck.mjs",
     "changelog": "node scripts/changelog.mjs",
     "check:ask-shapes": "node scripts/checkAskShapes.mjs",
     "check:corpus": "node scripts/checkCorpusBaseline.mjs",

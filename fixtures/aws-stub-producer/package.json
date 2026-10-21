@@ -1,0 +1,8 @@
+{
+  "name": "aws-stub-producer",
+  "private": true,
+  "dependencies": {
+    "@acme/async": "1.4.2",
+    "@acme/ledger-native": "1.4.2"
+  }
+}
