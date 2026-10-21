@@ -237,7 +237,7 @@ Options (check):
   --no-suppressions  Report every finding, ignoring any .sussignore
 
 Options (ask):
-  The question is one of ten, in these words:
+  The question is one of eleven, in these words:
     what can I project from <boundary>   what the boundary declares
     what reads <boundary>                which units read it
     what writes <boundary>               which units write it
@@ -249,6 +249,10 @@ Options (ask):
                                          through the target, however
                                          many calls away
     what does <package or unit> provide  every boundary it provides
+    what else sends the data <unit> sends
+                                         the other paths that read or
+                                         send the same columns and
+                                         fields, and send data out
     why does <unit> reach <boundary>     the call chain that gets there,
                                          with each hop's resolution
     why does <name> at <file>:<line> resolve to <target>

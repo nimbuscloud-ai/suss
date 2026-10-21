@@ -653,5 +653,5 @@ is wrong the tree says which fact to doubt.
 - [Facts and rules](/theory/facts-and-rules) for the
   other rule sets over the same engine, the ones that answer
   whole-program questions about reachability and effects.
-- [`suss ask`](/reference/cli/ask) for all ten questions `suss ask`
+- [`suss ask`](/reference/cli/ask) for all eleven questions `suss ask`
   takes.

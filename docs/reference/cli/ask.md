@@ -1,11 +1,11 @@
 ---
 title: suss ask
-description: The ten questions suss answers about a codebase from summaries on disk, how each one is written, the flags, and the JSON it produces.
+description: The eleven questions suss answers about a codebase from summaries on disk, how each one is written, the flags, and the JSON it produces.
 ---
 
 # `suss ask`
 
-`suss ask` takes one question about a codebase and works out the answer from the summaries `suss extract` already wrote. You write the question in one of the ten forms below, naming a boundary or a unit, and you get one answer back.
+`suss ask` takes one question about a codebase and works out the answer from the summaries `suss extract` already wrote. You write the question in one of the eleven forms below, naming a boundary or a unit, and you get one answer back.
 
 ```
 suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directory>]
@@ -14,7 +14,7 @@ suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directo
 
 | Flag or argument | Default | What it does |
 |---|---|---|
-| `"<question>"` | none | One of the ten forms below. Run `suss ask` with no question to print the list and exit `0`. |
+| `"<question>"` | none | One of the eleven forms below. Run `suss ask` with no question to print the list and exit `0`. |
 | `--dir <path>` | none | The folder of summary files to read. |
 | `<summaries.json>` | none | One summary file, as a second positional argument after the question. |
 | `--project <path>` | the working directory | Where the source is, for a why question. A why question reads source as well as summaries, and reports it when the two do not line up. It loads the packs a bare `suss extract` of that directory would load, the ones `suss.json` lists or the ones `suss init` would pick, so a step only a pack declares, such as a finder giving back its model, is explained too. |
@@ -23,7 +23,7 @@ suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directo
 | `--json` | off | Write the answer as JSON instead of text. Unaffected by `--all`: it always lists every item. |
 | `-o`, `--output <path>` | stdout | Write the answer to a file. |
 
-## The ten questions
+## The eleven questions
 
 Each one is written in these words. You fill in the placeholders, and the other words have to match.
 
@@ -37,6 +37,7 @@ Each one is written in these words. You fill in the placeholders, and the other 
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads, writes or invokes each. |
 | `what reaches <target>` | Every boundary whose unit ends up going through the target, however many calls away, and the calls it took to get there. A unit appears only when it serves a boundary of its own, so you get routes, queues and package exports, and the functions in between are left out. The answer also counts the calls that didn't resolve to a unit, because a boundary that reaches the target through one of those is missing from the list. |
 | `what does <package or unit> provide` | Every boundary it provides, one per line, sorted by boundary key. A package is spelled by its name, `@suss/checker`, and the answer gathers its exports wherever they are in the run. Also written `what does <package> export`. |
+| `what else sends the data <unit> sends` | The other paths that read the same columns, or the same fields on the same side of a boundary, and send data out: a response, a render, a publish or a write. A CSV export that reads the column a route responds with is one. A path that reads the same table without naming its columns is listed as not checked, with the reason, rather than as a match. `suss inspect --diff` asks this for every unit a change moved. |
 | `why does <unit> reach <target>` | The shortest call chain from the unit to a boundary, a function or a package export, with each written hop's resolution proved from source. |
 | `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
 
@@ -49,6 +50,7 @@ suss ask 'what calls src/editions/dao.ts'
 suss ask 'what does src/editions/dao.ts reach'
 suss ask 'what reaches src/editions/dao.ts'
 suss ask 'what does @suss/checker provide'
+suss ask 'what else sends the data src/editions/show.ts sends'
 suss ask 'why does src/editions/dao.ts reach aws.dynamodb:editions'
 suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
 ```
@@ -115,7 +117,7 @@ s3:acme-archive is provided by main.tf::aws_s3_bucket.archive.
 }
 ```
 
-`shape` is which of the ten was asked: `declares`, `reads`, `writes`, `invokes`, `calls`, `reaches`, `reachedBy`, `provides`, `whyReaches` or `whyResolves`. `found` is false when the subject is not in these summaries at all. Each entry in `items` has the fields that shape reports, plus `provides` when the unit serves a boundary of its own. `needs` lists what this run would need in order to report more. `caveats` lists what could make the answer wrong, such as a unit suss could not fully read. A why answer adds the chain, the hops with their resolution steps, and what the re-evaluation cost.
+`shape` is which of the eleven was asked: `declares`, `reads`, `writes`, `invokes`, `calls`, `reaches`, `reachedBy`, `provides`, `sendsSame`, `whyReaches` or `whyResolves`. `found` is false when the subject is not in these summaries at all. Each entry in `items` has the fields that shape reports, plus `provides` when the unit serves a boundary of its own. `needs` lists what this run would need in order to report more. `caveats` lists what could make the answer wrong, such as a unit suss could not fully read. A why answer adds the chain, the hops with their resolution steps, and what the re-evaluation cost.
 
 A question suss does not recognize writes `{ question, answer: null, message }` instead.
 

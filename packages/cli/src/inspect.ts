@@ -53,6 +53,7 @@ import {
 import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
 import { readingPairs, wholeReadings } from "./readingPairs.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
+import { siblingExits, siblingJson, siblingSection } from "./siblingExits.js";
 import { firstLineOf, readSummaries } from "./summaryFile.js";
 import { UsageError } from "./usageError.js";
 import { differenceTexts } from "./valueDiff.js";
@@ -77,6 +78,7 @@ import type { Relation } from "@suss/ir-core";
 import type { Declaration, DeclarationChange } from "./declaredEnvironment.js";
 import type { EntrypointChange, ReachedEffect } from "./diffReach.js";
 import type { CausedLine, SharedCause } from "./sharedCause.js";
+import type { SiblingGroup } from "./siblingExits.js";
 
 // ---------------------------------------------------------------------------
 // Body shape rendering
@@ -2935,6 +2937,7 @@ function blocksWithLines(blocks: readonly BoundaryBlock[]): BoundaryBlock[] {
  */
 function renderReport(
   report: DiffReport,
+  siblings: readonly SiblingGroup[],
   changedFiles: ReadonlySet<string>,
   options: { budget: number | null; hops: number | "full" },
 ): string {
@@ -2972,6 +2975,11 @@ function renderReport(
     if (!fits([blockHeading(block), ...blockLines(block, options.hops), ""])) {
       left.boundaries += 1;
     }
+  }
+
+  const sharing = siblingSection(siblings);
+  if (sharing.length > 0) {
+    fits(sharing);
   }
 
   const modules = moduleLines(report.modules);
@@ -3104,13 +3112,17 @@ function diffedCause(cause: SharedCause): DiffedCause {
  * summary that did not change is left out, because listing every
  * unchanged boundary would bury the ones that did.
  */
-function writeDiffJson(report: DiffReport): void {
+function writeDiffJson(
+  report: DiffReport,
+  siblings: readonly SiblingGroup[],
+): void {
   const json = {
     version: 1,
     changed: report.moved.length,
     summaries: report.moved.map(diffedSummary),
     boundaries: blocksWithLines(report.blocks).map(diffedBoundary),
     causes: report.causes.map(diffedCause),
+    siblings: siblingJson(siblings),
     ...(hasModuleChanges(report.modules) ? { modules: report.modules } : {}),
   };
   process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
@@ -3121,9 +3133,10 @@ export function inspectDiff(options: DiffOptions): void {
     readingPairs(options.before, options.after),
   );
   const report = diffReport(pairForDiff(before, after), before, after);
+  const siblings = siblingExits(report.moved, before, after);
 
   if (options.json === true) {
-    writeDiffJson(report);
+    writeDiffJson(report, siblings);
     return;
   }
 
@@ -3138,7 +3151,7 @@ export function inspectDiff(options: DiffOptions): void {
 
   const changedFiles = new Set(options.changedFiles ?? []);
   process.stdout.write(
-    `${renderReport(report, changedFiles, {
+    `${renderReport(report, siblings, changedFiles, {
       budget: options.budget ?? null,
       hops: options.chain ?? CHAIN_HOPS,
     })}\n`,
