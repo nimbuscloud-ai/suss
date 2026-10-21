@@ -120,6 +120,26 @@ A deployable's environment gets a block of its own when its template and its cod
 
 `from` gives the template parameter or resource the value comes from, when the template sets it with a reference. A read in code states no deployable, so under a route or a file it prints as `reads runtime-config ACCOUNTS_REGION`.
 
+### Other paths that send the same data
+
+A change often edits one place some data leaves the system and misses another. When a route stops sending a field, the report lists the other paths that read the same column and send data out, and that did not change:
+
+```
+Other paths that send the same data and did not change
+
+~ serves GET /players/{id}/stats  src/players.ts::get
+  data it changed: postgresql:players.golden, golden sent to GET /players/{id}/stats
+    serves GET /players/export.csv  src/export.ts::get
+      shares postgresql:players.golden; responds 200
+  not checked
+    serves GET /admin/players  src/leaderboard.ts::get
+      reads every column of postgresql:players, so suss cannot tell which of them it uses
+```
+
+The data a unit changed is every field that came, went or changed type on its moved paths, together with every column it reads under one of those names. When only the conditions moved, it is what the path sends, and the columns it reads under a name it sends. Two paths share data only when both read the same column of the same store, or both use the same field on the same side of the same boundary. A path sends data out when it responds, renders, emits, publishes, or writes across a boundary that leaves the process, itself or through a function it calls. A unit the change moved is left out, and so are the units that call into it and the units it calls.
+
+A path that reads the same store without saying which columns, such as `SELECT *` or `Player.all`, is listed under `not checked` with the reason. suss can't tell whether it uses the column, so it is never listed as a match. A unit that came whole gets no section, since a new exit has nothing it could have missed. `suss ask 'what else sends the data <unit> sends'` makes the same lookup for one unit, with everything it reads or sends.
+
 ### Module lines
 
 When the project lists its modules in [`suss.json`](/reference/cli/extract#modules-of-one-application), the report adds a `Module lines` block for two kinds of change:
@@ -133,7 +153,7 @@ Module lines
 
 The first kind is a store whose writing modules changed. A module writes a store when any of its code writes it, directly or through the calls it makes, so a module that starts calling another module's function that writes a table starts writing that table too. The second kind is a call written in one module's code that lands on a function of another module that is not one of its public exports. A test's calls are left out. Neither is a finding, and neither changes the exit code.
 
-`--diff --json` writes `{ version, changed, summaries, boundaries, causes }`. `summaries` has an entry for each summary that moved, marked `added`, `removed` or `changed`, and a changed one has its added, removed and changed transitions written out in full.
+`--diff --json` writes `{ version, changed, summaries, boundaries, causes, siblings }`. `summaries` has an entry for each summary that moved, marked `added`, `removed` or `changed`, and a changed one has its added, removed and changed transitions written out in full.
 
 `boundaries` and `causes` contain what the printed report lists. The text and the JSON come from the same comparison of the two files, so they list the same boundaries and put the same lines under a wrapper. `boundaries` has one entry for each boundary block, `{ change, does, boundary, unit, file, outcomes, effects }`:
 
@@ -162,6 +182,8 @@ Each outcome is `{ change, outcome }`. When the text prints a changed outcome as
 Each effect is `{ change, effect, through }`. An effect at a boundary also has `relation` and `boundary`, and `detail` for the variable a config read takes. `through` lists every call between the boundary's unit and the unit that has the effect, and it is empty when the boundary's unit has the effect itself. The `outcome` and `effect` strings are the words the text prints, so a program should match on `relation` and `boundary` rather than parse them.
 
 `causes` has one entry per line printed under a `From <wrapper>` heading: `{ from, change, outcome, at, notAt, covered }`. `at` lists the boundaries that got the line, `notAt` the ones the wrapper runs on that did not, and `covered` how many it runs on. The line is left out of the `outcomes` of each boundary in `at`, and a boundary with nothing else left is left out of `boundaries`, as it is from the text.
+
+`siblings` has one entry per changed unit with something to say: `{ changed, basis, data, siblings, unchecked, notes }`. `changed` is the unit, as `{ unit, file, line, boundary, role, change }`. `basis` is `fields` when a field moved, `conditions` when only the conditions did, and `removed` for a unit that went whole. Each entry in `data` and in a sibling's `shares` is `{ kind, at, field }`, where `kind` is `column`, `sends` or `reads`. Each sibling is the unit with `shares` and `sends`, and each unchecked path is the unit with `reasons` and `sends`. `notes` lists what suss could not read on the changed unit's own paths. When `siblings` is empty and `notes` is not, suss could not look for siblings of that data.
 
 `modules` is there only when a module line moved: `{ writers, crossings: { gained, lost } }`. Each entry in `writers` is `{ store, before, after }`, with the writing modules on each side. Each crossing is `{ from, to, caller, callerFile, call, target, targetFile }`, where `call` is the call as the caller's source writes it.
 

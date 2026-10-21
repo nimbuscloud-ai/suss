@@ -72,7 +72,7 @@ file read, and nothing is extracted again.
 suss ask "what writes aws.dynamodb:orders" --dir .suss --json
 ```
 
-It takes ten questions, worded like this:
+It takes eleven questions, worded like this:
 
 - `what can I project from <boundary>`, also `what does <boundary> declare`
 - `what reads <boundary>`
@@ -82,6 +82,7 @@ It takes ten questions, worded like this:
 - `what does <unit> reach`
 - `what reaches <target>`
 - `what does <package or unit> provide`, also `what does <package> export`
+- `what else sends the data <unit> sends`
 - `why does <unit> reach <boundary>`
 - `why does <name> at <file>:<line> resolve to <target>`
 
@@ -107,7 +108,7 @@ saying so.
 
 Exit code 0 means the question parsed and its subject is in these
 summaries, even when the answer is empty. Exit code 1 means the
-question was not one of the ten, or nothing in these summaries is at
+question was not one of the eleven, or nothing in these summaries is at
 the boundary it named.
 
 ## Reading a finding
@@ -149,7 +150,7 @@ this file:
 npx @suss/mcp /path/to/project
 ```
 
-`suss_ask` takes the ten questions. `suss_check` compares both sides
+`suss_ask` takes the eleven questions. `suss_check` compares both sides
 of every boundary. `suss_boundaries` lists the boundaries.
 `suss_stub_draft` drafts a stub for a package suss cannot read into,
 from how the project calls it. `suss_intent_outcomes` lists the
@@ -173,6 +174,12 @@ file, and asking `what reads` or `what calls` before changing
 something other code depends on. Use `--json` and act on the findings
 in it. A failed check with nothing parseable behind it gives whoever
 has to fix it nothing to go on.
+
+Before changing how one path sends some data, such as hiding a field
+from a response, ask `what else sends the data <unit> sends`. A CSV
+export or an email that reads the same column still sends it, and
+`suss inspect --diff` lists those under "Other paths that send the same
+data and did not change".
 
 In Claude Code, the suss plugin does this after every edit. Before the
 first edit for a request, it has the agent write a change list, the

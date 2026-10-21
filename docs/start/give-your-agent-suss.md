@@ -123,7 +123,7 @@ every answer comes back empty, and `suss_status` explains why.
 ## The tools
 
 `suss_ask` takes one question about one boundary and works the answer out
-from the code as it is right now. The `question` has to be one of ten
+from the code as it is right now. The `question` has to be one of eleven
 forms, and an optional `limit` sets how many results come back before the
 rest are counted and left out. Your agent calls this one before it
 changes a route, a table or a function signature:
