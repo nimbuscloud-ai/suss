@@ -41,6 +41,8 @@ Either way, writing `suss.json` also writes the config file for each pack that t
 
 `suss.json` is what [`extract`](/reference/cli/extract) reads when it is given no `-f`, and what [`inspect`](/reference/cli/inspect), [`check`](/reference/cli/check) and the MCP server read when they are given nothing. Without the file, those commands pick the same packs `init` would have picked, and print their choice on stderr.
 
+Every path in `suss.json` starts from the folder the file is in. In a monorepo, each package gets its own read, with the package's folder as `dir` and its tsconfig as `project`, such as `"dir": "apps/web", "project": "apps/web/tsconfig.json"`. suss 0.34.0 left `dir` out and wrote each tsconfig path from inside its package. A command that reads a file like that gives each read the folder of the package `init` finds with the same packs, and says so on stderr. `suss init --write --overwrite` writes the folders into the file.
+
 ## Example
 
 ```bash
