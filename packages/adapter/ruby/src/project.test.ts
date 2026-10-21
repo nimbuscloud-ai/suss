@@ -940,7 +940,7 @@ describe("a controllerActions pattern's routing gaps", () => {
         "class OrdersController < ApplicationController",
         "  def index",
         "    public_send(:audit)",
-        "    load_orders(-> { 1 })",
+        "    load_orders(@finder)",
         "  end",
         "",
         "  private",

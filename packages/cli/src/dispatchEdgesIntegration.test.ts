@@ -16,11 +16,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { extractRubyProject, findRubyFiles } from "@suss/adapter-ruby";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { readProcessMetadata } from "@suss/behavioral-ir";
 import { checkIntentAgreement } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
 import fastapi from "@suss/packs/fastapi";
+import rails from "@suss/packs/rails";
 import { nodeRuntimePack } from "@suss/runtime-node";
 
 import { answerQuestion } from "./ask.js";
@@ -32,6 +34,7 @@ import type { PatternPack } from "@suss/extractor";
 const fixtures = path.resolve(__dirname, "../../../fixtures");
 const typescriptRoot = path.join(fixtures, "dispatch-edges");
 const pythonRoot = path.join(fixtures, "dispatch-edges-python");
+const rubyRoot = path.join(fixtures, "dispatch-edges-ruby");
 
 /** The pack the dogfood run reads each workspace package with. */
 const packageExports: PatternPack = {
@@ -213,6 +216,68 @@ describe("Python calls through a dict, getattr, a decorator registry and a lambd
     expect(text).toMatch(/via_get \([^)]*\) calls handler, which may run/);
   });
 });
+
+describe("Ruby calls through send, a hash of lambdas, procs or method objects, and a lambda", () => {
+  it("finds the exit codes of the commands a hash dispatches to", async () => {
+    const summaries = await rubySummaries();
+
+    expect(possible(summaries, "run")).toEqual([
+      "Cli.run_check",
+      "Cli.run_init",
+    ]);
+    for (const name of ["run_check", "run_init"]) {
+      expect(
+        readProcessMetadata(named(summaries, name) as BehavioralSummary)
+          ?.exitCodeFrom,
+      ).toBe("return");
+    }
+  });
+
+  it("follows each shape to the methods it may run, and a written name to the one it runs", async () => {
+    const summaries = await rubySummaries();
+
+    expect(possible(summaries, "via_table")).toEqual([
+      "EventHandlers.on_created",
+      "EventHandlers.on_deleted",
+    ]);
+    expect(possible(summaries, "via_method_table")).toEqual([
+      "EventHandlers.on_archived",
+    ]);
+    expect(possible(summaries, "consume")).toEqual([
+      "EventHandlers.consume",
+      "EventHandlers.consume_literal",
+      "EventHandlers.consume_public",
+      "EventHandlers.created",
+      "EventHandlers.deleted",
+      "EventHandlers.initialize",
+    ]);
+    expect(calledFor(summaries, "consume_literal")).toEqual([
+      "EventHandlers.created",
+    ]);
+    expect(calledFor(summaries, "via_proc")).toContain(
+      "EventHandlers.on_deleted",
+    );
+  });
+
+  it("leaves no gap on a method that calls the lambda its caller writes", async () => {
+    const summaries = await rubySummaries();
+
+    expect(named(summaries, "run_proc")?.gaps).toEqual([]);
+  });
+});
+
+async function rubySummaries(): Promise<BehavioralSummary[]> {
+  const { summaries } = await extractRubyProject({
+    files: findRubyFiles(rubyRoot),
+    packs: [rails()],
+    workspaceRoot: rubyRoot,
+    cacheDir: null,
+  });
+  for (const summary of summaries) {
+    relativizeSummaryPaths(summary, rubyRoot);
+  }
+  return summaries;
+}
 
 async function pythonSummaries(): Promise<BehavioralSummary[]> {
   const { summaries } = await extractPythonProject({

@@ -40,10 +40,15 @@ import {
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
 import {
+  BLOCK_WRAPPERS,
   CONSTRUCTOR,
   CONVERTING_FUNCTIONS,
   CONVERTING_METHODS,
+  INVOKE_METHOD,
+  METHOD_REFERENCE,
+  PROC_CLASS,
   RECEIVER_RETURNS,
+  SENDING_METHODS,
 } from "./languageWords.js";
 import {
   collectWrites,
@@ -461,6 +466,104 @@ function emitCall(emitter: Emitter, site: CallSite): void {
   }
   emitCallArguments(emitter, site);
   emitConversion(emitter, site);
+  emitSentChoice(emitter, site);
+  emitMethodReference(emitter, site);
+  emitBlockAsProc(emitter, site);
+}
+
+/**
+ * `proc { |payload| ... }`, `lambda { ... }` and `Proc.new { ... }` hand
+ * back their block, so the call is that block as a function, and the
+ * calls written in it are the calls it makes. A hash of procs then
+ * contains functions the way a hash of `->` lambdas does.
+ */
+function emitBlockAsProc(emitter: Emitter, site: CallSite): void {
+  const { method, receiver, node } = site;
+  const name = method?.text;
+  const wraps =
+    receiver === null
+      ? name !== undefined && BLOCK_WRAPPERS.has(name)
+      : name === CONSTRUCTOR && receiver.text === PROC_CLASS;
+  const block = field(node, "block");
+  if (!wraps || block === null) {
+    return;
+  }
+  const blockKey = nodeId(emitter.filePath, block);
+  add(emitter, "func", blockKey);
+  add(emitter, "binds", site.key, blockKey);
+  for (const call of callsWrittenIn(block)) {
+    add(emitter, "makesCall", blockKey, nodeId(emitter.filePath, call));
+  }
+}
+
+/** The calls written in a block's own statements, short of a nested definition. */
+function callsWrittenIn(node: RbNode, found: RbNode[] = []): RbNode[] {
+  for (const child of children(node)) {
+    if (OWN_BODY_TYPES.has(child.type)) {
+      continue;
+    }
+    if (child.type === "call") {
+      found.push(child);
+    }
+    callsWrittenIn(child, found);
+  }
+  return found;
+}
+
+/**
+ * `send(kind)` runs, on its receiver, the method whose name `kind` is,
+ * so the call is its own entry read. A symbol or string written out
+ * narrows it to that method, spelled the way the receiver reads one.
+ */
+function emitSentChoice(emitter: Emitter, site: CallSite): void {
+  const { method, receiver, node } = site;
+  if (method === null || !SENDING_METHODS.has(method.text)) {
+    return;
+  }
+  const objectKey =
+    receiver === null ? emitter.selfKey : valueKey(emitter, receiver, node);
+  const [name] = readCallArgs(field(node, "arguments")).positional;
+  if (objectKey === null || name === undefined) {
+    return;
+  }
+  add(emitter, "callsChosenEntry", site.key);
+  const written = symbolValue(name) ?? stringLiteralValue(name);
+  if (written === null) {
+    add(emitter, "choosesEntry", site.key, objectKey);
+    return;
+  }
+  for (const spelled of namesReadAs(emitter, receiver, objectKey, written)) {
+    add(emitter, "choosesNamedEntry", site.key, objectKey, spelled);
+  }
+}
+
+/**
+ * `method(:on_created)` is the method itself, read off `self`, so a hash
+ * of method objects contains the methods.
+ */
+function emitMethodReference(emitter: Emitter, site: CallSite): void {
+  const { method, receiver, node } = site;
+  if (
+    method?.text !== METHOD_REFERENCE ||
+    receiver !== null ||
+    emitter.selfKey === null
+  ) {
+    return;
+  }
+  const [name] = readCallArgs(field(node, "arguments")).positional;
+  const written =
+    name === undefined ? null : (symbolValue(name) ?? stringLiteralValue(name));
+  if (written === null) {
+    return;
+  }
+  for (const spelled of namesReadAs(
+    emitter,
+    receiver,
+    emitter.selfKey,
+    written,
+  )) {
+    add(emitter, "readsProperty", site.key, emitter.selfKey, spelled);
+  }
 }
 
 /** `converts` for `x.to_i` and the like, and for Kernel's `Integer(x)`. */
@@ -615,9 +718,6 @@ const SELF_READS: Record<SelfRuns, (name: string) => string[]> = {
 function classSpelling(name: string): string {
   return name === CONSTRUCTOR ? name : classMemberName(name);
 }
-
-/** The method that runs a proc, `f.call(x)`. */
-const INVOKE_METHOD = "call";
 
 /**
  * The receiver of `f.(x)` or `f.call(x)`, both of which run the receiver
@@ -879,13 +979,18 @@ function emitKeyedRead(
   if (WRITTEN_KEY_TYPES.has(key.type)) {
     return;
   }
+  const siteKey = nodeId(emitter.filePath, site);
+  const containerKey = valueKey(emitter, container, site);
   add(
     emitter,
     "readsKeyed",
-    nodeId(emitter.filePath, site),
-    valueKey(emitter, container, site),
+    siteKey,
+    containerKey,
     valueKey(emitter, key, keyParent),
   );
+  // Nothing in Ruby narrows a key the program works out, so the read can
+  // take any entry the container has.
+  add(emitter, "choosesEntry", siteKey, containerKey);
 }
 
 function emitKeyedElement(
