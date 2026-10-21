@@ -57,6 +57,15 @@ own. A test fixture is a few top-level statements, with the call under
 test inside an exported function, so the adapter's walk would not reach
 any of it. The harness walks the whole file instead.
 
+## Running over a file you built
+
+A test that creates its own project, or needs a store it has set up, calls
+`effectsOverFile(sourceFile, pack, store)`. It walks the file the same way
+`effectsIn` does. The store is optional, and without one the harness builds
+the one extraction starts from. To test one recognizer of a pack that has
+several, `packWithOnly(pack, { invocation: [...], access: [...] })` gives
+back the pack with only those left in.
+
 ## Narrowing an effect
 
 `Effect` is a union, and the part a storage test cares about is two
