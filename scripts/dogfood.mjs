@@ -19,7 +19,8 @@
 //      providers/consumers: the cross-package dependency graph as
 //      structured data.
 //   5. Writes a consolidated roll-up to `scripts/dogfood-report.json`,
-//      and the per-package counts to `scripts/dogfood-baseline.json`.
+//      each package's counts to a `dogfood-baseline.json` at its root,
+//      and the counts no package owns to `scripts/dogfood-baseline.json`.
 //      Library summaries are counted on two lines: the ones that sit on
 //      the package's declared export surface, and the ones behind it.
 //      The roll-up is megabytes and stays out of git; the baseline is
@@ -48,9 +49,11 @@ import {
   declaredExports,
   librarySummariesBySurface,
 } from "./declaredSurface.mjs";
+import { writeBaseline } from "./dogfoodBaseline.mjs";
 import { evaluateInvariants } from "./dogfoodInvariants.mjs";
 import {
   BASELINE_PATH,
+  PACKAGE_BASELINE_FILE,
   SUMMARIES_DIR,
   SUMMARIES_FILE,
 } from "./dogfoodOutputs.mjs";
@@ -502,22 +505,7 @@ fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 // into one number, adding a private helper reads the same as widening
 // the API, and most of what the gate would then be guarding is nobody's
 // contract.
-const baseline = {
-  totals: {
-    packages: packages.length,
-    packagesWithExports: totalPackagesWithExports,
-    exports: totalExports,
-    internal: totalInternal,
-    consumers: totalConsumers,
-    pairs: pairing.pairs.length,
-    // The one count that runs the other way: every other number is
-    // something suss saw, so a drop is a regression, and this one is a
-    // call it could not see through, so a rise is.
-    unfollowedCalls: totalUnfollowedCalls,
-    // Errors run the same way: our own checker over our own packages
-    // says zero today, and a rise means a pass broke or the code did.
-    findingErrors: findingsBySeverity.error,
-  },
+writeBaseline({
   packages: Object.fromEntries(
     report.packages
       .filter((p) => p.skipped === undefined && p.error === undefined)
@@ -528,18 +516,28 @@ const baseline = {
           exports: p.exportCount,
           internal: p.internalCount,
           consumers: p.consumerCount,
+          // The one count that runs the other way: every other number
+          // is something suss saw, so a drop is a regression, and this
+          // one is a call it could not see through, so a rise is.
           unfollowedCalls: p.unfollowedCallCount,
         },
       ]),
   ),
-};
-fs.writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`);
+  shared: {
+    pairs: pairing.pairs.length,
+    // Errors run the same way: our own checker over our own packages
+    // says zero today, and a rise means a pass broke or the code did.
+    findingErrors: findingsBySeverity.error,
+  },
+});
 
 console.log(
   `\nSummary: ${totalExports} export + ${totalInternal} internal + ${totalConsumers} consumer summaries across ${packages.length} @suss/* packages. ${pairing.pairs.length} cross-package edges paired.`,
 );
 console.log(`Report written to ${path.relative(repoRoot, reportPath)}`);
-console.log(`Baseline written to ${path.relative(repoRoot, BASELINE_PATH)}`);
+console.log(
+  `Baselines written to each package's ${PACKAGE_BASELINE_FILE} and to ${path.relative(repoRoot, BASELINE_PATH)}`,
+);
 
 const failed = report.packages.filter((p) => p.error !== undefined);
 if (failed.length > 0) {

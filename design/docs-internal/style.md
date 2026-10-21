@@ -85,7 +85,7 @@ const path = Node.isStringLiteral(argument) ? argument.getLiteralValue() : null;
 const path = stringValueOf(argument, resolution);
 ```
 
-When the facility cannot read a spelling, add the case to the facility: a lowering case, a resolution rule, or a store method. A fallback that asks the facility first and then reads the syntax is the same copy with a branch in front of it. `npm run check:readers` scans the adapters and the packs for the textual signs of a second reader. The files that already fail are listed in `EXEMPT` in `scripts/checkReaders.mjs`, each with the functions that do the reading. An entry comes out when its copy goes away.
+When the facility cannot read a spelling, add the case to the facility: a lowering case, a resolution rule, or a store method. A fallback that asks the facility first and then reads the syntax is the same copy with a branch in front of it. `npm run check:readers` scans the adapters and the packs for the textual signs of a second reader. The files that already fail are listed in the `readerExempt.json` at the root of the package that owns the file, each with the functions that do the reading. An entry comes out when its copy goes away.
 
 ## Identifiers a pack names
 

@@ -2,12 +2,12 @@ name: Regenerate baselines
 
 # A branch's own check:dogfood and check:coverage compare a fresh run
 # against that branch's own HEAD, so a branch only ever needs to touch
-# scripts/dogfood-baseline.json, a package's coverage-summary.json, or a
+# package's dogfood-baseline.json, its coverage-summary.json, or a
 # badge when it is lowering a number on purpose. Nothing else needs
 # those files to move, and when two branches both moved them anyway they
 # collided on merge.
 #
-# This workflow is what keeps the three files caught up with main once
+# This workflow is what keeps those files caught up with main once
 # a branch that raised a count lands: it reruns the dogfood pass and the
 # test suite on main itself, and pushes back only if the fresh numbers
 # differ from what is committed. It is also the only run on main, since
@@ -110,7 +110,7 @@ jobs:
       # HUSKY=0 skips the local hooks: they exist for developers, and
       # this push already ran what they'd check.
       #
-      # Only these three path groups are staged. A dogfood run and a
+      # Only these path groups are staged. A dogfood run and a
       # coverage run touch nothing else that git tracks, but staging by
       # name rather than `git add -A` keeps it that way on purpose.
       #
@@ -123,7 +123,7 @@ jobs:
         env:
           HUSKY: "0"
         run: |
-          git add scripts/dogfood-baseline.json '**/coverage/coverage-summary.json' .github/badges
+          git add scripts/dogfood-baseline.json 'packages/**/dogfood-baseline.json' '**/coverage/coverage-summary.json' .github/badges
 
           if git diff --cached --quiet; then
             echo "Regenerated numbers match what main already commits, nothing to push."

@@ -22,7 +22,13 @@ import { ROOT } from "./workspacePackages.mjs";
 export const SUMMARIES_DIR = ".suss";
 export const SUMMARIES_FILE = "suss-summaries.json";
 
-/** Repo-relative path of the committed count-of-what-suss-saw baseline. */
+/**
+ * Repo-relative path of the committed counts that no single package
+ * owns. Each package keeps its own counts in a file of this name at its
+ * root.
+ */
 export const BASELINE_REL_PATH = "scripts/dogfood-baseline.json";
 
 export const BASELINE_PATH = path.join(ROOT, BASELINE_REL_PATH);
+
+export const PACKAGE_BASELINE_FILE = "dogfood-baseline.json";

@@ -1,0 +1,7 @@
+{
+  "name": "@suss/client-requests",
+  "exports": 2,
+  "internal": 1,
+  "consumers": 4,
+  "unfollowedCalls": 0
+}

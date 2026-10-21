@@ -1,0 +1,7 @@
+{
+  "name": "@suss/terraform-gcp",
+  "exports": 2,
+  "internal": 3,
+  "consumers": 28,
+  "unfollowedCalls": 0
+}
