@@ -41,7 +41,7 @@ The question must be one of these ten, in these words:
   what reads <boundary>                every unit that reads it, with the file, the line, and the call.
   what writes <boundary>               the same, for writes.
   what invokes <boundary>              the same, for invocations of a function or a queue.
-  what calls <unit>                    every unit whose calls resolve to this one.
+  what calls <unit or boundary>        every unit whose calls resolve to this one. For a route, a table or a queue, every unit that calls it from outside, the same units "what reads" and "what writes" list, then any unit that calls the code serving it as a function.
   what does <unit> reach               every boundary a file or a summary goes through, and whether it reads or writes each.
   what reaches <target>                every boundary whose unit ends up going through the target, however many calls away, with the calls it took. Pass a large limit to see all of them.
   what does <package or unit> provide  every boundary it provides, one per line. A package is spelled by its name, "@suss/checker". Also written "what does <package> export".

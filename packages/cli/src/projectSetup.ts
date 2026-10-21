@@ -22,6 +22,7 @@ import {
 } from "./projectFile.js";
 
 import type { InitReport, PackConfiguration, PackSuggestion } from "./init.js";
+import type { ProjectFile } from "./projectFile.js";
 
 /** A project init set up, and where it is relative to the root. */
 export interface SetupTarget {
@@ -36,36 +37,23 @@ export interface SetupLine {
   text: string;
 }
 
-/** What setting up one pack's config came to. */
-interface ConfiguredPack {
-  pack: string;
-  /** False when `suss.json` has to leave the pack out. */
-  listed: boolean;
-  line: SetupLine | null;
-}
-
 /** Writes the setup and says what it wrote. Empty when there was nothing to write. */
 export function writeProjectSetup(
   root: string,
   targets: readonly SetupTarget[],
 ): SetupLine[] {
-  const configured: ConfiguredPack[] = [];
-  const read = targets.flatMap((target) => {
-    const packs = target.report.suggestions.flatMap((suggestion) =>
-      suggestion.configuration === undefined
-        ? []
-        : [configurePack(target, suggestion, suggestion.configuration)],
-    );
-    configured.push(...packs);
-    const leftOut = new Set(
-      packs.filter((one) => !one.listed).map((one) => one.pack),
-    );
-    return projectFileFor(target.report, target.directory, leftOut)?.read ?? [];
-  });
+  const lines = targets.flatMap((target) =>
+    target.report.suggestions.flatMap((suggestion) => {
+      if (suggestion.configuration === undefined) {
+        return [];
+      }
 
-  const lines = configured.flatMap((one) =>
-    one.line === null ? [] : [one.line],
+      const line = configurePack(target, suggestion, suggestion.configuration);
+      return line === null ? [] : [line];
+    }),
   );
+  // After the config files, so each pack that has one is listed with it.
+  const read = setupReads(targets);
   if (read.length === 0) {
     return lines;
   }
@@ -85,6 +73,40 @@ export function writeProjectSetup(
 }
 
 /**
+ * The `read` list `writeProjectSetup` writes for these targets, without
+ * writing anything. A pack's config path is listed only when the file is
+ * on disk.
+ */
+export function setupReads(
+  targets: readonly SetupTarget[],
+): ProjectFile["read"] {
+  return targets.flatMap((target) => {
+    const leftOut = new Set(
+      target.report.suggestions
+        .filter(
+          (suggestion) =>
+            suggestion.configuration !== undefined &&
+            !isListed(target, suggestion.configuration),
+        )
+        .map((suggestion) => suggestion.name),
+    );
+    return projectFileFor(target.report, target.directory, leftOut)?.read ?? [];
+  });
+}
+
+/** A pack that needs a value init cannot work out is left out, since listing it would stop the whole extract for its language. */
+function isListed(
+  target: SetupTarget,
+  configuration: PackConfiguration,
+): boolean {
+  return (
+    !configuration.required ||
+    fs.existsSync(path.join(target.report.root, configuration.file)) ||
+    valuesFor(configuration, target.report.root) !== null
+  );
+}
+
+/**
  * Writes one pack's config file when init can fill it in. A file that is
  * already there is kept as it is, since it has this project's own values.
  */
@@ -92,18 +114,14 @@ function configurePack(
   target: SetupTarget,
   suggestion: PackSuggestion,
   configuration: PackConfiguration,
-): ConfiguredPack {
+): SetupLine | null {
   const pack = suggestion.name;
   const shown = path.join(target.directory, configuration.file);
   const file = path.join(target.report.root, configuration.file);
   if (fs.existsSync(file)) {
     return {
-      pack,
-      listed: true,
-      line: {
-        tone: "done",
-        text: `Kept ${shown}, which was already here, for the ${pack} pack.`,
-      },
+      tone: "done",
+      text: `Kept ${shown}, which was already here, for the ${pack} pack.`,
     };
   }
 
@@ -111,24 +129,16 @@ function configurePack(
   if (values !== null) {
     fs.writeFileSync(file, `${JSON.stringify(values, null, 2)}\n`);
     return {
-      pack,
-      listed: true,
-      line: {
-        tone: "done",
-        text: `Wrote ${shown} for the ${pack} pack: ${JSON.stringify(values)}.`,
-      },
+      tone: "done",
+      text: `Wrote ${shown} for the ${pack} pack: ${JSON.stringify(values)}.`,
     };
   }
 
-  if (!configuration.required) {
-    return { pack, listed: true, line: null };
+  if (isListed(target, configuration)) {
+    return null;
   }
   return {
-    pack,
-    listed: false,
-    line: {
-      tone: "note",
-      text: `Left ${pack} out of ${PROJECT_FILE}. It ${configurationNeed(configuration)} ${configuration.why} Write that to ${shown}, as in ${JSON.stringify(configuration.example)}, then run \`suss init --write --overwrite\` to list the pack.`,
-    },
+    tone: "note",
+    text: `Left ${pack} out of ${PROJECT_FILE}. It ${configurationNeed(configuration)} ${configuration.why} Write that to ${shown}, as in ${JSON.stringify(configuration.example)}, then run \`suss init --write --overwrite\` to list the pack.`,
   };
 }

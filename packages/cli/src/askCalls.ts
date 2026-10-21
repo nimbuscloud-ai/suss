@@ -17,6 +17,7 @@ import { functionsSpelled, representativeUnit } from "./reachTarget.js";
 import { providesKeyOf } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { CallFacts, ReachTarget } from "@suss/checker";
 import type { Answer, AnswerItem } from "./ask.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
 
@@ -38,12 +39,8 @@ export function answerCalls(
   }
 
   const { label } = spelled;
-  const calls = facts.callersOf(spelled.target);
-  const callers = [...new Set(calls.map((call) => call.caller))].map((fn) =>
-    representativeUnit(facts, fn),
-  );
-
-  if (calls.length === 0) {
+  const { items, callers } = directCalls(facts, spelled.target);
+  if (items.length === 0) {
     return {
       shape: "calls",
       subject,
@@ -55,7 +52,30 @@ export function answerCalls(
     };
   }
 
-  const items: AnswerItem[] = calls.map((call) => {
+  return {
+    shape: "calls",
+    subject,
+    headline: `${callers.length} unit${callers.length === 1 ? "" : "s"} call${callers.length === 1 ? "s" : ""} ${label}:`,
+    items,
+    needs: [],
+    caveats: [
+      ...gapCaveats(callers),
+      ...unfollowedCaveat(summaries, label, callers),
+    ],
+    found: true,
+  };
+}
+
+/** The calls into the target's functions, one item per caller and call, and the units making them. */
+export function directCalls(
+  facts: CallFacts,
+  target: ReachTarget,
+): { items: AnswerItem[]; callers: BehavioralSummary[] } {
+  const calls = facts.callersOf(target);
+  const callers = [...new Set(calls.map((call) => call.caller))].map((fn) =>
+    representativeUnit(facts, fn),
+  );
+  const items = calls.map((call) => {
     const caller = representativeUnit(facts, call.caller);
     const provides = providesKeyOf(caller);
     const at = `${caller.location.file}:${caller.location.range.start}${provides === undefined ? "" : `, provides ${provides}`}`;
@@ -70,19 +90,7 @@ export function answerCalls(
       },
     };
   });
-
-  return {
-    shape: "calls",
-    subject,
-    headline: `${callers.length} unit${callers.length === 1 ? "" : "s"} call${callers.length === 1 ? "s" : ""} ${label}:`,
-    items,
-    needs: [],
-    caveats: [
-      ...gapCaveats(callers),
-      ...unfollowedCaveat(summaries, label, callers),
-    ],
-    found: true,
-  };
+  return { items, callers };
 }
 
 /**

@@ -312,7 +312,7 @@ export function languageOfPack(name: string): Language {
 }
 
 /** A `-f` spec split at its `=` into the pack name and the config path. */
-function splitSpec(spec: string): { name: string; configPath?: string } {
+export function splitSpec(spec: string): { name: string; configPath?: string } {
   const separator = spec.indexOf("=");
   if (separator === -1) {
     return { name: spec };

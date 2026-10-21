@@ -1,0 +1,9 @@
+model Link {
+  id     String @id @default(cuid())
+  url    String
+  key    String
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
