@@ -66,6 +66,8 @@ suss check summaries/db.json summaries/app.json
 
 The `User` summary declares `id` (primary), `email` (unique), a nullable `name`, the derived `posts` relation, a derived `_count`, an index on `email`, and `physicalTable: "users"`.
 
+A schema split over several files is read as one, the way Prisma reads it. Pass the folder, and every `.prisma` file below it is read. Pass one file, and when it is the only file in its folder with a datasource, the other `.prisma` files in that folder are read with it, since a file with no datasource cannot be a schema on its own. Each model's summary records the file the model is in, and every model gets the storage system of the one datasource.
+
 Or from code:
 
 ```ts

@@ -4,7 +4,10 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { readStorageContractMetadata } from "@suss/behavioral-ir";
+
 import {
+  prismaSchemaFiles,
   prismaSchemaFileToSummaries,
   prismaSchemaToSummaries,
   prismaStorageSystem,
@@ -581,6 +584,74 @@ describe("prismaSchemaFileToSummaries", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("a schema split over several files", () => {
+  const MAIN = `datasource db {\n  provider = "mysql"\n}\n\nmodel User {\n  id    String @id\n  links Link[]\n}\n`;
+  const LINK =
+    "model Link {\n  id     String @id\n  userId String\n  user   User   @relation(fields: [userId], references: [id])\n}\n";
+
+  function folderWith(files: Record<string, string>): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prisma-split-"));
+    for (const [name, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+      fs.writeFileSync(path.join(dir, name), text);
+    }
+    return dir;
+  }
+
+  it("reads the files beside the one with the datasource as one schema", () => {
+    const dir = folderWith({ "schema.prisma": MAIN, "link.prisma": LINK });
+
+    expect(prismaSchemaFiles(path.join(dir, "schema.prisma"))).toEqual([
+      path.join(dir, "link.prisma"),
+      path.join(dir, "schema.prisma"),
+    ]);
+  });
+
+  it("reads every file below a schema folder", () => {
+    const dir = folderWith({
+      "schema.prisma": MAIN,
+      "models/link.prisma": LINK,
+    });
+
+    expect(prismaSchemaFiles(dir)).toEqual([
+      path.join(dir, "models/link.prisma"),
+      path.join(dir, "schema.prisma"),
+    ]);
+  });
+
+  it("reads one file alone when another beside it has its own datasource", () => {
+    const dir = folderWith({ "schema.prisma": MAIN, "test.prisma": MAIN });
+
+    expect(prismaSchemaFiles(path.join(dir, "schema.prisma"))).toEqual([
+      path.join(dir, "schema.prisma"),
+    ]);
+  });
+
+  it("gives every model the datasource's database and the file it is in", () => {
+    const dir = folderWith({ "schema.prisma": MAIN, "link.prisma": LINK });
+
+    const summaries = prismaSchemaFileToSummaries(
+      path.join(dir, "schema.prisma"),
+    );
+
+    expect(
+      summaries.map((summary) => [
+        tableOf(summary),
+        storageSystemOf(summary),
+        path.basename(summary.location.file),
+      ]),
+    ).toEqual([
+      ["Link", "mysql", "link.prisma"],
+      ["User", "mysql", "schema.prisma"],
+    ]);
+    const link = summaries[0] ?? raise("no Link summary");
+    const fields = readStorageContractMetadata(link)?.fields ?? [];
+    expect(fields.find((field) => field.name === "user")).toMatchObject({
+      relationKey: ["userId"],
+    });
   });
 });
 

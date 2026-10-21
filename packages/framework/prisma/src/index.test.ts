@@ -1023,6 +1023,29 @@ describe("the storage system a project's schema declares", () => {
       path.join(split, "db/main.prisma"),
       `datasource db {\n  provider = "mysql"\n}`,
     );
+
+    // A schema folder Prisma does not look in, which only the project's
+    // `prisma generate` script points at.
+    const scripted = path.join(root, "scripted");
+    writeProject(scripted, null);
+    fs.writeFileSync(
+      path.join(scripted, "package.json"),
+      JSON.stringify({
+        scripts: {
+          "prisma:generate":
+            "dotenv-flow -e .env -- prisma generate --schema=./prisma/schema",
+        },
+      }),
+    );
+    fs.mkdirSync(path.join(scripted, "prisma/schema"), { recursive: true });
+    fs.writeFileSync(
+      path.join(scripted, "prisma/schema/schema.prisma"),
+      `datasource db {\n  provider = "mysql"\n}`,
+    );
+    fs.writeFileSync(
+      path.join(scripted, "prisma/schema/account.prisma"),
+      "model Account {\n  id Int @id\n}",
+    );
   });
 
   function systemsIn(project: string): (string | null)[] {
@@ -1052,6 +1075,10 @@ describe("the storage system a project's schema declares", () => {
 
   it("reads the datasource out of a schema folder, past an entry it cannot read", () => {
     expect(systemsIn("split")).toEqual(["mysql", "mysql"]);
+  });
+
+  it("finds the schema folder a prisma generate script passes with --schema", () => {
+    expect(systemsIn("scripted")).toEqual(["mysql", "mysql"]);
   });
 });
 
