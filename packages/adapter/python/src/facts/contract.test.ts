@@ -77,6 +77,24 @@ const SOURCES: Record<string, CaseFiles> = {
     "source.py": "value = 1\n",
     "f.py": "from source import value as renamed\n",
   },
+  "a table of functions called by a key worked out at run time": {
+    "f.py": [
+      'TABLE = {"created": on_created, "deleted": on_deleted}',
+      "",
+      "def dispatch(kind, payload):",
+      "    return TABLE[kind](payload)",
+      "",
+    ].join("\n"),
+  },
+  "a function written into a table under a computed key": {
+    "f.py": [
+      "REGISTRY = {}",
+      "",
+      "def register(name, handler):",
+      "    REGISTRY[name] = handler",
+      "",
+    ].join("\n"),
+  },
 };
 
 /**

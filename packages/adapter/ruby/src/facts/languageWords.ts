@@ -96,6 +96,25 @@ export const OBJECT_METHODS: ReadonlySet<string> = new Set([
   "yield_self",
 ]);
 
+/** The methods that run, on the receiver, the method whose name is their first argument. */
+export const SENDING_METHODS: ReadonlySet<string> = new Set([
+  "send",
+  "public_send",
+  "__send__",
+]);
+
+/** Kernel's method that hands back, as an object, the method whose name it is given. */
+export const METHOD_REFERENCE = "method";
+
+/** The method that runs a proc or a lambda, `f.call(x)`. */
+export const INVOKE_METHOD = "call";
+
+/** Kernel's methods that hand back the block they are given as a proc. */
+export const BLOCK_WRAPPERS: ReadonlySet<string> = new Set(["proc", "lambda"]);
+
+/** The class whose `new` hands back its block as a proc. */
+export const PROC_CLASS = "Proc";
+
 /**
  * The method every Ruby class runs to make one of itself. An instance
  * has no `new`, so a read of it keeps its plain name wherever it is

@@ -139,9 +139,11 @@ export function checkCoveringTests(
     return verdicts.map((verdict) => verdict ?? { kind: "covered" });
   }
 
+  // A call that may run one of several functions is not a claim the test
+  // runs any one of them, so coverage counts only the calls the source settles.
   const honouring = lookup.facts.reachedFromEach(
     waiting.map((one) => one.test),
-    { pastMocks: true },
+    { pastMocks: true, certainOnly: true },
   );
   const missed = waiting.filter(
     (one) =>
@@ -151,7 +153,17 @@ export function checkCoveringTests(
   const ignoring =
     missed.length === 0
       ? new Map<FunctionKey, Reached>()
-      : lookup.facts.reachedFromEach(missed.map((one) => one.test));
+      : lookup.facts.reachedFromEach(
+          missed.map((one) => one.test),
+          { certainOnly: true },
+        );
+  const possibly =
+    missed.length === 0
+      ? new Map<FunctionKey, Reached>()
+      : lookup.facts.reachedFromEach(
+          missed.map((one) => one.test),
+          { pastMocks: true },
+        );
 
   for (const one of waiting) {
     const claim = claims[one.at];
@@ -170,6 +182,15 @@ export function checkCoveringTests(
         "testMissesSubject",
         `which reaches ${one.subject.label} only through a call its mocks replace (${mocksOf(lookup, one.test).join(", ")}), by ${callSpellings(throughMock).join(" -> ")}`,
       );
+      continue;
+    }
+    const throughPossible = pathInto(
+      one.test,
+      possibly.get(one.test),
+      one.subject,
+    );
+    if (throughPossible !== null) {
+      verdicts[one.at] = reachesOnlyMaybe(claim, one.subject, throughPossible);
       continue;
     }
     const unfollowed = unfollowedOnTheWay(one.unit, one.test, reached, lookup);
@@ -219,6 +240,29 @@ function notChecked(
       scenario: claim.label,
       coveredBy: claim.spelled.spelledAs,
       detail: `Scenario ${claim.label} lists the test "${claim.spelled.spelledAs}": ${why}.`,
+    },
+  };
+}
+
+/**
+ * A test that reaches its subject only through a call that picks its
+ * function at run time, from a table or by a computed name. It may run
+ * the subject, and suss cannot say it does, so it is reported as unchecked.
+ */
+function reachesOnlyMaybe(
+  claim: CoveringTestClaim,
+  subject: Subject,
+  path: CallPath,
+): Verdict {
+  const choosing = path.find((hop) => hop.recorded === "possible");
+  return {
+    kind: "unchecked",
+    unchecked: {
+      intent: claim.prd.title,
+      reason: "possibleCall",
+      scenario: claim.label,
+      coveredBy: claim.spelled.spelledAs,
+      detail: `Scenario ${claim.label} lists the test "${claim.spelled.spelledAs}": it reaches ${subject.label} only through ${choosing?.callee ?? "a call"}, which picks one of several functions at run time, so suss cannot say the test runs it (${callSpellings(path).join(" -> ")}).`,
     },
   };
 }

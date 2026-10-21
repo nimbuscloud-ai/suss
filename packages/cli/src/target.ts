@@ -46,6 +46,8 @@ export interface TargetTouch {
    * when the touch was found by following calls out of that unit.
    */
   through?: string[];
+  /** Set when one of those calls picks its function at run time and may pick another. */
+  possible?: true;
 }
 
 export interface ResolvedTarget {
@@ -442,6 +444,8 @@ export interface CollapsedTouch {
   provides?: string;
   /** The calls from the unit the user asked about to this one, when there were any. */
   through?: string[];
+  /** Set when one of those calls picks its function at run time and may pick another. */
+  possible?: true;
 }
 
 /**
@@ -453,7 +457,7 @@ export function collapseTouches(
   touches: ReadonlyArray<TargetTouch>,
 ): CollapsedTouch[] {
   return oneTouchPerCall(touches).map(
-    ({ summary, touched, through, relations }) => {
+    ({ summary, touched, through, relations, possible }) => {
       const provides = providesKeyOf(summary);
       return {
         boundary: touchLabel(touched),
@@ -462,6 +466,7 @@ export function collapseTouches(
         callee: touched.callee,
         ...(provides !== undefined ? { provides } : {}),
         ...(through !== undefined ? { through } : {}),
+        ...(possible === true ? { possible } : {}),
       };
     },
   );

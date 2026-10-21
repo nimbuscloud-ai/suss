@@ -56,7 +56,7 @@ export function localBuiltOnce(
 }
 
 /** The function whose body declares a local, or null at module level. */
-function declaringFunctionOf(declaration: Node): Node | null {
+export function declaringFunctionOf(declaration: Node): Node | null {
   for (
     let at = declaration.getParent();
     at !== undefined;

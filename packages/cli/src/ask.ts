@@ -23,7 +23,7 @@ import {
   summaryIdentifier,
   unsettledSummaryId,
 } from "@suss/behavioral-ir";
-import { callSpellings, functionOf } from "@suss/checker";
+import { functionOf } from "@suss/checker";
 
 import { answerCalls, directCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
@@ -535,11 +535,12 @@ function answerCallsOf(subject: string, loaded: LoadedSummaries): Answer {
   const direct = directCalls(
     loaded.callFacts,
     reachTargetOf(resolution.target),
+    `the code serving ${subject}`,
   );
   return answerAtBoundary("calls", subject, loaded, direct);
 }
 
-const NO_DIRECT_CALLS = { items: [], callers: [] };
+const NO_DIRECT_CALLS = { items: [], callers: [], calls: [] };
 
 function answerAtBoundary(
   shape: AtBoundary,
@@ -713,13 +714,13 @@ function throughCalls(
   const already = new Set(direct.map((touch) => touchKey(touch)));
   const found: ReachedTouch[] = [];
   const reached = facts.reachedFrom(start.map((unit) => functionOf(unit)));
-  for (const [fn, through] of shortestFirst(reached)) {
+  for (const [fn, through, possible] of shortestFirst(reached, facts)) {
     for (const touch of touchesOfUnits(facts.units.get(fn) ?? [])) {
       if (servesItself(touch) || already.has(touchKey(touch))) {
         continue;
       }
       already.add(touchKey(touch));
-      found.push({ ...touch, through });
+      found.push({ ...touch, through, ...(possible ? { possible } : {}) });
     }
   }
   return found;
@@ -728,13 +729,28 @@ function throughCalls(
 /** Nearest functions first, so the path shown for a boundary is the shortest one. */
 function shortestFirst(
   paths: ReadonlyMap<FunctionKey, CallPath>,
-): Array<[FunctionKey, string[]]> {
+  facts: CallFacts,
+): Array<[FunctionKey, string[], boolean]> {
   return [...paths]
-    .map(([fn, path]): [FunctionKey, string[]] => [fn, callSpellings(path)])
+    .map(([fn, path]): [FunctionKey, string[], boolean] => [
+      fn,
+      hopSpellings(path, facts),
+      path.some((hop) => hop.recorded === "possible"),
+    ])
     .sort(
       ([, a], [, b]) =>
         a.length - b.length || a.join(" ").localeCompare(b.join(" ")),
     );
+}
+
+/** A call that picks its function at run time may never pick the one this path goes through, so the hop says so. */
+function hopSpellings(path: CallPath, facts: CallFacts): string[] {
+  return path.map((hop) => {
+    const picked = hop.to === null ? undefined : facts.units.get(hop.to)?.[0];
+    return hop.recorded === "possible" && picked !== undefined
+      ? `${hop.callee}, which may run ${picked.identity.name}`
+      : hop.callee;
+  });
 }
 
 function touchKey(touch: TargetTouch): string {
@@ -808,7 +824,7 @@ function answerReachedBy(subject: string, loaded: LoadedSummaries): Answer {
         ];
   const items: AnswerItem[] = [];
   const said = new Set<string>();
-  for (const [fn, through] of shortestFirst(reaching)) {
+  for (const [fn, through, possible] of shortestFirst(reaching, facts)) {
     for (const own of ownBoundariesOf(facts, fn)) {
       const hops =
         through.length === 0 ? "" : `, by calling ${through.join(", then ")}`;
@@ -824,6 +840,7 @@ function answerReachedBy(subject: string, loaded: LoadedSummaries): Answer {
           boundary: own.touched.label,
           unit: summaryIdentifier(own.summary),
           through: [...through],
+          ...(possible ? { possible } : {}),
           ...(provides !== undefined ? { provides } : {}),
         },
       });
@@ -881,6 +898,7 @@ function answerReaches(subject: string, loaded: LoadedSummaries): Answer {
       ...(touch.callee !== undefined ? { via: touch.callee } : {}),
       ...(touch.provides !== undefined ? { provides: touch.provides } : {}),
       ...(touch.through !== undefined ? { through: touch.through } : {}),
+      ...(touch.possible === true ? { possible: true } : {}),
     };
     const hops =
       touch.through === undefined || touch.through.length === 0

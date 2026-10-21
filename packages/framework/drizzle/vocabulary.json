@@ -13,7 +13,7 @@
   "selectDistinct": "drizzle-orm: query builder method",
   "where": "drizzle-orm: query builder method",
   "values": "drizzle-orm: query builder method",
-  "set": "drizzle-orm: query builder method",
+  "set": "language: JavaScript spells Map#set the same way. drizzle-orm: query builder method",
   "query": "drizzle-orm: relational query entry point on the db object",
   "columns": "drizzle-orm: relational query option key",
   "with": "drizzle-orm: relational query option key",

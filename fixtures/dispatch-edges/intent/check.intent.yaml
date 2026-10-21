@@ -1,0 +1,21 @@
+kind: boundary
+
+name: dispatch-edges-check
+purpose: Run the check command and resolve to the process's exit code.
+audience: whoever runs the command
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "dispatch-edges"
+  exportPath: ["runCheck"]
+
+transitions:
+  - id: failed
+    when: --fail was passed
+    exits: 1
+
+  - id: passed
+    when: --fail was not passed
+    exits: 0
