@@ -42,6 +42,7 @@ Then nothing is written into the checkout except where you give `-o`.
 | A structured description of what the code does | `suss extract` |
 | The same, from a spec instead of code | `suss contract --from openapi` |
 | Where two sides of a boundary disagree | `suss check` |
+| The findings a branch introduced | `suss check --base origin/main` |
 | To read what the summaries say | `suss inspect` |
 | One question about one boundary | `suss ask` |
 
@@ -150,7 +151,9 @@ npx @suss/mcp /path/to/project
 ```
 
 `suss_ask` takes the ten questions. `suss_check` compares both sides
-of every boundary. `suss_boundaries` lists the boundaries.
+of every boundary, and with a `base` such as `origin/main` it keeps
+the findings the branch introduced. `suss_boundaries` lists the
+boundaries.
 `suss_stub_draft` drafts a stub for a package suss cannot read into,
 from how the project calls it. `suss_intent_outcomes` lists the
 outcomes the boundary intent documents declare, as the `link` a PRD

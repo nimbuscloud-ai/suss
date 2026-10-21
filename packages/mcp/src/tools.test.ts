@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -364,6 +365,109 @@ describe("the tools, on a project bigger than one answer", () => {
     project.close();
     fs.rmSync(root, { recursive: true, force: true });
   }, 60_000);
+});
+
+describe("suss_check with a base", () => {
+  const FIXTURE = path.resolve(
+    __dirname,
+    "../../../fixtures/supervisor-orders",
+  );
+
+  function git(cwd: string, ...args: string[]): string {
+    return execFileSync(
+      "git",
+      [
+        "-c",
+        "user.email=suss@example.com",
+        "-c",
+        "user.name=suss",
+        "-c",
+        "commit.gpgsign=false",
+        ...args,
+      ],
+      { cwd, encoding: "utf8" },
+    );
+  }
+
+  /** The orders fixture committed, then given a 409 its client does not handle. */
+  function editedRepository(): string {
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-base-")),
+    );
+    fs.cpSync(FIXTURE, root, {
+      recursive: true,
+      filter: (source) => !source.split(path.sep).includes(".suss"),
+    });
+    fs.writeFileSync(path.join(root, ".gitignore"), "node_modules\n.suss\n");
+    git(root, "init", "--quiet");
+    git(root, "add", "-A");
+    git(root, "commit", "--quiet", "-m", "base");
+    const file = path.join(root, "src/orders/create.ts");
+    fs.writeFileSync(
+      file,
+      fs
+        .readFileSync(file, "utf8")
+        .replace(
+          "  const created = await orders.insert({ sku, quantity });",
+          [
+            "  if (await orders.findOpen(sku)) {",
+            '    res.status(409).json({ error: "open" });',
+            "    return;",
+            "  }",
+            "  const created = await orders.insert({ sku, quantity });",
+          ].join("\n"),
+        ),
+    );
+    return root;
+  }
+
+  it("returns the findings the change introduced, with the base it compared with", async () => {
+    const root = editedRepository();
+    const project = new Project({ root, watch: false });
+    await project.start();
+
+    const result = await checkTool(project, { base: "HEAD" });
+    const payload = result.structuredContent as {
+      base: { ref: string; commit: string };
+      changedFiles: number;
+      findings: Array<{
+        kind: string;
+        provider: { location: { file: string } };
+      }>;
+      resolved: string[];
+      leftOut: { added: number; resolved: number };
+    };
+
+    expect(payload.base.ref).toBe("HEAD");
+    expect(payload.base.commit).toBe(git(root, "rev-parse", "HEAD").trim());
+    expect(payload.changedFiles).toBe(1);
+    expect(payload.findings.map((f) => f.kind)).toEqual([
+      "unhandledProviderCase",
+    ]);
+    expect(payload.findings[0].provider.location.file).toBe(
+      "src/orders/create.ts",
+    );
+    expect(payload.resolved).toEqual([]);
+    expect(payload.leftOut).toMatchObject({ added: 0, resolved: 0 });
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 120_000);
+
+  it("refuses a boundary and a base together", async () => {
+    const project = {
+      summaryDir: os.tmpdir(),
+      settled: async () => undefined,
+    } as unknown as Project;
+
+    const result = await checkTool(project, {
+      base: "main",
+      boundary: "GET /users",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("Pass boundary or base, not both");
+  });
 });
 
 describe("attempt", () => {

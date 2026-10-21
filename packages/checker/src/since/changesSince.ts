@@ -96,15 +96,8 @@ export function changedBoundaries(
   before: readonly BehavioralSummary[],
   after: readonly BehavioralSummary[],
 ): ChangedBoundary[] {
-  const beforeById = byUnit(before);
-  const afterById = byUnit(after);
   const touched = new Map<string, Touched>();
-
-  for (const id of new Set([...beforeById.keys(), ...afterById.keys()])) {
-    const moved = unitMoved(beforeById.get(id), afterById.get(id));
-    if (moved === null) {
-      continue;
-    }
+  for (const moved of movedUnits(before, after)) {
     recordTouches(moved, touched);
   }
 
@@ -152,6 +145,42 @@ export function changesSince(
     ...findingsSince(earlier.findings, later.findings),
     changedBoundaries: changedBoundaries(earlier.summaries, later.summaries),
   };
+}
+
+/**
+ * Every unit that was added, removed or now behaves differently, as
+ * `file::name` from both runs, so a finding from either run can be
+ * looked up by the summary on its side.
+ */
+export function unitsThatMoved(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+): Set<string> {
+  const refs = new Set<string>();
+  for (const moved of movedUnits(before, after)) {
+    for (const side of [moved.earlier, moved.later]) {
+      if (side !== undefined) {
+        refs.add(summaryRef(side));
+      }
+    }
+  }
+  return refs;
+}
+
+function movedUnits(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+): MovedUnit[] {
+  const beforeById = byUnit(before);
+  const afterById = byUnit(after);
+  const moved: MovedUnit[] = [];
+  for (const id of new Set([...beforeById.keys(), ...afterById.keys()])) {
+    const one = unitMoved(beforeById.get(id), afterById.get(id));
+    if (one !== null) {
+      moved.push(one);
+    }
+  }
+  return moved;
 }
 
 function byUnit(

@@ -16,8 +16,14 @@ export {
   preloadForQuestion,
 } from "./ask.js";
 export { setCacheDir, takeCacheDirFlag } from "./cacheDirFlag.js";
-export { check, checkDir, checkDirectory } from "./check.js";
+export {
+  check,
+  checkDir,
+  checkDirectory,
+  findingInOneLine,
+} from "./check.js";
 export { type CheckAtOptions, type CheckAtResult, checkAt } from "./checkAt.js";
+export { type BaseRead, type BaseRevision, readBase } from "./checkBase.js";
 export { contract } from "./contract.js";
 export { type CorroborateOptions, corroborateSummary } from "./corroborate.js";
 export {

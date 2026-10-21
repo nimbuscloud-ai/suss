@@ -33,6 +33,16 @@ inputs:
     description: Whether to post the diff as a comment on the pull request.
     required: false
     default: "true"
+  findings:
+    description: >
+      Whether to add the findings the pull request introduced to the
+      comment, after the diff. They are what `suss check --since` reports
+      for the two summary files, narrowed with `--changed-files` to the
+      ones a changed file, a unit whose behavior moved or a changed
+      boundary is on. Errors and warnings print in full and info findings
+      are counted, as in `suss check`.
+    required: false
+    default: "false"
   artifact-name:
     description: >
       The name of the run artifact that keeps both summary files and the
@@ -217,6 +227,43 @@ runs:
         fi
         sed "s#^$prefix##" "$list.raw" > "$list"
 
+    # Rendered before the diff, so the diff's budget can leave room for it.
+    - name: Check what the pull request introduced
+      if: inputs.findings == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      run: |
+        cd "$RUNNER_TEMP/suss"
+        if ! suss --help | grep -q -- "--base"; then
+          echo "::notice::suss $(suss --version) cannot narrow a check to one pull request, so the comment leaves findings out. Set version to a release whose suss --help lists check --base."
+          exit 0
+        fi
+
+        mkdir -p check/before check/after
+        cp before.json check/before/
+        cp after.json check/after/
+        touch changed-files.txt
+        # Exit 1 means a new finding at error severity, which the comment
+        # reports. Anything higher means the check itself failed.
+        status=0
+        suss check --dir check/after --since check/before --changed-files changed-files.txt --allow-empty > findings.txt || status=$?
+        if [ "$status" -gt 1 ]; then
+          echo "::warning::suss check exited $status, so the comment leaves findings out."
+          rm -f findings.txt
+          exit 0
+        fi
+
+        # The earlier folder is a path on the runner, which means nothing
+        # to a reader of the comment.
+        sed "s#$RUNNER_TEMP/suss/check/before#the base commit#" findings.txt > findings-comment.txt
+        limit=20000
+        if [ "$(wc -c < findings-comment.txt)" -gt "$limit" ]; then
+          head -c "$limit" findings-comment.txt > findings-comment.cut
+          printf '\n... cut here. Every finding is in findings.txt in the %s artifact of the run.\n' "$ARTIFACT" >> findings-comment.cut
+          mv findings-comment.cut findings-comment.txt
+        fi
+      env:
+        ARTIFACT: ${{ inputs.artifact-name }}
+
     - name: Diff
       id: diff
       if: github.event_name == 'pull_request'
@@ -229,11 +276,15 @@ runs:
         # older one renders the diff the way it always did.
         changed=()
         budget=()
+        room=58000
+        if [ -s findings-comment.txt ]; then
+          room=$((room - $(wc -c < findings-comment.txt)))
+        fi
         if suss --help | grep -q -- "--changed-files"; then
           if [ -s changed-files.txt ]; then
             changed=(--changed-files changed-files.txt)
           fi
-          budget=(--budget 58000)
+          budget=(--budget "$room")
         fi
 
         suss inspect --diff before.json after.json "${changed[@]}" | tee diff.txt
@@ -264,6 +315,7 @@ runs:
           ${{ runner.temp }}/suss/after.json
           ${{ runner.temp }}/suss/diff.txt
           ${{ runner.temp }}/suss/diff.json
+          ${{ runner.temp }}/suss/findings.txt
         if-no-files-found: error
         retention-days: 30
 
@@ -281,12 +333,16 @@ runs:
       run: |
         marker="<!-- suss-inspect-diff $ARTIFACT -->"
         diff="$RUNNER_TEMP/suss/comment.txt"
+        findings="$RUNNER_TEMP/suss/findings-comment.txt"
         body="$RUNNER_TEMP/suss/comment.md"
 
         # The diff step already rendered to length. This cut is what
         # catches a report that came out longer anyway, and the whole
         # of it stays in the run's artifact either way.
         limit=60000
+        if [ -s "$findings" ]; then
+          limit=$((limit - $(wc -c < "$findings")))
+        fi
         if [ "$(wc -c < "$diff")" -gt "$limit" ]; then
           head -c "$limit" "$diff" > "$diff.cut"
           printf '\n... cut here. The whole diff is in the %s artifact of the run.\n' "$ARTIFACT" >> "$diff.cut"
@@ -309,6 +365,14 @@ runs:
           cat "$diff"
           echo '```'
           echo
+          if [ -s "$findings" ]; then
+            echo "### What \`suss check\` finds in this pull request"
+            echo
+            echo '```'
+            cat "$findings"
+            echo '```'
+            echo
+          fi
           echo "<sub>Read by [suss](https://github.com/nimbuscloud-ai/suss) at ${HEAD_SHA:0:7}. The summaries it compared are the \`$ARTIFACT\` artifact of [the run]($RUN_URL); \`suss inspect after.json\` on them says where suss could not follow a call.</sub>"
         } > "$body"
 

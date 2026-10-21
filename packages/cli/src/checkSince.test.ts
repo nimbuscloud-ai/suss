@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { checkDir } from "./check.js";
 import { runCli } from "./run.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
@@ -330,6 +331,65 @@ describe("check --since", () => {
     expect(withAt.stderr).toContain("--since");
     expect(withFiles.exit).toBe(1);
     expect(withFiles.stderr).toContain("--since compares a folder");
+  });
+
+  it("keeps a new finding whose provider changed when the list names only the client", async () => {
+    const before = await snapshot("before");
+    edit(ADD_409);
+    const after = await snapshot("after");
+    const list = path.join(work, "changed.txt");
+    fs.writeFileSync(list, "web/orders/submitOrder.ts\n");
+
+    const { report } = await since(after, before, ["--changed-files", list]);
+
+    expect(report.changedFiles).toEqual(["web/orders/submitOrder.ts"]);
+    expect(report.findings.map((f: { kind: string }) => f.kind)).toEqual([
+      "unhandledProviderCase",
+    ]);
+    expect(report.findings[0].touchedByChange).toEqual([
+      "provider",
+      "consumer",
+      "boundary",
+    ]);
+    expect(report.addedElsewhere).toEqual([]);
+  });
+
+  it("prints only the change, without the whole repository's pairing counts", async () => {
+    const before = await snapshot("before");
+    edit(ADD_409);
+    const after = await snapshot("after");
+    const list = path.join(work, "changed.txt");
+    fs.writeFileSync(list, "src/orders/create.ts\n");
+
+    const run = await quietly([
+      "check",
+      "--dir",
+      after,
+      "--since",
+      before,
+      "--changed-files",
+      list,
+    ]);
+
+    expect(run.stdout).toContain(
+      `Since ${before}, narrowed to what touches the 1 file changed:`,
+    );
+    expect(run.stdout).toContain("1 new finding, 0 resolved.");
+    expect(run.stdout).not.toContain("Compared 1 boundary");
+  });
+
+  it("refuses --changed-files without an earlier run to compare with", async () => {
+    const dir = await snapshot("before");
+    const list = path.join(work, "changed.txt");
+    fs.writeFileSync(list, "src/orders/create.ts\n");
+
+    const run = await quietly(["check", "--dir", dir, "--changed-files", list]);
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain("so it needs --since");
+    expect(() => checkDir({ dir, changedFiles: [], json: true })).toThrow(
+      "so it needs --since",
+    );
   });
 
   it("refuses --intent, which scores a whole run against documents", async () => {
