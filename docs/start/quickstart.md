@@ -166,7 +166,10 @@ file is JSON, and `inspect` prints it in a form you can read.
 
 Those `-f` flags are the ones `init` printed. If you leave them off,
 `extract` reads the packs from `suss.json`, and when there is no such file
-it picks the same ones `init` would have.
+it picks the same ones `init` would have. When `suss.json` lists more than
+one read, such as a Python API and a TypeScript client, a bare `extract` runs
+all of them and prints one array. Add `-o summaries/code.json` to write that
+array to a file, or `--out-dir summaries` to get one file per read.
 
 ## Print what it found
 

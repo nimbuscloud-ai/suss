@@ -219,14 +219,14 @@ async function readFromTheSamePlace(
   const here = process.cwd();
   const inside = path.relative(top, fs.realpathSync(here));
   if (inside.startsWith("..") || path.isAbsolute(inside)) {
-    return await readProjectInto(baseRoot, summaryDir, reads);
+    return await readProjectInto(baseRoot, summaryDir, reads, undefined, true);
   }
 
   const mirror = path.join(tree, inside);
   fs.mkdirSync(mirror, { recursive: true });
   process.chdir(mirror);
   try {
-    return await readProjectInto(baseRoot, summaryDir, reads);
+    return await readProjectInto(baseRoot, summaryDir, reads, undefined, true);
   } finally {
     process.chdir(here);
   }
