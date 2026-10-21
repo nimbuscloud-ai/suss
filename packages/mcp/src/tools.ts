@@ -148,9 +148,8 @@ async function sinceBase(
   project: Project,
   ref: string,
 ): Promise<Record<string, unknown>> {
-  const { summaryDir, changedFiles, ...base } = await readBase(
-    project.root,
-    ref,
+  const { summaryDir, changedFiles, ...base } = await project.betweenBuilds(
+    () => readBase(project.root, ref),
   );
   const result = checkDir({
     dir: project.summaryDir,

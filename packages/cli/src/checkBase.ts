@@ -58,7 +58,8 @@ const FOLDERS_KEPT = 2;
 /**
  * Reads the base revision of the project at `root`. The changed files
  * are listed again on every call, since the working tree moves between
- * two questions and the base does not.
+ * two questions and the base does not. The read changes the process's
+ * working directory while it runs, so a server runs it between builds.
  */
 export async function readBase(root: string, ref: string): Promise<BaseRead> {
   const project = fs.realpathSync(path.resolve(root));
@@ -124,10 +125,12 @@ async function baseFolder(
   }
 
   const summaryDir = summariesIn(work);
-  const report = await readProjectInto(baseRoot, summaryDir, {
-    ...reads,
-    reads: present.map((entry) => withPackConfigsFrom(project, entry)),
-  });
+  const report = await fromTheSamePlace(tree, top, () =>
+    readProjectInto(baseRoot, summaryDir, {
+      ...reads,
+      reads: present.map((entry) => withPackConfigsFrom(project, entry)),
+    }),
+  );
   // The summaries are all a later question needs, and a large checkout
   // is most of the folder. Removing it leaves the linked node_modules alone.
   fs.rmSync(tree, { recursive: true, force: true });
@@ -143,11 +146,37 @@ async function baseFolder(
 }
 
 /**
- * A contract reader writes its file's path relative to the working
- * directory, which for the base points into the temporary folder. Each
- * such path is rewritten to the one the same file has in the checkout,
- * or the unit would look removed at one path and added at another.
- * The folder's name is random, so it appears in nothing else.
+ * Contract readers write a file's path relative to the working directory,
+ * so the base is read from the folder in the copy that matches where the
+ * command runs in the checkout. Otherwise every contract unit would look
+ * removed at one path and added at another.
+ */
+async function fromTheSamePlace<T>(
+  tree: string,
+  top: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  const here = process.cwd();
+  const inside = path.relative(top, fs.realpathSync(here));
+  if (inside.startsWith("..") || path.isAbsolute(inside)) {
+    return await read();
+  }
+
+  const mirror = path.join(tree, inside);
+  fs.mkdirSync(mirror, { recursive: true });
+  process.chdir(mirror);
+  try {
+    return await read();
+  } finally {
+    process.chdir(here);
+  }
+}
+
+/**
+ * A path a reader wrote into the temporary folder, absolute or from a
+ * working directory outside the checkout, is rewritten to the one the
+ * same file has in the checkout. The folder's name is random, so it
+ * appears in nothing else.
  */
 async function placeAtCheckout(
   summaryDir: string,
