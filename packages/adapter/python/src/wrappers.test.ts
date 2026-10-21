@@ -648,9 +648,20 @@ describe("decorators written on a route's function", () => {
         "def traced(fn):",
         "    return functools.partial(fn)",
         "",
+        "REGISTRY = []",
+        "",
+        "def registered(fn):",
+        "    REGISTRY.append(fn)",
+        "    return fn",
+        "",
         "@app.get('/traced')",
         "@traced",
         "async def traced_route():",
+        "    return {'ok': True}",
+        "",
+        "@app.get('/registered')",
+        "@registered",
+        "async def registered_route():",
         "    return {'ok': True}",
         "",
       ].join("\n"),
@@ -658,6 +669,9 @@ describe("decorators written on a route's function", () => {
 
     expect(wrappersOf(routeFor(summaries, "GET", "/traced"))).toEqual({
       applied: [{ file: "app/main.py", name: "traced(fn)" }],
+    });
+    expect(wrappersOf(routeFor(summaries, "GET", "/registered"))).toEqual({
+      applied: [{ file: "app/main.py", name: "registered(fn)" }],
     });
     expect(summaries.some((one) => one.identity.name === "traced(fn)")).toBe(
       false,
