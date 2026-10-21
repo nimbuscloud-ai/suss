@@ -1,6 +1,7 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { createTsSubUnitContext } from "@suss/adapter-typescript";
+import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
 import {
@@ -10,6 +11,7 @@ import {
 } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
+import type { SourceFile } from "ts-morph";
 
 function makeFile(source: string): SourceFile {
   const project = createTestProject();
@@ -17,20 +19,13 @@ function makeFile(source: string): SourceFile {
 }
 
 function recognizeAll(file: SourceFile): Effect[] {
-  const out: Effect[] = [];
-  file.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const emitted = schedulingRecognizer(node as CallExpression, {
-      sourceFile: file,
-    });
-    if (emitted !== null) {
-      out.push(...emitted);
-    }
-  });
-  return out;
+  return effectsOverFile(
+    file,
+    packWithOnly(nodeRuntimePack(), { invocation: [schedulingRecognizer] }),
+  );
 }
+
+const subUnitContext = createTsSubUnitContext();
 
 function scheduleEffectsOf(effects: Effect[]): Array<
   Extract<Effect, { type: "interaction" }> & {
@@ -169,7 +164,7 @@ describe("scheduling subUnits", () => {
     `);
     const sub = nodeSchedulingSubUnits(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      {},
+      subUnitContext,
     );
     expect(sub).toHaveLength(2);
     expect(sub.map((s) => s.kind)).toEqual([
@@ -191,7 +186,7 @@ describe("scheduling subUnits", () => {
     `);
     const sub = nodeSchedulingSubUnits(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      {},
+      subUnitContext,
     );
     expect(sub.map((s) => s.name)).toEqual([
       "parent.setImmediate#0",
@@ -208,7 +203,7 @@ describe("scheduling subUnits", () => {
     `);
     const sub = nodeSchedulingSubUnits(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      {},
+      subUnitContext,
     );
     expect(sub).toHaveLength(0);
   });
@@ -224,7 +219,7 @@ describe("scheduling subUnits", () => {
     `);
     const sub = nodeSchedulingSubUnits(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      {},
+      subUnitContext,
     );
     expect(sub).toHaveLength(1);
   });
@@ -237,7 +232,7 @@ describe("scheduling subUnits", () => {
     `);
     const sub = nodeSchedulingSubUnits(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      {},
+      subUnitContext,
     );
     expect(sub).toHaveLength(1);
     expect(sub[0]?.name).toBe("parent.process.nextTick#0");

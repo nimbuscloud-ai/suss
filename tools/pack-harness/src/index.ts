@@ -5,7 +5,7 @@ export {
   storageByOperation,
   storageOf,
 } from "./effects.js";
-export { packUnderTest } from "./harness.js";
+export { effectsOverFile, packUnderTest, packWithOnly } from "./harness.js";
 export { rubyPackUnderTest } from "./ruby.js";
 
 export type {
@@ -14,5 +14,9 @@ export type {
   InteractionOf,
   StorageAccess,
 } from "./effects.js";
-export type { PackHarness, PackHarnessOptions } from "./harness.js";
+export type {
+  PackHarness,
+  PackHarnessOptions,
+  RecognizersUnderTest,
+} from "./harness.js";
 export type { RubyPackHarness } from "./ruby.js";

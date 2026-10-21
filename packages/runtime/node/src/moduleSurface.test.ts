@@ -1,8 +1,9 @@
-import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
+import nodeRuntimePack from "./index.js";
 import {
   fileLocationRecognizer,
   findBareFileLocationGlobals,
@@ -10,6 +11,7 @@ import {
 } from "./moduleSurface.js";
 
 import type { Effect } from "@suss/behavioral-ir";
+import type { SourceFile } from "ts-morph";
 
 function makeFile(source: string): SourceFile {
   const project = createTestProject();
@@ -17,20 +19,12 @@ function makeFile(source: string): SourceFile {
 }
 
 function runRecognizers(file: SourceFile): Effect[] {
-  const out: Effect[] = [];
-  file.forEachDescendant((node) => {
-    if (!Node.isPropertyAccessExpression(node)) {
-      return;
-    }
-    const ctx = { sourceFile: file };
-    for (const rec of [importMetaRecognizer, fileLocationRecognizer]) {
-      const emitted = rec(node, ctx);
-      if (emitted !== null) {
-        out.push(...emitted);
-      }
-    }
-  });
-  return out;
+  return effectsOverFile(
+    file,
+    packWithOnly(nodeRuntimePack(), {
+      access: [importMetaRecognizer, fileLocationRecognizer],
+    }),
+  );
 }
 
 function metadataReadsOf(effects: Effect[]) {
