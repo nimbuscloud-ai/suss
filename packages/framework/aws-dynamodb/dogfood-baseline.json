@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-aws-dynamodb",
+  "exports": 2,
+  "internal": 4,
+  "consumers": 5,
+  "unfollowedCalls": 0
+}

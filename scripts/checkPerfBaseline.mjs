@@ -34,8 +34,8 @@
 //
 // Refreshing the baseline is a deliberate commit, same as the other
 // baselines: run with --update and put the diff in a pull request. A
-// run also rewrites scripts/dogfood-baseline.json and the per-package
-// .suss outputs, the same way `npm run dogfood` does.
+// run also rewrites the dogfood baselines and the per-package .suss
+// outputs, the same way `npm run dogfood` does.
 
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";

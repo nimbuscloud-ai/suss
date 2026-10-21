@@ -49,6 +49,13 @@ export function readJsonFromRef(ref, relPath) {
   }
 }
 
+/** Every file path under `dir` on `ref`, from the repo root. */
+export function listFilesAtRef(ref, dir) {
+  return git(`ls-tree -r --name-only ${ref} -- ${dir}`)
+    .split("\n")
+    .filter((line) => line !== "");
+}
+
 /** A whole number, for counts of things suss saw. */
 export const asCount = (n) => String(n);
 

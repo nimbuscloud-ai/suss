@@ -1,0 +1,7 @@
+{
+  "name": "@suss/terraform-aws",
+  "exports": 2,
+  "internal": 3,
+  "consumers": 16,
+  "unfollowedCalls": 0
+}
