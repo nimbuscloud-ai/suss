@@ -419,8 +419,11 @@ type BodyReads = BodyCalls & {
 
 /**
  * The calls the rules settled on nothing, asked as one question about
- * whether each takes its function from a table. A call through the
- * body's own parameter runs whatever the caller passed, so it is left out.
+ * whether each takes its function from a table. A method call,
+ * `obj.method(x)`, runs the attribute written after the dot, so only a callee written
+ * as a subscript, a call or a name can take its function from a table. A
+ * call through the body's own parameter runs whatever the caller passed,
+ * so it is left out.
  */
 function dispatchedAmong(
   written: readonly { call: PyNode; site: CallSite }[],
@@ -429,12 +432,18 @@ function dispatchedAmong(
 ): ReadonlyMap<number, DispatchedCall> {
   return dispatchedCalls(
     written.filter(({ call, site }) => {
+      if (!ENTRY_CALLEE_TYPES.has(field(call, "function")?.type ?? "")) {
+        return false;
+      }
       const outcome = resolveCallee(call, site, ctx, spellings);
       return outcome.kind === "stopped" && outcome.reason !== "callerSupplied";
     }),
     ctx,
   );
 }
+
+/** The ways a callee can be written that let it take its function from a table. */
+const ENTRY_CALLEE_TYPES = new Set(["subscript", "call", "identifier"]);
 
 /** One round's calls read and asked about together, which is how a run without a cache asks them. */
 function batchedReads(
