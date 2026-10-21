@@ -14,6 +14,7 @@ import {
   checkPair,
   countsForThreshold,
   findingIdentity,
+  groupBySharedCause,
   mergedSideOf,
   normalizedDescription,
   summaryWithDefinitionsInlined,
@@ -47,11 +48,13 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   BoundaryCollision,
+  CauseGroup,
   ChangeScope,
   ChangesSince,
   CheckAllResult,
   CheckedRun,
   ComparedPair,
+  OutcomeOrigin,
   SuppressionRule,
 } from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
@@ -187,7 +190,10 @@ export function check(options: CheckOptions): CheckResult {
           { file: options.providerFile, summaries: providerSummaries },
           { file: options.consumerFile, summaries: consumerSummaries },
         ]);
-  return emitFindings(findings, run, confidence, options);
+  return emitFindings(findings, run, confidence, options, [
+    ...providerSummaries,
+    ...consumerSummaries,
+  ]);
 }
 
 /**
@@ -563,7 +569,13 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     }
 
     if (since?.change !== undefined) {
-      return renderChange(since, confidence, scopeOf(options), run);
+      return renderChange(
+        since,
+        confidence,
+        scopeOf(options),
+        run,
+        allSummaries,
+      );
     }
     return (
       renderDirHuman(
@@ -571,7 +583,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
         confidence,
         scopeOf(options),
         since,
-        extractHintFor(allSummaries),
+        allSummaries,
       ) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
@@ -704,6 +716,7 @@ function renderSince(
   since: SinceReport,
   confidence: ConfidenceLookup,
   scope: ReportScope,
+  summaries: readonly BehavioralSummary[],
 ): string[] {
   const changed = since.changedBoundaries;
   const lines = [
@@ -715,7 +728,10 @@ function renderSince(
     ...elsewhereLines(since.change),
   ];
   if (since.added.length > 0) {
-    lines.push("", renderFindings(since.added, confidence, scope).trimEnd());
+    lines.push(
+      "",
+      renderFindings(since.added, confidence, scope, summaries).trimEnd(),
+    );
   }
 
   if (since.resolved.length > 0) {
@@ -742,8 +758,9 @@ function renderChange(
   confidence: ConfidenceLookup,
   scope: ReportScope,
   run: RunFinding[],
+  summaries: readonly BehavioralSummary[],
 ): string {
-  return `${renderSince(since, confidence, scope).join("\n")}\n${renderRunFindings(run)}`;
+  return `${renderSince(since, confidence, scope, summaries).join("\n")}\n${renderRunFindings(run)}`;
 }
 
 function sinceHeading(since: SinceReport): string[] {
@@ -1050,10 +1067,11 @@ function emitFindings(
   run: RunFinding[],
   confidence: ConfidenceLookup,
   options: { json?: boolean; output?: string; failOn?: FailOn; all?: boolean },
+  summaries: readonly BehavioralSummary[],
 ): CheckResult {
   const rendered = options.json
     ? `${JSON.stringify(twoFileJson(findings, run), null, 2)}\n`
-    : renderFindings(findings, confidence, scopeOf(options)) +
+    : renderFindings(findings, confidence, scopeOf(options), summaries) +
       renderRunFindings(run);
 
   writeReport(rendered, options.output);
@@ -1173,6 +1191,7 @@ export function renderFindings(
   allFindings: Finding[],
   confidence: ConfidenceLookup,
   scope: ReportScope = {},
+  summaries: readonly BehavioralSummary[] = [],
 ): string {
   const printed = printedSeverity(scope.failOn);
   const shown =
@@ -1195,31 +1214,19 @@ export function renderFindings(
     counts[f.severity] += 1;
   }
 
-  for (const f of shown) {
+  const groups = groupBySharedCause(shown, summaries);
+  for (const group of groups) {
     lines.push(`${"─".repeat(60)}`);
-    const sevLabel = formatSeverityHeader(f);
-    lines.push(`[${sevLabel}] ${f.kind}`);
-    lines.push(`  ${f.description}`);
-    if (f.suppressed !== undefined) {
-      lines.push(
-        `  suppressed (${f.suppressed.effect}): ${f.suppressed.reason}`,
-      );
-    }
-    // A finding merged from several sources lists the others under the
-    // side they replace, so a reviewer can see every summary behind it.
-    const mergedSide = mergedSideOf(f);
-    lines.push(`  provider: ${formatSide(f.provider, confidence)}`);
-    if (mergedSide === "provider") {
-      lines.push(...alsoFromLines(f, f.provider.summary));
-    }
-    lines.push(`  consumer: ${formatSide(f.consumer, confidence)}`);
-    if (mergedSide === "consumer") {
-      lines.push(...alsoFromLines(f, f.consumer.summary));
-    }
     lines.push(
-      `  boundary: ${f.boundary.recognition} (${f.boundary.transport})${formatRoute(f.boundary)}`,
+      ...(group.origins === null
+        ? findingBlock(group.findings[0] as Finding, confidence)
+        : sharedCauseBlock(
+            { findings: group.findings, origins: group.origins },
+            findings,
+            confidence,
+            scope.all === true,
+          )),
     );
-    lines.push(...formatSuppressionRule(f));
   }
   if (shown.length > 0) {
     lines.push("─".repeat(60));
@@ -1227,15 +1234,157 @@ export function renderFindings(
   lines.push(
     `${findings.length} finding${findings.length === 1 ? "" : "s"}: ${counts.error} error, ${counts.warning} warning, ${counts.info} info`,
   );
+  lines.push(...sharedCauseCountLines(groups));
   lines.push(...notShownLines(findings, shown, notes.size));
 
   return `${lines.join("\n")}\n`;
 }
 
-function alsoFromLines(f: Finding, shown: string): string[] {
+function findingBlock(f: Finding, confidence: ConfidenceLookup): string[] {
+  return [
+    `[${formatSeverityHeader(f)}] ${f.kind}`,
+    `  ${f.description}`,
+    ...suppressedLines(f),
+    ...sideLines(f, confidence, "  "),
+    `  ${boundaryLine(f)}`,
+    ...formatSuppressionRule(f),
+  ];
+}
+
+function suppressedLines(f: Finding): string[] {
+  return f.suppressed === undefined
+    ? []
+    : [`  suppressed (${f.suppressed.effect}): ${f.suppressed.reason}`];
+}
+
+/**
+ * Both sides of a finding. One merged from several sources lists the
+ * others under the side they replace, so a reviewer can see every
+ * summary behind it.
+ */
+function sideLines(
+  f: Finding,
+  confidence: ConfidenceLookup,
+  indent: string,
+): string[] {
+  const mergedSide = mergedSideOf(f);
+  return [
+    `${indent}provider: ${formatSide(f.provider, confidence)}`,
+    ...(mergedSide === "provider"
+      ? alsoFromLines(f, f.provider.summary, indent)
+      : []),
+    `${indent}consumer: ${formatSide(f.consumer, confidence)}`,
+    ...(mergedSide === "consumer"
+      ? alsoFromLines(f, f.consumer.summary, indent)
+      : []),
+  ];
+}
+
+function boundaryLine(f: Finding): string {
+  return `boundary: ${f.boundary.recognition} (${f.boundary.transport})${formatRoute(f.boundary)}`;
+}
+
+/** How many boundaries of a shared cause print in full without `--all`. */
+const SHARED_CAUSE_LISTED = 3;
+
+/**
+ * Findings that one provider outcome gives at several boundaries, such
+ * as a status a filter sends on every route behind it, printed once with
+ * the boundaries under it.
+ */
+function sharedCauseBlock(
+  group: { findings: Finding[]; origins: OutcomeOrigin[] },
+  every: readonly Finding[],
+  confidence: ConfidenceLookup,
+  all: boolean,
+): string[] {
+  const first = group.findings[0] as Finding;
+  const listed = all
+    ? group.findings
+    : group.findings.slice(0, SHARED_CAUSE_LISTED);
+  const lines = [
+    `[${formatSeverityHeader(first)}] ${first.kind} ${atBoundaries(group.findings)}`,
+    `  ${first.description}`,
+    ...suppressedLines(first),
+    `  comes from: ${group.origins.map((o) => `${o.name} (${o.file}:${o.line})`).join(", ")}`,
+  ];
+  for (const f of listed) {
+    lines.push(`  ${boundaryLine(f)}`, ...sideLines(f, confidence, "    "));
+  }
+  const rest = group.findings.length - listed.length;
+  if (rest > 0) {
+    lines.push(
+      `  and ${rest} more. Run the same command with --all to list them.`,
+    );
+  }
+  lines.push(...sharedCauseRule(group.findings, every));
+  return lines;
+}
+
+function atBoundaries(findings: readonly Finding[]): string {
+  const boundaries = new Set(findings.map((f) => boundaryKeyOf(f.boundary)));
+  const at = `at ${boundaries.size} boundaries`;
+  return boundaries.size === findings.length
+    ? at
+    : `${at} (${findings.length} findings)`;
+}
+
+/**
+ * One rule for every finding in a shared cause when the transition it
+ * cites matches those findings and no other, or else the rule for the
+ * first of them.
+ */
+function sharedCauseRule(
+  findings: readonly Finding[],
+  every: readonly Finding[],
+): string[] {
+  const first = findings[0] as Finding;
+  const transitionId = first.provider.transitionId;
+  if (first.suppressed !== undefined || transitionId === undefined) {
+    return [];
+  }
+
+  const rule: AcceptingRule = { kind: first.kind, provider: { transitionId } };
+  const open = every.filter((f) => f.suppressed === undefined);
+  const marked = applySuppressions(open, [
+    { ...rule, reason: "shared cause", scope: "narrow", effect: "mark" },
+  ]);
+  const accepted = new Set(
+    open.filter((_, i) => marked[i]?.suppressed !== undefined),
+  );
+  const others = [...accepted].filter((f) => !findings.includes(f)).length;
+  if (others > 0) {
+    return [
+      ...formatSuppressionRule(first, "to silence it at the first boundary"),
+      `  Without the boundary line the rule would also accept ${others} other finding${others === 1 ? "" : "s"} that cite${others === 1 ? "s" : ""} this transition.`,
+    ];
+  }
+  if (!findings.every((f) => accepted.has(f))) {
+    return formatSuppressionRule(first, "to silence it at the first boundary");
+  }
+  const where = findings.length === 2 ? "both" : `all ${findings.length}`;
+  return ruleLines(`to silence it at ${where}`, rule);
+}
+
+/** How many printed findings went into shared causes, so the count above them adds up. */
+function sharedCauseCountLines(groups: readonly CauseGroup[]): string[] {
+  const shared = groups.filter((group) => group.origins !== null);
+  if (shared.length === 0) {
+    return [];
+  }
+  const findings = shared.reduce(
+    (sum, group) => sum + group.findings.length,
+    0,
+  );
+  return [
+    `${findings} of them come from ${shared.length} shared cause${shared.length === 1 ? "" : "s"}, each printed once with the boundaries it reaches.`,
+  ];
+}
+
+function alsoFromLines(f: Finding, shown: string, indent: string): string[] {
   return (f.sources ?? [])
     .filter((s) => s !== shown)
-    .map((other) => `    also from: ${other}`);
+    .map((other) => `${indent}  also from: ${other}`);
 }
 
 /**
@@ -1315,13 +1464,20 @@ function formatSide(
  * `kind` plus `boundary` would also silence every other finding of that
  * kind on the boundary. A finding a rule already covers gets none either.
  */
-function formatSuppressionRule(f: Finding): string[] {
+function formatSuppressionRule(
+  f: Finding,
+  heading = "to silence this one",
+): string[] {
   const rule = acceptingRule(f);
   if (rule === null || f.suppressed !== undefined) {
     return [];
   }
+  return ruleLines(heading, rule);
+}
+
+function ruleLines(heading: string, rule: AcceptingRule): string[] {
   const lines = [
-    "  to silence this one, add to the rules in .sussignore.yml:",
+    `  ${heading}, add to the rules in .sussignore.yml:`,
     `    - kind: ${rule.kind}`,
   ];
   if (rule.boundary !== undefined) {
@@ -1498,8 +1654,9 @@ function renderDirHuman(
   confidence: ConfidenceLookup,
   scope: ReportScope,
   since: SinceReport | null,
-  extractHint: string,
+  summaries: readonly BehavioralSummary[],
 ): string {
+  const extractHint = extractHintFor(summaries);
   const all = scope.all === true;
   const lines: string[] = [];
   const { providers, consumers, unpairable } = result.unmatched;
@@ -1630,7 +1787,9 @@ function renderDirHuman(
     );
   }
 
-  lines.push(...findingLines(result, confidence, scope, since, coverage));
+  lines.push(
+    ...findingLines(result, confidence, scope, since, coverage, summaries),
+  );
   return `${lines.join("\n")}\n`;
 }
 
@@ -1641,12 +1800,16 @@ function findingLines(
   scope: ReportScope,
   since: SinceReport | null,
   coverage: PairingCoverage,
+  summaries: readonly BehavioralSummary[],
 ): string[] {
   if (since !== null) {
-    return ["", ...renderSince(since, confidence, scope)];
+    return ["", ...renderSince(since, confidence, scope, summaries)];
   }
   if (result.findings.length > 0) {
-    return ["", renderFindings(result.findings, confidence, scope).trimEnd()];
+    return [
+      "",
+      renderFindings(result.findings, confidence, scope, summaries).trimEnd(),
+    ];
   }
   if (result.pairs.length > 0) {
     return ["", noFindingsLine(coverage)];

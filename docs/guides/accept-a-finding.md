@@ -45,6 +45,8 @@ Run `check` again. The finding is still there, marked, with your reason under it
   boundary: hono (http) GET /reports/:id
 ```
 
+When one middleware or filter gives the same finding at many routes, `check` prints it once and the rule under it has no `boundary` line, so pasting it accepts the finding at every one of those routes. To accept it at one route only, add that route's `boundary` to the rule. See [One cause at many boundaries](/reference/cli/check#one-cause-at-many-boundaries).
+
 ## Where the file goes
 
 Most people keep it at the project root, beside `package.json`. `suss check --dir summaries/` starts looking inside `summaries/` and walks up until it finds one. `suss check provider.json consumer.json` starts in the working directory and walks up the same way. Either search stops at the first directory that has a `package.json` or a `.git` in it, so suss never picks up a file from outside your project.
