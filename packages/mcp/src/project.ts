@@ -311,6 +311,17 @@ export class Project {
   }
 
   /**
+   * Runs `work` after the build in flight and before the next one, for
+   * work such as reading a base revision that moves the working
+   * directory, which a build reading contracts would see.
+   */
+  betweenBuilds<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.chain.then(work);
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  /**
    * Queues a build behind the one running. A caller that asks while a
    * build is queued and not yet started joins that build, since it has
    * not read the tree yet either.

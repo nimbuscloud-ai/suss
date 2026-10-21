@@ -25,8 +25,9 @@ import {
   setCacheDir,
   takeCacheDirFlag,
 } from "./cacheDirFlag.js";
-import { check, checkDir } from "./check.js";
+import { CHANGED_FILES_NEED_SINCE, check, checkDir } from "./check.js";
 import { checkAt } from "./checkAt.js";
+import { readBase } from "./checkBase.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
 import { extract, languageOfRun } from "./extract.js";
@@ -55,6 +56,7 @@ import { stubDraft } from "./stubDraftCommand.js";
 import { installedVersion, printUpdateNoticeIfBehind } from "./updateNotice.js";
 import { UsageError } from "./usageError.js";
 
+import type { BaseRevision } from "./checkBase.js";
 import type { ContractSource } from "./contract.js";
 import type { ExtractOptions } from "./extract.js";
 import type { Language } from "./language.js";
@@ -71,7 +73,8 @@ Usage:
   suss check [--dir <directory>] [--intent <intent-dir>] [--all] [--json] [-o <output>]
   suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
   suss check [--dir <directory>] --at <file[:line] | boundary | summary-id> [--json]
-  suss check [--dir <directory>] --since <earlier-directory> [--json]
+  suss check [--dir <directory>] --since <earlier-directory> [--changed-files <file>] [--json]
+  suss check [--dir <directory>] --base <git ref> [--json]
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <framework> ...] [-o <output.json>]
@@ -224,6 +227,14 @@ Options (check):
                    narrows to what changed since then: new findings,
                    findings that went away, and the boundaries the code
                    changed at. The run fails only on new findings.
+  --changed-files  With --since, a file listing the paths a change touched,
+                   one per line. The report keeps the new and resolved
+                   findings with a side in one of those files, in a unit
+                   whose behavior moved, or at a boundary that changed.
+  --base           A git ref, such as origin/main. Reads the commit HEAD
+                   branched from into a temporary folder, without touching
+                   the checkout, and reports what --since and
+                   --changed-files would for the files changed since it.
   --all            Write out every finding and every list. Without it a run
                    prints the errors in full and counts the rest, because a
                    first run over a repository reports far more at warning
@@ -828,6 +839,11 @@ function chainHops(
 
 /** Reads the list of files a change touched, one path per line, as `git diff --name-only` prints it. */
 function readChangedFiles(file: string): string[] {
+  if (!existsSync(file)) {
+    throw new UsageError(
+      `No file at ${file}. --changed-files reads one path per line, the format \`git diff --name-only\` writes.`,
+    );
+  }
   return readFileSync(file, "utf-8")
     .split("\n")
     .map((line) => line.trim())
@@ -928,11 +944,8 @@ function runInspectDiff(
   }
 
   const changedFilesAt = values["changed-files"];
-  if (changedFilesAt !== undefined && !existsSync(changedFilesAt)) {
-    throw new UsageError(
-      `No file at ${changedFilesAt}. --changed-files reads one path per line, the format \`git diff --name-only\` writes.`,
-    );
-  }
+  const changedFiles =
+    changedFilesAt === undefined ? undefined : readChangedFiles(changedFilesAt);
 
   const chain = chainHops(values.chain);
   if (chain === "bad") {
@@ -945,9 +958,7 @@ function runInspectDiff(
     before,
     after,
     ...(values.json === true ? { json: true } : {}),
-    ...(changedFilesAt === undefined
-      ? {}
-      : { changedFiles: readChangedFiles(changedFilesAt) }),
+    ...(changedFiles === undefined ? {} : { changedFiles }),
     ...(budget === undefined ? {} : { budget }),
     ...(chain === undefined ? {} : { chain }),
   });
@@ -997,6 +1008,8 @@ export async function runCheck(args: string[]): Promise<number> {
       at: { type: "string" },
       intent: { type: "string" },
       since: { type: "string" },
+      base: { type: "string" },
+      "changed-files": { type: "string" },
       all: { type: "boolean" },
       "fail-on": { type: "string" },
       "allow-empty": { type: "boolean" },
@@ -1064,6 +1077,9 @@ export async function runCheck(args: string[]): Promise<number> {
     );
   }
 
+  refuseWithBase(values, positionals);
+  const earlier = await earlierRunFor(values);
+
   const checkFolder = (dir: string): number => {
     if (values.at !== undefined) {
       const scoped = checkAt({ dir, at: values.at, ...shared });
@@ -1074,7 +1090,7 @@ export async function runCheck(args: string[]): Promise<number> {
       ...shared,
       ...all,
       ...(values.intent !== undefined ? { intent: values.intent } : {}),
-      ...(values.since !== undefined ? { since: values.since } : {}),
+      ...earlier,
     });
     return result.hasErrors ? 1 : 0;
   };
@@ -1125,6 +1141,77 @@ export async function runCheck(args: string[]): Promise<number> {
     ...all,
   });
   return result.hasErrors ? 1 : 0;
+}
+
+/** The flags `check` reads to find the earlier run, as the argument parser returns them. */
+interface EarlierRunFlags {
+  at?: string;
+  intent?: string;
+  since?: string;
+  base?: string;
+  "changed-files"?: string;
+}
+
+/** The flags `--base` and `--changed-files` cannot run with, refused before anything is read. */
+function refuseWithBase(values: EarlierRunFlags, positionals: string[]): void {
+  const narrowing = values.base ?? values["changed-files"];
+  if (values.base !== undefined && values.since !== undefined) {
+    throw new UsageError(
+      "--base reads the earlier run out of git, so it takes the place of --since. Pass one of them.",
+    );
+  }
+
+  if (values.base !== undefined && values["changed-files"] !== undefined) {
+    throw new UsageError(
+      "--base lists the changed files from git, so it takes the place of --changed-files. Pass one of them.",
+    );
+  }
+
+  if (values["changed-files"] !== undefined && values.since === undefined) {
+    throw new UsageError(CHANGED_FILES_NEED_SINCE);
+  }
+
+  if (narrowing !== undefined && values.at !== undefined) {
+    throw new UsageError(
+      "--at reports on one thing and --base and --changed-files report what one change did to the whole folder, so they cannot run together. Run them one at a time.",
+    );
+  }
+
+  if (values.base !== undefined && values.intent !== undefined) {
+    throw new UsageError(
+      "--base reports what changed between two revisions and --intent scores the code against your intent docs, so they cannot run together. Run them one at a time.",
+    );
+  }
+
+  if (narrowing !== undefined && positionals.length > 0) {
+    throw new UsageError(
+      "--base and --changed-files narrow a run over a folder of summaries, so they take --dir or no files at all. Try: suss check --base origin/main",
+    );
+  }
+}
+
+/**
+ * The earlier run to compare with: a folder from `--since`, or the base
+ * revision `--base` reads out of git, with the files changed since it.
+ */
+async function earlierRunFor(values: EarlierRunFlags): Promise<{
+  since?: string;
+  changedFiles?: string[];
+  base?: BaseRevision;
+}> {
+  if (values.base !== undefined) {
+    const { summaryDir, changedFiles, ...base } = await readBase(
+      process.cwd(),
+      values.base,
+    );
+    return { since: summaryDir, changedFiles, base };
+  }
+  return {
+    ...(values.since !== undefined ? { since: values.since } : {}),
+    ...(values["changed-files"] !== undefined
+      ? { changedFiles: readChangedFiles(values["changed-files"]) }
+      : {}),
+  };
 }
 
 async function runAsk(args: string[]): Promise<number> {

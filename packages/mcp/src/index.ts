@@ -104,14 +104,20 @@ export function createServer(options: ServerOptions): {
           .describe(
             'One boundary, file, or file:line to narrow to, such as "GET /users/:id" or "src/orders.ts". Leave it out for the whole project.',
           ),
+        base: z
+          .string()
+          .optional()
+          .describe(
+            'A git ref the change branched from, such as "origin/main". The result keeps the findings this change introduced and lists the ones it resolved. Does not run with boundary.',
+          ),
       },
     },
     (args) =>
       attempt("suss_check", () =>
-        checkTool(
-          project,
-          args.boundary === undefined ? {} : { boundary: args.boundary },
-        ),
+        checkTool(project, {
+          ...(args.boundary === undefined ? {} : { boundary: args.boundary }),
+          ...(args.base === undefined ? {} : { base: args.base }),
+        }),
       ),
   );
 

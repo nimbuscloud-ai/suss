@@ -85,6 +85,7 @@ For Python that is `--dir src -f fastapi`, and for Ruby `--dir app -f rails`.
 | `version` | `latest` | The version of `@suss/cli` to install. |
 | `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty the base checkout shares the head's `node_modules` directories, and that works as long as the pull request does not change dependencies. |
 | `comment` | `true` | Whether to post the comment. Set it to `false` to read the outputs and do something else with them. |
+| `findings` | `false` | Whether to add the findings the pull request introduced to the comment, after the diff. The action runs `suss check --since` over the two summary files with `--changed-files`, so the comment lists the findings that are new since the base and touch a changed file, a unit whose behavior moved, or a changed boundary, and the ones it resolved. Errors and warnings print in full and info findings are counted. The whole report is `findings.txt` in the run's artifact. See [Checking a pull request](/reference/cli/check#checking-a-pull-request). |
 | `artifact-name` | `suss-diff` | The name of the run artifact that keeps both summary files and the diff. Two uses of the action in one workflow need two names. |
 | `cache` | `true` | Whether to keep suss's per-file cache and each commit's summaries in the repository's actions cache. |
 | `token` | `github.token` | The token used to post the comment. It needs `pull-requests: write`. |

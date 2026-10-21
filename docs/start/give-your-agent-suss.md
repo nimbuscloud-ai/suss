@@ -145,7 +145,12 @@ why does <name> at <file>:<line> resolve to <target>
 two disagree, such as a caller reading a field the provider never returns
 or a status no caller handles. An agent runs it after writing code that
 crosses a boundary. Pass a `boundary` to narrow a whole-project report
-down to one thing.
+down to one thing. To review a branch, pass a `base` such as
+`origin/main`: the result keeps the findings that are new since the
+commit the branch started from and touch what it changed, and lists
+the ones it resolved. It works the way
+[`suss check --base`](/reference/cli/check#checking-a-pull-request)
+does.
 
 `suss_boundaries` lists the boundaries in three groups: the ones with
 both sides present, the ones only something serves, and the ones only

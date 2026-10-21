@@ -160,6 +160,14 @@ export {
   runtimeReads,
 } from "./runtime-config/runtimeConfigPairing.js";
 export {
+  type ChangeScope,
+  type ChangesWithin,
+  type ChangeTouch,
+  changeScope,
+  changesWithin,
+  touchedByChange,
+} from "./since/changeScope.js";
+export {
   type ChangedBoundary,
   type ChangesSince,
   type CheckedRun,
@@ -167,6 +175,7 @@ export {
   changesSince,
   type FindingsSince,
   findingsSince,
+  unitsThatMoved,
 } from "./since/changesSince.js";
 export {
   boundaryKeyOf,
