@@ -131,7 +131,11 @@ import type { BoundPythonFile } from "./routers.js";
 import type { ModuleBinding } from "./scope.js";
 import type { UnreadManifest } from "./sourceRoots.js";
 import type { StorageLookup } from "./storage.js";
-import type { PythonWrapperIndex } from "./wrappers.js";
+import type {
+  DecoratorClosure,
+  FormOf,
+  PythonWrapperIndex,
+} from "./wrappers.js";
 
 export interface ExtractPythonOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -677,27 +681,10 @@ async function runPython(
   // its file can register the same ones in the same order.
   let registering: StoredRegistration[] | null = null;
   if (ledger !== null) {
-    wrapperIndex.onRegistered = (target, declared) => {
-      const form = positions.positionOf(declared);
-      if (registering !== null && form !== undefined) {
-        registering.push({
-          key: nodeId(target.file.file, target.node),
-          name: target.name,
-          exportPath: target.exportPath,
-          form,
-        });
-      }
-    };
-    wrapperIndex.onClosureRegistered = (target, closure) => {
-      const pattern = positions.idOf(closure.pattern);
-      if (registering !== null && pattern !== undefined) {
-        registering.push({
-          key: nodeId(target.file.file, target.node),
-          name: target.name,
-          exportPath: target.exportPath,
-          pattern,
-          continuation: closure.continuation,
-        });
+    wrapperIndex.onRegistered = (target, how) => {
+      const stored = storedRegistration(target, how, positions);
+      if (registering !== null && stored !== null) {
+        registering.push(stored);
       }
     };
   }
@@ -1104,6 +1091,27 @@ async function runPython(
   options.onTiming?.(timer.report());
 
   return { summaries: composed, facts: db };
+}
+
+/** A registration as a cache entry writes it, or null when the run's packs cannot place it. */
+function storedRegistration(
+  target: ReachedFunction,
+  how: FormOf | DecoratorClosure,
+  positions: PackPositions,
+): StoredRegistration | null {
+  const at = {
+    key: nodeId(target.file.file, target.node),
+    name: target.name,
+    exportPath: target.exportPath,
+  };
+  if ("continuation" in how) {
+    const pattern = positions.idOf(how.pattern);
+    return pattern === undefined
+      ? null
+      : { ...at, pattern, continuation: how.continuation };
+  }
+  const form = positions.positionOf(how);
+  return form === undefined ? null : { ...at, form };
 }
 
 /** Registers a stored wrapper again, the way the discovery that stored it did. */

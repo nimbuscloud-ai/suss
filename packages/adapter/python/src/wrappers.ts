@@ -172,12 +172,12 @@ export class PythonWrapperIndex {
     { file: string; names: string[]; declaresSource: boolean }
   >();
   private readonly unitsByFile = new Map<string, RawCodeStructure[]>();
-  /** Told about every registration, so a cache can repeat the ones a file's discovery made. */
-  onRegistered: ((target: ReachedFunction, declared: FormOf) => void) | null =
-    null;
-  /** The same, for the closure a project's decorator hands back. */
-  onClosureRegistered:
-    | ((target: ReachedFunction, closure: DecoratorClosure) => void)
+  /**
+   * Told about every registration, a pack's form or a project decorator's
+   * closure, so a cache can repeat the ones a file's discovery made.
+   */
+  onRegistered:
+    | ((target: ReachedFunction, how: FormOf | DecoratorClosure) => void)
     | null = null;
 
   constructor(
@@ -294,7 +294,7 @@ export class PythonWrapperIndex {
     target: ReachedFunction,
     closure: DecoratorClosure,
   ): WrapperReference {
-    this.onClosureRegistered?.(target, closure);
+    this.onRegistered?.(target, closure);
     const span = spanOf(target.node);
     const key = `${target.file.file}:${span.start}-${span.end}`;
     if (!this.unitsByKey.has(key)) {
@@ -442,7 +442,7 @@ export class PythonWrapperIndex {
     }
 
     const written = decoratorCallee(decorator);
-    if (written === null || BUILTIN_DECORATORS.has(written.text)) {
+    if (written === null) {
       return [];
     }
     const project =
@@ -684,9 +684,6 @@ export class PythonWrapperIndex {
 function referenceKey(reference: WrapperReference): string {
   return `${reference.file}::${reference.name}`;
 }
-
-/** Decorators the language defines, which change how a method is bound and wrap nothing a request runs. */
-const BUILTIN_DECORATORS = new Set(["staticmethod", "classmethod", "property"]);
 
 /** Whether a pack in the run reads decorators from this module itself. */
 function readByAPack(module: string, options: WrapperIndexOptions): boolean {
@@ -1022,7 +1019,7 @@ function wrapperUnit(
     {
       continuations: continuationStatements(target.node, declared.form),
       continuationName: null,
-      handsOn: (statement) => returnHandsOn(statement, declared.form),
+      form: declared.form,
       nameKind: "binding",
     },
     options,
@@ -1045,7 +1042,7 @@ function closureUnit(
     {
       continuations: callsThrough(target.node, closure.continuation),
       continuationName: closure.continuation,
-      handsOn: () => false,
+      form: null,
       nameKind: "label",
     },
     options,
@@ -1057,7 +1054,8 @@ interface WrapperReading {
   continuations: PyNode[];
   /** The name the continuation is called by, recorded where the wrapper hands on. */
   continuationName: string | null;
-  handsOn: (statement: PyNode) => boolean;
+  /** The pack's form, which says when a `return` hands on. A closure has none, and its returns respond. */
+  form: PyWrapperForm | null;
   nameKind: "binding" | "label";
 }
 
@@ -1123,7 +1121,10 @@ function unitAround(
     if (terminal.type === "continuation") {
       return delegate(terminal.statement, reading.continuationName);
     }
-    if (reading.handsOn(terminal.statement)) {
+    if (
+      reading.form !== null &&
+      returnHandsOn(terminal.statement, reading.form)
+    ) {
       return delegate(terminal.statement);
     }
     return respond(terminal.statement);
@@ -1237,10 +1238,7 @@ function closureReturnedBy(decorator: PyNode): PyNode | null {
   const returned = statements
     .find((statement) => statement.type === "return_statement")
     ?.namedChild(0);
-  if (returned === undefined || returned === null) {
-    return null;
-  }
-  if (returned.type !== "identifier") {
+  if (returned?.type !== "identifier") {
     return null;
   }
   for (const statement of statements) {

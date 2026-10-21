@@ -17,7 +17,7 @@ import {
   type DiscoveredUnit,
   toFunctionRoot,
 } from "./shared.js";
-import { wrappedExportOf } from "./wrappedExport.js";
+import { type WrappedExport, wrappedExportOf } from "./wrappedExport.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -93,33 +93,32 @@ export interface NamedExportOptions {
 }
 
 /**
- * The units an export written as `wrapper(fn)` gives: `fn`, with the
- * layers around it recorded, and the layer the run can read as a unit of
- * its own. Null leaves the export to the store's answer, which is a
+ * The handler inside an export written as `wrapper(fn)`, with the layers
+ * around it. Null leaves the export to the store's answer, which is a
  * different function when the factory hands back a closure that never
  * calls the one it was given.
  */
-function unitsInsideCall(
+function wrappedInsideCall(
   init: Node,
   resolved: FunctionRoot | null,
   kind: string,
   resolution: ResolutionStore,
-  nameFor: (handler: FunctionRoot) => string,
-): DiscoveredUnit[] | null {
+): WrappedExport | null {
   const wrapped = wrappedExportOf(init, kind, resolution);
   if (wrapped === null) {
     return null;
   }
-  if (resolved !== null && resolved !== wrapped.handler) {
-    return null;
-  }
+  return resolved !== null && resolved !== wrapped.handler ? null : wrapped;
+}
+
+/** The handler as the export's unit, and the layer the run can read as a unit of its own. */
+function unitsOf(
+  wrapped: WrappedExport,
+  kind: string,
+  name: string,
+): DiscoveredUnit[] {
   return [
-    {
-      func: wrapped.handler,
-      kind,
-      name: nameFor(wrapped.handler),
-      routeWrappers: wrapped.layers,
-    },
+    { func: wrapped.handler, kind, name, routeWrappers: wrapped.layers },
     ...(wrapped.closure === undefined ? [] : [wrapped.closure]),
   ];
 }
@@ -210,11 +209,11 @@ export function discoverNamedExports(
     if (resolution !== undefined) {
       const resolved = resolution.resolveCalledFunction(init);
       const fn = resolved === null ? null : toFunctionRoot(resolved);
-      const units = options.handlersInsideCalls
-        ? unitsInsideCall(init, fn, kind, resolution, () => name)
+      const wrapped = options.handlersInsideCalls
+        ? wrappedInsideCall(init, fn, kind, resolution)
         : null;
-      if (units !== null) {
-        results.push(...units);
+      if (wrapped !== null) {
+        results.push(...unitsOf(wrapped, kind, name));
         satisfied.add(name);
         continue;
       }
@@ -293,10 +292,10 @@ export function discoverNamedExports(
         resolution !== undefined &&
         options.handlersInsideCalls &&
         targetName !== "default"
-          ? unitsInsideCall(decl, null, kind, resolution, () => targetName)
+          ? wrappedInsideCall(decl, null, kind, resolution)
           : null;
       if (inside !== null) {
-        results.push(...inside);
+        results.push(...unitsOf(inside, kind, targetName));
         break;
       }
     }
@@ -336,12 +335,14 @@ function defaultExportUnits(
       written === null &&
       resolution !== undefined &&
       options.handlersInsideCalls
-        ? unitsInsideCall(expression, resolved, kind, resolution, (handler) =>
-            resolveDefaultExportName(expression, handler),
-          )
+        ? wrappedInsideCall(expression, resolved, kind, resolution)
         : null;
     if (inside !== null) {
-      return inside;
+      return unitsOf(
+        inside,
+        kind,
+        resolveDefaultExportName(expression, inside.handler),
+      );
     }
     if (resolved === null) {
       return [];
