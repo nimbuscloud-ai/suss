@@ -162,25 +162,40 @@ export function servicesOf(summaries: readonly BehavioralSummary[]): string[] {
 
 /**
  * Whether the providers a consumer reaches are routes in more than one
- * function, all equally specific. One request reaches one handler, so
- * when `/:username/:view` and `/:feed_type/:timeframe` both match
- * `/admin/stats`, the framework picks by the order it was given, which
- * the run cannot see. A contract document describes a route and serves
- * nothing, so it is never a rival.
+ * function, all equally specific, that one request could reach. One
+ * request reaches one handler, so when `/:username/:view` and
+ * `/:feed_type/:timeframe` both match `/admin/stats`, the framework picks
+ * by the order it was given, which the run cannot see. A call that picks
+ * its URL, `isInvite ? "/invites" : "/users"`, reaches each route on its
+ * own requests, so those two do not tie. A contract document describes a
+ * route and serves nothing, so it is never a rival.
  */
 function routesTie(providers: readonly BehavioralSummary[]): boolean {
-  const functions = new Set(
-    providers
-      .filter(
-        (provider) =>
-          servesOneRequestAlone(provider) &&
-          provider.identity.boundaryBinding !== null &&
-          exchangesHttpResponses(provider.identity.boundaryBinding) &&
-          !isContractDocument(provider),
-      )
-      .map(servingFunction),
+  const serving = providers.filter(
+    (provider) =>
+      servesOneRequestAlone(provider) &&
+      provider.identity.boundaryBinding !== null &&
+      exchangesHttpResponses(provider.identity.boundaryBinding) &&
+      !isContractDocument(provider),
   );
-  return functions.size > 1;
+  return serving.some((one, at) =>
+    serving
+      .slice(at + 1)
+      .some(
+        (other) =>
+          servingFunction(one) !== servingFunction(other) &&
+          oneRequestReachesBoth(one, other),
+      ),
+  );
+}
+
+function oneRequestReachesBoth(
+  one: BehavioralSummary,
+  other: BehavioralSummary,
+): boolean {
+  const a = one.identity.boundaryBinding;
+  const b = other.identity.boundaryBinding;
+  return a !== null && b !== null && bucketsMeet(a, b);
 }
 
 /**
