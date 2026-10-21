@@ -498,12 +498,23 @@ describe("placeCalls", () => {
 });
 
 describe("placePossibleCalls", () => {
-  it("writes possibleDeclaredAt on the invocation effect a target names", () => {
+  it("writes possibleDeclaredAt on the invocation effect a target names, and leaves a non-call effect alone", () => {
     const caller = summary({
       name: "dispatch",
       file: "src/run.ts",
       calls: ["run", "untouched"],
     });
+    const read = {
+      type: "interaction" as const,
+      interaction: {
+        class: "storage-access" as const,
+        target: { system: "postgresql", collection: "orders" },
+        operation: "read" as const,
+      },
+      target: "orders",
+      operation: "read",
+    };
+    caller.transitions[0]?.effects.push(read as never);
     const targets = [
       { file: "src/commands.ts", span: { start: 10, end: 18 } },
       { file: "src/commands.ts", span: { start: 30, end: 38 } },
@@ -515,6 +526,7 @@ describe("placePossibleCalls", () => {
     const effects = caller.transitions[0]?.effects ?? [];
     expect(effects[0]).toMatchObject({ possibleDeclaredAt: targets });
     expect(effects[1]).not.toHaveProperty("possibleDeclaredAt");
+    expect(effects[2]).toEqual(read);
   });
 });
 
