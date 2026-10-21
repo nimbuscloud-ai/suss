@@ -31,7 +31,7 @@ suss contract --from <source> <spec> [-o <output.json>]
 | `serverless` | A Serverless Framework service file, or the directory it is in. `${self:...}` resolves against the document; a reference a deploy supplies keeps its token. |
 | `wrangler` | A Cloudflare Worker's `wrangler.toml` or `wrangler.jsonc`, or the directory the Worker lives in. |
 | `appsync` | A CloudFormation template with `AWS::AppSync::*` resources. |
-| `prisma` | A `schema.prisma` file. |
+| `prisma` | A `schema.prisma` file, or the folder of a schema split over several files. |
 | `graphql` | A GraphQL SDL file. Each Query, Mutation and Subscription field becomes a resolver-kind summary. |
 | `graphql-documents` | Committed `.graphql` or `.gql` operation documents, one file or a directory walked recursively. Each operation becomes a client-kind summary, and fragment spreads are inlined across the whole read set. |
 | `storybook` | A CSF3 `.stories.ts` or `.stories.tsx` file, or a directory of them walked recursively. |

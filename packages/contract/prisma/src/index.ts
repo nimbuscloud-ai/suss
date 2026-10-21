@@ -97,11 +97,36 @@ export function prismaSchemaToSummaries(
   source: string,
   options: PrismaSchemaToSummariesOptions = {},
 ): BehavioralSummary[] {
-  const ast = getSchema(source);
-  const list = (ast as { list: Array<unknown> }).list;
+  return summariesOfSchema(
+    [{ file: options.source ?? "schema.prisma", text: source }],
+    options.scope ?? "default",
+  );
+}
+
+/** The text of one file of a schema, and the path its summaries record. */
+interface SchemaSource {
+  file: string;
+  text: string;
+}
+
+/**
+ * Prisma reads the files of a multi-file schema as one, so a field in one
+ * file can refer to a model in another, and only one file has the datasource.
+ */
+function summariesOfSchema(
+  sources: readonly SchemaSource[],
+  scope: string,
+): BehavioralSummary[] {
+  const nodes = sources.flatMap(({ file, text }) =>
+    (getSchema(text) as { list: Array<unknown> }).list.map((node) => ({
+      node,
+      file,
+    })),
+  );
+  const list = nodes.map(({ node }) => node);
 
   // Names are collected first, because a field can refer to a model or
-  // enum declared later in the file.
+  // enum declared later in the file, or in another file of the schema.
   const modelNames = new Set<string>();
   const enumNames = new Set<string>();
   const storageSystem = storageSystemIn(list);
@@ -125,11 +150,12 @@ export function prismaSchemaToSummaries(
     return [];
   }
 
-  const sourceFile = options.source ?? "schema.prisma";
-  const scope = options.scope ?? "default";
   const summaries: BehavioralSummary[] = [];
   const models = list.filter(
     (node): node is PrismaModel => (node as { type: string }).type === "model",
+  );
+  const fileOfModel = new Map(
+    nodes.map(({ node, file }) => [(node as { name?: string }).name, file]),
   );
   const relations = implicitManyToManyRelations(models, modelNames);
   const joinContainerByField = new Map<string, string>();
@@ -144,7 +170,7 @@ export function prismaSchemaToSummaries(
     );
   }
 
-  for (const node of list) {
+  for (const { node, file } of nodes) {
     const n = node as { type: string };
     if (n.type !== "model" && n.type !== "view") {
       continue;
@@ -157,7 +183,7 @@ export function prismaSchemaToSummaries(
         enumNames,
         storageSystem,
         scope,
-        sourceFile,
+        sourceFile: file,
         joinContainerByField,
       }),
     );
@@ -165,7 +191,12 @@ export function prismaSchemaToSummaries(
 
   for (const relation of relations) {
     summaries.push(
-      buildJoinTableSummary({ relation, storageSystem, scope, sourceFile }),
+      buildJoinTableSummary({
+        relation,
+        storageSystem,
+        scope,
+        sourceFile: fileOfModel.get(relation.leftModel) ?? "schema.prisma",
+      }),
     );
   }
 
@@ -354,8 +385,9 @@ function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
 }
 
 /**
- * Reads a Prisma schema file and converts it. Throws when the file does
- * not exist.
+ * Reads a Prisma schema from disk and converts it: a file, a schema
+ * folder, or one file of a multi-file schema, which brings the rest of
+ * its files with it. Throws when the path does not exist.
  */
 export function prismaSchemaFileToSummaries(
   schemaPath: string,
@@ -364,11 +396,72 @@ export function prismaSchemaFileToSummaries(
   if (!fs.existsSync(schemaPath)) {
     throw new Error(`Prisma schema not found: ${schemaPath}`);
   }
-  const source = fs.readFileSync(schemaPath, "utf-8");
-  return prismaSchemaToSummaries(source, {
-    ...options,
-    source: options.source ?? path.relative(process.cwd(), schemaPath),
-  });
+  const sources = prismaSchemaFiles(schemaPath).map((file) => ({
+    file: options.source ?? path.relative(process.cwd(), file),
+    text: fs.readFileSync(file, "utf-8"),
+  }));
+  return summariesOfSchema(sources, options.scope ?? "default");
+}
+
+/**
+ * The files Prisma reads as one schema, given a schema file or folder.
+ * Prisma reads every `.prisma` file below a folder. A file with no
+ * datasource cannot be a schema on its own, so when only one file in a
+ * folder has the datasource, the folder's files are one schema.
+ */
+export function prismaSchemaFiles(schemaPath: string): string[] {
+  const stat = statOf(schemaPath);
+  if (stat?.isDirectory() === true) {
+    return prismaFilesIn(schemaPath, true);
+  }
+
+  if (stat?.isFile() !== true) {
+    return [];
+  }
+
+  const beside = prismaFilesIn(path.dirname(schemaPath), false);
+  const withDatasource = beside.filter((file) =>
+    declaresDatasource(textOf(file)),
+  );
+  return withDatasource.length === 1 && schemaPath.endsWith(".prisma")
+    ? beside
+    : [schemaPath];
+}
+
+function statOf(file: string): fs.Stats | null {
+  try {
+    return fs.statSync(file);
+  } catch {
+    return null;
+  }
+}
+
+/** The `.prisma` files in a folder, sorted, and below it when `below` is set. */
+function prismaFilesIn(dir: string, below: boolean): string[] {
+  return fs
+    .readdirSync(dir, { recursive: below, encoding: "utf8" })
+    .filter((name) => name.endsWith(".prisma"))
+    .map((name) => path.join(dir, name))
+    .filter((file) => statOf(file)?.isFile() === true)
+    .sort();
+}
+
+function textOf(file: string): string {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function declaresDatasource(source: string): boolean {
+  try {
+    return (getSchema(source) as { list: unknown[] }).list.some(
+      (node) => (node as { type: string }).type === "datasource",
+    );
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

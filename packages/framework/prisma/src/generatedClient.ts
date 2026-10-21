@@ -7,9 +7,10 @@
  * recognize, and before `prisma generate` runs it does not exist at all.
  * The schema's generator blocks say where it goes. The schema is found
  * where Prisma looks for it: the `schema` a `prisma.config.ts` gives,
- * the `prisma.schema` key in package.json, then `prisma/schema.prisma`
- * and `schema.prisma`. A schema path may be a directory of `.prisma`
- * files. An `output` is relative to the file that declares it.
+ * the `prisma.schema` key in package.json, the `--schema` a `prisma
+ * generate` script passes, then `prisma/schema.prisma` and
+ * `schema.prisma`. A schema may span a folder of `.prisma` files. An
+ * `output` is relative to the file that declares it.
  */
 
 import fs from "node:fs";
@@ -18,7 +19,7 @@ import path from "node:path";
 import { getSchema } from "@mrleebo/prisma-ast";
 import { ts } from "ts-morph";
 
-import { prismaStorageSystem } from "@suss/contract-prisma";
+import { prismaSchemaFiles, prismaStorageSystem } from "@suss/contract-prisma";
 
 import type { PrismaStorageSystem } from "@suss/contract-prisma";
 
@@ -175,37 +176,22 @@ function configFileIn(dir: string): string | null {
 
 /** The schema files of the project at `root`, from the first place that has one. */
 function schemaFilesOf(root: string): string[] {
-  const stated = [configuredSchema(root), packageJsonSchema(root)];
+  const manifest = manifestOf(root);
+  const stated = [
+    configuredSchema(root),
+    packageJsonSchema(root, manifest),
+    generateScriptSchema(root, manifest),
+  ];
   for (const schema of [
     ...stated.filter((one): one is string => one !== null),
     ...DEFAULT_SCHEMAS.map((name) => path.join(root, name)),
   ]) {
-    const files = prismaFilesAt(schema);
+    const files = prismaSchemaFiles(schema);
     if (files.length > 0) {
       return files;
     }
   }
   return [];
-}
-
-function prismaFilesAt(schemaPath: string): string[] {
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(schemaPath);
-  } catch {
-    return [];
-  }
-  if (stat.isFile()) {
-    return [schemaPath];
-  }
-  if (!stat.isDirectory()) {
-    return [];
-  }
-  return fs
-    .readdirSync(schemaPath, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".prisma"))
-    .map((name) => path.join(schemaPath, name))
-    .sort();
 }
 
 /**
@@ -242,20 +228,48 @@ function configuredSchema(root: string): string | null {
   return found === null ? null : path.resolve(root, found);
 }
 
-function packageJsonSchema(root: string): string | null {
-  const file = path.join(root, "package.json");
-  if (!fs.existsSync(file)) {
-    return null;
-  }
+interface Manifest {
+  prisma?: { schema?: unknown };
+  scripts?: Record<string, unknown>;
+}
+
+function manifestOf(root: string): Manifest | null {
   try {
-    const manifest = JSON.parse(fs.readFileSync(file, "utf8")) as {
-      prisma?: { schema?: unknown };
-    };
-    const schema = manifest.prisma?.schema;
-    return typeof schema === "string" ? path.resolve(root, schema) : null;
+    return JSON.parse(
+      fs.readFileSync(path.join(root, "package.json"), "utf8"),
+    ) as Manifest;
   } catch {
     return null;
   }
+}
+
+function packageJsonSchema(
+  root: string,
+  manifest: Manifest | null,
+): string | null {
+  const schema = manifest?.prisma?.schema;
+  return typeof schema === "string" ? path.resolve(root, schema) : null;
+}
+
+const GENERATE_SCHEMA_FLAG =
+  /\bprisma\s+generate\b[^&|;]*?--schema(?:=|\s+)(["']?)([^\s"'&|;]+)\1/;
+
+/**
+ * The `--schema` a `prisma generate` script passes, since a project whose
+ * schema is a folder Prisma does not look in states it there and nowhere else.
+ */
+function generateScriptSchema(
+  root: string,
+  manifest: Manifest | null,
+): string | null {
+  for (const script of Object.values(manifest?.scripts ?? {})) {
+    const match =
+      typeof script === "string" ? GENERATE_SCHEMA_FLAG.exec(script) : null;
+    if (match?.[2] !== undefined) {
+      return path.resolve(root, match[2]);
+    }
+  }
+  return null;
 }
 
 /** The `output` of every generator block in one schema file. */
