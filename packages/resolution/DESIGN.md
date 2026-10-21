@@ -115,7 +115,8 @@ conditionalBranch(x, b)     x is a conditional expression and b is one
                             used as a value. Every language keeps a
                             conditional a written value, which the value
                             evaluator reads with its test, so only
-                            passedOn reads this
+                            passedOn and a call through a table read
+                            in a branch read this
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -1270,8 +1271,9 @@ Whether the call runs exactly one function is a count, which a rule
 cannot make. `dispatchOutcomes` makes it: the call runs one function
 when every read it goes through is narrowed to the same single name,
 the entry there is one function, and no write under a computed key
-could be the one instead. Every other call may run any of the functions
-listed. A walk records those as `possibleSummaries` on the call's
+could be the one instead. A call that reaches the read through a
+branch of `c ? T["a"] : other` never counts, since `other` may be any
+function. Every other call may run any of the functions listed. A walk records those as `possibleSummaries` on the call's
 effect, beside the `summary` a call it can follow gets, so a reader can
 tell "calls" from "may call". A check that needs certainty, such as
 whether a test covers a scenario, counts only the calls with a

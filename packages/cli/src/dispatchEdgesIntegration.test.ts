@@ -124,7 +124,7 @@ describe("TypeScript calls through a table, a map, a registry and a closure", ()
   it("lists every caller of a handler, and which of them may run another one", async () => {
     const text = ask(await typescriptSummaries(), "what calls onCreated");
 
-    expect(text).toContain("7 units call");
+    expect(text).toContain("8 units call");
     expect(text).toMatch(
       /viaLiteralKey \(src\/shapes\.ts:\d+, [^)]*\) calls TABLE\["created"\]\n/,
     );
@@ -135,6 +135,7 @@ describe("TypeScript calls through a table, a map, a registry and a closure", ()
       "viaTable",
       "viaNarrowedKey",
       "viaMap",
+      "viaConditional",
       "viaRegistry",
     ]) {
       expect(text).toMatch(
@@ -154,6 +155,11 @@ describe("TypeScript calls through a table, a map, a registry and a closure", ()
       "onDeleted",
     ]);
     expect(possible(summaries, "viaTable")).toEqual([
+      "TABLE.archived",
+      "onCreated",
+      "onDeleted",
+    ]);
+    expect(possible(summaries, "viaConditional")).toEqual([
       "TABLE.archived",
       "onCreated",
       "onDeleted",
@@ -196,6 +202,11 @@ describe("Python calls through a dict, getattr, a decorator registry and a lambd
       "on_deleted",
     ]);
     expect(possible(summaries, "via_get")).toEqual([
+      "on_archived",
+      "on_created",
+      "on_deleted",
+    ]);
+    expect(possible(summaries, "via_conditional")).toEqual([
       "on_archived",
       "on_created",
       "on_deleted",
@@ -253,6 +264,10 @@ describe("Ruby calls through send, a hash of lambdas, procs or method objects, a
     const summaries = await rubySummaries();
 
     expect(possible(summaries, "via_table")).toEqual([
+      "EventHandlers.on_created",
+      "EventHandlers.on_deleted",
+    ]);
+    expect(possible(summaries, "via_conditional")).toEqual([
       "EventHandlers.on_created",
       "EventHandlers.on_deleted",
     ]);

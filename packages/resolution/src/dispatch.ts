@@ -111,7 +111,8 @@ function outcomeOf(
       functions.length === 1 &&
       unresolved === 0 &&
       narrowedToOneName(db, sites) &&
-      column(db, "wantedDispatchComputed", call, 1).length === 0,
+      column(db, "wantedDispatchComputed", call, 1).length === 0 &&
+      column(db, "wantedDispatchInBranch", call, 1).length === 0,
     unresolved,
     through,
     containers: [

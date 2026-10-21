@@ -58,6 +58,11 @@ export function viaMap(kind: string, payload: string): number {
   return handler === undefined ? 0 : handler(payload);
 }
 
+export function viaConditional(kind: string, payload: string): number {
+  const handler = kind in TABLE ? TABLE[kind] : undefined;
+  return handler === undefined ? 0 : handler(payload);
+}
+
 const REGISTRY: Record<string, Handler> = {};
 
 function register(name: string, handler: Handler): void {

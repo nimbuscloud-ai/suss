@@ -304,8 +304,10 @@ through a property or a class field initializer is an unplaced
 `storesProperty`. A write under a key, a spread and a JSX prop or
 child are `holdsUnderKey`, another name taking it is `mayHold`,
 `yield` is `yieldsValue`, and a branch of `c ? a : b` or of `c && a`
-is `conditionalBranch`. No rule steps through those rows, so asking
-the question changes no other answer.
+is `conditionalBranch`. No value step goes through those rows, so
+asking the question changes no other answer. A ternary that any
+question reaches states its two branches the same way, so a call
+through `c ? T[k] : undefined` can find the table it reads.
 
 The store then asks `wantedUses` about each reference, since each
 TypeScript reference has a key of its own, and keeps the answer per

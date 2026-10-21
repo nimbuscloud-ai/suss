@@ -107,6 +107,24 @@ describe("dispatchOutcomes", () => {
     });
   });
 
+  it("follows a read in a conditional branch, and never counts the call as certain", () => {
+    // `const run = ok ? TABLE['check'] : other; run()`, where `other`
+    // may be any function, so even a written key leaves the call possible.
+    const outcome = outcomeOf(
+      [
+        ...TABLE,
+        ["readsEntry", "TABLE['check']", "TABLE", "check"],
+        ["conditionalBranch", "ok ? TABLE['check'] : other", "TABLE['check']"],
+        ["conditionalBranch", "ok ? TABLE['check'] : other", "other"],
+        ["binds", "run", "ok ? TABLE['check'] : other"],
+        ["call", "run()", "run"],
+      ],
+      "run()",
+    );
+    expect(outcome?.functions).toEqual(["runCheck"]);
+    expect(outcome?.certain).toBe(false);
+  });
+
   it("finds what a registry function stored under a computed key", () => {
     const outcome = outcomeOf(
       [
