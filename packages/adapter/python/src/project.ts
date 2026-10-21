@@ -1124,27 +1124,30 @@ function registerAgain(
   },
 ): void {
   const { positions, wrapperIndex, target } = context;
-  if (target === null) {
+  const how = howRegistered(registration, positions);
+  if (target === null || how === null) {
     throw new ReplayFailed(registration.key);
   }
-  if ("continuation" in registration) {
-    const pack = positions.packOf(registration.pattern);
-    const pattern = positions.patternOf(registration.pattern);
-    if (pack === undefined || pattern === undefined) {
-      throw new ReplayFailed(registration.key);
-    }
-    wrapperIndex.registeredClosure(target, {
-      pack,
-      pattern,
-      continuation: registration.continuation,
-    });
+  if ("continuation" in how) {
+    wrapperIndex.registeredClosure(target, how);
     return;
   }
-  const declared = positions.formAt(registration.form);
-  if (declared === undefined) {
-    throw new ReplayFailed(registration.key);
+  wrapperIndex.registered(target, how);
+}
+
+/** What a stored registration was registered through, or null when this run's packs no longer have it. */
+function howRegistered(
+  registration: StoredRegistration,
+  positions: PackPositions,
+): FormOf | DecoratorClosure | null {
+  if (!("continuation" in registration)) {
+    return positions.formAt(registration.form) ?? null;
   }
-  wrapperIndex.registered(target, declared);
+  const pack = positions.packOf(registration.pattern);
+  const pattern = positions.patternOf(registration.pattern);
+  return pack === undefined || pattern === undefined
+    ? null
+    : { pack, pattern, continuation: registration.continuation };
 }
 
 /** Every file's record for the entry this run writes. */

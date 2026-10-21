@@ -432,7 +432,9 @@ export class PythonWrapperIndex {
   ): WrapperReference[] {
     const facts = this.options.facts;
     const direct = classifyDecorator(decorator, query.module, facts);
+    const written = decoratorCallee(decorator);
     if (
+      written === null ||
       (direct.module !== null && readByAPack(direct.module, this.options)) ||
       (direct.objectName !== null &&
         direct.objectName === query.classification.objectName) ||
@@ -441,10 +443,6 @@ export class PythonWrapperIndex {
       return [];
     }
 
-    const written = decoratorCallee(decorator);
-    if (written === null) {
-      return [];
-    }
     const project =
       written.type === "identifier"
         ? this.functionCalled(file.file, written.text)
