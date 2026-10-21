@@ -198,6 +198,31 @@ export const GET = withLogging(async () => new Response("stats", { status: 200 }
     ).toBe(false);
   });
 
+  it("records a closure that reads the factory's options as a layer it did not read", async () => {
+    const summaries = await summariesOf({
+      "/src/lib/admin.ts": `
+declare function role(): Promise<string>;
+export const withAdmin =
+  (
+    handler: (req: Request) => Promise<Response>,
+    { requiredRoles = [] }: { requiredRoles?: string[] } = {},
+  ) =>
+  async (req: Request) => {
+    if (requiredRoles.length > 0 && !requiredRoles.includes(await role())) {
+      return new Response("forbidden", { status: 403 });
+    }
+    return handler(req);
+  };`,
+      "/src/app/stats/route.ts": `
+import { withAdmin } from "../../lib/admin";
+export const GET = withAdmin(async () => new Response("stats", { status: 200 }));`,
+    });
+
+    const route = routeAt(summaries, "GET", "/stats");
+    expect(wrapperNamesOf(route)).toEqual(["withAdmin(handler)"]);
+    expect(statusesOf(route)).toEqual([200]);
+  });
+
   it("folds the closure a project factory returns into the route", async () => {
     const summaries = await summariesOf({
       "/src/lib/admin.ts": `
