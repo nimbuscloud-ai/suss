@@ -29,8 +29,17 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+
+import {
+  binFor,
+  buildAt,
+  git,
+  heapFlags,
+  thisBuild,
+} from "./comparisonBuild.mjs";
+import { loadPerCore, percent, settle } from "./machineLoad.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -163,27 +172,13 @@ function fail(message) {
 // Machine state
 // ---------------------------------------------------------------------------
 
-function loadPerCore() {
-  return os.loadavg()[0] / os.cpus().length;
-}
-
-function sleepMs(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
 /** Waits for the load left by the previous run to die down. */
-function settle() {
-  const deadline = Date.now() + SETTLE_LIMIT_MS;
-  let noted = false;
-  while (loadPerCore() > MAX_LOAD_PER_CORE && Date.now() < deadline) {
-    if (!noted) {
-      process.stderr.write(
-        `  waiting for the load average (${percent(loadPerCore())} per core) to settle\n`,
-      );
-      noted = true;
-    }
-    sleepMs(SETTLE_POLL_MS);
-  }
+function settleBetweenRuns() {
+  settle({
+    maxLoadPerCore: MAX_LOAD_PER_CORE,
+    limitMs: SETTLE_LIMIT_MS,
+    pollMs: SETTLE_POLL_MS,
+  });
 }
 
 function refuseIfLoaded() {
@@ -220,76 +215,6 @@ function bestCalibration(samples = 3) {
 }
 
 // ---------------------------------------------------------------------------
-// Builds
-// ---------------------------------------------------------------------------
-
-function git(args, cwd = repoRoot) {
-  const res = spawnSync("git", args, { cwd, encoding: "utf8" });
-  if (res.status !== 0) {
-    fail(`git ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`);
-  }
-  return (res.stdout ?? "").trim();
-}
-
-function binFor(dir) {
-  return path.join(dir, "packages", "cli", "dist", "bin.js");
-}
-
-function describeBuild(dir, label) {
-  const sha = git(["rev-parse", "--short", "HEAD"], dir);
-  const dirty = git(["status", "--porcelain"], dir) !== "";
-  return { label, dir, sha, dirty };
-}
-
-function thisBuild() {
-  if (!fs.existsSync(binFor(repoRoot))) {
-    fail("This checkout has no built CLI. Run `npm run build` first.");
-  }
-  return describeBuild(repoRoot, "this build");
-}
-
-// A second build lives in its own worktree under the temp directory, so a
-// comparison never disturbs the tree the author is working in.
-function buildAt(ref) {
-  const sha = git(["rev-parse", "--short", ref]);
-  const dir = path.join(os.tmpdir(), "suss-benchmark-builds", sha);
-  if (!fs.existsSync(binFor(dir))) {
-    if (!fs.existsSync(dir)) {
-      process.stderr.write(
-        `Preparing a build at ${sha}. This takes a few minutes.\n`,
-      );
-      git(["worktree", "add", "--detach", dir, sha]);
-    }
-    runOrFail(dir, "npm", ["install", "--no-audit", "--no-fund"]);
-    // The build cache is keyed by what a task reads, not by which tree
-    // ran it, so a shared cache lets this build's artifacts be restored
-    // into the tree the author works in, and the other way around. Once
-    // that happens every later run replays it. This build caches inside
-    // its own worktree, where only it can reach.
-    runOrFail(dir, "npm", ["run", "build"], {
-      TURBO_CACHE_DIR: turboCacheDirFor(dir),
-    });
-  }
-  return describeBuild(dir, sha);
-}
-
-/** Where a comparison build keeps its own task cache. */
-function turboCacheDirFor(dir) {
-  return path.join(dir, ".turbo", "benchmark-cache");
-}
-
-function runOrFail(cwd, command, args, env = {}) {
-  const res = spawnSync(command, args, {
-    cwd,
-    stdio: "inherit",
-    env: { ...process.env, ...env },
-  });
-  if (res.status !== 0) {
-    fail(`${command} ${args.join(" ")} failed in ${cwd}.`);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // One measured run
 // ---------------------------------------------------------------------------
 
@@ -297,20 +222,6 @@ const DATALOG_LINE = /^datalog: (\d+)ms \(\s*([\d.]+)% of (\d+)ms wall\)/m;
 
 // No single run has come near this. One that does has hung.
 const EXTRACT_TIMEOUT_MS = 15 * 60 * 1000;
-
-// Every build gets the heap size this build's CLI picks for itself, so an
-// older build that never raised its own heap is not timed against a smaller
-// one. A size set in NODE_OPTIONS reaches every build and wins instead.
-async function heapFlags() {
-  const heap = await import(
-    pathToFileURL(path.join(repoRoot, "packages", "cli", "dist", "heapSize.js"))
-      .href
-  );
-  if (heap.heapSizeWasChosen(process.env.NODE_OPTIONS, [])) {
-    return [];
-  }
-  return [`--max-old-space-size=${heap.heapSizeFor(heap.availableMemoryMb())}`];
-}
 
 function extractOnce(build, target, targetsDir, nodeFlags) {
   const tsconfig = path.join(targetsDir, target.tsconfig);
@@ -391,10 +302,6 @@ function summarise(runs) {
 
 function seconds(ms) {
   return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function percent(fraction) {
-  return `${(fraction * 100).toFixed(1)}%`;
 }
 
 // The profile reports a share already in percent.
@@ -485,7 +392,7 @@ for (let repeat = 1; repeat <= requestedPairs; repeat++) {
     for (const build of builds) {
       // Checking before every run stops a benchmark that has already been
       // spoiled from spending another ten minutes proving it.
-      settle();
+      settleBetweenRuns();
       refuseIfLoaded();
       calibrations.push(bestCalibration(1));
       const run = extractOnce(build, target, targetsDir, nodeFlags);
@@ -498,7 +405,7 @@ for (let repeat = 1; repeat <= requestedPairs; repeat++) {
   }
 }
 
-settle();
+settleBetweenRuns();
 calibrations.push(bestCalibration());
 const calibrationMedian = median(calibrations);
 const calibrationDrift =
