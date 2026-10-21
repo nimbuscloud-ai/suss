@@ -1,10 +1,6 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import {
-  invocationContextFor,
-  ResolutionStore,
-} from "@suss/adapter-typescript";
+import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
 import nodeRuntimePack from "./index.js";
@@ -16,31 +12,12 @@ type StreamWrite = Extract<Effect, { type: "interaction" }> & {
   interaction: { class: "stream-write" };
 };
 
-function storeFor(file: SourceFile): ResolutionStore {
-  const store = ResolutionStore.forPacks([nodeRuntimePack()]);
-  const files = file
-    .getProject()
-    .getSourceFiles()
-    .filter((one) => !one.isInNodeModules());
-  store.extractFiles(files);
-  store.notePossibleCallers(files);
-  return store;
-}
-
 function writesIn(source: string): StreamWrite[] {
   const file = createTestProject().createSourceFile("cli.ts", source);
-  const store = storeFor(file);
-  const found: StreamWrite[] = [];
-  file.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const ctx = invocationContextFor(node as CallExpression, store);
-    for (const effect of streamWriteRecognizer(node, ctx) ?? []) {
-      found.push(effect as StreamWrite);
-    }
-  });
-  return found;
+  return effectsOverFile(
+    file,
+    packWithOnly(nodeRuntimePack(), { invocation: [streamWriteRecognizer] }),
+  ) as StreamWrite[];
 }
 
 function targetsOf(writes: StreamWrite[]): Array<string | null> {
