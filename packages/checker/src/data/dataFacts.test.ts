@@ -345,4 +345,187 @@ describe("readDataFacts", () => {
       "responds with a body whose fields suss could not read",
     ]);
   });
+
+  it("reads field paths through nested records, lists and unions, and gives up at a spread", () => {
+    const nested = handler("nested", route("GET", "/nested"), [], {
+      ...RESPONDS,
+      body: {
+        type: "union",
+        variants: [
+          {
+            type: "array",
+            items: {
+              type: "record",
+              properties: {
+                player: {
+                  type: "record",
+                  properties: { golden: { type: "integer" } },
+                },
+              },
+            },
+          },
+          { type: "null" },
+        ],
+      },
+    });
+    const spread = handler("spread", route("GET", "/spread"), [], {
+      ...RESPONDS,
+      body: {
+        type: "record",
+        properties: { golden: { type: "integer" } },
+        spreads: [{ sourceText: "...player" }],
+      },
+    });
+    const facts = readDataFacts([nested, spread]);
+    const answer = facts.dataOn([
+      { summary: nested, transition: nested.transitions[0] },
+      { summary: spread, transition: spread.transitions[0] },
+    ]);
+
+    expect(
+      answer.get(nested.transitions[0])?.named.map((datum) => datum.field),
+    ).toEqual(["player", "player.golden"]);
+    expect(answer.get(spread.transitions[0])?.named).toEqual([]);
+    expect(answer.get(spread.transitions[0])?.unread).toHaveLength(1);
+  });
+
+  it("lists a read through a relation as not checked", () => {
+    const stats = handler("stats", route("GET", "/stats"), [reads(["golden"])]);
+    const related: Effect = {
+      type: "interaction",
+      binding: PLAYERS,
+      interaction: {
+        class: "storage-access",
+        kind: "read",
+        fields: ["golden"],
+        relationPath: ["team"],
+      },
+    };
+    const team = handler("team", route("GET", "/team"), [related]);
+
+    const found = readDataFacts([stats, team]).sharing([GOLDEN], [stats]);
+
+    expect(found.sharing).toEqual([]);
+    expect(found.unchecked[0].unread[0].reason).toContain("through team");
+  });
+
+  it("says how each path sends the data out", () => {
+    const stats = handler("stats", route("GET", "/stats"), [reads(["golden"])]);
+    const send = (
+      name: string,
+      effect: Effect | null,
+      output: Output = RETURNS,
+      kind: BehavioralSummary["kind"] = "library",
+      binding: BoundaryBinding | null = null,
+    ): BehavioralSummary =>
+      unit(name, {
+        kind,
+        binding,
+        output,
+        effects: [reads(["golden"]), ...(effect === null ? [] : [effect])],
+      });
+    const service = (method: string): Effect => ({
+      type: "interaction",
+      binding: route(method, "/mail"),
+      interaction: { class: "service-call", method },
+    });
+    const units = [
+      stats,
+      send("mails", service("POST")),
+      send("asks", service("GET")),
+      send("prints", {
+        type: "interaction",
+        binding: {
+          transport: "process",
+          semantics: { name: "io", target: "stdout" },
+          recognition: "test",
+        },
+        groupId: "g1",
+        interaction: {
+          class: "stream-write",
+          payload: null,
+          serialized: "text",
+        },
+      }),
+      send("invokes", {
+        type: "interaction",
+        binding: {
+          transport: "aws",
+          semantics: {
+            name: "unit-invocation",
+            platform: "aws-lambda",
+            unit: "Report",
+          },
+          recognition: "test",
+        } as never,
+        interaction: { class: "unit-invoke" },
+      }),
+      send("emits", null, { type: "emit", event: "stats" }, "component"),
+      send("throws", null, {
+        type: "throw",
+        exceptionType: "Error",
+        message: null,
+      }),
+      send("resolves", null, RETURNS, "resolver", route("POST", "/graphql")),
+      send(
+        "unsure",
+        null,
+        { ...RESPONDS, statusCode: null },
+        "handler",
+        route("GET", "/unsure"),
+      ),
+    ];
+
+    const found = readDataFacts(units).sharing([GOLDEN], [stats]);
+    const sends = Object.fromEntries(
+      found.sharing.map((path) => [path.summary.identity.name, path.sends]),
+    );
+
+    expect(sends).toEqual({
+      mails: ["calls POST /mail"],
+      prints: ["writes io:stdout"],
+      invokes: [expect.stringMatching(/^invokes /)],
+      emits: ["emits stats"],
+      resolves: ["returns to POST /graphql"],
+      unsure: ["responds with a status suss could not read"],
+    });
+  });
+
+  it("reads what a message consumer takes off the message, or why it could not", () => {
+    const consumer = (
+      name: string,
+      inputReads: Array<{ input: string; path: string[] }>,
+    ): BehavioralSummary => ({
+      ...unit(name, {
+        kind: "consumer",
+        binding: TOPIC,
+        effects: [writes(["golden"])],
+      }),
+      inputs: [
+        {
+          type: "parameter",
+          name: "event",
+          position: 0,
+          role: "event",
+          shape: null,
+        },
+      ],
+      inputReads,
+    });
+    const reader = consumer("reader", [{ input: "event", path: ["golden"] }]);
+    const whole = consumer("whole", []);
+
+    const facts = readDataFacts([reader, whole]);
+    const answer = facts.dataOn([
+      { summary: reader, transition: reader.transitions[0] },
+      { summary: whole, transition: whole.transitions[0] },
+    ]);
+
+    expect(answer.get(reader.transitions[0])?.named).toEqual([
+      expect.objectContaining({ kind: "reads", field: "golden" }),
+    ]);
+    expect(answer.get(whole.transitions[0])?.unread[0].reason).toBe(
+      "reads no field of the message that suss could see",
+    );
+  });
 });
