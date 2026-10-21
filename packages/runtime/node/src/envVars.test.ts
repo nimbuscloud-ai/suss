@@ -1,16 +1,16 @@
-import { Node, type SourceFile } from "ts-morph";
+import { Node } from "ts-morph";
 import { describe, expect, it, vi } from "vitest";
 
 import { accessContextFor, ResolutionStore } from "@suss/adapter-typescript";
+import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
 import { envVarRecognizer, findProcessEnvReads } from "./envVars.js";
 import nodeRuntimePack from "./index.js";
 
-import type { Accessed } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
-import type { Project } from "ts-morph";
+import type { Project, SourceFile } from "ts-morph";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -27,15 +27,10 @@ function makeProject(userSource: string): SourceFile {
  * which no query starting at the parameter reaches on its own.
  */
 function storeOver(project: Project): ResolutionStore {
-  const store = new ResolutionStore(
-    [],
-    nodeRuntimePack().environmentObjects ?? [],
+  const store = ResolutionStore.forPacks([nodeRuntimePack()]);
+  store.notePossibleCallers(
+    project.getSourceFiles().filter((one) => !one.isInNodeModules()),
   );
-  const files = project
-    .getSourceFiles()
-    .filter((one) => !one.isInNodeModules());
-  store.extractFiles(files);
-  store.notePossibleCallers(files);
   return store;
 }
 
@@ -44,26 +39,34 @@ function recognizeWith(
   sourceFile: SourceFile,
   resolution?: ResolutionStore,
 ): Effect[] {
-  const effects: Effect[] = [];
-  // The same node filter and dedupe the adapter's dispatch applies: a
-  // helper call and the bracket read behind it give one effect, once.
+  // The adapter's dispatch states an effect once when a helper call and
+  // the bracket read behind it give the same one.
   const seen = new Set<string>();
-  sourceFile.forEachDescendant((node) => {
-    if (
-      !Node.isPropertyAccessExpression(node) &&
-      !Node.isCallExpression(node)
-    ) {
-      return;
+  return effectsOverFile(
+    sourceFile,
+    packWithOnly(nodeRuntimePack(), { access: [recognizer] }),
+    resolution,
+  ).filter((effect) => {
+    const key = JSON.stringify(effect);
+    if (seen.has(key)) {
+      return false;
     }
-    const ctx = accessContextFor(node as Accessed, sourceFile, resolution);
-    const emitted = recognizer(node, ctx);
-    for (const effect of emitted ?? []) {
-      const key = JSON.stringify(effect);
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      effects.push(effect);
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * The adapter's context with no store in it, which is what a caller of
+ * the adapter's library entry points without a run gets.
+ */
+function recognizeWithoutStore(sourceFile: SourceFile): Effect[] {
+  const recognizer = envVarRecognizer();
+  const effects: Effect[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (Node.isPropertyAccessExpression(node) || Node.isCallExpression(node)) {
+      const ctx = accessContextFor(node, sourceFile);
+      effects.push(...(recognizer(node, ctx) ?? []));
     }
   });
   return effects;
@@ -886,7 +889,7 @@ describe("a helper's body resolved from the callers' side", () => {
       `import { requireEnv } from "./env.js";
       export const table = requireEnv("TABLE_NAME");`,
     );
-    expect(configReadEffectsOf(recognizeAll(helper))).toEqual([]);
+    expect(configReadEffectsOf(recognizeWithoutStore(helper))).toEqual([]);
   });
 });
 
@@ -1011,10 +1014,7 @@ describe("a helper call resolved from the caller's side", () => {
     );
     // The reader meets `setting("DATABASE_URL")` before anything has
     // read `settings.ts` or `env.ts`, and gets the same answer.
-    const store = new ResolutionStore(
-      [],
-      nodeRuntimePack().environmentObjects ?? [],
-    );
+    const store = ResolutionStore.forPacks([nodeRuntimePack()]);
     const reads = configReadEffectsOf(
       recognizeWith(envVarRecognizer(), handler, store),
     );
@@ -1048,10 +1048,7 @@ describe("a helper call resolved from the caller's side", () => {
       export const other = String("NOT_A_VARIABLE");
       export const url = setting("DATABASE_URL");`,
     );
-    const store = new ResolutionStore(
-      [],
-      nodeRuntimePack().environmentObjects ?? [],
-    );
+    const store = ResolutionStore.forPacks([nodeRuntimePack()]);
     store.notePossibleCallers(
       project.getSourceFiles().filter((one) => !one.isInNodeModules()),
     );
@@ -1393,10 +1390,7 @@ describe("a helper call resolved from the caller's side", () => {
       `import { setting } from "./settings.js";
       export const table = setting("TABLE_NAME");`,
     );
-    const store = new ResolutionStore(
-      [],
-      nodeRuntimePack().environmentObjects ?? [],
-    );
+    const store = ResolutionStore.forPacks([nodeRuntimePack()]);
     store.notePossibleCallers(
       project.getSourceFiles().filter((one) => !one.isInNodeModules()),
     );

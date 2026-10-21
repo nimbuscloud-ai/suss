@@ -1,8 +1,10 @@
 import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
+import nodeRuntimePack from "./index.js";
 import { processSurfaceRecognizer } from "./processSurface.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -13,6 +15,15 @@ function makeFile(source: string): SourceFile {
 }
 
 function recognizeAll(file: SourceFile): Effect[] {
+  return effectsOverFile(
+    file,
+    packWithOnly(nodeRuntimePack(), { access: [processSurfaceRecognizer()] }),
+  );
+}
+
+// Extraction never hands a recognizer a bracket access, so the two tests
+// that read `process.argv[N]` feed these nodes in themselves.
+function recognizeWithBracketAccess(file: SourceFile): Effect[] {
   const rec = processSurfaceRecognizer();
   const out: Effect[] = [];
   file.forEachDescendant((node) => {
@@ -70,7 +81,7 @@ describe("process-surface recognizer", () => {
         return script;
       }
     `);
-    const reads = configReadsOf(recognizeAll(file));
+    const reads = configReadsOf(recognizeWithBracketAccess(file));
     const indexed = reads.find((r) => r.interaction.name === "argv[1]");
     expect(indexed).toBeDefined();
   });
@@ -113,7 +124,7 @@ describe("process-surface recognizer", () => {
         return process.argv[2];
       }
     `);
-    const effects = recognizeAll(file);
+    const effects = recognizeWithBracketAccess(file);
     expect(metadataReadsOf(effects)).toHaveLength(0);
     expect(
       configReadsOf(effects)
