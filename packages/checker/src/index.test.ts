@@ -247,6 +247,59 @@ describe("checkAll, when routes in one service tie", () => {
       ],
     ]);
   });
+
+  it("pairs a call that picks one of two URLs with the route for each", () => {
+    const route = (name: string, path: string): BehavioralSummary => {
+      const p = provider(name, [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]);
+      return {
+        ...p,
+        identity: {
+          ...p.identity,
+          boundaryBinding: restBinding({
+            transport: "http",
+            method: "PATCH",
+            path,
+            recognition: "nextjs",
+          }),
+        },
+      };
+    };
+    const c = consumer("updateRole", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    // `fetch(isInvite ? "/api/invites" : "/api/users", { method: "PATCH" })`
+    const updateRole = {
+      ...c,
+      identity: {
+        ...c.identity,
+        boundaryBinding: restBinding({
+          transport: "http",
+          method: "PATCH",
+          path: "(/api/invites|/api/users)",
+          recognition: "fetch",
+        }),
+      },
+    };
+
+    const result = checkAll([
+      route("invites", "/api/invites"),
+      route("users", "/api/users"),
+      updateRole,
+    ]);
+
+    expect(result.findings.map((f) => f.kind)).not.toContain(
+      "ambiguousProvider",
+    );
+    expect(result.pairs.map((pair) => pair.provider).sort()).toEqual([
+      "src/handlers/invites.ts::invites",
+      "src/handlers/users.ts::users",
+    ]);
+  });
 });
 
 describe("checkAll, what it lists as unpaired", () => {
