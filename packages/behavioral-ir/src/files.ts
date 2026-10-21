@@ -11,5 +11,6 @@ export {
   type JsonFileProblem,
   readJsonFile,
   writeDocumentFile,
+  writeFileAtomically,
 } from "./documentFile.js";
 export { readSummaryFile, writeSummaryFile } from "./summaryFile.js";

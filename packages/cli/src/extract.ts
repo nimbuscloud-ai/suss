@@ -1807,7 +1807,7 @@ export function formatExtractionReport(
 
 export function formatCacheDiagnostic(diag: CacheDiagnostic): string {
   if (diag.kind === "hit") {
-    return "  cache: hit (returned all summaries from manifest)\n";
+    return "  cache: hit (returned all summaries from the cache's shards)\n";
   }
   if (diag.kind === "partial") {
     const partial = diag.partial;
