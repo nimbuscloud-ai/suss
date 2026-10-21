@@ -24,7 +24,12 @@ import {
   spanOf,
   stripDecorators,
 } from "./ast.js";
-import { decoratorReceiver, readCallArguments } from "./decorators.js";
+import {
+  classifyDecorator,
+  decoratorReceiver,
+  readCallArguments,
+  unwrapDecorator,
+} from "./decorators.js";
 import {
   bodyContentOf,
   recognizedBodyEffects,
@@ -47,6 +52,7 @@ import { nodeOfResolutionKey } from "./values/evaluator.js";
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type { Range } from "./ast.js";
 import type { DecoratorClassification } from "./decorators.js";
 import type {
   PyDecoratedWrapperForm,
@@ -89,6 +95,17 @@ export interface RouteWrapperQuery {
 interface Registered {
   reference: WrapperReference;
   form: PyWrapperForm;
+}
+
+/**
+ * The closure a project's decorator hands back, read with the route's
+ * pattern. It runs the route's function where it calls the decorator's
+ * parameter, `continuation`. No pack declares it, so it has no form.
+ */
+export interface DecoratorClosure {
+  pack: PythonPack;
+  pattern: PythonDiscoveryPattern;
+  continuation: string;
 }
 
 /** A wrapper form with the pattern and pack that declare it. */
@@ -158,6 +175,10 @@ export class PythonWrapperIndex {
   /** Told about every registration, so a cache can repeat the ones a file's discovery made. */
   onRegistered: ((target: ReachedFunction, declared: FormOf) => void) | null =
     null;
+  /** The same, for the closure a project's decorator hands back. */
+  onClosureRegistered:
+    | ((target: ReachedFunction, closure: DecoratorClosure) => void)
+    | null = null;
 
   constructor(
     readonly options: WrapperIndexOptions,
@@ -264,6 +285,29 @@ export class PythonWrapperIndex {
   }
 
   /**
+   * The unit for the closure a project's decorator hands back, built once
+   * however many routes the decorator is written on. Its name is what
+   * calling the decorator writes, since the decorator may have a summary
+   * of its own under its name.
+   */
+  registeredClosure(
+    target: ReachedFunction,
+    closure: DecoratorClosure,
+  ): WrapperReference {
+    this.onClosureRegistered?.(target, closure);
+    const span = spanOf(target.node);
+    const key = `${target.file.file}:${span.start}-${span.end}`;
+    if (!this.unitsByKey.has(key)) {
+      const unit = closureUnit(target, closure, this.options);
+      this.unitsByKey.set(key, unit);
+      const inFile = this.unitsByFile.get(target.file.file) ?? [];
+      inFile.push(unit);
+      this.unitsByFile.set(target.file.file, inFile);
+    }
+    return { file: target.file.displayPath, name: target.name };
+  }
+
+  /**
    * The parameters the dependencies among these wrappers declare, and
    * whether one is declared through a parameter source such as `Query()`.
    * The library fills those from the request and validates them, the same
@@ -298,8 +342,12 @@ export class PythonWrapperIndex {
       pattern: query.pattern,
       form,
     }));
-    if (file === undefined || forms.length === 0) {
+    if (file === undefined) {
       return [];
+    }
+    const decorators = this.decoratorLayers(query, file);
+    if (forms.length === 0) {
+      return decorators;
     }
 
     const own = this.ownRoutesOf(query);
@@ -342,7 +390,98 @@ export class PythonWrapperIndex {
       seen.add(key);
       ordered.push(wrapper.reference);
     }
-    return ordered;
+    // The function's own decorators wrap what the library calls, so they
+    // run inside everything registered on the way to it.
+    return [
+      ...ordered.filter((one) => one.onThrow !== true),
+      ...decorators,
+      ...ordered.filter((one) => one.onThrow === true),
+    ];
+  }
+
+  /**
+   * The decorators written on the route's function below the one that
+   * registers it, outermost first. Each wraps the function the library
+   * calls. None has a summary: a library's has no body in the run, and a
+   * project's own is not composed into the route yet, so a project
+   * decorator goes by what calling it writes, `require_admin(fn)`, which
+   * no summary is named. The decorators the packs read, such as the
+   * route's own and the namespace's `@ns.doc`, are left out.
+   */
+  private decoratorLayers(
+    query: RouteWrapperQuery,
+    file: BoundPythonFile,
+  ): WrapperReference[] {
+    const decorated = query.definitionNode.parent;
+    if (decorated === null || decorated.type !== "decorated_definition") {
+      return [];
+    }
+    const written = stripDecorators(decorated).decorators;
+    const routeAt = written.findIndex((decorator) =>
+      sameRange(rangeOf(decorator), query.classification.range),
+    );
+    return written
+      .slice(routeAt + 1)
+      .flatMap((decorator) => this.decoratorLayer(decorator, query, file));
+  }
+
+  private decoratorLayer(
+    decorator: PyNode,
+    query: RouteWrapperQuery,
+    file: BoundPythonFile,
+  ): WrapperReference[] {
+    const facts = this.options.facts;
+    const direct = classifyDecorator(decorator, query.module, facts);
+    if (
+      (direct.module !== null && readByAPack(direct.module, this.options)) ||
+      (direct.objectName !== null &&
+        direct.objectName === query.classification.objectName) ||
+      unwrapDecorator(decorator, facts) !== null
+    ) {
+      return [];
+    }
+
+    const written = decoratorCallee(decorator);
+    if (written === null || BUILTIN_DECORATORS.has(written.text)) {
+      return [];
+    }
+    const project =
+      written.type === "identifier"
+        ? this.functionCalled(file.file, written.text)
+        : null;
+    if (project !== null) {
+      if (facts !== undefined) {
+        noteKeyRead(facts, project.file.file);
+      }
+      return [this.projectDecoratorLayer(project, query)];
+    }
+    return [{ file: direct.module ?? file.displayPath, name: written.text }];
+  }
+
+  /**
+   * The layer a project's own decorator puts around the route. When it
+   * hands back a closure written inside it that calls the function it
+   * was given, the closure is summarized and composed into the route.
+   * Any other decorator goes by the same name with no summary behind it.
+   */
+  private projectDecoratorLayer(
+    decorator: ReachedFunction,
+    query: RouteWrapperQuery,
+  ): WrapperReference {
+    const continuation = parameterNamesOf(decorator.node)[0] ?? "";
+    const name = `${decorator.name}(${continuation})`;
+    const closure = closureReturnedBy(decorator.node);
+    if (
+      closure === null ||
+      continuation === "" ||
+      callsThrough(closure, continuation).length === 0
+    ) {
+      return { file: decorator.file.displayPath, name };
+    }
+    return this.registeredClosure(
+      { file: decorator.file, node: closure, name, exportPath: [] },
+      { pack: query.pack, pattern: query.pattern, continuation },
+    );
   }
 
   /**
@@ -538,6 +677,29 @@ export class PythonWrapperIndex {
 
 function referenceKey(reference: WrapperReference): string {
   return `${reference.file}::${reference.name}`;
+}
+
+/** Decorators the language defines, which change how a method is bound and wrap nothing a request runs. */
+const BUILTIN_DECORATORS = new Set(["staticmethod", "classmethod", "property"]);
+
+/** Whether a pack in the run reads decorators from this module itself. */
+function readByAPack(module: string, options: WrapperIndexOptions): boolean {
+  return options.packs.some((pack) =>
+    pack.discovery.some((pattern) => pattern.importModule.includes(module)),
+  );
+}
+
+/** What a decorator calls, `limiter.limit` for `@limiter.limit("5/minute")`. */
+function decoratorCallee(decorator: PyNode): PyNode | null {
+  const written = decorator.namedChild(0);
+  if (written === null) {
+    return null;
+  }
+  return written.type === "call" ? field(written, "function") : written;
+}
+
+function sameRange(a: Range, b: Range): boolean {
+  return a.start === b.start && a.end === b.end;
 }
 
 function parameterNamesOf(definition: PyNode): string[] {
@@ -848,16 +1010,67 @@ function wrapperUnit(
   declared: FormOf,
   options: WrapperIndexOptions,
 ): RawCodeStructure {
+  return unitAround(
+    target,
+    declared.pattern,
+    {
+      continuations: continuationStatements(target.node, declared.form),
+      continuationName: null,
+      handsOn: (statement) => returnHandsOn(statement, declared.form),
+      nameKind: "binding",
+    },
+    options,
+  );
+}
+
+/**
+ * The unit for the closure a project's decorator hands back. It hands
+ * on where it calls the function the decorator was given, and every
+ * `return` that does not make that call responds on its own.
+ */
+function closureUnit(
+  target: ReachedFunction,
+  closure: DecoratorClosure,
+  options: WrapperIndexOptions,
+): RawCodeStructure {
+  return unitAround(
+    target,
+    closure.pattern,
+    {
+      continuations: callsThrough(target.node, closure.continuation),
+      continuationName: closure.continuation,
+      handsOn: () => false,
+      nameKind: "label",
+    },
+    options,
+  );
+}
+
+/** How a wrapper's body is read: where it hands on, and what its name is. */
+interface WrapperReading {
+  continuations: PyNode[];
+  /** The name the continuation is called by, recorded where the wrapper hands on. */
+  continuationName: string | null;
+  handsOn: (statement: PyNode) => boolean;
+  nameKind: "binding" | "label";
+}
+
+function unitAround(
+  target: ReachedFunction,
+  pattern: PythonDiscoveryPattern,
+  reading: WrapperReading,
+  options: WrapperIndexOptions,
+): RawCodeStructure {
   const { file, node, name, exportPath } = target;
   const body = field(node, "body");
   const range = rangeOf(node);
   const raised = raisedResponses(body, {
-    calls: declared.pattern.responseStatusCalls ?? [],
+    calls: pattern.responseStatusCalls ?? [],
     module: file.module,
     facts: options.facts,
-    constants: declared.pattern.statusCodeConstants ?? {},
+    constants: pattern.statusCodeConstants ?? {},
   });
-  const continuations = continuationStatements(node, declared.form);
+  const continuations = reading.continuations;
   const terminals = bodyTerminals(body, raised, continuations);
   const effects = invocationEffects(node, options.facts);
   const extra = recognizedBodyEffects(
@@ -866,7 +1079,7 @@ function wrapperUnit(
     options.storageFor(file),
     options.facts,
   );
-  const delegate = (at: PyNode): TerminalBranch => ({
+  const delegate = (at: PyNode, to: string | null = null): TerminalBranch => ({
     terminal: {
       kind: "delegate",
       statusCode: null,
@@ -875,7 +1088,7 @@ function wrapperUnit(
       message: null,
       component: null,
       renderTree: null,
-      delegateTarget: null,
+      delegateTarget: to,
       emitEvent: null,
       location: rangeOf(at),
     },
@@ -883,12 +1096,12 @@ function wrapperUnit(
   });
   const respond = (statement: PyNode): TerminalBranch =>
     returnBranch(statement, {
-      pattern: declared.pattern,
+      pattern,
       responseShape: { reading: absentReading },
       declaredStatus: {
         reading: absentReading,
-        ...(declared.pattern.defaultStatusCode !== undefined
-          ? { libraryDefault: declared.pattern.defaultStatusCode }
+        ...(pattern.defaultStatusCode !== undefined
+          ? { libraryDefault: pattern.defaultStatusCode }
           : {}),
       },
       module: file.module,
@@ -901,10 +1114,10 @@ function wrapperUnit(
         location: rangeOf(terminal.statement),
       };
     }
-    if (
-      terminal.type === "continuation" ||
-      returnHandsOn(terminal.statement, declared.form)
-    ) {
+    if (terminal.type === "continuation") {
+      return delegate(terminal.statement, reading.continuationName);
+    }
+    if (reading.handsOn(terminal.statement)) {
       return delegate(terminal.statement);
     }
     return respond(terminal.statement);
@@ -923,7 +1136,7 @@ function wrapperUnit(
   return {
     identity: {
       name,
-      nameKind: "binding",
+      nameKind: reading.nameKind,
       kind: "middleware",
       file: file.displayPath,
       range,
@@ -976,19 +1189,20 @@ function continuationStatements(node: PyNode, form: PyWrapperForm): PyNode[] {
       ? null
       : (field(param, "name")?.text ??
         (param.type === "identifier" ? param.text : null));
-  if (continuation === null) {
-    return [];
-  }
+  return continuation === null ? [] : callsThrough(node, continuation);
+}
 
+/** The statements in a function's body that call the name `callee`. */
+function callsThrough(node: PyNode, callee: string): PyNode[] {
   const body = field(node, "body");
   if (body === null) {
     return [];
   }
   const found: PyNode[] = [];
   for (const call of bodyCalls(body)) {
-    const callee = field(call, "function");
+    const called = field(call, "function");
     const statement =
-      callee?.type === "identifier" && callee.text === continuation
+      called?.type === "identifier" && called.text === callee
         ? enclosingStatement(call, body)
         : null;
     if (statement !== null) {
@@ -996,4 +1210,31 @@ function continuationStatements(node: PyNode, form: PyWrapperForm): PyNode[] {
     }
   }
   return found;
+}
+
+/**
+ * The function a decorator hands back when it is written in the
+ * decorator's own body, `def wrapper(...)` followed by `return wrapper`.
+ */
+function closureReturnedBy(decorator: PyNode): PyNode | null {
+  const statements = children(field(decorator, "body"));
+  const returned = statements
+    .find((statement) => statement.type === "return_statement")
+    ?.namedChild(0);
+  if (returned === undefined || returned === null) {
+    return null;
+  }
+  if (returned.type !== "identifier") {
+    return null;
+  }
+  for (const statement of statements) {
+    const { definition } = stripDecorators(statement);
+    if (
+      definition.type === "function_definition" &&
+      field(definition, "name")?.text === returned.text
+    ) {
+      return definition;
+    }
+  }
+  return null;
 }
