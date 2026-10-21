@@ -211,6 +211,22 @@ export const FIXTURE_INPUTS = [
       withConfig("activerecord", POSTGRES),
     ),
   ]),
+  // The tests read this with a package-exports pack built in memory; -f node
+  // is the nearest CLI form.
+  fixture("dispatch-edges", [
+    ...project("fixtures/dispatch-edges/tsconfig.json"),
+    ...packs("node"),
+  ]),
+  fixture("dispatch-edges-python", [
+    ...lang("python"),
+    ...dir("fixtures/dispatch-edges-python"),
+    ...packs("fastapi"),
+  ]),
+  fixture("dispatch-edges-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/dispatch-edges-ruby"),
+    ...packs("rails"),
+  ]),
   fixture("drizzle", [
     ...project("fixtures/drizzle/tsconfig.json"),
     ...packs("express", "drizzle"),
@@ -336,6 +352,12 @@ export const FIXTURE_INPUTS = [
       prepare: prismaGenerate("fixtures/prisma-generated-client/schema.prisma"),
     },
   ),
+  // The acceptance journey reads this without `prisma generate`, so the
+  // schema folder decides the storage system.
+  fixture("prisma-multi-file", [
+    ...project("fixtures/prisma-multi-file/tsconfig.json"),
+    ...packs("express", "prisma"),
+  ]),
   fixture(
     "prisma-module",
     [
@@ -520,6 +542,11 @@ export const FIXTURE_INPUTS = [
   fixture("typescript-job", [
     ...dir("fixtures/typescript-job"),
     ...packs("pg"),
+  ]),
+  // The API package, read with its own tsconfig the way init writes it.
+  fixture("typescript-monorepo", [
+    ...project("fixtures/typescript-monorepo/packages/api/tsconfig.json"),
+    ...packs("express"),
   ]),
   fixture("wrapped-routes", [
     ...dir("fixtures/wrapped-routes"),
