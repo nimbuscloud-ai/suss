@@ -391,9 +391,11 @@ export function mightReadAsACall(
 /**
  * Whether a call with no arguments is a method call instead of a property
  * read. It is a call when the rules settle its receiver on a function or
- * object this run defines. `config.host`, whose receiver the rules know
- * nothing about, is a property read. Treating it as a call would add an
- * effect and a gap for every attribute a body reads.
+ * object this run defines, the object a method gives back included, as
+ * `consumer.consume` does when `consumer` returns
+ * `@consumer ||= Consumer.new(params)`. `config.host`, whose
+ * receiver the rules know nothing about, is a property read. Treating it
+ * as a call would add an effect and a gap for every attribute a body reads.
  */
 export function readsAsACall(
   call: RbNode,
@@ -406,7 +408,13 @@ export function readsAsACall(
     return false;
   }
   const outcome = outcomeFor(spelling.key, ctx, read);
-  return outcome.kind === "function" || outcome.kind === "object";
+  return (
+    outcome.kind === "function" ||
+    outcome.kind === "object" ||
+    objectsBehind(ctx.facts, spelling.key).some((key) =>
+      ctx.classNames.has(key),
+    )
+  );
 }
 
 /** How this call's callee is resolved: through its receiver's key, or as a name Ruby looks up on `self`. */

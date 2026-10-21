@@ -1641,6 +1641,37 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     expect(calls(field)).toEqual([["c.run", summaryIdentifier(helper)]]);
   });
 
+  it("follows a no-argument call on the object a memoized method gives back", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    consumer.consume",
+      "  end",
+      "",
+      "  def consumer",
+      "    @consumer ||= Consumer.new",
+      "  end",
+      "end",
+    ]);
+    write("app/services/consumer.rb", [
+      "class Consumer",
+      "  def consume",
+      "    1",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const consume = unitNamed(summaries, "consume");
+    const field = unitNamed(summaries, "Query.orders");
+    expect(calls(field)).toContainEqual([
+      "consumer.consume",
+      summaryIdentifier(consume),
+    ]);
+  });
+
   it("reads a no-argument call on a receiver nothing settles as a property read", async () => {
     writeQueryType("orders", ["config.host"]);
 
