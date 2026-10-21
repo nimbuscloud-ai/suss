@@ -2331,6 +2331,206 @@ describe("the collapsed report", () => {
   });
 });
 
+describe("findings one filter gives at many routes", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-shared-cause-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const BEHIND_FILTER = ["orders", "invoices", "accounts", "users", "teams"];
+  const FILTER_403 = "require_login:response:403:aaa";
+
+  /** A 403 composition added from a filter, the way it reaches the checker. */
+  function filterForbids(): BehavioralSummary["transitions"][number] {
+    return {
+      ...transition(FILTER_403, { statusCode: 403 }),
+      location: { start: 15, end: 15 },
+      metadata: {
+        wrappers: {
+          from: {
+            file: "app/controllers/base_controller.rb",
+            name: "require_login",
+          },
+        },
+      },
+    };
+  }
+
+  /**
+   * Five routes behind one filter that sends 403, and one route whose own
+   * body sends it, each against a document that declares only 200.
+   */
+  function writeRoutes(dir = tmpDir, behindFilter = true): void {
+    const handlers = BEHIND_FILTER.map((name) =>
+      providerWithRoute(name, "GET", `/${name}`, [
+        ...(behindFilter ? [filterForbids()] : []),
+        transition(`${name}-200`, { statusCode: 200, isDefault: true }),
+      ]),
+    );
+    handlers.push(
+      providerWithRoute("health", "GET", "/health", [
+        transition("health-403", { statusCode: 403 }),
+        transition("health-200", { statusCode: 200, isDefault: true }),
+      ]),
+    );
+    fs.writeFileSync(path.join(dir, "api.json"), JSON.stringify(handlers));
+    fs.writeFileSync(
+      path.join(dir, "openapi.json"),
+      JSON.stringify(
+        [...BEHIND_FILTER, "health"].map((name) =>
+          openapiDocument("GET", `/${name}`, [200]),
+        ),
+      ),
+    );
+  }
+
+  it("prints the filter's status once, with the first few routes under it", () => {
+    writeRoutes();
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain(
+      "[ERROR] providerContractViolation at 5 boundaries",
+    );
+    expect(output).toContain(
+      "comes from: require_login (app/controllers/base_controller.rb:15)",
+    );
+    expect(output).toContain("boundary: ts-rest (http) GET /orders");
+    expect(output).not.toContain("boundary: ts-rest (http) GET /teams");
+    expect(output).toContain(
+      "and 2 more. Run the same command with --all to list them.",
+    );
+    // The route that sends 403 from its own body is a finding of its own.
+    expect(output).toContain("boundary: ts-rest (http) GET /health");
+    expect(output.match(/\[ERROR\]/g)).toHaveLength(2);
+  });
+
+  it("lists every route under --all", () => {
+    writeRoutes();
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, all: true }),
+    );
+
+    expect(output).toContain("boundary: ts-rest (http) GET /teams");
+    expect(output).not.toContain("more. Run the same command");
+  });
+
+  it("counts every finding and says how many share a cause", () => {
+    writeRoutes();
+    const { output, result } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("6 findings: 6 error, 0 warning, 0 info");
+    expect(output).toContain(
+      "5 of them come from 1 shared cause, each printed once with the boundaries it reaches.",
+    );
+    expect(result.findings).toHaveLength(6);
+    expect(result.hasErrors).toBe(true);
+  });
+
+  it("leaves --json reporting every finding", () => {
+    writeRoutes();
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, json: true }),
+    );
+
+    const parsed = JSON.parse(output) as { findings: Finding[] };
+    expect(parsed.findings).toHaveLength(6);
+  });
+
+  it("prints one rule that accepts the status at every route behind the filter", () => {
+    writeRoutes();
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain(
+      "to silence it at all 5, add to the rules in .sussignore.yml:",
+    );
+
+    const ignore = path.join(tmpDir, ".sussignore.yml");
+    fs.writeFileSync(
+      ignore,
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: providerContractViolation",
+        `    provider: { transitionId: "${FILTER_403}" }`,
+        "    reason: the filter's 403 is documented elsewhere",
+      ].join("\n"),
+    );
+    const { result } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, sussignore: ignore }),
+    );
+    const accepted = result.findings.filter((f) => f.suppressed !== undefined);
+    expect(accepted).toHaveLength(5);
+    // The route that sends 403 itself still fails the run.
+    expect(result.hasErrors).toBe(true);
+  });
+
+  it("groups the new findings a change brings, as --base and --changed-files report them", () => {
+    const before = fs.mkdtempSync(
+      path.join(os.tmpdir(), "suss-shared-before-"),
+    );
+    try {
+      writeRoutes(before, false);
+      writeRoutes();
+      const { output } = captureQuietly(() =>
+        checkDir({
+          dir: tmpDir,
+          since: before,
+          changedFiles: BEHIND_FILTER.map((name) => `src/handlers/${name}.ts`),
+        }),
+      );
+
+      expect(output).toContain("5 new findings, 0 resolved.");
+      expect(output).toContain(
+        "[ERROR] providerContractViolation at 5 boundaries",
+      );
+      expect(output).toContain(
+        "comes from: require_login (app/controllers/base_controller.rb:15)",
+      );
+    } finally {
+      fs.rmSync(before, { recursive: true, force: true });
+    }
+  });
+
+  it("still matches a rule written against one of the routes", () => {
+    writeRoutes();
+    const ignore = path.join(tmpDir, ".sussignore.yml");
+    fs.writeFileSync(
+      ignore,
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: providerContractViolation",
+        '    boundary: "GET /invoices"',
+        `    provider: { transitionId: "${FILTER_403}" }`,
+        "    reason: invoices are behind a different gateway",
+      ].join("\n"),
+    );
+
+    const { output, result } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, sussignore: ignore, all: true }),
+    );
+
+    const accepted = result.findings.filter((f) => f.suppressed !== undefined);
+    expect(accepted).toHaveLength(1);
+    expect(formatRouteOf(accepted[0] as Finding)).toBe("GET /invoices");
+    expect(output).toContain(
+      "[ERROR] providerContractViolation at 4 boundaries",
+    );
+    expect(output).toContain("[ERROR, suppressed] providerContractViolation\n");
+  });
+});
+
+function formatRouteOf(f: Finding): string {
+  const { semantics } = f.boundary;
+  return semantics.name === "rest"
+    ? `${semantics.method} ${semantics.path}`
+    : "";
+}
+
 describe("failing when the run compares nothing", () => {
   it("exits non-zero by default, and --allow-empty opts back out", () => {
     // A check that pairs nothing reports nothing, which reads the same
