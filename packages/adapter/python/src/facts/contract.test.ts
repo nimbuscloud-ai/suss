@@ -95,6 +95,20 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a list written with a spread": { "f.py": "items = [first, *rest]\n" },
+  "an object written with a spread": {
+    "f.py": 'options = {"a": first, **rest}\n',
+  },
+  "a template string with a hole": {
+    "f.py": 'user_id = lookup()\npath = f"/users/{user_id}/posts"\n',
+  },
+  "a callback given each element of a list": {
+    "f.py": "def names(users):\n    return [user for user in users]\n",
+  },
+  "a callback given each position in a list": {
+    "f.py":
+      "def positions(users):\n    return [at for at, user in enumerate(users)]\n",
+  },
 };
 
 /**

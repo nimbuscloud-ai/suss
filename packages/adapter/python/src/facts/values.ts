@@ -12,11 +12,18 @@
  */
 
 import {
+  type AddRow,
+  addEntryRows,
+  addTemplateRows,
   NAMED_STORE_NAME,
   RECEIVER_STORE_NAME,
+  SPREAD_ENTRY,
   startsAtName,
+  type TemplatePiece,
   UNPLACED_STORE_NAME,
+  VALUE_ENTRY,
   valueLeftByWrites,
+  type WrittenEntry,
   writesRunInOrder,
 } from "@suss/resolution";
 
@@ -32,11 +39,16 @@ import {
   LATER_BODY_TYPES,
   parameterIdentifier,
   parameterNameAndType,
+  stringContentValue,
   stringLiteralValue,
   stripDecorators,
 } from "../ast.js";
 import { bindModule } from "../scope.js";
-import { ATTRIBUTE_GETTER, CONVERTING_BUILTINS } from "./languageWords.js";
+import {
+  ATTRIBUTE_GETTER,
+  CONVERTING_BUILTINS,
+  POSITION_COUNTER,
+} from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameReads, NameWrite } from "@suss/resolution";
@@ -441,6 +453,7 @@ function emitSequence(emitter: Emitter, sequence: PyNode): void {
   const objectKey = nodeId(emitter.filePath, sequence);
   add(emitter, "objectValue", objectKey);
   let position = 0;
+  const entries: WrittenEntry[] = [];
   for (const element of children(sequence)) {
     add(
       emitter,
@@ -450,14 +463,23 @@ function emitSequence(emitter: Emitter, sequence: PyNode): void {
       valueKey(emitter, element),
     );
     position += 1;
+    if (element.type !== "comment") {
+      entries.push(writtenEntry(emitter, element));
+    }
   }
+  addEntryRows(rowsOf(emitter), objectKey, entries);
 }
 
 /** A dictionary is an object whose string keys contain values. */
 function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
   const objectKey = nodeId(emitter.filePath, dictionary);
   add(emitter, "objectValue", objectKey);
+  const entries: WrittenEntry[] = [];
   for (const pair of children(dictionary)) {
+    if (SPREAD_TYPES.has(pair.type)) {
+      entries.push(writtenEntry(emitter, pair));
+      continue;
+    }
     if (pair.type !== "pair") {
       continue;
     }
@@ -466,6 +488,7 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
     if (key === null || value === null) {
       continue;
     }
+    entries.push(writtenEntry(emitter, value));
     if (key.type !== "string") {
       add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value));
       continue;
@@ -478,6 +501,25 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
       valueKey(emitter, value),
     );
   }
+  addEntryRows(rowsOf(emitter), objectKey, entries);
+}
+
+/** `*items` in a list and `**options` in a dictionary unpack a collection into the one written around them. */
+const SPREAD_TYPES = new Set(["list_splat", "dictionary_splat"]);
+
+/** An entry of a sequence or a dictionary. A spread is the collection it unpacks. */
+function writtenEntry(emitter: Emitter, entry: PyNode): WrittenEntry {
+  const unpacked = SPREAD_TYPES.has(entry.type)
+    ? children(entry)[0]
+    : undefined;
+  return unpacked === undefined
+    ? { key: valueKey(emitter, entry), form: VALUE_ENTRY }
+    : { key: valueKey(emitter, unpacked), form: SPREAD_ENTRY };
+}
+
+/** `add` in the form the shared row helpers take. */
+function rowsOf(emitter: Emitter): AddRow {
+  return (relation, row) => add(emitter, relation, ...row);
 }
 
 /** `a.b` read as a property of `a`. */
@@ -884,6 +926,106 @@ function emitComprehensionElement(
   }
 }
 
+/** `for at, item in ...` and `for (at, item) in ...`, which take each element apart into two names. */
+const PAIR_TARGET_TYPES = new Set(["pattern_list", "tuple_pattern"]);
+
+/**
+ * A comprehension's `for item in items` gives `item` one element of
+ * `items` each time round. `for at, item in enumerate(items)` gives `at`
+ * the position as well. A target that takes the element apart any other
+ * way gets neither, since no one name is given the whole element.
+ */
+function emitElementVariables(emitter: Emitter, clause: PyNode): void {
+  const target = field(clause, "left");
+  const over = field(clause, "right");
+  if (target === null || over === null) {
+    return;
+  }
+  if (target.type === "identifier") {
+    add(
+      emitter,
+      "elementOf",
+      valueKey(emitter, target),
+      valueKey(emitter, over),
+    );
+    return;
+  }
+  const names = PAIR_TARGET_TYPES.has(target.type) ? children(target) : [];
+  const [position, element] = names;
+  const counted = countedCollection(emitter, over);
+  if (
+    counted === null ||
+    names.length !== 2 ||
+    position?.type !== "identifier" ||
+    element?.type !== "identifier"
+  ) {
+    return;
+  }
+  const elementKey = valueKey(emitter, element);
+  add(emitter, "elementOf", elementKey, valueKey(emitter, counted));
+  add(emitter, "positionOf", valueKey(emitter, position), elementKey);
+}
+
+/**
+ * The collection `enumerate(items)` counts through. Null for any other
+ * call, and for one given a start, which shifts every position.
+ */
+function countedCollection(emitter: Emitter, over: PyNode): PyNode | null {
+  const callee = over.type === "call" ? field(over, "function") : null;
+  const args = field(over, "arguments");
+  const [first] = callArguments(over);
+  if (
+    callee?.type !== "identifier" ||
+    callee.text !== POSITION_COUNTER ||
+    !isBuiltin(emitter, POSITION_COUNTER) ||
+    args === null ||
+    writtenArgumentCount(args) !== 1 ||
+    first?.kind !== "positional"
+  ) {
+    return null;
+  }
+  return first.node;
+}
+
+/**
+ * An f-string's text and the values it interpolates, in source order.
+ * Empty for a string with nothing interpolated, which is written out
+ * whole and needs no pieces.
+ */
+function interpolatedPieces(emitter: Emitter, string: PyNode): TemplatePiece[] {
+  const parts = children(string);
+  if (!parts.some((part) => part.type === "interpolation")) {
+    return [];
+  }
+  return parts.flatMap((part): TemplatePiece[] => {
+    if (part.type === "string_content") {
+      return [{ text: stringContentValue(part) }];
+    }
+    const expression =
+      part.type === "interpolation"
+        ? (field(part, "expression") ?? children(part)[0])
+        : undefined;
+    return expression === undefined
+      ? []
+      : [{ hole: valueKey(emitter, expression) }];
+  });
+}
+
+/** `"a" f"{b}"`, whose strings are joined into one, each a hole of the whole. */
+function adjacentPieces(emitter: Emitter, joined: PyNode): TemplatePiece[] {
+  return children(joined)
+    .filter((part) => part.type !== "comment")
+    .map((part) => ({ hole: valueKey(emitter, part) }));
+}
+
+/** The pieces of a string built from others, by the string's node type. */
+const TEMPLATE_PIECES: Partial<
+  Record<string, (emitter: Emitter, node: PyNode) => TemplatePiece[]>
+> = {
+  string: interpolatedPieces,
+  concatenated_string: adjacentPieces,
+};
+
 /** What one expression says about itself, whichever walk reached it. */
 function emitExpressionFact(
   emitter: Emitter,
@@ -925,6 +1067,13 @@ function emitExpressionFact(
   }
   if (COMPREHENSION_TYPES.has(type)) {
     emitComprehensionElement(emitter, child);
+  }
+  if (type === "for_in_clause") {
+    emitElementVariables(emitter, child);
+  }
+  const pieces = TEMPLATE_PIECES[type]?.(emitter, child) ?? [];
+  if (pieces.length > 0) {
+    addTemplateRows(rowsOf(emitter), nodeId(emitter.filePath, child), pieces);
   }
   const branches = fallbackBranchesOf(child, type);
   if (branches !== null) {

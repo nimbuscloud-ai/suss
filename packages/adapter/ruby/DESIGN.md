@@ -66,18 +66,18 @@ The summary then reports one of three things:
 
 An ancestor the adapter could not open ends the search, even when a method further along would match. Ruby would call whatever that ancestor defines, so a method found past it is not known to be the one that runs. Reporting it would make a confident claim that may be wrong, where the adapter should say nothing.
 
-A `define_method` call stops the search only for the names it defines. The adapter does not match the call's argument against fixed patterns. Instead it emits two facts as it walks a class body, and the lookup joins them:
+A `define_method` call stops the search only for the names it defines. The adapter does not match the call's argument against fixed patterns. Instead it emits facts as it walks a class body, and the lookup joins them:
 
 ```
-definesMethodFrom  order.rb:0-120  order.rb:64-67
-nameTurnsOn        order.rb:64-67  key  element  order.rb:30-52
+definesMethodFrom  order.rb:0-120     order.rb:64-67
+elementOf          order.rb:40-90#key  order.rb#KEYS
 ```
 
-`definesMethodFrom` records that the class defines a method whose name is whatever that expression evaluates to. `nameTurnsOn` records that a loop around the call binds `key` to each element of another expression. Both expressions then go through the value evaluator that also works out route paths. It follows names and constants across the whole run, so it gets the same answer whether the name is a literal symbol, a constant another file defines, a list a project method returns, or an interpolated symbol built from a loop's element.
+`definesMethodFrom` records that the class defines a method whose name is whatever the expression at `order.rb:64-67` evaluates to. `elementOf` records that the block at `order.rb:40-90` gives its variable `key` one element of `KEYS` each time it runs, and `positionOf` does the same for the position `each_with_index` gives. The lookup takes the loops inside the class whose block covers the name. The name and each loop's collection then go through the value evaluator that also works out route paths. It follows names and constants across the whole run, so it gets the same answer whether the name is a literal symbol, a constant another file defines, a list a project method returns, or an interpolated symbol built from a loop's element.
 
 The name the evaluator settles on goes back into the facts as `declaresName`. One shared rule adds it to `wantedDeclaredName` next to the names written with `def`. A caller asking which methods a class declares gets the dynamically defined ones too, with no special handling.
 
-The adapter recognizes Ruby's own `each`, `each_with_index` and `map` as loops without a pack, the same way it recognizes `ENV`, because they belong to `Enumerable` and not to a library.
+The adapter recognizes Ruby's own `each`, `each_with_index` and `map` as loops without a pack, the same way it recognizes `ENV`, because they belong to `Enumerable` and not to a library. A block with more variables than the element and, for `each_with_index`, the position takes each element apart, as `|name, value|` does over a hash. Its first variable is not given the whole element, so it gets no `elementOf`, and a name built from it stays unread.
 
 When only part of a name settles, as in `"category_#{filter}"` with nothing known about `filter`, the adapter keeps a pattern built from the literal parts. A lookup for a name that does not match any pattern continues up the ancestry. A lookup for a name that matches stops at the class, since the loop may be defining it. When a `define_method` name settles on nothing at all, such as a bare variable or a call nothing binds, the class stops every lookup.
 

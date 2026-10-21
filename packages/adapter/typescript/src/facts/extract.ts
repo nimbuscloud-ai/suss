@@ -26,13 +26,20 @@ import {
 } from "ts-morph";
 
 import {
+  type AddRow,
+  addEntryRows,
+  addTemplateRows,
   classMemberName,
   DEFAULT_IMPORT_NAME,
   GLOBAL_MODULE,
   NAMED_STORE_NAME,
   NAMESPACE_IMPORT_NAME,
   RECEIVER_STORE_NAME,
+  SPREAD_ENTRY,
+  type TemplatePiece,
+  VALUE_ENTRY,
   valueLeftByWrites,
+  type WrittenEntry,
 } from "@suss/resolution";
 
 import {
@@ -56,6 +63,7 @@ import {
 import {
   CONVERTING_GLOBALS,
   CONVERTING_METHODS,
+  ELEMENT_CALLBACK_METHODS,
   MAP_ENTRY_READ,
   MAP_ENTRY_WRITE,
 } from "./languageWords.js";
@@ -71,6 +79,9 @@ import type {
   ParameterDeclaration,
   PropertyAccessExpression,
   PropertyDeclaration,
+  SpreadAssignment,
+  SpreadElement,
+  TemplateExpression,
   TypeNode,
   TypeReferenceNode,
   VariableDeclaration,
@@ -79,6 +90,11 @@ import type {
 /** Arity sugar over `Database.add`, which takes a tuple array. */
 function fact(db: Database, relation: string, ...tuple: string[]): void {
   db.add(relation, tuple);
+}
+
+/** `fact` in the form the shared row helpers take. */
+function rowsInto(db: Database): AddRow {
+  return (relation, row) => db.add(relation, row);
 }
 
 export interface NodeTable {
@@ -572,6 +588,97 @@ function templateEnds(key: Node): { start: string; end: string } | null {
 }
 
 /**
+ * The facts for one property of an object written out, and the entry it
+ * puts in the object. Null for one that puts nothing a fact can name,
+ * such as a getter.
+ */
+function emitObjectEntry(
+  db: Database,
+  table: NodeTable,
+  objectId: string,
+  property: Node,
+): WrittenEntry | null {
+  if (Node.isSpreadAssignment(property)) {
+    return spreadEntry(table, property);
+  }
+  const held = emitObjectProperty(db, table, objectId, property);
+  return held === null ? null : { key: held, form: VALUE_ENTRY };
+}
+
+/** The key of what a named or computed property puts in the object, after its facts are stated. */
+function emitObjectProperty(
+  db: Database,
+  table: NodeTable,
+  objectId: string,
+  property: Node,
+): string | null {
+  if (Node.isPropertyAssignment(property)) {
+    const initializer = property.getInitializer();
+    if (initializer === undefined) {
+      return null;
+    }
+    const held = emitValue(db, table, initializer);
+    emitHeld(db, objectId, property, held);
+    return held;
+  }
+
+  if (Node.isShorthandPropertyAssignment(property)) {
+    // `{ handler }` is whatever the name refers to.
+    const held = emitValue(db, table, property.getNameNode());
+    emitHeld(db, objectId, property, held);
+    return held;
+  }
+
+  if (Node.isMethodDeclaration(property)) {
+    const methodId = nodeId(property);
+    table.byId.set(methodId, property);
+    fact(db, "func", methodId);
+    emitFunctionFacts(db, table, property);
+    emitHeld(db, objectId, property, methodId);
+    return methodId;
+  }
+  return null;
+}
+
+/** A spread's entry is the collection it unpacks, whose entries a reader puts in its place. */
+function spreadEntry(
+  table: NodeTable,
+  spread: SpreadElement | SpreadAssignment,
+): WrittenEntry {
+  return {
+    key: keyLeftUnstated(table, spread.getExpression()),
+    form: SPREAD_ENTRY,
+  };
+}
+
+/** A template literal's text and the values it puts between the text, in source order. */
+function templatePieces(
+  table: NodeTable,
+  template: TemplateExpression,
+): TemplatePiece[] {
+  return [
+    { text: template.getHead().getLiteralText() },
+    ...template
+      .getTemplateSpans()
+      .flatMap((span) => [
+        { hole: keyLeftUnstated(table, span.getExpression()) },
+        { text: span.getLiteral().getLiteralText() },
+      ]),
+  ];
+}
+
+/**
+ * The key `emitValue` gives an expression, with its facts left for the
+ * reader that follows the key. The README says why they wait.
+ */
+function keyLeftUnstated(table: NodeTable, value: Expression): string {
+  const expression = unwrapExpression(value);
+  const id = nodeId(expression);
+  table.byId.set(id, expression);
+  return id;
+}
+
+/**
  * An object literal's property, under the name it is written with. A
  * computed key, `[kind]: handler`, is under a name only the program
  * knows, which is what `holdsUnderKey` says.
@@ -828,47 +935,30 @@ export function emitValue(
     // An array has its elements under their positions, which is what
     // lets the property rule cover `routes[0]` unchanged.
     fact(db, "objectValue", id);
-    const elements = expression.getElements();
-    for (let position = 0; position < elements.length; position++) {
-      const element = elements[position];
-      if (element === undefined) {
-        continue;
-      }
-      fact(
-        db,
-        "holdsProperty",
-        id,
-        String(position),
-        emitValue(db, table, element),
+    const entries: WrittenEntry[] = [];
+    for (const [position, element] of expression.getElements().entries()) {
+      const held = emitValue(db, table, element);
+      fact(db, "holdsProperty", id, String(position), held);
+      entries.push(
+        Node.isSpreadElement(element)
+          ? spreadEntry(table, element)
+          : { key: held, form: VALUE_ENTRY },
       );
     }
+    addEntryRows(rowsInto(db), id, entries);
     return id;
   }
 
   if (Node.isObjectLiteralExpression(expression)) {
     fact(db, "objectValue", id);
+    const entries: WrittenEntry[] = [];
     for (const property of expression.getProperties()) {
-      if (Node.isPropertyAssignment(property)) {
-        const held = property.getInitializer();
-        if (held !== undefined) {
-          emitHeld(db, id, property, emitValue(db, table, held));
-        }
-      } else if (Node.isShorthandPropertyAssignment(property)) {
-        // `{ handler }` is whatever the name refers to.
-        emitHeld(
-          db,
-          id,
-          property,
-          emitValue(db, table, property.getNameNode()),
-        );
-      } else if (Node.isMethodDeclaration(property)) {
-        const methodId = nodeId(property);
-        table.byId.set(methodId, property);
-        fact(db, "func", methodId);
-        emitFunctionFacts(db, table, property);
-        emitHeld(db, id, property, methodId);
+      const entry = emitObjectEntry(db, table, id, property);
+      if (entry !== null) {
+        entries.push(entry);
       }
     }
+    addEntryRows(rowsInto(db), id, entries);
     return id;
   }
 
@@ -912,6 +1002,10 @@ export function emitValue(
     ]) {
       fact(db, "conditionalBranch", id, emitValue(db, table, branch));
     }
+  }
+
+  if (Node.isTemplateExpression(expression)) {
+    addTemplateRows(rowsInto(db), id, templatePieces(table, expression));
   }
 
   // Everything left is written out here and refers to nothing further:
@@ -1454,6 +1548,47 @@ function emitCallFacts(
   }
   emitConversion(db, table, callId, callee, global, args);
   emitMapAccess(db, table, callId, callee, args);
+  emitElementParameters(db, table, callee, args);
+}
+
+/**
+ * `items.map((item, at) => ...)` runs the function once for each element
+ * of `items`, so `item` is given an element and `at` its position. Only
+ * a function written into the call says so, since a named function can
+ * be called from anywhere else as well.
+ */
+function emitElementParameters(
+  db: Database,
+  table: NodeTable,
+  callee: Expression,
+  args: Node[],
+): void {
+  if (
+    !Node.isPropertyAccessExpression(callee) ||
+    !ELEMENT_CALLBACK_METHODS.has(callee.getName())
+  ) {
+    return;
+  }
+  const [callback] = args;
+  if (
+    !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback))
+  ) {
+    return;
+  }
+  const [element, position] = callback.getParameters();
+  if (element === undefined || element.isRestParameter()) {
+    return;
+  }
+  const elementId = nodeId(element);
+  fact(
+    db,
+    "elementOf",
+    elementId,
+    emitValue(db, table, callee.getExpression()),
+  );
+  if (position !== undefined && !position.isRestParameter()) {
+    fact(db, "positionOf", nodeId(position), elementId);
+  }
 }
 
 /** `new Map(...)`, the language's own map, which a program fills through `set`. */

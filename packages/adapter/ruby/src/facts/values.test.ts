@@ -757,12 +757,11 @@ describe("ruby value facts", () => {
     expect(db.size("holdsProperty")).toBe(0);
   });
 
-  it("says which expression a dynamic definition takes its name from", async () => {
+  it("says which expression a dynamic definition takes its name from, and what the loop around it gives each variable", async () => {
+    const block = "do |key, at|\n    define_method(key) { at }\n  end";
     const source = [
       "class Subject",
-      "  KEYS.each do |key, at|",
-      "    define_method(key) { at }",
-      "  end",
+      `  KEYS.each_with_index ${block}`,
       "end",
       "",
     ].join("\n");
@@ -773,24 +772,96 @@ describe("ruby value facts", () => {
     expect(rows(db, "definesMethodFrom")).toEqual([
       [cls?.[0], `:${at}-${at + "key".length}`],
     ]);
-    expect(rows(db, "nameTurnsOn").map((row) => row.slice(1, 3))).toEqual([
-      ["key", "at"],
+    const blockKey = keyOf(source, block);
+    expect(rows(db, "elementOf")).toEqual([[`${blockKey}#key`, "#KEYS"]]);
+    expect(rows(db, "positionOf")).toEqual([
+      [`${blockKey}#at`, `${blockKey}#key`],
     ]);
   });
 
-  it("says nothing about the turns of a loop whose block takes no parameter", async () => {
+  it("gives the variable of a map block one element of a literal array", async () => {
+    const source = "%i[width height].map { |key| key }\n";
+    const db = await factsFor(source);
+    const blockKey = keyOf(source, "{ |key| key }");
+    expect(rows(db, "elementOf")).toEqual([
+      [`${blockKey}#key`, keyOf(source, "%i[width height]")],
+    ]);
+    // The block's return reads the variable on the key elementOf gives it.
+    expect(rows(db, "returnsValue")).toEqual([[blockKey, `${blockKey}#key`]]);
+    expect(db.size("positionOf")).toBe(0);
+  });
+
+  it("says nothing about the variables of a loop block that takes no variable or takes each element apart", async () => {
     const db = await factsFor(
       [
         "class Subject",
         "  KEYS.each do",
         "    define_method(:width) { 1 }",
         "  end",
+        "  PAIRS.each { |name, value| name }",
+        "  PAIRS.map { |(name, value)| name }",
         "end",
         "",
       ].join("\n"),
     );
     expect(db.size("definesMethodFrom")).toBe(1);
-    expect(db.size("nameTurnsOn")).toBe(0);
+    expect(db.size("elementOf")).toBe(0);
+    expect(db.size("positionOf")).toBe(0);
+  });
+
+  it("states each entry of an array and a hash in order, with a spread as the collection it unpacks", async () => {
+    const source = [
+      "first = 1",
+      "rest = []",
+      "items = [first, *rest]",
+      "options = { a: first, # the rest go after",
+      "  **rest }",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const array = keyOf(source, "[first, *rest]");
+    const hash = keyOf(source, "{ a: first, # the rest go after\n  **rest }");
+    expect(rows(db, "writtenEntryAt")).toEqual([
+      [array, "0", "#first", "value"],
+      [array, "1", "#rest", "spread"],
+      [hash, "0", "#first", "value"],
+      [hash, "1", "#rest", "spread"],
+    ]);
+  });
+
+  it("states the text and the holes of an interpolated string and symbol in order", async () => {
+    const source = [
+      "id = 1",
+      'path = "/users/#{id}/posts"',
+      'setter = :"#{id}="',
+      'plain = "/users"',
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const path = keyOf(source, '"/users/#{id}/posts"');
+    const setter = keyOf(source, ':"#{id}="');
+    expect(rows(db, "partAt")).toEqual([
+      [path, "0", "/users/"],
+      [path, "2", "/posts"],
+      [setter, "1", "="],
+    ]);
+    expect(rows(db, "holeAt")).toEqual([
+      [path, "1", "#id"],
+      [setter, "0", "#id"],
+    ]);
+  });
+
+  it("states each string written next to another as a hole of the whole", async () => {
+    const source = 'id = 1\npath = "/users/" "#{id}"\n';
+    const db = await factsFor(source);
+    const joined = keyOf(source, '"/users/" "#{id}"');
+    const second = keyOf(source, '"#{id}"');
+    expect(rows(db, "holeAt")).toEqual([
+      [joined, "0", keyOf(source, '"/users/"')],
+      [joined, "1", second],
+      [second, "0", "#id"],
+    ]);
+    expect(db.size("partAt")).toBe(0);
   });
 
   it("leaves every block alone when no pack declares one", async () => {

@@ -587,6 +587,68 @@ describe("a read whose key the source computes", () => {
   });
 });
 
+describe("where each piece of a value written out goes", () => {
+  it("states each entry of an array and an object in order, with a spread as the collection it unpacks", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const first: unknown, rest: unknown[];",
+        "export const items = [first, ...rest];",
+        "export const options = { a: first, ...rest, run() {} };",
+        "",
+      ].join("\n"),
+    });
+
+    const object = "{ a: first, ...rest, run() {} }";
+    expect(rows(db, table, "writtenEntryAt")).toEqual([
+      ["[first, ...rest]", "0", "first", "value"],
+      ["[first, ...rest]", "1", "rest", "spread"],
+      [object, "0", "first", "value"],
+      [object, "1", "rest", "spread"],
+      [object, "2", "run() {}", "value"],
+    ]);
+  });
+
+  it("states the text and the holes of a template literal in order, leaving out text that writes nothing", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const id: string, kind: string;",
+        "export const path = `/users/${id}${kind}/posts`;",
+        "",
+      ].join("\n"),
+    });
+
+    const template = "`/users/${id}${kind}/posts`";
+    expect(rows(db, table, "partAt")).toEqual([
+      [template, "0", "/users/"],
+      [template, "3", "/posts"],
+    ]);
+    expect(rows(db, table, "holeAt")).toEqual([
+      [template, "1", "id"],
+      [template, "2", "kind"],
+    ]);
+  });
+
+  it("gives a callback written into map one element of the array and its position", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const users: { name: string }[];",
+        "declare function describe(user: unknown): string;",
+        "export const names = users.map((user, at) => user.name);",
+        "export const each = users.forEach(function (user) {});",
+        "export const described = users.map(describe);",
+        "export const sorted = users.sort((a, b) => 0);",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "elementOf")).toEqual([
+      ["user", "users"],
+      ["user", "users"],
+    ]);
+    expect(rows(db, table, "positionOf")).toEqual([["at", "user"]]);
+  });
+});
+
 describe("finding the environment objects in a file", () => {
   function objectsIn(
     source: string,

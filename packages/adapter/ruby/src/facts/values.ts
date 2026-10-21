@@ -7,13 +7,20 @@
  */
 
 import {
+  type AddRow,
+  addEntryRows,
   addPackWords,
+  addTemplateRows,
   classMemberName,
   NAMED_STORE_NAME,
   RECEIVER_STORE_NAME,
+  SPREAD_ENTRY,
   startsAtName,
+  type TemplatePiece,
   UNPLACED_STORE_NAME,
+  VALUE_ENTRY,
   valueLeftByWrites,
+  type WrittenEntry,
 } from "@suss/resolution";
 
 import {
@@ -304,6 +311,11 @@ function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
     return;
   }
   emitter.db.add(relation, tuple);
+}
+
+/** `add` in the form the shared row helpers take. */
+function rowsOf(emitter: Emitter): AddRow {
+  return (relation, row) => add(emitter, relation, ...row);
 }
 
 function valueKey(
@@ -810,6 +822,7 @@ function emitArray(emitter: Emitter, array: RbNode): void {
   const objectKey = nodeId(emitter.filePath, array);
   add(emitter, "objectValue", objectKey);
   let position = 0;
+  const entries: WrittenEntry[] = [];
   for (const element of children(array)) {
     add(
       emitter,
@@ -819,7 +832,26 @@ function emitArray(emitter: Emitter, array: RbNode): void {
       valueKey(emitter, element, array),
     );
     position += 1;
+    entries.push(writtenEntry(emitter, element, array));
   }
+  addEntryRows(rowsOf(emitter), objectKey, entries);
+}
+
+/** `*items` in an array and `**options` in a hash unpack a collection into the one written around them. */
+const SPREAD_TYPES = new Set(["splat_argument", "hash_splat_argument"]);
+
+/** An entry of an array or a hash. A spread is the collection it unpacks. */
+function writtenEntry(
+  emitter: Emitter,
+  entry: RbNode,
+  parent: RbNode,
+): WrittenEntry {
+  const unpacked = SPREAD_TYPES.has(entry.type)
+    ? children(entry)[0]
+    : undefined;
+  return unpacked === undefined
+    ? { key: valueKey(emitter, entry, parent), form: VALUE_ENTRY }
+    : { key: valueKey(emitter, unpacked, entry), form: SPREAD_ENTRY };
 }
 
 /**
@@ -829,7 +861,12 @@ function emitArray(emitter: Emitter, array: RbNode): void {
 function emitHash(emitter: Emitter, hash: RbNode): void {
   const objectKey = nodeId(emitter.filePath, hash);
   add(emitter, "objectValue", objectKey);
+  const entries: WrittenEntry[] = [];
   for (const pair of children(hash)) {
+    if (SPREAD_TYPES.has(pair.type)) {
+      entries.push(writtenEntry(emitter, pair, hash));
+      continue;
+    }
     if (pair.type !== "pair") {
       continue;
     }
@@ -838,6 +875,7 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
     if (key === null || value === null) {
       continue;
     }
+    entries.push(writtenEntry(emitter, value, pair));
     const keyText = pairKeyText(key);
     if (keyText === null) {
       add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value, pair));
@@ -851,6 +889,7 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
       valueKey(emitter, value, pair),
     );
   }
+  addEntryRows(rowsOf(emitter), objectKey, entries);
 }
 
 /** The two ways to write a block, `{ }` and `do ... end`. */
@@ -858,55 +897,49 @@ const BLOCK_TYPES = new Set(["block", "do_block"]);
 
 /**
  * Iteration methods whose block runs once per element, with the element
- * bound to the first parameter and, for `each_with_index`, the position
- * bound to the second. They come from `Enumerable`, so the adapter
- * recognizes them without a pack, as it does `ENV`.
+ * given to the first variable and, for `each_with_index`, the position
+ * to the second. They come from `Enumerable`, so the adapter recognizes
+ * them without a pack, as it does `ENV`.
  */
 const LOOP_METHODS = new Set(["each", "each_with_index", "map"]);
 
-/** Ruby's call for defining a method at run time. Its first argument is the method's name. */
-const DEFINE_METHOD_CALL = "define_method";
-
-/** The names one iteration of a loop block binds, and the collection it iterates over. */
-interface LoopTurn {
-  readonly element: string;
-  /** The name bound to the position, or the empty string for a block with one parameter. */
-  readonly index: string;
-  readonly overKey: string;
-}
+/** The loop method whose block takes the position after the element. */
+const COUNTING_LOOP = "each_with_index";
 
 /**
- * What a loop block binds on each iteration, or null when the block does
- * not belong to a loop call. `call` is the node the block is written in.
+ * `elementOf` for the variable a loop block gives each element, and
+ * `positionOf` for the one `each_with_index` gives its position. A block
+ * with more variables than that takes each element apart, so its first
+ * variable is not given the whole element. `call` is the node the block
+ * is written in.
  */
-function loopTurnAt(
+function emitLoopVariables(
   emitter: Emitter,
   block: RbNode,
   call: RbNode,
-): LoopTurn | null {
-  if (call.type !== "call") {
-    return null;
-  }
-  const receiver = field(call, "receiver");
-  const method = field(call, "method");
+): void {
+  const receiver = call.type === "call" ? field(call, "receiver") : null;
+  const method = receiver === null ? null : field(call, "method");
   if (receiver === null || method === null || !LOOP_METHODS.has(method.text)) {
-    return null;
+    return;
   }
-  const parameters = field(block, "parameters");
-  const names =
-    parameters === null ? [] : children(parameters).map((p) => p.text);
-  const element = names[0];
-  if (element === undefined) {
-    return null;
+  const variables = children(field(block, "parameters"));
+  const [element, position] = variables;
+  const counting = method.text === COUNTING_LOOP;
+  if (element?.type !== "identifier" || variables.length > (counting ? 2 : 1)) {
+    return;
   }
-  // Keyed on the receiver's node so the evaluator settles what the loop
-  // iterates over, from these same facts.
-  return {
-    element,
-    index: names[1] ?? "",
-    overKey: nodeId(emitter.filePath, receiver),
-  };
+  // A block variable is keyed on the block, the way a read of it is.
+  const blockKey = nodeId(emitter.filePath, block);
+  const elementKey = `${blockKey}#${element.text}`;
+  add(emitter, "elementOf", elementKey, valueKey(emitter, receiver, call));
+  if (position?.type === "identifier") {
+    add(emitter, "positionOf", `${blockKey}#${position.text}`, elementKey);
+  }
 }
+
+/** Ruby's call for defining a method at run time. Its first argument is the method's name. */
+const DEFINE_METHOD_CALL = "define_method";
 
 /**
  * Records a `define_method` call in a class body. The method's name is
@@ -917,7 +950,6 @@ function emitDynamicDefinition(
   emitter: Emitter,
   call: RbNode,
   type: string,
-  turns: readonly LoopTurn[],
 ): void {
   if (
     emitter.selfKey === null ||
@@ -934,16 +966,6 @@ function emitDynamicDefinition(
   // With no argument, the call's own key is used as the name, which settles on nothing.
   const nameKey = nodeId(emitter.filePath, first ?? call);
   add(emitter, "definesMethodFrom", emitter.selfKey, nameKey);
-  for (const turn of turns) {
-    add(
-      emitter,
-      "nameTurnsOn",
-      nameKey,
-      turn.element,
-      turn.index,
-      turn.overKey,
-    );
-  }
 }
 
 /**
@@ -951,24 +973,16 @@ function emitDynamicDefinition(
  * tree-sitter node is a call into WASM, so the walk reads them once and
  * hands them on.
  */
-type ExpressionVisit = (
-  child: RbNode,
-  type: string,
-  parent: RbNode,
-  turns: readonly LoopTurn[],
-) => void;
+type ExpressionVisit = (child: RbNode, type: string, parent: RbNode) => void;
 
 /**
  * Visits every expression under a node once, stopping at nested
  * definitions and adding each to `nested` when the caller passes a list.
- * `turns` lists the loop blocks around the expression, outermost first.
  */
 function walkExpressions(
   node: RbNode,
-  emitter: Emitter,
   visit: ExpressionVisit,
   nested: RbNode[] | null = null,
-  turns: readonly LoopTurn[] = [],
 ): void {
   for (const child of children(node)) {
     const type = child.type;
@@ -976,17 +990,8 @@ function walkExpressions(
       nested?.push(child);
       continue;
     }
-    visit(child, type, node, turns);
-    const opened = BLOCK_TYPES.has(type)
-      ? loopTurnAt(emitter, child, node)
-      : null;
-    walkExpressions(
-      child,
-      emitter,
-      visit,
-      nested,
-      opened === null ? turns : [...turns, opened],
-    );
+    visit(child, type, node);
+    walkExpressions(child, visit, nested);
   }
 }
 
@@ -1132,10 +1137,10 @@ function raises(written: RbNode, enclosing: RbNode | null): boolean {
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // The walk below starts at the children, so a statement that is itself
   // a `define_method` call is checked here.
-  emitDynamicDefinition(emitter, node, node.type, []);
-  walkExpressions(node, emitter, (child, type, parent, turns) => {
+  emitDynamicDefinition(emitter, node, node.type);
+  walkExpressions(node, (child, type, parent) => {
     const site = callSiteAt(emitter, child, type, parent);
-    emitExpressionFact(emitter, child, type, parent, turns, site);
+    emitExpressionFact(emitter, child, type, parent, site);
   });
 }
 
@@ -1145,10 +1150,9 @@ function emitExpressionFact(
   child: RbNode,
   type: string,
   parent: RbNode,
-  turns: readonly LoopTurn[],
   site: CallSite | null,
 ): void {
-  emitDynamicDefinition(emitter, child, type, turns);
+  emitDynamicDefinition(emitter, child, type);
   if (site !== null) {
     emitCall(emitter, site);
     emitKeyedFetch(emitter, site);
@@ -1191,6 +1195,11 @@ function emitExpressionFact(
   }
   if (BLOCK_TYPES.has(type)) {
     emitBlockValue(emitter, child);
+    emitLoopVariables(emitter, child, parent);
+  }
+  const pieces = TEMPLATE_PIECES[type]?.(emitter, child) ?? [];
+  if (pieces.length > 0) {
+    addTemplateRows(rowsOf(emitter), nodeId(emitter.filePath, child), pieces);
   }
   for (const branch of BRANCHES_OF[type]?.(child) ?? []) {
     add(
@@ -1210,6 +1219,44 @@ function emitExpressionFact(
     emitParameterDefault(emitter, child);
   }
 }
+
+/**
+ * A string's or a symbol's text and the values it interpolates with
+ * `#{}`, in source order. Empty for one with nothing interpolated, which
+ * is written out whole and needs no pieces.
+ */
+function interpolatedPieces(emitter: Emitter, string: RbNode): TemplatePiece[] {
+  const parts = children(string);
+  if (!parts.some((part) => part.type === "interpolation")) {
+    return [];
+  }
+  return parts.flatMap((part): TemplatePiece[] => {
+    if (part.type === "string_content") {
+      return [{ text: part.text }];
+    }
+    const expression =
+      part.type === "interpolation" ? children(part)[0] : undefined;
+    return expression === undefined
+      ? []
+      : [{ hole: valueKey(emitter, expression, part) }];
+  });
+}
+
+/** `"a" "#{b}"`, whose strings are joined into one, each a hole of the whole. */
+function adjacentPieces(emitter: Emitter, joined: RbNode): TemplatePiece[] {
+  return children(joined).map((part) => ({
+    hole: valueKey(emitter, part, joined),
+  }));
+}
+
+/** The pieces of a string built from others, by the string's node type. */
+const TEMPLATE_PIECES: Partial<
+  Record<string, (emitter: Emitter, node: RbNode) => TemplatePiece[]>
+> = {
+  string: interpolatedPieces,
+  delimited_symbol: interpolatedPieces,
+  chained_string: adjacentPieces,
+};
 
 /** `foo(&app)` hands `app` to the call as its block. */
 function emitBlockArgument(emitter: Emitter, argument: RbNode): void {
@@ -1841,11 +1888,10 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const collecting: Emitter = { ...inside, heldRows: expressionFacts };
   walkExpressions(
     body,
-    inside,
-    (child, type, parent, turns) => {
+    (child, type, parent) => {
       const site = callSiteAt(inside, child, type, parent);
       emitBodyFact(bodyFacts, inside, funcKey, child, type, site);
-      emitExpressionFact(collecting, child, type, parent, turns, site);
+      emitExpressionFact(collecting, child, type, parent, site);
     },
     nested,
   );

@@ -19,6 +19,25 @@ export function spanFileOf(key: string): string | null {
   return key.match(SPAN_KEY)?.[1] ?? null;
 }
 
+/** Where a node key's node is written. */
+export interface KeySpan {
+  readonly file: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/** The file and byte span of a node key, or null for a key that is not a node. */
+export function spanOfKey(key: string): KeySpan | null {
+  const span = key.match(SPAN_KEY);
+  return span === null
+    ? null
+    : {
+        file: span[1] as string,
+        start: Number(span[2]),
+        end: Number(span[3]),
+      };
+}
+
 /**
  * The node a key refers to: the smallest node over the span, walked up
  * to the one whose span matches. A key that is not a node, such as a
@@ -28,13 +47,12 @@ export function nodeOfKey<N extends SpannedNode<N>>(
   rootsByFile: ReadonlyMap<string, N>,
   key: string,
 ): N | null {
-  const span = key.match(SPAN_KEY);
+  const span = spanOfKey(key);
   if (span === null) {
     return null;
   }
-  const root = rootsByFile.get(span[1] as string);
-  const start = Number(span[2]);
-  const end = Number(span[3]);
+  const root = rootsByFile.get(span.file);
+  const { start, end } = span;
   if (root === undefined || end <= start) {
     return null;
   }

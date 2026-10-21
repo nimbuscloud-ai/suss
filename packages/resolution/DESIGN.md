@@ -77,6 +77,25 @@ choosesEntryLike(site, o, p, s)  the same read, where the source writes the
 collectionValue(c)          c builds a collection the program fills
                             through its methods, as new Map() does
                             (TypeScript)
+writtenEntryAt(c, k, x, form)  the list or object c is written out with
+                            the entry x at position k, counting its
+                            entries in source order. form is value for an
+                            entry written in place, whose name
+                            holdsProperty or holdsUnderKey gives. form is
+                            spread for [...xs], {...opts} or **opts, and
+                            x is the collection whose entries all go at
+                            k. No rule reads it yet. The rules derive a
+                            different relation, entryAt(site, held), for
+                            what a read of an entry can give back
+partAt(t, k, s)             the template string t writes the text s at
+                            position k, counting its parts and its holes
+                            together in source order: a template literal,
+                            an f-string, or a Ruby string or symbol with
+                            #{} in it. No rule reads it yet
+holeAt(t, k, x)             the template t puts the value of x at position
+                            k. Python and Ruby state each string of
+                            adjacent strings, "a" f"{b}", as a hole of the
+                            whole. No rule reads it yet
 converts(r, a, n)           the call r converts a to another type with
                             the language's own n, as Number(x), int(x)
                             or x.to_i. Only the source walk reads it
@@ -134,6 +153,20 @@ paramDefault(p, d)          p takes the value d when a caller passes no
                             or a block's parameter only
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
+elementOf(x, over)          the parameter or block variable x is given one
+                            element of the collection over each time it
+                            runs: the first parameter of a function
+                            written into map or forEach, a
+                            comprehension's variable, or the variable of
+                            a Ruby map or each block that takes one. A
+                            variable that takes the element apart has
+                            none. Ruby's define_method reader reads it,
+                            and no rule does
+positionOf(i, x)            i is given the position of x's element in its
+                            collection: the second parameter of a map or
+                            forEach callback, the count enumerate gives a
+                            comprehension, or the second variable of an
+                            each_with_index block. No rule reads it yet
 returnsValue(f, v)          f returns v. A Ruby block returns its last
                             expression to whatever runs it
 yieldsValue(f, v)           f's body yields v. A Python generator's
@@ -303,11 +336,9 @@ rbConstantName(c, q)        the constant defined at c is called q in
                             full, with every namespace around it (Ruby)
 definesMethodFrom(c, x)     c's body calls define_method, and x is the
                             argument that gives the method its name. The
-                            adapter settles x and states declaresName
-                            (Ruby)
-nameTurnsOn(x, element, index, over)  the name x is written in a loop
-                            block that binds element, and index when it
-                            has one, to each item of over (Ruby)
+                            adapter settles x, once for each element of
+                            each loop around it that elementOf states,
+                            and states declaresName (Ruby)
 ```
 
 `declaresName` is the only fact an adapter records after asking these

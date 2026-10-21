@@ -9,6 +9,7 @@ import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import {
   constructionSites,
   RUBY_PROGRAM,
+  RUBY_RULES,
   resolvedFunctions,
   resolveValues,
   writtenValueOf,
@@ -761,6 +762,17 @@ describe("a name a class defines dynamically", () => {
     expect(
       db.lookup("wantedDeclaredName", 0, account).map((row) => String(row[1])),
     ).toContain("suspended?");
+  });
+
+  it("comes from loops that Ruby's own rules never read, since only the define_method reader reads elementOf yet", () => {
+    const read = new Set(
+      RUBY_RULES.flatMap((one) => one.body.map((literal) => literal.relation)),
+    );
+    expect(
+      ["writtenEntryAt", "partAt", "holeAt", "elementOf", "positionOf"].filter(
+        (relation) => read.has(relation),
+      ),
+    ).toEqual([]);
   });
 });
 

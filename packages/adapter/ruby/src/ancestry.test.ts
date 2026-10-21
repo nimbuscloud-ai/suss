@@ -185,6 +185,45 @@ end
     expect(await lookup(source, "width")).toEqual({ type: "none" });
   });
 
+  it("reads a name built from the position each_with_index gives", async () => {
+    const source = `
+class Subject
+  %i(width height).each_with_index do |key, at|
+    define_method(:"#{key}_#{at}") { 1 }
+  end
+end
+`;
+    expect(await lookup(source, "width_0")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "height_1")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "width_1")).toEqual({ type: "none" });
+  });
+
+  it("reads a name built from the elements of two loops, one inside the other", async () => {
+    const source = `
+class Subject
+  %i(width height).each do |side|
+    %i(min max).each do |end_name|
+      define_method(:"#{end_name}_#{side}") { 1 }
+    end
+  end
+end
+`;
+    expect(await lookup(source, "min_width")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "max_height")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "width_min")).toEqual({ type: "none" });
+  });
+
+  it("reads only the loops inside the class around a name", async () => {
+    const source = `
+%i(width).each do |key|
+  class Subject
+    define_method(key) { 1 }
+  end
+end
+`;
+    expect(await lookup(source, "height")).toMatchObject(DYNAMIC);
+  });
+
   it("stops every lookup when one define_method has a name it could not read", async () => {
     const source = `
 class Subject

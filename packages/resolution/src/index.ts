@@ -55,7 +55,12 @@ export {
   startsAtName,
   writesRunInOrder,
 } from "./nameReads.js";
-export { nodeOfKey, type SpannedNode } from "./nodeKey.js";
+export {
+  type KeySpan,
+  nodeOfKey,
+  type SpannedNode,
+  spanOfKey,
+} from "./nodeKey.js";
 export {
   type AssociationConstructor,
   addPackWords,
@@ -111,6 +116,15 @@ export {
   objectOfUnder,
   writtenValueUnder,
 } from "./underContext.js";
+export {
+  type AddRow,
+  addEntryRows,
+  addTemplateRows,
+  SPREAD_ENTRY,
+  type TemplatePiece,
+  VALUE_ENTRY,
+  type WrittenEntry,
+} from "./valuePositions.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
   answersFromTestsLeftOut,

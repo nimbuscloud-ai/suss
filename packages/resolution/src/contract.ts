@@ -4,6 +4,7 @@
 // design/proposals/adapter-fact-contract.md says why this exists.
 
 import { NAMED_STORE_NAME } from "./index.js";
+import { SPREAD_ENTRY, VALUE_ENTRY } from "./valuePositions.js";
 
 import type { Database } from "@suss/datalog";
 
@@ -48,6 +49,47 @@ function leadsToOneOf(
 
 /** The relations an adapter can use to say a value came from another file. */
 const RELATIONS_THAT_CAN_CROSS = ["imports", "binds", "reExports"];
+
+/** Whether a value some function returns, or some collection is given, leads to `key`. */
+function someValueLeadsTo(facts: FactsOf, key: string): boolean {
+  const target = new Set([key]);
+  return ["returnsValue", "holdsUnderKey"].some((relation) =>
+    facts(relation).some((row) => leadsToOneOf(facts, row[1] ?? "", target)),
+  );
+}
+
+/**
+ * Whether some container's entries are a value at 0, keyed the way
+ * `holdsProperty` keys it under `name`, and then a spread at 1, keyed on
+ * the collection it unpacks rather than on the spread itself.
+ */
+function holdsValueThenSpread(facts: FactsOf, name: string): boolean {
+  const entries = facts("writtenEntryAt");
+  const held = facts("holdsProperty");
+  return [...new Set(entries.map((row) => row[0]))].some((container) => {
+    const own = entries.filter((row) => row[0] === container);
+    const value = own.find((row) => row[1] === "0");
+    const spread = own.find((row) => row[1] === "1");
+    return (
+      own.length === 2 &&
+      value?.[3] === VALUE_ENTRY &&
+      spread?.[3] === SPREAD_ENTRY &&
+      held.some(
+        (row) => row[0] === container && row[1] === name && row[2] === value[2],
+      ) &&
+      !held.some((row) => row[0] === container && row[2] === spread[2])
+    );
+  });
+}
+
+function valueThenSpread(facts: FactsOf, name: string): string | null {
+  if (facts("writtenEntryAt").length === 0) {
+    return "no list or object states its entries, so nothing says the order they are written in";
+  }
+  return holdsValueThenSpread(facts, name)
+    ? null
+    : `no container's entries are the value under ${name} at 0, keyed as holdsProperty keys it, and then a spread at 1 keyed on the collection it unpacks`;
+}
 
 export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
   {
@@ -332,6 +374,78 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
       return writes.some((row) => leadsToOneOf(facts, row[0] ?? "", objects))
         ? null
         : "the write is keyed so that nothing leads from it to the table";
+    },
+  },
+  {
+    name: "a list written with a spread",
+    requires:
+      "a module-level name assigned a written-out list of a name and then a spread of another name, `[first, ...rest]` or the language's own spelling",
+    check: (facts) => valueThenSpread(facts, "0"),
+  },
+  {
+    name: "an object written with a spread",
+    requires:
+      "a module-level name assigned an object or a dictionary written out with a name under the key a, written as a string where the language writes keys that way, and then a spread of another name",
+    check: (facts) => valueThenSpread(facts, "a"),
+  },
+  {
+    name: "a template string with a hole",
+    requires:
+      "a module-level name assigned the result of a call, and a template string that puts that name between two pieces of text, `/users/${id}/posts` or the language's own spelling",
+    check: (facts) => {
+      const parts = facts("partAt");
+      const [hole, ...moreHoles] = facts("holeAt");
+      if (parts.length !== 2 || hole === undefined || moreHoles.length > 0) {
+        return `expected two parts and one hole, found ${parts.length} and ${moreHoles.length + (hole === undefined ? 0 : 1)}`;
+      }
+      const positions = [...parts, hole]
+        .filter((row) => row[0] === hole[0])
+        .map((row) => row[1])
+        .sort();
+      if (positions.join() !== "0,1,2" || hole[1] !== "1") {
+        return "the parts and the hole of one template are not numbered together in source order from 0";
+      }
+      const calls = new Set(facts("call").map((row) => row[0] ?? ""));
+      return leadsToOneOf(facts, hole[2] ?? "", calls)
+        ? null
+        : "the hole is keyed so that nothing leads from it to the value the name is given";
+    },
+  },
+  {
+    name: "a callback given each element of a list",
+    requires:
+      "a function that maps its parameter through a callback returning the element it is given, `users.map((user) => user)`, a comprehension or the language's own spelling",
+    // The collection is a read of the function's parameter, and the
+    // callback's own read of its variable joins the key elementOf states.
+    check: (facts) => {
+      const [row, ...more] = facts("elementOf");
+      if (row === undefined || more.length > 0) {
+        return `expected one elementOf row, found ${more.length + (row === undefined ? 0 : 1)}`;
+      }
+      const params = new Set(facts("paramOf").map((one) => one[2] ?? ""));
+      if (!leadsToOneOf(facts, row[1] ?? "", params)) {
+        return "the collection is keyed so that nothing leads from it to the parameter it reads";
+      }
+      return someValueLeadsTo(facts, row[0] ?? "")
+        ? null
+        : "no read of the variable leads to the key elementOf gives it, so nothing knows what the read is given";
+    },
+  },
+  {
+    name: "a callback given each position in a list",
+    requires:
+      "a function that maps its parameter through a callback taking the element and then its position and returning the position, `users.map((user, at) => at)`, `enumerate` in a comprehension, or the language's own spelling",
+    check: (facts) => {
+      const [row, ...more] = facts("positionOf");
+      if (row === undefined || more.length > 0) {
+        return `expected one positionOf row, found ${more.length + (row === undefined ? 0 : 1)}`;
+      }
+      if (!facts("elementOf").some((one) => one[0] === row[1])) {
+        return "the position is tied to a variable that no elementOf row gives an element, so nothing says what it counts through";
+      }
+      return someValueLeadsTo(facts, row[0] ?? "")
+        ? null
+        : "no read of the position leads to the key positionOf gives it";
     },
   },
   {
