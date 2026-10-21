@@ -557,7 +557,7 @@ export const SELF_INPUTS = [
 
 /**
  * The field apps every run reads, unless --quick. Each is read at its
- * tools/first-run/repos.json commit, from a clone the first-run tool made,
+ * tools/first-run/repos.json or libraryRepos.json commit, from a clone the first-run tool made,
  * with the packs and options the first run used.
  */
 export const FIELD_INPUTS = [

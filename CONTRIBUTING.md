@@ -51,7 +51,7 @@ The inputs are listed in `scripts/byteCheckInputs.mjs`:
 - Five of suss's own packages: `@suss/cli`, `mcp`, `checker`, `datalog` and `behavioral-ir`. Both builds read them from main's checkout, so a package the branch edits does not differ by its own edit.
 - Three field apps: cal.com's `apps/web`, dispatch and mastodon. `--quick` leaves them out. `--extra all` adds four apps that each exercise one library: Drizzle in saas-starter, Mongoose in saas, SQS with SAM in di-account-management-backend, and DynamoDB in ToolJet's plugin.
 
-The field apps are read from the first-run clones in `~/.cache/suss-first-run/repos`, at their `tools/first-run/repos.json` commits. `npx tsx tools/first-run/src/run.ts --work <dir> --cli <suss> --only <name>` makes a clone when `<dir>/repos` points at that folder. A first-run checks out the parent commit partway through, so the script reads a clone only while it is at its pinned commit, and reports it as not checked otherwise.
+The field apps are read from the first-run clones in `~/.cache/suss-first-run/repos`, at the commits in `tools/first-run/repos.json`. saas-starter, saas and di-account-management-backend are listed in `tools/first-run/libraryRepos.json` instead, so the first-run scorecard keeps its 30 apps. ToolJet is already a scorecard app. `npx tsx tools/first-run/src/run.ts --work <dir> --cli <suss> --only <name>` makes a clone when `<dir>/repos` points at that folder; add `--repos tools/first-run/libraryRepos.json` for a library app. A first-run checks out the parent commit partway through, so the script reads a clone only while it is at its pinned commit, and reports it as not checked otherwise.
 
 Before you trust a result:
 

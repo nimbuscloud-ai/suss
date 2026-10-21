@@ -37,7 +37,11 @@ import { loadPerCore, percent, settle } from "./machineLoad.mjs";
 import { ROOT } from "./workspacePackages.mjs";
 
 const PEAK_HOOK = path.join(ROOT, "scripts", "peakMemory.cjs");
-const REPOS_JSON = path.join(ROOT, "tools", "first-run", "repos.json");
+// The first-run scorecard apps, then the apps that each exercise one
+// library, which stay out of the scorecard so its count stays comparable.
+const REPO_LISTS = ["repos.json", "libraryRepos.json"].map((name) =>
+  path.join(ROOT, "tools", "first-run", name),
+);
 
 // The largest field extract takes about two minutes. One that runs ten
 // times longer has hung.
@@ -266,10 +270,12 @@ function describeArg(arg) {
 // ---------------------------------------------------------------------------
 
 const PINNED = new Map(
-  JSON.parse(fs.readFileSync(REPOS_JSON, "utf8")).map((entry) => [
-    entry.name,
-    entry,
-  ]),
+  REPO_LISTS.flatMap((file) =>
+    JSON.parse(fs.readFileSync(file, "utf8")).map((entry) => [
+      entry.name,
+      { ...entry, list: path.relative(ROOT, file) },
+    ]),
+  ),
 );
 
 function headOf(dir) {
@@ -283,14 +289,16 @@ function headOf(dir) {
 function cloneOf(input) {
   const pinned = PINNED.get(input.repo);
   if (pinned === undefined) {
-    return { problem: `${input.repo} is not in tools/first-run/repos.json` };
+    return {
+      problem: `${input.repo} is in neither tools/first-run/repos.json nor tools/first-run/libraryRepos.json`,
+    };
   }
   const dir = path.join(values["repos-dir"], input.repo);
   if (!fs.existsSync(dir)) {
     return {
       problem:
         `no clone at ${dir}. Make one with \`npx tsx tools/first-run/src/run.ts ` +
-        `--work <dir> --cli <suss> --only ${input.repo}\`, where <dir>/repos is ${values["repos-dir"]}`,
+        `--work <dir> --cli <suss> --repos ${pinned.list} --only ${input.repo}\`, where <dir>/repos is ${values["repos-dir"]}`,
     };
   }
   const head = headOf(dir);
