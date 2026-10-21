@@ -225,14 +225,16 @@ complaint. The rule fires for any store whose contract declares
 
 ### A field is read when a query asks for it by name
 
-The pass counts a read from what the query asked for, so a field the code
-takes off a record the query already returned is invisible to it. A
-codebase that selects whole rows and picks fields out of them in the
-application leaves every column looking unread.
+The pass counts a read from what the query asked for and from the
+columns it picks rows by, so a field the code takes off a record the
+query already returned is invisible to it. A codebase that selects whole
+rows and picks fields out of them in the application leaves every column
+it never filters on looking unread.
 
 The finding's own text warns you about this: "suss counts a column as
-read only when a query selects it, so before you treat the column as
-dead, look for code that takes it off a record it already fetched". The
+read only when a query selects it or filters on it, so before you treat
+the column as dead, look for code that takes it off a record it already
+fetched". The
 warning still fires on that evidence.
 [#510](https://github.com/nimbuscloud-ai/suss/issues/510) is where
 field-level access tracing would fix it properly.

@@ -261,7 +261,7 @@ Providers with no client to compare against:
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 [WARNING] boundaryFieldUnused
-  Order declares "placedAt" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "placedAt" off a record it already fetched.
+  Order declares "placedAt" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it or filters on it, so before you treat the write as pointless, look for code that takes "placedAt" off a record it already fetched.
   provider: prisma/schema.prisma::Order (prisma/schema.prisma:1)
   consumer: prisma/schema.prisma::Order (prisma/schema.prisma:1)
   boundary: prisma (postgresql)
@@ -273,7 +273,7 @@ Two boundaries had both sides in this run. At the route, `loadOrder`
 treats every status other than 200 the same way, so a missing order and a
 failed request both end up on the screen as one generic error. At the
 table, both handlers are compared against the schema, and nothing in the
-project selects `placedAt` after `POST /orders` writes it. `POST /orders`
+project selects or filters on `placedAt` after `POST /orders` writes it. `POST /orders`
 has no caller here, so suss compared nothing across that route. An empty
 finding list on its own does not mean the two sides agreed.
 

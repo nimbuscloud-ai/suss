@@ -493,6 +493,27 @@ export const FIXTURE_INPUTS = [
     ...packs("aws-sqs", "node"),
   ]),
   fixture("split-routes", [...dir("fixtures/split-routes"), ...packs("hono")]),
+  contract(
+    "storage-filters",
+    "prisma",
+    "fixtures/storage-filters/schema.prisma",
+  ),
+  fixture("storage-filters/python", [
+    ...lang("python"),
+    ...dir("fixtures/storage-filters/python"),
+    ...packs(
+      "fastapi",
+      "sqlalchemy=fixtures/storage-filters/python/suss.sqlalchemy.json",
+    ),
+  ]),
+  fixture("storage-filters/ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/storage-filters/ruby"),
+    ...packs(
+      "rails=fixtures/storage-filters/ruby/suss.rails.json",
+      "activerecord=fixtures/storage-filters/ruby/suss.activerecord.json",
+    ),
+  ]),
   fixture("storage-wrapper", [
     ...dir("fixtures/storage-wrapper"),
     ...packs("aws-lambda", "aws-dynamodb"),

@@ -94,7 +94,7 @@ The info form means the run could not run the check at all:
   cloudformation:template.yaml declares environment variables and these summaries record no environment read anywhere, so whether code reads them was not checked. If the code reads process.env, extract with the node pack in the framework list (-f node) so the reads are in the summaries.
 ```
 
-For storage, suss stays quiet when any caller reads the table with a default shape (`["*"]`), because then it cannot tell whether those callers use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for. An `aspect` of `read` means the field has writers but nothing reads it.
+For storage, suss stays quiet when any caller reads the table with a default shape (`["*"]`), because then it cannot tell whether those callers use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for. A column a query filters on counts as read, whether the query reads the rows it picks or writes them, so `deleteMany({ where: { expires: { lt: cutoff } } })` reads `expires`. An `aspect` of `read` means the field has writers but nothing reads it.
 
 **Legitimate when:** the field is reserved for something that has not landed, or read by code outside the extracted scope. Suppress.
 
