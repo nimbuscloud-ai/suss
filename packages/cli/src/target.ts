@@ -452,30 +452,42 @@ export interface CollapsedTouch {
 export function collapseTouches(
   touches: ReadonlyArray<TargetTouch>,
 ): CollapsedTouch[] {
-  const byPair = new Map<string, CollapsedTouch>();
-  for (const { summary, touched, through } of touches) {
-    const unit = summaryIdentifier(summary);
-    const boundary = touchLabel(touched);
-    const key = `${boundary}\u0000${unit}\u0000${touched.callee ?? ""}`;
-    const seen = byPair.get(key);
-    if (seen === undefined) {
+  return oneTouchPerCall(touches).map(
+    ({ summary, touched, through, relations }) => {
       const provides = providesKeyOf(summary);
-      byPair.set(key, {
-        boundary,
-        unit,
-        relations: [touched.relation],
+      return {
+        boundary: touchLabel(touched),
+        unit: summaryIdentifier(summary),
+        relations,
         callee: touched.callee,
         ...(provides !== undefined ? { provides } : {}),
         ...(through !== undefined ? { through } : {}),
-      });
+      };
+    },
+  );
+}
+
+/**
+ * The touches with one entry per unit, boundary and call, each keeping
+ * the first touch and every relation the call has.
+ */
+export function oneTouchPerCall<T extends TargetTouch>(
+  touches: ReadonlyArray<T>,
+): Array<T & { relations: Relation[] }> {
+  const byCall = new Map<string, T & { relations: Relation[] }>();
+  for (const touch of touches) {
+    const key = `${touchLabel(touch.touched)}\u0000${summaryIdentifier(touch.summary)}\u0000${touch.touched.callee ?? ""}`;
+    const seen = byCall.get(key);
+    if (seen === undefined) {
+      byCall.set(key, { ...touch, relations: [touch.touched.relation] });
       continue;
     }
 
-    if (!seen.relations.includes(touched.relation)) {
-      seen.relations.push(touched.relation);
+    if (!seen.relations.includes(touch.touched.relation)) {
+      seen.relations.push(touch.touched.relation);
     }
   }
-  return [...byPair.values()];
+  return [...byCall.values()];
 }
 
 /**
