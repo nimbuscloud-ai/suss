@@ -12,8 +12,9 @@
 //   * Same-project only: declarations in node_modules or `.d.ts` files
 //     are skipped. Package boundaries go through `packageExports` /
 //     `packageImport`, not this pass.
-//   * Direct CallExpressions only: higher-order indirection (`fns.map(f)`
-//     where `f` is a parameter, dispatch-table lookups) isn't resolved.
+//   * A call that takes its function out of a table or a map reaches
+//     every function it may run, recorded as possible rather than as the
+//     one it runs. `fns.map(f)` where `f` is a parameter isn't resolved.
 //   * A call landing on an interface the project declares goes into the
 //     class the construction site passed, or the one a factory built.
 //   * Function-shaped declarations: FunctionDeclaration, ArrowFunction,
@@ -26,6 +27,7 @@ import { Node, type Project, type SourceFile } from "ts-morph";
 import {
   functionCallBinding,
   normalizeCalleeText,
+  placePossibleCalls,
   TargetPlacements,
 } from "@suss/behavioral-ir";
 import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
@@ -50,6 +52,8 @@ import {
   offsetKeyOf,
   spanOfOffsetKey,
 } from "../walk/nodeKeys.js";
+import { propertyNameOf } from "../walk/propertyName.js";
+import { climbSyntax } from "../walk/unwrap.js";
 import {
   fromScanRecord,
   type RecordedScan,
@@ -85,7 +89,7 @@ import type {
 import type { FunctionRoot } from "../conditions.js";
 import type { DiscoveredUnit } from "../discovery/index.js";
 import type { EveryUnitDeclarations } from "../everyUnit.js";
-import type { ResolutionStore } from "../facts/store.js";
+import type { DispatchedCall, ResolutionStore } from "../facts/store.js";
 
 /**
  * What the closure pass leaves behind for the passes after it: the
@@ -180,6 +184,13 @@ function moduleScopeKey(sourceFile: SourceFile): string {
 type CallOutcome =
   | { readonly kind: "followed"; readonly candidate: ReachableCandidate }
   | {
+      /** A call that takes its function out of a table and may run any of these. */
+      readonly kind: "possible";
+      readonly candidates: readonly ReachableCandidate[];
+      /** Set when an entry came to no function, so the call may run something not followed. */
+      readonly stop?: UnfollowedCall;
+    }
+  | {
       readonly kind: "stopped";
       readonly stop: UnfollowedCall;
       readonly declaration: Node | null;
@@ -266,9 +277,10 @@ function resolveCallee(
  * The stop a callee comes to, marked for the resolution store when its
  * declaration is project code the syntax could not follow: a function
  * destructured off a hook's result, a name written as a factory call,
- * or a value a wrapper hands back. Only an `unsettledValue` stop is
- * marked, since every other stop is already settled, and asking the
- * store reads files a call into a dependency never needs.
+ * or a value a wrapper hands back. A callee read out of a table, `T[k]`,
+ * is marked too, since the type checker declares no entry for it. Every
+ * other stop is already settled, and asking the store reads files a call
+ * into a dependency never needs.
  */
 function stopFor(
   callee: Node,
@@ -278,7 +290,9 @@ function stopFor(
   parameterIndex?: number,
 ): CallOutcome {
   const asks =
-    stop.reason === "unsettledValue" && scan.resolution !== undefined;
+    scan.resolution !== undefined &&
+    (stop.reason === "unsettledValue" ||
+      Node.isElementAccessExpression(callee));
   return {
     kind: "stopped",
     stop,
@@ -387,12 +401,105 @@ function declarationToReport(
   return resolveDecl(only, calleeName)?.func ?? only;
 }
 
-/** Where the callee an outcome came from is declared, when anything declares it. */
+/** Where the callee an outcome came from is declared, when one place declares it. */
 function declaredAtOf(outcome: CallOutcome): CallTarget | null {
   if (outcome.kind === "followed") {
     return targetOf(outcome.candidate.func);
   }
+  if (outcome.kind === "possible") {
+    return null;
+  }
   return outcome.declaration === null ? null : targetOf(outcome.declaration);
+}
+
+/**
+ * The calls still stopped that may take their function out of a table
+ * or a map, settled by asking the store which functions each may run.
+ * One question for the body, as `settleThroughStore` asks.
+ */
+function settleThroughDispatch(
+  found: readonly FoundCall[],
+  scan: ScanContext,
+): FoundCall[] {
+  const { resolution } = scan;
+  const asking = found.filter(mayDispatch);
+  if (resolution === undefined || asking.length === 0) {
+    return [...found];
+  }
+  const answers = resolution.dispatchedFunctions(asking.map((one) => one.node));
+  return found.map((one) => {
+    const answer = answers.get(one.node);
+    return answer === undefined || one.outcome.kind !== "stopped"
+      ? one
+      : { ...one, outcome: dispatchOutcome(answer, one.outcome.stop) };
+  });
+}
+
+/**
+ * Whether a stopped call can be one that takes its function from a
+ * table: its callee went to the store already, or it is itself a call,
+ * as `handlers.get(kind)(event)` is.
+ */
+function mayDispatch(one: FoundCall): boolean {
+  if (one.outcome.kind !== "stopped" || one.calleeText === undefined) {
+    return false;
+  }
+  if (one.outcome.askStore !== undefined) {
+    return true;
+  }
+  return (
+    Node.isCallExpression(one.node) &&
+    Node.isCallExpression(one.node.getExpression())
+  );
+}
+
+/**
+ * A call the source narrows to one function is followed into it. Any
+ * other is followed into every function it may run, and keeps a stop
+ * when an entry came to no function, since that one may run instead.
+ */
+function dispatchOutcome(
+  answer: DispatchedCall,
+  stopped: UnfollowedCall,
+): CallOutcome {
+  const candidates = answer.functions.flatMap((func) => {
+    const candidate = resolveDecl(func, entryNameOf(func) ?? stopped.callee);
+    return candidate === null ? [] : [candidate];
+  });
+  const [only] = candidates;
+  if (only === undefined) {
+    return { kind: "stopped", stop: stopped, declaration: null };
+  }
+  if (answer.certain && candidates.length === 1) {
+    return { kind: "followed", candidate: only };
+  }
+  return {
+    kind: "possible",
+    candidates,
+    ...(answer.unresolved > 0
+      ? { stop: { callee: stopped.callee, reason: "unsettledValue" as const } }
+      : {}),
+  };
+}
+
+/**
+ * What a function written as an entry of a table is called, as
+ * `jobLoaders.welcome-user-job`, since it has no name of its own. Null
+ * for a function that is not an entry.
+ */
+function entryNameOf(func: Node): string | null {
+  const property = func.getParent();
+  const key =
+    property === undefined || !Node.isPropertyAssignment(property)
+      ? null
+      : propertyNameOf(property);
+  if (property === undefined || key === null) {
+    return null;
+  }
+  const holder = climbSyntax(property.getParentOrThrow()).getParent();
+  return holder !== undefined && Node.isVariableDeclaration(holder)
+    ? `${holder.getName()}.${key}`
+    : key;
 }
 
 /**
@@ -410,6 +517,13 @@ function placeCallee(
   call: Node,
   outcome: CallOutcome,
 ): void {
+  if (outcome.kind === "possible") {
+    placements.placePossible(
+      calleeText,
+      outcome.candidates.map((candidate) => targetOf(candidate.func)),
+    );
+    return;
+  }
   const declared = declaredAtOf(outcome);
   if (declared !== null) {
     placements.place(calleeText, declared);
@@ -534,21 +648,34 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
   const seen = new Set<string>();
   const parameterCallsSeen = new Set<string>();
 
-  const record = (outcome: CallOutcome): void => {
-    if (outcome.kind === "stopped") {
-      const stopKey = `${outcome.stop.reason}:${outcome.stop.callee}`;
-      if (!seen.has(stopKey) && worthRecording(outcome.stop.reason)) {
-        seen.add(stopKey);
-        stops.push(outcome.stop);
-      }
-      return;
+  const recordStop = (stop: UnfollowedCall): void => {
+    const stopKey = `${stop.reason}:${stop.callee}`;
+    if (!seen.has(stopKey) && worthRecording(stop.reason)) {
+      seen.add(stopKey);
+      stops.push(stop);
     }
-    const key = nodeKey(outcome.candidate.func);
+  };
+  const recordFollowed = (candidate: ReachableCandidate): void => {
+    const key = nodeKey(candidate.func);
     if (seen.has(key)) {
       return;
     }
     seen.add(key);
-    calls.push({ key, ...outcome.candidate });
+    calls.push({ key, ...candidate });
+  };
+  const record = (outcome: CallOutcome): void => {
+    if (outcome.kind === "stopped") {
+      recordStop(outcome.stop);
+      return;
+    }
+    if (outcome.kind === "possible") {
+      outcome.candidates.forEach(recordFollowed);
+      if (outcome.stop !== undefined) {
+        recordStop(outcome.stop);
+      }
+      return;
+    }
+    recordFollowed(outcome.candidate);
   };
 
   // An identifier argument that is a project function is reachable the
@@ -564,6 +691,15 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     }
     const calleeTarget = declaredAtOf(calleeOutcome);
     call.getArguments().forEach((arg, position) => {
+      // A closure written at the call is part of this body, which already
+      // has its calls, so the callee calling it through that parameter is
+      // no gap.
+      if (Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)) {
+        if (calleeTarget !== null) {
+          passedPositions.add(passedPositionKey(calleeTarget, position));
+        }
+        return;
+      }
       if (!Node.isIdentifier(arg)) {
         return;
       }
@@ -604,8 +740,12 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     found.map((one) => one.outcome),
     inFunc,
   );
-  for (const one of found) {
-    const outcome = settle(one.outcome);
+  const settled = settleThroughDispatch(
+    found.map((one) => ({ ...one, outcome: settle(one.outcome) })),
+    inFunc,
+  );
+  for (const one of settled) {
+    const outcome = one.outcome;
     const calleeText = one.calleeText;
     if (calleeText === undefined) {
       record(outcome);
@@ -637,6 +777,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     stops,
     targets: placements.targets,
     argTargets: placements.argTargets,
+    possibleTargets: placements.possibleTargets,
     parameterCalls,
     passedPositions,
   };
@@ -850,12 +991,16 @@ export function expandReachableClosure(
     string,
     ReadonlyMap<string, ReadonlyMap<number, CallTarget>>
   >();
+  const possibleTargetsByKey = new Map<
+    string,
+    ReadonlyMap<string, readonly CallTarget[]>
+  >();
   const parameterCallsByKey = new Map<
     string,
     ReadonlyArray<{ callee: string; parameterIndex: number }>
   >();
   // Every (callee function, position) some body passes a named project
-  // function into. An inline arrow or a variable does not count, so a
+  // function or a closure it writes into. A variable does not count, so a
   // parameter call missing here is a gap even when a caller supplies one.
   const passedPositions = new Set<string>();
   const summariesByKey = new Map<string, BehavioralSummary[]>();
@@ -937,6 +1082,7 @@ export function expandReachableClosure(
       }
       targetsByKey.set(key, found.targets);
       argTargetsByKey.set(key, found.argTargets);
+      possibleTargetsByKey.set(key, found.possibleTargets);
       if (found.parameterCalls.length > 0) {
         parameterCallsByKey.set(key, found.parameterCalls);
       }
@@ -994,6 +1140,11 @@ export function expandReachableClosure(
   recordStops(stopsByKey, summariesByKey, options);
   recordTargets(targetsByKey, summariesByKey);
   recordArgTargets(argTargetsByKey, summariesByKey);
+  for (const [key, possibleTargets] of possibleTargetsByKey) {
+    for (const summary of summariesByKey.get(key) ?? []) {
+      placePossibleCalls(summary, possibleTargets);
+    }
+  }
   recordCalleeParameters(parameterCallsByKey, summariesByKey);
   recordParameterGaps(
     parameterCallsByKey,

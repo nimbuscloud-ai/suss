@@ -2961,8 +2961,8 @@ describe("createTypeScriptAdapter: reachable closure", () => {
       import { walkStatements } from "./routers";
       const s = initServer();
       export const router = s.router({} as any, {
-        go: async ({ params }: { params: { id: string } }) => {
-          walkStatements([params.id], (item) => item);
+        go: async ({ params }: { params: { id: string; visit: (item: string) => void } }) => {
+          walkStatements([params.id], params.visit);
           return { status: 200 as const, body: null };
         },
       });
@@ -2986,6 +2986,44 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     expect(gap?.description).toContain(
       "no caller in this run passes it a function by name",
     );
+  });
+
+  it("leaves no gap on a call through a parameter a caller passes a closure it writes", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "routers.ts",
+      `
+      export function walkStatements(items: string[], visit: (item: string) => void) {
+        for (const item of items) {
+          visit(item);
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { walkStatements } from "./routers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          walkStatements([params.id], (item) => item);
+          return { status: 200 as const, body: null };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const walkStatements = summaries.find(
+      (s) => s.identity.name === "walkStatements",
+    );
+    expect(walkStatements?.gaps).toEqual([]);
   });
 });
 

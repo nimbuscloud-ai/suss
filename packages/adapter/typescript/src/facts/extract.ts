@@ -40,6 +40,7 @@ import {
   isFunctionRoot,
 } from "../discovery/shared.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { propertyNameOf } from "../walk/propertyName.js";
 import { climbSyntax } from "../walk/unwrap.js";
 import {
   type BodyPropertyWrites,
@@ -52,7 +53,12 @@ import {
   writesToBinding,
   writesToField,
 } from "./assignments.js";
-import { CONVERTING_GLOBALS, CONVERTING_METHODS } from "./languageWords.js";
+import {
+  CONVERTING_GLOBALS,
+  CONVERTING_METHODS,
+  MAP_ENTRY_READ,
+  MAP_ENTRY_WRITE,
+} from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
 import type {
@@ -505,6 +511,65 @@ function literalIndexOf(index: Expression | undefined): string | null {
 }
 
 /**
+ * The names a key's type allows, when the type is a string or number
+ * literal or a union of them, as `kind: "created" | "deleted"` or
+ * `name as keyof typeof table` is. Any other type allows every name,
+ * which is an empty list.
+ */
+function keyNamesOf(key: Node): string[] {
+  const type = key.getType();
+  const members = type.isUnion() ? type.getUnionTypes() : [type];
+  const names: string[] = [];
+  for (const member of members) {
+    const value = member.getLiteralValue();
+    if (typeof value !== "string" && typeof value !== "number") {
+      return [];
+    }
+    names.push(String(value));
+  }
+  return names;
+}
+
+/**
+ * Which entries a read at a key worked out at run time may take: the
+ * ones under the names its key allows, or any of them. A rule cannot
+ * say "any, unless the key is narrowed", so one or the other is stated.
+ */
+function emitEntryChoice(
+  db: Database,
+  site: string,
+  container: string,
+  names: readonly string[],
+): void {
+  if (names.length === 0) {
+    fact(db, "choosesEntry", site, container);
+    return;
+  }
+  for (const name of names) {
+    fact(db, "choosesNamedEntry", site, container, name);
+  }
+}
+
+/**
+ * An object literal's property, under the name it is written with. A
+ * computed key, `[kind]: handler`, is under a name only the program
+ * knows, which is what `holdsUnderKey` says.
+ */
+function emitHeld(
+  db: Database,
+  objectId: string,
+  property: Node,
+  held: string,
+): void {
+  const name = propertyNameOf(property);
+  if (name === null) {
+    fact(db, "holdsUnderKey", objectId, held);
+    return;
+  }
+  fact(db, "holdsProperty", objectId, name, held);
+}
+
+/**
  * Whether an expression spells the process environment. The check is on
  * how it is written, since a pack declares the environment as the
  * dotted path a program spells, and the global it names has no
@@ -730,13 +795,9 @@ export function emitValue(
     // business, so the fact says nothing about that either way.
     const argument = expression.getArgumentExpression();
     if (argument !== undefined) {
-      fact(
-        db,
-        "readsKeyed",
-        id,
-        emitValue(db, table, expression.getExpression()),
-        emitValue(db, table, argument),
-      );
+      const container = emitValue(db, table, expression.getExpression());
+      fact(db, "readsKeyed", id, container, emitValue(db, table, argument));
+      emitEntryChoice(db, id, container, keyNamesOf(argument));
     }
     fact(db, "writtenValue", id);
     return id;
@@ -769,21 +830,14 @@ export function emitValue(
       if (Node.isPropertyAssignment(property)) {
         const held = property.getInitializer();
         if (held !== undefined) {
-          fact(
-            db,
-            "holdsProperty",
-            id,
-            property.getName(),
-            emitValue(db, table, held),
-          );
+          emitHeld(db, id, property, emitValue(db, table, held));
         }
       } else if (Node.isShorthandPropertyAssignment(property)) {
         // `{ handler }` is whatever the name refers to.
-        fact(
+        emitHeld(
           db,
-          "holdsProperty",
           id,
-          property.getName(),
+          property,
           emitValue(db, table, property.getNameNode()),
         );
       } else if (Node.isMethodDeclaration(property)) {
@@ -791,7 +845,7 @@ export function emitValue(
         table.byId.set(methodId, property);
         fact(db, "func", methodId);
         emitFunctionFacts(db, table, property);
-        fact(db, "holdsProperty", id, property.getName(), methodId);
+        emitHeld(db, id, property, methodId);
       }
     }
     return id;
@@ -811,6 +865,11 @@ export function emitValue(
     emitDynamicImportFacts(db, id, expression)
   ) {
     return id;
+  }
+
+  if (Node.isNewExpression(expression) && isMapConstruction(expression)) {
+    fact(db, "collectionValue", id);
+    emitMapEntries(db, table, id, expression);
   }
 
   // Making one of a class is calling it: the rules read `Foo()` as
@@ -1361,7 +1420,87 @@ function emitCallFacts(
     );
   }
   emitConversion(db, table, callId, callee, global, args);
+  emitMapAccess(db, table, callId, callee, args);
 }
+
+/** `new Map(...)`, the language's own map, which a program fills through `set`. */
+function isMapConstruction(construction: NewExpression): boolean {
+  return globalNameOf(unwrapExpression(construction.getExpression())) === "Map";
+}
+
+/** Whether a value is a map, by the type the checker gives it. */
+function isMapValue(value: Node): boolean {
+  const name = value.getType().getSymbol()?.getName();
+  return name === "Map" || name === "ReadonlyMap";
+}
+
+/**
+ * The entries a map is built with, `new Map([["created", onCreated]])`:
+ * under the key a string writes out, or under a key the program computes.
+ */
+function emitMapEntries(
+  db: Database,
+  table: NodeTable,
+  mapId: string,
+  construction: NewExpression,
+): void {
+  const [entries] = construction.getArguments();
+  if (entries === undefined || !Node.isArrayLiteralExpression(entries)) {
+    return;
+  }
+  for (const entry of entries.getElements()) {
+    const [key, value] = Node.isArrayLiteralExpression(entry)
+      ? entry.getElements()
+      : [];
+    if (key === undefined || value === undefined) {
+      continue;
+    }
+    const held = emitValue(db, table, value);
+    const name = literalIndexOf(key);
+    if (name === null) {
+      fact(db, "holdsUnderKey", mapId, held);
+      continue;
+    }
+    fact(db, "holdsProperty", mapId, name, held);
+  }
+}
+
+/**
+ * A map's `get(k)` reads an entry by a key the program works out, which
+ * is what `m[k]` says of an object, and its `set(k, v)` puts one in.
+ */
+function emitMapAccess(
+  db: Database,
+  table: NodeTable,
+  callId: string,
+  callee: Expression,
+  args: readonly Node[],
+): void {
+  if (
+    !Node.isPropertyAccessExpression(callee) ||
+    !MAP_METHODS.has(callee.getName()) ||
+    !isMapValue(callee.getExpression())
+  ) {
+    return;
+  }
+  const map = emitValue(db, table, callee.getExpression());
+  const [key, value] = args;
+  if (callee.getName() === MAP_ENTRY_WRITE) {
+    if (value !== undefined && Node.isExpression(value)) {
+      fact(db, "holdsUnderKey", map, emitValue(db, table, value));
+    }
+    return;
+  }
+  if (key !== undefined && Node.isExpression(key)) {
+    fact(db, "readsKeyed", callId, map, emitValue(db, table, key));
+    emitEntryChoice(db, callId, map, keyNamesOf(key));
+  }
+}
+
+const MAP_METHODS: ReadonlySet<string> = new Set([
+  MAP_ENTRY_READ,
+  MAP_ENTRY_WRITE,
+]);
 
 /** `converts` for a call of one of the language's own conversions. */
 function emitConversion(
