@@ -168,7 +168,7 @@ The schema can be inline in the template or in a `schema.graphql` next to it.
 
 ## `prisma`
 
-A `schema.prisma` file. Every model becomes a storage-provider summary with its fields, and those summaries pair against the storage-access effects the Prisma pack finds in code.
+A `schema.prisma` file. Every model becomes a storage-provider summary with its fields, and those summaries pair against the storage-access effects the Prisma pack finds in code. A schema split over a folder is read whole, from the folder or from the file in it that has the datasource.
 
 ```bash
 $ suss contract --from prisma schema.prisma -o prisma.json

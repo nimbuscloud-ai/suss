@@ -133,7 +133,7 @@ what can I project from <boundary>   the statuses a route returns, the fields a 
 what reads <boundary>                every unit that reads it, with the file, line and call
 what writes <boundary>               the same, for writes
 what invokes <boundary>              the same, for invocations of a function or a queue
-what calls <unit>                    every unit whose calls resolve to this one
+what calls <unit or boundary>        every unit that calls it, in-process or across a route or table
 what does <unit> reach               every boundary a file or a summary goes through
 what reaches <target>                every boundary that ends up going through the target
 what does <package or unit> provide  every boundary it provides, one per line

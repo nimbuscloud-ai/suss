@@ -13,8 +13,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { contract } from "./contract.js";
-import { extract, packSpecFrom } from "./extract.js";
+import { extract, packSpecFrom, splitSpec } from "./extract.js";
 import { inspectProject } from "./init.js";
+import { findInitTargets } from "./initTargets.js";
 import {
   PROJECT_FILE,
   projectFileFor,
@@ -22,6 +23,7 @@ import {
   readOutputName,
   readProjectFile,
 } from "./projectFile.js";
+import { setupReads } from "./projectSetup.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ContractSource } from "./contract.js";
@@ -36,6 +38,8 @@ export interface DeclaredReads {
   readonly reads: readonly ReadEntry[];
   /** True when `suss.json` listed the entries, false when detection picked them. */
   readonly declared: boolean;
+  /** How many entries `suss.json` gave without the folder they read, which this read found for them. */
+  readonly foldersFound?: number;
 }
 
 export interface ProjectReadReport {
@@ -62,10 +66,121 @@ export interface ProjectReadReport {
 export async function declaredReads(root: string): Promise<DeclaredReads> {
   const file = readProjectFile(root);
   if (file !== null) {
-    return { reads: file.read, declared: true };
+    return { ...(await withTheirFolders(root, file.read)), declared: true };
   }
   const detected = projectFileFor(await inspectProject(root));
   return { reads: detected?.read ?? [], declared: false };
+}
+
+/**
+ * suss 0.34.0 wrote a monorepo's `suss.json` with no `dir` on any entry
+ * and each tsconfig path relative to its own package. Every read then ran
+ * at the root, and a TypeScript read pointed at a tsconfig that is not
+ * there, or at the root's own. Each such entry gets the folder of the
+ * project `suss init` finds with the same language and packs, taken in
+ * the order init lists them. An entry that matches no project is read as
+ * it is written.
+ */
+async function withTheirFolders(
+  root: string,
+  reads: readonly ReadEntry[],
+): Promise<{ reads: readonly ReadEntry[]; foldersFound: number }> {
+  const unplaced = new Set(
+    reads.filter((entry) => lacksItsFolder(root, entry, reads)),
+  );
+  if (unplaced.size === 0) {
+    return { reads, foldersFound: 0 };
+  }
+
+  const candidates = setupReads(await findInitTargets(root)).filter(
+    (entry): entry is ExtractEntry => entry.kind === "extract",
+  );
+  const taken = new Set<ExtractEntry>();
+  const placed = reads.map((entry) => {
+    if (entry.kind !== "extract" || !unplaced.has(entry)) {
+      return entry;
+    }
+
+    const match = candidates.find(
+      (candidate) =>
+        !taken.has(candidate) &&
+        candidate.language === entry.language &&
+        samePacks(candidate.packs, entry.packs),
+    );
+    if (match === undefined) {
+      return entry;
+    }
+
+    taken.add(match);
+    return match.dir === undefined ? entry : inFolder(entry, match.dir);
+  });
+  return {
+    reads: placed,
+    foldersFound: placed.filter((entry, index) => entry !== reads[index])
+      .length,
+  };
+}
+
+/**
+ * An entry is missing its folder when it has no `dir` and its tsconfig is
+ * not at the root, or when several entries in one language have no `dir`,
+ * since only one of them can be the root's own.
+ */
+function lacksItsFolder(
+  root: string,
+  entry: ReadEntry,
+  reads: readonly ReadEntry[],
+): boolean {
+  if (entry.kind !== "extract" || entry.dir !== undefined) {
+    return false;
+  }
+
+  if (entry.project === undefined) {
+    return reads.some(
+      (other) => other !== entry && isFolderlessIn(other, entry.language),
+    );
+  }
+
+  if (!fs.existsSync(path.resolve(root, entry.project))) {
+    return true;
+  }
+
+  // A tsconfig path written from the root already says which folder it is in.
+  return (
+    path.dirname(entry.project) === "." &&
+    reads.some(
+      (other) => other !== entry && isFolderlessIn(other, entry.language),
+    )
+  );
+}
+
+function isFolderlessIn(entry: ReadEntry, language: string): boolean {
+  return (
+    entry.kind === "extract" &&
+    entry.language === language &&
+    entry.dir === undefined
+  );
+}
+
+/** The entry as init writes it now, with the folder and a tsconfig path from the root. */
+function inFolder(entry: ExtractEntry, dir: string): ExtractEntry {
+  return {
+    ...entry,
+    dir,
+    ...(entry.project === undefined
+      ? {}
+      : { project: path.join(dir, entry.project) }),
+  };
+}
+
+/** Compares pack names only, since init writes a pack's config path only once the file exists. */
+function samePacks(a: readonly string[], b: readonly string[]): boolean {
+  const names = (specs: readonly string[]): string =>
+    specs
+      .map((spec) => splitSpec(spec).name)
+      .sort()
+      .join(",");
+  return names(a) === names(b);
 }
 
 /** The extract entry for one language, or undefined when there is none. */
@@ -114,7 +229,16 @@ export function packFlags(packs: readonly string[]): string {
  * The line a command prints before it reads a project, so the user knows
  * whether the packs came from `suss.json` or from detection.
  */
-export function whereReadsCameFrom(root: string, declared: boolean): string {
+export function whereReadsCameFrom(
+  root: string,
+  declared: boolean,
+  foldersFound = 0,
+): string {
+  if (declared && foldersFound > 0) {
+    const reads = foldersFound === 1 ? "1 read" : `${foldersFound} reads`;
+    return `Reading what ${PROJECT_FILE} says. It gives ${reads} without a folder, the way suss 0.34.0 wrote a monorepo, so each reads the folder \`suss init\` finds with the same packs. Run \`suss init --write --overwrite\` to write the folders into ${PROJECT_FILE}.`;
+  }
+
   if (declared) {
     return `Reading what ${PROJECT_FILE} says.`;
   }
