@@ -33,6 +33,8 @@ export interface ContractOptions {
   from: ContractSource;
   spec: string;
   output?: string;
+  /** Skip the "Wrote N summaries to <file>" line, as in `ExtractOptions`. */
+  quiet?: boolean;
   /**
    * The directory each deployable unit's code is in, keyed by instance
    * name. A Terraform configuration never says which directory a
@@ -262,11 +264,13 @@ export async function contract(
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
     await writeSummaries(summaries, outPath);
-    process.stderr.write(
-      summaries.length === 0
-        ? `${options.spec} declares no boundaries suss could read.\n`
-        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
-    );
+    if (options.quiet !== true || summaries.length === 0) {
+      process.stderr.write(
+        summaries.length === 0
+          ? `${options.spec} declares no boundaries suss could read.\n`
+          : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
+      );
+    }
   } else {
     await writeSummaries(summaries);
   }

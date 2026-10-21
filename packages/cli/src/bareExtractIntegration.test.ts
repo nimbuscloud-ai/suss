@@ -89,6 +89,11 @@ describe("a bare extract with several reads in suss.json", () => {
 
     expect(run.exit).toBe(0);
     expect(run.stdout).toBe("");
+    expect(run.stderr).not.toContain("suss-read-");
+    expect(run.stderr).toContain(
+      "suss extract --lang python -f fastapi: 1 summary",
+    );
+    expect(run.stderr).toMatch(/Wrote \d+ summaries to .*all\.json\n$/);
     const files = (
       JSON.parse(fs.readFileSync(out, "utf8")) as BehavioralSummary[]
     ).map((summary) => summary.location.file);

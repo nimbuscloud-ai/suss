@@ -71,9 +71,9 @@ When `suss.json` lists more than one read and you pass none of `-f`, `-p`, `--la
 ```bash
 $ suss extract -o summaries/code.json
 Reading what suss.json says.
-  suss extract --lang python -f fastapi -f httpx
-  suss extract --lang typescript --dir frontend -f axios -f fetch -f node
-Wrote 5 summaries from 2 reads to /home/dana/shop/summaries/code.json
+  suss extract --lang python -f fastapi -f httpx: 3 summaries
+  suss extract --lang typescript --dir frontend -f axios -f fetch -f node: 2 summaries
+Wrote 5 summaries to /home/dana/shop/summaries/code.json
 ```
 
 If one read fails, the run says which one and why on stderr (`failed: suss extract --lang typescript ...`), still runs the others, writes what they produced, and exits `1`. It also exits `1` when a read produced no summaries, unless you pass `--allow-empty`. The flags `--gaps`, `--explain`, `--timing`, `--datalog-profile`, `--no-cache` and `--fail-on-pack-error` apply to a single read, so a bare extract of several refuses them. With one read in `suss.json`, a bare `extract` runs that read with every flag available.

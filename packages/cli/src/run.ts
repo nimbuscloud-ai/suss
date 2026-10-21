@@ -599,7 +599,7 @@ const EXAMPLE_PACK_FLAGS: Record<Language, string> = {
 async function withProjectRead(run: (dir: string) => number): Promise<number> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
   try {
-    const report = await readProjectSaying(process.cwd(), dir);
+    const report = await readProjectSaying(process.cwd(), dir, true);
     if (report === null || report.ran.length === 0) {
       return 1;
     }
@@ -612,11 +612,13 @@ async function withProjectRead(run: (dir: string) => number): Promise<number> {
 
 /**
  * Reads the project at `root` into `dir`, saying on stderr which reads
- * run and which fail. Null when no pack matched, after saying so.
+ * run and which fail. Null when no pack matched, after saying so. A
+ * quiet read gives each read's summary count, not its file path.
  */
 async function readProjectSaying(
   root: string,
   dir: string,
+  quiet: boolean,
 ): Promise<ProjectReadReport | null> {
   const reads = await declaredReads(root);
   if (reads.reads.length === 0) {
@@ -628,12 +630,20 @@ async function readProjectSaying(
   process.stderr.write(
     [
       whereReadsCameFrom(root, reads.declared),
-      ...reads.reads.map((entry) => `  ${commandFor(entry)}`),
+      ...(quiet ? [] : reads.reads.map((entry) => `  ${commandFor(entry)}`)),
       "",
     ].join("\n"),
   );
 
-  const report = await readProjectInto(root, dir, reads);
+  const report = await readProjectInto(root, dir, reads, undefined, quiet);
+  if (quiet) {
+    for (const [index, command] of report.ran.entries()) {
+      const count = report.counts[index] ?? 0;
+      process.stderr.write(
+        `  ${command}: ${count} summar${count === 1 ? "y" : "ies"}\n`,
+      );
+    }
+  }
   for (const line of report.failed) {
     process.stderr.write(`  failed: ${line}\n`);
   }
@@ -652,12 +662,14 @@ async function extractProjectInto(
   outDir: string,
   root: string | undefined,
   allowEmpty: boolean,
+  quiet = false,
 ): Promise<number> {
   const resolved = path.resolve(outDir);
   clearEarlierReads(resolved);
   const report = await readProjectSaying(
     path.resolve(root ?? process.cwd()),
     resolved,
+    quiet,
   );
   if (report === null) {
     return 1;
@@ -688,7 +700,7 @@ async function extractProjectMerged(
 ): Promise<number> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
   try {
-    const code = await extractProjectInto(dir, root, allowEmpty);
+    const code = await extractProjectInto(dir, root, allowEmpty, true);
     const files = readdirSync(dir)
       .filter((name) => readEntryIndex(name) !== null)
       .sort((a, b) => (readEntryIndex(a) ?? 0) - (readEntryIndex(b) ?? 0));
@@ -699,7 +711,7 @@ async function extractProjectMerged(
     await writeSummaries(summaries, outPath);
     if (outPath !== undefined) {
       process.stderr.write(
-        `Wrote ${summaries.length} summaries from ${files.length} reads to ${outPath}\n`,
+        `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
       );
     }
     return code;
