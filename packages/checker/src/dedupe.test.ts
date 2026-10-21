@@ -5,10 +5,15 @@ import { functionCallBinding, restBinding } from "@suss/behavioral-ir";
 import {
   dedupeFindings,
   findingPerConsumerPath,
+  groupBySharedCause,
   mergedSideOf,
 } from "./dedupe.js";
 
-import type { Finding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Finding,
+  Transition,
+} from "@suss/behavioral-ir";
 
 function finding(overrides: Partial<Finding> = {}): Finding {
   const base: Finding = {
@@ -397,5 +402,193 @@ describe("dedupeFindings", () => {
     expect(out[0].consumer.transitionId).toBe("ct-a");
     expect(out[1].consumer.transitionId).toBe("ct-b");
     expect(out[0].sources).toHaveLength(2);
+  });
+});
+
+describe("groupBySharedCause", () => {
+  const filter = {
+    file: "app/controllers/base_controller.rb",
+    name: "require_login",
+  };
+  const FILTER_403 = "require_login:response:403:aaa";
+
+  function forbidden(
+    id: string,
+    from?: { file: string; name: string },
+    line = 15,
+  ): Transition {
+    return {
+      id,
+      conditions: [],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 403 },
+        body: null,
+        headers: {},
+      },
+      effects: [],
+      location: { start: line, end: line },
+      isDefault: false,
+      ...(from !== undefined ? { metadata: { wrappers: { from } } } : {}),
+    };
+  }
+
+  function route(name: string, transitions: Transition[]): BehavioralSummary {
+    return {
+      kind: "handler",
+      location: {
+        file: `app/controllers/${name}_controller.rb`,
+        range: { start: 1, end: 20 },
+        exportName: name,
+      },
+      identity: {
+        name,
+        exportPath: [name],
+        boundaryBinding: restBinding({
+          transport: "http",
+          recognition: "rails",
+          method: "GET",
+          path: `/${name}`,
+        }),
+      },
+      inputs: [],
+      transitions,
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+  }
+
+  function violation(
+    summary: BehavioralSummary,
+    transitionId: string,
+    overrides: Partial<Finding> = {},
+  ): Finding {
+    return {
+      kind: "providerContractViolation",
+      boundary: summary.identity.boundaryBinding as Finding["boundary"],
+      provider: {
+        summary: `${summary.location.file}::${summary.identity.name}`,
+        transitionId,
+        location: summary.location,
+      },
+      consumer: {
+        summary: `openapi:index.yml::${summary.identity.name}`,
+        location: {
+          file: "openapi:index.yml",
+          range: { start: 0, end: 0 },
+          exportName: null,
+        },
+      },
+      description:
+        "Handler produces status 403 which the openapi document does not declare",
+      severity: "error",
+      ...overrides,
+    };
+  }
+
+  const behindFilter = ["orders", "invoices", "accounts"].map((name) =>
+    route(name, [forbidden(FILTER_403, filter)]),
+  );
+
+  it("puts a status a filter sends on every route behind it in one group", () => {
+    const findings = behindFilter.map((s) => violation(s, FILTER_403));
+    const groups = groupBySharedCause(findings, behindFilter);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.findings).toEqual(findings);
+    expect(groups[0]?.origins).toEqual([{ ...filter, line: 15 }]);
+  });
+
+  it("keeps a status each route's own body sends apart", () => {
+    const own = ["orders", "invoices"].map((name) =>
+      route(name, [forbidden(`${name}:response:403:bbb`)]),
+    );
+    const findings = own.map((s) =>
+      violation(s, `${s.identity.name}:response:403:bbb`),
+    );
+
+    const groups = groupBySharedCause(findings, own);
+
+    expect(groups.map((g) => g.origins)).toEqual([null, null]);
+  });
+
+  it("keeps two filters of one name in different files apart", () => {
+    const elsewhere = route("users", [
+      forbidden(FILTER_403, { ...filter, file: "app/controllers/users.rb" }),
+    ]);
+    const summaries = [...behindFilter, elsewhere];
+    const findings = summaries.map((s) => violation(s, FILTER_403));
+
+    const groups = groupBySharedCause(findings, summaries);
+
+    expect(groups.map((g) => g.findings.length)).toEqual([3, 1]);
+  });
+
+  it("keeps two claims about one outcome apart", () => {
+    const findings = behindFilter.map((s, i) =>
+      violation(s, FILTER_403, {
+        description:
+          i === 0
+            ? "The 403 body has no field error, which the document requires"
+            : "Handler produces status 403 which the openapi document does not declare",
+      }),
+    );
+
+    const groups = groupBySharedCause(findings, behindFilter);
+
+    expect(groups.map((g) => g.findings.length)).toEqual([1, 2]);
+  });
+
+  it("leaves a finding that cites a consumer path on its own", () => {
+    const findings = behindFilter.map((s) => {
+      const f = violation(s, FILTER_403);
+      return { ...f, consumer: { ...f.consumer, transitionId: "ct-1" } };
+    });
+
+    const groups = groupBySharedCause(findings, behindFilter);
+
+    expect(groups).toHaveLength(3);
+  });
+
+  it("leaves findings at a single boundary on their own", () => {
+    const [orders] = behindFilter as [BehavioralSummary];
+    const findings = [
+      violation(orders, FILTER_403),
+      violation(orders, FILTER_403, {
+        consumer: {
+          ...violation(orders, FILTER_403).consumer,
+          summary: "openapi:other.yml::orders",
+        },
+      }),
+    ];
+
+    const groups = groupBySharedCause(findings, [orders]);
+
+    expect(groups.map((g) => g.origins)).toEqual([null, null]);
+  });
+
+  it("leaves a finding whose transition is not in the run on its own", () => {
+    const findings = behindFilter.map((s) => violation(s, FILTER_403));
+
+    const groups = groupBySharedCause(findings, behindFilter.slice(0, 2));
+
+    expect(groups.map((g) => g.findings.length)).toEqual([2, 1]);
+  });
+
+  it("keeps a finding a rule accepted out of the group the others form", () => {
+    const findings = behindFilter.map((s, i) =>
+      violation(
+        s,
+        FILTER_403,
+        i === 1
+          ? { suppressed: { reason: "accepted", effect: "mark" } }
+          : undefined,
+      ),
+    );
+
+    const groups = groupBySharedCause(findings, behindFilter);
+
+    expect(groups.map((g) => g.findings.length)).toEqual([2, 1]);
+    expect(groups.flatMap((g) => g.findings)).toHaveLength(3);
   });
 });

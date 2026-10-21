@@ -241,9 +241,12 @@ function renderScoped(
   if (view.findings.length > 0) {
     lines.push(
       "",
-      renderFindings(view.findings, checked.confidence, {
-        all: true,
-      }).trimEnd(),
+      renderFindings(
+        view.findings,
+        checked.confidence,
+        { all: true },
+        checked.summaries,
+      ).trimEnd(),
     );
   } else {
     lines.push("", "No findings here.");

@@ -89,6 +89,38 @@ A run with no findings says "Every compared boundary agreed" only when every bou
 
 Without the collapse, a first run over a repository of any size prints thousands of lines before the first error. Over five public repositories and suss's own packages, the unpaired lists alone were between 66% and 99% of the report.
 
+### One cause at many boundaries
+
+When one piece of provider code gives the same finding at several boundaries, such as a middleware that sends 401 on every route behind it, the report prints that finding once. The block says where the outcome is written, lists the first three boundaries, and counts the rest. `--all` lists all of them.
+
+```
+────────────────────────────────────────────────────────────
+[ERROR] providerContractViolation at 5 boundaries
+  Handler produces status 401 which the openapi document does not declare
+  comes from: requireAuth (src/auth.ts:5)
+  boundary: express (http) GET /orders
+    provider: src/app.ts::get (src/app.ts:8)
+    consumer: openapi:openapi.yaml::listOrders (openapi:openapi.yaml:0)
+  boundary: express (http) GET /invoices
+    provider: src/app.ts::get (src/app.ts:12)
+    consumer: openapi:openapi.yaml::listInvoices (openapi:openapi.yaml:0)
+  boundary: express (http) GET /accounts
+    provider: src/app.ts::get (src/app.ts:16)
+    consumer: openapi:openapi.yaml::listAccounts (openapi:openapi.yaml:0)
+  and 2 more. Run the same command with --all to list them.
+  to silence it at all 5, add to the rules in .sussignore.yml:
+    - kind: providerContractViolation
+      provider: { transitionId: "requireAuth:response:401:2cc14e6" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+5 findings: 5 error, 0 warning, 0 info
+5 of them come from 1 shared cause, each printed once with the boundaries it reaches.
+```
+
+Two findings share a cause when they are the same kind with the same description and severity, and each provider transition they cite was written at the same file and line. suss knows where an outcome was written because composition records which wrapper added it to the route: a Rails filter or `rescue_from` handler, Express or Hono middleware, or a FastAPI dependency. A transition from a handler's own body counts as written in that handler. A finding that cites a consumer path keeps a block of its own, because that path is part of what it says.
+
+Only the printed report groups findings. `--json`, the finding count, `--fail-on` and `.sussignore` still see each finding, so a rule written for one boundary accepts that finding alone and the rest stay in the group. The rule printed under a group leaves the boundary out, so it accepts every finding in the group. When that rule would also accept a finding outside the group, the report prints the rule for the first boundary instead and says how many others the shorter rule would reach.
+
 With `--intent`, an `Intent:` section follows the findings with what was checked and what is still an uncurated draft.
 
 ## Reporting on one thing
