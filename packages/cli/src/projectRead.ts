@@ -42,6 +42,8 @@ export interface ProjectReadReport {
   readonly summaryDir: string;
   /** The command line of each entry that ran. */
   readonly ran: string[];
+  /** How many summaries each entry in `ran` wrote, in the same order. */
+  readonly counts: number[];
   /** One line per entry that threw, with its error message. */
   readonly failed: string[];
   /**
@@ -124,16 +126,19 @@ export function whereReadsCameFrom(root: string, declared: boolean): string {
  * `summaryDir`. An entry that throws loses only its own file, so a
  * project with one unreadable spec still gets summaries for the rest.
  * A process that reads the project after every edit passes `kept`, so
- * each entry reuses the adapter the last read of it left.
+ * each entry reuses the adapter the last read of it left. `quiet` stops
+ * each entry printing the temporary file it wrote.
  */
 export async function readProjectInto(
   root: string,
   summaryDir: string,
   reads: DeclaredReads,
   kept?: KeptAdapters,
+  quiet = false,
 ): Promise<ProjectReadReport> {
   fs.mkdirSync(summaryDir, { recursive: true });
   const ran: string[] = [];
+  const counts: number[] = [];
   const failed: string[] = [];
   const empty: string[] = [];
   kept?.startRead();
@@ -141,8 +146,9 @@ export async function readProjectInto(
   for (const [index, entry] of reads.reads.entries()) {
     const out = path.join(summaryDir, readOutputName(index, entry));
     try {
-      const wrote = await runEntry(entry, root, out, kept);
+      const wrote = await runEntry(entry, root, out, kept, quiet);
       ran.push(commandFor(entry));
+      counts.push(wrote.length);
       if (entry.kind === "extract" && wrote.length === 0) {
         empty.push(commandFor(entry));
       }
@@ -151,7 +157,7 @@ export async function readProjectInto(
     }
   }
 
-  return { summaryDir, ran, failed, empty, declared: reads.declared };
+  return { summaryDir, ran, counts, failed, empty, declared: reads.declared };
 }
 
 /**
@@ -174,18 +180,21 @@ async function runEntry(
   root: string,
   out: string,
   kept: KeptAdapters | undefined,
+  quiet: boolean,
 ): Promise<BehavioralSummary[]> {
   if (entry.kind === "contract") {
     return await contract({
       from: entry.from as ContractSource,
       spec: path.resolve(root, entry.file),
       output: out,
+      quiet,
     });
   }
   return await extract({
     dir: path.resolve(root, entry.dir ?? "."),
     frameworks: packSpecsOf(entry, root),
     output: out,
+    quiet,
     lang: entry.language as Language,
     allowEmpty: true,
     ...(kept !== undefined ? { kept } : {}),

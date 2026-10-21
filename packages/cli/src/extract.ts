@@ -843,6 +843,11 @@ export interface ExtractOptions {
    * fails. Set this when an empty run is expected.
    */
   allowEmpty?: boolean;
+  /**
+   * Skip the "Wrote N summaries to <file>" line, for a caller that writes
+   * to a temporary file and says what it read itself.
+   */
+  quiet?: boolean;
   /** Exit non-zero when a pack threw while it was reading. */
   failOnPackError?: boolean;
   /**
@@ -1406,11 +1411,13 @@ export async function extract(
       missingSubmodules,
       packsNeedingConfig,
     });
-    process.stderr.write(
-      summaries.length === 0
-        ? `No summaries to write${formatTimingTotal(timingReport)}.\n`
-        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}${formatTimingTotal(timingReport)}\n`,
-    );
+    if (options.quiet !== true || summaries.length === 0) {
+      process.stderr.write(
+        summaries.length === 0
+          ? `No summaries to write${formatTimingTotal(timingReport)}.\n`
+          : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}${formatTimingTotal(timingReport)}\n`,
+      );
+    }
   } else {
     await writeSummaries(summaries);
   }

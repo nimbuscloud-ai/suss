@@ -38,9 +38,14 @@ import { intentCheckCommand } from "./intentCheckCommand.js";
 import { intentDraft } from "./intentDraftCommand.js";
 import { intentKeep } from "./intentKeep.js";
 import { intentOutcomesCommand } from "./intentOutcomes.js";
+import { writeSummaries } from "./jsonStream.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
 import { prdDraft } from "./prdDraftCommand.js";
-import { PROJECT_FILE } from "./projectFile.js";
+import {
+  PROJECT_FILE,
+  readEntryIndex,
+  readProjectFile,
+} from "./projectFile.js";
 import {
   clearEarlierReads,
   commandFor,
@@ -53,9 +58,11 @@ import {
   whereReadsCameFrom,
 } from "./projectRead.js";
 import { stubDraft } from "./stubDraftCommand.js";
+import { readSummaries } from "./summaryFile.js";
 import { installedVersion, printUpdateNoticeIfBehind } from "./updateNotice.js";
 import { UsageError } from "./usageError.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { BaseRevision } from "./checkBase.js";
 import type { ContractSource } from "./contract.js";
 import type { ExtractOptions } from "./extract.js";
@@ -592,7 +599,7 @@ const EXAMPLE_PACK_FLAGS: Record<Language, string> = {
 async function withProjectRead(run: (dir: string) => number): Promise<number> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
   try {
-    const report = await readProjectSaying(process.cwd(), dir);
+    const report = await readProjectSaying(process.cwd(), dir, true);
     if (report === null || report.ran.length === 0) {
       return 1;
     }
@@ -605,11 +612,13 @@ async function withProjectRead(run: (dir: string) => number): Promise<number> {
 
 /**
  * Reads the project at `root` into `dir`, saying on stderr which reads
- * run and which fail. Null when no pack matched, after saying so.
+ * run and which fail. Null when no pack matched, after saying so. A
+ * quiet read gives each read's summary count, not its file path.
  */
 async function readProjectSaying(
   root: string,
   dir: string,
+  quiet: boolean,
 ): Promise<ProjectReadReport | null> {
   const reads = await declaredReads(root);
   if (reads.reads.length === 0) {
@@ -621,12 +630,20 @@ async function readProjectSaying(
   process.stderr.write(
     [
       whereReadsCameFrom(root, reads.declared),
-      ...reads.reads.map((entry) => `  ${commandFor(entry)}`),
+      ...(quiet ? [] : reads.reads.map((entry) => `  ${commandFor(entry)}`)),
       "",
     ].join("\n"),
   );
 
-  const report = await readProjectInto(root, dir, reads);
+  const report = await readProjectInto(root, dir, reads, undefined, quiet);
+  if (quiet) {
+    for (const [index, command] of report.ran.entries()) {
+      const count = report.counts[index] ?? 0;
+      process.stderr.write(
+        `  ${command}: ${count} summar${count === 1 ? "y" : "ies"}\n`,
+      );
+    }
+  }
   for (const line of report.failed) {
     process.stderr.write(`  failed: ${line}\n`);
   }
@@ -645,12 +662,14 @@ async function extractProjectInto(
   outDir: string,
   root: string | undefined,
   allowEmpty: boolean,
+  quiet = false,
 ): Promise<number> {
   const resolved = path.resolve(outDir);
   clearEarlierReads(resolved);
   const report = await readProjectSaying(
     path.resolve(root ?? process.cwd()),
     resolved,
+    quiet,
   );
   if (report === null) {
     return 1;
@@ -665,6 +684,58 @@ async function extractProjectInto(
     return 1;
   }
   return report.failed.length > 0 ? 1 : 0;
+}
+
+/**
+ * A bare `suss extract` in a project whose `suss.json` lists several
+ * reads: run them all and write one array holding every entry's
+ * summaries, to stdout or to `-o`. `--out-dir` is the way to keep them
+ * in separate files. A read that fails is named on stderr and the rest
+ * still run, but the exit code is 1.
+ */
+async function extractProjectMerged(
+  root: string,
+  output: string | undefined,
+  allowEmpty: boolean,
+): Promise<number> {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
+  try {
+    const code = await extractProjectInto(dir, root, allowEmpty, true);
+    const files = readdirSync(dir)
+      .filter((name) => readEntryIndex(name) !== null)
+      .sort((a, b) => (readEntryIndex(a) ?? 0) - (readEntryIndex(b) ?? 0));
+    const summaries: BehavioralSummary[] = files.flatMap((name) =>
+      readSummaries(path.join(dir, name)),
+    );
+    const outPath = output === undefined ? undefined : path.resolve(output);
+    await writeSummaries(summaries, outPath);
+    if (outPath !== undefined) {
+      process.stderr.write(
+        `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
+      );
+    }
+    return code;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** True when the command line picks one read, so `suss.json` is not asked for the rest. */
+function namesOneRead(
+  values: Record<string, unknown>,
+  positionals: readonly string[],
+): boolean {
+  return (
+    positionals.length > 0 ||
+    ["framework", "lang", "project", "files", "intent"].some(
+      (flag) => values[flag] !== undefined,
+    )
+  );
+}
+
+/** The flags that change one run, which an extract of every read does not pass to its entries. */
+function flagsEntriesIgnore(values: Record<string, unknown>): string[] {
+  return OUT_DIR_REFUSES.filter((flag) => values[flag] !== undefined);
 }
 
 /** The extract flags that change one run, which `--out-dir` does not pass to its entries. */
@@ -721,7 +792,7 @@ async function runExtract(args: string[]): Promise<number> {
       return 1;
     }
 
-    const perRun = OUT_DIR_REFUSES.filter((flag) => values[flag] !== undefined);
+    const perRun = flagsEntriesIgnore(values);
     if (perRun.length > 0) {
       process.stderr.write(
         `--out-dir runs each entry of suss.json with its default settings, so ${perRun.map((flag) => `--${flag}`).join(", ")} would go unused. Drop ${perRun.length === 1 ? "it" : "them"}, or run one entry with plain \`suss extract\` to use ${perRun.length === 1 ? "it" : "them"}.\n`,
@@ -732,6 +803,26 @@ async function runExtract(args: string[]): Promise<number> {
     return await extractProjectInto(
       values["out-dir"],
       values.dir,
+      values["allow-empty"] === true,
+    );
+  }
+
+  const root = path.resolve(values.dir ?? process.cwd());
+  if (
+    !namesOneRead(values, positionals) &&
+    (readProjectFile(root)?.read.length ?? 0) > 1
+  ) {
+    const perRun = flagsEntriesIgnore(values);
+    if (perRun.length > 0) {
+      process.stderr.write(
+        `${PROJECT_FILE} lists several reads, and a bare extract runs each with its default settings, so ${perRun.map((flag) => `--${flag}`).join(", ")} would go unused. Drop ${perRun.length === 1 ? "it" : "them"}, or run one read with --lang and -f to use ${perRun.length === 1 ? "it" : "them"}.\n`,
+      );
+      return 1;
+    }
+
+    return await extractProjectMerged(
+      root,
+      values.output,
       values["allow-empty"] === true,
     );
   }
