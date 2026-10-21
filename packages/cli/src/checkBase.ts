@@ -27,7 +27,11 @@ import {
 } from "./projectRead.js";
 import { UsageError } from "./usageError.js";
 
-import type { DeclaredReads, ReadEntry } from "./projectRead.js";
+import type {
+  DeclaredReads,
+  ProjectReadReport,
+  ReadEntry,
+} from "./projectRead.js";
 
 /** The revision a check compared with, as the user named it and as git resolved it. */
 export interface BaseRevision {
@@ -125,12 +129,10 @@ async function baseFolder(
   }
 
   const summaryDir = summariesIn(work);
-  const report = await fromTheSamePlace(tree, top, () =>
-    readProjectInto(baseRoot, summaryDir, {
-      ...reads,
-      reads: present.map((entry) => withPackConfigsFrom(project, entry)),
-    }),
-  );
+  const report = await readFromTheSamePlace(tree, top, baseRoot, summaryDir, {
+    ...reads,
+    reads: present.map((entry) => withPackConfigsFrom(project, entry)),
+  });
   // The summaries are all a later question needs, and a large checkout
   // is most of the folder. Removing it leaves the linked node_modules alone.
   fs.rmSync(tree, { recursive: true, force: true });
@@ -151,22 +153,24 @@ async function baseFolder(
  * command runs in the checkout. Otherwise every contract unit would look
  * removed at one path and added at another.
  */
-async function fromTheSamePlace<T>(
+async function readFromTheSamePlace(
   tree: string,
   top: string,
-  read: () => Promise<T>,
-): Promise<T> {
+  baseRoot: string,
+  summaryDir: string,
+  reads: DeclaredReads,
+): Promise<ProjectReadReport> {
   const here = process.cwd();
   const inside = path.relative(top, fs.realpathSync(here));
   if (inside.startsWith("..") || path.isAbsolute(inside)) {
-    return await read();
+    return await readProjectInto(baseRoot, summaryDir, reads);
   }
 
   const mirror = path.join(tree, inside);
   fs.mkdirSync(mirror, { recursive: true });
   process.chdir(mirror);
   try {
-    return await read();
+    return await readProjectInto(baseRoot, summaryDir, reads);
   } finally {
     process.chdir(here);
   }

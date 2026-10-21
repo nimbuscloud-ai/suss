@@ -9,6 +9,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { readBase } from "./checkBase.js";
 import { runCli } from "./run.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
@@ -258,6 +259,63 @@ describe("check --base", () => {
     expect(units).toEqual(["src/orders/create.ts::post"]);
     expect(report.resolved).toEqual([]);
     expect(report.resolvedElsewhere).toEqual([]);
+  });
+
+  it("skips a read whose folder the base did not have", async () => {
+    commit("base");
+    fs.mkdirSync(path.join(project, "jobs"));
+    fs.writeFileSync(
+      path.join(project, "jobs", "sweep.ts"),
+      'export async function sweep() {\n  await fetch("/orders");\n}\n',
+    );
+    const config = JSON.parse(
+      fs.readFileSync(path.join(project, "suss.json"), "utf8"),
+    );
+    config.read.push({
+      kind: "extract",
+      language: "typescript",
+      dir: "jobs",
+      packs: ["fetch"],
+    });
+    fs.writeFileSync(path.join(project, "suss.json"), JSON.stringify(config));
+
+    const run = await quietly(["check", "--base", "HEAD", "--json"]);
+
+    expect(run.stderr).toContain("skipped, since jobs did not exist at HEAD");
+    expect(JSON.parse(run.stdout).changedFiles).toEqual([
+      "jobs/sweep.ts",
+      "suss.json",
+    ]);
+  });
+
+  it("compares with the ref itself when the two histories share no commit", async () => {
+    commit("base");
+    const branch = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "--quiet", "--orphan", "elsewhere");
+    commit("unrelated");
+    git("checkout", "--quiet", branch);
+
+    const run = await quietly(["check", "--base", "elsewhere", "--json"]);
+
+    expect(run.stderr).toContain(
+      "git could not find where HEAD left elsewhere",
+    );
+    expect(JSON.parse(run.stdout).base).toEqual({
+      ref: "elsewhere",
+      commit: git("rev-parse", "elsewhere").trim(),
+      branchPoint: false,
+    });
+  });
+
+  it("reads the base for a caller whose working directory is outside the checkout", async () => {
+    commit("base");
+    edit(ADD_409);
+    process.chdir(work);
+
+    const base = await readBase(project, "HEAD");
+
+    expect(base.changedFiles).toEqual(["src/orders/create.ts"]);
+    expect(fs.readdirSync(base.summaryDir)).toEqual(["0-extract.json"]);
   });
 
   it("does not fail on a finding the base already had", async () => {
