@@ -119,6 +119,7 @@ import type {
 import type { PythonPack, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ReachedUnits, Seed } from "./reach/closure.js";
+import type { ReachedFunction } from "./reach/resolveCallee.js";
 import type {
   PythonEntryReuse,
   PythonFileRecord,
@@ -130,6 +131,7 @@ import type { BoundPythonFile } from "./routers.js";
 import type { ModuleBinding } from "./scope.js";
 import type { UnreadManifest } from "./sourceRoots.js";
 import type { StorageLookup } from "./storage.js";
+import type { PythonWrapperIndex } from "./wrappers.js";
 
 export interface ExtractPythonOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -686,6 +688,18 @@ async function runPython(
         });
       }
     };
+    wrapperIndex.onClosureRegistered = (target, closure) => {
+      const pattern = positions.idOf(closure.pattern);
+      if (registering !== null && pattern !== undefined) {
+        registering.push({
+          key: nodeId(target.file.file, target.node),
+          name: target.name,
+          exportPath: target.exportPath,
+          pattern,
+          continuation: closure.continuation,
+        });
+      }
+    };
   }
 
   // A route asks the wrapper index about its own parameters as it is
@@ -700,12 +714,11 @@ async function runPython(
     if (record !== undefined) {
       discoveries.set(file, record);
       for (const registration of record.registrations) {
-        const declared = positions.formAt(registration.form);
-        const target = storedFunction(registration, definitions, filesByPath);
-        if (declared === undefined || target === null) {
-          throw new ReplayFailed(registration.key);
-        }
-        wrapperIndex.registered(target, declared);
+        registerAgain(registration, {
+          positions,
+          wrapperIndex,
+          target: storedFunction(registration, definitions, filesByPath),
+        });
       }
       continue;
     }
@@ -1091,6 +1104,39 @@ async function runPython(
   options.onTiming?.(timer.report());
 
   return { summaries: composed, facts: db };
+}
+
+/** Registers a stored wrapper again, the way the discovery that stored it did. */
+function registerAgain(
+  registration: StoredRegistration,
+  context: {
+    positions: PackPositions;
+    wrapperIndex: PythonWrapperIndex;
+    target: ReachedFunction | null;
+  },
+): void {
+  const { positions, wrapperIndex, target } = context;
+  if (target === null) {
+    throw new ReplayFailed(registration.key);
+  }
+  if ("continuation" in registration) {
+    const pack = positions.packOf(registration.pattern);
+    const pattern = positions.patternOf(registration.pattern);
+    if (pack === undefined || pattern === undefined) {
+      throw new ReplayFailed(registration.key);
+    }
+    wrapperIndex.registeredClosure(target, {
+      pack,
+      pattern,
+      continuation: registration.continuation,
+    });
+    return;
+  }
+  const declared = positions.formAt(registration.form);
+  if (declared === undefined) {
+    throw new ReplayFailed(registration.key);
+  }
+  wrapperIndex.registered(target, declared);
 }
 
 /** Every file's record for the entry this run writes. */

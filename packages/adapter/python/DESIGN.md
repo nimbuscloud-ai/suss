@@ -575,6 +575,17 @@ How the adapter reads a wrapper's body depends on the form:
 
 Wrappers run in the order the library runs them: middleware first, then dependencies from the app, the mounts and routers outermost first, and the route, then exception handlers over whatever raised. Two registrations of the same function are one wrapper.
 
+A decorator written on the route's function below the one that registers it wraps the function the library calls, so it runs inside everything registered on the way, and the route lists it there, outermost first:
+
+```python
+@app.get("/admin")
+@limiter.limit("5/minute")    # a library's: slowapi
+@require_admin                 # the project's own
+async def admin(token: str): ...
+```
+
+A decorator the packs read, such as the route's own or a namespace's `@ns.doc`, is left out, and so is one written above the route's, which wraps the function after the library has it. A library's decorator has no body in the run. The route lists it under its module, `slowapi`, and its name as written, `limiter.limit`, and no summary goes by that name, so the checker treats it as a wrapper it did not read. A project's own decorator that defines a closure and returns it, `def wrapper(*args, **kwargs)` then `return wrapper`, gets that closure as a unit named after the call, `require_admin(fn)`. The closure hands on where it calls the decorator's parameter, so what it raises or returns before that call is composed into the route. A project decorator written any other way goes by the same name with no summary behind it.
+
 Not read yet:
 
 - `add_middleware(SomeClass)`. A middleware given as a class is missed.
