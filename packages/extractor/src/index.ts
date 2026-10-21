@@ -1173,7 +1173,11 @@ export {
   projectFileStamp,
   runDigest,
 } from "./adapterStamp.js";
-export { createCacheLayer, MAX_ENTRIES } from "./cache.js";
+export {
+  createCacheLayer,
+  MAX_ENTRIES,
+  ownersWhereWritten,
+} from "./cache.js";
 export {
   CACHE_DIR_ENV,
   chosenCacheRoot,

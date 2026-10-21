@@ -285,13 +285,16 @@ function namespaceReadIn(body) {
   return { schema: call.expression.expression.text, raw: call.arguments[0] };
 }
 
-/** The namespace key a `with*Metadata` helper stamps, from the property it sets. */
+/**
+ * The namespace key a `with*Metadata` helper stamps, from the property it
+ * sets to a strict parse, written `strictly(Schema).parse(value)`.
+ */
 function namespaceWriteIn(body) {
   const assignment = findFirst(
     body,
     (node) =>
       ts.isPropertyAssignment(node) &&
-      node.initializer.getText().includes(".strict().parse("),
+      /\bstrictly\(\w+\)\.parse\(/.test(node.initializer.getText()),
   );
   return assignment === null ? null : propertyName(assignment);
 }

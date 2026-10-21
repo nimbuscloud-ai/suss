@@ -18,6 +18,22 @@ import { TypeShapeSchema } from "@suss/ir-core";
 
 import type { BehavioralSummary, Transition } from "./index.js";
 
+const strictCopies = new WeakMap<z.ZodObject, z.ZodObject>();
+
+/**
+ * The strict form of a namespace's schema, built once. zod compiles each
+ * schema it builds, and a writer can run once per transition per route.
+ */
+function strictly<T extends z.ZodObject>(schema: T): ReturnType<T["strict"]> {
+  const known = strictCopies.get(schema);
+  if (known !== undefined) {
+    return known as ReturnType<T["strict"]>;
+  }
+  const strict = schema.strict();
+  strictCopies.set(schema, strict);
+  return strict as ReturnType<T["strict"]>;
+}
+
 /**
  * What the message-bus contract reader records beside a summary's
  * binding: the queue a consumer drains, the rule or subscription and
@@ -84,7 +100,7 @@ export function withMessageBusMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    messageBus: MessageBusMetadataSchema.strict().parse(value),
+    messageBus: strictly(MessageBusMetadataSchema).parse(value),
   };
 }
 
@@ -142,7 +158,7 @@ export function withMountMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    mount: MountMetadataSchema.strict().parse(value),
+    mount: strictly(MountMetadataSchema).parse(value),
   };
 }
 
@@ -229,7 +245,7 @@ export function withWrapperMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    wrappers: WrapperMetadataSchema.strict().parse(value),
+    wrappers: strictly(WrapperMetadataSchema).parse(value),
   };
 }
 
@@ -332,7 +348,7 @@ export function withRuntimeContractMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    runtimeContract: RuntimeContractMetadataSchema.strict().parse(value),
+    runtimeContract: strictly(RuntimeContractMetadataSchema).parse(value),
   };
 }
 
@@ -483,7 +499,7 @@ export function withRoutingMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    routing: RoutingMetadataSchema.strict().parse(value),
+    routing: strictly(RoutingMetadataSchema).parse(value),
   };
 }
 
@@ -654,7 +670,7 @@ export function withGraphqlMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    graphql: GraphqlMetadataSchema.strict().parse(value),
+    graphql: strictly(GraphqlMetadataSchema).parse(value),
   };
 }
 
@@ -693,7 +709,7 @@ export function withSourceDocumentMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    sourceDocument: SourceDocumentMetadataSchema.strict().parse(value),
+    sourceDocument: strictly(SourceDocumentMetadataSchema).parse(value),
   };
 }
 
@@ -875,7 +891,7 @@ export function withHttpMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    http: HttpMetadataSchema.strict().parse(value),
+    http: strictly(HttpMetadataSchema).parse(value),
   };
 }
 
@@ -944,7 +960,7 @@ export function withRequestSpellingMetadata(
 ): Record<string, unknown> {
   return {
     ...(metadata ?? {}),
-    requestSpelling: RequestSpellingMetadataSchema.strict().parse(value),
+    requestSpelling: strictly(RequestSpellingMetadataSchema).parse(value),
   };
 }
 

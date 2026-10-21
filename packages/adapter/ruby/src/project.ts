@@ -38,6 +38,7 @@ import {
   matchesTestFileName,
   moduleInitStructure,
   noopTimer,
+  ownersWhereWritten,
   runDigest,
   stampModuleImports,
   stampModules,
@@ -531,10 +532,16 @@ export async function extractRubyProject(
   const lookup = await timer.timeAsync("cache.lookup", () =>
     layer.lookup(input),
   );
+  // The cache stores summaries before their wrappers are composed, so a
+  // stored route stays its own, and every path composes on the way out.
+  const composed = (stored: readonly BehavioralSummary[]) =>
+    composeWrappers(stored, {
+      gapHandling: options.gapHandling ?? "permissive",
+    });
   if (lookup.kind === "hit") {
     options.onCacheDiagnostic?.(lookup.diagnostic);
     options.onTiming?.(timer.report());
-    return { summaries: lookup.summaries, facts: new Database() };
+    return { summaries: composed(lookup.summaries), facts: new Database() };
   }
 
   const plan =
@@ -551,7 +558,7 @@ export async function extractRubyProject(
     }
     options.onCacheDiagnostic?.({ kind: "hit" });
     options.onTiming?.(timer.report());
-    return { summaries: plan.allSummaries(), facts: new Database() };
+    return { summaries: composed(plan.allSummaries()), facts: new Database() };
   }
 
   const cache: RunCache = { timer, cacheDir, layer, input };
@@ -1048,21 +1055,25 @@ async function runRuby(
     return composeWrappers(summaries, { gapHandling });
   });
 
+  const walkedFiles = new Map(
+    parsed.map(({ file }) => [displayPathOf(file), file]),
+  );
   await timer.timeAsync("cache.write", async () => {
     // An empty result is not cached. A cache hit skips the stages that
     // explain an empty run, so a misconfigured project would keep getting
     // "0 summaries" with no reason given.
-    if (cacheDir === null || composed.length === 0) {
+    if (cacheDir === null || summaries.length === 0) {
       return;
     }
     try {
       await cache.layer.write(
         cache.input,
-        composed,
+        summaries,
         log === null || ledger === null || overBudget
           ? undefined
           : rubyAttribution({
-              composed,
+              summaries,
+              walkedFileOf: (locationFile) => walkedFiles.get(locationFile),
               discoveries,
               reached,
               reuse,
@@ -1132,7 +1143,9 @@ interface FileDiscovery {
 
 /** Every file's record for the entry this run writes. */
 function rubyAttribution(args: {
-  composed: readonly BehavioralSummary[];
+  /** What the entry stores: every summary, before wrappers are composed. */
+  summaries: readonly BehavioralSummary[];
+  walkedFileOf: (locationFile: string) => string | undefined;
   discoveries: ReadonlyMap<string, FileDiscovery>;
   reached: ReachedUnits;
   reuse: RubyEntryReuse | null;
@@ -1162,7 +1175,10 @@ function rubyAttribution(args: {
       facts: args.facts.get(file) ?? { own: "", joined: "" },
     },
   }));
-  return { roots, owners: args.composed.map(() => []) };
+  return {
+    roots,
+    owners: ownersWhereWritten(args.summaries, args.walkedFileOf),
+  };
 }
 
 const SKIPPED_DIRECTORIES = new Set(["vendor", "node_modules", "tmp", ".git"]);

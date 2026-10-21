@@ -9,9 +9,15 @@ import {
   type CacheAttribution,
   createCacheLayer,
   MAX_ENTRIES,
+  ownersWhereWritten,
 } from "./cache.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Effect,
+  Predicate,
+  Transition,
+} from "@suss/behavioral-ir";
 
 async function makeTempDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "suss-cache-"));
@@ -966,5 +972,365 @@ describe("per-file plan", () => {
         reads.mockRestore();
       }
     });
+  });
+});
+
+describe("the store of shards", () => {
+  const ordersTable: Effect = {
+    type: "interaction",
+    binding: {
+      transport: "postgresql",
+      semantics: {
+        name: "storage",
+        storageSystem: "postgresql",
+        scope: "default",
+        container: "orders",
+        accessPath: null,
+      },
+      recognition: "pg",
+    },
+    callee: "db.query",
+    interaction: { class: "storage-access", kind: "read", fields: ["id"] },
+  };
+  const audit: Effect = {
+    type: "invocation",
+    callee: "audit",
+    args: [],
+    async: false,
+  };
+  const signedIn: Predicate = {
+    type: "opaque",
+    sourceText: "user !== null",
+    reason: "complexExpression",
+  };
+
+  function transition(id: string, effects: Effect[]): Transition {
+    return {
+      id,
+      conditions: [signedIn],
+      output: { type: "void" },
+      effects,
+      location: { start: 1, end: 1 },
+      isDefault: false,
+    };
+  }
+
+  function unitIn(
+    file: string,
+    name: string,
+    transitions: Transition[] = [],
+  ): BehavioralSummary {
+    return {
+      ...fakeSummary,
+      location: { ...fakeSummary.location, file },
+      identity: { ...fakeSummary.identity, name },
+      transitions,
+      gaps: [
+        {
+          type: "unfollowedCall",
+          conditions: [signedIn],
+          consequence: "unknown",
+          description: "audit",
+        },
+      ],
+    };
+  }
+
+  async function storeOf(files: Record<string, string>) {
+    const cacheDir = await makeTempDir();
+    const { dir, paths } = await writeFiles(files);
+    const cache = createCacheLayer<{ prefixes: string[] }>(cacheDir);
+    const input = { files: paths, adapterPacksDigest: "test@1" };
+    const write = async (summaries: BehavioralSummary[]) => {
+      await cache.write(input, summaries, {
+        roots: paths.map((p) => ({
+          path: p,
+          cacheable: true,
+          deps: [],
+          claims: [],
+          meta: { prefixes: [`mounted at ${path.basename(p)}`] },
+          packs: [],
+        })),
+        owners: summaries.map((s) => [s.location.file]),
+      });
+    };
+    const entryDir = async (): Promise<string> => {
+      const [entry] = (await fs.readdir(cacheDir)).filter((name) =>
+        name.startsWith("key-"),
+      );
+      return path.join(cacheDir, entry ?? "");
+    };
+    const storedIn = async (kind: string): Promise<string[]> => {
+      const root = path.join(await entryDir(), kind);
+      const found: string[] = [];
+      for (const prefix of await fs.readdir(root)) {
+        for (const name of await fs.readdir(path.join(root, prefix))) {
+          found.push(name);
+        }
+      }
+      return found.sort();
+    };
+    const index = async () =>
+      JSON.parse(
+        await fs.readFile(path.join(await entryDir(), "index.json"), "utf8"),
+      );
+    return {
+      cache,
+      input,
+      dir,
+      write,
+      entryDir,
+      shardFiles: () => storedIn("shards"),
+      recordFiles: () => storedIn("records"),
+      index,
+    };
+  }
+
+  it("keeps each file's units in a shard and its record in a file of its own, and neither in the manifest", async () => {
+    const store = await storeOf({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const a = path.join(store.dir, "a.ts");
+    const b = path.join(store.dir, "b.ts");
+    await store.write([
+      unitIn(a, "first", [transition("t1", [ordersTable])]),
+      unitIn(b, "second"),
+    ]);
+
+    expect(await store.shardFiles()).toHaveLength(2);
+    expect(await store.recordFiles()).toHaveLength(2);
+    const manifest = await fs.readFile(
+      path.join(await store.entryDir(), "manifest.json"),
+      "utf8",
+    );
+    expect(manifest).not.toContain("first");
+    expect(manifest).not.toContain("mounted at");
+
+    const plan = await store.cache.plan(store.input);
+    expect(plan?.roots.get(a)?.meta).toEqual({ prefixes: ["mounted at a.ts"] });
+  });
+
+  it("gives back the summaries in the order they were written", async () => {
+    const store = await storeOf({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const a = path.join(store.dir, "a.ts");
+    const b = path.join(store.dir, "b.ts");
+    const written = [unitIn(b, "one"), unitIn(a, "two"), unitIn(b, "three")];
+    await store.write(written);
+
+    const hit = await store.cache.tryHit(store.input);
+    expect(hit).toEqual(written);
+  });
+
+  it("writes a repeated effect once and gives back a copy for each transition", async () => {
+    const store = await storeOf({ "a.ts": "export const a = 1;" });
+    const a = path.join(store.dir, "a.ts");
+    const written = unitIn(a, "twice", [
+      transition("t1", [ordersTable, audit]),
+      transition("t2", [structuredClone(ordersTable), audit]),
+    ]);
+    await store.write([written]);
+
+    const [shard] = await store.shardFiles();
+    const root = path.join(await store.entryDir(), "shards");
+    const text = await fs.readFile(
+      path.join(root, shard?.slice(0, 2) ?? "", shard ?? ""),
+      "utf8",
+    );
+    expect(text.split('"db.query"')).toHaveLength(2);
+    expect(text.split('"user !== null"')).toHaveLength(2);
+
+    const [read] = (await store.cache.tryHit(store.input)) ?? [];
+    expect(read).toEqual(written);
+    const [first, second] = read?.transitions ?? [];
+    expect(first?.effects[0]).not.toBe(second?.effects[0]);
+    expect(first?.conditions[0]).not.toBe(read?.gaps[0]?.conditions[0]);
+  });
+
+  it("rewrites only the shard of a changed file, and drops a stale one a write later", async () => {
+    const store = await storeOf({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const a = path.join(store.dir, "a.ts");
+    const b = path.join(store.dir, "b.ts");
+    const shardOf = async (): Promise<Record<string, string>> =>
+      Object.fromEntries(
+        (await store.index()).files.map(([file, id]: [string, string]) => [
+          file,
+          `${id}.json`,
+        ]),
+      );
+    await store.write([unitIn(a, "first"), unitIn(b, "second")]);
+    const first = await shardOf();
+
+    await store.write([unitIn(a, "first"), unitIn(b, "second, edited")]);
+    const second = await shardOf();
+    expect(second[a]).toBe(first[a]);
+    expect(second[b]).not.toBe(first[b]);
+    // A reader that opened the previous manifest can still read its shards.
+    expect(await store.shardFiles()).toEqual(
+      [first[a], first[b], second[b]].sort(),
+    );
+
+    await store.write([unitIn(a, "first"), unitIn(b, "second, edited")]);
+    expect(await store.shardFiles()).toEqual([second[a], second[b]].sort());
+  });
+
+  it("serves a hit without opening a record, and plans only with every record", async () => {
+    const store = await storeOf({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const written = [unitIn(path.join(store.dir, "a.ts"), "first")];
+    await store.write(written);
+    expect(await store.shardFiles()).toHaveLength(1);
+    await fs.rm(path.join(await store.entryDir(), "records"), {
+      recursive: true,
+    });
+
+    expect(await store.cache.tryHit(store.input)).toEqual(written);
+    expect(await store.cache.plan(store.input)).toBeNull();
+  });
+
+  it("writes one record for walked files whose meta is the same", async () => {
+    const cacheDir = await makeTempDir();
+    const { paths } = await writeFiles({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const cache = createCacheLayer(cacheDir);
+    const input = { files: paths, adapterPacksDigest: "test@1" };
+    await cache.write(input, [], {
+      roots: paths.map((p) => ({
+        path: p,
+        cacheable: true,
+        deps: [],
+        claims: [],
+        meta: { mountPrefixes: {} },
+        packs: [],
+      })),
+      owners: [],
+    });
+
+    const [entry] = (await fs.readdir(cacheDir)).filter((name) =>
+      name.startsWith("key-"),
+    );
+    const records = await fs.readdir(
+      path.join(cacheDir, entry ?? "", "records"),
+      { recursive: true },
+    );
+    expect(records.filter((name) => name.endsWith(".json"))).toHaveLength(1);
+
+    const plan = await cache.plan(input);
+    const [first, second] = paths.map((p) => plan?.roots.get(p)?.meta);
+    expect(first).toEqual({ mountPrefixes: {} });
+    expect(second).toEqual(first);
+    expect(second).not.toBe(first);
+  });
+
+  it("misses when a shard says it is another file", async () => {
+    const store = await storeOf({ "a.ts": "export const a = 1;" });
+    await store.write([unitIn(path.join(store.dir, "a.ts"), "first")]);
+    const [shard] = await store.shardFiles();
+    await fs.writeFile(
+      path.join(
+        await store.entryDir(),
+        "shards",
+        shard?.slice(0, 2) ?? "",
+        shard ?? "",
+      ),
+      JSON.stringify({ file: "elsewhere.ts", intern: [], units: [] }),
+    );
+
+    expect((await store.cache.lookup(store.input)).kind).toBe("miss");
+  });
+
+  it("misses when the manifest counts a summary no shard has", async () => {
+    const store = await storeOf({ "a.ts": "export const a = 1;" });
+    await store.write([unitIn(path.join(store.dir, "a.ts"), "first")]);
+    const manifestFile = path.join(await store.entryDir(), "manifest.json");
+    const manifest = JSON.parse(await fs.readFile(manifestFile, "utf8"));
+    manifest.summaryCount += 1;
+    await fs.writeFile(manifestFile, JSON.stringify(manifest));
+
+    expect((await store.cache.lookup(store.input)).kind).toBe("miss");
+  });
+
+  it("leaves out of the index a boundary whose protocol this build does not know", async () => {
+    const store = await storeOf({ "a.ts": "export const a = 1;" });
+    const unknown = {
+      ...ordersTable,
+      binding: {
+        ...ordersTable.binding,
+        semantics: { name: "carrier-pigeon" },
+      },
+    } as unknown as Effect;
+    await store.write([
+      unitIn(path.join(store.dir, "a.ts"), "sender", [
+        transition("t1", [unknown]),
+      ]),
+    ]);
+
+    const index = await store.index();
+    expect(Object.keys(index.boundaries)).not.toContain(
+      expect.stringContaining("pigeon"),
+    );
+    expect(await store.cache.tryHit(store.input)).toHaveLength(1);
+  });
+
+  it("owns a summary by the walked file it is written in", () => {
+    const owners = ownersWhereWritten(
+      [unitIn("app/a.py", "walked"), unitIn("lib/b.py", "library")],
+      (file) => (file === "app/a.py" ? "/work/app/a.py" : undefined),
+    );
+
+    expect(owners).toEqual([["/work/app/a.py"], []]);
+  });
+
+  it("misses instead of serving an entry whose shard is gone", async () => {
+    const store = await storeOf({ "a.ts": "export const a = 1;" });
+    await store.write([unitIn(path.join(store.dir, "a.ts"), "first")]);
+    await fs.rm(path.join(await store.entryDir(), "shards"), {
+      recursive: true,
+    });
+
+    expect((await store.cache.lookup(store.input)).kind).toBe("miss");
+    expect(await store.cache.plan(store.input)).toBeNull();
+  });
+
+  it("indexes the boundaries and calls in each shard, and copies an unchanged shard's entries", async () => {
+    const files = {
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    };
+    const store = await storeOf(files);
+    const a = path.join(store.dir, "a.ts");
+    const b = path.join(store.dir, "b.ts");
+    const reader = unitIn(a, "reader", [
+      transition("t1", [ordersTable, audit]),
+    ]);
+    await store.write([reader, unitIn(b, "caller", [transition("t1", [])])]);
+    await store.write([
+      reader,
+      unitIn(b, "caller", [transition("t1", [audit])]),
+    ]);
+
+    const index = await store.index();
+    expect(index.files.map(([file]: [string]) => file)).toEqual([a, b]);
+    expect(index.boundaries["postgresql:orders"]).toEqual([[0, 0, "calls"]]);
+    expect(index.callees.audit).toEqual([
+      [0, 0],
+      [1, 0],
+    ]);
+    const served = Object.entries(index.boundaries).filter(([, units]) =>
+      (units as [number, number, string][]).some(
+        ([, , role]) => role === "serves",
+      ),
+    );
+    expect(served).toHaveLength(1);
   });
 });
