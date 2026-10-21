@@ -11,3 +11,6 @@ export const CONVERTING_BUILTINS: ReadonlySet<string> = new Set([
   "str",
   "float",
 ]);
+
+/** The builtin that reads an attribute by a name it is given. */
+export const ATTRIBUTE_GETTER = "getattr";

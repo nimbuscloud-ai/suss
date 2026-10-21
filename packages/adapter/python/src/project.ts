@@ -20,6 +20,7 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placePossibleCalls,
   recordParameterGaps,
   summaryIdFromParts,
   unfollowedCallGap,
@@ -902,6 +903,7 @@ async function runPython(
     }
     placeCalls(summary, reached.targetsByKey.get(key));
     placeArgTargets(summary, reached.argTargetsByKey.get(key));
+    placePossibleCalls(summary, reached.possibleTargetsByKey.get(key));
     placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
   };
   for (const [key, owners] of summariesBySeed) {

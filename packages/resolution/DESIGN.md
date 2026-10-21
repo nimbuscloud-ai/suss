@@ -987,7 +987,8 @@ function at all, so one rule joins the two:
 `callsFunction(r, f) :- returnsValue(g, f), callsFunction(r0, g), callsNamed(r, r0)`.
 The rule starts from the factory's own call, which `callsFunction` has
 already settled, so nothing new starts from the call made through the
-name.
+name. A second rule covers the same function called straight off the
+factory's call, `register("created")(handler)`, with no name between.
 
 `returnsCall` asks `isWrittenAs` about what a function returns. A caller
 uses it to tell a wrapper that returns the library's call directly from
@@ -1236,6 +1237,12 @@ same goes for a map filled through `set`, which the TypeScript adapter
 states as `collectionValue` for the `new Map()` and `holdsUnderKey` for
 each `set`. A write under a computed key could be under any name, so a
 read narrowed to one name still finds it.
+
+A Python registry is often filled by a decorator, `@register("created")`
+over `def on_created`. The Python adapter states each decorator as the
+call it is, `register("created")(on_created)`, with `call` and
+`callArg` keyed on the decorator, so the function reaches the
+decorator's parameter by the argument step like any other argument.
 
 The functions are kept out of `stepsTo`. A step there would make every
 entry of a table the value of `T[k]`, and every value question would

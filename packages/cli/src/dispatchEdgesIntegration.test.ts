@@ -15,10 +15,12 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { readProcessMetadata } from "@suss/behavioral-ir";
 import { checkIntentAgreement } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
+import fastapi from "@suss/packs/fastapi";
 import { nodeRuntimePack } from "@suss/runtime-node";
 
 import { answerQuestion } from "./ask.js";
@@ -29,6 +31,7 @@ import type { PatternPack } from "@suss/extractor";
 
 const fixtures = path.resolve(__dirname, "../../../fixtures");
 const typescriptRoot = path.join(fixtures, "dispatch-edges");
+const pythonRoot = path.join(fixtures, "dispatch-edges-python");
 
 /** The pack the dogfood run reads each workspace package with. */
 const packageExports: PatternPack = {
@@ -142,20 +145,112 @@ describe("TypeScript calls through a table, a map, a registry and a closure", ()
 
   it("keeps a key narrowed to two names to the two entries under them", async () => {
     const summaries = await typescriptSummaries();
-    const possible = (name: string) =>
-      named(summaries, name)
-        ?.transitions.flatMap((t) => t.effects)
-        .flatMap((effect) =>
-          effect.type === "invocation" ? (effect.possibleSummaries ?? []) : [],
-        )
-        .map((id) => id.split("::").at(-1));
 
-    expect(possible("viaNarrowedKey")).toEqual(["onCreated", "onDeleted"]);
-    expect(possible("viaTable")).toEqual([
+    expect(possible(summaries, "viaNarrowedKey")).toEqual([
+      "onCreated",
+      "onDeleted",
+    ]);
+    expect(possible(summaries, "viaTable")).toEqual([
       "TABLE.archived",
       "onCreated",
       "onDeleted",
     ]);
-    expect(possible("viaRegistry")).toEqual(["onArchived", "onCreated"]);
+    expect(possible(summaries, "viaRegistry")).toEqual([
+      "onArchived",
+      "onCreated",
+    ]);
   });
 });
+
+describe("Python calls through a dict, getattr, a decorator registry and a lambda", () => {
+  it("finds the exit codes of the commands a dict dispatches to", async () => {
+    const summaries = await pythonSummaries();
+
+    expect(possible(summaries, "main")).toEqual(["run_check", "run_init"]);
+    for (const name of ["run_check", "run_init"]) {
+      expect(
+        readProcessMetadata(named(summaries, name) as BehavioralSummary)
+          ?.exitCodeFrom,
+      ).toBe("return");
+    }
+  });
+
+  it("follows each shape to the functions it may run, and a written key to the one it runs", async () => {
+    const summaries = await pythonSummaries();
+
+    expect(possible(summaries, "via_table")).toEqual([
+      "on_archived",
+      "on_created",
+      "on_deleted",
+    ]);
+    expect(possible(summaries, "via_get")).toEqual([
+      "on_archived",
+      "on_created",
+      "on_deleted",
+    ]);
+    expect(possible(summaries, "via_registry")).toEqual([
+      "registered_created",
+      "registered_deleted",
+    ]);
+    expect(possible(summaries, "handle")).toEqual([
+      "Events.created",
+      "Events.deleted",
+      "Events.handle",
+      "Events.handle_named",
+    ]);
+    expect(calledFor(summaries, "via_literal")).toEqual(["on_created"]);
+    expect(calledFor(summaries, "handle_named")).toEqual(["Events.created"]);
+  });
+
+  it("says which routes may call a handler, and which call it for sure", async () => {
+    const text = ask(await pythonSummaries(), "what calls on_created");
+
+    expect(text).toMatch(/via_literal \([^)]*\) calls HANDLERS\["created"\]\n/);
+    expect(text).toMatch(/via_closure \([^)]*\) calls on_created\n/);
+    expect(text).toMatch(
+      /via_table \([^)]*\) calls HANDLERS\[kind\], which may run/,
+    );
+    expect(text).toMatch(/via_get \([^)]*\) calls handler, which may run/);
+  });
+});
+
+async function pythonSummaries(): Promise<BehavioralSummary[]> {
+  const { summaries } = await extractPythonProject({
+    files: findPythonFiles(pythonRoot),
+    packs: [fastapi()],
+    roots: [pythonRoot],
+    projectRoot: pythonRoot,
+  });
+  for (const summary of summaries) {
+    relativizeSummaryPaths(summary, pythonRoot);
+  }
+  return summaries;
+}
+
+/** The functions a unit's calls may run, by the last part of each summary's id. */
+function possible(
+  summaries: BehavioralSummary[],
+  name: string,
+): string[] | undefined {
+  return named(summaries, name)
+    ?.transitions.flatMap((t) => t.effects)
+    .flatMap((effect) =>
+      effect.type === "invocation" ? (effect.possibleSummaries ?? []) : [],
+    )
+    .map((id) => id.split("::").at(-1) ?? id);
+}
+
+/** The functions a unit's calls run for sure, the same way. */
+function calledFor(
+  summaries: BehavioralSummary[],
+  name: string,
+): string[] | undefined {
+  return named(summaries, name)
+    ?.transitions.flatMap((t) => t.effects)
+    .flatMap((effect) =>
+      effect.type === "invocation" && effect.summary !== undefined
+        ? [effect.summary]
+        : [],
+    )
+    .map((id) => id.split("::").at(-1) ?? id);
+}

@@ -104,8 +104,6 @@ const SOURCES: Record<string, CaseFiles> = {
 const KNOWN_GAPS: Record<string, string> = {
   "a class constructed with an argument":
     "the parameters are keyed on __init__ rather than on the class",
-  "a table of functions called by a key worked out at run time":
-    "a keyed read states readsKeyed and no choice of entry",
 };
 
 describe("the Python adapter satisfies the fact contract", () => {
