@@ -76,13 +76,15 @@ The Python and Ruby adapters keep the same on-disk cache, rooted at `.suss/cache
 A run can only read an entry if it agrees with the run that wrote it on everything that changes what extraction produces. The name of the entry directory is a hash of these inputs:
 
 - the cache schema version
-- the adapter version, plus a content hash of the loaded adapter and analysis bundles
+- the adapter version, plus the adapter's code hash
 - each pack's name, declared version, code hash and config digest
 - the project files the packs read off disk
 - the run options that change output, stamped by `extractionConfigStamp` for all three adapters: `gapHandling` everywhere, `includeReachable` for TypeScript, and for Python and Ruby the directories their stored ids and paths are measured from, plus Python's import roots
 - the config path the adapter supplies (the TypeScript adapter's tsconfig)
 
 The TypeScript adapter measures ids and paths after the cache, on the way out, so its project root and workspace name stay out of the key.
+
+A code hash starts at the adapter's bundle or the pack's entry file and follows the import statements in the built files into every `@suss` package they load, and into every chunk the bundler split out. The adapter reaches the value evaluator, the resolution rules and the datalog engine this way, and a pack reaches the compiler for its declarations. Rebuilding any of them changes the key, the same as editing the adapter does. Each package is resolved from the file that imports it, with the export conditions of that import, so the hash covers the build the process loaded. A process reads each file once and shares what it found between the adapter and its packs. The CLI folds the code hash into a pack's version when it loads the pack. A caller that hands packs to an adapter directly has only the version the pack declares, and most packs declare none.
 
 A pack can read project files that no walk ever sees. aws-lambda reads the SAM template that lists which handlers exist. A `packageExports` pattern reads the `package.json` whose `exports` map decides which files are on a package's boundary. Editing one of those changes what the run produces while every source file hashes the same. So a pack lists those files under `discoveryInputs`, and the key includes their paths and their content. Which files they are depends on the files the run walks, so this part of the key is computed per run, after the file list is read and before the lookup. Inside the entry, a stamp for the config path and a stamp for each project file guard the rest. A run built from source, without a bundle, has no code hash and does not use the cache at all.
 
@@ -141,6 +143,8 @@ The index maps a boundary, by the label a report prints for it, to the units tha
 ### Known gaps
 
 A type read more than one import hop away, through a chain that no recorded mechanism followed, can change a summary's printed types without invalidating it. The middle file of a deep re-export chain has the same gap when the compiler resolved the chain and the store did not. A dependency upgrade under `node_modules` invalidates nothing, because the pack and adapter hashes stand in for knowledge of the libraries. Stage two of #422 closes these gaps by recording what each answer read, per answer.
+
+The code hash follows imports only into `@suss` packages. A new TypeScript compiler or tree-sitter runtime changes no key, and neither does replacing a grammar file the Python or Ruby adapter reads off disk, until the adapter's own code or version changes with it. A pack from outside suss is hashed through its own files and the `@suss` packages it imports, and the other packages it imports count as libraries here.
 
 A re-extracted summary can also be represented differently from one produced by a run without the cache. Type-shape expansion shares a memo across the run, so a run that walks five files can expand a shape to a different depth than a run that walks a thousand, and the shape digest changes with it. The summary was computed fresh either way, and nothing served is stale.
 

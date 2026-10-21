@@ -4,27 +4,24 @@
  * Each adapter calls `createAdapterStamp` once, with its own
  * `import.meta.url` and its hand-bumped version, and keeps the result for
  * the life of the process. The stamp hashes the adapter's dist file and
- * every analysis package shipped with it (this package, `@suss/resolution`,
- * `@suss/datalog`, `@suss/behavioral-ir`). A release that changes any of
- * them invalidates an older cache, and so does a local rebuild, with no
- * version bump. Running from source leaves no dist file to hash, so that
- * mode turns the cache off. This package's DESIGN.md describes the cache.
+ * every file it loads from suss's own packages, found by following its
+ * imports. A release that changes any of them invalidates an older cache,
+ * and so does a local rebuild, with no version bump. Running from source
+ * leaves no dist file to hash, so that mode turns the cache off. This
+ * package's DESIGN.md describes the cache.
  */
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  type CodeHasher,
+  createCodeHasher,
+  processCodeHasher,
+} from "./codeHash.js";
 import { modulesStamp, type SettledModule } from "./declaredModules.js";
-
-const ANALYSIS_PACKAGES = [
-  "@suss/extractor",
-  "@suss/resolution",
-  "@suss/datalog",
-  "@suss/behavioral-ir",
-];
 
 /**
  * Whether this process can see the adapter's own code. `bundle` includes
@@ -112,7 +109,7 @@ function readAdapterCodeStamp(moduleUrl: string): AdapterCodeStamp {
     // A published adapter bundles the calling module into its dist entry
     // file, so the directory `moduleUrl` points into contains the bundle.
     const selfPath = fileURLToPath(moduleUrl);
-    const hash = computeDistHashFrom(path.dirname(selfPath));
+    const hash = computeDistHashFrom(path.dirname(selfPath), processCodeHasher);
     return hash.length > 0 ? { kind: "bundle", hash } : SOURCE_STAMP;
   } catch {
     return SOURCE_STAMP;
@@ -120,17 +117,20 @@ function readAdapterCodeStamp(moduleUrl: string): AdapterCodeStamp {
 }
 
 /**
- * The hash for a bundle directory: the bundle itself plus every analysis
- * package that can be located. Empty when the directory has no bundle in
+ * The hash for a bundle directory: the bundle itself plus every file it
+ * loads from suss's packages. Empty when the directory has no bundle in
  * it, as happens when running from source.
  */
-export function computeDistHashFrom(dir: string): string {
+export function computeDistHashFrom(
+  dir: string,
+  hasher: CodeHasher = createCodeHasher(),
+): string {
   const candidates = [path.join(dir, "index.js"), path.join(dir, "index.cjs")];
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) {
       continue;
     }
-    return computeContentHash([candidate, ...analysisBundles()]);
+    return hasher.codeHash(candidate);
   }
   return "";
 }
@@ -251,24 +251,4 @@ export function runDigest(
 ): string {
   const inputs = packs.flatMap((pack) => pack.discoveryInputs?.(files) ?? []);
   return `${packsDigest}|reads:${projectFileStamp(inputs)}`;
-}
-
-/**
- * Where the analysis packages were loaded from. Only consulted once the
- * adapter has found its own bundle, so a run from source keeps the empty
- * stamp and its deterministic keys. A package that cannot be located is
- * skipped rather than failing the hash.
- */
-function analysisBundles(): string[] {
-  const require = createRequire(import.meta.url);
-  const found: string[] = [];
-  for (const name of ANALYSIS_PACKAGES) {
-    try {
-      found.push(require.resolve(name));
-    } catch {
-      // A host that bundles everything has no separate file to hash,
-      // and its own bundle already contains the code.
-    }
-  }
-  return found;
 }
