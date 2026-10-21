@@ -90,6 +90,8 @@ function extract(args: string[], out: string, extra: string[] = []): Extract {
 describe.each(PROJECTS)("the cache's store, in $language", (project) => {
   function setUp() {
     const dir = copyOfFixture(project.fixture, `store-${project.fixture}`);
+    // Other journeys extract the fixture in place, and the copy takes their cache along.
+    fs.rmSync(path.join(dir, ".suss"), { recursive: true, force: true });
     const out = path.join(path.dirname(dir), "out");
     fs.mkdirSync(out);
     const at = (name: string) => path.join(out, `${name}.json`);
@@ -111,6 +113,24 @@ describe.each(PROJECTS)("the cache's store, in $language", (project) => {
           .readdirSync(path.join(dir, ".suss", "cache"), { recursive: true })
           .some((name) => String(name).endsWith("index.json")),
     ).toBe(true);
+  });
+
+  it("keeps the shards, records and index under --cache-dir and out of the project", () => {
+    const { dir, args, at } = setUp();
+    const cacheDir = path.join(path.dirname(dir), "elsewhere");
+    const moved = ["--cache-dir", cacheDir];
+    const cold = extract(args, at("cold"), moved);
+    const warm = extract(args, at("warm"), moved);
+
+    expect(warm.cache).toContain("cache: hit");
+    expect(warm.written).toBe(cold.written);
+    expect(fs.existsSync(path.join(dir, ".suss", "cache"))).toBe(false);
+    const stored = fs
+      .readdirSync(cacheDir, { recursive: true })
+      .map((name) => String(name).split(path.sep));
+    for (const part of ["shards", "records", "index.json", "manifest.json"]) {
+      expect(stored.some((segments) => segments.includes(part))).toBe(true);
+    }
   });
 
   it("writes what a run without the cache writes after a file is edited", () => {
