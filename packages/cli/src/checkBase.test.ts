@@ -396,6 +396,86 @@ describe("check --base", () => {
     expect(fs.readdirSync(path.join(cacheRoot, "cache"))).toHaveLength(2);
   });
 
+  it("reads a base once per process, and again when its folder is gone", async () => {
+    commit("base");
+    forgetBaseReads();
+
+    const [first, alongside] = await Promise.all([
+      readBase(project, "HEAD"),
+      readBase(project, "HEAD"),
+    ]);
+    const again = await readBase(project, "HEAD");
+    fs.rmSync(first.summaryDir, { recursive: true, force: true });
+    const reread = await readBase(project, "HEAD");
+
+    expect(alongside.summaryDir).toBe(first.summaryDir);
+    expect(again.summaryDir).toBe(first.summaryDir);
+    expect(reread.summaryDir).not.toBe(first.summaryDir);
+    expect(fs.readdirSync(reread.summaryDir)).toEqual(["0-extract.json"]);
+  });
+
+  it("stops when a read fails at the base, since its units would all look new", async () => {
+    fs.writeFileSync(path.join(project, "openapi.yaml"), "paths: [unclosed\n");
+    const config = JSON.parse(
+      fs.readFileSync(path.join(project, "suss.json"), "utf8"),
+    );
+    config.read.push({
+      kind: "contract",
+      from: "openapi",
+      file: "openapi.yaml",
+    });
+    fs.writeFileSync(path.join(project, "suss.json"), JSON.stringify(config));
+    commit("base with a broken spec");
+    fs.writeFileSync(
+      path.join(project, "openapi.yaml"),
+      "openapi: 3.0.0\ninfo: { title: orders, version: '1' }\npaths: {}\n",
+    );
+
+    const run = await quietly(["check", "--base", "HEAD"]);
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain(
+      "Reading HEAD failed, and every unit those reads cover would look new",
+    );
+  });
+
+  it("says when nothing in the project matched a pack", async () => {
+    fs.writeFileSync(
+      path.join(project, "suss.json"),
+      JSON.stringify({ version: 1, read: [] }),
+    );
+    commit("base");
+
+    const run = await quietly(["check", "--base", "HEAD"]);
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain("so there is nothing to read at HEAD");
+  });
+
+  it("refuses --at, --intent and a pair of files, which do not cover one change", async () => {
+    commit("base");
+
+    const withAt = await quietly(["check", "--base", "HEAD", "--at", "src"]);
+    const withIntent = await quietly([
+      "check",
+      "--base",
+      "HEAD",
+      "--intent",
+      "intent",
+    ]);
+    const withFiles = await quietly([
+      "check",
+      "a.json",
+      "b.json",
+      "--base",
+      "HEAD",
+    ]);
+
+    expect(withAt.stderr).toContain("cannot run together");
+    expect(withIntent.stderr).toContain("--intent scores the code");
+    expect(withFiles.stderr).toContain("they take --dir or no files at all");
+  });
+
   it("does not fail on a finding the base already had", async () => {
     edit(ADD_409);
     commit("base with the 409");

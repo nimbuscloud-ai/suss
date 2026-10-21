@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { checkDir } from "./check.js";
 import { runCli } from "./run.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
@@ -386,6 +387,9 @@ describe("check --since", () => {
 
     expect(run.exit).toBe(1);
     expect(run.stderr).toContain("so it needs --since");
+    expect(() => checkDir({ dir, changedFiles: [], json: true })).toThrow(
+      "so it needs --since",
+    );
   });
 
   it("refuses --intent, which scores a whole run against documents", async () => {
