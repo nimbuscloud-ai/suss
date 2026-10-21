@@ -69,7 +69,21 @@ An interactive run ends with one line on stderr when a newer suss is on the regi
 | `TERM=dumb` | The same. Colour is also off whenever stdout is not a TTY, so a piped or redirected run is plain without you asking. |
 | `CI` | Set it to anything and the update notice is off. `suss init` detects CI separately and prints its commands rather than prompting, the same as `--plain`. |
 | `SUSS_NO_UPDATE_NOTICE` | Set it to anything and the update notice is off. |
+| `SUSS_CACHE_DIR` | A directory to keep suss's own files in, instead of `.suss` in the project. See [Where suss writes](#where-suss-writes). The `--cache-dir` flag overrides it. |
 | `NODE_OPTIONS` | A heap size set here with `--max-old-space-size` is the one suss runs with. Without one, suss picks its own, as [Memory](#memory) describes. |
+
+## Where suss writes
+
+A command that extracts keeps a cache so the next run reads only what changed. It goes in `.suss/cache` under the folder being read, with a `.gitignore` inside it. In a checkout you may only read, that write fails or dirties the tree. Point the cache somewhere else with `--cache-dir`, or with `SUSS_CACHE_DIR` for every command in a shell:
+
+```bash
+suss check --cache-dir /tmp/suss-cache
+SUSS_CACHE_DIR=/tmp/suss-cache suss extract --dir . -o /tmp/summaries.json
+```
+
+`init`, `extract`, `inspect`, `check` and `ask` take the flag, and the flag wins over the variable. Several projects can share one directory, because each gets a subfolder named for a hash of its path. The MCP server takes the same flag as an argument (`suss-mcp <project> --cache-dir <path>`) or reads the variable, and keeps its record for the plugin's hooks there too.
+
+With the cache moved, a command writes into the project only where you asked it to: `-o`, `--into`, `--out-dir`, and the files `init --write` creates. Everything else goes to the system temp folder (the update-check stamp, the temporary summaries a bare `check` reads, and the MCP server's socket).
 
 ## Memory
 

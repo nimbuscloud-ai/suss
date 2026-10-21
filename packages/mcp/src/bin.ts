@@ -14,14 +14,23 @@ import type { BuildReport, Project } from "./project.js";
 async function main(): Promise<void> {
   // Loaded only after the heap is settled, so a process that starts
   // itself again has not paid for loading the compiler twice.
-  const [{ StdioServerTransport }, { whereReadsCameFrom }, { createServer }] =
-    await Promise.all([
-      import("@modelcontextprotocol/sdk/server/stdio.js"),
-      import("@suss/cli"),
-      import("./index.js"),
-    ]);
+  const [
+    { StdioServerTransport },
+    { setCacheDir, takeCacheDirFlag, whereReadsCameFrom },
+    { createServer },
+  ] = await Promise.all([
+    import("@modelcontextprotocol/sdk/server/stdio.js"),
+    import("@suss/cli"),
+    import("./index.js"),
+  ]);
 
-  const root = process.argv[2] ?? process.cwd();
+  // Set before the server is made, because the cache and the live record
+  // both read it when they are first written.
+  const given = takeCacheDirFlag(process.argv.slice(2));
+  if (given.cacheDir !== undefined) {
+    setCacheDir(given.cacheDir);
+  }
+  const root = given.args[0] ?? process.cwd();
   const { server, project, live } = createServer({ root, live: true });
 
   const transport = new StdioServerTransport();

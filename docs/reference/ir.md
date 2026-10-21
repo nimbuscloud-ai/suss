@@ -561,7 +561,11 @@ Severity drives the exit code. `suss check` exits non-zero when any `error` find
 
 ```typescript
 interface RunFinding {
-  kind: "nothingPaired" | "unreadableInput" | "mostlyUnpaired";
+  kind:
+    | "nothingPaired"
+    | "unreadableInput"
+    | "mostlyUnpaired"
+    | "packNeedsConfig";
   severity: "error" | "warning" | "info";
   description: string;
   remedy: string;

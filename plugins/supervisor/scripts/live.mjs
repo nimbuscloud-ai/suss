@@ -4,12 +4,14 @@
  *
  * The server keeps the project's program between edits, so a read after
  * an edit costs what the edit changed. The server that keeps it writes
- * `.suss/live/server.json` under the project with the path of its socket.
+ * a record with the path of its socket, in `.suss/live` under the project
+ * or under `SUSS_CACHE_DIR`.
  * A request is the arguments the CLI would get, and the reply is what
  * the CLI would have printed. When no server is up, or it does not serve
  * the command, this returns null and the caller runs the CLI.
  */
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -59,15 +61,32 @@ export async function askLiveServer(projectDir, args, timeoutMs, notBefore) {
 function liveSocketOf(projectDir) {
   try {
     const record = JSON.parse(
-      fs.readFileSync(
-        path.join(projectDir, ".suss", "live", "server.json"),
-        "utf8",
-      ),
+      fs.readFileSync(liveRecordOf(projectDir), "utf8"),
     );
     return typeof record?.socket === "string" ? record.socket : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The server writes its record under `SUSS_CACHE_DIR` when that is set,
+ * in a file named for a hash of the project's real path, and under the
+ * project otherwise. This has to compute the same path.
+ *
+ * @param {string} projectDir
+ * @returns {string}
+ */
+export function liveRecordOf(projectDir) {
+  const chosen = process.env.SUSS_CACHE_DIR;
+  if (chosen === undefined || chosen === "") {
+    return path.join(projectDir, ".suss", "live", "server.json");
+  }
+  const digest = createHash("sha256")
+    .update(fs.realpathSync(path.resolve(projectDir)))
+    .digest("hex")
+    .slice(0, 16);
+  return path.join(path.resolve(chosen), "live", `${digest}.json`);
 }
 
 /**

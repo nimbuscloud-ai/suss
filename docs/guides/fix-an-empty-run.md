@@ -68,6 +68,24 @@ npx @suss/cli init --plain
 
 suss reads through a module of your own that wraps the framework. That module imports the framework itself, so it counts in the line above. suss follows the app object through it, so a route written inside `registerHealth(app)` still comes out as a route. When the framework import is inside a package suss cannot read at all, write a [dependency stub](/guides/teach-a-dependency) for that package.
 
+## A pack needs an option you did not give
+
+```
+Pack health (1):
+  no-config  graphql-ruby  reads nothing until root is set, for example {"root":"app/graphql"}. Write that to a JSON file and pass -f graphql-ruby=<config.json>.
+```
+
+Four packs cannot find anything until the project says one thing about itself: `graphql-ruby` needs `root`, the directory its classes are looked up under, and `activerecord`, `sqlalchemy` and `sqlmodel` need `storageSystem`, which database is behind the connection. Named with a bare `-f` and no config file, the pack is left out of the run and this line says so. When no other pack in the run produced a summary, the run exits non-zero. Otherwise it succeeds with the pack's boundaries missing, which is why the line prints either way.
+
+Write the example into a file and name it:
+
+```bash
+echo '{"root":"app/graphql"}' > suss.graphql-ruby.json
+npx @suss/cli extract --lang ruby -f rails -f graphql-ruby=suss.graphql-ruby.json -o summaries/code.json
+```
+
+`suss init --write` writes this file for you. `--fail-on-pack-error` turns the line into a failure even when other packs found something. The same warning reaches `suss check --json` as a `packNeedsConfig` entry under `run`, from the note `extract -o` leaves beside the summaries, so a check over summaries written without the option does not look complete.
+
 ## A pack read your code and recognized none of it
 
 A run can write summaries, exit 0, and still have a pack in it that read your code and matched nothing. The pack health block reports that:
@@ -113,7 +131,7 @@ A recognizer pack labels the calls inside boundaries that some other pack discov
 
 ### Every health code
 
-Six codes describe the run in front of you and always print. The other four are for whoever wrote the pack, and they print only with `--explain`.
+Seven codes describe the run in front of you and always print. The other four are for whoever wrote the pack, and they print only with `--explain`.
 
 | Code | Prints | What it means |
 |---|---|---|
@@ -123,6 +141,7 @@ Six codes describe the run in front of you and always print. The other four are 
 | `no-files` | always | The pack's library is installed and no file in the run imports it, through the project's own modules included. |
 | `no-units` | always | A recognizer pack had nothing to look inside, because no pack in the run discovers units. |
 | `no-helper` | always | A registration helper the pack read matched no call in the run, so whatever it registers is missing. |
+| `no-config` | always | A pack was left out because an option it cannot read without was not given. The line has the option and an example value. |
 | `no-version` | `--explain` | The pack declares no version, so a cache entry cannot tell two builds of it apart. |
 | `fn-link` | `--explain` | A declared pack wrote a link as a function instead of data, so only the TypeScript adapter can run it. |
 | `ast-link` | `--explain` | A declared pack reaches into the syntax tree, with the same consequence. |
