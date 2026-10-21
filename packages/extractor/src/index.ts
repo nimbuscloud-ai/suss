@@ -1185,6 +1185,7 @@ export {
   liveRecordFor,
 } from "./cacheLocation.js";
 export { stampMayMissAWrite } from "./cacheStamps.js";
+export { createCodeHasher, processCodeHasher } from "./codeHash.js";
 export {
   buildUngatedExtractionReport,
   createPackTallies,
@@ -1218,6 +1219,7 @@ export type {
   RootRecord,
   UnitRecord,
 } from "./cache.js";
+export type { CodeHasher } from "./codeHash.js";
 export type {
   EmptyStage,
   ExtractionReport,
