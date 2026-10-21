@@ -24,6 +24,13 @@ class EventsController < ApplicationController
     head :ok
   end
 
+  def via_conditional
+    kind = params[:kind]
+    handler = kind ? EventHandlers::HANDLERS[kind.to_sym] : nil
+    handler.call(params[:payload]) if handler
+    head :ok
+  end
+
   def via_method_table
     EventHandlers.method_table[params[:kind].to_sym].call(params[:payload])
     head :ok

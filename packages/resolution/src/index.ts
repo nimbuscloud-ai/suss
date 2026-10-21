@@ -379,6 +379,46 @@ const DISPATCH_RULES: readonly Rule[] = [
     ],
   ),
   rule("callsEntryAt", [v("r"), v("r")], [lit("callsChosenEntry", v("r"))]),
+  rule(
+    "callsEntryAt",
+    [v("r"), v("site")],
+    [lit("callsEntryInBranch", v("r"), v("site"))],
+  ),
+
+  // `c ? T[k] : undefined` is one of its branches, so a call through it
+  // may run what the read gives. The other branch may be some other
+  // function, so dispatch.ts never counts such a call as certain.
+  rule(
+    "callsEntryInBranch",
+    [v("r"), v("site")],
+    [lit("call", v("r"), v("c")), lit("branchReadsEntry", v("c"), v("site"))],
+  ),
+  rule(
+    "callsEntryInBranch",
+    [v("r"), v("site")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("reaches", v("c"), v("x"), VALUE_STEP),
+      lit("branchReadsEntry", v("x"), v("site")),
+    ],
+  ),
+  rule(
+    "branchReadsEntry",
+    [v("x"), v("site")],
+    [
+      lit("conditionalBranch", v("x"), v("site")),
+      lit("entryRead", v("site"), v("o")),
+    ],
+  ),
+  rule(
+    "branchReadsEntry",
+    [v("x"), v("site")],
+    [
+      lit("conditionalBranch", v("x"), v("b")),
+      lit("reaches", v("b"), v("site"), VALUE_STEP),
+      lit("entryRead", v("site"), v("o")),
+    ],
+  ),
 
   rule(
     "dispatchesTo",
@@ -2334,6 +2374,14 @@ export const RESOLUTION_QUESTIONS = [
       lit("wantedDispatch", v("r")),
       lit("callsEntryAt", v("r"), v("site")),
       lit("entryAt", v("site"), v("held")),
+    ],
+  ),
+  rule(
+    "wantedDispatchInBranch",
+    [v("r"), v("site")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryInBranch", v("r"), v("site")),
     ],
   ),
   rule(

@@ -21,6 +21,14 @@ def via_get(kind: str, payload: str):
     return handler(payload)
 
 
+@app.post("/conditional/{kind}")
+def via_conditional(kind: str, payload: str):
+    handler = HANDLERS[kind] if kind in HANDLERS else None
+    if handler is None:
+        return None
+    return handler(payload)
+
+
 @app.post("/registry/{kind}")
 def via_registry(kind: str, payload: str):
     return REGISTRY[kind](payload)

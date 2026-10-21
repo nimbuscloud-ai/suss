@@ -902,6 +902,18 @@ export function emitValue(
     return id;
   }
 
+  // The value evaluator reads a ternary with its test, so it stays a
+  // written value. Its branches are stated for a call through one, as
+  // `(c ? T[k] : undefined)(args)` is, the way Python and Ruby state them.
+  if (Node.isConditionalExpression(expression)) {
+    for (const branch of [
+      expression.getWhenTrue(),
+      expression.getWhenFalse(),
+    ]) {
+      fact(db, "conditionalBranch", id, emitValue(db, table, branch));
+    }
+  }
+
   // Everything left is written out here and refers to nothing further:
   // a template literal, a tag call's result, a ternary. A name for one
   // of these ends its chain here, and the caller decides whether what
