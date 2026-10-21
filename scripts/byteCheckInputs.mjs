@@ -600,5 +600,52 @@ export const FIELD_INPUTS = [
   },
 ];
 
-/** Apps that each exercise one library, which --extra adds to a run. */
-export const EXTRA_INPUTS = [];
+/**
+ * Apps that each exercise one library no standard input reaches in the
+ * field, which --extra adds to a run. The packs are the ones `suss init`
+ * suggests for each.
+ */
+export const EXTRA_INPUTS = [
+  {
+    name: "drizzle",
+    group: "extra",
+    repo: "saas-starter",
+    args: packs("nextjs", "react", "fetch", "drizzle", "node"),
+  },
+  {
+    name: "mongoose",
+    group: "extra",
+    repo: "saas",
+    args: [
+      ...dir("saas/api"),
+      ...packs("express", "fetch", "mongoose", "node"),
+    ],
+  },
+  {
+    name: "sqs-sam",
+    group: "extra",
+    repo: "di-account-management-backend",
+    args: [
+      ...lang("typescript"),
+      ...packs(
+        "aws-lambda",
+        "axios",
+        "fetch",
+        "aws-dynamodb",
+        "aws-secrets-manager",
+        "aws-sns",
+        "aws-sqs",
+        "node",
+      ),
+    ],
+  },
+  {
+    name: "dynamodb",
+    group: "extra",
+    repo: "tooljet",
+    args: [
+      ...project("plugins/packages/dynamodb/tsconfig.json"),
+      ...packs("aws-dynamodb"),
+    ],
+  },
+];

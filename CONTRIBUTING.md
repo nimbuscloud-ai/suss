@@ -49,7 +49,7 @@ The inputs are listed in `scripts/byteCheckInputs.mjs`:
 
 - Every directory under `fixtures/`, with the packs its tests use. The script refuses to run while a fixture has no entry, so a new fixture needs one.
 - Five of suss's own packages: `@suss/cli`, `mcp`, `checker`, `datalog` and `behavioral-ir`. Both builds read them from main's checkout, so a package the branch edits does not differ by its own edit.
-- Three field apps: cal.com's `apps/web`, dispatch and mastodon. `--quick` leaves them out. `--extra all` adds four apps that each exercise one library: Drizzle in saas-starter, Mongoose in angular-full-stack, SQS with SAM in di-account-management-backend, and DynamoDB in ToolJet's plugin.
+- Three field apps: cal.com's `apps/web`, dispatch and mastodon. `--quick` leaves them out. `--extra all` adds four apps that each exercise one library: Drizzle in saas-starter, Mongoose in saas, SQS with SAM in di-account-management-backend, and DynamoDB in ToolJet's plugin.
 
 The field apps are read from the first-run clones in `~/.cache/suss-first-run/repos`, at their `tools/first-run/repos.json` commits. `npx tsx tools/first-run/src/run.ts --work <dir> --cli <suss> --only <name>` makes a clone when `<dir>/repos` points at that folder. A first-run checks out the parent commit partway through, so the script reads a clone only while it is at its pinned commit, and reports it as not checked otherwise.
 
