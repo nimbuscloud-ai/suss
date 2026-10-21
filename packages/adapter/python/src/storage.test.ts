@@ -430,6 +430,24 @@ describe("the database work a Python body does", () => {
     expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
       ["tenant_id"],
       ["status", "kind"],
+      ["total"],
+    ]);
+  });
+
+  it("picks rows by its own model's column however a filter compares it", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import or_, select",
+        "",
+        "Orders.query().filter(Orders.expires >= now).delete()",
+        "select(Orders).where(or_(Orders.closed_at < cutoff, Orders.status != 'open'))",
+        "select(Orders).where(Users.created_at > cutoff)",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
+      ["expires"],
+      ["closed_at", "status"],
       undefined,
     ]);
   });

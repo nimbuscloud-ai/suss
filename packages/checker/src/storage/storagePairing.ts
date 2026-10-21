@@ -143,6 +143,12 @@ export function checkStorage(
         );
       }
 
+      // A column a query picks rows by is read to pick them, whether the
+      // query then reads those rows or writes them.
+      for (const field of access.effect.interaction.selector ?? []) {
+        readNames.add(field);
+      }
+
       if (kind === "read") {
         if (wildcards) {
           anyDefaultShapeRead = true;
@@ -954,11 +960,11 @@ function makeSelectorMismatchFinding(
 }
 
 /**
- * Both unused findings rest on a query asking for the field, which is
- * the only read either of them can see.
+ * Both unused findings rest on a query asking for the field or picking
+ * rows by it, which are the only reads either of them can see.
  */
 function askedForNote(field: string, verdict: string): string {
-  return `suss counts a column as read only when a query selects it, so before you treat ${verdict}, look for code that takes "${field}" off a record it already fetched.`;
+  return `suss counts a column as read only when a query selects it or filters on it, so before you treat ${verdict}, look for code that takes "${field}" off a record it already fetched.`;
 }
 
 function makeFieldUnusedFinding(
