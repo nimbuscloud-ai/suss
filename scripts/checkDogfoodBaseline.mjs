@@ -37,13 +37,13 @@
 // `node scripts/dogfood.mjs`. Set DOGFOOD_BASELINE_REF to compare
 // against some other ref.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 
+import { printDelta, reportRegressions } from "./baselineCompare.mjs";
 import {
-  printDelta,
-  readJsonFromRef,
-  reportRegressions,
-} from "./baselineCompare.mjs";
+  readBaselineFromRef,
+  readBaselineFromTree,
+} from "./dogfoodBaseline.mjs";
 import { BASELINE_PATH, BASELINE_REL_PATH } from "./dogfoodOutputs.mjs";
 
 const BASELINE_REF = process.env.DOGFOOD_BASELINE_REF ?? "HEAD";
@@ -55,11 +55,11 @@ if (!existsSync(BASELINE_PATH)) {
   process.exit(1);
 }
 
-const current = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
+const current = readBaselineFromTree();
 
 let committed;
 try {
-  committed = readJsonFromRef(BASELINE_REF, BASELINE_REL_PATH);
+  committed = readBaselineFromRef(BASELINE_REF);
 } catch (err) {
   console.error(`✗ ${err.message}`);
   process.exit(1);
@@ -263,9 +263,10 @@ for (const dir of Object.keys(current.packages)) {
 }
 
 const failed = reportRegressions({
-  title: `suss sees less of this tree than ${BASELINE_REL_PATH} says it should:`,
+  title:
+    "suss sees less of this tree than the dogfood baselines say it should:",
   regressions,
-  hint: `Either a recognizer stopped firing, or the code these counted was deleted. If it was deleted, run \`npm run dogfood\` and commit the refreshed ${BASELINE_REL_PATH} on this branch. The drop then lands in the pull request diff, where a reviewer can see what went and agree it should have. A count reported as missing rather than lower means the run no longer produces a number the baseline has, which is either the same refresh or a bug in what computes it. \`unfollowedCalls\` is the one count that fails on a rise instead: new code that reaches something through indirection raises it, and the same refresh declares that.`,
+  hint: "Either a recognizer stopped firing, or the code these counted was deleted. If it was deleted, run \`npm run dogfood\` and commit the refreshed dogfood-baseline.json files on this branch. The drop then lands in the pull request diff, where a reviewer can see what went and agree it should have. A count reported as missing rather than lower means the run no longer produces a number the baseline has, which is either the same refresh or a bug in what computes it. \`unfollowedCalls\` is the one count that fails on a rise instead: new code that reaches something through indirection raises it, and the same refresh declares that.",
 });
 
 if (failed) {

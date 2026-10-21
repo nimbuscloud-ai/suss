@@ -1,0 +1,5 @@
+{
+  "src/discovery.ts": "listenerAt",
+  "src/envBindings.ts": "isTriggerEnvArgument",
+  "src/storeBindings.ts": "declaredInitializer"
+}

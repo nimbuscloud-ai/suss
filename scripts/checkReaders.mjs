@@ -8,14 +8,15 @@
  * readers written beside a call site instead, two thirds of them after
  * the facility existed. This scans for the tells of one more.
  *
- * EXEMPT lists the files that already fail. Entries come out as the
- * copies are deleted, and one goes in only with a reason on the line.
- * The rule is in design/docs-internal/style.md#reading-a-value.
+ * Each package lists its failing files in `readerExempt.json`. The rule
+ * is in design/docs-internal/style.md#reading-a-value.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { findManifests } from "./workspacePackages.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -159,224 +160,47 @@ const PROBES = [
 ];
 
 /**
- * Files that read syntax today, with the functions that do it. Every
- * entry is either a copy waiting to be deleted or a read that is not
- * about a value at all, and the reason says which.
+ * Files that read syntax today, with the functions that do it, kept in a
+ * `readerExempt.json` at the root of the package that owns the file. A
+ * key is the file's path inside that package, and the value is the
+ * reason. Every entry is either a copy of the facility waiting to be
+ * deleted or a read that is not about a value at all, and the reason
+ * says which.
  */
-const EXEMPT = new Map([
-  // Reads that are not about a value: type identity, and the shape a
-  // type has rather than the value an expression holds.
-  [
-    "packages/adapter/typescript/src/shapes/typeShapes.ts",
-    "reads shapes off the type checker rather than values off expressions",
-  ],
-  [
-    "packages/adapter/typescript/src/promiseThen.ts",
-    "receiverIsPromiseTyped asks whether a type is Promise, which is type identity",
-  ],
-  [
-    "packages/runtime/node/src/processSurface.ts",
-    "recognizeElementAccess reads the numeric index of a process.argv access, not a value",
-  ],
+const EXEMPT_FILE = "readerExempt.json";
 
-  // Copies of the facility, waiting on the branches that delete them.
-  [
-    "packages/adapter/typescript/src/adapter.ts",
-    "bindingPatternNames, componentPropsParameters, bindingRole, extractParameters, extractDependencyCalls, fileImporting, internalImportsOf, synthesizeCallerSummaries",
-  ],
-  [
-    "packages/adapter/typescript/src/bootstrap/preFilter.ts",
-    "computePackApplicability",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/clientCall.ts",
-    "discoverClientCalls, clientReceiverCheckFor",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/decoratedMembers.ts",
-    "callableOf",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/decoratedMethod.ts",
-    "resolveResolverClassTypeName",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/decoratorComposition.ts",
-    "statesAValue",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/graphqlClientConstruction.ts",
-    "constructionRegistryStatus, constructionRef",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/graphqlShared.ts",
-    "writtenStringText, isDocumentTag, documentTagOrigin, declarationFileOf, importCarrying, singleLine, importedVariableInitializers, resolveGqlTemplateText, resolveTypedDocumentHeader, evaluateObjectLiteralAsJson, and documentNodeCastTypeArgs, which reads the type written on a cast rather than peeling the cast off",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/graphqlWrapper.ts",
-    "parameterBehind",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/helperIndex.ts",
-    "declaredFunctions",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/helperReading.ts",
-    "readValue, objectValue, propertyKey",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/importedCalls.ts",
-    "declaredLocally",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/jsxElementRoute.ts",
-    "attributeValueOf, literalStringOf, unitsOfArrayElements",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/namedExport.ts",
-    "discoverNamedExports, defaultExportUnits",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/packageExports.ts",
-    "discoverPackageExports",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/packageImport.ts",
-    "couldBePackageLinked, methodComesFromSource",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/registrationCall.ts",
-    "discoverRegistrationCalls, routeChainOf, collectMethodsCalledOnCallResults, registrationSubjectsOf, discoverMountEdges, extractRouteInfoFromBinding",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/registrationLoop.ts",
-    "tryExpandLoop, loopVariableName, readRouteSpec",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/registrationTemplate.ts",
-    "declaredInModule",
-  ],
-  ["packages/adapter/typescript/src/discovery/resolverMap.ts", "writtenSdl"],
-  [
-    "packages/adapter/typescript/src/discovery/shared.ts",
-    "couldStillNameAFunction, namesAParameter",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/wrapperFactory.ts",
-    "factoryStopOf",
-  ],
-  [
-    "packages/adapter/typescript/src/discoveryContext.ts",
-    "valueToAskAbout, resolveDeclarationToFunction",
-  ],
-  [
-    "packages/adapter/typescript/src/parameterReads.ts",
-    "pathAbove, parameterReads",
-  ],
-  ["packages/adapter/typescript/src/paths/lowering.ts", "ownExpressionsOf"],
-  [
-    "packages/adapter/typescript/src/predicates.ts",
-    "parseConditionExpression, tryExpandArrayIncludes",
-  ],
-  [
-    "packages/adapter/typescript/src/resolve/astResolve.ts",
-    "resolveElementAccess, shapeFromDeclaration, safeGetDefinitions, functionBodyOf",
-  ],
-  [
-    "packages/adapter/typescript/src/resolve/callOps.ts",
-    "entriesOf, itemsOf, literalText, literalFlag, initializerOf, unquoted",
-  ],
-  [
-    "packages/adapter/typescript/src/resolve/invocationEffects.ts",
-    "isImportedFrom, methodDeclaredIn, extractArg, inlineModuleBinding",
-  ],
-  [
-    "packages/adapter/typescript/src/resolve/reachableClosure.ts",
-    "resolveCallee, resolveJsxReference, recognizerOnlyRoots",
-  ],
-  [
-    "packages/adapter/typescript/src/resolve/readName.ts",
-    "isParameter, read, fromJoin, elementsOf, declarationOf, asCallable",
-  ],
-  [
-    "packages/adapter/typescript/src/resolve/rethrowEnrichment.ts",
-    "resolveCalleeSummary",
-  ],
-  [
-    "packages/adapter/typescript/src/resolve/unfollowedCall.ts",
-    "declarationsBehind",
-  ],
-  [
-    "packages/adapter/typescript/src/shapes/fieldAccesses.ts",
-    "findResponseAccessor, prefixOfMemberExpr",
-  ],
-  [
-    "packages/adapter/typescript/src/shapes/shapes.ts",
-    "extractShapeInner, shapeFromArrayLiteral, shapeFromObjectLiteral, propertyName",
-  ],
-  [
-    "packages/adapter/typescript/src/subjects.ts",
-    "resolveThenParameter, resolveSubject",
-  ],
-  [
-    "packages/adapter/typescript/src/subUnitContext.ts",
-    "findJsxAttributes, resolveAttributeValueFunction, readArrayLiteralText",
-  ],
-  [
-    "packages/adapter/typescript/src/terminals/extract.ts",
-    "statusFromProperty, extractStatusCodeFromRule, extractBody",
-  ],
-  [
-    "packages/adapter/typescript/src/terminals/helperResolution.ts",
-    "memoizedLocalHelper, declarationsFor, asFunctionLike, bindArguments",
-  ],
-  [
-    "packages/adapter/typescript/src/terminals/jsx.ts",
-    "collectJsxAttributes, and the parenthesis case of jsxToRenderNode and jsxExpressionToRenderNode, which recurse rather than loop",
-  ],
-  [
-    "packages/adapter/typescript/src/terminals/returns.ts",
-    "terminalFromReturnedObject",
-  ],
-  [
-    "packages/adapter/typescript/src/terminals/shared.ts",
-    "parameterPositionOf",
-  ],
-  [
-    "packages/adapter/typescript/src/terminals/statusBranches.ts",
-    "asConditional",
-  ],
-  [
-    "packages/adapter/typescript/src/terminals/throws.ts",
-    "extractThrowMessage",
-  ],
-  ["packages/framework/aws-sqs/src/index.ts", "isSqsRecordIdentifier"],
-  ["packages/framework/cloudflare-workers/src/discovery.ts", "listenerAt"],
-  [
-    "packages/framework/cloudflare-workers/src/envBindings.ts",
-    "isTriggerEnvArgument",
-  ],
-  [
-    "packages/framework/cloudflare-workers/src/storeBindings.ts",
-    "declaredInitializer",
-  ],
-  ["packages/framework/drizzle/src/index.ts", "valuesKeys"],
-  [
-    "packages/framework/nextjs/src/serverActions.ts",
-    "leadingDirectives, nextjsServerActions",
-  ],
-  ["packages/framework/react-query/src/index.ts", "callbackExpressionOf"],
-  [
-    "packages/runtime/node/src/envVars.ts",
-    "bracketRead, bindingRead, destructuredReads, and forwardedParameter, which takes the declaration behind a symbol the facility already resolved",
-  ],
-  ["packages/adapter/python/src/decorators.ts", "argShapeOf"],
-  [
-    "packages/adapter/python/src/paths/returnedShape.ts",
-    "recordShape, shapeOfReturned",
-  ],
-  ["packages/adapter/ruby/src/paths/predicates.ts", "literalOf"],
-]);
+/** The package.json directories under `root`, in a fixed order. */
+function packageDirsUnder(root) {
+  return findManifests(path.join(root, "packages"))
+    .map((manifest) => path.relative(root, path.dirname(manifest)))
+    .map((dir) => dir.split(path.sep).join("/"))
+    .sort();
+}
+
+/** One package's exempt list, with each key made relative to the repo root. */
+function exemptionsOf(root, dir) {
+  const file = path.join(root, dir, EXEMPT_FILE);
+  if (!fs.existsSync(file)) {
+    return [];
+  }
+
+  const entries = JSON.parse(fs.readFileSync(file, "utf8"));
+  return Object.entries(entries).map(([relative, reason]) => {
+    if (typeof reason !== "string" || reason.trim() === "") {
+      throw new Error(
+        `${dir}/${EXEMPT_FILE}: the entry for ${relative} needs a reason`,
+      );
+    }
+    return [`${dir}/${relative}`, reason];
+  });
+}
+
+/** Every package's exempt list, keyed by path from the repo root. */
+export function readExemptions(root) {
+  return new Map(
+    packageDirsUnder(root).flatMap((dir) => exemptionsOf(root, dir)),
+  );
+}
 
 function isUnder(relative, entry) {
   return relative === entry || relative.startsWith(`${entry}/`);
@@ -429,7 +253,7 @@ export function findSecondReaders({
   scopes = SCOPES,
   facility = FACILITY,
   probes = PROBES,
-  exempt = EXEMPT,
+  exempt = readExemptions(root),
   treeSitterScopes = TREE_SITTER_SCOPES,
 }) {
   const offenses = [];
@@ -473,13 +297,15 @@ export function findSecondReaders({
 
   for (const [relative] of exempt) {
     if (!fs.existsSync(path.join(root, relative))) {
-      offenses.push(`${relative}: exempt file is gone; drop its entry here`);
+      offenses.push(
+        `${relative}: exempt file is gone; drop its entry from the package's readerExempt.json`,
+      );
       continue;
     }
 
     if (!stillReading.has(relative)) {
       offenses.push(
-        `${relative}: exempt file reads no syntax any more; drop its entry here`,
+        `${relative}: exempt file reads no syntax any more; drop its entry from the package's readerExempt.json`,
       );
     }
   }
@@ -494,7 +320,7 @@ function main() {
       "A value is read through the evaluator or the resolution store, never off the syntax at the position.",
     );
     console.error(
-      "See design/docs-internal/style.md#reading-a-value. Call the facility, or add an EXEMPT entry here with a reason:",
+      "See design/docs-internal/style.md#reading-a-value. Call the facility, or add an entry with a reason to the readerExempt.json at the root of the package that owns the file:",
     );
     for (const offense of offenses) {
       console.error(`  - ${offense}`);

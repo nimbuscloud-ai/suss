@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-pytest",
+  "exports": 4,
+  "internal": 1,
+  "consumers": 3,
+  "unfollowedCalls": 0
+}
