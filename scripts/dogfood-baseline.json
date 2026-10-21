@@ -2,10 +2,10 @@
   "totals": {
     "packages": 87,
     "packagesWithExports": 87,
-    "exports": 1297,
-    "internal": 5504,
-    "consumers": 2869,
-    "pairs": 1639,
+    "exports": 1305,
+    "internal": 5559,
+    "consumers": 2882,
+    "pairs": 1649,
     "unfollowedCalls": 545,
     "findingErrors": 0
   },
@@ -40,9 +40,9 @@
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 60,
-      "internal": 278,
-      "consumers": 285,
+      "exports": 65,
+      "internal": 287,
+      "consumers": 291,
       "unfollowedCalls": 24
     },
     "packages/checker-intent": {
@@ -54,9 +54,9 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 65,
-      "internal": 867,
-      "consumers": 485,
+      "exports": 67,
+      "internal": 913,
+      "consumers": 490,
       "unfollowedCalls": 41
     },
     "packages/client/aiohttp": {
@@ -558,9 +558,9 @@
     },
     "packages/mcp": {
       "name": "@suss/mcp",
-      "exports": 16,
+      "exports": 17,
       "internal": 44,
-      "consumers": 27,
+      "consumers": 29,
       "unfollowedCalls": 6
     },
     "packages/packs": {
