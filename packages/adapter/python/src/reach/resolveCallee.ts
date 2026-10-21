@@ -14,13 +14,14 @@
 import {
   calleeOutcomeOf,
   calleeOutcomes,
+  dispatchOutcomes,
   noteKeyRead,
   RECEIVER_STORE_NAME,
   writtenSourcesOf,
 } from "@suss/resolution";
 
 import { children, enclosingFunction, field, isFunction } from "../ast.js";
-import { readKey } from "../facts/values.js";
+import { nodeId, readKey } from "../facts/values.js";
 import { resolveModule } from "../moduleResolver.js";
 import { resolveName } from "../scope.js";
 
@@ -204,6 +205,69 @@ export function namedOutcomes(
   ctx: ResolveContext,
 ): ReadonlyMap<string, CalleeOutcome> {
   return calleeOutcomes(ctx.facts, [...new Set(keys)]);
+}
+
+/** What a call that takes its function out of a table may run, as the walk follows it. */
+export interface DispatchedCall {
+  readonly targets: readonly ReachedFunction[];
+  /** True when the source narrows the call to one entry that is one function. */
+  readonly certain: boolean;
+  /** How many entries came to no function this run read. */
+  readonly unresolved: number;
+}
+
+/**
+ * What each of these calls may run, for the ones that take their
+ * function out of a table or pick a method by a computed name. One
+ * question for the batch.
+ */
+export function dispatchedCalls(
+  calls: readonly { call: PyNode; site: CallSite }[],
+  ctx: ResolveContext,
+): Map<number, DispatchedCall> {
+  const byKey = new Map(
+    calls.map(({ call, site }) => [nodeId(site.file.file, call), call]),
+  );
+  const found = new Map<number, DispatchedCall>();
+  for (const [key, outcome] of dispatchOutcomes(ctx.facts, [...byKey.keys()])) {
+    const call = byKey.get(key);
+    if (call === undefined) {
+      continue;
+    }
+    const targets = new Map<string, ReachedFunction>();
+    for (const fn of outcome.functions) {
+      for (const target of reachedThrough(fn, outcome.through, ctx)) {
+        targets.set(nodeId(target.file.file, target.node), target);
+      }
+    }
+    found.set(call.id, {
+      targets: [...targets.values()],
+      certain:
+        outcome.certain && outcome.functions.every((fn) => !isLambda(fn, ctx)),
+      unresolved: outcome.unresolved,
+    });
+  }
+  return found;
+}
+
+/**
+ * The function a key is. A lambda has no summary of its own, so the walk
+ * steps past it to the functions it calls.
+ */
+function reachedThrough(
+  key: string,
+  through: ReadonlyMap<string, readonly string[]>,
+  ctx: ResolveContext,
+): ReachedFunction[] {
+  const keys = isLambda(key, ctx) ? (through.get(key) ?? []) : [key];
+  return keys.flatMap((one) => {
+    const target = isLambda(one, ctx) ? null : functionAt(one, ctx);
+    return target === null ? [] : [target];
+  });
+}
+
+function isLambda(key: string, ctx: ResolveContext): boolean {
+  return ctx.definitions.get(key)?.type === "lambda";
 }
 
 /**

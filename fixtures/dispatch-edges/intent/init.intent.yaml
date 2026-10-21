@@ -1,0 +1,21 @@
+kind: boundary
+
+name: dispatch-edges-init
+purpose: Set the project up and resolve to the process's exit code.
+audience: whoever runs the command
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "dispatch-edges"
+  exportPath: ["initInteractive"]
+
+transitions:
+  - id: plain
+    when: --plain was passed
+    exits: 0
+
+  - id: asked
+    when: --plain was not passed
+    exits: 2

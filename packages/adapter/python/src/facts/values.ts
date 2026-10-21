@@ -33,9 +33,10 @@ import {
   parameterIdentifier,
   parameterNameAndType,
   stringLiteralValue,
+  stripDecorators,
 } from "../ast.js";
 import { bindModule } from "../scope.js";
-import { CONVERTING_BUILTINS } from "./languageWords.js";
+import { ATTRIBUTE_GETTER, CONVERTING_BUILTINS } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameReads, NameWrite } from "@suss/resolution";
@@ -362,10 +363,7 @@ function emitConversion(emitter: Emitter, call: PyNode, callKey: string): void {
     return;
   }
   const name = callee.text;
-  const builtin =
-    nameKey(emitter.filePath, emitter.enclosing, name) ===
-      nameId(emitter.filePath, name) && !emitter.moduleNames().has(name);
-  if (builtin) {
+  if (isBuiltin(emitter, name)) {
     add(emitter, "converts", callKey, valueKey(emitter, first.node), name);
   }
 }
@@ -592,12 +590,81 @@ function emitKeyedRead(
   if (WRITTEN_KEY_TYPES.has(key.type)) {
     return;
   }
-  add(
-    emitter,
-    "readsKeyed",
-    nodeId(emitter.filePath, site),
-    valueKey(emitter, container),
-    valueKey(emitter, key),
+  const siteKey = nodeId(emitter.filePath, site);
+  const containerKey = valueKey(emitter, container);
+  add(emitter, "readsKeyed", siteKey, containerKey, valueKey(emitter, key));
+  // Nothing in Python narrows a key the program works out, so the read
+  // can take any entry the container has.
+  add(emitter, "choosesEntry", siteKey, containerKey);
+}
+
+/**
+ * `getattr(obj, name)`, which reads the member of `obj` that `name`
+ * says. A name written out narrows the read to that member, and any
+ * other can be every member `obj` has.
+ */
+function emitAttributeChoice(emitter: Emitter, call: PyNode): void {
+  const callee = field(call, "function");
+  const [target, name] = callArguments(call);
+  if (
+    callee?.type !== "identifier" ||
+    callee.text !== ATTRIBUTE_GETTER ||
+    !isBuiltin(emitter, callee.text) ||
+    target?.kind !== "positional" ||
+    name?.kind !== "positional"
+  ) {
+    return;
+  }
+  const siteKey = nodeId(emitter.filePath, call);
+  const targetKey = valueKey(emitter, target.node);
+  const written = plainStringOf(name.node);
+  if (written !== null) {
+    add(emitter, "choosesNamedEntry", siteKey, targetKey, written);
+    return;
+  }
+  const ends = writtenEnds(name.node);
+  if (ends === null) {
+    add(emitter, "choosesEntry", siteKey, targetKey);
+    return;
+  }
+  add(emitter, "choosesEntryLike", siteKey, targetKey, ends.start, ends.end);
+}
+
+/**
+ * What an f-string writes before and after what it interpolates:
+ * `f"on_{event}"` starts with `on_` and ends with nothing. Null for
+ * anything else, and for one that writes neither.
+ */
+function writtenEnds(node: PyNode): { start: string; end: string } | null {
+  if (node.type !== "string") {
+    return null;
+  }
+  const parts = children(node).filter(
+    (part) => part.type !== "string_start" && part.type !== "string_end",
+  );
+  const written = (part: PyNode): boolean => part.type === "string_content";
+  const firstComputed = parts.findIndex((part) => !written(part));
+  if (firstComputed === -1) {
+    return null;
+  }
+  const lastComputed =
+    parts.length - 1 - [...parts].reverse().findIndex((part) => !written(part));
+  const start = parts
+    .slice(0, firstComputed)
+    .map((part) => part.text)
+    .join("");
+  const end = parts
+    .slice(lastComputed + 1)
+    .map((part) => part.text)
+    .join("");
+  return start === "" && end === "" ? null : { start, end };
+}
+
+/** Whether a name in this file is the builtin of that name, which no scope rebinds. */
+function isBuiltin(emitter: Emitter, name: string): boolean {
+  return (
+    nameKey(emitter.filePath, emitter.enclosing, name) ===
+      nameId(emitter.filePath, name) && !emitter.moduleNames().has(name)
   );
 }
 
@@ -829,6 +896,7 @@ function emitExpressionFact(
     if (mapping !== null) {
       emitKeyedRead(emitter, child, mapping.container, mapping.key);
     }
+    emitAttributeChoice(emitter, child);
   }
   if (type === "subscript") {
     const index = singleSubscript(child);
@@ -1659,6 +1727,9 @@ function readUnderName(
 function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
   for (const child of children(node)) {
     const type = child.type;
+    if (type === "decorated_definition") {
+      emitDecoratorCalls(emitter, child);
+    }
     if (FUNCTION_TYPES.has(type)) {
       emitFunctionFacts(emitter, child);
       if (emitter.enclosing !== null) {
@@ -1676,6 +1747,28 @@ function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
       continue;
     }
     emitNestedDefinitions(emitter, child);
+  }
+}
+
+/**
+ * A decorator calls its expression with the definition under it, so
+ * `@register("created")` over `def on_created` is
+ * `register("created")(on_created)`, and a registry the decorator fills
+ * finds the function the way it finds one passed by name. Decorators
+ * apply from the bottom up, each to what the one below it gave back.
+ */
+function emitDecoratorCalls(emitter: Emitter, decorated: PyNode): void {
+  const { definition, decorators } = stripDecorators(decorated);
+  let applied = nodeId(emitter.filePath, definition);
+  for (const decorator of [...decorators].reverse()) {
+    const [expression] = children(decorator);
+    if (expression === undefined) {
+      continue;
+    }
+    const callKey = nodeId(emitter.filePath, decorator);
+    add(emitter, "call", callKey, valueKey(emitter, expression));
+    add(emitter, "callArg", callKey, "0", applied);
+    applied = callKey;
   }
 }
 

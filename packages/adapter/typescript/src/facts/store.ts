@@ -31,11 +31,13 @@ import {
   allocationSitesOf,
   answersFor,
   askResolutionUnder,
+  DISPATCH_QUESTION,
   type ExplainStats,
   fallbackWrittenAs,
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
+  readDispatchOutcomes,
   readUses,
   resolutionProgram,
   resolutionUnderProgram,
@@ -50,6 +52,7 @@ import {
 import { checkerReads, sourceFileFor } from "../bootstrap/sourceFileLookup.js";
 import { recordFileDependency } from "../depTracking.js";
 import { isFunctionRoot } from "../discovery/shared.js";
+import { emitContainerWrites } from "./containerWrites.js";
 import {
   createNodeTable,
   emitValue,
@@ -111,6 +114,7 @@ type Question =
   | "wantedEnvObject"
   | "wantedStreamObject"
   | "wantedExitSink"
+  | typeof DISPATCH_QUESTION
   | "wantedSubject"
   | "wantedUses"
   | "wantedSource";
@@ -167,6 +171,16 @@ export interface ExplainedResolution {
 export interface PassedArgument {
   call: Node;
   argument: Node;
+}
+
+/** What a call that takes its function out of a table may run. */
+export interface DispatchedCall {
+  /** Every function it may run. */
+  functions: readonly Node[];
+  /** True when the source narrows the call to one entry that is one function. */
+  certain: boolean;
+  /** How many entries came to no function this run read. */
+  unresolved: number;
 }
 
 /** See `ResolutionStore.envNamers`. */
@@ -287,6 +301,8 @@ export class ResolutionStore {
   /** See `notePossibleCallers`. */
   private readonly possibleCallers = new Set<SourceFile>();
   private readonly callerFilesRead = new Set<string>();
+  /** Containers whose writes `dispatchedFunctions` has already stated. */
+  private readonly containersRead = new Set<string>();
 
   private stale = true;
 
@@ -670,6 +686,87 @@ export class ResolutionStore {
       }
       return found;
     });
+  }
+
+  /**
+   * What each call may run when it takes its function out of a table or
+   * a map. The writes into each table are read before the answer is,
+   * since a registry fills one from a body no question passes through.
+   * A call that takes no function from a table is left out.
+   */
+  dispatchedFunctions(calls: readonly Node[]): Map<Node, DispatchedCall> {
+    if (calls.length === 0) {
+      return new Map();
+    }
+    const first = this.askDispatch(calls);
+    const containers = [...first.values()].flatMap(
+      (outcome) => outcome.containers,
+    );
+    if (!this.readContainerWrites(containers)) {
+      return first;
+    }
+    return this.askDispatch(calls);
+  }
+
+  private askDispatch(
+    calls: readonly Node[],
+  ): Map<Node, DispatchedCall & { containers: readonly string[] }> {
+    return this.askAboutAll(calls, DISPATCH_QUESTION, () => {
+      this.derive();
+      const outcomes = readDispatchOutcomes(
+        this.db,
+        calls.map((call) => nodeId(call)),
+      );
+      const found = new Map<
+        Node,
+        DispatchedCall & { containers: readonly string[] }
+      >();
+      for (const call of calls) {
+        const outcome = outcomes.get(nodeId(call));
+        if (outcome !== undefined) {
+          found.set(call, {
+            functions: this.nodesFor(outcome.functions),
+            certain: outcome.certain,
+            unresolved: outcome.unresolved,
+            containers: outcome.containers,
+          });
+        }
+      }
+      return found;
+    });
+  }
+
+  private nodesFor(keys: readonly string[]): Node[] {
+    return keys.flatMap((key) => {
+      const node = this.table.byId.get(key);
+      return node === undefined ? [] : [node];
+    });
+  }
+
+  /**
+   * States the writes into each container not read before, and reads the
+   * files that may call a function writing one, since a registry is
+   * usually filled by a function its callers pass handlers to.
+   */
+  private readContainerWrites(containers: readonly string[]): boolean {
+    let wrote = false;
+    for (const key of containers) {
+      if (this.containersRead.has(key)) {
+        continue;
+      }
+      this.containersRead.add(key);
+      const node = this.table.byId.get(key);
+      const declaration =
+        node === undefined
+          ? null
+          : emitContainerWrites(this.db, this.table, node);
+      if (declaration !== null) {
+        this.readPossibleCallersOf(declaration.getSourceFile());
+        this.stale = true;
+        wrote = true;
+      }
+    }
+    return wrote;
   }
 
   /**

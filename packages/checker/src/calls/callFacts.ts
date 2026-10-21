@@ -2,14 +2,15 @@
  * The call facts in a set of summaries, and the reach questions asked
  * over them as datalog rules.
  *
- * A summary records a call four ways: an invocation effect the run
- * resolved, a wrapper the framework runs on the way in, a caller unit's
- * binding to the export it calls, and a function passed to a callee that
- * calls its parameter. Each becomes a one-hop fact, the `calls` rules join
- * them, and a reach question is the fixpoint over `calls`, with the
- * shortest call path kept as the tag on each fact. A node is a function,
- * keyed by its location, because a function bound to several exports has
- * several summaries and a call into any of them is a call into it.
+ * A summary records a call five ways: an invocation effect the run
+ * resolved, one that may run any of several functions from a table, a
+ * wrapper the framework runs on the way in, a caller unit's binding to
+ * the export it calls, and a function passed to a callee that calls its
+ * parameter. Each becomes a one-hop fact, the `calls` rules join them,
+ * and a reach question is the fixpoint over `calls`, with the shortest
+ * call path kept as the tag on each fact. A node is a function, keyed by
+ * its location, because a function bound to several exports has several
+ * summaries and a call into any of them is a call into it.
  */
 
 import {
@@ -48,9 +49,11 @@ export type FunctionKey = string;
  * export, so there is no call expression to point at. `passed` is a
  * function the caller hands to a callee, which calls it through a
  * parameter. `wraps` is a wrapper the framework runs in front of the
- * caller, which appears nowhere in the caller's body.
+ * caller, which appears nowhere in the caller's body. `possible` is a
+ * call that takes its function out of a table, or picks a member by a
+ * computed name, and may run this function or another one listed.
  */
-export type CallRecord = "written" | "bound" | "passed" | "wraps";
+export type CallRecord = "written" | "bound" | "passed" | "wraps" | "possible";
 
 export interface CallHop {
   callee: string;
@@ -90,8 +93,15 @@ export interface CallFacts {
    */
   reachedFromEach(
     starts: Iterable<FunctionKey>,
-    options?: { pastMocks?: boolean },
+    options?: ReachOptions,
   ): Map<FunctionKey, Reached>;
+}
+
+export interface ReachOptions {
+  /** Refuse a hop into something the start's test replaces with a mock. */
+  pastMocks?: boolean;
+  /** Take only the calls whose function the source settles, and no `possible` one. */
+  certainOnly?: boolean;
 }
 
 /** What one start reaches, each with the shortest path to it. */
@@ -125,6 +135,8 @@ export interface DirectCall {
   caller: FunctionKey;
   /** The call as the caller's source writes it, or the export's label when only the binding records the call. */
   callee: string;
+  /** Set when the call takes its function from a table and may run another one instead. */
+  possible?: true;
 }
 
 export function readCallFacts(
@@ -136,6 +148,7 @@ export function readCallFacts(
   const chain = wrapperIndex(summaries);
   const units = new Map<FunctionKey, BehavioralSummary[]>();
   const invocation: Array<[FunctionKey, FunctionKey, string]> = [];
+  const possible: Array<[FunctionKey, FunctionKey, string]> = [];
   const wraps: Array<[FunctionKey, FunctionKey, string]> = [];
   const boundTo: Array<[FunctionKey, string, string]> = [];
   const provides: Array<[FunctionKey, string]> = [];
@@ -166,6 +179,12 @@ export function readCallFacts(
           effect.summary === undefined ? undefined : byId.get(effect.summary);
         if (to !== undefined) {
           invocation.push([fn, functionOf(to), effect.callee]);
+        }
+        for (const id of effect.possibleSummaries ?? []) {
+          const maybe = byId.get(id);
+          if (maybe !== undefined) {
+            possible.push([fn, functionOf(maybe), effect.callee]);
+          }
         }
         if (effect.calleeParameter !== undefined) {
           callsParameter.push([
@@ -211,10 +230,13 @@ export function readCallFacts(
 
   // Each question adds its own facts before evaluating, so each one gets
   // a fresh database loaded with the same base facts.
-  const database = (): Database => {
+  const database = (certainOnly = false): Database => {
     const db = new Database();
     for (const fact of invocation) {
       db.add("invocation", fact);
+    }
+    for (const fact of certainOnly ? [] : possible) {
+      db.add("possible", fact);
     }
     for (const fact of wraps) {
       db.add("wraps", fact);
@@ -264,11 +286,13 @@ export function readCallFacts(
     callersOf: (target) => directCallers(database(), target),
     reaching: (target) => reachingFunctions(database(), target),
     reachedFrom: (start) => reachedFunctions(database(), start),
-    reachedFromEach: (starts, options) =>
-      reachedFromEachStart(
-        options?.pastMocks === true ? pastMocks(database()) : database(),
+    reachedFromEach: (starts, options) => {
+      const db = database(options?.certainOnly === true);
+      return reachedFromEachStart(
+        options?.pastMocks === true ? pastMocks(db) : db,
         starts,
-      ),
+      );
+    },
   };
 }
 
@@ -395,6 +419,12 @@ const CALLS: Rule[] = [
     [lit("passes", F, B, I, G), lit("callsParameter", B, I, L)],
     "calls-passed",
   ),
+  rule(
+    "calls",
+    [F, G, L, constant("possible")],
+    [lit("possible", F, G, L)],
+    "calls-possible",
+  ),
   rule("provided", [K], [lit("provides", G, K)], "provided"),
 ];
 
@@ -500,6 +530,7 @@ const CALL_RECORD_OF: Record<string, CallRecord> = {
   bound: "bound",
   passed: "passed",
   wraps: "wraps",
+  possible: "possible",
 };
 
 /** The hop recorded by the `calls` fact at `index` in a rule body. */
@@ -533,6 +564,7 @@ const PATH_OF: Record<
   "calls-bound": () => [],
   "calls-passed": () => [],
   "calls-wraps": () => [],
+  "calls-possible": () => [],
   provided: () => [],
   "reaches-at": () => [],
   "reaches-into": (body) => [callAt(body, 1)],
@@ -684,7 +716,11 @@ function directCallers(db: Database, target: ReachTarget): DirectCall[] {
         continue;
       }
       seen.add(`${caller} ${callee}`);
-      calls.push({ caller, callee });
+      calls.push({
+        caller,
+        callee,
+        ...(tuple[3] === "possible" ? { possible: true as const } : {}),
+      });
     }
   }
 

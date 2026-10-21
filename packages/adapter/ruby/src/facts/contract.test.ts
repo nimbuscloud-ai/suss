@@ -56,6 +56,26 @@ const SOURCES: Record<string, CaseFiles> = {
     "source.rb": "class Order\nend\n",
     "f.rb": "value = Order\n",
   },
+  "a table of functions called by a key worked out at run time": {
+    "f.rb": [
+      "TABLE = { created: ->(payload) { payload }, deleted: ->(payload) { payload } }",
+      "",
+      "def dispatch(kind, payload)",
+      "  TABLE[kind].call(payload)",
+      "end",
+      "",
+    ].join("\n"),
+  },
+  "a function written into a table under a computed key": {
+    "f.rb": [
+      "REGISTRY = {}",
+      "",
+      "def register(name, handler)",
+      "  REGISTRY[name] = handler",
+      "end",
+      "",
+    ].join("\n"),
+  },
 };
 
 /**
