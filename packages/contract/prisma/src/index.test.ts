@@ -622,6 +622,23 @@ describe("a schema split over several files", () => {
     ]);
   });
 
+  it("leaves out a file beside it that does not parse", () => {
+    const dir = folderWith({
+      "schema.prisma": MAIN,
+      "link.prisma": LINK,
+      "draft.prisma": "model {",
+    });
+
+    expect(prismaSchemaFiles(path.join(dir, "schema.prisma"))).toEqual([
+      path.join(dir, "link.prisma"),
+      path.join(dir, "schema.prisma"),
+    ]);
+  });
+
+  it("gives no files for a path that is not there", () => {
+    expect(prismaSchemaFiles("/no/such/schema.prisma")).toEqual([]);
+  });
+
   it("reads one file alone when another beside it has its own datasource", () => {
     const dir = folderWith({ "schema.prisma": MAIN, "test.prisma": MAIN });
 

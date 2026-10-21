@@ -419,12 +419,20 @@ export function prismaSchemaFiles(schemaPath: string): string[] {
     return [];
   }
 
-  const beside = prismaFilesIn(path.dirname(schemaPath), false);
-  const withDatasource = beside.filter((file) =>
-    declaresDatasource(textOf(file)),
+  // A file beside it that does not parse is left out of the schema.
+  const beside = prismaFilesIn(path.dirname(schemaPath), false).flatMap(
+    (file) => {
+      const list = schemaListOf(file);
+      return list === null ? [] : [{ file, list }];
+    },
   );
-  return withDatasource.length === 1 && schemaPath.endsWith(".prisma")
-    ? beside
+  const datasources = beside.filter(({ list }) =>
+    list.some(isDatasource),
+  ).length;
+  const given = path.resolve(schemaPath);
+  return datasources === 1 &&
+    beside.some(({ file }) => path.resolve(file) === given)
+    ? beside.map(({ file }) => file)
     : [schemaPath];
 }
 
@@ -446,22 +454,17 @@ function prismaFilesIn(dir: string, below: boolean): string[] {
     .sort();
 }
 
-function textOf(file: string): string {
+function schemaListOf(file: string): unknown[] | null {
   try {
-    return fs.readFileSync(file, "utf8");
+    return (getSchema(fs.readFileSync(file, "utf8")) as { list: unknown[] })
+      .list;
   } catch {
-    return "";
+    return null;
   }
 }
 
-function declaresDatasource(source: string): boolean {
-  try {
-    return (getSchema(source) as { list: unknown[] }).list.some(
-      (node) => (node as { type: string }).type === "datasource",
-    );
-  } catch {
-    return false;
-  }
+function isDatasource(node: unknown): boolean {
+  return (node as { type: string }).type === "datasource";
 }
 
 // ---------------------------------------------------------------------------
