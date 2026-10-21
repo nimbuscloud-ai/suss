@@ -532,22 +532,43 @@ function keyNamesOf(key: Node): string[] {
 
 /**
  * Which entries a read at a key worked out at run time may take: the
- * ones under the names its key allows, or any of them. A rule cannot
- * say "any, unless the key is narrowed", so one or the other is stated.
+ * ones under the names its key allows, the ones whose name starts and
+ * ends the way a template key is written, or any of them. A rule cannot
+ * say "any, unless the key is narrowed", so only one of these is stated.
  */
 function emitEntryChoice(
   db: Database,
   site: string,
   container: string,
-  names: readonly string[],
+  key: Node,
 ): void {
-  if (names.length === 0) {
-    fact(db, "choosesEntry", site, container);
-    return;
-  }
+  const names = keyNamesOf(key);
   for (const name of names) {
     fact(db, "choosesNamedEntry", site, container, name);
   }
+  if (names.length > 0) {
+    return;
+  }
+  const ends = templateEnds(key);
+  if (ends !== null) {
+    fact(db, "choosesEntryLike", site, container, ends.start, ends.end);
+    return;
+  }
+  fact(db, "choosesEntry", site, container);
+}
+
+/**
+ * What a template key writes before and after what it interpolates:
+ * `` `on_${kind}` `` starts with `on_` and ends with nothing. Null for
+ * any other key, and for one that writes neither.
+ */
+function templateEnds(key: Node): { start: string; end: string } | null {
+  if (!Node.isTemplateExpression(key)) {
+    return null;
+  }
+  const start = key.getHead().getLiteralText();
+  const end = key.getTemplateSpans().at(-1)?.getLiteral().getLiteralText();
+  return start === "" && (end ?? "") === "" ? null : { start, end: end ?? "" };
 }
 
 /**
@@ -797,7 +818,7 @@ export function emitValue(
     if (argument !== undefined) {
       const container = emitValue(db, table, expression.getExpression());
       fact(db, "readsKeyed", id, container, emitValue(db, table, argument));
-      emitEntryChoice(db, id, container, keyNamesOf(argument));
+      emitEntryChoice(db, id, container, argument);
     }
     fact(db, "writtenValue", id);
     return id;
@@ -1493,7 +1514,7 @@ function emitMapAccess(
   }
   if (key !== undefined && Node.isExpression(key)) {
     fact(db, "readsKeyed", callId, map, emitValue(db, table, key));
-    emitEntryChoice(db, callId, map, keyNamesOf(key));
+    emitEntryChoice(db, callId, map, key);
   }
 }
 

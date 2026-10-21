@@ -528,13 +528,48 @@ function emitSentChoice(emitter: Emitter, site: CallSite): void {
   }
   add(emitter, "callsChosenEntry", site.key);
   const written = symbolValue(name) ?? stringLiteralValue(name);
-  if (written === null) {
+  if (written !== null) {
+    for (const spelled of namesReadAs(emitter, receiver, objectKey, written)) {
+      add(emitter, "choosesNamedEntry", site.key, objectKey, spelled);
+    }
+    return;
+  }
+  const ends = writtenEnds(name);
+  if (ends === null) {
     add(emitter, "choosesEntry", site.key, objectKey);
     return;
   }
-  for (const spelled of namesReadAs(emitter, receiver, objectKey, written)) {
-    add(emitter, "choosesNamedEntry", site.key, objectKey, spelled);
+  for (const start of namesReadAs(emitter, receiver, objectKey, ends.start)) {
+    add(emitter, "choosesEntryLike", site.key, objectKey, start, ends.end);
   }
+}
+
+/**
+ * What a string or symbol writes before and after what it interpolates:
+ * `"complete_#{step}"` starts with `complete_` and ends with nothing.
+ * Null for anything else, and for one that writes neither.
+ */
+function writtenEnds(node: RbNode): { start: string; end: string } | null {
+  if (node.type !== "string" && node.type !== "delimited_symbol") {
+    return null;
+  }
+  const parts = children(node);
+  const written = (part: RbNode): boolean => part.type === "string_content";
+  const firstComputed = parts.findIndex((part) => !written(part));
+  if (firstComputed === -1) {
+    return null;
+  }
+  const lastComputed =
+    parts.length - 1 - [...parts].reverse().findIndex((part) => !written(part));
+  const start = parts
+    .slice(0, firstComputed)
+    .map((part) => part.text)
+    .join("");
+  const end = parts
+    .slice(lastComputed + 1)
+    .map((part) => part.text)
+    .join("");
+  return start === "" && end === "" ? null : { start, end };
 }
 
 /**

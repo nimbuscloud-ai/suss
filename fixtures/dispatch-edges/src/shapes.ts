@@ -39,6 +39,16 @@ export function viaLiteralKey(payload: string): number {
   return TABLE["created"](payload);
 }
 
+const HOOKS: Record<string, Handler> = {
+  beforeSave: onCreated,
+  beforeDelete: onDeleted,
+  afterSave: onArchived,
+};
+
+export function viaTemplateKey(step: string, payload: string): number {
+  return HOOKS[`before${step}`](payload);
+}
+
 const BY_NAME = new Map<string, Handler>();
 BY_NAME.set("created", onCreated);
 BY_NAME.set("deleted", onDeleted);

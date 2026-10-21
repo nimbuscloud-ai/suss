@@ -67,6 +67,13 @@ choosesNamedEntry(site, o, n)  the same read, where the source says the
                             (TypeScript), or a name written out in send
                             or getattr (Python, Ruby). An adapter states
                             this in place of choosesEntry
+choosesEntryLike(site, o, p, s)  the same read, where the source writes the
+                            start p and the end s of the key and computes
+                            the rest, as send("complete_#{step}") or
+                            getattr(self, f"on_{event}"). Only the reader
+                            in dispatch.ts matches a name against p and s.
+                            An adapter states this in place of
+                            choosesEntry
 collectionValue(c)          c builds a collection the program fills
                             through its methods, as new Map() does
                             (TypeScript)
@@ -1251,6 +1258,13 @@ out of a table would be every status in it. So `dispatchesTo` is its
 own relation, and only the questions about calls read it: the exit code
 above, and `wantedDispatch`, which a walk asks about a call it could not
 follow.
+
+A key the source writes in part, `send("complete_#{step}")`, narrows
+the read to the members whose name starts with `complete_`. A rule
+cannot compare strings, so `wantedDispatchLikeEntry` lists every entry
+of such a read with its name, and `dispatchOutcomes` keeps the ones that
+match. Those entries stay out of `dispatchesTo`, so the exit-code
+question does not follow a call of that kind.
 
 Whether the call runs exactly one function is a count, which a rule
 cannot make. `dispatchOutcomes` makes it: the call runs one function

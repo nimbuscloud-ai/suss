@@ -164,6 +164,29 @@ describe("dispatchOutcomes", () => {
     expect(sorted(outcome?.functions)).toEqual(["created", "deleted"]);
   });
 
+  it("keeps the members whose name starts and ends with what a partly written key writes", () => {
+    const outcome = outcomeOf(
+      [
+        ["func", "complete_profile"],
+        ["func", "complete_billing"],
+        ["func", "reset"],
+        ["objectValue", "Onboarding"],
+        ["holdsProperty", "Onboarding", "complete_profile", "complete_profile"],
+        ["holdsProperty", "Onboarding", "complete_billing", "complete_billing"],
+        ["holdsProperty", "Onboarding", "reset", "reset"],
+        ["instanceOf", "self", "Onboarding"],
+        ["choosesEntryLike", "send(step)", "self", "complete_", ""],
+        ["callsChosenEntry", "send(step)"],
+      ],
+      "send(step)",
+    );
+    expect(sorted(outcome?.functions)).toEqual([
+      "complete_billing",
+      "complete_profile",
+    ]);
+    expect(outcome?.certain).toBe(false);
+  });
+
   it("counts an entry that comes to no function", () => {
     const outcome = outcomeOf(
       [

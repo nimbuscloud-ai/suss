@@ -618,11 +618,46 @@ function emitAttributeChoice(emitter: Emitter, call: PyNode): void {
   const siteKey = nodeId(emitter.filePath, call);
   const targetKey = valueKey(emitter, target.node);
   const written = plainStringOf(name.node);
-  if (written === null) {
+  if (written !== null) {
+    add(emitter, "choosesNamedEntry", siteKey, targetKey, written);
+    return;
+  }
+  const ends = writtenEnds(name.node);
+  if (ends === null) {
     add(emitter, "choosesEntry", siteKey, targetKey);
     return;
   }
-  add(emitter, "choosesNamedEntry", siteKey, targetKey, written);
+  add(emitter, "choosesEntryLike", siteKey, targetKey, ends.start, ends.end);
+}
+
+/**
+ * What an f-string writes before and after what it interpolates:
+ * `f"on_{event}"` starts with `on_` and ends with nothing. Null for
+ * anything else, and for one that writes neither.
+ */
+function writtenEnds(node: PyNode): { start: string; end: string } | null {
+  if (node.type !== "string") {
+    return null;
+  }
+  const parts = children(node).filter(
+    (part) => part.type !== "string_start" && part.type !== "string_end",
+  );
+  const written = (part: PyNode): boolean => part.type === "string_content";
+  const firstComputed = parts.findIndex((part) => !written(part));
+  if (firstComputed === -1) {
+    return null;
+  }
+  const lastComputed =
+    parts.length - 1 - [...parts].reverse().findIndex((part) => !written(part));
+  const start = parts
+    .slice(0, firstComputed)
+    .map((part) => part.text)
+    .join("");
+  const end = parts
+    .slice(lastComputed + 1)
+    .map((part) => part.text)
+    .join("");
+  return start === "" && end === "" ? null : { start, end };
 }
 
 /** Whether a name in this file is the builtin of that name, which no scope rebinds. */
