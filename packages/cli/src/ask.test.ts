@@ -449,7 +449,7 @@ describe("suss ask", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of ten questions");
+    expect(output).toContain("suss ask takes one of eleven questions");
   });
 
   it("writes JSON an agent can read", () => {
