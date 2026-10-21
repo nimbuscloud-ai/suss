@@ -97,6 +97,19 @@ export {
 export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { checkResponseMisread } from "./coverage/responseMisread.js";
+export {
+  type DataFacts,
+  type DataPath,
+  type Datum,
+  type DatumKind,
+  datumKey,
+  type PathData,
+  readDataFacts,
+  type Sharing,
+  type SharingPath,
+  type UncheckedPath,
+  type UnreadData,
+} from "./data/dataFacts.js";
 export { dedupeFindings, mergedSideOf } from "./dedupe.js";
 export {
   buildFlowChains,
