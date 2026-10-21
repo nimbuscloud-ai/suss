@@ -7,7 +7,7 @@
   "sendStatus": "express: response method sending a bare status",
   "end": "express: response method ending the response, with or without a body",
   "redirect": "express: response method sending a redirect",
-  "set": "express: response method setting a header, returns the response",
+  "set": "language: JavaScript spells Map#set the same way. express: response method setting a header, returns the response",
   "header": "express: alias of set",
   "type": "express: response method setting Content-Type, returns the response",
   "contentType": "express: alias of type",

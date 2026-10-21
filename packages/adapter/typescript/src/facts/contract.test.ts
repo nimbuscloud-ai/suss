@@ -73,6 +73,29 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a table of functions called by a key worked out at run time": {
+    "/f.ts": [
+      "declare function onCreated(payload: string): void;",
+      "declare function onDeleted(payload: string): void;",
+      'const TABLE = { "created": onCreated, deleted: onDeleted };',
+      "export function dispatch(kind: string, payload: string) {",
+      "  return TABLE[kind as keyof typeof TABLE](payload);",
+      "}",
+      "export function dispatchAny(kind: string, payload: string) {",
+      "  return (TABLE as Record<string, (p: string) => void>)[kind](payload);",
+      "}",
+      "",
+    ].join("\n"),
+  },
+  "a function written into a table under a computed key": {
+    "/f.ts": [
+      "const REGISTRY: Record<string, () => void> = {};",
+      "export function register(name: string, handler: () => void) {",
+      "  REGISTRY[name] = handler;",
+      "}",
+      "",
+    ].join("\n"),
+  },
   "a value another file declares": {
     "/source.ts": "export const value = 1;\n",
     "/f.ts":
@@ -80,20 +103,32 @@ const SOURCES: Record<string, CaseFiles> = {
   },
 };
 
+/** The cases this adapter meets another way, and why. */
+const KNOWN = {
+  known: {
+    "a function written into a table under a computed key":
+      "extraction is lazy, so the store reads the writes into a table when a call through that table is asked about, and file extraction states none",
+  },
+};
+
 describe("the TypeScript adapter satisfies the fact contract", () => {
   it("keys every fact the way the rules expect", async () => {
-    const failures = await checkFactContract(SOURCES, (files) => {
-      const project = new Project({ useInMemoryFileSystem: true });
-      for (const [name, source] of Object.entries(files)) {
-        project.createSourceFile(name, source);
-      }
-      const db = new Database();
-      const table = createNodeTable();
-      for (const sourceFile of project.getSourceFiles()) {
-        extractFileFacts(db, table, sourceFile);
-      }
-      return db;
-    });
+    const failures = await checkFactContract(
+      SOURCES,
+      (files) => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        for (const [name, source] of Object.entries(files)) {
+          project.createSourceFile(name, source);
+        }
+        const db = new Database();
+        const table = createNodeTable();
+        for (const sourceFile of project.getSourceFiles()) {
+          extractFileFacts(db, table, sourceFile);
+        }
+        return db;
+      },
+      KNOWN,
+    );
     expect(failures).toEqual([]);
   });
 });

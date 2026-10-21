@@ -1,6 +1,6 @@
 {
   "addEventListener": "Cloudflare Workers: the service-worker form of trigger registration",
-  "get": "Cloudflare Workers: KV and R2 read of one key",
+  "get": "language: JavaScript spells Map#get the same way. Cloudflare Workers: KV and R2 read of one key",
   "getWithMetadata": "Cloudflare Workers: KV read of one key and its metadata",
   "head": "Cloudflare Workers: R2 read of one object's metadata",
   "put": "Cloudflare Workers: KV and R2 write of one key",

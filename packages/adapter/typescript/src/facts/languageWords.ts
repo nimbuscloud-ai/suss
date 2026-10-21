@@ -34,3 +34,9 @@ export const CONVERTING_GLOBALS: ReadonlySet<string> = new Set([
 
 /** The methods that convert the value they are called on. */
 export const CONVERTING_METHODS: ReadonlySet<string> = new Set(["toString"]);
+
+/** The method a `Map` reads one entry through. */
+export const MAP_ENTRY_READ = "get";
+
+/** The method a program puts an entry into a `Map` through. */
+export const MAP_ENTRY_WRITE = "set";
