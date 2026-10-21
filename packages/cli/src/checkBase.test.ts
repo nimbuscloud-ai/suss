@@ -2,7 +2,7 @@
 // client, committed to git. Each test edits the working tree the way a pull
 // request would and asks what the edit introduced.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +13,9 @@ import { forgetBaseReads, readBase } from "./checkBase.js";
 import { runCli } from "./run.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
+
+// `test` depends on `build` in turbo.json, so dist/ is present here.
+const BIN = path.resolve(__dirname, "../dist/bin.js");
 
 const ADD_409 = {
   file: "src/orders/create.ts",
@@ -133,6 +136,30 @@ async function quietly(
     process.stdout.write = writeOut;
     process.stderr.write = writeErr;
   }
+}
+
+/** `suss check` from the built binary in its own process, so two can run at once. */
+function builtCheck(
+  args: string[],
+  cacheRoot: string,
+): Promise<{ exit: number | null; stdout: string; stderr: string }> {
+  const child = spawn(process.execPath, [BIN, "check", ...args], {
+    cwd: project,
+    env: { ...process.env, SUSS_CACHE_DIR: cacheRoot },
+  });
+  const out: Buffer[] = [];
+  const err: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
+  child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
+  return new Promise((resolve) => {
+    child.on("close", (exit) =>
+      resolve({
+        exit,
+        stdout: Buffer.concat(out).toString("utf8"),
+        stderr: Buffer.concat(err).toString("utf8"),
+      }),
+    );
+  });
 }
 
 async function againstBase(ref = "HEAD", extra: string[] = []) {
@@ -346,6 +373,27 @@ describe("check --base", () => {
     } finally {
       restoreEnv("SUSS_CACHE_DIR", before);
     }
+  });
+
+  it("gives two processes reading one base at once the same findings", async () => {
+    commit("base");
+    edit(ADD_409);
+    const cacheRoot = path.join(work, "cache-root");
+
+    const [first, second] = await Promise.all([
+      builtCheck(["--base", "HEAD", "--json"], cacheRoot),
+      builtCheck(["--base", "HEAD", "--json"], cacheRoot),
+    ]);
+
+    expect(first.exit, first.stderr).toBe(0);
+    expect(second.exit, second.stderr).toBe(0);
+    const identities = (run: { stdout: string }) =>
+      JSON.parse(run.stdout).findings.map(
+        (f: { identity: string }) => f.identity,
+      );
+    expect(identities(first)).toHaveLength(1);
+    expect(identities(second)).toEqual(identities(first));
+    expect(fs.readdirSync(path.join(cacheRoot, "cache"))).toHaveLength(2);
   });
 
   it("does not fail on a finding the base already had", async () => {

@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
+import { acquireFolderLock, releaseFolderLock } from "./folderLock.js";
 import {
   commandFor,
   declaredReads,
@@ -92,6 +93,11 @@ async function baseFolder(
   reads: DeclaredReads,
 ): Promise<string> {
   const key = JSON.stringify([revision.commit, project, reads.reads]);
+  const running = readsInFlight.get(key);
+  if (running !== undefined) {
+    return await running;
+  }
+
   const known = readFolders.get(key);
   if (known !== undefined && fs.existsSync(summariesIn(known))) {
     return summariesIn(known);
@@ -107,7 +113,58 @@ async function baseFolder(
     fs.rmSync(folder, { recursive: true, force: true });
   }
 
+  const read = readUnderLock(top, project, revision, reads, work);
+  readsInFlight.set(key, read);
+  try {
+    return await read;
+  } catch (error) {
+    readFolders.delete(key);
+    fs.rmSync(work, { recursive: true, force: true });
+    throw error;
+  } finally {
+    readsInFlight.delete(key);
+  }
+}
+
+/** A base read that has started and not finished, which a second caller waits on. */
+const readsInFlight = new Map<string, Promise<string>>();
+
+/** As long as the slowest base read seen, a large monorepo's, with room to spare. */
+const LOCK_TIMEOUT_MS = 60 * 60 * 1000;
+
+/**
+ * Every process reading one commit of one project writes its copy to the
+ * same folder, so each one holds the folder's lock from clearing it to
+ * removing it. A process that waited then finds the cache the first one
+ * left, when `SUSS_CACHE_DIR` keeps it.
+ */
+async function readUnderLock(
+  top: string,
+  project: string,
+  revision: BaseRevision,
+  reads: DeclaredReads,
+  work: string,
+): Promise<string> {
   const tree = treeFor(top, project, revision.commit);
+  const lock = await acquireFolderLock(
+    `${path.dirname(tree)}.lock`,
+    LOCK_TIMEOUT_MS,
+  );
+  try {
+    return await readIntoTree(top, project, revision, reads, work, tree);
+  } finally {
+    releaseFolderLock(lock);
+  }
+}
+
+async function readIntoTree(
+  top: string,
+  project: string,
+  revision: BaseRevision,
+  reads: DeclaredReads,
+  work: string,
+  tree: string,
+): Promise<string> {
   fs.rmSync(path.dirname(tree), { recursive: true, force: true });
   fs.mkdirSync(tree, { recursive: true });
   writeRevision(top, revision.commit, work, tree);
@@ -138,8 +195,6 @@ async function baseFolder(
     fs.rmSync(path.dirname(tree), { recursive: true, force: true });
   });
   if (report.failed.length > 0) {
-    readFolders.delete(key);
-    fs.rmSync(work, { recursive: true, force: true });
     throw new UsageError(
       `Reading ${revision.ref} failed, and every unit those reads cover would look new:\n${report.failed.map((line) => `  ${line}`).join("\n")}`,
     );
