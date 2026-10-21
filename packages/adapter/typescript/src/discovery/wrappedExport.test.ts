@@ -115,6 +115,22 @@ export const GET = withAxiom(async (req: Request) => {
     ]);
   });
 
+  it("reads a wrapped handler an export list gives under two names", async () => {
+    const summaries = await summariesOf({
+      "/src/lib/axiom.ts": AXIOM,
+      "/src/app/queue/route.ts": `
+import { withAxiom } from "../../lib/axiom";
+const handler = withAxiom(async () => new Response("queued", { status: 202 }));
+export { handler as GET, handler as POST };`,
+    });
+
+    for (const method of ["GET", "POST"]) {
+      const route = routeAt(summaries, method, "/queue");
+      expect(statusesOf(route)).toEqual([202]);
+      expect(wrapperNamesOf(route)).toEqual(["withAxiom"]);
+    }
+  });
+
   it("names a wrapper from a package the run has no source for by its module", async () => {
     const summaries = await summariesOf({
       "/src/app/health/route.ts": `

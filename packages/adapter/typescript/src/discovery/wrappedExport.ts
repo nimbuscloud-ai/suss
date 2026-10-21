@@ -17,10 +17,7 @@ import { Node } from "ts-morph";
 
 import { factKeyOf } from "../facts/extract.js";
 import { enclosingParameterReads } from "../parameterReads.js";
-import {
-  declarationsBehind,
-  isInExternalCode,
-} from "../resolve/unfollowedCall.js";
+import { isInExternalCode } from "../resolve/unfollowedCall.js";
 import { returnPositionOf } from "../terminals/shared.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import { specifierImportedAs } from "./importScan.js";
@@ -71,7 +68,7 @@ export function wrappedExportOf(
   const callee = call.getExpression();
   const factory = functionOrNull(resolution.resolveCalledFunction(callee));
   if (factory === null) {
-    return { handler: given.func, layers: [unreadLayer(callee)] };
+    return { handler: given.func, layers: [unreadLayer(callee, resolution)] };
   }
   return layersInside(factory, given, kind, resolution);
 }
@@ -129,11 +126,11 @@ function layersInside(
       ? null
       : closureLayer(factory, inner.func, given.position, kind, resolution);
   if (layer === null) {
-    return { handler: given.func, layers: [unreadLayer(outer)] };
+    return { handler: given.func, layers: [unreadLayer(outer, resolution)] };
   }
   return {
     handler: given.func,
-    layers: [unreadLayer(outer), layer.reference],
+    layers: [unreadLayer(outer, resolution), layer.reference],
     ...(layer.unit === undefined ? {} : { closure: layer.unit }),
   };
 }
@@ -223,13 +220,8 @@ function callWrittenAt(
   value: Node,
   resolution: ResolutionStore,
 ): CallExpression | null {
-  const written = Node.isVariableDeclaration(value)
-    ? value.getInitializer()
-    : value;
-  if (written === undefined) {
-    return null;
-  }
-  const key = factKeyOf(written);
+  const asked = Node.isVariableDeclaration(value) ? value.getNameNode() : value;
+  const key = factKeyOf(asked);
   if (Node.isCallExpression(key)) {
     return key;
   }
@@ -261,7 +253,10 @@ function functionGivenTo(
  * can find it in. No summary in the run goes by this file and name,
  * which is how the checker knows the layer was not read.
  */
-function unreadLayer(callee: Node): WrapperReference {
+function unreadLayer(
+  callee: Node,
+  resolution: ResolutionStore,
+): WrapperReference {
   // `withRateLimit(options)(handler)` is the wrapper `withRateLimit` makes.
   const written = Node.isCallExpression(callee)
     ? callee.getExpression()
@@ -269,34 +264,22 @@ function unreadLayer(callee: Node): WrapperReference {
   const name = Node.isPropertyAccessExpression(written)
     ? written.getName()
     : written.getText();
-  return { file: declaredIn(written), name };
+  return { file: declaredIn(written, resolution), name };
 }
 
 /**
- * The project file a wrapper is declared in, or the module it is
+ * The project file a wrapper is written in, or the module it is
  * imported from when the run has no source for it.
  */
-function declaredIn(written: Node): string {
-  const inProject = declarationsBehind(written.getSymbol()).find(
-    (declaration) =>
-      !isImportBinding(declaration) &&
-      !isInExternalCode(declaration.getSourceFile()),
-  );
-  if (inProject !== undefined) {
-    return inProject.getSourceFile().getFilePath();
+function declaredIn(written: Node, resolution: ResolutionStore): string {
+  const behind = resolution.resolveWrittenValue(written);
+  if (behind !== null && !isInExternalCode(behind.getSourceFile())) {
+    return behind.getSourceFile().getFilePath();
   }
   const sourceFile = written.getSourceFile();
   return (
     specifierImportedAs(sourceFile, leftmostName(written)) ??
     sourceFile.getFilePath()
-  );
-}
-
-function isImportBinding(declaration: Node): boolean {
-  return (
-    Node.isImportSpecifier(declaration) ||
-    Node.isImportClause(declaration) ||
-    Node.isNamespaceImport(declaration)
   );
 }
 
