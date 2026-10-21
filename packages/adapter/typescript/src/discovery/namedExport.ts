@@ -17,6 +17,7 @@ import {
   type DiscoveredUnit,
   toFunctionRoot,
 } from "./shared.js";
+import { wrappedExportOf } from "./wrappedExport.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -81,11 +82,54 @@ function resolveDefaultExportName(decl: Node, fn: FunctionRoot): string {
   return "default";
 }
 
+/** What the pattern finding these exports says about them. */
+export interface NamedExportOptions {
+  /**
+   * Every export the pattern looks for is a handler, as in a Next.js
+   * route file, so an export written as a call wraps the function it is
+   * given.
+   */
+  handlersInsideCalls?: boolean;
+}
+
+/**
+ * The units an export written as `wrapper(fn)` gives: `fn`, with the
+ * layers around it recorded, and the layer the run can read as a unit of
+ * its own. Null leaves the export to the store's answer, which is a
+ * different function when the factory hands back a closure that never
+ * calls the one it was given.
+ */
+function unitsInsideCall(
+  init: Node,
+  resolved: FunctionRoot | null,
+  kind: string,
+  resolution: ResolutionStore,
+  nameFor: (handler: FunctionRoot) => string,
+): DiscoveredUnit[] | null {
+  const wrapped = wrappedExportOf(init, kind, resolution);
+  if (wrapped === null) {
+    return null;
+  }
+  if (resolved !== null && resolved !== wrapped.handler) {
+    return null;
+  }
+  return [
+    {
+      func: wrapped.handler,
+      kind,
+      name: nameFor(wrapped.handler),
+      routeWrappers: wrapped.layers,
+    },
+    ...(wrapped.closure === undefined ? [] : [wrapped.closure]),
+  ];
+}
+
 export function discoverNamedExports(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "namedExport" }>,
   kind: string,
   resolution?: ResolutionStore,
+  options: NamedExportOptions = {},
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
   const names = new Set(match.names);
@@ -166,6 +210,14 @@ export function discoverNamedExports(
     if (resolution !== undefined) {
       const resolved = resolution.resolveCalledFunction(init);
       const fn = resolved === null ? null : toFunctionRoot(resolved);
+      const units = options.handlersInsideCalls
+        ? unitsInsideCall(init, fn, kind, resolution, () => name)
+        : null;
+      if (units !== null) {
+        results.push(...units);
+        satisfied.add(name);
+        continue;
+      }
       if (fn !== null) {
         results.push({ func: fn, kind, name });
         satisfied.add(name);
@@ -183,7 +235,7 @@ export function discoverNamedExports(
   // it to "default" would collapse every file's default export into
   // the same name across the workspace.
   if (names.has("default")) {
-    const units = defaultExportUnits(sourceFile, kind, resolution);
+    const units = defaultExportUnits(sourceFile, kind, resolution, options);
     results.push(...units);
     if (units.length > 0) {
       satisfied.add("default");
@@ -236,6 +288,17 @@ export function discoverNamedExports(
         });
         break;
       }
+      // `export { handler as GET }` over `const handler = withCron(...)`.
+      const inside =
+        resolution !== undefined &&
+        options.handlersInsideCalls &&
+        targetName !== "default"
+          ? unitsInsideCall(decl, null, kind, resolution, () => targetName)
+          : null;
+      if (inside !== null) {
+        results.push(...inside);
+        break;
+      }
     }
   }
 
@@ -255,7 +318,8 @@ export function discoverNamedExports(
 function defaultExportUnits(
   sourceFile: SourceFile,
   kind: string,
-  resolution?: ResolutionStore,
+  resolution: ResolutionStore | undefined,
+  options: NamedExportOptions,
 ): DiscoveredUnit[] {
   for (const assignment of sourceFile.getExportAssignments()) {
     if (assignment.isExportEquals()) {
@@ -268,6 +332,17 @@ function defaultExportUnits(
       (resolution === undefined
         ? null
         : resolutionToFunctionRoot(resolution, expression));
+    const inside =
+      written === null &&
+      resolution !== undefined &&
+      options.handlersInsideCalls
+        ? unitsInsideCall(expression, resolved, kind, resolution, (handler) =>
+            resolveDefaultExportName(expression, handler),
+          )
+        : null;
+    if (inside !== null) {
+      return inside;
+    }
     if (resolved === null) {
       return [];
     }
