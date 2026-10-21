@@ -1,0 +1,7 @@
+{
+  "name": "@suss/contract-aws-apigateway",
+  "exports": 2,
+  "internal": 19,
+  "consumers": 5,
+  "unfollowedCalls": 0
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-vitest",
+  "exports": 2,
+  "internal": 1,
+  "consumers": 9,
+  "unfollowedCalls": 0
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-typeorm",
+  "exports": 2,
+  "internal": 5,
+  "consumers": 8,
+  "unfollowedCalls": 0
+}

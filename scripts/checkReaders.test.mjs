@@ -3,7 +3,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { findSecondReaders } from "./checkReaders.mjs";
+import { findSecondReaders, readExemptions } from "./checkReaders.mjs";
 
 const fixtures = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -75,7 +75,7 @@ test("an exempt entry that no longer reads syntax has to come out", () => {
   ]);
   const offenses = offensesFor("passing", exempt);
   assert.deepEqual(offenses, [
-    "packages/framework/example/src/index.ts: exempt file reads no syntax any more; drop its entry here",
+    "packages/framework/example/src/index.ts: exempt file reads no syntax any more; drop its entry from the package's readerExempt.json",
   ]);
 });
 
@@ -83,6 +83,33 @@ test("an exempt entry for a file that is gone has to come out", () => {
   const exempt = new Map([["packages/framework/gone/src/index.ts", "gone"]]);
   const offenses = offensesFor("passing", exempt);
   assert.deepEqual(offenses, [
-    "packages/framework/gone/src/index.ts: exempt file is gone; drop its entry here",
+    "packages/framework/gone/src/index.ts: exempt file is gone; drop its entry from the package's readerExempt.json",
   ]);
+});
+
+test("a package's readerExempt.json exempts its own files", () => {
+  const root = path.join(fixtures, "exempted");
+  assert.deepEqual(
+    [...readExemptions(root)],
+    [
+      ["packages/adapter/python/src/routes.ts", "routePathOf"],
+      ["packages/framework/example/src/index.ts", "routePathOf"],
+    ],
+  );
+  assert.deepEqual(
+    findSecondReaders({
+      root,
+      scopes: SCOPES,
+      facility: [],
+      treeSitterScopes: TREE_SITTER_SCOPES,
+    }),
+    [],
+  );
+});
+
+test("an exempt entry without a reason is refused", () => {
+  assert.throws(
+    () => readExemptions(path.join(fixtures, "noReason")),
+    /packages\/framework\/example\/readerExempt\.json: the entry for src\/index\.ts needs a reason/,
+  );
 });

@@ -15,7 +15,7 @@ Both sides are written to `<pkg>/.suss/suss-summaries.json`, in the format that 
 
 ## What the run produces
 
-The current counts are in `scripts/dogfood-baseline.json`: export, internal and consumer summaries per package and in total, the number of cross-package edges paired, and the calls the walk could not follow. `scripts/dogfood.mjs` writes that file, we commit it, and CI runs the script on every push. [What CI enforces](#what-ci-enforces) explains what happens when a number moves. The script also prints the most consumed exports, which is the quickest way to see which packages the rest of the monorepo depends on most.
+The current counts are in a `dogfood-baseline.json` at the root of each package, with that package's export, internal and consumer summaries and the calls the walk could not follow. `scripts/dogfood-baseline.json` contains the number of cross-package edges paired and the finding errors, and the totals are the sums of the package files. `scripts/dogfood.mjs` writes those files, we commit them, and CI runs the script on every push. [What CI enforces](#what-ci-enforces) explains what happens when a number moves. The script also prints the most consumed exports, which is the quickest way to see which packages the rest of the monorepo depends on most.
 
 We count library summaries on two lines because the two change for different reasons.
 
@@ -119,7 +119,7 @@ CI checks two things, and they fail for different reasons.
 
 These stay true however the source changes. Move an export between packages and both sides still balance. Delete one and there is nothing left to require. Strip a package back to types and it requires nothing at all.
 
-**The counts** are in `scripts/dogfood-baseline.json`, and `npm run check:dogfood` compares a fresh run against the copy committed in the same tree. They only act as a floor. A number going up is fine and needs no refresh, and CI on main pushes the refreshed file back so the floor keeps up with the source.
+**The counts** are in each package's `dogfood-baseline.json` and in `scripts/dogfood-baseline.json`, and `npm run check:dogfood` compares a fresh run against the copies committed in the same tree. They only act as a floor. A number going up is fine and needs no refresh, and CI on main pushes the refreshed file back so the floor keeps up with the source.
 
 We keep the counts because the invariants cannot see a recognizer that stops firing at some call sites and keeps firing at others. Every declared export still has its summary and every boundary still has its key. The only thing that changed is how much of the closure suss reached. The closure makes up most of the library summaries (the internal line in the baseline is several times the export line), so without a guard on it, most of the run would have no guard. The internal line is where such a change shows up. If the closure stops expanding, the internal count drops to nothing while every export and every invariant still passes.
 
