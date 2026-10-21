@@ -1548,6 +1548,17 @@ const STATED_RULES = [
       lit("callsNamed", v("r"), v("r0")),
     ],
   ),
+  // The same, called straight off the factory's call, as
+  // `register("created")(handler)` or a Python decorator written that way.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [
+      lit("returnsValue", v("g"), v("f")),
+      lit("callsFunction", v("r0"), v("g")),
+      lit("call", v("r"), v("r0")),
+    ],
+  ),
 
   // The expressions that refer to an object under another name, through
   // a name hop or an import. Asked from the object, so it visits only

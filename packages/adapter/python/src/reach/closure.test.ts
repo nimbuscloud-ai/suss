@@ -523,8 +523,8 @@ describe("the functions a route reaches", () => {
       "    handler()",
       "",
       '@app.get("/run")',
-      "def run():",
-      "    apply(lambda: 1)",
+      "def run(handlers):",
+      "    apply(handlers.default)",
     ]);
 
     const summaries = await extract();
@@ -536,6 +536,21 @@ describe("the functions a route reaches", () => {
     expect(gap?.description).toContain(
       "no caller in this run passes it a function by name",
     );
+  });
+
+  it("leaves no gap on a call through a parameter a caller passes a lambda it writes", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def apply(handler):",
+      "    handler()",
+      "",
+      '@app.get("/run")',
+      "def run():",
+      "    apply(lambda: 1)",
+    ]);
+
+    const summaries = await extract();
+    expect(unitNamed(summaries, "apply").gaps).toEqual([]);
   });
 
   it("keeps a nested def and a lambda inside the body apart from the names outside", async () => {

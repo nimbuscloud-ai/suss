@@ -16,6 +16,7 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placePossibleCalls,
   recordParameterGaps,
   StopList,
   TargetPlacements,
@@ -62,6 +63,7 @@ import { askFileSources } from "../provenance.js";
 import { askWrittenValues, forgetEvaluations } from "../values/evaluator.js";
 import {
   calleeSpellings,
+  dispatchedCalls,
   functionNamed,
   namedOutcomes,
   resolveCallee,
@@ -92,6 +94,7 @@ import type {
   CalleeResolution,
   CalleeSpellings,
   CallSite,
+  DispatchedCall,
   ReachedFunction,
   ResolveContext,
 } from "./resolveCallee.js";
@@ -137,6 +140,7 @@ export interface StoredScan {
   readonly stops: UnfollowedCall[];
   readonly targets: [string, DeclaredAt][];
   readonly argTargets: [string, [number, DeclaredAt][]][];
+  readonly possibleTargets: [string, DeclaredAt[]][];
   readonly parameterCalls: ParameterCall[];
   readonly passedPositions: string[];
 }
@@ -159,6 +163,11 @@ export interface ReachedUnits {
   readonly argTargetsByKey: ReadonlyMap<
     string,
     ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
+  >;
+  /** Where each function a table call may run is declared, by callee text, keyed by the scanned function's key. */
+  readonly possibleTargetsByKey: ReadonlyMap<
+    string,
+    ReadonlyMap<string, readonly DeclaredAt[]>
   >;
   /** The calls each scanned body makes through one of its own parameters, by the scanned function's key. */
   readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
@@ -203,10 +212,14 @@ export function reachedFunctions(
     string,
     ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
   >();
+  const possibleTargetsByKey = new Map<
+    string,
+    ReadonlyMap<string, readonly DeclaredAt[]>
+  >();
   const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
   const callsByKey = new Map<string, string[]>();
   // Every (function, position) some scanned body passes a named project
-  // function into. An inline lambda or a variable does not count, so a
+  // function or a lambda it writes into. A variable does not count, so a
   // parameter call missing here is a gap even when a caller supplies one.
   const passedPositions = new Set<string>();
   const { replay, ledger } = options;
@@ -276,6 +289,7 @@ export function reachedFunctions(
       }
       targetsByKey.set(key, scan.targets);
       argTargetsByKey.set(key, scan.argTargets);
+      possibleTargetsByKey.set(key, scan.possibleTargets);
       if (scan.parameterCalls.length > 0) {
         parameterCallsByKey.set(key, scan.parameterCalls);
       }
@@ -333,6 +347,7 @@ export function reachedFunctions(
       }
       placeCalls(summary, targetsByKey.get(key));
       placeArgTargets(summary, argTargetsByKey.get(key));
+      placePossibleCalls(summary, possibleTargetsByKey.get(key));
       placeCalleeParameters(summary, parameterCallsByKey.get(key));
       return summary;
     };
@@ -360,6 +375,7 @@ export function reachedFunctions(
     targetsByKey,
     stopsByKey,
     argTargetsByKey,
+    possibleTargetsByKey,
     parameterCallsByKey,
     callsByKey,
     passedPositions,
@@ -397,7 +413,28 @@ type RoundEntry =
 type BodyReads = BodyCalls & {
   spellings: CalleeSpellings;
   passed: ReadonlyMap<string, CalleeOutcome>;
+  /** What each stopped call may run when it takes its function from a table, by call node id. */
+  dispatched: ReadonlyMap<number, DispatchedCall>;
 };
+
+/**
+ * The calls the rules settled on nothing, asked as one question about
+ * whether each takes its function from a table. A call through the
+ * body's own parameter runs whatever the caller passed, so it is left out.
+ */
+function dispatchedAmong(
+  written: readonly { call: PyNode; site: CallSite }[],
+  spellings: CalleeSpellings,
+  ctx: ResolveContext,
+): ReadonlyMap<number, DispatchedCall> {
+  return dispatchedCalls(
+    written.filter(({ call, site }) => {
+      const outcome = resolveCallee(call, site, ctx, spellings);
+      return outcome.kind === "stopped" && outcome.reason !== "callerSupplied";
+    }),
+    ctx,
+  );
+}
 
 /** One round's calls read and asked about together, which is how a run without a cache asks them. */
 function batchedReads(
@@ -409,20 +446,25 @@ function batchedReads(
       ? [{ key: entry.key, source: entry.source, ...bodyOf(entry.source) }]
       : [],
   );
-  const spellings = calleeSpellings(
-    bodies.flatMap((body) => body.written),
-    ctx,
-  );
+  const written = bodies.flatMap((body) => body.written);
+  const spellings = calleeSpellings(written, ctx);
   const passed = namedOutcomes(
     bodies.flatMap(({ source, written }) =>
       written.flatMap(({ call }) => passedNameKeys(source.file, call)),
     ),
     ctx,
   );
+  const dispatched = dispatchedAmong(written, spellings, ctx);
   return new Map(
     bodies.map((body) => [
       body.key,
-      { body: body.body, written: body.written, spellings, passed },
+      {
+        body: body.body,
+        written: body.written,
+        spellings,
+        passed,
+        dispatched,
+      },
     ]),
   );
 }
@@ -472,13 +514,15 @@ function scanOnce(
 /** One body's calls, asked about on their own. */
 function ownReads(source: ReachedFunction, ctx: ResolveContext): BodyReads {
   const body = bodyOf(source);
+  const spellings = calleeSpellings(body.written, ctx);
   return {
     ...body,
-    spellings: calleeSpellings(body.written, ctx),
+    spellings,
     passed: namedOutcomes(
       body.written.flatMap(({ call }) => passedNameKeys(source.file, call)),
       ctx,
     ),
+    dispatched: dispatchedAmong(body.written, spellings, ctx),
   };
 }
 
@@ -494,6 +538,10 @@ function storedScan(scan: Scan): StoredScan {
     argTargets: [...scan.argTargets].map(([callee, byPosition]) => [
       callee,
       [...byPosition],
+    ]),
+    possibleTargets: [...scan.possibleTargets].map(([callee, places]) => [
+      callee,
+      [...places],
     ]),
     parameterCalls: [...scan.parameterCalls],
     passedPositions: [...scan.passedPositions],
@@ -514,6 +562,7 @@ function scanFromStored(
         new Map(byPosition),
       ]),
     ),
+    possibleTargets: new Map(stored.possibleTargets),
     parameterCalls: stored.parameterCalls,
     passedPositions: new Set(stored.passedPositions),
   };
@@ -569,6 +618,8 @@ interface Scan {
   readonly stops: UnfollowedCall[];
   readonly targets: ReadonlyMap<string, DeclaredAt>;
   readonly argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
+  /** Where each function a table call may run is declared, by callee text. */
+  readonly possibleTargets: ReadonlyMap<string, readonly DeclaredAt[]>;
   readonly parameterCalls: readonly ParameterCall[];
   readonly passedPositions: ReadonlySet<string>;
 }
@@ -578,6 +629,7 @@ const EMPTY_SCAN: Scan = {
   stops: [],
   targets: new Map(),
   argTargets: new Map(),
+  possibleTargets: new Map(),
   parameterCalls: [],
   passedPositions: new Set(),
 };
@@ -677,10 +729,7 @@ function scanBody(
   source: ReachedFunction,
   ctx: ResolveContext,
   recognized: ReadonlySet<number>,
-  read: BodyCalls & {
-    spellings: CalleeSpellings;
-    passed: ReadonlyMap<string, CalleeOutcome>;
-  },
+  read: BodyReads,
   implied: readonly ImpliedCall[],
 ): Scan {
   const followed: ReachedFunction[] = [];
@@ -701,6 +750,14 @@ function scanBody(
 
   const ownParameters = callParameterNames(node, source.exportPath.length > 1);
 
+  const follow = (target: ReachedFunction): void => {
+    const key = keyOf(target);
+    if (!seen.has(key)) {
+      seen.add(key);
+      followed.push(target);
+    }
+  };
+
   // An identifier argument that is a project function joins a `passes`
   // fact to whichever parameter of the followed callee it calls through.
   const recordPassedArgs = (
@@ -713,6 +770,15 @@ function scanBody(
       return;
     }
     children(args).forEach((arg, position) => {
+      // A lambda written at the call is part of this body, which already
+      // has its calls, so the callee calling it through that parameter is
+      // no gap.
+      if (arg.type === "lambda") {
+        if (calleeKey !== null) {
+          passedPositions.add(`${calleeKey}#${position}`);
+        }
+        return;
+      }
       const nameKey = passedNameKeyOf(file, arg);
       if (nameKey === null) {
         return;
@@ -721,11 +787,7 @@ function scanBody(
       if (resolved === null) {
         return;
       }
-      const key = keyOf(resolved);
-      if (!seen.has(key)) {
-        seen.add(key);
-        followed.push(resolved);
-      }
+      follow(resolved);
       placements.placeArg(callee, position, {
         file: resolved.file.displayPath,
         span: spanOf(resolved.node),
@@ -736,9 +798,39 @@ function scanBody(
     });
   };
 
+  // A call that may run any of several functions from a table is followed
+  // into each, and placed as possible rather than at one declaration.
+  const recordPossible = (
+    call: PyNode,
+    callee: string,
+    dispatched: DispatchedCall,
+  ): void => {
+    dispatched.targets.forEach(follow);
+    placements.placePossible(
+      callee,
+      dispatched.targets.map((target) => ({
+        file: target.file.displayPath,
+        span: spanOf(target.node),
+      })),
+    );
+    recordPassedArgs(call, callee, null);
+    if (dispatched.unresolved > 0 && !recognized.has(call.id)) {
+      stops.add({ callee, reason: "unsettledValue" });
+    }
+  };
+
   const record = (call: PyNode, site: CallSite): void => {
     const callee = calleeText(call);
-    const outcome = resolveCallee(call, site, ctx, spellings);
+    const settled = resolveCallee(call, site, ctx, spellings);
+    const dispatched =
+      settled.kind === "stopped" ? read.dispatched.get(call.id) : undefined;
+    const [only] = dispatched?.targets ?? [];
+    if (dispatched !== undefined && only !== undefined && !dispatched.certain) {
+      recordPossible(call, callee, dispatched);
+      return;
+    }
+    const outcome: CalleeResolution =
+      only === undefined ? settled : { kind: "followed", target: only };
     placeCallee(placements, callee, outcome, call, file);
     recordPassedArgs(
       call,
@@ -767,11 +859,7 @@ function scanBody(
       }
       return;
     }
-    const key = keyOf(outcome.target);
-    if (!seen.has(key)) {
-      seen.add(key);
-      followed.push(outcome.target);
-    }
+    follow(outcome.target);
   };
 
   for (const { call, site } of written) {
@@ -782,11 +870,7 @@ function scanBody(
       file: target.file.displayPath,
       span: spanOf(target.node),
     });
-    const key = keyOf(target);
-    if (!seen.has(key)) {
-      seen.add(key);
-      followed.push(target);
-    }
+    follow(target);
   }
 
   return {
@@ -794,6 +878,7 @@ function scanBody(
     stops: stops.stops,
     targets: placements.targets,
     argTargets: placements.argTargets,
+    possibleTargets: placements.possibleTargets,
     parameterCalls,
     passedPositions,
   };
