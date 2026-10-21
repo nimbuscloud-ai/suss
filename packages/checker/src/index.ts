@@ -97,7 +97,13 @@ export {
 export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { checkResponseMisread } from "./coverage/responseMisread.js";
-export { dedupeFindings, mergedSideOf } from "./dedupe.js";
+export {
+  type CauseGroup,
+  dedupeFindings,
+  groupBySharedCause,
+  mergedSideOf,
+  type OutcomeOrigin,
+} from "./dedupe.js";
 export {
   buildFlowChains,
   type FlowCertainty,
