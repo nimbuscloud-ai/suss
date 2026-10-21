@@ -260,7 +260,7 @@ Options (ask):
     what reads <boundary>                which units read it
     what writes <boundary>               which units write it
     what invokes <boundary>              which units invoke it
-    what calls <unit>                    which units call it
+    what calls <unit or boundary>        which units call it
     what does <unit> reach               which boundaries a file or
                                          summary goes through
     what reaches <target>                which boundaries end up going

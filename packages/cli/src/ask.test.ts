@@ -1077,6 +1077,102 @@ describe("suss ask what calls", () => {
     }
   }
 
+  /** The units an answer lists, from its JSON. */
+  function unitsIn(output: string): string[] {
+    return (JSON.parse(output) as { items: Array<{ unit: string }> }).items.map(
+      (item) => item.unit,
+    );
+  }
+
+  it("lists the clients of a route, the units what reads lists", () => {
+    const summaries = [route, nestedRoute, routeClient];
+    const calls = askCalls("what calls GET /editions", summaries, {
+      json: true,
+    });
+    const reads = askCalls("what reads GET /editions", summaries, {
+      json: true,
+    });
+
+    expect(calls.code).toBe(0);
+    expect(JSON.parse(calls.output)).toMatchObject({
+      found: true,
+      headline: "1 unit calls GET /editions:",
+      items: [{ relations: ["reads", "writes"] }],
+    });
+    expect(unitsIn(calls.output)).toEqual(unitsIn(reads.output));
+    expect(unitsIn(calls.output)).toEqual([summaryIdentifier(routeClient)]);
+  });
+
+  it("lists every unit at a table, with what each does there", () => {
+    const { output } = askCalls("what calls aws.dynamodb:editions", [
+      indexContract,
+      dao,
+      dashboard,
+    ]);
+
+    expect(output).toContain("2 units call aws.dynamodb:editions");
+    expect(output).toMatch(
+      /byPublication \(src\/editions\/dao\.ts:\d+\).*, reads/,
+    );
+    expect(output).toMatch(
+      /forDashboard \(src\/editions\/dao\.ts:\d+\).*, reads/,
+    );
+  });
+
+  it("adds a unit that calls the route's handler as a function", () => {
+    const warm: BehavioralSummary = {
+      ...handler,
+      location: { ...handler.location, file: "src/warm.ts" },
+      identity: {
+        name: "warmEditions",
+        exportPath: ["warmEditions"],
+        boundaryBinding: null,
+        id: "repo::src/warm.ts::warmEditions",
+      },
+      transitions: [
+        {
+          ...(handler.transitions[0] as BehavioralSummary["transitions"][0]),
+          id: "warmEditions:default",
+          effects: [
+            {
+              type: "invocation",
+              callee: "listEditions",
+              summary: summaryIdentifier(route),
+              args: [],
+              async: true,
+            },
+          ],
+        },
+      ],
+    };
+
+    const { output } = askCalls(
+      "what calls GET /editions",
+      [route, routeClient, warm],
+      { json: true },
+    );
+
+    expect(JSON.parse(output).headline).toBe("2 units call GET /editions:");
+    expect(unitsIn(output)).toEqual([
+      summaryIdentifier(routeClient),
+      "repo::src/warm.ts::warmEditions",
+    ]);
+  });
+
+  it("says nothing calls a route no client reaches, and what serves it", () => {
+    const { output, code } = askCalls("what calls GET /editions", [route], {
+      json: true,
+    });
+
+    expect(code).toBe(0);
+    expect(JSON.parse(output)).toMatchObject({
+      found: true,
+      headline: "Nothing in these summaries calls GET /editions.",
+      items: [],
+      needs: [`GET /editions is provided by ${summaryIdentifier(route)}.`],
+    });
+  });
+
   it("finds a caller recorded through a package-export binding", () => {
     const provider: BehavioralSummary = {
       ...wrapper,

@@ -33,7 +33,7 @@ Each one is written in these words. You fill in the placeholders, and the other 
 | `what reads <boundary>` | Every unit that reads it, with the file, the line and the call. |
 | `what writes <boundary>` | The same, for writes. |
 | `what invokes <boundary>` | Every unit that calls a deployed unit by name, such as one Lambda invoking another. |
-| `what calls <unit>` | Every unit whose calls the run resolved to it, with the file, the line and the call. |
+| `what calls <unit or boundary>` | For a unit, every unit whose calls the run resolved to it, with the file, the line and the call. For a route, a table or a queue, every unit that calls it from outside, the units `what reads` and `what writes` list, each with what it does there, then any unit that calls the code serving it as a function. |
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads, writes or invokes each. |
 | `what reaches <target>` | Every boundary whose unit ends up going through the target, however many calls away, and the calls it took to get there. A unit appears only when it serves a boundary of its own, so you get routes, queues and package exports, and the functions in between are left out. The answer also counts the calls that didn't resolve to a unit, because a boundary that reaches the target through one of those is missing from the list. |
 | `what does <package or unit> provide` | Every boundary it provides, one per line, sorted by boundary key. A package is spelled by its name, `@suss/checker`, and the answer gathers its exports wherever they are in the run. Also written `what does <package> export`. |
@@ -61,7 +61,7 @@ Five of the forms have a symbol spelling, for a question you type often. The ope
 
 | Shorthand | The question it means |
 |---|---|
-| `<- <unit>` | `what calls <unit>` |
+| `<- <unit or boundary>` | `what calls <unit or boundary>` |
 | `<unit> ->` | `what does <unit> reach` |
 | `r<- <boundary>` | `what reads <boundary>` |
 | `w<- <boundary>` | `what writes <boundary>` |
