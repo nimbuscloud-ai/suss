@@ -1199,10 +1199,9 @@ export class ResolutionStore {
    * handler it was given.
    */
   callsThrough(parameter: Node): Node[] {
-    this.extractFile(parameter.getSourceFile());
     const found: Node[] = [];
-    for (const [referenceId] of this.db.lookup("binds", 1, nodeId(parameter))) {
-      for (const [callId] of this.db.lookup("call", 1, String(referenceId))) {
+    for (const reference of this.referencesTo(parameter)) {
+      for (const [callId] of this.db.lookup("call", 1, nodeId(reference))) {
         const call = this.table.byId.get(String(callId));
         if (call !== undefined) {
           found.push(call);
@@ -1210,6 +1209,17 @@ export class ResolutionStore {
       }
     }
     return found;
+  }
+
+  /** Every name the facts record as referring to this declaration. */
+  referencesTo(declaration: Node): Node[] {
+    this.extractFile(declaration.getSourceFile());
+    return this.db
+      .lookup("binds", 1, nodeId(declaration))
+      .flatMap(([referenceId]) => {
+        const reference = this.table.byId.get(String(referenceId));
+        return reference === undefined ? [] : [reference];
+      });
   }
 
   /**

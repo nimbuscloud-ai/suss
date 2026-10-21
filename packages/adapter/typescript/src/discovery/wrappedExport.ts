@@ -16,6 +16,7 @@
 import { Node } from "ts-morph";
 
 import { factKeyOf } from "../facts/extract.js";
+import { enclosingParameterReads } from "../parameterReads.js";
 import {
   declarationsBehind,
   isInExternalCode,
@@ -142,10 +143,8 @@ function layersInside(
  * is written inside the factory and calls that parameter. The call is
  * where the handler runs, so the unit reads it as its continuation.
  *
- * A closure that keeps going after the handler returns, `const response
- * = await handler(ctx)` and then more code, can send something on the
- * handler's paths that no path through the closure shows, so it is
- * recorded with no unit, as a layer the run did not read.
+ * One that keeps going after the handler returns, or reads the factory's
+ * other parameters, gets no unit, and the README says why.
  */
 function closureLayer(
   factory: FunctionRoot,
@@ -169,7 +168,14 @@ function closureLayer(
   // goes by what calling the factory writes.
   const name = `${functionNameOrAnon(factory)}(${parameter.getName()})`;
   const reference = { file: closure.getSourceFile().getFilePath(), name };
-  if (!handsOn.every((call) => returnedBy(call, closure))) {
+  const options = factory
+    .getParameters()
+    .filter((_, at) => at !== position)
+    .flatMap((one) => namesBoundBy(one.getNameNode()));
+  if (
+    !handsOn.every((call) => returnedBy(call, closure)) ||
+    enclosingParameterReads(closure, factory, options).length > 0
+  ) {
     return { reference };
   }
   return {
@@ -182,6 +188,23 @@ function closureLayer(
       factoryContinuation: position,
     },
   };
+}
+
+/** The names a parameter declares, each one a destructuring pattern takes apart included. */
+function namesBoundBy(name: Node): string[] {
+  if (Node.isIdentifier(name)) {
+    return [name.getText()];
+  }
+  if (Node.isObjectBindingPattern(name) || Node.isArrayBindingPattern(name)) {
+    return name
+      .getElements()
+      .flatMap((element) =>
+        Node.isBindingElement(element)
+          ? namesBoundBy(element.getNameNode())
+          : [],
+      );
+  }
+  return [];
 }
 
 /** Whether `func` itself returns the call's result, so nothing of `func` runs after it. */
