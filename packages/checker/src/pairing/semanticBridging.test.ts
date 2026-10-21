@@ -390,6 +390,40 @@ describe("checkSemanticBridging", () => {
     );
   });
 
+  it("counts a test on the whole body a .json() call returns", () => {
+    // `return NextResponse.json(exists ? 1 : 0)`, read as `(await res.json()) === 1`.
+    const p = provider("checkSlug", [
+      transition("t-200-taken", { output: response(200, literal(1)) }),
+      transition("t-200-free", {
+        output: response(200, literal(0)),
+        isDefault: true,
+      }),
+    ]);
+    const exists: ValueRef = {
+      type: "dependency",
+      name: "res.json",
+      accessChain: [],
+    };
+    const taken: Predicate = {
+      type: "comparison",
+      op: "eq",
+      left: exists,
+      right: { type: "literal", value: 1 },
+    };
+    const c = consumer("SlugField", [
+      transition("ct-taken", {
+        conditions: [statusEq(200), taken],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-free", {
+        conditions: [statusEq(200), { type: "negation", operand: taken }],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    expect(checkSemanticBridging(p, c)).toEqual([]);
+  });
+
   it("emits no finding when consumer matches any distinguishing literal (not all)", () => {
     // Provider transition has both type and tier as distinguishing literals
     // Consumer only tests for type. That's sufficient awareness

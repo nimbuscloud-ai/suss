@@ -150,6 +150,10 @@ function tryExtractFieldTestBody(
  * `res.json()`).
  */
 function tryExtractBodyPath(ref: ValueRef): string[] | null {
+  // `const exists = await res.json(); if (exists === 1)` tests the body itself.
+  if (ref.type === "dependency" && isBodyAccessorCall(ref.name)) {
+    return [...ref.accessChain];
+  }
   const result = extractPropertyChainWithRoot(ref);
   if (result === null) {
     return null;
