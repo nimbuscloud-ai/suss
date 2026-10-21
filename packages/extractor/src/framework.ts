@@ -924,6 +924,12 @@ export type TerminalMatch =
        */
       type: "parameterCall";
       parameterPosition: number;
+      /**
+       * The parameter belongs to the function this unit is written
+       * inside, the way a wrapper factory's closure calls the handler
+       * the factory was given.
+       */
+      ofEnclosingFunction?: boolean;
     };
 
 export interface TerminalExtraction {

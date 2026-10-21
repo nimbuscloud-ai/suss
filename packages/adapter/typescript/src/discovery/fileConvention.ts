@@ -55,5 +55,12 @@ export function discoverFileConventions(
     { type: "namedExport", names: match.exportNames },
     kind,
     resolution,
-  ).map((unit) => ({ ...unit, routeFile: sourceFile }));
+    { handlersInsideCalls: true },
+  ).map((unit) =>
+    // A layer a factory puts around a route serves no route of its own,
+    // so it is read with no binding to state.
+    unit.factoryContinuation === undefined
+      ? { ...unit, routeFile: sourceFile }
+      : { ...unit, pattern: { kind, match } },
+  );
 }

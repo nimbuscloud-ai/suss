@@ -216,6 +216,15 @@ export const POST = handler;`,
     expect(routes).toEqual(["GET GET /reports", "POST POST /reports"]);
   });
 
+  it("keeps one route for each name an export list gives a handler", async () => {
+    const routes = await routesIn({
+      "/src/app/reports/route.ts": `
+const handler = async (req: Request) => { return { ok: true }; };
+export { handler as GET, handler as POST };`,
+    });
+    expect(routes).toEqual(["GET GET /reports", "POST POST /reports"]);
+  });
+
   it("reads a default export a factory with a block body returns", async () => {
     const routes = await routesIn({
       "/src/lib/responder.ts": `

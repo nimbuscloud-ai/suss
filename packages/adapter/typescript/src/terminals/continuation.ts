@@ -13,8 +13,9 @@
 
 import { Node } from "ts-morph";
 
+import { findEnclosingFunction } from "../discovery/shared.js";
 import { endLineOf, startLineOf } from "../lines.js";
-import { parameterPositionOf } from "./shared.js";
+import { parameterPositionOf, returnPositionOf } from "./shared.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -30,8 +31,13 @@ export function tryMatchParameterCall(
     return null;
   }
 
+  const owner =
+    match.ofEnclosingFunction === true ? findEnclosingFunction(func) : func;
   const callee = node.getExpression();
-  if (parameterPositionOf(callee, func) !== match.parameterPosition) {
+  if (
+    owner === null ||
+    parameterPositionOf(callee, owner) !== match.parameterPosition
+  ) {
     return null;
   }
 
@@ -48,5 +54,7 @@ export function tryMatchParameterCall(
     location: { start: startLineOf(node), end: endLineOf(node) },
   };
 
-  return { node, terminal };
+  // `return next()` hands the request on, so the return is read.
+  const source = returnPositionOf(node);
+  return source === null ? { node, terminal } : { node, terminal, source };
 }
