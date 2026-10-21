@@ -13,6 +13,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -106,10 +107,9 @@ async function baseFolder(
     fs.rmSync(folder, { recursive: true, force: true });
   }
 
-  // Named like the checkout, so a summary that takes a workspace name
-  // from its folder reads the same on both sides.
-  const tree = path.join(work, path.basename(top));
-  fs.mkdirSync(tree);
+  const tree = treeFor(top, project, revision.commit);
+  fs.rmSync(path.dirname(tree), { recursive: true, force: true });
+  fs.mkdirSync(tree, { recursive: true });
   writeRevision(top, revision.commit, work, tree);
   shareDependencies(top, tree);
   // Readers that measure a path from the repository look for this folder.
@@ -132,10 +132,11 @@ async function baseFolder(
   const report = await readFromTheSamePlace(tree, top, baseRoot, summaryDir, {
     ...reads,
     reads: present.map((entry) => withPackConfigsFrom(project, entry)),
+  }).finally(() => {
+    // The summaries are all a later question needs, and a large checkout
+    // is most of the folder. Removing it leaves the linked node_modules alone.
+    fs.rmSync(path.dirname(tree), { recursive: true, force: true });
   });
-  // The summaries are all a later question needs, and a large checkout
-  // is most of the folder. Removing it leaves the linked node_modules alone.
-  fs.rmSync(tree, { recursive: true, force: true });
   if (report.failed.length > 0) {
     readFolders.delete(key);
     fs.rmSync(work, { recursive: true, force: true });
@@ -236,6 +237,35 @@ function withPackConfigsFrom(project: string, entry: ReadEntry): ReadEntry {
     return entry;
   }
   return { ...entry, packs: packSpecsOf(entry, project) };
+}
+
+/**
+ * Where the base is written out. The extraction cache is keyed by the
+ * folder it reads, and under `SUSS_CACHE_DIR` it outlives the copy, so
+ * the folder is the same for every read of one commit of one project: a
+ * second read of that commit finds its cache, and a new read adds no
+ * cache folder of its own. The last part is named like the checkout, so
+ * a summary that takes a workspace name from its folder reads the same
+ * on both sides.
+ */
+function treeFor(top: string, project: string, commit: string): string {
+  const key = createHash("sha256")
+    .update(`${commit}\0${project}`)
+    .digest("hex")
+    .slice(0, 16);
+  return path.join(
+    fs.realpathSync(os.tmpdir()),
+    `suss-base-${key}`,
+    path.basename(top),
+  );
+}
+
+/** Lets the next `readBase` go back to git, for a caller that wants a cold read. */
+export function forgetBaseReads(): void {
+  for (const folder of readFolders.values()) {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+  readFolders.clear();
 }
 
 function summariesIn(work: string): string {

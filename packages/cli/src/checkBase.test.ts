@@ -9,7 +9,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readBase } from "./checkBase.js";
+import { forgetBaseReads, readBase } from "./checkBase.js";
 import { runCli } from "./run.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
@@ -88,6 +88,14 @@ function git(...args: string[]): string {
     ],
     { cwd: project, encoding: "utf8" },
   );
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
 }
 
 function commit(message: string): void {
@@ -316,6 +324,28 @@ describe("check --base", () => {
 
     expect(base.changedFiles).toEqual(["src/orders/create.ts"]);
     expect(fs.readdirSync(base.summaryDir)).toEqual(["0-extract.json"]);
+  });
+
+  it("keeps one cache for a base commit when SUSS_CACHE_DIR moves the cache", async () => {
+    commit("base");
+    edit(ADD_409);
+    const cacheRoot = path.join(work, "cache-root");
+    const before = process.env.SUSS_CACHE_DIR;
+    process.env.SUSS_CACHE_DIR = cacheRoot;
+    try {
+      await againstBase();
+      const afterFirst = fs.readdirSync(path.join(cacheRoot, "cache")).sort();
+      forgetBaseReads();
+      const second = await againstBase();
+      const afterSecond = fs.readdirSync(path.join(cacheRoot, "cache")).sort();
+
+      // One folder for the working tree and one for the base commit.
+      expect(afterFirst).toHaveLength(2);
+      expect(afterSecond).toEqual(afterFirst);
+      expect(second.report.findings).toHaveLength(1);
+    } finally {
+      restoreEnv("SUSS_CACHE_DIR", before);
+    }
   });
 
   it("does not fail on a finding the base already had", async () => {

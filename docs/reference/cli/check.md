@@ -201,7 +201,7 @@ A finding keeps its identity when only its lines moved, so lines added above a r
 suss check --dir .suss/after --since .suss/before --changed-files changed.txt
 ```
 
-Reading the base costs as much as a full extract, since nothing it reads is in the per-file cache yet. The MCP server's `suss_check` takes the same `base` and reads each base commit once while it runs.
+The first read of a base commit costs as much as a full extract. When `SUSS_CACHE_DIR` or `--cache-dir` moves the cache out of the project, the base gets one cache folder per commit and project, and a second `--base` against the same commit reads from it: on dub, a second run took 16 seconds where the first took 7 minutes. Without either, the base's cache is inside the temporary copy and is removed with it. The MCP server's `suss_check` takes the same `base` and reads each base commit once while it runs.
 
 ## JSON output
 
