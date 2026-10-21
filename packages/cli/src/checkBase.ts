@@ -183,20 +183,12 @@ async function placeAtCheckout(
   tree: string,
   top: string,
 ): Promise<void> {
-  const real = path.join(
-    fs.realpathSync(path.dirname(tree)),
-    path.basename(tree),
-  );
   const atTop = relativeSpelling(top);
-  // Longest first, since an absolute spelling is part of a relative one.
-  const replacements = [...new Set([tree, real])]
-    .flatMap(
-      (spelling): Array<[string, string]> => [
-        [`${relativeSpelling(spelling)}/`, atTop === "" ? "" : `${atTop}/`],
-        [`${spelling}/`, `${top}/`],
-      ],
-    )
-    .sort(([a], [b]) => b.length - a.length);
+  // The relative spelling first, since the absolute one is part of it.
+  const replacements: Array<[string, string]> = [
+    [`${relativeSpelling(tree)}/`, atTop === "" ? "" : `${atTop}/`],
+    [`${tree}/`, `${top}/`],
+  ];
   for (const name of fs.readdirSync(summaryDir)) {
     const file = path.join(summaryDir, name);
     const rewritten = `${file}.rewritten`;
@@ -255,7 +247,9 @@ function temporaryFolder(): string {
       }
     });
   }
-  return fs.mkdtempSync(path.join(os.tmpdir(), "suss-base-"));
+  // The working directory reads back resolved, so every path into the
+  // copy is spelled resolved too, or relative paths would climb out of it.
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "suss-base-")));
 }
 
 let cleanupRegistered = false;

@@ -233,12 +233,19 @@ describe("check --base", () => {
     const config = JSON.parse(
       fs.readFileSync(path.join(project, "suss.json"), "utf8"),
     );
-    // The prisma reader writes its file relative to the working directory.
-    config.read.push({
-      kind: "contract",
-      from: "prisma",
-      file: "prisma/schema.prisma",
-    });
+    fs.writeFileSync(
+      path.join(project, "wrangler.jsonc"),
+      JSON.stringify({
+        name: "orders",
+        main: "src/orders/create.ts",
+        vars: { REGION: "eu" },
+      }),
+    );
+    // Both readers write their file relative to the working directory.
+    config.read.push(
+      { kind: "contract", from: "prisma", file: "prisma/schema.prisma" },
+      { kind: "contract", from: "wrangler", file: "wrangler.jsonc" },
+    );
     fs.writeFileSync(path.join(project, "suss.json"), JSON.stringify(config));
     commit("base with a contract");
     edit(ADD_409);
