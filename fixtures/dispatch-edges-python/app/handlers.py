@@ -49,6 +49,15 @@ class Events:
     def handle_named(self, payload):
         return getattr(self, "created")(payload)
 
+    def finish(self, kind, payload):
+        return getattr(self, f"finish_{kind}")(payload)
+
+    def finish_created(self, payload):
+        return on_created(payload)
+
+    def finish_deleted(self, payload):
+        return on_deleted(payload)
+
     def created(self, payload):
         return on_created(payload)
 

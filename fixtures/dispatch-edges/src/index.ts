@@ -8,4 +8,5 @@ export {
   viaPassedName,
   viaRegistry,
   viaTable,
+  viaTemplateKey,
 } from "./shapes.js";

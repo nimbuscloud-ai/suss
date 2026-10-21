@@ -124,7 +124,7 @@ describe("TypeScript calls through a table, a map, a registry and a closure", ()
   it("lists every caller of a handler, and which of them may run another one", async () => {
     const text = ask(await typescriptSummaries(), "what calls onCreated");
 
-    expect(text).toContain("6 units call");
+    expect(text).toContain("7 units call");
     expect(text).toMatch(
       /viaLiteralKey \(src\/shapes\.ts:\d+, [^)]*\) calls TABLE\["created"\]\n/,
     );
@@ -163,6 +163,15 @@ describe("TypeScript calls through a table, a map, a registry and a closure", ()
       "onCreated",
     ]);
   });
+
+  it("keeps a template key to the entries whose name starts the way it is written", async () => {
+    const summaries = await typescriptSummaries();
+
+    expect(possible(summaries, "viaTemplateKey")).toEqual([
+      "onCreated",
+      "onDeleted",
+    ]);
+  });
 });
 
 describe("Python calls through a dict, getattr, a decorator registry and a lambda", () => {
@@ -198,8 +207,15 @@ describe("Python calls through a dict, getattr, a decorator registry and a lambd
     expect(possible(summaries, "handle")).toEqual([
       "Events.created",
       "Events.deleted",
+      "Events.finish",
+      "Events.finish_created",
+      "Events.finish_deleted",
       "Events.handle",
       "Events.handle_named",
+    ]);
+    expect(possible(summaries, "finish")).toEqual([
+      "Events.finish_created",
+      "Events.finish_deleted",
     ]);
     expect(calledFor(summaries, "via_literal")).toEqual(["on_created"]);
     expect(calledFor(summaries, "handle_named")).toEqual(["Events.created"]);
@@ -249,7 +265,14 @@ describe("Ruby calls through send, a hash of lambdas, procs or method objects, a
       "EventHandlers.consume_public",
       "EventHandlers.created",
       "EventHandlers.deleted",
+      "EventHandlers.finish",
+      "EventHandlers.finish_created",
+      "EventHandlers.finish_deleted",
       "EventHandlers.initialize",
+    ]);
+    expect(possible(summaries, "finish")).toEqual([
+      "EventHandlers.finish_created",
+      "EventHandlers.finish_deleted",
     ]);
     expect(calledFor(summaries, "consume_literal")).toEqual([
       "EventHandlers.created",

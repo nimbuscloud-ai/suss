@@ -79,8 +79,19 @@ function outcomeOf(
   for (const entry of column(db, "wantedDispatchEntry", call, 1)) {
     byEntry.set(entry, new Set());
   }
-  for (const row of db.lookup("wantedDispatchFunction", 0, call)) {
-    byEntry.get(String(row[1]))?.add(String(row[2]));
+  for (const row of db.lookup("wantedDispatchLikeEntry", 0, call)) {
+    const held = String(row[3]);
+    if (
+      !byEntry.has(held) &&
+      matchesWrittenPart(db, String(row[1]), String(row[2]))
+    ) {
+      byEntry.set(held, new Set());
+    }
+  }
+  for (const relation of ENTRY_FUNCTIONS) {
+    for (const row of db.lookup(relation, 0, call)) {
+      byEntry.get(String(row[1]))?.add(String(row[2]));
+    }
   }
   const functions = [
     ...new Set([...byEntry.values()].flatMap((found) => [...found])),
@@ -114,7 +125,31 @@ function outcomeOf(
 }
 
 /** The facts that say a read takes an entry out of a container. */
-const ENTRY_READS = ["choosesEntry", "choosesNamedEntry", "readsEntry"];
+const ENTRY_READS = [
+  "choosesEntry",
+  "choosesNamedEntry",
+  "choosesEntryLike",
+  "readsEntry",
+];
+
+/** The relations that pair an entry with the function it comes to. */
+const ENTRY_FUNCTIONS = [
+  "wantedDispatchFunction",
+  "wantedDispatchLikeFunction",
+];
+
+/** Whether a name starts and ends with what the source writes out of the key at this read. */
+function matchesWrittenPart(db: Database, site: string, name: string): boolean {
+  return db.lookup("choosesEntryLike", 0, site).some((row) => {
+    const prefix = String(row[2]);
+    const suffix = String(row[3]);
+    return (
+      name.length >= prefix.length + suffix.length &&
+      name.startsWith(prefix) &&
+      name.endsWith(suffix)
+    );
+  });
+}
 
 /** Whether every read the call takes its function from is narrowed, and all of them to the same one name. */
 function narrowedToOneName(db: Database, sites: readonly string[]): boolean {

@@ -282,6 +282,23 @@ const DISPATCH_RULES: readonly Rule[] = [
     [lit("namedEntryRead", v("site"), v("o"), v("n"))],
   ),
   rule(
+    "entryRead",
+    [v("site"), v("o")],
+    [lit("choosesEntryLike", v("site"), v("o"), v("p"), v("s"))],
+  ),
+  // Every entry of a read whose key is partly written out, by name. A rule
+  // cannot compare strings, so dispatch.ts keeps the names that match, and
+  // these stay out of `dispatchesTo`.
+  rule(
+    "likeEntryAt",
+    [v("site"), v("n"), v("held")],
+    [
+      lit("choosesEntryLike", v("site"), v("o"), v("p"), v("s")),
+      lit("containerOf", v("o"), v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+    ],
+  ),
+  rule(
     "namedEntryRead",
     [v("site"), v("o"), v("n")],
     [lit("choosesNamedEntry", v("site"), v("o"), v("n"))],
@@ -2335,6 +2352,26 @@ export const RESOLUTION_QUESTIONS = [
       lit("wantedDispatch", v("r")),
       lit("callsEntryAt", v("r"), v("site")),
       lit("entryAt", v("site"), v("held")),
+      lit("comesTo", v("held"), v("f")),
+      lit("func", v("f")),
+    ],
+  ),
+  rule(
+    "wantedDispatchLikeEntry",
+    [v("r"), v("site"), v("n"), v("held")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("likeEntryAt", v("site"), v("n"), v("held")),
+    ],
+  ),
+  rule(
+    "wantedDispatchLikeFunction",
+    [v("r"), v("held"), v("f")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("likeEntryAt", v("site"), v("n"), v("held")),
       lit("comesTo", v("held"), v("f")),
       lit("func", v("f")),
     ],

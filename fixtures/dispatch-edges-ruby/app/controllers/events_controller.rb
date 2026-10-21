@@ -9,6 +9,11 @@ class EventsController < ApplicationController
     head :ok
   end
 
+  def via_finish
+    EventHandlers.new(params[:payload]).finish(params[:kind])
+    head :ok
+  end
+
   def via_public_send
     EventHandlers.new(params[:payload]).consume_public(params[:kind])
     head :ok

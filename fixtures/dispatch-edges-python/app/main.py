@@ -31,6 +31,11 @@ def via_getattr(kind: str, payload: str):
     return Events().handle(kind, payload)
 
 
+@app.post("/finish/{kind}")
+def via_finish(kind: str, payload: str):
+    return Events().finish(kind, payload)
+
+
 @app.post("/closure")
 def via_closure(payload: str):
     return run_later(payload, lambda: on_created(payload))

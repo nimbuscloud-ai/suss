@@ -46,6 +46,18 @@ class EventHandlers
     send(:created)
   end
 
+  def finish(kind)
+    send("finish_#{kind}")
+  end
+
+  def finish_created
+    EventHandlers.on_created(@payload)
+  end
+
+  def finish_deleted
+    EventHandlers.on_deleted(@payload)
+  end
+
   def created
     EventHandlers.on_created(@payload)
   end
