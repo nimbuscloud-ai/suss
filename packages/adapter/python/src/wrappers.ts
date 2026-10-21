@@ -460,9 +460,11 @@ export class PythonWrapperIndex {
 
   /**
    * The layer a project's own decorator puts around the route. When it
-   * hands back a closure written inside it that calls the function it
-   * was given, the closure is summarized and composed into the route.
-   * Any other decorator goes by the same name with no summary behind it.
+   * hands back a closure written inside it that returns what calling the
+   * function it was given returns, the closure is summarized and
+   * composed into the route. Any other decorator, including one whose
+   * closure keeps going after that call, goes by the same name with no
+   * summary behind it.
    */
   private projectDecoratorLayer(
     decorator: ReachedFunction,
@@ -471,10 +473,14 @@ export class PythonWrapperIndex {
     const continuation = parameterNamesOf(decorator.node)[0] ?? "";
     const name = `${decorator.name}(${continuation})`;
     const closure = closureReturnedBy(decorator.node);
+    const handsOn =
+      closure === null || continuation === ""
+        ? []
+        : callsThrough(closure, continuation);
     if (
       closure === null ||
-      continuation === "" ||
-      callsThrough(closure, continuation).length === 0
+      handsOn.length === 0 ||
+      !handsOn.every((statement) => returnsCallTo(statement, continuation))
     ) {
       return { file: decorator.file.displayPath, name };
     }
@@ -1210,6 +1216,16 @@ function callsThrough(node: PyNode, callee: string): PyNode[] {
     }
   }
   return found;
+}
+
+/** Whether a statement is `return callee(...)` or `return await callee(...)`. */
+function returnsCallTo(statement: PyNode, callee: string): boolean {
+  if (statement.type !== "return_statement") {
+    return false;
+  }
+  const value = statement.namedChild(0);
+  const call = value?.type === "await" ? value.namedChild(0) : value;
+  return call?.type === "call" && field(call, "function")?.text === callee;
 }
 
 /**

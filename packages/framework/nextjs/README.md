@@ -69,7 +69,10 @@ own factory hands back, here the one passed to `withAxiomBodyLog`, gets
 a summary of its own named after the call, `withWorkspace(handler)`. Its
 call to `handler` is where the route's function runs, so its other
 outcomes, the 401 here, are added to the route the same way middleware
-is. A wrapper a library builds, such as `withAxiomBodyLog` from
+is. A closure that keeps going after `handler` returns, such as one that
+logs the response first, is recorded with no summary, since it can
+change what the route sends in ways the run does not follow. A wrapper
+a library builds, such as `withAxiomBodyLog` from
 `createAxiomRouteHandler`, has no body the run can read. It is recorded
 with no summary behind it, and the checker then leaves out any finding
 that needs every status the route can send.

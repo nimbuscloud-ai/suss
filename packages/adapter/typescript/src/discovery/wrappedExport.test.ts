@@ -169,6 +169,35 @@ export const POST = withWorkspace(async () => new Response("made", { status: 201
     ).toHaveLength(1);
   });
 
+  it("records a closure that keeps going after the handler returns as a layer it did not read", async () => {
+    const summaries = await summariesOf({
+      "/src/lib/logged.ts": `
+declare function log(res: Response): void;
+export const withLogging =
+  (handler: (req: Request) => Promise<Response>) =>
+  async (req: Request) => {
+    const res = await handler(req);
+    log(res);
+    if (res.status >= 500) {
+      return new Response("hidden", { status: 502 });
+    }
+    return res;
+  };`,
+      "/src/app/stats/route.ts": `
+import { withLogging } from "../../lib/logged";
+export const GET = withLogging(async () => new Response("stats", { status: 200 }));`,
+    });
+
+    const route = routeAt(summaries, "GET", "/stats");
+    expect(readWrapperMetadata(route)?.applied).toEqual([
+      { file: "/src/lib/logged.ts", name: "withLogging(handler)" },
+    ]);
+    expect(statusesOf(route)).toEqual([200]);
+    expect(
+      summaries.some((s) => s.identity.name === "withLogging(handler)"),
+    ).toBe(false);
+  });
+
   it("folds the closure a project factory returns into the route", async () => {
     const summaries = await summariesOf({
       "/src/lib/admin.ts": `

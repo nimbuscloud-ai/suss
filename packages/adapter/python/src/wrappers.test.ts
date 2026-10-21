@@ -606,6 +606,37 @@ describe("decorators written on a route's function", () => {
     ).toContainEqual({ type: "delegate", to: "fn" });
   });
 
+  it("records a project decorator whose closure keeps going after the call with no summary behind it", async () => {
+    const summaries = await extractWritten({
+      "app/main.py": [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "def logged(fn):",
+        "    async def wrapper(*args, **kwargs):",
+        "        result = await fn(*args, **kwargs)",
+        "        if result is None:",
+        "            return {'missing': True}",
+        "        return result",
+        "    return wrapper",
+        "",
+        "@app.get('/logged')",
+        "@logged",
+        "async def logged_route():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(wrappersOf(routeFor(summaries, "GET", "/logged"))).toEqual({
+      applied: [{ file: "app/main.py", name: "logged(fn)" }],
+    });
+    expect(summaries.some((one) => one.identity.name === "logged(fn)")).toBe(
+      false,
+    );
+  });
+
   it("records a project decorator it cannot read through with no summary behind it", async () => {
     const summaries = await extractWritten({
       "app/main.py": [
