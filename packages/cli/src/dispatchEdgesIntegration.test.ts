@@ -170,6 +170,25 @@ describe("TypeScript calls through a table, a map, a registry and a closure", ()
     ]);
   });
 
+  it("says a boundary reaches a handler only if a call on the way picks it", async () => {
+    const text = ask(await typescriptSummaries(), "what reaches onCreated");
+
+    expect(text).toContain(
+      "viaTable, by calling TABLE[kind], which may run onCreated\n",
+    );
+    expect(text).toContain('viaLiteralKey, by calling TABLE["created"]\n');
+    const { answer } = answerQuestion({
+      question: "what reaches onCreated",
+      dir: out,
+      output: path.join(out, "answer.json"),
+      json: true,
+    });
+    const flagged = (answer?.items ?? []).filter(
+      (item) => (item as { possible?: boolean }).possible === true,
+    );
+    expect(flagged).toHaveLength(6);
+  });
+
   it("keeps a template key to the entries whose name starts the way it is written", async () => {
     const summaries = await typescriptSummaries();
 
