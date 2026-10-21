@@ -5,7 +5,7 @@
  * that affects extraction output: IR shape, discovery semantics,
  * terminal classification, anything that would invalidate previously
  * cached summaries. `createAdapterStamp` (from `@suss/extractor`) folds
- * it together with a hash of this adapter's own loaded code, so a
+ * it together with a hash of the code this adapter loads, so a
  * rebuilt dev build invalidates the cache even when nobody remembered
  * to bump the constant. See that package's README for the full design.
  */
