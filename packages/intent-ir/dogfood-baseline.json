@@ -1,7 +1,7 @@
 {
   "name": "@suss/intent-ir",
   "exports": 9,
-  "internal": 23,
+  "internal": 32,
   "consumers": 5,
-  "unfollowedCalls": 2
+  "unfollowedCalls": 0
 }

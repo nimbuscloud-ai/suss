@@ -280,6 +280,7 @@ describe("a scan record", () => {
     stops: [{ callee: "this.rows.remove", reason: "noDeclaration" }],
     targets: new Map([["load", target]]),
     argTargets: new Map([["retry", new Map([[0, target]])]]),
+    possibleTargets: new Map([["HANDLERS[kind]", [target]]]),
     parameterCalls: [{ callee: "onDone", parameterIndex: 1 }],
     passedPositions: new Set(["/orders.ts:0-38#0"]),
   };
@@ -301,6 +302,7 @@ describe("a scan record", () => {
     expect(found?.stops).toEqual(findings.stops);
     expect(found?.targets.get("load")).toEqual(target);
     expect(found?.argTargets.get("retry")?.get(0)).toEqual(target);
+    expect(found?.possibleTargets.get("HANDLERS[kind]")).toEqual([target]);
     expect(found?.parameterCalls).toEqual(findings.parameterCalls);
     expect([...(found?.passedPositions ?? [])]).toEqual(["/orders.ts:0-38#0"]);
   });

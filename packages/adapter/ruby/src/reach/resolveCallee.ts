@@ -19,12 +19,17 @@ import {
   calleeOutcomes,
   classMemberName,
   couldBeSettled,
+  dispatchOutcomes,
 } from "@suss/resolution";
 
 import { methodInAncestry } from "../ancestry.js";
 import { definesClassMethod, field, singletonMethodsByName } from "../ast.js";
 import { classBehind } from "../baseClass.js";
-import { OBJECT_METHODS } from "../facts/languageWords.js";
+import {
+  INVOKE_METHOD,
+  OBJECT_METHODS,
+  SENDING_METHODS,
+} from "../facts/languageWords.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
 import {
   classLocalsAt,
@@ -109,11 +114,6 @@ export interface CallSite {
   readonly owner: string;
   readonly enclosingQualifiedName: string | null;
 }
-
-const DYNAMIC_SEND_NAMES = new Set(["send", "public_send", "__send__"]);
-
-/** The method name that runs the receiver itself, as with a proc or lambda. */
-const INVOKES_RECEIVER = "call";
 
 /** The gap reason for each outcome where the rules settle nothing. */
 const STOP_FOR: Record<string, UnfollowedReason> = {
@@ -267,6 +267,99 @@ function loaderSourceCallee(
   return null;
 }
 
+/** What a call that takes its function out of a table may run, as the walk follows it. */
+export interface DispatchedCall {
+  readonly targets: readonly ReachedFunction[];
+  /** True when the source narrows the call to one entry that is one method. */
+  readonly certain: boolean;
+  /** How many entries came to no method this run read. */
+  readonly unresolved: number;
+}
+
+/**
+ * What each of these calls may run, for the ones that take their method
+ * out of a hash or pick one with `send`. One question for the batch.
+ */
+export function dispatchedCalls(
+  calls: readonly { call: RbNode; site: CallSite }[],
+  ctx: ReachContext,
+): Map<number, DispatchedCall> {
+  const byKey = new Map(
+    calls.map((one) => [nodeId(one.site.file, one.call), one]),
+  );
+  const found = new Map<number, DispatchedCall>();
+  const outcomes = dispatchOutcomes(ctx.facts, [...byKey.keys()], RUBY_PROGRAM);
+  for (const [key, outcome] of outcomes) {
+    const asked = byKey.get(key);
+    if (asked === undefined) {
+      continue;
+    }
+    const fits = sendFits(asked.call, asked.site, ctx);
+    const targets = new Map<string, ReachedFunction>();
+    for (const fn of outcome.functions) {
+      for (const target of reachedThrough(fn, outcome.through, ctx)) {
+        if (fits(target)) {
+          targets.set(nodeId(target.file, target.node), target);
+        }
+      }
+    }
+    found.set(asked.call.id, {
+      targets: [...targets.values()],
+      certain:
+        outcome.certain &&
+        outcome.functions.every((fn) => ctx.definitions.has(fn)),
+      unresolved: outcome.unresolved,
+    });
+  }
+  return found;
+}
+
+/**
+ * The method a key is. A lambda in a hash has no summary of its own, so
+ * the walk steps past it to the methods it calls.
+ */
+function reachedThrough(
+  key: string,
+  through: ReadonlyMap<string, readonly string[]>,
+  ctx: ReachContext,
+): ReachedFunction[] {
+  const own = ctx.definitions.get(key);
+  if (own !== undefined) {
+    return [own];
+  }
+  return (through.get(key) ?? []).flatMap((inner) => {
+    const target = ctx.definitions.get(inner);
+    return target === undefined ? [] : [target];
+  });
+}
+
+/**
+ * Which methods a `send` can run: a class method when it is sent to the
+ * class, and an instance method otherwise. A call that takes its method
+ * out of a hash runs whichever method the hash contains.
+ */
+function sendFits(
+  call: RbNode,
+  site: CallSite,
+  ctx: ReachContext,
+): (target: ReachedFunction) => boolean {
+  const method = calleeMethodName(call);
+  if (method === undefined || !SENDING_METHODS.has(method)) {
+    return () => true;
+  }
+  const receiver = field(call, "receiver");
+  const toClass =
+    receiver === null || receiver.type === "self"
+      ? inClassMethod(site, ctx)
+      : readsOffClassItself(
+          receiver,
+          readKey(site.file, receiver, site.method),
+          classLocalsFor(call, site),
+        );
+  return (target) =>
+    definesClassMethod(target.node, ctx.bodyBlocks) === toClass;
+}
+
 function outcomeFor(
   key: string,
   ctx: ReachContext,
@@ -298,9 +391,11 @@ export function mightReadAsACall(
 /**
  * Whether a call with no arguments is a method call instead of a property
  * read. It is a call when the rules settle its receiver on a function or
- * object this run defines. `config.host`, whose receiver the rules know
- * nothing about, is a property read. Treating it as a call would add an
- * effect and a gap for every attribute a body reads.
+ * object this run defines, the object a method gives back included, as
+ * `consumer.consume` does when `consumer` returns
+ * `@consumer ||= Consumer.new(params)`. `config.host`, whose
+ * receiver the rules know nothing about, is a property read. Treating it
+ * as a call would add an effect and a gap for every attribute a body reads.
  */
 export function readsAsACall(
   call: RbNode,
@@ -313,7 +408,13 @@ export function readsAsACall(
     return false;
   }
   const outcome = outcomeFor(spelling.key, ctx, read);
-  return outcome.kind === "function" || outcome.kind === "object";
+  return (
+    outcome.kind === "function" ||
+    outcome.kind === "object" ||
+    objectsBehind(ctx.facts, spelling.key).some((key) =>
+      ctx.classNames.has(key),
+    )
+  );
 }
 
 /** How this call's callee is resolved: through its receiver's key, or as a name Ruby looks up on `self`. */
@@ -322,7 +423,7 @@ function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
   if (methodName === undefined) {
     return { kind: "stopped", reason: "noDeclaration" };
   }
-  if (DYNAMIC_SEND_NAMES.has(methodName)) {
+  if (SENDING_METHODS.has(methodName)) {
     return { kind: "stopped", reason: "unsettledValue" };
   }
   const receiver = field(call, "receiver");
@@ -380,7 +481,7 @@ function asCallee(
   if (outcome.kind === "function") {
     // A method or lambda runs when `call` is sent to it. Any other method
     // called on it is one Ruby itself defines.
-    return spelling.method === INVOKES_RECEIVER
+    return spelling.method === INVOKE_METHOD
       ? functionCallee(outcome.key, ctx)
       : NO_DECLARATION;
   }
@@ -476,7 +577,7 @@ function fromCaller(
 ): CalleeResolution {
   if (
     !parameterKey.startsWith(`${site.owner}#`) ||
-    spelling.method !== INVOKES_RECEIVER
+    spelling.method !== INVOKE_METHOD
   ) {
     return stop("unsettledValue");
   }

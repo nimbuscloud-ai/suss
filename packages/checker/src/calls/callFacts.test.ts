@@ -225,6 +225,58 @@ describe("readCallFacts", () => {
   });
 });
 
+describe("readCallFacts, a call that takes its function from a table", () => {
+  const init = unit("runInit");
+  const check = unit("runCheck");
+  const dispatch = unit("dispatch", [
+    calls("COMMANDS[name]", undefined, {
+      possibleSummaries: [init.identity.id ?? "", check.identity.id ?? ""],
+    }),
+  ]);
+  const facts = readCallFacts([init, check, dispatch]);
+
+  it("reaches every function the table holds, each by a possible call", () => {
+    const reached = facts.reachedFrom([functionOf(dispatch)]);
+    expect([...reached.values()]).toEqual([
+      [
+        {
+          callee: "COMMANDS[name]",
+          to: functionOf(init),
+          recorded: "possible",
+        },
+      ],
+      [
+        {
+          callee: "COMMANDS[name]",
+          to: functionOf(check),
+          recorded: "possible",
+        },
+      ],
+    ]);
+  });
+
+  it("marks the caller as one that may call the function", () => {
+    expect(
+      facts.callersOf({ functions: [functionOf(check)], keys: [] }),
+    ).toEqual([
+      {
+        caller: functionOf(dispatch),
+        callee: "COMMANDS[name]",
+        possible: true,
+      },
+    ]);
+  });
+
+  it("leaves the possible calls out when asked for the ones the source settles", () => {
+    const start = functionOf(dispatch);
+    expect(
+      facts.reachedFromEach([start], { certainOnly: true }).get(start)
+        ?.functions.size,
+    ).toBe(0);
+    expect(facts.reachedFromEach([start]).get(start)?.functions.size).toBe(2);
+  });
+});
+
 describe("readCallFacts, reached from each start", () => {
   const store = unit("loadOrder");
   const service = unit("orderService", [calls("loadOrder", store)]);

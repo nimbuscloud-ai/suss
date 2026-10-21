@@ -146,7 +146,7 @@ export type CheckedIntent = CheckedBoundaryIntent | CheckedPrd;
 export interface UncheckedIntent {
   /** The intent doc's `name` (boundary) or `title` (prd). */
   intent: string;
-  reason: "unkeyable" | "unreadValue" | "unfollowedCall";
+  reason: "unkeyable" | "unreadValue" | "unfollowedCall" | "possibleCall";
   /** The outcome the claim is on, for a claim narrower than the document. */
   outcomeId?: string;
   /** The scenario the claim is on, by its title or its position, for a covering test. */

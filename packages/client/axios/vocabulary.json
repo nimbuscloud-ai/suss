@@ -1,7 +1,7 @@
 {
   "axios": "axios: the default export",
   "create": "axios: factory method building a configured instance",
-  "get": "axios: instance method, HTTP GET",
+  "get": "language: JavaScript spells Map#get the same way. axios: instance method, HTTP GET",
   "post": "axios: instance method, HTTP POST",
   "put": "axios: instance method, HTTP PUT",
   "delete": "axios: instance method, HTTP DELETE",

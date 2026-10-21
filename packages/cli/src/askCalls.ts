@@ -17,7 +17,7 @@ import { functionsSpelled, representativeUnit } from "./reachTarget.js";
 import { providesKeyOf } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { CallFacts, ReachTarget } from "@suss/checker";
+import type { CallFacts, DirectCall, ReachTarget } from "@suss/checker";
 import type { Answer, AnswerItem } from "./ask.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
 
@@ -39,7 +39,7 @@ export function answerCalls(
   }
 
   const { label } = spelled;
-  const { items, callers } = directCalls(facts, spelled.target);
+  const { items, callers, calls } = directCalls(facts, spelled.target, label);
   if (items.length === 0) {
     return {
       shape: "calls",
@@ -55,7 +55,7 @@ export function answerCalls(
   return {
     shape: "calls",
     subject,
-    headline: `${callers.length} unit${callers.length === 1 ? "" : "s"} call${callers.length === 1 ? "s" : ""} ${label}:`,
+    headline: `${callers.length} unit${callers.length === 1 ? "" : "s"} ${callVerb(calls, callers.length)} ${label}:`,
     items,
     needs: [],
     caveats: [
@@ -70,7 +70,12 @@ export function answerCalls(
 export function directCalls(
   facts: CallFacts,
   target: ReachTarget,
-): { items: AnswerItem[]; callers: BehavioralSummary[] } {
+  label: string,
+): {
+  items: AnswerItem[];
+  callers: BehavioralSummary[];
+  calls: readonly DirectCall[];
+} {
   const calls = facts.callersOf(target);
   const callers = [...new Set(calls.map((call) => call.caller))].map((fn) =>
     representativeUnit(facts, fn),
@@ -79,18 +84,31 @@ export function directCalls(
     const caller = representativeUnit(facts, call.caller);
     const provides = providesKeyOf(caller);
     const at = `${caller.location.file}:${caller.location.range.start}${provides === undefined ? "" : `, provides ${provides}`}`;
+    const possibly =
+      call.possible === true
+        ? `, which may run ${label} or another function it picks at run time`
+        : "";
     return {
-      text: `${summaryIdentifier(caller)} (${at}) calls ${call.callee}`,
+      text: `${summaryIdentifier(caller)} (${at}) calls ${call.callee}${possibly}`,
       data: {
         unit: summaryIdentifier(caller),
         file: caller.location.file,
         line: caller.location.range.start,
         ...(provides !== undefined ? { provides } : {}),
         call: call.callee,
+        ...(call.possible === true ? { possible: true } : {}),
       },
     };
   });
-  return { items, callers };
+  return { items, callers, calls };
+}
+
+/** "may call" when every call found may run another function instead, since none of them is sure to reach the subject. */
+function callVerb(calls: readonly DirectCall[], callers: number): string {
+  if (calls.every((call) => call.possible === true)) {
+    return "may call";
+  }
+  return callers === 1 ? "calls" : "call";
 }
 
 /**

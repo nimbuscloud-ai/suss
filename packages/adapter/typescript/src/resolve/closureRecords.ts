@@ -29,6 +29,8 @@ export interface ScanFindings {
   stops: UnfollowedCall[];
   targets: ReadonlyMap<string, DeclaredAt>;
   argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
+  /** Where each function a table call may run is declared, by callee text. */
+  possibleTargets: ReadonlyMap<string, readonly DeclaredAt[]>;
   parameterCalls: ReadonlyArray<{ callee: string; parameterIndex: number }>;
   passedPositions: ReadonlySet<string>;
 }
@@ -53,6 +55,7 @@ export interface ScanRecord {
   stops?: UnfollowedCall[];
   targets?: Array<[string, ...StoredPlace]>;
   argTargets?: Array<[string, Array<[number, ...StoredPlace]>]>;
+  possible?: Array<[string, StoredPlace[]]>;
   parameterCalls?: Array<{ callee: string; parameterIndex: number }>;
   passed?: string[];
 }
@@ -116,11 +119,24 @@ export function fromScanRecord(
     argTargets.set(callee, byPosition);
   }
 
+  const possibleTargets = new Map<string, DeclaredAt[]>();
+  for (const [callee, stored] of record.possible ?? []) {
+    const places = stored.map(placeOf);
+    if (places.some((place) => place === null)) {
+      return null;
+    }
+    possibleTargets.set(
+      callee,
+      places.filter((place): place is DeclaredAt => place !== null),
+    );
+  }
+
   return {
     calls,
     stops: record.stops ?? [],
     targets,
     argTargets,
+    possibleTargets,
     parameterCalls: record.parameterCalls ?? [],
     passedPositions: new Set(record.passed ?? []),
   };
@@ -192,6 +208,11 @@ function filesNamedBy(findings: ScanFindings): string[] {
       files.push(target.file);
     }
   }
+  for (const places of findings.possibleTargets.values()) {
+    for (const target of places) {
+      files.push(target.file);
+    }
+  }
   return files;
 }
 
@@ -249,6 +270,12 @@ export function toScanRecord(
       ]),
     ],
   );
+  const possible = [...findings.possibleTargets].map(
+    ([callee, places]): [string, StoredPlace[]] => [
+      callee,
+      places.map(placeOf),
+    ],
+  );
   if (!complete) {
     return null;
   }
@@ -259,6 +286,7 @@ export function toScanRecord(
     ...(findings.stops.length === 0 ? {} : { stops: findings.stops }),
     ...(targets.length === 0 ? {} : { targets }),
     ...(argTargets.length === 0 ? {} : { argTargets }),
+    ...(possible.length === 0 ? {} : { possible }),
     ...(findings.parameterCalls.length === 0
       ? {}
       : { parameterCalls: [...findings.parameterCalls] }),

@@ -1,7 +1,7 @@
 {
   "name": "@suss/datalog",
   "exports": 34,
-  "internal": 114,
+  "internal": 116,
   "consumers": 0,
-  "unfollowedCalls": 11
+  "unfollowedCalls": 10
 }

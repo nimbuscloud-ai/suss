@@ -24,6 +24,12 @@ export {
   WatchedMap,
 } from "./dependencyLedger.js";
 export {
+  DISPATCH_QUESTION,
+  type DispatchOutcome,
+  dispatchOutcomes,
+  readDispatchOutcomes,
+} from "./dispatch.js";
+export {
   EntryReuse,
   fileOfKey,
   recordsToReplay,
@@ -259,6 +265,174 @@ const STEP_LATTICE = [
   { soFar: RESULT_STEP, next: VALUE_STEP, took: RESULT_STEP },
   { soFar: RESULT_STEP, next: INSTANCE_STEP, took: RESULT_STEP },
   { soFar: RESULT_STEP, next: RESULT_STEP, took: RESULT_STEP },
+];
+
+// The functions a call may run when it takes one out of a table or picks
+// a member by a computed name. They stay out of `stepsTo`, and DESIGN.md
+// says why and which entries a read can come back with.
+const DISPATCH_RULES: readonly Rule[] = [
+  rule(
+    "entryRead",
+    [v("site"), v("o")],
+    [lit("choosesEntry", v("site"), v("o"))],
+  ),
+  rule(
+    "entryRead",
+    [v("site"), v("o")],
+    [lit("namedEntryRead", v("site"), v("o"), v("n"))],
+  ),
+  rule(
+    "entryRead",
+    [v("site"), v("o")],
+    [lit("choosesEntryLike", v("site"), v("o"), v("p"), v("s"))],
+  ),
+  // Every entry of a read whose key is partly written out, by name. A rule
+  // cannot compare strings, so dispatch.ts keeps the names that match, and
+  // these stay out of `dispatchesTo`.
+  rule(
+    "likeEntryAt",
+    [v("site"), v("n"), v("held")],
+    [
+      lit("choosesEntryLike", v("site"), v("o"), v("p"), v("s")),
+      lit("containerOf", v("o"), v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+    ],
+  ),
+  rule(
+    "namedEntryRead",
+    [v("site"), v("o"), v("n")],
+    [lit("choosesNamedEntry", v("site"), v("o"), v("n"))],
+  ),
+  rule(
+    "namedEntryRead",
+    [v("site"), v("o"), v("n")],
+    [lit("readsEntry", v("site"), v("o"), v("n"))],
+  ),
+
+  // The container a read takes its entry from: an object written out, or
+  // a collection the program fills through its methods.
+  rule("containerOf", [v("o"), v("obj")], [lit("objectOf", v("o"), v("obj"))]),
+  rule(
+    "containerOf",
+    [v("o"), v("c")],
+    [
+      lit("reaches", v("o"), v("c"), VALUE_STEP),
+      lit("collectionValue", v("c")),
+    ],
+  ),
+  rule("containerOf", [v("c"), v("c")], [lit("collectionValue", v("c"))]),
+
+  rule(
+    "entryAt",
+    [v("site"), v("held")],
+    [
+      lit("choosesEntry", v("site"), v("o")),
+      lit("containerOf", v("o"), v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+    ],
+    "any entry",
+  ),
+  rule(
+    "entryAt",
+    [v("site"), v("held")],
+    [
+      lit("namedEntryRead", v("site"), v("o"), v("n")),
+      lit("containerOf", v("o"), v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+    ],
+    "named entry",
+  ),
+  rule(
+    "entryAt",
+    [v("site"), v("held")],
+    [lit("computedEntryAt", v("site"), v("held"))],
+  ),
+  // A write under a key the source computes, `T[name] = fn` or a map's
+  // `set`, could be under any name, so every read of the container may
+  // come back with it, a read narrowed to one name included.
+  rule(
+    "computedEntryAt",
+    [v("site"), v("held")],
+    [
+      lit("entryRead", v("site"), v("o")),
+      lit("containerOf", v("o"), v("c")),
+      lit("refersToObject", v("x"), v("c")),
+      lit("holdsUnderKey", v("x"), v("held")),
+    ],
+    "entry under a computed key",
+  ),
+
+  // The read a call takes its function from: the callee itself, a name
+  // for it, or the call when the call is the read, as Ruby's `send` is.
+  rule(
+    "callsEntryAt",
+    [v("r"), v("site")],
+    [lit("call", v("r"), v("site")), lit("entryRead", v("site"), v("o"))],
+  ),
+  rule(
+    "callsEntryAt",
+    [v("r"), v("site")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("reaches", v("c"), v("site"), VALUE_STEP),
+      lit("entryRead", v("site"), v("o")),
+    ],
+  ),
+  rule("callsEntryAt", [v("r"), v("r")], [lit("callsChosenEntry", v("r"))]),
+  rule(
+    "callsEntryAt",
+    [v("r"), v("site")],
+    [lit("callsEntryInBranch", v("r"), v("site"))],
+  ),
+
+  // `c ? T[k] : undefined` is one of its branches, so a call through it
+  // may run what the read gives. The other branch may be some other
+  // function, so dispatch.ts never counts such a call as certain.
+  rule(
+    "callsEntryInBranch",
+    [v("r"), v("site")],
+    [lit("call", v("r"), v("c")), lit("branchReadsEntry", v("c"), v("site"))],
+  ),
+  rule(
+    "callsEntryInBranch",
+    [v("r"), v("site")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("reaches", v("c"), v("x"), VALUE_STEP),
+      lit("branchReadsEntry", v("x"), v("site")),
+    ],
+  ),
+  rule(
+    "branchReadsEntry",
+    [v("x"), v("site")],
+    [
+      lit("conditionalBranch", v("x"), v("site")),
+      lit("entryRead", v("site"), v("o")),
+    ],
+  ),
+  rule(
+    "branchReadsEntry",
+    [v("x"), v("site")],
+    [
+      lit("conditionalBranch", v("x"), v("b")),
+      lit("reaches", v("b"), v("site"), VALUE_STEP),
+      lit("entryRead", v("site"), v("o")),
+    ],
+  ),
+
+  rule(
+    "dispatchesTo",
+    [v("r"), v("f")],
+    [
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("entryAt", v("site"), v("held")),
+      lit("comesTo", v("held"), v("f")),
+      lit("func", v("f")),
+    ],
+  ),
+  // A collection a program fills is an object the way a written one is,
+  // so a write through a name for it lands on it.
+  rule("refersToObject", [v("c"), v("c")], [lit("collectionValue", v("c"))]),
 ];
 
 /**
@@ -1431,6 +1605,17 @@ const STATED_RULES = [
       lit("callsNamed", v("r"), v("r0")),
     ],
   ),
+  // The same, called straight off the factory's call, as
+  // `register("created")(handler)` or a Python decorator written that way.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [
+      lit("returnsValue", v("g"), v("f")),
+      lit("callsFunction", v("r0"), v("g")),
+      lit("call", v("r"), v("r0")),
+    ],
+  ),
 
   // The expressions that refer to an object under another name, through
   // a name hop or an import. Asked from the object, so it visits only
@@ -1890,6 +2075,8 @@ const STATED_RULES = [
     [lit("comesTo", v("x"), v("z")), lit("func", v("z"))],
   ),
 
+  ...DISPATCH_RULES,
+
   ...PASSED_ON_RULES,
 ];
 
@@ -2141,18 +2328,112 @@ export const RESOLUTION_QUESTIONS = [
   ),
   // The functions whose return becomes the exit code: a call the value
   // that ends up as the code is, or one it reaches. DESIGN.md has the seeds.
+  rule("exitStart", [v("x"), v("x")], [lit("wantedExitSink", v("x"))]),
+  // `reaches` takes no step through a call that picks its function from a
+  // table, so the walk starts again from what each function there returns.
   rule(
-    "wantedExitCodeFrom",
-    [v("x"), v("f")],
-    [lit("wantedExitSink", v("x")), lit("invokes", v("x"), v("f"))],
+    "exitStart",
+    [v("x"), v("ret")],
+    [
+      lit("exitReached", v("x"), v("y")),
+      lit("dispatchesTo", v("y"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+    ],
+  ),
+  rule("exitReached", [v("x"), v("s")], [lit("exitStart", v("x"), v("s"))]),
+  rule(
+    "exitReached",
+    [v("x"), v("y")],
+    [
+      lit("exitStart", v("x"), v("s")),
+      lit("reaches", v("s"), v("y"), v("kind")),
+    ],
   ),
   rule(
     "wantedExitCodeFrom",
     [v("x"), v("f")],
+    [lit("exitReached", v("x"), v("y")), lit("invokes", v("y"), v("f"))],
+  ),
+  rule(
+    "wantedExitCodeFrom",
+    [v("x"), v("f")],
+    [lit("exitReached", v("x"), v("y")), lit("dispatchesTo", v("y"), v("f"))],
+  ),
+  // The functions a call may run when it takes one from a table, with the
+  // entry each came from, and the entries that come to no function. The
+  // reader in dispatch.ts decides whether the call runs exactly one.
+  rule(
+    "wantedDispatchSite",
+    [v("r"), v("site")],
+    [lit("wantedDispatch", v("r")), lit("callsEntryAt", v("r"), v("site"))],
+  ),
+  rule(
+    "wantedDispatchEntry",
+    [v("r"), v("held")],
     [
-      lit("wantedExitSink", v("x")),
-      lit("reaches", v("x"), v("y"), v("kind")),
-      lit("invokes", v("y"), v("f")),
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("entryAt", v("site"), v("held")),
+    ],
+  ),
+  rule(
+    "wantedDispatchInBranch",
+    [v("r"), v("site")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryInBranch", v("r"), v("site")),
+    ],
+  ),
+  rule(
+    "wantedDispatchComputed",
+    [v("r"), v("held")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("computedEntryAt", v("site"), v("held")),
+    ],
+  ),
+  rule(
+    "wantedDispatchFunction",
+    [v("r"), v("held"), v("f")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("entryAt", v("site"), v("held")),
+      lit("comesTo", v("held"), v("f")),
+      lit("func", v("f")),
+    ],
+  ),
+  rule(
+    "wantedDispatchLikeEntry",
+    [v("r"), v("site"), v("n"), v("held")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("likeEntryAt", v("site"), v("n"), v("held")),
+    ],
+  ),
+  rule(
+    "wantedDispatchLikeFunction",
+    [v("r"), v("held"), v("f")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("callsEntryAt", v("r"), v("site")),
+      lit("likeEntryAt", v("site"), v("n"), v("held")),
+      lit("comesTo", v("held"), v("f")),
+      lit("func", v("f")),
+    ],
+  ),
+  // What a function there calls in its own body, for an entry written as
+  // a lambda, which no summary describes.
+  rule(
+    "wantedDispatchThrough",
+    [v("r"), v("f"), v("g")],
+    [
+      lit("wantedDispatch", v("r")),
+      lit("dispatchesTo", v("r"), v("f")),
+      lit("makesCall", v("f"), v("r2")),
+      lit("invokes", v("r2"), v("g")),
     ],
   ),
   // The calls that hand a stream on, so the asker can read the callee's file.

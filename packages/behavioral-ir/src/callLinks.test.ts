@@ -11,6 +11,7 @@ import {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placePossibleCalls,
   placeReceiverClasses,
   ReceiverClasses,
   recordParameterGaps,
@@ -26,6 +27,7 @@ type Call =
       callee: string;
       declaredAt?: DeclaredAt;
       argsDeclaredAt?: Record<string, DeclaredAt>;
+      possibleDeclaredAt?: DeclaredAt[];
     };
 
 function summary(over: {
@@ -289,6 +291,46 @@ describe("linkCallsToSummaries", () => {
     expect(effect).not.toHaveProperty("argsSummary");
   });
 
+  it("links each function a table call may run to the summary declared there", () => {
+    const init = summary({
+      name: "runInit",
+      file: "src/commands.ts",
+      id: "cli::src/commands.ts::runInit",
+      start: 10,
+    });
+    const check = summary({
+      name: "runCheck",
+      file: "src/commands.ts",
+      id: "cli::src/commands.ts::runCheck",
+      start: 30,
+    });
+    const caller = summary({
+      name: "dispatch",
+      file: "src/run.ts",
+      calls: [
+        {
+          callee: "run",
+          possibleDeclaredAt: [
+            declaredAt(check),
+            declaredAt(init),
+            { file: "node_modules/lib/index.d.ts", span: { start: 0, end: 1 } },
+          ],
+        },
+      ],
+    });
+
+    linkCallsToSummaries([caller, init, check]);
+
+    expect(argEffectOf(caller)).toMatchObject({
+      possibleSummaries: [
+        "cli::src/commands.ts::runCheck",
+        "cli::src/commands.ts::runInit",
+      ],
+    });
+    expect(argEffectOf(caller)).not.toHaveProperty("possibleDeclaredAt");
+    expect(argEffectOf(caller)).not.toHaveProperty("summary");
+  });
+
   it("spells a declaration key by file and offsets", () => {
     expect(declarationKey("src/h.py", { start: 3, end: 9 })).toBe(
       "src/h.py:3-9",
@@ -307,6 +349,33 @@ describe("TargetPlacements", () => {
     placements.place("helper", at(10));
 
     expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
+  });
+
+  it("keeps the functions a table call may run, in one order whatever order they came in", () => {
+    const placements = new TargetPlacements();
+    placements.placePossible("run", [at(20), at(10)]);
+    placements.placePossible("run", [at(10), at(20)]);
+
+    expect(placements.possibleTargets).toEqual(
+      new Map([["run", [at(10), at(20)]]]),
+    );
+  });
+
+  it("settles a callee text placed at two sets of possible functions to nothing", () => {
+    const placements = new TargetPlacements();
+    placements.placePossible("run", [at(10), at(20)]);
+    placements.placePossible("run", [at(10)]);
+    placements.placePossible("other", []);
+
+    expect(placements.possibleTargets.size).toBe(0);
+  });
+
+  it("leaves out possible functions for a callee text also placed at one declaration", () => {
+    const placements = new TargetPlacements();
+    placements.placePossible("run", [at(10), at(20)]);
+    placements.place("run", at(30));
+
+    expect(placements.possibleTargets.size).toBe(0);
   });
 
   it("settles a callee text placed two ways to nothing, a shadowed name say", () => {
@@ -425,6 +494,39 @@ describe("placeCalls", () => {
     );
 
     expect(caller.transitions[0]?.effects).toEqual([read]);
+  });
+});
+
+describe("placePossibleCalls", () => {
+  it("writes possibleDeclaredAt on the invocation effect a target names, and leaves a non-call effect alone", () => {
+    const caller = summary({
+      name: "dispatch",
+      file: "src/run.ts",
+      calls: ["run", "untouched"],
+    });
+    const read = {
+      type: "interaction" as const,
+      interaction: {
+        class: "storage-access" as const,
+        target: { system: "postgresql", collection: "orders" },
+        operation: "read" as const,
+      },
+      target: "orders",
+      operation: "read",
+    };
+    caller.transitions[0]?.effects.push(read as never);
+    const targets = [
+      { file: "src/commands.ts", span: { start: 10, end: 18 } },
+      { file: "src/commands.ts", span: { start: 30, end: 38 } },
+    ];
+
+    placePossibleCalls(caller, new Map([["run", targets]]));
+    placePossibleCalls(caller, undefined);
+
+    const effects = caller.transitions[0]?.effects ?? [];
+    expect(effects[0]).toMatchObject({ possibleDeclaredAt: targets });
+    expect(effects[1]).not.toHaveProperty("possibleDeclaredAt");
+    expect(effects[2]).toEqual(read);
   });
 });
 
