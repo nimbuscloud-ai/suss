@@ -869,6 +869,24 @@ The floor takes a count (`25`) or a share (`50%`).
 
 **A bug when:** both sides were extracted and the share is still high. The usual causes are unpathed providers, whose routes have a gap message saying why, and two spellings of one boundary.
 
+### `packNeedsConfig`
+
+**Severity:** warning. Emitted by `suss check` over a folder whose extract note (`<name>.incomplete.json`) lists a pack that was left out for want of an option.
+
+An extract named a pack that reads nothing until the project gives it an option, such as the directory `graphql-ruby` looks classes up under, and no option was given. The summaries are missing whatever that pack would have found, and an agreeing check over them says nothing about it.
+
+```
+warning: packNeedsConfig
+  The graphql-ruby pack reads nothing until root is set, for example {"root":"app/graphql"}, so its boundaries are missing from these summaries.
+  Write that to a JSON file, pass it as -f graphql-ruby=<config.json> to the extract, and run the check again.
+```
+
+It is a warning because the check that follows fails on its own account when the missing pack left nothing to pair. A run that paired other boundaries passes with this entry beside it.
+
+**Legitimate when:** the pack was named by mistake and the project does not use its library. Drop it from the extract.
+
+**A bug when:** the project does use the library. The extract ran without the pack's config file, so its boundaries are not in the comparison.
+
 ### `unreadableInput`
 
 **Severity:** error. Emitted under `--fail-on-unreadable`.

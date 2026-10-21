@@ -7,7 +7,7 @@ export {
   functionOf,
   readCallFacts,
 } from "@suss/checker";
-export { makeIgnoredDirectory } from "@suss/extractor";
+export { liveRecordFor, makeIgnoredDirectory } from "@suss/extractor";
 
 export {
   type AskOptions,
@@ -15,6 +15,7 @@ export {
   ask,
   preloadForQuestion,
 } from "./ask.js";
+export { setCacheDir, takeCacheDirFlag } from "./cacheDirFlag.js";
 export { check, checkDir, checkDirectory } from "./check.js";
 export { type CheckAtOptions, type CheckAtResult, checkAt } from "./checkAt.js";
 export { contract } from "./contract.js";

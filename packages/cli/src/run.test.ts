@@ -876,7 +876,7 @@ describe("runCli extract", () => {
       ]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("needs `root`");
+    expect(io.stderr).toContain("reads nothing until root is set");
     expect(io.stderr).not.toContain("    at ");
   });
 });

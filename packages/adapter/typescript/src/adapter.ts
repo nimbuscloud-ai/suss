@@ -55,6 +55,7 @@ import {
   type DiscoveredSubUnitParent,
   type DiscoveryPattern,
   type ExtractorOptions,
+  extractionCacheDirFor,
   extractionConfigStamp,
   type InputMappingPattern,
   type InvocationRecognizer,
@@ -2401,7 +2402,8 @@ export interface TypeScriptAdapterConfig {
   onExtractionReport?: (report: ExtractionReport) => void;
   /**
    * Absolute. `.suss/cache/` in `walkedDirectory` when set, otherwise
-   * beside the tsconfig; `null` turns it off.
+   * beside the tsconfig, or under `SUSS_CACHE_DIR` when that is set;
+   * `null` turns it off.
    */
   cacheDir?: string | null;
   /** The modules the project lists in `suss.json`, with absolute paths. */
@@ -2503,11 +2505,11 @@ interface TsCacheMeta {
  */
 function defaultCacheDir(config: TypeScriptAdapterConfig): string | null {
   if (config.walkedDirectory !== undefined) {
-    return path.join(config.walkedDirectory, ".suss", "cache");
+    return extractionCacheDirFor(config.walkedDirectory);
   }
 
   if (config.tsConfigFilePath !== undefined) {
-    return path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache");
+    return extractionCacheDirFor(path.dirname(config.tsConfigFilePath));
   }
 
   return null;

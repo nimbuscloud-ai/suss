@@ -153,6 +153,8 @@ export const RunFindingKindSchema = z.enum([
   "unreadableInput",
   /** More boundaries went unpaired than the caller's floor allows. */
   "mostlyUnpaired",
+  /** An extract left a pack out because an option it needs was not set. */
+  "packNeedsConfig",
 ]);
 
 export const RunFindingSchema = z.object({

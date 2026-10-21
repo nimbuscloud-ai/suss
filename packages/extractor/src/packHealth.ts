@@ -351,6 +351,40 @@ function undocumentedDeclarations(
 }
 
 /**
+ * A pack the run asked for that reads nothing until a project option is
+ * set, such as the directory a GraphQL pack looks classes up under.
+ * `example` is a config file's JSON text with a value that works for a
+ * project laid out the way the library's generator leaves it.
+ */
+export interface PackConfigNeed {
+  pack: string;
+  option: string;
+  example: string;
+}
+
+/**
+ * Packs the run left out because their option was missing.
+ *
+ * Without the option the pack has no way to find anything, and the rest
+ * of the run looks the same as it would for a project the pack has
+ * nothing to say about. The pack is not part of the extraction report,
+ * since it never ran, so the caller passes these in.
+ */
+export function packConfigCheck(
+  needs: ReadonlyArray<PackConfigNeed>,
+): HealthCheck {
+  return {
+    name: "every pack that needs an option was given it",
+    code: "no-config",
+    audience: "run",
+    violations: needs.map((need) => ({
+      label: need.pack,
+      detail: `reads nothing until ${need.option} is set, for example ${need.example}. Write that to a JSON file and pass -f ${need.pack}=<config.json>.`,
+    })),
+  };
+}
+
+/**
  * Run every health check over one extraction report and return what
  * fired, grouped by which check caught it.
  */

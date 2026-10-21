@@ -12,7 +12,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
              [-f <pack>[=<config.json>] ...] [-o <output.json>]
              [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
              [--explain] [--timing] [--datalog-profile] [--no-cache]
-             [--allow-empty] [--fail-on-pack-error] [--intent <directory>]
+             [--cache-dir <path>] [--allow-empty] [--fail-on-pack-error] [--intent <directory>]
 
 suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 ```
@@ -31,8 +31,9 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 | `--timing` | off | Print how long each phase took, to stderr. |
 | `--datalog-profile` | off | Print what the Datalog evaluator spent its time on, rule by rule, with how many rows its joins read. Use it when `--timing` shows the rules phase is the slow one. |
 | `--no-cache` | off | Skip the on-disk cache for this run. |
+| `--cache-dir <path>` | `.suss/cache` under the folder being read, or `SUSS_CACHE_DIR` | Keep the cache here instead. Use it to read a checkout you may not write to. See [Where suss writes](/reference/cli/#where-suss-writes). With `--out-dir`, it applies to every entry. |
 | `--allow-empty` | off | Exit `0` even when the run produced nothing. Without it that run fails, because a silent zero looks the same in CI as a passing check. |
-| `--fail-on-pack-error` | off | Exit non-zero when a pack throws while it reads. By default the run reports the throw and keeps going with the other packs. |
+| `--fail-on-pack-error` | off | Exit non-zero when a pack throws while it reads, or was left out because an option it needs was not given. By default the run reports it and keeps going with the other packs. |
 | `--intent <path>` | none | A folder of intent documents. A test pack (`-f vitest`, `-f pytest`, `-f rspec` or `-f minitest`) reads only the test files its PRDs list under `coveredBy`, instead of every test, so `check --intent` can check them. A pack given its own `files` in a config file keeps that list. |
 
 `--fail-on-empty` is gone. A run that finds nothing now fails by default, and passing the old flag stops the run and points you at `--allow-empty`.
@@ -41,7 +42,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 
 Without `-o`, the summary JSON goes to stdout and nothing else does, so `suss extract ... | jq` works. With `-o`, the JSON goes to the file and one acknowledgement line goes to stderr.
 
-With `-o`, a run that could not read part of the project also writes a note beside the summaries, at `summaries.incomplete.json` next to `summaries.json`. It has one key per reason: `filesWithUnreadableExports` for re-export chains suss could not follow in a TypeScript run, and `submodulesNotCheckedOut` for a submodule with nothing in it, which any language can hit. A run with nothing to report deletes a note an earlier run left, so a stale file never fails a job that has since been fixed.
+With `-o`, a run that could not read part of the project also writes a note beside the summaries, at `summaries.incomplete.json` next to `summaries.json`. It has one key per reason: `filesWithUnreadableExports` for re-export chains suss could not follow in a TypeScript run, `submodulesNotCheckedOut` for a submodule with nothing in it, which any language can hit, and `packsNeedingConfig` for a pack that was left out because an option it needs was not given. `suss check --json` turns that last one into a `packNeedsConfig` run finding. A run with nothing to report deletes a note an earlier run left, so a stale file never fails a job that has since been fixed.
 
 ## Example
 
@@ -143,6 +144,15 @@ Write `-f <pack>=<config.json>` and the file's contents go to the pack as its op
 A relative config path typed after `-f` is read against the working directory. The same spec written in `suss.json` is read against the directory `suss.json` is in, so the file works whichever directory a command or the MCP server starts from. [`suss init`](/reference/cli/init#what-it-writes) writes the config file for each pack that takes one when it writes `suss.json`, and lists the pack with its file.
 
 A pack config describes your own project: which database is behind a connection, or which directory your schema lives in. A fact about a package you depend on goes in a [dependency stub](/guides/teach-a-dependency) instead, and every pack in the run reads it from there.
+
+Four packs read nothing until they are given an option: `graphql-ruby` needs `root`, and `activerecord`, `sqlalchemy` and `sqlmodel` need `storageSystem`. Run without it, the pack is left out and the pack health block says so, with an example to copy:
+
+```
+Pack health (1):
+  no-config  graphql-ruby  reads nothing until root is set, for example {"root":"app/graphql"}. Write that to a JSON file and pass -f graphql-ruby=<config.json>.
+```
+
+When no other pack in the run produced a summary, the run fails like any other empty one. See [Fix a run that found nothing](/guides/fix-an-empty-run#a-pack-needs-an-option-you-did-not-give).
 
 Most packs have nothing to configure. `aws-dynamodb` takes `requiresImport`, the modules whose presence, directly or through a file the project imports, makes a file one the pack should read. `react-router` takes `errorHelpers`, the project's own helpers that turn an error into a response.
 

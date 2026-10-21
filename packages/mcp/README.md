@@ -60,6 +60,10 @@ ask what calls a function before changing its signature. When it cannot
 answer, `needs` lists the input that would let it, and that is usually
 the thing to act on.
 
+The cache and the socket record go under `.suss` in the project. Pass
+`--cache-dir <path>` after the project, or set `SUSS_CACHE_DIR`, to put
+them elsewhere, for a checkout you cannot write to.
+
 ## Staying current
 
 The server connects to its host first and reads `suss.json` in the

@@ -28,6 +28,13 @@ spec you skipped only when `suss.json` lists it. Without the file, the
 boundaries whose other side is in that spec go unpaired and nothing says
 why. In CI, `init` prints the commands instead of prompting.
 
+## Reading a checkout you may not write to
+
+suss keeps an extraction cache in `.suss` under the project. Pass
+`--cache-dir <path>` to `init`, `extract`, `inspect`, `check` or `ask`, or
+set `SUSS_CACHE_DIR`, and the cache goes there instead. The flag wins.
+Then nothing is written into the checkout except where you give `-o`.
+
 ## Which command to use
 
 | You want | Run |
