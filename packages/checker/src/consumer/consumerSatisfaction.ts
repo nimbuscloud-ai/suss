@@ -1,4 +1,5 @@
 import { statusAccessorsFor } from "../contract/declaredContract.js";
+import { lowestStatusSentUnread } from "../contract/partlyRead.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
@@ -10,12 +11,20 @@ import {
   nothingWasRead,
 } from "../coverage/responseMatch.js";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Finding,
+  WrapperIndex,
+} from "@suss/behavioral-ir";
 import type { DeclaredStatusRange } from "../coverage/responseMatch.js";
+
+/** No summaries to look a wrapper up in, so every wrapper counts as unread. */
+const NO_WRAPPER_SUMMARIES: WrapperIndex = new Map();
 
 export function checkConsumerSatisfaction(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
+  wrappers: WrapperIndex = NO_WRAPPER_SUMMARIES,
 ): Finding[] {
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
@@ -24,6 +33,9 @@ export function checkConsumerSatisfaction(
   // calling the consumer's branches dead would blame the consumer for
   // that. Those branches get low confidence instead.
   const unread = nothingWasRead(provider);
+  // A wrapper suss did not read, or a throw the framework turns into a
+  // status, can send a status no transition shows.
+  const unreadFrom = lowestStatusSentUnread(provider, wrappers);
 
   const providerStatuses = new Set<number>();
   const providerRanges: DeclaredStatusRange[] = [];
@@ -64,15 +76,13 @@ export function checkConsumerSatisfaction(
       if (producesStatus(status)) {
         continue;
       }
-      if (providerHasOpaqueStatus || unread) {
+      if (providerHasOpaqueStatus || unread || status >= unreadFrom) {
         findings.push({
           kind: "lowConfidence",
           boundary,
           provider: makeSide(provider),
           consumer: makeSide(consumer, ct.id),
-          description: unread
-            ? `Consumer expects status ${status}, and nothing about what the provider answers was read, so this cannot be confirmed either way`
-            : `Consumer expects status ${status}, and one of the provider's statuses could not be read, so this cannot be confirmed either way`,
+          description: `Consumer expects status ${status}, and ${whatWentUnread(unread, providerHasOpaqueStatus)}, so this cannot be confirmed either way`,
           severity: "info",
         });
         continue;
@@ -89,4 +99,15 @@ export function checkConsumerSatisfaction(
   }
 
   return findings;
+}
+
+/** Why the provider's statuses are not all known, as the finding says it. */
+function whatWentUnread(nothingRead: boolean, opaqueStatus: boolean): string {
+  if (nothingRead) {
+    return "nothing about what the provider answers was read";
+  }
+  if (opaqueStatus) {
+    return "one of the provider's statuses could not be read";
+  }
+  return "part of the provider went unread, such as a wrapper around it";
 }

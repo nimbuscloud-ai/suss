@@ -162,17 +162,25 @@ function reachesTheFramework(transition: Transition): boolean {
  * composed into: the run has no summary for it, part of it went unread,
  * or it makes a call suss could not follow where that call could send
  * the response. A filter that responds through a helper often does it
- * in that call.
+ * in that call. The call that hands the request on is left out, since
+ * what runs there is the route's own handler.
  */
 function wrapperUnread(wrapper: BehavioralSummary | undefined): boolean {
   if (wrapper === undefined) {
     return true;
   }
+  const handsOnTo = new Set(
+    wrapper.transitions.flatMap((t) =>
+      t.output.type === "delegate" ? [t.output.to] : [],
+    ),
+  );
   return (
     wrapper.gaps.some(
       (gap) =>
         gap.type === "unreadOutcome" ||
-        (gap.type === "unfollowedCall" && gap.usedAsValue !== true),
+        (gap.type === "unfollowedCall" &&
+          gap.usedAsValue !== true &&
+          !handsOnTo.has(gap.callee ?? "")),
     ) || wrapper.transitions.some(hasOpaqueStatus)
   );
 }

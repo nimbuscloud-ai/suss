@@ -209,6 +209,8 @@ The branch never runs and nothing misreads because of it, so there is no wrong r
 
 A status inside a range the provider declares (404 against an OpenAPI `4XX`) is produced, and a provider with a `default` response produces any status, so neither makes a branch dead.
 
+A provider suss read only in part may send a status no path shows. A route behind a wrapper suss could not read, such as one a library factory built, can send a redirect or a failure from it, and a route that throws something no error handler catches gets a status from the framework. A branch on one of those statuses is reported as `lowConfidence`.
+
 **Fix:** delete the branch, or add the missing status to the provider's contract.
 
 ### `providerContractViolation`
