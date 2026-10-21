@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { computeContentHash } from "@suss/adapter-typescript";
 import { safeParseSummaries } from "@suss/behavioral-ir";
+import { createCodeHasher } from "@suss/extractor";
 
 import {
   BUILTIN_FRAMEWORKS,
@@ -46,6 +46,12 @@ function writeConfig(contents: string): string {
   const file = path.join(dir, "pack.json");
   fs.writeFileSync(file, contents);
   return file;
+}
+
+function codeHashOf(specifier: string): string {
+  return createCodeHasher().codeHash(
+    fileURLToPath(import.meta.resolve(specifier)),
+  );
 }
 
 /**
@@ -129,32 +135,17 @@ describe("resolveFramework", () => {
 
   it("stamps a pack with a hash of the code it loaded", async () => {
     const pack = await resolveFramework("apollo-client");
-    const loaded = fileURLToPath(
-      import.meta.resolve("@suss/packs/apollo-client"),
-    );
 
-    expect(pack.version).toContain(computeContentHash([loaded]));
-    expect(pack.version).not.toContain(
-      computeContentHash([
-        fileURLToPath(import.meta.resolve("@suss/packs/fetch")),
-      ]),
-    );
+    expect(pack.version).toContain(codeHashOf("@suss/packs/apollo-client"));
+    expect(pack.version).not.toContain(codeHashOf("@suss/packs/fetch"));
   });
 
   it("gives two packs resolved in one process their own code hash", async () => {
     const apollo = await resolveFramework("apollo-client");
     const web = await resolveFramework("fetch");
 
-    expect(apollo.version).toContain(
-      computeContentHash([
-        fileURLToPath(import.meta.resolve("@suss/packs/apollo-client")),
-      ]),
-    );
-    expect(web.version).toContain(
-      computeContentHash([
-        fileURLToPath(import.meta.resolve("@suss/packs/fetch")),
-      ]),
-    );
+    expect(apollo.version).toContain(codeHashOf("@suss/packs/apollo-client"));
+    expect(web.version).toContain(codeHashOf("@suss/packs/fetch"));
   });
 
   it("keeps the config in the stamp alongside the code", async () => {
@@ -162,10 +153,7 @@ describe("resolveFramework", () => {
       `aws-dynamodb=${writeConfig('{"requiresImport":["@acme/signing"]}')}`,
     );
     const plain = await resolveFramework("aws-dynamodb");
-    const loaded = fileURLToPath(
-      import.meta.resolve("@suss/packs/aws-dynamodb"),
-    );
-    const code = computeContentHash([loaded]);
+    const code = codeHashOf("@suss/packs/aws-dynamodb");
 
     expect(plain.version).toContain(code);
     expect(configured.version).toContain(code);

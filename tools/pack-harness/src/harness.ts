@@ -13,7 +13,11 @@ import {
 import { createTestProject } from "@suss/test-project";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type {
+  AccessRecognizer,
+  InvocationRecognizer,
+  PatternPack,
+} from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
 /** Where a snippet goes when the test does not say. */
@@ -106,12 +110,52 @@ function writeFiles(
   return entryFile;
 }
 
+/**
+ * The effects a pack emits over a file a test already built in a project
+ * of its own. A test passes the store when it has set one up, such as one
+ * it spies on or one that has read some files and not others; without
+ * one, the store is the one extraction starts from.
+ */
+export function effectsOverFile(
+  sourceFile: SourceFile,
+  pack: PatternPack,
+  store?: ResolutionStore,
+): Effect[] {
+  const written = sourceFile
+    .getProject()
+    .getSourceFiles()
+    .filter((one) => !one.isInNodeModules())
+    .map((one) => one.getFilePath());
+  return effectsOver(sourceFile, pack, written, store);
+}
+
+/** The recognizers a test is about, by the walk that hands them a node. */
+export interface RecognizersUnderTest {
+  invocation?: InvocationRecognizer[];
+  access?: AccessRecognizer[];
+}
+
+/**
+ * The same pack with only these recognizers left in, so a test about one
+ * recognizer does not see the effects of the others.
+ */
+export function packWithOnly(
+  pack: PatternPack,
+  recognizers: RecognizersUnderTest,
+): PatternPack {
+  return {
+    ...pack,
+    invocationRecognizers: recognizers.invocation ?? [],
+    accessRecognizers: recognizers.access ?? [],
+  };
+}
+
 function effectsOver(
   sourceFile: SourceFile,
   pack: PatternPack,
   written: readonly string[],
+  store: ResolutionStore = ResolutionStore.forPacks([pack]),
 ): Effect[] {
-  const store = ResolutionStore.forPacks([pack]);
   const invocations = [
     ...(pack.invocationRecognizers ?? []),
     ...contributedBy(pack, sourceFile, written, store),

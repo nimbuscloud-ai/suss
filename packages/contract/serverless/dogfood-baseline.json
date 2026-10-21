@@ -1,0 +1,7 @@
+{
+  "name": "@suss/contract-serverless",
+  "exports": 10,
+  "internal": 18,
+  "consumers": 11,
+  "unfollowedCalls": 6
+}

@@ -260,7 +260,7 @@ Options (ask):
     what reads <boundary>                which units read it
     what writes <boundary>               which units write it
     what invokes <boundary>              which units invoke it
-    what calls <unit>                    which units call it
+    what calls <unit or boundary>        which units call it
     what does <unit> reach               which boundaries a file or
                                          summary goes through
     what reaches <target>                which boundaries end up going
@@ -537,7 +537,7 @@ async function packsFromProject(source: {
     ...(source.tsconfig !== undefined ? { tsconfig: source.tsconfig } : {}),
     ...(source.lang !== undefined ? { lang: source.lang } : {}),
   });
-  const { reads, declared } = await declaredReads(source.root);
+  const { reads, declared, foldersFound } = await declaredReads(source.root);
   const entry = extractEntryFor(reads, language);
   if (entry === undefined) {
     process.stderr.write(noPacksMessage(source, language, reads, declared));
@@ -556,7 +556,7 @@ async function packsFromProject(source: {
       : { project: path.relative(source.root, tsconfig) || "." }),
   };
   process.stderr.write(
-    `${whereReadsCameFrom(source.root, declared)}\n  ${commandFor(running)}\n`,
+    `${whereReadsCameFrom(source.root, declared, foldersFound)}\n  ${commandFor(running)}\n`,
   );
   return { frameworks: packSpecsOf(entry, source.root), tsconfig };
 }
@@ -629,7 +629,7 @@ async function readProjectSaying(
   }
   process.stderr.write(
     [
-      whereReadsCameFrom(root, reads.declared),
+      whereReadsCameFrom(root, reads.declared, reads.foldersFound),
       ...(quiet ? [] : reads.reads.map((entry) => `  ${commandFor(entry)}`)),
       "",
     ].join("\n"),

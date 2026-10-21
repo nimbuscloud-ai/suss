@@ -79,7 +79,7 @@ It takes ten questions, worded like this:
 - `what reads <boundary>`
 - `what writes <boundary>`
 - `what invokes <boundary>`
-- `what calls <unit>`
+- `what calls <unit or boundary>`
 - `what does <unit> reach`
 - `what reaches <target>`
 - `what does <package or unit> provide`, also `what does <package> export`
@@ -87,6 +87,11 @@ It takes ten questions, worded like this:
 - `why does <name> at <file>:<line> resolve to <target>`
 
 Run `suss ask` with no question and it prints this list back.
+
+`what calls` on a route, a table or a queue lists every unit that
+calls it from outside, the same units `what reads` and `what writes`
+list, and says what each one does there. Units that call the code
+serving it as a function come after them.
 
 Five of them also have a symbol form, such as `<- <unit>` and
 `<unit> ->`. The reference for

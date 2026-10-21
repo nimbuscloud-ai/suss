@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-aws-secrets-manager",
+  "exports": 2,
+  "internal": 0,
+  "consumers": 1,
+  "unfollowedCalls": 0
+}

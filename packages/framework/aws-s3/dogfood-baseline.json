@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-aws-s3",
+  "exports": 2,
+  "internal": 1,
+  "consumers": 2,
+  "unfollowedCalls": 0
+}

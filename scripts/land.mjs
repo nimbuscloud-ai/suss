@@ -43,7 +43,7 @@ const ROOT = path.resolve(import.meta.dirname, "..");
  * else stops the script.
  *
  * The regenerate workflow (.github/workflows/regenerate.yml) stages the
- * same three groups when it refreshes main after a merge. A workflow
+ * same groups when it refreshes main after a merge. A workflow
  * cannot import a module, so when this list changes, the staging list
  * there has to change with it.
  *
@@ -58,6 +58,10 @@ export const GENERATED_PATH_GROUPS = [
   {
     pathspec: "scripts/dogfood-baseline.json",
     pattern: /^scripts\/dogfood-baseline\.json$/,
+  },
+  {
+    pathspec: "packages/**/dogfood-baseline.json",
+    pattern: /^packages\/(?:[^/]+\/)+dogfood-baseline\.json$/,
   },
   {
     pathspec: "packages/**/coverage/coverage-summary.json",

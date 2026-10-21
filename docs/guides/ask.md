@@ -127,7 +127,7 @@ Five questions have a symbol form, for asking the same thing often. The arrows p
 
 | Symbols | The question it means |
 |---|---|
-| `<- <unit>` | `what calls <unit>` |
+| `<- <unit or boundary>` | `what calls <unit or boundary>` |
 | `<unit> ->` | `what does <unit> reach` |
 | `<unit> -> <boundary> ?` | `why does <unit> reach <boundary>` |
 | `r<- <boundary>` | `what reads <boundary>` |
