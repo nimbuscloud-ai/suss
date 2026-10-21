@@ -193,15 +193,14 @@ function movedPaths(unit: MovedUnit): MovedPaths | null {
  * The data a changed unit moved. When a field came, went or changed
  * type, that is every datum with the field's name, so a column the path
  * reads joins the body field it sends under the same name. When only the
- * conditions moved, or the unit went whole, it is what the path sends
- * and every column it reads under a name it sends.
+ * conditions moved, or the unit went whole, it is what the path sends.
  */
 function movedData(
   named: ReadonlyMap<string, Datum>,
   beforeKeys: ReadonlySet<string>,
   afterKeys: ReadonlySet<string>,
   retyped: readonly string[],
-  removed: boolean,
+  unit: { readonly removed: boolean; readonly atBoundary: boolean },
 ): { basis: SiblingBasis; data: Datum[] } {
   const moved = new Set(retyped);
   for (const [key, datum] of named) {
@@ -209,18 +208,38 @@ function movedData(
       moved.add(leafName(datum.field));
     }
   }
-  if (moved.size > 0 && !removed) {
+  const all = [...named.values()];
+  const sent = sentData(all);
+  if (moved.size > 0 && !unit.removed) {
     return {
       basis: "fields",
-      data: [...named.values()].filter((datum) =>
+      data: (sent.length > 0 ? sent : all).filter((datum) =>
         moved.has(leafName(datum.field)),
       ),
     };
   }
   return {
-    basis: removed ? "removed" : "conditions",
-    data: sentData([...named.values()]),
+    basis: unit.removed ? "removed" : "conditions",
+    data: dataThatLeaves(sent, all, unit.atBoundary),
   };
+}
+
+/**
+ * What a path whose conditions moved sends out. That is the fields it
+ * sends, with the columns it reads under their names, so a column a
+ * shared helper reads on the way is left out. A route that sends nothing
+ * field by field, such as a CSV body, sends every column it reads. A
+ * function inside the project sends nothing out itself.
+ */
+function dataThatLeaves(
+  sent: readonly Datum[],
+  all: readonly Datum[],
+  atBoundary: boolean,
+): Datum[] {
+  if (sent.length > 0) {
+    return [...sent];
+  }
+  return atBoundary ? [...all] : [];
 }
 
 /** What a path sends, and every column it reads under a name it sends. */
@@ -419,7 +438,10 @@ function movedGroup(
     new Set(was.named.keys()),
     new Set(now.named.keys()),
     retyped,
-    unit.change === "removed",
+    {
+      removed: unit.change === "removed",
+      atBoundary: placeOf(owner).boundary !== null,
+    },
   );
   const unmatched = basis === "fields" ? unmatchedFields(data) : [];
   const notes = [
@@ -528,26 +550,45 @@ function groupLines(group: SiblingGroup): string[] {
   ];
 }
 
+/** How many siblings, and how many unchecked paths, a group prints before it counts the rest. */
+const SIBLINGS_LISTED = 10;
+const UNCHECKED_LISTED = 3;
+
+function moreLine(count: number, what: string): string[] {
+  return count > 0
+    ? [`    ... and ${count} more ${what}. --json lists every one.`]
+    : [];
+}
+
 /** The siblings and the unchecked paths of one group, indented under it. */
-export function siblingLines(
+function siblingLines(
   group: Pick<SiblingGroup, "siblings" | "unchecked" | "notes">,
 ): string[] {
   const lines: string[] = [];
-  for (const sibling of group.siblings) {
+  for (const sibling of group.siblings.slice(0, SIBLINGS_LISTED)) {
     lines.push(`    ${placeText(sibling)}`);
     lines.push(
       `      shares ${sibling.shares.map(datumText).join(", ")}; ${sibling.sends.join(", ")}`,
     );
   }
+  lines.push(
+    ...moreLine(group.siblings.length - SIBLINGS_LISTED, "paths that share it"),
+  );
 
   if (group.unchecked.length > 0) {
     lines.push("  not checked");
   }
 
-  for (const path of group.unchecked) {
+  for (const path of group.unchecked.slice(0, UNCHECKED_LISTED)) {
     lines.push(`    ${placeText(path)}`);
     lines.push(...path.reasons.map((reason) => `      ${reason}`));
   }
+  lines.push(
+    ...moreLine(
+      group.unchecked.length - UNCHECKED_LISTED,
+      "paths suss could not check",
+    ),
+  );
 
   for (const note of group.notes) {
     lines.push(`  suss could not read part of this unit: ${note}`);
