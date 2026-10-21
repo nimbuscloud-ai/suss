@@ -75,6 +75,14 @@ function prismaGenerate(schema) {
   return ["npx", "prisma", "generate", `--schema=${schema}`, "--no-hints"];
 }
 
+/** The rails pack, over a Rails layout's app/ and config/routes.rb. */
+function railsIn(root) {
+  return withConfig("rails", {
+    root: inBase(`${root}/app`),
+    routesFile: inBase(`${root}/config/routes.rb`),
+  });
+}
+
 export const FIXTURE_INPUTS = [
   fixture("apollo", [...dir("fixtures/apollo"), ...packs("apollo")]),
   fixture("apollo-client", [
@@ -381,10 +389,7 @@ export const FIXTURE_INPUTS = [
       withConfig("graphql-ruby", {
         root: inBase("fixtures/rails-graphql-app/app/graphql"),
       }),
-      withConfig("rails", {
-        root: inBase("fixtures/rails-graphql-app/app"),
-        routesFile: inBase("fixtures/rails-graphql-app/config/routes.rb"),
-      }),
+      railsIn("fixtures/rails-graphql-app"),
       withConfig("activerecord", POSTGRES),
     ),
   ]),
@@ -405,10 +410,12 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/react-router"),
     ...packs("react-router"),
   ]),
+  // The pack's tests read one file's effects directly. From the CLI the
+  // rails pack finds the controller actions that reach them.
   fixture("ruby-bigquery", [
     ...lang("ruby"),
     ...dir("fixtures/ruby-bigquery"),
-    ...packs("bigquery-ruby"),
+    ...packs(railsIn("fixtures/ruby-bigquery"), "bigquery-ruby"),
   ]),
   fixture("ruby-graphql", [
     ...lang("ruby"),
@@ -427,16 +434,13 @@ export const FIXTURE_INPUTS = [
   fixture("ruby-pg", [
     ...lang("ruby"),
     ...dir("fixtures/ruby-pg"),
-    ...packs("pg-ruby"),
+    ...packs(railsIn("fixtures/ruby-pg"), "pg-ruby"),
   ]),
   fixture("ruby-rails", [
     ...lang("ruby"),
     ...dir("fixtures/ruby-rails"),
     ...packs(
-      withConfig("rails", {
-        root: inBase("fixtures/ruby-rails/app"),
-        routesFile: inBase("fixtures/ruby-rails/config/routes.rb"),
-      }),
+      railsIn("fixtures/ruby-rails"),
       withConfig("activerecord", POSTGRES),
     ),
   ]),
@@ -460,11 +464,11 @@ export const FIXTURE_INPUTS = [
     ...packs("ts-rest"),
   ]),
   contract("serverless", "serverless", "fixtures/serverless/serverless.yml"),
-  // Only the serverless contract reads this fixture's template, so its
-  // handlers are read with the SQS pack alone.
+  // The aws-lambda pack reads only SAM templates, so nothing discovers
+  // these handlers and the node pack makes their summaries.
   fixture("serverless/src", [
     ...project("fixtures/serverless/tsconfig.json"),
-    ...packs("aws-sqs"),
+    ...packs("aws-sqs", "node"),
   ]),
   fixture("split-routes", [...dir("fixtures/split-routes"), ...packs("hono")]),
   fixture("storage-wrapper", [
@@ -588,10 +592,7 @@ export const FIELD_INPUTS = [
     args: [
       ...lang("ruby"),
       ...packs(
-        withConfig("rails", {
-          root: inBase("app"),
-          routesFile: inBase("config/routes.rb"),
-        }),
+        railsIn("."),
         "net-http",
         "pg-ruby",
         withConfig("activerecord", POSTGRES),

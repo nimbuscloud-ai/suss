@@ -604,6 +604,9 @@ for (const [index, input] of inputs.entries()) {
       maxLoadPerCore: FIELD_LOAD_PER_CORE,
       limitMs: FIELD_SETTLE_MS,
     });
+    process.stderr.write(
+      `  ${input.name}: load ${percent(result.loadPerCore)} per core\n`,
+    );
   }
 
   const prepared = prepare(input, base.dir);
@@ -631,6 +634,10 @@ for (const [index, input] of inputs.entries()) {
   result.runs = Object.fromEntries(runs);
 
   const [mainRun, branchRun] = runs.values();
+  const summaries =
+    mainRun.summaries === branchRun.summaries
+      ? mainRun.summaries
+      : `${mainRun.summaries}/${branchRun.summaries}`;
   const cells = [
     seconds(mainRun.wallMs),
     seconds(branchRun.wallMs),
@@ -638,12 +645,7 @@ for (const [index, input] of inputs.entries()) {
     megabytes(branchRun.peakBytes),
   ];
   process.stdout.write(
-    row(
-      input.name,
-      mainRun.summaries,
-      cells,
-      RESULT_TEXT[result.status](result),
-    ),
+    row(input.name, summaries, cells, RESULT_TEXT[result.status](result)),
   );
   if (result.status === "differs") {
     process.stdout.write(
