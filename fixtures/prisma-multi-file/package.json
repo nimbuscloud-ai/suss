@@ -1,0 +1,15 @@
+{
+  "name": "links",
+  "private": true,
+  "scripts": {
+    "prisma:generate": "dotenv-flow -e .env -- prisma generate --schema=./prisma/schema",
+    "prisma:push": "dotenv-flow -e .env -- prisma db push --schema=./prisma/schema"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.1",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "prisma": "6.19.1"
+  }
+}

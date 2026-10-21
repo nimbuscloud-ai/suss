@@ -25,7 +25,7 @@ import {
 } from "@suss/behavioral-ir";
 import { callSpellings, functionOf } from "@suss/checker";
 
-import { answerCalls } from "./askCalls.js";
+import { answerCalls, directCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
@@ -45,6 +45,7 @@ import { readSummaries } from "./summaryFile.js";
 import {
   ambiguousBoundarySpelling,
   collapseTouches,
+  oneTouchPerCall,
   providesKeyOf,
   type ResolvedTarget,
   resolveTarget,
@@ -57,6 +58,7 @@ import { UsageError } from "./usageError.js";
 
 import type {
   BehavioralSummary,
+  Relation,
   TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
@@ -274,7 +276,7 @@ const ANSWERS: Record<
   reads: (subject, loaded) => answerDirection("reads", subject, loaded),
   writes: (subject, loaded) => answerDirection("writes", subject, loaded),
   invokes: (subject, loaded) => answerDirection("invokes", subject, loaded),
-  calls: answerCalls,
+  calls: answerCallsOf,
   reaches: answerReaches,
   reachedBy: answerReachedBy,
   provides: answerProvides,
@@ -293,18 +295,31 @@ function boundaryLabelFor(
   return labels.size === 1 ? [...labels][0] : subject;
 }
 
+/** The questions that list the units at a boundary. */
+type AtBoundary = Direction | "calls";
+
 /** "2 units read", "1 unit reads". */
-const PLURAL_VERB: Record<Direction, string> = {
+const PLURAL_VERB: Record<AtBoundary, string> = {
   reads: "read",
   writes: "write",
   invokes: "invoke",
+  calls: "call",
 };
 
 /** What an unfollowed call could be hiding, for each question. */
-const HIDDEN_ACTOR: Record<Direction, string> = {
+const HIDDEN_ACTOR: Record<AtBoundary, string> = {
   reads: "a reader",
   writes: "a writer",
   invokes: "a caller",
+  calls: "a caller",
+};
+
+/** The touches each question lists. Calling a boundary is anything a unit does at it from the outside. */
+const LISTED_RELATIONS: Record<AtBoundary, readonly Relation[]> = {
+  reads: ["reads"],
+  writes: ["writes"],
+  invokes: ["invokes"],
+  calls: ["reads", "writes", "invokes"],
 };
 
 /**
@@ -481,9 +496,13 @@ function isFunctionCallBoundary(
   return (
     resolution.matched &&
     resolution.target.kind === "boundary" &&
-    resolution.target.touches.every((touch) =>
-      bindingIs(touch.touched.binding, "function-call"),
-    )
+    isCalledInProcess(resolution.target)
+  );
+}
+
+function isCalledInProcess(target: ResolvedTarget): boolean {
+  return target.touches.every((touch) =>
+    bindingIs(touch.touched.binding, "function-call"),
   );
 }
 
@@ -492,11 +511,43 @@ function answerDirection(
   subject: string,
   loaded: LoadedSummaries,
 ): Answer {
-  const { summaries } = loaded;
-  if (isFunctionCallBoundary(subject, summaries)) {
+  if (isFunctionCallBoundary(subject, loaded.summaries)) {
     return { ...answerCalls(subject, loaded), shape };
   }
+  return answerAtBoundary(shape, subject, loaded);
+}
 
+/**
+ * Code calls a route, a table or a queue across the boundary, and no call
+ * fact records that, so the answer lists every unit at it from outside.
+ */
+function answerCallsOf(subject: string, loaded: LoadedSummaries): Answer {
+  const resolution = resolveTarget(subject, loaded.summaries);
+  if (
+    !resolution.matched ||
+    resolution.target.kind !== "boundary" ||
+    isCalledInProcess(resolution.target)
+  ) {
+    return answerCalls(subject, loaded);
+  }
+
+  // Code that calls the route's handler as a function calls it too.
+  const direct = directCalls(
+    loaded.callFacts,
+    reachTargetOf(resolution.target),
+  );
+  return answerAtBoundary("calls", subject, loaded, direct);
+}
+
+const NO_DIRECT_CALLS = { items: [], callers: [] };
+
+function answerAtBoundary(
+  shape: AtBoundary,
+  subject: string,
+  loaded: LoadedSummaries,
+  direct: ReturnType<typeof directCalls> = NO_DIRECT_CALLS,
+): Answer {
+  const { summaries } = loaded;
   const ambiguous = ambiguousBoundarySpelling(subject, summaries);
   if (ambiguous !== null) {
     return ambiguousAnswer(shape, subject, ambiguous, summaries);
@@ -509,22 +560,33 @@ function answerDirection(
 
   const label = boundaryLabelFor(subject, touches);
   const matching = byModule(
-    touches.filter((touch) => touch.touched.relation === shape),
+    oneTouchPerCall(
+      touches.filter((touch) =>
+        LISTED_RELATIONS[shape].includes(touch.touched.relation),
+      ),
+    ),
   );
   const named = spansWorkspaces(matching.map((touch) => touch.summary));
-  const items = matching.map(({ summary, touched, grounding }) => ({
-    text: `${moduleTag(summary)}${unitLabel(summary, named)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}`,
-    data: {
-      unit: summaryIdentifier(summary),
-      file: summary.location.file,
-      line: summary.location.range.start,
-      ...(summary.location.module !== undefined
-        ? { module: summary.location.module }
-        : {}),
-      ...(touched.callee !== undefined ? { via: touched.callee } : {}),
-      ...(grounding !== undefined ? { grounding } : {}),
-    },
-  }));
+  // A question that lists more than one relation says which on each line.
+  const saysRelations = LISTED_RELATIONS[shape].length > 1;
+  const items = [
+    ...matching.map(({ summary, touched, grounding, relations }) => ({
+      text: `${moduleTag(summary)}${unitLabel(summary, named)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}${saysRelations ? `, ${sentenceList(relations)}` : ""}`,
+      data: {
+        unit: summaryIdentifier(summary),
+        file: summary.location.file,
+        line: summary.location.range.start,
+        ...(summary.location.module !== undefined
+          ? { module: summary.location.module }
+          : {}),
+        ...(touched.callee !== undefined ? { via: touched.callee } : {}),
+        ...(grounding !== undefined ? { grounding } : {}),
+        ...(saysRelations ? { relations } : {}),
+      },
+    })),
+    ...direct.items,
+  ];
+  const listed = [...matching.map((touch) => touch.summary), ...direct.callers];
   const modules = modulesOf(matching);
 
   const providers = touches
@@ -547,21 +609,18 @@ function answerDirection(
     };
   }
 
+  const units = new Set(listed).size;
   return {
     shape,
     subject,
-    headline: `${items.length} unit${items.length === 1 ? "" : "s"} ${items.length === 1 ? shape : PLURAL_VERB[shape]} ${label}${fromModules(modules)}:`,
+    headline: `${units} unit${units === 1 ? "" : "s"} ${units === 1 ? shape : PLURAL_VERB[shape]} ${label}${fromModules(modules)}:`,
     items,
     ...(modules.length === 0 ? {} : { detail: { modules } }),
     needs: servedBy,
     caveats: [
       ...hints,
-      ...gapCaveats(matching.map((touch) => touch.summary)),
-      ...runCaveats(
-        summaries,
-        shape,
-        matching.map((touch) => touch.summary),
-      ),
+      ...gapCaveats(listed),
+      ...runCaveats(summaries, shape, listed),
     ],
     found: true,
   };
@@ -1081,7 +1140,7 @@ function declarationsOf(summary: BehavioralSummary): Declaration[] {
  */
 function runCaveats(
   summaries: ReadonlyArray<BehavioralSummary>,
-  shape: Direction,
+  shape: AtBoundary,
   listed: ReadonlyArray<BehavioralSummary> = [],
 ): string[] {
   const already = new Set(listed);
