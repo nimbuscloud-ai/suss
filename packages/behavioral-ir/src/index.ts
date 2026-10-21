@@ -113,6 +113,7 @@ export {
   placeArgTargets,
   placeCalleeParameters,
   placeCalls,
+  placePossibleCalls,
   placeReceiverClasses,
   type ReceiverClass,
   ReceiverClasses,

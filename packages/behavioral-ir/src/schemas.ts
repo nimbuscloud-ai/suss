@@ -534,6 +534,18 @@ export const EffectSchema = z.discriminatedUnion("type", [
     /** The summary each `argsDeclaredAt` position reached, once resolved. */
     argsSummary: z.record(z.string(), z.string()).optional(),
     /**
+     * Where each function is declared that the call may run when it
+     * takes one out of a table or picks a member by a computed name,
+     * as `COMMANDS[name](args)` or Ruby's `send(kind)` does. Same
+     * lifecycle as `declaredAt`: naming turns it into `possibleSummaries`.
+     */
+    possibleDeclaredAt: z.array(DeclarationPlaceSchema).optional(),
+    /**
+     * The summaries the call may reach that way, one of which runs. A
+     * call the source narrows to one function has `summary` instead.
+     */
+    possibleSummaries: z.array(z.string()).optional(),
+    /**
      * Set when the callee is one of this unit's own parameters: its
      * index among them. A caller elsewhere that passes a function into
      * that parameter (`argsSummary` at the matching position) reaches

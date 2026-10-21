@@ -76,6 +76,7 @@ export {
   type FunctionKey,
   functionOf,
   type Reached,
+  type ReachOptions,
   type ReachTarget,
   readCallFacts,
 } from "./calls/callFacts.js";

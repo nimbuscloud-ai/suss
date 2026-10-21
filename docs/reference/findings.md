@@ -758,7 +758,7 @@ The test exists and runs, and either suss followed every call it makes and none 
 
 When the subject is a class, or a file a class is written in, a call the test sends to that class or an instance of it reaches it wherever the method is written: in a module the class includes, as `account.reviewed?` is when `Reviewable` defines `reviewed?`, or in the library, as `Account.find(1)` and a column read are.
 
-A test that doesn't reach its subject through the calls suss followed, and makes a call suss could not follow, on the way or in its own body, might still reach it through that call. suss doesn't report it as this finding. It goes under `unchecked` as `unfollowedCall`, with the calls it could not follow, and its scenario is not counted as covered.
+A test that doesn't reach its subject through the calls suss followed, and makes a call suss could not follow, on the way or in its own body, might still reach it through that call. suss doesn't report it as this finding. It goes under `unchecked` as `unfollowedCall`, with the calls it could not follow, and its scenario is not counted as covered. A test that reaches its subject only through a call that takes its function from a table, or picks a method by a name it computes, goes under `unchecked` as `possibleCall` for the same reason: that call may run another function instead.
 
 **Legitimate when:** the test reaches the subject through something suss doesn't follow and doesn't record a gap for, such as a child process. Accept it with a rule for that scenario, saying why.
 

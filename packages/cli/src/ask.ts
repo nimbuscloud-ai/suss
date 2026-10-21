@@ -535,11 +535,12 @@ function answerCallsOf(subject: string, loaded: LoadedSummaries): Answer {
   const direct = directCalls(
     loaded.callFacts,
     reachTargetOf(resolution.target),
+    `the code serving ${subject}`,
   );
   return answerAtBoundary("calls", subject, loaded, direct);
 }
 
-const NO_DIRECT_CALLS = { items: [], callers: [] };
+const NO_DIRECT_CALLS = { items: [], callers: [], calls: [] };
 
 function answerAtBoundary(
   shape: AtBoundary,

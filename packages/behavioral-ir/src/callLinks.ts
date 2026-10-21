@@ -78,6 +78,7 @@ export class TargetPlacements {
     string,
     Map<number, DeclaredAt | null>
   >();
+  private readonly possibleByCallee = new Map<string, DeclaredAt[] | null>();
 
   /**
    * Record where a callee is declared. When one callee text is placed at
@@ -110,6 +111,47 @@ export class TargetPlacements {
     const byPosition = this.byCalleeAndPosition.get(key) ?? new Map();
     this.byCalleeAndPosition.set(key, byPosition);
     settle(byPosition, position, placed);
+  }
+
+  /**
+   * Record the functions a call may run when it takes one from a table.
+   * One callee text placed at two different sets keeps neither, as with
+   * a shadowed name.
+   */
+  placePossible(calleeText: string, placed: readonly DeclaredAt[]): void {
+    if (placed.length === 0) {
+      return;
+    }
+    const key = normalizeCalleeText(calleeText);
+    const sorted = [...placed].sort(byDeclaration);
+    const known = this.possibleByCallee.get(key);
+    if (known === undefined) {
+      this.possibleByCallee.set(key, sorted);
+      return;
+    }
+    if (known !== null && !samePlaces(known, sorted)) {
+      this.possibleByCallee.set(key, null);
+    }
+  }
+
+  /**
+   * Every callee text placed at one set of possible functions, as
+   * `placePossibleCalls` takes it. A text also placed at one declaration
+   * or at a stop is left out, since the link step cannot tell which
+   * effect came from which call.
+   */
+  get possibleTargets(): ReadonlyMap<string, readonly DeclaredAt[]> {
+    const found = new Map<string, readonly DeclaredAt[]>();
+    for (const [calleeText, placed] of this.possibleByCallee) {
+      if (
+        placed !== null &&
+        !this.byCallee.has(calleeText) &&
+        !this.stops.has(calleeText)
+      ) {
+        found.set(calleeText, placed);
+      }
+    }
+    return found;
   }
 
   /** Every callee text placed at exactly one declaration or at a stop, as `placeCalls` takes it. */
@@ -153,6 +195,22 @@ function settle<K>(
   }
 }
 
+function byDeclaration(a: DeclaredAt, b: DeclaredAt): number {
+  const left = declarationKey(a.file, a.span);
+  const right = declarationKey(b.file, b.span);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function samePlaces(
+  a: readonly DeclaredAt[],
+  b: readonly DeclaredAt[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((place, at) => byDeclaration(place, b[at] as DeclaredAt) === 0)
+  );
+}
+
 function onlySettled<K, V>(map: ReadonlyMap<K, V | null>): ReadonlyMap<K, V> {
   const out = new Map<K, V>();
   for (const [key, value] of map) {
@@ -194,6 +252,31 @@ export function placeArgTargets(
       }
       if (Object.keys(argsDeclaredAt).length > 0) {
         effect.argsDeclaredAt = argsDeclaredAt;
+      }
+    }
+  }
+}
+
+/**
+ * Record on each invocation effect the functions it may run when it
+ * takes one from a table. The link step turns them into
+ * `possibleSummaries`, the way it turns `declaredAt` into `summary`.
+ */
+export function placePossibleCalls(
+  summary: BehavioralSummary,
+  possibleTargets: ReadonlyMap<string, readonly DeclaredAt[]> | undefined,
+): void {
+  if (possibleTargets === undefined || possibleTargets.size === 0) {
+    return;
+  }
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (effect.type !== "invocation") {
+        continue;
+      }
+      const placed = possibleTargets.get(normalizeCalleeText(effect.callee));
+      if (placed !== undefined) {
+        effect.possibleDeclaredAt = [...placed];
       }
     }
   }
@@ -369,6 +452,7 @@ export function linkCallsToSummaries(summaries: BehavioralSummary[]): void {
           effect.summary = summaryIdentifier(reached);
         }
         linkArgs(effect, byLocation);
+        linkPossible(effect, byLocation);
       }
     }
   }
@@ -398,6 +482,29 @@ function linkArgs(
   delete effect.argsDeclaredAt;
   if (Object.keys(argsSummary).length > 0) {
     effect.argsSummary = argsSummary;
+  }
+}
+
+/** The same location join, for each function a call may run when it takes one from a table. */
+function linkPossible(
+  effect: InvocationEffect,
+  byLocation: ReadonlyMap<string, BehavioralSummary[]>,
+): void {
+  if (effect.possibleDeclaredAt === undefined) {
+    return;
+  }
+  const reached = new Set<string>();
+  for (const target of effect.possibleDeclaredAt) {
+    const found = summaryAtPlace(
+      byLocation.get(declarationKey(target.file, target.span)) ?? [],
+    );
+    if (found !== null) {
+      reached.add(summaryIdentifier(found));
+    }
+  }
+  delete effect.possibleDeclaredAt;
+  if (reached.size > 0) {
+    effect.possibleSummaries = [...reached].sort();
   }
 }
 
