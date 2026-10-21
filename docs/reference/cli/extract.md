@@ -23,7 +23,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 | `-p`, `--project <path>` | the nearest `tsconfig.json` or `jsconfig.json` at or above the directory being read | The tsconfig covering the code to read, so suss resolves types the way your compiler does. When suss finds one above that directory, it uses the tsconfig's settings but reads only the files under the directory. |
 | `--dir <path>` | the working directory | Read this directory, for a project with no tsconfig, or for one package under a tsconfig that covers the whole repository. With `-p`, suss reads only the tsconfig's files under this directory. |
 | `--lang <name>` | worked out from what the directory contains, the packs you asked for, and the nearest tsconfig | `typescript`, `python` or `ruby`. When suss cannot work the language out for itself, it stops and asks you to pass this flag. |
-| `-o`, `--output <path>` | stdout | Write the summary JSON to a file. Parent directories are created. |
+| `-o`, `--output <path>` | stdout | Write the summary JSON to a file. Parent directories are created. When `suss.json` lists several reads, the file contains all of them. See [A bare extract in a project with several reads](#a-bare-extract-in-a-project-with-several-reads). |
 | `--out-dir <path>` | none | Run every read `suss.json` lists, contracts included, and write each one to its own file in this folder. See [The whole project into a folder](#the-whole-project-into-a-folder). Takes no `-f`, `-o`, `-p`, `--lang`, `--intent` or files. Each entry runs with its default settings, so `--out-dir` also refuses `--gaps`, `--explain`, `--timing`, `--datalog-profile`, `--no-cache` and `--fail-on-pack-error`. |
 | `--files <f1> <f2> ...` | every file the tsconfig or directory covers | Read only these files, resolved against the working directory. Bare arguments with no flag in front of them mean the same thing when `--files` is absent. |
 | `--gaps <mode>` | `permissive` | `permissive` records in the summary the returns and declared statuses a pack could not account for. `strict` records the same and then exits non-zero. `silent` skips gap detection. |
@@ -63,6 +63,20 @@ Wrote 2 summaries to /home/dana/shop/.suss/now/0-extract.json in 0.74s
 ```
 
 Files an earlier `--out-dir` run wrote in the folder are removed first, so an entry that fails this time leaves nothing stale behind. The run exits non-zero when any entry failed, because the folder then describes only part of the project. It also exits non-zero when an extract entry didn't write a summary, the same as a single `extract` does, unless you pass `--allow-empty`.
+
+## A bare extract in a project with several reads
+
+When `suss.json` lists more than one read and you pass none of `-f`, `-p`, `--lang`, `--intent` or files, `suss extract` runs every entry, the same reads a bare `suss check` runs. Their summaries are merged into one array, which goes to stdout, or to the file given with `-o`. A project with a Python API at the root and a TypeScript client in `frontend/` gets both in that array. Use `--out-dir` instead to keep each read in its own file.
+
+```bash
+$ suss extract -o summaries/code.json
+Reading what suss.json says.
+  suss extract --lang python -f fastapi -f httpx
+  suss extract --lang typescript --dir frontend -f axios -f fetch -f node
+Wrote 5 summaries from 2 reads to /home/dana/shop/summaries/code.json
+```
+
+If one read fails, the run says which one and why on stderr (`failed: suss extract --lang typescript ...`), still runs the others, writes what they produced, and exits `1`. It also exits `1` when a read produced no summaries, unless you pass `--allow-empty`. The flags `--gaps`, `--explain`, `--timing`, `--datalog-profile`, `--no-cache` and `--fail-on-pack-error` apply to a single read, so a bare extract of several refuses them. With one read in `suss.json`, a bare `extract` runs that read with every flag available.
 
 ## Modules of one application
 
