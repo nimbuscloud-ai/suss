@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { summaryRef } from "@suss/behavioral-ir";
+import { summaryRef, wrapperIndex } from "@suss/behavioral-ir";
 import {
   applySuppressions,
   boundaryCollisions,
@@ -170,9 +170,10 @@ export function check(options: CheckOptions): CheckResult {
   const consumerSummaries = readSummaryPair(options.consumerFile);
 
   const rawFindings: Finding[] = [];
+  const wrappers = wrapperIndex(providerSummaries);
   for (const provider of providerSummaries) {
     for (const consumer of consumerSummaries) {
-      rawFindings.push(...checkPair(provider, consumer));
+      rawFindings.push(...checkPair(provider, consumer, wrappers));
     }
   }
 
