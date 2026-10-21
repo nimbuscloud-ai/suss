@@ -1,0 +1,16 @@
+# The project's dispatcher and publisher, stated in the form the SQS and
+# EventBridge packs read today: a receiver type, a method, and the
+# positions of the subject and the body.
+package: "@acme/async"
+authored: agent
+from: package source at 1.4.2
+statements:
+  - kind: performs-call
+    system: aws.sqs
+    spec: { receiver: CommandDispatcher, method: dispatch, subjectArg: 0, bodyArg: 1 }
+  - kind: performs-call
+    system: aws.sqs
+    spec: { receiver: CommandDispatcher, method: dispatchBatch, subjectArg: 0 }
+  - kind: performs-call
+    system: aws.events
+    spec: { receiver: EventPublisher, method: emit, subjectArg: 0, bodyArg: 1 }
