@@ -242,6 +242,7 @@ The format is stable enough to build on. These are the guarantees:
 - **Adding an interaction class, a code unit kind, an output type or a semantics variant is additive.** A tool that dispatches on `class`, `kind`, an output's `type` or `semantics.name` needs a default branch, and it never gets a new required field on a shape it already reads.
 - **Transition ids survive reordering and reformatting.** They are computed from the condition chain's source text, with source offsets left out, so a diff across two points in time matches by id.
 - **A null identity field means the source did not say.** It never means the empty string, which is invalid from version 2 on.
+- **Paths are relative.** Every path is measured from the root of the project it is in, so two checkouts of one project write the same summaries. A path a summary records for a file in another project, such as an import of a sibling package, starts with that project's name, as in `@acme/shared::src/routes.ts`.
 - **The JSON is the canonical artifact.** The text `suss inspect` prints is written for people to read, and it changes with the CLI, so build your tool on the JSON. [Format stability](/reference/cli/inspect#format-stability) lists the parts of the text that do stay put.
 
 Two ways to read a file:
