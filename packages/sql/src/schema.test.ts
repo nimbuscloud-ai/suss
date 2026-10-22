@@ -323,6 +323,38 @@ CREATE TABLE \`orders\` (
     ]);
   });
 
+  it("lists each statement or definition it cannot read, and reads the rest", () => {
+    const sql = `
+CREATE TABLE (id integer);
+CREATE TABLE public.typed OF public.address_type;
+CREATE TABLE public.unclosed (id integer
+;
+CREATE TABLE public.bookings (
+    id bigint NOT NULL,
+    room public.room_code NOT NULL,
+    EXCLUDE USING gist (room WITH =)
+);
+ALTER TABLE ONLY public.bookings ALTER COLUMN room TYPE text;
+ALTER TABLE ONLY public.missing ADD CONSTRAINT missing_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.bookings ATTACH PARTITION public.bookings_2024 FOR VALUES FROM (1) TO (2);
+`;
+    const schema = readSqlSchema(sql);
+
+    expect(schema.tables.map((table) => table.name)).toEqual(["bookings"]);
+    expect(schema.tables[0]?.columns).toEqual([
+      { name: "id", type: "bigint", nullable: false, default: false },
+      { name: "room", type: "room_code", nullable: false, default: false },
+    ]);
+    expect(schema.unread).toEqual([
+      { line: 2, table: null, column: null },
+      { line: 3, table: "typed", column: null },
+      { line: 4, table: "unclosed", column: null },
+      { line: 9, table: "bookings", column: null },
+      { line: 13, table: "bookings", column: null },
+    ]);
+    expect(schema.statements).toBe(7);
+  });
+
   it("reads nothing for a dialect it has no grammar for", () => {
     expect(readSqlSchema(PG_DUMP, { dialect: "oracle" })).toEqual({
       tables: [],

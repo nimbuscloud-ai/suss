@@ -276,11 +276,10 @@ function readDefinitions(
   table: SqlTable,
   enums: Set<string>,
 ): void {
-  for (const definition of Array.isArray(definitions) ? definitions : []) {
-    const node = asNode(definition);
-    if (node === null) {
-      continue;
-    }
+  const nodes = (Array.isArray(definitions) ? definitions : [])
+    .map(asNode)
+    .filter((node): node is Node => node !== null);
+  for (const node of nodes) {
     if (node.resource === "constraint") {
       applyConstraint(table, node);
       continue;
