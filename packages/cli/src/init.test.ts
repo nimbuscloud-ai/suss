@@ -211,6 +211,24 @@ describe("inspectProject", () => {
     expect(await names(dir)).toEqual([]);
   });
 
+  it("lists a Rails app's schema dump in db/, and not a schema.rb anywhere else", async () => {
+    writeManifest({ dependencies: {} });
+    fs.mkdirSync(path.join(dir, "db"));
+    fs.mkdirSync(path.join(dir, "legacy", "db"), { recursive: true });
+    fs.mkdirSync(path.join(dir, "app", "graphql"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "db", "schema.rb"), "");
+    fs.writeFileSync(path.join(dir, "legacy", "db", "structure.sql"), "");
+    fs.writeFileSync(path.join(dir, "app", "graphql", "schema.rb"), "");
+
+    const contracts = (await inspectProject(dir)).suggestions.filter(
+      (s) => s.kind === "contract",
+    );
+    expect(contracts.map((s) => [s.name, s.file]).sort()).toEqual([
+      ["rails-schema", path.join("db", "schema.rb")],
+      ["rails-schema", path.join("legacy", "db", "structure.sql")],
+    ]);
+  });
+
   it("still reads a subdirectory that is part of this project", async () => {
     writeManifest({ dependencies: {} });
     const nested = path.join(dir, "infra");

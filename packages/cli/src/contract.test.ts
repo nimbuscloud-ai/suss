@@ -402,6 +402,36 @@ describe("contract CLI command", () => {
     }
   });
 
+  it("reads a Rails dump via --from rails-schema, with no engine when no database.yml says one", async () => {
+    const db = path.join(tmpDir, "db");
+    fs.mkdirSync(db);
+    fs.writeFileSync(
+      path.join(db, "schema.rb"),
+      'ActiveRecord::Schema[7.1].define(version: 1) do\n  create_table "users" do |t|\n  end\nend\n',
+    );
+    const [users] = await readContract({
+      from: "rails-schema",
+      spec: path.join(db, "schema.rb"),
+    });
+    expect(users?.identity.boundaryBinding?.semantics).toMatchObject({
+      container: "users",
+      storageSystem: null,
+    });
+
+    fs.mkdirSync(path.join(tmpDir, "config"));
+    fs.writeFileSync(
+      path.join(tmpDir, "config", "database.yml"),
+      "default:\n  adapter: mysql2\n",
+    );
+    const [onMysql] = await readContract({
+      from: "rails-schema",
+      spec: path.join(db, "schema.rb"),
+    });
+    expect(onMysql?.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: "mysql",
+    });
+  });
+
   describe("URL inputs", () => {
     let server: http.Server;
     let baseUrl: string;

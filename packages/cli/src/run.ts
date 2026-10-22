@@ -285,10 +285,11 @@ Options (ask):
 Options (contract):
   --from           What kind of file to read: openapi, cloudformation,
                    terraform, serverless, storybook, appsync, prisma,
-                   graphql, graphql-documents, wrangler. A terraform path
-                   may be one .tf file or the directory a module lives
-                   in, and a wrangler path may be the directory a Worker
-                   lives in
+                   rails-schema, graphql, graphql-documents, wrangler. A
+                   terraform path may be one .tf file or the directory a
+                   module lives in, and a wrangler path may be the
+                   directory a Worker lives in. rails-schema reads
+                   db/schema.rb, or db/structure.sql by its extension
   --code-scope     Where a deployable unit's code is, written
                    <instance>=<dir>. Repeatable. Terraform only: a
                    configuration never says which directory a
@@ -1444,6 +1445,7 @@ async function runContract(args: string[]): Promise<number> {
     "storybook",
     "appsync",
     "prisma",
+    "rails-schema",
     "graphql",
     "graphql-documents",
     "wrangler",

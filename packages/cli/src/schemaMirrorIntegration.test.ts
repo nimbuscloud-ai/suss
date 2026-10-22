@@ -1,99 +1,37 @@
 /**
  * The Prisma copy in fixtures/schema-mirror, compared column by column
- * with the Rails declaration of the same two tables. No reader for
- * `db/schema.rb` exists yet, so this file builds that declaration by
- * hand, the way such a reader would write each `create_table`. Each
- * column the fixture comments on gives one finding, and every other
- * column agrees.
+ * with the Rails app's dump of the same two tables. The app keeps the
+ * dump as db/schema.rb or as db/structure.sql, and either one gives the
+ * same findings. Each column schema.prisma comments on gives one
+ * finding, and every other column agrees.
  */
 
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { storageBinding } from "@suss/behavioral-ir";
 import { checkSchemaAgreement } from "@suss/checker";
 import { prismaSchemaFileToSummaries } from "@suss/contract-prisma";
+import { railsSchemaToSummaries } from "@suss/contract-rails-schema";
 
-import type {
-  BehavioralSummary,
-  StorageContractMetadata,
-} from "@suss/behavioral-ir";
+import { readContract } from "./contract.js";
 
-type Field = NonNullable<StorageContractMetadata["fields"]>[number];
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixtureRoot = path.resolve(__dirname, "../../../fixtures/schema-mirror");
 
-function railsTable(container: string, fields: Field[]): BehavioralSummary {
-  return {
-    kind: "library",
-    location: {
-      file: "db/schema.rb",
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
-    identity: {
-      name: container,
-      exportPath: null,
-      boundaryBinding: storageBinding({
-        recognition: "rails-schema",
-        storageSystem: "postgresql",
-        scope: "default",
-        container,
-      }),
-    },
-    inputs: [],
-    transitions: [],
-    gaps: [],
-    confidence: { source: "declared", level: "high" },
-    metadata: {
-      storageContract: { fieldSet: "exhaustive", fields, origin: "dump" },
-    },
-  };
-}
-
-function column(
-  name: string,
-  type: string,
-  nullable: boolean,
-  more: Partial<Field> = {},
-): Field {
-  return { name, type, nullable, default: false, ...more };
-}
-
-const ORDERS = railsTable("orders", [
-  column("id", "bigint", false, { primary: true, default: true }),
-  column("customer_id", "bigint", false, { foreignKey: "users" }),
-  column("status", "string", false, { default: true }),
-  column("priority", "integer", false),
-  // `t.integer "quantity", limit: 2`
-  column("quantity", "smallint", false),
-  column("total", "decimal", false),
-  column("weight", "float", true),
-  column("paid", "boolean", false, { default: true }),
-  column("public_id", "uuid", false),
-  column("metadata", "jsonb", true),
-  column("receipt", "binary", true),
-  column("tags", "string[]", false, { default: true }),
-  column("state", "enum", false, { default: true }),
-  column("ship_on", "date", true),
-  column("notes", "text", true),
-  column("reference", "string", false),
-  column("legacy_code", "string", true),
-  column("created_at", "datetime", false),
-  column("updated_at", "datetime", false),
-]);
-
-const ATTACHMENTS = railsTable("attachments", [
-  column("id", "uuid", false, { primary: true, default: true }),
-  column("blob_id", "uuid", false),
-  column("order_id", "bigint", false, { foreignKey: "orders" }),
-  column("filename", "string", false),
-  column("created_at", "datetime", false),
-]);
+const DUMPS = ["db/schema.rb", "db/structure.sql"];
 
 function prismaCopy(): BehavioralSummary[] {
   return prismaSchemaFileToSummaries(path.join(fixtureRoot, "schema.prisma"));
+}
+
+async function dump(file: string): Promise<BehavioralSummary[]> {
+  return readContract({
+    from: "rails-schema",
+    spec: path.join(fixtureRoot, file),
+    warnings: [],
+  });
 }
 
 function findingsOf(summaries: BehavioralSummary[]) {
@@ -111,12 +49,28 @@ function findingsOf(summaries: BehavioralSummary[]) {
   };
 }
 
-describe("a Prisma copy of tables a Rails app owns", () => {
-  it("gives one finding for each column that disagrees, and none for the rest", () => {
+describe.each(DUMPS)("a Prisma copy of the tables %s declares", (file) => {
+  it("reads the engine from config/database.yml and marks each table a dump", async () => {
+    const tables = await dump(file);
+    expect(
+      tables.map((table) => [
+        table.identity.name,
+        table.identity.boundaryBinding?.semantics,
+      ]),
+    ).toEqual([
+      ["attachments", expect.objectContaining({ storageSystem: "postgresql" })],
+      ["orders", expect.objectContaining({ storageSystem: "postgresql" })],
+    ]);
+    expect(tables.map((table) => table.metadata?.storageContract)).toEqual([
+      expect.objectContaining({ origin: "dump" }),
+      expect.objectContaining({ origin: "dump" }),
+    ]);
+  });
+
+  it("gives one finding for each column that disagrees, and none for the rest", async () => {
     const { findings, unchecked } = findingsOf([
       ...prismaCopy(),
-      ORDERS,
-      ATTACHMENTS,
+      ...(await dump(file)),
     ]);
 
     expect(unchecked).toEqual([]);
@@ -166,20 +120,25 @@ describe("a Prisma copy of tables a Rails app owns", () => {
     ]);
   });
 
-  it("reports no default on a now() column the database leaves without one, since the client sends the time", () => {
-    const { findings } = findingsOf([...prismaCopy(), ORDERS, ATTACHMENTS]);
+  it("reports no default on a now() column the database leaves without one, since the client sends the time", async () => {
+    const { findings } = findingsOf([...prismaCopy(), ...(await dump(file))]);
     const createdAt = findings.filter((finding) =>
       finding.column?.endsWith(".created_at"),
     );
     expect(createdAt).toEqual([]);
   });
+});
 
-  it("compares no column of a table whose two declarations are keyed differently", () => {
-    const keyedOnBigint = railsTable("attachments", [
-      column("id", "bigint", false, { primary: true, default: true }),
-      column("blob_id", "uuid", false),
-    ]);
-    const { findings } = findingsOf([...prismaCopy(), keyedOnBigint]);
+describe("a dump keyed differently from its copy", () => {
+  it("compares no column of the table", async () => {
+    const keyedOnBigint = await railsSchemaToSummaries(`
+ActiveRecord::Schema[7.1].define(version: 2024_06_01_000000) do
+  create_table "attachments", force: :cascade do |t|
+    t.uuid "blob_id", null: false
+  end
+end
+`);
+    const { findings } = findingsOf([...prismaCopy(), ...keyedOnBigint]);
     expect(findings).toEqual([
       {
         kind: "boundaryShapeMismatch",

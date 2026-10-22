@@ -1,6 +1,6 @@
 ---
 title: Contract sources
-description: The ten things suss contract reads, from an OpenAPI document to a wrangler config, and the boundary each one produces.
+description: The eleven things suss contract reads, from an OpenAPI document to a wrangler config, and the boundary each one produces.
 ---
 
 # Contract sources
@@ -13,7 +13,7 @@ suss contract --from openapi orders.yaml -o summaries/orders.json
 suss check --dir summaries/
 ```
 
-There are ten sources. `SPEC` is a file path or an `http(s)` URL, and a fetched document is parsed by its extension, `.json` as JSON and anything else as YAML.
+There are eleven sources. `SPEC` is a file path or an `http(s)` URL, and a fetched document is parsed by its extension, `.json` as JSON and anything else as YAML.
 
 ## `openapi`
 
@@ -182,6 +182,23 @@ schema.prisma
 ```
 
 The datasource provider is part of the identity, so `postgresql:Order` pairs with a Postgres read and not with something else called `Order`.
+
+## `rails-schema`
+
+A Rails app's `db/schema.rb`, or its `db/structure.sql`, which the reader tells apart by the `.sql` extension. Rails writes either file out of the database after every migration, so each table becomes a storage-provider summary marked as a dump of the database. The engine comes from the nearest `config/database.yml` above the file.
+
+```bash
+$ suss contract --from rails-schema db/schema.rb -o rails.json
+$ suss inspect rails.json
+db/schema.rb
+├─ postgresql:attachments  (rails-schema library | line 9)
+│    Serves: id (uuid), blob_id (uuid), order_id (bigint), filename (string), created_at (datetime)
+│
+└─ postgresql:orders  (rails-schema library | line 16)
+     Serves: id (bigint), customer_id (bigint), status (string), priority (integer), quantity (smallint), total (decimal), weight (float), paid (boolean), public_id (uuid), metadata (jsonb), receipt (binary), tags (string[]), and 7 more
+```
+
+A dump is compared only with other declarations of the same tables, such as a Prisma model mapped to `orders` or a Drizzle `pgTable("orders")`, and `check` takes the dump as what the database contains. A column the copy types differently, declares nullable where the database does not, or gives a default the database lacks is a finding against the copy. A dump is never paired with the queries in code. A Ruby write records every keyword key it passes, among them attributes a model defines in code, such as `password`, and a dump would report each of those as a column the table lacks.
 
 ## `storybook`
 

@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Fifty-six packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Fifty-six packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Eleven contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
