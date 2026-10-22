@@ -28,6 +28,7 @@ export type ContractSource =
   | "storybook"
   | "appsync"
   | "prisma"
+  | "rails-schema"
   | "graphql"
   | "graphql-documents"
   | "wrangler";
@@ -135,6 +136,22 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
       projectRoot: options.projectRoot,
     });
   },
+  // Reads db/schema.rb, or db/structure.sql by its extension.
+  "rails-schema": async (specPath, source, options) => {
+    const [reader, activerecord] = await Promise.all([
+      import("@suss/contract-rails-schema"),
+      import("@suss/packs/activerecord"),
+    ]);
+    return reader.railsSchemaFileToSummaries(specPath, {
+      ...(source !== undefined ? { source } : {}),
+      projectRoot: options.projectRoot,
+      storageSystem: railsEngineOf(
+        specPath,
+        activerecord.storageSystemFromDatabaseYml,
+      ),
+      ...warningsOf(options),
+    });
+  },
   graphql: async (specPath, _source, options) => {
     const mod = await import("@suss/contract-graphql");
     return mod.graphqlSdlFileToSummaries(specPath, {
@@ -193,6 +210,27 @@ export function firstBatchWithSummaries(
     start += size;
   }
   return [];
+}
+
+/**
+ * The engine the app a dump belongs to connects to, from the nearest
+ * `config/database.yml` above the dump, or null when none says.
+ */
+function railsEngineOf(
+  dump: string,
+  fromDatabaseYml: (root: string) => { storageSystem: string } | null,
+): string | null {
+  let folder = path.dirname(path.resolve(dump));
+  for (;;) {
+    if (fs.existsSync(path.join(folder, "config", "database.yml"))) {
+      return fromDatabaseYml(folder)?.storageSystem ?? null;
+    }
+    const parent = path.dirname(folder);
+    if (parent === folder) {
+      return null;
+    }
+    folder = parent;
+  }
 }
 
 function warningsOf(options: ContractReadOptions): { warnings?: string[] } {

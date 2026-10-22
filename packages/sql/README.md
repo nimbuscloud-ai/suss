@@ -112,6 +112,10 @@ It reads Postgres, MySQL, SQLite, and BigQuery. Pass the dialect the same way a 
 readSqlAccess("SELECT `id` FROM `users`", { dialect: "mysql" });
 ```
 
+## Reading a schema dump
+
+`readSqlSchema` reads the tables a dump of the database declares, such as Rails' `db/structure.sql`, with each column's type, nullability, default and keys, and lists whatever the grammar could not read. [How a schema dump is read](./DESIGN.md) covers which statements count and what happens to a type the grammar does not know.
+
 ## What it will not tell you
 
 - **A dialect it does not read returns nothing.** So does a statement it cannot parse. In both cases it does not guess from whatever words the text happens to contain.
@@ -120,6 +124,6 @@ readSqlAccess("SELECT `id` FROM `users`", { dialect: "mysql" });
 
 ## Where it fits in suss
 
-`@suss/framework-drizzle` uses it for ``db.execute(sql`...`)``. Nothing else depends on it, and it depends on nothing inside suss, so it stays a plain function over a string.
+The adapters and packs that find SQL written in code, such as `@suss/framework-drizzle` for ``db.execute(sql`...`)``, pass it to `readSqlAccess`. `@suss/contract-rails-schema` reads `db/structure.sql` through `readSqlSchema`. The package depends on nothing inside suss, so it stays a plain function over a string.
 
 The grammars come from `node-sql-parser`. They are bundled into this package's build and not installed, which is why the package has no runtime dependencies. See THIRD-PARTY-NOTICES.md.

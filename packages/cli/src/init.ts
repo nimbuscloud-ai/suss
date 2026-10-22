@@ -191,6 +191,16 @@ const BY_FILE: Array<{
     describe: (p) => `a Prisma schema at ${p}`,
   },
   {
+    // Rails dumps its database into db/, and a schema.rb anywhere else,
+    // such as a GraphQL schema class, is something else.
+    matches: (f, file) =>
+      (f === "schema.rb" || f === "structure.sql") &&
+      path.basename(path.dirname(file)) === "db",
+    name: "rails-schema",
+    packageName: "@suss/contract-rails-schema",
+    describe: (p) => `a Rails schema dump at ${p}`,
+  },
+  {
     matches: (f, file) => isGraphqlFile(f) && declaresTypes(file),
     name: "graphql",
     packageName: "@suss/contract-graphql",

@@ -495,6 +495,16 @@ export const FIXTURE_INPUTS = [
     ...packs("fastapi"),
   ]),
   contract("schema-mirror", "prisma", "fixtures/schema-mirror/schema.prisma"),
+  contract(
+    "schema-mirror/db/schema.rb",
+    "rails-schema",
+    "fixtures/schema-mirror/db/schema.rb",
+  ),
+  contract(
+    "schema-mirror/db/structure.sql",
+    "rails-schema",
+    "fixtures/schema-mirror/db/structure.sql",
+  ),
   fixture("semantic-bridging", [
     ...dir("fixtures/semantic-bridging"),
     ...packs("ts-rest"),

@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Fifty-six packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Fifty-six packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Eleven contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -144,6 +144,7 @@ These are not packs. A contract source reads something the project already decla
 | [`@suss/contract-wrangler`](../../packages/contract/wrangler) | `wrangler` | A Cloudflare Worker's `wrangler.toml` or `wrangler.jsonc`. The Worker comes out as a deployable with its configuration, values included, so a store addressed through a variable resolves. The reader also writes a summary for each KV namespace, R2 bucket, D1 database and Queues channel the Worker is bound to. | ![](../../.github/badges/coverage-contract-wrangler.svg) |
 | [`@suss/contract-appsync`](../../packages/contract/appsync) | `appsync` | An AppSync GraphQL schema and its resolver mapping templates. | ![](../../.github/badges/coverage-contract-appsync.svg) |
 | [`@suss/contract-prisma`](../../packages/contract/prisma) | `prisma` | A `schema.prisma` file, one storage provider summary per model. | ![](../../.github/badges/coverage-contract-prisma.svg) |
+| [`@suss/contract-rails-schema`](../../packages/contract/rails-schema) | `rails-schema` | A Rails app's `db/schema.rb` or `db/structure.sql`, one storage provider summary per table. The summaries are a dump of the database, so they are compared with other declarations of the same tables, such as a Prisma copy, and never with the queries in code. | ![](../../.github/badges/coverage-contract-rails-schema.svg) |
 | [`@suss/contract-storybook`](../../packages/contract/storybook) | `storybook` | Storybook CSF3 stories, one component contract summary per story. | ![](../../.github/badges/coverage-contract-storybook.svg) |
 | [`@suss/contract-aws-apigateway`](../../packages/contract/aws-apigateway) | (through the readers above) | API Gateway resource semantics for REST and HTTP APIs, including the transitions the platform injects. The CloudFormation, Serverless and Terraform readers all delegate to it. | ![](../../.github/badges/coverage-contract-aws-apigateway.svg) |
 | [`@suss/contract-intent`](../../packages/contract/intent) | (through `check --intent`) | Team-authored intent specs, `*.intent` and `*.prd`. | ![](../../.github/badges/coverage-contract-intent.svg) |

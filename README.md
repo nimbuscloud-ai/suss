@@ -198,7 +198,7 @@ Fifty-six packs read code today. You pick them by name with `-f`:
 | In-process, between workspace packages | `package-exports` |
 | Tests a PRD scenario lists as covering it | `vitest` `pytest` `rspec` `minitest`, with `factory-bot` and `fabrication` for what a Ruby test builds |
 
-Ten contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL), `graphql-documents` (committed `.graphql` operations), `cloudformation` (including SAM, and the API Gateway resources in it), `serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`. The intent docs your team writes are read separately, by `suss check --intent`.
+Eleven contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL), `graphql-documents` (committed `.graphql` operations), `cloudformation` (including SAM, and the API Gateway resources in it), `serverless`, `appsync`, `storybook`, `prisma`, `rails-schema` (a Rails app's `db/schema.rb` or `db/structure.sql`), `terraform`, `wrangler`. The intent docs your team writes are read separately, by `suss check --intent`.
 
 ## License
 

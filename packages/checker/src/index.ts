@@ -31,7 +31,7 @@ import { isStory, isTestCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { checkSchemaAgreement } from "./storage/schemaAgreement.js";
-import { checkStorage } from "./storage/storagePairing.js";
+import { checkStorage, isDatabaseDump } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 import { checkUnitInvocation } from "./unit-invocation/unitInvocationPairing.js";
 
@@ -378,13 +378,15 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
       consumer: summaryIdentifier(consumer),
     });
   }
+  // A dump pairs only with other declarations of its tables, so one that
+  // nothing declares again, with or without an engine, is not unpaired.
   const stillUnmatched = (s: BehavioralSummary): boolean =>
-    !graphqlMatched.has(s) && !reportedByItsOwnPass(s);
+    !graphqlMatched.has(s) && !reportedByItsOwnPass(s) && !isDatabaseDump(s);
   const unmatched = {
     providers: restUnmatched.providers.filter(stillUnmatched),
     consumers: restUnmatched.consumers.filter(stillUnmatched),
     unpairable: restUnmatched.unpairable.filter(
-      (u) => !graphqlMatched.has(u.summary),
+      (u) => !graphqlMatched.has(u.summary) && !isDatabaseDump(u.summary),
     ),
   };
 

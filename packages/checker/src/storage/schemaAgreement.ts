@@ -24,6 +24,7 @@ import {
 import {
   type DeclaredContainer,
   declaredContainers,
+  isDatabaseDump,
   sameService,
 } from "./storagePairing.js";
 
@@ -241,12 +242,25 @@ function sameTablePairs(
     const a = declared[i] as DeclaredContainer;
     for (let j = i + 1; j < declared.length; j++) {
       const b = declared[j] as DeclaredContainer;
-      if (oneTable(a, b) && !answeredByAThird(a, b, declared)) {
+      if (
+        oneTable(a, b) &&
+        !bothDumps(a, b) &&
+        !answeredByAThird(a, b, declared)
+      ) {
         pairs.push([a, b]);
       }
     }
   }
   return pairs;
+}
+
+/**
+ * A dump is the database, so two dumps of one table name are two
+ * databases, such as two Rails apps in one monorepo that each have
+ * `users`, and nobody could fix what comparing them would report.
+ */
+function bothDumps(a: DeclaredContainer, b: DeclaredContainer): boolean {
+  return isDatabaseDump(a.summary) && isDatabaseDump(b.summary);
 }
 
 function oneTable(a: DeclaredContainer, b: DeclaredContainer): boolean {

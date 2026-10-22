@@ -32,6 +32,7 @@ suss contract --from <source> <spec> [-o <output.json>]
 | `wrangler` | A Cloudflare Worker's `wrangler.toml` or `wrangler.jsonc`, or the directory the Worker lives in. |
 | `appsync` | A CloudFormation template with `AWS::AppSync::*` resources. |
 | `prisma` | A `schema.prisma` file, or the folder of a schema split over several files. |
+| `rails-schema` | A Rails app's `db/schema.rb`, or its `db/structure.sql`, told apart by the `.sql` extension. The engine comes from the nearest `config/database.yml` above the file. |
 | `graphql` | A GraphQL SDL file. Each Query, Mutation and Subscription field becomes a resolver-kind summary. |
 | `graphql-documents` | Committed `.graphql` or `.gql` operation documents, one file or a directory walked recursively. Each operation becomes a client-kind summary, and fragment spreads are inlined across the whole read set. |
 | `storybook` | A CSF3 `.stories.ts` or `.stories.tsx` file, or a directory of them walked recursively. |
@@ -73,6 +74,8 @@ Without `-o`, the summary JSON goes to stdout. With `-o`, the JSON goes to the f
 When suss doesn't read a boundary from the source, it still writes the empty list, says so on stderr, and exits 1, because an empty file would reach `check` as a side with nothing to compare. Pass `--allow-empty` when that is expected.
 
 For an OpenAPI document, stderr also lists each file a `$ref` points to that could not be read, and each `$ref` that points at nothing. A path item behind one of those is left out, and so is a parameter, since it has no name to pair on. A response keeps its status and loses its body.
+
+For a `db/structure.sql`, stderr says how many parts of the table statements the SQL grammar could not read, and lists the first ten by line, table and column. Whatever such a statement says about a column is left unstated, so a comparison skips it.
 
 ## Example
 

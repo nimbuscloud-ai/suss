@@ -101,6 +101,7 @@ export const coveragePackages = [
   ["packages/contract/appsync", "contract-appsync"],
   ["packages/contract/storybook", "contract-storybook"],
   ["packages/contract/prisma", "contract-prisma"],
+  ["packages/contract/rails-schema", "contract-rails-schema"],
   ["packages/contract/intent", "contract-intent"],
   // Manifests
   ["packages/manifest/aws", "manifest-aws"],

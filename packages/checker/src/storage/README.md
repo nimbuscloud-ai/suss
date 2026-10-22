@@ -33,6 +33,8 @@ A project can declare a table twice, such as a Drizzle copy of the tables a Rail
 - **`default` is compared only when both sides state it.** `false` means a reader looked and found no default. A reader that does not read defaults leaves it out, and so does any summary written before the field existed.
 - **The type families** are in `SPELLINGS`, matched without case, with every array one family. A type outside them leaves the column unchecked, and the pass lists it in `unchecked` with the reason. `check` does not print that list yet.
 - **Two copies of one dump are not compared with each other.** Each is compared with the dump, and comparing the two as well would report every difference twice.
+- **Two dumps are never compared with each other.** A dump is the database, so two dumps of one table name are two databases, such as two Rails apps in one monorepo that each have `users`. Nobody could fix what comparing them would report. A copy is still compared with either dump.
+- **A dump is compared with declarations only, and never with an access.** `checkStorage` leaves out every contract with `origin: "dump"`. A Ruby write records every keyword key of `create` and `update`, and some of those are attributes the model defines in code: `password` and `password_confirmation` from `has_secure_password`, `*_attributes` from `accepts_nested_attributes_for`, the keys of a `store_accessor`. Against a dump each would be a column the table lacks, and every column no query selects would be unused. A dump also stays out of `checkAll`'s unmatched providers, so a Rails app whose tables nothing declares again does not look mostly unpaired. `groundStorageAccesses` still lists a dump among the providers, so `suss ask` can say what a table declares.
 
 ## Gotchas
 

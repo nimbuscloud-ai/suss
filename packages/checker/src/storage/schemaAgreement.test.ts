@@ -730,17 +730,24 @@ describe("checkSchemaAgreement: which side is the provider", () => {
     expect(findings[0]?.description).toContain("The database contains bigint");
   });
 
-  it("keeps two dumps symmetric, since either could be the stale one", () => {
-    const { findings } = check(
-      plain("db/structure.rb", "dump"),
-      table({
-        file: "db/schema.rb",
-        container: "orders",
-        origin: "dump",
-        fields: [ID_UUID, { name: "note", type: "text" }],
-      }),
-    );
-    expect(findings.map((f) => f.severity)).toEqual(["warning", "warning"]);
+  it("never pairs two dumps, since each is its own database, and still checks a copy against either", () => {
+    const billing = plain("billing/db/schema.rb", "dump");
+    const shop = table({
+      file: "shop/db/schema.rb",
+      container: "orders",
+      origin: "dump",
+      fields: [ID_UUID, { name: "note", type: "text" }],
+    });
+    const compared: ComparedPair[] = [];
+    expect(checkSchemaAgreement([billing, shop], undefined, compared)).toEqual({
+      findings: [],
+      unchecked: [],
+    });
+    expect(compared).toEqual([]);
+
+    expect(sides(check(billing, plain("src/db/schema.ts")).findings)).toEqual([
+      ["billing/db/schema.rb::orders", "src/db/schema.ts::orders"],
+    ]);
   });
 });
 
