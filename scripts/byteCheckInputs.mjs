@@ -150,6 +150,10 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/axios/generated-sdk"),
     ...packs("axios"),
   ]),
+  fixture("body-field-guards", [
+    ...dir("fixtures/body-field-guards"),
+    ...packs("nextjs", "fetch"),
+  ]),
   fixture("cloudflare-worker-stores", [
     ...dir("fixtures/cloudflare-worker-stores"),
     ...packs(
