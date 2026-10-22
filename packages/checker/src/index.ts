@@ -1,5 +1,4 @@
 import {
-  readStorageContractMetadata,
   summaryIdentifier,
   summaryRef,
   wrapperIndex,
@@ -62,19 +61,12 @@ function pairIsCheckable(pair: SummaryPair): boolean {
   return exchangesHttpResponses(binding);
 }
 
-/**
- * A dump of the database pairs only with other declarations of its
- * tables, so a dump nothing declares again is not missing a consumer.
- */
 function reportedByItsOwnPass(summary: BehavioralSummary): boolean {
   const binding = summary.identity.boundaryBinding;
   if (binding === null || binding === undefined) {
     return false;
   }
-  return (
-    reportsUnpairedItself(binding) ||
-    isDatabaseDump(readStorageContractMetadata(summary))
-  );
+  return reportsUnpairedItself(binding);
 }
 
 export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
@@ -386,13 +378,15 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
       consumer: summaryIdentifier(consumer),
     });
   }
+  // A dump pairs only with other declarations of its tables, so one that
+  // nothing declares again, with or without an engine, is not unpaired.
   const stillUnmatched = (s: BehavioralSummary): boolean =>
-    !graphqlMatched.has(s) && !reportedByItsOwnPass(s);
+    !graphqlMatched.has(s) && !reportedByItsOwnPass(s) && !isDatabaseDump(s);
   const unmatched = {
     providers: restUnmatched.providers.filter(stillUnmatched),
     consumers: restUnmatched.consumers.filter(stillUnmatched),
     unpairable: restUnmatched.unpairable.filter(
-      (u) => !graphqlMatched.has(u.summary),
+      (u) => !graphqlMatched.has(u.summary) && !isDatabaseDump(u.summary),
     ),
   };
 

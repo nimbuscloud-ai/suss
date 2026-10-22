@@ -401,6 +401,33 @@ describe("checkAll, what it lists as unpaired", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("does not list a dump as unpairable when nothing says which engine it runs on", () => {
+    const dumped: BehavioralSummary = {
+      ...table(),
+      identity: {
+        name: "orders",
+        exportPath: null,
+        boundaryBinding: storageBinding({
+          recognition: "rails-schema",
+          storageSystem: null,
+          scope: "default",
+          container: "orders",
+        }),
+      },
+      metadata: {
+        storageContract: {
+          fieldSet: "exhaustive",
+          fields: [{ name: "id" }],
+          origin: "dump",
+        },
+      },
+    };
+    const withoutDump = checkAll([listOrders()]);
+    const withDump = checkAll([dumped, listOrders()]);
+
+    expect(withDump.unmatched).toEqual(withoutDump.unmatched);
+  });
+
   it("still compares a story with its component after leaving it out of pairing", () => {
     const card: BehavioralSummary = {
       ...emptySummary("Card"),

@@ -292,14 +292,12 @@ function reachedBy(
  * keyword key of `create` and `update`, `password` and `*_attributes`
  * among them, and a dump would call each one a column the table lacks.
  */
-export function isDatabaseDump(
-  contract: StorageContractMetadata | undefined,
-): boolean {
-  return contract?.origin === "dump";
+export function isDatabaseDump(summary: BehavioralSummary): boolean {
+  return readStorageContractMetadata(summary)?.origin === "dump";
 }
 
 function pairsWithAccesses(container: DeclaredContainer): boolean {
-  return !isDatabaseDump(container.contract);
+  return !isDatabaseDump(container.summary);
 }
 
 export function declaredContainers(
