@@ -14,6 +14,7 @@ import { type CallExpression, Node } from "ts-morph";
 
 import { writtenPayloadOf } from "@suss/adapter-typescript";
 import { ioBinding } from "@suss/behavioral-ir";
+import { callSiteKey } from "@suss/extractor";
 
 import type {
   ResolutionStore,
@@ -58,18 +59,17 @@ export const streamWriteRecognizer: InvocationRecognizer = (call, ctx) => {
     return null;
   }
   const payload = writtenPayloadOf(written.getArguments());
-  const effect: Effect = {
+  const effect: Extract<Effect, { type: "interaction" }> = {
     type: "interaction",
     binding: ioBinding({ recognition: RECOGNITION, target }),
     callee: callee.getText(),
-    groupId: callSiteId(written),
     interaction: {
       class: "stream-write",
       payload: payload.shape,
       serialized: payload.serialized,
     },
   };
-  return [effect];
+  return [{ ...effect, groupId: callSiteKey(effect) }];
 };
 
 /**
@@ -123,12 +123,4 @@ function viaParameter(
 /** `process.stdout` writes to `stdout`. */
 function streamName(path: string): string {
   return path.slice(path.lastIndexOf(".") + 1);
-}
-
-/** Where the call is, which is what tells two writes in one unit apart. */
-function callSiteId(call: CallExpression): string {
-  const { line, column } = call
-    .getSourceFile()
-    .getLineAndColumnAtPos(call.getStart());
-  return `${line}:${column}`;
 }

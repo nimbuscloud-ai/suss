@@ -11,7 +11,12 @@
  */
 
 import { ioBinding } from "@suss/behavioral-ir";
-import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
+import {
+  callSiteKey,
+  numberRepeatedCallSites,
+  SKIP_CHILDREN,
+  walkDescendants,
+} from "@suss/extractor";
 
 import { children, field, rangeOf } from "./ast.js";
 import { callArguments } from "./facts/values.js";
@@ -35,6 +40,12 @@ export function streamWriteEffects(
   root: PyNode,
   module: ModuleBinding,
 ): EffectAt[] {
+  return numberRepeatedCallSites(
+    writesUnder(root, module).map((write) => [write]),
+  ).flat();
+}
+
+function writesUnder(root: PyNode, module: ModuleBinding): EffectAt[] {
   const found: EffectAt[] = [];
   const startScope = module.scopeFor.get(root.id) ?? module.moduleScope;
   walkDescendants<PyNode, Scope>(root, startScope, children, {
@@ -102,6 +113,8 @@ function standardStream(node: PyNode, scope: Scope): string | null {
     : null;
 }
 
+type StreamWrite = Extract<Effect, { type: "interaction" }>;
+
 interface WriteSite {
   call: PyNode;
   callee: string;
@@ -112,17 +125,17 @@ interface WriteSite {
 
 function writeEffect(site: WriteSite): Effect {
   const { call, callee, target } = site;
-  return {
+  const effect: StreamWrite = {
     type: "interaction",
     binding: ioBinding({ recognition: PYTHON_STREAM_RECOGNITION, target }),
     callee,
-    groupId: `${call.startPosition.row + 1}:${call.startPosition.column + 1}`,
     interaction: {
       class: "stream-write",
       ...payloadOf(site.positional, site.scope),
     },
     location: rangeOf(call),
   };
+  return { ...effect, groupId: callSiteKey(effect) };
 }
 
 /**
