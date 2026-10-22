@@ -242,7 +242,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
   const routesInput = (): RoutesInput => ({
     routesFile: {
       file: routesFile,
-      displayPath: options.routesFile ?? "config/routes.rb",
+      displayPath: displayPathOf(routesFile),
     },
     engines: readEngines(engineRoots(), acronyms).map((engine) => ({
       ...engine,
