@@ -96,6 +96,34 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a list written with a spread": {
+    "/f.ts":
+      "declare const first: unknown, rest: unknown[];\nexport const items = [first, ...rest];\n",
+  },
+  "an object written with a spread": {
+    "/f.ts":
+      "declare const first: unknown, rest: object;\nexport const options = { a: first, ...rest };\n",
+  },
+  "a template string with a hole": {
+    "/f.ts": [
+      "declare function lookup(): string;",
+      "const id = lookup();",
+      "export const path = `/users/${id}/posts`;",
+      "",
+    ].join("\n"),
+  },
+  "a callback given each element of a list": {
+    "/f.ts":
+      "export function names(users: string[]) {\n  return users.map((user) => user);\n}\n",
+  },
+  "a callback given the parts of each element of a list": {
+    "/f.ts":
+      "export function names(pairs: [string, string][]) {\n  return pairs.map(([name, kind]) => name);\n}\n",
+  },
+  "a callback given each position in a list": {
+    "/f.ts":
+      "export function positions(users: string[]) {\n  return users.map((user, at) => at);\n}\n",
+  },
   "a value another file declares": {
     "/source.ts": "export const value = 1;\n",
     "/f.ts":
@@ -108,6 +136,8 @@ const KNOWN = {
   known: {
     "a function written into a table under a computed key":
       "extraction is lazy, so the store reads the writes into a table when a call through that table is asked about, and file extraction states none",
+    "a template string with a hole":
+      "extraction is lazy, so the value in a hole gets its facts when a question reaches it, and file extraction states only its key",
   },
 };
 

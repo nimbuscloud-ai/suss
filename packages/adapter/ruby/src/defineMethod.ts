@@ -6,18 +6,18 @@
  * Knowing the names lets a lookup for any other name continue up the
  * ancestry instead of stopping at the class.
  *
- * The calls and their name expressions come in as `definesMethodFrom`
- * and `nameTurnsOn` facts, so this module never reads source itself. Each
- * name goes through the shared value evaluator, which follows names and
- * constants across the whole run. A name that settles only in part
- * becomes a pattern the whole name has to match.
+ * The calls come in as `definesMethodFrom` facts, and the loops around
+ * them as `elementOf` and `positionOf`. The shared value evaluator reads
+ * each name once for each element of each loop. A name that settles
+ * only in part becomes a pattern the whole name has to match.
  */
 
-import { nodeOfKey } from "@suss/resolution";
+import { type KeySpan, nodeOfKey, spanOfKey } from "@suss/resolution";
 import { hole, literalOf, piecesOf } from "@suss/values";
 
+import { field } from "./ast.js";
 import { evaluatedValue } from "./values/evaluator.js";
-import { literalElementsOf } from "./values/literals.js";
+import { type LoopElement, loopElementsOf } from "./values/literals.js";
 
 import type { Database } from "@suss/datalog";
 import type { Value } from "@suss/values";
@@ -71,13 +71,16 @@ export function readDynamicNames(
   rootsByFile: ReadonlyMap<string, RbNode>,
 ): DynamicNames {
   const byClass = new Map<string, DefinedNames>();
-  for (const [classKey, nameKey] of db.facts("definesMethodFrom")) {
+  const definitions = db.facts("definesMethodFrom");
+  const loops = definitions.length === 0 ? new Map() : loopsByFile(db);
+  for (const [classKey, nameKey] of definitions) {
     const key = String(classKey);
+    const around = loopsAround(loops, key, String(nameKey));
     byClass.set(
       key,
       foldReading(
         byClass.get(key) ?? NOTHING,
-        readOne(db, rootsByFile, String(nameKey)),
+        readOne(db, rootsByFile, String(nameKey), around),
       ),
     );
   }
@@ -109,12 +112,13 @@ function readOne(
   db: Database,
   rootsByFile: ReadonlyMap<string, RbNode>,
   nameKey: string,
+  loops: readonly LoopBlock[],
 ): { names: string[]; patterns: RegExp[] } | null {
   // A key with no node in the run is treated like an unreadable name.
   const node = nodeOfKey(rootsByFile, nameKey);
   const names: string[] = [];
   const patterns: RegExp[] = [];
-  for (const bindings of loopTurns(db, rootsByFile, nameKey)) {
+  for (const bindings of loopTurns(db, rootsByFile, loops)) {
     const value =
       node === null
         ? hole(nameKey)
@@ -162,55 +166,177 @@ function escapeForPattern(text: string): string {
 }
 
 /**
- * One set of block parameter bindings per turn of the loops the name is
- * written inside. A loop whose elements cannot be listed adds no
- * binding, so a name taken from its parameter stays unread.
+ * One set of block variable bindings per turn of the loops the name is
+ * written inside. A loop whose elements cannot be listed adds no turns,
+ * so a name taken from its variables stays unread.
  */
 function loopTurns(
   db: Database,
   rootsByFile: ReadonlyMap<string, RbNode>,
-  nameKey: string,
+  loops: readonly LoopBlock[],
 ): ParameterBindings[] {
   let turns: Array<Map<string, string>> = [new Map()];
-  for (const over of listsBehind(db, rootsByFile, nameKey)) {
+  for (const loop of loops) {
+    const bindings = bindingsOf(db, rootsByFile, loop);
+    if (bindings === null) {
+      continue;
+    }
     turns = turns.flatMap((base) =>
-      over.elements.map((value, position) => {
-        const binding = new Map([...base, [over.element, value]]);
-        if (over.index !== "") {
-          binding.set(over.index, String(position));
-        }
-        return binding;
-      }),
+      bindings.map((binding) => new Map([...base, ...binding])),
     );
   }
   return turns;
 }
 
-/** One loop around a name, with the elements it runs over. */
-interface LoopOver {
-  readonly element: string;
-  /** The name the position is bound to, or the empty string for a block that takes one parameter. */
-  readonly index: string;
-  readonly elements: string[];
-}
-
-/** Every loop around the name whose elements could be listed, in the order of the facts. */
-function listsBehind(
+/**
+ * What each of a loop block's variables is given on each turn, one map
+ * per element. A variable that some element gives no literal is left out
+ * of every turn, and a loop with no variable left is null.
+ */
+function bindingsOf(
   db: Database,
   rootsByFile: ReadonlyMap<string, RbNode>,
-  nameKey: string,
-): LoopOver[] {
-  const found: LoopOver[] = [];
-  for (const [, element, index, overKey] of db.lookup(
-    "nameTurnsOn",
-    0,
-    nameKey,
-  )) {
-    const node = nodeOfKey(rootsByFile, String(overKey));
-    const elements = node === null ? null : literalElementsOf(node, db);
-    if (elements !== null) {
-      found.push({ element: String(element), index: String(index), elements });
+  loop: LoopBlock,
+): Map<string, string>[] | null {
+  const node = collectionNode(rootsByFile, loop);
+  const elements = node === null ? null : loopElementsOf(node, db);
+  if (elements === null) {
+    return null;
+  }
+  const bound = [...loop.variables].flatMap(([name, takes]) => {
+    const values = elements.map((element, position) =>
+      GIVEN[takes.kind](element, position, takes),
+    );
+    return values.every((value) => value !== null)
+      ? [{ name, values: values as string[] }]
+      : [];
+  });
+  if (bound.length === 0) {
+    return null;
+  }
+  return elements.map(
+    (_, position) =>
+      new Map(bound.map(({ name, values }) => [name, values[position] ?? ""])),
+  );
+}
+
+/** What a block variable is given each time round: the element, one part of it, or its position. */
+type Takes =
+  | { readonly kind: "element" }
+  | { readonly kind: "part"; readonly part: number }
+  | { readonly kind: "position" };
+
+/** The literal one element gives a variable, by what the variable takes, or null when it gives none. */
+const GIVEN: Record<
+  Takes["kind"],
+  (element: LoopElement, position: number, takes: Takes) => string | null
+> = {
+  element: (element) => literalOf(element.whole),
+  part: (element, _, takes) => {
+    const part = takes.kind === "part" ? element.parts[takes.part] : undefined;
+    return part === undefined ? null : literalOf(part);
+  },
+  position: (_, position) => String(position),
+};
+
+/**
+ * The syntax of the collection a loop block runs over, for the evaluator
+ * to read. A name's key has no node of its own, so a name is read where
+ * the call the block is passed to writes it.
+ */
+function collectionNode(
+  rootsByFile: ReadonlyMap<string, RbNode>,
+  loop: LoopBlock,
+): RbNode | null {
+  const written = nodeOfKey(rootsByFile, loop.over);
+  if (written !== null) {
+    return written;
+  }
+  const call = nodeOfKey(rootsByFile, loop.block.key)?.parent ?? null;
+  return call === null ? null : field(call, "receiver");
+}
+
+/** A loop block, with where it is written, what it runs over and what each of its variables is given. */
+interface LoopBlock {
+  readonly block: KeySpan & { readonly key: string };
+  /** The key of the collection the block runs over. */
+  readonly over: string;
+  readonly variables: Map<string, Takes>;
+}
+
+/**
+ * The block and the name a block variable's key is made of. The adapter
+ * keys a block's variable on the block, then `#`, then the name, the way
+ * it keys a read of it. Null for any other key.
+ */
+function blockVariableOf(
+  key: string,
+): { block: KeySpan & { key: string }; name: string } | null {
+  const at = key.lastIndexOf("#");
+  const span = at < 0 ? null : spanOfKey(key.slice(0, at));
+  return span === null
+    ? null
+    : { block: { ...span, key: key.slice(0, at) }, name: key.slice(at + 1) };
+}
+
+/** Every loop block in the run that elementOf or elementPartOf states, by the file it is in. */
+function loopsByFile(db: Database): Map<string, LoopBlock[]> {
+  const blocks = new Map<string, LoopBlock>();
+  const note = (key: unknown, over: unknown, takes: Takes): void => {
+    const variable = blockVariableOf(String(key));
+    if (variable === null) {
+      return;
+    }
+    const known = blocks.get(variable.block.key);
+    const loop = known ?? {
+      block: variable.block,
+      over: String(over),
+      variables: new Map(),
+    };
+    loop.variables.set(variable.name, takes);
+    blocks.set(variable.block.key, loop);
+  };
+  for (const [element, over] of db.facts("elementOf")) {
+    note(element, over, { kind: "element" });
+  }
+  for (const [element, over, part] of db.facts("elementPartOf")) {
+    note(element, over, { kind: "part", part: Number(part) });
+  }
+  // A position belongs to the block of the variable it is tied to.
+  for (const [position, element] of db.facts("positionOf")) {
+    const block = blockVariableOf(String(element))?.block.key;
+    if (block !== undefined && blocks.has(block)) {
+      note(position, blocks.get(block)?.over, { kind: "position" });
     }
   }
-  return found;
+  const byFile = new Map<string, LoopBlock[]>();
+  for (const loop of blocks.values()) {
+    byFile.set(loop.block.file, [...(byFile.get(loop.block.file) ?? []), loop]);
+  }
+  return byFile;
+}
+
+/**
+ * The loops a class body writes around a `define_method` name, outermost
+ * first: each block inside the class whose span covers the name's.
+ */
+function loopsAround(
+  loops: ReadonlyMap<string, readonly LoopBlock[]>,
+  classKey: string,
+  nameKey: string,
+): LoopBlock[] {
+  const cls = spanOfKey(classKey);
+  const name = spanOfKey(nameKey);
+  if (cls === null || name === null) {
+    return [];
+  }
+  return (loops.get(name.file) ?? [])
+    .filter(
+      ({ block }) =>
+        cls.start <= block.start &&
+        block.end <= cls.end &&
+        block.start <= name.start &&
+        name.end <= block.end,
+    )
+    .sort((a, b) => a.block.start - b.block.start);
 }

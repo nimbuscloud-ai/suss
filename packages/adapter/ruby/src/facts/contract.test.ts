@@ -76,6 +76,25 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a list written with a spread": {
+    "f.rb": "first = 1\nrest = []\nitems = [first, *rest]\n",
+  },
+  "an object written with a spread": {
+    "f.rb": "first = 1\nrest = {}\noptions = { a: first, **rest }\n",
+  },
+  "a template string with a hole": {
+    "f.rb": 'user_id = lookup()\npath = "/users/#{user_id}/posts"\n',
+  },
+  "a callback given each element of a list": {
+    "f.rb": "def names(users)\n  users.map { |user| user }\nend\n",
+  },
+  "a callback given the parts of each element of a list": {
+    "f.rb": "def names(pairs)\n  pairs.map { |name, kind| name }\nend\n",
+  },
+  "a callback given each position in a list": {
+    "f.rb":
+      "def positions(users)\n  users.each_with_index { |user, at| at }\nend\n",
+  },
 };
 
 /**

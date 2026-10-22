@@ -340,6 +340,100 @@ describe("python value facts", () => {
     ]);
   });
 
+  it("gives a comprehension's variable one element of what it runs over", async () => {
+    const source =
+      "def names(users):\n    return [user.name for user in users]\n";
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "elementOf")).toEqual([
+      [`${funcKey}#user`, `${funcKey}#users`],
+    ]);
+    // The body reads the variable on the key elementOf gives it.
+    expect(rows(db, "readsProperty")).toEqual([
+      [expect.any(String), `${funcKey}#user`, "name"],
+    ]);
+    expect(db.size("positionOf")).toBe(0);
+  });
+
+  it("gives the first name enumerate unpacks the position of the element the second is given", async () => {
+    const source =
+      "labels = [f'{at}: {user}' for at, user in enumerate(users)]\n";
+    const db = await factsFor(source);
+    expect(rows(db, "elementOf")).toEqual([["#user", "#users"]]);
+    expect(rows(db, "positionOf")).toEqual([["#at", "#user"]]);
+  });
+
+  it("gives each name a comprehension takes the element apart into its part, up to a starred name", async () => {
+    const source = [
+      "pairs = [key for key, value in items.items()]",
+      "counted = [user for at, user in enumerate(users, 1)]",
+      "split = [first for first, *rest, last in rows]",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const items = `:${source.indexOf("items.items()")}-${source.indexOf(")]") + 1}`;
+    const counted = `:${source.indexOf("enumerate(")}-${source.indexOf("1)]") + 2}`;
+    expect(rows(db, "elementPartOf")).toEqual([
+      ["#key", items, "0"],
+      ["#value", items, "1"],
+      ["#at", counted, "0"],
+      ["#user", counted, "1"],
+      ["#first", "#rows", "0"],
+    ]);
+    expect(db.size("elementOf")).toBe(0);
+    expect(db.size("positionOf")).toBe(0);
+  });
+
+  it("gives the count enumerate unpacks to the first name it takes each element apart into", async () => {
+    const db = await factsFor(
+      "labels = [name for at, (name, kind) in enumerate(pairs)]\n",
+    );
+    expect(rows(db, "elementPartOf")).toEqual([
+      ["#name", "#pairs", "0"],
+      ["#kind", "#pairs", "1"],
+    ]);
+    expect(rows(db, "positionOf")).toEqual([["#at", "#name"]]);
+  });
+
+  it("states each entry of a list and a dictionary in order, with a spread as the collection it unpacks", async () => {
+    const source = 'items = [first, *rest]\noptions = {"a": first, **rest}\n';
+    const db = await factsFor(source);
+    const list = `:${source.indexOf("[first")}-${source.indexOf("]") + 1}`;
+    const dict = `:${source.indexOf('{"a"')}-${source.indexOf("}") + 1}`;
+    expect(rows(db, "writtenEntryAt")).toEqual([
+      [list, "0", "#first", "value"],
+      [list, "1", "#rest", "spread"],
+      [dict, "0", "#first", "value"],
+      [dict, "1", "#rest", "spread"],
+    ]);
+  });
+
+  it("states the text and the holes of an f-string in order", async () => {
+    const source =
+      'path = f"/users/{{id}}/{user_id}/posts"\nplain = "/users"\n';
+    const db = await factsFor(source);
+    const string = `:${source.indexOf('f"')}-${source.indexOf("\n")}`;
+    expect(rows(db, "partAt")).toEqual([
+      [string, "0", "/users/{id}/"],
+      [string, "2", "/posts"],
+    ]);
+    expect(rows(db, "holeAt")).toEqual([[string, "1", "#user_id"]]);
+  });
+
+  it("states each string written next to another as a hole of the whole", async () => {
+    const source = 'path = ("/users/" f"{user_id}")\n';
+    const db = await factsFor(source);
+    const first = `:${source.indexOf('"/users/"')}-${source.indexOf(" f")}`;
+    const second = `:${source.indexOf('f"')}-${source.indexOf(")")}`;
+    const joined = `:${source.indexOf('"/users/"')}-${source.indexOf(")")}`;
+    expect(rows(db, "holeAt")).toEqual([
+      [joined, "0", first],
+      [joined, "1", second],
+      [second, "0", "#user_id"],
+    ]);
+    expect(db.size("partAt")).toBe(0);
+  });
+
   it("records a parameter's default, read where the def is written", async () => {
     const db = await factsFor("def load(env=environ):\n    return env\n");
     const [funcKey] = rows(db, "func")[0] ?? [];
