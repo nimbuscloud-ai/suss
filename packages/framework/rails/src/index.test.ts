@@ -99,6 +99,8 @@ describe("railsFramework", () => {
       unprocessable_entity: 422,
       unprocessable_content: 422,
       internal_server_error: 500,
+      bandwidth_limit_exceeded: 509,
+      not_extended: 510,
     });
   });
 
