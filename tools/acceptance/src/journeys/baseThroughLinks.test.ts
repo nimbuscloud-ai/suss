@@ -10,16 +10,47 @@ import { fixture, runSuss, workspace } from "../harness.js";
  * Edit one route in a workspace whose api package mounts a sibling
  * package's routes through the link npm puts in node_modules, beside a
  * GraphQL schema and a Prisma schema that suss.json reads as contracts.
- * Then ask what the change did, from a path that reaches the checkout
- * through a symlink, the way a macOS temp folder does.
+ * Write the summaries with the commands a person runs from the project
+ * root, then ask what the change did against the commit before it.
  *
- * `check --base` reads the base in a temporary copy. Every summary whose
- * id spells a path from the machine reads as removed in one place and
- * added in another, so the answer is only right when the boundaries it
- * lists are the ones the edited file touches.
+ * `check --base` reads the base in a temporary copy through suss.json.
+ * A summary whose id spells a path from the machine, or a path the
+ * command was given, reads as removed in one place and added in another,
+ * so the answer is right only when it lists what the edited file touches.
  */
 
 const EDITED = "packages/api/src/health.ts";
+
+const COMMANDS = [
+  [
+    "extract",
+    "--no-cache",
+    "--dir",
+    "packages/api",
+    "-p",
+    "packages/api/tsconfig.json",
+    "-f",
+    "express",
+    "-o",
+    ".suss/api.json",
+  ],
+  [
+    "contract",
+    "--from",
+    "graphql",
+    "schema.graphql",
+    "-o",
+    ".suss/schema.json",
+  ],
+  [
+    "contract",
+    "--from",
+    "prisma",
+    "prisma/schema.prisma",
+    "-o",
+    ".suss/prisma.json",
+  ],
+];
 
 function write(root: string, file: string, text: string): void {
   fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -41,6 +72,18 @@ function git(cwd: string, ...args: string[]): string {
     { cwd, encoding: "utf8" },
   );
 }
+
+const TSCONFIG = JSON.stringify({
+  compilerOptions: {
+    target: "ES2022",
+    module: "ES2022",
+    moduleResolution: "Bundler",
+    strict: true,
+    skipLibCheck: true,
+    noEmit: true,
+  },
+  include: ["src/**/*.ts"],
+});
 
 function writeProject(root: string): void {
   write(
@@ -81,33 +124,22 @@ function writeProject(root: string): void {
     fs.readFileSync(path.join(fixture("prisma"), "schema.prisma"), "utf8"),
   );
 
-  const tsconfig = JSON.stringify({
-    compilerOptions: {
-      target: "ES2022",
-      module: "ES2022",
-      moduleResolution: "Bundler",
-      strict: true,
-      skipLibCheck: true,
-      noEmit: true,
-    },
-    include: ["src/**/*.ts"],
-  });
   write(
     root,
     "packages/api/package.json",
     JSON.stringify({ name: "@shop/api", private: true }),
   );
-  write(root, "packages/api/tsconfig.json", tsconfig);
+  write(root, "packages/api/tsconfig.json", TSCONFIG);
   write(
     root,
     "packages/api/src/server.ts",
     [
       'import { Router } from "express";',
-      'import { ordersRouter } from "@shop/shared";',
+      'import { orderRoutes } from "@shop/shared";',
       'import { healthRouter } from "./health";',
       "",
       "export const app = Router();",
-      "app.use(ordersRouter);",
+      "orderRoutes(app);",
       "app.use(healthRouter);",
       "",
     ].join("\n"),
@@ -136,22 +168,22 @@ function writeProject(root: string): void {
       types: "src/index.ts",
     }),
   );
-  write(root, "packages/shared/tsconfig.json", tsconfig);
+  write(root, "packages/shared/tsconfig.json", TSCONFIG);
   write(
     root,
     "packages/shared/src/index.ts",
     [
-      'import { Router } from "express";',
+      'import type { Router } from "express";',
       "",
-      "export const ordersRouter = Router();",
-      "",
-      'ordersRouter.get("/orders/:id", async (req, res) => {',
-      "  if (!req.params.id) {",
-      '    res.status(404).json({ error: "missing" });',
-      "    return;",
-      "  }",
-      "  res.status(200).json({ id: req.params.id });",
-      "});",
+      "export function orderRoutes(router: Router) {",
+      '  router.get("/orders/:id", async (req, res) => {',
+      "    if (!req.params.id) {",
+      '      res.status(404).json({ error: "missing" });',
+      "      return;",
+      "    }",
+      "    res.status(200).json({ id: req.params.id });",
+      "  });",
+      "}",
       "",
     ].join("\n"),
   );
@@ -167,34 +199,36 @@ interface ChangedBoundary {
   units: string[];
 }
 
-describe("check --base after one file changed, in a workspace read through links", () => {
-  const dir = workspace("base-through-links");
-  const real = path.join(dir, "real", "shop");
-  const linked = path.join(dir, "linked");
+describe("check --base after one file changed, in a workspace with a linked sibling package", () => {
+  const project = path.join(workspace("base-through-links"), "shop");
   let report: { changedFiles: string[]; changedBoundaries: ChangedBoundary[] };
 
   beforeAll(() => {
-    writeProject(real);
-    fs.symlinkSync(real, linked);
-    git(real, "init", "--quiet");
-    git(real, "add", "-A");
-    git(real, "commit", "--quiet", "-m", "base");
+    writeProject(project);
+    git(project, "init", "--quiet");
+    git(project, "add", "-A");
+    git(project, "commit", "--quiet", "-m", "base");
     write(
-      real,
+      project,
       EDITED,
       fs
-        .readFileSync(path.join(real, EDITED), "utf8")
+        .readFileSync(path.join(project, EDITED), "utf8")
         .replace(
           "  res.status(200)",
           '  if (process.env.DRAINING === "1") {\n    res.status(503).json({ ok: false });\n    return;\n  }\n  res.status(200)',
         ),
     );
 
-    const run = runSuss(["check", "--base", "HEAD", "--json"], {
-      cwd: linked,
-    });
-    expect(run.stdout, run.stderr).toMatch(/^\{/);
-    report = JSON.parse(run.stdout);
+    for (const command of COMMANDS) {
+      const run = runSuss(command, { cwd: project });
+      expect(run.status, run.stderr).toBe(0);
+    }
+    const check = runSuss(
+      ["check", "--dir", ".suss", "--base", "HEAD", "--json"],
+      { cwd: project },
+    );
+    expect(check.stdout, check.stderr).toMatch(/^\{/);
+    report = JSON.parse(check.stdout);
   });
 
   it("lists the edited file as the only change", () => {
@@ -202,8 +236,9 @@ describe("check --base after one file changed, in a workspace read through links
   });
 
   it("reports the route the edit changed", () => {
-    const units = report.changedBoundaries.flatMap((one) => one.units);
-    expect(units.length).toBeGreaterThan(0);
+    expect(report.changedBoundaries.map((one) => one.key)).toContain(
+      "GET /health",
+    );
   });
 
   it("reports nothing the edited file does not touch", () => {
