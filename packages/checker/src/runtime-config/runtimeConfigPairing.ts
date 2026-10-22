@@ -16,6 +16,7 @@
 import {
   contestedFiles,
   entryFileAmong,
+  inScopeDirectory,
   isRuntimeConfigProvider,
   type LibraryEnvReads,
   placeRuntimes,
@@ -23,10 +24,11 @@ import {
   readLibraryEnvReads,
   readRuntimeContractMetadata,
   runsIn,
+  sameProject,
+  summaryFileKey,
   summaryIdentifier,
   unitsByFile,
 } from "@suss/behavioral-ir";
-import { fileInCodeScope } from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
 
@@ -83,7 +85,7 @@ interface PlacedCode {
   reads: EnvVarRead[];
   sawConfigReadEffect: boolean;
   placement: Placement;
-  /** Files several runtimes' directories contain, which no runtime claims. */
+  /** Files several runtimes' directories contain, which no runtime claims, keyed by `summaryFileKey`. */
   contested: ReadonlySet<string>;
 }
 
@@ -134,7 +136,7 @@ export function runtimeReads(summaries: BehavioralSummary[]): RuntimeReads[] {
     reads: code.reads.filter(
       (read) =>
         runsIn(read.summary, scope, code.byFile) &&
-        !code.contested.has(read.summary.location.file),
+        !code.contested.has(summaryFileKey(read.summary)),
     ),
   }));
 }
@@ -165,7 +167,6 @@ export function checkRuntimeConfig(
     findings.push(makeScopeUnknownFinding(runtime, binding));
   }
   const placed = placement.placed;
-  const filesRead = new Set(summaries.map((s) => s.location.file));
 
   const scoped: ScopedRuntime[] = [];
   for (const { runtime, binding, scope } of placed) {
@@ -180,24 +181,20 @@ export function checkRuntimeConfig(
       if (
         read.defaulted ||
         providedSet.has(read.name) ||
-        contested.has(read.summary.location.file)
+        contested.has(summaryFileKey(read.summary))
       ) {
         continue;
       }
       findings.push(makeUnprovidedFinding(runtime, binding, read));
     }
 
-    const entry = readCodeScope(runtime).entry;
     scoped.push({
       runtime,
       binding,
       provided,
       sources: readEnvVarSources(runtime),
       readNames: new Set(inScope.map((r) => r.name)),
-      unreadEntry:
-        entry !== undefined && entryFileAmong(entry, filesRead) === undefined
-          ? entry
-          : undefined,
+      unreadEntry: unreadEntryOf(runtime, summaries),
     });
   }
 
@@ -268,6 +265,21 @@ function libraryReads(marker: LibraryEnvReads, name: string): boolean {
   return marker.prefixes?.some((prefix) => name.startsWith(prefix)) === true;
 }
 
+/** The entry a runtime states when no file of its project that the run read matches it. */
+function unreadEntryOf(
+  runtime: BehavioralSummary,
+  summaries: BehavioralSummary[],
+): string | undefined {
+  const { entry, workspace } = readCodeScope(runtime);
+  if (entry === undefined) {
+    return undefined;
+  }
+  const filesRead = summaries
+    .filter((summary) => sameProject(summary.location.workspace, workspace))
+    .map((summary) => summary.location.file);
+  return entryFileAmong(entry, filesRead) === undefined ? entry : undefined;
+}
+
 /**
  * Names read in files that sit under a placed runtime's directory but
  * inside none of their scopes, which can only happen once a closure
@@ -284,18 +296,15 @@ function unclaimedReadNames(
   }
 
   for (const read of codeReads) {
-    const file = read.summary.location.file;
     if (
       read.summary.identity.deployableUnit !== undefined ||
-      byFile.has(file)
+      byFile.has(summaryFileKey(read.summary))
     ) {
       continue;
     }
 
-    const underSomeDirectory = placed.some(
-      (p) =>
-        p.scope.codeScope !== undefined &&
-        fileInCodeScope(file, p.scope.codeScope),
+    const underSomeDirectory = placed.some((p) =>
+      inScopeDirectory(read.summary, p.scope),
     );
     const inSomeScope = placed.some((p) =>
       runsIn(read.summary, p.scope, byFile),
@@ -328,7 +337,10 @@ function contestedFindings(
   const findings: Finding[] = [];
   const seen = new Set<BehavioralSummary>();
   for (const read of codeReads) {
-    if (!contested.has(read.summary.location.file) || seen.has(read.summary)) {
+    if (
+      !contested.has(summaryFileKey(read.summary)) ||
+      seen.has(read.summary)
+    ) {
       continue;
     }
     seen.add(read.summary);

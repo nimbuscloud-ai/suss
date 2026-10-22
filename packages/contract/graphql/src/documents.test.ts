@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { readGraphqlMetadata } from "@suss/behavioral-ir";
 
 import {
+  graphqlDocumentFilesToSummaries,
   graphqlDocumentsPathToSummaries,
   graphqlDocumentsToSummaries,
 } from "./documents.js";
@@ -406,5 +407,30 @@ describe("graphqlDocumentsPathToSummaries", () => {
     expect(() => graphqlDocumentsPathToSummaries(missing)).toThrow(
       /No GraphQL documents found/,
     );
+  });
+
+  it("records each file's path from the project root it is given", () => {
+    const summaries = graphqlDocumentsPathToSummaries(fixturesDir, {
+      projectRoot: path.dirname(fixturesDir),
+    });
+    expect(byName(summaries, "AccountUpdate").location.file).toBe(
+      "graphql-documents/accountUpdate.gql",
+    );
+    expect(
+      byName(summaries, "nested/anonymous.graphql:query").location.file,
+    ).toBe("graphql-documents/nested/anonymous.graphql");
+  });
+});
+
+describe("graphqlDocumentFilesToSummaries", () => {
+  it("names an anonymous operation by its whole path when no directory was walked", () => {
+    const file = path.join(fixturesDir, "anonymous.graphql");
+    const summaries = graphqlDocumentFilesToSummaries([file], {
+      projectRoot: fixturesDir,
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "anonymous.graphql:query",
+    ]);
+    expect(summaries[0]?.location.file).toBe("anonymous.graphql");
   });
 });

@@ -164,6 +164,24 @@ describe("runsIn", () => {
     expect(runsIn(code("src/api/other.ts"), scope, new Map())).toBe(false);
   });
 
+  it("tells a sibling package's file from the run's own file at the same path", () => {
+    const inProject = (workspace: string, file: string): BehavioralSummary => {
+      const one = code(file);
+      return { ...one, location: { ...one.location, workspace } };
+    };
+    const scope: UnitScope = {
+      unit: undefined,
+      closure: new Set(["@acme/shared::src/log.ts"]),
+    };
+
+    expect(
+      runsIn(inProject("@acme/shared", "src/log.ts"), scope, new Map()),
+    ).toBe(true);
+    expect(runsIn(inProject("@acme/api", "src/log.ts"), scope, new Map())).toBe(
+      false,
+    );
+  });
+
   it("falls back to the directory when nothing else says", () => {
     expect(
       runsIn(code("src/api/other.ts"), scopeOf("src/api"), new Map()),
@@ -171,6 +189,32 @@ describe("runsIn", () => {
     expect(
       runsIn(code("src/worker/other.ts"), scopeOf("src/api"), new Map()),
     ).toBe(false);
+  });
+
+  it("leaves a sibling package's file at the same path out of the template's directory", () => {
+    const inProject = (workspace: string, file: string): BehavioralSummary => {
+      const one = code(file);
+      return { ...one, location: { ...one.location, workspace } };
+    };
+    const scope: UnitScope = { ...scopeOf("src"), workspace: "@acme/api" };
+
+    expect(
+      runsIn(inProject("@acme/api", "src/config.ts"), scope, new Map()),
+    ).toBe(true);
+    expect(
+      runsIn(inProject("@acme/shared", "src/config.ts"), scope, new Map()),
+    ).toBe(false);
+    expect(runsIn(code("src/config.ts"), scope, new Map())).toBe(true);
+    expect(runsIn(code("src/config.ts"), { unit: undefined }, new Map())).toBe(
+      false,
+    );
+    expect([
+      ...contestedFiles(
+        [inProject("@acme/shared", "src/config.ts")],
+        [scope, { ...scopeOf("src"), workspace: "@acme/web" }],
+        new Map(),
+      ),
+    ]).toEqual([]);
   });
 });
 
@@ -334,5 +378,40 @@ describe("placeDeclared", () => {
       "src/work.ts",
     ]);
     expect(scope?.unit).toEqual(lambda("Worker"));
+  });
+
+  it("enters through the file in the template's own project when a sibling package has one at the same path", () => {
+    const declared = runtime({
+      name: "Api",
+      scope: "src",
+      entry: "src/handler",
+    });
+    const metadata = declared.metadata as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const api: BehavioralSummary = {
+      ...declared,
+      metadata: {
+        ...metadata,
+        codeScope: { ...metadata.codeScope, workspace: "@acme/api" },
+      },
+    };
+    const inProject = (workspace: string, file: string, imports: string[]) => {
+      const one = importing(file, imports);
+      return { ...one, location: { ...one.location, workspace } };
+    };
+    const graph = buildModuleGraph([
+      inProject("@acme/shared", "src/handler.ts", []),
+      inProject("@acme/api", "src/handler.ts", ["src/db.ts"]),
+      inProject("@acme/api", "src/db.ts", []),
+    ]);
+
+    const scope = placeDeclared(api, graph);
+    expect([...(scope?.closure ?? [])].sort()).toEqual([
+      "@acme/api::src/db.ts",
+      "@acme/api::src/handler.ts",
+    ]);
+    expect(scope?.workspace).toBe("@acme/api");
   });
 });

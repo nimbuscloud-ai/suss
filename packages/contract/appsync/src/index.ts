@@ -10,6 +10,7 @@
 
 import path from "node:path";
 
+import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 import { loadCloudFormationTemplate } from "@suss/manifest-aws";
 
 import { readAppSyncFromCfn } from "./cfn.js";
@@ -32,6 +33,12 @@ export interface AppsyncToSummariesOptions {
    * resolves against. `appsyncFileToSummaries` sets it to the template's.
    */
   baseDir?: string;
+}
+
+export interface AppsyncFileToSummariesOptions
+  extends AppsyncToSummariesOptions {
+  /** Absolute. The directory the template's path is measured from. */
+  projectRoot?: string;
 }
 
 /**
@@ -80,11 +87,12 @@ function indexSchemas(
  */
 export function appsyncFileToSummaries(
   filePath: string,
-  options: AppsyncToSummariesOptions = {},
+  options: AppsyncFileToSummariesOptions = {},
 ): BehavioralSummary[] {
   const template = loadCloudFormationTemplate(filePath);
+  const root = options.projectRoot ?? defaultProjectRoot(filePath);
   return appsyncToSummaries(template, {
-    source: options.source ?? path.relative(process.cwd(), filePath),
+    source: options.source ?? pathInProject(filePath, root),
     baseDir: options.baseDir ?? path.dirname(filePath),
   });
 }

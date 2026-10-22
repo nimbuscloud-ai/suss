@@ -14,11 +14,10 @@
 
 import path from "node:path";
 
+import { namedPackageDirAbove } from "@suss/behavioral-ir/files";
+
 import { sourceFileFor } from "../bootstrap/sourceFileLookup.js";
-import {
-  namedPackageDirAbove,
-  resolvePackageExportsCached,
-} from "../packageExports.js";
+import { resolvePackageExportsCached } from "../packageExports.js";
 
 import type { Node } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";

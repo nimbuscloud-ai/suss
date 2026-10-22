@@ -12,6 +12,7 @@ import {
 import {
   describesOperations,
   describesTypes,
+  graphqlSdlFileToSummaries,
   graphqlSdlToSummaries,
   loadSdlFile,
 } from "./index.js";
@@ -160,6 +161,26 @@ describe("graphqlSdlToSummaries: the schema document", () => {
     const summaries = graphqlSdlToSummaries(sdl, { source: "schema.graphql" });
     for (const summary of summaries) {
       expect(readSourceDocumentMetadata(summary)?.label).toBe("schema.graphql");
+    }
+  });
+});
+
+describe("graphqlSdlFileToSummaries", () => {
+  it("labels the document by its path from the project root, wherever the checkout is", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-graphql-"));
+    const file = path.join(tmp, "api", "schema.graphql");
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, "type Query { ping: String }");
+    try {
+      const summaries = graphqlSdlFileToSummaries(file, { projectRoot: tmp });
+      for (const summary of summaries) {
+        expect(readSourceDocumentMetadata(summary)?.label).toBe(
+          "api/schema.graphql",
+        );
+      }
+      expect(summaries[0]?.identity.name).toBe("api/schema.graphql");
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
     }
   });
 });

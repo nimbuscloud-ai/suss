@@ -29,6 +29,7 @@ import {
   graphqlOperationBinding,
   withGraphqlMetadata,
 } from "@suss/behavioral-ir";
+import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 
 import { typeNodeToShape } from "./typeShape.js";
 
@@ -53,8 +54,9 @@ export interface GraphqlDocumentsOptions {
    */
   transport?: string;
   /**
-   * The directory an anonymous operation's name is relative to, so the
-   * name is the same on every machine. Without it the path is used as is.
+   * The directory an anonymous operation's name is relative to, spelled
+   * the way the sources' paths are, so the name is the same on every
+   * machine. Without it the path is used as is.
    */
   rootDir?: string;
 }
@@ -152,14 +154,22 @@ function distinctName(candidate: string, taken: Set<string>): string {
   return name;
 }
 
+export interface GraphqlDocumentFilesOptions extends GraphqlDocumentsOptions {
+  /** Absolute. The directory each file's path is measured from. */
+  projectRoot?: string;
+}
+
 /**
  * Reads `.graphql` and `.gql` files and converts them. A file that cannot
  * be read is skipped, so one bad path does not lose the rest.
  */
 export function graphqlDocumentFilesToSummaries(
   filepaths: string[],
-  options: GraphqlDocumentsOptions = {},
+  options: GraphqlDocumentFilesOptions = {},
 ): BehavioralSummary[] {
+  const { projectRoot, rootDir, ...documentOptions } = options;
+  const root =
+    projectRoot ?? defaultProjectRoot(rootDir ?? filepaths[0] ?? ".");
   const sources: DocumentSource[] = [];
   for (const filepath of filepaths) {
     let text: string;
@@ -168,9 +178,13 @@ export function graphqlDocumentFilesToSummaries(
     } catch {
       continue;
     }
-    sources.push({ path: filepath, text });
+    sources.push({ path: pathInProject(filepath, root), text });
   }
-  return graphqlDocumentsToSummaries(sources, options);
+  return graphqlDocumentsToSummaries(sources, {
+    ...documentOptions,
+    // An anonymous operation is named from rootDir, so both are spelled from one root.
+    ...(rootDir === undefined ? {} : { rootDir: pathInProject(rootDir, root) }),
+  });
 }
 
 /**
@@ -180,7 +194,7 @@ export function graphqlDocumentFilesToSummaries(
  */
 export function graphqlDocumentsPathToSummaries(
   specPath: string,
-  options: GraphqlDocumentsOptions = {},
+  options: GraphqlDocumentFilesOptions = {},
 ): BehavioralSummary[] {
   const absolute = path.resolve(specPath);
   if (!fs.existsSync(absolute)) {

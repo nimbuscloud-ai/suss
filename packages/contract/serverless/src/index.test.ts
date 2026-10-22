@@ -105,6 +105,7 @@ describe("the serverless fixture", () => {
       kind: "codeUri",
       path: ".",
       entry: "src/handlers/createOrder",
+      workspace: "suss",
     });
   });
 

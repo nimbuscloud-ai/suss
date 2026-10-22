@@ -277,7 +277,7 @@ describe("check --base", () => {
         vars: { REGION: "eu" },
       }),
     );
-    // Both readers write their file relative to the working directory.
+    // Both readers record their file's path, which has to read the same in the copy.
     config.read.push(
       { kind: "contract", from: "prisma", file: "prisma/schema.prisma" },
       { kind: "contract", from: "wrangler", file: "wrangler.jsonc" },

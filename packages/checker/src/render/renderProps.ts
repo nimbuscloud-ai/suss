@@ -14,6 +14,7 @@
 import {
   functionCallBinding,
   readReactMetadata,
+  referencedFile,
   renderTargetKey,
   summaryRef,
 } from "@suss/behavioral-ir";
@@ -196,14 +197,14 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
 
   for (const summary of summaries) {
     for (const edge of edgesOf(summary)) {
-      // A target's file is written from the root of the parent's own
-      // extract, so it is a file in the parent's workspace.
+      // A target's file is in the parent's workspace unless its path
+      // says which other project it is in.
+      const target = referencedFile(
+        summary.location.workspace,
+        edge.target.file,
+      );
       const child = childByKey.get(
-        renderTargetKey(
-          summary.location.workspace,
-          edge.target.file,
-          edge.target.name,
-        ),
+        renderTargetKey(target.workspace, target.file, edge.target.name),
       );
       if (child === undefined || child === summary) {
         continue;

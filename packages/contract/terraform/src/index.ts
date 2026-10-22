@@ -30,6 +30,7 @@ import {
   storageBinding,
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
+import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 
 import { dynamicBlocks, iteratedRecords } from "./blockExpansion.js";
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
@@ -109,6 +110,11 @@ export interface TerraformReadOptions {
    * location.
    */
   codeScopes?: Record<string, string>;
+  /**
+   * Absolute. The directory each `.tf` file's path is measured from.
+   * Without it, a file's path is recorded as it was given.
+   */
+  projectRoot?: string;
 }
 
 interface KeyedShape {
@@ -163,7 +169,10 @@ export function terraformFileToSummaries(
       arguments: {},
       ancestors: [directory],
     }),
-    options,
+    {
+      ...options,
+      projectRoot: options.projectRoot ?? defaultProjectRoot(target),
+    },
   );
 }
 
@@ -352,6 +361,10 @@ function moduleSummaries(
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   for (const file of module.files) {
+    const sourceFile =
+      options.projectRoot === undefined
+        ? file.sourceFile
+        : pathInProject(file.sourceFile, options.projectRoot);
     for (const [resourceType, label, body] of file.resources) {
       for (const pack of options.packs) {
         const pattern = patternFor(pack, resourceType, file.constraints, body);
@@ -363,7 +376,7 @@ function moduleSummaries(
             pattern,
             label,
             body,
-            sourceFile: file.sourceFile,
+            sourceFile,
             resourceType,
             scope: module.scope,
             options,

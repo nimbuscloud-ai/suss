@@ -336,6 +336,37 @@ describe("readCallFacts, reached from each start", () => {
     expect(ignoring.get(start)?.functions.has(functionOf(store))).toBe(true);
   });
 
+  it("refuses a hop into a sibling package's file only when the mock gives that package", () => {
+    const inProject = (summary: BehavioralSummary, workspace: string) => ({
+      ...summary,
+      location: { ...summary.location, workspace },
+    });
+    const sibling = inProject(unit("loadOrder"), "@acme/shared");
+    const own = inProject(
+      unit("orderService", [calls("loadOrder", sibling)]),
+      "@acme/api",
+    );
+    const mocking = (module: string) =>
+      inProject(
+        test(
+          "loads",
+          [calls("orderService", own)],
+          [{ module, written: "vi.mock" }],
+        ),
+        "@acme/api",
+      );
+    const reaches = (mocked: BehavioralSummary) =>
+      readCallFacts([sibling, own, mocked])
+        .reachedFromEach([functionOf(mocked)], { pastMocks: true })
+        .get(functionOf(mocked))
+        ?.functions.has(functionOf(sibling));
+
+    expect(reaches(mocking(`@acme/shared::${sibling.location.file}`))).toBe(
+      false,
+    );
+    expect(reaches(mocking(sibling.location.file))).toBe(true);
+  });
+
   it("refuses a spy only on a member with that name, never on a function", () => {
     const method = {
       ...unit("OrderStore.load", [], 40),

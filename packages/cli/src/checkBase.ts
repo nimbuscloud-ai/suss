@@ -14,11 +14,9 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import readline from "node:readline";
 
 import { acquireFolderLock, releaseFolderLock } from "./folderLock.js";
 import {
@@ -29,11 +27,7 @@ import {
 } from "./projectRead.js";
 import { UsageError } from "./usageError.js";
 
-import type {
-  DeclaredReads,
-  ProjectReadReport,
-  ReadEntry,
-} from "./projectRead.js";
+import type { DeclaredReads, ReadEntry } from "./projectRead.js";
 
 /** The revision a check compared with, as the user named it and as git resolved it. */
 export interface BaseRevision {
@@ -64,8 +58,7 @@ const FOLDERS_KEPT = 2;
 /**
  * Reads the base revision of the project at `root`. The changed files
  * are listed again on every call, since the working tree moves between
- * two questions and the base does not. The read changes the process's
- * working directory while it runs, so a server runs it between builds.
+ * two questions and the base does not.
  */
 export async function readBase(root: string, ref: string): Promise<BaseRead> {
   const project = fs.realpathSync(path.resolve(root));
@@ -185,11 +178,19 @@ async function readIntoTree(
     );
   }
 
+  // Every path a read writes is measured from the root it reads, so the
+  // copy's summaries spell each file the way the checkout's do.
   const summaryDir = summariesIn(work);
-  const report = await readFromTheSamePlace(tree, top, baseRoot, summaryDir, {
-    ...reads,
-    reads: present.map((entry) => withPackConfigsFrom(project, entry)),
-  }).finally(() => {
+  const report = await readProjectInto(
+    baseRoot,
+    summaryDir,
+    {
+      ...reads,
+      reads: present.map((entry) => withPackConfigsFrom(project, entry)),
+    },
+    undefined,
+    true,
+  ).finally(() => {
     // The summaries are all a later question needs, and a large checkout
     // is most of the folder. Removing it leaves the linked node_modules alone.
     fs.rmSync(path.dirname(tree), { recursive: true, force: true });
@@ -199,82 +200,7 @@ async function readIntoTree(
       `Reading ${revision.ref} failed, and every unit those reads cover would look new:\n${report.failed.map((line) => `  ${line}`).join("\n")}`,
     );
   }
-  await placeAtCheckout(summaryDir, tree, top);
   return summaryDir;
-}
-
-/**
- * Contract readers write a file's path relative to the working directory,
- * so the base is read from the folder in the copy that matches where the
- * command runs in the checkout. Otherwise every contract unit would look
- * removed at one path and added at another.
- */
-async function readFromTheSamePlace(
-  tree: string,
-  top: string,
-  baseRoot: string,
-  summaryDir: string,
-  reads: DeclaredReads,
-): Promise<ProjectReadReport> {
-  const here = process.cwd();
-  const inside = path.relative(top, fs.realpathSync(here));
-  if (inside.startsWith("..") || path.isAbsolute(inside)) {
-    return await readProjectInto(baseRoot, summaryDir, reads, undefined, true);
-  }
-
-  const mirror = path.join(tree, inside);
-  fs.mkdirSync(mirror, { recursive: true });
-  process.chdir(mirror);
-  try {
-    return await readProjectInto(baseRoot, summaryDir, reads, undefined, true);
-  } finally {
-    process.chdir(here);
-  }
-}
-
-/**
- * A path a reader wrote into the temporary folder, absolute or from a
- * working directory outside the checkout, is rewritten to the one the
- * same file has in the checkout. The folder's name is random, so it
- * appears in nothing else.
- */
-async function placeAtCheckout(
-  summaryDir: string,
-  tree: string,
-  top: string,
-): Promise<void> {
-  const atTop = relativeSpelling(top);
-  // The relative spelling first, since the absolute one is part of it.
-  const replacements: Array<[string, string]> = [
-    [`${relativeSpelling(tree)}/`, atTop === "" ? "" : `${atTop}/`],
-    [`${tree}/`, `${top}/`],
-  ];
-  for (const name of fs.readdirSync(summaryDir)) {
-    const file = path.join(summaryDir, name);
-    const rewritten = `${file}.rewritten`;
-    const out = fs.createWriteStream(rewritten);
-    const lines = readline.createInterface({
-      input: fs.createReadStream(file),
-      crlfDelay: Number.POSITIVE_INFINITY,
-    });
-    for await (const line of lines) {
-      const placed = replacements.reduce(
-        (text, [from, to]) => text.replaceAll(from, to),
-        line,
-      );
-      if (!out.write(`${placed}\n`)) {
-        await once(out, "drain");
-      }
-    }
-    out.end();
-    await once(out, "finish");
-    fs.renameSync(rewritten, file);
-  }
-}
-
-/** A path as a reader that measures from the working directory writes it. */
-function relativeSpelling(target: string): string {
-  return path.relative(process.cwd(), target).split(path.sep).join("/");
 }
 
 /** The folder an extract reads, or the file a contract reads, relative to the project root. */
@@ -336,8 +262,7 @@ function temporaryFolder(): string {
       }
     });
   }
-  // The working directory reads back resolved, so every path into the
-  // copy is spelled resolved too, or relative paths would climb out of it.
+  // The checkout is read at its resolved path, so the copy is too.
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "suss-base-")));
 }
 

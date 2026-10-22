@@ -1,7 +1,7 @@
 {
   "name": "@suss/contract-cloudformation",
   "exports": 8,
-  "internal": 85,
-  "consumers": 126,
+  "internal": 82,
+  "consumers": 127,
   "unfollowedCalls": 0
 }
