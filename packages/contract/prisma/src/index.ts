@@ -454,13 +454,20 @@ function migrationsOriginOf(
 }
 
 function hasMigrationsFolder(dir: string): boolean {
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .some(
-      (entry) =>
-        entry.isDirectory() &&
-        fs.existsSync(path.join(dir, entry.name, "migration_lock.toml")),
-    );
+  return foldersIn(dir).some((folder) =>
+    fs.existsSync(path.join(dir, folder, "migration_lock.toml")),
+  );
+}
+
+function foldersIn(dir: string): string[] {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
 }
 
 function originOf(
@@ -830,8 +837,8 @@ function defaultFillerOf(field: PrismaField): DefaultFiller {
   if (value === undefined) {
     return "nobody";
   }
-  const call = value as { type?: string; name?: string };
-  if (call.type !== "function") {
+  const call = value as { type?: string; name?: string } | null;
+  if (call?.type !== "function") {
     return "both";
   }
   return DEFAULT_FUNCTION_FILLERS[call.name ?? ""] ?? "unknown";
