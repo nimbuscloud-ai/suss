@@ -98,6 +98,32 @@ describe("naming a summary", () => {
     expect(first.identity.id).not.toBe(second.identity.id);
   });
 
+  it("numbers two units that share a name by their order in the file, so moving them keeps the ids", () => {
+    const idsAt = (starts: [number, number]) => {
+      const later = summary({
+        name: "read",
+        file: "src/a.ts",
+        start: starts[1],
+      });
+      const earlier = summary({
+        name: "read",
+        file: "src/a.ts",
+        start: starts[0],
+      });
+      nameSummaries([later, earlier], {
+        workspace: "svc",
+        projectRoot: undefined,
+      });
+      return [earlier.identity.id, later.identity.id];
+    };
+
+    expect(idsAt([10, 40])).toEqual([
+      "svc::src/a.ts::read",
+      "svc::src/a.ts::read@2",
+    ]);
+    expect(idsAt([20, 50])).toEqual(idsAt([10, 40]));
+  });
+
   it("tells apart what a function consumes before reaching for its line", () => {
     const asRest = summary({
       name: "read",

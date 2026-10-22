@@ -87,7 +87,7 @@ export function nameSummaries(
   // boundary each one is about is what tells them apart, and it is also
   // what decides which summaries pair with each other. An anonymous
   // function has no name to start from, so when the boundary does not
-  // separate them either, the line number does.
+  // separate them either, their order in the file does.
   disambiguateSummaryIds(summaries);
 
   linkCallsToSummaries(summaries);
