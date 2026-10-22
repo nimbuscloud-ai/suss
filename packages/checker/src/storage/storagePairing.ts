@@ -357,7 +357,25 @@ function claimantsOf(
       candidates.push({ subject: container, name });
     }
   }
-  return mostSpecificName(statedEngineFirst(candidates, access));
+  return mostSpecificName(
+    sameRecognitionFirst(statedEngineFirst(candidates, access), access),
+  );
+}
+
+/**
+ * The candidates left once one of them was read by the library that
+ * recorded the access. A table declared both in Drizzle and in Prisma
+ * is checked against the Drizzle columns for a Drizzle query.
+ */
+function sameRecognitionFirst(
+  candidates: NameCandidate<DeclaredContainer>[],
+  access: StorageAccessRecord,
+): NameCandidate<DeclaredContainer>[] {
+  const recognition = access.effect.binding.recognition;
+  const same = candidates.filter(
+    (candidate) => candidate.subject.binding.recognition === recognition,
+  );
+  return same.length === 0 ? candidates : same;
 }
 
 /**
