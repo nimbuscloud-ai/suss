@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "read": [
+    {
+      "kind": "extract",
+      "language": "typescript",
+      "packs": ["apollo-client=apollo.json"]
+    },
+    {
+      "kind": "contract",
+      "from": "graphql",
+      "file": "schema/legacy.graphql"
+    },
+    {
+      "kind": "contract",
+      "from": "graphql",
+      "file": "schema/appsync.graphql"
+    }
+  ]
+}
