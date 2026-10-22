@@ -203,7 +203,7 @@ export function checkStorage(
  * the binding's own (a Prisma model) and the physical one a template
  * states.
  */
-interface DeclaredContainer {
+export interface DeclaredContainer {
   summary: BehavioralSummary;
   binding: BoundaryBinding;
   semantics: StorageSemantics;
@@ -284,7 +284,7 @@ function reachedBy(
   };
 }
 
-function declaredContainers(
+export function declaredContainers(
   summaries: BehavioralSummary[],
 ): DeclaredContainer[] {
   const containers: DeclaredContainer[] = [];
@@ -829,7 +829,7 @@ function claim(
  * at error severity (#121). A summary that states no workspace is a
  * single-project run, where every summary belongs to the one service.
  */
-function sameService(
+export function sameService(
   provider: BehavioralSummary,
   access: BehavioralSummary,
 ): boolean {

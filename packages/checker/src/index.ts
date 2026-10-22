@@ -30,6 +30,7 @@ import { checkSemanticBridging } from "./pairing/semanticBridging.js";
 import { isStory, isTestCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
+import { checkSchemaAgreement } from "./storage/schemaAgreement.js";
 import { checkStorage } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 import { checkUnitInvocation } from "./unit-invocation/unitInvocationPairing.js";
@@ -200,6 +201,11 @@ export type { ComparedPair } from "./pairing/comparedPair.js";
 import { summaryWithDefinitionsInlined } from "./spelledOut.js";
 
 export { summaryWithDefinitionsInlined } from "./spelledOut.js";
+export {
+  checkSchemaAgreement,
+  type SchemaAgreement,
+  type UncheckedColumn,
+} from "./storage/schemaAgreement.js";
 export {
   checkStorage,
   type GroundedBy,
@@ -403,6 +409,9 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
 
   findings.push(...checkRuntimeConfig(production, interactionIndex, pairInfo));
   findings.push(...checkStorage(production, interactionIndex, pairInfo));
+  findings.push(
+    ...checkSchemaAgreement(production, interactionIndex, pairInfo).findings,
+  );
   findings.push(...checkMessageBus(production, interactionIndex, pairInfo));
   findings.push(...checkUnitInvocation(production, interactionIndex, pairInfo));
   findings.push(...checkMetric(production, interactionIndex));
