@@ -160,6 +160,7 @@ export {
 } from "./deployment/placement.js";
 export {
   contestedFiles,
+  inScopeDirectory,
   readCodeScope,
   runsIn,
   type UnitScope,
@@ -231,6 +232,7 @@ export {
   type TestMock,
   type WrapperMetadata,
   type WrapperReference,
+  withCodeScopeWorkspace,
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,
@@ -279,6 +281,7 @@ export {
   referencedFileKey,
   renderTargetKey,
   type SummaryIdParts,
+  sameProject,
   settlingSuffix,
   summaryFileKey,
   summaryIdentifier,

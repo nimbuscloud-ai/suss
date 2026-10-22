@@ -71,12 +71,20 @@ describe("the ALB flow template", () => {
         {
           instanceName: "OrdersTaskDefinition/orders-app",
           deploymentTarget: "ecs-task",
-          codeScope: { kind: "codeUri", path: "src/orders-app" },
+          codeScope: {
+            kind: "codeUri",
+            path: "src/orders-app",
+            workspace: "aws-alb",
+          },
         },
         {
           instanceName: "HealthFunction",
           deploymentTarget: "lambda",
-          codeScope: { kind: "codeUri", path: "src/health" },
+          codeScope: {
+            kind: "codeUri",
+            path: "src/health",
+            workspace: "aws-alb",
+          },
         },
       ]),
     );

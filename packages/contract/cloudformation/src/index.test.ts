@@ -437,6 +437,41 @@ describe("cloudFormationToSummaries — AWS::ApiGatewayV2::Route", () => {
 });
 
 describe("cloudFormationFileToSummaries — file loading", () => {
+  it("says which project a function's CodeUri is in: the one the template is in", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-cfn-"));
+    fs.writeFileSync(
+      path.join(tmp, "package.json"),
+      JSON.stringify({ name: "@acme/api" }),
+    );
+    const file = path.join(tmp, "template.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        Resources: {
+          Fn: {
+            Type: "AWS::Serverless::Function",
+            Properties: {
+              CodeUri: "src/",
+              Handler: "handler.main",
+              Environment: { Variables: { TABLE: "orders" } },
+            },
+          },
+        },
+      }),
+    );
+    try {
+      const scopes = cloudFormationFileToSummaries(file).flatMap(
+        (summary) => summary.metadata?.codeScope ?? [],
+      );
+      expect(scopes).not.toEqual([]);
+      for (const scope of scopes) {
+        expect(scope).toMatchObject({ path: "src", workspace: "@acme/api" });
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  });
+
   it("loads a JSON template from disk", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-cfn-"));
     const file = path.join(tmp, "stack.json");

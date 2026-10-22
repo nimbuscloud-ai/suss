@@ -17,7 +17,7 @@ import { fileInCodeScope } from "@suss/ir-core";
 
 import { sameUnit } from "../declaredDelivery.js";
 import { readCodeScopeMetadata } from "../metadata.js";
-import { summaryFileKey } from "../summaryId.js";
+import { sameProject, summaryFileKey } from "../summaryId.js";
 
 import type { BehavioralSummary, DeployableUnit } from "../index.js";
 import type { CodeScopeMetadata } from "../metadata.js";
@@ -48,6 +48,29 @@ export interface UnitScope {
    * file outside every closure pairs with none.
    */
   closure?: ReadonlySet<string>;
+  /**
+   * The project `codeScope` is measured from. A sibling package's file
+   * at the same path is in another project, so the directory leaves it out.
+   */
+  workspace?: string;
+}
+
+/**
+ * Whether the scope's directory contains this code: the same project,
+ * and a path under the directory. Code or a scope that gives no project
+ * is compared by path alone.
+ */
+export function inScopeDirectory(
+  code: BehavioralSummary,
+  scope: UnitScope,
+): boolean {
+  if (scope.codeScope === undefined) {
+    return false;
+  }
+  return (
+    sameProject(code.location.workspace, scope.workspace) &&
+    fileInCodeScope(code.location.file, scope.codeScope)
+  );
 }
 
 /**
@@ -86,17 +109,17 @@ export function contestedFiles(
   scopes: readonly UnitScope[],
   byFile: UnitsByFile,
 ): ReadonlySet<string> {
-  const unplaced = new Map<string, string>();
+  const unplaced = new Map<string, BehavioralSummary>();
   for (const summary of code) {
     const key = summaryFileKey(summary);
     if (summary.identity.deployableUnit !== undefined || byFile.has(key)) {
       continue;
     }
-    unplaced.set(key, summary.location.file);
+    unplaced.set(key, summary);
   }
 
   const contested = new Set<string>();
-  for (const [key, file] of unplaced) {
+  for (const [key, summary] of unplaced) {
     // A file inside any closure is placed by that closure, even when it
     // is in two of them. Only scopes without a closure go by directory.
     if (scopes.some((s) => s.closure?.has(key) === true)) {
@@ -105,11 +128,7 @@ export function contestedFiles(
 
     let containing = 0;
     for (const scope of scopes) {
-      if (scope.closure !== undefined || scope.codeScope === undefined) {
-        continue;
-      }
-
-      if (!fileInCodeScope(file, scope.codeScope)) {
+      if (scope.closure !== undefined || !inScopeDirectory(summary, scope)) {
         continue;
       }
       containing += 1;
@@ -141,8 +160,5 @@ export function runsIn(
   }
   // With no directory, nothing places this file. `placeDeclared` never
   // builds a scope with neither a closure nor a directory.
-  return (
-    scope.codeScope !== undefined &&
-    fileInCodeScope(code.location.file, scope.codeScope)
-  );
+  return inScopeDirectory(code, scope);
 }

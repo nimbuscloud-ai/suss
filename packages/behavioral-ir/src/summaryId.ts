@@ -176,6 +176,14 @@ export function referencedFileKey(
   return fileReference(workspace, file);
 }
 
+/** Whether two projects can be the same one, which they are when either is unknown. */
+export function sameProject(
+  one: string | undefined,
+  other: string | undefined,
+): boolean {
+  return one === undefined || other === undefined || one === other;
+}
+
 /** The key that joins a summary's own file with the paths other summaries record for it. */
 export function summaryFileKey(summary: BehavioralSummary): string {
   return fileReference(summary.location.workspace, summary.location.file);

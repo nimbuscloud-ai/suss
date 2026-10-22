@@ -4,6 +4,7 @@ import { readModuleImports } from "../metadata.js";
 import {
   referencedFile,
   referencedFileKey,
+  sameProject,
   summaryFileKey,
 } from "../summaryId.js";
 
@@ -50,12 +51,14 @@ function importKeys(
 export function entryClosure(
   entry: string,
   graph: ModuleGraph,
+  /** The project the entry is measured from, when the template says. */
+  workspace?: string,
 ): ReadonlySet<string> | null {
   const keyByFile = new Map<string, string>();
   for (const key of graph.keys()) {
-    const { file } = referencedFile(undefined, key);
-    if (!keyByFile.has(file)) {
-      keyByFile.set(file, key);
+    const place = referencedFile(undefined, key);
+    if (!keyByFile.has(place.file) && sameProject(place.workspace, workspace)) {
+      keyByFile.set(place.file, key);
     }
   }
   const entryFile = entryFileAmong(entry, keyByFile.keys());

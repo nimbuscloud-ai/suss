@@ -12,10 +12,12 @@
 
 import path from "node:path";
 
+import { withCodeScopeWorkspace } from "@suss/behavioral-ir";
 import {
   defaultProjectRoot,
   documentSourceLabel,
   pathInProject,
+  projectNameOf,
 } from "@suss/behavioral-ir/files";
 import { codeScopePath } from "@suss/ir-core";
 
@@ -102,13 +104,19 @@ export function wranglerFileToSummaries(
   }
   const document = loadConfigurationDocument(located.file);
   const root = options.projectRoot ?? defaultProjectRoot(located.file);
-  return wranglerToSummaries(document, {
+  const summaries = wranglerToSummaries(document, {
     source:
       options.source ?? documentSourceLabel(RECOGNITION, located.file, root),
     codeScope:
       options.codeScope ??
       codeScopePath(path.posix.dirname(pathInProject(located.file, root))),
   });
+  // The scope worked out here is measured from the root; a caller's is its own.
+  return options.codeScope === undefined
+    ? summaries.map((summary) =>
+        withCodeScopeWorkspace(summary, projectNameOf(root)),
+      )
+    : summaries;
 }
 
 /**

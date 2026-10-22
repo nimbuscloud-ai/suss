@@ -12,12 +12,15 @@
  * section and a relative path only mean something inside their document.
  */
 
+import path from "node:path";
+
 import {
   nestedDocumentLabel,
   readRoutingMetadata,
+  withCodeScopeWorkspace,
   withRoutingMetadata,
 } from "@suss/behavioral-ir";
-import { documentSourceLabel } from "@suss/behavioral-ir/files";
+import { documentSourceLabel, projectNameOf } from "@suss/behavioral-ir/files";
 import {
   type AuthorizerConfig,
   type AuthorizerType,
@@ -1109,10 +1112,12 @@ export function cloudFormationFileToSummaries(
   const rootLabel =
     options.source ??
     documentSourceLabel("cloudformation", templatePath, options.projectRoot);
-  return tree.documents.flatMap((document) =>
-    cloudFormationToSummaries(document.template, {
+  return tree.documents.flatMap((document) => {
+    // A CodeUri is a folder in the project the template is in.
+    const workspace = projectNameOf(path.dirname(document.path));
+    return cloudFormationToSummaries(document.template, {
       source: nestedDocumentLabel(rootLabel, document.stackPath),
       stackPath: document.stackPath,
-    }),
-  );
+    }).map((summary) => withCodeScopeWorkspace(summary, workspace));
+  });
 }
