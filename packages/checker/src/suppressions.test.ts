@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { restBinding } from "@suss/behavioral-ir";
+import { restBinding, storageBinding } from "@suss/behavioral-ir";
 
 import {
   applySuppressions,
@@ -487,5 +487,87 @@ describe("rules against deduped sources", () => {
       const [out] = applySuppressions([collapsed], [asProvider]);
       expect(out.suppressed).toBeUndefined();
     });
+  });
+});
+
+describe("rules for a store", () => {
+  const users = storageBinding({
+    recognition: "prisma",
+    storageSystem: "postgresql",
+    scope: "default",
+    container: "users",
+  });
+
+  function columnFinding(
+    kind: Finding["kind"],
+    field: string | undefined,
+  ): Finding {
+    const side = {
+      summary: "prisma/schema.prisma::users",
+      location: {
+        file: "prisma/schema.prisma",
+        range: { start: 1, end: 1 },
+        exportName: null,
+      },
+    };
+    return finding({
+      kind,
+      boundary: users,
+      provider: side,
+      consumer: { ...side, ...(field !== undefined ? { field } : {}) },
+      description: `about ${field ?? "the table"}`,
+    });
+  }
+
+  it("matches a rule that gives the store's label as its boundary", () => {
+    const unused = columnFinding("boundaryFieldUnused", undefined);
+    const [out] = applySuppressions(
+      [unused],
+      [rule({ kind: "boundaryFieldUnused", boundary: "postgresql:users" })],
+    );
+    expect(out.suppressed?.reason).toBe("accepted");
+  });
+
+  it("matches a field rule on that field only", () => {
+    const findings = [
+      columnFinding("boundaryShapeMismatch", "email"),
+      columnFinding("boundaryShapeMismatch", "name"),
+      columnFinding("boundaryShapeMismatch", undefined),
+    ];
+    const out = applySuppressions(findings, [
+      rule({
+        kind: "boundaryShapeMismatch",
+        boundary: "postgresql:users",
+        consumer: { field: "email" },
+      }),
+    ]);
+    expect(out.map((f) => f.suppressed !== undefined)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  it("keeps a field rule off the same field of another table", () => {
+    const elsewhere = {
+      ...columnFinding("boundaryShapeMismatch", "email"),
+      boundary: storageBinding({
+        recognition: "prisma",
+        storageSystem: "postgresql",
+        scope: "default",
+        container: "accounts",
+      }),
+    };
+    const [out] = applySuppressions(
+      [elsewhere],
+      [
+        rule({
+          kind: "boundaryShapeMismatch",
+          boundary: "postgresql:users",
+          consumer: { field: "email" },
+        }),
+      ],
+    );
+    expect(out.suppressed).toBeUndefined();
   });
 });

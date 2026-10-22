@@ -833,6 +833,13 @@ export const FindingSideSchema = z.object({
    * `transitionId` is the first of them.
    */
   transitionIds: z.array(z.string()).optional(),
+  /**
+   * The field this side declares or uses, as its own code addresses it,
+   * when the finding is about one field. A finding between two
+   * declarations has no transition, and this is what a rule picks it
+   * out by.
+   */
+  field: z.string().optional(),
   location: SourceLocationSchema,
 });
 

@@ -115,11 +115,13 @@ rules:
 |---|---|---|
 | `version` | yes | Always `1`. A file without it does not load, and `check` prints the line to add. |
 | `kind` | see matching | Any behavioral or intent finding kind. The [findings catalog](/reference/findings) lists them. An unknown kind is rejected when the file loads. |
-| `boundary` | see matching | `"METHOD /path"`, with `:id` and `{id}` both accepted, or a non-REST key verbatim (`"fn:@acme/api::getUser"`, `"gql:Query.user"`). |
+| `boundary` | see matching | `"METHOD /path"`, with `:id` and `{id}` both accepted, or a non-REST key verbatim (`"fn:@acme/api::getUser"`, `"gql:Query.user"`). A store is its engine and container, such as `"postgresql:users"`. |
 | `consumer.transitionId` | optional | Matches the consumer side's branch. |
 | `consumer.summary` | optional | `${file}::${name}` for the consumer side. |
+| `consumer.field` | optional | Matches the field the finding is about, as the consumer's code spells it. |
 | `provider.transitionId` | optional | Matches the provider side's branch. A finding about a status the provider produces puts its id here, not on the consumer. |
 | `provider.summary` | optional | `${file}::${name}` for the provider side. Also matches a contributor listed in `sources` when two identical findings were collapsed. |
+| `provider.field` | optional | Matches the field the finding is about, as the provider's code spells it. |
 | `scenario` | optional | The title of one PRD scenario. Matches only intent findings about that scenario. |
 | `scope` | optional, default `narrow` | `broad` allows a rule with only a `kind` or only a `boundary`. |
 | `reason` | yes | Free text. It shows in the report next to the suppressed finding. |
@@ -131,7 +133,16 @@ No other keys are accepted, and there is no `expires`.
 
 A finding matches a rule when every field the rule states equals the finding's. Fields the rule leaves out match anything, and there is no wildcard syntax: `boundary: "GET /legacy/*"` matches a route literally spelled `/legacy/*`, not everything under `/legacy`. The first rule that matches wins, so order matters when two rules overlap.
 
-A narrow rule, which is the default, needs `kind` plus one of `boundary`, `scenario`, `consumer.transitionId` or `provider.transitionId`. The rule suss prints always satisfies that, because it identifies the transition on whichever side has one. A finding with no transition on either side gets no printed rule, since `kind` plus `boundary` would silence every other finding of that kind on that boundary.
+A narrow rule, which is the default, needs `kind` plus one of `boundary`, `scenario`, `consumer.transitionId` or `provider.transitionId`. The rule suss prints always satisfies that, because it identifies the transition on whichever side has one. A finding between two declarations of a table has no transition, so its rule gives the store as the boundary and the column's field on one side:
+
+```yaml
+    - kind: boundaryShapeMismatch
+      boundary: "postgresql:attachments"
+      consumer: { field: "blobId" }
+      reason: TODO say why you accept this
+```
+
+A finding with neither a transition nor a field on either side gets no printed rule, since `kind` plus `boundary` would silence every other finding of that kind on that boundary.
 
 For a whole category, `scope: broad` opts in to a rule keyed on `kind` alone:
 

@@ -109,15 +109,26 @@ export function renderRule(rule) {
   }
 
   for (const side of /** @type {const} */ (["provider", "consumer"])) {
-    const transitionId = rule[side]?.transitionId;
-    if (transitionId !== undefined) {
-      lines.push(
-        `  ${side}: { transitionId: ${JSON.stringify(transitionId)} }`,
-      );
+    const matched = rule[side];
+    if (matched !== undefined) {
+      lines.push(`  ${side}: ${ruleSideText(matched)}`);
     }
   }
   lines.push("  reason: <why this is intended>");
   return lines;
+}
+
+/**
+ * A finding between two declarations of a table has no transition, and
+ * its rule picks it out by the column's field instead.
+ *
+ * @param {NonNullable<NonNullable<SinceFinding["rule"]>["provider"]>} side
+ */
+function ruleSideText(side) {
+  if ("transitionId" in side) {
+    return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
+  }
+  return `{ field: ${JSON.stringify(side.field)} }`;
 }
 
 /**

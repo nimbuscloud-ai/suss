@@ -5,7 +5,7 @@
  * @suss/ir-core so the intent checker can share them without depending
  * on this package. This module decides whether a rule's `boundary`,
  * `consumer` and `provider` match a two-sided `Finding`: the boundary
- * by key, and each side by summary and transition id.
+ * by key, and each side by summary, transition id and field.
  *
  * The CLI reads the rule file from disk and passes the parsed rules in.
  */
@@ -21,8 +21,9 @@ import {
 
 import { mergedSideOf } from "./dedupe.js";
 import { boundaryKey } from "./pairing/pairing.js";
+import { storageBoundaryKey } from "./storage/storagePairing.js";
 
-import type { Finding } from "@suss/behavioral-ir";
+import type { BoundaryBinding, Finding } from "@suss/behavioral-ir";
 import type { SuppressionRule } from "@suss/ir-core";
 
 export {
@@ -80,6 +81,9 @@ function ruleSideMatches(
   ) {
     return false;
   }
+  if (side.field !== undefined && side.field !== findingSide.field) {
+    return false;
+  }
   return true;
 }
 
@@ -99,6 +103,7 @@ function mergedSideMatches(
   if (
     side?.summary === undefined ||
     side.transitionId !== undefined ||
+    (side.field !== undefined && side.field !== finding[which].field) ||
     mergedSideOf(finding) !== which
   ) {
     return false;
@@ -118,7 +123,7 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
 
   if (
     rule.boundary !== undefined &&
-    !ruleBoundaryMatchesKey(rule.boundary, boundaryKey(finding.boundary))
+    !ruleBoundaryMatchesKey(rule.boundary, ruleBoundaryKey(finding.boundary))
   ) {
     return false;
   }
@@ -126,6 +131,15 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
     mergedSideMatches(rule.consumer, finding, "consumer") &&
     mergedSideMatches(rule.provider, finding, "provider")
   );
+}
+
+/**
+ * The key a rule's `boundary` gives for this binding. Storage has no
+ * identity key, since its own pass pairs it, so a rule spells a store
+ * the way that pass labels it, such as `postgresql:users`.
+ */
+export function ruleBoundaryKey(binding: BoundaryBinding): string | null {
+  return boundaryKey(binding) ?? storageBoundaryKey(binding.semantics);
 }
 
 /**

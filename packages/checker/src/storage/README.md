@@ -12,7 +12,27 @@ This check pairs a store's declared contract (Prisma, Drizzle, raw SQL) with the
 - `grounding.ts:groundReferences` works out what a unit reaches when a caller passed the unit its target. A wrapper that takes its bucket as an argument records `{location.bucket}`, which is the parameter and the field inside it. Each call in the run already records which summary it reaches and what it passed, so grounding is a join over the summaries and needs no further walk over source. The pairing pass classifies each container with `parseBoundaryName` in `@suss/ir-core`, the same module the adapter wrote it with, and passes grounding the parsed reference. That way neither side has its own code for writing or reading the braces. A container that is one bare name, `{ORDER_TABLE}`, is a variable the deployment sets and not an argument anyone passes. It is grounded against `metadata.runtimeContract.envVarValues` on the runtimes that run the file. `runtime-config/placement.ts:placeRuntimes` works out which runtimes those are, and `checkRuntimeConfig` uses the same result to scope a `process.env` read.
 - `storagePairing.ts:makeFieldUnknownFinding` builds the per-field errors for code that touches undeclared fields.
 - `storagePairing.ts:makeFieldUnusedFinding` builds the warning for declared fields no code accesses.
+- `schemaAgreement.ts:checkSchemaAgreement` compares two declarations of one table with each other, described below.
 - The storage contract comes from each provider's `metadata.storageContract` (the field list and its metadata).
+
+## Two declarations of one table
+
+A project can declare a table twice, such as a Drizzle copy of the tables a Rails schema owns. `checkSchemaAgreement` pairs declared stores with each other on the same key `checkStorage` pairs a store with an access, with a null engine meeting any engine and a workspace agreeing when the other side has none. It skips SQLite, which stores by affinity, and any contract that does not declare every column.
+
+- **The side that speaks for the database is the provider.** A contract with `origin: "dump"` wins, then one with `origin: "migrations"`, then the file whose path sorts first. `source: true` outranks all three. The other side is the copy. When the provider is a dump or marked as the source and the copy is neither, the copy is judged against it. Otherwise either side could be out of date, and the text gives both files without saying which one is wrong.
+- **Columns are compared by what the database stores.** That is `column ?? name`, so `blobId: bigint("blob_id")` is `blob_id`. `derived` fields are skipped. A finding side's `field` is the side's own `name`, which is what a printed rule keys on.
+- **The primary keys guard the table.** When the keys differ in their columns or their type families, the two may be different databases that each have a table of that name, so the table gets one warning in place of its column findings. When a side declares no primary key, the table is left unchecked.
+- **Severities, when one side is a dump or a stated source.** These are errors, since each has an input that fails:
+  - a type family that differs, or nullability that differs;
+  - a column the copy declares and the database lacks;
+  - a NOT NULL column with no default that the copy leaves out;
+  - a default the copy declares and the database lacks, on a NOT NULL column.
+
+  The same default on a nullable column is a warning, and so is a foreign key to a different table. A nullable or defaulted column the copy leaves out is not reported, and neither is a default the copy lacks.
+- **Severities, when neither side is.** A column or a default on one side only is a warning. Type, nullability and foreign keys keep the severities above.
+- **`default` is compared only when both sides state it.** `false` means a reader looked and found no default. A reader that does not read defaults leaves it out, and so does any summary written before the field existed.
+- **The type families** are in `SPELLINGS`, matched without case, with every array one family. A type outside them leaves the column unchecked, and the pass lists it in `unchecked` with the reason. `check` does not print that list yet.
+- **Two copies of one dump are not compared with each other.** Each is compared with the dump, and comparing the two as well would report every difference twice.
 
 ## Gotchas
 
