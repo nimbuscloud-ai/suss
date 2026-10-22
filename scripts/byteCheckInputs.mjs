@@ -419,6 +419,15 @@ export const FIXTURE_INPUTS = [
       withConfig("activerecord", POSTGRES),
     ),
   ]),
+  fixture("rails-status-symbols", [
+    ...lang("ruby"),
+    ...dir("fixtures/rails-status-symbols"),
+    ...packs("rails=fixtures/rails-status-symbols/suss.rails.json"),
+  ]),
+  fixture("rails-status-symbols/client", [
+    ...dir("fixtures/rails-status-symbols/client"),
+    ...packs("fetch"),
+  ]),
   fixture("rails-tenant", [
     ...lang("ruby"),
     ...dir("fixtures/rails-tenant"),
