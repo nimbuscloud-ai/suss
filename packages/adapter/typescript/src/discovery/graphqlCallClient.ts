@@ -19,7 +19,6 @@ import { force, hole, text, type Value } from "@suss/values";
 
 import { ResolutionStore } from "../facts/store.js";
 import { evaluatedValueThrough } from "../values/evaluator.js";
-import { peelSyntax } from "../walk/unwrap.js";
 import {
   constructionEndpoint,
   type GraphqlClientConstruction,
@@ -27,6 +26,7 @@ import {
   type GraphqlClientSpec,
   graphqlClientConstructions,
 } from "./graphqlClientConstruction.js";
+import { objectLiteralOf, propertyOf } from "./resolveValue.js";
 
 import type { CallExpression, SourceFile } from "ts-morph";
 
@@ -57,12 +57,12 @@ export function clientChosenAt(
   specs: ReadonlyArray<GraphqlClientSpec>,
   resolution: ResolutionStore | undefined,
 ): ClientChosenAtCall | null {
-  const written = writtenClientOf(site);
+  const store = resolution ?? new ResolutionStore();
+  const written = writtenClientOf(site, store);
   if (written === null) {
     return null;
   }
 
-  const store = resolution ?? new ResolutionStore();
   const constructions = constructionsInProject(
     site.call.getSourceFile(),
     specs,
@@ -82,7 +82,7 @@ export function clientChosenAt(
   );
   const chosen =
     value === null
-      ? unreadChain(written)
+      ? unreadChain(written, store)
       : clientValueOf(value, written.property);
   if (chosen === undefined) {
     return null;
@@ -131,7 +131,10 @@ interface WrittenClient {
   property: string | null;
 }
 
-function writtenClientOf(site: GraphqlCallSite): WrittenClient | null {
+function writtenClientOf(
+  site: GraphqlCallSite,
+  store: ResolutionStore,
+): WrittenClient | null {
   if (site.client === "receiver") {
     const callee = site.call.getExpression();
     return Node.isPropertyAccessExpression(callee)
@@ -140,9 +143,17 @@ function writtenClientOf(site: GraphqlCallSite): WrittenClient | null {
   }
 
   const options = site.call.getArguments()[site.client.argument];
-  return options === undefined
-    ? null
-    : { node: options, property: site.client.property };
+  if (options === undefined) {
+    return null;
+  }
+  // Most direct hook calls pass options with no client in them, and those
+  // need no evaluating. Through a wrapper, a client can arrive in a
+  // spread of the wrapper's parameter, which only the bindings show.
+  const direct = site.through.length === 0;
+  if (direct && optionWritten(options, site.client.property, store) === null) {
+    return null;
+  }
+  return { node: options, property: site.client.property };
 }
 
 /**
@@ -170,11 +181,14 @@ function clientValueOf(
 }
 
 /** A wrapper call the evaluator could not run leaves open only a client the call writes out. */
-function unreadChain(written: WrittenClient): Value | undefined {
+function unreadChain(
+  written: WrittenClient,
+  store: ResolutionStore,
+): Value | undefined {
   if (written.property === null) {
     return hole("client");
   }
-  return optionWritten(written.node, written.property) === null
+  return optionWritten(written.node, written.property, store) === null
     ? undefined
     : hole("client");
 }
@@ -212,7 +226,8 @@ function referenceOf(
   property: string | null,
   store: ResolutionStore,
 ): string {
-  const written = property === null ? node : optionWritten(node, property);
+  const written =
+    property === null ? node : optionWritten(node, property, store);
   const shown =
     written === null
       ? `${node.getText()}.${property}`
@@ -222,18 +237,13 @@ function referenceOf(
     : shown;
 }
 
-function optionWritten(options: Node, property: string): Node | null {
-  const literal = peelSyntax(options);
-  if (!Node.isObjectLiteralExpression(literal)) {
-    return null;
-  }
-  const written = literal.getProperty(property);
-  if (Node.isShorthandPropertyAssignment(written)) {
-    return written.getNameNode();
-  }
-  return Node.isPropertyAssignment(written)
-    ? (written.getInitializer() ?? null)
-    : null;
+function optionWritten(
+  options: Node,
+  property: string,
+  store: ResolutionStore,
+): Node | null {
+  const literal = objectLiteralOf(options, store);
+  return literal === null ? null : propertyOf(literal, property, store);
 }
 
 /** A local name shows what it was written as, so the reason shows the choice. */

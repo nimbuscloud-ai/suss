@@ -1548,12 +1548,19 @@ describe("apolloClientPack — the client a call passes", () => {
           export function Provided() {
             return useQuery(Account);
           }
+          export function Stored() {
+            const options = { client: appSyncClient };
+            return useQuery(Account, options);
+          }
         `,
       },
       BOTH_BOUND,
     );
 
     expect(clientOf(summaries, "Pinned.Listing").client?.workspace).toBe(
+      "schema/appsync.graphql",
+    );
+    expect(clientOf(summaries, "Stored.Account").client?.workspace).toBe(
       "schema/appsync.graphql",
     );
     expect(clientOf(summaries, "Either.Account").unresolved).toBe(
