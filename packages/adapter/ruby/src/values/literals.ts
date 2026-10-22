@@ -8,7 +8,7 @@
  * down to the same string.
  */
 
-import { force, literalOf } from "@suss/values";
+import { force, literalOf, sequence, text } from "@suss/values";
 
 import { evaluatedValue } from "./evaluator.js";
 
@@ -38,6 +38,46 @@ export function literalElementsOf(
   db?: Database,
 ): string[] | null {
   return literalElementsIn(evaluatedValue(node, db));
+}
+
+/** One element a loop runs over, and the parts a block that takes it apart is given, in order. */
+export interface LoopElement {
+  readonly whole: Value;
+  readonly parts: readonly Value[];
+}
+
+/**
+ * The elements a loop over the expression at `node` runs through, or
+ * null when it does not come down to a list or a hash the source writes
+ * out. A hash gives its key and value pairs. An element that is not a
+ * list is its own first part, since Ruby gives it whole to the first
+ * variable of a block that takes elements apart.
+ */
+export function loopElementsOf(
+  node: RbNode,
+  db?: Database,
+): LoopElement[] | null {
+  const value = evaluatedValue(node, db);
+  if (value.kind === "sequence") {
+    return value.items.map((item) => elementOfList(force(item.value)));
+  }
+  if (value.kind === "record" && !value.open) {
+    return [...value.fields].map(([key, item]) => {
+      const parts = [text(key), force(item.value)];
+      return { whole: sequence(parts), parts };
+    });
+  }
+  return null;
+}
+
+function elementOfList(whole: Value): LoopElement {
+  return {
+    whole,
+    parts:
+      whole.kind === "sequence"
+        ? whole.items.map((item) => force(item.value))
+        : [whole],
+  };
 }
 
 /**

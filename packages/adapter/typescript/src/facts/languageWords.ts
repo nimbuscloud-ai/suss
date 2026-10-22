@@ -40,3 +40,9 @@ export const MAP_ENTRY_READ = "get";
 
 /** The method a program puts an entry into a `Map` through. */
 export const MAP_ENTRY_WRITE = "set";
+
+/** The array methods that run a callback once per element, passing it the element and then its position. */
+export const ELEMENT_CALLBACK_METHODS: ReadonlySet<string> = new Set([
+  "map",
+  "forEach",
+]);

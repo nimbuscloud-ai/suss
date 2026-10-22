@@ -14,3 +14,6 @@ export const CONVERTING_BUILTINS: ReadonlySet<string> = new Set([
 
 /** The builtin that reads an attribute by a name it is given. */
 export const ATTRIBUTE_GETTER = "getattr";
+
+/** The builtin that pairs each element of a collection with its position, counting from 0. */
+export const POSITION_COUNTER = "enumerate";
