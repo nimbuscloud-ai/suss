@@ -20,7 +20,7 @@ The behavior is in `metadata.storageContract`:
 - `fields`, one entry per column. Scalar fields (`Int`, `BigInt`, `Float`, `Decimal`, `String`, `Boolean`, `DateTime`, `Json`, `Bytes`), enum fields, and lists of either are columns. Each column has:
   - `name`, the field name the client uses, and `column`, the name `@map("...")` gives the column in the database, when that is different.
   - `type`, the Prisma type, or the native type when the field has one, such as `@db.VarChar` for `String @db.VarChar(255)`. The length is left out. Every enum field has the type `enum`, and a list adds `[]`, as in `String[]`.
-  - `nullable`, from whether the field is optional.
+  - `nullable`, from whether the field is optional. A list works differently, as described below.
   - `primary` from `@id`, or from being listed in the model's `@@id([...])`, and `unique` from `@unique`.
   - `default`, whether the database fills the column when a create leaves it out. See below.
   - `foreignKey`, the table of the model a relation reaches, on each column its `@relation(fields: [...])` lists. The table is the target's `@@map` name, or the model name when it has none.
