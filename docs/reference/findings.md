@@ -156,6 +156,8 @@ The provider produces a status, or a body case within a status, that no consumer
 
 You cannot name an input and a wrong result here. The fall-through may be exactly what the author intended, and over the pinned corpus this kind was wrong far more often than right. The narrower case, a path that will misread a response, is `misreadProviderResponse` below, and that one is an error.
 
+A consumer can handle a failure by what the body says instead of by its status. `if (res.error) showError(res.error)` handles a 404 that sends `{ error }` when no 2xx body has an `error`. The `else` of `if (data.exists) { ... } else { showError() }` handles a 400 whose body has no `exists`, or sends it as `false`, when a 2xx body has one. That `else` has to do something: with no `else` written, the 400 is still reported.
+
 A provider response declared as a range, such as an OpenAPI `4XX`, is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member, whether that is a branch on 404, a `!res.ok` guard, or a catch on a throwing client. When nothing covers any member it reports once, saying `Provider produces statuses in the 4XX range but no consumer branch handles any of them`.
 
 When the provider returns one status under several conditions and the consumer has a single branch for it, the finding says `Provider returns status 200 in 3 different situations, and the consumer treats them all the same`, at info. It appears only when suss read every one of those bodies and they differ in a field or a literal, because that difference is the only thing a client could tell them apart by. Bodies that match, or one suss could not read, give nothing to tell apart, and no finding.
