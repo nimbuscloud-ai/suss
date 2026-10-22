@@ -363,16 +363,36 @@ describe("python value facts", () => {
     expect(rows(db, "positionOf")).toEqual([["#at", "#user"]]);
   });
 
-  it("says nothing about a comprehension that takes each element apart other than through enumerate", async () => {
-    const db = await factsFor(
-      [
-        "pairs = [key for key, value in items.items()]",
-        "counted = [user for at, user in enumerate(users, 1)]",
-        "",
-      ].join("\n"),
-    );
+  it("gives each name a comprehension takes the element apart into its part, up to a starred name", async () => {
+    const source = [
+      "pairs = [key for key, value in items.items()]",
+      "counted = [user for at, user in enumerate(users, 1)]",
+      "split = [first for first, *rest, last in rows]",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const items = `:${source.indexOf("items.items()")}-${source.indexOf(")]") + 1}`;
+    const counted = `:${source.indexOf("enumerate(")}-${source.indexOf("1)]") + 2}`;
+    expect(rows(db, "elementPartOf")).toEqual([
+      ["#key", items, "0"],
+      ["#value", items, "1"],
+      ["#at", counted, "0"],
+      ["#user", counted, "1"],
+      ["#first", "#rows", "0"],
+    ]);
     expect(db.size("elementOf")).toBe(0);
     expect(db.size("positionOf")).toBe(0);
+  });
+
+  it("gives the count enumerate unpacks to the first name it takes each element apart into", async () => {
+    const db = await factsFor(
+      "labels = [name for at, (name, kind) in enumerate(pairs)]\n",
+    );
+    expect(rows(db, "elementPartOf")).toEqual([
+      ["#name", "#pairs", "0"],
+      ["#kind", "#pairs", "1"],
+    ]);
+    expect(rows(db, "positionOf")).toEqual([["#at", "#name"]]);
   });
 
   it("states each entry of a list and a dictionary in order, with a spread as the collection it unpacks", async () => {

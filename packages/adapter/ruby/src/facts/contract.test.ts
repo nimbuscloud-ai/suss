@@ -88,6 +88,9 @@ const SOURCES: Record<string, CaseFiles> = {
   "a callback given each element of a list": {
     "f.rb": "def names(users)\n  users.map { |user| user }\nend\n",
   },
+  "a callback given the parts of each element of a list": {
+    "f.rb": "def names(pairs)\n  pairs.map { |name, kind| name }\nend\n",
+  },
   "a callback given each position in a list": {
     "f.rb":
       "def positions(users)\n  users.each_with_index { |user, at| at }\nend\n",

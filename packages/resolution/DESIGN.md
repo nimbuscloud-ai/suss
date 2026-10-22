@@ -158,13 +158,23 @@ elementOf(x, over)          the parameter or block variable x is given one
                             runs: the first parameter of a function
                             written into map or forEach, a
                             comprehension's variable, or the variable of
-                            a Ruby map or each block that takes one. A
-                            variable that takes the element apart has
-                            none. Ruby's define_method reader reads it,
-                            and no rule does
-positionOf(i, x)            i is given the position of x's element in its
-                            collection: the second parameter of a map or
-                            forEach callback, the count enumerate gives a
+                            a Ruby map or each block that takes one.
+                            Ruby's define_method reader reads it, and no
+                            rule does
+elementPartOf(x, over, k)   x is given the part under k of each element
+                            of over, where the code takes the element
+                            apart: ([name, kind]) or ({ id }) in a
+                            callback's parameter, for name, kind in a
+                            comprehension, or |name, kind| and
+                            |(name, kind)| in a Ruby block. k is a
+                            position, or a property name for an object
+                            pattern. A hash's elements are its key and
+                            value pairs. Ruby's define_method reader
+                            reads it, and no rule does
+positionOf(i, x)            i is given the position in its collection of
+                            the element x is given, or takes a part of:
+                            the second parameter of a map or forEach
+                            callback, the count enumerate gives a
                             comprehension, or the second variable of an
                             each_with_index block. No rule reads it yet
 returnsValue(f, v)          f returns v. A Ruby block returns its last
@@ -337,8 +347,9 @@ rbConstantName(c, q)        the constant defined at c is called q in
 definesMethodFrom(c, x)     c's body calls define_method, and x is the
                             argument that gives the method its name. The
                             adapter settles x, once for each element of
-                            each loop around it that elementOf states,
-                            and states declaresName (Ruby)
+                            each loop around it that elementOf or
+                            elementPartOf states, and states
+                            declaresName (Ruby)
 ```
 
 `declaresName` is the only fact an adapter records after asking these

@@ -908,9 +908,10 @@ const COUNTING_LOOP = "each_with_index";
 
 /**
  * `elementOf` for the variable a loop block gives each element, and
- * `positionOf` for the one `each_with_index` gives its position. A block
- * with more variables than that takes each element apart, so its first
- * variable is not given the whole element. `call` is the node the block
+ * `elementPartOf` for each variable of a block that takes the element
+ * apart, as `|name, kind|` and `|(name, kind)|` do. `each_with_index`
+ * gives the element and then its position, which `positionOf` ties to
+ * the first variable the element went to. `call` is the node the block
  * is written in.
  */
 function emitLoopVariables(
@@ -923,19 +924,72 @@ function emitLoopVariables(
   if (receiver === null || method === null || !LOOP_METHODS.has(method.text)) {
     return;
   }
-  const variables = children(field(block, "parameters"));
-  const [element, position] = variables;
+  const variables = children(field(block, "parameters")).filter(
+    (variable) => variable.type !== "block_parameter",
+  );
   const counting = method.text === COUNTING_LOOP;
-  if (element?.type !== "identifier" || variables.length > (counting ? 2 : 1)) {
+  const [first, position] = variables;
+  if (first === undefined || (counting && variables.length > 2)) {
     return;
   }
+  const taken =
+    counting || variables.length === 1
+      ? elementTakenBy(first)
+      : partsTakenBy(variables);
   // A block variable is keyed on the block, the way a read of it is.
   const blockKey = nodeId(emitter.filePath, block);
-  const elementKey = `${blockKey}#${element.text}`;
-  add(emitter, "elementOf", elementKey, valueKey(emitter, receiver, call));
-  if (position?.type === "identifier") {
-    add(emitter, "positionOf", `${blockKey}#${position.text}`, elementKey);
+  const over = valueKey(emitter, receiver, call);
+  for (const variable of taken) {
+    const key = `${blockKey}#${variable.name}`;
+    if (variable.part === null) {
+      add(emitter, "elementOf", key, over);
+      continue;
+    }
+    add(emitter, "elementPartOf", key, over, variable.part);
   }
+  const [anchor] = taken;
+  if (counting && position?.type === "identifier" && anchor !== undefined) {
+    add(
+      emitter,
+      "positionOf",
+      `${blockKey}#${position.text}`,
+      `${blockKey}#${anchor.name}`,
+    );
+  }
+}
+
+/** A block variable and the part of the element it is given, or null for the whole element. */
+interface TakenVariable {
+  readonly name: string;
+  readonly part: string | null;
+}
+
+/** What one block variable takes of the element: all of it, or its parts when it is written `(name, kind)`. */
+function elementTakenBy(variable: RbNode): TakenVariable[] {
+  if (variable.type === "identifier") {
+    return [{ name: variable.text, part: null }];
+  }
+  return variable.type === "destructured_parameter"
+    ? partsTakenBy(children(variable))
+    : [];
+}
+
+/**
+ * The variables an element is taken apart into, each with its position.
+ * A nested one takes more than one part, so it is left out, and a splat
+ * takes what is left, so the variables after it have no fixed position.
+ */
+function partsTakenBy(variables: readonly RbNode[]): TakenVariable[] {
+  const parts: TakenVariable[] = [];
+  for (const [position, variable] of variables.entries()) {
+    if (variable.type === "splat_parameter") {
+      break;
+    }
+    if (variable.type === "identifier") {
+      parts.push({ name: variable.text, part: String(position) });
+    }
+  }
+  return parts;
 }
 
 /** Ruby's call for defining a method at run time. Its first argument is the method's name. */

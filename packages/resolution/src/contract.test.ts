@@ -55,6 +55,9 @@ function conformingFacts(): Database {
   db.add("positionOf", ["block:1#at", "block:1#user"]);
   db.add("holdsUnderKey", ["comprehension:1", "block:1#user"]);
   db.add("holdsUnderKey", ["comprehension:1", "block:1#at"]);
+  db.add("elementPartOf", ["block:2#name", "fn:a#loader", "0"]);
+  db.add("elementPartOf", ["block:2#kind", "fn:a#loader", "1"]);
+  db.add("holdsUnderKey", ["comprehension:2", "block:2#name"]);
   return db;
 }
 
@@ -506,6 +509,27 @@ describe("the fact contract", () => {
       expect.stringContaining("no list or object states its entries"),
       expect.stringContaining("no list or object states its entries"),
       expect.stringContaining("nothing leads from it to the parameter"),
+    ]);
+  });
+
+  it("catches parts of one element keyed under two collections, and a list with only one part stated", async () => {
+    const split = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("elementPartOf", [["block:2#kind", "fn:a#loader", "1"]]);
+      db.add("elementPartOf", ["block:2#kind", "f#pairs", "1"]);
+      return db;
+    });
+    expect(split.map((f) => f.problem)).toEqual([
+      expect.stringContaining("the two parts name different collections"),
+    ]);
+
+    const single = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("elementPartOf", [["block:2#kind", "fn:a#loader", "1"]]);
+      return db;
+    });
+    expect(single.map((f) => f.problem)).toEqual([
+      expect.stringContaining("no two names are given parts 0 and 1"),
     ]);
   });
 

@@ -20,3 +20,9 @@ Four rows are here to record what suss cannot read, and each one's file
 explains why: a field name computed from a loop variable, a resolver
 defined with `define_method`, a field declared in an included module,
 and a field declared on a class whose name comes from a variable.
+
+Two more rows define their resolvers in a loop whose block takes each
+element apart: r19 over a hash, and r20 over a list of pairs with
+`each_with_index`. suss reads the names those loops define, so r19's
+field, which its loop does not define, is looked up on the base class,
+and r20's field stops at the `define_method` that defines it.

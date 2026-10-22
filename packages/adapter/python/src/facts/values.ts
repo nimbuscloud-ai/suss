@@ -931,9 +931,9 @@ const PAIR_TARGET_TYPES = new Set(["pattern_list", "tuple_pattern"]);
 
 /**
  * A comprehension's `for item in items` gives `item` one element of
- * `items` each time round. `for at, item in enumerate(items)` gives `at`
- * the position as well. A target that takes the element apart any other
- * way gets neither, since no one name is given the whole element.
+ * `items` each time round, and `for name, kind in pairs` gives each name
+ * a part of one. `for at, item in enumerate(items)` gives `at` the
+ * position as well, whichever way the element is taken.
  */
 function emitElementVariables(emitter: Emitter, clause: PyNode): void {
   const target = field(clause, "left");
@@ -941,29 +941,77 @@ function emitElementVariables(emitter: Emitter, clause: PyNode): void {
   if (target === null || over === null) {
     return;
   }
-  if (target.type === "identifier") {
-    add(
-      emitter,
-      "elementOf",
-      valueKey(emitter, target),
-      valueKey(emitter, over),
-    );
-    return;
-  }
   const names = PAIR_TARGET_TYPES.has(target.type) ? children(target) : [];
   const [position, element] = names;
   const counted = countedCollection(emitter, over);
   if (
-    counted === null ||
-    names.length !== 2 ||
-    position?.type !== "identifier" ||
-    element?.type !== "identifier"
+    counted !== null &&
+    names.length === 2 &&
+    position?.type === "identifier" &&
+    element !== undefined
   ) {
+    emitElementTaken(emitter, element, valueKey(emitter, counted), position);
     return;
   }
-  const elementKey = valueKey(emitter, element);
-  add(emitter, "elementOf", elementKey, valueKey(emitter, counted));
-  add(emitter, "positionOf", valueKey(emitter, position), elementKey);
+  emitElementTaken(emitter, target, valueKey(emitter, over), null);
+}
+
+/**
+ * `elementOf` for a target that is one name, and `elementPartOf` for each
+ * name a target takes the element apart into. The count enumerate gives
+ * is tied to whichever of those names comes first.
+ */
+function emitElementTaken(
+  emitter: Emitter,
+  target: PyNode,
+  overKey: string,
+  position: PyNode | null,
+): void {
+  const variables =
+    target.type === "identifier"
+      ? [{ node: target, part: null }]
+      : partsTakenApart(target);
+  for (const variable of variables) {
+    const key = valueKey(emitter, variable.node);
+    if (variable.part === null) {
+      add(emitter, "elementOf", key, overKey);
+      continue;
+    }
+    add(emitter, "elementPartOf", key, overKey, variable.part);
+  }
+  const [first] = variables;
+  if (position !== null && first !== undefined) {
+    add(
+      emitter,
+      "positionOf",
+      valueKey(emitter, position),
+      valueKey(emitter, first.node),
+    );
+  }
+}
+
+/**
+ * The names a tuple target takes an element apart into, each with its
+ * position. A nested target takes more than one part, so it is left out,
+ * and a starred name takes what is left, so the names after it have no
+ * fixed position.
+ */
+function partsTakenApart(
+  target: PyNode,
+): { node: PyNode; part: string | null }[] {
+  const parts: { node: PyNode; part: string | null }[] = [];
+  if (!PAIR_TARGET_TYPES.has(target.type)) {
+    return parts;
+  }
+  for (const [position, part] of children(target).entries()) {
+    if (part.type === "list_splat_pattern") {
+      break;
+    }
+    if (part.type === "identifier") {
+      parts.push({ node: part, part: String(position) });
+    }
+  }
+  return parts;
 }
 
 /**

@@ -791,22 +791,51 @@ describe("ruby value facts", () => {
     expect(db.size("positionOf")).toBe(0);
   });
 
-  it("says nothing about the variables of a loop block that takes no variable or takes each element apart", async () => {
+  it("says nothing about the variables of a loop block that takes no variable", async () => {
     const db = await factsFor(
       [
         "class Subject",
         "  KEYS.each do",
         "    define_method(:width) { 1 }",
         "  end",
-        "  PAIRS.each { |name, value| name }",
-        "  PAIRS.map { |(name, value)| name }",
         "end",
         "",
       ].join("\n"),
     );
     expect(db.size("definesMethodFrom")).toBe(1);
     expect(db.size("elementOf")).toBe(0);
-    expect(db.size("positionOf")).toBe(0);
+    expect(db.size("elementPartOf")).toBe(0);
+  });
+
+  it("gives each variable of a block that takes the element apart its part, up to a splat", async () => {
+    const pair = "{ |name, value| name }";
+    const destructured = "{ |(name, value)| name }";
+    const counted = "{ |(name, value), at| at }";
+    const splat = "{ |first, *rest, last| first }";
+    const source = [
+      `PAIRS.each ${pair}`,
+      `PAIRS.map ${destructured}`,
+      `PAIRS.each_with_index ${counted}`,
+      `PAIRS.each ${splat}`,
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const parts = (block: string, names: string[]): string[][] =>
+      names.map((name, position) => [
+        `${keyOf(source, block)}#${name}`,
+        "#PAIRS",
+        String(position),
+      ]);
+    expect(rows(db, "elementPartOf")).toEqual([
+      ...parts(pair, ["name", "value"]),
+      ...parts(destructured, ["name", "value"]),
+      ...parts(counted, ["name", "value"]),
+      ...parts(splat, ["first"]),
+    ]);
+    expect(rows(db, "positionOf")).toEqual([
+      [`${keyOf(source, counted)}#at`, `${keyOf(source, counted)}#name`],
+    ]);
+    expect(db.size("elementOf")).toBe(0);
   });
 
   it("states each entry of an array and a hash in order, with a spread as the collection it unpacks", async () => {

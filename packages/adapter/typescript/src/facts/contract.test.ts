@@ -116,6 +116,10 @@ const SOURCES: Record<string, CaseFiles> = {
     "/f.ts":
       "export function names(users: string[]) {\n  return users.map((user) => user);\n}\n",
   },
+  "a callback given the parts of each element of a list": {
+    "/f.ts":
+      "export function names(pairs: [string, string][]) {\n  return pairs.map(([name, kind]) => name);\n}\n",
+  },
   "a callback given each position in a list": {
     "/f.ts":
       "export function positions(users: string[]) {\n  return users.map((user, at) => at);\n}\n",

@@ -14,6 +14,7 @@ const VALUE_POSITION_RELATIONS = [
   "partAt",
   "holeAt",
   "elementOf",
+  "elementPartOf",
   "positionOf",
 ];
 

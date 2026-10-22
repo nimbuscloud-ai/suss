@@ -769,9 +769,14 @@ describe("a name a class defines dynamically", () => {
       RUBY_RULES.flatMap((one) => one.body.map((literal) => literal.relation)),
     );
     expect(
-      ["writtenEntryAt", "partAt", "holeAt", "elementOf", "positionOf"].filter(
-        (relation) => read.has(relation),
-      ),
+      [
+        "writtenEntryAt",
+        "partAt",
+        "holeAt",
+        "elementOf",
+        "elementPartOf",
+        "positionOf",
+      ].filter((relation) => read.has(relation)),
     ).toEqual([]);
   });
 });

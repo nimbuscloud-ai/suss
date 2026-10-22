@@ -432,6 +432,29 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
+    name: "a callback given the parts of each element of a list",
+    requires:
+      "a function that maps its parameter through a callback taking each element apart into two names and returning the first, `pairs.map(([name, kind]) => name)`, `[name for name, kind in pairs]` or the language's own spelling",
+    check: (facts) => {
+      const parts = facts("elementPartOf");
+      const first = parts.find((row) => row[2] === "0");
+      const second = parts.find((row) => row[2] === "1");
+      if (first === undefined || second === undefined) {
+        return "no two names are given parts 0 and 1 of each element, so nothing says what a name taken apart is given";
+      }
+      const params = new Set(facts("paramOf").map((one) => one[2] ?? ""));
+      if (
+        first[1] !== second[1] ||
+        !leadsToOneOf(facts, first[1] ?? "", params)
+      ) {
+        return "the two parts name different collections, or one that nothing leads from to the parameter it reads";
+      }
+      return someValueLeadsTo(facts, first[0] ?? "")
+        ? null
+        : "no read of the first name leads to the key elementPartOf gives it";
+    },
+  },
+  {
     name: "a callback given each position in a list",
     requires:
       "a function that maps its parameter through a callback taking the element and then its position and returning the position, `users.map((user, at) => at)`, `enumerate` in a comprehension, or the language's own spelling",

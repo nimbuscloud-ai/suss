@@ -198,6 +198,47 @@ end
     expect(await lookup(source, "width_1")).toEqual({ type: "none" });
   });
 
+  it("reads the keys of a hash a two-variable each takes apart", async () => {
+    const source = `
+class Subject
+  { width: 1, height: "tall" }.each do |name, size|
+    define_method(name) { size }
+  end
+end
+`;
+    expect(await lookup(source, "width")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "height")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "depth")).toEqual({ type: "none" });
+  });
+
+  it("reads the first part of each pair in a list, written with or without parentheses", async () => {
+    const source = `
+class Subject
+  [[:width, :w], [:height, :h]].map { |name, short| define_method(name) { short } }
+  [[:depth, :d]].each { |(name, short)| define_method("#{short}_#{name}") { 1 } }
+end
+`;
+    expect(await lookup(source, "width")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "height")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "d_depth")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "depth")).toEqual({ type: "none" });
+  });
+
+  it("reads a name built from a pair and the position each_with_index gives", async () => {
+    const source = `
+KINDS = { width: :w, height: :h }.freeze
+
+class Subject
+  KINDS.each_with_index do |(name, short), at|
+    define_method(:"#{short}#{at}_#{name}") { 1 }
+  end
+end
+`;
+    expect(await lookup(source, "w0_width")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "h1_height")).toMatchObject(DYNAMIC);
+    expect(await lookup(source, "width")).toEqual({ type: "none" });
+  });
+
   it("reads a name built from the elements of two loops, one inside the other", async () => {
     const source = `
 class Subject

@@ -647,6 +647,28 @@ describe("where each piece of a value written out goes", () => {
     ]);
     expect(rows(db, table, "positionOf")).toEqual([["at", "user"]]);
   });
+
+  it("gives each name a callback's parameter takes the element apart into its part, by position or by property", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const sizes: Record<string, number>;",
+        "declare const users: { id: string; 'full-name': string }[];",
+        "export const each = Object.entries(sizes).forEach(([name, , size, ...rest]) => name);",
+        "export const ids = users.map(({ id, 'full-name': label, ...others }, at) => id);",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "elementPartOf")).toEqual([
+      ["name", "Object.entries(sizes)", "0"],
+      ["size", "Object.entries(sizes)", "2"],
+      ["id", "users", "id"],
+      ["'full-name': label", "users", "full-name"],
+    ]);
+    expect(rows(db, table, "positionOf")).toEqual([
+      ["at", "{ id, 'full-name': label, ...others }"],
+    ]);
+  });
 });
 
 describe("finding the environment objects in a file", () => {

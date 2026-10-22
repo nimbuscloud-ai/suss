@@ -1580,15 +1580,61 @@ function emitElementParameters(
     return;
   }
   const elementId = nodeId(element);
-  fact(
-    db,
-    "elementOf",
-    elementId,
-    emitValue(db, table, callee.getExpression()),
-  );
+  const over = emitValue(db, table, callee.getExpression());
+  fact(db, "elementOf", elementId, over);
+  for (const part of partsTakenApart(element.getNameNode())) {
+    const partId = nodeId(part.variable);
+    table.byId.set(partId, part.variable);
+    fact(db, "elementPartOf", partId, over, part.key);
+  }
   if (position !== undefined && !position.isRestParameter()) {
     fact(db, "positionOf", nodeId(position), elementId);
   }
+}
+
+/**
+ * The names a parameter written as a pattern takes out of its value,
+ * each with the position or the property it takes. A nested pattern and
+ * a rest element take more than one part, so they are left out.
+ */
+function partsTakenApart(
+  pattern: Node,
+): { variable: BindingElement; key: string }[] {
+  if (Node.isArrayBindingPattern(pattern)) {
+    return pattern
+      .getElements()
+      .flatMap((element, position) =>
+        Node.isBindingElement(element) && takesOnePart(element)
+          ? [{ variable: element, key: String(position) }]
+          : [],
+      );
+  }
+  if (Node.isObjectBindingPattern(pattern)) {
+    return pattern.getElements().flatMap((element) => {
+      const key = takesOnePart(element) ? propertyTakenBy(element) : null;
+      return key === null ? [] : [{ variable: element, key }];
+    });
+  }
+  return [];
+}
+
+function takesOnePart(element: BindingElement): boolean {
+  return (
+    element.getDotDotDotToken() === undefined &&
+    Node.isIdentifier(element.getNameNode())
+  );
+}
+
+/** The property `{ id }` or `{ id: userId }` takes, or null for one the source computes. */
+function propertyTakenBy(element: BindingElement): string | null {
+  const property = element.getPropertyNameNode();
+  if (property === undefined || Node.isIdentifier(property)) {
+    return (property ?? element.getNameNode()).getText();
+  }
+  if (Node.isStringLiteral(property) || Node.isNumericLiteral(property)) {
+    return property.getLiteralText();
+  }
+  return null;
 }
 
 /** `new Map(...)`, the language's own map, which a program fills through `set`. */

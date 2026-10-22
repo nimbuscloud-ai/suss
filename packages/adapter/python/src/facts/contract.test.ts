@@ -105,6 +105,9 @@ const SOURCES: Record<string, CaseFiles> = {
   "a callback given each element of a list": {
     "f.py": "def names(users):\n    return [user for user in users]\n",
   },
+  "a callback given the parts of each element of a list": {
+    "f.py": "def names(pairs):\n    return [name for name, kind in pairs]\n",
+  },
   "a callback given each position in a list": {
     "f.py":
       "def positions(users):\n    return [at for at, user in enumerate(users)]\n",
