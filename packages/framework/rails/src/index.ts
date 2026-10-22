@@ -222,10 +222,10 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     options.routesFile ?? "config/routes.rb",
   );
 
+  // Printed from the folder app/ is in, since a pack config can sit anywhere.
+  const railsRoot = path.dirname(root);
   const displayPathOf = (file: string) =>
-    options.configDirectory === undefined
-      ? file
-      : path.relative(options.configDirectory, file);
+    path.isAbsolute(file) ? path.relative(railsRoot, file) : file;
   const engineRoots = () =>
     expandPatterns(options.configDirectory, options.engineRoots);
   const extraRoutesFiles = () =>
