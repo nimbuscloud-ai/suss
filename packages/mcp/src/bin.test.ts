@@ -16,8 +16,10 @@ const BIN = path.resolve(__dirname, "../dist/bin.js");
 
 const cleanups: Array<() => void> = [];
 
+// Last added runs first, so a server is killed before the folders it
+// writes into are removed.
 afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) {
+  for (const cleanup of cleanups.splice(0).reverse()) {
     cleanup();
   }
 });
@@ -115,6 +117,9 @@ describe("suss-mcp", () => {
           : { ...process.env, SUSS_CACHE_DIR: state },
       });
       cleanups.push(() => server.kill("SIGKILL"));
+      const exited = new Promise<void>((resolve) =>
+        server.on("exit", () => resolve()),
+      );
 
       await waitFor(
         () =>
@@ -123,6 +128,9 @@ describe("suss-mcp", () => {
         30_000,
       );
       server.stdin.end();
+      // The server may still be writing its cache, and removing the
+      // folder under it fails with ENOTEMPTY.
+      await exited;
 
       expect(fs.existsSync(path.join(root, ".suss"))).toBe(false);
     },
