@@ -10,6 +10,8 @@ import { storageSystemOption } from "@suss/extractor";
 
 import { storageSystemFromDatabaseYml } from "./databaseYml.js";
 
+export { storageSystemFromDatabaseYml } from "./databaseYml.js";
+
 import type {
   RbRawSqlPattern,
   RbStoragePattern,

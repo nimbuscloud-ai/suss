@@ -56,6 +56,9 @@
       "path": "packages/contract/prisma/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/contract/rails-schema/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/contract/serverless/tsconfig.typecheck.json"
     },
     {
