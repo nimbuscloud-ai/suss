@@ -1,0 +1,28 @@
+{
+  "name": "@suss/trace-oracle",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Measures how many of the boundary reaches a runtime trace records suss also records, and sorts every miss by its cause. Internal; never published.",
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "scripts": {
+    "oracle": "tsx src/cli.ts",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/behavioral-ir": "*",
+    "@suss/cli": "*",
+    "@suss/ir-core": "*",
+    "@suss/sql": "*"
+  },
+  "devDependencies": {
+    "@types/node": "*",
+    "tsx": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
