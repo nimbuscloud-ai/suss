@@ -89,11 +89,6 @@ export function clientChosenAt(
   }
 
   const picked = tokensIn(chosen, constructions.length);
-  const reference = referenceOf(written.node, written.property, store);
-  const passes =
-    written.property === null
-      ? "the client it is called on"
-      : "the client it passes";
   if (picked !== null && picked.length === 1) {
     const construction = constructions[picked[0] as number];
     const endpoint =
@@ -106,16 +101,21 @@ export function clientChosenAt(
     };
   }
 
+  if (picked === null && written.property === null) {
+    return null;
+  }
+
+  const reference = referenceOf(written.node, written.property, store);
+  const passes =
+    written.property === null
+      ? "the client it is called on"
+      : "the client it passes";
   if (picked !== null && picked.length > 1) {
     return {
       kind: "unresolved",
       reference,
       reason: `${passes}, ${reference}, can be any of ${picked.length} clients, and nothing the call passes settles which`,
     };
-  }
-
-  if (written.property === null) {
-    return null;
   }
   return {
     kind: "unresolved",

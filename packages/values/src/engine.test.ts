@@ -1448,6 +1448,47 @@ describe("Evaluator", () => {
       const field = value.kind === "record" ? value.fields.get("client") : null;
       expect(field?.value).toEqual(text("first"));
     });
+
+    it("comes back with a list's items computed, whether or not its length is known", () => {
+      const evaluator = new Evaluator(testLowering);
+      const made = call(null, "Client", [], { constructs: true });
+      const listed = array(name("client"));
+      const grown = name("clients");
+      module([
+        declare({ client: made }),
+        fn([], [ret(listed)]),
+        declare({ clients: array() }),
+        loop([expr(call(name("clients"), "push", [name("client")]))]),
+        expr(grown),
+      ]);
+      const given = new Map([[made, text("first")]]);
+      expect(evaluator.evaluate(listed, { given })).toEqual(
+        sequence([text("first")]),
+      );
+      expect(evaluator.evaluate(grown, { given }).kind).toBe("unbounded");
+    });
+
+    it("binds a call's arguments with the tokens it was given", () => {
+      const evaluator = new Evaluator(testLowering);
+      const made = call(null, "Client", [], { constructs: true });
+      const wrapper = fn(["options"], []);
+      const passed = call(
+        null,
+        "wrapper",
+        [record({ client: name("client") })],
+        {
+          calls: wrapper,
+        },
+      );
+      module([declare({ client: made }), wrapper, expr(passed)]);
+      const bound = evaluator.argumentsAt(passed, {
+        given: new Map([[made, text("first")]]),
+      });
+      const options = bound?.get("options");
+      expect(
+        options?.kind === "record" ? options.fields.get("client")?.value : null,
+      ).toEqual(text("first"));
+    });
   });
 
   describe("arguments at a call", () => {

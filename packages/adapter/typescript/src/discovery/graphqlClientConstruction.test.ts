@@ -510,3 +510,145 @@ describe("stampGraphqlClientRefs", () => {
     expect(readGraphqlMetadata(summary)?.client).toBeUndefined();
   });
 });
+
+/** An operation whose own call passed the client built with `uri`. */
+function chosenSummary(uri: string | null): BehavioralSummary {
+  const summary = operationSummary();
+  summary.metadata = {
+    graphql: {
+      document: "query GetPet { pet { id } }",
+      client: { uri, uriRef: null, chosenAtCall: true },
+    },
+  };
+  return summary;
+}
+
+const TWO_CLIENTS = `
+  import { ApolloClient, HttpLink } from "@apollo/client";
+  export const a = new ApolloClient({ uri: "https://one.example.com" });
+  export const b = new ApolloClient({
+    link: new HttpLink({ uri: "https://two.example.com" }),
+  });
+`;
+
+/** The client spec with its transport option, which makes it a client a call can pass. */
+const passablePack: PatternPack = {
+  ...clientPack,
+  graphqlClients: (clientPack.graphqlClients ?? []).map((spec) =>
+    spec.importName === "ApolloClient"
+      ? { ...spec, linkProperty: "link" }
+      : spec,
+  ),
+};
+
+describe("stampGraphqlClientRefs, a client the call chose", () => {
+  function stamp(
+    source: string,
+    summary: BehavioralSummary,
+    pack: PatternPack = passablePack,
+  ): ReturnType<typeof readGraphqlMetadata> {
+    const project = createTestProject();
+    const file = project.createSourceFile("src/client.ts", source);
+    stampGraphqlClientRefs([summary], [file], [pack], undefined);
+    return readGraphqlMetadata(summary);
+  }
+
+  it("ties it to the service its endpoint is bound to", () => {
+    const meta = stamp(TWO_CLIENTS, chosenSummary("https://two.example.com"), {
+      ...passablePack,
+      graphqlClientBindings: {
+        "https://two.example.com": "schema/two.graphql",
+      },
+    });
+    expect(meta?.client).toEqual({
+      uri: "https://two.example.com",
+      uriRef: null,
+      chosenAtCall: true,
+      workspace: "schema/two.graphql",
+    });
+    expect(meta?.unresolvedClient).toBeUndefined();
+  });
+
+  it("takes an operation scope when no binding covers the endpoint", () => {
+    const meta = stamp(TWO_CLIENTS, chosenSummary("https://two.example.com"), {
+      ...passablePack,
+      graphqlOperationScopes: [{ files: ["src/**"], workspace: "pets-api" }],
+    });
+    expect(meta?.client?.workspace).toBe("pets-api");
+  });
+
+  it("goes unpaired, saying which binding to add, when the project builds two clients", () => {
+    const meta = stamp(TWO_CLIENTS, chosenSummary("https://two.example.com"));
+    expect(meta?.unresolvedClient).toEqual({
+      reference: "https://two.example.com",
+      reason:
+        "it passes the client built with https://two.example.com, the project builds more than one client, and no `clients` entry in the pack options says which service https://two.example.com talks to",
+    });
+  });
+
+  it("says when the endpoint of the client it passes could not be read", () => {
+    const meta = stamp(TWO_CLIENTS, chosenSummary(null));
+    expect(meta?.unresolvedClient?.reason).toContain(
+      "a client whose endpoint suss could not read",
+    );
+  });
+
+  it("pairs like the app's client when it is the only client the project builds", () => {
+    const meta = stamp(
+      `
+        import { ApolloClient } from "@apollo/client";
+        export const only = new ApolloClient({ uri: "https://one.example.com" });
+      `,
+      chosenSummary("https://one.example.com"),
+    );
+    expect(meta?.client).toEqual({
+      uri: "https://one.example.com",
+      uriRef: null,
+      chosenAtCall: true,
+    });
+    expect(meta?.unresolvedClient).toBeUndefined();
+  });
+
+  it("pairs like the app's client when every construction shares its endpoint", () => {
+    const meta = stamp(
+      `
+        import { ApolloClient } from "@apollo/client";
+        export const server = new ApolloClient({ uri: "/graphql" });
+        export const browser = new ApolloClient({ uri: "/graphql" });
+      `,
+      chosenSummary("/graphql"),
+    );
+    expect(meta?.unresolvedClient).toBeUndefined();
+  });
+
+  it("drops a reason an earlier run wrote once a binding covers the client", () => {
+    const summary = chosenSummary("https://two.example.com");
+    stamp(TWO_CLIENTS, summary);
+    const meta = stamp(TWO_CLIENTS, summary, {
+      ...passablePack,
+      graphqlClientBindings: { "https://two.example.com": "two" },
+    });
+    expect(meta?.unresolvedClient).toBeUndefined();
+    expect(meta?.client?.workspace).toBe("two");
+  });
+
+  it("leaves a choice the call left open as the call recorded it", () => {
+    const summary = operationSummary();
+    const unresolvedClient = {
+      reference: "flag ? a : b",
+      reason: "the client it passes, flag ? a : b, can be any of 2 clients",
+    };
+    summary.metadata = {
+      graphql: { document: "query GetPet { pet { id } }", unresolvedClient },
+    };
+    const meta = stamp(
+      `
+        import { ApolloClient } from "@apollo/client";
+        export const only = new ApolloClient({ uri: "https://one.example.com" });
+      `,
+      summary,
+    );
+    expect(meta?.unresolvedClient).toEqual(unresolvedClient);
+    expect(meta?.client).toBeUndefined();
+  });
+});
