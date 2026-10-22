@@ -93,7 +93,8 @@ export function indexOf(
 }
 
 function listAt<T>(record: Record<string, T[]>, key: string): T[] {
-  const existing = record[key];
+  // A call spelled `toString` would otherwise find the prototype's method.
+  const existing = Object.hasOwn(record, key) ? record[key] : undefined;
   if (existing !== undefined) {
     return existing;
   }
