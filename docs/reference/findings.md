@@ -18,7 +18,7 @@ The behavioral findings go under `findings` in the JSON, and each one reports th
 | `kind` | string | Which failure mode this is, one of the values below. |
 | `severity` | `error` \| `warning` \| `info` | The default. A `.sussignore` rule can downgrade it. |
 | `boundary` | `BoundaryBinding` | Which boundary this is about: a REST endpoint, a table, a channel, a runtime's config, and so on. |
-| `provider` | `FindingSide` | The provider's summary, as `{ summary, transitionId?, transitionIds?, location }`, where `summary` reads `${file}::${name}`. `transitionIds` is set when several transitions give the one finding, such as two filters that each send a status the document leaves out, and `transitionId` is the first of them. |
+| `provider` | `FindingSide` | The provider's summary, as `{ summary, transitionId?, transitionIds?, field?, location }`, where `summary` reads `${file}::${name}`. `transitionIds` is set when several transitions give the one finding, such as two filters that each send a status the document leaves out, and `transitionId` is the first of them. `field` is the field the finding is about, as this side's code spells it, and is set when the finding has no transition to point at. |
 | `consumer` | `FindingSide` | The consumer's summary. Always set, even where the finding is about a provider against its own contract; there the two often resolve to the same summary. |
 | `description` | string | One line of human-readable text. |
 | `aspect` | `BoundaryAspect?` | Which side of the field this concerns: `read`, `write`, `send`, `receive`, `construct` or `selector`. Absent where the aspect is irrelevant or spans several. |
@@ -43,7 +43,7 @@ They replaced the per-domain enums earlier versions had, where `storageReadField
 
 ### `boundaryFieldUnknown`
 
-**Severity:** error for a read or a write against a contract in the run, warning for a construct or send aspect, or where suss never extracted the provider.
+**Severity:** error for a read or a write against a contract in the run, and for a column that a copy of a table and the database disagree on having. Warning for a construct or send aspect, where suss never extracted the provider, and where two declarations of a table disagree and neither is known to match the database.
 
 The consumer references a field the provider's contract does not declare. A read of a missing field comes back undefined, nothing raises an error, and the code goes on to branch on a value that was never there. The construct and send aspects and the missing-provider case cannot state that outcome, so they stay warnings.
 
@@ -71,6 +71,15 @@ A message bus, where the consumer reads a field off the message body:
 ```
 
 A queue takes a string, so nothing on either side type-checks the payload and the consumer throws on every message. A producer whose body suss cannot read takes the channel out of the comparison, so a missing finding here does not mean the two sides agree.
+
+Storage, where a project declares a table twice, such as a Drizzle copy of the tables a Rails schema owns:
+
+```
+[ERROR] boundaryFieldUnknown
+  orders.producttype: src/db/schema.ts declares the column and db/schema.rb has no such column. Every query through the copy that selects it fails.
+```
+
+A dump of the database, such as Rails' `db/schema.rb`, is the provider, and the other declaration is the copy. Two cases are errors: the copy declares a column the database lacks, or it leaves out a NOT NULL column with no default, so the database refuses every insert through it. A copy that leaves out a nullable or defaulted column is how Drizzle and Prisma are meant to be used, and is not reported. When neither declaration is known to match the database, a column on one side only is a warning, since either side could be out of date. Two declarations are compared only when their primary keys agree, as described under `boundaryShapeMismatch`. The rule suss prints for one of these keys on the store and the field, such as `boundary: "postgresql:orders"` with `consumer: { field: "productType" }`.
 
 **Legitimate when:** the provider is in a service or a contract source you have not extracted. Suppress with `.sussignore` and `effect: mark`.
 
@@ -106,7 +115,7 @@ For storage, suss stays quiet when any caller reads the table with a default sha
 
 Both sides declare the value and disagree about its form: its type, its nullability, its content type. The `aspect` says which side found the disagreement.
 
-Only the metric checker emits it today. A monitoring alert compares a series against a single number, and the resource declaring that series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
+The metric checker and the storage checker emit it. A monitoring alert compares a series against a single number, and the resource declaring that series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
 
 ```
 [ERROR] boundaryShapeMismatch
@@ -115,11 +124,38 @@ Only the metric checker emits it today. A monitoring alert compares a series aga
 
 Both sides have to say what the value is. When a metric's summary has no `metadata.metricContract.values`, or a reading has no `metadata.metricReading.comparesTo`, nothing is compared.
 
-This kind is where the message-bus body-shape pairing will report, along with the type-aware storage, runtime-config and GraphQL checks. It takes the place of the per-domain shape kinds earlier versions reserved: `storageTypeMismatch`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch` and the rest.
+Storage, where a project declares a table twice and the two declarations of a column disagree:
 
-**Legitimate when:** the consumer coerces the value before using it, so the difference never reaches anything that cares.
+```
+[ERROR] boundaryShapeMismatch
+  attachments.blob_id: db/schema.rb declares uuid and src/db/schema.ts declares bigint. The database contains uuid values the copy cannot read, and refuses the bigint it writes.
 
-**A bug when:** it does not. The side that reads the value will act on something other than what arrives.
+[ERROR] boundaryShapeMismatch
+  attachments.created_at: src/db/schema.ts declares a database default and db/schema.rb declares none on a NOT NULL column. An insert through the copy that leaves it out is refused.
+```
+
+Two declared stores are one table when the storage pass would pair them with one query: the engines agree, the scopes are equal, and a name of one agrees with a name of the other, such as a Prisma model's `@@map`. Each column is compared under the name the database stores it by, so `blobId: bigint("blob_id")` is the column `blob_id`. Relations and other derived fields are left out. A dump of the database is the provider, then a schema with its own migrations beside it, then the file whose path sorts first. A declaration the project marks as the source outranks all three.
+
+- A type family that differs is an error. Lengths, precisions and enum values are ignored, so `varchar` and `text` are one family, and so are `timestamp` and `timestamptz`, and `json` and `jsonb`. A type suss has no family for leaves the column unchecked.
+- Nullability that differs is an error in either direction.
+- A database default the copy declares and the database lacks is an error on a NOT NULL column, where an insert that leaves it out is refused, and a warning on a nullable one, where NULL is stored and nothing says so. A default the database has and the copy lacks is not reported, since the copy supplies a value every time.
+- A foreign key that points at a different table on each side is a warning.
+- When neither declaration is known to match the database, a default on one side only is a warning, since either side could be out of date.
+
+Columns are compared only when the two primary keys agree on their columns and families. Two databases can each have a `users` table, such as an auth library's beside an application's own, so keys that differ give one warning for the table in place of every column finding:
+
+```
+[WARNING] boundaryShapeMismatch
+  users: db/schema.rb keys it on id (uuid) and prisma/schema.prisma keys it on id (String). These may be two databases that each have a table of this name, so no column was compared. If they are, give each its own scope.
+```
+
+A side that declares no primary key leaves the table unchecked.
+
+This kind is where the message-bus body-shape pairing will report, along with the type-aware runtime-config and GraphQL checks. It takes the place of the per-domain shape kinds earlier versions reserved: `storageTypeMismatch`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch` and the rest.
+
+**Legitimate when:** the consumer coerces the value before using it, so the difference never reaches anything that cares. For two declarations of a table, when the copy only ever reads the column and handles both forms.
+
+**A bug when:** it does not. The side that reads the value will act on something other than what arrives. For two declarations of a table, change the copy to match the database, or regenerate it from the database.
 
 ### `boundarySelectorMismatch`
 
