@@ -21,6 +21,7 @@ import {
   readStorybookMetadata,
   readTestMetadata,
   readWrapperMetadata,
+  withCodeScopeWorkspace,
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,
@@ -71,6 +72,30 @@ function transitionWith(
     ...(metadata !== undefined ? { metadata } : {}),
   };
 }
+
+describe("the project a code scope is measured from", () => {
+  it("is recorded on a scope that gives a path or an entry", () => {
+    const summary = withCodeScopeWorkspace(
+      summaryWith({ codeScope: { kind: "codeUri", path: "src" } }),
+      "@acme/api",
+    );
+    expect(readCodeScopeMetadata(summary)).toEqual({
+      kind: "codeUri",
+      path: "src",
+      workspace: "@acme/api",
+    });
+  });
+
+  it("leaves a summary alone when there is no project, scope, or path to measure", () => {
+    const scoped = summaryWith({ codeScope: { kind: "codeUri", path: "src" } });
+    const unknown = summaryWith({ codeScope: { kind: "unknown" } });
+    const none = summaryWith(undefined);
+
+    expect(withCodeScopeWorkspace(scoped, null)).toBe(scoped);
+    expect(withCodeScopeWorkspace(unknown, "@acme/api")).toBe(unknown);
+    expect(withCodeScopeWorkspace(none, "@acme/api")).toBe(none);
+  });
+});
 
 describe("the test metadata namespace", () => {
   it("reads what a test pack recorded, and keeps the fields that parse", () => {

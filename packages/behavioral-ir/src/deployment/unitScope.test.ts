@@ -205,6 +205,9 @@ describe("runsIn", () => {
       runsIn(inProject("@acme/shared", "src/config.ts"), scope, new Map()),
     ).toBe(false);
     expect(runsIn(code("src/config.ts"), scope, new Map())).toBe(true);
+    expect(runsIn(code("src/config.ts"), { unit: undefined }, new Map())).toBe(
+      false,
+    );
     expect([
       ...contestedFiles(
         [inProject("@acme/shared", "src/config.ts")],

@@ -121,6 +121,12 @@ describe("pathInProject", () => {
     expect(pathInProject(path.join(two, "src", "a.ts"), two)).toBe("src/a.ts");
   });
 
+  it("spells the root itself as a dot", () => {
+    const root = folder();
+
+    expect(pathInProject(root, root)).toBe(".");
+  });
+
   it("climbs out of the root rather than writing an absolute path", () => {
     const root = folder();
 
@@ -166,5 +172,6 @@ describe("projectNameOf", () => {
     const root = folder();
 
     expect(projectNameOf(root)).toBe(path.basename(root));
+    expect(projectNameOf(path.parse(root).root)).toBeNull();
   });
 });
