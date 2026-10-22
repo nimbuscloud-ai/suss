@@ -23,6 +23,7 @@ import {
   readLibraryEnvReads,
   readRuntimeContractMetadata,
   runsIn,
+  summaryFileKey,
   summaryIdentifier,
   unitsByFile,
 } from "@suss/behavioral-ir";
@@ -83,7 +84,7 @@ interface PlacedCode {
   reads: EnvVarRead[];
   sawConfigReadEffect: boolean;
   placement: Placement;
-  /** Files several runtimes' directories contain, which no runtime claims. */
+  /** Files several runtimes' directories contain, which no runtime claims, keyed by `summaryFileKey`. */
   contested: ReadonlySet<string>;
 }
 
@@ -134,7 +135,7 @@ export function runtimeReads(summaries: BehavioralSummary[]): RuntimeReads[] {
     reads: code.reads.filter(
       (read) =>
         runsIn(read.summary, scope, code.byFile) &&
-        !code.contested.has(read.summary.location.file),
+        !code.contested.has(summaryFileKey(read.summary)),
     ),
   }));
 }
@@ -180,7 +181,7 @@ export function checkRuntimeConfig(
       if (
         read.defaulted ||
         providedSet.has(read.name) ||
-        contested.has(read.summary.location.file)
+        contested.has(summaryFileKey(read.summary))
       ) {
         continue;
       }
@@ -287,7 +288,7 @@ function unclaimedReadNames(
     const file = read.summary.location.file;
     if (
       read.summary.identity.deployableUnit !== undefined ||
-      byFile.has(file)
+      byFile.has(summaryFileKey(read.summary))
     ) {
       continue;
     }
@@ -328,7 +329,10 @@ function contestedFindings(
   const findings: Finding[] = [];
   const seen = new Set<BehavioralSummary>();
   for (const read of codeReads) {
-    if (!contested.has(read.summary.location.file) || seen.has(read.summary)) {
+    if (
+      !contested.has(summaryFileKey(read.summary)) ||
+      seen.has(read.summary)
+    ) {
       continue;
     }
     seen.add(read.summary);

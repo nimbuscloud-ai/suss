@@ -133,6 +133,55 @@ export function summaryIdFromParts(parts: SummaryIdParts): string {
 }
 
 /**
+ * How a summary writes the path of a file in another project, such as a
+ * sibling package it imports: that project's name, then the file's path
+ * from its root, the way an id starts. The same form is the key a join
+ * compares two records of one file by. A file in the summary's own
+ * project is written as a plain path, and so is one with no project name.
+ */
+export function fileReference(
+  workspace: string | null | undefined,
+  file: string,
+): string {
+  return workspace === null || workspace === undefined || workspace === ""
+    ? file
+    : `${workspace}::${file}`;
+}
+
+/**
+ * The project and path a recorded file path points at. A plain path is
+ * a file in the project of the summary that records it.
+ */
+export function referencedFile(
+  owner: string | undefined,
+  written: string,
+): { workspace: string | undefined; file: string } {
+  const at = written.indexOf("::");
+  if (at === -1) {
+    return { workspace: owner, file: written };
+  }
+  const workspace = written.slice(0, at);
+  return {
+    workspace: workspace === "" ? undefined : workspace,
+    file: written.slice(at + 2),
+  };
+}
+
+/** The key that joins a recorded path with the summaries of the file it points at. */
+export function referencedFileKey(
+  owner: string | undefined,
+  written: string,
+): string {
+  const { workspace, file } = referencedFile(owner, written);
+  return fileReference(workspace, file);
+}
+
+/** The key that joins a summary's own file with the paths other summaries record for it. */
+export function summaryFileKey(summary: BehavioralSummary): string {
+  return fileReference(summary.location.workspace, summary.location.file);
+}
+
+/**
  * The key a render edge joins on: the workspace a component was
  * extracted in, the file it is declared in, and one of its names. Two
  * packages can have the same file path, so the file alone is not

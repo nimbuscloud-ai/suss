@@ -1,10 +1,19 @@
 // Which files a runtime's handler entry reaches through imports.
 
 import { readModuleImports } from "../metadata.js";
+import {
+  referencedFile,
+  referencedFileKey,
+  summaryFileKey,
+} from "../summaryId.js";
 
 import type { BehavioralSummary } from "../index.js";
 
-/** Edges from each summary file to the files it imports. */
+/**
+ * Edges from each summary file to the files it imports, keyed the way
+ * `summaryFileKey` keys a file, so two projects' `src/index.ts` stay
+ * two nodes.
+ */
 export type ModuleGraph = ReadonlyMap<string, readonly string[]>;
 
 export function buildModuleGraph(
@@ -13,8 +22,13 @@ export function buildModuleGraph(
   const graph = new Map<string, readonly string[]>();
   for (const summary of summaries) {
     const imports = readModuleImports(summary);
-    if (imports !== undefined && !graph.has(summary.location.file)) {
-      graph.set(summary.location.file, imports);
+    const key = summaryFileKey(summary);
+    if (imports !== undefined && !graph.has(key)) {
+      const owner = summary.location.workspace;
+      graph.set(
+        key,
+        imports.map((file) => referencedFileKey(owner, file)),
+      );
     }
   }
   return graph;
@@ -22,9 +36,10 @@ export function buildModuleGraph(
 
 /**
  * Every file the entry reaches through the graph, the entry's own file
- * included. The entry comes from a template's `Handler`, written
- * without an extension ("src/handlers/confirm"), so it is compared with
- * each graph file's extension stripped. Null when no file matches the
+ * included, keyed as the graph keys them. The entry comes from a
+ * template's `Handler`, written without an extension
+ * ("src/handlers/confirm"), so it is compared with each graph file's
+ * path with the extension stripped. Null when no file matches the
  * entry. The graph then does not show what the runtime loads, and the
  * caller falls back to the directory.
  */
@@ -32,23 +47,32 @@ export function entryClosure(
   entry: string,
   graph: ModuleGraph,
 ): ReadonlySet<string> | null {
-  const entryFile = entryFileAmong(entry, graph.keys());
-  if (entryFile === undefined) {
+  const keyByFile = new Map<string, string>();
+  for (const key of graph.keys()) {
+    const { file } = referencedFile(undefined, key);
+    if (!keyByFile.has(file)) {
+      keyByFile.set(file, key);
+    }
+  }
+  const entryFile = entryFileAmong(entry, keyByFile.keys());
+  const entryKey =
+    entryFile === undefined ? undefined : keyByFile.get(entryFile);
+  if (entryKey === undefined) {
     return null;
   }
 
-  const reached = new Set<string>([entryFile]);
-  const queue = [entryFile];
+  const reached = new Set<string>([entryKey]);
+  const queue = [entryKey];
   while (queue.length > 0) {
-    const file = queue.pop();
-    // The loop condition guarantees a file. The check only narrows the type.
+    const key = queue.pop();
+    // The loop condition guarantees a key. The check only narrows the type.
     /* v8 ignore start */
-    if (file === undefined) {
+    if (key === undefined) {
       break;
     }
     /* v8 ignore stop */
 
-    for (const imported of graph.get(file) ?? []) {
+    for (const imported of graph.get(key) ?? []) {
       if (!reached.has(imported)) {
         reached.add(imported);
         queue.push(imported);

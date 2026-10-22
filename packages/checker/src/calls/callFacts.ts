@@ -19,6 +19,8 @@ import {
   boundaryKey,
   displayLabel,
   readTestMetadata,
+  referencedFileKey,
+  summaryFileKey,
   summaryIdentifier,
   wrapperChain,
   wrapperFor,
@@ -317,12 +319,22 @@ function addMockFacts(
   facts: MockFacts,
 ): void {
   for (const mock of readTestMetadata(summary)?.mocks ?? []) {
-    if (mock.module !== undefined && mock.name !== undefined) {
-      facts.member.push([fn, mock.module, mock.name]);
-    } else if (mock.module !== undefined) {
-      facts.module.push([fn, mock.module]);
-    } else if (mock.name !== undefined) {
-      facts.name.push([fn, mock.name]);
+    if (mock.module === undefined) {
+      if (mock.name !== undefined) {
+        facts.name.push([fn, mock.name]);
+      }
+      continue;
+    }
+
+    // A package is mocked by its name, and a file by its path in the
+    // test's own project, so both spellings are offered.
+    const owner = summary.location.workspace;
+    for (const module of [mock.module, referencedFileKey(owner, mock.module)]) {
+      if (mock.name !== undefined) {
+        facts.member.push([fn, module, mock.name]);
+        continue;
+      }
+      facts.module.push([fn, module]);
     }
   }
 }
@@ -337,7 +349,7 @@ function placeFunction(
   summary: BehavioralSummary,
   facts: PlaceFacts,
 ): void {
-  facts.inModule.push([fn, summary.location.file]);
+  facts.inModule.push([fn, summaryFileKey(summary)]);
   if (summary.location.workspace !== undefined) {
     facts.inModule.push([fn, summary.location.workspace]);
   }

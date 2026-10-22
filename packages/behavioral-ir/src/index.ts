@@ -274,9 +274,13 @@ export {
 } from "./statusTests.js";
 export {
   disambiguateSummaryIds,
+  fileReference,
+  referencedFile,
+  referencedFileKey,
   renderTargetKey,
   type SummaryIdParts,
   settlingSuffix,
+  summaryFileKey,
   summaryIdentifier,
   summaryIdFromParts,
   unsettledSummaryId,
