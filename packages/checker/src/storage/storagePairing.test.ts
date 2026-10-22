@@ -34,6 +34,7 @@ function makeProvider(opts: {
   /** A SQL schema declares every field, so that is the default here. */
   fieldSet?: "exhaustive" | "partial" | "none";
   keyFields?: string[];
+  recognition?: string;
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -46,7 +47,7 @@ function makeProvider(opts: {
       name: opts.container ?? "<unnamed>",
       exportPath: null,
       boundaryBinding: storageBinding({
-        recognition: "prisma",
+        recognition: opts.recognition ?? "prisma",
         storageSystem:
           opts.storageSystem === undefined ? "postgresql" : opts.storageSystem,
         scope: opts.scope ?? "default",
@@ -78,6 +79,7 @@ function makeAccessSummary(opts: {
   file: string;
   accesses: Array<{
     container: string | null;
+    recognition?: string;
     storageSystem?: string;
     scope?: string;
     accessPath?: string | null;
@@ -97,7 +99,7 @@ function makeAccessSummary(opts: {
       (a): Effect => ({
         type: "interaction",
         binding: storageBinding({
-          recognition: "test",
+          recognition: a.recognition ?? "test",
           storageSystem: a.storageSystem ?? "postgresql",
           scope: a.scope ?? "default",
           container: a.container,
@@ -857,6 +859,56 @@ describe("checkStorage", () => {
     expect(findings.filter((f) => f.kind === "ambiguousProvider")).toHaveLength(
       1,
     );
+  });
+
+  describe("two libraries declaring one table", () => {
+    const declarations = [
+      makeProvider({
+        container: "accounts",
+        recognition: "prisma",
+        fields: [{ name: "id" }],
+      }),
+      makeProvider({
+        container: "accounts",
+        recognition: "@suss/framework-drizzle",
+        fields: [{ name: "id" }, { name: "nickname" }],
+      }),
+    ];
+
+    it("gives the access to the declaration its own library read", () => {
+      const findings = checkStorage([
+        ...declarations,
+        makeAccessSummary({
+          name: "listAccounts",
+          file: "src/accounts.ts",
+          accesses: [
+            {
+              container: "accounts",
+              recognition: "@suss/framework-drizzle",
+              kind: "read",
+              fields: ["id", "nickname"],
+            },
+          ],
+        }),
+      ]);
+
+      expect(findings).toEqual([]);
+    });
+
+    it("checks an access no declaration's library recorded against both", () => {
+      const findings = checkStorage([
+        ...declarations,
+        makeAccessSummary({
+          name: "listAccounts",
+          file: "src/accounts.ts",
+          accesses: [
+            { container: "accounts", kind: "read", fields: ["id", "nickname"] },
+          ],
+        }),
+      ]);
+
+      expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnknown"]);
+    });
   });
 
   it("multi-table accesses (joins) emit per-table findings", () => {

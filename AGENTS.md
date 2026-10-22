@@ -140,8 +140,9 @@ cannot see that.
 
 Severity decides the exit code, and it does not tell you what to do.
 The default threshold is `error`, so warnings and info findings print
-without failing the run. When a finding points at one transition, suss
-prints a `.sussignore` rule you can paste. Accepting that finding then
+without failing the run. When a finding points at one transition, or at
+one column of a table, suss prints a `.sussignore` rule you can paste.
+Accepting that finding then
 goes on record once, and nobody has to make the same call again on the
 next run.
 
