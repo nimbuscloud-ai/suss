@@ -18,6 +18,15 @@ import { DIALECTS, type Grammar, parsedStatement } from "./grammars.js";
 import { CAST_TYPE, replaceInCode, TYPE_WORD } from "./rewrites.js";
 import { codeMask, nextToken } from "./textRuns.js";
 
+export {
+  readSqlSchema,
+  type SqlColumn,
+  type SqlSchema,
+  type SqlSchemaOptions,
+  type SqlTable,
+  type SqlUnreadStatement,
+} from "./schema.js";
+
 /** One table a statement touches, and what it does to it. */
 export interface SqlAccess {
   table: string;

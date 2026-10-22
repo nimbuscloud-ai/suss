@@ -112,6 +112,31 @@ It reads Postgres, MySQL, SQLite, and BigQuery. Pass the dialect the same way a 
 readSqlAccess("SELECT `id` FROM `users`", { dialect: "mysql" });
 ```
 
+## Reading a schema dump
+
+`readSqlSchema` reads the tables a dump of the database declares, such as Rails' `db/structure.sql` or what `pg_dump --schema-only` writes. Each column comes back with the fields a storage contract gives a column:
+
+```ts
+readSqlSchema(`
+CREATE TABLE public.orders (
+    id bigint NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL
+);
+ALTER TABLE ONLY public.orders ALTER COLUMN id SET DEFAULT nextval('public.orders_id_seq'::regclass);
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_pkey PRIMARY KEY (id);
+`);
+// { tables: [{ name: "orders", line: 2, columns: [
+//     { name: "id", type: "bigint", nullable: false, default: true, primary: true },
+//     { name: "status", type: "character varying", nullable: false, default: true } ] }],
+//   unread: [], statements: 3 }
+```
+
+pg_dump writes the keys and a serial column's default after the tables, in `ALTER TABLE` statements, so those are read too: `ADD CONSTRAINT` for a primary or foreign key, and `ALTER COLUMN ... SET DEFAULT`. A table in the `public` schema is named without it, and a table in any other schema keeps it, as `audit.events`. `CREATE TYPE ... AS ENUM` gives the enum types, and a column of one has the type `enum`. Every other statement, such as an index, a function or a trigger, is skipped.
+
+The grammar knows only the built-in types, and a dump is full of others: enum types, and types from extensions such as `citext` or `halfvec`. When the grammar rejects a table, each column is parsed on its own, and a column it still rejects is parsed again with its type set aside. The type is then taken as written, without its schema or length. A column that fails even then keeps its name and type, and its nullability and default are left unstated. An `ALTER TABLE` the grammar rejects is skipped, and when it is an `ALTER COLUMN`, that column's default is left unstated too, since the statement may have given it one.
+
+Whatever was not read is listed in `unread`, with its line, its table and its column where it has one, and `statements` counts every `CREATE TABLE` and `ALTER TABLE` in the dump. Together they say how much of the dump was read. A MySQL dump is read with `{ dialect: "mysql" }`, where `AUTO_INCREMENT` counts as a default and `DEFAULT NULL` does not.
+
 ## What it will not tell you
 
 - **A dialect it does not read returns nothing.** So does a statement it cannot parse. In both cases it does not guess from whatever words the text happens to contain.
@@ -120,6 +145,6 @@ readSqlAccess("SELECT `id` FROM `users`", { dialect: "mysql" });
 
 ## Where it fits in suss
 
-`@suss/framework-drizzle` uses it for ``db.execute(sql`...`)``. Nothing else depends on it, and it depends on nothing inside suss, so it stays a plain function over a string.
+The adapters and packs that find SQL written in code, such as `@suss/framework-drizzle` for ``db.execute(sql`...`)``, pass it to `readSqlAccess`. `@suss/contract-rails-schema` reads `db/structure.sql` through `readSqlSchema`. The package depends on nothing inside suss, so it stays a plain function over a string.
 
 The grammars come from `node-sql-parser`. They are bundled into this package's build and not installed, which is why the package has no runtime dependencies. See THIRD-PARTY-NOTICES.md.
