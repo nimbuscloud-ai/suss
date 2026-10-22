@@ -152,6 +152,21 @@ cp summaries/web.json auth/
 npx @suss/cli check --dir auth/
 ```
 
+## Two GraphQL services behind one frontend
+
+A frontend that sends some operations to one GraphQL service and some to another usually builds two Apollo clients and picks one per call. suss reads which client each call picks, through the project's own hook too. Tell it which service each client talks to, by the endpoint the client is built with, in the Apollo pack's options:
+
+```json
+{
+  "clients": {
+    "/graphql": "schema/legacy.graphql",
+    "https://events.appsync-api.example.com/graphql": "schema/appsync.graphql"
+  }
+}
+```
+
+Each operation then pairs with its own service's schema. An operation whose client suss cannot tie to one service is listed as not checked, with the reason, instead of being compared with a schema it may never reach. The [Apollo pack](https://github.com/nimbuscloud-ai/suss/blob/main/packages/client/apollo/README.md#which-service-an-operation-goes-to) shows the spellings it reads.
+
 ## A spec instead of the other side's code
 
 `suss contract` reads a spec and writes it out in the same format as `extract`. The other side can then be an OpenAPI document, a Prisma schema or a CloudFormation template instead of code:

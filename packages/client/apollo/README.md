@@ -51,12 +51,40 @@ Both options tell the pack which service an operation talks to, for a frontend t
 }
 ```
 
-- `clients`: which service each client talks to, keyed by the endpoint the client is constructed with. The key is the `uri` string itself, or the expression as written when the value is computed, such as an env read like `import.meta.env.VITE_GRAPHQL_URL`. The value is the provider workspace name. One line per client keeps apart two GraphQL services that share root field names.
-- `operationScopes`: which service the operations in a set of files talk to. A hook call does not show which client it goes through, so these globs decide by file. An operation whose file matches gets the entry's workspace, and the first matching entry wins.
+- `clients`: which service each client talks to, keyed by the endpoint the client is constructed with. The key is the `uri` string itself, or the expression as written when the value is computed, such as an env read like `import.meta.env.VITE_GRAPHQL_URL`. A client built with a `link` instead of a `uri` takes the endpoint of the `HttpLink` or `createHttpLink` that `link` is set to. The value is the provider workspace name, or the path of a schema file a `contract` command reads, measured from the folder `suss.json` is in. One line per client keeps apart two GraphQL services that share root field names.
+- `operationScopes`: which service the operations in a set of files talk to, for an operation whose call does not pass a client of its own. An operation whose file matches gets the entry's workspace, and the first matching entry wins.
+
+## Which service an operation goes to
+
+Apollo sends an operation through the client the app provides, unless the call passes one. A hook call passes it as the `client` option, and `client.query` goes through the client it is called on. suss reads that client at each call, and through a project hook it binds what each caller passed before reading the choice:
+
+```ts
+export function useGraphQLQuery(doc, { nextGen, ...opts } = {}) {
+  const client = nextGen ? appSyncClient : railsClient;
+  return useQuery(doc, { ...opts, client });
+}
+
+useGraphQLQuery(EVENT_LISTING, { variables, nextGen: true }); // appSyncClient
+useGraphQLQuery(ACCOUNT_PAGE); // railsClient
+useGraphQLQuery(PANEL, { nextGen: useFeatureFlag("new") }); // either one
+```
+
+The client goes on the summary as `metadata.graphql.client`, with `chosenAtCall` set. A `clients` entry or an operation scope says which service it talks to, and the operation pairs only with that service's resolvers. Without either, the operation pairs like one that passes no client only when the client it passes is the app's only client, or has the endpoint every client shares.
+
+Otherwise suss cannot tell which schema the operation is sent to, and pairing it with whichever schema shares its field names would report a field the other service declares as missing. So the operation is not paired, `metadata.graphql.unresolvedClient` says why, and `check` lists it as not checked:
+
+```
+1 GraphQL operation was not checked, because suss could not tell which service its client talks to:
+  web::src/featurePanel.tsx::FeaturePanel.FeaturePanel: the client it passes, nextGen ? appSyncClient : railsClient, can be any of 2 clients, and nothing the call passes settles which
+```
+
+The same happens to an operation whose client comes from something suss cannot follow to a construction, such as a React context, and to one bound to a service nothing in the run describes.
+
+An operation that passes no client goes through the client the app provides. suss does not read `ApolloProvider` yet, so when the project builds one distinct client every such operation gets it, and when it builds more, they pair with every schema that has their fields, as before.
 
 ## Pairing
 
-Provider-side summaries, such as Apollo resolvers and AppSync resolvers, will pair with these once the pairing layer can map an operation's selection set to resolvers. Until then a `graphql-operation` binding lands in `unmatched`, which shows the consumer boundary without joining it to anything.
+Each operation pairs with the resolvers that serve its root fields, from code or from a schema read with `suss contract --from graphql`, and its nested selections are checked against that schema.
 
 ## Where it fits in suss
 
