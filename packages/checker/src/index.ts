@@ -219,6 +219,7 @@ export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js
 export {
   applySuppressions,
   countsForThreshold,
+  ruleBoundaryKey,
   type SuppressionFile,
   SuppressionFileSchema,
   type SuppressionRule,

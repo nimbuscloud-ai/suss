@@ -6,7 +6,6 @@ import { summaryRef, wrapperIndex } from "@suss/behavioral-ir";
 import {
   applySuppressions,
   boundaryCollisions,
-  boundaryKey,
   boundaryKeyOf,
   changesSince,
   changesWithin,
@@ -17,6 +16,7 @@ import {
   groupBySharedCause,
   mergedSideOf,
   normalizedDescription,
+  ruleBoundaryKey,
   summaryWithDefinitionsInlined,
   touchedByChange,
 } from "@suss/checker";
@@ -1461,9 +1461,9 @@ function formatSide(
  * about a status the provider returns has its id on the provider side,
  * and a rule keyed on `consumer.transitionId` would never match it.
  *
- * A finding with no transition on either side gets no rule, because
- * `kind` plus `boundary` would also silence every other finding of that
- * kind on the boundary. A finding a rule already covers gets none either.
+ * A finding with no transition or field on either side gets no rule,
+ * because `kind` plus `boundary` would also silence every other finding
+ * of that kind there. A finding a rule already covers gets none either.
  */
 function formatSuppressionRule(
   f: Finding,
@@ -1486,23 +1486,36 @@ function ruleLines(heading: string, rule: AcceptingRule): string[] {
   }
 
   for (const side of ["provider", "consumer"] as const) {
-    const transitionId = rule[side]?.transitionId;
-    if (transitionId !== undefined) {
-      lines.push(
-        `      ${side}: { transitionId: ${JSON.stringify(transitionId)} }`,
-      );
+    const matched = rule[side];
+    if (matched !== undefined) {
+      lines.push(`      ${side}: ${ruleSideText(matched)}`);
     }
   }
   lines.push("      reason: TODO say why you accept this");
   return lines;
 }
 
+function ruleSideText(side: AcceptingSide): string {
+  if ("transitionId" in side) {
+    return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
+  }
+  return `{ field: ${JSON.stringify(side.field)} }`;
+}
+
+/** What a printed rule matches one side of a finding by. */
+export type AcceptingSide = { transitionId: string } | { field: string };
+
 /** A `.sussignore` rule without its reason, which the person accepting it writes. */
 export interface AcceptingRule {
   kind: Finding["kind"];
   boundary?: string;
-  provider?: { transitionId: string };
-  consumer?: { transitionId: string };
+  provider?: AcceptingSide;
+  consumer?: AcceptingSide;
+}
+
+interface NamedSide {
+  name: "provider" | "consumer";
+  matches: AcceptingSide;
 }
 
 /**
@@ -1510,26 +1523,48 @@ export interface AcceptingRule {
  * null when no rule can be that narrow.
  */
 export function acceptingRule(f: Finding): AcceptingRule | null {
-  const side = findingTransitionSide(f);
+  const key = ruleBoundaryKey(f.boundary);
+  const side = findingTransitionSide(f) ?? findingFieldSide(f, key);
   if (side === null) {
     return null;
   }
-  const key = boundaryKey(f.boundary);
   return {
     kind: f.kind,
     ...(key !== null ? { boundary: key } : {}),
-    [side.name]: { transitionId: side.transitionId },
+    [side.name]: side.matches,
   };
 }
 
-function findingTransitionSide(
-  f: Finding,
-): { name: "provider" | "consumer"; transitionId: string } | null {
+function findingTransitionSide(f: Finding): NamedSide | null {
   if (f.provider.transitionId !== undefined) {
-    return { name: "provider", transitionId: f.provider.transitionId };
+    return {
+      name: "provider",
+      matches: { transitionId: f.provider.transitionId },
+    };
   }
   if (f.consumer.transitionId !== undefined) {
-    return { name: "consumer", transitionId: f.consumer.transitionId };
+    return {
+      name: "consumer",
+      matches: { transitionId: f.consumer.transitionId },
+    };
+  }
+  return null;
+}
+
+/**
+ * The side whose field picks out the finding, the consumer's first. A
+ * field means one column only within one table, so a finding with no
+ * boundary key gets no rule from it.
+ */
+function findingFieldSide(f: Finding, key: string | null): NamedSide | null {
+  if (key === null) {
+    return null;
+  }
+  if (f.consumer.field !== undefined) {
+    return { name: "consumer", matches: { field: f.consumer.field } };
+  }
+  if (f.provider.field !== undefined) {
+    return { name: "provider", matches: { field: f.provider.field } };
   }
   return null;
 }
