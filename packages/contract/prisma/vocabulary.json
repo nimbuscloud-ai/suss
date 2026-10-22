@@ -28,6 +28,12 @@
   "_count": "Prisma client: the relation counts a query can ask for",
   "PrismaCount": "suss: the type this pack gives the _count field",
   "keyValue": "suss: the parser's node type for a named attribute argument",
+  "function": "suss: the parser's node type for a function call in an attribute argument",
+  "db": "Prisma schema: the attribute group of a native type, as in @db.VarChar",
+  "migrations": "suss: storage contract origin for a schema whose own migrations made the tables",
+  "nobody": "suss: a column nothing fills when a create leaves it out",
+  "database": "suss: a column default the database fills",
+  "both": "suss: a column default Prisma's migrations write and the client also sends",
   "A": "Prisma client: the column of an implicit many-to-many join table referencing the model whose name sorts first",
   "B": "Prisma client: the column of an implicit many-to-many join table referencing the model whose name sorts second"
 }

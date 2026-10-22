@@ -1,0 +1,69 @@
+// A hand-maintained Prisma copy of two tables a Rails app owns. Each
+// commented column disagrees with the Rails declaration in one way, and
+// the rest agree through a different spelling of the same type.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum OrderState {
+  pending
+  paid
+  shipped
+
+  @@map("order_state")
+}
+
+model Customer {
+  id     BigInt  @id @default(autoincrement())
+  orders Order[]
+
+  @@map("customers")
+}
+
+model Order {
+  id           BigInt       @id @default(autoincrement())
+  // The database's foreign key points at users.
+  customerId   BigInt       @map("customer_id")
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  status       String       @db.VarChar(32)
+  priority     Int          @default(0)
+  quantity     Int          @db.SmallInt
+  total        Decimal      @db.Decimal(10, 2)
+  // Nullable in the database.
+  weight       Float
+  paid         Boolean      @default(false)
+  // The database has no default, and the client leaves the column out.
+  publicId     String       @default(dbgenerated("gen_random_uuid()")) @map("public_id") @db.Uuid
+  metadata     Json?        @db.JsonB
+  receipt      Bytes?
+  tags         String[]
+  state        OrderState   @default(pending)
+  shipOn       DateTime?    @map("ship_on") @db.Date
+  // The database has no default, so a create that leaves it out stores NULL.
+  notes        String?      @default(dbgenerated("''::text")) @db.Text
+  // The database has no such column.
+  discountCode String?      @map("discount_code")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  attachments  Attachment[]
+
+  @@map("orders")
+}
+
+model Attachment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // The database stores a uuid.
+  blobId    BigInt   @map("blob_id")
+  orderId   BigInt   @map("order_id")
+  order     Order    @relation(fields: [orderId], references: [id])
+  filename  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("attachments")
+}

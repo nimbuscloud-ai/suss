@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { readStorageContractMetadata } from "@suss/behavioral-ir";
 
@@ -192,14 +192,14 @@ model Post {
     expect(name.unique).toBeUndefined();
   });
 
-  it("treats enum-typed fields as columns", () => {
+  it("treats enum-typed fields as columns of one enum type", () => {
     const summaries = prismaSchemaToSummaries(postgresSchema);
     const user =
       summaries.find((s) => s.identity.name === "User") ??
       raise("User summary not found");
     const role = fieldsOf(user).find((c) => c.name === "role");
     expect(role).toBeDefined();
-    expect(role?.type).toBe("Role");
+    expect(role?.type).toBe("enum");
   });
 
   it("declares a relation field by the model it points at", () => {
@@ -669,6 +669,358 @@ describe("a schema split over several files", () => {
     expect(fields.find((field) => field.name === "user")).toMatchObject({
       relationKey: ["userId"],
     });
+  });
+});
+
+const DATASOURCE = `datasource db {\n  provider = "postgresql"\n  url      = env("DATABASE_URL")\n}\n`;
+
+function columnsOf(
+  summaries: BehavioralSummary[],
+  model: string,
+): Map<string, Record<string, unknown>> {
+  const summary =
+    summaries.find((s) => s.identity.name === model) ??
+    raise(`${model} summary not found`);
+  return new Map(
+    (readStorageContractMetadata(summary)?.fields ?? []).map((field) => [
+      field.name,
+      field as Record<string, unknown>,
+    ]),
+  );
+}
+
+function columnOf(
+  summaries: BehavioralSummary[],
+  model: string,
+  field: string,
+): Record<string, unknown> {
+  return (
+    columnsOf(summaries, model).get(field) ??
+    raise(`${model}.${field} not found`)
+  );
+}
+
+describe("the columns two declarations of one table are compared on", () => {
+  it("keeps the field name and records the column a field's @map gives", () => {
+    const summaries = prismaSchemaToSummaries(`${DATASOURCE}
+model Order {
+  id        Int      @id
+  createdAt DateTime @map("created_at")
+  blobId    String   @map(name: "blob_id")
+  total     Int      @map("total")
+}
+`);
+    expect(columnOf(summaries, "Order", "createdAt")).toMatchObject({
+      name: "createdAt",
+      column: "created_at",
+    });
+    expect(columnOf(summaries, "Order", "blobId").column).toBe("blob_id");
+    // A @map that repeats the field name changes nothing.
+    expect(columnOf(summaries, "Order", "total").column).toBeUndefined();
+    expect(columnOf(summaries, "Order", "id").column).toBeUndefined();
+  });
+
+  it("reads @@map spelled with a name argument", () => {
+    const summaries = prismaSchemaToSummaries(`${DATASOURCE}
+model Order {
+  id Int @id
+
+  @@map(name: "orders")
+}
+`);
+    const order = summaries[0] ?? raise("no Order summary");
+    expect(readStorageContractMetadata(order)?.physicalTable).toBe("orders");
+  });
+
+  it("says which defaults the database fills and which the client sends", () => {
+    const summaries = prismaSchemaToSummaries(`${DATASOURCE}
+model Order {
+  id         Int      @id @default(autoincrement())
+  publicId   String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token      String   @default(uuid())
+  slug       String   @default(cuid())
+  short      String   @default(nanoid(8))
+  sortKey    String   @default(ulid())
+  updatedAt  DateTime @updatedAt
+  reference  String
+  note       String?
+}
+`);
+    const columns = columnsOf(summaries, "Order");
+    const defaults = Object.fromEntries(
+      [...columns].map(([name, field]) => [name, field.default]),
+    );
+    expect(defaults).toEqual({
+      id: true,
+      publicId: true,
+      token: false,
+      slug: false,
+      short: false,
+      sortKey: false,
+      updatedAt: false,
+      reference: false,
+      note: false,
+    });
+  });
+
+  it("leaves a literal or now() default unstated unless Prisma's migrations made the table", () => {
+    const schema = `${DATASOURCE}
+enum Status {
+  PENDING
+  PAID
+}
+
+model Order {
+  id        Int      @id
+  status    Status   @default(PENDING)
+  paid      Boolean  @default(false)
+  label     String   @default("x", map: "order_label_default")
+  createdAt DateTime @default(now())
+  touchedAt DateTime @default(now()) @updatedAt
+}
+`;
+    const copy = columnsOf(prismaSchemaToSummaries(schema), "Order");
+    const migrated = columnsOf(
+      prismaSchemaToSummaries(schema, { origin: "migrations" }),
+      "Order",
+    );
+    for (const name of ["status", "paid", "label", "createdAt", "touchedAt"]) {
+      expect(copy.get(name)?.default).toBeUndefined();
+      expect(migrated.get(name)?.default).toBe(true);
+    }
+  });
+
+  it("marks every column @@id lists as primary, in either spelling", () => {
+    const summaries = prismaSchemaToSummaries(`${DATASOURCE}
+model Membership {
+  teamId Int
+  userId Int
+  role   String
+
+  @@id([teamId, userId])
+}
+
+model Grant {
+  scope   String
+  ownerId Int
+
+  @@id(fields: [scope, ownerId], map: "grant_pk")
+}
+`);
+    const membership = columnsOf(summaries, "Membership");
+    expect(membership.get("teamId")?.primary).toBe(true);
+    expect(membership.get("userId")?.primary).toBe(true);
+    expect(membership.get("role")?.primary).toBeUndefined();
+    const grant = columnsOf(summaries, "Grant");
+    expect(grant.get("scope")?.primary).toBe(true);
+    expect(grant.get("ownerId")?.primary).toBe(true);
+    const grantSummary =
+      summaries.find((s) => s.identity.name === "Grant") ?? raise("no Grant");
+    expect(readStorageContractMetadata(grantSummary)?.indexes).toEqual([
+      { fields: ["scope", "ownerId"], unique: true },
+    ]);
+  });
+
+  it("keeps a native type without its arguments", () => {
+    const summaries = prismaSchemaToSummaries(`${DATASOURCE}
+model Attachment {
+  id        String   @id @db.Uuid
+  name      String   @db.VarChar(255)
+  size      Int      @db.SmallInt
+  createdAt DateTime @db.Timestamptz(6)
+  plain     String
+}
+`);
+    const types = Object.fromEntries(
+      [...columnsOf(summaries, "Attachment")].map(([name, field]) => [
+        name,
+        field.type,
+      ]),
+    );
+    expect(types).toEqual({
+      id: "@db.Uuid",
+      name: "@db.VarChar",
+      size: "@db.SmallInt",
+      createdAt: "@db.Timestamptz",
+      plain: "String",
+    });
+  });
+
+  it("declares a scalar list as a column of a list type", () => {
+    const schema = `${DATASOURCE}
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id     Int      @id
+  tags   String[]
+  roles  Role[]
+  labels String[] @db.VarChar(20)
+  scores Int[]    @default([])
+  posts  Post[]
+}
+
+model Post {
+  id       Int  @id
+  authorId Int
+  author   User @relation(fields: [authorId], references: [id])
+}
+`;
+    const copy = columnsOf(prismaSchemaToSummaries(schema), "User");
+    expect(copy.get("tags")).toMatchObject({
+      type: "String[]",
+      default: false,
+    });
+    expect(copy.get("roles")?.type).toBe("enum[]");
+    expect(copy.get("labels")?.type).toBe("@db.VarChar[]");
+    // A relation list is still a relation, not a column.
+    expect(copy.get("posts")).toMatchObject({ type: "Post[]", derived: true });
+    // Prisma's migrations make a list column nullable and the client reads
+    // NULL there as an empty list, so only a migrated table says which.
+    expect(copy.get("tags")?.nullable).toBeUndefined();
+    const migrated = columnsOf(
+      prismaSchemaToSummaries(schema, { origin: "migrations" }),
+      "User",
+    );
+    expect(migrated.get("tags")?.nullable).toBe(true);
+    expect(migrated.get("scores")?.default).toBe(true);
+  });
+
+  it("points a foreign key at the table of the model its relation reaches", () => {
+    const summaries = prismaSchemaToSummaries(`${DATASOURCE}
+model User {
+  id    Int    @id
+  posts Post[]
+
+  @@map("users")
+}
+
+model Team {
+  id       Int @id
+  tenantId Int
+  posts    Post[]
+}
+
+model Post {
+  id       Int  @id
+  authorId Int  @map("author_id")
+  author   User @relation(fields: [authorId], references: [id])
+  teamId   Int
+  tenantId Int
+  team     Team @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  title    String
+}
+`);
+    const post = columnsOf(summaries, "Post");
+    expect(post.get("authorId")).toMatchObject({
+      column: "author_id",
+      foreignKey: "users",
+    });
+    expect(post.get("teamId")?.foreignKey).toBe("Team");
+    expect(post.get("tenantId")?.foreignKey).toBe("Team");
+    expect(post.get("title")?.foreignKey).toBeUndefined();
+    // The relation field itself is not a column and has no key of its own.
+    expect(post.get("author")?.foreignKey).toBeUndefined();
+  });
+
+  it("gives the columns of an implicit join table no default and a key to each model", () => {
+    const summaries = prismaSchemaToSummaries(`${DATASOURCE}
+model Post {
+  id   Int   @id
+  tags Tag[]
+
+  @@map("posts")
+}
+
+model Tag {
+  id    Int    @id
+  posts Post[]
+}
+`);
+    const join = columnsOf(summaries, "_PostToTag");
+    expect(join.get("A")).toMatchObject({
+      default: false,
+      foreignKey: "posts",
+    });
+    expect(join.get("B")).toMatchObject({ default: false, foreignKey: "Tag" });
+  });
+});
+
+describe("where a schema's columns come from", () => {
+  const made: string[] = [];
+  afterEach(() => {
+    for (const dir of made.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function schemaFolder(files: Record<string, string>): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prisma-origin-"));
+    made.push(dir);
+    for (const [name, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+      fs.writeFileSync(path.join(dir, name), text);
+    }
+    return dir;
+  }
+
+  const SCHEMA = `${DATASOURCE}\nmodel Order {\n  id Int @id\n}\n`;
+  const LOCK = 'provider = "postgresql"\n';
+
+  function originOf(summaries: BehavioralSummary[]): string | undefined {
+    const first = summaries[0] ?? raise("no summary");
+    return readStorageContractMetadata(first)?.origin;
+  }
+
+  it("is Prisma's migrations when a migrations folder is next to the schema", () => {
+    const dir = schemaFolder({
+      "prisma/schema.prisma": SCHEMA,
+      "prisma/migrations/migration_lock.toml": LOCK,
+    });
+    expect(
+      originOf(
+        prismaSchemaFileToSummaries(path.join(dir, "prisma/schema.prisma")),
+      ),
+    ).toBe("migrations");
+  });
+
+  it("finds the migrations folder beside a schema folder", () => {
+    const dir = schemaFolder({
+      "prisma/schema/schema.prisma": SCHEMA,
+      "prisma/schema/user.prisma": "model User {\n  id Int @id\n}\n",
+      "prisma/migrations/migration_lock.toml": LOCK,
+    });
+    expect(
+      originOf(prismaSchemaFileToSummaries(path.join(dir, "prisma/schema"))),
+    ).toBe("migrations");
+  });
+
+  it("is unstated without a migration lock file", () => {
+    const dir = schemaFolder({
+      "prisma/schema.prisma": SCHEMA,
+      "prisma/migrations/README.md": "hand-written SQL\n",
+    });
+    expect(
+      originOf(
+        prismaSchemaFileToSummaries(path.join(dir, "prisma/schema.prisma")),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("does not look above a single schema file", () => {
+    const dir = schemaFolder({
+      "packages/db/schema.prisma": SCHEMA,
+      "packages/migrations/migration_lock.toml": LOCK,
+    });
+    expect(
+      originOf(
+        prismaSchemaFileToSummaries(
+          path.join(dir, "packages/db/schema.prisma"),
+        ),
+      ),
+    ).toBeUndefined();
   });
 });
 

@@ -494,6 +494,7 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/runtime-config-python"),
     ...packs("fastapi"),
   ]),
+  contract("schema-mirror", "prisma", "fixtures/schema-mirror/schema.prisma"),
   fixture("semantic-bridging", [
     ...dir("fixtures/semantic-bridging"),
     ...packs("ts-rest"),

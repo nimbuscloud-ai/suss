@@ -15,7 +15,10 @@ import { getSchema } from "@mrleebo/prisma-ast";
 
 import { storageBinding } from "@suss/behavioral-ir";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  StorageContractMetadata,
+} from "@suss/behavioral-ir";
 
 export interface PrismaSchemaToSummariesOptions {
   /** The path recorded on each summary, in place of the default. */
@@ -25,7 +28,11 @@ export interface PrismaSchemaToSummariesOptions {
    * each its own scope so their pairings stay separate.
    */
   scope?: string;
+  /** `"migrations"` when Prisma's own migrations made the database. */
+  origin?: "migrations";
 }
+
+type ContractField = NonNullable<StorageContractMetadata["fields"]>[number];
 
 /**
  * A field of one of these types is a column. Any other field type is an
@@ -57,6 +64,7 @@ const PROVIDER_TO_SYSTEM: Record<string, "postgresql" | "mysql" | "sqlite"> = {
 interface PrismaField {
   type: "field";
   name: string;
+  /** An object for `Unsupported("...")`, so it is never a model or enum name. */
   fieldType: string;
   array?: boolean;
   optional?: boolean;
@@ -100,6 +108,7 @@ export function prismaSchemaToSummaries(
   return summariesOfSchema(
     [{ file: options.source ?? "schema.prisma", text: source }],
     options.scope ?? "default",
+    options.origin,
   );
 }
 
@@ -116,6 +125,7 @@ interface SchemaSource {
 function summariesOfSchema(
   sources: readonly SchemaSource[],
   scope: string,
+  origin: "migrations" | undefined,
 ): BehavioralSummary[] {
   const nodes = sources.flatMap(({ file, text }) =>
     (getSchema(text) as { list: Array<unknown> }).list.map((node) => ({
@@ -158,6 +168,9 @@ function summariesOfSchema(
     nodes.map(({ node, file }) => [(node as { name?: string }).name, file]),
   );
   const relations = implicitManyToManyRelations(models, modelNames);
+  const tableOfModel = new Map(
+    models.map((model) => [model.name, physicalTableOf(model) ?? model.name]),
+  );
   const joinContainerByField = new Map<string, string>();
   for (const relation of relations) {
     joinContainerByField.set(
@@ -181,8 +194,10 @@ function summariesOfSchema(
         model,
         modelNames,
         enumNames,
+        tableOfModel,
         storageSystem,
         scope,
+        origin,
         sourceFile: file,
         joinContainerByField,
       }),
@@ -193,8 +208,10 @@ function summariesOfSchema(
     summaries.push(
       buildJoinTableSummary({
         relation,
+        tableOfModel,
         storageSystem,
         scope,
+        origin,
         sourceFile: fileOfModel.get(relation.leftModel) ?? "schema.prisma",
       }),
     );
@@ -332,8 +349,10 @@ function joinTableName(
 
 interface BuildJoinTableOpts {
   relation: ImplicitManyToMany;
+  tableOfModel: Map<string, string>;
   storageSystem: "postgresql" | "mysql" | "sqlite";
   scope: string;
+  origin: "migrations" | undefined;
   sourceFile: string;
 }
 
@@ -346,7 +365,15 @@ function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
   const [modelA, modelB] = [
     opts.relation.leftModel,
     opts.relation.rightModel,
-  ].sort();
+  ].sort() as [string, string];
+  const keyColumn = (name: string, model: string): ContractField => ({
+    name,
+    type: model,
+    nullable: false,
+    primary: true,
+    default: false,
+    foreignKey: opts.tableOfModel.get(model) ?? model,
+  });
   return {
     kind: "library",
     location: {
@@ -371,14 +398,12 @@ function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
     metadata: {
       storageContract: {
         fieldSet: "exhaustive",
-        fields: [
-          { name: "A", type: modelA, nullable: false, primary: true },
-          { name: "B", type: modelB, nullable: false, primary: true },
-        ],
+        fields: [keyColumn("A", modelA), keyColumn("B", modelB)],
         indexes: [
           { fields: ["A", "B"], unique: true },
           { fields: ["B"], unique: false },
         ],
+        ...originOf(opts.origin),
       },
     },
   };
@@ -387,7 +412,9 @@ function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
 /**
  * Reads a Prisma schema from disk and converts it: a file, a schema
  * folder, or one file of a multi-file schema, which brings the rest of
- * its files with it. Throws when the path does not exist.
+ * its files with it. Throws when the path does not exist. Unless the
+ * options say otherwise, the origin is `"migrations"` when a Prisma
+ * migrations folder is next to the schema.
  */
 export function prismaSchemaFileToSummaries(
   schemaPath: string,
@@ -396,11 +423,57 @@ export function prismaSchemaFileToSummaries(
   if (!fs.existsSync(schemaPath)) {
     throw new Error(`Prisma schema not found: ${schemaPath}`);
   }
-  const sources = prismaSchemaFiles(schemaPath).map((file) => ({
+  const files = prismaSchemaFiles(schemaPath);
+  const sources = files.map((file) => ({
     file: options.source ?? path.relative(process.cwd(), file),
     text: fs.readFileSync(file, "utf-8"),
   }));
-  return summariesOfSchema(sources, options.scope ?? "default");
+  return summariesOfSchema(
+    sources,
+    options.scope ?? "default",
+    options.origin ?? migrationsOriginOf(schemaPath, files),
+  );
+}
+
+/**
+ * Prisma Migrate writes `migration_lock.toml` into its migrations folder.
+ * The folder is next to a schema file, and a schema split into a folder
+ * of its own can keep it one level up, beside that folder.
+ */
+function migrationsOriginOf(
+  schemaPath: string,
+  files: readonly string[],
+): "migrations" | undefined {
+  const folder = statOf(schemaPath)?.isDirectory() === true;
+  const own = folder
+    ? path.resolve(schemaPath)
+    : path.dirname(path.resolve(schemaPath));
+  const searched =
+    folder || files.length > 1 ? [own, path.dirname(own)] : [own];
+  return searched.some(hasMigrationsFolder) ? "migrations" : undefined;
+}
+
+function hasMigrationsFolder(dir: string): boolean {
+  return foldersIn(dir).some((folder) =>
+    fs.existsSync(path.join(dir, folder, "migration_lock.toml")),
+  );
+}
+
+function foldersIn(dir: string): string[] {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function originOf(
+  origin: "migrations" | undefined,
+): Pick<StorageContractMetadata, "origin"> {
+  return origin === undefined ? {} : { origin };
 }
 
 /**
@@ -475,8 +548,11 @@ interface BuildModelOpts {
   model: PrismaModel;
   modelNames: Set<string>;
   enumNames: Set<string>;
+  /** The table each model is stored in, from `@@map` or the model name. */
+  tableOfModel: Map<string, string>;
   storageSystem: "postgresql" | "mysql" | "sqlite";
   scope: string;
+  origin: "migrations" | undefined;
   sourceFile: string;
   /**
    * The implicit join table each many-to-many field writes through, keyed
@@ -486,23 +562,21 @@ interface BuildModelOpts {
 }
 
 function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
-  const columns: Array<{
-    name: string;
-    type: string;
-    nullable: boolean;
-    primary?: boolean;
-    unique?: boolean;
-    derived?: boolean;
-    joinContainer?: string;
-  }> = [];
+  const columns: ContractField[] = [];
   const indexes: Array<{ fields: string[]; unique: boolean }> = [];
   const physicalTable = physicalTableOf(opts.model);
+  const context: ColumnContext = {
+    enumNames: opts.enumNames,
+    foreignKeys: foreignKeysOf(opts.model, opts.modelNames, opts.tableOfModel),
+    compositeKey: compositeKeyOf(opts.model),
+    migrated: opts.origin === "migrations",
+  };
 
   let hasRelation = false;
   for (const property of opts.model.properties) {
     if ((property as { type: string }).type === "field") {
       const field = property as PrismaField;
-      const column = fieldToColumn(field, opts.modelNames, opts.enumNames);
+      const column = fieldToColumn(field, opts.modelNames, context);
       if (column !== null) {
         columns.push(column);
       }
@@ -563,6 +637,7 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
         ...(physicalTable !== null && physicalTable !== opts.model.name
           ? { physicalTable }
           : {}),
+        ...originOf(opts.origin),
       },
     },
   };
@@ -622,56 +697,187 @@ function relationNameOf(field: PrismaField): string | null {
   return relation === undefined ? null : readStringArg(relation);
 }
 
+/** What a column reads from the rest of its model. */
+interface ColumnContext {
+  enumNames: Set<string>;
+  /** The table each scalar field's foreign key points at. */
+  foreignKeys: Map<string, string>;
+  /** The fields `@@id` lists. */
+  compositeKey: Set<string>;
+  /** Whether Prisma's migrations made the table. */
+  migrated: boolean;
+}
+
 /**
- * Scalar and enum fields are columns. A relation field is not, and
- * neither is any array field.
+ * Scalar and enum fields are columns, lists of them included. A relation
+ * field is not.
  */
 function fieldToColumn(
   field: PrismaField,
   modelNames: Set<string>,
-  enumNames: Set<string>,
-): {
-  name: string;
-  type: string;
-  nullable: boolean;
-  primary?: boolean;
-  unique?: boolean;
-} | null {
-  if (field.array === true) {
-    // Every array field is taken as a relation list, so `String[]` is
-    // dropped as well.
-    return null;
-  }
+  context: ColumnContext,
+): ContractField | null {
   const ft = field.fieldType;
-  const isScalar = PRISMA_SCALARS.has(ft);
-  const isEnum = enumNames.has(ft);
-  const isRelation = modelNames.has(ft);
-  if (isRelation) {
+  if (modelNames.has(ft)) {
     return null;
   }
-  if (!isScalar && !isEnum) {
+  if (!PRISMA_SCALARS.has(ft) && !context.enumNames.has(ft)) {
     // `Unsupported(...)`, a composite type, or a typo. The field is
     // skipped so the reader never guesses.
     return null;
   }
 
-  let primary = false;
-  let unique = false;
-  for (const attr of field.attributes ?? []) {
-    if (attr.name === "id") {
-      primary = true;
-    } else if (attr.name === "unique") {
-      unique = true;
-    }
-  }
-
+  const column = stringArgOf(fieldAttribute(field, "map"));
+  const nullable = nullableOf(field, context.migrated);
+  const databaseDefault = databaseDefaultOf(field, context.migrated);
+  const foreignKey = context.foreignKeys.get(field.name);
+  const primary =
+    fieldAttribute(field, "id") !== undefined ||
+    context.compositeKey.has(field.name);
   return {
     name: field.name,
-    type: ft,
-    nullable: field.optional === true,
+    ...(column !== null && column !== field.name ? { column } : {}),
+    type: columnTypeOf(field, context.enumNames),
+    ...(nullable === undefined ? {} : { nullable }),
     ...(primary ? { primary: true } : {}),
-    ...(unique ? { unique: true } : {}),
+    ...(fieldAttribute(field, "unique") !== undefined ? { unique: true } : {}),
+    ...(databaseDefault === undefined ? {} : { default: databaseDefault }),
+    ...(foreignKey === undefined ? {} : { foreignKey }),
   };
+}
+
+/** A field attribute such as `@map`. A native type such as `@db.Uuid` never matches. */
+function fieldAttribute(
+  field: PrismaField,
+  name: string,
+): PrismaAttribute | undefined {
+  return (field.attributes ?? []).find(
+    (attr) => attr.name === name && attr.group === undefined,
+  );
+}
+
+function columnTypeOf(field: PrismaField, enumNames: Set<string>): string {
+  const element = elementTypeOf(field, enumNames);
+  return field.array === true ? `${element}[]` : element;
+}
+
+/**
+ * The native type, such as `@db.VarChar` without its length, says more
+ * than the Prisma type. Every enum is one type.
+ */
+function elementTypeOf(field: PrismaField, enumNames: Set<string>): string {
+  const native = (field.attributes ?? []).find((attr) => attr.group === "db");
+  if (native !== undefined) {
+    return `@db.${native.name}`;
+  }
+  return enumNames.has(field.fieldType) ? "enum" : field.fieldType;
+}
+
+/**
+ * Prisma's migrations make a list column nullable, and the client reads
+ * NULL there as an empty list, so a list's nullability is known only
+ * when Prisma made the table.
+ */
+function nullableOf(
+  field: PrismaField,
+  migrated: boolean,
+): boolean | undefined {
+  if (field.array === true) {
+    return migrated ? true : undefined;
+  }
+  return field.optional === true;
+}
+
+/**
+ * Who fills a column that a create leaves out, by its `@default(...)`.
+ * `"both"` is a literal or `now()`: Prisma's migrations make it a
+ * database default, and the client also sends the value on every create.
+ */
+type DefaultFiller = "nobody" | "database" | "client" | "both" | "unknown";
+
+const DEFAULT_FUNCTION_FILLERS: Readonly<
+  Record<string, DefaultFiller | undefined>
+> = {
+  autoincrement: "database",
+  dbgenerated: "database",
+  now: "both",
+  uuid: "client",
+  cuid: "client",
+  nanoid: "client",
+  ulid: "client",
+};
+
+/**
+ * Whether the database fills the column. A value the client sends on
+ * every create says nothing about the database unless Prisma's
+ * migrations made the table, so it is left unstated otherwise.
+ */
+const DATABASE_DEFAULT: Record<
+  DefaultFiller,
+  (migrated: boolean) => boolean | undefined
+> = {
+  nobody: () => false,
+  database: () => true,
+  client: () => false,
+  both: (migrated) => (migrated ? true : undefined),
+  unknown: () => undefined,
+};
+
+function databaseDefaultOf(
+  field: PrismaField,
+  migrated: boolean,
+): boolean | undefined {
+  return DATABASE_DEFAULT[defaultFillerOf(field)](migrated);
+}
+
+function defaultFillerOf(field: PrismaField): DefaultFiller {
+  const value = (fieldAttribute(field, "default")?.args ?? []).find(
+    (arg) => (arg.value as { type?: string } | null)?.type !== "keyValue",
+  )?.value;
+  if (value === undefined) {
+    return "nobody";
+  }
+  const call = value as { type?: string; name?: string } | null;
+  if (call?.type !== "function") {
+    return "both";
+  }
+  return DEFAULT_FUNCTION_FILLERS[call.name ?? ""] ?? "unknown";
+}
+
+/**
+ * Each column a relation's `fields: [...]` lists points at the table of
+ * the model the relation field has as its type.
+ */
+function foreignKeysOf(
+  model: PrismaModel,
+  modelNames: Set<string>,
+  tableOfModel: Map<string, string>,
+): Map<string, string> {
+  const targets = new Map<string, string>();
+  for (const property of model.properties) {
+    if ((property as { type: string }).type !== "field") {
+      continue;
+    }
+    const field = property as PrismaField;
+    if (!modelNames.has(field.fieldType)) {
+      continue;
+    }
+    const table = tableOfModel.get(field.fieldType) ?? field.fieldType;
+    for (const column of relationKeyOf(field) ?? []) {
+      targets.set(column, table);
+    }
+  }
+  return targets;
+}
+
+function compositeKeyOf(model: PrismaModel): Set<string> {
+  for (const property of model.properties) {
+    const attr = property as PrismaAttribute;
+    if (attr.type === "attribute" && attr.name === "id") {
+      return new Set(blockFieldsOf(attr) ?? []);
+    }
+  }
+  return new Set();
 }
 
 /**
@@ -688,9 +894,31 @@ function physicalTableOf(model: PrismaModel): string | null {
     if (attr.name !== "map") {
       continue;
     }
-    const name = readStringArg(attr);
+    const name = stringArgOf(attr);
     if (name !== null) {
       return name;
+    }
+  }
+  return null;
+}
+
+/** The string `@map("...")` or `@map(name: "...")` gives. */
+function stringArgOf(attr: PrismaAttribute | undefined): string | null {
+  if (attr === undefined) {
+    return null;
+  }
+  const positional = readStringArg(attr);
+  if (positional !== null) {
+    return positional;
+  }
+  for (const arg of attr.args ?? []) {
+    const value = arg.value as { type?: string; key?: string; value?: unknown };
+    if (
+      value?.type === "keyValue" &&
+      value.key === "name" &&
+      typeof value.value === "string"
+    ) {
+      return value.value.replace(/^"|"$/g, "");
     }
   }
   return null;
@@ -717,11 +945,16 @@ function blockAttributeToIndex(
   if (attr.name !== "index" && attr.name !== "unique" && attr.name !== "id") {
     return null;
   }
-  const fields = readArrayArg(attr);
+  const fields = blockFieldsOf(attr);
   if (fields === null) {
     return null;
   }
   return { fields, unique: attr.name !== "index" };
+}
+
+/** The fields `@@id([a, b])` lists, also spelled `@@id(fields: [a, b])`. */
+function blockFieldsOf(attr: PrismaAttribute): string[] | null {
+  return readArrayArg(attr) ?? readKeyedArrayArg(attr, "fields");
 }
 
 function readArrayArg(attr: PrismaAttribute): string[] | null {
