@@ -164,6 +164,24 @@ describe("runsIn", () => {
     expect(runsIn(code("src/api/other.ts"), scope, new Map())).toBe(false);
   });
 
+  it("tells a sibling package's file from the run's own file at the same path", () => {
+    const inProject = (workspace: string, file: string): BehavioralSummary => {
+      const one = code(file);
+      return { ...one, location: { ...one.location, workspace } };
+    };
+    const scope: UnitScope = {
+      unit: undefined,
+      closure: new Set(["@acme/shared::src/log.ts"]),
+    };
+
+    expect(
+      runsIn(inProject("@acme/shared", "src/log.ts"), scope, new Map()),
+    ).toBe(true);
+    expect(runsIn(inProject("@acme/api", "src/log.ts"), scope, new Map())).toBe(
+      false,
+    );
+  });
+
   it("falls back to the directory when nothing else says", () => {
     expect(
       runsIn(code("src/api/other.ts"), scopeOf("src/api"), new Map()),
