@@ -1,7 +1,7 @@
 {
   "name": "@suss/contract-prisma",
   "exports": 4,
-  "internal": 27,
-  "consumers": 3,
+  "internal": 47,
+  "consumers": 7,
   "unfollowedCalls": 0
 }
