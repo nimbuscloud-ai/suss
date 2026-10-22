@@ -410,10 +410,12 @@ describe("railsSchemaFileToSummaries", () => {
     ]);
   });
 
-  it("labels each summary with the file's path from the working directory", async () => {
+  it("labels each summary with the file's path from the project root", async () => {
     const rb = path.join(dir, "schema.rb");
-    const [summary] = await railsSchemaFileToSummaries(rb);
-    expect(summary?.location.file).toBe(path.relative(process.cwd(), rb));
+    const [summary] = await railsSchemaFileToSummaries(rb, {
+      projectRoot: path.dirname(dir),
+    });
+    expect(summary?.location.file).toBe(`${path.basename(dir)}/schema.rb`);
   });
 
   it("throws when the file does not exist", async () => {

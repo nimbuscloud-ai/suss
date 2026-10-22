@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { preloadRubyGrammar } from "@suss/adapter-ruby";
+import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 
 import { tablesInSchemaRb } from "./schemaRb.js";
 import { tablesInStructureSql } from "./structureSql.js";
@@ -37,6 +38,11 @@ export interface RailsSchemaOptions {
    * grammar rejects. Without it, each goes to stderr.
    */
   warnings?: string[];
+}
+
+export interface RailsSchemaFileOptions extends RailsSchemaOptions {
+  /** Absolute. The directory the dump's path is measured from. */
+  projectRoot?: string;
 }
 
 /** Converts the text of a `db/schema.rb`. */
@@ -71,15 +77,18 @@ export function structureSqlToSummaries(
  */
 export async function railsSchemaFileToSummaries(
   file: string,
-  options: RailsSchemaOptions = {},
+  options: RailsSchemaFileOptions = {},
 ): Promise<BehavioralSummary[]> {
   if (!fs.existsSync(file)) {
     throw new Error(`Rails schema not found: ${file}`);
   }
   const text = fs.readFileSync(file, "utf8");
+  const { projectRoot, ...rest } = options;
   const labelled = {
-    ...options,
-    source: options.source ?? path.relative(process.cwd(), file),
+    ...rest,
+    source:
+      options.source ??
+      pathInProject(file, projectRoot ?? defaultProjectRoot(file)),
   };
   return path.extname(file) === ".sql"
     ? structureSqlToSummaries(text, labelled)

@@ -144,6 +144,7 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     ]);
     return reader.railsSchemaFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
+      projectRoot: options.projectRoot,
       storageSystem: railsEngineOf(
         specPath,
         activerecord.storageSystemFromDatabaseYml,
