@@ -23,10 +23,13 @@ import {
   summaryIdFromParts,
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
-import { pathInProject } from "@suss/behavioral-ir/files";
+import {
+  namedPackageDirAbove,
+  pathInProject,
+  projectNameOf,
+} from "@suss/behavioral-ir/files";
 
 import { findNearestTsconfig } from "./bootstrap/noTsconfigProject.js";
-import { namedPackageDirAbove, packageNameAt } from "./packageExports.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -56,15 +59,7 @@ export function workspaceRootFor(anchor: string): string {
  * the folder, which is at least what somebody typed.
  */
 export function workspaceNameFor(root: string | undefined): string | null {
-  if (root === undefined) {
-    return null;
-  }
-  const dir = namedPackageDirAbove(root);
-  if (dir !== null) {
-    return packageNameAt(dir);
-  }
-  const folder = path.basename(path.resolve(root));
-  return folder.length > 0 ? folder : null;
+  return root === undefined ? null : projectNameOf(root);
 }
 
 /**

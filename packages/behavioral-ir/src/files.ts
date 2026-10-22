@@ -17,6 +17,9 @@ export {
 export {
   defaultProjectRoot,
   documentSourceLabel,
+  namedPackageDirAbove,
+  packageNameAt,
   pathInProject,
+  projectNameOf,
 } from "./projectPath.js";
 export { readSummaryFile, writeSummaryFile } from "./summaryFile.js";

@@ -48,6 +48,55 @@ export function documentSourceLabel(
 }
 
 /**
+ * What the project a folder is in calls itself: the name in the nearest
+ * package.json at or above it that has one, which is what a sibling
+ * package imports it by. A project without one is called by its folder.
+ */
+export function projectNameOf(dir: string): string | null {
+  const named = namedPackageDirAbove(dir);
+  if (named !== null) {
+    return packageNameAt(named);
+  }
+  const folder = path.basename(path.resolve(dir));
+  return folder.length > 0 ? folder : null;
+}
+
+/**
+ * The nearest directory at or above `start` whose package.json has a
+ * name. A built `dist/package.json` that only sets `type` is skipped,
+ * so a declaration file under `dist/` resolves to the package that
+ * built it.
+ */
+export function namedPackageDirAbove(start: string): string | null {
+  let at = path.resolve(start);
+  for (let up = 0; up < 12; up += 1) {
+    if (packageNameAt(at) !== null) {
+      return at;
+    }
+    const parent = path.dirname(at);
+    if (parent === at) {
+      break;
+    }
+    at = parent;
+  }
+  return null;
+}
+
+export function packageNameAt(dir: string): string | null {
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(dir, "package.json"), "utf8"),
+    ) as { name?: unknown };
+    if (typeof manifest.name === "string" && manifest.name.length > 0) {
+      return manifest.name;
+    }
+  } catch {
+    // Nothing here, or nothing readable.
+  }
+  return null;
+}
+
+/**
  * The nearest ancestor with a `.git` entry, which a linked worktree
  * writes as a file. A repository vendored inside another is its own root.
  */

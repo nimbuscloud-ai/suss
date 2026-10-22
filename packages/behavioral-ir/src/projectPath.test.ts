@@ -11,6 +11,7 @@ import {
   defaultProjectRoot,
   documentSourceLabel,
   pathInProject,
+  projectNameOf,
 } from "./projectPath.js";
 
 const made: string[] = [];
@@ -142,5 +143,28 @@ describe("defaultProjectRoot", () => {
     const file = write(outside, "infra/template.yaml");
 
     expect(defaultProjectRoot(file)).toBe(process.cwd());
+  });
+});
+
+describe("projectNameOf", () => {
+  it("is the name in the nearest package.json that has one", () => {
+    const root = folder();
+    fs.writeFileSync(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "@acme/api" }),
+    );
+    fs.mkdirSync(path.join(root, "infra", "dist"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "infra", "dist", "package.json"),
+      JSON.stringify({ type: "module" }),
+    );
+
+    expect(projectNameOf(path.join(root, "infra", "dist"))).toBe("@acme/api");
+  });
+
+  it("is the folder's own name when no package.json gives one", () => {
+    const root = folder();
+
+    expect(projectNameOf(root)).toBe(path.basename(root));
   });
 });
