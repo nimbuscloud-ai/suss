@@ -581,6 +581,65 @@ describe("checkStorage", () => {
     );
   });
 
+  it("counts a column a query filters on as read, on a write as well as a read", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "ResetToken",
+        fields: [
+          { name: "token" },
+          { name: "expires" },
+          { name: "issuedBy" },
+          { name: "note" },
+        ],
+      }),
+      makeAccessSummary({
+        name: "issueToken",
+        file: "src/issueToken.ts",
+        accesses: [
+          {
+            container: "ResetToken",
+            kind: "write",
+            fields: ["token", "expires", "issuedBy", "note"],
+          },
+        ],
+      }),
+      makeAccessSummary({
+        name: "redeemToken",
+        file: "src/redeemToken.ts",
+        accesses: [
+          {
+            container: "ResetToken",
+            kind: "read",
+            fields: ["token"],
+            selector: ["token", "expires"],
+          },
+        ],
+      }),
+      makeAccessSummary({
+        name: "revokeTokens",
+        file: "src/revokeTokens.ts",
+        // deleteMany({ where: { issuedBy } }) picks rows by issuedBy
+        accesses: [
+          {
+            container: "ResetToken",
+            kind: "write",
+            fields: ["*"],
+            selector: ["issuedBy"],
+          },
+        ],
+      }),
+    ]);
+    const writeOnly = findings.filter(
+      (f) => f.kind === "boundaryFieldUnused" && f.aspect === "read",
+    );
+    expect(writeOnly.map((f) => f.description)).toEqual([
+      expect.stringContaining('ResetToken declares "note"'),
+    ]);
+    expect(writeOnly[0].description).toContain(
+      "only when a query selects it or filters on it",
+    );
+  });
+
   it("suppresses unused-column checks when ANY caller uses default-shape reads", () => {
     const findings = checkStorage([
       makeProvider({

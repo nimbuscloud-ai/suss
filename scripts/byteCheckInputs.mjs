@@ -150,6 +150,10 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/axios/generated-sdk"),
     ...packs("axios"),
   ]),
+  fixture("body-field-guards", [
+    ...dir("fixtures/body-field-guards"),
+    ...packs("nextjs", "fetch"),
+  ]),
   fixture("cloudflare-worker-stores", [
     ...dir("fixtures/cloudflare-worker-stores"),
     ...packs(
@@ -415,6 +419,15 @@ export const FIXTURE_INPUTS = [
       withConfig("activerecord", POSTGRES),
     ),
   ]),
+  fixture("rails-status-symbols", [
+    ...lang("ruby"),
+    ...dir("fixtures/rails-status-symbols"),
+    ...packs("rails=fixtures/rails-status-symbols/suss.rails.json"),
+  ]),
+  fixture("rails-status-symbols/client", [
+    ...dir("fixtures/rails-status-symbols/client"),
+    ...packs("fetch"),
+  ]),
   fixture("rails-tenant", [
     ...lang("ruby"),
     ...dir("fixtures/rails-tenant"),
@@ -493,6 +506,27 @@ export const FIXTURE_INPUTS = [
     ...packs("aws-sqs", "node"),
   ]),
   fixture("split-routes", [...dir("fixtures/split-routes"), ...packs("hono")]),
+  contract(
+    "storage-filters",
+    "prisma",
+    "fixtures/storage-filters/schema.prisma",
+  ),
+  fixture("storage-filters/python", [
+    ...lang("python"),
+    ...dir("fixtures/storage-filters/python"),
+    ...packs(
+      "fastapi",
+      "sqlalchemy=fixtures/storage-filters/python/suss.sqlalchemy.json",
+    ),
+  ]),
+  fixture("storage-filters/ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/storage-filters/ruby"),
+    ...packs(
+      "rails=fixtures/storage-filters/ruby/suss.rails.json",
+      "activerecord=fixtures/storage-filters/ruby/suss.activerecord.json",
+    ),
+  ]),
   fixture("storage-wrapper", [
     ...dir("fixtures/storage-wrapper"),
     ...packs("aws-lambda", "aws-dynamodb"),

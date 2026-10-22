@@ -72,6 +72,7 @@ export const RACK_STATUS_CODE_NAMES: Record<string, number> = {
   variant_also_negotiates: 506,
   insufficient_storage: 507,
   loop_detected: 508,
+  bandwidth_limit_exceeded: 509,
   not_extended: 510,
   network_authentication_required: 511,
 };

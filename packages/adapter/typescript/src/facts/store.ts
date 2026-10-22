@@ -1177,6 +1177,52 @@ export class ResolutionStore {
   }
 
   /**
+   * Each expression a function's returns hand back, as written. Unlike
+   * `returnsCall`, a call into a library comes back too, since a caller
+   * asking this wants to see where the project's own code stops.
+   */
+  returnedValuesOf(func: Node): Node[] {
+    this.extractFile(func.getSourceFile());
+    const found = new Set<Node>();
+    for (const [, valueId] of this.db.lookup("returnsValue", 0, nodeId(func))) {
+      const value = this.table.byId.get(String(valueId));
+      if (value !== undefined) {
+        found.add(value);
+      }
+    }
+    return [...found];
+  }
+
+  /**
+   * Every call made through this parameter, in its own function or in
+   * a closure written inside it, which is how a wrapper runs the
+   * handler it was given.
+   */
+  callsThrough(parameter: Node): Node[] {
+    const found: Node[] = [];
+    for (const reference of this.referencesTo(parameter)) {
+      for (const [callId] of this.db.lookup("call", 1, nodeId(reference))) {
+        const call = this.table.byId.get(String(callId));
+        if (call !== undefined) {
+          found.push(call);
+        }
+      }
+    }
+    return found;
+  }
+
+  /** Every name the facts record as referring to this declaration. */
+  referencesTo(declaration: Node): Node[] {
+    this.extractFile(declaration.getSourceFile());
+    return this.db
+      .lookup("binds", 1, nodeId(declaration))
+      .flatMap(([referenceId]) => {
+        const reference = this.table.byId.get(String(referenceId));
+        return reference === undefined ? [] : [reference];
+      });
+  }
+
+  /**
    * What the reads of a local do with it, when `receiver` is a local a
    * function declares once as `construction`. Null for anything else,
    * such as a module-level value, which some other file may serve.

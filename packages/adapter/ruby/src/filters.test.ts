@@ -5,15 +5,19 @@ import { ancestryOf } from "./ancestry.js";
 import { NodeMap } from "./ast.js";
 import { createConstantFileCache } from "./constantPath.js";
 import {
+  controllerFilterChain,
   controllerFilters,
   filterCoversAction,
+  filterOf,
   filterReference,
   filterUnit,
+  unreadFilterReference,
 } from "./filters.js";
 import { parseRuby } from "./parser.js";
 import { walkDefinitions } from "./scope.js";
 
 import type { Ancestry, ReachedBody } from "./ancestry.js";
+import type { FilterLink } from "./filters.js";
 import type { ControllerActions } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
@@ -498,6 +502,42 @@ end
 `);
 
     expect(filters).toEqual([]);
+  });
+
+  it("keeps a filter whose method this run cannot see in the chain, in the order Rails runs it", async () => {
+    const chain = controllerFilterChain(
+      controllerActionsPattern(RAILS_LIKE),
+      await ancestryOfSource(`
+class OrdersController < ApplicationController
+  before_action :authenticate_user!
+  before_action :load_order, only: [:show]
+
+  def show
+  end
+
+  def load_order
+  end
+end
+`),
+    );
+
+    expect(
+      chain.map((link) =>
+        "read" in link
+          ? `read ${link.read.methodName}`
+          : `unread ${link.unread.methodName}`,
+      ),
+    ).toEqual(["unread authenticate_user!", "read load_order"]);
+    const unread = chain[0] as Extract<FilterLink, { unread: unknown }>;
+    expect(filterCoversAction(filterOf(chain[0] as FilterLink), "index")).toBe(
+      true,
+    );
+    expect(
+      unreadFilterReference(unread.unread, "app/controllers/orders.rb"),
+    ).toEqual({
+      file: "app/controllers/orders.rb",
+      name: "authenticate_user!",
+    });
   });
 
   it("keeps a filter a base class defines when the controller includes a module this run did not read", async () => {

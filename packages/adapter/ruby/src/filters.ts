@@ -70,6 +70,25 @@ export interface Rescues {
 
 const RESCUES_NOTHING: Rescues = { refs: [], someUnread: false };
 
+/**
+ * A filter whose method the run found nowhere, such as a gem's
+ * `authenticate_user!`. It still runs around the actions it covers, so
+ * they record it, with no summary behind it.
+ */
+export interface UnreadFilter {
+  readonly filter: RbControllerFilter;
+  readonly methodName: string;
+  /** Absolute path of the file the declaration is written in. */
+  readonly declaredIn: string;
+  readonly only: ReadonlySet<string> | null;
+  readonly except: ReadonlySet<string>;
+}
+
+/** One filter in the chain the library runs, read or not. */
+export type FilterLink =
+  | { readonly read: ControllerFilter }
+  | { readonly unread: UnreadFilter };
+
 /** A filter declaration, before its method has been looked up. */
 interface Declaration {
   readonly filter: RbControllerFilter;
@@ -77,6 +96,8 @@ interface Declaration {
   readonly only: ReadonlySet<string> | null;
   readonly except: ReadonlySet<string>;
   readonly rescues: Rescues;
+  /** Absolute path of the file the declaration is written in. */
+  readonly declaredIn: string;
   /** The block given in place of a method, read as the filter when no method by that name is found. */
   readonly inline?: InlineHandler;
 }
@@ -95,16 +116,27 @@ interface Skip {
   readonly actions: ReadonlySet<string> | null;
 }
 
-/**
- * Every filter a controller runs, in the order the library runs them:
- * as declared, ancestors first. The ones that run only after a raise
- * come last, in the order the library tries them, last declared first.
- */
+/** Every filter a controller runs whose method the run read, in the order `controllerFilterChain` gives. */
 export function controllerFilters(
   pattern: ControllerActions,
   ancestry: Ancestry,
   read: BodyReading = {},
 ): ControllerFilter[] {
+  return controllerFilterChain(pattern, ancestry, read).flatMap((link) =>
+    "read" in link ? [link.read] : [],
+  );
+}
+
+/**
+ * Every filter a controller runs, in the order the library runs them:
+ * as declared, ancestors first. The ones that run only after a raise
+ * come last, in the order the library tries them, last declared first.
+ */
+export function controllerFilterChain(
+  pattern: ControllerActions,
+  ancestry: Ancestry,
+  read: BodyReading = {},
+): FilterLink[] {
   const forms = pattern.filters ?? [];
   if (forms.length === 0) {
     return [];
@@ -159,28 +191,56 @@ export function controllerFilters(
     }
   }
 
-  const resolved: ControllerFilter[] = [];
-  for (const declaration of declared) {
-    const written = writtenAt(
+  const resolved = declared.map((declaration) =>
+    linkFor(
       declaration,
-      filterMethod(ancestry, declaration.methodName, read),
-    );
-    if (written === null) {
-      continue;
-    }
-    resolved.push({
+      writtenAt(
+        declaration,
+        filterMethod(ancestry, declaration.methodName, read),
+      ),
+    ),
+  );
+
+  return [
+    ...resolved.filter((one) => !runsAfterARaise(one)),
+    ...resolved.filter(runsAfterARaise).reverse(),
+  ];
+}
+
+/** The declaration as the chain keeps it: with its code when the run found it, or as an unread filter. */
+function linkFor(
+  declaration: Declaration,
+  written: WrittenAt | null,
+): FilterLink {
+  if (written === null) {
+    return {
+      unread: {
+        filter: declaration.filter,
+        methodName: declaration.methodName,
+        declaredIn: declaration.declaredIn,
+        only: declaration.only,
+        except: declaration.except,
+      },
+    };
+  }
+  return {
+    read: {
       filter: declaration.filter,
       ...written,
       only: declaration.only,
       except: declaration.except,
       rescues: declaration.rescues,
-    });
-  }
+    },
+  };
+}
 
-  return [
-    ...resolved.filter((one) => one.filter.onThrow !== true),
-    ...resolved.filter((one) => one.filter.onThrow === true).reverse(),
-  ];
+/** The declaration a link was made from, whichever kind it is. */
+export function filterOf(link: FilterLink): ControllerFilter | UnreadFilter {
+  return "read" in link ? link.read : link.unread;
+}
+
+function runsAfterARaise(link: FilterLink): boolean {
+  return filterOf(link).filter.onThrow === true;
 }
 
 type WrittenAt = Pick<
@@ -246,7 +306,7 @@ function filterMethod(
 
 /** Whether the library runs this filter for the given action. */
 export function filterCoversAction(
-  filter: ControllerFilter,
+  filter: Pick<ControllerFilter, "only" | "except">,
   actionName: string,
 ): boolean {
   if (filter.except.has(actionName)) {
@@ -277,6 +337,23 @@ export function filterReference(
             : {}),
           ...(caught.someUnread ? { mayCatchAny: true } : {}),
         }),
+  };
+}
+
+/**
+ * The reference an action records for a filter the run did not read. It
+ * goes by the method's name in the file that declares the filter, where
+ * no summary has that name, which is how the checker knows the filter
+ * was not read.
+ */
+export function unreadFilterReference(
+  filter: UnreadFilter,
+  displayPath: string,
+): WrapperReference {
+  return {
+    file: displayPath,
+    name: filter.methodName,
+    ...(filter.filter.onThrow === true ? { onThrow: true } : {}),
   };
 }
 
@@ -415,6 +492,7 @@ function declarationsOf(
     only,
     except: except ?? new Set<string>(),
     rescues,
+    declaredIn: declaredIn.file,
     ...(inline === undefined ? {} : { inline }),
   }));
 }

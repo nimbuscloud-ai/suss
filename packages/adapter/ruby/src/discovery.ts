@@ -41,10 +41,12 @@ import { createConstantFileCache } from "./constantPath.js";
 import { envReadEffects } from "./envReads.js";
 import { ExceptionReader } from "./exceptionClasses.js";
 import {
-  controllerFilters,
+  controllerFilterChain,
   filterCoversAction,
+  filterOf,
   filterReference,
   filterUnit,
+  unreadFilterReference,
 } from "./filters.js";
 import { EVERY_ARGLESS_CALL, invocationEffects } from "./paths/effects.js";
 import {
@@ -99,7 +101,7 @@ import type { ClientCallOptions } from "./clientCalls.js";
 import type { ConstantFileCache } from "./constantPath.js";
 import type { DynamicNames } from "./defineMethod.js";
 import type { ExceptionClass } from "./exceptionClasses.js";
-import type { ControllerFilter } from "./filters.js";
+import type { ControllerFilter, FilterLink } from "./filters.js";
 import type {
   ControllerActions,
   ControllerRoute,
@@ -478,11 +480,12 @@ async function controllerActionUnits(
     return [];
   }
 
-  const filters = controllerFilters(pattern, ancestry, {
+  const chain = controllerFilterChain(pattern, ancestry, {
     facts: options.facts,
     bodyBlocks: options.bodyBlocks,
     dynamicNames: options.dynamicNames,
   });
+  const filters = chain.flatMap((link) => ("read" in link ? [link.read] : []));
   const units: RawCodeStructure[] = [];
   const actions = controllerActions(
     pattern,
@@ -551,21 +554,26 @@ async function controllerActionUnits(
     });
   }
 
+  const displayPath = (file: string): string =>
+    options.displayPathOf?.(file) ?? file;
+  const referenceTo = (link: FilterLink): WrapperReference =>
+    "read" in link
+      ? filterReference(
+          link.read,
+          displayPath(link.read.file),
+          caught.get(link.read),
+        )
+      : unreadFilterReference(link.unread, displayPath(link.unread.declaredIn));
+
   const emitAction = async (
     actionName: string,
     method: RbNode,
     block: ReachedBody,
     routes: readonly ControllerRoute[],
   ) => {
-    const around = filters
-      .filter((filter) => filterCoversAction(filter, actionName))
-      .map((filter) =>
-        filterReference(
-          filter,
-          options.displayPathOf?.(filter.file) ?? filter.file,
-          caught.get(filter),
-        ),
-      );
+    const around = chain
+      .filter((link) => filterCoversAction(filterOf(link), actionName))
+      .map((link) => referenceTo(link));
     const raises: RaisesRead = {
       classes: await raisedClasses(method, block.info.bodyNesting, exceptions),
       handlers: handlersAround(actionName),

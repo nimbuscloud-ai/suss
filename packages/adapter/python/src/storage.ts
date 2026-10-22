@@ -409,15 +409,54 @@ export interface SlotValue {
   value: PyNode;
 }
 
-/** What the calls after the root were given to pick rows by. A call that supplies values is not one of them. */
-function selectorOf(chain: Chain, valueMethods: readonly string[]): string[] {
+/**
+ * What the calls after the root were given to pick rows by. A call that
+ * supplies values is not one of them. A column of the chain's own model
+ * picks rows whatever it is compared with, so `filter(Token.expires >=
+ * now)` picks by `expires` though it states no value for it.
+ */
+function selectorOf(
+  chain: Chain,
+  valueMethods: readonly string[],
+  model: string | null,
+): string[] {
+  const picking = laterCalls(chain).filter(
+    (call) => !valueMethods.includes(methodNameOf(call)),
+  );
   return [
-    ...new Set(
-      laterCalls(chain)
-        .filter((call) => !valueMethods.includes(methodNameOf(call)))
-        .flatMap((call) => pickedBy(call).map((one) => one.name)),
-    ),
+    ...new Set([
+      ...picking.flatMap((call) => pickedBy(call).map((one) => one.name)),
+      ...(model === null
+        ? []
+        : picking.flatMap((call) => columnsComparedBy(call, model))),
+    ]),
   ];
+}
+
+/** The calls that join two or more tests into one condition. */
+const COMBINED_TESTS = ["and_", "or_", "not_"];
+
+/** The columns of `model` a call's arguments compare with anything. */
+function columnsComparedBy(call: PyNode, model: string): string[] {
+  const args = field(call, "arguments");
+  return (args === null ? [] : children(args)).flatMap((argument) =>
+    columnsCompared(argument, model),
+  );
+}
+
+/** The columns of `model` one condition compares, with `and_`, `or_` and `not_` taken apart. */
+function columnsCompared(node: PyNode, model: string): string[] {
+  if (node.type === "call" && COMBINED_TESTS.includes(methodNameOf(node))) {
+    return columnsComparedBy(node, model);
+  }
+  if (node.type !== "comparison_operator") {
+    return [];
+  }
+  return children(node).flatMap((side) => {
+    const object = side.type === "attribute" ? field(side, "object") : null;
+    const column = object?.text === model ? field(side, "attribute") : null;
+    return column === null ? [] : [column.text];
+  });
 }
 
 /** The calls whose first argument says which table a statement reads when `select(func.count())` did not. */
@@ -539,14 +578,15 @@ function effectFor(
   options: StorageOptions,
 ): Effect {
   const valueMethods = pattern.valueMethods ?? [];
-  const picked = selectorOf(chain, valueMethods);
+  const model = modelOf(chain, options);
+  const picked = selectorOf(chain, valueMethods, model);
   const effect: Effect = {
     type: "interaction",
     binding: storageBinding({
       recognition: "python-storage",
       storageSystem: pattern.storageSystem,
       scope: "default",
-      container: modelOf(chain, options),
+      container: model,
     }),
     callee: chain.last.text,
     interaction: {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { withWrapperMetadata, wrapperIndex } from "@suss/behavioral-ir";
+
 import {
   consumer,
   opaqueResponse,
@@ -139,6 +141,64 @@ describe("checkConsumerSatisfaction", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].kind).toBe("lowConfidence");
     expect(findings[0].severity).toBe("info");
+  });
+
+  describe("a provider behind a wrapper", () => {
+    const AXIOM = { file: "lib/axiom.ts", name: "withAxiom" };
+    const routed = {
+      ...provider("getUser", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      metadata: withWrapperMetadata(undefined, { applied: [AXIOM] }),
+    };
+    const expecting = (status: number) =>
+      consumer("UserPage", [
+        transition(`ct-${status}`, {
+          conditions: [statusEq(status)],
+          output: { type: "return", value: null },
+        }),
+      ]);
+
+    it("leaves a failure branch unconfirmed when the run has no summary for the wrapper", () => {
+      const findings = checkConsumerSatisfaction(
+        routed,
+        expecting(401),
+        wrapperIndex([]),
+      );
+      expect(findings.map((f) => f.kind)).toEqual(["lowConfidence"]);
+      expect(findings[0]?.description).toContain("a wrapper around it");
+    });
+
+    it("still calls a success branch dead, since a wrapper that stops a request does not send one", () => {
+      const findings = checkConsumerSatisfaction(
+        routed,
+        expecting(204),
+        wrapperIndex([]),
+      );
+      expect(findings.map((f) => f.kind)).toEqual(["deadConsumerBranch"]);
+    });
+
+    it("calls a failure branch dead when the wrapper was read and sends nothing of its own", () => {
+      const withAxiom = {
+        ...provider("withAxiom", [
+          transition("t-next", {
+            output: { type: "delegate", to: "handler" },
+            isDefault: true,
+          }),
+        ]),
+        location: {
+          file: AXIOM.file,
+          range: { start: 1, end: 9 },
+          exportName: null,
+        },
+      };
+      const findings = checkConsumerSatisfaction(
+        routed,
+        expecting(401),
+        wrapperIndex([withAxiom]),
+      );
+      expect(findings.map((f) => f.kind)).toEqual(["deadConsumerBranch"]);
+    });
   });
 
   it("emits one finding per unmatched expected status", () => {

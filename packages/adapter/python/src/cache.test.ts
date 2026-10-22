@@ -504,6 +504,55 @@ describe("extractPythonProject's on-disk cache", () => {
       },
     );
 
+    it("gives what a run without the cache gives for a route behind a project decorator, after another file changes", async () => {
+      const files = shopProject();
+      // The decorator's file reads the helpers through a wildcard, so a
+      // change there reads it again while the route's file is replayed.
+      write(
+        "app/auth.py",
+        [
+          "from fastapi import HTTPException",
+          "from app.helpers import *",
+          "",
+          "",
+          "def require_admin(fn):",
+          "    def wrapper(*args, **kwargs):",
+          "        if kwargs.get('token') != 'admin':",
+          "            raise HTTPException(status_code=403)",
+          "        return fn(*args, **kwargs)",
+          "    return wrapper",
+          "",
+        ].join("\n"),
+      );
+      write(
+        "app/routes/admin.py",
+        [
+          "from fastapi import APIRouter",
+          "from app.auth import require_admin",
+          "",
+          'router = APIRouter(prefix="/admin")',
+          "",
+          "",
+          '@router.get("/stats")',
+          "@require_admin",
+          "def stats(token: str):",
+          "    return []",
+          "",
+        ].join("\n"),
+      );
+      const withAuth = findPythonFiles(tmpDir);
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(withAuth, diagnostics);
+      write("app/helpers.py", "def unrelated():\n    return 2\n");
+
+      const { cached, cold } = await bothRuns(withAuth, diagnostics);
+
+      expect(before.cold).toContain("require_admin(fn)");
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+      expect(files.length).toBeLessThan(withAuth.length);
+    });
+
     it("hits after a file is written again with the same content", async () => {
       const files = shopProject();
       const diagnostics: CacheDiagnostic[] = [];

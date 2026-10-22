@@ -208,6 +208,228 @@ describe("checkProviderCoverage", () => {
     expect(findings[0].description).toContain("404");
   });
 
+  describe("an arm for a field only a success can make truthy", () => {
+    const bodyRead = (field: string): ValueRef => ({
+      type: "dependency",
+      name: "res",
+      accessChain: ["body", field],
+    });
+    const missing = (subject: ValueRef): Predicate => ({
+      type: "negation",
+      operand: { type: "truthinessCheck", subject, negated: false },
+    });
+    const faviconProvider = (
+      failing: TypeShape,
+      succeeding: TypeShape = recordBody("exists", "url"),
+    ): BehavioralSummary =>
+      provider("checkFavicon", [
+        transition("t-400", { output: response(400, recordBody("error")) }),
+        transition("t-500", { output: response(500, failing) }),
+        transition("t-200", {
+          output: response(200, succeeding),
+          isDefault: true,
+        }),
+        transition("t-throw", {
+          output: { type: "throw", exceptionType: "Error", message: null },
+        }),
+      ]);
+    const existsFalse: TypeShape = {
+      type: "record",
+      properties: {
+        exists: { type: "literal", value: false },
+        error: { type: "text" },
+      },
+    };
+    // `if (data.exists) setLogo(data.url) else log(...)`, with the
+    // else's call written only when the test passes, or left out.
+    const elseArm = (subject: ValueRef, acts: boolean): Transition => ({
+      ...transition("ct-else", {
+        conditions: [missing(subject)],
+        output: { type: "return", value: null },
+      }),
+      effects: acts
+        ? [
+            {
+              type: "invocation",
+              callee: "log",
+              args: [],
+              async: false,
+              preconditions: [missing(subject)],
+            },
+          ]
+        : [],
+    });
+    const faviconConsumer = (arm: Transition): BehavioralSummary =>
+      consumer("CreateWorkspaceForm", [
+        transition("ct-exists", {
+          conditions: [bodyFieldTruthy("exists")],
+          output: { type: "return", value: null },
+        }),
+        arm,
+        transition("ct-default", {
+          output: { type: "return", value: null },
+          isDefault: true,
+        }),
+      ]);
+    const statuses = (findings: ReturnType<typeof checkProviderCoverage>) =>
+      findings
+        .filter((f) => f.kind === "unhandledProviderCase")
+        .map((f) => /status (\d+)/.exec(f.description)?.[1]);
+
+    it("counts the else for a body that lacks the field or sends it as false", () => {
+      const findings = checkProviderCoverage(
+        faviconProvider(existsFalse),
+        faviconConsumer(elseArm(bodyRead("exists"), true)),
+      );
+      expect(statuses(findings)).toEqual([]);
+    });
+
+    it("still reports both when the code does nothing on the falsy path", () => {
+      const findings = checkProviderCoverage(
+        faviconProvider(existsFalse),
+        faviconConsumer(elseArm(bodyRead("exists"), false)),
+      );
+      expect(statuses(findings)).toEqual(["400", "500"]);
+    });
+
+    it("still reports a failure whose body may send the field as true", () => {
+      const findings = checkProviderCoverage(
+        faviconProvider(recordBody("exists", "error")),
+        faviconConsumer(elseArm(bodyRead("exists"), true)),
+      );
+      expect(statuses(findings)).toEqual(["500"]);
+    });
+
+    it("still reports when the field tested is not read off the body", () => {
+      const session: ValueRef = {
+        type: "dependency",
+        name: "session",
+        accessChain: ["user", "exists"],
+      };
+      const findings = checkProviderCoverage(
+        faviconProvider(existsFalse),
+        faviconConsumer(elseArm(session, true)),
+      );
+      expect(statuses(findings)).toEqual(["400", "500"]);
+    });
+
+    const falsyExists = (exists: TypeShape): TypeShape => ({
+      type: "record",
+      properties: { exists, error: { type: "text" } },
+    });
+    it.each<[string, TypeShape, string[]]>([
+      ["null", falsyExists({ type: "null" }), []],
+      [
+        "false or undefined",
+        falsyExists({
+          type: "union",
+          variants: [{ type: "literal", value: false }, { type: "undefined" }],
+        }),
+        [],
+      ],
+      [
+        "a union of bodies that each leave it falsy",
+        { type: "union", variants: [recordBody("error"), existsFalse] },
+        [],
+      ],
+      ["text, which may say anything", { type: "text" }, ["500"]],
+    ])("reads a 500 that sends %s", (_label, failing, reported) => {
+      const findings = checkProviderCoverage(
+        faviconProvider(failing),
+        faviconConsumer(elseArm(bodyRead("exists"), true)),
+      );
+      expect(statuses(findings)).toEqual(reported);
+    });
+
+    const fromBody: ValueRef = {
+      type: "dependency",
+      name: "res",
+      accessChain: ["body"],
+    };
+    it.each<[string, ValueRef, string[]]>([
+      [
+        "a destructured field",
+        {
+          type: "derived",
+          from: fromBody,
+          derivation: { type: "destructured", field: "exists" },
+        },
+        [],
+      ],
+      [
+        "an input's field",
+        { type: "input", inputRef: "res", path: ["body", "exists"] },
+        [],
+      ],
+      [
+        "a method's result",
+        {
+          type: "derived",
+          from: fromBody,
+          derivation: { type: "methodCall", method: "exists", args: [] },
+        },
+        ["400", "500"],
+      ],
+      ["a literal", { type: "literal", value: "exists" }, ["400", "500"]],
+    ])("reads %s as the field tested", (_label, subject, reported) => {
+      const findings = checkProviderCoverage(
+        faviconProvider(existsFalse),
+        faviconConsumer(elseArm(subject, true)),
+      );
+      expect(statuses(findings)).toEqual(reported);
+    });
+
+    it("counts an arm that throws on the falsy path", () => {
+      const throwing = transition("ct-else", {
+        conditions: [
+          {
+            type: "truthinessCheck",
+            subject: bodyRead("exists"),
+            negated: true,
+          },
+        ],
+        output: { type: "throw", exceptionType: "Error", message: null },
+      });
+      const findings = checkProviderCoverage(
+        faviconProvider(existsFalse),
+        faviconConsumer(throwing),
+      );
+      expect(statuses(findings)).toEqual([]);
+    });
+
+    it("still reports when the arm also tests another body field", () => {
+      const arm = elseArm(bodyRead("exists"), true);
+      const findings = checkProviderCoverage(
+        faviconProvider(existsFalse),
+        faviconConsumer({
+          ...arm,
+          conditions: [...arm.conditions, bodyFieldTruthy("url")],
+        }),
+      );
+      expect(statuses(findings)).toEqual(["400", "500"]);
+    });
+
+    it("still reports a status the arm's own status guard leaves out", () => {
+      const arm = elseArm(bodyRead("exists"), true);
+      const findings = checkProviderCoverage(
+        faviconProvider(existsFalse),
+        faviconConsumer({
+          ...arm,
+          conditions: [...arm.conditions, statusEq(400)],
+        }),
+      );
+      expect(statuses(findings)).toEqual(["500"]);
+    });
+
+    it("still reports when no 2xx body sends the field", () => {
+      const findings = checkProviderCoverage(
+        faviconProvider(recordBody("error"), recordBody("url")),
+        faviconConsumer(elseArm(bodyRead("exists"), true)),
+      );
+      expect(statuses(findings)).toEqual(["400", "500"]);
+    });
+  });
+
   it("counts a catch when the client throws on a non-2xx", () => {
     const p = provider("getUser", [
       transition("t-404", { output: response(404) }),

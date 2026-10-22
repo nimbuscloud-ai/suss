@@ -41,12 +41,28 @@ export interface StoredUnit {
 }
 
 /** A wrapper a file's routes registered, which a replay registers again in the same order. */
-export interface StoredRegistration {
+export type StoredRegistration =
+  | StoredFormRegistration
+  | StoredClosureRegistration;
+
+/** A wrapper a pack's form registered. */
+export interface StoredFormRegistration {
   readonly key: string;
   readonly name: string;
   readonly exportPath: string[];
   /** Where the form is declared: the pack, its pattern and the form, by position. */
   readonly form: readonly [number, number, number];
+}
+
+/** The closure a project's decorator hands back, read with a route's pattern. */
+export interface StoredClosureRegistration {
+  readonly key: string;
+  readonly name: string;
+  readonly exportPath: string[];
+  /** The route's pattern, as `PackPositions.idOf` gives it. */
+  readonly pattern: string;
+  /** The decorator's parameter the closure calls to run the route's function. */
+  readonly continuation: string;
 }
 
 /** A file's load-time unit. */
@@ -152,6 +168,11 @@ export class PackPositions {
   patternOf(id: string): PythonDiscoveryPattern | undefined {
     const [packAt, patternAt] = id.split("/").map(Number);
     return this.packs[packAt ?? -1]?.discovery[patternAt ?? -1];
+  }
+
+  packOf(id: string): PythonPack | undefined {
+    const [packAt] = id.split("/").map(Number);
+    return this.packs[packAt ?? -1];
   }
 
   formAt(at: readonly [number, number, number]): FormOf | undefined {

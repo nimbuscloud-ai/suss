@@ -547,6 +547,144 @@ describe("FastAPI wrappers", () => {
   });
 });
 
+describe("decorators written on a route's function", () => {
+  const ROUTES = [
+    "from functools import wraps",
+    "from fastapi import FastAPI, HTTPException",
+    "from slowapi import Limiter",
+    "",
+    "app = FastAPI()",
+    "limiter = Limiter(key_func=lambda request: 'caller')",
+    "",
+    "def require_admin(fn):",
+    "    @wraps(fn)",
+    "    async def wrapper(*args, **kwargs):",
+    "        if kwargs.get('token') != 'admin':",
+    "            raise HTTPException(status_code=403)",
+    "        return await fn(*args, **kwargs)",
+    "    return wrapper",
+    "",
+    "@limiter.limit('5/minute')",
+    "@app.get('/above')",
+    "async def above(token: str):",
+    "    return {'ok': True}",
+    "",
+    "@app.get('/limited')",
+    "@limiter.limit('5/minute')",
+    "async def limited(token: str):",
+    "    return {'ok': True}",
+    "",
+    "@app.get('/admin')",
+    "@require_admin",
+    "async def admin(token: str):",
+    "    return {'admin': True}",
+    "",
+  ].join("\n");
+
+  it("records a library's decorator below the route's as a layer the run did not read", async () => {
+    const summaries = await extractWritten({ "app/main.py": ROUTES });
+
+    expect(wrappersOf(routeFor(summaries, "GET", "/limited"))).toEqual({
+      applied: [{ file: "slowapi", name: "limiter.limit" }],
+    });
+  });
+
+  it("composes the closure the project's own decorator hands back into the route", async () => {
+    const summaries = await extractWritten({ "app/main.py": ROUTES });
+    const admin = routeFor(summaries, "GET", "/admin");
+
+    expect(wrappersOf(admin)).toEqual({
+      applied: [{ file: "app/main.py", name: "require_admin(fn)" }],
+    });
+    expect(statusesOf(admin)).toEqual([403, 200]);
+    expect(fromOf(admin)).toEqual(["require_admin(fn)", undefined]);
+    const closure = summaries.find(
+      (one) => one.identity.name === "require_admin(fn)",
+    );
+    expect(
+      closure?.transitions.map((transition) => transition.output),
+    ).toContainEqual({ type: "delegate", to: "fn" });
+  });
+
+  it("records a project decorator whose closure keeps going after the call with no summary behind it", async () => {
+    const summaries = await extractWritten({
+      "app/main.py": [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "def logged(fn):",
+        "    async def wrapper(*args, **kwargs):",
+        "        result = await fn(*args, **kwargs)",
+        "        if result is None:",
+        "            return {'missing': True}",
+        "        return result",
+        "    return wrapper",
+        "",
+        "@app.get('/logged')",
+        "@logged",
+        "async def logged_route():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(wrappersOf(routeFor(summaries, "GET", "/logged"))).toEqual({
+      applied: [{ file: "app/main.py", name: "logged(fn)" }],
+    });
+    expect(summaries.some((one) => one.identity.name === "logged(fn)")).toBe(
+      false,
+    );
+  });
+
+  it("records a project decorator it cannot read through with no summary behind it", async () => {
+    const summaries = await extractWritten({
+      "app/main.py": [
+        "import functools",
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "def traced(fn):",
+        "    return functools.partial(fn)",
+        "",
+        "REGISTRY = []",
+        "",
+        "def registered(fn):",
+        "    REGISTRY.append(fn)",
+        "    return fn",
+        "",
+        "@app.get('/traced')",
+        "@traced",
+        "async def traced_route():",
+        "    return {'ok': True}",
+        "",
+        "@app.get('/registered')",
+        "@registered",
+        "async def registered_route():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(wrappersOf(routeFor(summaries, "GET", "/traced"))).toEqual({
+      applied: [{ file: "app/main.py", name: "traced(fn)" }],
+    });
+    expect(wrappersOf(routeFor(summaries, "GET", "/registered"))).toEqual({
+      applied: [{ file: "app/main.py", name: "registered(fn)" }],
+    });
+    expect(summaries.some((one) => one.identity.name === "traced(fn)")).toBe(
+      false,
+    );
+  });
+
+  it("leaves out a decorator above the route's, which wraps the function after the library has it", async () => {
+    const summaries = await extractWritten({ "app/main.py": ROUTES });
+
+    expect(wrappersOf(routeFor(summaries, "GET", "/above"))).toBeUndefined();
+  });
+});
+
 describe("flask-restx wrappers", () => {
   it("lists the app's before_request hook and the API's error handler", async () => {
     const summaries = await extract("wrapped-routes-flask", flaskRestxLike);

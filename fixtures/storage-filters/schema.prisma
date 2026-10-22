@@ -1,0 +1,15 @@
+// The table the Python and Ruby services both reach. Every column but
+// `note` is read: `token` by a select, `email` and `expires` only by the
+// filters that pick which rows a query reads or deletes.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ResetToken {
+  token   String   @id
+  email   String
+  expires DateTime
+  note    String?
+}

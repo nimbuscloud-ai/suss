@@ -1,4 +1,8 @@
-import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
+import {
+  summaryIdentifier,
+  summaryRef,
+  wrapperIndex,
+} from "@suss/behavioral-ir";
 import {
   displayLabel,
   exchangesHttpResponses,
@@ -34,6 +38,7 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   Finding,
+  WrapperIndex,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "./pairing/comparedPair.js";
 import type {
@@ -225,24 +230,29 @@ export type { GroundedName, Grounding } from "./storage/grounding.js";
 /**
  * Compare one provider with one consumer. Named types are put back into
  * the shapes first, because comparing two refs only compares their names.
+ * `wrappers` is the run's summaries by file and name, which says whether
+ * each wrapper around the provider was read. Without it, none counts as
+ * read.
  */
 export function checkPair(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
+  wrappers?: WrapperIndex,
 ): Finding[] {
   const spelledOut = summaryWithDefinitionsInlined(provider);
   const consuming = summaryWithDefinitionsInlined(consumer);
-  return checkSpelledOutPair(spelledOut, consuming);
+  return checkSpelledOutPair(spelledOut, consuming, wrappers);
 }
 
 function checkSpelledOutPair(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
+  wrappers: WrapperIndex | undefined,
 ): Finding[] {
   return findingPerConsumerPath([
     ...checkProviderCoverage(provider, consumer),
     ...checkResponseMisread(provider, consumer),
-    ...checkConsumerSatisfaction(provider, consumer),
+    ...checkConsumerSatisfaction(provider, consumer, wrappers),
     ...checkContractConsistency(provider, consumer),
     ...checkConsumerContract(provider, consumer),
     ...checkBodyCompatibility(provider, consumer),
@@ -337,12 +347,13 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
     ...restAmbiguous.map(twoServicesServeIt),
   ];
   const pairInfo: CheckAllResult["pairs"] = [];
+  const wrappers = wrapperIndex(summaries);
 
   // A pair that no check here compares is still listed, so a reader can
   // see it. The pass for its protocol reports the findings.
   for (const pair of restPairs) {
     if (pairIsCheckable(pair)) {
-      findings.push(...checkPair(pair.provider, pair.consumer));
+      findings.push(...checkPair(pair.provider, pair.consumer, wrappers));
     }
     pairInfo.push({
       key: pair.key,

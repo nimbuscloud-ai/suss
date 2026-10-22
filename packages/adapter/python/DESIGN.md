@@ -243,7 +243,7 @@ queryFunctions: ["select", "insert", "update", "delete"]
 
 For one of these the function itself is the operation, so `update(User).where(...).values(...)` is an update however the chain ends.
 
-`fields` comes from the columns a query spells out, `User.id` in `select(User.id, User.email)`, and from the keywords of a call the pack lists under `valueMethods`, `name` in `.values(name="x")`. `selector` comes from what every other call in the chain selects rows by: the keywords, `id` in `filter_by(id=user_id)`, and a model's column compared with `==`, `tenant_id` in `where(User.tenant_id == t)` or inside `and_(...)`. Raw SQL passed to `text` is read as its own effect, with the kind and table taken from the statement.
+`fields` comes from the columns a query spells out, `User.id` in `select(User.id, User.email)`, and from the keywords of a call the pack lists under `valueMethods`, `name` in `.values(name="x")`. `selector` comes from what every other call in the chain selects rows by: the keywords, `id` in `filter_by(id=user_id)`, and a model's column compared with `==`, `tenant_id` in `where(User.tenant_id == t)` or inside `and_(...)`. A column of the chain's own model compared any other way picks rows too, `expires` in `filter(Token.expires >= now)` or inside `or_(...)`, so it goes in `selector` the way a SQL `WHERE` column does. Only an `==` comparison says what value the column is given, so only those columns get a provenance slot. Raw SQL passed to `text` is read as its own effect, with the kind and table taken from the statement.
 
 The value each of those columns is given is recorded too, and the summary says where it came from. For `text`, a `:tenant` placeholder takes its value from `.bindparams(tenant=t)` on the statement or from the dictionary handed over beside it, `session.execute(stmt, {"tenant": t})`, and a `?` from its place in a tuple or list handed over the same way.
 
@@ -574,6 +574,17 @@ How the adapter reads a wrapper's body depends on the form:
 - A `decoratedWrapper` with `throwParam` (an exception handler) runs only for a request that raised. Its responses replace each of the route's paths that end in a `raise` the pack does not read as a response. A raised `HTTPException` or `abort` already has a status, so no handler applies to it.
 
 Wrappers run in the order the library runs them: middleware first, then dependencies from the app, the mounts and routers outermost first, and the route, then exception handlers over whatever raised. Two registrations of the same function are one wrapper.
+
+A decorator written on the route's function below the one that registers it wraps the function the library calls, so it runs inside everything registered on the way, and the route lists it there, outermost first:
+
+```python
+@app.get("/admin")
+@limiter.limit("5/minute")    # a library's: slowapi
+@require_admin                 # the project's own
+async def admin(token: str): ...
+```
+
+A decorator the packs read, such as the route's own or a namespace's `@ns.doc`, is left out, and so is one written above the route's, which wraps the function after the library has it. A library's decorator has no body in the run. The route lists it under its module, `slowapi`, and its name as written, `limiter.limit`, and no summary goes by that name, so the checker treats it as a wrapper it did not read. A project's own decorator that defines a closure and returns it, `def wrapper(*args, **kwargs)` then `return wrapper`, gets that closure as a unit named after the call, `require_admin(fn)`, when the closure returns what calling the decorator's parameter returns, `return fn(*args, **kwargs)`. The closure hands on there, so what it raises or returns before that call is composed into the route. A closure that keeps going after the call, `result = fn(...)` and then more code, can change what the route sends in ways the run does not follow. It goes by the same name with no summary behind it, and so does a project decorator written any other way.
 
 Not read yet:
 

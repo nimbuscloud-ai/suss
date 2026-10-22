@@ -15,6 +15,7 @@
   "src/discovery/importedCalls.ts": "declaredLocally",
   "src/discovery/jsxElementRoute.ts": "attributeValueOf, literalStringOf, unitsOfArrayElements",
   "src/discovery/namedExport.ts": "discoverNamedExports, defaultExportUnits",
+  "src/discovery/wrappedExport.ts": "namesBoundBy, which reads the names a parameter's destructuring pattern declares, a declaration and not a value",
   "src/discovery/packageExports.ts": "discoverPackageExports",
   "src/discovery/packageImport.ts": "couldBePackageLinked, methodComesFromSource",
   "src/discovery/registrationCall.ts": "discoverRegistrationCalls, routeChainOf, collectMethodsCalledOnCallResults, registrationSubjectsOf, discoverMountEdges, extractRouteInfoFromBinding",
