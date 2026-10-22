@@ -54,6 +54,9 @@ export interface TracedEdge {
   tableFromRequest?: boolean;
   /** How many spans showed this edge. */
   count: number;
+  /** Of those, how many ran while a template was rendering, and which templates. */
+  duringRender: number;
+  templates: string[];
   /** The first few spans that showed it. */
   evidence: Evidence[];
 }
@@ -175,25 +178,53 @@ function storageTargets(span: Span): TargetRead {
     "db.mongodb.collection",
     "db.cassandra.table",
   );
-  if (named !== undefined) {
-    return { targets: [{ kind: "storage", system, table: lastPart(named) }] };
-  }
   const statement = textAttribute(
     span.attributes,
     "db.query.text",
     "db.statement",
   );
   const dialect = SQL_DIALECTS[system];
-  if (statement === undefined || dialect === undefined) {
-    return { setAside: `a ${system} span with no table` };
-  }
-  const tables = tablesIn(statement, dialect);
+  const tables = tablesOfSpan(named, statement, dialect);
   if (tables.length === 0) {
-    return { setAside: `a ${system} statement with no table in it` };
+    return {
+      setAside:
+        statement === undefined
+          ? `a ${system} span with no table`
+          : `a ${system} statement with no table in it`,
+    };
+  }
+  const own = tables.filter((table) => !isCatalog(table));
+  if (own.length === 0) {
+    return { setAside: `a read of the ${system} catalog` };
   }
   return {
-    targets: tables.map((table) => ({ kind: "storage", system, table })),
+    targets: own.map((table) => ({
+      kind: "storage",
+      system,
+      table: lastPart(table),
+    })),
   };
+}
+
+function tablesOfSpan(
+  named: string | undefined,
+  statement: string | undefined,
+  dialect: string | undefined,
+): string[] {
+  if (named !== undefined) {
+    return [named];
+  }
+  if (statement === undefined || dialect === undefined) {
+    return [];
+  }
+  return tablesIn(statement, dialect);
+}
+
+// The database's own catalog, which schema introspection reads and application code never mentions.
+const CATALOG = /^(sqlite_|pg_)|(^|\.)(information_schema|pg_catalog)\./i;
+
+function isCatalog(table: string): boolean {
+  return CATALOG.test(table);
 }
 
 // A test run repeats a few hundred statements hundreds of thousands of times, and parsing is the slow part.
@@ -205,13 +236,30 @@ function tablesIn(statement: string, dialect: string): string[] {
   if (known !== undefined) {
     return known;
   }
+  // Python drivers write a bind as %(name)s or %s, which no SQL grammar reads.
+  const bound = statement.replace(/%\(\w+\)s|%s/g, "$1");
+  const named = commonTableExpressions(statement);
   const tables = [
     ...new Set(
-      readSqlAccess(statement, { dialect }).map((access) => access.table),
+      readSqlAccess(bound, { dialect })
+        .filter((access) => !named.has(access.table.toLowerCase()))
+        .map((access) => [...access.qualifier, access.table].join(".")),
     ),
   ];
   PARSED.set(key, tables);
   return tables;
+}
+
+// The parser reads a CTE declared inside a join's subquery as a table, so its name is dropped here.
+const CTE_NAME =
+  /(?:\bwith\s+(?:recursive\s+)?|,\s*)["`]?(\w+)["`]?\s+as\s*\(/gi;
+
+function commonTableExpressions(statement: string): Set<string> {
+  return new Set(
+    [...statement.matchAll(CTE_NAME)].map((match) =>
+      (match[1] ?? "").toLowerCase(),
+    ),
+  );
 }
 
 function lastPart(name: string): string {
@@ -291,20 +339,56 @@ function evidenceOf(span: Span): Evidence {
   };
 }
 
+/**
+ * The path segments a request filled into its route's parameters. When
+ * the route and the path have the same number of segments, those are
+ * the ones under a `:name`, `{name}` or `*`. Otherwise every segment
+ * the route does not spell out counts.
+ */
 function requestSegments(server: Span): Set<string> {
   const path =
     pathOnly(textAttribute(server.attributes, "url.path", "http.target")) ?? "";
-  return new Set(
-    path
-      .split("/")
-      .filter((segment) => segment !== "")
-      .map((segment) => {
-        try {
-          return decodeURIComponent(segment);
-        } catch {
-          return segment;
-        }
-      }),
+  const route = withoutOptionalFormat(
+    textAttribute(server.attributes, "http.route") ?? "",
+  );
+  const given = path
+    .split("/")
+    .filter((segment) => segment !== "")
+    .map(decoded);
+  const template = route.split("/").filter((segment) => segment !== "");
+  if (given.length === template.length) {
+    return new Set(
+      given.filter((_, index) => /[:{*]/.test(template[index] ?? "")),
+    );
+  }
+  const fixed = new Set(template.filter((segment) => !/[:{*(]/.test(segment)));
+  return new Set(given.filter((segment) => !fixed.has(segment)));
+}
+
+function decoded(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
+ * The template a span renders, when it is one: Rails' ActionView writes
+ * `render_template.action_view` with the file as `identifier`, and
+ * Python's Jinja2 instrumentation writes `jinja2.render`.
+ */
+function templateOf(span: Span): string | null {
+  if (!/^render_\w+\.action_view$|^jinja2\.render$|^render\b/.test(span.name)) {
+    return null;
+  }
+  return (
+    textAttribute(
+      span.attributes,
+      "identifier",
+      "jinja2.template_name",
+      "code.filepath",
+    ) ?? span.name
   );
 }
 
@@ -346,12 +430,16 @@ export function extractEdges(
     span.parentSpanId === null
       ? undefined
       : bySpan.get(`${span.traceId}/${span.parentSpanId}`);
-  const nearestServer = (span: Span): Span | undefined => {
+  const nearestServer = (
+    span: Span,
+  ): { server: Span; template: string | null } | undefined => {
     let at = parentOf(span);
+    let template: string | null = null;
     while (at !== undefined && at.kind !== "server") {
+      template ??= templateOf(at);
       at = parentOf(at);
     }
-    return at;
+    return at === undefined ? undefined : { server: at, template };
   };
 
   const edges = new Map<string, TracedEdge>();
@@ -380,11 +468,12 @@ export function extractEdges(
       if (result === null) {
         continue;
       }
-      const server = nearestServer(span);
-      if (server === undefined) {
+      const found = nearestServer(span);
+      if (found === undefined) {
         putAside("a reach outside any request", span);
         continue;
       }
+      const { server, template } = found;
       const entry = entryOf(server);
       if (entry === null) {
         putAside(
@@ -402,19 +491,23 @@ export function extractEdges(
         const key = `${entryKey(entry)} -> ${targetKey(target)}`;
         const fromRequest =
           target.kind === "storage" && segments.has(target.table);
-        const known = edges.get(key);
-        if (known === undefined) {
-          edges.set(key, {
-            entry,
-            target,
-            count: 1,
-            evidence: [evidenceOf(span)],
-            ...(fromRequest ? { tableFromRequest: true } : {}),
-          });
-          continue;
-        }
+        const known = edges.get(key) ?? {
+          entry,
+          target,
+          count: 0,
+          duringRender: 0,
+          templates: [],
+          evidence: [],
+        };
+        edges.set(key, known);
         if (fromRequest) {
           known.tableFromRequest = true;
+        }
+        if (template !== null) {
+          known.duringRender += 1;
+          if (!known.templates.includes(template)) {
+            known.templates.push(template);
+          }
         }
         known.count += 1;
         if (known.evidence.length < EVIDENCE_KEPT) {

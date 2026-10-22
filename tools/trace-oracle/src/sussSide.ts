@@ -72,8 +72,9 @@ function interactionBindings(summary: BehavioralSummary): BoundaryBinding[] {
   return found;
 }
 
-// A callee written with a computed member or a reflective send picks its function at run time.
-const COMPUTED_CALLEE = /\[|\bgetattr\(|\.(public_)?send\(|__send__/;
+// A callee called through a subscript, `TABLE[key](...)`, or a reflective send picks its function at run time.
+const COMPUTED_CALLEE =
+  /\]\s*\(|(^|[.\s])(getattr|public_send|send|__send__)(\(|$)/;
 
 // The two stops whose sentence says the call had more than one candidate.
 const SEVERAL_CANDIDATES =

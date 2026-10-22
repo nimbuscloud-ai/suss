@@ -8,14 +8,13 @@
  * The README explains what evidence each reason rests on.
  */
 
-import { displayLabel } from "@suss/behavioral-ir";
-
 import { agreement, SEMANTICS_FOR, sameStore, unsettled } from "./agreement.js";
 import { entryKey, targetKey } from "./edges.js";
 
 import type { BoundaryBinding } from "@suss/behavioral-ir";
 import type { Agreement } from "./agreement.js";
 import type { EdgeKind, RouteEntry, Target, TracedEdge } from "./edges.js";
+import type { SourceTree } from "./sourceTree.js";
 import type { Reach, RouteMatch, SussSide, Walk } from "./sussSide.js";
 
 export type MissReason =
@@ -48,6 +47,7 @@ export interface EdgeVerdict {
   /** The suss boundary that matched, and the calls `ask` says lead to it. */
   via?: { label: string; through: string[]; possible: boolean };
   reason?: MissReason;
+  otherKind?: OtherKind;
   detail?: string;
   /** The library the span came from, as its instrumentation scope says. */
   library: string;
@@ -65,6 +65,11 @@ export function scopeLibrary(scope: string): string {
   return tail === "" ? scope : tail.replace(/^[-._:]+/, "").toLowerCase();
 }
 
+/** The method a callee calls: `repo.findUser` and `self.find_user!` give `findUser` and `find_user!`. */
+function methodName(callee: string): string {
+  return callee.split(/[.:]/).pop()?.replace(/\(.*$/s, "").trim() ?? callee;
+}
+
 function firstFew(items: readonly string[], count = 3): string {
   const unique = [...new Set(items)];
   const shown = unique.slice(0, count).join(", ");
@@ -75,6 +80,7 @@ function firstFew(items: readonly string[], count = 3): string {
 
 interface MatchContext {
   side: SussSide;
+  tree: SourceTree;
   match: RouteMatch;
   reaches: Reach[];
   walk: Walk | null;
@@ -99,10 +105,22 @@ function found(
   return byName;
 }
 
-function reasonFor(
-  edge: TracedEdge,
-  context: MatchContext,
-): { reason: MissReason; detail: string } {
+/** The finer cause behind an `other`, so the report can count each one. */
+export type OtherKind = "template" | "implicitLoad" | "untouched";
+
+export const OTHER_LABEL: Record<OtherKind, string> = {
+  template: "ran inside a template, which suss does not read",
+  implicitLoad: "the ORM touched it on its own",
+  untouched: "nothing in the run touches it",
+};
+
+interface Classified {
+  reason: MissReason;
+  detail: string;
+  otherKind?: OtherKind;
+}
+
+function reasonFor(edge: TracedEdge, context: MatchContext): Classified {
   const target = edge.target;
   if (context.match.routes.length === 0) {
     return {
@@ -124,60 +142,94 @@ function reasonFor(
         "the request path gives the table, so only a hole can stand for it",
     };
   }
+  // Only a function that serves no route of its own can be the callee the walk missed.
+  const touchingTarget = context.side.touching.filter((entry) =>
+    entry.bindings.some((binding) => agreement(binding, target) !== null),
+  );
+  const callees = touchingTarget.filter(
+    (entry) => entry.unit.identity.boundaryBinding?.semantics.name !== "rest",
+  );
+  const elsewhere = callees.map(
+    (entry) => `${entry.unit.identity.name} (${entry.unit.location.file})`,
+  );
+  if (edge.duringRender === edge.count) {
+    return {
+      reason: "other",
+      otherKind: "template",
+      detail: `every span of it ran while ${firstFew(edge.templates.map((file) => context.tree.relative(file)))} rendered, and suss reads no template`,
+    };
+  }
+  const walk = context.walk;
+  // A stop counts against a unit only when it calls a method of that unit's name.
+  const touchingNames = new Set(
+    callees.map((entry) => entry.unit.identity.name),
+  );
+  const named = (call: { callee: string }): boolean =>
+    touchingNames.has(methodName(call.callee));
+  const dispatched = walk?.dispatched.filter(named) ?? [];
+  if (dispatched.length > 0) {
+    return {
+      reason: "dynamicDispatch",
+      detail: `the walk from the route reaches ${firstFew(dispatched.map((call) => call.callee))}, a call with more than one candidate, and ${firstFew(elsewhere)} touches ${targetKey(target)}`,
+    };
+  }
+  if (elsewhere.length > 0) {
+    const stops = walk?.unfollowed.filter(named) ?? [];
+    return {
+      reason: "wrapperOrFactory",
+      detail: `${firstFew(elsewhere)} touches ${targetKey(target)}, and no call chain from the route leads there${stops.length > 0 ? `; the walk stops at ${firstFew(stops.map((call) => call.callee))}` : ""}`,
+    };
+  }
+  // An access with no container, such as a commit, is on most routes, so it explains a miss only when no unit touches the target by name.
   const unsettledReach = context.reaches.find((reach) =>
     reach.bindings.some(
       (binding) =>
         sameStore(binding, target) && unsettled(binding, target.kind),
     ),
   );
-  if (unsettledReach !== undefined) {
+  if (unsettledReach !== undefined && touchingTarget.length === 0) {
     return {
       reason: "nameNotSettled",
-      detail: `the route reaches ${unsettledReach.label} with no settled name`,
+      detail: `no unit in the run touches ${targetKey(target)} by name, and the route reaches ${unsettledReach.label}, which has no settled name`,
     };
   }
-  const elsewhere = context.side.touching
-    .filter((entry) =>
-      entry.bindings.some((binding) => agreement(binding, target) !== null),
-    )
-    .map(
-      (entry) => `${entry.unit.identity.name} (${entry.unit.location.file})`,
-    );
-  const walk = context.walk;
-  if (
-    walk !== null &&
-    walk.dispatched.length > 0 &&
-    (elsewhere.length > 0 || walk.unfollowed.length === 0)
-  ) {
-    return {
-      reason: "dynamicDispatch",
-      detail: `the walk from the route picks a function at run time at ${firstFew(walk.dispatched.map((call) => call.callee))}${elsewhere.length > 0 ? `; ${firstFew(elsewhere)} touches ${targetKey(target)}` : ""}`,
-    };
-  }
-  if (elsewhere.length > 0) {
-    const stops =
-      walk === null ? [] : walk.unfollowed.map((call) => call.callee);
-    return {
-      reason: "wrapperOrFactory",
-      detail: `${firstFew(elsewhere)} touches ${targetKey(target)}, and no call chain from the route leads there${stops.length > 0 ? `; the walk stops at ${firstFew(stops)}` : ""}`,
-    };
-  }
-  if (walk !== null && walk.unfollowed.length > 0) {
-    return {
-      reason: "wrapperOrFactory",
-      detail: `nothing in the run touches ${targetKey(target)}, and the walk from the route stops at ${firstFew(walk.unfollowed.map((call) => call.callee))}`,
-    };
-  }
+  return otherVerdict(target, context, touchingTarget.length);
+}
+
+function otherVerdict(
+  target: Target,
+  context: MatchContext,
+  routesTouching: number,
+): Classified {
   const sameStoreReach = context.reaches.filter((reach) =>
-    reach.bindings.some((binding) => sameStore(binding, target)),
+    reach.bindings.some(
+      (binding) =>
+        sameStore(binding, target) && !unsettled(binding, target.kind),
+    ),
   );
+  const reached =
+    sameStoreReach.length > 0
+      ? `the route reaches ${firstFew(sameStoreReach.map((reach) => reach.label))} on this store, and never ${targetKey(target)}`
+      : "the route reaches nothing on this store by name";
+  if (routesTouching > 0) {
+    return {
+      reason: "other",
+      otherKind: "implicitLoad",
+      detail: `${reached}; only other routes touch ${targetKey(target)}, so the store likely touched it on its own, as an ORM cascade or a relationship load does`,
+    };
+  }
   return {
     reason: "other",
-    detail:
-      sameStoreReach.length > 0
-        ? `the route reaches ${firstFew(sameStoreReach.map((reach) => reach.label))} on this store, and never ${targetKey(target)}`
-        : `nothing in the run touches ${targetKey(target)}, and the walk from the route has no unfollowed call`,
+    otherKind: "untouched",
+    detail: `${reached}; nothing in the run touches ${targetKey(target)}, so the call that does is one no pack recognizes, such as raw SQL or a database trigger${stopsNote(context.walk)}`,
   };
+}
+
+function stopsNote(walk: Walk | null): string {
+  if (walk === null || walk.unfollowed.length === 0) {
+    return "";
+  }
+  return `; the walk also stops at ${firstFew(walk.unfollowed.map((call) => call.callee))}`;
 }
 
 function systemOf(target: Target): string {
@@ -192,6 +244,8 @@ function systemOf(target: Target): string {
 export interface MatchResult {
   verdicts: EdgeVerdict[];
   notExercised: NotExercised[];
+  /** Accesses with no container name on exercised routes, which no span can agree with. */
+  unnamedReaches: number;
   routesMatched: Map<string, RouteMatch>;
 }
 
@@ -199,6 +253,7 @@ export function matchEdges(
   side: SussSide,
   edges: readonly TracedEdge[],
   routes: ReadonlyArray<{ entry: RouteEntry; requests: number }>,
+  tree: SourceTree,
 ): MatchResult {
   const routesMatched = new Map<string, RouteMatch>();
   const requestsByRoute = new Map(
@@ -245,46 +300,63 @@ export function matchEdges(
     verdicts.push({
       ...base,
       found: false,
-      ...reasonFor(edge, { side, match, reaches, walk }),
+      ...reasonFor(edge, { side, tree, match, reaches, walk }),
     });
   }
+  const { named, unnamed } = notExercised(side, edges, routesMatched);
   return {
     verdicts,
-    notExercised: notExercised(side, edges, routesMatched),
+    notExercised: named,
+    unnamedReaches: unnamed,
     routesMatched,
   };
 }
 
-/** What suss says an exercised route reaches that no request in the trace reached. */
+/**
+ * What suss says an exercised route reaches that no request in the
+ * trace reached. An access with no container, such as a commit, can
+ * never agree with a span, so it is counted instead of listed.
+ */
 function notExercised(
   side: SussSide,
   edges: readonly TracedEdge[],
   routesMatched: ReadonlyMap<string, RouteMatch>,
-): NotExercised[] {
-  const found: NotExercised[] = [];
+): { named: NotExercised[]; unnamed: number } {
+  const named: NotExercised[] = [];
+  let unnamed = 0;
   for (const [route, match] of routesMatched) {
     const traced = edges.filter((edge) => entryKey(edge.entry) === route);
     const seen = new Set<string>();
     for (const reach of match.routes.flatMap((one) => side.reachOf(one))) {
-      const kinds = reach.bindings.filter(isReachKind);
+      const kinds = reach.bindings.filter(
+        (binding) => edgeKindOf(binding) !== undefined,
+      );
       if (kinds.length === 0 || seen.has(reach.label)) {
         continue;
       }
       seen.add(reach.label);
+      if (kinds.every((binding) => isUnnamed(binding))) {
+        unnamed += 1;
+        continue;
+      }
       const exercised = traced.some((edge) =>
         kinds.some((binding) => agreement(binding, edge.target) !== null),
       );
       if (!exercised) {
-        found.push({ route, boundary: reach.label });
+        named.push({ route, boundary: reach.label });
       }
     }
   }
-  return found;
+  return { named, unnamed };
 }
 
-function isReachKind(binding: BoundaryBinding): boolean {
-  return (
-    Object.values(SEMANTICS_FOR).includes(binding.semantics.name) &&
-    displayLabel(binding) !== ""
+function edgeKindOf(binding: BoundaryBinding): EdgeKind | undefined {
+  return (Object.keys(SEMANTICS_FOR) as EdgeKind[]).find(
+    (kind) => SEMANTICS_FOR[kind] === binding.semantics.name,
   );
+}
+
+function isUnnamed(binding: BoundaryBinding): boolean {
+  const kind = edgeKindOf(binding);
+  return kind !== undefined && unsettled(binding, kind);
 }

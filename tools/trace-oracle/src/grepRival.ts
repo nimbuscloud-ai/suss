@@ -10,13 +10,13 @@
  * with the same model and table name rule suss gets.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 
 import { nameKey } from "./agreement.js";
 import { entryKey, targetKey } from "./edges.js";
 
 import type { RouteEntry, Target, TracedEdge } from "./edges.js";
+import type { SourceTree } from "./sourceTree.js";
 import type { RouteMatch } from "./sussSide.js";
 
 export type Locator = "trace" | "suss" | "search";
@@ -28,75 +28,11 @@ export interface GrepVerdict {
   files: string[];
 }
 
-const SOURCE_EXTENSIONS = new Set([
-  ".ts",
-  ".tsx",
-  ".js",
-  ".mjs",
-  ".cjs",
-  ".py",
-  ".rb",
-]);
-
-const SKIPPED = new Set([
-  "node_modules",
-  "dist",
-  "build",
-  ".git",
-  ".venv",
-  "venv",
-  "vendor",
-  "coverage",
-  "tmp",
-  "log",
-]);
-
 // A line that registers a route says so with one of these words.
 const REGISTRATION =
   /\b(get|post|put|patch|delete|route|router|resources?|resource|match|api_route|add_api_route)\b/i;
 
 const MOST_FILES_SEARCHED = 10;
-
-export class SourceTree {
-  readonly files: string[] = [];
-  private readonly texts = new Map<string, string>();
-
-  constructor(readonly root: string) {
-    this.walk(root);
-  }
-
-  private walk(dir: string): void {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (SKIPPED.has(entry.name) || entry.name.startsWith(".")) {
-        continue;
-      }
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        this.walk(full);
-        continue;
-      }
-      if (SOURCE_EXTENSIONS.has(path.extname(entry.name))) {
-        this.files.push(full);
-      }
-    }
-  }
-
-  text(file: string): string {
-    const known = this.texts.get(file);
-    if (known !== undefined) {
-      return known;
-    }
-    const read = fs.readFileSync(file, "utf8");
-    this.texts.set(file, read);
-    return read;
-  }
-
-  /** The files whose path ends with this relative one, for a path a summary or a span wrote. */
-  endingWith(relative: string): string[] {
-    const suffix = `${path.sep}${relative.replace(/^\.?\//, "")}`;
-    return this.files.filter((file) => file.endsWith(suffix));
-  }
-}
 
 function fromTrace(entry: RouteEntry, tree: SourceTree): string[] {
   if (entry.code.file !== undefined) {

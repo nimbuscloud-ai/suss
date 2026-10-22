@@ -8,13 +8,19 @@
  */
 
 import { extractEdges } from "./edges.js";
-import { grepEdges, SourceTree } from "./grepRival.js";
-import { matchEdges, REASON_LABEL } from "./matcher.js";
+import { grepEdges } from "./grepRival.js";
+import { matchEdges, OTHER_LABEL, REASON_LABEL } from "./matcher.js";
+import { SourceTree } from "./sourceTree.js";
 import { SussSide } from "./sussSide.js";
 
 import type { EdgeKind, SetAside } from "./edges.js";
 import type { GrepVerdict } from "./grepRival.js";
-import type { EdgeVerdict, MissReason, NotExercised } from "./matcher.js";
+import type {
+  EdgeVerdict,
+  MissReason,
+  NotExercised,
+  OtherKind,
+} from "./matcher.js";
 import type { Span } from "./spans.js";
 
 export interface ReportOptions {
@@ -49,22 +55,35 @@ export interface Report {
   recallSettleable: Rate;
   recallByKind: Partial<Record<EdgeKind, Rate>>;
   missesByReason: Partial<Record<MissReason, number>>;
+  /** The misses under `other`, by their finer cause. */
+  othersByKind: Partial<Record<OtherKind, number>>;
   /** How many found edges needed the model and table name rule. */
   foundByName: number;
   grepLocated: Record<string, number>;
   verdicts: Array<EdgeVerdict & { grep: Omit<GrepVerdict, "edge"> }>;
   notExercised: NotExercised[];
+  /** Accesses with no container name that suss reaches from exercised routes. */
+  unnamedReaches: number;
   setAside: SetAside[];
 }
 
 const REASON_ORDER: MissReason[] = [
   "routeNotDiscovered",
   "noPack",
-  "nameNotSettled",
   "dynamicDispatch",
   "wrapperOrFactory",
+  "nameNotSettled",
   "other",
 ];
+
+/** The reasons with at least one miss, most misses first, since the count is the ranking. */
+function rankedReasons(report: Report): MissReason[] {
+  return REASON_ORDER.filter(
+    (reason) => report.missesByReason[reason] !== undefined,
+  ).sort(
+    (a, b) => (report.missesByReason[b] ?? 0) - (report.missesByReason[a] ?? 0),
+  );
+}
 
 export function buildReport(options: ReportOptions): Report {
   const extraction = extractEdges(options.spans, {
@@ -76,12 +95,9 @@ export function buildReport(options: ReportOptions): Report {
       : { entryPattern: options.entryPattern }),
   });
   const side = new SussSide(options.summariesDir);
-  const matched = matchEdges(side, extraction.edges, extraction.routes);
-  const grep = grepEdges(
-    extraction.edges,
-    matched.routesMatched,
-    new SourceTree(options.sourceDir),
-  );
+  const tree = new SourceTree(options.sourceDir);
+  const matched = matchEdges(side, extraction.edges, extraction.routes, tree);
+  const grep = grepEdges(extraction.edges, matched.routesMatched, tree);
   const grepByEdge = new Map(grep.map((one) => [one.edge, one]));
   const verdicts = matched.verdicts.map((verdict) => {
     const rival = grepByEdge.get(verdict.edge);
@@ -105,10 +121,15 @@ export function buildReport(options: ReportOptions): Report {
     recallByKind[kind] = rate(verdicts.filter((one) => one.kind === kind));
   }
   const missesByReason: Partial<Record<MissReason, number>> = {};
+  const othersByKind: Partial<Record<OtherKind, number>> = {};
   for (const verdict of verdicts) {
     if (verdict.reason !== undefined) {
       missesByReason[verdict.reason] =
         (missesByReason[verdict.reason] ?? 0) + 1;
+    }
+    if (verdict.otherKind !== undefined) {
+      othersByKind[verdict.otherKind] =
+        (othersByKind[verdict.otherKind] ?? 0) + 1;
     }
   }
   const grepLocated: Record<string, number> = {};
@@ -132,10 +153,12 @@ export function buildReport(options: ReportOptions): Report {
     recallSettleable: rate(verdicts.filter((one) => !one.tableFromRequest)),
     recallByKind,
     missesByReason,
+    othersByKind,
     foundByName: verdicts.filter((one) => one.agreement === "byName").length,
     grepLocated,
     verdicts,
     notExercised: matched.notExercised,
+    unnamedReaches: matched.unnamedReaches,
     setAside: extraction.setAside,
   };
 }
@@ -154,14 +177,16 @@ export function renderSummary(report: Report): string {
     `  suss found ${report.recall.suss} (${percent(report.recall.suss, report.recall.traced)}), grep found ${report.recall.grep} (${percent(report.recall.grep, report.recall.traced)})`,
     `  less the ${report.recall.traced - report.recallSettleable.traced} edges whose table the request path gives: suss ${report.recallSettleable.suss} of ${report.recallSettleable.traced}, grep ${report.recallSettleable.grep}`,
   ];
-  for (const reason of REASON_ORDER) {
-    const count = report.missesByReason[reason];
-    if (count !== undefined) {
-      lines.push(`  missed, ${REASON_LABEL[reason]}: ${count}`);
-    }
+  for (const reason of rankedReasons(report)) {
+    lines.push(
+      `  missed, ${REASON_LABEL[reason]}: ${report.missesByReason[reason]}`,
+    );
+  }
+  for (const [kind, count] of Object.entries(report.othersByKind)) {
+    lines.push(`    of other, ${OTHER_LABEL[kind as OtherKind]}: ${count}`);
   }
   lines.push(
-    `  not exercised: ${report.notExercised.length} boundaries suss reaches from exercised routes`,
+    `  not exercised: ${report.notExercised.length} named boundaries suss reaches from exercised routes, and ${report.unnamedReaches} accesses with no container name`,
   );
   return lines.join("\n");
 }
@@ -189,17 +214,16 @@ export function renderMarkdown(report: Report): string {
     "| Reason | Edges |",
     "| --- | --- |",
   );
-  for (const reason of REASON_ORDER) {
-    const count = report.missesByReason[reason];
-    if (count !== undefined) {
-      lines.push(`| ${REASON_LABEL[reason]} | ${count} |`);
-    }
+  for (const reason of rankedReasons(report)) {
+    lines.push(
+      `| ${REASON_LABEL[reason]} | ${report.missesByReason[reason]} |`,
+    );
   }
-  for (const reason of REASON_ORDER) {
+  for (const [kind, count] of Object.entries(report.othersByKind)) {
+    lines.push(`| other: ${OTHER_LABEL[kind as OtherKind]} | ${count} |`);
+  }
+  for (const reason of rankedReasons(report)) {
     const missed = report.verdicts.filter((one) => one.reason === reason);
-    if (missed.length === 0) {
-      continue;
-    }
     lines.push("", `### ${REASON_LABEL[reason]}`, "");
     for (const one of missed) {
       lines.push(`- \`${one.edge}\` (${one.library}): ${one.detail ?? ""}`);
@@ -219,6 +243,8 @@ export function renderMarkdown(report: Report): string {
     "## Not exercised",
     "",
     "suss reaches these from a route the trace exercised, and no request in the trace reached them. A trace covers only the paths the tests ran, so these are not wrong.",
+    "",
+    `suss also reaches ${report.unnamedReaches} accesses with no container name from exercised routes, such as a commit, which no span can agree with.`,
     "",
   );
   for (const one of report.notExercised) {

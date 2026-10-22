@@ -95,6 +95,8 @@ export async function record(options: RecordOptions): Promise<RecordResult> {
       ...process.env,
       OTEL_EXPORTER_OTLP_ENDPOINT: `http://127.0.0.1:${port}`,
       OTEL_TRACES_EXPORTER: "otlp",
+      // Python's `otlp` means gRPC unless the protocol says otherwise.
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
       OTEL_METRICS_EXPORTER: "none",
       OTEL_LOGS_EXPORTER: "none",
       // The cloud detectors ask metadata servers off this machine.
