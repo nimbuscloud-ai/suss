@@ -9,7 +9,7 @@ describe("indexOf", () => {
         file: "src/format.ts",
         id: "a",
         entries: {
-          boundaries: [["constructor", 0, "provider"]],
+          boundaries: [["constructor", 0, "serves"]],
           callees: [
             ["toString", 0],
             ["hasOwnProperty", 1],
@@ -20,9 +20,9 @@ describe("indexOf", () => {
 
     expect(index.callees.toString).toEqual([[0, 0]]);
     expect(index.callees.hasOwnProperty).toEqual([[0, 1]]);
-    expect(index.boundaries.constructor).toEqual([[0, 0, "provider"]]);
+    expect(index.boundaries.constructor).toEqual([[0, 0, "serves"]]);
     expect(entriesByShard(index).get("a")).toEqual({
-      boundaries: [["constructor", 0, "provider"]],
+      boundaries: [["constructor", 0, "serves"]],
       callees: [
         ["toString", 0],
         ["hasOwnProperty", 1],
