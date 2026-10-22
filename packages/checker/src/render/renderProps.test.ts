@@ -121,6 +121,37 @@ describe("checkRenderProps", () => {
     expect(checkRenderProps([parent, ownBox, otherBox])).toEqual([]);
   });
 
+  it("joins a target in a sibling package to the component in that package", () => {
+    const parent = component({
+      name: "Settings",
+      file: "src/settings.tsx",
+      workspace: "admin",
+      root: rendering(
+        "Avatar",
+        { file: "@acme/ui::src/avatar.tsx", name: "Avatar" },
+        { src: '"/me.png"', unusedThing: "value" },
+      ),
+    });
+    const sameFileHere = component({
+      name: "Avatar",
+      file: "src/avatar.tsx",
+      workspace: "admin",
+      inputs: [param("src"), param("unusedThing")],
+    });
+    const sibling = component({
+      name: "Avatar",
+      file: "src/avatar.tsx",
+      workspace: "@acme/ui",
+      inputs: [param("src")],
+      inputReads: [{ input: "src", path: [] }],
+    });
+
+    const findings = checkRenderProps([parent, sameFileHere, sibling]);
+    expect(findings.map((finding) => finding.description)).toEqual([
+      expect.stringContaining('"unusedThing"'),
+    ]);
+  });
+
   it("counts a chain off the props object as a read of its first segment", () => {
     const parent = component({
       name: "Page",

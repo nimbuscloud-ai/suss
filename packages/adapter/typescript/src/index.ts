@@ -89,7 +89,14 @@ export {
 } from "./stubEvidence.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
-export { workspaceNameFor, workspaceRootFor } from "./summaryIdentity.js";
+export {
+  type FilePlace,
+  pathFromRun,
+  placeOutsideRun,
+  projectPlaceOf,
+  workspaceNameFor,
+  workspaceRootFor,
+} from "./summaryIdentity.js";
 export {
   type WrittenPayload,
   writtenPayloadOf,

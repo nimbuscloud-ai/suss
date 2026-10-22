@@ -89,7 +89,9 @@ export function placeDeclared(
   const codeScope = readCodeScope(summary);
   const directory = codeScope.kind === "codeUri" ? codeScope.path : undefined;
   const closure =
-    codeScope.entry !== undefined ? entryClosure(codeScope.entry, graph) : null;
+    codeScope.entry !== undefined
+      ? entryClosure(codeScope.entry, graph, codeScope.workspace)
+      : null;
   // Falling back to the directory needs one to have been stated.
   if (closure === null && directory === undefined) {
     return null;
@@ -99,5 +101,8 @@ export function placeDeclared(
     unit: summary.identity.deployableUnit,
     ...(directory !== undefined ? { codeScope: directory } : {}),
     ...(closure !== null ? { closure } : {}),
+    ...(codeScope.workspace !== undefined
+      ? { workspace: codeScope.workspace }
+      : {}),
   };
 }

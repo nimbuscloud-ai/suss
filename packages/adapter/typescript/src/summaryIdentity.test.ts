@@ -4,9 +4,18 @@
  * each with a function of the same name.
  */
 
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { nameSummaries } from "./summaryIdentity.js";
+import { afterAll, describe, expect, it } from "vitest";
+
+import {
+  readSourceDocumentMetadata,
+  withSourceDocumentMetadata,
+} from "@suss/behavioral-ir";
+
+import { nameSummaries, pathFromRun } from "./summaryIdentity.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -335,5 +344,78 @@ describe("a call the checker could not place", () => {
     });
 
     expect(callsOf(caller)[0]?.reaches).toBe(called.identity.id);
+  });
+});
+
+describe("a file outside the run's root", () => {
+  const made: string[] = [];
+  afterAll(() => {
+    for (const dir of made) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function workspaceOnDisk(): { api: string; shared: string } {
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-outside-root-")),
+    );
+    made.push(root);
+    for (const [folder, name] of [
+      ["api", "@acme/api"],
+      ["shared", "@acme/shared"],
+    ]) {
+      fs.mkdirSync(path.join(root, "packages", folder, "src"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(root, "packages", folder, "package.json"),
+        JSON.stringify({ name }),
+      );
+    }
+    return {
+      api: path.join(root, "packages", "api"),
+      shared: path.join(root, "packages", "shared"),
+    };
+  }
+
+  it("is named by the package it is in and its path inside that package", () => {
+    const { api, shared } = workspaceOnDisk();
+    const own = summary({ name: "health", file: path.join(api, "src/a.ts") });
+    const sibling = summary({
+      name: "orders",
+      file: path.join(shared, "src/routes.ts"),
+    });
+
+    nameSummaries([own, sibling], { workspace: "@acme/api", projectRoot: api });
+
+    expect(own.identity.id).toBe("@acme/api::src/a.ts::health");
+    expect(sibling.identity.id).toBe("@acme/shared::src/routes.ts::orders");
+    expect(sibling.location.workspace).toBe("@acme/shared");
+  });
+
+  it("is written with its package in front where another summary records it", () => {
+    const { api, shared } = workspaceOnDisk();
+
+    expect(pathFromRun(path.join(api, "src/a.ts"), api)).toBe("src/a.ts");
+    expect(pathFromRun(path.join(shared, "src/routes.ts"), api)).toBe(
+      "@acme/shared::src/routes.ts",
+    );
+    expect(pathFromRun("src/a.ts", api)).toBe("src/a.ts");
+  });
+
+  it("gives a schema document named after its file the file's path in the project", () => {
+    const { api } = workspaceOnDisk();
+    const file = path.join(api, "src/server.ts");
+    const document = summary({ name: file, file });
+    document.identity.exportPath = null;
+    document.metadata = withSourceDocumentMetadata(undefined, { label: file });
+
+    nameSummaries([document], { workspace: "@acme/api", projectRoot: api });
+
+    expect(document.identity.name).toBe("src/server.ts");
+    expect(readSourceDocumentMetadata(document)?.label).toBe("src/server.ts");
+    expect(document.identity.id).toBe(
+      "@acme/api::src/server.ts::src/server.ts",
+    );
   });
 });

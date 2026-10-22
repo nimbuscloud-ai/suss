@@ -14,6 +14,7 @@ import path from "node:path";
 import { getSchema } from "@mrleebo/prisma-ast";
 
 import { storageBinding } from "@suss/behavioral-ir";
+import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 
 import type {
   BehavioralSummary,
@@ -30,6 +31,12 @@ export interface PrismaSchemaToSummariesOptions {
   scope?: string;
   /** `"migrations"` when Prisma's own migrations made the database. */
   origin?: "migrations";
+}
+
+export interface PrismaSchemaFileToSummariesOptions
+  extends PrismaSchemaToSummariesOptions {
+  /** Absolute. The directory each schema file's path is measured from. */
+  projectRoot?: string;
 }
 
 type ContractField = NonNullable<StorageContractMetadata["fields"]>[number];
@@ -418,14 +425,15 @@ function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
  */
 export function prismaSchemaFileToSummaries(
   schemaPath: string,
-  options: PrismaSchemaToSummariesOptions = {},
+  options: PrismaSchemaFileToSummariesOptions = {},
 ): BehavioralSummary[] {
   if (!fs.existsSync(schemaPath)) {
     throw new Error(`Prisma schema not found: ${schemaPath}`);
   }
+  const root = options.projectRoot ?? defaultProjectRoot(schemaPath);
   const files = prismaSchemaFiles(schemaPath);
   const sources = files.map((file) => ({
-    file: options.source ?? path.relative(process.cwd(), file),
+    file: options.source ?? pathInProject(file, root),
     text: fs.readFileSync(file, "utf-8"),
   }));
   return summariesOfSchema(

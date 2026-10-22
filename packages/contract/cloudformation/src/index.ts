@@ -12,11 +12,15 @@
  * section and a relative path only mean something inside their document.
  */
 
+import path from "node:path";
+
 import {
   nestedDocumentLabel,
   readRoutingMetadata,
+  withCodeScopeWorkspace,
   withRoutingMetadata,
 } from "@suss/behavioral-ir";
+import { documentSourceLabel, projectNameOf } from "@suss/behavioral-ir/files";
 import {
   type AuthorizerConfig,
   type AuthorizerType,
@@ -48,7 +52,6 @@ import {
 
 import { buildAlbFlowSummaries } from "./albFlow.js";
 import { buildDnsFlowSummaries } from "./dnsFlow.js";
-import { documentSourceLabel } from "./documentLabel.js";
 import { buildDynamoTableSummaries } from "./dynamoTables.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
@@ -56,6 +59,9 @@ import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 import type { BehavioralSummary, RoutingMetadata } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "@suss/contract-openapi";
 
+// A document's label decides which flow scope its resources join, so
+// every manifest reader has to label documents the same way.
+export { documentSourceLabel } from "@suss/behavioral-ir/files";
 // These live in @suss/manifest-aws. Callers that import them from this
 // package still get them.
 export {
@@ -70,9 +76,6 @@ export {
 } from "@suss/manifest-aws";
 
 export { ALB_MATCH_LANGUAGE, albRouterSelector } from "./albMatch.js";
-// A document's label decides which flow scope its resources join, so
-// every manifest reader has to label documents the same way.
-export { documentSourceLabel } from "./documentLabel.js";
 // @suss/contract-serverless runs this walk over SAM-shaped resources, so
 // both readers record environment variables the same way.
 export { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
@@ -99,6 +102,8 @@ export interface CloudFormationFileToSummariesOptions
   extends CloudFormationToSummariesOptions {
   /** Collects each child template that could not be opened. Without it, each goes to stderr. */
   warnings?: string[];
+  /** Absolute. The directory the template's label is measured from. */
+  projectRoot?: string;
 }
 
 // Resource types whose `Body` or `DefinitionBody` usually contains an
@@ -1105,11 +1110,14 @@ export function cloudFormationFileToSummaries(
     process.stderr.write(`[suss] cloudformation: ${message}\n`);
   }
   const rootLabel =
-    options.source ?? documentSourceLabel("cloudformation", templatePath);
-  return tree.documents.flatMap((document) =>
-    cloudFormationToSummaries(document.template, {
+    options.source ??
+    documentSourceLabel("cloudformation", templatePath, options.projectRoot);
+  return tree.documents.flatMap((document) => {
+    // A CodeUri is a folder in the project the template is in.
+    const workspace = projectNameOf(path.dirname(document.path));
+    return cloudFormationToSummaries(document.template, {
       source: nestedDocumentLabel(rootLabel, document.stackPath),
       stackPath: document.stackPath,
-    }),
-  );
+    }).map((summary) => withCodeScopeWorkspace(summary, workspace));
+  });
 }

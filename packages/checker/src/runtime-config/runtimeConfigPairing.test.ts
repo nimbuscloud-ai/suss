@@ -14,7 +14,12 @@ import type { ComparedPair } from "../pairing/comparedPair.js";
 function makeRuntimeProvider(opts: {
   instanceName: string;
   envVars: string[];
-  codeScope: { kind: "codeUri" | "unknown"; path?: string; entry?: string };
+  codeScope: {
+    kind: "codeUri" | "unknown";
+    path?: string;
+    entry?: string;
+    workspace?: string;
+  };
   namesUnit?: boolean;
   envVarSources?: Record<string, "template" | "globals" | "platform">;
 }): BehavioralSummary {
@@ -318,6 +323,41 @@ describe("checkRuntimeConfig", () => {
     // The neighbour is out of scope, so its read cannot count for A, and
     // A comes out as declared but never used.
     expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnused"]);
+  });
+
+  it("keeps a sibling package's file at the same path out of a template's directory", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "api",
+      envVars: ["A"],
+      codeScope: { kind: "codeUri", path: "src", workspace: "@acme/api" },
+    });
+    const inProject = (summary: BehavioralSummary, workspace: string) => ({
+      ...summary,
+      location: { ...summary.location, workspace },
+    });
+    const own = inProject(
+      makeCodeSummary({
+        name: "handler",
+        file: "src/handler.ts",
+        envReads: ["A"],
+      }),
+      "@acme/api",
+    );
+    const sibling = inProject(
+      makeCodeSummary({
+        name: "config",
+        file: "src/config.ts",
+        envReads: ["B"],
+      }),
+      "@acme/shared",
+    );
+
+    expect(checkRuntimeConfig([runtime, own, sibling])).toEqual([]);
+    expect(
+      checkRuntimeConfig([runtime, own, inProject(sibling, "@acme/api")]).map(
+        (finding) => finding.kind,
+      ),
+    ).toEqual(["boundaryFieldUnknown"]);
   });
 
   it("lets a scope of . cover the whole project", () => {

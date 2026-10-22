@@ -1217,6 +1217,12 @@ const CodeScopeMetadataSchema = z.object({
   path: z.string().optional(),
   /** The file the runtime enters, without an extension. */
   entry: z.string().optional(),
+  /**
+   * The project `path` and `entry` are measured from, by the name its
+   * code summaries give as their workspace. Absent, they are compared
+   * with code in any project.
+   */
+  workspace: z.string().optional(),
 });
 
 export type CodeScopeMetadata = z.infer<typeof CodeScopeMetadataSchema>;
@@ -1226,6 +1232,29 @@ export function readCodeScopeMetadata(
   summary: BehavioralSummary,
 ): CodeScopeMetadata | undefined {
   return readNamespace(CodeScopeMetadataSchema, summary.metadata?.codeScope);
+}
+
+/**
+ * The summary with its code scope said to be measured from the project
+ * called `workspace`. A summary whose scope gives no path or entry, or
+ * that has no scope, comes back as it was.
+ */
+export function withCodeScopeWorkspace(
+  summary: BehavioralSummary,
+  workspace: string | null,
+): BehavioralSummary {
+  const scope = readCodeScopeMetadata(summary);
+  if (
+    workspace === null ||
+    scope === undefined ||
+    (scope.path === undefined && scope.entry === undefined)
+  ) {
+    return summary;
+  }
+  return {
+    ...summary,
+    metadata: { ...summary.metadata, codeScope: { ...scope, workspace } },
+  };
 }
 
 /**

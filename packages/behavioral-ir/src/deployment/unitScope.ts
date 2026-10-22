@@ -17,6 +17,7 @@ import { fileInCodeScope } from "@suss/ir-core";
 
 import { sameUnit } from "../declaredDelivery.js";
 import { readCodeScopeMetadata } from "../metadata.js";
+import { sameProject, summaryFileKey } from "../summaryId.js";
 
 import type { BehavioralSummary, DeployableUnit } from "../index.js";
 import type { CodeScopeMetadata } from "../metadata.js";
@@ -28,7 +29,7 @@ export function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
   return readCodeScopeMetadata(summary) ?? { kind: "unknown" };
 }
 
-/** The units each file's code is deployed as, according to its own summaries. */
+/** The units each file's code is deployed as, according to its own summaries, keyed by `summaryFileKey`. */
 export type UnitsByFile = ReadonlyMap<string, DeployableUnit[]>;
 
 export interface UnitScope {
@@ -41,12 +42,35 @@ export interface UnitScope {
    */
   codeScope?: string;
   /**
-   * The files the runtime's handler entry reaches through imports.
-   * When set, it replaces the directory test: a shared helper pairs
-   * with every runtime whose closure loads it, and a file outside every
-   * closure pairs with none.
+   * The files the runtime's handler entry reaches through imports, keyed
+   * by `summaryFileKey`. When set, it replaces the directory test: a
+   * shared helper pairs with every runtime whose closure loads it, and a
+   * file outside every closure pairs with none.
    */
   closure?: ReadonlySet<string>;
+  /**
+   * The project `codeScope` is measured from. A sibling package's file
+   * at the same path is in another project, so the directory leaves it out.
+   */
+  workspace?: string;
+}
+
+/**
+ * Whether the scope's directory contains this code: the same project,
+ * and a path under the directory. Code or a scope that gives no project
+ * is compared by path alone.
+ */
+export function inScopeDirectory(
+  code: BehavioralSummary,
+  scope: UnitScope,
+): boolean {
+  if (scope.codeScope === undefined) {
+    return false;
+  }
+  return (
+    sameProject(code.location.workspace, scope.workspace) &&
+    fileInCodeScope(code.location.file, scope.codeScope)
+  );
 }
 
 /**
@@ -61,12 +85,12 @@ export function unitsByFile(summaries: BehavioralSummary[]): UnitsByFile {
     if (unit === undefined) {
       continue;
     }
-    const file = summary.location.file;
-    const units = byFile.get(file) ?? [];
+    const key = summaryFileKey(summary);
+    const units = byFile.get(key) ?? [];
     if (!units.some((seen) => sameUnit(seen, unit))) {
       units.push(unit);
     }
-    byFile.set(file, units);
+    byFile.set(key, units);
   }
   return byFile;
 }
@@ -85,35 +109,31 @@ export function contestedFiles(
   scopes: readonly UnitScope[],
   byFile: UnitsByFile,
 ): ReadonlySet<string> {
-  const unplaced = new Set<string>();
+  const unplaced = new Map<string, BehavioralSummary>();
   for (const summary of code) {
-    const file = summary.location.file;
-    if (summary.identity.deployableUnit !== undefined || byFile.has(file)) {
+    const key = summaryFileKey(summary);
+    if (summary.identity.deployableUnit !== undefined || byFile.has(key)) {
       continue;
     }
-    unplaced.add(file);
+    unplaced.set(key, summary);
   }
 
   const contested = new Set<string>();
-  for (const file of unplaced) {
+  for (const [key, summary] of unplaced) {
     // A file inside any closure is placed by that closure, even when it
     // is in two of them. Only scopes without a closure go by directory.
-    if (scopes.some((s) => s.closure?.has(file) === true)) {
+    if (scopes.some((s) => s.closure?.has(key) === true)) {
       continue;
     }
 
     let containing = 0;
     for (const scope of scopes) {
-      if (scope.closure !== undefined || scope.codeScope === undefined) {
-        continue;
-      }
-
-      if (!fileInCodeScope(file, scope.codeScope)) {
+      if (scope.closure !== undefined || !inScopeDirectory(summary, scope)) {
         continue;
       }
       containing += 1;
       if (containing > 1) {
-        contested.add(file);
+        contested.add(key);
         break;
       }
     }
@@ -128,19 +148,17 @@ export function runsIn(
   byFile: UnitsByFile,
 ): boolean {
   const own = code.identity.deployableUnit;
-  const codeUnits = own !== undefined ? [own] : byFile.get(code.location.file);
+  const codeUnits =
+    own !== undefined ? [own] : byFile.get(summaryFileKey(code));
   const declared = scope.unit;
   if (codeUnits !== undefined && declared !== undefined) {
     return codeUnits.some((unit) => sameUnit(unit, declared));
   }
 
   if (scope.closure !== undefined) {
-    return scope.closure.has(code.location.file);
+    return scope.closure.has(summaryFileKey(code));
   }
   // With no directory, nothing places this file. `placeDeclared` never
   // builds a scope with neither a closure nor a directory.
-  return (
-    scope.codeScope !== undefined &&
-    fileInCodeScope(code.location.file, scope.codeScope)
-  );
+  return inScopeDirectory(code, scope);
 }
