@@ -203,7 +203,7 @@ export function checkStorage(
  * the binding's own (a Prisma model) and the physical one a template
  * states.
  */
-interface DeclaredContainer {
+export interface DeclaredContainer {
   summary: BehavioralSummary;
   binding: BoundaryBinding;
   semantics: StorageSemantics;
@@ -284,7 +284,7 @@ function reachedBy(
   };
 }
 
-function declaredContainers(
+export function declaredContainers(
   summaries: BehavioralSummary[],
 ): DeclaredContainer[] {
   const containers: DeclaredContainer[] = [];
@@ -357,7 +357,25 @@ function claimantsOf(
       candidates.push({ subject: container, name });
     }
   }
-  return mostSpecificName(statedEngineFirst(candidates, access));
+  return mostSpecificName(
+    sameRecognitionFirst(statedEngineFirst(candidates, access), access),
+  );
+}
+
+/**
+ * The candidates left once one of them was read by the library that
+ * recorded the access. A table declared both in Drizzle and in Prisma
+ * is checked against the Drizzle columns for a Drizzle query.
+ */
+function sameRecognitionFirst(
+  candidates: NameCandidate<DeclaredContainer>[],
+  access: StorageAccessRecord,
+): NameCandidate<DeclaredContainer>[] {
+  const recognition = access.effect.binding.recognition;
+  const same = candidates.filter(
+    (candidate) => candidate.subject.binding.recognition === recognition,
+  );
+  return same.length === 0 ? candidates : same;
 }
 
 /**
@@ -829,7 +847,7 @@ function claim(
  * at error severity (#121). A summary that states no workspace is a
  * single-project run, where every summary belongs to the one service.
  */
-function sameService(
+export function sameService(
   provider: BehavioralSummary,
   access: BehavioralSummary,
 ): boolean {

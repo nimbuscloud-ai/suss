@@ -535,6 +535,7 @@ interface FindingSide {
   summary: string;         // "src/handlers/users.ts::getUser"
   transitionId?: string;   // set when the finding is about one branch
   transitionIds?: string[]; // set when several branches give one finding; transitionId is the first
+  field?: string;          // the field the finding is about, as this side's code spells it
   location: SourceLocation;
 }
 

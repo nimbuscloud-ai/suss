@@ -223,6 +223,14 @@ the rest vary, and `"none"` for a blob. Only an exhaustive contract produces
 one item out of the container, either the key fields in the order the store
 keys on them or a convention the key follows.
 
+Two declared stores on the same key are two declarations of one table, and
+they are compared with each other column by column. Each field's `column`
+is the name the database stores it under when that differs from `name`, and
+`type`, `nullable`, `primary`, `default` and `foreignKey` are what is
+compared. `origin` says whether a declaration is a dump of the database or a
+schema with its own migrations, which decides the side that speaks for the
+database.
+
 **`message-bus`** covers SQS, SNS, S3, EventBridge, BullMQ, Kafka, and NATS.
 Producer-side `interaction(class: "message-send")` effects pair against it, and
 consumer-side handlers get the same binding from the deployment-manifest
