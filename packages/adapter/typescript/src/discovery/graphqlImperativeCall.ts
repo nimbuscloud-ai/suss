@@ -89,6 +89,7 @@ export function discoverGraphqlImperativeCalls(
             operationType: spec.operationType,
             methodName,
             store: resolution,
+            client: "receiver",
           });
     if (expansion !== null) {
       results.push(...expansion.units);
@@ -127,6 +128,7 @@ export function discoverGraphqlImperativeCalls(
       name: `${functionNameOrAnon(enclosing)}.${nameToken}`,
       callSite: { callExpression: node, methodName },
       operationInfo,
+      graphqlCall: { call: node, through: [], client: "receiver" },
     });
   });
   return results;

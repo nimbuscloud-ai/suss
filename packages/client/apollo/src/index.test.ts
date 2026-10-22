@@ -6,7 +6,7 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { readGraphqlMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
-import { apolloClientPack } from "./index.js";
+import { type ApolloClientPackOptions, apolloClientPack } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -45,6 +45,7 @@ async function runInMemory(source: string): Promise<BehavioralSummary[]> {
 
 async function runInMemoryFiles(
   files: Record<string, string>,
+  options: ApolloClientPackOptions = {},
 ): Promise<BehavioralSummary[]> {
   const project = createTestProject();
   for (const [name, source] of Object.entries(files)) {
@@ -52,7 +53,7 @@ async function runInMemoryFiles(
   }
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [apolloClientPack()],
+    frameworks: [apolloClientPack(options)],
   });
   return await adapter.extractAll();
 }
@@ -1386,5 +1387,250 @@ describe("apolloClientPack — a project hook wrapping the library's", () => {
       type: "record",
       properties: { error: { type: "unknown" }, data: { type: "unknown" } },
     });
+  });
+});
+
+const TWO_CLIENTS = `
+  import { ApolloClient, HttpLink, InMemoryCache } from "@apollo/client";
+  export const railsClient = new ApolloClient({
+    uri: "/graphql",
+    cache: new InMemoryCache(),
+  });
+  export const appSyncClient = new ApolloClient({
+    link: new HttpLink({ uri: "https://appsync.example.com/graphql" }),
+    cache: new InMemoryCache(),
+  });
+`;
+
+const PICKING_HOOK = `
+  import { useQuery } from "@apollo/client";
+  import { appSyncClient, railsClient } from "./clients.js";
+  export function useGraphQLQuery(
+    doc: unknown,
+    { nextGen, ...opts }: { nextGen?: unknown; variables?: unknown } = {},
+  ) {
+    const client = nextGen ? appSyncClient : railsClient;
+    return useQuery(doc as never, { ...opts, client } as never);
+  }
+`;
+
+const BOTH_BOUND: ApolloClientPackOptions = {
+  clients: {
+    "/graphql": "schema/legacy.graphql",
+    "https://appsync.example.com/graphql": "schema/appsync.graphql",
+  },
+};
+
+/** The client an operation goes through, and why it went unpaired when it did. */
+function clientOf(summaries: BehavioralSummary[], name: string) {
+  const summary = summaries.find((s) => s.identity.name === name);
+  const meta = summary === undefined ? undefined : readGraphqlMetadata(summary);
+  return {
+    client: meta?.client,
+    unresolved: meta?.unresolvedClient?.reason,
+  };
+}
+
+function component(name: string, call: string): string {
+  return `
+    import { gql } from "@apollo/client";
+    import { useGraphQLQuery } from "./hooks.js";
+    import { useFlag } from "./flags.js";
+    const Doc = gql\`query ${name} { listing { id } }\`;
+    export function ${name}() {
+      return ${call};
+    }
+  `;
+}
+
+describe("apolloClientPack — the client a call passes", () => {
+  const files = {
+    "clients.ts": TWO_CLIENTS,
+    "hooks.ts": PICKING_HOOK,
+    "flags.ts": "export declare function useFlag(name: string): boolean;",
+    "eventListing.ts": component(
+      "EventListing",
+      "useGraphQLQuery(Doc, { variables: {}, nextGen: true })",
+    ),
+    "account.ts": component("Account", "useGraphQLQuery(Doc)"),
+    "featurePanel.ts": component(
+      "FeaturePanel",
+      `useGraphQLQuery(Doc, { nextGen: useFlag("new-listings") })`,
+    ),
+  };
+
+  it("settles a wrapper's choice from the literal each caller passes", async () => {
+    const summaries = await runInMemoryFiles(files, BOTH_BOUND);
+
+    expect(clientOf(summaries, "EventListing.EventListing")).toEqual({
+      client: {
+        uri: "https://appsync.example.com/graphql",
+        uriRef: null,
+        chosenAtCall: true,
+        workspace: "schema/appsync.graphql",
+      },
+      unresolved: undefined,
+    });
+    expect(clientOf(summaries, "Account.Account")).toEqual({
+      client: {
+        uri: "/graphql",
+        uriRef: null,
+        chosenAtCall: true,
+        workspace: "schema/legacy.graphql",
+      },
+      unresolved: undefined,
+    });
+  });
+
+  it("leaves the operation unpaired when the caller's value decides at run time", async () => {
+    const summaries = await runInMemoryFiles(files, BOTH_BOUND);
+
+    expect(clientOf(summaries, "FeaturePanel.FeaturePanel")).toEqual({
+      client: undefined,
+      unresolved:
+        "the client it passes, nextGen ? appSyncClient : railsClient, can be any of 2 clients, and nothing the call passes settles which",
+    });
+  });
+
+  it("says which binding to add when two clients are built and none is bound", async () => {
+    const summaries = await runInMemoryFiles(files);
+
+    expect(clientOf(summaries, "EventListing.EventListing").unresolved).toBe(
+      "it passes the client built with https://appsync.example.com/graphql, the project builds more than one client, and no `clients` entry in the pack options says which service https://appsync.example.com/graphql talks to",
+    );
+  });
+
+  it("reads the spelling that tests an option off a named parameter", async () => {
+    const summaries = await runInMemoryFiles(
+      {
+        "clients.ts": TWO_CLIENTS,
+        "hooks.ts": `
+          import { useMutation } from "@apollo/client";
+          import { appSyncClient, railsClient } from "./clients.js";
+          export function useTypedMutation(doc: unknown, variables?: unknown, options?: { nextGen?: boolean }) {
+            const client = options?.nextGen ? appSyncClient : railsClient;
+            return useMutation(doc as never, { ...options, variables, client } as never);
+          }
+        `,
+        "deleteUser.ts": `
+          import { gql } from "@apollo/client";
+          import { useTypedMutation } from "./hooks.js";
+          const DeleteUser = gql\`mutation DeleteUser { deleteUser { id } }\`;
+          export function DeleteUser() {
+            return useTypedMutation(DeleteUser, undefined, { nextGen: true });
+          }
+        `,
+      },
+      BOTH_BOUND,
+    );
+
+    expect(clientOf(summaries, "DeleteUser.DeleteUser").client?.workspace).toBe(
+      "schema/appsync.graphql",
+    );
+  });
+
+  it("reads a client written straight into the hook call", async () => {
+    const summaries = await runInMemoryFiles(
+      {
+        "clients.ts": TWO_CLIENTS,
+        "direct.ts": `
+          import { gql, useQuery } from "@apollo/client";
+          import { appSyncClient, railsClient } from "./clients.js";
+          const Listing = gql\`query Listing { listing { id } }\`;
+          const Account = gql\`query Account { account { id } }\`;
+          declare const preferNew: boolean;
+          export function Pinned() {
+            return useQuery(Listing, { client: appSyncClient });
+          }
+          export function Either() {
+            return useQuery(Account, { client: preferNew ? appSyncClient : railsClient });
+          }
+          export function Provided() {
+            return useQuery(Account);
+          }
+        `,
+      },
+      BOTH_BOUND,
+    );
+
+    expect(clientOf(summaries, "Pinned.Listing").client?.workspace).toBe(
+      "schema/appsync.graphql",
+    );
+    expect(clientOf(summaries, "Either.Account").unresolved).toBe(
+      "the client it passes, preferNew ? appSyncClient : railsClient, can be any of 2 clients, and nothing the call passes settles which",
+    );
+    // The provider's client is left to the project-wide rule, which
+    // abstains for a project with two clients.
+    expect(clientOf(summaries, "Provided.Account")).toEqual({
+      client: undefined,
+      unresolved: undefined,
+    });
+  });
+
+  it("goes unpaired when the client comes from something suss cannot read", async () => {
+    const summaries = await runInMemoryFiles({
+      "clients.ts": TWO_CLIENTS,
+      "context.ts": `
+        import { gql, useQuery } from "@apollo/client";
+        import { useContext } from "react";
+        import { AdminClientContext } from "./adminContext.js";
+        const Health = gql\`query Health { health { ok } }\`;
+        export function AdminHealth() {
+          const adminClient = useContext(AdminClientContext);
+          return useQuery(Health, { client: adminClient });
+        }
+      `,
+      "adminContext.ts": `
+        import { createContext } from "react";
+        export const AdminClientContext = createContext(null);
+      `,
+    });
+
+    expect(clientOf(summaries, "AdminHealth.Health").unresolved).toBe(
+      "the client it passes, useContext(AdminClientContext), does not come out as one client construction suss can read",
+    );
+  });
+
+  it("pairs a call that passes the project's only client the way the provider's would", async () => {
+    const summaries = await runInMemoryFiles({
+      "client.ts": `
+        import { ApolloClient, InMemoryCache } from "@apollo/client";
+        export const client = new ApolloClient({ uri: "/graphql", cache: new InMemoryCache() });
+      `,
+      "page.ts": `
+        import { gql, useQuery } from "@apollo/client";
+        import { client } from "./client.js";
+        const Me = gql\`query Me { me { id } }\`;
+        export function Page() {
+          return useQuery(Me, { client });
+        }
+      `,
+    });
+
+    expect(clientOf(summaries, "Page.Me")).toEqual({
+      client: { uri: "/graphql", uriRef: null, chosenAtCall: true },
+      unresolved: undefined,
+    });
+  });
+
+  it("reads the client an imperative call is made on", async () => {
+    const summaries = await runInMemoryFiles(
+      {
+        "clients.ts": TWO_CLIENTS,
+        "load.ts": `
+          import { gql } from "@apollo/client";
+          import { appSyncClient } from "./clients.js";
+          const Listing = gql\`query Listing { listing { id } }\`;
+          export async function load() {
+            return appSyncClient.query({ query: Listing });
+          }
+        `,
+      },
+      BOTH_BOUND,
+    );
+
+    expect(clientOf(summaries, "load.Listing").client?.workspace).toBe(
+      "schema/appsync.graphql",
+    );
   });
 });

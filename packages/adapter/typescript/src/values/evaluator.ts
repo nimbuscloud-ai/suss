@@ -69,3 +69,30 @@ export function evaluatedValueUnder(
     ? evaluatedValue(node, resolution)
     : force(evaluatorFor(node, resolution).evaluate(node, { bindings }));
 }
+
+/**
+ * What an expression is worth when the function it is written in runs
+ * from one particular call. `calls` runs innermost first: the first one
+ * calls the expression's function, the next calls the function the
+ * first is written in, and so on out, and each call's arguments are
+ * read with its own function's parameters bound by the call after it.
+ * `given` takes a value in place of each construction it lists. Null
+ * when a call in the chain runs a function the evaluator cannot see.
+ */
+export function evaluatedValueThrough(
+  node: Node,
+  calls: readonly Node[],
+  resolution: ResolutionStore | undefined,
+  given: ReadonlyMap<Node, Value>,
+): Value | null {
+  const evaluator = evaluatorFor(node, resolution);
+  let bindings: ReadonlyMap<string, Value> = new Map();
+  for (const call of [...calls].reverse()) {
+    const bound = evaluator.argumentsAt(call, { bindings, given });
+    if (bound === null) {
+      return null;
+    }
+    bindings = bound;
+  }
+  return evaluator.evaluate(node, { bindings, given });
+}

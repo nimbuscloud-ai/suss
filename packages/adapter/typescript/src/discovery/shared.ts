@@ -26,6 +26,7 @@ import type {
 } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { UnfollowedCall } from "../resolve/unfollowedCall.js";
+import type { GraphqlCallSite } from "./graphqlCallClient.js";
 
 export interface ClientCallSite {
   callExpression: CallExpression;
@@ -141,6 +142,8 @@ export interface DiscoveredUnit {
     ambiguousFragments?: string[];
     unresolved?: { reference: string; reason: string };
   };
+  /** Where the operation's call takes its client, read once the pack's client constructions are known. */
+  graphqlCall?: GraphqlCallSite;
   /**
    * Populated by `packageExports` discovery. Has the package identity
    * the adapter uses to build a `function-call` binding

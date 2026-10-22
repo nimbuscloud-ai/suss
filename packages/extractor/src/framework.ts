@@ -129,6 +129,8 @@ export type DiscoveryMatch =
         hookName: string;
         operationType: "query" | "mutation" | "subscription";
       }>;
+      /** Where a call passes a client of its own instead of the app's: the options argument and the option. */
+      clientOption?: { argument: number; property: string };
     }
   | {
       /**
@@ -1417,13 +1419,14 @@ export interface PatternPack {
    * `uriProperty` the option key whose value is the endpoint. The
    * adapter reads every construction in the project and stamps the
    * client on each operation summary when exactly one distinct client
-   * exists; two or more distinct clients abstain, since a hook call
-   * does not say which one it goes through.
+   * exists; two or more abstain, unless a call passes its own client.
    */
   graphqlClients?: Array<{
     importModule: string;
     importName: string;
     uriProperty: string;
+    /** On a client a call can pass, the option its transport goes in. */
+    linkProperty?: string;
     /**
      * How this constructor's cache option installs a fragment
      * registry, for the library whose client can supply fragment
@@ -1445,8 +1448,9 @@ export interface PatternPack {
    * Which service a client talks to, keyed by the endpoint the
    * construction was read with: the uri literal, or the written
    * expression when the value is computed. The value is the provider
-   * workspace name. This is deployment knowledge, so it comes from the
-   * pack's own per-project config rather than from the library.
+   * workspace name, or the schema file the provider was read from.
+   * This is deployment knowledge, so it comes from the pack's own
+   * per-project config rather than from the library.
    */
   graphqlClientBindings?: Record<string, string>;
   /**

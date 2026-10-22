@@ -16,6 +16,8 @@
   "HttpLink": "@apollo/client: the HTTP transport link class, constructed with a uri",
   "createHttpLink": "@apollo/client: factory form of HttpLink, same options",
   "cache": "@apollo/client: the normalized-cache option on ApolloClient",
+  "link": "@apollo/client: the transport option on ApolloClient, used when no uri is given",
+  "client": "@apollo/client: the hook option that runs one operation through a client of its own",
   "InMemoryCache": "@apollo/client: the normalized cache constructor",
   "fragments": "@apollo/client: the InMemoryCache option that installs a fragment registry"
 }
