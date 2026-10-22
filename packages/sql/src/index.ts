@@ -13,10 +13,10 @@
  * words in the text. The README lists the dialects and what is left out.
  */
 
-import bigquery from "node-sql-parser/build/bigquery.js";
-import mysql from "node-sql-parser/build/mysql.js";
-import postgresql from "node-sql-parser/build/postgresql.js";
-import sqlite from "node-sql-parser/build/sqlite.js";
+import { asNode, columnName, type Node, stringOf } from "./astNodes.js";
+import { DIALECTS, type Grammar, parsedStatement } from "./grammars.js";
+import { CAST_TYPE, replaceInCode, TYPE_WORD } from "./rewrites.js";
+import { codeMask, nextToken } from "./textRuns.js";
 
 /** One table a statement touches, and what it does to it. */
 export interface SqlAccess {
@@ -57,41 +57,6 @@ export interface SqlReadOptions {
   dialect?: string;
   /** Whether to say which placeholder gives each column its value. */
   placeholders?: boolean;
-}
-
-interface SqlParser {
-  astify(sql: string, options: { database: string }): unknown;
-}
-
-interface ParserModule {
-  Parser: new () => SqlParser;
-}
-
-/** The grammars, keyed by the store name a pack declares. */
-const DIALECTS: Record<string, Grammar> = {
-  postgresql: { module: postgresql as ParserModule, database: "postgresql" },
-  mysql: {
-    module: mysql as ParserModule,
-    database: "mysql",
-    bindsByPosition: true,
-  },
-  sqlite: {
-    module: sqlite as ParserModule,
-    database: "sqlite",
-    bindsByPosition: true,
-  },
-  bigquery: { module: bigquery as ParserModule, database: "bigquery" },
-};
-
-interface Grammar {
-  module: ParserModule;
-  database: string;
-  /**
-   * Whether the dialect writes a bind as a bare `?`, counted by where it
-   * appears. The tree does not keep that order, so each `?` is numbered
-   * as `$1`, `$2` before parsing, which these grammars also read.
-   */
-  bindsByPosition?: boolean;
 }
 
 /** Every table a statement touches. Empty when the dialect is unknown or the statement cannot be parsed. */
@@ -154,12 +119,8 @@ function parsedAccesses(
   grammar: Grammar,
   defined: Set<string> = new Set(),
 ): SqlAccess[] | null {
-  let parsed: unknown;
-  try {
-    parsed = new grammar.module.Parser().astify(sql, {
-      database: grammar.database,
-    });
-  } catch {
+  const parsed = parsedStatement(sql, grammar);
+  if (parsed === null) {
     return null;
   }
   const statements = Array.isArray(parsed) ? parsed : [parsed];
@@ -285,108 +246,6 @@ function quoteAfter(open: string | null, part: string): string | null {
   return closing;
 }
 
-/** A stretch of a statement the grammar reads as text rather than code. */
-interface TextRun {
-  /** One character past the end of the run. */
-  end: number;
-  /** Whether it is a comment rather than a literal or a quoted name. */
-  comment: boolean;
-}
-
-/** What closes a run of text, by what opened it. */
-const TEXT_RUNS: ReadonlyArray<{
-  open: string;
-  close: string;
-  comment: boolean;
-}> = [
-  { open: "--", close: "\n", comment: true },
-  { open: "/*", close: "*/", comment: true },
-  { open: "'", close: "'", comment: false },
-  { open: '"', close: '"', comment: false },
-  { open: "`", close: "`", comment: false },
-];
-
-/** What opens and closes a Postgres dollar-quoted literal. */
-const DOLLAR_TAG = /\$(?:[A-Za-z_]\w*)?\$/y;
-
-/** The run of text that opens at `index`, or null when `index` is in code. */
-function textRunAt(sql: string, index: number): TextRun | null {
-  DOLLAR_TAG.lastIndex = index;
-  const tag = DOLLAR_TAG.exec(sql)?.[0];
-  if (tag !== undefined) {
-    return { end: closingAt(sql, index + tag.length, tag), comment: false };
-  }
-  for (const run of TEXT_RUNS) {
-    if (sql.startsWith(run.open, index)) {
-      const from = index + run.open.length;
-      return { end: closingAt(sql, from, run.close), comment: run.comment };
-    }
-  }
-  return null;
-}
-
-/** One character past the closer, or the end when nothing closed it. */
-function closingAt(sql: string, from: number, close: string): number {
-  const at = sql.indexOf(close, from);
-  return at === -1 ? sql.length : at + close.length;
-}
-
-/**
- * Which characters are code, as opposed to a literal, a quoted name or
- * a comment. The rewrites apply to code only, because rewriting inside
- * text would change the statement's meaning.
- */
-function codeMask(sql: string): boolean[] {
-  const mask = new Array<boolean>(sql.length).fill(true);
-  let index = 0;
-  while (index < sql.length) {
-    const run = textRunAt(sql, index);
-    if (run === null) {
-      index += 1;
-      continue;
-    }
-    for (let at = index; at < run.end; at += 1) {
-      mask[at] = false;
-    }
-    index = run.end;
-  }
-  return mask;
-}
-
-/** The statement with every match that starts in code rewritten. */
-function replaceInCode(
-  sql: string,
-  pattern: RegExp,
-  rewrite: (match: RegExpMatchArray) => string,
-): string {
-  const mask = codeMask(sql);
-  let rewritten = "";
-  let from = 0;
-  for (const match of sql.matchAll(pattern)) {
-    const at = match.index;
-    if (at === undefined || mask[at] === false) {
-      continue;
-    }
-    rewritten += sql.slice(from, at) + rewrite(match);
-    from = at + match[0].length;
-  }
-  return rewritten + sql.slice(from);
-}
-
-/** A name a type can go by, quoted or bare. */
-const TYPE_WORD = String.raw`(?:"[^"]*"|\w+)`;
-
-/** The optional length or precision after a type, as in `varchar(20)` or `numeric(10, 2)`. */
-const TYPE_SIZE = String.raw`(?:\s*\(\s*\d+\s*(?:,\s*\d+\s*)?\))?`;
-
-/** The words after a type name the standard writes as more than one word, as in `double precision`. */
-const TYPE_TAIL = String.raw`(?:\s+(?:precision|varying|with(?:out)?\s+time\s+zone))?`;
-
-/** A type a statement can cast to, including a schema-qualified name and array dimensions. */
-const CAST_TYPE =
-  `${TYPE_WORD}(?:\\s*\\.\\s*${TYPE_WORD})?` +
-  `${TYPE_SIZE}${TYPE_TAIL}${TYPE_SIZE}(?:\\s*\\[\\s*\\])*`;
-
 /** A parameter with a cast, such as `$1::text`. */
 const PARAMETER_CAST = new RegExp(
   String.raw`(\$\d+)(?:\s*::\s*${CAST_TYPE})+`,
@@ -507,23 +366,6 @@ function pastMaterialized(sql: string, index: number): number {
     : past;
 }
 
-/** The index of the next token, past whitespace and comments. */
-function nextToken(sql: string, from: number): number {
-  let index = from;
-  while (index < sql.length) {
-    if (/\s/.test(sql[index] ?? "")) {
-      index += 1;
-      continue;
-    }
-    const run = textRunAt(sql, index);
-    if (run === null || !run.comment) {
-      return index;
-    }
-    index = run.end;
-  }
-  return index;
-}
-
 /** Whether `word` appears at `index` as a whole word, ignoring case. */
 function wordAt(sql: string, index: number, word: string): boolean {
   const written = sql.slice(index, index + word.length).toLowerCase();
@@ -577,11 +419,6 @@ function afterGroup(
     }
   }
   return null;
-}
-
-interface Node {
-  type?: string;
-  [key: string]: unknown;
 }
 
 /**
@@ -1113,34 +950,4 @@ function namesOf(value: unknown): string[] {
   return value
     .map((entry) => columnName(entry))
     .filter((name): name is string => name !== null);
-}
-
-/**
- * A column's name. The parser returns a bare name as a string and a
- * quoted or qualified one as a value node.
- */
-function columnName(value: unknown): string | null {
-  const direct = stringOf(value);
-  if (direct !== null) {
-    return direct;
-  }
-  const node = asNode(value);
-  if (node === null) {
-    return null;
-  }
-  const own = stringOf(node.value);
-  if (own !== null) {
-    return own;
-  }
-  return node.expr === undefined ? null : columnName(node.expr);
-}
-
-function stringOf(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function asNode(value: unknown): Node | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Node)
-    : null;
 }
