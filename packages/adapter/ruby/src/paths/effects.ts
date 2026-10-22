@@ -61,6 +61,9 @@ function literalArgOf(
   if (typeof constant === "boolean") {
     return { kind: "boolean", value: constant };
   }
+  if (constant === null) {
+    return { kind: "null" };
+  }
   return null;
 }
 

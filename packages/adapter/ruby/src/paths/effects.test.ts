@@ -188,6 +188,19 @@ describe("ruby invocation effects", () => {
     const effects = await effectsFor(["def total", "  1", "end"]);
     expect(effects).toEqual([]);
   });
+  it("records a written nil apart from an argument it could not read", async () => {
+    const effects = await effectsFor([
+      "def send_body(sections, count)",
+      "  create_email_body(sections, nil, count + 1)",
+      "end",
+    ]);
+    expect(effects[0]?.args).toEqual([
+      { kind: "identifier", name: "sections" },
+      { kind: "null" },
+      { kind: "identifier", name: "count + 1" },
+    ]);
+  });
+
   it("writes a float and a false out too", async () => {
     const effects = await effectsFor([
       "def total",

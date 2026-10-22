@@ -1401,6 +1401,60 @@ describe("edge cases", () => {
     ]);
   });
 
+  it("records a written null and undefined apart from an argument it could not read", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler(sections: string, count: number) {
+        createEmailBody(sections, null, undefined, count + 1, { footer: null });
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns).branches;
+    expect(invocationOf(branches, "createEmailBody").args).toEqual([
+      { kind: "identifier", name: "sections" },
+      { kind: "null" },
+      { kind: "undefined" },
+      null,
+      { kind: "object", fields: { footer: { kind: "null" } } },
+    ]);
+  });
+
+  it("does not inline a module-level let, which code can set again before the call", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "mod.ts",
+      `
+      let client = null;
+      const NONE = null;
+      export function handler() {
+        send(client, NONE);
+      }
+    `,
+    );
+    const fn = file.getFunctions().find((f) => f.isExported()) as FunctionRoot;
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns).branches;
+    expect(invocationOf(branches, "send").args).toEqual([
+      { kind: "identifier", name: "client" },
+      { kind: "null" },
+    ]);
+  });
+
   it("inlines module-level const bindings with simple initializers", () => {
     // Closure-over-constants: `const QUEUE_URL = process.env.QUEUE_URL;
     // send(QUEUE_URL, ...)` should read the same at the call site as
