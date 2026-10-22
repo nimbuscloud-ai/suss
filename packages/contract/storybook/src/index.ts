@@ -28,6 +28,7 @@ import {
   exportedDeclarationsOf,
   findNearestTsconfig,
   objectLiteralOf,
+  projectPlaceOf,
   propertiesOf,
   propertyFunctionOf,
   propertyNameOf,
@@ -37,10 +38,9 @@ import {
   specifierImportedAs,
   stringValueOf,
   symbolBehind,
-  workspaceNameFor,
-  workspaceRootFor,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
+import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 
 import type {
   BehavioralSummary,
@@ -53,7 +53,7 @@ import type {
 export interface StorybookStubOptions {
   /**
    * Each summary's `location.file` is relative to this, so it is the same
-   * on every machine. Defaults to the working directory.
+   * on every machine. Defaults to the repository each story is in.
    */
   projectRoot?: string;
   /**
@@ -74,7 +74,6 @@ export function generateSummariesFromStories(
   filePaths: string[],
   options: StorybookStubOptions = {},
 ): BehavioralSummary[] {
-  const projectRoot = options.projectRoot ?? process.cwd();
   const componentModules = options.componentModules ?? true;
   const byFile = new Map<string, BehavioralSummary[]>();
   const groups: Map<string | null, string[]> = componentModules
@@ -85,7 +84,11 @@ export function generateSummariesFromStories(
     const project = projectFor(tsconfig);
     const resolution = new ResolutionStore();
     for (const sf of files.map((fp) => project.addSourceFileAtPath(fp))) {
-      const relPath = path.relative(projectRoot, sf.getFilePath());
+      const storyFile = sf.getFilePath();
+      const relPath = pathInProject(
+        storyFile,
+        options.projectRoot ?? defaultProjectRoot(storyFile),
+      );
       const meta = extractMeta(sf, resolution, componentModules);
       if (meta === null) {
         continue;
@@ -320,15 +323,10 @@ function declaredModuleOf(component: Node): ComponentModule | undefined {
   if (declaration === undefined) {
     return undefined;
   }
-  const file = declaration.getSourceFile().getFilePath();
-  const tsconfig = findNearestTsconfig(path.dirname(file));
-  const root = workspaceRootFor(
-    tsconfig === null ? path.dirname(file) : path.dirname(tsconfig),
-  );
-  const workspace = workspaceNameFor(root);
+  const place = projectPlaceOf(declaration.getSourceFile().getFilePath());
   return {
-    ...(workspace === null ? {} : { workspace }),
-    file: path.relative(root, file).replace(/\\/g, "/"),
+    ...(place.workspace === null ? {} : { workspace: place.workspace }),
+    file: place.file,
     name: declaredNameOf(declaration) ?? component.getText(),
   };
 }

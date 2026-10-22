@@ -18,6 +18,14 @@ It imports `@suss/behavioral-ir` for type references and `@suss/extractor` for t
 
 Code outside the facility never reads the syntax to find out what a value is. `discovery/resolveValue.ts` is the entry point most callers want. `stringValueOf` folds a template and follows a name to the string it was written as. `objectLiteralOf` and `propertiesOf` read an object through whatever name it arrived under and fold a spread into it. `functionValueOf` and `writtenNodeOf` return the function or the expression a reference comes to. Under those are the `ResolutionStore` in `facts/store.ts` (`resolveWrittenValue`, `resolveObject`, `resolveCallable`, `argumentsPassedTo`, `importedNamesOf`, `importOriginsOf`, `exportsOf`), `resolve/functionBehind.ts`, `walk/unwrap.ts` for casts and parentheses, and `discovery/importScan.ts` for imports. Packs reach all of it through this package's exports. When the facility cannot read a spelling, add the case to the facility. `npm run check:readers` at the repo root fails on a reader written beside a call site instead. [`design/docs-internal/style.md#reading-a-value`](../../../design/docs-internal/style.md#reading-a-value) has the rule.
 
+## How a summary spells its file
+
+A run measures every path from one root: the nearest folder at or above the tsconfig, or the folder the run was pointed at, whose `package.json` has a name. That name is the summary's `location.workspace`, and its id is the workspace, the file's path from the root, and the export path, as in `@acme/api::src/server.ts::get`. Nothing absolute goes into a summary, so two checkouts of one project write the same bytes.
+
+A run can reach a file outside its root. The usual case is a sibling package in an npm workspace, which the compiler reaches through the link in `node_modules` and reports at the path the link leads to. That path depends on where the checkout is, and `check --base` reads the base revision in a temporary copy whose links lead back into the working checkout. So a file outside the root gets the name an extract of its own package would give it: that package's name as the workspace, and the file's path inside the package. A route that `@acme/api` mounts from `@acme/shared` comes out as `@acme/shared::src/routes.ts::get` in every checkout.
+
+A path a summary records about another file, such as an import in `moduleImports` or a component's file in a render target, is written from the run's root. One outside the root is written with its package's name in front, `@acme/shared::src/routes.ts`, the form `referencedFile` in `@suss/behavioral-ir` reads back. `pathFromRun` writes it, and `placeOutsideRun` gives the workspace and path a summary in such a file gets.
+
 ## How a project is loaded
 
 When a `Project` is constructed, ts-morph parses every file in the tsconfig include glob. On a monorepo that is thousands of files the extraction never touches. The bootstrap avoids that in four steps:

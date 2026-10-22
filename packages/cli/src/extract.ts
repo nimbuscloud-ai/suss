@@ -19,6 +19,8 @@ import {
   createProjectWithoutTsconfig,
   createTypeScriptAdapter,
   findNearestTsconfig,
+  pathFromRun,
+  placeOutsideRun,
   workspaceRootFor,
 } from "@suss/adapter-typescript";
 import {
@@ -1848,15 +1850,15 @@ function formatTimingBreakdown(report: TimingReport): string {
  * writes every path absolute, and the written summaries are relative, so
  * every field that contains a path is rewritten here: the unit's file, the
  * boundary binding, render targets, module imports, wrappers and type refs.
+ * A file outside the root is written the way `pathFromRun` writes it, and
+ * a unit in such a file has its path in its own project, as its id does.
  */
 export function relativizeSummaryPaths(
   summary: BehavioralSummary,
   projectRoot: string,
 ): void {
-  summary.location.file = relativeIfAbsolute(
-    projectRoot,
-    summary.location.file,
-  );
+  summary.location.file = locationFileIn(projectRoot, summary.location.file);
+  relativizeDerivedFrom(summary, projectRoot);
   const binding = summary.identity.boundaryBinding;
   if (binding !== null && binding !== undefined) {
     summary.identity.boundaryBinding = withRewrittenPaths(binding, (one) =>
@@ -1881,6 +1883,29 @@ export function relativizeSummaryPaths(
   relativizeTypeRefs(summary, projectRoot);
   relativizeMockedModules(summary, projectRoot);
   relativizeReceiverClasses(summary, projectRoot);
+}
+
+/** A unit read from a wrapper's own behavior records the wrapper's file. */
+function relativizeDerivedFrom(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  const derivedFrom = summary.metadata?.derivedFromWrapper;
+  if (
+    typeof derivedFrom !== "object" ||
+    derivedFrom === null ||
+    !("file" in derivedFrom) ||
+    typeof derivedFrom.file !== "string"
+  ) {
+    return;
+  }
+  summary.metadata = {
+    ...summary.metadata,
+    derivedFromWrapper: {
+      ...derivedFrom,
+      file: relativeIfAbsolute(projectRoot, derivedFrom.file),
+    },
+  };
 }
 
 /** A call's receiver class is matched against the subject's file, so both are relative. */
@@ -1988,25 +2013,38 @@ function relativizeWrapper(
   return { ...wrapper, file: relativeIfAbsolute(projectRoot, wrapper.file) };
 }
 
-const relativeByRoot = new Map<string, Map<string, string>>();
-
 /**
- * `path.relative`, remembered. A large run rewrites the same few
- * thousand files tens of thousands of times, and each call normalizes
- * and splits both paths again.
+ * A large run rewrites the same few thousand files tens of thousands of
+ * times, and each answer costs a walk up the tree for a file outside the
+ * root, so each one is remembered per root.
  */
-function relativeTo(projectRoot: string, file: string): string {
-  let byFile = relativeByRoot.get(projectRoot);
-  if (byFile === undefined) {
-    byFile = new Map();
-    relativeByRoot.set(projectRoot, byFile);
+function remembered<T>(
+  compute: (file: string, projectRoot: string) => T,
+): (projectRoot: string, file: string) => T {
+  const byRoot = new Map<string, Map<string, T>>();
+  return (projectRoot, file) => {
+    let byFile = byRoot.get(projectRoot);
+    if (byFile === undefined) {
+      byFile = new Map();
+      byRoot.set(projectRoot, byFile);
+    }
+    if (!byFile.has(file)) {
+      byFile.set(file, compute(file, projectRoot));
+    }
+    return byFile.get(file) as T;
+  };
+}
+
+// Looked up on each call, so a test that mocks the adapter still loads this module.
+const relativeTo = remembered((file, root) => pathFromRun(file, root));
+const outsidePlace = remembered((file, root) => placeOutsideRun(file, root));
+
+/** A unit's own file, as its id spells it. */
+function locationFileIn(projectRoot: string, file: string): string {
+  if (!path.isAbsolute(file)) {
+    return file;
   }
-  let relative = byFile.get(file);
-  if (relative === undefined) {
-    relative = path.relative(projectRoot, file);
-    byFile.set(file, relative);
-  }
-  return relative;
+  return outsidePlace(projectRoot, file)?.file ?? relativeTo(projectRoot, file);
 }
 
 /**

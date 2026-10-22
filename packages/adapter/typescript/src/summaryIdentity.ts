@@ -17,10 +17,15 @@ import path from "node:path";
 
 import {
   disambiguateSummaryIds,
+  fileReference,
   linkCallsToSummaries,
+  readSourceDocumentMetadata,
   summaryIdFromParts,
+  withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
+import { pathInProject } from "@suss/behavioral-ir/files";
 
+import { findNearestTsconfig } from "./bootstrap/noTsconfigProject.js";
 import { namedPackageDirAbove, packageNameAt } from "./packageExports.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -74,11 +79,12 @@ export function nameSummaries(
   args: { workspace: string | null; projectRoot: string | undefined },
 ): void {
   for (const summary of summaries) {
-    const file = relativeFile(summary.location.file, args.projectRoot);
-    if (args.workspace !== null) {
-      summary.location.workspace = args.workspace;
+    spellPathNames(summary, args.projectRoot);
+    const place = placeInRun(summary.location.file, args);
+    if (place.workspace !== null) {
+      summary.location.workspace = place.workspace;
     }
-    summary.identity.id = idFor(args.workspace, file, summary);
+    summary.identity.id = idFor(place.workspace, place.file, summary);
   }
 
   // One function can produce several summaries, one per thing it
@@ -92,13 +98,99 @@ export function nameSummaries(
   linkCallsToSummaries(summaries);
 }
 
-/** Relative to the project, so the id survives moving the checkout. */
-function relativeFile(file: string, projectRoot: string | undefined): string {
-  if (projectRoot === undefined || !path.isAbsolute(file)) {
+/** A file as a summary records it: the project it is in, and its path from that project's root. */
+export interface FilePlace {
+  /** Absolute. */
+  root: string;
+  workspace: string | null;
+  file: string;
+}
+
+/**
+ * Where a file belongs when it is read as part of its own project: the
+ * root an extract of that project measures from, the project's name, and
+ * the file's path from that root.
+ */
+export function projectPlaceOf(file: string): FilePlace {
+  const dir = path.dirname(file);
+  const tsconfig = findNearestTsconfig(dir);
+  const root = workspaceRootFor(
+    tsconfig === null ? dir : path.dirname(tsconfig),
+  );
+  return {
+    root,
+    workspace: workspaceNameFor(root),
+    file: pathInProject(file, root),
+  };
+}
+
+/**
+ * Where a file outside the run's root belongs, such as a sibling package
+ * reached through a workspace link, or null for a file under the root.
+ * The path the link leads to never appears, so every checkout agrees.
+ */
+export function placeOutsideRun(
+  file: string,
+  runRoot: string,
+): FilePlace | null {
+  const inRun = path.relative(runRoot, file);
+  if (!inRun.startsWith("..") && !path.isAbsolute(inRun)) {
+    return null;
+  }
+  return projectPlaceOf(file);
+}
+
+/**
+ * How a summary writes a path on disk that it mentions, such as an
+ * import: its path from the run's root, or the other project's name and
+ * the path from that project's root for a file outside the run.
+ */
+export function pathFromRun(file: string, runRoot: string): string {
+  if (!path.isAbsolute(file)) {
     return file;
   }
-  const relative = path.relative(projectRoot, file);
-  return relative.startsWith("..") ? file : relative;
+  const outside = placeOutsideRun(file, runRoot);
+  return outside === null
+    ? pathInProject(file, runRoot)
+    : fileReference(outside.workspace, outside.file);
+}
+
+function placeInRun(
+  file: string,
+  args: { workspace: string | null; projectRoot: string | undefined },
+): { workspace: string | null; file: string } {
+  if (args.projectRoot === undefined || !path.isAbsolute(file)) {
+    return { workspace: args.workspace, file };
+  }
+  return (
+    placeOutsideRun(file, args.projectRoot) ?? {
+      workspace: args.workspace,
+      file: pathInProject(file, args.projectRoot),
+    }
+  );
+}
+
+/**
+ * A name that is a path on disk, such as the file a schema document is
+ * named after, is spelled like any other path, so the id built from it
+ * is the same on every machine.
+ */
+function spellPathNames(
+  summary: BehavioralSummary,
+  projectRoot: string | undefined,
+): void {
+  if (projectRoot === undefined) {
+    return;
+  }
+  if (path.isAbsolute(summary.identity.name)) {
+    summary.identity.name = pathFromRun(summary.identity.name, projectRoot);
+  }
+  const label = readSourceDocumentMetadata(summary)?.label;
+  if (label !== undefined && path.isAbsolute(label)) {
+    summary.metadata = withSourceDocumentMetadata(summary.metadata, {
+      label: pathFromRun(label, projectRoot),
+    });
+  }
 }
 
 function idFor(
