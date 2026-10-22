@@ -359,6 +359,21 @@ describe("checkSchemaAgreement: type families", () => {
     ["date", "date"],
     ["time", "time"],
     ["interval", "interval"],
+    ["integer", "@db.Integer"],
+    ["integer", "@db.Int"],
+    ["float", "@db.Double"],
+    ["float", "@db.Float"],
+    ["text", "@db.TinyText"],
+    ["text", "@db.MediumText"],
+    ["text", "@db.LongText"],
+    ["boolean", "@db.Boolean"],
+    ["datetime", "@db.DateTime"],
+    ["binary", "@db.Binary"],
+    ["binary", "@db.VarBinary"],
+    ["binary", "@db.TinyBlob"],
+    ["binary", "@db.Blob"],
+    ["binary", "@db.MediumBlob"],
+    ["binary", "@db.LongBlob"],
   ];
 
   it.each(agreeing)("treats %s and %s as one family", (left, right) => {

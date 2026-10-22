@@ -63,7 +63,15 @@ type Family =
  * Time zones, and json against jsonb, are one family for now.
  */
 const SPELLINGS: Record<Family, readonly string[]> = {
-  integer: ["integer", "int", "int4", "serial", "serial4"],
+  integer: [
+    "integer",
+    "int",
+    "int4",
+    "serial",
+    "serial4",
+    "@db.integer",
+    "@db.int",
+  ],
   smallint: [
     "smallint",
     "int2",
@@ -91,6 +99,8 @@ const SPELLINGS: Record<Family, readonly string[]> = {
     "float8",
     "@db.real",
     "@db.doubleprecision",
+    "@db.float",
+    "@db.double",
   ],
   text: [
     "string",
@@ -105,8 +115,11 @@ const SPELLINGS: Record<Family, readonly string[]> = {
     "@db.varchar",
     "@db.char",
     "@db.citext",
+    "@db.tinytext",
+    "@db.mediumtext",
+    "@db.longtext",
   ],
-  boolean: ["boolean", "bool", "tinyint(1)"],
+  boolean: ["boolean", "bool", "tinyint(1)", "@db.boolean"],
   uuid: ["uuid", "@db.uuid"],
   timestamp: [
     "datetime",
@@ -116,6 +129,7 @@ const SPELLINGS: Record<Family, readonly string[]> = {
     "timestamp without time zone",
     "@db.timestamp",
     "@db.timestamptz",
+    "@db.datetime",
   ],
   date: ["date", "@db.date"],
   time: [
@@ -128,7 +142,19 @@ const SPELLINGS: Record<Family, readonly string[]> = {
   ],
   interval: ["interval"],
   json: ["json", "jsonb", "@db.json", "@db.jsonb"],
-  bytea: ["binary", "bytea", "bytes", "largebinary", "@db.bytea"],
+  bytea: [
+    "binary",
+    "bytea",
+    "bytes",
+    "largebinary",
+    "@db.bytea",
+    "@db.binary",
+    "@db.varbinary",
+    "@db.tinyblob",
+    "@db.blob",
+    "@db.mediumblob",
+    "@db.longblob",
+  ],
   enum: ["enum"],
   array: ["array"],
 };
