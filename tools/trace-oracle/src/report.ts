@@ -59,6 +59,13 @@ export interface Report {
   othersByKind: Partial<Record<OtherKind, number>>;
   /** How many found edges needed the model and table name rule. */
   foundByName: number;
+  /** How suss and grep split the traced edges between them. */
+  overlap: {
+    both: number;
+    sussOnly: number;
+    grepOnly: number;
+    neither: number;
+  };
   grepLocated: Record<string, number>;
   verdicts: Array<EdgeVerdict & { grep: Omit<GrepVerdict, "edge"> }>;
   notExercised: NotExercised[];
@@ -155,6 +162,12 @@ export function buildReport(options: ReportOptions): Report {
     missesByReason,
     othersByKind,
     foundByName: verdicts.filter((one) => one.agreement === "byName").length,
+    overlap: {
+      both: verdicts.filter((one) => one.found && one.grep.found).length,
+      sussOnly: verdicts.filter((one) => one.found && !one.grep.found).length,
+      grepOnly: verdicts.filter((one) => !one.found && one.grep.found).length,
+      neither: verdicts.filter((one) => !one.found && !one.grep.found).length,
+    },
     grepLocated,
     verdicts,
     notExercised: matched.notExercised,
@@ -174,7 +187,7 @@ function rateCells(rate: Rate): string {
 export function renderSummary(report: Report): string {
   const lines = [
     `${report.app}: ${report.recall.traced} traced edges from ${report.routes.exercised} exercised routes (${report.routes.discovered} of them in suss)`,
-    `  suss found ${report.recall.suss} (${percent(report.recall.suss, report.recall.traced)}), grep found ${report.recall.grep} (${percent(report.recall.grep, report.recall.traced)})`,
+    `  suss found ${report.recall.suss} (${percent(report.recall.suss, report.recall.traced)}), grep found ${report.recall.grep} (${percent(report.recall.grep, report.recall.traced)}); both ${report.overlap.both}, only suss ${report.overlap.sussOnly}, only grep ${report.overlap.grepOnly}`,
     `  less the ${report.recall.traced - report.recallSettleable.traced} edges whose table the request path gives: suss ${report.recallSettleable.suss} of ${report.recallSettleable.traced}, grep ${report.recallSettleable.grep}`,
   ];
   for (const reason of rankedReasons(report)) {
@@ -208,6 +221,8 @@ export function renderMarkdown(report: Report): string {
   lines.push(
     "",
     `${report.foundByName} found edges agreed only by the model and table name rule.`,
+    "",
+    `Both found ${report.overlap.both}, only suss ${report.overlap.sussOnly}, only grep ${report.overlap.grepOnly}, neither ${report.overlap.neither}.`,
     "",
     "## Misses by reason",
     "",
