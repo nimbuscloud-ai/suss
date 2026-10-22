@@ -1040,11 +1040,29 @@ const StorageContractMetadataSchema = z.object({
   fields: z
     .array(
       z.object({
+        /** What the code addresses the field by. */
         name: z.string(),
+        /**
+         * The column the database stores it under, when that differs
+         * from `name`: a Prisma field's `@map`, or the string a Drizzle
+         * builder is given. Two declarations of one table are compared
+         * on this, and accesses are still checked against `name`.
+         */
+        column: z.string().optional(),
         type: z.string().optional(),
         nullable: z.boolean().optional(),
         primary: z.boolean().optional(),
         unique: z.boolean().optional(),
+        /**
+         * Whether the database fills the column when an insert leaves
+         * it out. A default the application computes, such as Prisma's
+         * `cuid()`, is not one. `false` means the reader looked and
+         * found none, and absent means the reader does not read
+         * defaults, so only two stated values are compared.
+         */
+        default: z.boolean().optional(),
+        /** The table a foreign key on this column points at. */
+        foreignKey: z.string().optional(),
         /**
          * Set when the boundary serves this field without storing it:
          * a Prisma relation, which is read through its foreign key, or
@@ -1078,6 +1096,21 @@ const StorageContractMetadataSchema = z.object({
     .optional(),
   /** The physical SQL name when a model maps to a table spelled differently. */
   physicalTable: z.string().optional(),
+  /**
+   * Where the declaration's columns come from, which decides the side
+   * that speaks for the database when two declarations of one table
+   * disagree. `"dump"` was written out of the database itself, such as
+   * Rails' `db/schema.rb`. `"migrations"` is a schema whose own
+   * migrations make the table, with `prisma/migrations` or
+   * `alembic/versions` beside it. Absent is a declaration the code is
+   * written against and nothing more is known.
+   */
+  origin: z.enum(["dump", "migrations"]).optional(),
+  /**
+   * Set when the project says this declaration speaks for the database,
+   * which outranks `origin`.
+   */
+  source: z.boolean().optional(),
 });
 
 export type StorageContractMetadata = z.infer<

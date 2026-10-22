@@ -25,6 +25,8 @@ const SuppressionSideSchema = z
   .object({
     summary: z.string().optional(),
     transitionId: z.string().optional(),
+    /** The field on that side, for a finding about one field and no transition. */
+    field: z.string().optional(),
   })
   .optional();
 
