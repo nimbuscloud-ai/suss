@@ -30,11 +30,14 @@ export type UnpairableReason =
   | "noBoundary"
   | "unnamedBoundary"
   | "unknownKind"
-  | "testCode";
+  | "testCode"
+  | "unknownService";
 
 export interface UnpairableSummary {
   summary: BehavioralSummary;
   reason: UnpairableReason;
+  /** What stopped this one summary pairing, when the reason alone does not say. */
+  detail?: string;
 }
 
 /** One consumer, and the services that all serve what it calls. */
@@ -55,7 +58,8 @@ export interface PairingResult {
      * `unnamedBoundary` is a boundary the source never gave a name to,
      * and `unknownKind` is a summary read from disk with a kind this
      * build does not know, and `testCode` is a test or code in a test
-     * file. They share one list, and a reader groups them by reason.
+     * file. The GraphQL pass adds `unknownService`, an operation whose
+     * client suss could not tie to a service. A reader groups them by reason.
      */
     unpairable: UnpairableSummary[];
   };
