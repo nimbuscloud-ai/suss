@@ -42,15 +42,32 @@ function conformingFacts(): Database {
   db.add("binds", ["f#REGISTRY", "registry:1"]);
   db.add("paramOf", ["fn:register", "1", "fn:register#handler"]);
   db.add("holdsUnderKey", ["f#REGISTRY", "fn:register#handler"]);
+  db.add("writtenEntryAt", ["list:1", "0", "f#first", "value"]);
+  db.add("writtenEntryAt", ["list:1", "1", "f#rest", "spread"]);
+  db.add("holdsProperty", ["options:1", "a", "f#first"]);
+  db.add("writtenEntryAt", ["options:1", "0", "f#first", "value"]);
+  db.add("writtenEntryAt", ["options:1", "1", "f#rest", "spread"]);
+  db.add("binds", ["f#id", "call:1"]);
+  db.add("partAt", ["path:1", "0", "/users/"]);
+  db.add("holeAt", ["path:1", "1", "f#id"]);
+  db.add("partAt", ["path:1", "2", "/posts"]);
+  db.add("elementOf", ["block:1#user", "fn:a#loader"]);
+  db.add("positionOf", ["block:1#at", "block:1#user"]);
+  db.add("holdsUnderKey", ["comprehension:1", "block:1#user"]);
+  db.add("holdsUnderKey", ["comprehension:1", "block:1#at"]);
+  db.add("elementPartOf", ["block:2#name", "fn:a#loader", "0"]);
+  db.add("elementPartOf", ["block:2#kind", "fn:a#loader", "1"]);
+  db.add("holdsUnderKey", ["comprehension:2", "block:2#name"]);
   return db;
 }
 
-/** The same facts less the two tables, for a case that counts every object or entry. */
+/** The same facts less the two tables and the object written with a spread, for a case that counts every object or entry. */
 function withoutTables(db: Database): Database {
   db.retract("objectValue", [["table:1"], ["registry:1"]]);
   db.retract("holdsProperty", [
     ["table:1", "created", "f#on_created"],
     ["table:1", "deleted", "f#on_deleted"],
+    ["options:1", "a", "f#first"],
   ]);
   return db;
 }
@@ -449,6 +466,85 @@ describe("the fact contract", () => {
     expect(problems).toContain("expected one call");
     expect(problems).toContain("not an object value");
     expect(problems).toContain("exports nothing");
+  });
+
+  it("catches a spread keyed on the spread written in the list rather than on what it unpacks", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("writtenEntryAt", [["list:1", "1", "f#rest", "spread"]]);
+      db.add("writtenEntryAt", ["list:1", "1", "f#second", "spread"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toEqual([
+      "a list written with a spread",
+    ]);
+  });
+
+  it("catches a template whose parts are numbered apart from its holes", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("partAt", [["path:1", "2", "/posts"]]);
+      db.add("partAt", ["path:1", "1", "/posts"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toEqual([
+      "a template string with a hole",
+    ]);
+  });
+
+  it("catches a loop whose collection leads to no parameter, and a list with no entries stated", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("elementOf", [["block:1#user", "fn:a#loader"]]);
+      db.add("elementOf", ["block:1#user", "f#users"]);
+      db.retract("writtenEntryAt", [
+        ["list:1", "0", "f#first", "value"],
+        ["list:1", "1", "f#rest", "spread"],
+        ["options:1", "0", "f#first", "value"],
+        ["options:1", "1", "f#rest", "spread"],
+      ]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem)).toEqual([
+      expect.stringContaining("no list or object states its entries"),
+      expect.stringContaining("no list or object states its entries"),
+      expect.stringContaining("nothing leads from it to the parameter"),
+    ]);
+  });
+
+  it("catches parts of one element keyed under two collections, and a list with only one part stated", async () => {
+    const split = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("elementPartOf", [["block:2#kind", "fn:a#loader", "1"]]);
+      db.add("elementPartOf", ["block:2#kind", "f#pairs", "1"]);
+      return db;
+    });
+    expect(split.map((f) => f.problem)).toEqual([
+      expect.stringContaining("the two parts name different collections"),
+    ]);
+
+    const single = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("elementPartOf", [["block:2#kind", "fn:a#loader", "1"]]);
+      return db;
+    });
+    expect(single.map((f) => f.problem)).toEqual([
+      expect.stringContaining("no two names are given parts 0 and 1"),
+    ]);
+  });
+
+  it("catches a loop variable that no read of it leads to, and a position tied to no element", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("holdsUnderKey", [["comprehension:1", "block:1#user"]]);
+      db.retract("positionOf", [["block:1#at", "block:1#user"]]);
+      db.add("positionOf", ["block:1#at", "block:2#user"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toEqual([
+      "a callback given each element of a list",
+      "a callback given each position in a list",
+    ]);
   });
 
   it("says a sequence keeps no elements when it is an object with none", async () => {

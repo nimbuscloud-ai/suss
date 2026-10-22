@@ -594,6 +594,10 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/wrapped-routes-flask"),
     ...packs("flask-restx"),
   ]),
+  fixture("wrapped-routes-nextjs", [
+    ...dir("fixtures/wrapped-routes-nextjs"),
+    ...packs("nextjs", "fetch"),
+  ]),
   fixture("wrapped-set-timeout", [
     ...project("fixtures/wrapped-set-timeout/tsconfig.json"),
     ...packs("react", "express", "node", "fetch"),

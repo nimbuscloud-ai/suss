@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nodeOfKey } from "./nodeKey.js";
+import { nodeOfKey, spanOfKey } from "./nodeKey.js";
 
 import type { SpannedNode } from "./nodeKey.js";
 
@@ -48,5 +48,20 @@ describe("nodeOfKey", () => {
     expect(nodeOfKey(roots, "a.rb:0-5")).toBeNull();
     expect(nodeOfKey(roots, "a.rb:8-8")).toBeNull();
     expect(nodeOfKey(roots, "a.rb:10-25")).toBeNull();
+  });
+});
+
+describe("spanOfKey", () => {
+  it("reads the file and the byte span of a node key, a file path with colons included", () => {
+    expect(spanOfKey("/app/a:b.rb:4-8")).toEqual({
+      file: "/app/a:b.rb",
+      start: 4,
+      end: 8,
+    });
+  });
+
+  it("returns null for a name key", () => {
+    expect(spanOfKey("a.rb:4-8#key")).toBeNull();
+    expect(spanOfKey("a.rb#key")).toBeNull();
   });
 });

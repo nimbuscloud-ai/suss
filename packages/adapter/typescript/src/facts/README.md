@@ -342,6 +342,21 @@ function body could run any number of times. For those the extractor
 writes nothing down, and the name resolves to nothing instead of to
 whichever write came first.
 
+## Why a spread or a template hole has a key and no facts yet
+
+`writtenEntryAt` says which collection a spread unpacks, and `holeAt`
+says which value a template literal puts in a hole. Python and Ruby
+state facts for every expression, so a reader following either key
+finds them. Here the key comes with no facts behind it, and the store
+states them when a question reaches the node.
+
+Stating them while the object or the template is written down would ask
+the checker about nodes no question reached. The checker numbers each
+type in the order it makes it, and a union prints in that order. So one
+extra question in one file can change the order in which
+`Omit<Props, "a">` prints its members in another file's summary, though
+neither file changed.
+
 ## Why a written value has to be an expression
 
 `resolveWrittenValue` returns the expression a value was written as,
