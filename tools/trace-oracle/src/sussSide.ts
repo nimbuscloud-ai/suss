@@ -159,13 +159,12 @@ export class SussSide {
     if (cached !== undefined) {
       return cached;
     }
-    let items = this.ask(route.label);
-    if (items === null) {
-      items = route.summaries.flatMap(
+    const items =
+      this.ask(route.label) ??
+      route.summaries.flatMap(
         (summary) =>
           this.ask(summary.identity.id ?? summary.identity.name) ?? [],
       );
-    }
     const reaches = items.map((item) => ({
       label: item.boundary,
       bindings: this.bindingsByLabel.get(item.boundary) ?? [],

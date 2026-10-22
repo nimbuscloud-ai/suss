@@ -100,6 +100,19 @@ function mentions(target: Target, text: string): boolean {
   );
 }
 
+function firstLocated(tries: ReadonlyArray<[Locator, () => string[]]>): {
+  files: string[];
+  by: Locator | null;
+} {
+  for (const [by, find] of tries) {
+    const files = find();
+    if (files.length > 0) {
+      return { files, by };
+    }
+  }
+  return { files: [], by: null };
+}
+
 export function grepEdges(
   edges: readonly TracedEdge[],
   routesMatched: ReadonlyMap<string, RouteMatch>,
@@ -114,22 +127,11 @@ export function grepEdges(
     if (known !== undefined) {
       return known;
     }
-    const tries: Array<[Locator, () => string[]]> = [
+    const result = firstLocated([
       ["trace", () => fromTrace(entry, tree)],
       ["suss", () => fromSuss(routesMatched.get(key), tree)],
       ["search", () => fromSearch(entry, tree)],
-    ];
-    let result: { files: string[]; by: Locator | null } = {
-      files: [],
-      by: null,
-    };
-    for (const [by, find] of tries) {
-      const files = find();
-      if (files.length > 0) {
-        result = { files, by };
-        break;
-      }
-    }
+    ]);
     located.set(key, result);
     return result;
   };
