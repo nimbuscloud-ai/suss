@@ -24,14 +24,18 @@ export function buildModuleGraph(
     const imports = readModuleImports(summary);
     const key = summaryFileKey(summary);
     if (imports !== undefined && !graph.has(key)) {
-      const owner = summary.location.workspace;
-      graph.set(
-        key,
-        imports.map((file) => referencedFileKey(owner, file)),
-      );
+      graph.set(key, importKeys(summary.location.workspace, imports));
     }
   }
   return graph;
+}
+
+/** Each imported file, read against the importer's project and keyed as the graph keys it. */
+function importKeys(
+  owner: string | undefined,
+  imports: readonly string[],
+): string[] {
+  return imports.map((file) => referencedFileKey(owner, file));
 }
 
 /**
