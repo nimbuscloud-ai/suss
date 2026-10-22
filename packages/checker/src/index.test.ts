@@ -381,6 +381,26 @@ describe("checkAll, what it lists as unpaired", () => {
     expect(result.unmatched.unpairable).toEqual([]);
   });
 
+  it("lists a table read out of a dump of the database as neither paired nor unpaired", () => {
+    const dumped: BehavioralSummary = {
+      ...table(),
+      metadata: {
+        storageContract: {
+          fieldSet: "exhaustive",
+          fields: [{ name: "id" }],
+          origin: "dump",
+        },
+      },
+    };
+    const result = checkAll([dumped, listOrders()]);
+
+    expect(result.pairs).toEqual([]);
+    expect(result.unmatched.providers.map((one) => one.key)).toEqual([
+      "GET /orders",
+    ]);
+    expect(result.findings).toEqual([]);
+  });
+
   it("still compares a story with its component after leaving it out of pairing", () => {
     const card: BehavioralSummary = {
       ...emptySummary("Card"),

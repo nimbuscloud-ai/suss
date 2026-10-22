@@ -35,6 +35,7 @@ function makeProvider(opts: {
   fieldSet?: "exhaustive" | "partial" | "none";
   keyFields?: string[];
   recognition?: string;
+  origin?: "dump" | "migrations";
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -69,6 +70,7 @@ function makeProvider(opts: {
         ...(opts.physicalTable !== undefined
           ? { physicalTable: opts.physicalTable }
           : {}),
+        ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
       },
     },
   };
@@ -2431,5 +2433,64 @@ describe("what storage pairing takes for granted", () => {
     expect(mismatch).toHaveLength(1);
     expect(mismatch[0]?.severity).toBe("error");
     expect(mismatch[0]?.description).toContain("postgresql");
+  });
+});
+
+describe("a dump of the database", () => {
+  const dump = () =>
+    makeProvider({
+      container: "users",
+      recognition: "rails-schema",
+      origin: "dump",
+      fields: [{ name: "id" }, { name: "email" }, { name: "password_digest" }],
+    });
+  // `User.create(email:, password:, password_confirmation:)` records the
+  // keyword keys, and two of them are virtual attributes, not columns.
+  const signUp = () =>
+    makeAccessSummary({
+      name: "UsersController#create",
+      file: "app/controllers/users_controller.rb",
+      accesses: [
+        {
+          container: "users",
+          recognition: "activerecord",
+          kind: "write",
+          fields: ["email", "password", "password_confirmation"],
+        },
+      ],
+    });
+
+  it("pairs with no access, so a virtual attribute a write passes is not a column the table lacks", () => {
+    const compared: ComparedPair[] = [];
+    expect(checkStorage([dump(), signUp()], undefined, compared)).toEqual([]);
+    expect(compared).toEqual([]);
+  });
+
+  it("leaves an access to the declaration a model gives the same table", () => {
+    const unknown = checkStorage([
+      dump(),
+      makeProvider({
+        container: "users",
+        fields: [{ name: "id" }, { name: "email" }],
+      }),
+      signUp(),
+    ]).filter((finding) => finding.kind === "boundaryFieldUnknown");
+    expect(
+      unknown.map((finding) => [
+        finding.boundary.recognition,
+        finding.description,
+      ]),
+    ).toEqual([
+      ["prisma", expect.stringContaining('"password"')],
+      ["prisma", expect.stringContaining('"password_confirmation"')],
+    ]);
+  });
+
+  it("is listed among the providers of its table, and claims no access there", () => {
+    const grounded = groundStorageAccesses([dump(), signUp()]);
+    expect(grounded.providers.map((provider) => provider.names)).toEqual([
+      ["users"],
+    ]);
+    expect(grounded.accesses.map((access) => access.providers)).toEqual([[]]);
   });
 });

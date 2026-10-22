@@ -74,7 +74,9 @@ export function checkStorage(
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
   const grounding = groundReferences(summaries);
-  const containers = declaredContainers(providersOf(idx, "storage"));
+  const containers = declaredContainers(providersOf(idx, "storage")).filter(
+    pairsWithAccesses,
+  );
   const reachedFor = reachedBy(grounding);
   const accesses = withRelationAccessesPlaced(
     containers,
@@ -282,6 +284,22 @@ function reachedBy(
       parseBoundaryName(container),
     );
   };
+}
+
+/**
+ * A dump of the database, such as Rails' `db/schema.rb`, is compared only
+ * with other declarations of its tables. A Ruby write records every
+ * keyword key of `create` and `update`, `password` and `*_attributes`
+ * among them, and a dump would call each one a column the table lacks.
+ */
+export function isDatabaseDump(
+  contract: StorageContractMetadata | undefined,
+): boolean {
+  return contract?.origin === "dump";
+}
+
+function pairsWithAccesses(container: DeclaredContainer): boolean {
+  return !isDatabaseDump(container.contract);
 }
 
 export function declaredContainers(
@@ -708,7 +726,8 @@ export function groundStorageAccesses(
 ): GroundedStorage {
   const idx = buildInteractionIndex(summaries);
   const grounding = groundReferences(summaries);
-  const containers = declaredContainers(providersOf(idx, "storage"));
+  const declared = declaredContainers(providersOf(idx, "storage"));
+  const containers = declared.filter(pairsWithAccesses);
   const reachedFor = reachedBy(grounding);
   const accesses = withRelationAccessesPlaced(
     containers,
@@ -764,7 +783,7 @@ export function groundStorageAccesses(
 
   return {
     accesses: grounded,
-    providers: containers.map((container) => ({
+    providers: declared.map((container) => ({
       summary: container.summary,
       binding: container.binding,
       names: container.names,

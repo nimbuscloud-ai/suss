@@ -1,4 +1,5 @@
 import {
+  readStorageContractMetadata,
   summaryIdentifier,
   summaryRef,
   wrapperIndex,
@@ -31,7 +32,7 @@ import { isStory, isTestCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { checkSchemaAgreement } from "./storage/schemaAgreement.js";
-import { checkStorage } from "./storage/storagePairing.js";
+import { checkStorage, isDatabaseDump } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 import { checkUnitInvocation } from "./unit-invocation/unitInvocationPairing.js";
 
@@ -61,12 +62,19 @@ function pairIsCheckable(pair: SummaryPair): boolean {
   return exchangesHttpResponses(binding);
 }
 
+/**
+ * A dump of the database pairs only with other declarations of its
+ * tables, so a dump nothing declares again is not missing a consumer.
+ */
 function reportedByItsOwnPass(summary: BehavioralSummary): boolean {
   const binding = summary.identity.boundaryBinding;
   if (binding === null || binding === undefined) {
     return false;
   }
-  return reportsUnpairedItself(binding);
+  return (
+    reportsUnpairedItself(binding) ||
+    isDatabaseDump(readStorageContractMetadata(summary))
+  );
 }
 
 export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
