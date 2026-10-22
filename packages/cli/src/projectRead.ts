@@ -312,6 +312,7 @@ async function runEntry(
       spec: path.resolve(root, entry.file),
       output: out,
       quiet,
+      projectRoot: root,
     });
   }
   return await extract({

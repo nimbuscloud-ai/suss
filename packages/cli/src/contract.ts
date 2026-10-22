@@ -13,7 +13,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { defaultProjectRoot } from "@suss/behavioral-ir/files";
+
 import { writeSummaries } from "./jsonStream.js";
+import { nearestProjectFile } from "./projectModules.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -42,6 +45,11 @@ export interface ContractOptions {
    * the unit with its code.
    */
   codeScopes?: Record<string, string>;
+  /**
+   * Absolute. Every path the reader records is measured from here.
+   * Without it, the folder of the nearest `suss.json` above the spec.
+   */
+  projectRoot?: string;
 }
 
 export interface ContractReadOptions extends Omit<ContractOptions, "output"> {
@@ -52,6 +60,9 @@ export interface ContractReadOptions extends Omit<ContractOptions, "output"> {
   warnings?: string[];
 }
 
+/** What a loader is given: the read's options, with the project root worked out. */
+type LoaderOptions = ContractReadOptions & { projectRoot: string };
+
 /**
  * `source` is the label recorded on every summary, and the CLI sets it
  * only for a spec fetched from a URL. For a file on disk the reader labels
@@ -61,7 +72,7 @@ export interface ContractReadOptions extends Omit<ContractOptions, "output"> {
 type ContractLoader = (
   specPath: string,
   source: string | undefined,
-  options: ContractReadOptions,
+  options: LoaderOptions,
 ) => Promise<BehavioralSummary[]>;
 
 const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
@@ -74,6 +85,7 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     return mod.cloudFormationFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
       ...warningsOf(options),
+      projectRoot: options.projectRoot,
     });
   },
   terraform: async (specPath, _source, options) => {
@@ -90,6 +102,7 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
       ...(options.codeScopes !== undefined
         ? { codeScopes: options.codeScopes }
         : {}),
+      projectRoot: options.projectRoot,
     });
   },
   serverless: async (specPath, source, options) => {
@@ -100,34 +113,46 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
       ...(warnings !== undefined
         ? { onUnread: (wiring) => warnings.push(unreadWiringLine(wiring)) }
         : {}),
+      projectRoot: options.projectRoot,
     });
   },
-  storybook: async (specPath) => {
+  storybook: async (specPath, _source, options) => {
     const mod = await import("@suss/contract-storybook");
     const files = expandStoryPaths(specPath);
-    return mod.generateSummariesFromStories(files);
+    return mod.generateSummariesFromStories(files, {
+      projectRoot: options.projectRoot,
+    });
   },
-  appsync: async (specPath) => {
+  appsync: async (specPath, _source, options) => {
     const mod = await import("@suss/contract-appsync");
-    return mod.appsyncFileToSummaries(specPath);
+    return mod.appsyncFileToSummaries(specPath, {
+      projectRoot: options.projectRoot,
+    });
   },
-  prisma: async (specPath) => {
+  prisma: async (specPath, _source, options) => {
     const mod = await import("@suss/contract-prisma");
-    return mod.prismaSchemaFileToSummaries(specPath);
+    return mod.prismaSchemaFileToSummaries(specPath, {
+      projectRoot: options.projectRoot,
+    });
   },
-  graphql: async (specPath) => {
+  graphql: async (specPath, _source, options) => {
     const mod = await import("@suss/contract-graphql");
-    return mod.graphqlSdlFileToSummaries(specPath);
+    return mod.graphqlSdlFileToSummaries(specPath, {
+      projectRoot: options.projectRoot,
+    });
   },
-  wrangler: async (specPath, source) => {
+  wrangler: async (specPath, source, options) => {
     const mod = await import("@suss/contract-wrangler");
     return mod.wranglerFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
+      projectRoot: options.projectRoot,
     });
   },
-  "graphql-documents": async (specPath) => {
+  "graphql-documents": async (specPath, _source, options) => {
     const mod = await import("@suss/contract-graphql");
-    return mod.graphqlDocumentsPathToSummaries(specPath);
+    return mod.graphqlDocumentsPathToSummaries(specPath, {
+      projectRoot: options.projectRoot,
+    });
   },
 };
 
@@ -138,10 +163,13 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
  * whether a `contract` command there would read anything.
  */
 const SAMPLE_LOADERS: Partial<Record<ContractSource, ContractLoader>> = {
-  storybook: async (specPath) => {
+  storybook: async (specPath, _source, options) => {
     const mod = await import("@suss/contract-storybook");
     return firstBatchWithSummaries(expandStoryPaths(specPath), (files) =>
-      mod.generateSummariesFromStories(files, { componentModules: false }),
+      mod.generateSummariesFromStories(files, {
+        componentModules: false,
+        projectRoot: options.projectRoot,
+      }),
     );
   },
 };
@@ -326,9 +354,24 @@ async function readWith(
       : `${options.from}:${resolved.fetchedFrom}`;
   let summaries: BehavioralSummary[];
   try {
-    summaries = await loader(resolved.path, source, options);
+    summaries = await loader(resolved.path, source, {
+      ...options,
+      projectRoot: options.projectRoot ?? contractProjectRoot(resolved.path),
+    });
   } finally {
     resolved.cleanup?.();
   }
   return summaries;
+}
+
+/**
+ * The folder of the nearest `suss.json` at or above the spec, the one a
+ * read listed there runs from, so a spec reads the same however the
+ * command reached it.
+ */
+function contractProjectRoot(spec: string): string {
+  const projectFile = nearestProjectFile(path.resolve(spec));
+  return projectFile === null
+    ? defaultProjectRoot(spec)
+    : path.dirname(projectFile);
 }

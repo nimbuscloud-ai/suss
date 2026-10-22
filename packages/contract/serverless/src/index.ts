@@ -16,10 +16,8 @@
 import path from "node:path";
 
 import { nestedDocumentLabel } from "@suss/behavioral-ir";
-import {
-  cloudFormationToSummaries,
-  documentSourceLabel,
-} from "@suss/contract-cloudformation";
+import { documentSourceLabel } from "@suss/behavioral-ir/files";
+import { cloudFormationToSummaries } from "@suss/contract-cloudformation";
 
 import { loadServerlessDocument, locateServiceFile } from "./document.js";
 import { translateService, type UnreadWiring } from "./translate.js";
@@ -67,6 +65,12 @@ export interface ServerlessToSummariesOptions {
   onUnread?: (wiring: UnreadWiring) => void;
 }
 
+export interface ServerlessFileToSummariesOptions
+  extends ServerlessToSummariesOptions {
+  /** Absolute. The directory the service file's label is measured from. */
+  projectRoot?: string;
+}
+
 export function serverlessToSummaries(
   document: ServerlessDocument,
   options: ServerlessToSummariesOptions = {},
@@ -101,7 +105,7 @@ export function serverlessToSummaries(
  */
 export function serverlessFileToSummaries(
   servicePath: string,
-  options: ServerlessToSummariesOptions = {},
+  options: ServerlessFileToSummariesOptions = {},
 ): BehavioralSummary[] {
   const located = locateServiceFile(servicePath);
   if (located.kind === "missing") {
@@ -119,10 +123,13 @@ export function serverlessFileToSummaries(
     return [];
   }
   const document = loadServerlessDocument(located.file);
+  const { projectRoot, ...readOptions } = options;
 
   return serverlessToSummaries(document, {
-    ...options,
-    source: options.source ?? documentSourceLabel("serverless", located.file),
+    ...readOptions,
+    source:
+      options.source ??
+      documentSourceLabel("serverless", located.file, projectRoot),
   });
 }
 

@@ -7,13 +7,24 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { documentSourceLabel } from "./documentLabel.js";
+import {
+  defaultProjectRoot,
+  documentSourceLabel,
+  pathInProject,
+} from "./projectPath.js";
 
 const made: string[] = [];
 
-function repository(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-doc-label-"));
+function folder(): string {
+  const root = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "suss-doc-label-")),
+  );
   made.push(root);
+  return root;
+}
+
+function repository(): string {
+  const root = folder();
   fs.mkdirSync(path.join(root, ".git"));
   return root;
 }
@@ -46,8 +57,7 @@ describe("documentSourceLabel", () => {
   });
 
   it("finds the repository through a linked worktree, whose .git is a file", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-doc-label-"));
-    made.push(root);
+    const root = folder();
     fs.writeFileSync(path.join(root, ".git"), "gitdir: /elsewhere\n");
     const file = write(root, "infra/template.yaml");
 
@@ -77,11 +87,60 @@ describe("documentSourceLabel", () => {
     );
   });
 
-  it("falls back to the whole path for a file no repository holds", () => {
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "suss-doc-label-"));
-    made.push(outside);
-    const file = write(outside, "template.yaml");
+  it("measures from the root it is given, whatever repository the file is in", () => {
+    const root = repository();
+    const file = write(root, "services/alpha/template.yaml");
 
-    expect(documentSourceLabel("serverless", file)).toBe(`serverless:${file}`);
+    expect(
+      documentSourceLabel("serverless", file, path.join(root, "services")),
+    ).toBe("serverless:alpha/template.yaml");
+  });
+
+  it("measures from the working directory for a file no repository holds", () => {
+    const outside = folder();
+    const alpha = write(outside, "services/alpha/template.yaml");
+    const beta = write(outside, "services/beta/template.yaml");
+    const fromHere = (file: string) =>
+      `serverless:${path.relative(process.cwd(), file).split(path.sep).join("/")}`;
+
+    expect(documentSourceLabel("serverless", alpha)).toBe(fromHere(alpha));
+    expect(documentSourceLabel("serverless", beta)).toBe(fromHere(beta));
+    expect(documentSourceLabel("serverless", alpha)).not.toMatch(
+      /^serverless:\//,
+    );
+  });
+});
+
+describe("pathInProject", () => {
+  it("spells the same file the same way from two checkouts", () => {
+    const one = folder();
+    const two = path.join(folder(), "deeper", "checkout");
+
+    expect(pathInProject(path.join(one, "src", "a.ts"), one)).toBe("src/a.ts");
+    expect(pathInProject(path.join(two, "src", "a.ts"), two)).toBe("src/a.ts");
+  });
+
+  it("climbs out of the root rather than writing an absolute path", () => {
+    const root = folder();
+
+    expect(pathInProject(path.join(root, "..", "shared", "a.ts"), root)).toBe(
+      "../shared/a.ts",
+    );
+  });
+});
+
+describe("defaultProjectRoot", () => {
+  it("is the repository a file is in", () => {
+    const root = repository();
+    const file = write(root, "infra/template.yaml");
+
+    expect(defaultProjectRoot(file)).toBe(root);
+  });
+
+  it("is the working directory outside every repository", () => {
+    const outside = folder();
+    const file = write(outside, "infra/template.yaml");
+
+    expect(defaultProjectRoot(file)).toBe(process.cwd());
   });
 });

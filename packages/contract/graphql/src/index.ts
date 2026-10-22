@@ -21,6 +21,7 @@ import {
   withGraphqlMetadata,
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
+import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 
 import { typeDefinitionsIn, typeNodeToShape } from "./typeShape.js";
 
@@ -32,6 +33,7 @@ import type {
 } from "@suss/behavioral-ir";
 
 export {
+  type GraphqlDocumentFilesOptions,
   type GraphqlDocumentsOptions,
   graphqlDocumentFilesToSummaries,
   graphqlDocumentsPathToSummaries,
@@ -109,18 +111,27 @@ interface ReaderSettings {
   transport: string;
 }
 
+export interface GraphqlSdlFileOptions extends GraphqlContractOptions {
+  /** Absolute. The directory the file's path is measured from. */
+  projectRoot?: string;
+}
+
 /**
- * Reads an SDL file and converts it, recording the file path as the
- * source. `suss contract --from graphql <file>` calls this.
+ * Reads an SDL file and converts it, recording the file's path in its
+ * project as the source. `suss contract --from graphql <file>` calls this.
  */
 export function graphqlSdlFileToSummaries(
   filepath: string,
-  options: GraphqlContractOptions = {},
+  options: GraphqlSdlFileOptions = {},
 ): BehavioralSummary[] {
   const sdl = fs.readFileSync(filepath, "utf8");
+  const { projectRoot, ...contractOptions } = options;
   return graphqlSdlToSummaries(sdl, {
-    source: filepath,
-    ...options,
+    source: pathInProject(
+      filepath,
+      projectRoot ?? defaultProjectRoot(filepath),
+    ),
+    ...contractOptions,
   });
 }
 

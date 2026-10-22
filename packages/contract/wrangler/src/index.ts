@@ -12,6 +12,11 @@
 
 import path from "node:path";
 
+import {
+  defaultProjectRoot,
+  documentSourceLabel,
+  pathInProject,
+} from "@suss/behavioral-ir/files";
 import { codeScopePath } from "@suss/ir-core";
 
 import { queueSummaries, RECOGNITION, storeSummaries } from "./bindings.js";
@@ -42,9 +47,11 @@ export interface WranglerToSummariesOptions {
   /**
    * The directory the Worker's code is in, relative to wherever the
    * extraction run was pointed. Defaults to where the document is,
-   * relative to the working directory.
+   * relative to the project root.
    */
   codeScope?: string;
+  /** Absolute. The directory the document's paths are measured from. */
+  projectRoot?: string;
 }
 
 export function wranglerToSummaries(
@@ -94,24 +101,14 @@ export function wranglerFileToSummaries(
     throw new Error(`Wrangler configuration not found: ${target}`);
   }
   const document = loadConfigurationDocument(located.file);
+  const root = options.projectRoot ?? defaultProjectRoot(located.file);
   return wranglerToSummaries(document, {
-    source: options.source ?? `${RECOGNITION}:${relativeToRun(located.file)}`,
+    source:
+      options.source ?? documentSourceLabel(RECOGNITION, located.file, root),
     codeScope:
       options.codeScope ??
-      codeScopePath(path.dirname(relativeToRun(located.file))),
+      codeScopePath(path.posix.dirname(pathInProject(located.file, root))),
   });
-}
-
-/**
- * A file outside the working directory keeps its absolute path, so two
- * such files never end up with the same source name.
- */
-function relativeToRun(file: string): string {
-  const relative = path.relative(process.cwd(), path.resolve(file));
-  if (relative === "" || relative.startsWith("..")) {
-    return path.resolve(file).split(path.sep).join("/");
-  }
-  return relative.split(path.sep).join("/");
 }
 
 /**

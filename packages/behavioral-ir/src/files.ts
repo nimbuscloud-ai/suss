@@ -1,7 +1,8 @@
 /**
  * @suss/behavioral-ir/files: the one reader and writer for the JSON
- * files suss keeps on disk. It needs Node's file system, so it is a
- * separate entry point and the main one stays free of it.
+ * files suss keeps on disk, and the one way a summary spells a path on
+ * disk. Both need Node's file system, so they are a separate entry point
+ * and the main one stays free of it.
  */
 
 export {
@@ -13,4 +14,9 @@ export {
   writeDocumentFile,
   writeFileAtomically,
 } from "./documentFile.js";
+export {
+  defaultProjectRoot,
+  documentSourceLabel,
+  pathInProject,
+} from "./projectPath.js";
 export { readSummaryFile, writeSummaryFile } from "./summaryFile.js";
