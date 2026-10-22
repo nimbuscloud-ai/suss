@@ -8,11 +8,12 @@
 //   2. Read schema.prisma via @suss/contract-prisma → provider summaries.
 //   3. Run checkAll over the union; assert findings.
 //
-// Three fixture cases, the first two deliberately typo'd:
+// Four fixture cases, the first two deliberately typo'd:
 //   - get-user-by-email: reads User.emial (typo) → storageReadFieldUnknown
 //   - create-post: writes Post.bdoy (typo) → storageWriteFieldUnknown
 //   - create-post-with-tags: writes Tag and Label through relations
 //     whose payloads array callbacks build
+//   - delete-posts-by-author: reads Post.authorId only in its where
 //
 // The schema declares User.deletedAt, no fixture reads it, so it
 // surfaces as storageFieldUnused. Post.title is written but never
@@ -184,6 +185,20 @@ describe("prisma integration", () => {
       (access) => access.kind === "write" && access.container === "_PostToTag",
     );
     expect(joinWrites.length).toBeGreaterThan(0);
+  });
+
+  it("counts a column a where clause filters on as read, and still reports one nothing reads", async () => {
+    const findings = await runPipeline();
+    const writeOnly = (column: string) =>
+      findings.filter(
+        (f) =>
+          f.kind === "boundaryFieldUnused" &&
+          f.aspect === "read" &&
+          f.description.includes(`Post declares "${column}"`),
+      );
+    // delete-posts-by-author picks rows by authorId and selects nothing.
+    expect(writeOnly("authorId")).toEqual([]);
+    expect(writeOnly("title")).toHaveLength(1);
   });
 
   it("reports the join table's columns as write-only, since nothing here reads them", async () => {

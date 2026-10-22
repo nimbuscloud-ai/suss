@@ -229,13 +229,21 @@ export interface DiscoveredUnit {
    */
   unfollowed?: UnfollowedCall;
   /**
-   * The functions the registration call lists before this handler,
-   * `router.post("/", validate, handler)`, in the order they run. Each
-   * is a unit of its own in the same file, and these references point
-   * the handler at them. They run inside whatever the app registers
-   * for every route, so they are applied after those.
+   * The functions that run around this handler on its route alone, in
+   * the order they run: the ones `router.post("/", validate, handler)`
+   * lists before it, or the layers a route export written as
+   * `withAuth(handler)` puts around it. A reference points at the
+   * layer's own summary, and a layer the run could not read has none.
+   * They run inside whatever the app registers for every route, so they
+   * are applied after those.
    */
   routeWrappers?: WrapperReference[];
+  /**
+   * Set on the closure a wrapper factory hands back: the position of the
+   * factory's parameter it calls to run the handler it was given. That
+   * call is the closure's continuation.
+   */
+  factoryContinuation?: number;
   /**
    * The functions listed before this handler that a project factory
    * returned and the store could not follow, one stop per call.

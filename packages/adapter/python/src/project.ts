@@ -119,6 +119,7 @@ import type {
 import type { PythonPack, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ReachedUnits, Seed } from "./reach/closure.js";
+import type { ReachedFunction } from "./reach/resolveCallee.js";
 import type {
   PythonEntryReuse,
   PythonFileRecord,
@@ -130,6 +131,11 @@ import type { BoundPythonFile } from "./routers.js";
 import type { ModuleBinding } from "./scope.js";
 import type { UnreadManifest } from "./sourceRoots.js";
 import type { StorageLookup } from "./storage.js";
+import type {
+  DecoratorClosure,
+  FormOf,
+  PythonWrapperIndex,
+} from "./wrappers.js";
 
 export interface ExtractPythonOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -675,15 +681,10 @@ async function runPython(
   // its file can register the same ones in the same order.
   let registering: StoredRegistration[] | null = null;
   if (ledger !== null) {
-    wrapperIndex.onRegistered = (target, declared) => {
-      const form = positions.positionOf(declared);
-      if (registering !== null && form !== undefined) {
-        registering.push({
-          key: nodeId(target.file.file, target.node),
-          name: target.name,
-          exportPath: target.exportPath,
-          form,
-        });
+    wrapperIndex.onRegistered = (target, how) => {
+      const stored = storedRegistration(target, how, positions);
+      if (registering !== null && stored !== null) {
+        registering.push(stored);
       }
     };
   }
@@ -700,12 +701,11 @@ async function runPython(
     if (record !== undefined) {
       discoveries.set(file, record);
       for (const registration of record.registrations) {
-        const declared = positions.formAt(registration.form);
-        const target = storedFunction(registration, definitions, filesByPath);
-        if (declared === undefined || target === null) {
-          throw new ReplayFailed(registration.key);
-        }
-        wrapperIndex.registered(target, declared);
+        registerAgain(registration, {
+          positions,
+          wrapperIndex,
+          target: storedFunction(registration, definitions, filesByPath),
+        });
       }
       continue;
     }
@@ -1091,6 +1091,63 @@ async function runPython(
   options.onTiming?.(timer.report());
 
   return { summaries: composed, facts: db };
+}
+
+/** A registration as a cache entry writes it, or null when the run's packs cannot place it. */
+function storedRegistration(
+  target: ReachedFunction,
+  how: FormOf | DecoratorClosure,
+  positions: PackPositions,
+): StoredRegistration | null {
+  const at = {
+    key: nodeId(target.file.file, target.node),
+    name: target.name,
+    exportPath: target.exportPath,
+  };
+  if ("continuation" in how) {
+    const pattern = positions.idOf(how.pattern);
+    return pattern === undefined
+      ? null
+      : { ...at, pattern, continuation: how.continuation };
+  }
+  const form = positions.positionOf(how);
+  return form === undefined ? null : { ...at, form };
+}
+
+/** Registers a stored wrapper again, the way the discovery that stored it did. */
+function registerAgain(
+  registration: StoredRegistration,
+  context: {
+    positions: PackPositions;
+    wrapperIndex: PythonWrapperIndex;
+    target: ReachedFunction | null;
+  },
+): void {
+  const { positions, wrapperIndex, target } = context;
+  const how = howRegistered(registration, positions);
+  if (target === null || how === null) {
+    throw new ReplayFailed(registration.key);
+  }
+  if ("continuation" in how) {
+    wrapperIndex.registeredClosure(target, how);
+    return;
+  }
+  wrapperIndex.registered(target, how);
+}
+
+/** What a stored registration was registered through, or null when this run's packs no longer have it. */
+function howRegistered(
+  registration: StoredRegistration,
+  positions: PackPositions,
+): FormOf | DecoratorClosure | null {
+  if (!("continuation" in registration)) {
+    return positions.formAt(registration.form) ?? null;
+  }
+  const pack = positions.packOf(registration.pattern);
+  const pattern = positions.patternOf(registration.pattern);
+  return pack === undefined || pattern === undefined
+    ? null
+    : { pack, pattern, continuation: registration.continuation };
 }
 
 /** Every file's record for the entry this run writes. */

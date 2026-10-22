@@ -51,10 +51,9 @@ const FOLLOWED_REDIRECTS: ReadonlySet<number> = new Set([
 
 /**
  * Whether the consumer has anything at all for a status the provider
- * can send. Four things count, and the README beside this file says why
- * each one does: a branch that admits the status, a fall-through over
- * the 2xx class, a guard on a body field only the failing status
- * returns, and a client that throws rather than returning a response.
+ * can send: a branch that admits the status, a fall-through over the
+ * 2xx class, a test of the body, or a client that throws. The README
+ * beside this file lists the five rules and says why each one counts.
  */
 export function coverageOf(
   provider: BehavioralSummary,

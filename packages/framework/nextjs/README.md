@@ -43,6 +43,42 @@ or the function the factory returns when the factory wraps its argument
 in a function of its own. One handler exported as both `GET` and `POST`
 gives two routes.
 
+## A handler inside a wrapper
+
+Most apps write every route through a wrapper that checks the caller or
+logs the request:
+
+```ts
+// lib/auth/workspace.ts
+export const withWorkspace = (handler) =>
+  withAxiomBodyLog(async (req, ctx) => {
+    if (!(await getSession())) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    return handler({ req, ... });
+  });
+
+// app/api/links/route.ts
+export const POST = withWorkspace(async ({ req }) => { ... });
+```
+
+The summary of `POST /api/links` reads the function the route passes to
+the wrapper, and records each wrapper around it under
+`metadata.wrappers.applied`, outermost first. A closure the project's
+own factory hands back, here the one passed to `withAxiomBodyLog`, gets
+a summary of its own named after the call, `withWorkspace(handler)`. Its
+call to `handler` is where the route's function runs, so its other
+outcomes, the 401 here, are added to the route the same way middleware
+is. A closure that keeps going after `handler` returns, such as one that
+logs the response first, is recorded with no summary, since it can
+change what the route sends in ways the run does not follow. So is one
+that reads the factory's options, `withWorkspace(handler, {
+requiredPermissions })`, since what it sends depends on what each route
+passes. A wrapper a library builds, such as `withAxiomBodyLog` from
+`createAxiomRouteHandler`, has no body the run can read. It is recorded
+with no summary behind it, and the checker then leaves out any finding
+that needs every status the route can send.
+
 ## Pages handlers and server actions
 
 A `pages/api` handler is one default export that switches on
@@ -62,7 +98,8 @@ inside a function marks that function alone, exported or not.
 - **Page components.** `@suss/framework-react` already reads those.
 - **A route a library serves.** NextAuth's route file is
   `export { GET, POST } from "@/auth"`, where those names come from
-  destructuring the library's own return value. No function in the
+  destructuring the library's own return value, or `export { handler as
+  GET }` over `const handler = NextAuth(options)`. No function in the
   project serves that route, so nothing is reported for it.
 
 ## Where it fits in suss

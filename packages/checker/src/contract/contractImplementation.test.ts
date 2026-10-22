@@ -608,6 +608,27 @@ describe("checkContractImplementation, on a handler suss read in part", () => {
     expect(findings).toEqual([]);
   });
 
+  it("claims a declared failure is never sent past middleware whose only unfollowed call hands the request on", () => {
+    // A factory's closure calls the handler it was given, which the run cannot settle to one function.
+    const findings = checkContractImplementation([
+      document("GET", "/users", [{ statusCode: 200 }, { statusCode: 401 }]),
+      routedThrough,
+      requireUser([
+        {
+          type: "unfollowedCall",
+          conditions: [],
+          consequence: "unknown",
+          description:
+            "The call to next goes through a value this run could not settle",
+          callee: "next",
+        },
+      ]),
+    ]);
+    expect(findings.map((f) => f.description)).toEqual([
+      "The openapi document declares response 401, and no path in the handler produces it",
+    ]);
+  });
+
   it("claims a declared failure is never sent past middleware suss read and composed", () => {
     const findings = checkContractImplementation([
       document("GET", "/users", [{ statusCode: 200 }, { statusCode: 401 }]),

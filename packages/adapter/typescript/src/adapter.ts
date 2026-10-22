@@ -821,6 +821,19 @@ function rolesPastFrameworkValue(
  * that unit in there; a path that never reaches it ends on its own.
  */
 function continuationTerminal(unit: DiscoveredUnit): TerminalPattern[] {
+  if (unit.factoryContinuation !== undefined) {
+    return [
+      {
+        kind: "delegate",
+        match: {
+          type: "parameterCall",
+          parameterPosition: unit.factoryContinuation,
+          ofEnclosingFunction: true,
+        },
+        extraction: {},
+      },
+    ];
+  }
   const at = unit.pattern?.wraps?.continuationParam;
   if (at === undefined) {
     return [];
@@ -1827,7 +1840,11 @@ function stampWrappers(
   }
   raw.wrappers = applied;
   for (const wrapper of applied) {
-    recordFileDependency(wrapper.file);
+    // A wrapper from a package the run has no source for is recorded
+    // under its module, which is not a file that can change.
+    if (path.isAbsolute(wrapper.file)) {
+      recordFileDependency(wrapper.file);
+    }
   }
 }
 
