@@ -504,7 +504,12 @@ export function safeParseSummaries(
  */
 function behaviourOf(t: Transition): string {
   const { location: _location, ...behaviour } = t;
-  return JSON.stringify(behaviour);
+  return JSON.stringify({ ...behaviour, effects: unplaced(t.effects) });
+}
+
+/** The effects as what they do, with the lines each was written on left out. */
+function unplaced(effects: readonly Effect[]): Effect[] {
+  return effects.map(({ location: _location, ...effect }) => effect as Effect);
 }
 
 /**
@@ -525,7 +530,7 @@ function outcomeOf(t: Transition): string {
     isDefault: _isDefault,
     ...outcome
   } = t;
-  return JSON.stringify(outcome);
+  return JSON.stringify({ ...outcome, effects: unplaced(t.effects) });
 }
 
 function pairGuardChanges(

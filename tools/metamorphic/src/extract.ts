@@ -51,7 +51,13 @@ export interface RunDescription {
 
 // A rewrite moves the call and renames the function around it, so these
 // would differ for a program that reaches the same boundary the same way.
-const IGNORED_KEYS = new Set(["callee", "groupId", "origin", "preconditions"]);
+const IGNORED_KEYS = new Set([
+  "callee",
+  "groupId",
+  "location",
+  "origin",
+  "preconditions",
+]);
 
 function stable(value: unknown): string {
   if (Array.isArray(value)) {
