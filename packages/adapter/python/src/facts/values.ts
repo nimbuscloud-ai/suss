@@ -17,6 +17,9 @@ import {
   addTemplateRows,
   NAMED_STORE_NAME,
   RECEIVER_STORE_NAME,
+  SELF_AS_CLASS_NAME,
+  SELF_AS_INSTANCE_NAME,
+  type SelfForm,
   SPREAD_ENTRY,
   startsAtName,
   type TemplatePiece,
@@ -46,8 +49,10 @@ import {
 import { bindModule } from "../scope.js";
 import {
   ATTRIBUTE_GETTER,
+  CLASS_METHOD_DECORATOR,
   CONVERTING_BUILTINS,
   POSITION_COUNTER,
+  STATIC_METHOD_DECORATOR,
 } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
@@ -1169,6 +1174,44 @@ function yieldedValue(node: PyNode): PyNode | null {
   return children(node).find((child) => child?.type !== "comment") ?? null;
 }
 
+/**
+ * A method's first parameter. A method's is an instance of the class, so
+ * a value one method stores on it reaches a read in another method. A
+ * classmethod's is the class itself, or a subclass it was called on.
+ */
+function emitReceiver(
+  emitter: Emitter,
+  fn: PyNode,
+  paramKey: string,
+  classKey: string,
+): void {
+  const form = receiverFormOf(fn);
+  if (form === SELF_AS_CLASS_NAME) {
+    add(emitter, "binds", paramKey, classKey);
+  } else {
+    add(emitter, "instanceOf", paramKey, classKey);
+  }
+  if (form !== null) {
+    add(emitter, "selfReceiver", nodeId(emitter.filePath, fn), paramKey, form);
+  }
+}
+
+/** What a method's first parameter is given, or null for a staticmethod, which takes no receiver. */
+export function receiverFormOf(fn: PyNode): SelfForm | null {
+  const decorators =
+    fn.parent?.type === "decorated_definition"
+      ? stripDecorators(fn.parent).decorators.map((decorator) =>
+          decorator.text.slice(1).trim(),
+        )
+      : [];
+  if (decorators.includes(STATIC_METHOD_DECORATOR)) {
+    return null;
+  }
+  return decorators.includes(CLASS_METHOD_DECORATOR)
+    ? SELF_AS_CLASS_NAME
+    : SELF_AS_INSTANCE_NAME;
+}
+
 /** The class a method belongs to, and what that method calls its receiver. */
 interface MethodReceiver {
   classKey: string;
@@ -1209,11 +1252,9 @@ function emitFunctionFacts(
       if (byPosition && position >= 0) {
         add(emitter, "paramOf", funcKey, String(position), paramKey);
       }
-      // The receiver is an instance of the class, so a value one method
-      // stores on it reaches a read in another method.
       if (classKey !== undefined && position === -1) {
         receiver = { classKey, name: paramName.text };
-        add(emitter, "instanceOf", paramKey, classKey);
+        emitReceiver(emitter, fn, paramKey, classKey);
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
       // A default is evaluated once, where the def is written.

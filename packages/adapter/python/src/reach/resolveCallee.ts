@@ -12,22 +12,31 @@
  */
 
 import {
+  answersFor,
   calleeOutcomeOf,
   calleeOutcomes,
   dispatchOutcomes,
+  fileOfKey,
+  memberOf,
+  nodeOfKey,
   noteKeyRead,
   RECEIVER_STORE_NAME,
+  resolutionProgram,
+  SELF_AS_CLASS_NAME,
+  selfFormOf,
+  selfResultOf,
   writtenSourcesOf,
 } from "@suss/resolution";
 
 import { children, enclosingFunction, field, isFunction } from "../ast.js";
+import { resolveCalls } from "../facts/resolve.js";
 import { nodeId, readKey } from "../facts/values.js";
 import { resolveModule } from "../moduleResolver.js";
 import { resolveName } from "../scope.js";
 
 import type { UnfollowedReason } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { CalleeOutcome } from "@suss/resolution";
+import type { CalleeOutcome, SubclassPlace } from "@suss/resolution";
 import type { PyNode } from "../parser.js";
 import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
@@ -40,6 +49,13 @@ export interface ReachedFunction {
   readonly name: string;
   /** `[name]` for a module function, `[Class, name]` for a method. */
   readonly exportPath: string[];
+  /** The subclass the method runs on, when the call reached it through a class that inherits it. Calls on `self` or `cls` then resolve against that class. */
+  readonly receiverClass?: PythonSubclass;
+}
+
+/** A class that inherits a method: its name, the file that declares it, and its key in the value facts. */
+export interface PythonSubclass extends SubclassPlace {
+  readonly key: string;
 }
 
 export type CalleeResolution =
@@ -62,6 +78,8 @@ export interface CallSite {
   readonly scope: Scope;
   /** The key of the function being scanned. A parameter key that starts with it is one of this function's own. */
   readonly owner: string;
+  /** The subclass the function being scanned runs on, when it is not the class the function is written in. */
+  readonly receiverClass?: PythonSubclass | undefined;
 }
 
 /** The gap reason reported for each outcome where the rules stop. */
@@ -99,14 +117,21 @@ export function calleeSpellings(
 ): CalleeSpellings {
   const spellingOf = new Map<number, CalleeSpelling>();
   const keys = new Set<string>();
+  const receivers = new Set<string>();
   for (const { call, site } of calls) {
     const spelling = spellingFor(call, site, ctx);
     spellingOf.set(call.id, spelling);
     if (spelling.kind === "key") {
       keys.add(spelling.key);
     }
+    const receiver = receiverOf(call, site);
+    if (receiver !== null) {
+      receivers.add(receiver.key);
+    }
   }
-  return { spellingOf, outcomes: calleeOutcomes(ctx.facts, [...keys]) };
+  const outcomes = calleeOutcomes(ctx.facts, [...keys]);
+  resolveCalls(ctx.facts, [...receivers]);
+  return { spellingOf, outcomes };
 }
 
 /** What a call's callee resolves to, reading the batch from `calleeSpellings` when one is passed. */
@@ -124,10 +149,180 @@ export function resolveCallee(
   const outcome =
     read?.outcomes.get(spelling.key) ??
     calleeOutcomeOf(ctx.facts, spelling.key);
-  if (selfCallInMixin(call, outcome, site, ctx)) {
-    return { kind: "stopped", reason: "selfCallInMixin" };
+  const settled: CalleeResolution = selfCallInMixin(call, outcome, site, ctx)
+    ? { kind: "stopped", reason: "selfCallInMixin" }
+    : asCallee(outcome, site.owner, ctx);
+  return onReceiverClass(call, site, ctx, settled) ?? settled;
+}
+
+/** A method call's receiver and the name it reads off it. */
+interface MethodRead {
+  readonly key: string;
+  readonly name: string;
+}
+
+function receiverOf(call: PyNode, site: CallSite): MethodRead | null {
+  const callee = readThrough(field(call, "function"));
+  const object = callee?.type === "attribute" ? field(callee, "object") : null;
+  const name = callee === null ? undefined : field(callee, "attribute")?.text;
+  if (object === null || name === undefined) {
+    return null;
   }
-  return asCallee(outcome, site.owner, ctx);
+  return {
+    key: readKey(site.file.file, object, enclosingFunction(object)),
+    name,
+  };
+}
+
+/**
+ * The method a call runs when its receiver decides the class: one sent
+ * to a class, or an instance of one, that inherits the method it finds;
+ * one sent to the scanned method's own `self` or `cls`, or to an
+ * instance `cls(...)` made; and one sent to what a method returned when
+ * it returns its own receiver. Null when the receiver decides nothing.
+ */
+function onReceiverClass(
+  call: PyNode,
+  site: CallSite,
+  ctx: ResolveContext,
+  settled: CalleeResolution,
+): CalleeResolution | null {
+  const own = ownReceiverOf(site, ctx);
+  const callee = readThrough(field(call, "function"));
+  if (callee?.type === "identifier") {
+    const calleeKey = readKey(
+      site.file.file,
+      callee,
+      enclosingFunction(callee),
+    );
+    return own !== null &&
+      selfFormOf(ctx.facts, calleeKey, own.key) === SELF_AS_CLASS_NAME
+      ? methodOn(own.cls, CONSTRUCTOR_METHOD, ctx)
+      : null;
+  }
+  const read = receiverOf(call, site);
+  if (read === null) {
+    return null;
+  }
+  if (own !== null && selfFormOf(ctx.facts, read.key, own.key) !== null) {
+    return methodOn(own.cls, read.name, ctx);
+  }
+  const sentTo = classReturnedTo(read.key, own, ctx);
+  if (sentTo !== null) {
+    return methodOn(sentTo, read.name, ctx);
+  }
+  const receiverClass =
+    settled.kind === "followed" ? onlyClassOf(read.key, ctx) : null;
+  return receiverClass === null || settled.kind !== "followed"
+    ? null
+    : { kind: "followed", target: runningOn(settled.target, receiverClass) };
+}
+
+/** The scanned method's own receiver, and the class it runs on. */
+interface OwnReceiver {
+  readonly key: string;
+  readonly cls: PythonSubclass;
+}
+
+function ownReceiverOf(
+  site: CallSite,
+  ctx: ResolveContext,
+): OwnReceiver | null {
+  const [row] = ctx.facts.lookup("selfReceiver", 0, site.owner);
+  const cls = site.receiverClass ?? classOfFunction(site.owner, ctx);
+  return row === undefined || cls === null
+    ? null
+    : { key: String(row[1]), cls };
+}
+
+/**
+ * The class a call was sent to, when the method it ran returns its own
+ * receiver or one made from it: the class the scanned method runs on, or
+ * the one class the receiver settles on.
+ */
+function classReturnedTo(
+  key: string,
+  own: OwnReceiver | null,
+  ctx: ResolveContext,
+): PythonSubclass | null {
+  const returned = selfResultOf(ctx.facts, key);
+  if (returned === null) {
+    return null;
+  }
+  if (own !== null && returned.receiver === own.key) {
+    return own.cls;
+  }
+  resolveCalls(ctx.facts, [returned.receiver]);
+  return onlyClassOf(returned.receiver, ctx);
+}
+
+/** The method `__init__` that calling a class runs. */
+const CONSTRUCTOR_METHOD = "__init__";
+
+/**
+ * The method a class has under a name, its bases' included, as it runs
+ * on that class. Null when the class has none, which leaves the call to
+ * however the rules settled it.
+ */
+function methodOn(
+  cls: PythonSubclass,
+  name: string,
+  ctx: ResolveContext,
+): CalleeResolution | null {
+  const key = memberOf(ctx.facts, cls.key, name, resolutionProgram());
+  const found = key === null ? null : functionCallee(key, ctx);
+  if (found === null || found.kind !== "followed") {
+    return null;
+  }
+  return { kind: "followed", target: runningOn(found.target, cls) };
+}
+
+/** A method as it runs on a class, which differs from the class it is written in when the class inherits it. */
+function runningOn(
+  target: ReachedFunction,
+  cls: PythonSubclass,
+): ReachedFunction {
+  const owner = ownerClassOf(target.node);
+  if (owner === null || nodeId(target.file.file, owner) === cls.key) {
+    return target;
+  }
+  return {
+    ...target,
+    exportPath: [cls.name, target.name],
+    receiverClass: cls,
+  };
+}
+
+/** The class a method is written in, or null for a function outside any class. */
+function classOfFunction(
+  functionKey: string,
+  ctx: ResolveContext,
+): PythonSubclass | null {
+  const node = ctx.definitions.get(functionKey);
+  const owner = node === undefined ? null : ownerClassOf(node);
+  return owner === null ? null : subclassAt(owner, fileOfKey(functionKey));
+}
+
+/** The one class a value settles on, as an instance or as the class itself. */
+function onlyClassOf(key: string, ctx: ResolveContext): PythonSubclass | null {
+  const objects = answersFor(ctx.facts, "wantedObjectOf", key);
+  const [only] = objects;
+  if (objects.length !== 1 || only === undefined) {
+    return null;
+  }
+  const file = ctx.filesByPath.get(fileOfKey(only));
+  const node =
+    file === undefined
+      ? null
+      : nodeOfKey(new Map([[file.file, file.root]]), only);
+  return node?.type === "class_definition"
+    ? subclassAt(node, file?.file ?? fileOfKey(only))
+    : null;
+}
+
+function subclassAt(cls: PyNode, file: string): PythonSubclass | null {
+  const name = field(cls, "name")?.text;
+  return name === undefined ? null : { key: nodeId(file, cls), name, file };
 }
 
 /**

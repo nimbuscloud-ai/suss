@@ -19,6 +19,7 @@ import {
   placePossibleCalls,
   recordParameterGaps,
   StopList,
+  sameDeclarations,
   TargetPlacements,
   unfollowedCallGap,
   worthRecording,
@@ -32,7 +33,11 @@ import {
 import {
   type Dependencies,
   type DependencyLedger,
+  keptVariants,
   noDependencies,
+  plainKeyOf,
+  type SubclassPlace,
+  variantKey,
 } from "@suss/resolution";
 
 import {
@@ -66,11 +71,13 @@ import {
   dispatchedCalls,
   functionNamed,
   namedOutcomes,
+  reachedFunctionOf,
   resolveCallee,
 } from "./resolveCallee.js";
 
 import type {
   BehavioralSummary,
+  BodyPlacements,
   BoundaryBinding,
   DeclaredAt,
   ParameterCall,
@@ -95,6 +102,7 @@ import type {
   CalleeSpellings,
   CallSite,
   DispatchedCall,
+  PythonSubclass,
   ReachedFunction,
   ResolveContext,
 } from "./resolveCallee.js";
@@ -132,6 +140,7 @@ export interface StoredTarget {
   readonly key: string;
   readonly name: string;
   readonly exportPath: string[];
+  readonly receiverClass?: PythonSubclass;
 }
 
 /** What one scan of a body found, in a form JSON keeps. */
@@ -297,7 +306,12 @@ export function reachedFunctions(
         passedPositions.add(position);
       }
       const called: string[] = [];
-      for (const target of scan.followed) {
+      // A method reached on a subclass is reached on its own class too, so
+      // its own summary is there for callers its variant gets none for.
+      const reachedOnOwnClass = scan.followed
+        .filter((target) => target.receiverClass !== undefined)
+        .map(plainOf);
+      for (const target of [...scan.followed, ...reachedOnOwnClass]) {
         const calleeKey = keyOf(target);
         if (!functionByKey.has(calleeKey)) {
           functionByKey.set(calleeKey, target);
@@ -321,11 +335,35 @@ export function reachedFunctions(
     settleBodyValues(reached, functionByKey, options);
   }
 
+  const placementsOf = (key: string): BodyPlacements => ({
+    targets: targetsByKey.get(key),
+    argTargets: argTargetsByKey.get(key),
+    possibleTargets: possibleTargetsByKey.get(key),
+  });
+  const onSubclass = keptVariants(
+    reached.flatMap((key) =>
+      functionByKey.get(key)?.receiverClass === undefined
+        ? []
+        : [
+            {
+              key,
+              differs: !sameDeclarations(
+                placementsOf(key),
+                placementsOf(plainKeyOf(key)),
+              ),
+              calls: callsByKey.get(key) ?? [],
+            },
+          ],
+    ),
+  );
   const summaries: BehavioralSummary[] = [];
   const summariesByKey = new Map<string, BehavioralSummary[]>();
   for (const key of reached) {
     const target = functionByKey.get(key);
-    if (target === undefined) {
+    if (
+      target === undefined ||
+      (target.receiverClass !== undefined && !onSubclass.has(key))
+    ) {
       continue;
     }
     const kept = replay?.summaryOf(key);
@@ -340,6 +378,9 @@ export function reachedFunctions(
       const summary = assembleSummary(libraryUnit(target, options), {
         gapHandling: options.gapHandling,
       });
+      if (target.receiverClass !== undefined) {
+        summary.receiverClass = displayedClass(target.receiverClass, ctx);
+      }
       if (options.gapHandling !== "silent") {
         summary.gaps.push(
           ...(stopsByKey.get(key) ?? []).map(unfollowedCallGap),
@@ -541,6 +582,9 @@ function storedScan(scan: Scan): StoredScan {
       key: keyOf(target),
       name: target.name,
       exportPath: target.exportPath,
+      ...(target.receiverClass === undefined
+        ? {}
+        : { receiverClass: target.receiverClass }),
     })),
     stops: scan.stops,
     targets: [...scan.targets],
@@ -577,8 +621,36 @@ function scanFromStored(
   };
 }
 
+/** The walk's key for a function, which is a variant's own when it runs on a subclass. */
 function keyOf(target: ReachedFunction): string {
-  return nodeId(target.file.file, target.node);
+  const key = nodeId(target.file.file, target.node);
+  return target.receiverClass === undefined
+    ? key
+    : variantKey(key, target.receiverClass);
+}
+
+/** The method running on the class it is written in. */
+function plainOf(target: ReachedFunction): ReachedFunction {
+  return reachedFunctionOf(target.file, target.node);
+}
+
+/** Where a call's callee is declared, with the subclass it runs on when it inherits it. */
+function placeOf(target: ReachedFunction, ctx: ResolveContext): DeclaredAt {
+  const place = { file: target.file.displayPath, span: spanOf(target.node) };
+  return target.receiverClass === undefined
+    ? place
+    : { ...place, receiverClass: displayedClass(target.receiverClass, ctx) };
+}
+
+/** A subclass as a summary records it, by the path it prints for the class's file. */
+function displayedClass(
+  cls: PythonSubclass,
+  ctx: ResolveContext,
+): SubclassPlace {
+  return {
+    name: cls.name,
+    file: ctx.filesByPath.get(cls.file)?.displayPath ?? cls.file,
+  };
 }
 
 /**
@@ -595,12 +667,10 @@ function placeCallee(
   outcome: CalleeResolution,
   call: PyNode,
   file: BoundPythonFile,
+  ctx: ResolveContext,
 ): void {
   if (outcome.kind === "followed") {
-    placements.place(callee, {
-      file: outcome.target.file.displayPath,
-      span: spanOf(outcome.target.node),
-    });
+    placements.place(callee, placeOf(outcome.target, ctx));
     return;
   }
 
@@ -661,9 +731,13 @@ function bodyOf(source: ReachedFunction): BodyCalls {
   /* v8 ignore stop */
   return {
     body,
-    written: callsWritten(file, body, scopeAt(file, node), keyOf(source), {
-      descendsInto: isModule(node) ? runsAtModuleLoad : outsideNestedDef,
-    }),
+    written: callsWritten(
+      file,
+      body,
+      scopeAt(file, node),
+      { owner: nodeId(file.file, node), receiverClass: source.receiverClass },
+      { descendsInto: isModule(node) ? runsAtModuleLoad : outsideNestedDef },
+    ),
   };
 }
 
@@ -768,24 +842,30 @@ function scanBody(
   };
 
   // An identifier argument that is a project function joins a `passes`
-  // fact to whichever parameter of the followed callee it calls through.
+  // fact to whichever parameter of the followed callee it calls through,
+  // under a variant's key and its method's own, since either may summarize.
   const recordPassedArgs = (
     call: PyNode,
     callee: string,
-    calleeKey: string | null,
+    target: ReachedFunction | null,
   ): void => {
     const args = field(call, "arguments");
     if (args === null) {
       return;
     }
+    const calleeKeys =
+      target === null ? [] : [keyOf(target), keyOf(plainOf(target))];
+    const passes = (position: number): void => {
+      for (const calleeKey of calleeKeys) {
+        passedPositions.add(`${calleeKey}#${position}`);
+      }
+    };
     children(args).forEach((arg, position) => {
       // A lambda written at the call is part of this body, which already
       // has its calls, so the callee calling it through that parameter is
       // no gap.
       if (arg.type === "lambda") {
-        if (calleeKey !== null) {
-          passedPositions.add(`${calleeKey}#${position}`);
-        }
+        passes(position);
         return;
       }
       const nameKey = passedNameKeyOf(file, arg);
@@ -797,13 +877,8 @@ function scanBody(
         return;
       }
       follow(resolved);
-      placements.placeArg(callee, position, {
-        file: resolved.file.displayPath,
-        span: spanOf(resolved.node),
-      });
-      if (calleeKey !== null) {
-        passedPositions.add(`${calleeKey}#${position}`);
-      }
+      placements.placeArg(callee, position, placeOf(resolved, ctx));
+      passes(position);
     });
   };
 
@@ -817,10 +892,7 @@ function scanBody(
     dispatched.targets.forEach(follow);
     placements.placePossible(
       callee,
-      dispatched.targets.map((target) => ({
-        file: target.file.displayPath,
-        span: spanOf(target.node),
-      })),
+      dispatched.targets.map((target) => placeOf(target, ctx)),
     );
     recordPassedArgs(call, callee, null);
     if (dispatched.unresolved > 0 && !recognized.has(call.id)) {
@@ -840,11 +912,11 @@ function scanBody(
     }
     const outcome: CalleeResolution =
       only === undefined ? settled : { kind: "followed", target: only };
-    placeCallee(placements, callee, outcome, call, file);
+    placeCallee(placements, callee, outcome, call, file, ctx);
     recordPassedArgs(
       call,
       callee,
-      outcome.kind === "followed" ? keyOf(outcome.target) : null,
+      outcome.kind === "followed" ? outcome.target : null,
     );
 
     // A call that storage recognition already read is not reported as a stop.
@@ -898,14 +970,14 @@ function callsWritten(
   file: BoundPythonFile,
   body: PyNode,
   outer: Scope,
-  owner: string,
+  scanned: Pick<CallSite, "owner" | "receiverClass">,
   limit: { descendsInto: (node: PyNode) => boolean },
 ): { call: PyNode; site: CallSite }[] {
   const found: { call: PyNode; site: CallSite }[] = [];
   walkDescendants<PyNode, Scope>(body, outer, children, {
     at: (child, scope) => {
       if (child.type === "call") {
-        found.push({ call: child, site: { file, scope, owner } });
+        found.push({ call: child, site: { file, scope, ...scanned } });
       }
     },
     into: (child, scope) =>

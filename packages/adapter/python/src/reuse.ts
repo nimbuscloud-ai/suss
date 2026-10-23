@@ -12,7 +12,13 @@
  * made in them comes back the same.
  */
 
-import { EntryReuse, fileOfKey, noteLookup } from "@suss/resolution";
+import {
+  EntryReuse,
+  fileOfKey,
+  noteLookup,
+  plainKeyOf,
+  variantKey,
+} from "@suss/resolution";
 
 import { envLookupAgain } from "./envReads.js";
 
@@ -115,11 +121,25 @@ export function storedFunction(
   definitions: ReadonlyMap<string, PyNode>,
   filesByPath: ReadonlyMap<string, BoundPythonFile>,
 ): ReachedFunction | null {
-  const node = definitions.get(target.key);
+  const plainKey = plainKeyOf(target.key);
+  const node = definitions.get(plainKey);
   const file = filesByPath.get(fileOfKey(target.key));
-  return node === undefined || file === undefined
-    ? null
-    : { file, node, name: target.name, exportPath: target.exportPath };
+  const key =
+    target.receiverClass === undefined
+      ? plainKey
+      : variantKey(plainKey, target.receiverClass);
+  if (node === undefined || file === undefined || key !== target.key) {
+    return null;
+  }
+  const found = {
+    file,
+    node,
+    name: target.name,
+    exportPath: target.exportPath,
+  };
+  return target.receiverClass === undefined
+    ? found
+    : { ...found, receiverClass: target.receiverClass };
 }
 
 /** What an earlier run's walk found, for the bodies whose inputs have not changed since. */

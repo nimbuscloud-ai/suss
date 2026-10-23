@@ -17,3 +17,9 @@ export const ATTRIBUTE_GETTER = "getattr";
 
 /** The builtin that pairs each element of a collection with its position, counting from 0. */
 export const POSITION_COUNTER = "enumerate";
+
+/** The decorator that passes a method the class it was called on in place of an instance. */
+export const CLASS_METHOD_DECORATOR = "classmethod";
+
+/** The decorator that passes a method no receiver at all. */
+export const STATIC_METHOD_DECORATOR = "staticmethod";
