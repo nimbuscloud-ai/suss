@@ -6,7 +6,7 @@ Framework pack for AWS Lambda handlers. The SAM or CloudFormation template decla
 
 `@suss/framework-aws-lambda` exports a `PatternPack`. It covers:
 
-- **Discovery** through a `discoverUnits` callback. For each source file, the pack walks up to the nearest SAM template (`template.yaml`, `template.yml` or `template.json`). It resolves every `Serverless::Function`'s `Handler` back to a module path and an export, and records units for what the template routes there. Each template is parsed once and memoized. Nested stacks are followed, so a function declared in a child stack points at the same deployed Lambda the declared side does. The pack declares those templates, children included, as its `discoveryInputs`, so their content goes into the extraction cache key. When you edit a template, the next run reads the project again and does not return the result from before the edit.
+- **Discovery** through a `discoverUnits` callback. For each source file, the pack walks up to the nearest SAM template (`template.yaml`, `template.yml` or `template.json`) or Serverless Framework service file (`serverless.yml`, `serverless.yaml` or `serverless.json`). A service file is rewritten as SAM resources the same way `@suss/contract-serverless` rewrites it, so both sides agree on each function's logical id. It resolves every `Serverless::Function`'s `Handler` back to a module path and an export, and records units for what the template routes there. Each template is parsed once and memoized. Nested stacks are followed, so a function declared in a child stack points at the same deployed Lambda the declared side does. The pack declares those templates, children included, as its `discoveryInputs`, so their content goes into the extraction cache key. When you edit a template, the next run reads the project again and does not return the result from before the edit.
 - **HTTP route units**, each with a REST binding of `(method, path)` that pairs with the route the same template declares. A route on `ANY` is left to the declared side, since one REST binding cannot represent every verb.
 - **AppSync resolver units**, one per `Query`, `Mutation` or `Subscription` field the template routes to the handler. When the field is on any other type, the handler keeps those fields recorded on it without claiming an API surface, because no client can address such a field by itself.
 - **Accounting units** for a handler that an SQS, Schedule, SNS or S3 event reaches, marked `recognized-not-http` with the event types that reached it. The unit's binding records which bus the template routes to it. SQS and S3 map to their own wire, and a Schedule or an EventBridge rule maps to eventbridge. A handler the template routes no event to is reached by invoking it by name, so its binding is the deployed function itself, `unit:lambda <logical id>`. A handler that bound to nothing at all gets one of these too, so suss never drops a recognized handler without saying so.
@@ -20,6 +20,24 @@ Framework pack for AWS Lambda handlers. The SAM or CloudFormation template decla
 Most handlers build the response object in a helper instead of at the return, and each service writes its own helper, so the pack does not try to list them. The adapter follows a returned call into the project and applies the same declaration to the object it finds there. It reads the helper's parameters to see which argument supplies which field. So a service that writes `json(status, payload)` and one that writes `json(payload, status)` both come out right.
 
 The pack has no import gate, on purpose. A TypeScript handler imports `APIGatewayProxyHandlerV2` from `aws-lambda` to annotate its export. A JavaScript handler has nothing to annotate and does not import it, so gating on that import would extract nothing from a JavaScript service. The template acts as the gate instead, and works better, because it lists the handlers directly.
+
+## Python and Ruby handlers
+
+`-f aws-lambda-python` and `-f aws-lambda-ruby` read the same templates for those adapters. Each handler the template points at gets a `handler` summary with its deployable unit, and the call walk starts from it, so the functions it calls get summaries too. A handler that nothing in the code calls had no summary before this.
+
+The `Handler` string is split the way each runtime reads it:
+
+| Runtime | Handler | Function |
+|---|---|---|
+| Python | `orders.app.handler` | `handler` at the top of `orders/app.py` |
+| Ruby | `src/orders.handler` | `def handler` at the top of `src/orders.rb` |
+| Ruby | `app.Billing::Handler.process` | `def self.process` in `Billing::Handler`, in `app.rb` |
+
+Neither adapter reads a Lambda response envelope yet, so a Python or Ruby handler gets no route or resolver binding. Its events are listed on the summary under `awsLambda.eventTypes`. A handler whose events all come from one bus is that bus's consumer, and any other handler is bound as the deployed function, `unit:lambda <logical id>`. A name the module binds without a body, such as `handler = Mangum(app)`, gets no summary.
+
+The Python pack also declares the `POWERTOOLS_` variables that `aws_lambda_powertools` reads from its installed package, the way the TypeScript pack does for `@aws-lambda-powertools/`.
+
+The template readers record the function as `codeScope.entryExport` beside `codeScope.entry`, so a reader can find the handler's summary when no pack stamped it.
 
 ## How an invoke pairs with the function it calls
 

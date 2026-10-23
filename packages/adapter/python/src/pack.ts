@@ -12,7 +12,11 @@
  */
 
 import type { RequestSpellingMetadata } from "@suss/behavioral-ir";
-import type { RedirectOption } from "@suss/extractor";
+import type {
+  DeclaredEntryPoint,
+  LibraryEnvVars,
+  RedirectOption,
+} from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 
 export interface PythonPack {
@@ -35,6 +39,14 @@ export interface PythonPack {
   /** Wire protocol for the produced boundary bindings, e.g. "http". */
   protocol: string;
   discovery: PythonDiscoveryPattern[];
+  /**
+   * The functions a deploy manifest says the platform calls in a file,
+   * given the file's absolute path. The adapter builds the units on each
+   * function it finds by name, and the call walk starts there.
+   */
+  entryPoints?: (file: string) => DeclaredEntryPoint[];
+  /** Environment variables the library reads from its own installed code, where no walk over the project goes. */
+  libraryEnvVars?: LibraryEnvVars[];
   /**
    * Wrapper modules around the library that a person lists when
    * configuring the pack. The library's own module does not go here. The adapter

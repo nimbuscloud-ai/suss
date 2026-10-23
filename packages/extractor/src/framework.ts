@@ -20,6 +20,7 @@ import type {
   MessageBusSemantics,
   RequestSpellingMetadata,
 } from "@suss/behavioral-ir";
+import type { LibraryEnvVars } from "./libraryEnvReads.js";
 import type { ProjectHelpers } from "./projectHelpers.js";
 
 // =============================================================================
@@ -1362,14 +1363,7 @@ export interface PatternPack {
    * before reporting. `module` matches as a prefix, so one entry covers a
    * family like `@aws-lambda-powertools/`.
    */
-  libraryEnvVars?: Array<{
-    /** Module-specifier prefix the library's imports start with. */
-    module: string;
-    /** Env-var name prefixes the library reads, e.g. "POWERTOOLS_". */
-    prefixes?: string[];
-    /** Exact env-var names the library reads. */
-    names?: string[];
-  }>;
+  libraryEnvVars?: LibraryEnvVars[];
   /**
    * Library wrappers that return the function they were handed. A call to
    * the `name` that `module` exports resolves to its `argument`-th

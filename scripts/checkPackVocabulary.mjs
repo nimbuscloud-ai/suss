@@ -247,14 +247,20 @@ function namesInFile(file, { identifierMapKeys = true } = {}) {
   return found;
 }
 
-/** The `export const declares: PackDeclaration = { ... }` statement. */
+/**
+ * An `export const declares: PackDeclaration = { ... }` statement. A
+ * package that ships a pack per language has one per pack, each under
+ * its own name.
+ */
 function isPackDeclaration(node) {
   return (
     ts.isVariableStatement(node) &&
     node.declarationList.declarations.some(
       (declaration) =>
-        ts.isIdentifier(declaration.name) &&
-        declaration.name.text === "declares",
+        declaration.type !== undefined &&
+        ts.isTypeReferenceNode(declaration.type) &&
+        ts.isIdentifier(declaration.type.typeName) &&
+        declaration.type.typeName.text === "PackDeclaration",
     )
   );
 }

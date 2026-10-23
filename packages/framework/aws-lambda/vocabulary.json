@@ -1,6 +1,7 @@
 {
   "awsLambda": "pack name, used as this pack's metadata namespace",
-  "lambda": "AWS deployment target, AWS Lambda",
+  "lambda": "language: Python and Ruby spell their anonymous-function keyword the same way. AWS deployment target, AWS Lambda",
+  "aws_lambda_powertools": "Powertools for AWS Lambda (Python): the package whose imports mark that it reads POWERTOOLS_ variables",
   "ANY": "SAM: catch-all HTTP method on an Api or HttpApi event",
   "Query": "GraphQL spec: operation root type",
   "Mutation": "GraphQL spec: operation root type",

@@ -64,6 +64,7 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { discoverUnits } from "./discovery.js";
+import { declaredEntryUnits } from "./entryPoints.js";
 import {
   bindEnvFacts,
   envFactsIn,
@@ -74,6 +75,7 @@ import { exitSites, type FileExits, markExitCodeFunctions } from "./exits.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
+import { libraryEnvReadMarkers } from "./libraryEnvReads.js";
 import { moduleExportUnits, settlePythonModules } from "./moduleSurface.js";
 import { parsePython } from "./parser.js";
 import { moduleLoadInvocationEffects } from "./paths/effects.js";
@@ -521,7 +523,9 @@ async function runPython(
   const declaredModules = settlePythonModules(options.modules);
   const discovers =
     declaredModules.length > 0 ||
-    options.packs.some((pack) => pack.discovery.length > 0);
+    options.packs.some(
+      (pack) => pack.discovery.length > 0 || pack.entryPoints !== undefined,
+    );
   // A client pattern with a receiver asks the rules what built it.
   const buildsReceivers = options.packs.some((pack) =>
     (pack.clients ?? []).some(
@@ -725,6 +729,10 @@ async function runPython(
       ...moduleExportUnits(boundFile, {
         modules: declaredModules,
         filesByPath,
+        facts: db,
+        storageFor,
+      }),
+      ...declaredEntryUnits(boundFile, options.packs, {
         facts: db,
         storageFor,
       }),
@@ -972,6 +980,7 @@ async function runPython(
   }
 
   summaries.push(...reached.summaries);
+  summaries.push(...libraryEnvReadMarkers(bound, options.packs));
 
   // An under-question given up on its budget depends on how much the run
   // asked before it, which a replay changes, so such a run starts over.

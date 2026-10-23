@@ -410,6 +410,10 @@ export async function inspectProject(root: string): Promise<InitReport> {
     });
   }
 
+  for (const suggestion of lambdaHandlerPacks(suggestions, languages)) {
+    add(suggestion);
+  }
+
   const tsconfig = TSCONFIG_NAMES.map((name) => path.join(resolved, name)).find(
     (candidate) => fs.existsSync(candidate),
   );
@@ -435,6 +439,44 @@ export async function inspectProject(root: string): Promise<InitReport> {
     unread: declared.unread,
     recognizedWithoutPack,
   };
+}
+
+/** The pack that finds Lambda handlers in each language that has no dependency to suggest it by. */
+const LAMBDA_HANDLER_PACKS: Partial<Record<Language, string>> = {
+  python: "aws-lambda-python",
+  ruby: "aws-lambda-ruby",
+};
+
+/**
+ * A Python or Ruby Lambda imports nothing that marks it as one, so the
+ * SAM template or service file found next to the source is what suggests
+ * the pack that finds its handlers.
+ */
+function lambdaHandlerPacks(
+  suggestions: ReadonlyArray<PackSuggestion>,
+  languages: readonly Language[],
+): PackSuggestion[] {
+  const manifest = suggestions.find(
+    (suggestion) =>
+      suggestion.name === "cloudformation" || suggestion.name === "serverless",
+  );
+  if (manifest?.file === undefined) {
+    return [];
+  }
+  return languages.flatMap((language) => {
+    const name = LAMBDA_HANDLER_PACKS[language];
+    return name === undefined
+      ? []
+      : [
+          {
+            name,
+            packageName: "@suss/framework-aws-lambda",
+            because: `${LANGUAGE_LABEL[language]} sources, and Lambda functions in ${manifest.file}`,
+            kind: "framework" as const,
+            language,
+          },
+        ];
+  });
 }
 
 /**
