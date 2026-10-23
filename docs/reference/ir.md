@@ -25,6 +25,7 @@ interface BehavioralSummary {
   confidence: ConfidenceInfo;
   definitions?: Record<string, TypeShape>;
   inputReads?: Array<{ input: string; path: string[] }>;
+  receiverClass?: { file: string; name: string };
   metadata?: Record<string, unknown>;
 }
 ```
@@ -34,6 +35,7 @@ suss writes one of these per code unit. It is flat JSON with no cycles, apart fr
 - **`schemaVersion`** is absent on a summary written by 0.3.x, which the parsers read as version 1. Version 6 is current. [Summary format](/reference/summary-format#versions) lists what each version changed.
 - **`definitions`** is the table a `ref` shape points into, keyed the way `typeDefinitionKey` in `@suss/ir-core` builds a key. `withDefinitionsInlined` puts a definition back into a shape, and every comparison reads the inlined form.
 - **`inputReads`** records what the unit read out of the values it was given, once each, as an input name and a property path.
+- **`receiverClass`** is set on a summary of a method running on a subclass that inherits it, when the method does something else there than on the class it is written in. `BaseService.call` doing `new(...).call` runs the subclass's `call` when the caller sent it to `Invoices::CreateService`, so that caller links to a summary with `receiverClass` set to `Invoices::CreateService`. `location` is still where the method is written, and the export path starts with the subclass. The summary without it describes the method on its own class.
 - **`metadata`** takes framework-specific data that does not fit the universal structure. Keys are namespaced by boundary semantics: HTTP-scoped entries go under `metadata.http.*`, GraphQL under `metadata.graphql.*`. Semantics-neutral keys such as `metadata.derivedFromWrapper` stay at the top level. A tool that does not need any of it can ignore the field.
 
 ### `CodeUnitKind`
@@ -302,6 +304,8 @@ type Effect = ({ count?: number; location?: { start: number; end: number } }) & 
 interface DeclarationPlace {
   file: string;
   span: { start: number; end: number };
+  // The subclass the method runs on, matched against a summary's receiverClass.
+  receiverClass?: { file: string; name: string };
 }
 ```
 

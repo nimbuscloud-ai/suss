@@ -62,13 +62,29 @@ async function extract(): Promise<BehavioralSummary[]> {
   return summaries;
 }
 
+/** The summary of a function on the class it is written in. */
 function unitNamed(
   summaries: BehavioralSummary[],
   name: string,
 ): BehavioralSummary {
-  const found = summaries.find((summary) => summary.identity.name === name);
+  return unitOn(summaries, name, undefined);
+}
+
+/** The summary of a method running on a subclass that inherits it, or on its own class when `subclass` is undefined. */
+function unitOn(
+  summaries: BehavioralSummary[],
+  name: string,
+  subclass: string | undefined,
+): BehavioralSummary {
+  const found = summaries.find(
+    (summary) =>
+      summary.identity.name === name &&
+      summary.receiverClass?.name === subclass,
+  );
   if (found === undefined) {
-    throw new Error(`no summary is named ${name}`);
+    throw new Error(
+      `no summary is named ${name} on ${subclass ?? "its class"}`,
+    );
   }
   return found;
 }
@@ -234,6 +250,15 @@ describe("the functions a route reaches", () => {
         description: expect.stringContaining("is made on self in a mixin"),
       }),
     );
+    // Run on Service, the mixin's method finds the `deny` Service writes.
+    const onService = unitOn(summaries, "check", "Service");
+    expect(calls(onService)).toEqual([
+      ["self.deny", summaryIdentifier(unitNamed(summaries, "deny"))],
+    ]);
+    expect(calls(unitNamed(summaries, "items"))).toContainEqual([
+      "Service().check",
+      summaryIdentifier(onService),
+    ]);
   });
 
   it("marks a mixin call whose result the method uses as a value", async () => {

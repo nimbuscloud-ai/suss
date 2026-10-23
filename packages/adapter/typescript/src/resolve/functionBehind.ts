@@ -24,10 +24,13 @@ import {
 
 import type { CallExpression, Identifier, Symbol as TsSymbol } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
+import type { TsSubclass } from "./receiverClass.js";
 
 export interface ReachableCandidate {
   func: FunctionRoot;
   name: string;
+  /** The subclass the method runs on, when the call reached it through a class that inherits it. */
+  receiverClass?: TsSubclass;
 }
 
 /** The first of these declarations the walk can follow into. */

@@ -40,6 +40,7 @@ export {
 export { exitCodeFunctions } from "./exitCode.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export { importedFilesByFile } from "./fileImports.js";
+export { memberOf } from "./members.js";
 export {
   agreedMountPrefix,
   joinMountedPath,
@@ -94,6 +95,20 @@ export {
   type UnderOutcome,
   underQuestionSpend,
 } from "./program.js";
+export {
+  keptVariants,
+  plainKeyOf,
+  type ReceiverVariant,
+  SELF_AS_CLASS,
+  SELF_AS_CLASS_NAME,
+  SELF_AS_INSTANCE,
+  SELF_AS_INSTANCE_NAME,
+  type SelfForm,
+  type SubclassPlace,
+  selfFormOf,
+  selfResultOf,
+  variantKey,
+} from "./receiverSelf.js";
 export { explainResolvedKey, proofRules } from "./session.js";
 export {
   answersFor,
@@ -185,6 +200,7 @@ export type {
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
 import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
+import { SELF_QUESTIONS, SELF_RULES } from "./receiverSelf.js";
 
 import type { Rule } from "@suss/datalog";
 
@@ -2092,6 +2108,8 @@ const STATED_RULES = [
   ...DISPATCH_RULES,
 
   ...PASSED_ON_RULES,
+
+  ...SELF_RULES,
 ];
 
 /**
@@ -2760,6 +2778,8 @@ export const RESOLUTION_QUESTIONS = [
   ),
 
   ...USES_QUESTIONS,
+
+  ...SELF_QUESTIONS,
 
   // Where a value came from, asked from the value. DESIGN.md says why the
   // walk takes `hop`, why it descends into the object a read is off, and

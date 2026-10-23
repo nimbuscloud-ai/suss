@@ -264,6 +264,12 @@ fieldCall(c, n, callee, t)  c's field n is given a call of callee, and
                             t refers to the class n is about (Python)
 classCallback(c, event, n)  c's body registers its own method n to run
                             on event (Ruby)
+selfReceiver(f, s, form)    the method f runs with the receiver s: the
+                            class itself when form is class (a Ruby class
+                            method, a Python classmethod's cls), or one
+                            of it when form is instance. A subclass that
+                            inherits f runs it with s set to the subclass
+                            (Ruby, Python)
 ```
 
 Modules:
@@ -1325,6 +1331,71 @@ possible call as unchecked.
 An entry that is a lambda has no summary. `wantedDispatchThrough`
 lists what each function the call may run calls in its own body, so an
 adapter can step past a lambda to the functions it calls.
+
+## A method that runs on a subclass
+
+```ruby
+class BaseService
+  def self.call(...) = new(...).call
+end
+
+class Invoices::CreateService < BaseService
+  def call = Invoice.create!(amount: @amount)
+end
+
+Invoices::CreateService.call(amount: 10)
+```
+
+`call` is written once, in `BaseService`, and runs with whichever class
+the caller sent it to as `self`. Here `new` makes an
+`Invoices::CreateService`, so the `.call` on it runs
+`Invoices::CreateService#call`. Python's `cls(**kwargs)` in a
+classmethod and TypeScript's `new this(args)` in a static method work
+the same way. So does an inherited instance method that calls
+`self.run`, which runs the subclass's `run` when the subclass has one.
+
+The rules cannot know the class, since one body serves every caller.
+They say which values come from the method's own receiver, and the walk
+that followed the call puts the caller's class in their place. The Ruby
+and Python adapters state `selfReceiver(f, s, form)` for each method,
+and the rules derive:
+
+```
+selfBehind(x, s, form)      x is the receiver s, a name for it, or one
+                            made from it: the class when form is class,
+                            one of it when form is instance. Calling the
+                            class makes one, and Ruby adds its own `new`
+                            and `self.class`
+selfResult(r, o, form)      the call r was sent to o, and the method it
+                            ran returns its own receiver in this form,
+                            as `def self.build(x) = new(x)` does
+```
+
+Asking `wanted` about a key fills both, as `wantedSelfBehind` and
+`wantedSelfResult`. Only name hops lead to a receiver. A receiver
+passed into another method is that method's parameter, and the walk
+there has no subclass to put in its place.
+
+A walk that follows `Invoices::CreateService.call` scans `call`'s body
+once for that class, as a variant of the method. A call in the variant
+whose receiver `selfBehind` says is the method's own receiver is looked
+up on the subclass. The Python walk asks for the member through
+`wantedMembers(cls)`, which lists what `contains` gives the class and
+which of those a nearer member overrides, and `memberOf` picks the one
+left. Ruby looks the method up in its own ancestry walk. The TypeScript
+walk reads its receivers off the syntax (`this`, `new this(...)`, and a
+`const` given one of those) and asks the type checker for the member,
+since its walk settles every other call through the checker too.
+
+Most variants do what the method does on its own class, since most
+inherited methods never call back into the subclass. The walk scans the
+method on its own class too, and a variant gets a summary of its own
+only when one of its calls goes somewhere else, or when it calls a
+variant that does. `keptVariants` works that out. Every other variant's
+callers link to the summary of the method on its own class. A variant's
+summary keeps the method's location and sets `receiverClass`, and the
+call placed on it says the same class, so the link step can tell the
+summaries at one place apart.
 
 ## Where a value came from
 

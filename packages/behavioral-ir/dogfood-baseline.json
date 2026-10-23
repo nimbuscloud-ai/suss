@@ -1,7 +1,7 @@
 {
   "name": "@suss/behavioral-ir",
-  "exports": 185,
-  "internal": 139,
+  "exports": 186,
+  "internal": 143,
   "consumers": 21,
   "unfollowedCalls": 8
 }

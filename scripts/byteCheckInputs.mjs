@@ -301,6 +301,26 @@ export const FIXTURE_INPUTS = [
   ]),
   fixture("hono", [...dir("fixtures/hono"), ...packs("hono")]),
   fixture("hono-openapi", [...dir("fixtures/hono-openapi"), ...packs("hono")]),
+  fixture("inherited-receiver", [
+    ...dir("fixtures/inherited-receiver"),
+    ...packs("express", "fetch"),
+  ]),
+  fixture("inherited-receiver-python", [
+    ...lang("python"),
+    ...dir("fixtures/inherited-receiver-python"),
+    ...packs(
+      "fastapi",
+      "sqlmodel=fixtures/inherited-receiver-python/suss.sqlmodel.json",
+    ),
+  ]),
+  fixture("inherited-receiver-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/inherited-receiver-ruby"),
+    ...packs(
+      "rails=fixtures/inherited-receiver-ruby/suss.rails.json",
+      "activerecord=fixtures/inherited-receiver-ruby/suss.activerecord.json",
+    ),
+  ]),
   fixture("lambda-invoke", [
     ...dir("fixtures/lambda-invoke"),
     ...packs("aws-lambda"),

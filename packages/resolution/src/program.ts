@@ -53,6 +53,7 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedUses",
   "wantedSource",
   "wantedInputRead",
+  "wantedMembers",
 ];
 
 const NO_LANGUAGE_RULES: readonly Rule[] = [];
