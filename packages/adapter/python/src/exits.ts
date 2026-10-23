@@ -29,7 +29,7 @@ import { evaluatedValue } from "./values/evaluator.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawTerminal } from "@suss/extractor";
+import type { PlacedEffect, RawBranch, RawTerminal } from "@suss/extractor";
 import type { PyNode } from "./parser.js";
 import type { InvocationEffect } from "./paths/bodyBranches.js";
 import type { RaisedResponse } from "./paths/raisedResponses.js";
@@ -147,7 +147,7 @@ function exitCodeOf(
 export function exitingBranches(
   definition: PyNode,
   module: ModuleBinding,
-  effects: readonly InvocationEffect[],
+  effects: readonly PlacedEffect<InvocationEffect>[],
   facts?: Database,
 ): RawBranch[] | null {
   const body = field(definition, "body");

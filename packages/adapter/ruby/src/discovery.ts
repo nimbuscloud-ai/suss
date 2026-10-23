@@ -54,7 +54,12 @@ import {
   filterUnit,
   unreadFilterReference,
 } from "./filters.js";
-import { EVERY_ARGLESS_CALL, invocationEffects } from "./paths/effects.js";
+import {
+  EVERY_ARGLESS_CALL,
+  effectSitesIn,
+  invocationSites,
+  methodBody,
+} from "./paths/effects.js";
 import {
   askSourcesOfBodies,
   slotProvenance,
@@ -95,6 +100,7 @@ import type {
 import type { Database } from "@suss/datalog";
 import type {
   BodyContent,
+  PlacedEffect,
   RawBranch,
   RawCodeStructure,
   RawEffect,
@@ -597,7 +603,7 @@ async function controllerActionUnits(
             raised: raisedStatusBranches(
               pattern,
               options.storage?.patterns ?? [],
-              body.extraEffects,
+              everyEffect(body.extraEffects),
               "eachRoute",
               rangeOf(filter.method),
             ),
@@ -881,10 +887,10 @@ function buildControllerActionUnit(
             reading: absentReading,
             libraryDefault: pattern.defaultStatusCode,
           },
-          effects: body.effects ?? [],
+          effects: everyEffect(body.effects),
           ...(body.extraEffects === undefined
             ? {}
-            : { extraEffects: body.extraEffects }),
+            : { extraEffects: everyEffect(body.extraEffects) }),
           location: range,
           isDefault: true,
         },
@@ -894,7 +900,7 @@ function buildControllerActionUnit(
       raisedStatusBranches(
         pattern,
         bodyRead.storage?.patterns ?? [],
-        body.extraEffects,
+        everyEffect(body.extraEffects),
         raises.handlers,
         range,
       ),
@@ -1027,14 +1033,22 @@ function branchesFor(body: BodyReport, range: Range): RawBranch[] {
       emitEvent: null,
       location: range,
     },
-    effects: body.effects ?? [],
+    effects: everyEffect(body.effects),
     ...(body.extraEffects === undefined
       ? {}
-      : { extraEffects: body.extraEffects }),
+      : { extraEffects: everyEffect(body.extraEffects) }),
     location: range,
     isDefault: true,
   };
   return withSlotSources([branch], body.provenance);
+}
+
+/**
+ * Every effect a body has, wherever it was written. A branch that ends
+ * where the method ends gets all of them, since every one can run first.
+ */
+function everyEffect<E>(placed: readonly PlacedEffect<E>[] | undefined): E[] {
+  return (placed ?? []).map((one) => one.effect);
 }
 
 /** A field's contract and the method behind it, read together because a wiring keyword decides both. */
@@ -1051,10 +1065,10 @@ export interface BodyReport {
    */
   bodyContent?: BodyContent;
   readings: Reading<unknown>[];
-  /** The calls the method makes, each with the conditions it runs under. */
-  effects?: RawEffect[];
-  /** Effects a recognizer built in IR form, such as database work. */
-  extraEffects?: Effect[];
+  /** The calls the method makes, each with where it is written and the conditions it runs under. */
+  effects?: PlacedEffect<RawEffect>[];
+  /** Effects a recognizer built in IR form, such as database work, each with where it is written. */
+  extraEffects?: PlacedEffect<Effect>[];
   /** Where the values in the slots of `extraEffects` came from. */
   provenance?: RawProvenance[];
   /** Set when this body came from a method, so the reach walk can follow the calls it makes. */
@@ -1069,7 +1083,7 @@ export function bodyOfMethod(
 ): BodyReport {
   // Every call with no arguments goes on the list, and the reach walk
   // removes the ones that turn out to be property reads.
-  const effects = invocationEffects(
+  const effects = invocationSites(
     method,
     bodyRead.inheritedMethods,
     EVERY_ARGLESS_CALL,
@@ -1081,7 +1095,7 @@ export function bodyOfMethod(
     storage === undefined
       ? { effects: [], slots: [] }
       : methodStorage(method, file, storage);
-  const extra = [
+  const found = [
     ...envReadEffects(
       method,
       facts === undefined ? undefined : { db: facts, file },
@@ -1089,6 +1103,11 @@ export function bodyOfMethod(
     ...database.effects,
     ...streamWriteEffects(method),
   ];
+  const siteOf = effectSitesIn(
+    methodBody(method),
+    found.map((one) => one.at),
+  );
+  const extra = found.map(({ effect, at }) => ({ effect, site: siteOf(at) }));
   const provenance =
     database.slots.length === 0 || storage === undefined
       ? []

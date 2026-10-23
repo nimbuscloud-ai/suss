@@ -15,6 +15,7 @@ import {
   children,
   field,
   hashKeySymbolName,
+  rangeOf,
   readCallArgs,
   stringLiteralValue,
   symbolValue,
@@ -22,6 +23,7 @@ import {
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 
 export const RUBY_STREAM_RECOGNITION = "ruby-stdlib";
 
@@ -47,13 +49,13 @@ const STREAM_METHODS = new Set(["puts", "print", "write", "<<"]);
 const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
 
 /** The write effects for every print under `root`, in source order. */
-export function streamWriteEffects(root: RbNode): Effect[] {
-  const found: Effect[] = [];
+export function streamWriteEffects(root: RbNode): EffectAt[] {
+  const found: EffectAt[] = [];
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       const write = node.type === "call" ? streamWriteAt(node) : null;
       if (write !== null) {
-        found.push(write);
+        found.push({ effect: write, at: node });
       }
     },
     into: (node) => (DEFERRED_BODY_TYPES.has(node.type) ? SKIP_CHILDREN : null),
@@ -101,6 +103,7 @@ export function writeEffect(
     callee: receiver === null ? method : `${receiver.text}.${method}`,
     groupId: `${call.startPosition.row + 1}:${call.startPosition.column + 1}`,
     interaction: { class: "stream-write", ...payloadOf(args) },
+    location: rangeOf(call),
   };
 }
 

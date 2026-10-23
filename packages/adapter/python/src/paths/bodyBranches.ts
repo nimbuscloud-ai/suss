@@ -8,7 +8,7 @@
  * request on to the handler.
  */
 
-import { enumerateOrDegrade, guardsHoldOn } from "@suss/extractor";
+import { effectsFiringOn, enumerateOrDegrade } from "@suss/extractor";
 
 import { children, NodeSet } from "../ast.js";
 import { guardInputs } from "../provenance.js";
@@ -19,10 +19,12 @@ import type { Database } from "@suss/datalog";
 import type {
   ConditionInfo,
   KeepsArms,
+  PlacedEffect,
   RawBranch,
   RawCondition,
   RawEffect,
   RawTerminal,
+  TerminalPlacement,
 } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
 import type { RaisedResponse } from "./raisedResponses.js";
@@ -86,21 +88,11 @@ export function bodyTerminals(
   return found.sort((a, b) => a.statement.startIndex - b.statement.startIndex);
 }
 
-/** A call belongs to a path when everything gating the call also gates the path. */
-export function effectsReaching(
-  effects: readonly InvocationEffect[],
-  conditions: readonly RawCondition[],
-): RawEffect[] {
-  return effects.filter((effect) =>
-    guardsHoldOn(effect.preconditions, conditions),
-  );
-}
-
 export interface EnumerateBodyOptions {
   body: PyNode | null;
   terminals: readonly BodyTerminal[];
   raised: readonly RaisedResponse[];
-  effects: readonly InvocationEffect[];
+  effects: readonly PlacedEffect<InvocationEffect>[];
   branchOf: (terminal: BodyTerminal) => TerminalBranch;
   /** What a path that runs off the end of the body does. When unset, those paths are dropped. */
   fallthrough?: TerminalBranch;
@@ -170,7 +162,9 @@ export function enumerateBodyBranches(
   const push = (
     branch: TerminalBranch,
     paths: readonly ConditionInfo<PyNode>[][],
+    placement: TerminalPlacement | undefined,
   ): void => {
+    const loopAround = placement?.loopAround;
     for (const path of paths) {
       const conditions: RawCondition[] = path.map((condition) => ({
         sourceText: condition.sourceText,
@@ -181,10 +175,14 @@ export function enumerateBodyBranches(
         polarity: condition.polarity,
         source: condition.source,
       }));
-      branches.push({
+      const ending = {
         ...branch,
         conditions,
-        effects: effectsReaching(options.effects, conditions),
+        ...(loopAround === undefined ? {} : { loopAround }),
+      };
+      branches.push({
+        ...ending,
+        effects: effectsFiringOn<RawEffect>(options.effects, ending),
         isDefault: path.length === 0,
       });
     }
@@ -193,11 +191,15 @@ export function enumerateBodyBranches(
   for (const found of options.terminals) {
     const paths = enumerated.byTerminal.get(found.statement);
     if (paths !== undefined) {
-      push(options.branchOf(found), paths);
+      push(
+        options.branchOf(found),
+        paths,
+        enumerated.placement.get(found.statement),
+      );
     }
   }
   if (options.fallthrough !== undefined) {
-    push(options.fallthrough, enumerated.fallthrough);
+    push(options.fallthrough, enumerated.fallthrough, undefined);
   }
   return branches;
 }

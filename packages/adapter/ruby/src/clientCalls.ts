@@ -500,7 +500,7 @@ function callerBranches(method: RbNode, reading: CallerReading): RawBranch[] {
     testsStatus(predicateOf(condition), reading.statusMembers);
   const found = returnPathBranches(
     method,
-    effects,
+    sites,
     [],
     reading.facts,
     keepsArms,

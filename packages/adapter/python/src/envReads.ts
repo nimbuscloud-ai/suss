@@ -20,6 +20,7 @@ import {
   children,
   enclosingFunction,
   field,
+  rangeOf,
   stringLiteralValue,
 } from "./ast.js";
 import { isDefaultedAt } from "./defaulted.js";
@@ -36,6 +37,7 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { EnvReadSpelling } from "./envSpellings.js";
 import type { PyNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
 export const PYTHON_ENV_RECOGNITION = "python-env";
@@ -56,7 +58,7 @@ interface EnvReadSyntax {
 const DEFERRED_BODY_TYPES = new Set(["function_definition", "lambda"]);
 
 /** One place in a body: a read the body writes itself, or a call that may read through a helper. */
-type ReadSlot = { read: EnvRead } | { call: PyNode };
+type ReadSlot = { read: EnvRead; at: PyNode } | { call: PyNode };
 
 /**
  * The config-read effects for every environment read under `root`,
@@ -70,7 +72,7 @@ export function envReadEffects(
   root: PyNode,
   module: ModuleBinding,
   facts?: Database,
-): Effect[] {
+): EffectAt[] {
   const slots: ReadSlot[] = [];
   // Without any sites in the run there is no helper to find behind a
   // call, so the calls are not collected at all.
@@ -82,7 +84,7 @@ export function envReadEffects(
       if (syntax !== null) {
         const name = stringLiteralValue(syntax.name);
         if (name !== null) {
-          slots.push({ read: { name, defaulted: syntax.defaulted } });
+          slots.push({ read: { name, defaulted: syntax.defaulted }, at: node });
         }
         return;
       }
@@ -102,15 +104,18 @@ export function envReadEffects(
     slots.flatMap((slot) => ("call" in slot ? [slot.call] : [])),
     facts,
   );
-  return slots.flatMap((slot) => {
+  return slots.flatMap((slot): EffectAt[] => {
     if ("read" in slot) {
-      return [configReadEffect(slot.read)];
+      return [{ effect: configReadEffect(slot.read, slot.at), at: slot.at }];
     }
-    return throughHelpers.get(slot.call.id) ?? [];
+    return (throughHelpers.get(slot.call.id) ?? []).map((effect) => ({
+      effect,
+      at: slot.call,
+    }));
   });
 }
 
-function configReadEffect(read: EnvRead): Effect {
+function configReadEffect(read: EnvRead, at: PyNode): Effect {
   return {
     type: "interaction",
     binding: runtimeConfigBinding({ recognition: PYTHON_ENV_RECOGNITION }),
@@ -120,6 +125,7 @@ function configReadEffect(read: EnvRead): Effect {
       name: read.name,
       defaulted: read.defaulted,
     },
+    location: rangeOf(at),
   };
 }
 
@@ -516,6 +522,6 @@ function readsThroughHelper(
   }
   const defaultedAtCall = isDefaultedAt(call);
   return [...reads].map(([name, defaulted]) =>
-    configReadEffect({ name, defaulted: defaulted || defaultedAtCall }),
+    configReadEffect({ name, defaulted: defaulted || defaultedAtCall }, call),
   );
 }

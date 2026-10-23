@@ -239,6 +239,26 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/dynamodb-signed-request"),
     ...packs("express", "aws-dynamodb"),
   ]),
+  fixture("effect-placement", [
+    ...dir("fixtures/effect-placement"),
+    ...packs("express", "aws-dynamodb"),
+  ]),
+  fixture("effect-placement-python", [
+    ...lang("python"),
+    ...dir("fixtures/effect-placement-python"),
+    ...packs(
+      "fastapi",
+      "sqlmodel=fixtures/effect-placement-python/suss.sqlmodel.json",
+    ),
+  ]),
+  fixture("effect-placement-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/effect-placement-ruby"),
+    ...packs(
+      "rails=fixtures/effect-placement-ruby/suss.rails.json",
+      "activerecord=fixtures/effect-placement-ruby/suss.activerecord.json",
+    ),
+  ]),
   fixture("express", [...dir("fixtures/express"), ...packs("express")]),
   fixture("express-admin-audit", [
     ...project("fixtures/express-admin-audit/tsconfig.json"),

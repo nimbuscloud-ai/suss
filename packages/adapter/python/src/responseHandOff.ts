@@ -44,15 +44,10 @@ export function throughResponseHelpers(
   options: HandOffOptions,
 ): RawBranch[] {
   const handOffs: HandOffSite[] = [];
-  for (const { call, effect } of sites) {
+  for (const { call, site } of sites) {
     const helper = helperBranchesAt(call, options);
     if (helper !== null) {
-      handOffs.push({
-        helper,
-        preconditions: effect.preconditions,
-        line: rangeOf(call).start,
-        at: rangeOf(call),
-      });
+      handOffs.push({ ...site, helper, at: rangeOf(call) });
     }
   }
   return handOffs.length === 0

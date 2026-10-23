@@ -14,7 +14,7 @@ import { storageBinding } from "@suss/ir-core";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { piecesOf } from "@suss/values";
 
-import { field, readCallArgs } from "./ast.js";
+import { field, rangeOf, readCallArgs } from "./ast.js";
 import { classBehind, enclosingClassKey, reachesBase } from "./baseClass.js";
 import { compoundName } from "./scope.js";
 import { evaluatedValue, writtenNodeOf } from "./values/evaluator.js";
@@ -218,6 +218,7 @@ function effectOf(
       operation,
       ...(access.selector.length > 0 ? { selector: access.selector } : {}),
     },
+    location: rangeOf(call),
   };
 }
 

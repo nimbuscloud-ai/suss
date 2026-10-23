@@ -225,12 +225,20 @@ describe("splitAtHandOffs", () => {
     expect(guardedOut[0]?.terminal.kind).toBe("return");
   });
 
-  it("counts a call in a finally block on a branch that ended before it", () => {
+  it("counts a call in a finally block on a branch that ended inside its try", () => {
     const split = splitAtHandOffs(caller, [
-      { ...site(helper, 14), alwaysRuns: true },
+      { ...site(helper, 14), cleansUpFrom: 9 },
     ]);
 
     expect(split[0]?.terminal.kind).toBe("throw");
+  });
+
+  it("leaves a finally call off a branch that ended before its try", () => {
+    const split = splitAtHandOffs(caller, [
+      { ...site(helper, 14), cleansUpFrom: 13 },
+    ]);
+
+    expect(split).toEqual([caller]);
   });
 });
 

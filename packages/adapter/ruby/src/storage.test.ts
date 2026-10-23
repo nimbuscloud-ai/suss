@@ -117,7 +117,7 @@ async function effectsFor(source: string, models = MODELS) {
     facts: db,
     patterns: [ACTIVE_RECORD],
     loaders: [DATALOADER],
-  });
+  }).map((one) => one.effect);
 }
 
 /** Two models, one of which declares that it reaches the other. */
@@ -235,7 +235,7 @@ async function writesIn(method: string, source: string, models = MODELS) {
     "use.rb",
     { facts: db, patterns: [ACTIVE_RECORD] },
     body,
-  );
+  ).map((one) => one.effect);
 }
 
 const accessOf = (effect: unknown) =>
@@ -452,9 +452,13 @@ describe("the database work a Ruby body does", () => {
       storageEffects(callsIn(root), "use.rb", {
         facts: db,
         patterns: [ACTIVE_RECORD],
-      }),
+      }).map((one) => one.effect),
     ).toMatchObject([
-      { binding: { semantics: { container: "Order" } }, type: "interaction" },
+      {
+        binding: { semantics: { container: "Order" } },
+        type: "interaction",
+        location: { start: 1, end: 1 },
+      },
     ]);
   });
 

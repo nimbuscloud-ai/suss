@@ -8,17 +8,25 @@
  * its own summary.
  */
 
-import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
+import { sharedGatingConditions, statementSites } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { children, field, runsAtModuleLoad } from "../ast.js";
+import { children, field, rangeOf, runsAtModuleLoad } from "../ast.js";
 import { guardInputs } from "../provenance.js";
 import { askWrittenValues, evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
 import { type GuardInputs, operandsOf, predicateOf } from "./predicates.js";
 
+import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { ConditionInfo, EffectArg, RawEffect } from "@suss/extractor";
+import type {
+  ConditionInfo,
+  EffectArg,
+  EffectSite,
+  PlacedEffect,
+  RawEffect,
+  StatementSites,
+} from "@suss/extractor";
 import type { PyNode } from "../parser.js";
 
 /** A lambda is left out on purpose, because its calls count as the enclosing unit's. */
@@ -136,10 +144,15 @@ export function invocationEffects(
 
 type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
 
-/** One call a body makes, beside the effect recorded for it. */
-export interface InvocationSite {
+/** An effect a reader built from the source, and the node it built it from. */
+export interface EffectAt {
+  effect: Effect;
+  at: PyNode;
+}
+
+/** One call a body makes, beside the effect recorded for it and where it is written. */
+export interface InvocationSite extends PlacedEffect<InvocationEffect> {
   call: PyNode;
-  effect: InvocationEffect;
 }
 
 /** The same, keeping each effect's call, for a reader that has to go back to it. */
@@ -238,6 +251,32 @@ function gatingInputs(
     : guardInputs(operands, { facts, unit });
 }
 
+/** The paths to the statement each of these nodes is written in, and where each one is. */
+function sitesIn(
+  body: PyNode,
+  nodes: readonly PyNode[],
+): StatementSites<PyNode, PyNode> {
+  return statementSites(nodes, {
+    statementOf: (node) => enclosingStatement(node, body),
+    lower: (statements) => lowerPythonBody(body, statements),
+    firstLine: (node) => rangeOf(node).start,
+  });
+}
+
+/**
+ * Where each of these nodes is written in the body, for an effect a pack
+ * recognized at one of them to be placed on branches by.
+ */
+export function effectSitesIn(
+  body: PyNode | null,
+  nodes: readonly PyNode[],
+): (node: PyNode) => EffectSite {
+  if (body === null || nodes.length === 0) {
+    return (node) => ({ line: rangeOf(node).start });
+  }
+  return sitesIn(body, nodes).plainSiteOf;
+}
+
 function invocationEffectsIn(
   body: PyNode,
   written: readonly PyNode[],
@@ -250,34 +289,8 @@ function invocationEffectsIn(
     return [];
   }
 
-  // A call is an expression inside a statement, and the lowering keys paths by
-  // statement, so each call is asked about through the statement it is in.
-  const statementOf = new Map<number, PyNode>();
-  const statements: PyNode[] = [];
-  for (const call of calls) {
-    const statement = enclosingStatement(call, body);
-    if (statement === null) {
-      continue;
-    }
-    statementOf.set(call.id, statement);
-    statements.push(statement);
-  }
-
-  const lowered = lowerPythonBody(body, statements);
-  const enumerated = enumerateOrDegrade(
-    {
-      statements: lowered.statements,
-      terminalsByStmt: lowered.terminalsByStmt,
-    },
-    statements,
-  );
-
-  const gatingOf = calls.map((call) => {
-    const statement = statementOf.get(call.id);
-    return statement === undefined
-      ? undefined
-      : enumerated.byTerminal.get(statement);
-  });
+  const sites = sitesIn(body, calls);
+  const gatingOf = calls.map((call) => sites.pathsTo(call));
 
   // The rules run over the whole project's facts, so this body settles
   // every value it is about to read in one question rather than one per
@@ -300,7 +313,9 @@ function invocationEffectsIn(
         args: argsOf(call, facts),
         async: false,
         ...(conditions.length > 0 ? { preconditions: conditions } : {}),
+        location: rangeOf(call),
       },
+      site: sites.siteOf(call, conditions),
     };
   });
 }

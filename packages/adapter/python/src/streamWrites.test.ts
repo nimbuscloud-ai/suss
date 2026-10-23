@@ -14,7 +14,9 @@ interface Write {
 
 async function writesIn(source: string): Promise<Effect[]> {
   const tree = await parsePython(source);
-  return streamWriteEffects(tree.rootNode, bindModule(tree.rootNode));
+  return streamWriteEffects(tree.rootNode, bindModule(tree.rootNode)).map(
+    (one) => one.effect,
+  );
 }
 
 function summarized(effects: Effect[]): Write[] {

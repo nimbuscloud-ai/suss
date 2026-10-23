@@ -14,10 +14,10 @@
 
 import { predicateRefs, replacePredicateRefs } from "@suss/behavioral-ir";
 
-import { guardsHoldOn, runsBefore } from "./effectGuards.js";
+import { type EffectSite, firesOn } from "./effectGuards.js";
 
 import type { Predicate, TypeShape, ValueRef } from "@suss/behavioral-ir";
-import type { RawBranch, RawCondition } from "./index.js";
+import type { RawBranch } from "./index.js";
 
 /**
  * Past this many paths a helper is doing more than reading a response,
@@ -50,15 +50,26 @@ export function throughHelper(
         isDefault: branch.isDefault && helper.isDefault,
       };
     }
+    const { loopAround, ...rest } = branch;
     return {
-      ...branch,
+      ...rest,
       ...reads,
       conditions,
       terminal: { ...helper.terminal, location: at },
       location: at,
+      ...(loopAround !== undefined && within(at, loopAround)
+        ? { loopAround }
+        : {}),
       isDefault: false,
     };
   });
+}
+
+function within(
+  inner: { start: number; end: number },
+  outer: { start: number; end: number },
+): boolean {
+  return inner.start >= outer.start && inner.end <= outer.end;
 }
 
 /**
@@ -84,17 +95,16 @@ export function mergeReadShapes(
   return { ...a, properties };
 }
 
-/** One call in a caller's body that hands a helper the response, in source order. */
-export interface HandOffSite {
+/**
+ * One call in a caller's body that hands a helper the response, in
+ * source order. A branch reaches it when an effect written there would
+ * fire on the branch.
+ */
+export interface HandOffSite extends EffectSite {
   /** The helper's paths, in the caller's terms. */
   helper: readonly RawBranch[];
-  preconditions?: readonly RawCondition[] | undefined;
-  /** The line the statement holding the call starts on, which decides whether a branch reaches it. */
-  line: number;
   /** The lines the call is written on. */
   at: { start: number; end: number };
-  /** A call in a `finally` runs on every path, even one that left before it. */
-  alwaysRuns?: boolean;
 }
 
 /**
@@ -109,10 +119,7 @@ export function splitAtHandOffs(
 ): RawBranch[] {
   for (let index = from; index < sites.length; index++) {
     const site = sites[index] as HandOffSite;
-    const reached =
-      site.alwaysRuns === true ||
-      runsBefore(site.line, branch.terminal.location.end);
-    if (!reached || !guardsHoldOn(site.preconditions, branch.conditions)) {
+    if (!firesOn(site, branch)) {
       continue;
     }
     return throughHelper(branch, site.at, site.helper).flatMap((path) =>

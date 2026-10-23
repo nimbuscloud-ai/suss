@@ -27,7 +27,7 @@ This layer runs after discovery and during summary assembly. It does three jobs:
 Node identity settles everything a position list would have decided:
 
 - Which call is the terminal. When a pack's terminal pattern matches `res.json(body)`, that call is a response, and it must not also be an effect. Assembly compares the call node against the terminal nodes. It drops a call that is the terminal or a link in its receiver chain (`res.status(404)` inside `res.status(404).json(body)`). A call whose result a terminal describes, `return toView(row)`, and a call written as the terminal's argument, `res.json(toView(row))`, are different nodes and stay.
-- Which line the call is on. Every effect takes the line of the statement enclosing the call. Assembly compares that line with where each terminal ends to decide which branch the call fires on.
+- Which line the call is on. Every effect takes the line of the statement enclosing the call, and a call in a `finally` body takes the first line of its try as well. Assembly hands both to `firesOn` in `@suss/extractor`, which compares them with where each terminal ends to decide which branch the call fires on. The effect itself records the lines of the call node, under `location`.
 - What had to be true first. Preconditions are collected from the call node itself, so a call in one arm of a ternary records the ternary's condition.
 
 The effects come out in the order the calls finish. A call in argument position comes before the call it feeds, and `f()()` records `f` and then `f()`. The `args` of the outer effect still describe the inner call as `{ kind: "call" }`, for readers that want the data flow.

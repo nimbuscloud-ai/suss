@@ -42,14 +42,18 @@ Composition does not read the following:
 
 ## Which branch an effect belongs to
 
-An adapter finds the calls a body makes in one pass, and finds the branches separately. Something then has to decide which branch each call runs on. `guardsHoldOn` and `runsBefore` in `effectGuards.ts` make that decision, and both adapters that need it call these functions instead of keeping a copy.
+An adapter finds the calls a body makes in one pass, and finds the branches separately. Something then has to decide which branch each call runs on. `firesOn` in `effectGuards.ts` makes that decision, and all three adapters call it for every effect a body produces: a plain call, and the database work, environment read or print a pack recognized at a call. A transition lists only the effects that can run before its terminal, so a route that raises 404 before it writes does not list the write on the 404.
 
-A call belongs to a branch when both of these are true:
+Each effect comes with its site: the line the statement holding the call starts on, the guards the call is written under, and, for a call in a `finally` or `ensure` body, the first line of the try it cleans up after. Each branch comes with its conditions, its terminal, and the lines of the outermost loop the terminal is written in, if there is one. A call belongs to a branch when one of these is true:
 
-- **The branch did not record any of the call's guards the other way around.** A call inside `if (flag)` stays off every branch that recorded `!flag`. A call written above every guard has no guards, so it reaches all of the branches.
-- **The call is written no later than the terminal's last line.** A call written after an early return did not run on that early return's path. The test uses the terminal's last line because `return new Promise((resolve) => resolve(read()))` runs the call inside its own expression.
+- **The call is written inside the loop around the terminal.** An earlier pass may have run it, so it stays whatever its guards say about the last pass. In `for (const id of ids) { if (!id) return res.status(400).end(); await save(id); }`, the 400 lists `save`, since it ran for the ids before the empty one.
+- **The branch did not record any of the call's guards the other way around, and the call is written no later than the terminal's last line.** A call inside `if (flag)` stays off every branch that recorded `!flag`, and a call written after an early return stays off that return's branch. The test uses the terminal's last line because `return new Promise((resolve) => resolve(read()))` runs the call inside its own expression. A cleanup call is tested by the first line of its try instead of its own line, so it is on every branch that ended inside the try or after it, and off a branch that ended before the try started.
 
-Neither test is enough on its own, and ordinary code gets each one wrong.
+When suss cannot tell whether an effect runs before a terminal, the effect stays on the branch, because leaving out an effect that can run is as false as listing one that cannot. A call into an unread function that may throw is the usual case: everything written in the `try` before that call stays on the `catch` branch. A Ruby block lowers to a loop, so a call later in a `transaction do` block also stays on a terminal earlier in it, though the block runs once. A callback is not a loop to the path engine, so a TypeScript `forEach` whose callback throws loses the calls after the throw on earlier elements.
+
+Where the loops and the tries are comes from the path engine. Each lowering gives a loop and a try the lines it is written on, and `placeTerminals` reads them off the lowered tree the engine already walks, for every terminal it was given. The Python and Ruby adapters ask it about the statements their calls are in, which is how a call in a cleanup body gets its try. The engine does not enumerate a cleanup body, so `enumerateCallStatements` places those statements without asking for their paths, so a call in `finally` does not make the engine give up on the rest of the body.
+
+The guard test and the line test are each needed, and ordinary code gets each one wrong on its own.
 
 ```ts
 const found = await dynamo.send(new GetItemCommand({ TableName: "Invoices" }));

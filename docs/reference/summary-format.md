@@ -131,7 +131,13 @@ A transition records that when all of these conditions hold, this output comes o
     "headers": {}
   },
   "effects": [
-    { "type": "invocation", "callee": "db.findById", "args": [{ "kind": "identifier", "name": "id" }], "async": true }
+    {
+      "type": "invocation",
+      "callee": "db.findById",
+      "args": [{ "kind": "identifier", "name": "id" }],
+      "async": true,
+      "location": { "start": 25, "end": 25 }
+    }
   ],
   "location": { "start": 28, "end": 28 },
   "isDefault": false
@@ -169,11 +175,16 @@ The transition above has an `invocation` effect, which records that a call fired
     "fields": ["*"],
     "operation": "GetItemCommand",
     "selector": ["invoiceId"]
-  }
+  },
+  "location": { "start": 19, "end": 24 }
 }
 ```
 
-A transition lists each effect once, however many sites on that path produced it. The repeats become `count`, so a path that calls the same validator thirteen times has one effect with `"count": 13`, and a path that calls it once has no `count` at all. `callee` is the source text with its whitespace collapsed, so a chain broken across lines and the same chain written on one line are one effect.
+`location` gives the first and last line of the call or read that produced the effect, in the same file as the transition's own `location`. The `dynamo.send(...)` above is written across six lines. A tool that wants to point at the call reads the lines here instead of searching the file for `callee`, which finds every other `dynamo.send` too. An effect no line of source produced, such as one a contract declares or a call a test framework makes on the unit's behalf, has no `location`.
+
+A transition lists each effect once, however many sites on that path produced it. The repeats become `count`, so a path that calls the same validator thirteen times has one effect with `"count": 13`, and a path that calls it once has no `count` at all. The folded effect keeps the first site's `location`. `callee` is the source text with its whitespace collapsed, so a chain broken across lines and the same chain written on one line are one effect.
+
+A transition lists only the effects that can run before it ends. A route that returns 404 when the read finds nothing does not list the write it makes after that check on the 404. An effect written inside the loop that the transition ends in stays on it, since an earlier pass may have run it, and so does cleanup in a `finally` or `ensure` around the place it ends.
 
 Every `interaction` includes the `BoundaryBinding` of the resource it reaches, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The nine classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read`, `schedule` and `stream-write`. [IR types](/reference/ir#effect) has each one's fields.
 

@@ -858,7 +858,9 @@ async function runPython(
       record !== undefined && discoveries.get(file) === record
         ? null
         : timer.time("discover", () =>
-            charged(file, () => envReadEffects(root, moduleBinding, db)),
+            charged(file, () =>
+              envReadEffects(root, moduleBinding, db).map((one) => one.effect),
+            ),
           );
     // What a module runs on the way in is a caller like any other, so it
     // joins the walk even when it reads nothing from the environment.

@@ -22,6 +22,7 @@ import {
   UnmodeledFlow,
 } from "@suss/extractor";
 
+import { lineRangeOf } from "../lines.js";
 import {
   containsNoCode,
   type DescentBarriers,
@@ -290,6 +291,7 @@ function buildStructured(
       condition: { sourceText: loopHeaderText(stmt), expression: null },
       body: lowerList(statementsOf(getLoopBody(stmt)), ctx),
       exitKind,
+      lines: lineRangeOf(stmt),
     };
   }
 
@@ -298,6 +300,7 @@ function buildStructured(
     const finallyBlock = stmt.getFinallyBlock();
     return {
       kind: "try",
+      lines: lineRangeOf(stmt),
       tryBody: lowerList(stmt.getTryBlock().getStatements(), ctx),
       catchBody:
         catchClause === undefined
