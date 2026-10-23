@@ -109,10 +109,8 @@ function definitionsRun(
     const at = rest.findIndex(
       (entry) => entry.type === "bodies" && entry.blocks.includes(lookup.block),
     );
-    if (at === -1) {
-      break;
-    }
-    rest = rest.slice(at + 1);
+    // The lookup returns one of these entries' blocks. The floor keeps the loop finite regardless.
+    rest = rest.slice(Math.max(at, 0) + 1);
   }
   return { definitions, unsettled: null };
 }
@@ -184,7 +182,7 @@ export function hookUnit(
       raiseEndings(hook.method),
       (statement, location) =>
         hookEnding(hook.method, statement, location, input),
-    ) ?? [goOnBranch(range)]
+    ) ?? [emptyBodyBranch(range)]
   ).map(
     (branch): RawBranch =>
       extraEffects === undefined ? branch : { ...branch, extraEffects },
@@ -294,10 +292,11 @@ function isFalsy(value: Value): boolean {
   return settled === false || settled === null;
 }
 
-function goOnBranch(location: Range): RawBranch {
+/** A hook with nothing in its body returns nil, which stops the field. */
+function emptyBodyBranch(location: Range): RawBranch {
   return {
     conditions: [],
-    terminal: goOn(location),
+    terminal: endingTerminal("return", location),
     effects: [],
     location,
     isDefault: true,

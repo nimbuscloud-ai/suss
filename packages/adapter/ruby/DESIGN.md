@@ -96,7 +96,7 @@ graphql-ruby runs `ready?`, then `authorized?`, then `resolve` on a wired class,
 A hook's paths come from the same path engine a controller filter's do:
 
 - A path that raises ends in a `throw`, with the class the raise writes.
-- A path that returns `false` or `nil`, or `false, payload` or `[false, payload]` when the pack says the library reads a list's head, ends in a `return`. The field stops there and `resolve` never runs. A `return` with no value returns nil.
+- A path that returns `false` or `nil`, or `false, payload` or `[false, payload]` when the pack says the library reads a list's head, ends in a `return`. The field stops there and `resolve` never runs. A `return` with no value returns nil, and so does a hook with nothing in its body.
 - Every other path ends in a `delegate`, which composition leaves off the field because the field's own transition already says what happens next. That includes a path whose answer is worked out at run time.
 
 An unread ancestor in front of every project definition of a hook is usually a gem's module that defines none, so the lookup says nothing about it. When the project does define the hook past an unread ancestor, or a `define_method` may define it, the field gets one sentence saying whether a hook runs was not settled.

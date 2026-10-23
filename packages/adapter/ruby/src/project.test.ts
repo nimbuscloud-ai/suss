@@ -8,7 +8,10 @@ import { readWrapperMetadata } from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
 import { addPackWords } from "@suss/resolution";
 
-import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
+import {
+  graphqlObjectFieldsPattern,
+  graphqlRubyTestPack,
+} from "./__fixtures__/graphqlRubyPattern.js";
 import {
   httpClientTestPack,
   wrappedUrlsPattern,
@@ -920,6 +923,82 @@ describe("the class a field is wired to, and the hooks it runs", () => {
       "delegate",
       "delegate",
     ]);
+  });
+
+  it("follows super from a class's hook to the one a concern it includes defines", async () => {
+    write(
+      "app/graphql/types/mutation_type.rb",
+      "class Types::MutationType < Types::BaseObject\n  field :approve, mutation: Mutations::Approve\n  field :reject, mutation: Mutations::Reject\nend\n",
+    );
+    write(
+      "app/graphql/concerns/signed_in.rb",
+      'module SignedIn\n  def ready?(**args)\n    raise GraphQL::ExecutionError, "Sign in" unless context[:user]\n    super\n  end\nend\n',
+    );
+    write(
+      "app/graphql/mutations/approve.rb",
+      'class Mutations::Approve < Mutations::BaseMutation\n  include SignedIn\n\n  def ready?(**args)\n    raise GraphQL::ExecutionError, "Closed" if Window.closed?\n    super\n  end\n\n  def resolve\n    Approval.record(:now)\n  end\nend\n',
+    );
+    write(
+      "app/graphql/mutations/reject.rb",
+      "class Mutations::Reject < Mutations::BaseMutation\n  include SignedIn\n\n  def resolve\n    Approval.reject(:now)\n  end\nend\n",
+    );
+    const summaries = await extractAll();
+    const approve = field(summaries, "Mutation.approve");
+    expect(
+      approve.transitions.map((t) =>
+        t.output.type === "throw" ? t.output.message : t.output.type,
+      ),
+    ).toEqual(["Closed", "Sign in", "void"]);
+    // Both fields run the concern's hook, and it gets one summary.
+    expect(
+      summaries
+        .filter((s) => s.kind === "middleware")
+        .map((s) => s.location.file)
+        .sort(),
+    ).toEqual([
+      "app/graphql/concerns/signed_in.rb",
+      "app/graphql/mutations/approve.rb",
+    ]);
+  });
+
+  it("reads a hook with nothing in its body as stopping the field, since it returns nil", async () => {
+    write("app/graphql/types/mutation_type.rb", MUTATION_TYPE);
+    write(
+      "app/graphql/mutations/approve.rb",
+      "class Mutations::Approve < Mutations::BaseMutation\n  def authorized?(**args)\n  end\n\n  def resolve\n    Approval.record(:now)\n  end\nend\n",
+    );
+    const approve = field(await extractAll(), "Mutation.approve");
+    expect(approve.transitions.map((t) => t.output.type)).toEqual([
+      "return",
+      "void",
+    ]);
+  });
+
+  it("reads no hooks when the pack lists none", async () => {
+    write("app/graphql/types/mutation_type.rb", MUTATION_TYPE);
+    write(
+      "app/graphql/mutations/approve.rb",
+      'class Mutations::Approve < Mutations::BaseMutation\n  def ready?(**args)\n    raise GraphQL::ExecutionError, "Closed"\n  end\n\n  def resolve\n    Approval.record(:now)\n  end\nend\n',
+    );
+    const { resolverHooks: _hooks, ...withoutHooks } =
+      graphqlObjectFieldsPattern({ root: path.join(tmpDir, "app", "graphql") });
+    const { summaries } = await extractRubyProject({
+      files: findRubyFiles(tmpDir),
+      packs: [
+        {
+          name: "graphql-ruby",
+          protocol: "http-graphql",
+          discovery: [withoutHooks],
+        },
+      ],
+      workspaceRoot: tmpDir,
+    });
+    expect(summaries.filter((s) => s.kind === "middleware")).toEqual([]);
+    expect(
+      field(summaries, "Mutation.approve").transitions.map(
+        (t) => t.output.type,
+      ),
+    ).toEqual(["void"]);
   });
 
   it("reads the method a field's resolver_method keyword gives", async () => {
