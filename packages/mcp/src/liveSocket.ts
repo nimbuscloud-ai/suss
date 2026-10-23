@@ -25,6 +25,7 @@ import {
   checkDir,
   checkDirectory,
   clearEarlierReads,
+  exitCodeOf,
   liveRecordFor,
   makeIgnoredDirectory,
 } from "@suss/cli";
@@ -317,7 +318,7 @@ async function checkSince(
       output,
     });
     return {
-      code: result.hasErrors ? 1 : 0,
+      code: exitCodeOf(result.outcome),
       stdout: fs.readFileSync(output, "utf8"),
       stderr: "",
     };

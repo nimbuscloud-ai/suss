@@ -42,10 +42,6 @@ transitions:
     throws:
       errorType: UsageError
 
-  - id: pair-failed
-    when: two summary files were compared and the comparison found something at or above --fail-on
-    exits: 1
-
-  - id: pair-passed
-    when: two summary files were compared and nothing reached --fail-on
-    exits: 0
+  # Every exit code a run returns comes from the CHECK_EXIT_CODES table,
+  # which suss cannot read through yet, so no transition here states one.
+  # The scenarios in emptyRunFails.prd.yaml name the tests that cover them.

@@ -156,6 +156,7 @@ describe("the tools, on a project bigger than one answer", () => {
     const project = {
       summaryDir,
       settled: async () => undefined,
+      hasBuilt: () => false,
     } as unknown as Project;
 
     const result = await checkTool(project, {});
@@ -337,6 +338,27 @@ describe("the tools, on a project bigger than one answer", () => {
     const text = textOf(statusTool(project));
     expect(text).toContain("matched a pack");
     expect(text).toContain("suss init");
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("says in the check result whether the project has source no pack matched or none suss reads", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-empty-"));
+    fs.writeFileSync(path.join(root, "orders.sql"), "select 1\n");
+    const project = new Project({ root, watch: false });
+    await project.start();
+
+    const uncovered = (await checkTool(project, {})).structuredContent as {
+      run: Array<{ kind: string }>;
+    };
+    expect(uncovered.run.map((one) => one.kind)).toEqual(["notCovered"]);
+
+    fs.writeFileSync(path.join(root, "tool.js"), "module.exports = 1;\n");
+    const unmatched = (await checkTool(project, {})).structuredContent as {
+      run: Array<{ kind: string }>;
+    };
+    expect(unmatched.run.map((one) => one.kind)).toEqual(["noPackMatched"]);
 
     project.close();
     fs.rmSync(root, { recursive: true, force: true });

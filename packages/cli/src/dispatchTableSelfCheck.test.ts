@@ -1,7 +1,7 @@
 /**
- * `check:self` compares the exit codes `intent/cli-check.intent.yaml` and
- * `intent/cli-init.intent.yaml` declare with what `runCheck` and
- * `initInteractive` return. suss links a return to the exit code only by
+ * `check:self` compares what `intent/cli-check.intent.yaml` and
+ * `intent/cli-init.intent.yaml` declare, the exit codes among it, with
+ * what `runCheck` and `initInteractive` do. suss links a return to the exit code only by
  * following calls from `bin.ts` down to the command, so the comparison
  * breaks if `dispatch` stops calling each command by name.
  *

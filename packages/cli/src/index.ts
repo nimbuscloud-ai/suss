@@ -24,6 +24,12 @@ export {
 } from "./check.js";
 export { type CheckAtOptions, type CheckAtResult, checkAt } from "./checkAt.js";
 export { type BaseRead, type BaseRevision, readBase } from "./checkBase.js";
+export {
+  CHECK_EXIT_CODES,
+  type CheckOutcome,
+  emptyProjectFinding,
+  exitCodeOf,
+} from "./checkOutcome.js";
 export { contract } from "./contract.js";
 export { type CorroborateOptions, corroborateSummary } from "./corroborate.js";
 export {

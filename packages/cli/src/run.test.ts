@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { indexContract } from "./__fixtures__/oneThing.js";
+import { CHECK_EXIT_CODES } from "./checkOutcome.js";
 import { runCli, USAGE } from "./run.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -1114,11 +1115,12 @@ describe("runCli check", () => {
   });
 
   it("says when the project it is run in matches nothing", async () => {
+    fs.writeFileSync(path.join(tmpDir, "tool.js"), "module.exports = 1;\n");
     const { exit, io } = await inDirectory(tmpDir, () =>
       capture(() => runCli(["check"])),
     );
-    expect(exit).toBe(1);
-    expect(io.stderr).toContain(`Nothing in ${tmpDir} matched a pack`);
+    expect(exit).toBe(CHECK_EXIT_CODES.noPackMatched);
+    expect(io.stdout).toContain(`Nothing in ${tmpDir} matched a pack`);
   });
 
   it("fails when the project's extract writes no summaries, and says why in the JSON", async () => {
@@ -1127,7 +1129,7 @@ describe("runCli check", () => {
       capture(() => runCli(["check", "--json"])),
     );
 
-    expect(exit).toBe(1);
+    expect(exit).toBe(CHECK_EXIT_CODES.nothingCompared);
     const report = JSON.parse(io.stdout) as {
       run: Array<{ kind: string; description: string }>;
     };
@@ -1202,7 +1204,7 @@ describe("runCli check", () => {
     const provider = writeJson("provider.json", [minimalSummary]);
     const consumer = writeJson("consumer.json", []);
     const failed = await capture(() => runCli(["check", provider, consumer]));
-    expect(failed.exit).toBe(1);
+    expect(failed.exit).toBe(CHECK_EXIT_CODES.nothingCompared);
     expect(failed.io.stdout).toContain("nothingPaired");
 
     const allowed = await capture(() =>
@@ -1636,7 +1638,8 @@ describe("runCli check floors", () => {
     const { exit, io } = await capture(() =>
       runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "0"]),
     );
-    expect(exit).toBe(1);
+    // Nothing paired at all, which says more than the floor does.
+    expect(exit).toBe(CHECK_EXIT_CODES.nothingCompared);
     expect(io.stdout).toContain("--fail-on-unpaired floor of 0");
   });
 
