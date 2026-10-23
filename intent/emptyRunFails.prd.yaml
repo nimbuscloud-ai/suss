@@ -33,6 +33,33 @@ scenarios:
     expect: it exits non-zero, and the JSON report has a nothingPaired entry under run that says how many summaries were read and what to do next
     coveredBy: packages/cli/src/check.test.ts > failing when the run compares nothing > says what went wrong in the report, not only in the exit code
 
+  # Every exit code below comes from the CHECK_EXIT_CODES table, which
+  # suss cannot read through yet, so CLI tests cover them.
+  - title: nothing pairs, told apart from a finding
+    when: suss check reads summaries where nothing pairs
+    expect: it exits 3, a code no finding uses, so CI can tell an empty run from an error
+    coveredBy: packages/cli/src/check.test.ts > the exit code says how the run ended > exits 3 when nothing paired, and the JSON says nothingPaired
+
+  - title: a finding fails the run
+    when: two sides pair and disagree at or above --fail-on
+    expect: it exits 1, as it always has
+    coveredBy: packages/cli/src/check.test.ts > the exit code says how the run ended > exits 1 on a finding at or above the threshold
+
+  - title: both sides agree
+    when: two sides pair and nothing reaches --fail-on
+    expect: it exits 0
+    coveredBy: packages/cli/src/check.test.ts > the exit code says how the run ended > exits 0 when both sides agree
+
+  - title: no pack matched the source
+    when: a bare suss check runs in a project with source that no pack recognizes
+    expect: it exits 4, and the JSON report has a noPackMatched entry under run
+    coveredBy: packages/cli/src/check.test.ts > the exit code says how the run ended > exits 4 when the project has source and no pack matched it
+
+  - title: the project has no source suss reads
+    when: a bare suss check runs in a repository with no TypeScript, JavaScript, Python or Ruby file, such as a dbt project
+    expect: it prints one line saying suss does not cover it and exits 0, and the JSON report has a notCovered entry under run
+    coveredBy: packages/cli/src/check.test.ts > the exit code says how the run ended > exits 0 with one line when the project has no source suss reads
+
   # The same helper inside runCheck returns this code. A CLI test covers it.
   - title: an empty run is expected
     when: the same check runs with --allow-empty

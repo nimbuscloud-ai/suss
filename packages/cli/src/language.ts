@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { SOURCE_SUFFIXES } from "@suss/adapter-typescript";
+import { SKIP_DIRECTORIES, SOURCE_SUFFIXES } from "@suss/adapter-typescript";
 
 export type Language = "typescript" | "python" | "ruby";
 
@@ -30,24 +30,8 @@ export const LANGUAGE_LABEL: Record<Language, string> = {
   ruby: "Ruby",
 };
 
-/** `suss init` skips these too, so both walks skip the same directories. */
-export const SKIP_DIRECTORIES = new Set([
-  "node_modules",
-  "dist",
-  "build",
-  "out",
-  "coverage",
-  ".git",
-  ".turbo",
-  ".next",
-  ".suss",
-  "vendor",
-  "__pycache__",
-  ".venv",
-  "venv",
-  ".tox",
-  "tmp",
-]);
+/** The TypeScript extract skips the same folders, so detection and extraction agree on what counts as source. */
+export { SKIP_DIRECTORIES };
 
 interface LanguageMarkers {
   /** Relative to the project root. */
@@ -102,9 +86,28 @@ export function detectLanguages(root: string): Language[] {
   return LANGUAGES.filter(
     (language) =>
       projectFilesOf(root, language).length > 0 ||
-      hasSourceFile(root, MARKERS[language].sourceSuffixes),
+      hasSourceFile(root, MARKERS[language].sourceSuffixes, DETECTION_DEPTH),
   );
 }
+
+/**
+ * Whether any file under `root` is in a language suss reads. A project
+ * file such as `package.json` does not count, because a repository of
+ * SQL can have one for its formatter.
+ */
+export function hasReadableSource(root: string): boolean {
+  return hasSourceFile(
+    root,
+    LANGUAGES.flatMap((language) => MARKERS[language].sourceSuffixes),
+    COVERAGE_DEPTH,
+  );
+}
+
+/** Language detection stops three levels down, because a project nearly always has source files nearer the top than that. */
+const DETECTION_DEPTH = 3;
+
+/** Deciding that suss reads nothing in a repository looks as deep as `init` does, since being wrong passes the run. */
+const COVERAGE_DEPTH = 10;
 
 export interface ProjectLanguageContext {
   /** Whether a tsconfig above this directory covers it. */
@@ -142,13 +145,13 @@ export function languageOfProject(
   return { language: first };
 }
 
-/** Stops three levels down, because a project nearly always has source files nearer the top than that. */
 function hasSourceFile(
   root: string,
   suffixes: readonly string[],
+  maxDepth: number,
   depth = 0,
 ): boolean {
-  if (depth > 3) {
+  if (depth > maxDepth) {
     return false;
   }
 
@@ -176,6 +179,6 @@ function hasSourceFile(
   }
 
   return directories.some((directory) =>
-    hasSourceFile(directory, suffixes, depth + 1),
+    hasSourceFile(directory, suffixes, maxDepth, depth + 1),
   );
 }

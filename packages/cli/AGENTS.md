@@ -55,12 +55,22 @@ suss contract --from openapi openapi.yaml -o .suss/spec.json
 suss check --dir .suss --json
 ```
 
-A run that pairs nothing exits non-zero by default. Otherwise
-automation could not tell it apart from a run where both sides agreed,
-because both would print "no findings". The report also gets a
-`nothingPaired` finding under `run` that describes what happened and
-what to do next, so whatever reacts to the failed exit has something to
-act on. Pass `--allow-empty` when you expect an empty run.
+`check` exits with a code that says how the run ended:
+
+| Code | What happened | Under `run` in the JSON |
+|---|---|---|
+| 0 | Nothing reached `--fail-on`, or the repository has no source suss reads | nothing, or `notCovered` |
+| 1 | A finding reached `--fail-on` | |
+| 3 | Nothing was compared, because no boundary had both sides | `nothingPaired` |
+| 4 | A bare `check` found source and no pack matched it | `noPackMatched` |
+
+A run that pairs nothing fails, so automation can tell it apart from a
+run where both sides agreed, since both would print "no findings". It
+gets its own code so CI can also tell it apart from a run that found an
+error. The run finding says what happened and what to do next, so
+whatever reacts to the exit has something to act on, and a parser of
+the JSON does not need the exit code. Pass `--allow-empty` when you
+expect an empty run, and it exits 0.
 
 The flags for every command are in [docs/reference/cli/index.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli/index.md).
 
@@ -216,12 +226,18 @@ two. `diffSummaries` reports what changed between two runs.
 
 ## When a run finds nothing
 
-An empty report has three possible causes, and you can tell them
-apart.
+An empty report has five possible causes, and you can tell them
+apart by the exit code or by the entry under `run`.
 
-- Nothing paired. This exits non-zero by default and reports how many
-  summaries were read. Pass `--allow-empty` when you expect an empty
-  run.
+- Nothing paired. This exits 3 and reports how many summaries were
+  read, under `nothingPaired`. Pass `--allow-empty` when you expect an
+  empty run.
+- No pack matched the project's source, so a bare `check` read nothing.
+  This exits 4, under `noPackMatched`. Run `suss init` to see what it
+  looked for.
+- The repository has no TypeScript, JavaScript, Python or Ruby source,
+  such as a dbt project. `check` prints one line saying suss does not
+  cover it and exits 0, under `notCovered`.
 - A pack read your files and recognised none of them. The pack health
   block shows this; see
   [docs/guides/fix-an-empty-run.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/fix-an-empty-run.md).

@@ -61,6 +61,14 @@ describe("reading a project with no tsconfig", () => {
     expect(names(dir)).toEqual(["src/a.ts"]);
   });
 
+  it("skips a Python virtualenv, whose packages can ship JavaScript of their own", () => {
+    write("scripts/notify.js");
+    write("venv/lib/python3.11/site-packages/widgets/static/app.js");
+    write("__pycache__/a.js");
+
+    expect(names(dir)).toEqual(["scripts/notify.js"]);
+  });
+
   it("leaves declaration files out, since they say nothing about behaviour", () => {
     write("src/a.ts");
     write("src/a.d.ts", "export declare const x: number;\n");

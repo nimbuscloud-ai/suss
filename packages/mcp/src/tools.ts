@@ -16,6 +16,7 @@ import {
   answerQuestion,
   checkAt,
   checkDir,
+  emptyProjectFinding,
   findingInOneLine,
   intentOutcomes,
   preloadForQuestion,
@@ -61,7 +62,7 @@ Reach for this after writing code that crosses a boundary, before opening a pull
 Three lists come back and they mean different things.
   findings  two sides of a boundary disagree.
   intent    the code and a document the team wrote disagree. Only present when the project has intent docs.
-  run       the run could not get far enough to compare anything. A "nothingPaired" entry here means no boundary had both sides in this project, so an empty "findings" proves nothing.
+  run       the run could not get far enough to compare anything. A "nothingPaired" entry here means no boundary had both sides in this project, so an empty "findings" proves nothing. "noPackMatched" means no pack recognized anything in the source, and "notCovered" means the project has no source in a language suss reads, so there is nothing to check.
 
 Severity says how the run would exit, not what to do. Read the finding's own text before acting, because several kinds have no universal fix. "unhandledProviderCase" fires when a provider can return something no consumer handles, and whether to change the consumer, change the provider, or leave it depends on whether that branch is reachable in this deployment, which suss cannot see. "boundaryFieldUnknown" at warning usually means the contract is behind the code rather than the code being wrong.
 
@@ -129,6 +130,14 @@ export async function checkTool(
   }
 
   await project.settled();
+  if (project.hasBuilt() && nothingMatched(project.lastBuild())) {
+    return said({
+      findings: [],
+      total: 0,
+      run: [emptyProjectFinding(project.root)],
+    });
+  }
+
   if (args.base !== undefined) {
     return said(await sinceBase(project, args.base));
   }
@@ -309,8 +318,13 @@ function statusText(
   return building ? [REBUILDING_LINE, ...lines].join("\n") : lines.join("\n");
 }
 
+/** No pack matched anything in the project, so the build ran no read. */
+function nothingMatched(report: BuildReport): boolean {
+  return report.ran.length + report.failed.length === 0;
+}
+
 function reportLines(root: string, report: BuildReport): string[] {
-  if (report.ran.length + report.failed.length === 0) {
+  if (nothingMatched(report)) {
     return [
       `Nothing in ${root} matched a pack, so nothing was extracted and every answer will be empty. Run \`suss init\` in that directory to see what suss looked for.`,
     ];

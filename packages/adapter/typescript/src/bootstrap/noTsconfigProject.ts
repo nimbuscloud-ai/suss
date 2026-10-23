@@ -30,7 +30,13 @@ export const SOURCE_SUFFIXES = [
 
 const SOURCE_EXTENSIONS = new Set<string>(SOURCE_SUFFIXES);
 
-const SKIP_DIRECTORIES = new Set([
+/**
+ * Dependencies, build output and other languages' environments. `suss
+ * init` skips the same folders, so a file it never saw as source is not
+ * read here either. A Python virtualenv can contain thousands of
+ * JavaScript files that belong to its packages.
+ */
+export const SKIP_DIRECTORIES: ReadonlySet<string> = new Set([
   "node_modules",
   "dist",
   "build",
@@ -41,6 +47,11 @@ const SKIP_DIRECTORIES = new Set([
   ".next",
   ".suss",
   "vendor",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".tox",
+  "tmp",
 ]);
 
 /** Every source file under `rootDir`, skipping build output and dependencies. */

@@ -26,6 +26,11 @@ import {
 } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
 
+import {
+  checkOutcome,
+  emptyProjectFinding,
+  exitCodeOf,
+} from "./checkOutcome.js";
 import { coveringTestLookup } from "./coveringTests.js";
 import { behaviorDiffText } from "./inspect.js";
 import { languageOfFile } from "./language.js";
@@ -61,6 +66,7 @@ import type {
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 import type { PackConfigNeed } from "@suss/extractor";
 import type { BaseRevision } from "./checkBase.js";
+import type { CheckOutcome } from "./checkOutcome.js";
 
 /**
  * Each summary's confidence, keyed by `summaryRef`. The checker writes
@@ -164,6 +170,8 @@ export interface CheckResult {
    */
   intent?: CheckIntentResult;
   hasErrors: boolean;
+  /** How the run ended, which decides the exit code. */
+  outcome: CheckOutcome;
 }
 
 export function check(options: CheckOptions): CheckResult {
@@ -196,6 +204,41 @@ export function check(options: CheckOptions): CheckResult {
     ...providerSummaries,
     ...consumerSummaries,
   ]);
+}
+
+/**
+ * The report for a bare `check` in a project where no pack matched, so
+ * nothing was extracted. A project suss does not cover gets one line and
+ * passes. `--allow-empty` does not apply, because no read ran.
+ */
+export function checkEmptyProject(
+  root: string,
+  options: { json?: boolean; output?: string },
+): CheckResult {
+  const finding = emptyProjectFinding(root);
+  writeReport(renderEmptyProject(finding, options.json), options.output);
+
+  const outcome = checkOutcome(false, [finding]);
+  return {
+    findings: [],
+    run: [finding],
+    hasErrors: exitCodeOf(outcome) !== 0,
+    outcome,
+  };
+}
+
+function renderEmptyProject(
+  finding: RunFinding,
+  json: boolean | undefined,
+): string {
+  if (json === true) {
+    return `${JSON.stringify({ findings: [], run: [finding] }, null, 2)}\n`;
+  }
+
+  if (finding.kind === "notCovered") {
+    return `${finding.description}\n`;
+  }
+  return renderRunFindings([finding]).trimStart();
 }
 
 /**
@@ -606,14 +649,17 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
   writeReport(rendered(), options.output);
 
   const failOn = options.failOn ?? "error";
+  const outcome = checkOutcome(
+    meetsThreshold(reported, failOn) ||
+      intentMeetsThreshold(intent?.findings ?? [], failOn),
+    run,
+  );
   return {
     findings: reported,
     ...(run.length > 0 ? { run } : {}),
     ...(intent !== undefined ? { intent } : {}),
-    hasErrors:
-      meetsThreshold(reported, failOn) ||
-      intentMeetsThreshold(intent?.findings ?? [], failOn) ||
-      run.some((finding) => finding.severity === "error"),
+    hasErrors: exitCodeOf(outcome) !== 0,
+    outcome,
     result,
     collisions,
     ...(since !== null ? { since } : {}),
@@ -1128,11 +1174,15 @@ function emitFindings(
 
   writeReport(rendered, options.output);
 
+  const outcome = checkOutcome(
+    meetsThreshold(findings, options.failOn ?? "error"),
+    run,
+  );
   return {
     findings,
     ...(run.length > 0 ? { run } : {}),
-    hasErrors:
-      meetsThreshold(findings, options.failOn ?? "error") || run.length > 0,
+    hasErrors: exitCodeOf(outcome) !== 0,
+    outcome,
   };
 }
 

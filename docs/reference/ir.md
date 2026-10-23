@@ -568,7 +568,9 @@ interface RunFinding {
     | "nothingPaired"
     | "unreadableInput"
     | "mostlyUnpaired"
-    | "packNeedsConfig";
+    | "packNeedsConfig"
+    | "noPackMatched"
+    | "notCovered";
   severity: "error" | "warning" | "info";
   description: string;
   remedy: string;
