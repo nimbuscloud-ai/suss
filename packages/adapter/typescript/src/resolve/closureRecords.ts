@@ -12,6 +12,8 @@
  * the body's own file imports, the bar a walked file is held to.
  */
 
+import { plainKeyOf } from "@suss/resolution";
+
 import {
   fileOfOffsetKey,
   offsetKeyFor,
@@ -22,10 +24,16 @@ import type { DeclaredAt, UnfollowedCall } from "@suss/behavioral-ir";
 import type { UnitRecord } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ReferenceIndex } from "../referencedFiles.js";
+import type { TsSubclass } from "./receiverClass.js";
 
 /** What one scan found, whether it ran on this run or came from a record. */
 export interface ScanFindings {
-  calls: ReadonlyArray<{ key: string; name: string; func?: FunctionRoot }>;
+  calls: ReadonlyArray<{
+    key: string;
+    name: string;
+    func?: FunctionRoot;
+    receiverClass?: TsSubclass | undefined;
+  }>;
   stops: UnfollowedCall[];
   targets: ReadonlyMap<string, DeclaredAt>;
   argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
@@ -171,8 +179,10 @@ export function closureUnitRecords(
       continue;
     }
 
+    // A record has no place for the subclass a method runs on, so a body
+    // read on one, or that reaches one, is scanned again next run.
     const file = fileOfOffsetKey(key);
-    if (file === null) {
+    if (file === null || reachesASubclass(key, scan.findings)) {
       continue;
     }
 
@@ -189,6 +199,13 @@ export function closureUnitRecords(
     }
   }
   return units;
+}
+
+function reachesASubclass(key: string, findings: ScanFindings): boolean {
+  return (
+    key !== plainKeyOf(key) ||
+    findings.calls.some((call) => call.key !== plainKeyOf(call.key))
+  );
 }
 
 /** Every file a scan's findings point at. */

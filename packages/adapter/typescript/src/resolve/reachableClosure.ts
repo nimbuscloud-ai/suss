@@ -25,13 +25,16 @@
 import { Node, type Project, type SourceFile } from "ts-morph";
 
 import {
+  type BodyPlacements,
   functionCallBinding,
   normalizeCalleeText,
   placePossibleCalls,
+  sameDeclarations,
   TargetPlacements,
 } from "@suss/behavioral-ir";
 import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
+import { keptVariants, plainKeyOf, variantKey } from "@suss/resolution";
 
 import { extractCodeStructure } from "../adapter.js";
 import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
@@ -67,6 +70,11 @@ import {
   type ReachableCandidate,
   resolveDecl,
 } from "./functionBehind.js";
+import {
+  candidateOnReceiver,
+  subclassPlace,
+  type TsSubclass,
+} from "./receiverClass.js";
 import {
   classifyStop,
   declarationsBehind,
@@ -212,6 +220,22 @@ function targetOf(node: Node): CallTarget {
   };
 }
 
+/** Where a reached function is declared, with the subclass it runs on when it inherits it. */
+function placeOfCandidate(candidate: ReachableCandidate): CallTarget {
+  const place = targetOf(candidate.func);
+  return candidate.receiverClass === undefined
+    ? place
+    : { ...place, receiverClass: subclassPlace(candidate.receiverClass) };
+}
+
+/** The walk's key for a reached function, which is a variant's own when it runs on a subclass. */
+function candidateKey(candidate: ReachableCandidate): string {
+  const key = nodeKey(candidate.func);
+  return candidate.receiverClass === undefined
+    ? key
+    : variantKey(key, subclassPlace(candidate.receiverClass));
+}
+
 function resolveCallee(
   call: Node,
   calleeName: string,
@@ -228,6 +252,15 @@ function resolveCallee(
   // was imported.
   const declarations = declarationsBehind(symbol);
   const direct = functionAmong(declarations, calleeName);
+  const onReceiver = candidateOnReceiver(
+    callee,
+    direct,
+    scan.scanning,
+    scan.receiverClass,
+  );
+  if (onReceiver !== null) {
+    return { kind: "followed", candidate: onReceiver };
+  }
   if (direct !== null) {
     return { kind: "followed", candidate: direct };
   }
@@ -404,7 +437,7 @@ function declarationToReport(
 /** Where the callee an outcome came from is declared, when one place declares it. */
 function declaredAtOf(outcome: CallOutcome): CallTarget | null {
   if (outcome.kind === "followed") {
-    return targetOf(outcome.candidate.func);
+    return placeOfCandidate(outcome.candidate);
   }
   if (outcome.kind === "possible") {
     return null;
@@ -521,7 +554,7 @@ function placeCallee(
   if (outcome.kind === "possible") {
     placements.placePossible(
       calleeText,
-      outcome.candidates.map((candidate) => targetOf(candidate.func)),
+      outcome.candidates.map(placeOfCandidate),
     );
     return;
   }
@@ -576,6 +609,8 @@ interface ScanContext {
   sourceDeclarationsBehind?: (declaration: Node) => Node[];
   reachedFrom?: SourceFile;
   scanning?: FunctionRoot;
+  /** The subclass the scanned method runs on, when it is not the class the method is written in. */
+  receiverClass?: TsSubclass;
   /** Set once the scan asks which class a declared shape was given. */
   sourcesAsked?: { asked: boolean };
 }
@@ -641,7 +676,12 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
   const inFunc: ScanContext = atModuleScope
     ? { ...scan }
     : { ...scan, scanning: root };
-  const calls: Array<{ key: string; name: string; func: FunctionRoot }> = [];
+  const calls: Array<{
+    key: string;
+    name: string;
+    func: FunctionRoot;
+    receiverClass?: TsSubclass;
+  }> = [];
   const stops: UnfollowedCall[] = [];
   const placements = new TargetPlacements();
   const parameterCalls: Array<{ callee: string; parameterIndex: number }> = [];
@@ -657,7 +697,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     }
   };
   const recordFollowed = (candidate: ReachableCandidate): void => {
-    const key = nodeKey(candidate.func);
+    const key = candidateKey(candidate);
     if (seen.has(key)) {
       return;
     }
@@ -1009,6 +1049,8 @@ export function expandReachableClosure(
   // The file a function was reached from, which is where whoever called
   // it built the dependencies it works through.
   const reachedFrom = new Map<string, string>();
+  const receiverByKey = new Map<string, TsSubclass>();
+  const callsByKey = new Map<string, readonly string[]>();
   const finding: FindingContext = {
     project,
     lookup,
@@ -1018,6 +1060,7 @@ export function expandReachableClosure(
     funcByKey,
     moduleByKey,
     reachedFrom,
+    receiverByKey,
   };
 
   for (const seed of seeds) {
@@ -1090,28 +1133,61 @@ export function expandReachableClosure(
       for (const position of found.passedPositions) {
         passedPositions.add(position);
       }
-      const callerFile = fileOfOffsetKey(key);
-      for (const call of found.calls) {
+      const callerFile = fileOfOffsetKey(plainKeyOf(key));
+      // A method reached on a subclass is reached on its own class too, so
+      // its own summary is there for callers its variant gets none for.
+      const reachedOnOwnClass = found.calls.flatMap((call) =>
+        call.receiverClass === undefined
+          ? []
+          : [{ ...call, key: plainKeyOf(call.key), receiverClass: undefined }],
+      );
+      const called: string[] = [];
+      for (const call of [...found.calls, ...reachedOnOwnClass]) {
         if (!nameByKey.has(call.key)) {
           nameByKey.set(call.key, call.name);
         }
         if (call.func !== undefined && !funcByKey.has(call.key)) {
           funcByKey.set(call.key, call.func);
         }
+        if (call.receiverClass !== undefined) {
+          receiverByKey.set(call.key, call.receiverClass);
+        }
         if (callerFile !== null && !reachedFrom.has(call.key)) {
           reachedFrom.set(call.key, callerFile);
         }
         db.add("calls", [key, call.key]);
+        called.push(call.key);
       }
+      callsByKey.set(key, called);
     }
   }
 
   // Emit library summaries in derivation order (the engine appends
   // facts as it derives them, so this tracks the old BFS order).
+  const placementsOf = (key: string): BodyPlacements => ({
+    targets: targetsByKey.get(key),
+    argTargets: argTargetsByKey.get(key),
+    possibleTargets: possibleTargetsByKey.get(key),
+  });
+  const onSubclass = keptVariants(
+    [...receiverByKey.keys()].map((key) => ({
+      key,
+      differs: !sameDeclarations(
+        placementsOf(key),
+        placementsOf(plainKeyOf(key)),
+      ),
+      calls: callsByKey.get(key) ?? [],
+    })),
+  );
   const reached: BehavioralSummary[] = [];
   for (const [keyAtom] of db.facts("reachable")) {
     const key = String(keyAtom);
-    if (known.has(key) || seedKeys.has(key)) {
+    const receiverClass = receiverByKey.get(key);
+    if (
+      known.has(key) ||
+      seedKeys.has(key) ||
+      (receiverClass !== undefined && !onSubclass.has(key))
+    ) {
       continue;
     }
     const name = nameByKey.get(key);
@@ -1125,7 +1201,7 @@ export function expandReachableClosure(
     if (projectFileSet !== undefined) {
       lazyAddSourceFile(project, projectFileSet, file);
     }
-    const func = funcByKey.get(key) ?? functionAtKey(key, lookup);
+    const func = funcByKey.get(key) ?? functionAtKey(plainKeyOf(key), lookup);
     if (func === undefined) {
       continue;
     }
@@ -1133,6 +1209,10 @@ export function expandReachableClosure(
     const { result: summary } = scanWithRecording(key, facts, () =>
       extractReachableSummary(candidate, options, recognizers),
     );
+    if (receiverClass !== undefined) {
+      summary.receiverClass = subclassPlace(receiverClass);
+      summary.identity.exportPath = [receiverClass.name, name];
+    }
     facts?.unitKeyBySummary.set(summary, key);
     rememberSummary(summariesByKey, key, summary);
     reached.push(summary);
@@ -1214,6 +1294,8 @@ interface FindingContext {
   funcByKey: ReadonlyMap<string, FunctionRoot>;
   moduleByKey: ReadonlyMap<string, SourceFile>;
   reachedFrom: ReadonlyMap<string, string>;
+  /** The subclass each variant's method runs on, by the variant's key. */
+  receiverByKey: ReadonlyMap<string, TsSubclass>;
 }
 
 /**
@@ -1223,7 +1305,11 @@ interface FindingContext {
  */
 function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
   const cameFrom = ctx.reachedFrom.get(key);
-  const stored = ctx.facts?.previousScans?.get(key);
+  const receiverClass = ctx.receiverByKey.get(key);
+  const stored =
+    receiverClass === undefined
+      ? ctx.facts?.previousScans?.get(key)
+      : undefined;
   const recorded =
     stored !== undefined && recordValidFrom(stored.data, cameFrom)
       ? fromScanRecord(stored)
@@ -1237,7 +1323,7 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
   const root: ScanRoot | undefined =
     ctx.funcByKey.get(key) ??
     ctx.moduleByKey.get(key) ??
-    functionAtKey(key, ctx.lookup);
+    functionAtKey(plainKeyOf(key), ctx.lookup);
   if (root === undefined) {
     return null;
   }
@@ -1260,6 +1346,7 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
       ? {}
       : { sourceDeclarationsBehind }),
     ...(reachedFrom === undefined ? {} : { reachedFrom }),
+    ...(receiverClass === undefined ? {} : { receiverClass }),
   };
   const scanned = scanOrReport(key, ctx.facts, root, scan);
   if (scanned === null) {
@@ -1503,7 +1590,8 @@ function recordParameterGaps(
   }
   for (const [key, parameterCalls] of parameterCallsByKey) {
     const unbound = parameterCalls.filter(
-      ({ parameterIndex }) => !passedPositions.has(`${key}#${parameterIndex}`),
+      ({ parameterIndex }) =>
+        !passedPositions.has(`${plainKeyOf(key)}#${parameterIndex}`),
     );
     if (unbound.length === 0) {
       continue;
