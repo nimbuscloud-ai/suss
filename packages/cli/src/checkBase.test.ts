@@ -448,6 +448,31 @@ describe("check --base", () => {
     expect(report.resolved).toEqual([]);
   });
 
+  it("reads the base with a pack config that is not committed yet", async () => {
+    commit("base");
+    const config = JSON.parse(
+      fs.readFileSync(path.join(project, "suss.json"), "utf8"),
+    );
+    config.read[0].packs = config.read[0].packs.map((pack: string) =>
+      pack === "express" ? "express=config/suss.express.json" : pack,
+    );
+    fs.writeFileSync(path.join(project, "suss.json"), JSON.stringify(config));
+    fs.mkdirSync(path.join(project, "config"));
+    fs.writeFileSync(path.join(project, "config", "suss.express.json"), "{}\n");
+    edit(ADD_409);
+
+    const run = await quietly(["check", "--base", "HEAD", "--json"]);
+
+    expect(run.exit, run.stderr).toBe(0);
+    expect(run.stderr).not.toContain("No pack config");
+    const report = JSON.parse(run.stdout);
+    expect(report.changedFiles).toEqual(["src/orders/create.ts"]);
+    expect(report.findings.map((f: { kind: string }) => f.kind)).toEqual([
+      "unhandledProviderCase",
+    ]);
+    expect(report.resolved).toEqual([]);
+  });
+
   it("reads the project --dir names, at the base its own repository gives", async () => {
     commit("base");
     edit(ADD_409);

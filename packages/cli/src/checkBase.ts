@@ -207,7 +207,7 @@ async function readIntoTree(
   const present = reads.reads.filter((entry) =>
     fs.existsSync(path.resolve(baseRoot, inputOf(entry))),
   );
-  useProjectFileFrom(project, baseRoot);
+  useConfigFilesFrom(project, baseRoot, reads);
   process.stderr.write(
     `Reading ${revision.ref} at ${revision.commit.slice(0, 7)} into a temporary folder, with the same reads:\n${present.map((entry) => `  ${commandFor(entry)}`).join("\n")}\n`,
   );
@@ -248,23 +248,34 @@ async function readIntoTree(
   return summaryDir;
 }
 
-/**
- * Readers look up `suss.json` beside what they read, for the hosts and
- * modules it lists and the root they measure paths from. The base gets
- * the working tree's copy, which is often not committed yet, so a read
- * of either side finds the same file.
- */
 function projectFileText(project: string): string | null {
   const own = path.join(project, PROJECT_FILE);
   return fs.existsSync(own) ? fs.readFileSync(own, "utf8") : null;
 }
 
-function useProjectFileFrom(project: string, baseRoot: string): void {
-  const own = path.join(project, PROJECT_FILE);
-  if (!fs.existsSync(own) || !fs.existsSync(baseRoot)) {
+/**
+ * Readers look up `suss.json` beside what they read, for the hosts and
+ * modules it lists and the root they measure paths from, and a pack
+ * spec reads its config file. The base gets the working tree's copies,
+ * which are often not committed yet, so both sides read the same files.
+ */
+function useConfigFilesFrom(
+  project: string,
+  baseRoot: string,
+  reads: DeclaredReads,
+): void {
+  if (!fs.existsSync(baseRoot)) {
     return;
   }
-  fs.copyFileSync(own, path.join(baseRoot, PROJECT_FILE));
+  for (const file of configFilesOf(project, reads)) {
+    const own = path.join(project, file);
+    if (!fs.existsSync(own)) {
+      continue;
+    }
+    const copy = path.join(baseRoot, file);
+    fs.mkdirSync(path.dirname(copy), { recursive: true });
+    fs.copyFileSync(own, copy);
+  }
 }
 
 /** The folder an extract reads, or the file a contract reads, relative to the project root. */
