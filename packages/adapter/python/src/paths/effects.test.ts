@@ -137,6 +137,19 @@ describe("python invocation effects", () => {
     ]);
   });
 
+  it("records a constructor called with empty strings as the strings it passed", async () => {
+    const effects = await effectsFor([
+      "def build(self):",
+      '    Mailer("", "", None)',
+    ]);
+    const [effect] = effects;
+    expect(effect?.type === "invocation" && effect.args).toEqual([
+      { kind: "string", value: "" },
+      { kind: "string", value: "" },
+      { kind: "null" },
+    ]);
+  });
+
   it("does not call a module-level None null once another function sets it", async () => {
     const tree = await parsePython(
       [

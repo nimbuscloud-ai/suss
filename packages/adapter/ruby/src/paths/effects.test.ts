@@ -188,6 +188,7 @@ describe("ruby invocation effects", () => {
     const effects = await effectsFor(["def total", "  1", "end"]);
     expect(effects).toEqual([]);
   });
+
   it("records a written nil apart from an argument it could not read", async () => {
     const effects = await effectsFor([
       "def send_body(sections, count)",
@@ -198,6 +199,19 @@ describe("ruby invocation effects", () => {
       { kind: "identifier", name: "sections" },
       { kind: "null" },
       { kind: "identifier", name: "count + 1" },
+    ]);
+  });
+
+  it("records a constructor called with empty strings as the strings it passed", async () => {
+    const effects = await effectsFor([
+      "def build",
+      '  Mailer.new("", "", nil)',
+      "end",
+    ]);
+    expect(effects[0]?.args).toEqual([
+      { kind: "string", value: "" },
+      { kind: "string", value: "" },
+      { kind: "null" },
     ]);
   });
 

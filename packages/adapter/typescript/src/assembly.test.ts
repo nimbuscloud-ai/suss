@@ -1407,7 +1407,7 @@ describe("edge cases", () => {
       project,
       `
       export function handler(sections: string, count: number) {
-        createEmailBody(sections, null, undefined, count + 1, { footer: null });
+        createEmailBody(sections, null, undefined, count + 1, { footer: null }, new Mailer("", ""));
       }
     `,
     );
@@ -1425,6 +1425,14 @@ describe("edge cases", () => {
       { kind: "undefined" },
       null,
       { kind: "object", fields: { footer: { kind: "null" } } },
+      {
+        kind: "call",
+        callee: "Mailer",
+        args: [
+          { kind: "string", value: "" },
+          { kind: "string", value: "" },
+        ],
+      },
     ]);
   });
 
