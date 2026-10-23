@@ -47,6 +47,10 @@ const REGISTRY =
 /** How many publishes run at once. Enough to finish inside one password. */
 const CONCURRENCY = 10;
 
+/** How long a `bin` package waits for its dependencies to read as published. */
+const VISIBLE_TIMEOUT_MS = 2 * 60 * 1000;
+const VISIBLE_POLL_MS = 5 * 1000;
+
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
   options: {
@@ -455,10 +459,6 @@ function requiresOtp() {
     return false;
   }
 }
-
-/** How long a `bin` package waits for its dependencies to read as published. */
-const VISIBLE_TIMEOUT_MS = 2 * 60 * 1000;
-const VISIBLE_POLL_MS = 5 * 1000;
 
 /**
  * People install the `bin` packages, and npm fails that install while
