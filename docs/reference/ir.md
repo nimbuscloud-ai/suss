@@ -317,6 +317,25 @@ A transition lists only the effects that can run before its terminal. A write af
 
 On an `invocation`, `summary` is the summary this call reaches, the one whose unit is declared where the type checker resolved `callee`. It is absent when the callee is declared outside the run, when more than one summary describes that unit, or when nothing resolved and no summary in the same file has that name. `declaredAt` and `argsDeclaredAt` are the raw declaration places an adapter sets while extracting; naming turns them into `summary` and `argsSummary` and removes them, so you see them only in the extraction cache. `possibleSummaries` lists the summaries a call may reach when it takes its function out of a table or picks a member by a name it works out at run time, as `COMMANDS[name](args)` or Ruby's `send(kind)` does. One of them runs, and the source does not say which, so the call has no `summary`. A call the source narrows to one entry gets `summary` instead. `possibleDeclaredAt` is the raw form, with the same lifecycle as `declaredAt`. `calleeParameter` is set when the callee is one of this unit's own parameters, and gives its index among them, so a caller that passes a function into that parameter reaches this call through it. `receiverClass` is the file and qualified name of the class the call was sent to: the receiver's class, or the class itself for a class method. It is set when the adapter settled the receiver on a class the run defines, even when the method comes from a module the class includes or from the library, as `Account.find(id)` does. Only a test unit's calls have it, and the intent check reads it to decide whether a test reached the class a scenario is about.
 
+`args` has one entry per argument, in the order the call wrote them, and each entry's `kind` says what was passed:
+
+```typescript
+type Argument =
+  | { kind: "string"; value: string }
+  | { kind: "number"; value: number }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "null" }
+  | { kind: "undefined" }
+  | { kind: "object"; fields: Record<string, Argument> }
+  | { kind: "array"; items: Argument[] }
+  | { kind: "template"; sourceText: string }
+  | { kind: "identifier"; name: string }
+  | { kind: "call"; callee: string; args: Argument[] }
+  | null;
+```
+
+`{ "kind": "null" }` is a caller that wrote `null`, `None` or `nil`. `{ "kind": "undefined" }` is a JavaScript caller that wrote `undefined`, which a parameter default replaces and `null` does not. A JSON `null` entry is an argument the TypeScript adapter could not read, such as arithmetic, so `[{ "kind": "null" }]` says the caller passed null and `[null]` says suss does not know. Python and Ruby write an argument they could not read as an `identifier` whose `name` is its source text, such as `count + 1`.
+
 **`interaction` effects** are the typed boundary crossings. Each one includes the `BoundaryBinding` of the resource it reaches, plus a payload discriminated on `class`:
 
 ```typescript

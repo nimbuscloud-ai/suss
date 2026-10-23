@@ -39,33 +39,30 @@ export interface StubDraftOptions {
   output?: string;
 }
 
-const ARG_RENDERERS: Record<string, (arg: EffectArg) => string> = {
-  string: (arg) =>
-    arg !== null && arg.kind === "string" ? JSON.stringify(arg.value) : "?",
-  number: (arg) =>
-    arg !== null && arg.kind === "number" ? String(arg.value) : "?",
-  boolean: (arg) =>
-    arg !== null && arg.kind === "boolean" ? String(arg.value) : "?",
-  object: (arg) =>
-    arg !== null && arg.kind === "object"
-      ? `{${Object.keys(arg.fields).join(", ")}}`
-      : "?",
-  array: (arg) =>
-    arg !== null && arg.kind === "array" ? `[${arg.items.length} items]` : "?",
-  template: (arg) =>
-    arg !== null && arg.kind === "template" ? arg.sourceText : "?",
-  identifier: (arg) =>
-    arg !== null && arg.kind === "identifier" ? arg.name : "?",
-  call: (arg) =>
-    arg !== null && arg.kind === "call" ? `${arg.callee}(...)` : "?",
+type ReadArg = NonNullable<EffectArg>;
+
+const ARG_RENDERERS: {
+  [K in ReadArg["kind"]]: (arg: Extract<ReadArg, { kind: K }>) => string;
+} = {
+  string: (arg) => JSON.stringify(arg.value),
+  number: (arg) => String(arg.value),
+  boolean: (arg) => String(arg.value),
+  null: () => "null",
+  undefined: () => "undefined",
+  object: (arg) => `{${Object.keys(arg.fields).join(", ")}}`,
+  array: (arg) => `[${arg.items.length} items]`,
+  template: (arg) => arg.sourceText,
+  identifier: (arg) => arg.name,
+  call: (arg) => `${arg.callee}(...)`,
 };
 
+/** A `?` marks an argument the adapter could not read, which a written `null` is not. */
 function renderArg(arg: EffectArg): string {
   if (arg === null) {
     return "?";
   }
-  const renderer = ARG_RENDERERS[arg.kind];
-  return renderer === undefined ? "?" : renderer(arg);
+  const renderer = ARG_RENDERERS[arg.kind] as (one: ReadArg) => string;
+  return renderer(arg);
 }
 
 const SITES_SHOWN = 3;
