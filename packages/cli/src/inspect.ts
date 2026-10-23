@@ -3116,6 +3116,30 @@ function writeDiffJson(report: DiffReport): void {
   process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
 }
 
+function nothingMoved(report: DiffReport): boolean {
+  return (
+    report.moved.length === 0 &&
+    report.blocks.length === 0 &&
+    !hasModuleChanges(report.modules)
+  );
+}
+
+/** What `inspect --diff` prints for two readings, or null when nothing moved. */
+export function behaviorDiffText(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+  changedFiles: readonly string[],
+): string | null {
+  const report = behaviorDiff(before, after);
+  if (nothingMoved(report)) {
+    return null;
+  }
+  return renderReport(report, new Set(changedFiles), {
+    budget: null,
+    hops: CHAIN_HOPS,
+  });
+}
+
 export function inspectDiff(options: DiffOptions): void {
   const { before, after } = wholeReadings(
     readingPairs(options.before, options.after),
@@ -3127,11 +3151,7 @@ export function inspectDiff(options: DiffOptions): void {
     return;
   }
 
-  if (
-    report.moved.length === 0 &&
-    report.blocks.length === 0 &&
-    !hasModuleChanges(report.modules)
-  ) {
+  if (nothingMoved(report)) {
     process.stdout.write("No behavioral changes.\n");
     return;
   }

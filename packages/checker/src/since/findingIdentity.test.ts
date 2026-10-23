@@ -115,6 +115,50 @@ describe("findingIdentity", () => {
     expect(findingIdentity(colon)).toBe(findingIdentity(braces));
   });
 
+  it("reads a function moved into a nested stack as the same resource", () => {
+    const envFinding = (stack: string, template: string): Finding =>
+      finding({
+        kind: "boundaryFieldUnknown",
+        boundary: {
+          transport: "os",
+          semantics: {
+            name: "runtime-config",
+            deploymentTarget: "lambda",
+            instanceName: `${stack}PingFunction`,
+          },
+          recognition: "cloudformation",
+        },
+        provider: {
+          summary: `cloudformation:${template}::PingFunction`,
+          location: {
+            file: `cloudformation:${template}`,
+            range: { start: 1, end: 1 },
+            exportName: null,
+          },
+        },
+        consumer: {
+          summary: `src/ping.ts::${stack}PingFunction.handler`,
+          transitionId: `${stack}PingFunction.handler:response:200:da39a3e`,
+          location: {
+            file: "src/ping.ts",
+            range: { start: 1, end: 6 },
+            exportName: `${stack}PingFunction.handler`,
+          },
+        },
+        description: `process.env.PING_REGION read by ${stack}PingFunction.handler (lambda/${stack}PingFunction scope) but ${stack}PingFunction declares no PING_REGION in its environment.`,
+      });
+
+    const flat = envFinding("", "template.yaml");
+    const nested = envFinding("ApiStack/", "template.yaml#ApiStack");
+    const otherFunction = finding({
+      ...flat,
+      consumer: { ...flat.consumer, summary: "src/pong.ts::PongFunction" },
+    });
+
+    expect(findingIdentity(nested)).toBe(findingIdentity(flat));
+    expect(findingIdentity(otherFunction)).not.toBe(findingIdentity(flat));
+  });
+
   it("tells apart two consumers of one provider status", () => {
     const secondClient = finding({
       consumer: {
