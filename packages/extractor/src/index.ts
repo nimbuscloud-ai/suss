@@ -1224,10 +1224,12 @@ export {
 export { makeIgnoredDirectory } from "./ignoredDirectory.js";
 export { KeptParses } from "./keptParses.js";
 export {
+  describeMissingPath,
   evaluatePackHealth,
   formatPackHealth,
   packConfigCheck,
   packGradients,
+  packPathCheck,
 } from "./packHealth.js";
 export { createTimer, noopTimer } from "./timing.js";
 
@@ -1272,5 +1274,6 @@ export type {
   HealthViolation,
   PackConfigNeed,
   PackGradient,
+  PackPathMissing,
 } from "./packHealth.js";
 export type { Timer, TimingReport } from "./timing.js";

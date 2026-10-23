@@ -229,7 +229,7 @@ Most packs need nothing from you, because everything they match on is something 
 npx @suss/cli extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json
 ```
 
-A pack that cannot work without a value stops and says so, instead of quietly reading half a project. A relative path in an option is read against the config file itself, so the same file works whichever directory you run from.
+A pack that cannot work without a value stops and says so, instead of quietly reading half a project. A relative path in an option is read against the config file itself, so the same file works whichever directory you run from. In a config file kept outside the project, write paths as absolute ones. A relative one points at a folder that does not exist, and the run reports it as `no-path` in the pack health block and as `packPathMissing` in `check --json`.
 
 A pack config states something about your own project. A fact about a package you depend on, such as a module of yours that re-exports a framework, goes in a [dependency stub](/guides/teach-a-dependency) instead.
 

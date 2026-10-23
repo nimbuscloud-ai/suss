@@ -42,7 +42,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 
 Without `-o`, the summary JSON goes to stdout and nothing else does, so `suss extract ... | jq` works. With `-o`, the JSON goes to the file and one acknowledgement line goes to stderr.
 
-With `-o`, a run that could not read part of the project also writes a note beside the summaries, at `summaries.incomplete.json` next to `summaries.json`. It has one key per reason: `filesWithUnreadableExports` for re-export chains suss could not follow in a TypeScript run, `submodulesNotCheckedOut` for a submodule with nothing in it, which any language can hit, and `packsNeedingConfig` for a pack that was left out because an option it needs was not given. `suss check --json` turns that last one into a `packNeedsConfig` run finding. A run with nothing to report deletes a note an earlier run left, so a stale file never fails a job that has since been fixed.
+With `-o`, a run that could not read part of the project also writes a note beside the summaries, at `summaries.incomplete.json` next to `summaries.json`. It has one key per reason: `filesWithUnreadableExports` for re-export chains suss could not follow in a TypeScript run, `submodulesNotCheckedOut` for a submodule with nothing in it, which any language can hit, `packsNeedingConfig` for a pack that was left out because an option it needs was not given, and `packPathsMissing` for a path in a pack config where nothing exists. `suss check --json` turns the last two into `packNeedsConfig` and `packPathMissing` run findings. A run with nothing to report deletes a note an earlier run left, so a stale file never fails a job that has since been fixed.
 
 ## Example
 

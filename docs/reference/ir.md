@@ -573,6 +573,7 @@ interface RunFinding {
     | "unreadableInput"
     | "mostlyUnpaired"
     | "packNeedsConfig"
+    | "packPathMissing"
     | "noPackMatched"
     | "notCovered";
   severity: "error" | "warning" | "info";
