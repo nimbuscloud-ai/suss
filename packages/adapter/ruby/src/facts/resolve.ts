@@ -17,13 +17,15 @@ import {
   readUses,
   resolutionProgram,
   resolutionUnderProgram,
+  SELF_AS_CLASS,
+  SELF_AS_INSTANCE,
   writtenValueOf as sharedWrittenValueOf,
   writtenValueUnder as sharedWrittenValueUnder,
   USES_QUESTION,
   type ValueUses,
 } from "@suss/resolution";
 
-import { CONSTRUCTOR } from "./languageWords.js";
+import { CLASS_OF_INSTANCE, CONSTRUCTOR } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
 import type { SourceLeaf, SourceQuestion } from "@suss/resolution";
@@ -55,6 +57,27 @@ export const RUBY_RULES = alsoSteps([
       lit("binds", v("o"), v("cls")),
       lit("readsProperty", v("c"), v("o"), constant(CONSTRUCTOR)),
       lit("call", v("r"), v("c")),
+    ],
+  ),
+
+  // `new` in a class method makes one of the class the method runs on,
+  // and `self.class` in an instance method is that class.
+  rule(
+    "selfBehind",
+    [v("r"), v("s"), SELF_AS_INSTANCE],
+    [
+      lit("call", v("r"), v("c")),
+      lit("readsProperty", v("c"), v("o"), constant(CONSTRUCTOR)),
+      lit("selfBehind", v("o"), v("s"), SELF_AS_CLASS),
+    ],
+  ),
+  rule(
+    "selfBehind",
+    [v("r"), v("s"), SELF_AS_CLASS],
+    [
+      lit("call", v("r"), v("c")),
+      lit("readsProperty", v("c"), v("o"), constant(CLASS_OF_INSTANCE)),
+      lit("selfBehind", v("o"), v("s"), SELF_AS_INSTANCE),
     ],
   ),
 ]);

@@ -20,6 +20,7 @@ import {
   ReceiverClasses,
   recordParameterGaps,
   StopList,
+  sameDeclarations,
   TargetPlacements,
   unfollowedCallGap,
   worthRecording,
@@ -30,7 +31,12 @@ import {
   type Dependencies,
   type DependencyLedger,
   fileOfKey,
+  keptVariants,
   noDependencies,
+  plainKeyOf,
+  type ReceiverVariant,
+  type SubclassPlace,
+  variantKey,
 } from "@suss/resolution";
 
 import {
@@ -74,6 +80,7 @@ import {
 
 import type {
   BehavioralSummary,
+  BodyPlacements,
   BoundaryBinding,
   DeclaredAt,
   ParameterCall,
@@ -121,6 +128,7 @@ export interface StoredTarget {
   readonly name: string;
   readonly exportPath: string[];
   readonly enclosingQualifiedName: string | null;
+  readonly receiverClass?: SubclassPlace;
 }
 
 /** What one scan of a body found, in a form JSON keeps. */
@@ -228,11 +236,12 @@ export async function reachedFunctions(
   const charges = new Map<string, Dependencies>();
   const beforeGaps = new Map<string, BehavioralSummary>();
   const functionFor = (target: StoredTarget): ReachedFunction => {
-    const node = replay?.nodeOf(target.key) ?? null;
-    if (node === null) {
+    const node = replay?.nodeOf(plainKeyOf(target.key)) ?? null;
+    const found = node === null ? null : { ...target, node };
+    if (found === null || keyOf(found) !== target.key) {
       throw new ReplayFailed(target.key);
     }
-    return { ...target, node };
+    return found;
   };
 
   for (const seed of seeds) {
@@ -305,7 +314,13 @@ export async function reachedFunctions(
         followedKeys.add(key);
       }
 
-      for (const target of scan.followed) {
+      // A method reached on a subclass is reached on its own class too, so
+      // its own summary is there for the callers its variant ends up not
+      // needing a summary for.
+      const reachedOnOwnClass = scan.followed
+        .filter((target) => target.receiverClass !== undefined)
+        .map(plainOf);
+      for (const target of [...scan.followed, ...reachedOnOwnClass]) {
         const calleeKey = keyOf(target);
         if (!functionByKey.has(calleeKey)) {
           functionByKey.set(calleeKey, target);
@@ -330,12 +345,28 @@ export async function reachedFunctions(
       options.storage,
     );
   }
+  const placementsOf = (key: string): BodyPlacements => ({
+    targets: targetsByKey.get(key),
+    argTargets: argTargetsByKey.get(key),
+    possibleTargets: possibleTargetsByKey.get(key),
+  });
+  const onSubclass = keptVariants(
+    [...functionByKey].flatMap(([key, target]) =>
+      target.receiverClass === undefined
+        ? []
+        : [variantOf(key, scans, placementsOf)],
+    ),
+  );
   const summaries: BehavioralSummary[] = [];
   const summariesByKey = new Map<string, BehavioralSummary[]>();
   for (const [keyAtom] of db.facts("reachable")) {
     const key = String(keyAtom);
     const target = functionByKey.get(key);
-    if (seedKeys.has(key) || target === undefined) {
+    if (
+      seedKeys.has(key) ||
+      target === undefined ||
+      (target.receiverClass !== undefined && !onSubclass.has(key))
+    ) {
       continue;
     }
     const kept = replay?.summaryOf(key);
@@ -350,6 +381,12 @@ export async function reachedFunctions(
       const raw = libraryUnit(target, options);
       dropPropertyReads(raw, propertyReadsByKey.get(key));
       const summary = assembleSummary(raw, { gapHandling });
+      if (target.receiverClass !== undefined) {
+        summary.receiverClass = subclassAt(
+          target.receiverClass,
+          options.displayPathOf,
+        );
+      }
       if (gapHandling !== "silent") {
         summary.gaps.push(
           ...(stopsByKey.get(key) ?? []).map(unfollowedCallGap),
@@ -393,6 +430,27 @@ export async function reachedFunctions(
     scans,
     charges,
     beforeGaps,
+  };
+}
+
+/**
+ * A method reached on a subclass, set against the same method on its own
+ * class. It differs when one of its calls goes somewhere else there. A
+ * call that stops on both for different reasons links nowhere either
+ * way, so it does not count.
+ */
+function variantOf(
+  key: string,
+  scans: ReadonlyMap<string, StoredScan>,
+  placementsOf: (key: string) => BodyPlacements,
+): ReceiverVariant {
+  return {
+    key,
+    differs: !sameDeclarations(
+      placementsOf(key),
+      placementsOf(plainKeyOf(key)),
+    ),
+    calls: scans.get(key)?.followed.map((target) => target.key) ?? [],
   };
 }
 
@@ -541,6 +599,9 @@ function storedScan(scan: Scan): StoredScan {
       name: target.name,
       exportPath: target.exportPath,
       enclosingQualifiedName: target.enclosingQualifiedName,
+      ...(target.receiverClass === undefined
+        ? {}
+        : { receiverClass: target.receiverClass }),
     })),
     stops: scan.stops,
     targets: [...scan.targets],
@@ -581,8 +642,44 @@ function scanFromStored(
   };
 }
 
+/** The walk's key for a method, which is a variant's own when it runs on a subclass. */
 function keyOf(target: ReachedFunction): string {
-  return nodeId(target.file, target.node);
+  const key = nodeId(target.file, target.node);
+  return target.receiverClass === undefined
+    ? key
+    : variantKey(key, target.receiverClass);
+}
+
+/** The method running on the class it is written in. */
+function plainOf(target: ReachedFunction): ReachedFunction {
+  const { receiverClass: _, ...plain } = target;
+  return plain.enclosingQualifiedName === null
+    ? plain
+    : { ...plain, exportPath: [plain.enclosingQualifiedName, plain.name] };
+}
+
+/** Where a call's callee is declared, with the subclass it runs on when it inherits it. */
+function placeOf(
+  target: ReachedFunction,
+  displayPathOf: (file: string) => string,
+): DeclaredAt {
+  const place = {
+    file: displayPathOf(target.file),
+    span: spanOf(target.node),
+  };
+  return target.receiverClass === undefined
+    ? place
+    : {
+        ...place,
+        receiverClass: subclassAt(target.receiverClass, displayPathOf),
+      };
+}
+
+function subclassAt(
+  subclass: SubclassPlace,
+  displayPathOf: (file: string) => string,
+): SubclassPlace {
+  return { name: subclass.name, file: displayPathOf(subclass.file) };
 }
 
 /**
@@ -749,8 +846,9 @@ function siteOf(source: ReachedFunction): CallSite {
   return {
     file: source.file,
     method: localsOwnerOf(source.node),
-    owner: keyOf(source),
+    owner: nodeId(source.file, source.node),
     enclosingQualifiedName: source.enclosingQualifiedName,
+    receiverClass: source.receiverClass,
   };
 }
 
@@ -836,25 +934,31 @@ function scanBody(
   const keptArgless = new Set<number>();
 
   // Records each `method(:name)` argument as passed into that position of
-  // the callee, so it can be joined to the parameter the callee calls.
+  // the callee, under a variant's key and its method's own, since either
+  // may summarize it, so it can be joined to the parameter it calls.
   const recordPassedArgs = (
     call: RbNode,
     callee: string,
-    calleeKey: string | null,
+    target: ReachedFunction | null,
   ): void => {
     const args = field(call, "arguments");
     if (args === null) {
       return;
     }
+    const calleeKeys =
+      target === null ? [] : [keyOf(target), keyOf(plainOf(target))];
+    const passes = (position: number): void => {
+      for (const calleeKey of calleeKeys) {
+        passedPositions.add(`${calleeKey}#${position}`);
+      }
+    };
     const argNodes = bodyStatements(args);
     for (let position = 0; position < argNodes.length; position += 1) {
       // A lambda written at the call is part of this body, which already
       // has its calls, so the callee calling it through that parameter is
       // no gap.
       if (argNodes[position]?.type === LAMBDA_TYPE) {
-        if (calleeKey !== null) {
-          passedPositions.add(`${calleeKey}#${position}`);
-        }
+        passes(position);
         continue;
       }
       const symbol = methodReferenceSymbol(argNodes[position] as RbNode);
@@ -870,13 +974,8 @@ function scanBody(
         seen.add(key);
         followed.push(resolved);
       }
-      placements.placeArg(callee, position, {
-        file: displayPathOf(resolved.file),
-        span: spanOf(resolved.node),
-      });
-      if (calleeKey !== null) {
-        passedPositions.add(`${calleeKey}#${position}`);
-      }
+      placements.placeArg(callee, position, placeOf(resolved, displayPathOf));
+      passes(position);
     }
   };
 
@@ -923,10 +1022,7 @@ function scanBody(
       dispatched.targets.forEach(follow);
       placements.placePossible(
         callee,
-        dispatched.targets.map((target) => ({
-          file: displayPathOf(target.file),
-          span: spanOf(target.node),
-        })),
+        dispatched.targets.map((target) => placeOf(target, displayPathOf)),
       );
       if (dispatched.unresolved > 0) {
         stops.add({ callee, reason: "unsettledValue" });
@@ -959,7 +1055,7 @@ function scanBody(
     recordPassedArgs(
       call,
       callee,
-      outcome.kind === "followed" ? keyOf(outcome.target) : null,
+      outcome.kind === "followed" ? outcome.target : null,
     );
 
     if (outcome.kind === "stopped") {
@@ -1024,10 +1120,7 @@ function placeCallee(
 ): void {
   const callee = calleeText(call);
   if (outcome.kind === "followed") {
-    placements.place(callee, {
-      file: where.displayPathOf(outcome.target.file),
-      span: spanOf(outcome.target.node),
-    });
+    placements.place(callee, placeOf(outcome.target, where.displayPathOf));
     return;
   }
 

@@ -121,3 +121,9 @@ export const PROC_CLASS = "Proc";
  * written, and the one rule for a construction matches that name.
  */
 export const CONSTRUCTOR = "new";
+
+/** The method Ruby runs on a new instance. */
+export const INITIALIZE_METHOD = "initialize";
+
+/** The method that returns the class an instance is one of. */
+export const CLASS_OF_INSTANCE = "class";
