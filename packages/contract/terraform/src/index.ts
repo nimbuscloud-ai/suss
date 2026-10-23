@@ -1069,15 +1069,15 @@ function deployableSummary(
   const platform =
     boundary.platformEnvVars ??
     PLATFORM_INJECTED_ENV_VARS[boundary.deploymentTarget];
-  const code = codePointer(process.body, boundary, opts.scope);
-  const image = attributePattern(
-    process.body,
-    boundary.code?.imageAttribute,
-    opts.scope,
-  );
   const runtime = attributePattern(
     process.body,
     boundary.runtimeAttribute,
+    opts.scope,
+  );
+  const code = codePointer(process.body, boundary, opts.scope, runtime);
+  const image = attributePattern(
+    process.body,
+    boundary.code?.imageAttribute,
     opts.scope,
   );
   const prefix = opts.scope.namePrefix;
@@ -1110,7 +1110,7 @@ function deployableSummary(
       {
         codeScope: declaredCodeScope(
           opts.options.codeScopes?.[deployableUnit.instanceName],
-          code.entry,
+          code,
         ),
       },
       {
@@ -1137,9 +1137,12 @@ function deployableSummary(
  */
 function declaredCodeScope(
   directory: string | undefined,
-  entry: string | null,
+  code: CodePointer,
 ): CodeScopeMetadata {
-  const written = entry !== null ? { entry } : {};
+  const written = {
+    ...(code.entry !== null ? { entry: code.entry } : {}),
+    ...(code.entryExport !== null ? { entryExport: code.entryExport } : {}),
+  };
   if (directory !== undefined) {
     return { kind: "codeUri", path: directory, ...written };
   }
@@ -1186,35 +1189,50 @@ interface CodePointer {
   entryPoint: string | null;
   /** The file the handler is in, when the spelling includes one. */
   entry: string | null;
+  /** The function in that file the platform calls. */
+  entryExport: string | null;
 }
 
+type HandlerParts = Pick<CodePointer, "entry" | "entryExport">;
+
 /**
- * Gets the module from each handler spelling. A bare exported name has
- * no file, so the unit is placed by whatever else the run has found.
+ * Splits each handler spelling into its file and function. A bare
+ * exported name has no file, so the unit is placed by whatever else the
+ * run has found.
  */
-const HANDLER_MODULE: Record<
+const HANDLER_PARTS: Record<
   HandlerSpelling,
-  (written: string) => string | null
+  (written: string, runtime: string | null) => HandlerParts
 > = {
-  "module.export": (written) => parseHandler(written)?.modulePath ?? null,
-  name: () => null,
+  "module.export": (written, runtime) => {
+    const parsed = parseHandler(written, runtime ?? undefined);
+    return {
+      entry: parsed?.modulePath ?? null,
+      entryExport: parsed?.exportName ?? null,
+    };
+  },
+  name: (written) => ({ entry: null, entryExport: written.trim() || null }),
 };
 
 function codePointer(
   body: Record<string, unknown>,
   boundary: DeployableResource,
   scope: ReferenceScope,
+  runtime: string | null,
 ): CodePointer {
   const spec = boundary.code?.handler;
   const written = attributePattern(body, spec?.attribute, scope);
   if (spec === undefined || written === null) {
-    return { entryPoint: null, entry: null };
+    return { entryPoint: null, entry: null, entryExport: null };
   }
   // Splitting a handler with a hole in it at its last dot picks a file
   // nobody deploys, so the unit is placed by whatever else the run has found.
+  if (hasNameHole(written)) {
+    return { entryPoint: written, entry: null, entryExport: null };
+  }
   return {
     entryPoint: written,
-    entry: hasNameHole(written) ? null : HANDLER_MODULE[spec.spelling](written),
+    ...HANDLER_PARTS[spec.spelling](written, runtime),
   };
 }
 

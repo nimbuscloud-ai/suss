@@ -68,6 +68,7 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { createFileCache, discoverUnits, routingGapUnit } from "./discovery.js";
+import { declaredEntryUnits } from "./entryPoints.js";
 import {
   emitEnvFacts,
   envReadEffects,
@@ -831,6 +832,16 @@ async function runRuby(
       })),
       ...moduleExportUnits(root, file, {
         modules: declaredModules,
+        ...(storage === undefined ? {} : { storage }),
+        inheritedMethods,
+        bodyBlocks,
+        dynamicNames: watchedNames,
+        displayPathOf,
+        facts: db,
+        onReachSeed,
+      }),
+      ...declaredEntryUnits(root, file, {
+        packs: options.packs,
         ...(storage === undefined ? {} : { storage }),
         inheritedMethods,
         bodyBlocks,

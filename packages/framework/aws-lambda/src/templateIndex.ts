@@ -1,16 +1,24 @@
 /**
- * Finds the SAM or CloudFormation template above a source file and
- * indexes its Serverless::Function handlers by module path, so discovery
- * can map a handler export back to the routes that reach it.
+ * Finds the SAM template or Serverless Framework service file above a
+ * source file and indexes its functions' handlers by module path, so
+ * discovery can map a handler export back to the routes that reach it.
  *
- * @suss/manifest-aws parses the template and its nested stacks. This
- * module walks up the filesystem to the template and turns `CodeUri` and
- * `Handler` into an absolute module path.
+ * @suss/manifest-aws parses a template and its nested stacks, and
+ * @suss/contract-serverless rewrites a service file as the same SAM
+ * resources, so both are indexed the same way and give the same logical
+ * ids the declared side gives. This module walks up the filesystem to
+ * the manifest and turns `CodeUri` and `Handler` into an absolute module
+ * path.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  loadServerlessDocument,
+  SERVICE_FILE_NAMES,
+  translateService,
+} from "@suss/contract-serverless";
 import {
   type AppSyncResolverBinding,
   loadTemplateTree,
@@ -19,6 +27,7 @@ import {
   readServerlessFunctions,
   type ServerlessHttpRoute,
   type ServerlessNonHttpEvent,
+  type TemplateTree,
   unfollowedStackMessage,
 } from "@suss/manifest-aws";
 
@@ -37,6 +46,7 @@ export interface HandlerEntry {
    */
   graphqlFields: Array<{ typeName: string; fieldName: string }>;
   handler: string;
+  /** The function the handler points at, in its language's spelling, as `parseHandler` splits it. */
   exportName: string;
   httpRoutes: ServerlessHttpRoute[];
   nonHttpEvents: ServerlessNonHttpEvent[];
@@ -45,8 +55,53 @@ export interface HandlerEntry {
 /** Map from an absolute, extension-less module path to the handlers it backs. */
 export type HandlerIndex = Map<string, HandlerEntry[]>;
 
-// SAM's default template filenames, in the order the CLI resolves them.
-const TEMPLATE_NAMES = ["template.yaml", "template.yml", "template.json"];
+// SAM's default template filenames, in the order the CLI resolves them,
+// then the Serverless Framework's. A directory with both is read as SAM.
+const TEMPLATE_NAMES = [
+  "template.yaml",
+  "template.yml",
+  "template.json",
+  ...SERVICE_FILE_NAMES,
+];
+
+const isServiceFile = (file: string): boolean =>
+  (SERVICE_FILE_NAMES as readonly string[]).includes(path.basename(file));
+
+/**
+ * The manifest as SAM documents. A service file becomes one document,
+ * its functions block rewritten as SAM resources, the same rewrite the
+ * declared side reads, so the logical ids agree.
+ */
+function manifestTree(manifestPath: string): TemplateTree {
+  if (!isServiceFile(manifestPath)) {
+    return loadTemplateTree(manifestPath);
+  }
+  const translated = translateService(loadServerlessDocument(manifestPath));
+  return {
+    documents: [
+      {
+        path: path.resolve(manifestPath),
+        stackPath: [],
+        template: translated.functions,
+      },
+    ],
+    unfollowed: [],
+  };
+}
+
+/**
+ * Every absolute module path a handler's module can be. Python writes a
+ * package path with dots (`orders.app.handler`), so the dotted last
+ * segment is also read as directories.
+ */
+function modulePathsOf(resolvedModule: string): string[] {
+  const directory = path.dirname(resolvedModule);
+  const base = path.basename(resolvedModule);
+  if (!base.includes(".")) {
+    return [resolvedModule];
+  }
+  return [resolvedModule, path.join(directory, ...base.split("."))];
+}
 
 // A run reads a handful of templates for thousands of source files, so
 // these stay memoized for the process. Walking and parsing per file would
@@ -115,7 +170,7 @@ function indexForTemplate(templatePath: string): HandlerIndex {
   const index: HandlerIndex = new Map();
   const documents = new Set<string>([templatePath]);
   try {
-    const tree = loadTemplateTree(templatePath);
+    const tree = manifestTree(templatePath);
     for (const document of tree.documents) {
       documents.add(document.path);
     }
@@ -142,8 +197,7 @@ function indexForTemplate(templatePath: string): HandlerIndex {
           fn.codeUri,
           fn.modulePath,
         );
-        const list = index.get(resolvedModule) ?? [];
-        list.push({
+        const entry: HandlerEntry = {
           functionLogicalId: qualifiedLogicalId(
             document.stackPath,
             fn.logicalId,
@@ -153,8 +207,10 @@ function indexForTemplate(templatePath: string): HandlerIndex {
           exportName: fn.exportName,
           httpRoutes: fn.httpRoutes,
           nonHttpEvents: fn.nonHttpEvents,
-        });
-        index.set(resolvedModule, list);
+        };
+        for (const modulePath of modulePathsOf(resolvedModule)) {
+          index.set(modulePath, [...(index.get(modulePath) ?? []), entry]);
+        }
       }
     }
   } catch (err) {

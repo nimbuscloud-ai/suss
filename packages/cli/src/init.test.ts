@@ -373,6 +373,22 @@ describe("inspectProject", () => {
     fs.writeFileSync(path.join(dir, "requirements.txt"), "fastapi\n");
     expect((await inspectProject(dir)).languages).toEqual(["python"]);
   });
+
+  it("suggests the Lambda pack for Python and Ruby handlers a template points at", async () => {
+    fs.writeFileSync(path.join(dir, "template.yaml"), TEMPLATE);
+    fs.writeFileSync(path.join(dir, "requirements.txt"), "boto3\n");
+    fs.writeFileSync(path.join(dir, "Gemfile"), 'gem "aws-sdk-s3"\n');
+    const suggested = (await inspectProject(dir)).suggestions
+      .filter((suggestion) => suggestion.kind === "framework")
+      .map((suggestion) => [suggestion.name, suggestion.language]);
+
+    expect(suggested).toEqual(
+      expect.arrayContaining([
+        ["aws-lambda-python", "python"],
+        ["aws-lambda-ruby", "ruby"],
+      ]),
+    );
+  });
 });
 
 describe("formatInitReport", () => {

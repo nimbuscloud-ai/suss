@@ -177,7 +177,7 @@ Reference and theory: [Summary format](./docs/reference/summary-format.md), [IR 
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are still in active development, and the set of packs keeps growing.
 
-Fifty-six packs read code today. You pick them by name with `-f`:
+Fifty-eight packs read code today. You pick them by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -185,7 +185,7 @@ Fifty-six packs read code today. You pick them by name with `-f`:
 | HTTP frameworks, Python | `fastapi` `flask-restx` |
 | HTTP frameworks, Ruby | `rails` |
 | GraphQL servers | `apollo` `nestjs-graphql` `graphql-ruby` |
-| Serverless and edge | `aws-lambda` `cloudflare-workers` |
+| Serverless and edge | `aws-lambda` `aws-lambda-python` `aws-lambda-ruby` `cloudflare-workers` |
 | UI | `react` `react-router` `react-query` |
 | HTTP and GraphQL clients | `fetch` `axios` `apollo-client` `requests` `httpx` `aiohttp` `faraday` `net-http` |
 | Databases and ORMs | `prisma` `drizzle` `mongoose` `typeorm` `pg` `pg-ruby` `sqlalchemy` `sqlmodel` `activerecord` `redis` |

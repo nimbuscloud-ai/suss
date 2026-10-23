@@ -534,11 +534,10 @@ export const FIXTURE_INPUTS = [
     ...packs("ts-rest"),
   ]),
   contract("serverless", "serverless", "fixtures/serverless/serverless.yml"),
-  // The aws-lambda pack reads only SAM templates, so nothing discovers
-  // these handlers and the node pack makes their summaries.
+  // The aws-lambda pack finds these handlers from the service file.
   fixture("serverless/src", [
     ...project("fixtures/serverless/tsconfig.json"),
-    ...packs("aws-sqs", "node"),
+    ...packs("aws-lambda", "aws-sqs", "node"),
   ]),
   fixture("split-routes", [...dir("fixtures/split-routes"), ...packs("hono")]),
   contract(

@@ -159,6 +159,7 @@ describe("buildMessageBusSummaries", () => {
       kind: "codeUri",
       path: "",
       entry: "src/handlers/orders",
+      entryExport: "handler",
     });
     expect(consumer.metadata?.codeScope).toEqual(runtime.metadata?.codeScope);
   });
