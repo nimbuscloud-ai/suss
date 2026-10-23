@@ -62,6 +62,23 @@ describe("draftYaml", () => {
     expect(yaml).toContain('export: "publishEntry"');
     expect(yaml).toContain('system: ""');
   });
+
+  it("prints a written null as null and keeps ? for an argument it could not read", () => {
+    const yaml = draftYaml("@acme/ledger-native", [
+      {
+        exportPath: ["publishEntry"],
+        calls: [
+          {
+            file: "src/ledger.ts",
+            line: 4,
+            args: [{ kind: "null" }, { kind: "undefined" }, null],
+          },
+        ],
+      },
+    ]);
+
+    expect(yaml).toContain("#   src/ledger.ts:4  (null, undefined, ?)");
+  });
 });
 
 describe("stubDraft", () => {

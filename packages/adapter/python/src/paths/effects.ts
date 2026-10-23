@@ -37,6 +37,10 @@ function literalArgOf(
   node: PyNode,
   facts: Database | undefined,
 ): EffectArg | null {
+  // The evaluator can settle a name on None when it lost track of the other values, so only a written None counts.
+  if (node.type === "none") {
+    return { kind: "null" };
+  }
   const value = evaluatedValue(node, facts);
   const text = literalOf(value);
   if (text !== null) {

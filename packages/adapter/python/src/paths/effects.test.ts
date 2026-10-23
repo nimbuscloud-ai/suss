@@ -124,6 +124,54 @@ describe("python invocation effects", () => {
     ]);
   });
 
+  it("records a written None apart from an argument it could not read", async () => {
+    const effects = await effectsFor([
+      "def send(self, sections, count):",
+      "    create_email_body(sections, None, count + 1)",
+    ]);
+    const [effect] = effects;
+    expect(effect?.type === "invocation" && effect.args).toEqual([
+      { kind: "identifier", name: "sections" },
+      { kind: "null" },
+      { kind: "identifier", name: "count + 1" },
+    ]);
+  });
+
+  it("records a constructor called with empty strings as the strings it passed", async () => {
+    const effects = await effectsFor([
+      "def build(self):",
+      '    Mailer("", "", None)',
+    ]);
+    const [effect] = effects;
+    expect(effect?.type === "invocation" && effect.args).toEqual([
+      { kind: "string", value: "" },
+      { kind: "string", value: "" },
+      { kind: "null" },
+    ]);
+  });
+
+  it("does not call a module-level None null once another function sets it", async () => {
+    const tree = await parsePython(
+      [
+        "_client = None",
+        "",
+        "def connect():",
+        "    global _client",
+        "    _client = object()",
+        "",
+        "def send(self):",
+        "    publish(_client)",
+      ].join("\n"),
+    );
+    const fn = tree.rootNode.namedChildren.filter(
+      (child) => child?.type === "function_definition",
+    )[1] as PyNode;
+    const [effect] = invocationEffects(fn);
+    expect(effect?.type === "invocation" && effect.args).toEqual([
+      { kind: "identifier", name: "_client" },
+    ]);
+  });
+
   it("writes out an argument written as a module-level constant", async () => {
     const tree = await parsePython(
       ['QUEUE = "orders"', "", "def get(self):", "    publish(QUEUE)"].join(
