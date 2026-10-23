@@ -27,6 +27,7 @@ import {
 import { loadIntentDirectory } from "@suss/contract-intent";
 
 import { coveringTestLookup } from "./coveringTests.js";
+import { behaviorDiffText } from "./inspect.js";
 import { languageOfFile } from "./language.js";
 import {
   readEntryIndex,
@@ -316,15 +317,8 @@ export function checkDirectory(options: {
     );
   }
 
-  // The suppressions file can live in this directory too. Leave it out,
-  // along with extract's incompleteness note.
   const entries = fs.readdirSync(resolved);
-  const files = entries.filter(
-    (f) =>
-      f.endsWith(".json") &&
-      !f.endsWith(".incomplete.json") &&
-      !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
-  );
+  const files = summaryFilesAmong(entries);
 
   // Extract writes this note beside its output when it could not read
   // every export. Agreement over those summaries covers only part of the
@@ -371,6 +365,19 @@ export function checkDirectory(options: {
     confidence: buildConfidenceLookup(summaries),
     packsNeedingConfig: packsNeedingConfigIn(resolved, notes),
   };
+}
+
+/**
+ * The suppressions file can live in a summaries folder too, and so can
+ * extract's incompleteness note. Neither is a summaries file.
+ */
+function summaryFilesAmong(entries: readonly string[]): string[] {
+  return entries.filter(
+    (f) =>
+      f.endsWith(".json") &&
+      !f.endsWith(".incomplete.json") &&
+      !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
+  );
 }
 
 interface CheckedFiles {
@@ -576,6 +583,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
         scopeOf(options),
         run,
         allSummaries,
+        result.pairs.length === 0,
       );
     }
     return (
@@ -630,6 +638,7 @@ interface ChangeReport {
   addedElsewhere: Finding[];
   resolvedElsewhere: Finding[];
   scope: ChangeScope;
+  earlierSummaries: readonly BehavioralSummary[];
 }
 
 /**
@@ -642,11 +651,7 @@ function compareWithEarlierRun(
   options: CheckDirOptions,
   later: CheckedRun,
 ): SinceReport {
-  const checked = checkDirectory({ ...options, dir });
-  const earlier = {
-    summaries: checked.summaries,
-    findings: checked.result.findings,
-  };
+  const earlier = earlierRun(dir, options);
   if (options.changedFiles === undefined) {
     return { dir: path.resolve(dir), ...changesSince(earlier, later) };
   }
@@ -663,8 +668,27 @@ function compareWithEarlierRun(
       addedElsewhere: within.addedElsewhere,
       resolvedElsewhere: within.resolvedElsewhere,
       scope: within.scope,
+      earlierSummaries: earlier.summaries,
     },
   };
+}
+
+/**
+ * A base revision that had none of the folders the reads cover leaves
+ * nothing in its folder, and then everything in the later run is new.
+ */
+function earlierRun(dir: string, options: CheckDirOptions): CheckedRun {
+  if (options.base !== undefined && !hasSummaryFiles(dir)) {
+    return { summaries: [], findings: [] };
+  }
+  const checked = checkDirectory({ ...options, dir });
+  return { summaries: checked.summaries, findings: checked.result.findings };
+}
+
+function hasSummaryFiles(dir: string): boolean {
+  return (
+    fs.existsSync(dir) && summaryFilesAmong(fs.readdirSync(dir)).length > 0
+  );
 }
 
 /**
@@ -760,8 +784,35 @@ function renderChange(
   scope: ReportScope,
   run: RunFinding[],
   summaries: readonly BehavioralSummary[],
+  nothingPaired: boolean,
 ): string {
-  return `${renderSince(since, confidence, scope, summaries).join("\n")}\n${renderRunFindings(run)}`;
+  const lines = renderSince(since, confidence, scope, summaries);
+  if (nothingPaired && since.change !== undefined) {
+    lines.push(
+      ...unitChangeLines(
+        since.change.earlierSummaries,
+        summaries,
+        since.change,
+      ),
+    );
+  }
+  return `${lines.join("\n")}\n${renderRunFindings(run)}`;
+}
+
+/**
+ * With nothing paired no finding can be new, so the units that moved are
+ * the only account of what the change did.
+ */
+function unitChangeLines(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+  change: ChangeReport,
+): string[] {
+  const diff = behaviorDiffText(before, after, change.files);
+  if (diff === null) {
+    return ["", "Nothing paired, and no unit behaves differently."];
+  }
+  return ["", "Nothing paired, so these are the units that changed:", "", diff];
 }
 
 function sinceHeading(since: SinceReport): string[] {

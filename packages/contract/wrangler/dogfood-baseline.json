@@ -1,7 +1,7 @@
 {
   "name": "@suss/contract-wrangler",
   "exports": 6,
-  "internal": 12,
-  "consumers": 12,
+  "internal": 11,
+  "consumers": 17,
   "unfollowedCalls": 0
 }
