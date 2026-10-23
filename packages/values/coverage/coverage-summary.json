@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1195,
-      "covered": 1176,
+      "total": 1240,
+      "covered": 1221,
+      "skipped": 0,
+      "pct": 98.46
+    },
+    "statements": {
+      "total": 1261,
+      "covered": 1241,
       "skipped": 0,
       "pct": 98.41
     },
-    "statements": {
-      "total": 1215,
-      "covered": 1195,
-      "skipped": 0,
-      "pct": 98.35
-    },
     "functions": {
-      "total": 295,
-      "covered": 288,
+      "total": 303,
+      "covered": 296,
       "skipped": 0,
-      "pct": 97.62
+      "pct": 97.68
     },
     "branches": {
-      "total": 1042,
-      "covered": 954,
+      "total": 1074,
+      "covered": 986,
       "skipped": 0,
-      "pct": 91.55
+      "pct": 91.8
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/engine.ts": {
     "lines": {
-      "total": 524,
-      "covered": 516,
+      "total": 570,
+      "covered": 562,
       "skipped": 0,
-      "pct": 98.47
+      "pct": 98.59
     },
     "functions": {
-      "total": 85,
-      "covered": 83,
+      "total": 93,
+      "covered": 91,
       "skipped": 0,
-      "pct": 97.64
+      "pct": 97.84
     },
     "statements": {
-      "total": 535,
-      "covered": 526,
+      "total": 581,
+      "covered": 572,
       "skipped": 0,
-      "pct": 98.31
+      "pct": 98.45
     },
     "branches": {
-      "total": 400,
-      "covered": 371,
+      "total": 430,
+      "covered": 401,
       "skipped": 0,
-      "pct": 92.75
+      "pct": 93.25
     }
   },
   "src/index.ts": {
@@ -189,10 +189,10 @@
   },
   "src/testLowering.ts": {
     "lines": {
-      "total": 141,
-      "covered": 136,
+      "total": 140,
+      "covered": 135,
       "skipped": 0,
-      "pct": 96.45
+      "pct": 96.42
     },
     "functions": {
       "total": 86,
@@ -207,10 +207,10 @@
       "pct": 96.52
     },
     "branches": {
-      "total": 131,
-      "covered": 99,
+      "total": 133,
+      "covered": 101,
       "skipped": 0,
-      "pct": 75.57
+      "pct": 75.93
     }
   },
   "src/typeShape.ts": {
