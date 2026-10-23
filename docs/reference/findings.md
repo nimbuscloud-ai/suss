@@ -927,6 +927,24 @@ It is a warning because the check that follows fails on its own account when the
 
 **A bug when:** the project does use the library. The extract ran without the pack's config file, so its boundaries are not in the comparison.
 
+### `packPathMissing`
+
+**Severity:** warning. Emitted by `suss check` over a folder whose extract note (`<name>.incomplete.json`) lists a path in a pack config where nothing exists.
+
+A pack config gave a file or directory, and nothing is at the path it resolved to. A relative path is read against the folder the config file is in, so a config kept outside the project points somewhere else. The pack ran anyway, and every lookup under that path came back empty.
+
+```
+warning: packPathMissing
+  The graphql-ruby pack's root is app/graphql in /configs/suss.graphql-ruby.json, and nothing exists at /configs/app/graphql. A relative path is read against the config file, not the project. Whatever the pack would have read there is missing from these summaries.
+  Set root to /work/shop/app/graphql in the config file, or move the config file into the project. Then run the extract and the check again.
+```
+
+It is a warning for the same reason as `packNeedsConfig`: the rest of the run was read, and a run that paired other boundaries passes with this entry beside it.
+
+**Legitimate when:** the option lists a pattern such as `engines/*` that is meant for a layout this project does not have. Remove it from the config.
+
+**A bug when:** the folder or file exists in the project. Give the path as an absolute one, or keep the config file in the project.
+
 ### `noPackMatched`
 
 **Severity:** error. Emitted by a bare `suss check`, and by the MCP `suss_check` tool, when the project has source in a language suss reads and no pack matched anything in it.

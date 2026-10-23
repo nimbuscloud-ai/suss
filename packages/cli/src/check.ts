@@ -25,6 +25,7 @@ import {
   checkIntentAgreement,
 } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
+import { describeMissingPath } from "@suss/extractor";
 
 import {
   checkOutcome,
@@ -64,7 +65,7 @@ import type {
   SuppressionRule,
 } from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
-import type { PackConfigNeed } from "@suss/extractor";
+import type { PackConfigNeed, PackPathMissing } from "@suss/extractor";
 import type { BaseRevision } from "./checkBase.js";
 import type { CheckOutcome } from "./checkOutcome.js";
 
@@ -304,26 +305,52 @@ export interface CheckedDirectory {
   confidence: ConfidenceLookup;
   /** Packs an extract into this directory left out for want of an option. */
   packsNeedingConfig: PackConfigNeed[];
+  /** Paths in a pack config, used by an extract into this directory, where nothing exists. */
+  packPathsMissing: PackPathMissing[];
+}
+
+/** The parts of an extract's note that `check` reports on. */
+interface PackConfigNote {
+  packsNeedingConfig?: PackConfigNeed[];
+  packPathsMissing?: PackPathMissing[];
 }
 
 /**
- * The packs an extract's note says it left out, from every note in the
- * directory. A note that does not parse is skipped, since the note's job
- * is to warn and a bad one should not stop the check.
+ * Every extract note in the directory. A note that does not parse is
+ * skipped, since the note's job is to warn and a bad one should not stop
+ * the check.
  */
-function packsNeedingConfigIn(
+function packConfigNotesIn(
   dir: string,
   notes: readonly string[],
-): PackConfigNeed[] {
+): PackConfigNote[] {
   return notes.flatMap((note) => {
     try {
-      const parsed = JSON.parse(
-        fs.readFileSync(path.join(dir, note), "utf8"),
-      ) as { packsNeedingConfig?: PackConfigNeed[] };
-      return parsed.packsNeedingConfig ?? [];
+      return [
+        JSON.parse(
+          fs.readFileSync(path.join(dir, note), "utf8"),
+        ) as PackConfigNote,
+      ];
     } catch {
       return [];
     }
+  });
+}
+
+/**
+ * A `packPathMissing` finding for each path a pack config gives where
+ * nothing exists. It is a warning, like `packNeedsConfig`, so a run that
+ * paired the rest of the project stays green with this beside it.
+ */
+function packPathFindings(missing: readonly PackPathMissing[]): RunFinding[] {
+  return missing.map((one) => {
+    const { problem, fix } = describeMissingPath(one);
+    return {
+      kind: "packPathMissing",
+      severity: "warning",
+      description: `The ${one.pack} pack's ${problem} Whatever the pack would have read there is missing from these summaries.`,
+      remedy: `${fix} Then run the extract and the check again.`,
+    };
   });
 }
 
@@ -396,6 +423,7 @@ export function checkDirectory(options: {
   }
 
   const suppressions = loadSuppressionsForOptions(options, resolved);
+  const packConfigNotes = packConfigNotesIn(resolved, notes);
   return {
     summaries,
     sourceFile,
@@ -406,7 +434,12 @@ export function checkDirectory(options: {
     },
     suppressions,
     confidence: buildConfidenceLookup(summaries),
-    packsNeedingConfig: packsNeedingConfigIn(resolved, notes),
+    packsNeedingConfig: packConfigNotes.flatMap(
+      (note) => note.packsNeedingConfig ?? [],
+    ),
+    packPathsMissing: packConfigNotes.flatMap(
+      (note) => note.packPathsMissing ?? [],
+    ),
   };
 }
 
@@ -567,6 +600,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     suppressions,
     confidence,
     packsNeedingConfig,
+    packPathsMissing,
   } = checkDirectory(options);
 
   const since =
@@ -600,6 +634,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
       result,
     ),
     ...packConfigFindings(packsNeedingConfig),
+    ...packPathFindings(packPathsMissing),
     ...unreadableFindings(options.failOnUnreadable === true, skipped),
     ...unpairedFindings(options.failOnUnpaired, result),
   ];

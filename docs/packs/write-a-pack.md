@@ -189,6 +189,8 @@ configuration: {
 
 Write `readFromProject` only when the library says where that file lives, for the same reason a pack hardcodes only what the library defines. The function should read that one file and return. It returns null when the file is missing or does not settle the value, for example when `database.yml` lists two adapters. Init then asks the user, where a guess would have been written into the project and never looked at again.
 
+When an option is a file or directory path, list it under `paths`, as the Rails pack does with `paths: ["root", "routesFile", "engineRoots", "routesFiles"]`. The pack also declares `configDirectory` in its options schema, and resolves a relative path against it. The CLI fills that in with the config file's folder. When it loads the pack, the CLI checks each listed path and reports any that points at nothing, so a config file kept outside the project does not leave the pack quietly reading an empty directory. A test fails when a pack takes `configDirectory` and lists no `paths`.
+
 ## Ship it
 
 A pack works as soon as the CLI can import it. `-f @acme/suss-pack-itty-router` imports the package as written, so a pack published under your own scope, or linked into `node_modules`, runs with no further setup.

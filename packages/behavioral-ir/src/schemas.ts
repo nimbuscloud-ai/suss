@@ -155,6 +155,8 @@ export const RunFindingKindSchema = z.enum([
   "mostlyUnpaired",
   /** An extract left a pack out because an option it needs was not set. */
   "packNeedsConfig",
+  /** A path in a pack's config file points where nothing exists, so the pack read nothing there. */
+  "packPathMissing",
   /** The project has source suss reads, and no pack recognized anything in it. */
   "noPackMatched",
   /** The project has no source file in a language suss reads. */
