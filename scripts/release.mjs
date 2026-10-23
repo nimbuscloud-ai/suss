@@ -98,7 +98,12 @@ if (!skipBuild) {
 const packages = findPackages()
   .map((dir) => ({ dir, manifest: readJson(path.join(dir, "package.json")) }))
   .filter(({ manifest }) => manifest.private !== true)
-  .map(({ dir, manifest }) => ({ dir, name: manifest.name }));
+  .map(({ dir, manifest }) => ({
+    dir,
+    name: manifest.name,
+    dependsOn: Object.keys(manifest.dependencies ?? {}),
+    installed: manifest.bin !== undefined,
+  }));
 
 console.log(
   `\nChecking which of ${packages.length} packages are already at ${version}...`,
@@ -451,10 +456,89 @@ function requiresOtp() {
   }
 }
 
+/** How long a `bin` package waits for its dependencies to read as published. */
+const VISIBLE_TIMEOUT_MS = 15 * 60 * 1000;
+const VISIBLE_POLL_MS = 15 * 1000;
+
+/**
+ * People install the `bin` packages, and npm fails that install while
+ * any dependency still reads as missing. So the libraries go first, and
+ * each `bin` package waits until those read as published. A
+ * password expires too soon to wait, so a laptop run only keeps the order.
+ */
 async function publishAll(pending) {
-  const queue = [...pending];
   const results = [];
-  let done = 0;
+  const progress = { done: 0, total: pending.length };
+  for (const step of publishOrder(pending)) {
+    const blocked = results.some((r) => !r.ok);
+    if (blocked) {
+      results.push(...step.map(notAttempted));
+      continue;
+    }
+    if (otp === undefined && results.length > 0) {
+      // Everything so far, since an install also needs the dependencies' own.
+      await waitUntilVisible(results.map((r) => r.name));
+    }
+    results.push(...(await publishConcurrently(step, progress)));
+  }
+  return results;
+}
+
+/**
+ * The libraries in one step, then each `bin` package once the `bin`
+ * packages it depends on are out. The MCP server depends on the CLI.
+ */
+function publishOrder(pending) {
+  const steps = [pending.filter((item) => !item.installed)];
+  let left = pending.filter((item) => item.installed);
+  while (left.length > 0) {
+    const names = new Set(left.map((item) => item.name));
+    const ready = left.filter(
+      (item) => !item.dependsOn.some((dep) => names.has(dep)),
+    );
+    if (ready.length === 0) {
+      fail(`These depend on each other in a cycle: ${[...names].join(", ")}`);
+    }
+    steps.push(ready);
+    left = left.filter((item) => !ready.includes(item));
+  }
+  return steps.filter((step) => step.length > 0);
+}
+
+async function waitUntilVisible(names) {
+  const deadline = Date.now() + VISIBLE_TIMEOUT_MS;
+  let missing = names;
+  while (missing.length > 0) {
+    missing = missing.filter((name) => !isPublished(name, version));
+    if (missing.length === 0) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      fail(
+        `${missing.length} packages still read as missing at ${version} after` +
+          ` ${VISIBLE_TIMEOUT_MS / 60000} minutes: ${missing.join(", ")}.\n` +
+          "Re-run this once they show up; it will pick up only what is left.",
+      );
+    }
+    console.log(
+      `  waiting for ${missing.length} to show up on the registry...`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, VISIBLE_POLL_MS));
+  }
+}
+
+function notAttempted({ name }) {
+  return {
+    name,
+    ok: false,
+    message: "not attempted, because a package before it did not publish",
+    output: "",
+  };
+}
+
+async function publishConcurrently(step, progress) {
+  const queue = [...step];
+  const results = [];
 
   const worker = async () => {
     for (;;) {
@@ -464,9 +548,9 @@ async function publishAll(pending) {
       }
       const result = await publishOne(item);
       results.push(result);
-      done += 1;
+      progress.done += 1;
       process.stdout.write(
-        `  ${label(result)} ${result.name}  (${done}/${pending.length})\n`,
+        `  ${label(result)} ${result.name}  (${progress.done}/${progress.total})\n`,
       );
     }
   };
