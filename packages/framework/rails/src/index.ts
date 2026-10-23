@@ -231,12 +231,14 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
   const extraRoutesFiles = () =>
     expandPatterns(options.configDirectory, options.routesFiles);
 
+  // Rails reads its initializers and application.rb from the app's own
+  // root, which a config file kept outside the project is not in.
+  const appRoot = options.configDirectory === undefined ? undefined : railsRoot;
+
   // The acronyms change how every constant maps to a file and a routing
   // key, so they are read once, before anything is resolved.
   const inflections =
-    options.configDirectory === undefined
-      ? EMPTY_INFLECTIONS
-      : readInflections(options.configDirectory);
+    appRoot === undefined ? EMPTY_INFLECTIONS : readInflections(appRoot);
   const acronyms = inflections.acronyms;
 
   const routesInput = (): RoutesInput => ({
@@ -272,10 +274,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       ...(options.baseClassNames ?? []),
     ],
     root,
-    autoloadRoots:
-      options.configDirectory === undefined
-        ? []
-        : readAutoloadRoots(options.configDirectory),
+    autoloadRoots: appRoot === undefined ? [] : readAutoloadRoots(appRoot),
     pathConvention: "railsUnderscore",
     acronyms,
     ancestryRootClassNames: [...RAILS_ROOT_CLASS_NAMES],
@@ -327,12 +326,9 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       ...drawableRoutesFiles(routesFile),
       ...engineRoots().flatMap(engineSourceFiles),
       ...extraRoutesFiles(),
-      ...(options.configDirectory === undefined
+      ...(appRoot === undefined
         ? []
-        : [
-            ...inflectionFiles(options.configDirectory),
-            ...applicationFile(options.configDirectory),
-          ]),
+        : [...inflectionFiles(appRoot), ...applicationFile(appRoot)]),
     ],
   };
 }

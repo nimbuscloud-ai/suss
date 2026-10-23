@@ -1525,6 +1525,21 @@ describe("railsFramework", () => {
         path.join(dir, "config", "initializers", "inflections.rb"),
       );
     });
+
+    it("reads the initializer from the app's root when the config file is kept elsewhere", () => {
+      projectWith(INFLECTIONS);
+      const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "suss-config-"));
+      try {
+        const pack = railsFramework({
+          configDirectory: elsewhere,
+          root: path.join(dir, "app"),
+          routesFile: path.join(dir, "config", "routes.rb"),
+        });
+        expect(pattern(pack).acronyms).toEqual(["ActivityPub"]);
+      } finally {
+        fs.rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("the YAML files Rails renders through ERB as it boots", () => {
