@@ -897,6 +897,12 @@ describe("a call to a helper that reads the environment", () => {
       ),
     ).toEqual([]);
   });
+
+  it("records nothing at a call whose argument does not settle to a name", async () => {
+    expect(
+      await moduleReadsWithFacts(`${SUBSCRIPT_HELPER}A = env(pick_name())\n`),
+    ).toEqual([]);
+  });
 });
 
 describe("a project whose environment reads go through a helper", () => {
