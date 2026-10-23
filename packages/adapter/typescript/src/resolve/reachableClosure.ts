@@ -252,12 +252,11 @@ function resolveCallee(
   // was imported.
   const declarations = declarationsBehind(symbol);
   const direct = functionAmong(declarations, calleeName);
-  const onReceiver = candidateOnReceiver(
-    callee,
-    direct,
-    scan.scanning,
-    scan.receiverClass,
-  );
+  const onReceiver = candidateOnReceiver(callee, direct, {
+    scanning: scan.scanning,
+    runsOn: scan.receiverClass,
+    resolution: scan.resolution,
+  });
   if (onReceiver !== null) {
     return { kind: "followed", candidate: onReceiver };
   }

@@ -7,12 +7,14 @@
  * on the subclass instead.
  *
  * A receiver comes from `this` when it is `this`, `new this(...)`, or a
- * `const` the scanned method gives one of those. Anything else keeps the
- * checker's answer.
+ * name the resolution store says is written as one of those. Which class
+ * a receiver is, and which member that class has, are asked of the type
+ * checker. Anything else keeps the checker's answer.
  */
 
 import { Node } from "ts-morph";
 
+import { writtenNodeOf } from "../discovery/resolveValue.js";
 import { peelSyntax } from "../walk/unwrap.js";
 import { functionAmong } from "./functionBehind.js";
 import { declarationsBehind } from "./unfollowedCall.js";
@@ -20,7 +22,15 @@ import { declarationsBehind } from "./unfollowedCall.js";
 import type { SubclassPlace } from "@suss/resolution";
 import type { ClassDeclaration, Type } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 import type { ReachableCandidate } from "./functionBehind.js";
+
+/** The scan a call is read in: the method, the subclass it runs on, and the store that reads names. */
+export interface ReceiverScan {
+  readonly scanning: FunctionRoot | undefined;
+  readonly runsOn: TsSubclass | undefined;
+  readonly resolution: ResolutionStore | undefined;
+}
 
 /** A class a method runs on, with its declaration for looking members up. */
 export interface TsSubclass {
@@ -39,17 +49,20 @@ type ReceiverForm = "class" | "instance";
 export function candidateOnReceiver(
   callee: Node,
   checked: ReachableCandidate | null,
-  scanning: FunctionRoot | undefined,
-  runsOn: TsSubclass | undefined,
+  scan: ReceiverScan,
 ): ReachableCandidate | null {
   if (!Node.isPropertyAccessExpression(callee)) {
     return null;
   }
   const receiver = callee.getExpression();
   const name = callee.getName();
-  const own = scanning === undefined ? null : ownForm(receiver, scanning, 0);
+  const { scanning } = scan;
+  const own =
+    scanning === undefined
+      ? null
+      : ownForm(receiver, scanning, scan.resolution, 0);
   const selfClass =
-    runsOn ?? (scanning === undefined ? null : classOf(scanning));
+    scan.runsOn ?? (scanning === undefined ? null : classOf(scanning));
   if (own !== null && selfClass !== null) {
     return memberOn(selfClass, name, own);
   }
@@ -60,7 +73,11 @@ export function candidateOnReceiver(
   return sentTo === null ? null : runningOn(checked, sentTo);
 }
 
-/** A method as it runs on a class, marked when the class inherits it. */
+/**
+ * A method as it runs on a class, marked when another class writes it.
+ * The checker found the method on this class's type, so the class has
+ * it through a base or a merged declaration.
+ */
 export function runningOn(
   candidate: ReachableCandidate,
   cls: TsSubclass,
@@ -69,9 +86,7 @@ export function runningOn(
   if (!Node.isClassDeclaration(owner) || owner === cls.node) {
     return candidate;
   }
-  return inherits(cls.node, owner)
-    ? { ...candidate, receiverClass: cls }
-    : candidate;
+  return { ...candidate, receiverClass: cls };
 }
 
 /** A subclass as a summary records it. */
@@ -91,9 +106,11 @@ function ownThis(node: Node, scanning: FunctionRoot): boolean {
   return owner === scanning;
 }
 
+/** Whether a value is the scanned method's own `this`, one `new this(...)` made, or a name written as one of those. */
 function ownForm(
   value: Node,
   scanning: FunctionRoot,
+  resolution: ResolutionStore | undefined,
   depth: number,
 ): ReceiverForm | null {
   const written = peelSyntax(value);
@@ -104,23 +121,18 @@ function ownForm(
     return scanning.isStatic() ? "class" : "instance";
   }
   if (Node.isNewExpression(written)) {
-    return ownForm(written.getExpression(), scanning, depth) === "class"
+    return ownForm(written.getExpression(), scanning, resolution, depth) ===
+      "class"
       ? "instance"
       : null;
   }
   if (!Node.isIdentifier(written) || depth > 0) {
     return null;
   }
-  const declaration = written.getSymbol()?.getValueDeclaration();
-  const initializer = Node.isVariableDeclaration(declaration)
-    ? declaration.getInitializer()
-    : undefined;
-  const isConst =
-    Node.isVariableDeclaration(declaration) &&
-    declaration.getVariableStatement()?.getDeclarationKind() === "const";
-  return initializer === undefined || !isConst
+  const behind = writtenNodeOf(written, resolution);
+  return behind === null || behind === written
     ? null
-    : ownForm(initializer, scanning, depth + 1);
+    : ownForm(behind, scanning, resolution, depth + 1);
 }
 
 /** The class a method is written in, or null for a function outside any class. */
@@ -168,31 +180,20 @@ function memberOn(
   name: string,
   form: ReceiverForm,
 ): ReachableCandidate | null {
-  const member = typeOf(cls, form)?.getProperty(name);
+  const member = typeOf(cls, form).getProperty(name);
   const found =
     member === undefined ? null : functionAmong(member.getDeclarations(), name);
   return found === null ? null : runningOn(found, cls);
 }
 
 /** An instance's type, or for the class itself the type of its constructor, which has the statics. */
-function typeOf(cls: TsSubclass, form: ReceiverForm): Type | undefined {
+function typeOf(cls: TsSubclass, form: ReceiverForm): Type {
   if (form === "instance") {
     return cls.node.getType();
   }
-  const symbol = cls.node.getSymbol();
-  return symbol === undefined
-    ? undefined
-    : cls.node
-        .getProject()
-        .getTypeChecker()
-        .getTypeOfSymbolAtLocation(symbol, cls.node);
-}
-
-function inherits(cls: ClassDeclaration, base: ClassDeclaration): boolean {
-  for (let at = cls.getBaseClass(); at !== undefined; at = at.getBaseClass()) {
-    if (at === base) {
-      return true;
-    }
-  }
-  return false;
+  // A class with a name, which `subclassOf` requires, always has a symbol.
+  return cls.node
+    .getProject()
+    .getTypeChecker()
+    .getTypeOfSymbolAtLocation(cls.node.getSymbolOrThrow(), cls.node);
 }
