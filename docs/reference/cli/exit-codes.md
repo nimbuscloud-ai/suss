@@ -5,7 +5,24 @@ description: What each suss command returns to the shell, so a CI job can tell a
 
 # Exit codes
 
-Every code is `0` or `1`. There is no third code to branch on.
+Every command exits `0` or `1`, except `check`, which also exits `3` and `4` so CI can tell a run that found an error from a run that had nothing to compare.
+
+## `suss check`
+
+| Code | Run finding under `run` | What happened |
+|---|---|---|
+| `0` | none, or `notCovered` | Nothing reached `--fail-on`. A bare `check` in a repository with no TypeScript, JavaScript, Python or Ruby source prints one line saying suss does not cover it and exits `0` too. |
+| `1` | none, `unreadableInput` or `mostlyUnpaired` | A finding reached `--fail-on`, or `--fail-on-unreadable` or `--fail-on-unpaired` fired, or the command line was wrong. This is the code CI already fails on. |
+| `3` | `nothingPaired` | Nothing was compared. No boundary had both sides, or no summaries were read. `--allow-empty` turns this into `0`. |
+| `4` | `noPackMatched` | A bare `check` found source and no pack recognized anything in it, so nothing was extracted. `--allow-empty` does not change this, because no read ran. |
+
+`2` is not used. The shell and most tools use it for a bad command line, so `check` leaves it alone.
+
+You do not need the code to tell these apart. `check --json` and the MCP `suss_check` tool put a run finding of the kind in the second column under `run`, and a finding decides the run before any run finding does. A run that pairs nothing and also passes the `--fail-on-unpaired` floor exits `3`.
+
+`check --base` exits the same way, since it compares the base revision with the working tree through the same check.
+
+## Every command
 
 | Command | Exits `0` | Exits `1` |
 |---|---|---|
@@ -13,7 +30,7 @@ Every code is `0` or `1`. There is no third code to branch on.
 | [`init`](/reference/cli/init) | Declining every question, cancelling, and a failed install all end the same way. A failed install prints what npm said and leaves you the command to retry. | A flag `init` does not take, or `--overwrite` without `--write`. |
 | [`extract`](/reference/cli/extract) | It produced at least one summary, or ran with `--allow-empty`, and neither `--gaps strict` nor `--fail-on-pack-error` found something to fail on. | It produced nothing and `--allow-empty` was not passed, which under `--out-dir` means any one extract entry produced nothing; `--gaps strict` recorded a gap; a pack threw while `--fail-on-pack-error` was on; an unknown pack, a `-p` path with no tsconfig, a `--dir` that does not exist, a bad `--lang` or `--gaps` value, a pack config the pack cannot read; or extraction threw. |
 | [`contract`](/reference/cli/contract) | The source loaded and suss read at least one boundary from it, or ran with `--allow-empty`. | suss didn't read a boundary from the source and `--allow-empty` was not passed; no `--from`, a source that is not one of the ten, no path, a fetch that failed, or a file suss could not parse. |
-| [`check`](/reference/cli/check) | Nothing at or above `--fail-on` (`error` by default), after suppressions. | Something at or above the threshold; `--at` matched nothing; a run over `--dir` or over the project paired nothing, or didn't read any summaries, without `--allow-empty`; `--fail-on-unpaired` or `--fail-on-unreadable` fired; or the arguments do not make a form (one positional file, `--dir` together with files, `--at` with two files, `--at` together with `--intent`). |
+| [`check`](/reference/cli/check) | Nothing at or above `--fail-on` (`error` by default), after suppressions, or a repository with no source suss reads. | Something at or above the threshold; `--at` matched nothing; `--fail-on-unpaired` or `--fail-on-unreadable` fired; or the arguments do not make a form (one positional file, `--dir` together with files, `--at` with two files, `--at` together with `--intent`). A run that paired nothing exits `3` and a project no pack matched exits `4`, as the table above says. |
 | [`inspect`](/reference/cli/inspect) | It rendered. | The file is missing or is not valid summary JSON; a flag `inspect` does not take; `--changed-files`, `--budget` or `--chain` without `--diff`; `--diff` with fewer than two files; or, given nothing, a project where nothing matched a pack. |
 | [`inspect --flow`](/reference/cli/inspect#suss-inspect-flow) | It worked out an answer, including when nothing serves the request. | The request would not parse, there were no summaries to read, or the entry node is ambiguous. |
 | [`ask`](/reference/cli/ask) | The question is one of the ten and its subject is in the summaries it read, even when the answer is empty. Running `suss ask` with no question prints the list and exits `0`. | The question is not one of the ten, nothing in the summaries is at the boundary it asked about, or a why question's chain is not one the run contains. |
@@ -26,7 +43,7 @@ Every code is `0` or `1`. There is no third code to branch on.
 
 When `--json` is among the arguments, the reason for a usage failure arrives on stdout as `{"error": "..."}` as well as on stderr, so a caller parsing stdout still gets the reason. Plain `inspect` is the exception: it does not take `--json`, so it says so on stderr and leaves stdout empty.
 
-`--fail-on-empty` is gone from both `extract` and `check`. A run that finds or pairs nothing now fails by default; passing the old flag exits `1` and says to use `--allow-empty` instead.
+`--fail-on-empty` is gone from both `extract` and `check`. A run that finds or pairs nothing now fails by default. Passing the old flag exits `1` and says to use `--allow-empty` instead.
 
 ## Suppressions and the check threshold
 

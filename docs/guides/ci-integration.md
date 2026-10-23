@@ -168,7 +168,7 @@ With a `suss.json` committed, `npx @suss/cli check` does all of that. It runs ev
 
 `check` exits 1 when it finds something at or above the severity you give `--fail-on`, and `error` is the default. Warnings and info findings print without failing the build. Move to `--fail-on warning` once every accepted finding is in `.sussignore` and a new warning means something.
 
-Two other exits matter here. A run that paired nothing exits non-zero, because having nothing to report looks the same as both sides agreeing. Pass `--allow-empty` when you expect an empty run, such as checking one side before the other has been extracted. `--at` exits non-zero when it matches nothing, for the same reason. [Exit codes](/reference/cli/exit-codes) lists what every command returns.
+Three other exits matter here. A run that paired nothing exits 3, because having nothing to report looks the same as both sides agreeing, and a step can tell that from a finding. Pass `--allow-empty` when you expect an empty run, such as checking one side before the other has been extracted. A bare `check` in a project where no pack matched the source exits 4. A repository with no source suss reads, such as a dbt project, exits 0 with one line saying suss does not cover it, so a check shared across repositories stays green there. `--at` exits 1 when it matches nothing. [Exit codes](/reference/cli/exit-codes) lists what every command returns.
 
 Do not gate on `--fail-on info`. Info findings are advisory. Failing the build on them causes churn without telling you anything.
 

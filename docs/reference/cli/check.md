@@ -35,6 +35,8 @@ suss check [--at <target>] [--since <earlier-directory>] [--intent <intent-dir>]
 
 Given no files and no `--dir`, `check` reads the project it is run in: every entry in `suss.json`, or what `init` would pick when there is no file, into a temporary folder, then the `--dir` form over that. It prints the commands it ran to stderr.
 
+When no pack matches anything in the project, there is nothing to read. If the project has TypeScript, JavaScript, Python or Ruby source, the run gets a `noPackMatched` run finding and exits `4`. If it has none, as in a dbt project of SQL and YAML, `check` prints one line saying suss does not cover the project and exits `0`, and `--json` writes a `notCovered` run finding.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | none | The folder of summary files, paired by boundary. Every `.json` in it is read, except a `.incomplete.json` note. Given together with positional files, the run stops with a usage error, since the files would go unread. |
@@ -47,7 +49,7 @@ Given no files and no `--dir`, `check` reads the project it is run in: every ent
 | `--json` | off | Write findings as JSON instead of text. |
 | `-o`, `--output <path>` | stdout | Write the report to a file. |
 | `--fail-on <severity>` | `error` | Which severity of finding fails the run: `error`, `warning`, `info`, or `none` so that no finding fails it. A run that compared nothing still fails under `none`, because `--fail-on` applies to findings and `nothingPaired` is in the `run` list. Pass `--allow-empty` for that case. |
-| `--allow-empty` | off | Exit `0` from a run that compared nothing: a folder whose summary files paired nothing or have no summaries in them, or two files where one has no summaries. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. A folder with no `.json` files, or with none that read as summaries, fails with a usage error either way. |
+| `--allow-empty` | off | Exit `0` from a run that compared nothing: a folder whose summary files paired nothing or have no summaries in them, or two files where one has no summaries. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits `3`, which no finding uses. A folder with no `.json` files, or with none that read as summaries, fails with a usage error either way. |
 | `--fail-on-unpaired <N\|N%>` | off | Fail when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). It counts boundaries the way the report's first line does, so a route that two summaries serve counts once. It applies to a run over `--dir` and to a bare `check`. The two-file form pairs nothing, so it ignores the flag. The report gets a `mostlyUnpaired` run finding with the numbers. |
 | `--fail-on-unreadable` | off | Fail when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` lists the skipped files either way. |
 | `--cache-dir <path>` | `.suss/cache` under the project, or `SUSS_CACHE_DIR` | Where the extraction cache goes when `check` reads the project itself. See [Where suss writes](/reference/cli/#where-suss-writes). |
@@ -262,4 +264,6 @@ with `intent` added when `--intent` was passed. Two positional files write the b
 
 `findingIdentity`, `findingsSince`, `changedBoundaries` and `changesWithin` in `@suss/checker` compute the same things from a program.
 
-[Exit codes](/reference/cli/exit-codes) lists what `check` returns to the shell, and how a suppression changes the count.
+A bare `check` that found nothing to read writes `{ findings: [], run }`, with one `noPackMatched` or `notCovered` entry in `run`.
+
+`check` exits `0` when nothing reached `--fail-on`, `1` on a finding that did, `3` when nothing was compared, and `4` when no pack matched the project's source. [Exit codes](/reference/cli/exit-codes) has the full table, and says how a suppression changes the count.
