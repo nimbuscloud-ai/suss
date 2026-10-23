@@ -54,6 +54,65 @@ const HANDLE_409 = {
   ].join("\n"),
 };
 
+// A Lambda function in a SAM template, reading a variable the template
+// does not declare.
+const PING_FUNCTION = (codeUri: string) =>
+  [
+    "  PingFunction:",
+    "    Type: AWS::Serverless::Function",
+    "    Properties:",
+    "      Runtime: nodejs20.x",
+    `      CodeUri: ${codeUri}`,
+    "      Handler: src/ping.handler",
+    "      Environment:",
+    "        Variables:",
+    "          PING_TABLE: pings",
+    "",
+  ].join("\n");
+
+const SAM_HEADER =
+  'AWSTemplateFormatVersion: "2010-09-09"\nTransform: AWS::Serverless-2016-10-31\n\nResources:\n';
+
+const PING_SERVICE: Record<string, string> = {
+  "package.json": '{ "name": "ping-service", "private": true }\n',
+  "tsconfig.json":
+    '{ "compilerOptions": { "strict": true, "noEmit": true, "types": [] }, "include": ["src/**/*.ts"] }\n',
+  "suss.json": JSON.stringify({
+    version: 1,
+    read: [
+      {
+        kind: "extract",
+        language: "typescript",
+        project: "tsconfig.json",
+        packs: ["aws-lambda", "node"],
+      },
+      { kind: "contract", from: "cloudformation", file: "template.yaml" },
+    ],
+  }),
+  "src/ping.ts": [
+    "export async function handler() {",
+    "  return {",
+    "    statusCode: 200,",
+    '    body: (process.env.PING_TABLE ?? "pings") + " " + process.env.PING_REGION,',
+    "  };",
+    "}",
+    "",
+  ].join("\n"),
+  "template.yaml": SAM_HEADER + PING_FUNCTION("./"),
+};
+
+const PING_IN_A_NESTED_STACK: Record<string, string> = {
+  "template.yaml": `${SAM_HEADER}  ApiStack:\n    Type: AWS::Serverless::Application\n    Properties:\n      Location: stacks/api.yaml\n`,
+  "stacks/api.yaml": SAM_HEADER + PING_FUNCTION("../"),
+};
+
+function writeFiles(root: string, files: Record<string, string>): void {
+  for (const [name, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    fs.writeFileSync(path.join(root, name), text);
+  }
+}
+
 let work: string;
 let project: string;
 let startedIn: string;
@@ -78,6 +137,10 @@ afterEach(() => {
 });
 
 function git(...args: string[]): string {
+  return gitAt(project, ...args);
+}
+
+function gitAt(cwd: string, ...args: string[]): string {
   return execFileSync(
     "git",
     [
@@ -89,7 +152,7 @@ function git(...args: string[]): string {
       "commit.gpgsign=false",
       ...args,
     ],
-    { cwd: project, encoding: "utf8" },
+    { cwd, encoding: "utf8" },
   );
 }
 
@@ -115,6 +178,7 @@ function edit(change: { file: string; from: string; to: string }): void {
 
 async function quietly(
   args: string[],
+  cwd = project,
 ): Promise<{ exit: number; stdout: string; stderr: string }> {
   const out: string[] = [];
   const err: string[] = [];
@@ -129,7 +193,7 @@ async function quietly(
     return true;
   }) as typeof process.stderr.write;
   try {
-    process.chdir(project);
+    process.chdir(cwd);
     const exit = await runCli(args);
     return { exit, stdout: out.join(""), stderr: err.join("") };
   } finally {
@@ -317,10 +381,146 @@ describe("check --base", () => {
     const run = await quietly(["check", "--base", "HEAD", "--json"]);
 
     expect(run.stderr).toContain("skipped, since jobs did not exist at HEAD");
-    expect(JSON.parse(run.stdout).changedFiles).toEqual([
-      "jobs/sweep.ts",
-      "suss.json",
+    expect(JSON.parse(run.stdout).changedFiles).toEqual(["jobs/sweep.ts"]);
+  });
+
+  it("counts everything as new when the project folder is new in the change", async () => {
+    fs.rmSync(path.join(project, ".git"), { recursive: true, force: true });
+    fs.writeFileSync(path.join(work, "README.md"), "Apps live here.\n");
+    gitAt(work, "init", "--quiet");
+    gitAt(work, "add", "README.md");
+    gitAt(work, "commit", "--quiet", "-m", "base without the app");
+    edit(ADD_409);
+
+    const run = await quietly(["check", "--base", "HEAD", "--json"]);
+
+    expect(run.stderr).not.toContain("has no JSON files");
+    expect(run.stderr).toContain(
+      "so everything in the working tree counts as new",
+    );
+    const report = JSON.parse(run.stdout);
+    expect(report.changedFiles).toContain("src/orders/create.ts");
+    expect(report.findings.map((f: { kind: string }) => f.kind)).toContain(
+      "unhandledProviderCase",
+    );
+    expect(report.resolved).toEqual([]);
+  });
+
+  it("lists the units that changed when nothing paired", async () => {
+    fs.rmSync(path.join(project, "web"), { recursive: true, force: true });
+    commit("base with no client");
+    edit(ADD_409);
+
+    const run = await quietly(["check", "--base", "HEAD"]);
+
+    expect(run.stdout).toContain(
+      "Nothing paired, so these are the units that changed:",
+    );
+    expect(run.stdout).toMatch(/\+ responds 409 .*when/);
+    expect(run.stdout).toContain("nothingPaired");
+  });
+
+  it("reads the base with the working tree's suss.json and pack configs, and counts neither as changed", async () => {
+    edit({
+      file: "web/orders/submitOrder.ts",
+      from: 'fetch("/orders"',
+      to: 'fetch("https://orders.acme.dev/orders"',
+    });
+    const config = JSON.parse(
+      fs.readFileSync(path.join(project, "suss.json"), "utf8"),
+    );
+    fs.rmSync(path.join(project, "suss.json"));
+    commit("base before suss init");
+    config.hosts = ["orders.acme.dev"];
+    config.read[0].packs = config.read[0].packs.map((pack: string) =>
+      pack === "express" ? "express=suss.express.json" : pack,
+    );
+    fs.writeFileSync(path.join(project, "suss.json"), JSON.stringify(config));
+    fs.writeFileSync(path.join(project, "suss.express.json"), "{}\n");
+
+    const run = await quietly(["check", "--base", "HEAD", "--json"]);
+
+    expect(run.exit, run.stderr).toBe(0);
+    const report = JSON.parse(run.stdout);
+    expect(report.changedFiles).toEqual([]);
+    expect(report.changedBoundaries).toEqual([]);
+    expect(report.findings).toEqual([]);
+    expect(report.resolved).toEqual([]);
+  });
+
+  it("reads the project --dir names, at the base its own repository gives", async () => {
+    commit("base");
+    edit(ADD_409);
+    fs.writeFileSync(path.join(work, "notes.md"), "Unrelated.\n");
+    gitAt(work, "init", "--quiet");
+    gitAt(work, "add", "notes.md");
+    gitAt(work, "commit", "--quiet", "-m", "an unrelated history");
+
+    const run = await quietly(
+      ["check", "--dir", "orders-app", "--base", "HEAD", "--json"],
+      work,
+    );
+
+    expect(run.exit, run.stderr).toBe(0);
+    const report = JSON.parse(run.stdout);
+    expect(report.base.commit).toBe(git("rev-parse", "HEAD").trim());
+    expect(report.changedFiles).toEqual(["src/orders/create.ts"]);
+    expect(report.findings.map((f: { kind: string }) => f.kind)).toEqual([
+      "unhandledProviderCase",
     ]);
+  });
+
+  it("refuses a project --dir names that is not in a git repository", async () => {
+    fs.rmSync(path.join(project, ".git"), { recursive: true, force: true });
+
+    const run = await quietly(
+      ["check", "--dir", "orders-app", "--base", "HEAD"],
+      work,
+    );
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain(`${project} is not inside a git repository`);
+  });
+
+  it("refuses a folder of summaries from another repository", async () => {
+    commit("base");
+    const summaries = path.join(project, ".suss", "after");
+    await quietly(["extract", "--out-dir", summaries]);
+    const elsewhere = path.join(work, "elsewhere");
+    fs.mkdirSync(elsewhere);
+    gitAt(elsewhere, "init", "--quiet");
+
+    const run = await quietly(
+      ["check", "--dir", summaries, "--base", "HEAD"],
+      elsewhere,
+    );
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain(
+      "is a folder of summaries in the git repository",
+    );
+  });
+
+  it("does not report a finding as new and resolved when its function moved into a nested stack", async () => {
+    const service = path.join(work, "ping-service");
+    writeFiles(service, PING_SERVICE);
+    gitAt(service, "init", "--quiet");
+    gitAt(service, "add", "-A");
+    gitAt(service, "commit", "--quiet", "-m", "one stack");
+    writeFiles(service, PING_IN_A_NESTED_STACK);
+
+    const run = await quietly(["check", "--base", "HEAD", "--json"], service);
+    const whole = await quietly(["check", "--json"], service);
+
+    expect(
+      JSON.parse(whole.stdout).findings.map((f: { kind: string }) => f.kind),
+    ).toContain("boundaryFieldUnknown");
+    const report = JSON.parse(run.stdout);
+    expect(report.changedFiles).toEqual(["stacks/api.yaml", "template.yaml"]);
+    expect(report.findings).toEqual([]);
+    expect(report.resolved).toEqual([]);
+    expect(report.addedElsewhere).toEqual([]);
+    expect(report.resolvedElsewhere).toEqual([]);
   });
 
   it("compares with the ref itself when the two histories share no commit", async () => {
