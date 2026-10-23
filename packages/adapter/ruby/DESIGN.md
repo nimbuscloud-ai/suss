@@ -460,6 +460,19 @@ So the rules settle what `Account.recent` gives back from the lambda's last expr
 
 A read inside a method that a pack discovers, such as a resolver method behind a GraphQL field, goes on that unit's summary. A read in the file body, in a class or module body, or in a block at those levels runs when the file loads. It goes on a `module-init` summary named after the file, and each file with such a read gets one. A read inside a method no pack discovers, or inside a lambda, is not reported, because the adapter has no way to know when it runs.
 
+### A configuration file rendered through ERB at boot
+
+Rails renders `config/database.yml` through ERB before it parses the YAML, so this line reads two variables when the app boots:
+
+```yaml
+production:
+  url: <%= ENV['DATABASE_CONNECTION_POOL_URL'] || ENV['DATABASE_URL'] %>
+```
+
+A pack lists the files its library renders this way, in `bootTemplates`. The adapter adds them to the files it walks and reads each one as the Ruby in its tags (`erbTemplate.ts`). Text outside a tag becomes spaces, each tag's code ends in `;`, and the value a `<%= %>` tag prints goes inside `[ ]`, so the parser sees it used as a value instead of thrown away. Every character keeps its offset, so a read is on the line it has in the template. The file then goes through the walk like any other file whose top-level statements run as it loads: its reads go on a `module-init` summary named after the template, such as `database.yml`, with the same defaulted rules as the table above, and a call into project code is followed from there. Above, `DATABASE_CONNECTION_POOL_URL` is defaulted and `DATABASE_URL`, the last resort, is not. ERB evaluates a tag inside a YAML comment too, so such a tag is read.
+
+Ruby written as a YAML string for a library to evaluate later, such as a Solid Queue recurring task's `command:`, is not in a tag and is not read.
+
 ### A name handed to a project helper
 
 When a service reads its environment through a helper method of its own, the variable's name is written at the call to the helper and never next to `ENV`. The value facts record `readsKeyed(site, o, x)` for every read whose key comes from an expression, off any container at all. The adapter records `environmentObject(w)` for every expression that spells `ENV` and passes it somewhere. The rules in `@suss/resolution` join the two and work out which parameters end up naming a variable, following a name passed on from one helper to the next.

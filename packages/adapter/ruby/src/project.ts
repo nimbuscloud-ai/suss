@@ -73,6 +73,7 @@ import {
   envReadEffects,
   settleNamedParameters,
 } from "./envReads.js";
+import { rubyInErbTemplate } from "./erbTemplate.js";
 import { exitSites, markExitCodeFunctions } from "./exits.js";
 import { callbacksIn, emitClassCallbacks } from "./facts/callbacks.js";
 import {
@@ -497,9 +498,47 @@ interface Previous {
   readonly records: ReadonlyMap<string, RubyFileRecord>;
 }
 
+/** The files a run walks: the ones it was given, then the packs' boot templates. */
+interface WalkedFiles {
+  readonly files: string[];
+  /** The walked files read as the Ruby in their ERB tags. */
+  readonly templates: ReadonlySet<string>;
+}
+
+/**
+ * Adds the templates the packs say the library renders at boot to the
+ * files the run walks. A boot template's tags run when the app loads, so
+ * the walk reads it the way it reads a file under `config/initializers`.
+ */
+function walkedFilesOf(options: ExtractRubyOptions): WalkedFiles {
+  const given = new Set(options.files);
+  const templates = [
+    ...new Set(options.packs.flatMap((pack) => pack.bootTemplates?.() ?? [])),
+  ]
+    .filter((file) => !given.has(file))
+    .sort();
+  return {
+    files: [...options.files, ...templates],
+    templates: new Set(templates),
+  };
+}
+
+/** The Ruby a file runs: its text, or the code in its tags for a boot template. */
+function rubySourceOf(
+  absPath: string,
+  templates: ReadonlySet<string>,
+): string | null {
+  if (!fs.existsSync(absPath)) {
+    return null;
+  }
+  const text = fs.readFileSync(absPath, "utf8");
+  return templates.has(absPath) ? rubyInErbTemplate(text) : text;
+}
+
 export async function extractRubyProject(
   options: ExtractRubyOptions,
 ): Promise<ExtractRubyResult> {
+  const walked = walkedFilesOf(options);
   const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
 
   const cacheDir = adapterStamp.declineWhenRunFromSource(
@@ -524,11 +563,11 @@ export async function extractRubyProject(
     modules: settleRubyModules(options.modules),
   })}`;
   const input: CacheInput = {
-    files: cacheDir === null ? [] : options.files,
+    files: cacheDir === null ? [] : walked.files,
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : runDigest(packsDigest, options.packs, options.files),
+        : runDigest(packsDigest, options.packs, walked.files),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     layer.lookup(input),
@@ -569,7 +608,7 @@ export async function extractRubyProject(
       : recordsToReplay<RubyFileRecord>(plan.roots, plan.changed, plan.removed);
   if (plan !== null && records !== null) {
     try {
-      return await runRuby(options, cache, { plan, records });
+      return await runRuby(options, walked, cache, { plan, records });
     } catch (error) {
       if (!(error instanceof ReplayFailed)) {
         throw error;
@@ -577,7 +616,7 @@ export async function extractRubyProject(
     }
   }
   options.onCacheDiagnostic?.(lookup.diagnostic);
-  return runRuby(options, cache, null);
+  return runRuby(options, walked, cache, null);
 }
 
 /** A stored seed with its node found again in this run's trees. */
@@ -607,6 +646,7 @@ function addForSeed(
 
 async function runRuby(
   options: ExtractRubyOptions,
+  walked: WalkedFiles,
   cache: RunCache,
   previous: Previous | null,
 ): Promise<ExtractRubyResult> {
@@ -617,7 +657,7 @@ async function runRuby(
   const tallies = createPackTallies(options.packs);
   // With a cache, every question and every read of another file is charged
   // to the file's discovery or the method's scan that made it.
-  const ledger = cacheDir === null ? null : new DependencyLedger(options.files);
+  const ledger = cacheDir === null ? null : new DependencyLedger(walked.files);
   const log = ledger === null ? null : new FactLog(db, ledger);
   if (ledger !== null) {
     observeDemand(db, ledger);
@@ -627,8 +667,7 @@ async function runRuby(
   const parses = options.keptParses ?? keptRubyParses();
   const trees = createFileCache(
     (source, absPath) => parses.parse(absPath, source, parseRubyRoot),
-    (absPath) =>
-      fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null,
+    (absPath) => rubySourceOf(absPath, walked.templates),
   );
   const fileCache = ledger === null ? trees : watchFileCache(trees, ledger);
 
@@ -636,7 +675,7 @@ async function runRuby(
   // storage recognizer asks during discovery which file defines a constant.
   const facts = new RunFacts(db, options.packs);
   const { parsed, bodyBlocks, scopeCalls } = facts;
-  for (const file of options.files) {
+  for (const file of walked.files) {
     await timer.timeAsync("parse", async () => {
       const root = await trees.get(file);
       if (root !== null) {
@@ -648,7 +687,7 @@ async function runRuby(
   }
   // A file read later in the run for its constants is parsed through the
   // same holder, so letting go of the rest now frees only last run's trees.
-  options.keptParses?.keepOnly(options.files);
+  options.keptParses?.keepOnly(walked.files);
   const rootsByFile = new Map(parsed.map(({ file, root }) => [file, root]));
   const dynamicNames = timer.time("discover", () => {
     log?.startJoined();
@@ -1127,7 +1166,7 @@ async function runRuby(
     buildRubyExtractionReport({
       packs: options.packs,
       tallies,
-      filesWalked: options.files.length,
+      filesWalked: walked.files.length,
       summaries: composed,
     }),
   );

@@ -339,6 +339,57 @@ describe("environment reads on a summary", () => {
       { class: "config-read", name: "BANNER_BUCKET", defaulted: false },
     ]);
   });
+
+  it("puts a boot template's reads on a load-time unit for the template, through a helper too", async () => {
+    const settings = write(
+      "config/settings.rb",
+      [
+        "module Settings",
+        "  def self.setting(key)",
+        "    ENV.fetch(key)",
+        "  end",
+        "",
+        "  def self.cache_url",
+        '    ENV["CACHE_URL"]',
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const template = write(
+      "config/cable.yml",
+      [
+        "production:",
+        '  url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>',
+        '  region: <%= Settings.setting("AWS_REGION") %>',
+        "  cache: <%= Settings.cache_url %>",
+        "",
+      ].join("\n"),
+    );
+    const pack: RubyPack = {
+      ...graphqlRubyPack(path.join(tmpDir, "app", "graphql")),
+      bootTemplates: () => [template],
+    };
+    const { summaries } = await extractRubyProject({
+      files: [settings],
+      packs: [pack],
+      workspaceRoot: tmpDir,
+    });
+
+    const moduleInit = summaries.find(
+      (s) => s.location.file === "config/cable.yml",
+    );
+    expect(moduleInit?.kind).toBe("module-init");
+    expect(moduleInit?.identity.name).toBe("cable.yml");
+    expect(configReads(moduleInit)).toEqual([
+      { class: "config-read", name: "REDIS_URL", defaulted: true },
+      { class: "config-read", name: "AWS_REGION", defaulted: false },
+    ]);
+    const cacheUrl = summaries.find((s) => s.identity.name === "cache_url");
+    expect(configReads(cacheUrl)).toEqual([
+      { class: "config-read", name: "CACHE_URL", defaulted: false },
+    ]);
+  });
 });
 
 describe("the unit for what a file does when it loads", () => {

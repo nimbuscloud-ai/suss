@@ -1526,4 +1526,37 @@ describe("railsFramework", () => {
       );
     });
   });
+
+  describe("the YAML files Rails renders through ERB as it boots", () => {
+    let dir: string;
+
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("lists each YAML file directly under config, and no locale file", () => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-templates-"));
+      for (const relative of [
+        "config/database.yml",
+        "config/cable.yml",
+        "config/routes.rb",
+        "config/locales/en.yml",
+      ]) {
+        const file = path.join(dir, relative);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, "");
+      }
+      const pack = railsFramework({ configDirectory: dir });
+      expect(pack.bootTemplates?.()).toEqual([
+        path.join(dir, "config", "cable.yml"),
+        path.join(dir, "config", "database.yml"),
+      ]);
+    });
+
+    it("lists nothing for a project with no config directory", () => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-templates-"));
+      const pack = railsFramework({ configDirectory: dir });
+      expect(pack.bootTemplates?.()).toEqual([]);
+    });
+  });
 });

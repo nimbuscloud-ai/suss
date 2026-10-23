@@ -789,10 +789,17 @@ function flowsOnward(node: Node): boolean {
   return true;
 }
 
-/** The dotted path an expression spells, when every part of it is an identifier. */
-function dottedPathOf(expression: Node): string | null {
+/**
+ * The dotted path an expression spells, when every part of it is an
+ * identifier or it starts at `import.meta`, as `import.meta.env` does.
+ */
+export function dottedPathOf(expression: Node): string | null {
   if (Node.isIdentifier(expression)) {
     return expression.getText();
+  }
+  if (Node.isMetaProperty(expression)) {
+    const keyword = ts.tokenToString(expression.getKeywordToken());
+    return `${keyword}.${expression.getName()}`;
   }
   if (!Node.isPropertyAccessExpression(expression)) {
     return null;
