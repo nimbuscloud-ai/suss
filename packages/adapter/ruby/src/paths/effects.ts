@@ -49,6 +49,10 @@ function literalArgOf(
   node: RbNode,
   facts: Database | undefined,
 ): EffectArg | null {
+  // The evaluator settles `ENV.fetch("KEY", nil)` on nil, so only a nil the caller wrote counts.
+  if (node.type === "nil") {
+    return { kind: "null" };
+  }
   const value = evaluatedValue(node, facts);
   const text = literalOf(value);
   if (text !== null) {
@@ -60,9 +64,6 @@ function literalArgOf(
   }
   if (typeof constant === "boolean") {
     return { kind: "boolean", value: constant };
-  }
-  if (constant === null) {
-    return { kind: "null" };
   }
   return null;
 }

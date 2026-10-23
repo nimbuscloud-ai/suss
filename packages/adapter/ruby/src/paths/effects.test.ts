@@ -202,6 +202,16 @@ describe("ruby invocation effects", () => {
     ]);
   });
 
+  it("does not call an environment read with a nil fallback a nil", async () => {
+    const effects = await effectsFor([
+      "def configure",
+      '  merge!(:alias_url, ENV["ALIAS_HOST"] || ENV.fetch("CLOUDFRONT_HOST", nil))',
+      "end",
+    ]);
+    const merge = effects.find((effect) => effect.callee === "merge!");
+    expect(merge?.args[1]).not.toEqual({ kind: "null" });
+  });
+
   it("records a constructor called with empty strings as the strings it passed", async () => {
     const effects = await effectsFor([
       "def build",
