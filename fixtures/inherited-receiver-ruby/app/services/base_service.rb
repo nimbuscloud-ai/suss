@@ -14,6 +14,10 @@ class BaseService
     new(**args)
   end
 
+  def self.call_built(**args)
+    build(**args).call
+  end
+
   def self.perform_later(**args)
     perform(**args)
   end

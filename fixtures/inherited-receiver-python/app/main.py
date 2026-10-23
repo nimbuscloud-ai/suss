@@ -20,6 +20,11 @@ def create_built(amount: int):
     return CreateInvoice.build(amount=amount).run()
 
 
+@app.post("/invoices/built-inside")
+def create_built_inside(amount: int):
+    return CreateInvoice.call_built(amount=amount)
+
+
 @app.post("/invoices/later")
 def create_later(amount: int):
     return CreateInvoice.perform_later(amount=amount)

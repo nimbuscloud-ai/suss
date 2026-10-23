@@ -866,9 +866,13 @@ function runningOn(
     (entry) => entry.type === "bodies" && entry.name === qualifiedName,
   );
   const file = own?.type === "bodies" ? own.blocks[0]?.file : undefined;
+  // The lookup found the method through this class's ancestry, which
+  // starts from bodies of the class itself.
+  /* v8 ignore start */
   if (file === undefined) {
     return target;
   }
+  /* v8 ignore stop */
   return {
     ...target,
     exportPath: [qualifiedName, target.name],

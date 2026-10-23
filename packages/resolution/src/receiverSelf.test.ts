@@ -133,9 +133,20 @@ describe("keptVariants", () => {
       { key: "runWithLog@Sub", differs: true, calls: ["subRun"] },
       { key: "log@Sub", differs: false, calls: [] },
       { key: "loop@Sub", differs: false, calls: ["loop@Sub"] },
+      {
+        key: "both@Sub",
+        differs: false,
+        calls: ["runWithLog@Sub", "save@Sub"],
+      },
+      { key: "save@Sub", differs: true, calls: [] },
     ]);
 
-    expect([...kept].sort()).toEqual(["call@Sub", "runWithLog@Sub"]);
+    expect([...kept].sort()).toEqual([
+      "both@Sub",
+      "call@Sub",
+      "runWithLog@Sub",
+      "save@Sub",
+    ]);
   });
 });
 

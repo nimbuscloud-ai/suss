@@ -37,8 +37,16 @@ class BaseService:
         return cls(**kwargs)
 
     @classmethod
+    def call_built(cls, **kwargs):
+        return cls.build(**kwargs).run()
+
+    @classmethod
     def perform_later(cls, **kwargs):
         return cls.perform(**kwargs)
+
+    @staticmethod
+    def label(amount):
+        return f"invoice for {amount}"
 
     def run(self):
         raise NotImplementedError

@@ -14,6 +14,11 @@ class InvoicesController < ApplicationController
     head :created
   end
 
+  def create_built_inside
+    Invoices::CreateService.call_built(amount: params[:amount])
+    head :created
+  end
+
   def create_later
     Invoices::CreateService.perform_later(amount: params[:amount])
     head :accepted
