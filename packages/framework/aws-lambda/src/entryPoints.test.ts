@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { clearTemplateCache, lambdaEntryPoints } from "./index.js";
+import {
+  awsLambdaPython,
+  awsLambdaRuby,
+  clearTemplateCache,
+  lambdaEntryPoints,
+} from "./index.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-lambda-entry-"));
 
@@ -58,6 +63,38 @@ functions:
 `,
   );
   write("service/src/handlers/buy.rb", "def run(event:, context:)\nend\n");
+  write(
+    "graphql/template.yaml",
+    `
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  NotesApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties: { Name: notes, AuthenticationType: API_KEY }
+  NotesDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      Name: NotesLambda
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt NotesFunction.Arn
+  QueryNoteResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      TypeName: Query
+      FieldName: note
+      DataSourceName: !GetAtt NotesDataSource.Name
+  NotesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Runtime: python3.12
+      Handler: notes.handler
+`,
+  );
+  write("graphql/notes.py", "def handler(event, context):\n  pass\n");
 });
 
 afterAll(() => {
@@ -67,7 +104,41 @@ afterAll(() => {
 
 const entryPoints = lambdaEntryPoints("aws-lambda-test");
 
+describe("the Python and Ruby packs", () => {
+  it("hand each adapter the handlers in a file, recorded under the pack's own name", () => {
+    const file = path.join(root, "sam/jobs/worker.py");
+    for (const pack of [awsLambdaPython(), awsLambdaRuby()]) {
+      const [entry] = pack.entryPoints?.(file) ?? [];
+      expect(entry?.units[0]?.binding.recognition).toBe(pack.name);
+      expect(pack.discoveryInputs?.([file])).toEqual([
+        path.join(root, "sam/template.yaml"),
+      ]);
+    }
+    expect(awsLambdaPython().libraryEnvVars).toEqual([
+      { module: "aws_lambda_powertools", prefixes: ["POWERTOOLS_"] },
+    ]);
+  });
+});
+
 describe("lambdaEntryPoints", () => {
+  it("binds a handler AppSync routes a field to as the deployed function, listing the field", () => {
+    const [entry] = entryPoints(path.join(root, "graphql/notes.py"));
+
+    expect(entry?.units[0]?.binding.semantics).toEqual({
+      name: "unit-invocation",
+      deploymentTarget: "lambda",
+      instanceName: "NotesFunction",
+    });
+    expect(entry?.units[0]?.metadata).toEqual({
+      awsLambda: {
+        handler: "notes.handler",
+        recognition: "handler-entry",
+        eventTypes: [],
+        graphqlTypeFields: [{ typeName: "Query", fieldName: "note" }],
+      },
+    });
+  });
+
   it("finds a Python handler whose module the template writes with dots", () => {
     const [entry] = entryPoints(path.join(root, "sam/jobs/worker.py"));
 
