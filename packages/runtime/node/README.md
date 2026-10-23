@@ -18,10 +18,11 @@ reads. It covers:
   `setTimeout`, `setInterval`, `queueMicrotask` and `process.nextTick`,
   and for what a program prints through `console`, `process.stdout` and
   `process.stderr`.
-- **Access recognizers** for `process.env.X` reads, the keys of a
-  schema parsed against `process.env`, the rest of the process object
-  (`argv`, `exit` and the process metadata), and the module-location
-  globals `__dirname`, `__filename` and `import.meta.url`.
+- **Access recognizers** for `process.env.X` and `import.meta.env.X`
+  reads, the keys of a schema parsed against either, the rest of the
+  process object (`argv`, `exit` and the process metadata), and the
+  module-location globals `__dirname`, `__filename` and
+  `import.meta.url`.
 - **Sub-units** for the callbacks passed to a scheduling call, so what
   runs later is described as its own unit.
 
@@ -68,6 +69,25 @@ goes for a missing value that leads to a `throw`, whether in the branch
 it takes or after the test: `if (url) return url; throw new Error(...)`
 still requires the variable.
 
+## `import.meta.env`
+
+Vite and Bun give a program its environment as `import.meta.env`, and
+the pack reads it the way it reads `process.env`:
+
+```ts
+const api = import.meta.env.VITE_API_URL;
+const { VITE_SENTRY_DSN } = import.meta.env;
+const env = (name: string) => import.meta.env[name];
+```
+
+Each of these is a `config-read` of the variable, written
+`import.meta.env.VITE_API_URL`, so a finding quotes the read the way the
+code wrote it. A helper's index, a fallback and a schema parsed against
+`import.meta.env` all work as they do for `process.env`. Vite also sets
+`MODE`, `BASE_URL`, `PROD`, `DEV` and `SSR` from the build itself. No
+deployment declares those, so a read of one is a `metadata-read`, the
+same as `import.meta.url`.
+
 ## Reads through a project's own helper
 
 Most services read their environment through one helper:
@@ -86,10 +106,11 @@ The pack reports `TABLE_NAME` at the call in `handler.ts`, instead of
 at the bracket read in `env.ts`, so the unit that gave the variable's name
 is the unit recorded as reading it.
 
-The pack declares `process.env` as the environment object. The adapter
-records a fact for a read from it whose index is not a literal, and the
-resolution rules work out which parameters end up supplying the name at
-such a read, however many helpers pass it along on the way.
+The pack declares `process.env` and `import.meta.env` as the
+environment objects. The adapter records a fact for a read from one
+whose index is not a literal, and the resolution rules work out which
+parameters end up supplying the name at such a read, however many
+helpers pass it along on the way.
 
 That question is asked once for the whole project, starting from the
 reads instead of from the parameters. A project has a handful of reads
