@@ -877,7 +877,7 @@ Run findings are a third list, under `run` in the JSON. They are about the run i
 
 **Severity:** error. Emitted by `suss check --dir`, by a bare `suss check` over the project, and by `suss check <a.json> <b.json>` when one of the two files has no summaries, unless `--allow-empty` was passed.
 
-The run paired nothing. No boundary had both a provider and a consumer, so nothing was compared. Without this finding the report would look exactly like one where both sides agreed.
+The run paired nothing. No boundary had both a provider and a consumer, so nothing was compared. Without this finding the report would look exactly like one where both sides agreed. The run exits `3`, which no finding uses.
 
 ```
 error: nothingPaired
@@ -926,6 +926,36 @@ It is a warning because the check that follows fails on its own account when the
 **Legitimate when:** the pack was named by mistake and the project does not use its library. Drop it from the extract.
 
 **A bug when:** the project does use the library. The extract ran without the pack's config file, so its boundaries are not in the comparison.
+
+### `noPackMatched`
+
+**Severity:** error. Emitted by a bare `suss check`, and by the MCP `suss_check` tool, when the project has source in a language suss reads and no pack matched anything in it.
+
+Nothing was extracted, so nothing could be compared. The run exits `4`. `--allow-empty` does not change that, because no read ran.
+
+```
+error: noPackMatched
+  Nothing in /work/orders matched a pack, so there is nothing to read or compare.
+  Run `suss init` to see what suss looked for, name a pack yourself with `suss extract -f`, or pass a summaries file.
+```
+
+**Legitimate when:** the project uses a framework suss has no pack for. [Write a pack](/packs/write-a-pack) for it, or leave `check` out of this repository's CI.
+
+**A bug when:** the project does use a framework suss reads. Its dependency is probably declared somewhere `init` does not look, so name the pack with `-f`.
+
+### `notCovered`
+
+**Severity:** info. Emitted by a bare `suss check`, and by the MCP `suss_check` tool, when no pack matched and the project has no TypeScript, JavaScript, Python or Ruby source at all.
+
+suss does not cover the repository. The run exits `0`, and the text report is this one line:
+
+```
+suss does not cover /work/warehouse. It has no TypeScript, JavaScript, Python or Ruby source, so there is nothing to compare.
+```
+
+**Legitimate when:** the repository is in a language suss does not read, such as a dbt project of SQL and YAML.
+
+**A bug when:** the source is there and suss missed it. suss skips dependency and build folders such as `node_modules`, `dist` and `venv`, so source kept only under one of those is not counted.
 
 ### `unreadableInput`
 

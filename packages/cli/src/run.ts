@@ -26,9 +26,15 @@ import {
   setCacheDir,
   takeCacheDirFlag,
 } from "./cacheDirFlag.js";
-import { CHANGED_FILES_NEED_SINCE, check, checkDir } from "./check.js";
+import {
+  CHANGED_FILES_NEED_SINCE,
+  check,
+  checkDir,
+  checkEmptyProject,
+} from "./check.js";
 import { checkAt } from "./checkAt.js";
 import { readBase, repositoryOf } from "./checkBase.js";
+import { exitCodeOf } from "./checkOutcome.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
 import { extract, languageOfRun } from "./extract.js";
@@ -602,11 +608,16 @@ const EXAMPLE_PACK_FLAGS: Record<Language, string> = {
 async function withProjectRead(
   run: (dir: string) => number,
   root = process.cwd(),
+  nothingMatched: (root: string) => number = sayNothingMatched,
 ): Promise<number> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
   try {
     const report = await readProjectSaying(root, dir, true);
-    if (report === null || report.ran.length === 0) {
+    if (report === null) {
+      return nothingMatched(root);
+    }
+
+    if (report.ran.length === 0) {
       return 1;
     }
     process.stderr.write("\n");
@@ -616,10 +627,17 @@ async function withProjectRead(
   }
 }
 
+function sayNothingMatched(root: string): number {
+  process.stderr.write(
+    `Nothing in ${root} matched a pack, so there is nothing to read. Run \`suss init\` to see what suss looked for, or pass a summaries file.\n`,
+  );
+  return 1;
+}
+
 /**
  * Reads the project at `root` into `dir`, saying on stderr which reads
- * run and which fail. Null when no pack matched, after saying so. A
- * quiet read gives each read's summary count, not its file path.
+ * run and which fail. Null when no pack matched, and the caller says so.
+ * A quiet read gives each read's summary count, not its file path.
  */
 async function readProjectSaying(
   root: string,
@@ -628,9 +646,6 @@ async function readProjectSaying(
 ): Promise<ProjectReadReport | null> {
   const reads = await declaredReads(root);
   if (reads.reads.length === 0) {
-    process.stderr.write(
-      `Nothing in ${root} matched a pack, so there is nothing to read. Run \`suss init\` to see what suss looked for, or pass a summaries file.\n`,
-    );
     return null;
   }
   process.stderr.write(
@@ -672,13 +687,10 @@ async function extractProjectInto(
 ): Promise<number> {
   const resolved = path.resolve(outDir);
   clearEarlierReads(resolved);
-  const report = await readProjectSaying(
-    path.resolve(root ?? process.cwd()),
-    resolved,
-    quiet,
-  );
+  const projectRoot = path.resolve(root ?? process.cwd());
+  const report = await readProjectSaying(projectRoot, resolved, quiet);
   if (report === null) {
-    return 1;
+    return sayNothingMatched(projectRoot);
   }
 
   if (!allowEmpty && report.empty.length > 0) {
@@ -1181,7 +1193,7 @@ export async function runCheck(args: string[]): Promise<number> {
   const checkFolder = (dir: string): number => {
     if (values.at !== undefined) {
       const scoped = checkAt({ dir, at: values.at, ...shared });
-      return scoped.hasErrors ? 1 : 0;
+      return exitCodeOf(scoped.hasErrors ? "findings" : "passed");
     }
     const result = checkDir({
       dir,
@@ -1190,7 +1202,7 @@ export async function runCheck(args: string[]): Promise<number> {
       ...(values.intent !== undefined ? { intent: values.intent } : {}),
       ...earlier,
     });
-    return result.hasErrors ? 1 : 0;
+    return exitCodeOf(result.outcome);
   };
 
   if (values.dir !== undefined && positionals.length > 0) {
@@ -1209,7 +1221,9 @@ export async function runCheck(args: string[]): Promise<number> {
 
   // With no files given, extract the current project and check that.
   if (positionals.length === 0) {
-    return await withProjectRead(checkFolder);
+    return await withProjectRead(checkFolder, process.cwd(), (root) =>
+      exitCodeOf(checkEmptyProject(root, shared).outcome),
+    );
   }
 
   if (values.at !== undefined) {
@@ -1242,7 +1256,7 @@ export async function runCheck(args: string[]): Promise<number> {
     ...shared,
     ...all,
   });
-  return result.hasErrors ? 1 : 0;
+  return exitCodeOf(result.outcome);
 }
 
 /** The flags `check` reads to find the earlier run, as the argument parser returns them. */

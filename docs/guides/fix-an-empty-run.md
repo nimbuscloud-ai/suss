@@ -1,6 +1,6 @@
 ---
 title: Fix a run that found nothing
-description: What each empty-run message means when extract wrote no summaries, when check compared nothing, and when a pack read your code and recognized none of it.
+description: What each empty-run message means when extract wrote no summaries, when check compared nothing, when no pack matched the project, and when a pack read your code and recognized none of it.
 ---
 
 # Fix a run that found nothing
@@ -175,6 +175,8 @@ error: nothingPaired
   Check that both sides of at least one boundary are in the directory. A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. `suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.
 ```
 
+This run exits `3`, a code no finding uses, so a CI job can tell it from a run that found an error. `--json` has the same `nothingPaired` entry under `run`. Pass `--allow-empty` when one side on its own is what you expect.
+
 `check` compares two sides, so one side on its own gives it nothing to do. If you have Express routes and no `fetch` or axios call site next to them, the callers were never extracted. Either they live in another repository, or the pack that reads them was left off the command.
 
 Extract the other side into the same folder:
@@ -192,6 +194,29 @@ npx @suss/cli check --dir summaries/
 ```
 
 If the other side is in another repository, extract it there and copy its summary file in. [Work across services](/guides/work-across-services) shows how.
+
+## Nothing in the project matched a pack
+
+```
+error: noPackMatched
+  Nothing in /work/orders matched a pack, so there is nothing to read or compare.
+  Run `suss init` to see what suss looked for, name a pack yourself with `suss extract -f`, or pass a summaries file.
+```
+
+A bare `suss check` found TypeScript, JavaScript, Python or Ruby source, and none of the project's dependencies or files told it which pack reads that source. It exits `4`. Run `init` to see what it looked for, then name the pack with `-f`:
+
+```bash
+npx @suss/cli init --plain
+npx @suss/cli extract -f express -o summaries/code.json
+```
+
+## suss does not cover this repository
+
+```
+suss does not cover /work/warehouse. It has no TypeScript, JavaScript, Python or Ruby source, so there is nothing to compare.
+```
+
+The repository has no source in a language suss reads. A dbt project of SQL and YAML is the usual case, and a `package.json` that is only there for a formatter does not change it. The run exits `0`, so a shared CI job does not fail in a repository suss was never meant to read. `--json` writes a `notCovered` entry under `run`.
 
 ## See also
 

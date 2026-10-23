@@ -9,6 +9,7 @@ export { readTsconfigFileList } from "./bootstrap/lazyProjectInit.js";
 export {
   createProjectWithoutTsconfig,
   findNearestTsconfig,
+  SKIP_DIRECTORIES,
   SOURCE_SUFFIXES,
   TSCONFIG_NAMES,
 } from "./bootstrap/noTsconfigProject.js";

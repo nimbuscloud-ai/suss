@@ -11,6 +11,8 @@ import {
 } from "@suss/behavioral-ir";
 
 import { check, checkDir, checkDirectory, renderFindings } from "./check.js";
+import { CHECK_EXIT_CODES } from "./checkOutcome.js";
+import { runCli } from "./run.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
@@ -2687,5 +2689,153 @@ describe("failing when the run compares nothing", () => {
     expect(checkDir({ dir }).hasErrors).toBe(false);
 
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("the exit code says how the run ended", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-exit-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function suss(
+    args: string[],
+    cwd = process.cwd(),
+  ): Promise<{ exit: number; stdout: string; stderr: string }> {
+    const out: string[] = [];
+    const err: string[] = [];
+    const origOut = process.stdout.write.bind(process.stdout);
+    const origErr = process.stderr.write.bind(process.stderr);
+    const before = process.cwd();
+    process.stdout.write = ((chunk: string) => {
+      out.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string) => {
+      err.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    process.chdir(cwd);
+    try {
+      const exit = await runCli(args);
+      return { exit, stdout: out.join(""), stderr: err.join("") };
+    } finally {
+      process.chdir(before);
+      process.stdout.write = origOut;
+      process.stderr.write = origErr;
+    }
+  }
+
+  function writeSides(
+    providerFields: string[],
+    consumerReads: string[] | null,
+  ): void {
+    fs.writeFileSync(
+      path.join(dir, "providers.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", {
+            statusCode: 200,
+            isDefault: true,
+            bodyFields: providerFields,
+          }),
+        ]),
+      ]),
+    );
+    if (consumerReads === null) {
+      return;
+    }
+
+    fs.writeFileSync(
+      path.join(dir, "consumers.json"),
+      JSON.stringify([
+        consumerWithRoute("UserPage", "GET", "/users/:id", [
+          transition("ct-200", {
+            conditionStatus: 200,
+            readsBodyFields: consumerReads,
+          }),
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+  }
+
+  it("exits 0 when both sides agree", async () => {
+    writeSides(["name"], ["name"]);
+
+    const run = await suss(["check", "--dir", dir]);
+
+    expect(run.exit).toBe(CHECK_EXIT_CODES.passed);
+    expect(run.exit).toBe(0);
+  });
+
+  it("exits 1 on a finding at or above the threshold", async () => {
+    writeSides(["name"], ["email"]);
+
+    const run = await suss(["check", "--dir", dir, "--json"]);
+
+    expect(run.exit).toBe(CHECK_EXIT_CODES.findings);
+    expect(run.exit).toBe(1);
+    expect(JSON.parse(run.stdout).run).toEqual([]);
+  });
+
+  it("exits 3 when nothing paired, and the JSON says nothingPaired", async () => {
+    writeSides(["name"], null);
+
+    const run = await suss(["check", "--dir", dir, "--json"]);
+
+    expect(run.exit).toBe(CHECK_EXIT_CODES.nothingCompared);
+    expect(run.exit).toBe(3);
+    expect(JSON.parse(run.stdout).run[0].kind).toBe("nothingPaired");
+  });
+
+  it("exits 0 for the same run with --allow-empty", async () => {
+    writeSides(["name"], null);
+
+    const run = await suss(["check", "--dir", dir, "--allow-empty"]);
+
+    expect(run.exit).toBe(0);
+  });
+
+  it("exits 4 when the project has source and no pack matched it", async () => {
+    fs.writeFileSync(path.join(dir, "tool.js"), "module.exports = 1;\n");
+
+    const run = await suss(["check", "--json"], dir);
+
+    expect(run.exit).toBe(CHECK_EXIT_CODES.noPackMatched);
+    expect(run.exit).toBe(4);
+    expect(JSON.parse(run.stdout)).toEqual({
+      findings: [],
+      run: [expect.objectContaining({ kind: "noPackMatched" })],
+    });
+  });
+
+  it("exits 0 with one line when the project has no source suss reads", async () => {
+    // A dbt project: SQL and YAML, and a package.json for its formatter.
+    fs.mkdirSync(path.join(dir, "models"));
+    fs.writeFileSync(
+      path.join(dir, "models", "orders.sql"),
+      "select id from {{ source('raw', 'orders') }}\n",
+    );
+    fs.writeFileSync(path.join(dir, "dbt_project.yml"), "name: shop\n");
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ devDependencies: { prettier: "^3.0.0" } }),
+    );
+
+    const plain = await suss(["check"], dir);
+    expect(plain.exit).toBe(CHECK_EXIT_CODES.notCovered);
+    expect(plain.exit).toBe(0);
+    expect(plain.stdout.trim().split("\n")).toHaveLength(1);
+    expect(plain.stdout).toContain("suss does not cover");
+
+    const json = await suss(["check", "--json"], dir);
+    expect(json.exit).toBe(0);
+    expect(JSON.parse(json.stdout).run[0].kind).toBe("notCovered");
   });
 });
