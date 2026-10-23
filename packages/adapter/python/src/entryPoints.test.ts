@@ -26,7 +26,7 @@ const entryPack: PythonPack = {
   discovery: [],
   entryPoints: (file) =>
     path.basename(file) === "app.py"
-      ? ["handler", "wrapped"].map((name) => ({
+      ? ["handler", "wrapped", "absent", "table_name"].map((name) => ({
           name,
           units: [
             {
@@ -40,12 +40,17 @@ const entryPack: PythonPack = {
                 deploymentTarget: "lambda",
                 instanceName: "Orders",
               },
-              metadata: { entryTest: { name } },
+              ...(name === "handler"
+                ? { metadata: { entryTest: { name } } }
+                : {}),
             },
           ],
         }))
       : [],
-  libraryEnvVars: [{ module: "tracing_lib", prefixes: ["TRACE_"] }],
+  libraryEnvVars: [
+    { module: "tracing_lib", prefixes: ["TRACE_"] },
+    { module: "unused_lib", prefixes: ["UNUSED_"] },
+  ],
 };
 
 let summaries: BehavioralSummary[] = [];
@@ -104,10 +109,17 @@ describe("a function a deploy manifest points at", () => {
     expect(summaries.map((s) => s.identity.name)).toContain("table_name");
   });
 
-  it("gets no unit when the module binds the name without a body", () => {
-    expect(summaries.some((s) => s.identity.name === "Orders.wrapped")).toBe(
-      false,
-    );
+  it("gets no unit when the module binds the name without a body, imports it, or never binds it", () => {
+    const names = summaries.map((s) => s.identity.name);
+    expect(names).not.toContain("Orders.wrapped");
+    expect(names).not.toContain("Orders.table_name");
+    expect(names).not.toContain("Orders.absent");
+  });
+
+  it("marks no library that no file in the run imports", () => {
+    expect(
+      summaries.some((s) => s.identity.name === "unused_lib env reads"),
+    ).toBe(false);
   });
 
   it("marks a library the pack says reads the environment from its own code", () => {
