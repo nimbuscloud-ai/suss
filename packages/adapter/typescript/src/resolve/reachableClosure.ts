@@ -1134,15 +1134,18 @@ export function expandReachableClosure(
         passedPositions.add(position);
       }
       const callerFile = fileOfOffsetKey(plainKeyOf(key));
-      // A method reached on a subclass is reached on its own class too, so
-      // its own summary is there for callers its variant gets none for.
-      const reachedOnOwnClass = found.calls.flatMap((call) =>
+      // A method reached on a subclass is reached on its own class first,
+      // so its own summary is there for callers its variant gets none for.
+      const calledHere = found.calls.flatMap((call) =>
         call.receiverClass === undefined
-          ? []
-          : [{ ...call, key: plainKeyOf(call.key), receiverClass: undefined }],
+          ? [call]
+          : [
+              { ...call, key: plainKeyOf(call.key), receiverClass: undefined },
+              call,
+            ],
       );
       const called: string[] = [];
-      for (const call of [...found.calls, ...reachedOnOwnClass]) {
+      for (const call of calledHere) {
         if (!nameByKey.has(call.key)) {
           nameByKey.set(call.key, call.name);
         }

@@ -314,13 +314,14 @@ export async function reachedFunctions(
         followedKeys.add(key);
       }
 
-      // A method reached on a subclass is reached on its own class too, so
-      // its own summary is there for the callers its variant ends up not
-      // needing a summary for.
-      const reachedOnOwnClass = scan.followed
-        .filter((target) => target.receiverClass !== undefined)
-        .map(plainOf);
-      for (const target of [...scan.followed, ...reachedOnOwnClass]) {
+      // A method reached on a subclass is reached on its own class first,
+      // so its own summary is there for callers its variant gets none for.
+      const calledHere = scan.followed.flatMap((target) =>
+        target.receiverClass === undefined
+          ? [target]
+          : [plainOf(target), target],
+      );
+      for (const target of calledHere) {
         const calleeKey = keyOf(target);
         if (!functionByKey.has(calleeKey)) {
           functionByKey.set(calleeKey, target);
