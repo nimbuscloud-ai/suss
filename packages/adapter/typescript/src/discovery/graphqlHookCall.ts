@@ -69,6 +69,9 @@ export function discoverGraphqlHookCalls(
       operationType: spec.operationType,
       methodName: spec.canonical,
       store,
+      ...(match.clientOption === undefined
+        ? {}
+        : { client: match.clientOption }),
     });
     if (expansion !== null) {
       results.push(...expansion.units);
@@ -107,6 +110,15 @@ export function discoverGraphqlHookCalls(
       name: `${functionNameOrAnon(enclosing)}.${nameToken}`,
       callSite: { callExpression: node, methodName: spec.canonical },
       operationInfo,
+      ...(match.clientOption === undefined
+        ? {}
+        : {
+            graphqlCall: {
+              call: node,
+              through: [],
+              client: match.clientOption,
+            },
+          }),
     });
   }
   return results;

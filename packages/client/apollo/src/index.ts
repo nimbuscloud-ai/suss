@@ -32,6 +32,10 @@ const DOCUMENT_HOOKS = [
   { hookName: "useSubscription", operationType: "subscription" },
 ] as const;
 
+// Every document hook takes its options second, and `client` there
+// overrides the one `ApolloProvider` supplies.
+const CLIENT_OPTION = { argument: 1, property: "client" };
+
 /**
  * The options in a `-f apollo-client=config.json` file. The CLI checks
  * the file against this schema before the pack factory runs.
@@ -59,6 +63,12 @@ export const optionsSchema = z
           .strict(),
       )
       .optional(),
+    /**
+     * What to do with an operation whose client neither `clients` nor
+     * `operationScopes` ties to a service, when the project builds
+     * clients for more than one endpoint. `unchecked` is the default.
+     */
+    unboundClients: z.enum(["unchecked", "pairWithAll"]).optional(),
   })
   .strict();
 
@@ -81,6 +91,7 @@ export function apolloClientPack(
           type: "graphqlHookCall",
           importModule: "@apollo/client",
           hooks: [...DOCUMENT_HOOKS],
+          clientOption: CLIENT_OPTION,
         },
         // requiresImport matches by prefix, so it also admits
         // `@apollo/client/react`. importModule above matches exactly.
@@ -93,6 +104,7 @@ export function apolloClientPack(
           type: "graphqlHookCall",
           importModule: "@apollo/client/react",
           hooks: [...DOCUMENT_HOOKS],
+          clientOption: CLIENT_OPTION,
         },
         requiresImport: ["@apollo/client"],
       },
@@ -134,6 +146,7 @@ export function apolloClientPack(
         importModule: "@apollo/client",
         importName: "ApolloClient",
         uriProperty: "uri",
+        linkProperty: "link",
         // With a registry from `createFragmentRegistry` on the cache, a
         // document can spread a fragment it does not define, and the
         // client fills it in at run time.
@@ -162,6 +175,9 @@ export function apolloClientPack(
       : {}),
     ...(options.operationScopes !== undefined
       ? { graphqlOperationScopes: options.operationScopes }
+      : {}),
+    ...(options.unboundClients !== undefined
+      ? { graphqlUnboundClients: options.unboundClients }
       : {}),
 
     terminals: [

@@ -19,6 +19,7 @@ import {
   expressionBodyOf,
   type Field,
   type FunctionBody,
+  type FunctionShape,
   type Literal,
   type Lowering,
   type Parameter,
@@ -86,7 +87,7 @@ interface Arguments {
   readonly named: Map<string, Value>;
 }
 
-export interface EvaluateOptions {
+export interface EvaluateOptions<N = unknown> {
   /** Values for parameters of the enclosing function, from a call site. */
   readonly bindings?: ReadonlyMap<string, Value>;
   /**
@@ -95,6 +96,14 @@ export interface EvaluateOptions {
    * which instance reads it.
    */
   readonly site?: string;
+  /**
+   * Values to take for some expressions instead of reading them. A
+   * caller that needs to know which of several constructions a value
+   * came from gives each construction a token of its own here. None of
+   * the run is memoized, and the result comes back with nothing in it
+   * left lazy.
+   */
+  readonly given?: ReadonlyMap<N, Value>;
 }
 
 export interface EvaluatorOptions {
@@ -107,6 +116,8 @@ export class Evaluator<N extends object> {
   private statements = 0;
   /** The allocation site the current `evaluate` call is running under. */
   private underSite: string | undefined;
+  /** The current call's `given` values, keyed by `idOf`. */
+  private givenById: ReadonlyMap<unknown, Value> | undefined;
   private readonly statementBudget: number;
   private readonly stateAfterStatement = new Map<unknown, State>();
   private readonly outerByNode = new Map<unknown, Value>();
@@ -157,7 +168,11 @@ export class Evaluator<N extends object> {
   private remembers(
     bindings: ReadonlyMap<string, Value> | null = null,
   ): boolean {
-    return bindings === null && this.underSite === undefined;
+    return (
+      bindings === null &&
+      this.underSite === undefined &&
+      this.givenById === undefined
+    );
   }
 
   private same(a: N, b: N): boolean {
@@ -169,8 +184,75 @@ export class Evaluator<N extends object> {
    * under an allocation site is true only for that site, so it is forced
    * before the site is cleared and none of it goes into the memos.
    */
-  evaluate(node: N, options: EvaluateOptions = {}): Value {
+  evaluate(node: N, options: EvaluateOptions<N> = {}): Value {
     this.statements = 0;
+    if (options.given === undefined) {
+      return this.evaluateUnderSite(node, options);
+    }
+    return this.withGiven(options.given, () =>
+      forcedThrough(this.evaluateUnderSite(node, options)),
+    );
+  }
+
+  /**
+   * What a call gives each parameter of the function it calls, bound
+   * the way an inlined call binds them: by keyword, by position, off a
+   * destructured argument, or from a default. `options.bindings` fills
+   * the parameters of the function the call is written in. Null when
+   * the lowering cannot see the body of the function the call runs.
+   */
+  argumentsAt(
+    call: N,
+    options: EvaluateOptions<N> = {},
+  ): ReadonlyMap<string, Value> | null {
+    this.statements = 0;
+    const shape = this.lowering.expression(call);
+    const fn = this.lowering.callable(call);
+    const callee = fn === null ? null : this.lowering.functionOf(fn);
+    if (shape.kind !== "call" || callee === null) {
+      return null;
+    }
+    return this.withGiven(options.given, () => {
+      const site = this.lowering.siteOf(call);
+      const outer =
+        options.bindings === undefined || options.bindings.size === 0
+          ? null
+          : options.bindings;
+      const state = site === null ? emptyState() : this.stateAt(site, outer, 0);
+      const args = this.argumentsOf(shape.args, state, 0);
+      const inner: State = {
+        bindings: new Map(),
+        heap: state.heap,
+        parameters: new Set(),
+      };
+      this.bindParameters(callee, args, inner, 0);
+      const bound = new Map<string, Value>();
+      for (const [name, value] of inner.bindings) {
+        bound.set(name, forcedThrough(this.materialize(value, inner)));
+      }
+      return bound;
+    });
+  }
+
+  private withGiven<T>(
+    given: ReadonlyMap<N, Value> | undefined,
+    run: () => T,
+  ): T {
+    if (given === undefined) {
+      return run();
+    }
+    const previous = this.givenById;
+    this.givenById = new Map(
+      [...given].map(([node, value]) => [this.idOf(node), value]),
+    );
+    try {
+      return run();
+    } finally {
+      this.givenById = previous;
+    }
+  }
+
+  private evaluateUnderSite(node: N, options: EvaluateOptions<N>): Value {
     if (options.site === undefined) {
       return this.valueAt(node, options);
     }
@@ -182,7 +264,7 @@ export class Evaluator<N extends object> {
     }
   }
 
-  private valueAt(node: N, options: EvaluateOptions = {}): Value {
+  private valueAt(node: N, options: EvaluateOptions<N> = {}): Value {
     const shape = this.lowering.expression(node);
     if (shape.kind === "literal") {
       // A literal has the same value wherever it is written, so the
@@ -528,6 +610,10 @@ export class Evaluator<N extends object> {
   }
 
   private expression(node: N, state: State, depth: number): Value {
+    const given = this.givenById?.get(this.idOf(node));
+    if (given !== undefined) {
+      return given;
+    }
     const shape = this.lowering.expression(node);
     if (shape.kind === "literal") {
       return literalValue(shape.value);
@@ -998,16 +1084,7 @@ export class Evaluator<N extends object> {
       heap: state.heap,
       parameters: new Set(),
     };
-    // Bound in order so a default can read a parameter before it.
-    shape.parameters.forEach((parameter) => {
-      const passed = this.argumentFor(parameter, args, inner);
-      const bound =
-        passed ??
-        (parameter.default === null
-          ? constant(undefined)
-          : this.expression(parameter.default, inner, depth + 1));
-      inner.bindings.set(parameter.name, bound);
-    });
+    this.bindParameters(shape, args, inner, depth);
     const returned = expressionBodyOf(shape.body);
     if (returned !== null) {
       return this.expression(returned, inner, depth + 1);
@@ -1019,19 +1096,43 @@ export class Evaluator<N extends object> {
     return joinAll(outcome.returns);
   }
 
+  /** Bound in order, so a default can read a parameter before it. */
+  private bindParameters(
+    shape: FunctionShape<N>,
+    args: Arguments,
+    inner: State,
+    depth: number,
+  ): void {
+    for (const parameter of shape.parameters) {
+      const passed = this.argumentFor(parameter, args, inner, depth);
+      const bound =
+        passed ??
+        (parameter.default === null
+          ? constant(undefined)
+          : this.expression(parameter.default, inner, depth + 1));
+      inner.bindings.set(parameter.name, bound);
+    }
+  }
+
   /** The argument a call passes for a parameter, or undefined when the call leaves it out. */
   private argumentFor(
     parameter: Parameter<N>,
     args: Arguments,
     state: State,
+    depth: number,
   ): Value | undefined {
     const argument = args.positional[parameter.position];
     if (parameter.path === undefined) {
       return args.named.get(parameter.name) ?? argument;
     }
-    return argument === undefined
+    const whole =
+      argument ??
+      (parameter.patternDefault === undefined
+        ? undefined
+        : this.expression(parameter.patternDefault, state, depth + 1));
+    return whole === undefined
       ? undefined
-      : this.propertyAt(argument, parameter.path, parameter.name, state);
+      : this.propertyAt(whole, parameter.path, parameter.name, state);
   }
 
   /**
@@ -1174,6 +1275,34 @@ function widenAway(content: Value): Value {
     return hole("value");
   }
   return content;
+}
+
+/** The value with every deferral inside it computed, however deep. */
+function forcedThrough(value: Value): Value {
+  const forced = force(value);
+  if (forced.kind === "record") {
+    const fields = new Map<string, Item>();
+    for (const [name, item] of forced.fields) {
+      fields.set(name, {
+        value: forcedThrough(item.value),
+        presence: item.presence,
+      });
+    }
+    return { kind: "record", fields, open: forced.open };
+  }
+  if (forced.kind === "sequence") {
+    return {
+      kind: "sequence",
+      items: forced.items.map((item) => ({
+        value: forcedThrough(item.value),
+        presence: item.presence,
+      })),
+    };
+  }
+  if (forced.kind === "unbounded") {
+    return unbounded(forcedThrough(forced.element));
+  }
+  return forced;
 }
 
 function literalValue(value: Literal): Value {

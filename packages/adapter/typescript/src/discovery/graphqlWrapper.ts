@@ -25,6 +25,7 @@ import {
 import type { CallExpression, ParameterDeclaration } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
+import type { GraphqlCallSite } from "./graphqlCallClient.js";
 import type { DocumentResolution } from "./graphqlShared.js";
 import type { DiscoveredUnit } from "./shared.js";
 
@@ -42,6 +43,8 @@ export interface WrapperContext {
   /** The library call's own name, so the pack reads the caller's result. */
   methodName: string;
   store: ResolutionStore;
+  /** Where the library call takes its client, when the pack says. */
+  client?: GraphqlCallSite["client"];
 }
 
 export interface WrapperExpansion {
@@ -61,7 +64,7 @@ export interface WrapperExpansion {
  */
 export function expandDocumentParameterCallers(
   documentArgument: Node,
-  libraryCall: Node,
+  libraryCall: CallExpression,
   context: WrapperContext,
 ): WrapperExpansion | null {
   const wrapper = enclosingFunctionRoot(libraryCall);
@@ -79,6 +82,7 @@ export function expandDocumentParameterCallers(
     0,
     new Set([parameter]),
     context,
+    { library: libraryCall, through: [] },
   );
   return {
     units: expanded.units,
@@ -111,12 +115,19 @@ interface ExpandedCallers {
   unfollowed: number;
 }
 
+/** The library call, and the wrapper calls followed out to here, innermost first. */
+interface CallChain {
+  library: CallExpression;
+  through: CallExpression[];
+}
+
 function expandParameter(
   parameter: ParameterDeclaration,
   forwardsResult: boolean,
   depth: number,
   expanded: ReadonlySet<ParameterDeclaration>,
   context: WrapperContext,
+  chain: CallChain,
 ): ExpandedCallers {
   const passed = context.store.argumentsPassedTo(parameter);
   if (passed.length === 0) {
@@ -131,6 +142,7 @@ function expandParameter(
       unfollowed++;
       continue;
     }
+    const outward = { ...chain, through: [...chain.through, call] };
     const nested = parameterBehind(argument, caller);
     if (nested !== null) {
       const deeper = expandNested(
@@ -139,12 +151,20 @@ function expandParameter(
         depth,
         expanded,
         context,
+        outward,
       );
       units.push(...deeper.units);
       unfollowed += deeper.unfollowed;
       continue;
     }
-    const unit = callerUnit(caller, call, argument, forwardsResult, context);
+    const unit = callerUnit(
+      caller,
+      call,
+      argument,
+      forwardsResult,
+      context,
+      outward,
+    );
     if (unit === null) {
       unfollowed++;
       continue;
@@ -161,6 +181,7 @@ function expandNested(
   depth: number,
   expanded: ReadonlySet<ParameterDeclaration>,
   context: WrapperContext,
+  chain: CallChain,
 ): ExpandedCallers {
   if (depth + 1 >= MAX_WRAPPER_DEPTH || expanded.has(parameter)) {
     return { units: [], unfollowed: 1 };
@@ -171,6 +192,7 @@ function expandNested(
     depth + 1,
     new Set([...expanded, parameter]),
     context,
+    chain,
   );
 }
 
@@ -180,6 +202,7 @@ function callerUnit(
   argument: Node,
   forwardsResult: boolean,
   context: WrapperContext,
+  chain: CallChain,
 ): DiscoveredUnit | null {
   const document =
     resolveGraphqlDocument(argument, context.store) ??
@@ -205,6 +228,15 @@ function callerUnit(
       ? { callSite: { callExpression: call, methodName: context.methodName } }
       : {}),
     operationInfo,
+    ...(context.client === undefined
+      ? {}
+      : {
+          graphqlCall: {
+            call: chain.library,
+            through: chain.through,
+            client: context.client,
+          },
+        }),
   };
 }
 

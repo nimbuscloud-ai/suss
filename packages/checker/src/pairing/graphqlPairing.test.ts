@@ -114,6 +114,23 @@ function operation(
   };
 }
 
+/** The same operation with more set in its graphql metadata. */
+function withGraphql(
+  summary: BehavioralSummary,
+  more: Record<string, unknown>,
+): BehavioralSummary {
+  return {
+    ...summary,
+    metadata: {
+      ...summary.metadata,
+      graphql: {
+        ...(summary.metadata?.graphql as Record<string, unknown>),
+        ...more,
+      },
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Pairing
 // ---------------------------------------------------------------------------
@@ -300,7 +317,7 @@ describe("pairGraphqlOperations", () => {
     expect(result.findings).toEqual([]);
   });
 
-  it("keeps every match when the bound service implements nothing at the key", () => {
+  it("leaves an operation unchecked when nothing in the run describes its bound service", () => {
     const railsPet = {
       ...resolver("Query", "pet"),
       location: {
@@ -310,24 +327,175 @@ describe("pairGraphqlOperations", () => {
         workspace: "rails-api",
       },
     };
-    const base = operation(
-      "usePet",
-      "GetPet",
-      "query",
-      `query GetPet { pet(id: "1") { id } }`,
+    const op = withGraphql(
+      operation(
+        "usePet",
+        "GetPet",
+        "query",
+        `query GetPet { pet(id: "1") { id } }`,
+      ),
+      { client: { uri: null, uriRef: "X", workspace: "appsync-stack" } },
     );
-    const op = {
-      ...base,
-      metadata: {
-        graphql: {
-          ...(base.metadata?.graphql as Record<string, unknown>),
-          client: { uri: null, uriRef: "X", workspace: "appsync-stack" },
+    const result = pairGraphqlOperations([railsPet, op]);
+    expect(result.pairs).toEqual([]);
+    expect(result.findings).toEqual([]);
+    expect(result.unchecked).toEqual([
+      {
+        summary: op,
+        reason:
+          "its client is bound to appsync-stack, and nothing in this run describes appsync-stack",
+      },
+    ]);
+  });
+
+  it("reports a field the bound service does not declare against that service alone", () => {
+    const legacy = resolver("Query", "pet", "graphql", {
+      document: "schema/legacy.graphql",
+    });
+    const appsyncListing = resolver("Query", "listing", "graphql", {
+      document: "schema/appsync.graphql",
+    });
+    const op = withGraphql(
+      operation(
+        "usePet",
+        "GetPet",
+        "query",
+        `query GetPet { pet(id: "1") { id } }`,
+      ),
+      {
+        client: {
+          uri: "https://appsync.example.com/graphql",
+          uriRef: null,
+          workspace: "schema/appsync.graphql",
         },
       },
-    };
-    const result = pairGraphqlOperations([railsPet, op]);
+    );
+    const result = pairGraphqlOperations([legacy, appsyncListing, op]);
+    expect(result.pairs).toEqual([]);
+    expect(result.findings.map((f) => f.provider.summary)).toEqual([
+      "Query.pet (unresolved)",
+    ]);
+  });
+
+  it("pairs a client bound to a schema file with that file's resolvers only", () => {
+    const legacySdl =
+      "type Listing { id: ID! } type Query { listing: Listing }";
+    const appsyncSdl =
+      "type Listing { id: ID! venue: String } type Query { listing: Listing }";
+    const summaries = [
+      schemaDocument("schema/legacy.graphql", legacySdl),
+      resolver("Query", "listing", "graphql", {
+        document: "schema/legacy.graphql",
+      }),
+      schemaDocument("schema/appsync.graphql", appsyncSdl),
+      resolver("Query", "listing", "graphql", {
+        document: "schema/appsync.graphql",
+      }),
+    ];
+    const op = withGraphql(
+      operation(
+        "useListing",
+        "Listing",
+        "query",
+        "query Listing { listing { id venue } }",
+      ),
+      {
+        client: {
+          uri: "https://appsync.example.com/graphql",
+          uriRef: null,
+          chosenAtCall: true,
+          workspace: "schema/appsync.graphql",
+        },
+      },
+    );
+    const result = pairGraphqlOperations([...summaries, op]);
     expect(result.pairs).toHaveLength(1);
-    expect(result.pairs[0].provider).toBe(railsPet);
+    expect(result.pairs[0].provider).toBe(summaries[3]);
+    // The legacy schema would have said venue is undeclared.
+    expect(result.findings).toEqual([]);
+  });
+
+  it("leaves an operation unchecked when the client its call passes stayed open", () => {
+    const op = withGraphql(
+      operation(
+        "useListing",
+        "Listing",
+        "query",
+        "query Listing { listing { id venue } }",
+      ),
+      {
+        unresolvedClient: {
+          reference: "nextGen ? appSyncClient : railsClient",
+          reason: "the client it passes can be any of 2 clients",
+        },
+      },
+    );
+    const result = checkAll([
+      resolver("Query", "listing", "graphql", {
+        document: "schema/legacy.graphql",
+        schemaSdl: "type Listing { id: ID! } type Query { listing: Listing }",
+      }),
+      op,
+    ]);
+    expect(result.pairs).toEqual([]);
+    expect(result.findings).toEqual([]);
+    expect(result.unmatched.consumers).toEqual([]);
+    expect(
+      result.unmatched.unpairable.filter(
+        (u) => u.name === "useListing.Listing",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        reason: "unknownService",
+        detail: "the client it passes can be any of 2 clients",
+      }),
+    ]);
+  });
+
+  it("pairs an open client with every schema and warns when the project asked for every match", () => {
+    const summaries = [
+      schemaDocument(
+        "schema/legacy.graphql",
+        "type Listing { id: ID! } type Query { listing: Listing }",
+      ),
+      resolver("Query", "listing", "graphql", {
+        document: "schema/legacy.graphql",
+      }),
+      schemaDocument(
+        "schema/appsync.graphql",
+        "type Listing { id: ID! venue: String } type Query { listing: Listing }",
+      ),
+      resolver("Query", "listing", "graphql", {
+        document: "schema/appsync.graphql",
+      }),
+    ];
+    const op = withGraphql(
+      operation(
+        "useListing",
+        "Listing",
+        "query",
+        "query Listing { listing { id } }",
+      ),
+      {
+        unresolvedClient: {
+          reference: "nextGen ? appSyncClient : railsClient",
+          reason: "the client it passes can be any of 2 clients",
+          pairWithAll: true,
+        },
+      },
+    );
+    const result = pairGraphqlOperations([...summaries, op]);
+    expect(result.unchecked).toEqual([]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([
+      summaries[1],
+      summaries[3],
+    ]);
+    expect(result.findings.map((finding) => finding.kind)).toEqual([
+      "ambiguousProvider",
+    ]);
+    expect(result.findings[0]?.description).toContain(
+      "(schema/appsync.graphql, schema/legacy.graphql)",
+    );
   });
 
   it("stays quiet when the matching resolvers share one workspace", () => {

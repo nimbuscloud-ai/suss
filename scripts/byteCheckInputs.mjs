@@ -295,6 +295,10 @@ export const FIXTURE_INPUTS = [
     "graphql-documents",
     "fixtures/graphql-documents",
   ),
+  fixture("graphql-two-endpoints", [
+    ...dir("fixtures/graphql-two-endpoints"),
+    ...packs("apollo-client=fixtures/graphql-two-endpoints/apollo.json"),
+  ]),
   fixture("hono", [...dir("fixtures/hono"), ...packs("hono")]),
   fixture("hono-openapi", [...dir("fixtures/hono-openapi"), ...packs("hono")]),
   fixture("lambda-invoke", [

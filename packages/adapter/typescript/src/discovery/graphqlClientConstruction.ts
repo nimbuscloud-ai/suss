@@ -26,7 +26,7 @@ import {
   writtenNodeOf,
 } from "./resolveValue.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, GraphqlMetadata } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 
 export interface GraphqlClientRef {
@@ -41,7 +41,7 @@ export interface GraphqlClientRef {
  * `metadata.graphql.client`. A file-scope binding decides per
  * operation; otherwise the project's sole client construction decides
  * for all of them, and a project with two clients and no scopes
- * records nothing.
+ * records nothing. `clientFor` settles a client the call passes.
  *
  * An operation whose document ships a dangling fragment spread also
  * gets `metadata.graphql.fragmentRegistry`, so the checker can say
@@ -53,14 +53,26 @@ export function stampGraphqlClientRefs(
   packs: ReadonlyArray<PatternPack>,
   resolution: ResolutionStore | undefined,
 ): void {
-  const scopes = compileOperationScopes(packs);
-  const sole = soleGraphqlClientRef(
-    collectGraphqlClientRefs(sourceFiles, packs, resolution),
+  const constructions = graphqlClientConstructions(
+    sourceFiles,
+    packs.flatMap((pack) => pack.graphqlClients ?? []),
+    resolution,
   );
-
-  const workspace = sole !== null ? boundWorkspaceFor(sole, packs) : null;
-  const soleClient =
-    sole !== null ? (workspace !== null ? { ...sole, workspace } : sole) : null;
+  const sole = soleGraphqlClientRef(
+    constructionRefs(constructions, resolution),
+  );
+  const grounding: Grounding = {
+    packs,
+    scopes: compileOperationScopes(packs),
+    sole,
+    soleClient: withBoundWorkspace(sole, packs),
+    clientsBuilt: constructions.filter(
+      (construction) => construction.spec.linkProperty !== undefined,
+    ).length,
+    pairWithAll: packs.some(
+      (pack) => pack.graphqlUnboundClients === "pairWithAll",
+    ),
+  };
   // Walked once, and only when an operation ships a dangling spread.
   let registry: FragmentRegistryStatus | null = null;
   for (const summary of summaries) {
@@ -69,13 +81,9 @@ export function stampGraphqlClientRefs(
     }
 
     const existing = readGraphqlMetadata(summary) ?? {};
-    const scoped = scopedWorkspaceFor(summary.location.file, scopes);
-    const client =
-      scoped !== null
-        ? { uri: null, uriRef: null, workspace: scoped }
-        : soleClient;
+    const decided = clientFor(summary, existing, grounding);
     const dangling = (existing.unresolvedFragments?.length ?? 0) > 0;
-    if (client === null && !dangling) {
+    if (decided === null && !dangling) {
       continue;
     }
 
@@ -84,11 +92,161 @@ export function stampGraphqlClientRefs(
     }
 
     summary.metadata = withGraphqlMetadata(summary.metadata, {
-      ...existing,
-      ...(client !== null ? { client } : {}),
+      ...(decided === null ? existing : withoutClient(existing)),
+      ...(decided ?? {}),
       ...(dangling && registry !== null ? { fragmentRegistry: registry } : {}),
     });
   }
+}
+
+function withBoundWorkspace(
+  sole: GraphqlClientRef | null,
+  packs: ReadonlyArray<PatternPack>,
+): (GraphqlClientRef & { workspace?: string }) | null {
+  if (sole === null) {
+    return null;
+  }
+  const workspace = boundWorkspaceFor(sole, packs);
+  return workspace === null ? sole : { ...sole, workspace };
+}
+
+/** What the whole run knows about the project's clients. */
+interface Grounding {
+  packs: ReadonlyArray<PatternPack>;
+  scopes: CompiledScope[];
+  sole: GraphqlClientRef | null;
+  soleClient: (GraphqlClientRef & { workspace?: string }) | null;
+  /** How many clients a call can pass the project builds. */
+  clientsBuilt: number;
+  /** The project's `unboundClients` setting asks for every match. */
+  pairWithAll: boolean;
+}
+
+type ClientDecision = Pick<GraphqlMetadata, "client" | "unresolvedClient">;
+type UnresolvedClient = NonNullable<GraphqlMetadata["unresolvedClient"]>;
+
+/** The reason, marked so the checker pairs the operation when the project asked it to. */
+function underUnboundSetting(
+  unresolved: UnresolvedClient,
+  grounding: Grounding,
+): UnresolvedClient {
+  return grounding.pairWithAll
+    ? { ...unresolved, pairWithAll: true }
+    : unresolved;
+}
+
+/**
+ * Which client an operation goes through, and the service it talks to
+ * when the run can say. Null leaves the summary as it is.
+ *
+ * A client the call passes is tied to a service by a `clients` binding,
+ * or by an operation scope. Without either, it pairs the way an
+ * operation using the app's client does only when it is that client:
+ * the one client the project builds, or the one endpoint every
+ * construction shares. Any other client goes unpaired, with the reason.
+ */
+function clientFor(
+  summary: BehavioralSummary,
+  existing: GraphqlMetadata,
+  grounding: Grounding,
+): ClientDecision | null {
+  const scoped = scopedWorkspaceFor(summary.location.file, grounding.scopes);
+  const chosen =
+    existing.client?.chosenAtCall === true ? existing.client : null;
+  if (chosen === null) {
+    const open = existing.unresolvedClient !== undefined;
+    if (
+      existing.unresolvedClient !== undefined &&
+      !oneEndpointToChoose(grounding)
+    ) {
+      return grounding.pairWithAll
+        ? {
+            unresolvedClient: {
+              ...existing.unresolvedClient,
+              pairWithAll: true,
+            },
+          }
+        : null;
+    }
+    const client =
+      scoped !== null
+        ? { uri: null, uriRef: null, workspace: scoped }
+        : grounding.soleClient;
+    if (client === null) {
+      // An empty decision clears the open choice from the summary.
+      return open ? {} : null;
+    }
+    return { client };
+  }
+
+  const passed = {
+    uri: chosen.uri,
+    uriRef: chosen.uriRef,
+    chosenAtCall: true,
+  };
+  const bound = boundWorkspaceFor(passed, grounding.packs) ?? scoped;
+  if (bound !== null) {
+    return { client: { ...passed, workspace: bound } };
+  }
+
+  if (isTheAppsClient(passed, grounding)) {
+    return { client: passed };
+  }
+  return {
+    client: passed,
+    unresolvedClient: underUnboundSetting(unboundClient(passed), grounding),
+  };
+}
+
+function isTheAppsClient(
+  passed: GraphqlClientRef,
+  grounding: Grounding,
+): boolean {
+  if (grounding.clientsBuilt === 1) {
+    return true;
+  }
+  const key = endpointKeyOf(passed);
+  return (
+    key !== null &&
+    grounding.sole !== null &&
+    key === endpointKeyOf(grounding.sole)
+  );
+}
+
+/**
+ * A client suss could not follow can still go only one way when the
+ * project builds at most one client, or every construction shares one
+ * endpoint, so it pairs like the app's client.
+ */
+function oneEndpointToChoose(grounding: Grounding): boolean {
+  return grounding.clientsBuilt <= 1 || grounding.sole !== null;
+}
+
+function unboundClient(passed: GraphqlClientRef): {
+  reference: string;
+  reason: string;
+} {
+  const key = endpointKeyOf(passed);
+  if (key === null) {
+    return {
+      reference: "the client it passes",
+      reason:
+        "it passes a client whose endpoint suss could not read, and the project builds more than one client, so suss cannot tell which service this one talks to",
+    };
+  }
+  return {
+    reference: key,
+    reason: `it passes the client built with ${key}, the project builds more than one client, and no \`clients\` entry in the pack options says which service ${key} talks to`,
+  };
+}
+
+function endpointKeyOf(ref: GraphqlClientRef): string | null {
+  return ref.uri ?? ref.uriRef;
+}
+
+function withoutClient(existing: GraphqlMetadata): GraphqlMetadata {
+  const { client: _client, unresolvedClient: _unresolved, ...rest } = existing;
+  return rest;
 }
 
 interface CompiledScope {
@@ -157,13 +315,52 @@ export function collectGraphqlClientRefs(
   packs: ReadonlyArray<PatternPack>,
   resolution: ResolutionStore | undefined,
 ): GraphqlClientRef[] {
-  const specs = packs.flatMap((pack) => pack.graphqlClients ?? []);
+  return constructionRefs(
+    graphqlClientConstructions(
+      sourceFiles,
+      packs.flatMap((pack) => pack.graphqlClients ?? []),
+      resolution,
+    ),
+    resolution,
+  );
+}
+
+/** The endpoint each construction is built with. A construction with no uri of its own is left out. */
+function constructionRefs(
+  constructions: ReadonlyArray<GraphqlClientConstruction>,
+  resolution: ResolutionStore | undefined,
+): GraphqlClientRef[] {
+  return constructions.flatMap((construction) => {
+    const found = constructionRef(
+      construction.node,
+      construction.spec.uriProperty,
+      resolution,
+    );
+    return found === null ? [] : [found];
+  });
+}
+
+export type GraphqlClientSpec = NonNullable<
+  PatternPack["graphqlClients"]
+>[number];
+
+export interface GraphqlClientConstruction {
+  node: NewExpression | CallExpression;
+  spec: GraphqlClientSpec;
+}
+
+/** Every construction of a client or transport the specs describe, in the given files. */
+export function graphqlClientConstructions(
+  sourceFiles: ReadonlyArray<SourceFile>,
+  specs: ReadonlyArray<GraphqlClientSpec>,
+  resolution: ResolutionStore | undefined,
+): GraphqlClientConstruction[] {
   if (specs.length === 0) {
     return [];
   }
 
   const store = resolution ?? new ResolutionStore();
-  const refs: GraphqlClientRef[] = [];
+  const found: GraphqlClientConstruction[] = [];
   for (const sourceFile of sourceFiles) {
     for (const spec of specs) {
       const constructions = callsByOriginName(
@@ -173,14 +370,41 @@ export function collectGraphqlClientRefs(
         new Set([spec.importName]),
       );
       for (const node of constructions.keys()) {
-        const found = constructionRef(node, spec.uriProperty, resolution);
-        if (found !== null) {
-          refs.push(found);
-        }
+        found.push({ node, spec });
       }
     }
   }
-  return refs;
+  return found;
+}
+
+/**
+ * The endpoint a construction is built with. A client written without
+ * a uri takes the endpoint of the transport its link option is set to,
+ * when that is one of `transports`.
+ */
+export function constructionEndpoint(
+  construction: GraphqlClientConstruction,
+  transports: ReadonlyArray<GraphqlClientConstruction>,
+  resolution: ResolutionStore | undefined,
+): GraphqlClientRef | null {
+  const own = constructionRef(
+    construction.node,
+    construction.spec.uriProperty,
+    resolution,
+  );
+  const linkProperty = construction.spec.linkProperty;
+  if (own !== null || linkProperty === undefined) {
+    return own;
+  }
+
+  const options = firstArgumentObject(construction.node, resolution);
+  const link =
+    options === null ? null : propertyOf(options, linkProperty, resolution);
+  const transport = link === null ? null : writtenNodeOf(link, resolution);
+  const built = transports.find((one) => one.node === transport);
+  return built === undefined
+    ? null
+    : constructionRef(built.node, built.spec.uriProperty, resolution);
 }
 
 /**
