@@ -2,6 +2,6 @@
   "name": "@suss/runtime-node",
   "exports": 13,
   "internal": 42,
-  "consumers": 38,
+  "consumers": 33,
   "unfollowedCalls": 3
 }

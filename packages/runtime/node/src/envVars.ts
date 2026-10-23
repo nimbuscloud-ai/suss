@@ -39,7 +39,6 @@ type FunctionLike =
 import {
   declarationsBehind,
   dottedPathOf,
-  findEnclosingFunction,
   functionTargetOf,
   isDefaultedAt,
   stringValueOf,
@@ -81,7 +80,8 @@ const IMPORT_META_ENV = "import.meta.env";
 const VITE_BUILD_KEYS = new Set(["MODE", "BASE_URL", "PROD", "DEV", "SSR"]);
 
 interface EnvRead {
-  name: string;
+  /** Null when the code works the name out at run time. */
+  name: string | null;
   defaulted: boolean;
   /** Where the read is reported, which sets its line number. */
   node: Node;
@@ -90,10 +90,12 @@ interface EnvRead {
 }
 
 /**
- * Every spelling gets the dotted name, so a consumer grouping reads by
- * variable never has to parse an index argument or a binding pattern.
+ * Every spelling with a name gets the dotted name, so a consumer
+ * grouping reads by variable never has to parse an index argument or a
+ * binding pattern. A read with no name is spelled as written.
  */
-const readName = (read: EnvRead): string => `${read.object}.${read.name}`;
+const readName = (read: EnvRead): string =>
+  read.name === null ? read.node.getText() : `${read.object}.${read.name}`;
 
 /** `process.env` or `import.meta.env` as the code spells it, or null for any other node. */
 function environmentSpelling(node: Node): string | null {
@@ -115,125 +117,31 @@ function dottedRead(node: PropertyAccessExpression): EnvRead[] {
 }
 
 /**
- * `process.env["NAME"]`. Pairing needs the variable's name, so an index
- * that does not resolve to a literal reports nothing.
+ * `process.env["NAME"]`. When the index is not a literal, as in a
+ * helper's `process.env[name]`, the read has no name. Each call to the
+ * helper records its own read with the name it passes, so the helper's
+ * read does not take on every caller's names.
  */
 function bracketRead(
   access: ElementAccessExpression,
   object: string,
-  resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   const argument = access.getArgumentExpression();
   if (argument === undefined) {
     return [];
   }
-  if (
-    N.isStringLiteral(argument) ||
-    N.isNoSubstitutionTemplateLiteral(argument)
-  ) {
-    const name = argument.getLiteralValue();
-    if (name.length === 0) {
-      return [];
-    }
-    return [{ name, defaulted: isDefaultedAt(access), node: access, object }];
-  }
-  if (N.isIdentifier(argument)) {
-    return readsThroughParameter(access, argument, object, resolution);
-  }
-  return [];
-}
-
-/**
- * A helper is visited once for each unit whose closure contains it, and
- * the store query is the costly part, so later visits reuse the answer.
- */
-const CALLER_LOOKUPS = new WeakMap<Node, EnvRead[]>();
-
-/**
- * `process.env[name]` where `name` is a parameter. The reads are the
- * literals callers pass, each reported at its call, so the unit that
- * passed the name is recorded as reading the variable.
- */
-function readsThroughParameter(
-  access: ElementAccessExpression,
-  index: Identifier,
-  object: string,
-  resolution: ResolutionStore | undefined,
-): EnvRead[] {
-  const remembered = CALLER_LOOKUPS.get(access);
-  if (remembered !== undefined) {
-    return remembered;
-  }
-  const found = callerLiteralReads(access, index, object, resolution);
-  CALLER_LOOKUPS.set(access, found);
-  return found;
-}
-
-function callerLiteralReads(
-  access: ElementAccessExpression,
-  index: Identifier,
-  object: string,
-  resolution: ResolutionStore | undefined,
-): EnvRead[] {
-  if (resolution === undefined) {
-    return [];
-  }
-  const enclosing = findEnclosingFunction(access);
-  if (enclosing === null) {
-    return [];
-  }
-  const start = enclosing
-    .getParameters()
-    .find((parameter) => parameter.getName() === index.getText());
-  if (start === undefined) {
-    return [];
-  }
-
   const defaulted = isDefaultedAt(access);
-  const reads: EnvRead[] = [];
-  // The literal can be more than one call away, as when getEnv(name)
-  // passes it to requireEnv(name). `taken` stops two helpers that call
-  // each other from looping.
-  const pending: ParameterDeclaration[] = [start];
-  const taken = new Set<ParameterDeclaration>();
-  while (pending.length > 0) {
-    const wanted = pending.pop() as ParameterDeclaration;
-    if (taken.has(wanted)) {
-      continue;
-    }
-    taken.add(wanted);
-    for (const passed of resolution.argumentsPassedTo(wanted)) {
-      const literal = stringValueOf(passed.argument, resolution);
-      if (literal !== null && literal.length > 0) {
-        reads.push({ name: literal, defaulted, node: passed.call, object });
-        continue;
-      }
-      const forwarded = forwardedParameter(passed.argument, passed.call);
-      if (forwarded !== null) {
-        pending.push(forwarded);
-      }
-    }
+  if (
+    !N.isStringLiteral(argument) &&
+    !N.isNoSubstitutionTemplateLiteral(argument)
+  ) {
+    return [{ name: null, defaulted, node: access, object }];
   }
-  return reads;
-}
-
-/** The caller's parameter, when the argument passes one along unchanged. */
-function forwardedParameter(
-  passed: Node,
-  call: Node,
-): ParameterDeclaration | null {
-  if (!N.isIdentifier(passed)) {
-    return null;
+  const name = argument.getLiteralValue();
+  if (name.length === 0) {
+    return [];
   }
-  const caller = findEnclosingFunction(call);
-  if (caller === null) {
-    return null;
-  }
-  const behind = symbolBehind(passed)?.getValueDeclaration();
-  if (behind === undefined || !N.isParameterDeclaration(behind)) {
-    return null;
-  }
-  return behind.getParent() === caller ? behind : null;
+  return [{ name, defaulted, node: access, object }];
 }
 
 /** The variable read by one element of `const { A, B: c } = process.env`. */
@@ -285,11 +193,10 @@ function destructuredReads(
 function readsThroughEnvObject(
   envNode: PropertyAccessExpression,
   object: string,
-  resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   const parent = envNode.getParent();
   if (N.isElementAccessExpression(parent)) {
-    return bracketRead(parent, object, resolution);
+    return bracketRead(parent, object);
   }
   if (N.isVariableDeclaration(parent)) {
     return destructuredReads(parent, object);
@@ -317,12 +224,13 @@ function envReadsAt(
   const object = environmentSpelling(node);
   return object === null
     ? dottedRead(node)
-    : readsThroughEnvObject(node, object, resolution);
+    : readsThroughEnvObject(node, object);
 }
 
 /**
- * `requireEnv("TABLE_NAME")`, read forward from the call. A call at module
- * scope is in no unit's body, so readsThroughParameter never sees it (#326).
+ * `requireEnv("TABLE_NAME")`, read forward from the call. Every read
+ * through a helper is reported here, at the call that passes the name,
+ * a call at module scope included (#326).
  */
 function readsThroughHelperCall(
   call: CallExpression,
@@ -344,7 +252,7 @@ function readsThroughHelperCall(
     }
     const sites = sitesNaming(parameter) ?? directEnvReads(callee, parameter);
     const [first] = sites;
-    if (first === undefined) {
+    if (first === undefined || handsOnParameter(passed)) {
       return;
     }
     const literal = stringValueOf(passed, resolution);
@@ -371,6 +279,21 @@ function readsThroughHelperCall(
     // every handler calls, so each call reports the keys that parse reads.
     ...anchoredAt(schemaEnvReadsInside(callee, resolution), call),
   ];
+}
+
+/**
+ * Whether the argument is the calling function's own parameter, as in
+ * `getEnv(key)` calling `requireEnv(key)`. The name comes from whoever
+ * calls `getEnv`, and the rules follow it to that call, so the
+ * forwarding call records nothing. Settling the parameter here would
+ * give the helper its callers' names.
+ */
+function handsOnParameter(passed: Node): boolean {
+  if (!N.isIdentifier(passed)) {
+    return false;
+  }
+  const declared = symbolBehind(passed)?.getValueDeclaration();
+  return declared !== undefined && N.isParameterDeclaration(declared);
 }
 
 /** The environment object a helper's read site is off, or `process.env` when the site does not spell one. */
@@ -495,7 +418,11 @@ function directEnvRead(
 
 /** Whether the read is of a key the bundler sets, which is no environment variable. */
 function readsBuildKey(read: EnvRead): boolean {
-  return read.object === IMPORT_META_ENV && VITE_BUILD_KEYS.has(read.name);
+  return (
+    read.object === IMPORT_META_ENV &&
+    read.name !== null &&
+    VITE_BUILD_KEYS.has(read.name)
+  );
 }
 
 function configReadEffect(read: EnvRead, where: DeploymentOptions): Effect {
@@ -527,25 +454,20 @@ function recognizeProcessEnvRead(
 }
 
 /**
- * Every environment variable read in a source file, with its line. This
- * runs outside extraction, which uses `envVarRecognizer` through the pack
- * instead.
+ * Every environment variable read in a source file that says which
+ * variable, with its line. This runs outside extraction, which uses
+ * `envVarRecognizer` through the pack instead.
  */
 export function findProcessEnvReads(
   sourceFile: SourceFile,
   resolution?: ResolutionStore,
 ): Array<{ name: string; defaulted: boolean; line: number }> {
   const out: Array<{ name: string; defaulted: boolean; line: number }> = [];
-  // A helper call is found both at the call and at the bracket read in
-  // its callee, reported at the same node, so the second is dropped.
-  const seen = new Set<string>();
   sourceFile.forEachDescendant((node) => {
     for (const read of envReadsAt(node, resolution)) {
-      const key = `${read.node.getPos()}:${read.name}`;
-      if (seen.has(key) || readsBuildKey(read)) {
+      if (read.name === null || readsBuildKey(read)) {
         continue;
       }
-      seen.add(key);
       out.push({
         name: read.name,
         defaulted: read.defaulted,

@@ -457,6 +457,33 @@ function lookupConfigReads(
   return out;
 }
 
+/**
+ * The read an effect records, when it is a config read that says which
+ * variable. A helper that reads `process.env[name]` records a read with
+ * no name, and each call to it records its own read with the name it
+ * passes, so the helper's read is left out of pairing.
+ */
+function namedRead(
+  effect: Effect,
+  summary: BehavioralSummary,
+  transitionId: string,
+): EnvVarRead | null {
+  if (
+    effect.type !== "interaction" ||
+    effect.interaction.class !== "config-read" ||
+    effect.interaction.name === null
+  ) {
+    return null;
+  }
+  return {
+    name: effect.interaction.name,
+    summary,
+    transitionId,
+    defaulted: effect.interaction.defaulted === true,
+    ...(effect.callee === undefined ? {} : { spelling: effect.callee }),
+  };
+}
+
 function collectEnvVarReads(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
@@ -472,35 +499,24 @@ function collectEnvVarReads(
       if (!summarySet.has(record.summary)) {
         continue;
       }
-      sawConfigReadEffect = true;
-      reads.push({
-        name: record.effect.interaction.name,
-        summary: record.summary,
-        transitionId: record.transitionId,
-        defaulted: record.effect.interaction.defaulted === true,
-        ...(record.effect.callee === undefined
-          ? {}
-          : { spelling: record.effect.callee }),
-      });
+      const read = namedRead(
+        record.effect,
+        record.summary,
+        record.transitionId,
+      );
+      if (read !== null) {
+        sawConfigReadEffect = true;
+        reads.push(read);
+      }
     }
   } else {
     for (const summary of summaries) {
       for (const transition of summary.transitions) {
         for (const effect of transition.effects) {
-          if (
-            effect.type === "interaction" &&
-            effect.interaction.class === "config-read"
-          ) {
+          const read = namedRead(effect, summary, transition.id);
+          if (read !== null) {
             sawConfigReadEffect = true;
-            reads.push({
-              name: effect.interaction.name,
-              summary,
-              transitionId: transition.id,
-              defaulted: effect.interaction.defaulted === true,
-              ...(effect.callee === undefined
-                ? {}
-                : { spelling: effect.callee }),
-            });
+            reads.push(read);
           }
         }
       }

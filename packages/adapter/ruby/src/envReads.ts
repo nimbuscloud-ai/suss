@@ -63,7 +63,12 @@ interface HelperFacts extends EnvFacts {
 }
 
 interface EnvRead {
-  name: string;
+  /**
+   * Null when the code works the name out at run time, as a helper's
+   * `ENV[name]` does. Each call to the helper records its own read with
+   * the name it passes.
+   */
+  name: string | null;
   defaulted: boolean;
 }
 
@@ -379,7 +384,7 @@ function configReadEffect(read: EnvRead, at: RbNode): Effect {
   return {
     type: "interaction",
     binding: runtimeConfigBinding({ recognition: RUBY_ENV_RECOGNITION }),
-    callee: `ENV["${read.name}"]`,
+    callee: read.name === null ? at.text : `ENV["${read.name}"]`,
     interaction: {
       class: "config-read",
       name: read.name,
@@ -394,8 +399,7 @@ function envReadAt(node: RbNode): EnvRead | null {
   if (site === null) {
     return null;
   }
-  const name = stringLiteralValue(site.name);
-  return name === null ? null : { name, defaulted: site.defaulted };
+  return { name: stringLiteralValue(site.name), defaulted: site.defaulted };
 }
 
 function envSiteAt(node: RbNode): EnvSite | null {

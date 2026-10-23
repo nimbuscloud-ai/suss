@@ -1549,7 +1549,14 @@
                                 "const": "config-read"
                               },
                               "name": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "defaulted": {
                                 "type": "boolean"

@@ -15,7 +15,7 @@ import type { RbNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 
 interface Read {
-  name: string;
+  name: string | null;
   defaulted: boolean;
 }
 
@@ -171,12 +171,16 @@ describe("ENV spellings", () => {
     ]);
   });
 
-  it("skips a read whose name is not a string literal", async () => {
+  it("records a read with no name when the name is not a string literal", async () => {
     expect(
       await fileReads(
         'A = ENV[name]\nB = ENV.fetch("#{prefix}_B")\nC = ENV[:C]\n',
       ),
-    ).toEqual([]);
+    ).toEqual([
+      { name: null, defaulted: false },
+      { name: null, defaulted: false },
+      { name: null, defaulted: false },
+    ]);
   });
 
   it("ignores writes, membership tests, and other objects' fetch", async () => {
