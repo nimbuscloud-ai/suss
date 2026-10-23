@@ -27,7 +27,12 @@ import { evaluatedValue } from "./values/evaluator.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawEffect, RawTerminal } from "@suss/extractor";
+import type {
+  PlacedEffect,
+  RawBranch,
+  RawEffect,
+  RawTerminal,
+} from "@suss/extractor";
 import type { RbNode } from "./parser.js";
 import type { EndingCall } from "./responseStatus.js";
 
@@ -122,7 +127,7 @@ function exitCodeOf(
  */
 export function exitingBranches(
   method: RbNode,
-  effects: readonly RawEffect[],
+  effects: readonly PlacedEffect<RawEffect>[],
   facts?: Database,
 ): RawBranch[] | null {
   const body = field(method, "body");

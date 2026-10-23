@@ -9,16 +9,17 @@ import { parsePython } from "./parser.js";
 import { extractPythonProject, factsForFile } from "./project.js";
 import { bindModule } from "./scope.js";
 
-import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PyNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 
 interface Read {
   name: string;
   defaulted: boolean;
 }
 
-function readsOf(effects: Effect[]): Read[] {
-  return effects.map((effect) => {
+function readsOf(found: readonly EffectAt[]): Read[] {
+  return found.map(({ effect }) => {
     if (
       effect.type !== "interaction" ||
       effect.interaction.class !== "config-read"
@@ -492,17 +493,19 @@ describe("what a function body reads", () => {
 
   it("spells every read as os.environ[...] so the checker names one channel", async () => {
     const tree = await parsePython('import os\nA = os.getenv("A")\n');
-    const [effect] = envReadEffects(tree.rootNode, bindModule(tree.rootNode));
-    expect(effect).toMatchObject({
+    const [read] = envReadEffects(tree.rootNode, bindModule(tree.rootNode));
+    expect(read?.effect).toMatchObject({
       type: "interaction",
       callee: 'os.environ["A"]',
       binding: { transport: "os", recognition: "python-env" },
+      location: { start: 2, end: 2 },
     });
   });
 
   it("leaves the deployment off a read, since the code does not say which one runs it", async () => {
     const tree = await parsePython('import os\nA = os.getenv("A")\n');
-    const [effect] = envReadEffects(tree.rootNode, bindModule(tree.rootNode));
+    const [read] = envReadEffects(tree.rootNode, bindModule(tree.rootNode));
+    const effect = read?.effect;
     expect(effect?.type === "interaction" && effect.binding.semantics).toEqual({
       name: "runtime-config",
     });

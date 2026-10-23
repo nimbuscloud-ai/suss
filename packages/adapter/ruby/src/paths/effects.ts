@@ -4,7 +4,7 @@
  * with preconditions as one that does not always run.
  */
 
-import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
+import { sharedGatingConditions, statementSites } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
 import {
@@ -12,15 +12,22 @@ import {
   field,
   LAMBDA_TYPE,
   MODULE_SCOPE_STOPS,
-  NodeMap,
   OWN_BODY_TYPES,
+  rangeOf,
 } from "../ast.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
 
+import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { EffectArg, RawEffect } from "@suss/extractor";
+import type {
+  EffectArg,
+  EffectSite,
+  PlacedEffect,
+  RawEffect,
+  StatementSites,
+} from "@suss/extractor";
 import type { RbNode } from "../parser.js";
 
 type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
@@ -285,12 +292,30 @@ function argsOf(call: RbNode, facts: Database | undefined): EffectArg[] {
 function enclosingStatement(call: RbNode, body: RbNode): RbNode {
   let current: RbNode = call;
   while (current.parent !== null) {
-    if (BLOCK_TYPES.has(current.parent.type) || current.parent.id === body.id) {
+    if (listsStatements(current.parent, body)) {
       return current;
     }
     current = current.parent;
   }
   return current;
+}
+
+/**
+ * Whether the lowering reads this node's children as statements. A
+ * `begin` written as a statement lowers to a try, so its own body and its
+ * `ensure` do. One used as a value is part of the statement around it.
+ */
+function listsStatements(node: RbNode, body: RbNode): boolean {
+  if (BLOCK_TYPES.has(node.type) || node.id === body.id) {
+    return true;
+  }
+  const begin = node.type === "ensure" ? node.parent : node;
+  const around = begin?.type === "begin" ? begin.parent : null;
+  return (
+    around !== null &&
+    around !== undefined &&
+    (BLOCK_TYPES.has(around.type) || around.id === body.id)
+  );
 }
 
 /**
@@ -317,10 +342,15 @@ export function invocationEffects(
   ).map((site) => site.effect);
 }
 
-/** One call a body makes, beside the effect recorded for it. */
-export interface InvocationSite {
+/** An effect a reader built from the source, and the node it built it from. */
+export interface EffectAt {
+  effect: Effect;
+  at: RbNode;
+}
+
+/** One call a body makes, beside the effect recorded for it and where it is written. */
+export interface InvocationSite extends PlacedEffect<InvocationEffect> {
   call: RbNode;
-  effect: InvocationEffect;
 }
 
 /** The same, keeping each effect's call, for a reader that has to go back to it. */
@@ -358,44 +388,14 @@ function effectsOfBody(
   keepsArglessCall: (call: RbNode) => boolean,
   facts: Database | undefined,
 ): InvocationSite[] {
-  const body = read.body;
   const calls = callsReported(bodyCalls(read, inherited), keepsArglessCall);
   if (calls.length === 0) {
     return [];
   }
 
-  // `Filter.new(a).results` puts two calls in one statement. The engine
-  // keys a path by the node it was given, so both calls must map to the
-  // same statement node.
-  const statementOf = new Map<number, RbNode>();
-  const byStatement = new NodeMap<RbNode>();
-  const statements: RbNode[] = [];
-  for (const call of calls) {
-    const written = enclosingStatement(call, body);
-    const statement = byStatement.get(written);
-    if (statement === undefined) {
-      byStatement.set(written, written);
-      statements.push(written);
-    }
-    statementOf.set(call.id, statement ?? written);
-  }
-
-  const lowered = lowerRubyBody(body, statements);
-  const enumerated = enumerateOrDegrade(
-    {
-      statements: lowered.statements,
-      terminalsByStmt: lowered.terminalsByStmt,
-    },
-    statements,
-  );
-
+  const sites = sitesIn(read.body, calls);
   return calls.map((call) => {
-    const statement = statementOf.get(call.id);
-    const conditions = sharedGatingConditions(
-      statement === undefined
-        ? undefined
-        : enumerated.byTerminal.get(statement),
-    );
+    const conditions = sharedGatingConditions(sites.pathsTo(call));
     return {
       call,
       effect: {
@@ -404,7 +404,35 @@ function effectsOfBody(
         args: argsOf(call, facts),
         async: false,
         ...(conditions.length > 0 ? { preconditions: conditions } : {}),
+        location: rangeOf(call),
       },
+      site: sites.siteOf(call, conditions),
     };
   });
+}
+
+/** The paths to the statement each of these nodes is written in, and where each one is. */
+function sitesIn(
+  body: RbNode,
+  nodes: readonly RbNode[],
+): StatementSites<RbNode, RbNode> {
+  return statementSites(nodes, {
+    statementOf: (node) => enclosingStatement(node, body),
+    lower: (statements) => lowerRubyBody(body, statements),
+    firstLine: (node) => rangeOf(node).start,
+  });
+}
+
+/**
+ * Where each of these nodes is written in the body, for an effect a pack
+ * recognized at one of them to be placed on branches by.
+ */
+export function effectSitesIn(
+  read: ReadableBody | null,
+  nodes: readonly RbNode[],
+): (node: RbNode) => EffectSite {
+  if (read === null || nodes.length === 0) {
+    return (node) => ({ line: rangeOf(node).start });
+  }
+  return sitesIn(read.body, nodes).plainSiteOf;
 }

@@ -20,7 +20,12 @@ import { escapingRaises } from "./raises.js";
 import { responseBranches } from "./responseStatus.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
-import type { RawBranch, RawEffect, Reading } from "@suss/extractor";
+import type {
+  PlacedEffect,
+  RawBranch,
+  RawEffect,
+  Reading,
+} from "@suss/extractor";
 import type { ExceptionClass } from "./exceptionClasses.js";
 import type { ControllerActions } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -62,6 +67,15 @@ async function actionMethod(actionBody: string) {
   return method;
 }
 
+/** An effect written above the body's first statement, under the guards it records. */
+function atTheTop<E>(effect: E): PlacedEffect<E> {
+  const preconditions =
+    (effect as RawEffect).type === "invocation"
+      ? (effect as Extract<RawEffect, { type: "invocation" }>).preconditions
+      : undefined;
+  return { effect, site: { line: 1, preconditions } };
+}
+
 async function branchesOf(
   actionBody: string,
   pattern: Partial<ControllerActions> = RAILS_LIKE,
@@ -72,8 +86,8 @@ async function branchesOf(
   const branches = responseBranches(
     method,
     controllerActionsPattern(pattern),
-    effects,
-    extraEffects,
+    effects.map(atTheTop),
+    extraEffects?.map(atTheTop),
   );
   if (branches === null) {
     throw new Error("the walk read no branches for this action");

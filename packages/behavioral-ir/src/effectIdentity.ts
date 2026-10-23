@@ -6,15 +6,20 @@
  * is the only place that multiplicity is kept, and a reader that needs
  * it reads the field rather than counting entries.
  *
- * Two fields stay out of the key. `groupId` says which call site produced
- * an effect rather than what the effect is, and `count` is the result of
- * the fold. Only the top level is filtered, because an argument object is
- * free to have a field of its own called `count`.
+ * Three fields stay out of the key. `groupId` and `location` say which
+ * call site produced an effect rather than what the effect is, and
+ * `count` is the result of the fold. The folded effect keeps the first
+ * site's `location`. Only the top level is filtered, because an argument
+ * object is free to have a field of its own called `count`.
  */
 
 import type { Effect } from "./index.js";
 
-const NOT_IN_KEY: ReadonlySet<string> = new Set(["groupId", "count"]);
+const NOT_IN_KEY: ReadonlySet<string> = new Set([
+  "groupId",
+  "count",
+  "location",
+]);
 
 /**
  * A callee's text with its whitespace normalized. A callee is the call

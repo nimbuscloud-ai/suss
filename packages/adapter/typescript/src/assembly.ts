@@ -10,7 +10,7 @@
 
 import { type CallExpression, type Expression, Node } from "ts-morph";
 
-import { guardsHoldOn, runsBefore, splitAtHandOffs } from "@suss/extractor";
+import { firesOn, runsBefore, splitAtHandOffs } from "@suss/extractor";
 
 import {
   type ConditionInfo,
@@ -42,6 +42,7 @@ import type { Effect } from "@suss/behavioral-ir";
 import type {
   AccessRecognizer,
   BodyContent,
+  EffectSite,
   HandOffSite,
   InvocationRecognizer,
   KeepsArms,
@@ -73,23 +74,13 @@ import type { ResolveCallee } from "./terminals/helperResolution.js";
 const preconditionsOf = (effect: RawEffect): RawCondition[] | undefined =>
   effect.type === "invocation" ? effect.preconditions : undefined;
 
-/** Where a call is and what it is written under. */
-interface CallSite {
-  line: number;
-  alwaysRuns: boolean;
-  preconditions: RawCondition[] | undefined;
-}
-
-/**
- * Whether the call at `site` runs on the way to `branch`'s terminal.
- * Both tests, and why each is needed, are in the `@suss/extractor`
- * README.
- */
-function firesOn(site: CallSite, branch: RawBranch): boolean {
-  if (!guardsHoldOn(site.preconditions, branch.conditions)) {
-    return false;
-  }
-  return site.alwaysRuns || runsBefore(site.line, branch.terminal.location.end);
+/** Where the call behind a plain invocation is written, for the shared branch test. */
+function invocationSite(call: InvocationEffectLocation): EffectSite {
+  return {
+    line: call.line,
+    preconditions: preconditionsOf(call.effect),
+    cleansUpFrom: call.cleansUpFrom,
+  };
 }
 
 /**
@@ -300,7 +291,7 @@ export function extractRawBranches(
       .filter(({ terminal }) => terminal.kind === "exit")
       .map(({ node }) => node),
   );
-  const { byTerminal } = computePathConditions(
+  const { byTerminal, placement } = computePathConditions(
     func,
     terminals.map(({ node }) => node),
     barriers,
@@ -353,6 +344,7 @@ export function extractRawBranches(
       // Dead-code terminals (no entry path reaches them) produce no
       // branches: a terminal that cannot fire is not behavior.
       const conditionLists = byTerminal.get(node) ?? [];
+      const loopAround = placement.get(node)?.loopAround;
       return conditionLists.map((infos): RawBranch => {
         // When two terminals share a node, `whenAlso` is the only thing
         // that tells them apart. The path conditions cannot, because
@@ -366,6 +358,7 @@ export function extractRawBranches(
           terminal,
           effects: [] as RawEffect[],
           location: terminal.location,
+          ...(loopAround === undefined ? {} : { loopAround }),
           isDefault: isDefaultConditionList(infos),
         };
       });
@@ -402,9 +395,7 @@ export function extractRawBranches(
     );
     for (const branch of distinctBranches) {
       branch.effects = sideEffects
-        .filter((i) =>
-          firesOn({ ...i, preconditions: preconditionsOf(i.effect) }, branch),
-        )
+        .filter((i) => firesOn(invocationSite(i), branch))
         .map((i) => i.effect);
     }
   }
@@ -483,11 +474,9 @@ function handOffSites(
       continue;
     }
     sites.push({
+      ...invocationSite(site),
       helper,
-      preconditions: preconditionsOf(site.effect),
-      line: site.line,
       at: lineRangeOf(site.node),
-      alwaysRuns: site.alwaysRuns,
     });
   }
   return sites;
@@ -525,20 +514,15 @@ function accountFor(
   if (writesTerminal(node, terminalNodes)) {
     return { node, callee, line, outcome: "terminal" };
   }
-  const call: CallSite = {
-    line,
-    alwaysRuns: site.alwaysRuns,
-    preconditions: preconditionsOf(site.effect),
-  };
+  const call = invocationSite(site);
   if (branches.some((branch) => firesOn(call, branch))) {
     return { node, callee, line, outcome: "invocation" };
   }
   // A branch whose terminal runs at or after this call makes the call
   // reachable; firing on none of them despite that is a dropped call,
   // not dead code.
-  const reachable = branches.some(
-    (branch) =>
-      site.alwaysRuns || runsBefore(line, branch.terminal.location.end),
+  const reachable = branches.some((branch) =>
+    runsBefore(call.cleansUpFrom ?? line, branch.terminal.location.end),
   );
   return {
     node,

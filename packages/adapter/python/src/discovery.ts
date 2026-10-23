@@ -16,6 +16,7 @@ import {
   absentReading,
   ambiguousReading,
   andThenReading,
+  effectsFiringOn,
   firstWrittenReading,
   mapReading,
   unreadableReading,
@@ -56,7 +57,7 @@ import {
   enumerateBodyBranches,
   returnStatements,
 } from "./paths/bodyBranches.js";
-import { invocationEffects } from "./paths/effects.js";
+import { effectSitesIn, invocationSites } from "./paths/effects.js";
 import {
   raisedResponses,
   returnedResponseStatus,
@@ -86,6 +87,7 @@ import type {
   ChosenReading,
   DefaultedReading,
   ExtractorOptions,
+  PlacedEffect,
   RawBranch,
   RawCodeStructure,
   RawParameter,
@@ -938,7 +940,7 @@ function terminalBranchOf(
 
 interface PerTerminalOptions {
   definitionNode: PyNode;
-  effects: readonly InvocationEffect[];
+  effects: readonly PlacedEffect<InvocationEffect>[];
   responseStatusCalls: readonly PyStatusCall[];
   ctx: TerminalContext;
 }
@@ -1452,7 +1454,8 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     readReturnAnnotation(definitionNode, enclosingScope, ctx),
   );
 
-  const effects = invocationEffects(definitionNode, options.facts);
+  const calls = invocationSites(definitionNode, options.facts);
+  const effects = calls.map((call) => call.effect);
   const extra = recognizedBodyEffects(
     definitionNode,
     module,
@@ -1461,7 +1464,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   );
   const perTerminal = branchesPerTerminal({
     definitionNode,
-    effects,
+    effects: calls,
     responseStatusCalls: options.responseStatusCalls,
     ctx: {
       pattern,
@@ -1656,7 +1659,7 @@ function unreadRoleReadings(
 
 /** What a body does besides calling, and where the values its effects are given came from. */
 export interface BodyEffects {
-  effects: Effect[];
+  effects: PlacedEffect<Effect>[];
   provenance: RawProvenance[];
 }
 
@@ -1671,12 +1674,17 @@ export function recognizedBodyEffects(
     storageLookup === undefined
       ? { effects: [], slots: [] }
       : bodyStorage(definitionNode, storageLookup);
+  const found = [
+    ...envReadEffects(definitionNode, module, facts),
+    ...storage.effects,
+    ...streamWriteEffects(definitionNode, module),
+  ];
+  const siteOf = effectSitesIn(
+    field(definitionNode, "body"),
+    found.map((one) => one.at),
+  );
   return {
-    effects: [
-      ...envReadEffects(definitionNode, module, facts),
-      ...storage.effects,
-      ...streamWriteEffects(definitionNode, module),
-    ],
+    effects: found.map(({ effect, at }) => ({ effect, site: siteOf(at) })),
     provenance:
       storage.slots.length === 0 || storageLookup === undefined
         ? []
@@ -1687,17 +1695,18 @@ export function recognizedBodyEffects(
   };
 }
 
-/** A branch with the body's own effects on it, and where their values came from. */
+/** A branch with the body's own effects that run before its terminal, and where their values came from. */
 export function withBodyEffects(
   branch: RawBranch,
   extra: BodyEffects,
 ): RawBranch {
-  if (extra.effects.length === 0) {
+  const effects = effectsFiringOn(extra.effects, branch);
+  if (effects.length === 0) {
     return branch;
   }
   return {
     ...branch,
-    extraEffects: extra.effects,
+    extraEffects: effects,
     ...(extra.provenance.length === 0 ? {} : { provenance: extra.provenance }),
   };
 }

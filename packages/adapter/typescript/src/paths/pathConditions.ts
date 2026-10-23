@@ -56,7 +56,9 @@ import {
   enumerateStructuredPaths,
   type KeepsArms,
   PathBudgetExceeded,
+  placeTerminals,
   type StructuredStatement,
+  type TerminalPlacement,
   UnmodeledFlow,
 } from "@suss/extractor";
 
@@ -88,6 +90,8 @@ export interface PathConditionsResult {
    * the synthetic `functionFallthrough` terminal's branches.
    */
   fallthrough: TerminalPaths;
+  /** The loop around each terminal written in one, keyed by terminal node. */
+  placement: Map<Node, TerminalPlacement>;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,14 +170,15 @@ export function computePathConditions(
   const body = func.getBody();
   if (body === undefined) {
     // Ambient declaration, nothing to enumerate, nothing terminates.
-    return { byTerminal: new Map(), fallthrough: [] };
+    return { byTerminal: new Map(), fallthrough: [], placement: new Map() };
   }
   if (containsUnmodeledFlow(body, func, barriers)) {
     return degradedResult(func, terminalNodes, "labeled statement");
   }
 
+  let lowered: LoweredFunctionBody | undefined;
   try {
-    const lowered = Node.isBlock(body)
+    lowered = Node.isBlock(body)
       ? lowerFunctionBody(body, terminalNodes, func, barriers, endings)
       : loweredExpressionBody(body, terminalNodes, func, barriers);
     const result = enumerateStructuredPaths({
@@ -183,15 +188,18 @@ export function computePathConditions(
     });
     return composeExpressionLevel(func, result, lowered.terminalHomeRaw);
   } catch (error) {
+    const placement =
+      lowered === undefined ? new Map() : placeTerminals(lowered);
     if (error instanceof PathBudgetExceeded) {
       return degradedResult(
         func,
         terminalNodes,
         error.message === "" ? "path budget exceeded" : error.message,
+        placement,
       );
     }
     if (error instanceof UnmodeledFlow) {
-      return degradedResult(func, terminalNodes, error.message);
+      return degradedResult(func, terminalNodes, error.message, placement);
     }
     throw error;
   }
@@ -206,7 +214,7 @@ export function computePathConditions(
  */
 function composeExpressionLevel(
   func: FunctionRoot,
-  result: { byTerminal: Map<Node, TerminalPaths>; fallthrough: TerminalPaths },
+  result: PathConditionsResult,
   terminalHomeRaw: ReadonlyMap<Node, Node>,
 ): PathConditionsResult {
   const byTerminal = new Map<Node, TerminalPaths>();
@@ -218,7 +226,11 @@ function composeExpressionLevel(
       paths.map((statementLevel) => [...statementLevel, ...expressionLevel]),
     );
   }
-  return { byTerminal, fallthrough: result.fallthrough };
+  return {
+    byTerminal,
+    fallthrough: result.fallthrough,
+    placement: result.placement,
+  };
 }
 
 /**
@@ -238,6 +250,7 @@ function degradedResult(
   func: FunctionRoot,
   terminalNodes: readonly Node[],
   reason: string,
+  placement: Map<Node, TerminalPlacement> = new Map(),
 ): PathConditionsResult {
   const marker: ConditionInfo = {
     sourceText: `unmodeled control flow (${reason})`,
@@ -255,5 +268,5 @@ function degradedResult(
       [...collectAncestorConditionInfosBelow(terminal, func), marker],
     ]);
   }
-  return { byTerminal, fallthrough: [[marker]] };
+  return { byTerminal, fallthrough: [[marker]], placement };
 }

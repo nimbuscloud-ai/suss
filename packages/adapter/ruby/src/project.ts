@@ -892,7 +892,7 @@ async function runRuby(
     seedKeys.add(moduleKey);
     seeds.push(moduleSeed);
     const readLoadTime = () => ({
-      reads: envReadEffects(root, { db, file }),
+      reads: envReadEffects(root, { db, file }).map((one) => one.effect),
       calls: moduleScopeInvocationEffects(
         root,
         inheritedMethods,

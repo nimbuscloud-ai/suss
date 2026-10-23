@@ -12,6 +12,7 @@ import {
   enumerateOrDegrade,
   enumerateStructuredPaths,
   PathBudgetExceeded,
+  placeTerminals,
   UnmodeledFlow,
 } from "./enumeratePaths.js";
 
@@ -879,5 +880,61 @@ describe("enumerateStructuredPaths, callbacks a statement runs", () => {
       terminalsByStmt: new Map<S, string[]>(),
     });
     expect(pathSigs(result.fallthrough)).toEqual(["<unconditional>"]);
+  });
+});
+
+describe("placeTerminals", () => {
+  const at = (start: number, end: number) => ({ start, end });
+
+  it("gives a terminal the outermost loop it is written in", () => {
+    const raise = thr();
+    const inner = { ...mkLoop("b in bs", [raise, opq()]), lines: at(3, 5) };
+    const outer = { ...mkLoop("a in as", [opq(), inner]), lines: at(2, 7) };
+    const terminalsByStmt = new Map<S, string[]>([[raise, ["T"]]]);
+
+    const placement = placeTerminals({
+      statements: [outer, ret()],
+      terminalsByStmt,
+    });
+
+    expect(placement.get("T")).toEqual({ loopAround: at(2, 7) });
+  });
+
+  it("says where the try starts for a terminal in its cleanup body", () => {
+    const cleanup = opq();
+    const early = ret();
+    const tried = { ...mkTry([early], null, [cleanup]), lines: at(4, 9) };
+    const terminalsByStmt = new Map<S, string[]>([
+      [cleanup, ["cleanup"]],
+      [early, ["early"]],
+    ]);
+
+    const placement = placeTerminals({ statements: [tried], terminalsByStmt });
+
+    expect(placement.get("cleanup")).toEqual({ cleansUpFrom: 4 });
+    expect(placement.has("early")).toBe(false);
+  });
+
+  it("comes back with the paths, and still when the engine gives up", () => {
+    const raise = thr();
+    const loop = { ...mkLoop("a in as", [raise]), lines: at(1, 3) };
+    const declined = mkSwitch([
+      group("a", false, [opq(), brk()]),
+      group(null, false, [opq()]),
+    ]);
+    const terminalsByStmt = new Map<S, string[]>([[raise, ["T"]]]);
+
+    const read = enumerateStructuredPaths({
+      statements: [loop],
+      terminalsByStmt,
+    });
+    const degraded = enumerateOrDegrade(
+      { statements: [declined, loop], terminalsByStmt },
+      ["T"],
+    );
+
+    expect(read.placement.get("T")).toEqual({ loopAround: at(1, 3) });
+    expect(degraded.degraded).not.toBeNull();
+    expect(degraded.placement.get("T")).toEqual({ loopAround: at(1, 3) });
   });
 });

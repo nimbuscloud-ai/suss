@@ -62,6 +62,8 @@ export interface CaseGroup<Cond> {
  *
  * The lowering works `exitKind` out by scanning the statement's own
  * subtree for a return or a throw, skipping every nested function body.
+ * The engine reads `lines` only to say which loop or try each terminal
+ * is written in.
  *
  * `callbacks` is the bodies of the functions this statement passes to
  * calls it makes, when the language treats those as running for the
@@ -74,6 +76,12 @@ export interface CaseGroup<Cond> {
 export interface LoweredStatementParts<Cond> {
   readonly exitKind: ExitKind;
   readonly callbacks?: readonly StatementBlock<Cond>[];
+  /**
+   * The lines a loop or a try is written on, from its first line to the
+   * end of its body. Without them, a branch cannot say which calls in a
+   * loop may have run before its terminal.
+   */
+  readonly lines?: { readonly start: number; readonly end: number };
 }
 
 /**

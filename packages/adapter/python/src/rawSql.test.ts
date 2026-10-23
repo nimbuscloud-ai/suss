@@ -117,7 +117,7 @@ async function effectsFor(source: string): Promise<Effect[]> {
     facts: read.facts,
     filePath: read.filePath,
     patterns: SQLALCHEMY,
-  }).effects;
+  }).effects.map((one) => one.effect);
 }
 
 async function warehouseEffects(
@@ -129,7 +129,7 @@ async function warehouseEffects(
     filePath: read.filePath,
     patterns: [],
     clients: WAREHOUSE,
-  }).effects;
+  }).effects.map((one) => one.effect);
 }
 
 function storageOf(effect: Effect) {

@@ -395,7 +395,7 @@ function callerBranches(
     body,
     terminals: bodyTerminals(body, raised),
     raised,
-    effects,
+    effects: sites,
     branchOf: (found) =>
       found.type === "raise"
         ? { terminal: found.terminal, location: rangeOf(found.statement) }

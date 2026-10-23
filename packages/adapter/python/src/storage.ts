@@ -8,7 +8,13 @@
 import { storageBinding } from "@suss/ir-core";
 import { answersFor } from "@suss/resolution";
 
-import { allChildren, children, enclosingFunction, field } from "./ast.js";
+import {
+  allChildren,
+  children,
+  enclosingFunction,
+  field,
+  rangeOf,
+} from "./ast.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { bodyCalls } from "./paths/effects.js";
@@ -28,6 +34,7 @@ import type {
   StoragePattern,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 
 /** One call chain, from the call that starts it to the call that ends it. */
 interface Chain {
@@ -596,6 +603,7 @@ function effectFor(
       operation,
       ...(picked.length > 0 ? { selector: picked } : {}),
     },
+    location: rangeOf(chain.last),
   };
   if (options.statesSlots !== undefined) {
     const slots = slotsOf(chain, valueMethods);
@@ -787,10 +795,17 @@ export function storageCallIds(
 export function storageEffects(
   calls: readonly PyNode[],
   options: StorageOptions,
-): Effect[] {
+): EffectAt[] {
   return matchedChains(calls, options).flatMap(
     ({ chain, pattern, operation }) =>
-      operation === null ? [] : [effectFor(pattern, chain, operation, options)],
+      operation === null
+        ? []
+        : [
+            {
+              effect: effectFor(pattern, chain, operation, options),
+              at: chain.last,
+            },
+          ],
   );
 }
 
@@ -804,7 +819,7 @@ export interface EffectSlot extends SlotValue {
 
 /** Effects, and the value each of their columns is given. */
 export interface SlottedEffects {
-  effects: Effect[];
+  effects: EffectAt[];
   slots: EffectSlot[];
 }
 

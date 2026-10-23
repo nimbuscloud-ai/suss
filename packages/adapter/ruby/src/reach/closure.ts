@@ -58,6 +58,7 @@ import {
   moduleScopeBody,
 } from "../paths/effects.js";
 import { askSourcesOfBodies, withSlotSources } from "../provenance.js";
+import { withEffectsThatRun } from "../responseStatus.js";
 import { callbacksReached, storageClaims } from "../storage.js";
 import { exampleCalls } from "../testCases.js";
 import { forgetEvaluations } from "../values/evaluator.js";
@@ -1102,7 +1103,7 @@ export function libraryUnit(
         emitEvent: null,
         location: range,
       },
-      effects,
+      effects: [],
       location: range,
       isDefault: true,
     },
@@ -1122,9 +1123,10 @@ export function libraryUnit(
     parameters,
     branches: withSlotSources(
       branches.map((branch) =>
-        body.extraEffects === undefined
-          ? branch
-          : { ...branch, extraEffects: body.extraEffects },
+        withEffectsThatRun(branch, {
+          effects,
+          extraEffects: body.extraEffects,
+        }),
       ),
       body.provenance,
     ),

@@ -72,6 +72,16 @@ describe("throughHelper", () => {
     expect(thrown?.isDefault).toBe(false);
   });
 
+  it("keeps the loop around the caller's ending only when the call that now ends it is inside that loop", () => {
+    const inLoop = { ...caller, loopAround: { start: 10, end: 13 } };
+
+    const [insideLoop] = throughHelper(inLoop, { start: 11, end: 11 }, helper);
+    const [beforeLoop] = throughHelper(inLoop, { start: 8, end: 8 }, helper);
+
+    expect(insideLoop?.loopAround).toEqual({ start: 10, end: 13 });
+    expect(beforeLoop?.loopAround).toBeUndefined();
+  });
+
   it("goes on to the caller's ending on a path where the helper returns", () => {
     const [, returned] = throughHelper(caller, { start: 11, end: 11 }, helper);
 
@@ -225,12 +235,20 @@ describe("splitAtHandOffs", () => {
     expect(guardedOut[0]?.terminal.kind).toBe("return");
   });
 
-  it("counts a call in a finally block on a branch that ended before it", () => {
+  it("counts a call in a finally block on a branch that ended inside its try", () => {
     const split = splitAtHandOffs(caller, [
-      { ...site(helper, 14), alwaysRuns: true },
+      { ...site(helper, 14), cleansUpFrom: 9 },
     ]);
 
     expect(split[0]?.terminal.kind).toBe("throw");
+  });
+
+  it("leaves a finally call off a branch that ended before its try", () => {
+    const split = splitAtHandOffs(caller, [
+      { ...site(helper, 14), cleansUpFrom: 13 },
+    ]);
+
+    expect(split).toEqual([caller]);
   });
 });
 

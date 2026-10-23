@@ -19,6 +19,7 @@ import {
   children,
   field,
   hashKeySymbolName,
+  rangeOf,
   readCallArgs,
   stringLiteralValue,
   symbolValue,
@@ -54,6 +55,7 @@ import type {
   RbStoragePattern,
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 
 function receiverOf(node: RbNode): RbNode | null {
   return node.type === "call" ? field(node, "receiver") : null;
@@ -362,6 +364,7 @@ function storageEffect(
       operation,
       ...(selector.length > 0 ? { selector } : {}),
     },
+    location: rangeOf(call),
   };
 }
 
@@ -505,13 +508,18 @@ function callbacksRunBy(
   return [...found.values()];
 }
 
-/** An invocation of a callback, which the body never calls by name but the walk still follows. */
-function callbackEffect(callback: RunCallback): Effect {
+/**
+ * An invocation of a callback, which the body never calls by name but the
+ * walk still follows. It is placed at the write that makes the library
+ * run it.
+ */
+function callbackEffect(callback: RunCallback, write: RbNode): Effect {
   return {
     type: "invocation",
     callee: callback.name,
     args: [],
     async: false,
+    location: rangeOf(write),
   };
 }
 
@@ -568,7 +576,7 @@ function modelCallEffects(
         options.statesSlots(access, slots);
       }
     }
-    return [access, ...ran.map(callbackEffect)];
+    return [access, ...ran.map((callback) => callbackEffect(callback, worked))];
   }
   return [];
 }
@@ -711,7 +719,7 @@ export interface EffectSlot extends SlotValue {
 
 /** Effects, and the value each of their columns is given. */
 export interface SlottedEffects {
-  effects: Effect[];
+  effects: EffectAt[];
   slots: EffectSlot[];
 }
 
@@ -794,7 +802,7 @@ export function storageEffects(
   file: string,
   options: RbStorageOptions,
   enclosing: RbNode | null = null,
-): Effect[] {
+): EffectAt[] {
   if (!saysAnything(options)) {
     return [];
   }
@@ -815,9 +823,10 @@ export function storageEffects(
     RUBY_PROGRAM,
   );
 
-  const effects: Effect[] = [];
-  for (const call of chains) {
-    effects.push(...effectsOfCall(call, file, options, enclosing));
-  }
-  return effects;
+  return chains.flatMap((call) =>
+    effectsOfCall(call, file, options, enclosing).map((effect) => ({
+      effect,
+      at: call,
+    })),
+  );
 }

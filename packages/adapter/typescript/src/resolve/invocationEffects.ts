@@ -28,7 +28,7 @@ import {
   conditionInfoToRawCondition,
   type FunctionRoot,
 } from "../conditions.js";
-import { startLineOf } from "../lines.js";
+import { lineRangeOf, startLineOf } from "../lines.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
   type DescentBarriers,
@@ -72,10 +72,11 @@ export interface InvocationEffectLocation {
    */
   line: number;
   /**
-   * True for a call in a `finally` body, which runs on every path
-   * through the try, including the ones that left before it.
+   * For a call in a `finally` body, the first line of the try it cleans
+   * up after. It runs on every path through that try, including the
+   * ones that left before reaching it.
    */
-  alwaysRuns: boolean;
+  cleansUpFrom: number | undefined;
 }
 
 /**
@@ -93,8 +94,8 @@ export interface RecognizedEffectLocation {
    * without going back to the AST.
    */
   preconditions: RawCondition[];
-  /** True for a call in a `finally` body. See `InvocationEffectLocation`. */
-  alwaysRuns: boolean;
+  /** For a call in a `finally` body. See `InvocationEffectLocation`. */
+  cleansUpFrom: number | undefined;
   /** The value the call states for each column the effect has, when known. */
   slots?: SlotValue[];
 }
@@ -479,10 +480,11 @@ function invocationAt(
       args: extractArgs(call),
       async: isAwaited(call),
       ...(preconditions.length > 0 ? { preconditions } : {}),
+      location: lineRangeOf(call),
     },
     node: call,
     line: enclosingStatementLine(call),
-    alwaysRuns: runsOnEveryPath(call, func),
+    cleansUpFrom: cleanupStartLine(call, func),
   };
 }
 
@@ -541,7 +543,7 @@ export function runInvocationRecognizers(
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, func);
-    const alwaysRuns = runsOnEveryPath(node, func);
+    const cleansUpFrom = cleanupStartLine(node, func);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -564,10 +566,10 @@ export function runInvocationRecognizers(
       }
       for (const eff of emitted) {
         out.push({
-          effect: withPreconditions(eff, preconditions),
+          effect: placedAt(withPreconditions(eff, preconditions), node),
           line,
           preconditions,
-          alwaysRuns,
+          cleansUpFrom,
           ...stated?.of(eff),
         });
       }
@@ -734,7 +736,7 @@ function dispatchAccessRecognizers(
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, root);
-    const alwaysRuns = runsOnEveryPath(node, root);
+    const cleansUpFrom = cleanupStartLine(node, root);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -758,10 +760,10 @@ function dispatchAccessRecognizers(
         }
         seenEffects.add(key);
         out.push({
-          effect,
+          effect: placedAt(effect, node),
           line,
           preconditions,
-          alwaysRuns,
+          cleansUpFrom,
           ...stated?.of(eff),
         });
       }
@@ -989,11 +991,13 @@ function collectPreconditions(node: Node, root: Node): RawCondition[] {
 }
 
 /**
- * Whether `node` is inside a `finally` body below `root`. Cleanup
- * written there runs on the paths that returned or threw above it, so
- * where it is in the file says nothing about which branches reach it.
+ * For `node` inside a `finally` body below `root`, the first line of the
+ * outermost try it cleans up after. Cleanup written there runs on the
+ * paths that returned or threw inside that try, so its own line says
+ * nothing about which of those branches reach it.
  */
-function runsOnEveryPath(node: Node, root: Node): boolean {
+function cleanupStartLine(node: Node, root: Node): number | undefined {
+  let found: number | undefined;
   let current: Node | undefined = node;
   while (current !== undefined && current !== root) {
     const parent: Node | undefined = current.getParent();
@@ -1002,11 +1006,16 @@ function runsOnEveryPath(node: Node, root: Node): boolean {
       Node.isTryStatement(parent) &&
       parent.getFinallyBlock() === current
     ) {
-      return true;
+      found = startLineOf(parent);
     }
     current = parent;
   }
-  return false;
+  return found;
+}
+
+/** The effect, with the lines of the node a recognizer built it from. */
+function placedAt(effect: Effect, node: Node): Effect {
+  return { ...effect, location: lineRangeOf(node) };
 }
 
 /**

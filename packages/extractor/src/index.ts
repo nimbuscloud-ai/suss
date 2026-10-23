@@ -68,7 +68,15 @@ export {
   settleModules,
   stampModules,
 } from "./declaredModules.js";
-export { guardsHoldOn, runsBefore } from "./effectGuards.js";
+export {
+  type BranchEnding,
+  type EffectSite,
+  effectsFiringOn,
+  firesOn,
+  guardsHoldOn,
+  type PlacedEffect,
+  runsBefore,
+} from "./effectGuards.js";
 export { markReturnsAsExitCode } from "./exitCode.js";
 export {
   type HandOffSite,
@@ -98,12 +106,18 @@ export {
   enumerateStructuredPaths,
   MAX_PATHS,
   PathBudgetExceeded,
+  placeTerminals,
   UnmodeledFlow,
 } from "./paths/enumeratePaths.js";
 export { sharedGatingConditions } from "./paths/gatingConditions.js";
 export { IdMap, IdSet } from "./paths/nodeIdentity.js";
 export { EnclosingNodes } from "./paths/nodeReads.js";
 export { SKIP_CHILDREN, walkDescendants } from "./paths/nodeWalk.js";
+export {
+  type StatementReading,
+  type StatementSites,
+  statementSites,
+} from "./paths/statementSites.js";
 export { commonDirectoryOf } from "./projectRoot.js";
 export {
   absentReading,
@@ -164,6 +178,7 @@ export type {
   KeepsArms,
   StructuredPathConditionsInput,
   StructuredPathConditionsResult,
+  TerminalPlacement,
 } from "./paths/enumeratePaths.js";
 export type { Identified } from "./paths/nodeIdentity.js";
 export type { ParsedNode } from "./paths/nodeReads.js";
@@ -275,7 +290,7 @@ export type EffectArg =
   | { kind: "call"; callee: string; args: EffectArg[] }
   | null;
 
-export type RawEffect =
+export type RawEffect = { location?: { start: number; end: number } } & (
   | {
       type: "mutation";
       target: string;
@@ -290,7 +305,8 @@ export type RawEffect =
       preconditions?: RawCondition[];
     }
   | { type: "emission"; event: string }
-  | { type: "stateChange"; variable: string };
+  | { type: "stateChange"; variable: string }
+);
 
 export interface RawBranch {
   conditions: RawCondition[];
@@ -304,6 +320,12 @@ export interface RawBranch {
   /** Where the values in the slots of `extraEffects` came from. */
   provenance?: RawProvenance[];
   location: { start: number; end: number };
+  /**
+   * The lines of the outermost loop the terminal is written in, when it
+   * is in one. A call anywhere in those lines may have run on an earlier
+   * pass before this path reached the terminal.
+   */
+  loopAround?: { start: number; end: number };
   isDefault: boolean;
   /** The fields a consumer reads off a response inside this branch. */
   expectedInput?: TypeShape | null;
@@ -1151,7 +1173,12 @@ const effectConverters: EffectConverters = {
 };
 
 export function effectToIR(effect: RawEffect): Effect {
-  return (effectConverters[effect.type] as (e: RawEffect) => Effect)(effect);
+  const converted = (effectConverters[effect.type] as (e: RawEffect) => Effect)(
+    effect,
+  );
+  return effect.location === undefined
+    ? converted
+    : { ...converted, location: effect.location };
 }
 
 export function paramToInput(param: RawParameter): Input {

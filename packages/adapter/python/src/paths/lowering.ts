@@ -4,7 +4,7 @@
  * package's DESIGN.md, under "What a body lowers to".
  */
 
-import { children, field, NodeMap, NodeSet } from "../ast.js";
+import { children, field, NodeMap, NodeSet, rangeOf } from "../ast.js";
 
 import type {
   CaseGroup,
@@ -165,6 +165,7 @@ class Lowerer {
 
     return {
       kind: "try",
+      lines: rangeOf(node),
       tryBody: this.lowerBlock(field(node, "body")),
       catchBody:
         excepts.length > 0
@@ -223,12 +224,19 @@ class Lowerer {
         node.type === "while_statement"
           ? field(node, "condition")
           : field(node, "right");
+      const body = field(node, "body");
       return this.attach(
         {
           kind: "loop",
           condition: handleOf(header),
-          body: this.lowerBlock(field(node, "body")),
+          body: this.lowerBlock(body),
           exitKind: exitKindOf(node, this.thrown),
+          // An `else` clause runs once the loop is done, so it is no part
+          // of what repeats.
+          lines: {
+            start: rangeOf(node).start,
+            end: rangeOf(body ?? node).end,
+          },
         },
         [header],
       );

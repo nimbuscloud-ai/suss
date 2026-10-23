@@ -11,16 +11,16 @@ import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
-import type { Effect } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 
 interface Read {
   name: string;
   defaulted: boolean;
 }
 
-function readsOf(effects: Effect[]): Read[] {
-  return effects.map((effect) => {
+function readsOf(found: readonly EffectAt[]): Read[] {
+  return found.map(({ effect }) => {
     if (
       effect.type !== "interaction" ||
       effect.interaction.class !== "config-read"
@@ -480,8 +480,8 @@ describe("what a method body reads", () => {
 
   it("spells every read as ENV[...] so the checker names one channel", async () => {
     const tree = await parseRuby('A = ENV.fetch("A")\n');
-    const [effect] = envReadEffects(tree.rootNode);
-    expect(effect).toMatchObject({
+    const [read] = envReadEffects(tree.rootNode);
+    expect(read?.effect).toMatchObject({
       type: "interaction",
       callee: 'ENV["A"]',
       binding: { transport: "os", recognition: "ruby-env" },
@@ -490,7 +490,9 @@ describe("what a method body reads", () => {
 
   it("leaves the deployment off a read, since the code does not say which one runs it", async () => {
     const tree = await parseRuby('A = ENV.fetch("A")\n');
-    const [effect] = envReadEffects(tree.rootNode);
+    const [read] = envReadEffects(tree.rootNode);
+    const effect = read?.effect;
+    expect(read?.effect.location).toEqual({ start: 1, end: 1 });
     expect(effect?.type === "interaction" && effect.binding.semantics).toEqual({
       name: "runtime-config",
     });

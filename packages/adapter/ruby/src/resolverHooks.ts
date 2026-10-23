@@ -30,7 +30,7 @@ import {
 } from "./ast.js";
 import { withSlotSources } from "./provenance.js";
 import { raiseEndings } from "./responseHandOff.js";
-import { returnPathBranches } from "./responseStatus.js";
+import { returnPathBranches, withEffectsThatRun } from "./responseStatus.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
@@ -171,11 +171,11 @@ export function hookUnit(
 ): RawCodeStructure {
   const { body, facts } = input;
   const range = rangeOf(hook.method);
-  const extraEffects = body.extraEffects;
+  const effects = body.effects ?? [];
   const branches = (
     returnPathBranches(
       hook.method,
-      body.effects ?? [],
+      effects,
       [],
       facts,
       undefined,
@@ -185,7 +185,10 @@ export function hookUnit(
     ) ?? [emptyBodyBranch(range)]
   ).map(
     (branch): RawBranch =>
-      extraEffects === undefined ? branch : { ...branch, extraEffects },
+      withEffectsThatRun(branch, {
+        effects,
+        extraEffects: body.extraEffects,
+      }),
   );
   return {
     identity: {

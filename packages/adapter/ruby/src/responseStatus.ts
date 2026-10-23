@@ -14,8 +14,8 @@
 
 import {
   absentReading,
+  effectsFiringOn,
   enumerateOrDegrade,
-  guardsHoldOn,
   unreadableReading,
   writtenReading,
 } from "@suss/extractor";
@@ -41,11 +41,12 @@ import { escapingRaises } from "./raises.js";
 import { bodyReadingOfCall } from "./responseBody.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
-import type { TypeShape } from "@suss/behavioral-ir";
+import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   ConditionInfo,
   KeepsArms,
+  PlacedEffect,
   RawBranch,
   RawCondition,
   RawEffect,
@@ -250,17 +251,23 @@ function readingOfCall(
   return writtenReading(status, rangeOf(argument));
 }
 
-/** A call belongs to a path when everything gating the call also gates the path. */
-function effectsReaching(
-  effects: readonly RawEffect[],
-  conditions: readonly RawCondition[],
-): RawEffect[] {
-  return effects.filter((effect) =>
-    guardsHoldOn(
-      effect.type === "invocation" ? effect.preconditions : undefined,
-      conditions,
-    ),
-  );
+/** The calls a body makes and what its recognizers read, each with where it is written. */
+export interface PlacedBodyEffects {
+  effects: readonly PlacedEffect<RawEffect>[];
+  extraEffects?: readonly PlacedEffect<Effect>[] | undefined;
+}
+
+/** The branch with the body's effects that can run before its terminal. */
+export function withEffectsThatRun(
+  branch: RawBranch,
+  body: PlacedBodyEffects,
+): RawBranch {
+  const extra = effectsFiringOn(body.extraEffects ?? [], branch);
+  return {
+    ...branch,
+    effects: effectsFiringOn(body.effects, branch),
+    ...(extra.length === 0 ? {} : { extraEffects: extra }),
+  };
 }
 
 /** A condition as the path engine hands it over. */
@@ -314,6 +321,8 @@ interface Outcome {
   reading: Reading<number>;
   body?: Reading<TypeShape>;
   location: Range;
+  /** The lines of the outermost loop the response is written in. */
+  loopAround?: Range | undefined;
   /** True for a path that reached no response call of its own. */
   fellThrough?: boolean;
 }
@@ -406,66 +415,75 @@ export function helperResponse(
 function branchOf(
   outcome: Outcome,
   pattern: ControllerActions,
-  effects: readonly RawEffect[],
-  extraEffects: RawBranch["extraEffects"],
+  body: PlacedBodyEffects,
   options: BranchOptions,
 ): RawBranch {
   if (outcome.fellThrough === true && options.fallthrough === "handOn") {
-    return handsOnBranch(outcome, effects, extraEffects);
+    return handsOnBranch(outcome, body);
   }
-  return {
-    conditions: outcome.conditions,
-    terminal: {
-      kind: "response",
-      statusCode: null,
-      body: null,
-      exceptionType: null,
-      message: null,
-      component: null,
-      renderTree: null,
-      delegateTarget: null,
-      emitEvent: null,
+  return withEffectsThatRun(
+    {
+      conditions: outcome.conditions,
+      terminal: {
+        kind: "response",
+        statusCode: null,
+        body: null,
+        exceptionType: null,
+        message: null,
+        component: null,
+        renderTree: null,
+        delegateTarget: null,
+        emitEvent: null,
+        location: outcome.location,
+      },
+      statusCodeReading: {
+        reading: outcome.reading,
+        libraryDefault: pattern.defaultStatusCode,
+      },
+      ...(outcome.body === undefined
+        ? {}
+        : { bodyShapeReading: { reading: outcome.body } }),
+      effects: [],
       location: outcome.location,
+      ...loopAroundOf(outcome),
+      isDefault: outcome.conditions.length === 0,
     },
-    statusCodeReading: {
-      reading: outcome.reading,
-      libraryDefault: pattern.defaultStatusCode,
-    },
-    ...(outcome.body === undefined
-      ? {}
-      : { bodyShapeReading: { reading: outcome.body } }),
-    effects: effectsReaching(effects, outcome.conditions),
-    ...(extraEffects === undefined ? {} : { extraEffects }),
-    location: outcome.location,
-    isDefault: outcome.conditions.length === 0,
-  };
+    body,
+  );
 }
 
 /** A path through a filter that wrote no response: the request goes on to whatever the filter wraps. */
-function handsOnBranch(
-  outcome: Outcome,
-  effects: readonly RawEffect[],
-  extraEffects: RawBranch["extraEffects"],
-): RawBranch {
-  return {
-    conditions: outcome.conditions,
-    terminal: {
-      kind: "delegate",
-      statusCode: null,
-      body: null,
-      exceptionType: null,
-      message: null,
-      component: null,
-      renderTree: null,
-      delegateTarget: null,
-      emitEvent: null,
+function handsOnBranch(outcome: Outcome, body: PlacedBodyEffects): RawBranch {
+  return withEffectsThatRun(
+    {
+      conditions: outcome.conditions,
+      terminal: {
+        kind: "delegate",
+        statusCode: null,
+        body: null,
+        exceptionType: null,
+        message: null,
+        component: null,
+        renderTree: null,
+        delegateTarget: null,
+        emitEvent: null,
+        location: outcome.location,
+      },
+      effects: [],
       location: outcome.location,
+      ...loopAroundOf(outcome),
+      isDefault: outcome.conditions.length === 0,
     },
-    effects: effectsReaching(effects, outcome.conditions),
-    ...(extraEffects === undefined ? {} : { extraEffects }),
-    location: outcome.location,
-    isDefault: outcome.conditions.length === 0,
-  };
+    body,
+  );
+}
+
+function loopAroundOf(placed: {
+  loopAround?: Range | undefined;
+}): Pick<RawBranch, "loopAround"> {
+  return placed.loopAround === undefined
+    ? {}
+    : { loopAround: placed.loopAround };
 }
 
 /**
@@ -476,7 +494,7 @@ function handsOnBranch(
  */
 export function returnPathBranches(
   method: RbNode,
-  effects: readonly RawEffect[],
+  effects: readonly PlacedEffect<RawEffect>[],
   exits: readonly EndingCall[] = [],
   facts?: Database,
   keepsArms?: KeepsArms<RbNode>,
@@ -516,18 +534,26 @@ export function returnPathBranches(
   const push = (
     paths: readonly ConditionInfo<RbNode>[][],
     terminal: RawTerminal,
+    at: RbNode | null,
   ): void => {
+    const placement = at === null ? undefined : enumerated.placement.get(at);
     for (const path of paths) {
       const conditions = path.map((condition) =>
         conditionOf(condition, inputs),
       );
-      branches.push({
-        conditions,
-        terminal,
-        effects: effectsReaching(effects, conditions),
-        location: terminal.location,
-        isDefault: conditions.length === 0,
-      });
+      branches.push(
+        withEffectsThatRun(
+          {
+            conditions,
+            terminal,
+            effects: [],
+            location: terminal.location,
+            ...loopAroundOf({ loopAround: placement?.loopAround }),
+            isDefault: conditions.length === 0,
+          },
+          { effects },
+        ),
+      );
     }
   };
 
@@ -535,12 +561,17 @@ export function returnPathBranches(
     push(
       enumerated.byTerminal.get(statement) ?? [],
       endingOfReturn(statement, rangeOf(statement)),
+      statement,
     );
   }
   for (const ending of [...exits, ...raises]) {
-    push(enumerated.byTerminal.get(ending.call) ?? [], ending.terminal);
+    push(
+      enumerated.byTerminal.get(ending.call) ?? [],
+      ending.terminal,
+      ending.call,
+    );
   }
-  push(enumerated.fallthrough, endingOfReturn(null, rangeOf(method)));
+  push(enumerated.fallthrough, endingOfReturn(null, rangeOf(method)), null);
   return branches.length === 0 ? null : branches;
 }
 
@@ -583,8 +614,8 @@ export function returnTerminal(location: Range): RawTerminal {
 export function responseBranches(
   method: RbNode,
   pattern: ControllerActions,
-  effects: readonly RawEffect[],
-  extraEffects: RawBranch["extraEffects"],
+  effects: readonly PlacedEffect<RawEffect>[],
+  extraEffects: readonly PlacedEffect<Effect>[] | undefined,
   options: BranchOptions = {},
 ): RawBranch[] | null {
   const declarations = pattern.responseStatusCalls ?? [];
@@ -644,12 +675,14 @@ export function responseBranches(
       responder?.kind === "declared"
         ? bodyReadingOfCall(terminal, responder.declaration, options.facts)
         : undefined;
+    const loopAround = enumerated.placement.get(terminal)?.loopAround;
     for (const path of enumerated.byTerminal.get(terminal) ?? []) {
       outcomes.push({
         conditions: conditionsOf(path),
         reading,
         ...(body === undefined ? {} : { body }),
         location: rangeOf(terminal),
+        loopAround,
         // A bare `return` wrote no response, so a filter that takes it
         // hands the request on the same as one that reaches its end.
         ...(responder === undefined ? { fellThrough: true } : {}),
@@ -666,6 +699,7 @@ export function responseBranches(
   }
 
   const read = options.raises;
+  const placed: PlacedBodyEffects = { effects, extraEffects };
   const raised = raises.flatMap((call) => {
     const terminal = raisedTerminal(
       pattern,
@@ -673,26 +707,28 @@ export function responseBranches(
       read?.handlers ?? [],
       rangeOf(call),
     );
-    return (enumerated.byTerminal.get(call) ?? []).map((path): RawBranch => {
-      const conditions = conditionsOf(path);
-      return {
-        conditions,
-        terminal,
-        effects: effectsReaching(effects, conditions),
-        ...(extraEffects === undefined ? {} : { extraEffects }),
-        location: terminal.location,
-        isDefault: false,
-      };
-    });
+    const loopAround = enumerated.placement.get(call)?.loopAround;
+    return (enumerated.byTerminal.get(call) ?? []).map(
+      (path): RawBranch =>
+        withEffectsThatRun(
+          {
+            conditions: conditionsOf(path),
+            terminal,
+            effects: [],
+            location: terminal.location,
+            ...loopAroundOf({ loopAround }),
+            isDefault: false,
+          },
+          placed,
+        ),
+    );
   });
 
   if (outcomes.length === 0 && raised.length === 0) {
     return null;
   }
   return [
-    ...outcomes.map((outcome) =>
-      branchOf(outcome, pattern, effects, extraEffects, options),
-    ),
+    ...outcomes.map((outcome) => branchOf(outcome, pattern, placed, options)),
     ...raised,
   ];
 }

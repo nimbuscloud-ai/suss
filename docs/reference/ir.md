@@ -281,7 +281,7 @@ type RenderNode =
 ### `Effect`
 
 ```typescript
-type Effect = ({ count?: number }) & (
+type Effect = ({ count?: number; location?: { start: number; end: number } }) & (
   | { type: "mutation"; target: string; operation: "create" | "update" | "delete" }
   | { type: "invocation"; callee: string; args: unknown[]; async: boolean;
       summary?: string; declaredAt?: DeclarationPlace;
@@ -308,6 +308,10 @@ interface DeclarationPlace {
 An effect is what a transition does besides producing a value. Effects come in two layers.
 
 A transition lists each effect once. `count` says how many sites on that path produced it, so a path that validates the same schema thirteen times has one effect with `count: 13`. It is absent when there was only one, and a call written across several lines counts with the same call written on one, since `callee` is the source text with its whitespace collapsed.
+
+`location` is the first and last line of the call or read that produced the effect, numbered the way the transition's `location` is and in the same file. A folded effect keeps the first site's lines. It is absent on an effect that no line of source produced, such as a call a test framework makes on the unit's behalf. Two effects that differ only in `location` are the same effect, and `diffSummaries` leaves it out the way it leaves out a transition's own `location`.
+
+A transition lists only the effects that can run before its terminal. A write after an early return is not on that return's transition. A call written inside the loop the terminal is in stays, since an earlier pass may have run it, and so does a call in a `finally` or `ensure` around the terminal.
 
 **Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that something happened: a call fired, a state variable was set, an event went out. They are there for impact analysis, the kind where you want to say "this change edits a handler that writes `users`, and here is who reads `users`".
 

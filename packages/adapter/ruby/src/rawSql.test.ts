@@ -98,7 +98,7 @@ async function effectsFor(
     facts: db,
     patterns: [],
     rawSql: [pattern],
-  });
+  }).map((one) => one.effect);
 }
 
 /** The storage access an effect is, or a throw saying what it was instead. */

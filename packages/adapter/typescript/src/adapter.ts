@@ -1656,19 +1656,18 @@ function extractFromSourceFile(
           ) {
             const defaultBranch = raw.branches.find((b) => b.isDefault);
             if (defaultBranch !== undefined) {
-              const calleeText = unit.callSite.callExpression
-                .getExpression()
-                .getText();
+              const call = unit.callSite.callExpression;
               defaultBranch.extraEffects = [
                 ...(defaultBranch.extraEffects ?? []),
                 {
                   type: "interaction",
                   binding,
-                  callee: calleeText,
+                  callee: call.getExpression().getText(),
                   interaction: {
                     class: "service-call",
                     method: binding.semantics.method,
                   },
+                  location: lineRangeOf(call),
                 },
               ];
             }

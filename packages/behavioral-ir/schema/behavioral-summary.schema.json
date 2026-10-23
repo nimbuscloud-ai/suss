@@ -819,6 +819,19 @@
                         "minimum": 2,
                         "maximum": 9007199254740991
                       },
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "start": {
+                            "type": "number"
+                          },
+                          "end": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["start", "end"],
+                        "additionalProperties": false
+                      },
                       "type": {
                         "type": "string",
                         "const": "mutation"
@@ -841,6 +854,19 @@
                         "type": "integer",
                         "minimum": 2,
                         "maximum": 9007199254740991
+                      },
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "start": {
+                            "type": "number"
+                          },
+                          "end": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["start", "end"],
+                        "additionalProperties": false
                       },
                       "type": {
                         "type": "string",
@@ -986,6 +1012,19 @@
                         "minimum": 2,
                         "maximum": 9007199254740991
                       },
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "start": {
+                            "type": "number"
+                          },
+                          "end": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["start", "end"],
+                        "additionalProperties": false
+                      },
                       "type": {
                         "type": "string",
                         "const": "emission"
@@ -1006,6 +1045,19 @@
                         "minimum": 2,
                         "maximum": 9007199254740991
                       },
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "start": {
+                            "type": "number"
+                          },
+                          "end": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["start", "end"],
+                        "additionalProperties": false
+                      },
                       "type": {
                         "type": "string",
                         "const": "stateChange"
@@ -1025,6 +1077,19 @@
                         "type": "integer",
                         "minimum": 2,
                         "maximum": 9007199254740991
+                      },
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "start": {
+                            "type": "number"
+                          },
+                          "end": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["start", "end"],
+                        "additionalProperties": false
                       },
                       "type": {
                         "type": "string",

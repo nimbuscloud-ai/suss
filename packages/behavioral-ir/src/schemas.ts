@@ -501,15 +501,28 @@ const DeclarationPlaceSchema = z.object({
  */
 const repeatCount = { count: z.number().int().min(2).optional() };
 
+/** A first and a last line, both one-based and inclusive. */
+const LinesSchema = z.object({ start: z.number(), end: z.number() });
+
+/**
+ * The lines the call or read behind an effect is written on, in the file
+ * the transition's own `location` is in. When `count` folded several
+ * sites into one effect, these are the first site's lines. Absent when
+ * no line of source produced the effect, such as one a contract declares.
+ */
+const writtenAt = { location: LinesSchema.optional() };
+
 export const EffectSchema = z.discriminatedUnion("type", [
   z.object({
     ...repeatCount,
+    ...writtenAt,
     type: z.literal("mutation"),
     target: z.string(),
     operation: z.enum(["create", "update", "delete"]),
   }),
   z.object({
     ...repeatCount,
+    ...writtenAt,
     type: z.literal("invocation"),
     callee: z.string(),
     /**
@@ -572,12 +585,14 @@ export const EffectSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     ...repeatCount,
+    ...writtenAt,
     type: z.literal("emission"),
     event: z.string(),
     payload: z.unknown().optional(),
   }),
   z.object({
     ...repeatCount,
+    ...writtenAt,
     type: z.literal("stateChange"),
     variable: z.string(),
     newValue: z.unknown().optional(),
@@ -590,6 +605,7 @@ export const EffectSchema = z.discriminatedUnion("type", [
   z
     .object({
       ...repeatCount,
+      ...writtenAt,
       type: z.literal("interaction"),
       binding: BoundaryBindingSchema,
       /** Source text of the call expression, for inspect rendering. */
@@ -761,7 +777,7 @@ export const TransitionSchema = z.object({
   conditions: z.array(PredicateSchema),
   output: OutputSchema,
   effects: z.array(EffectSchema),
-  location: z.object({ start: z.number(), end: z.number() }),
+  location: LinesSchema,
   isDefault: z.boolean(),
   confidence: ConfidenceInfoSchema.optional(),
   expectedInput: TypeShapeSchema.optional(),
