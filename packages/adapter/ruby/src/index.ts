@@ -110,6 +110,7 @@ export type {
   RbInflections,
   RbPredicateMatcher,
   RbRawSqlPattern,
+  RbResolverHooks,
   RbRowCall,
   RbSharedInclude,
   RbStatusCall,

@@ -8,6 +8,7 @@
   "mutation": "graphql-ruby: field keyword wiring the field to a Mutation class",
   "resolver": "graphql-ruby: field keyword wiring the field to a Resolver class (also a shared suss name; this note covers the library's use)",
   "resolve": "graphql-ruby: the instance method a Mutation or Resolver class defines to answer the field it is wired to",
+  "resolver_method": "graphql-ruby: field keyword choosing which of the type's own methods resolves the field",
   "required": "graphql-ruby: argument keyword opting out of the required-by-default registration",
   "camelize": "graphql-ruby: field/argument keyword overriding the schema-wide camelize default for that one name",
   "Integer": "language: Ruby's own Integer class and Kernel#Integer conversion. graphql-ruby accepts the class as a convenience synonym for the Int scalar",

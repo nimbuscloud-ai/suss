@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { readWrapperMetadata } from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
 import { addPackWords } from "@suss/resolution";
 
@@ -782,6 +783,175 @@ describe("the method behind a field", () => {
       "User",
     );
     expect(summaries.flatMap((summary) => summary.gaps)).toEqual([]);
+  });
+});
+
+describe("the class a field is wired to, and the hooks it runs", () => {
+  beforeEach(writeBaseClasses);
+
+  const MUTATION_TYPE =
+    "class Types::MutationType < Types::BaseObject\n  field :approve, mutation: Mutations::Approve\nend\n";
+
+  /** Extracts every file written so far, with `app/graphql` as the root. */
+  async function extractAll(): Promise<BehavioralSummary[]> {
+    const { summaries } = await extractRubyProject({
+      files: findRubyFiles(tmpDir),
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+      workspaceRoot: tmpDir,
+    });
+    return summaries;
+  }
+
+  function field(summaries: readonly BehavioralSummary[], name: string) {
+    const found = summaries.find((s) => s.identity.name === name);
+    expect(found, name).toBeDefined();
+    return found as BehavioralSummary;
+  }
+
+  /** What the field's own transitions call. The calls its hooks make are left out. */
+  function calls(summary: BehavioralSummary): string[] {
+    return summary.transitions
+      .filter((t) => readWrapperMetadata(t)?.from === undefined)
+      .flatMap((t) =>
+        t.effects.flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+      );
+  }
+
+  it("reads a wired class from whichever file of the run declares it, outside the root too", async () => {
+    write("app/graphql/types/mutation_type.rb", MUTATION_TYPE);
+    write(
+      "packs/approvals/approve.rb",
+      "class Mutations::Approve < Mutations::BaseMutation\n  argument :id, ID, required: true\n  field :ok, Boolean, null: false\n\n  def resolve(id:)\n    Approval.record(id)\n  end\nend\n",
+    );
+    const approve = field(await extractAll(), "Mutation.approve");
+    expect(approve.gaps).toEqual([]);
+    expect(calls(approve)).toEqual(["Approval.record"]);
+    expect(
+      approve.inputs.flatMap((input) =>
+        input.type === "parameter" ? [input.name] : [],
+      ),
+    ).toEqual(["id"]);
+  });
+
+  it("follows a wiring value through a constant the project assigns the class to", async () => {
+    write(
+      "app/graphql/types/mutation_type.rb",
+      "APPROVAL = Mutations::Approve\n\nclass Types::MutationType < Types::BaseObject\n  field :approve, mutation: APPROVAL\nend\n",
+    );
+    write(
+      "app/graphql/mutations/approve.rb",
+      "class Mutations::Approve < Mutations::BaseMutation\n  def resolve\n    Approval.record(:now)\n  end\nend\n",
+    );
+    expect(calls(field(await extractAll(), "Mutation.approve"))).toEqual([
+      "Approval.record",
+    ]);
+  });
+
+  it("still finds a wired class outside the run by the path convention", async () => {
+    write(
+      "app/graphql/mutations/approve.rb",
+      "class Mutations::Approve < Mutations::BaseMutation\n  def resolve\n    Approval.record(:now)\n  end\nend\n",
+    );
+    const mutationType = write(
+      "app/graphql/types/mutation_type.rb",
+      MUTATION_TYPE,
+    );
+    const { summaries } = await extractRubyProject({
+      files: [mutationType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+    });
+    expect(calls(field(summaries, "Mutation.approve"))).toEqual([
+      "Approval.record",
+    ]);
+  });
+
+  it("says whether a hook runs is not settled when the project defines one past a module it could not read", async () => {
+    write("app/graphql/types/mutation_type.rb", MUTATION_TYPE);
+    write(
+      "app/graphql/mutations/approve.rb",
+      "class Mutations::Approve < Mutations::Signed\n  include Gem::Tracking\n\n  def resolve\n  end\nend\n",
+    );
+    write(
+      "app/graphql/mutations/signed.rb",
+      'class Mutations::Signed < Mutations::BaseMutation\n  def ready?(**args)\n    raise GraphQL::ExecutionError, "Sign in" unless context[:user]\n    true\n  end\nend\n',
+    );
+    const approve = field(await extractAll(), "Mutation.approve");
+    expect(approve.gaps.map((gap) => gap.description)).toEqual([
+      "This field's Mutations::Approve could be stopped by a ready? hook inherited from Gem::Tracking, which this run did not read, so whether one runs was not settled here",
+    ]);
+    expect(readWrapperMetadata(approve)).toBeUndefined();
+  });
+
+  it("says nothing about hooks when only a module it could not read might define one", async () => {
+    write("app/graphql/types/mutation_type.rb", MUTATION_TYPE);
+    write(
+      "app/graphql/mutations/approve.rb",
+      "class Mutations::Approve < Mutations::BaseMutation\n  include Gem::Tracking\n\n  def resolve\n    Approval.record(:now)\n  end\nend\n",
+    );
+    const approve = field(await extractAll(), "Mutation.approve");
+    expect(approve.gaps).toEqual([]);
+    expect(approve.transitions.map((t) => t.output.type)).toEqual(["void"]);
+  });
+
+  it("reads a hook's return false, payload as stopping the field, and a bare return too", async () => {
+    write("app/graphql/types/mutation_type.rb", MUTATION_TYPE);
+    write(
+      "app/graphql/mutations/approve.rb",
+      [
+        "class Mutations::Approve < Mutations::BaseMutation",
+        "  def ready?(**args)",
+        '    return false, { errors: ["closed"] } if Window.closed?',
+        "    return if Window.paused?",
+        "    return [true, nil] if Window.open?",
+        "    true",
+        "  end",
+        "",
+        "  def resolve",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const summaries = await extractAll();
+    const hook = summaries.find((s) => s.identity.name === "ready?");
+    expect(hook?.transitions.map((t) => t.output.type)).toEqual([
+      "return",
+      "return",
+      "delegate",
+      "delegate",
+    ]);
+  });
+
+  it("reads the method a field's resolver_method keyword gives", async () => {
+    const queryType = write(
+      "app/graphql/types/query_type.rb",
+      "class Types::QueryType < Types::BaseObject\n  field :total, Integer, null: false, resolver_method: :count_all\n\n  def count_all\n    Ledger.total(:all)\n  end\nend\n",
+    );
+    const { summaries } = await extractRubyProject({
+      files: [queryType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+    });
+    expect(calls(field(summaries, "Query.total"))).toEqual(["Ledger.total"]);
+  });
+
+  it("says a resolver_method nothing defines left the field unread", async () => {
+    const queryType = write(
+      "app/graphql/types/query_type.rb",
+      "class Types::QueryType < Types::BaseObject\n  field :total, Integer, null: false, resolver_method: :count_all\nend\n",
+    );
+    expect(await gapsOfOnlyField(queryType)).toEqual([
+      "This field is resolved by count_all, which nothing in its type's ancestry defines, so nothing about what it does was read here",
+    ]);
+  });
+
+  it("says a resolver_method worked out at run time left the field unread", async () => {
+    const queryType = write(
+      "app/graphql/types/query_type.rb",
+      "class Types::QueryType < Types::BaseObject\n  field :total, Integer, null: false, resolver_method: pick_method\nend\n",
+    );
+    expect(await gapsOfOnlyField(queryType)).toEqual([
+      "This field is resolved by the method pick_method, which is worked out at run time, so nothing about what it does was read here",
+    ]);
   });
 });
 
