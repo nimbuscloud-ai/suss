@@ -62,11 +62,14 @@ describe("statementSites", () => {
     [2, node(10, 5)],
     [3, cleanup],
   ]);
-  const sites = statementSites([node(1, 5), node(2, 5), node(3, 8)], {
-    statementOf: (one) => statementOf.get(one.id) ?? null,
-    lower: lowerBody(first, cleanup),
-    firstLine: (one) => one.line,
-  });
+  const sites = statementSites(
+    [node(1, 5), node(2, 5), node(3, 8), node(9, 2)],
+    {
+      statementOf: (one) => statementOf.get(one.id) ?? null,
+      lower: lowerBody(first, cleanup),
+      firstLine: (one) => one.line,
+    },
+  );
 
   it("asks about two calls in one statement through the same statement", () => {
     expect(sites.plainSiteOf(node(1, 5))).toEqual(
@@ -75,6 +78,14 @@ describe("statementSites", () => {
     expect(sites.plainSiteOf(node(2, 5)).preconditions).toMatchObject([
       { sourceText: "a", polarity: "positive" },
     ]);
+  });
+
+  it("places a node written outside every statement by its own line, under no guards", () => {
+    expect(sites.plainSiteOf(node(9, 2))).toEqual({
+      line: 2,
+      preconditions: [],
+      cleansUpFrom: undefined,
+    });
   });
 
   it("places a call in a cleanup body by its try, and reads the rest of the body all the same", () => {

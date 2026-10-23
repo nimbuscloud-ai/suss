@@ -72,6 +72,16 @@ describe("throughHelper", () => {
     expect(thrown?.isDefault).toBe(false);
   });
 
+  it("keeps the loop around the caller's ending only when the call that now ends it is inside that loop", () => {
+    const inLoop = { ...caller, loopAround: { start: 10, end: 13 } };
+
+    const [insideLoop] = throughHelper(inLoop, { start: 11, end: 11 }, helper);
+    const [beforeLoop] = throughHelper(inLoop, { start: 8, end: 8 }, helper);
+
+    expect(insideLoop?.loopAround).toEqual({ start: 10, end: 13 });
+    expect(beforeLoop?.loopAround).toBeUndefined();
+  });
+
   it("goes on to the caller's ending on a path where the helper returns", () => {
     const [, returned] = throughHelper(caller, { start: 11, end: 11 }, helper);
 
