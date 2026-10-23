@@ -159,7 +159,7 @@ function buildSummary(opts: {
   envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
   // Plain-text values, so a store named through a variable can pair.
   envVarValues?: Record<string, string>;
-  codeScope: { kind: "codeUri" | "unknown"; path?: string };
+  codeScope: ReturnType<typeof readCodeScope>;
   // The SAM `Runtime`, when set.
   runtime?: string;
   recognition: string;
@@ -301,13 +301,20 @@ export function readCodeScope(resource: CloudFormationResource): {
   kind: "codeUri" | "unknown";
   path?: string;
   entry?: string;
+  entryExport?: string;
 } {
   // A CodeUri built with an intrinsic cannot be turned into a path.
   const codeUri = resource.Properties?.CodeUri;
   if (typeof codeUri === "string" && codeUri.length > 0) {
     const path = codeScopePath(codeUri);
     const entry = handlerEntry(resource, path);
-    return { kind: "codeUri", path, ...(entry !== null ? { entry } : {}) };
+    return {
+      kind: "codeUri",
+      path,
+      ...(entry !== null
+        ? { entry: entry.file, entryExport: entry.exportName }
+        : {}),
+    };
   }
   // Without a CodeUri, a `Metadata.SussCodeScope` annotation can say
   // which source directory the function runs.
@@ -320,20 +327,28 @@ export function readCodeScope(resource: CloudFormationResource): {
 
 // Several functions can share one CodeUri, and the entry file from each
 // `Handler` is what keeps their scopes apart. It has no extension, as SAM
-// writes it.
+// writes it. The export is the function in it that the platform calls.
 function handlerEntry(
   resource: CloudFormationResource,
   scopePath: string,
-): string | null {
+): { file: string; exportName: string } | null {
   const handlerRaw = resource.Properties?.Handler;
   if (typeof handlerRaw !== "string") {
     return null;
   }
-  const parsed = parseHandler(handlerRaw);
+  const runtime = resource.Properties?.Runtime;
+  const parsed = parseHandler(
+    handlerRaw,
+    typeof runtime === "string" ? runtime : undefined,
+  );
   if (parsed === null) {
     return null;
   }
-  return scopePath === "" || scopePath === "."
-    ? parsed.modulePath
-    : `${scopePath.replace(/\/$/, "")}/${parsed.modulePath}`;
+  return {
+    file:
+      scopePath === "" || scopePath === "."
+        ? parsed.modulePath
+        : `${scopePath.replace(/\/$/, "")}/${parsed.modulePath}`,
+    exportName: parsed.exportName,
+  };
 }

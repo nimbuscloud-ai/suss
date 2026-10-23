@@ -50,12 +50,15 @@ function builtinPacks() {
       );
     }
 
+    // A package that ships a pack per language exports one declaration
+    // each, and the entry says which one is this pack's.
+    const declaration = /(\w+) as declares\b/.exec(entry)?.[1] ?? "declares";
     return {
       name,
       packageName,
       directory,
       badge: badgeByDirectory.get(directory),
-      declares: declarationIn(path.join(REPO_ROOT, directory)),
+      declares: declarationIn(path.join(REPO_ROOT, directory), declaration),
     };
   });
 }
@@ -65,14 +68,13 @@ function builtinPacks() {
  * bundle would say the same thing and would make writing a document
  * wait on a build.
  */
-function declarationIn(directory) {
+function declarationIn(directory, exportName) {
   const source = fs.readFileSync(path.join(directory, "src/index.ts"), "utf8");
-  const block =
-    /export const declares: PackDeclaration = \{([\s\S]*?)\n\};/.exec(
-      source,
-    )?.[1];
+  const block = new RegExp(
+    `export const ${exportName}: PackDeclaration = \\{([\\s\\S]*?)\\n\\};`,
+  ).exec(source)?.[1];
   if (block === undefined) {
-    throw new Error(`${directory} exports no declares`);
+    throw new Error(`${directory} exports no ${exportName}`);
   }
 
   const kind = /\n {2}kind: "(\w+)"/.exec(block)?.[1];

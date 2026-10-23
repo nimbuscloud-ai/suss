@@ -191,6 +191,7 @@ describe("a function a configuration deploys", () => {
     expect((unit as BehavioralSummary).metadata?.codeScope).toEqual({
       kind: "unknown",
       entry: "src/handlers/confirm",
+      entryExport: "handler",
     });
   });
 
@@ -305,6 +306,7 @@ describe("a deployable whose provider writes its variables as blocks", () => {
     expect(contract?.entryPoint).toBe("makeThumbnail");
     expect((unit as BehavioralSummary).metadata?.codeScope).toEqual({
       kind: "unknown",
+      entryExport: "makeThumbnail",
     });
   });
 
@@ -392,6 +394,7 @@ describe("a deployable the caller says where the code for is", () => {
       kind: "codeUri",
       path: "services/orders",
       entry: "src/handlers/confirm",
+      entryExport: "handler",
     });
   });
 });

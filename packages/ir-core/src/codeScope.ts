@@ -40,23 +40,63 @@ export function fileInCodeScope(file: string, scope: string): boolean {
 
 export interface ParsedHandler {
   modulePath: string;
+  /**
+   * The function the platform calls, written the way the module's
+   * language writes it: `handler`, or `Billing::Handler.process` for a
+   * class method in Ruby.
+   */
   exportName: string;
 }
 
 /**
- * Split a handler string into its module path and exported symbol.
- * The final dot separates them: `"src/handlers/confirmToken.handler"` →
+ * Split a handler string into its module path and the function the
+ * platform calls. Most runtimes put the function after the final dot:
+ * `"src/handlers/confirmToken.handler"` gives
  * `{ modulePath: "src/handlers/confirmToken", exportName: "handler" }`.
+ *
+ * Ruby writes `file.method` or `file.Class.method`, and the class can be
+ * namespaced, as in `app.Billing::Handler.process`. A Ruby file name has
+ * no dot, so the module ends at the first dot. The runtime, when the
+ * manifest gives one, says which language wrote the handler; without
+ * one, a `::` marks a Ruby class.
+ *
  * Returns null when there's no dot, since there's no export to bind to.
  */
-export function parseHandler(handler: string): ParsedHandler | null {
+export function parseHandler(
+  handler: string,
+  runtime?: string,
+): ParsedHandler | null {
   const trimmed = handler.trim();
-  const lastDot = trimmed.lastIndexOf(".");
-  if (lastDot <= 0 || lastDot === trimmed.length - 1) {
+  return HANDLER_SPLITS[handlerSpelling(trimmed, runtime)](trimmed);
+}
+
+type HandlerSpelling = "ruby" | "lastDot";
+
+function handlerSpelling(
+  handler: string,
+  runtime: string | undefined,
+): HandlerSpelling {
+  if (runtime !== undefined) {
+    return runtime.trim().toLowerCase().startsWith("ruby") ? "ruby" : "lastDot";
+  }
+  return handler.includes("::") ? "ruby" : "lastDot";
+}
+
+const HANDLER_SPLITS: Record<
+  HandlerSpelling,
+  (handler: string) => ParsedHandler | null
+> = {
+  lastDot: (handler) => splitAt(handler, handler.lastIndexOf(".")),
+  ruby: (handler) =>
+    splitAt(handler, handler.indexOf(".", handler.lastIndexOf("/") + 1)),
+};
+
+function splitAt(handler: string, dot: number): ParsedHandler | null {
+  if (dot <= 0 || dot === handler.length - 1) {
     return null;
   }
   return {
-    modulePath: trimmed.slice(0, lastDot),
-    exportName: trimmed.slice(lastDot + 1),
+    modulePath: handler.slice(0, dot),
+    exportName: handler.slice(dot + 1),
   };
 }
