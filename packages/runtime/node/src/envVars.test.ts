@@ -1293,6 +1293,22 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });
 
+  it("finds the helper's own read in its body when there is no store, past an unrelated element access", () => {
+    const sourceFile = makeProject(`
+      const flags = ["a", "b"];
+      function requireEnv(name: string): string {
+        const first = flags[0];
+        return first + (process.env[name] ?? "");
+      }
+      export const table = requireEnv("TABLE_NAME");
+    `);
+    const effects = recognizeWithoutStore(sourceFile);
+    expect(
+      configReadEffectsOf(effects).map((read) => read.interaction.name),
+    ).toEqual(["TABLE_NAME"]);
+    expect(namelessReadsOf(effects)).toEqual(["process.env[name]"]);
+  });
+
   it("does not credit the parameter with a read done by a local that shadows its name", () => {
     const sourceFile = makeProject(`
       function wrap(name: string): string {
