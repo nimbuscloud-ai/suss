@@ -66,10 +66,9 @@ export function stampGraphqlClientRefs(
     scopes: compileOperationScopes(packs),
     sole,
     soleClient: withBoundWorkspace(sole, packs),
-    onlyClient:
-      constructions.filter(
-        (construction) => construction.spec.linkProperty !== undefined,
-      ).length === 1,
+    clientsBuilt: constructions.filter(
+      (construction) => construction.spec.linkProperty !== undefined,
+    ).length,
   };
   // Walked once, and only when an operation ships a dangling spread.
   let registry: FragmentRegistryStatus | null = null;
@@ -114,8 +113,8 @@ interface Grounding {
   scopes: CompiledScope[];
   sole: GraphqlClientRef | null;
   soleClient: (GraphqlClientRef & { workspace?: string }) | null;
-  /** Whether the project builds exactly one client a call can pass. */
-  onlyClient: boolean;
+  /** How many clients a call can pass the project builds. */
+  clientsBuilt: number;
 }
 
 type ClientDecision = Pick<GraphqlMetadata, "client" | "unresolvedClient">;
@@ -139,15 +138,19 @@ function clientFor(
   const chosen =
     existing.client?.chosenAtCall === true ? existing.client : null;
   if (chosen === null) {
-    // The call's own choice stayed open, which the summary already says.
-    if (existing.unresolvedClient !== undefined) {
+    const open = existing.unresolvedClient !== undefined;
+    if (open && !oneEndpointToChoose(grounding)) {
       return null;
     }
     const client =
       scoped !== null
         ? { uri: null, uriRef: null, workspace: scoped }
         : grounding.soleClient;
-    return client === null ? null : { client };
+    if (client === null) {
+      // An empty decision clears the open choice from the summary.
+      return open ? {} : null;
+    }
+    return { client };
   }
 
   const passed = {
@@ -170,7 +173,7 @@ function isTheAppsClient(
   passed: GraphqlClientRef,
   grounding: Grounding,
 ): boolean {
-  if (grounding.onlyClient) {
+  if (grounding.clientsBuilt === 1) {
     return true;
   }
   const key = endpointKeyOf(passed);
@@ -179,6 +182,15 @@ function isTheAppsClient(
     grounding.sole !== null &&
     key === endpointKeyOf(grounding.sole)
   );
+}
+
+/**
+ * A client suss could not follow can still go only one way when the
+ * project builds at most one client, or every construction shares one
+ * endpoint, so it pairs like the app's client.
+ */
+function oneEndpointToChoose(grounding: Grounding): boolean {
+  return grounding.clientsBuilt <= 1 || grounding.sole !== null;
 }
 
 function unboundClient(passed: GraphqlClientRef): {

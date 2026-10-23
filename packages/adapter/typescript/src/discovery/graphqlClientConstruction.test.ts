@@ -632,23 +632,47 @@ describe("stampGraphqlClientRefs, a client the call chose", () => {
     expect(meta?.client?.workspace).toBe("two");
   });
 
-  it("leaves a choice the call left open as the call recorded it", () => {
+  function openChoiceSummary(): BehavioralSummary {
     const summary = operationSummary();
-    const unresolvedClient = {
-      reference: "flag ? a : b",
-      reason: "the client it passes, flag ? a : b, can be any of 2 clients",
-    };
     summary.metadata = {
-      graphql: { document: "query GetPet { pet { id } }", unresolvedClient },
+      graphql: {
+        document: "query GetPet { pet { id } }",
+        unresolvedClient: {
+          reference: "useAppClient()",
+          reason:
+            "the client it passes, useAppClient(), does not come out as one client construction suss can read",
+        },
+      },
     };
+    return summary;
+  }
+
+  it("leaves a choice the call left open as the call recorded it when the project builds two clients", () => {
+    const summary = openChoiceSummary();
+    const recorded = readGraphqlMetadata(summary)?.unresolvedClient;
+    const meta = stamp(TWO_CLIENTS, summary);
+    expect(meta?.unresolvedClient).toEqual(recorded);
+    expect(meta?.client).toBeUndefined();
+  });
+
+  it("gives an open choice the app's client when the project builds only that one", () => {
     const meta = stamp(
       `
         import { ApolloClient } from "@apollo/client";
         export const only = new ApolloClient({ uri: "https://one.example.com" });
       `,
-      summary,
+      openChoiceSummary(),
     );
-    expect(meta?.unresolvedClient).toEqual(unresolvedClient);
+    expect(meta?.unresolvedClient).toBeUndefined();
+    expect(meta?.client).toEqual({
+      uri: "https://one.example.com",
+      uriRef: null,
+    });
+  });
+
+  it("clears an open choice when the project builds no client suss can read", () => {
+    const meta = stamp("export const nothing = 1;", openChoiceSummary());
+    expect(meta?.unresolvedClient).toBeUndefined();
     expect(meta?.client).toBeUndefined();
   });
 });

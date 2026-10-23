@@ -78,7 +78,7 @@ Otherwise suss cannot tell which schema the operation is sent to, and pairing it
   web::src/featurePanel.tsx::FeaturePanel.FeaturePanel: the client it passes, nextGen ? appSyncClient : railsClient, can be any of 2 clients, and nothing the call passes settles which
 ```
 
-The same happens to an operation whose client comes from something suss cannot follow to a construction, such as a React context, and to one bound to a service nothing in the run describes.
+The same happens to an operation bound to a service nothing in the run describes. It also happens to an operation whose client comes from something suss cannot follow to a construction, such as a React context, when the project builds clients with more than one endpoint. With one endpoint there is nothing to choose between, so that operation pairs like one that passes no client.
 
 An operation that passes no client goes through the client the app provides. suss does not read `ApolloProvider` yet, so when the project builds one distinct client every such operation gets it, and when it builds more, they pair with every schema that has their fields, as before.
 
