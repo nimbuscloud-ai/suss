@@ -73,6 +73,31 @@ describe("parseHandler", () => {
     });
   });
 
+  it("reads a Ruby class method as the class and method after the file", () => {
+    expect(parseHandler("app/lambda.Billing::Handler.process")).toEqual({
+      modulePath: "app/lambda",
+      exportName: "Billing::Handler.process",
+    });
+  });
+
+  it("reads a Ruby class with no namespace when the runtime says Ruby", () => {
+    expect(parseHandler("app.Handler.process", "ruby3.3")).toEqual({
+      modulePath: "app",
+      exportName: "Handler.process",
+    });
+    expect(parseHandler("src/handlers/orders.handler", "ruby3.3")).toEqual({
+      modulePath: "src/handlers/orders",
+      exportName: "handler",
+    });
+  });
+
+  it("keeps a Python dotted module whole when the runtime says Python", () => {
+    expect(parseHandler("shop.app.lambda_handler", "python3.12")).toEqual({
+      modulePath: "shop.app",
+      exportName: "lambda_handler",
+    });
+  });
+
   it("ignores the whitespace a manifest wrote around it", () => {
     expect(parseHandler("  index.handler  ")?.modulePath).toBe("index");
   });

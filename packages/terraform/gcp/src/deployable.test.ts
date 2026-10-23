@@ -183,7 +183,10 @@ describe("the Cloud Functions entry", () => {
     const contract = readRuntimeContractMetadata(unit("thumbnail"));
     expect(contract?.entryPoint).toBe("makeThumbnail");
     expect(contract?.runtime).toBe("nodejs20");
-    expect(unit("thumbnail").metadata?.codeScope).toEqual({ kind: "unknown" });
+    expect(unit("thumbnail").metadata?.codeScope).toEqual({
+      kind: "unknown",
+      entryExport: "makeThumbnail",
+    });
   });
 
   it("adds the variables a function's runtime injects", () => {

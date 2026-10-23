@@ -46,15 +46,17 @@ export interface ServerlessFunctionInfo {
   logicalId: string;
   /** Raw Handler string, e.g. "src/handlers/confirmToken.handler". */
   handler: string;
-  /** Module-path portion of the handler (everything before the final dot). */
+  /** Module-path portion of the handler, as `parseHandler` splits it. */
   modulePath: string;
-  /** Exported symbol the handler points at (everything after the final dot). */
+  /** The function the handler points at, as `parseHandler` splits it. */
   exportName: string;
   /**
    * CodeUri base directory the handler resolves against: the function's
    * own CodeUri, else the `Globals.Function.CodeUri` default, else ".".
    */
   codeUri: string;
+  /** The `Runtime`, from the function or Globals, when the template states one. */
+  runtime?: string;
   httpRoutes: ServerlessHttpRoute[];
   nonHttpEvents: ServerlessNonHttpEvent[];
 }
@@ -145,7 +147,9 @@ export function readServerlessFunctions(
     if (typeof handlerRaw !== "string") {
       continue;
     }
-    const parsed = parseHandler(handlerRaw);
+    const runtimeRaw = resource.Properties?.Runtime;
+    const runtime = typeof runtimeRaw === "string" ? runtimeRaw : undefined;
+    const parsed = parseHandler(handlerRaw, runtime);
     if (parsed === null) {
       continue;
     }
@@ -165,6 +169,7 @@ export function readServerlessFunctions(
       modulePath: parsed.modulePath,
       exportName: parsed.exportName,
       codeUri: readCodeUri(resource),
+      ...(runtime !== undefined ? { runtime } : {}),
       httpRoutes,
       nonHttpEvents,
     });
