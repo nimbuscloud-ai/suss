@@ -6816,3 +6816,89 @@ describe("discoverUnits callback with routeInfo + metadata", () => {
     }
   });
 });
+
+const graphqlClientPack: PatternPack = {
+  name: "apollo-client",
+  protocol: "http",
+  languages: ["typescript"],
+  discovery: [
+    {
+      kind: "client",
+      match: {
+        type: "graphqlHookCall",
+        importModule: "@apollo/client",
+        hooks: [{ hookName: "useQuery", operationType: "query" }],
+        clientOption: { argument: 1, property: "client" },
+      },
+    },
+  ],
+  graphqlClients: [
+    {
+      importModule: "@apollo/client",
+      importName: "ApolloClient",
+      uriProperty: "uri",
+      linkProperty: "link",
+    },
+  ],
+  graphqlClientBindings: { "https://two.example.com": "two-api" },
+  terminals: [
+    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+  ],
+  inputMapping: { type: "positionalParams", params: [] },
+};
+
+describe("the client a GraphQL operation's call passes", () => {
+  it("records the client each caller of a project hook picks", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "clients.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      export const one = new ApolloClient({ uri: "https://one.example.com" });
+      export const two = new ApolloClient({ uri: "https://two.example.com" });
+      `,
+    );
+    project.createSourceFile(
+      "hooks.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      import { one, two } from "./clients.js";
+      export function useAppQuery(doc: unknown, { next, ...rest }: { next?: boolean } = {}) {
+        const client = next ? two : one;
+        return useQuery(doc as never, { ...rest, client } as never);
+      }
+      `,
+    );
+    project.createSourceFile(
+      "pages.ts",
+      `
+      import { gql } from "@apollo/client";
+      import { useAppQuery } from "./hooks.js";
+      declare const flag: boolean;
+      const Next = gql\`query Next { next { id } }\`;
+      const Either = gql\`query Either { either { id } }\`;
+      export function NextPage() { return useAppQuery(Next, { next: true }); }
+      export function EitherPage() { return useAppQuery(Either, { next: flag }); }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [graphqlClientPack],
+    });
+    const summaries = await adapter.extractAll();
+    const metaOf = (name: string) =>
+      readGraphqlMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      );
+
+    expect(metaOf("NextPage.Next")?.client).toEqual({
+      uri: "https://two.example.com",
+      uriRef: null,
+      chosenAtCall: true,
+      workspace: "two-api",
+    });
+    expect(metaOf("EitherPage.Either")?.unresolvedClient?.reason).toBe(
+      "the client it passes, next ? two : one, can be any of 2 clients, and nothing the call passes settles which",
+    );
+  });
+});

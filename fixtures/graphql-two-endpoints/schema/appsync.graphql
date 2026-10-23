@@ -1,0 +1,18 @@
+# The newer API. Event has a venue here, which the older server's Event
+# does not declare.
+
+type Venue {
+  id: ID!
+  name: String!
+}
+
+type Event {
+  id: ID!
+  title: String!
+  venue: Venue
+}
+
+type Query {
+  events: [Event!]!
+  venue(id: ID!): Venue
+}

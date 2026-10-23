@@ -642,6 +642,17 @@ describe("functions", () => {
     ).toBe("/");
   });
 
+  it("reads a destructured name off the pattern's default when the call passes nothing", () => {
+    expect(
+      literal(`
+        function route({ prefix, ...rest }: { prefix?: string } = { prefix: "/v1" }): string {
+          return prefix ?? "/";
+        }
+        export const subject = route();
+      `),
+    ).toBe("/v1");
+  });
+
   it("leaves a destructured parameter unknown when the argument is not an object", () => {
     expect(
       subjectOf(`

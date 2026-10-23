@@ -232,9 +232,10 @@ function link(child: TestNode, parent: TestNode): void {
 
 function childrenOf(n: TestNode): TestNode[] {
   if (n.fn !== undefined) {
-    const defaults = n.fn.parameters.flatMap((entry) =>
-      entry.default === null ? [] : [entry.default],
-    );
+    const defaults = n.fn.parameters.flatMap((entry) => [
+      ...(entry.default === null ? [] : [entry.default]),
+      ...(entry.patternDefault === undefined ? [] : [entry.patternDefault]),
+    ]);
     const returned = expressionBodyOf(n.fn.body);
     return [
       ...defaults,

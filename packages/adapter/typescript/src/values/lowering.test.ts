@@ -100,11 +100,18 @@ describe("parameter lowering", () => {
     ).toEqual([]);
   });
 
-  it("drops a pattern that carries a default of its own", () => {
+  it("keeps the default a whole pattern carries beside each name", () => {
+    const parameters = parametersOf(
+      `function route({ prefix, ...rest }: any = { prefix: "/" }) { return prefix; }`,
+    );
     expect(
-      shapesOf(
-        `function route({ prefix }: any = { prefix: "/" }) { return prefix; }`,
-      ),
-    ).toEqual([]);
+      parameters.map((parameter) => ({
+        name: parameter.name,
+        path: parameter.path ?? null,
+        patternDefault: parameter.patternDefault?.getText() ?? null,
+      })),
+    ).toEqual([
+      { name: "prefix", path: ["prefix"], patternDefault: `{ prefix: "/" }` },
+    ]);
   });
 });

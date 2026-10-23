@@ -1959,10 +1959,38 @@ function renderDirHuman(
     );
   }
 
+  lines.push(...unknownServiceLines(unpairable, all));
   lines.push(
     ...findingLines(result, confidence, scope, since, coverage, summaries),
   );
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * GraphQL operations left unchecked because their client could not be
+ * tied to a service. Each says why, since the fix is different for a
+ * choice made at run time and for a client nobody bound.
+ */
+function unknownServiceLines(
+  unpairable: CheckAllResult["unmatched"]["unpairable"],
+  all: boolean,
+): string[] {
+  const unchecked = unpairable.filter((u) => u.reason === "unknownService");
+  if (unchecked.length === 0) {
+    return [];
+  }
+  const one = unchecked.length === 1;
+  const shown = all ? unchecked : unchecked.slice(0, DIAGNOSTIC_LIMIT);
+  return [
+    "",
+    `${unchecked.length} GraphQL operation${one ? " was" : "s were"} not checked, because suss could not tell which service ${one ? "its" : "their"} client talks to:`,
+    ...shown.map((u) => `  ${u.id}: ${u.detail ?? "no reason recorded"}`),
+    ...(shown.length < unchecked.length
+      ? [
+          `  ... and ${unchecked.length - shown.length} more. Run the same command with --all to list them.`,
+        ]
+      : []),
+  ];
 }
 
 /** The end of the report: what changed since an earlier run, or every finding. */
