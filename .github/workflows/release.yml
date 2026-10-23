@@ -77,7 +77,19 @@ jobs:
 
       - run: npm run build
 
+      # CI records every tree it passed under refs/tested/, and a squash
+      # merge of an up-to-date pull request has the tree CI tested.
+      - name: Look up whether CI passed this tree
+        id: tested
+        run: |
+          TREE=$(git rev-parse 'HEAD^{tree}')
+          if git ls-remote --exit-code origin "refs/tested/$TREE" >/dev/null; then
+            echo "tested=true" >> "$GITHUB_OUTPUT"
+            echo "Tree $TREE already passed CI, so the tests do not run again."
+          fi
+
       - name: Run the tests
+        if: steps.tested.outputs.tested != 'true'
         run: npm test
 
       - name: Read the version being released
