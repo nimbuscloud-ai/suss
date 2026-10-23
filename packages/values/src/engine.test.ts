@@ -29,6 +29,7 @@ import {
   throws,
 } from "./testLowering.js";
 import {
+  constant,
   force,
   hole,
   holePiece,
@@ -556,6 +557,21 @@ describe("Evaluator", () => {
       });
       module([helper, expr(target)]);
       expect(force(evaluate(target))).toEqual(hole("prefix"));
+    });
+
+    it("reads the name off the pattern's own default when the call passes nothing", () => {
+      const helper = fn(
+        [
+          {
+            ...destructured("prefix", 0, ["prefix"]),
+            patternDefault: record({ prefix: lit("/v1") }),
+          },
+        ],
+        name("prefix"),
+      );
+      const target = call(null, "helper", [], { calls: helper });
+      module([helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/v1");
     });
 
     it("loses an array handed to an unknown call by keyword", () => {
@@ -1405,6 +1421,125 @@ describe("Evaluator", () => {
       expect(literalOf(force(evaluator.evaluate(inArm)))).toBe("/a/b");
       expect(literalOf(force(evaluator.evaluate(inArm)))).toBe("/a/b");
       expect(literalOf(force(evaluator.evaluate(written)))).toBe("/c");
+    });
+  });
+
+  describe("given values", () => {
+    it("takes a given value in place of the expression, through a name", () => {
+      const evaluator = new Evaluator(testLowering);
+      const made = call(null, "Client", [], { constructs: true });
+      const target = name("client");
+      module([declare({ client: made }), expr(target)]);
+      const given = new Map([[made, text("first")]]);
+      expect(literalOf(evaluator.evaluate(target, { given }))).toBe("first");
+      // Nothing from the given run was kept for the plain question.
+      expect(force(evaluator.evaluate(target)).kind).toBe("hole");
+    });
+
+    it("comes back with a record's fields already computed", () => {
+      const evaluator = new Evaluator(testLowering);
+      const made = call(null, "Client", [], { constructs: true });
+      const target = record({ client: name("client") });
+      module([declare({ client: made }), fn([], [ret(target)])]);
+      const value = evaluator.evaluate(target, {
+        given: new Map([[made, text("first")]]),
+      });
+      expect(value.kind).toBe("record");
+      const field = value.kind === "record" ? value.fields.get("client") : null;
+      expect(field?.value).toEqual(text("first"));
+    });
+
+    it("comes back with a list's items computed, whether or not its length is known", () => {
+      const evaluator = new Evaluator(testLowering);
+      const made = call(null, "Client", [], { constructs: true });
+      const listed = array(name("client"));
+      const grown = name("clients");
+      module([
+        declare({ client: made }),
+        fn([], [ret(listed)]),
+        declare({ clients: array() }),
+        loop([expr(call(name("clients"), "push", [name("client")]))]),
+        expr(grown),
+      ]);
+      const given = new Map([[made, text("first")]]);
+      expect(evaluator.evaluate(listed, { given })).toEqual(
+        sequence([text("first")]),
+      );
+      expect(evaluator.evaluate(grown, { given }).kind).toBe("unbounded");
+    });
+
+    it("binds a call's arguments with the tokens it was given", () => {
+      const evaluator = new Evaluator(testLowering);
+      const made = call(null, "Client", [], { constructs: true });
+      const wrapper = fn(["options"], []);
+      const passed = call(
+        null,
+        "wrapper",
+        [record({ client: name("client") })],
+        {
+          calls: wrapper,
+        },
+      );
+      module([declare({ client: made }), wrapper, expr(passed)]);
+      const bound = evaluator.argumentsAt(passed, {
+        given: new Map([[made, text("first")]]),
+      });
+      const options = bound?.get("options");
+      expect(
+        options?.kind === "record" ? options.fields.get("client")?.value : null,
+      ).toEqual(text("first"));
+    });
+  });
+
+  describe("arguments at a call", () => {
+    it("binds each parameter the way an inlined call does", () => {
+      const evaluator = new Evaluator(testLowering);
+      const wrapper = fn(
+        [
+          positioned("doc", 0),
+          {
+            ...destructured("nextGen", 1, ["nextGen"]),
+            patternDefault: record({}),
+          },
+        ],
+        [],
+      );
+      const passed = call(
+        null,
+        "wrapper",
+        [lit("Doc"), record({ nextGen: lit(true) })],
+        { calls: wrapper },
+      );
+      const bare = call(null, "wrapper", [lit("Doc")], { calls: wrapper });
+      module([wrapper, expr(passed), expr(bare)]);
+
+      const bound = evaluator.argumentsAt(passed);
+      expect(literalOf(bound?.get("doc") ?? hole("doc"))).toBe("Doc");
+      expect(bound?.get("nextGen")).toEqual(constant(true));
+      // `{}` has no nextGen, so the name takes its own default, undefined.
+      expect(evaluator.argumentsAt(bare)?.get("nextGen")).toEqual(
+        constant(undefined),
+      );
+    });
+
+    it("reads the caller's arguments with the caller's own parameters bound", () => {
+      const evaluator = new Evaluator(testLowering);
+      const inner = fn(["flag"], []);
+      const forwarded = call(null, "inner", [name("outerFlag")], {
+        calls: inner,
+      });
+      module([inner, fn(["outerFlag"], [expr(forwarded)])]);
+      const bound = evaluator.argumentsAt(forwarded, {
+        bindings: new Map([["outerFlag", constant(false)]]),
+      });
+      expect(bound?.get("flag")).toEqual(constant(false));
+    });
+
+    it("gives nothing back for a call whose function it cannot see", () => {
+      const evaluator = new Evaluator(testLowering);
+      const target = call(null, "mystery", [lit("a")]);
+      module([expr(target)]);
+      expect(evaluator.argumentsAt(target)).toBeNull();
     });
   });
 });

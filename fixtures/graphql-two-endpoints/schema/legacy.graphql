@@ -1,0 +1,17 @@
+# The older server. It shares root field names with the newer API, and
+# its types have fewer fields.
+
+type Event {
+  id: ID!
+  title: String!
+}
+
+type Account {
+  id: ID!
+  email: String!
+}
+
+type Query {
+  events: [Event!]!
+  account: Account
+}

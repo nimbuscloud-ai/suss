@@ -344,6 +344,11 @@ describe("assembleSummary: optional metadata plumbing", () => {
         reference: "SomeDocument",
         reason: "imported from a module the adapter could not resolve",
       },
+      graphqlClient: { uri: "/graphql", uriRef: null, chosenAtCall: true },
+      graphqlUnresolvedClient: {
+        reference: "flag ? a : b",
+        reason: "can be any of 2 clients",
+      },
     };
 
     const summary = assembleSummary(raw);
@@ -356,6 +361,8 @@ describe("assembleSummary: optional metadata plumbing", () => {
       unresolvedFragments: ["OwnerFields", "PetFields"],
       ambiguousFragments: ["PetFields"],
       unresolvedDocument: { reference: "SomeDocument" },
+      client: { uri: "/graphql", chosenAtCall: true },
+      unresolvedClient: { reference: "flag ? a : b" },
     });
     expect(summary.transitions[0].output).toMatchObject({
       type: "response",

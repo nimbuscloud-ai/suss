@@ -67,6 +67,8 @@ interface FieldSelection {
 export interface GraphqlPairingResult {
   pairs: SummaryPair[];
   findings: Finding[];
+  /** Operations left unpaired because suss could not tell which service their client talks to. */
+  unchecked: Array<{ summary: BehavioralSummary; reason: string }>;
 }
 
 export function pairGraphqlOperations(
@@ -74,15 +76,17 @@ export function pairGraphqlOperations(
 ): GraphqlPairingResult {
   const operations = summaries.filter(isGraphqlOperation);
   if (operations.length === 0) {
-    return { pairs: [], findings: [] };
+    return { pairs: [], findings: [], unchecked: [] };
   }
   const resolverIndex = indexResolvers(summaries);
+  const services = servicesInRun(resolverIndex);
   const schemas: SchemaLookup = {
     byDocument: schemasByDocument(summaries),
     parsed: new Map<string, SchemaIndex>(),
   };
   const pairs: SummaryPair[] = [];
   const findings: Finding[] = [];
+  const unchecked: GraphqlPairingResult["unchecked"] = [];
 
   for (const operation of operations) {
     const doc = operationDocFor(operation);
@@ -101,10 +105,61 @@ export function pairGraphqlOperations(
         ),
       );
     }
+    // Pairing with whichever schema shares the field names would check
+    // the operation against a service it may never reach.
+    const unknownService = unknownServiceReason(meta, services);
+    if (unknownService !== null) {
+      unchecked.push({ summary: operation, reason: unknownService });
+      continue;
+    }
     pairOneOperation(operation, doc, resolverIndex, schemas, pairs, findings);
   }
 
-  return { pairs, findings };
+  return { pairs, findings, unchecked };
+}
+
+/**
+ * Why the operation's service cannot be told, or null when it can: the
+ * client the call passes stayed open, or the client is bound to a
+ * service nothing in this run describes.
+ */
+function unknownServiceReason(
+  meta: ReturnType<typeof readGraphqlMetadata>,
+  services: ReadonlySet<string>,
+): string | null {
+  if (meta?.unresolvedClient !== undefined) {
+    return meta.unresolvedClient.pairWithAll === true
+      ? null
+      : meta.unresolvedClient.reason;
+  }
+  const bound = meta?.client?.workspace;
+  if (bound === undefined || services.has(bound)) {
+    return null;
+  }
+  return `its client is bound to ${bound}, and nothing in this run describes ${bound}`;
+}
+
+/** Every service a client binding in this run can point at. */
+function servicesInRun(
+  resolverIndex: Map<string, BehavioralSummary[]>,
+): Set<string> {
+  const services = new Set<string>();
+  for (const resolvers of resolverIndex.values()) {
+    for (const resolver of resolvers) {
+      for (const name of serviceNamesOf(resolver)) {
+        services.add(name);
+      }
+    }
+  }
+  return services;
+}
+
+/** A resolver's workspace, and the schema file it was read from. */
+function serviceNamesOf(resolver: BehavioralSummary): string[] {
+  return [
+    resolver.location.workspace,
+    readSourceDocumentMetadata(resolver)?.label,
+  ].filter((name): name is string => name !== undefined);
 }
 
 function pairOneOperation(
@@ -134,7 +189,7 @@ function pairOneOperation(
 
     // Two GraphQL services in one repo can declare the same root field,
     // and the key has no endpoint identity to tell them apart (#224).
-    const workspaces = providerWorkspaces(matchingResolvers);
+    const workspaces = providerWorkspaces(operation, matchingResolvers);
     if (workspaces.length > 1) {
       findings.push(
         ambiguousProviderFinding(
@@ -574,10 +629,10 @@ function fieldNotImplementedFinding(
 /**
  * Keep only the resolvers from the service the operation's client is
  * bound to, when a per-project config bound one. An unbound consumer
- * keeps every match, ambiguity warning included. A binding that
- * matches no resolver also keeps every match, since dropping them all
- * would report "not implemented" for a field somebody does implement,
- * and the ambiguity warning surfaces the collision either way.
+ * keeps every match, ambiguity warning included. A bound service that
+ * declares nothing at this key does not serve the field, since the run
+ * describes that service; an operation bound to a service the run does
+ * not describe never gets this far.
  */
 function scopeToBoundService(
   operation: BehavioralSummary,
@@ -588,20 +643,33 @@ function scopeToBoundService(
     return resolvers;
   }
 
-  const scoped = resolvers.filter(
-    (resolver) => resolver.location.workspace === workspace,
+  return resolvers.filter((resolver) =>
+    serviceNamesOf(resolver).includes(workspace),
   );
-  return scoped.length > 0 ? scoped : resolvers;
 }
 
 /**
  * The distinct workspaces the matched resolvers came from. A resolver
  * without a workspace is a schema document or a single-project run, and
  * REST pairing does not count either one as a rival service, so this
- * does not either.
+ * does not either. The exception is an operation the project asked to
+ * pair with every match although its client goes to one of several
+ * endpoints: there each schema file counts as a service of its own.
  */
-function providerWorkspaces(resolvers: BehavioralSummary[]): string[] {
-  return servicesOf(resolvers);
+function providerWorkspaces(
+  operation: BehavioralSummary,
+  resolvers: BehavioralSummary[],
+): string[] {
+  if (readGraphqlMetadata(operation)?.unresolvedClient?.pairWithAll !== true) {
+    return servicesOf(resolvers);
+  }
+  const named = resolvers.flatMap((resolver) => {
+    const name =
+      resolver.location.workspace ??
+      readSourceDocumentMetadata(resolver)?.label;
+    return name === undefined ? [] : [name];
+  });
+  return [...new Set(named)].sort();
 }
 
 function ambiguousProviderFinding(

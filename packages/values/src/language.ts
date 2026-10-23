@@ -128,6 +128,11 @@ export interface Parameter<N> {
    * argument itself.
    */
   readonly path?: readonly string[];
+  /**
+   * The default the whole pattern takes, as in `{ a, b } = {}`. A call
+   * that leaves the argument out has `path` read off this instead.
+   */
+  readonly patternDefault?: N;
 }
 
 export function parameter<N>(
