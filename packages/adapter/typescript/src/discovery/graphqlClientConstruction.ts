@@ -59,27 +59,13 @@ export function stampGraphqlClientRefs(
     resolution,
   );
   const sole = soleGraphqlClientRef(
-    constructions.flatMap((construction) => {
-      const found = constructionRef(
-        construction.node,
-        construction.spec.uriProperty,
-        resolution,
-      );
-      return found === null ? [] : [found];
-    }),
+    constructionRefs(constructions, resolution),
   );
-
-  const workspace = sole !== null ? boundWorkspaceFor(sole, packs) : null;
   const grounding: Grounding = {
     packs,
     scopes: compileOperationScopes(packs),
     sole,
-    soleClient:
-      sole !== null
-        ? workspace !== null
-          ? { ...sole, workspace }
-          : sole
-        : null,
+    soleClient: withBoundWorkspace(sole, packs),
     onlyClient:
       constructions.filter(
         (construction) => construction.spec.linkProperty !== undefined,
@@ -109,6 +95,17 @@ export function stampGraphqlClientRefs(
       ...(dangling && registry !== null ? { fragmentRegistry: registry } : {}),
     });
   }
+}
+
+function withBoundWorkspace(
+  sole: GraphqlClientRef | null,
+  packs: ReadonlyArray<PatternPack>,
+): (GraphqlClientRef & { workspace?: string }) | null {
+  if (sole === null) {
+    return null;
+  }
+  const workspace = boundWorkspaceFor(sole, packs);
+  return workspace === null ? sole : { ...sole, workspace };
 }
 
 /** What the whole run knows about the project's clients. */
@@ -277,11 +274,22 @@ export function collectGraphqlClientRefs(
   packs: ReadonlyArray<PatternPack>,
   resolution: ResolutionStore | undefined,
 ): GraphqlClientRef[] {
-  return graphqlClientConstructions(
-    sourceFiles,
-    packs.flatMap((pack) => pack.graphqlClients ?? []),
+  return constructionRefs(
+    graphqlClientConstructions(
+      sourceFiles,
+      packs.flatMap((pack) => pack.graphqlClients ?? []),
+      resolution,
+    ),
     resolution,
-  ).flatMap((construction) => {
+  );
+}
+
+/** The endpoint each construction is built with. A construction with no uri of its own is left out. */
+function constructionRefs(
+  constructions: ReadonlyArray<GraphqlClientConstruction>,
+  resolution: ResolutionStore | undefined,
+): GraphqlClientRef[] {
+  return constructions.flatMap((construction) => {
     const found = constructionRef(
       construction.node,
       construction.spec.uriProperty,
