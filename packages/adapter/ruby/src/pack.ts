@@ -68,6 +68,13 @@ export interface RubyPack {
    * cache key, so editing one of them forces a re-extract.
    */
   discoveryInputs?: (files: readonly string[]) => string[];
+  /**
+   * Files the library renders through ERB when the app boots, such as
+   * Rails' `config/database.yml`, as absolute paths. The adapter reads
+   * each one as the Ruby in its tags, run when the app loads, so a read of
+   * `ENV` there goes on a load-time unit for the file.
+   */
+  bootTemplates?: () => string[];
   /** Wire protocol for the boundary bindings the pack produces, e.g. "http-graphql". */
   protocol: string;
   discovery: RubyDiscoveryPattern[];

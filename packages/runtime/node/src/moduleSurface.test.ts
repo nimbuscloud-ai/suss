@@ -47,6 +47,14 @@ describe("module-surface recognizers", () => {
     expect(reads[0]?.interaction.name).toBe("import.meta.url");
   });
 
+  it("leaves import.meta.env to the environment reader", () => {
+    const file = makeFile(`
+      const api = import.meta.env.VITE_API_URL;
+      const env = import.meta.env;
+    `);
+    expect(runRecognizers(file)).toEqual([]);
+  });
+
   it("says nothing about a deployment, since nothing supplies a module's location", () => {
     const file = makeFile(`
       const here = import.meta.url;

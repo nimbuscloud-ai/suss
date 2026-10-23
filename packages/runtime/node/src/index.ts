@@ -12,7 +12,7 @@
 
 import { z } from "zod";
 
-import { envVarRecognizer } from "./envVars.js";
+import { ENVIRONMENT_OBJECTS, envVarRecognizer } from "./envVars.js";
 import {
   fileLocationRecognizer,
   importMetaRecognizer,
@@ -51,7 +51,7 @@ export { streamWriteRecognizer } from "./streamWrites.js";
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.3.0";
+const PACK_VERSION = "0.4.0";
 
 /**
  * The options in a `-f node=config.json` file. The CLI checks the file
@@ -123,7 +123,7 @@ export function nodeRuntimePack(
     argumentParsers: PARSE_ARGS,
     inputMapping: { type: "positionalParams", params: [] },
     invocationRecognizers: [schedulingRecognizer, streamWriteRecognizer],
-    environmentObjects: ["process.env"],
+    environmentObjects: [...ENVIRONMENT_OBJECTS],
     streamObjects: PROCESS_STREAMS,
     accessRecognizers: [
       // envRecognizer handles `process.env.X` and processRecognizer skips
@@ -144,7 +144,7 @@ export const declares: PackDeclaration = {
   dependencies: [],
   shippedWith: "typescript",
   reads:
-    "Node.js runtime primitives, scheduling and the \`process\` surface, each recorded as an interaction effect. A \`process.env.X\` read, or a key of a schema parsed against \`process.env\`, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction. A \`console\` call or a write to \`process.stdout\` or \`process.stderr\` becomes a stream-write interaction on the stream it goes to.",
+    "Node.js runtime primitives, scheduling and the \`process\` surface, each recorded as an interaction effect. A \`process.env.X\` or \`import.meta.env.X\` read, or a key of a schema parsed against either, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction. A \`console\` call or a write to \`process.stdout\` or \`process.stderr\` becomes a stream-write interaction on the stream it goes to.",
 };
 
 export default nodeRuntimePack;
