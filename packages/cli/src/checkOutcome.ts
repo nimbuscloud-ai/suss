@@ -43,6 +43,7 @@ const OUTCOME_OF_RUN_FINDING: Record<RunFindingKind, CheckOutcome> = {
   unreadableInput: "findings",
   mostlyUnpaired: "findings",
   packNeedsConfig: "findings",
+  packPathMissing: "findings",
 };
 
 /**

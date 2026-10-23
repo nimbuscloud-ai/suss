@@ -14,6 +14,8 @@
  * stage pairs instead of one check written per stage.
  */
 
+import path from "node:path";
+
 import type {
   ExtractionReport,
   PackFailure,
@@ -381,6 +383,65 @@ export function packConfigCheck(
       label: need.pack,
       detail: `reads nothing until ${need.option} is set, for example ${need.example}. Write that to a JSON file and pass -f ${need.pack}=<config.json>.`,
     })),
+  };
+}
+
+/**
+ * A path in a pack's config file where nothing exists. `resolved` is the
+ * path the pack was given. `inProject` is the same value read against the
+ * project instead, set only when something exists there, since that is
+ * the path the user most likely meant.
+ */
+export interface PackPathMissing {
+  pack: string;
+  option: string;
+  /** The value as the config file wrote it, or one entry of a list. */
+  value: string;
+  configFile: string;
+  resolved: string;
+  inProject?: string;
+}
+
+/**
+ * What went wrong with a path option and what to do about it, worded
+ * once for the health block and for the run finding `check` reports.
+ */
+export function describeMissingPath(missing: PackPathMissing): {
+  problem: string;
+  fix: string;
+} {
+  const where = `${missing.option} is ${missing.value} in ${missing.configFile}`;
+  if (path.isAbsolute(missing.value)) {
+    return {
+      problem: `${where}, and nothing exists there.`,
+      fix: `Set ${missing.option} to a path that exists.`,
+    };
+  }
+  return {
+    problem: `${where}, and nothing exists at ${missing.resolved}. A relative path is read against the config file, not the project.`,
+    fix:
+      missing.inProject === undefined
+        ? `Set ${missing.option} to an absolute path, or move the config file into the project.`
+        : `Set ${missing.option} to ${missing.inProject} in the config file, or move the config file into the project.`,
+  };
+}
+
+/**
+ * Path options in a config file that point at nothing. The pack still
+ * runs, and every lookup under such a path comes back empty, so the
+ * summaries look like a project with less in it.
+ */
+export function packPathCheck(
+  missing: ReadonlyArray<PackPathMissing>,
+): HealthCheck {
+  return {
+    name: "every path a pack config gives exists",
+    code: "no-path",
+    audience: "run",
+    violations: missing.map((one) => {
+      const { problem, fix } = describeMissingPath(one);
+      return { label: one.pack, detail: `${problem} ${fix}` };
+    }),
   };
 }
 

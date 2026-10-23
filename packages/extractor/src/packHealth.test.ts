@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  describeMissingPath,
   evaluatePackHealth,
   formatPackHealth,
   packConfigCheck,
   packGradients,
+  packPathCheck,
 } from "./packHealth.js";
 
 import type { PackFunnel } from "./extractionReport.js";
@@ -466,5 +468,46 @@ describe("the pack config check", () => {
 
   it("prints nothing when no pack is missing its option", () => {
     expect(formatPackHealth([packConfigCheck([])], ["run"])).toBe("");
+  });
+});
+
+describe("the pack path check", () => {
+  const missing = {
+    pack: "graphql-ruby",
+    option: "root",
+    value: "app/graphql",
+    configFile: "/configs/suss.graphql-ruby.json",
+    resolved: "/configs/app/graphql",
+  };
+
+  it("says where a relative path was read from, and the project path that exists", () => {
+    const text = formatPackHealth(
+      [packPathCheck([{ ...missing, inProject: "/work/shop/app/graphql" }])],
+      ["run"],
+    );
+
+    expect(text).toContain(
+      "no-path  graphql-ruby  root is app/graphql in /configs/suss.graphql-ruby.json, and nothing exists at /configs/app/graphql. A relative path is read against the config file, not the project. Set root to /work/shop/app/graphql in the config file, or move the config file into the project.",
+    );
+  });
+
+  it("asks for an absolute path when the project has nothing there either", () => {
+    expect(describeMissingPath(missing).fix).toBe(
+      "Set root to an absolute path, or move the config file into the project.",
+    );
+  });
+
+  it("leaves out the explanation for an absolute path", () => {
+    expect(
+      describeMissingPath({
+        ...missing,
+        value: "/gone/app/graphql",
+        resolved: "/gone/app/graphql",
+      }),
+    ).toEqual({
+      problem:
+        "root is /gone/app/graphql in /configs/suss.graphql-ruby.json, and nothing exists there.",
+      fix: "Set root to a path that exists.",
+    });
   });
 });

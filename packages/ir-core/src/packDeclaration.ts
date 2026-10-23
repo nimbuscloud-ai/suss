@@ -37,6 +37,14 @@ export interface PackConfiguration {
    * not say.
    */
   readFromProject?: (projectRoot: string) => Record<string, unknown> | null;
+  /**
+   * The options whose value is a file or directory path, either one
+   * string or a list of them. A relative one is read against the config
+   * file, so a file kept outside the project points somewhere else. The
+   * CLI reports each path where nothing exists, instead of letting the
+   * pack look up classes in a directory that is not there.
+   */
+  paths?: readonly string[];
 }
 
 export interface PackDeclaration {

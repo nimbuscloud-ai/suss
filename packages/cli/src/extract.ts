@@ -35,6 +35,7 @@ import {
   evaluatePackHealth,
   formatPackHealth,
   packConfigCheck,
+  packPathCheck,
   processCodeHasher,
 } from "@suss/extractor";
 
@@ -83,6 +84,7 @@ import type {
   EmptyStage,
   ExtractionReport,
   PackConfigNeed,
+  PackPathMissing,
   PatternPack,
   TimingReport,
 } from "@suss/extractor";
@@ -389,41 +391,83 @@ function optionsForFactory(
     return options;
   }
   const given = options as Record<string, unknown> | undefined;
-  if (configFile !== undefined && given !== undefined) {
-    warnAboutMissingPaths(given, configFile, directory);
-  }
   return { ...given, configDirectory: directory };
 }
 
 /**
- * Warns about a path option that points at nothing. A relative path in a
- * pack config is read against the config file, so a config kept outside
- * the project points at a directory that is not there. Every class lookup
- * through it then comes back empty, and the run reports gaps for classes
- * the project does have. The warning costs one stat per path option.
+ * The path options in a config file where nothing exists. A relative path
+ * is read against the config file, so a config kept outside the project
+ * points at a directory that is not there. The pack still runs, every
+ * class lookup through it comes back empty, and the run reports gaps for
+ * classes the project does have. The pack declares which options are
+ * paths, and the check costs one stat per path.
  */
-function warnAboutMissingPaths(
-  options: Record<string, unknown>,
-  configFile: string,
-  directory: string,
-): void {
-  for (const [key, value] of Object.entries(options)) {
-    if (
-      typeof value !== "string" ||
-      !/(^|[a-z])(root|file|dir|path)/i.test(key)
-    ) {
-      continue;
-    }
-
-    const resolved = path.isAbsolute(value)
-      ? value
-      : path.resolve(directory, value);
-    if (!fs.existsSync(resolved)) {
-      process.stderr.write(
-        `${configFile} says ${key} is ${value}, and there is nothing at ${resolved}. A relative path is read against the config file, so a config kept outside the project points at nothing.\n`,
-      );
-    }
+function missingPathsOf(
+  name: string,
+  declares: PackDeclaration | undefined,
+  options: unknown,
+  configFile: string | undefined,
+  projectRoot: string | undefined,
+): PackPathMissing[] {
+  const paths = declares?.configuration?.paths ?? [];
+  if (
+    configFile === undefined ||
+    paths.length === 0 ||
+    options === null ||
+    typeof options !== "object"
+  ) {
+    return [];
   }
+
+  const given = options as Record<string, unknown>;
+  return paths.flatMap((option) =>
+    pathValuesOf(given[option]).flatMap((value) => {
+      const resolved = path.resolve(path.dirname(configFile), value);
+      if (pathExists(resolved)) {
+        return [];
+      }
+      const inProject =
+        projectRoot === undefined || path.isAbsolute(value)
+          ? undefined
+          : path.resolve(projectRoot, value);
+      return [
+        {
+          pack: name,
+          option,
+          value,
+          configFile,
+          resolved,
+          ...(inProject !== undefined && pathExists(inProject)
+            ? { inProject }
+            : {}),
+        },
+      ];
+    }),
+  );
+}
+
+function pathValuesOf(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.filter((one): one is string => typeof one === "string");
+  }
+  return [];
+}
+
+/**
+ * Whether a path exists, or for a pattern with a `*` in a segment, the
+ * directory the pattern starts from. A pattern that matches no entry
+ * under a directory that is there is the project's own business.
+ */
+function pathExists(pattern: string): boolean {
+  const segments = pattern.split(path.sep);
+  const wildcard = segments.findIndex((segment) => segment.includes("*"));
+  if (wildcard === -1) {
+    return fs.existsSync(pattern);
+  }
+  return fs.existsSync(segments.slice(0, wildcard).join(path.sep) || path.sep);
 }
 
 /**
@@ -453,6 +497,8 @@ interface LoadedFactory {
   takesFiles: boolean;
   /** What the pack says about the config it needs, for a run that gave it none. */
   unmetConfig: PackConfigNeed | null;
+  /** Path options in the config file where nothing exists. */
+  missingPaths: PackPathMissing[];
 }
 
 /**
@@ -608,6 +654,13 @@ async function loadPackFactory(
       specifier,
       takesFiles: mod.optionsSchema?.shape.files !== undefined,
       unmetConfig: unmetConfigOf(name, mod, options),
+      missingPaths: missingPathsOf(
+        name,
+        mod.declares,
+        options,
+        configFile,
+        projectRoot,
+      ),
     };
   };
 
@@ -661,25 +714,32 @@ function unmetConfigOf(
 /**
  * Splits the packs a run asked for into those it can read with and those
  * that need an option the run did not give. A pack in the second list is
- * reported by the pack health block instead of stopping the run.
+ * reported by the pack health block instead of stopping the run, along
+ * with any path a config file gives where nothing exists.
  */
 async function leaveOutUnconfigured(
   specs: readonly string[],
   language: Language,
   projectRoot: string,
-): Promise<{ configured: string[]; needs: PackConfigNeed[] }> {
+): Promise<{
+  configured: string[];
+  needs: PackConfigNeed[];
+  missingPaths: PackPathMissing[];
+}> {
   const configured: string[] = [];
   const needs: PackConfigNeed[] = [];
+  const missingPaths: PackPathMissing[] = [];
   for (const spec of specs) {
     const loaded = await loadPackFactory(spec, projectRoot);
     assertPackLanguage(loaded.name, language);
+    missingPaths.push(...loaded.missingPaths);
     if (loaded.unmetConfig === null) {
       configured.push(spec);
       continue;
     }
     needs.push(loaded.unmetConfig);
   }
-  return { configured, needs };
+  return { configured, needs, missingPaths };
 }
 
 function assertPackLanguage(name: string, language: Language): void {
@@ -947,6 +1007,8 @@ interface LanguageRun {
   explicitFiles: boolean;
   /** Packs the run asked for and left out, because an option they need was not given. */
   packsNeedingConfig: PackConfigNeed[];
+  /** Paths in the packs' config files where nothing exists. */
+  packPathsMissing: PackPathMissing[];
 }
 
 /** What the adapter's callbacks reported during the current run. */
@@ -1008,7 +1070,7 @@ async function runTypeScript(
   const runRoot = workspaceRootFor(source.root);
   const stubOverlay = stubOverlayOf(loadStubs(runRoot));
   const testFiles = testFilesFor(options);
-  const { configured, needs } = await leaveOutUnconfigured(
+  const { configured, ...packConfig } = await leaveOutUnconfigured(
     options.frameworks,
     "typescript",
     runRoot,
@@ -1096,14 +1158,15 @@ async function runTypeScript(
         (p) => p.discovery.length === 0 && p.discoverUnits === undefined,
       ),
     explicitFiles,
-    packsNeedingConfig: needs,
+    packsNeedingConfig: packConfig.needs,
+    packPathsMissing: packConfig.missingPaths,
   };
 }
 
 async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
   const testFiles = testFilesFor(runOptions.options);
-  const { configured, needs } = await leaveOutUnconfigured(
+  const { configured, ...packConfig } = await leaveOutUnconfigured(
     runOptions.options.frameworks,
     "python",
     runOptions.root,
@@ -1165,7 +1228,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     timingReport,
     extractionReport,
     cacheDiagnostic,
-    needs,
+    packConfig,
   );
 }
 
@@ -1189,7 +1252,7 @@ export function formatUnreadManifests(
 async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
   const testFiles = testFilesFor(runOptions.options);
-  const { configured, needs } = await leaveOutUnconfigured(
+  const { configured, ...packConfig } = await leaveOutUnconfigured(
     runOptions.options.frameworks,
     "ruby",
     runOptions.root,
@@ -1246,7 +1309,7 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     timingReport,
     extractionReport,
     cacheDiagnostic,
-    needs,
+    packConfig,
   );
 }
 
@@ -1285,7 +1348,7 @@ function languageRun(
   timingReport: TimingReport | null,
   extractionReport: ExtractionReport | null,
   cacheDiagnostic: CacheDiagnostic | null,
-  packsNeedingConfig: PackConfigNeed[],
+  packConfig: { needs: PackConfigNeed[]; missingPaths: PackPathMissing[] },
 ): LanguageRun {
   return {
     summaries,
@@ -1298,7 +1361,8 @@ function languageRun(
     // Python and Ruby build a report even with --files, so downstream
     // code has no reason to tell the two kinds of run apart.
     explicitFiles: false,
-    packsNeedingConfig,
+    packsNeedingConfig: packConfig.needs,
+    packPathsMissing: packConfig.missingPaths,
   };
 }
 
@@ -1385,6 +1449,7 @@ export async function extract(
     cacheDiagnostic,
     extractionReport,
     packsNeedingConfig,
+    packPathsMissing,
   } = run;
 
   const projectRoot = run.root;
@@ -1404,6 +1469,7 @@ export async function extract(
       report: extractionReport,
       missingSubmodules,
       packsNeedingConfig,
+      packPathsMissing,
     });
     if (options.quiet !== true || summaries.length === 0) {
       process.stderr.write(
@@ -1466,6 +1532,7 @@ export async function extract(
           ? []
           : evaluatePackHealth(extractionReport)),
         packConfigCheck(packsNeedingConfig),
+        packPathCheck(packPathsMissing),
       ],
       options.explain === true ? ["run", "pack"] : ["run"],
     ),
@@ -1474,6 +1541,14 @@ export async function extract(
   if (options.failOnPackError === true && packsNeedingConfig.length > 0) {
     process.stderr.write(
       `Failing because ${listOf(packsNeedingConfig.map((need) => need.pack))} could not read without an option (--fail-on-pack-error).\n`,
+    );
+    process.exitCode = 1;
+  }
+
+  if (options.failOnPackError === true && packPathsMissing.length > 0) {
+    const packs = [...new Set(packPathsMissing.map((one) => one.pack))];
+    process.stderr.write(
+      `Failing because a path in the config for ${listOf(packs)} points at nothing (--fail-on-pack-error).\n`,
     );
     process.exitCode = 1;
   }
@@ -1547,13 +1622,15 @@ async function writeIncompleteness(args: {
   report: ExtractionReport | null;
   missingSubmodules: readonly string[];
   packsNeedingConfig: readonly PackConfigNeed[];
+  packPathsMissing: readonly PackPathMissing[];
 }): Promise<void> {
   const notePath = incompletenessPathFor(args.outPath);
   const unreadable = args.report?.filesWithUnreadableExports ?? [];
   if (
     unreadable.length === 0 &&
     args.missingSubmodules.length === 0 &&
-    args.packsNeedingConfig.length === 0
+    args.packsNeedingConfig.length === 0 &&
+    args.packPathsMissing.length === 0
   ) {
     fs.rmSync(notePath, { force: true });
     return;
@@ -1574,6 +1651,9 @@ async function writeIncompleteness(args: {
         : {}),
       ...(args.packsNeedingConfig.length > 0
         ? { packsNeedingConfig: [...args.packsNeedingConfig] }
+        : {}),
+      ...(args.packPathsMissing.length > 0
+        ? { packPathsMissing: [...args.packPathsMissing] }
         : {}),
     },
     indent: 2,

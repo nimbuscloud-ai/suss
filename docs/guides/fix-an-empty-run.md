@@ -86,6 +86,17 @@ npx @suss/cli extract --lang ruby -f rails -f graphql-ruby=suss.graphql-ruby.jso
 
 `suss init --write` writes this file for you. `--fail-on-pack-error` turns the line into a failure even when other packs found something. The same warning reaches `suss check --json` as a `packNeedsConfig` entry under `run`, from the note `extract -o` leaves beside the summaries, so a check over summaries written without the option does not look complete.
 
+## A path in a pack config points at nothing
+
+```
+Pack health (1):
+  no-path  graphql-ruby  root is app/graphql in /configs/suss.graphql-ruby.json, and nothing exists at /configs/app/graphql. A relative path is read against the config file, not the project. Set root to /work/shop/app/graphql in the config file, or move the config file into the project.
+```
+
+A relative path in a pack config is read against the folder the config file is in. That keeps a run working from any directory. A config kept outside the project, as when the checkout is read-only, then points the pack at a folder that does not exist. The pack still runs, every lookup under that path comes back empty, and the summaries say a wired field's class was not read when it is sitting in the project. When the same relative path does exist under the project, the line prints the absolute path to use.
+
+Use an absolute path in a config file kept elsewhere, or keep the file in the project. `--fail-on-pack-error` turns the line into a failure, and `suss check --json` reports it as a `packPathMissing` entry under `run`.
+
 ## A pack read your code and recognized none of it
 
 A run can write summaries, exit 0, and still have a pack in it that read your code and matched nothing. The pack health block reports that:
