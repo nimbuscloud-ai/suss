@@ -245,7 +245,7 @@ Options (check):
                    --changed-files would for the files changed since it.
                    With --dir pointing at a project, reads that project
                    and finds the ref in its git repository.
-  --all           Write out every finding and every list. Without it a run
+  --all            Write out every finding and every list. Without it a run
                    prints the errors in full and counts the rest, because a
                    first run over a repository reports far more at warning
                    and info than at error. --at already prints in full, and
