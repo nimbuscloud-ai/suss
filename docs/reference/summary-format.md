@@ -40,6 +40,7 @@ Any JSON parser reads it. A tool that reads a file too large for one string can 
 | `confidence` | `ConfidenceInfo` | How much of the behavior was read, and where the claim came from. |
 | `definitions` | record, optional | Types a `ref` shape points at, keyed by definition. |
 | `inputReads` | array, optional | What the unit read out of the values it was given, once each. |
+| `receiverClass` | object, optional | The subclass an inherited method runs on, for a summary of the method on that subclass. |
 | `metadata` | record, optional | Framework-specific data, namespaced by boundary semantics. |
 
 ## One unit

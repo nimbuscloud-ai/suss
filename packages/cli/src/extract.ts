@@ -1997,6 +1997,12 @@ function relativizeReceiverClasses(
   summary: BehavioralSummary,
   projectRoot: string,
 ): void {
+  if (summary.receiverClass !== undefined) {
+    summary.receiverClass = {
+      ...summary.receiverClass,
+      file: locationFileIn(projectRoot, summary.receiverClass.file),
+    };
+  }
   for (const transition of summary.transitions) {
     // A summary built by hand in a caller's test can leave the list out.
     for (const effect of transition.effects ?? []) {

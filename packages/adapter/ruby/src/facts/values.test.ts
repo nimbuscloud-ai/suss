@@ -1144,10 +1144,14 @@ describe("ruby value facts", () => {
     const source = "class Entity\n  def self.filter\n    self\n  end\nend\n";
     const db = await factsFor(source);
     const classKey = rows(db, "objectValue")[0]?.[0];
+    const filter = keyOf(source, "def self.filter\n    self\n  end");
+    const receiver = `${filter}#self`;
     expect(rows(db, "binds")).toContainEqual([
       lastKeyOf(source, "self"),
-      classKey,
+      receiver,
     ]);
+    expect(rows(db, "binds")).toContainEqual([receiver, classKey]);
+    expect(rows(db, "selfReceiver")).toEqual([[filter, receiver, "class"]]);
     expect(rows(db, "instanceOf")).toEqual([]);
   });
 
@@ -1172,7 +1176,8 @@ describe("ruby value facts", () => {
       ".filter",
       filter,
     ]);
-    expect(rows(db, "binds")).toContainEqual([self, classKey]);
+    expect(rows(db, "binds")).toContainEqual([self, `${filter}#self`]);
+    expect(rows(db, "binds")).toContainEqual([`${filter}#self`, classKey]);
     expect(rows(db, "storesProperty")).toContainEqual([
       filter,
       "@cache",
@@ -1212,8 +1217,9 @@ describe("ruby value facts", () => {
     ]);
     expect(rows(db, "binds")).toContainEqual([
       lastKeyOf(source, "self"),
-      classKey,
+      `${build}#self`,
     ]);
+    expect(rows(db, "binds")).toContainEqual([`${build}#self`, classKey]);
     expect(rows(db, "instanceOf")).toEqual([]);
   });
 

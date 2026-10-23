@@ -14,6 +14,8 @@ import {
   classMemberName,
   NAMED_STORE_NAME,
   RECEIVER_STORE_NAME,
+  SELF_AS_CLASS_NAME,
+  SELF_AS_INSTANCE_NAME,
   SPREAD_ENTRY,
   startsAtName,
   type TemplatePiece,
@@ -51,6 +53,7 @@ import {
   CONSTRUCTOR,
   CONVERTING_FUNCTIONS,
   CONVERTING_METHODS,
+  INITIALIZE_METHOD,
   INVOKE_METHOD,
   METHOD_REFERENCE,
   PROC_CLASS,
@@ -2145,23 +2148,14 @@ function emitCandidates(
   }
 }
 
-/** The method Ruby runs on a new instance. */
-const INITIALIZE_METHOD = "initialize";
-
 /**
- * The key `self` has inside a method. In an instance method `self` is an
- * instance of the class, with a key of its own so that a walk from one
- * construction reads that construction's fields. In a class method `self`
- * is the class itself.
+ * The key `self` has inside a method, its own for each method. In an
+ * instance method a walk from one construction then reads that
+ * construction's fields, and in a class method a subclass that inherits
+ * the method can stand in for the class.
  */
-function receiverKeyOf(
-  emitter: Emitter,
-  method: RbNode,
-  classKey: string,
-): string {
-  return definesClassMethod(method, emitter.bodyBlocks)
-    ? classKey
-    : `${nodeId(emitter.filePath, method)}#self`;
+export function receiverKeyOf(file: string, method: RbNode): string {
+  return `${nodeId(file, method)}#self`;
 }
 
 /** A mixin argument written any other way has no name a rule can join on. */
@@ -2232,11 +2226,20 @@ function emitMethodOfClass(
   offeredOnClass: NodeSet,
 ): void {
   const stored = new Map<string, InstanceWrite[]>();
-  const receiverKey = receiverKeyOf(within, method, classKey);
-  const onInstance = receiverKey !== classKey;
+  const receiverKey = receiverKeyOf(within.filePath, method);
+  const onInstance = !definesClassMethod(method, within.bodyBlocks);
   if (onInstance) {
     add(within, "instanceOf", receiverKey, classKey);
+  } else {
+    add(within, "binds", receiverKey, classKey);
   }
+  add(
+    within,
+    "selfReceiver",
+    nodeId(within.filePath, method),
+    receiverKey,
+    onInstance ? SELF_AS_INSTANCE_NAME : SELF_AS_CLASS_NAME,
+  );
   const funcKey = emitMethodFacts(
     {
       ...within,

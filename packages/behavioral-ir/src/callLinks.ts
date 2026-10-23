@@ -186,13 +186,59 @@ function settle<K>(
     map.set(key, placed);
     return;
   }
-  if (
-    known !== null &&
-    declarationKey(known.file, known.span) !==
-      declarationKey(placed.file, placed.span)
-  ) {
+  if (known !== null && !samePlace(known, placed)) {
     map.set(key, null);
   }
+}
+
+/** Where one scanned body's calls go, in the forms `TargetPlacements` gives. */
+export interface BodyPlacements {
+  readonly targets?: ReadonlyMap<string, DeclaredAt> | undefined;
+  readonly argTargets?:
+    | ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
+    | undefined;
+  readonly possibleTargets?:
+    | ReadonlyMap<string, readonly DeclaredAt[]>
+    | undefined;
+}
+
+/**
+ * Whether two scans of one method send every call to the same places,
+ * whichever subclass each place runs on. A method that inherits a body
+ * is scanned once on its own class and once on each subclass, and this
+ * says whether the subclass's scan changed where any call goes.
+ */
+export function sameDeclarations(
+  a: BodyPlacements,
+  b: BodyPlacements,
+): boolean {
+  return declarationsOf(a) === declarationsOf(b);
+}
+
+function declarationsOf(body: BodyPlacements): string {
+  const at = (place: DeclaredAt): string =>
+    declarationKey(place.file, place.span);
+  return JSON.stringify(
+    [
+      [...(body.targets ?? [])].map(([callee, place]) => [callee, at(place)]),
+      [...(body.possibleTargets ?? [])].map(([callee, places]) => [
+        callee,
+        places.map(at),
+      ]),
+      [...(body.argTargets ?? [])].map(([callee, byPosition]) => [
+        callee,
+        [...byPosition].map(([position, place]) => [position, at(place)]),
+      ]),
+    ].map((entries) => entries.sort()),
+  );
+}
+
+function samePlace(a: DeclaredAt, b: DeclaredAt): boolean {
+  return (
+    declarationKey(a.file, a.span) === declarationKey(b.file, b.span) &&
+    a.receiverClass?.file === b.receiverClass?.file &&
+    a.receiverClass?.name === b.receiverClass?.name
+  );
 }
 
 function byDeclaration(a: DeclaredAt, b: DeclaredAt): number {
@@ -428,6 +474,11 @@ export function linkCallsToSummaries(summaries: BehavioralSummary[]): void {
         summary,
       );
     }
+    // A call reaches a method on a subclass only through a placement
+    // that says which subclass.
+    if (summary.receiverClass !== undefined) {
+      continue;
+    }
     remember(
       byFileAndName,
       `${summary.location.file}::${summary.identity.name}`,
@@ -474,6 +525,7 @@ function linkArgs(
   for (const [position, target] of Object.entries(effect.argsDeclaredAt)) {
     const reached = summaryAtPlace(
       byLocation.get(declarationKey(target.file, target.span)) ?? [],
+      target.receiverClass,
     );
     if (reached !== null) {
       argsSummary[position] = summaryIdentifier(reached);
@@ -497,6 +549,7 @@ function linkPossible(
   for (const target of effect.possibleDeclaredAt) {
     const found = summaryAtPlace(
       byLocation.get(declarationKey(target.file, target.span)) ?? [],
+      target.receiverClass,
     );
     if (found !== null) {
       reached.add(summaryIdentifier(found));
@@ -531,6 +584,7 @@ function summaryReachedBy(
   if (declaredAt !== undefined) {
     return summaryAtPlace(
       byLocation.get(declarationKey(declaredAt.file, declaredAt.span)) ?? [],
+      declaredAt.receiverClass,
     );
   }
   // A method call includes its receiver, and the last segment is the
@@ -544,13 +598,31 @@ function summaryReachedBy(
  * exported through two packages has a provider summary per package,
  * and one that also calls out has a consumer summary beside them. The
  * link goes to a provider, because callers know the function by the
- * provider's id, and otherwise to the first summary.
+ * provider's id, and otherwise to the first summary. A summary of the
+ * method running on a subclass is reached only by a call placed there.
  */
-function summaryAtPlace(found: BehavioralSummary[]): BehavioralSummary | null {
-  const provider = found.find(
+function summaryAtPlace(
+  found: BehavioralSummary[],
+  receiverClass?: ReceiverClass,
+): BehavioralSummary | null {
+  const onSubclass =
+    receiverClass === undefined
+      ? undefined
+      : found.find((summary) =>
+          sameClass(summary.receiverClass, receiverClass),
+        );
+  if (onSubclass !== undefined) {
+    return onSubclass;
+  }
+  const own = found.filter((summary) => summary.receiverClass === undefined);
+  const provider = own.find(
     (summary) => BOUNDARY_ROLE[summary.kind] === "provider",
   );
-  return provider ?? found[0] ?? null;
+  return provider ?? own[0] ?? null;
+}
+
+function sameClass(a: ReceiverClass | undefined, b: ReceiverClass): boolean {
+  return a?.file === b.file && a.name === b.name;
 }
 
 function onlyAnswer(

@@ -896,6 +896,19 @@
                             },
                             "required": ["start", "end"],
                             "additionalProperties": false
+                          },
+                          "receiverClass": {
+                            "type": "object",
+                            "properties": {
+                              "file": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["file", "name"],
+                            "additionalProperties": false
                           }
                         },
                         "required": ["file", "span"],
@@ -923,6 +936,19 @@
                                 }
                               },
                               "required": ["start", "end"],
+                              "additionalProperties": false
+                            },
+                            "receiverClass": {
+                              "type": "object",
+                              "properties": {
+                                "file": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["file", "name"],
                               "additionalProperties": false
                             }
                           },
@@ -958,6 +984,19 @@
                                 }
                               },
                               "required": ["start", "end"],
+                              "additionalProperties": false
+                            },
+                            "receiverClass": {
+                              "type": "object",
+                              "properties": {
+                                "file": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["file", "name"],
                               "additionalProperties": false
                             }
                           },
@@ -1903,6 +1942,19 @@
           "required": ["input", "path"],
           "additionalProperties": false
         }
+      },
+      "receiverClass": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["file", "name"],
+        "additionalProperties": false
       },
       "metadata": {
         "type": "object",

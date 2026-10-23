@@ -20,29 +20,35 @@ import {
   classMemberName,
   couldBeSettled,
   dispatchOutcomes,
+  SELF_AS_CLASS_NAME,
+  selfFormOf,
+  selfResultOf,
 } from "@suss/resolution";
 
 import { methodInAncestry } from "../ancestry.js";
 import { definesClassMethod, field, singletonMethodsByName } from "../ast.js";
 import { classBehind } from "../baseClass.js";
 import {
+  CONSTRUCTOR,
+  INITIALIZE_METHOD,
   INVOKE_METHOD,
   OBJECT_METHODS,
   SENDING_METHODS,
 } from "../facts/languageWords.js";
-import { RUBY_PROGRAM } from "../facts/resolve.js";
+import { RUBY_PROGRAM, resolveValues } from "../facts/resolve.js";
 import {
   classLocalsAt,
   nodeId,
   readKey,
   readsOffClassItself,
+  receiverKeyOf,
 } from "../facts/values.js";
 import { pickedSource } from "../loaders.js";
 import { calleeMethodName } from "../paths/effects.js";
 
 import type { UnfollowedReason } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { CalleeOutcome } from "@suss/resolution";
+import type { CalleeOutcome, SelfForm, SubclassPlace } from "@suss/resolution";
 import type {
   AncestorLookup,
   Ancestry,
@@ -64,6 +70,8 @@ export interface ReachedFunction {
   readonly exportPath: string[];
   /** The class the method is written in, so calls from inside it resolve against that class's ancestry. Null for a method defined outside any class. */
   readonly enclosingQualifiedName: string | null;
+  /** The subclass the method runs on, when the call reached it through a class that inherits it. Calls on `self` then resolve against that class. */
+  readonly receiverClass?: SubclassPlace;
 }
 
 /** A class the run defines, by the value facts' key for its node and its qualified name. */
@@ -113,6 +121,13 @@ export interface CallSite {
   /** That method's key, which its parameters' keys start with. */
   readonly owner: string;
   readonly enclosingQualifiedName: string | null;
+  /** The subclass the method being scanned runs on, when it is not the class the method is written in. */
+  readonly receiverClass?: SubclassPlace | undefined;
+}
+
+/** The class `self` belongs to where a call is written. */
+function selfClassOf(site: CallSite): string | null {
+  return site.receiverClass?.name ?? site.enclosingQualifiedName;
 }
 
 /** The gap reason for each outcome where the rules settle nothing. */
@@ -473,6 +488,25 @@ function asCallee(
   if (objects.length > 1) {
     return stop("multipleSources");
   }
+  const fromSelf = ownReceiverForm(spelling.key, site, ctx);
+  const selfClass = selfClassOf(site);
+  if (fromSelf !== null && selfClass !== null) {
+    return methodOfClass(
+      { ...spelling, onClassItself: fromSelf === SELF_AS_CLASS_NAME },
+      selfClass,
+      ctx,
+    );
+  }
+  const returned = selfResultOf(ctx.facts, spelling.key);
+  const sentTo =
+    returned === null ? null : classSentTo(returned.receiver, site, ctx);
+  if (returned !== null && sentTo !== null) {
+    return methodOfClass(
+      { ...spelling, onClassItself: returned.form === SELF_AS_CLASS_NAME },
+      sentTo,
+      ctx,
+    );
+  }
   const objectKey =
     objects[0] ?? (outcome.kind === "object" ? outcome.key : undefined);
   if (objectKey !== undefined) {
@@ -486,6 +520,42 @@ function asCallee(
       : NO_DECLARATION;
   }
   return stop(STOP_FOR[outcome.kind] ?? "noDeclaration");
+}
+
+/**
+ * Whether a receiver is the scanned method's own `self`, or was made from
+ * it, as `new(...)` in a class method and `self.class` in an instance
+ * method are. Such a receiver is the class the method runs on, which for
+ * a method a subclass inherits is the subclass.
+ */
+function ownReceiverForm(
+  key: string,
+  site: CallSite,
+  ctx: ReachContext,
+): SelfForm | null {
+  return site.method === null
+    ? null
+    : selfFormOf(ctx.facts, key, receiverKeyOf(site.file, site.method));
+}
+
+/**
+ * The class a call was sent to, when the method it ran returns its own
+ * receiver: the class `self` belongs to here, or the one class the
+ * receiver settles on.
+ */
+function classSentTo(
+  receiver: string,
+  site: CallSite,
+  ctx: ReachContext,
+): string | null {
+  resolveValues(ctx.facts, [receiver]);
+  if (ownReceiverForm(receiver, site, ctx) !== null) {
+    return selfClassOf(site);
+  }
+  const [only, ...more] = objectsBehind(ctx.facts, receiver);
+  return only === undefined || more.length > 0
+    ? null
+    : (ctx.classNames.get(only) ?? null);
 }
 
 /**
@@ -527,26 +597,44 @@ function methodOfClass(
   if (!spelling.onClassItself) {
     return methodOnAncestryOf(qualifiedName, spelling.method, ctx);
   }
-  if (spelling.method === "new") {
-    return methodOnAncestryOf(qualifiedName, "initialize", ctx);
+  if (spelling.method === CONSTRUCTOR) {
+    return methodOnAncestryOf(qualifiedName, INITIALIZE_METHOD, ctx);
   }
-  const written = singletonMethodOn(qualifiedName, spelling.method, ctx);
-  return written.kind === "followed"
-    ? written
-    : (scopeOn(qualifiedName, spelling.method, ctx) ?? written);
+  return classMethodOn(qualifiedName, spelling.method, ctx);
 }
 
 /**
- * The class method a scope call defines, which the value facts record as
- * a property holding the lambda. A subclass inherits it, and a scope in a
- * concern's `included` block is defined on the class that includes it,
- * so the lookup goes through the whole ancestry.
+ * A class method called on the class, as `Const.method` or as a bare call
+ * inside another class method: one the class's own body writes, or else
+ * one it inherits, which runs with the class as `self`.
+ */
+function classMethodOn(
+  qualifiedName: string,
+  method: string,
+  ctx: ReachContext,
+): CalleeResolution {
+  const written = singletonMethodOn(qualifiedName, method, ctx);
+  if (written.kind === "followed") {
+    return written;
+  }
+  const inherited = scopeOn(qualifiedName, method, ctx);
+  return inherited === null
+    ? written
+    : followed(runningOn(qualifiedName, inherited, ctx));
+}
+
+/**
+ * A class method the ancestry records, as a property holding the method
+ * or the lambda a scope call defines. A subclass inherits a superclass's
+ * class methods, and a concern's `class_methods` and `included` blocks
+ * define theirs on the class that includes it, so the lookup goes
+ * through the whole ancestry.
  */
 function scopeOn(
   qualifiedName: string,
   method: string,
   ctx: ReachContext,
-): CalleeResolution | null {
+): ReachedFunction | null {
   const spelled = classMemberName(method);
   const bodies = (ctx.ancestries.get(qualifiedName) ?? []).flatMap((entry) =>
     entry.type === "bodies" ? entry.blocks : [],
@@ -557,7 +645,7 @@ function scopeOn(
       const target =
         row[1] === spelled ? ctx.definitions.get(String(row[2])) : undefined;
       if (target !== undefined) {
-        return followed(target);
+        return target;
       }
     }
   }
@@ -624,10 +712,9 @@ function resolveImplicitSelf(
   site: CallSite,
   ctx: ReachContext,
 ): CalleeResolution {
+  const selfClass = selfClassOf(site);
   const onClass =
-    site.enclosingQualifiedName === null
-      ? null
-      : methodOnSelf(site, site.enclosingQualifiedName, methodName, ctx);
+    selfClass === null ? null : methodOnSelf(site, selfClass, methodName, ctx);
   if (
     onClass !== null &&
     (onClass.kind === "followed" ||
@@ -657,7 +744,7 @@ function resolveImplicitSelf(
  * module and its own ancestors do not define is that class's to supply.
  */
 function inModuleInstanceMethod(site: CallSite, ctx: ReachContext): boolean {
-  const qualifiedName = site.enclosingQualifiedName;
+  const qualifiedName = selfClassOf(site);
   if (
     qualifiedName === null ||
     site.method === null ||
@@ -683,7 +770,7 @@ function declaredForTheOtherSelf(
   methodName: string,
   ctx: ReachContext,
 ): boolean {
-  const qualifiedName = site.enclosingQualifiedName;
+  const qualifiedName = selfClassOf(site);
   if (qualifiedName === null) {
     return false;
   }
@@ -700,9 +787,10 @@ function inClassMethod(site: CallSite, ctx: ReachContext): boolean {
 }
 
 /**
- * The method a call on `self` runs in the enclosing class. Inside a class
- * method `self` is the class, so the call runs another class method.
- * Anywhere else `self` is an instance, and the ancestry decides.
+ * The method a call on `self` runs in the class `self` belongs to. Inside
+ * a class method `self` is the class, so the call runs another class
+ * method, and `new` runs the class's `initialize`. Anywhere else `self`
+ * is an instance, and the ancestry decides.
  */
 function methodOnSelf(
   site: CallSite,
@@ -710,10 +798,12 @@ function methodOnSelf(
   methodName: string,
   ctx: ReachContext,
 ): CalleeResolution {
-  if (inClassMethod(site, ctx)) {
-    return singletonMethodOn(qualifiedName, methodName, ctx);
+  if (!inClassMethod(site, ctx)) {
+    return methodOnAncestryOf(qualifiedName, methodName, ctx);
   }
-  return methodOnAncestryOf(qualifiedName, methodName, ctx);
+  return methodName === CONSTRUCTOR
+    ? methodOnAncestryOf(qualifiedName, INITIALIZE_METHOD, ctx)
+    : classMethodOn(qualifiedName, methodName, ctx);
 }
 
 function resolveTopLevelName(
@@ -745,12 +835,49 @@ function methodOnAncestryOf(
     dynamicNames: ctx.dynamicNames,
   });
   if (found.type === "found") {
-    return followed(reachedMethod(found.method, found.block, methodName));
+    return followed(
+      runningOn(
+        qualifiedName,
+        reachedMethod(found.method, found.block, methodName),
+        ctx,
+      ),
+    );
   }
   if (found.type === "unsettled") {
     return stop(unsettledReason(found));
   }
   return NO_DECLARATION;
+}
+
+/**
+ * The method as it runs on the class the lookup started from. A method
+ * that class inherits runs with that class as `self`, so the walk reads
+ * its calls on `self` against that class.
+ */
+function runningOn(
+  qualifiedName: string,
+  target: ReachedFunction,
+  ctx: ReachContext,
+): ReachedFunction {
+  if (target.enclosingQualifiedName === qualifiedName) {
+    return target;
+  }
+  const own = (ctx.ancestries.get(qualifiedName) ?? []).find(
+    (entry) => entry.type === "bodies" && entry.name === qualifiedName,
+  );
+  const file = own?.type === "bodies" ? own.blocks[0]?.file : undefined;
+  // The lookup found the method through this class's ancestry, which
+  // starts from bodies of the class itself.
+  /* v8 ignore start */
+  if (file === undefined) {
+    return target;
+  }
+  /* v8 ignore stop */
+  return {
+    ...target,
+    exportPath: [qualifiedName, target.name],
+    receiverClass: { name: qualifiedName, file },
+  };
 }
 
 /**
@@ -783,11 +910,8 @@ function reachedMethod(
 }
 
 /**
- * A class method called on the class, as `Const.method` or as a bare call
- * inside another class method, which runs a class method written in the
- * class's own body. This does not walk the ancestry, because a
- * superclass's class methods are inherited through a different mechanism
- * from the one `include` and `prepend` use.
+ * A class method written in the class's own body. `classMethodOn` looks
+ * further, through what the class inherits.
  */
 function singletonMethodOn(
   qualifiedName: string,

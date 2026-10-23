@@ -15,6 +15,7 @@ import {
   placeReceiverClasses,
   ReceiverClasses,
   recordParameterGaps,
+  sameDeclarations,
   TargetPlacements,
 } from "./callLinks.js";
 
@@ -112,6 +113,55 @@ describe("linkCallsToSummaries", () => {
       { callee: "store.read", reaches: "svc::src/store.py::read" },
     ]);
     expect(caller.transitions[0]?.effects[0]).not.toHaveProperty("declaredAt");
+  });
+
+  it("links a call placed on a subclass to the summary of the method on that subclass", () => {
+    const own = summary({
+      name: "call",
+      file: "app/base.rb",
+      id: "app/base.rb::BaseService.call",
+      start: 3,
+    });
+    const onSubclass = {
+      ...summary({
+        name: "call",
+        file: "app/base.rb",
+        id: "app/base.rb::CreateService.call",
+        start: 3,
+      }),
+      receiverClass: { file: "app/create.rb", name: "CreateService" },
+    };
+    const place = declaredAt(own);
+    const caller = summary({
+      name: "create",
+      file: "app/controller.rb",
+      calls: [
+        {
+          callee: "CreateService.call",
+          declaredAt: { ...place, receiverClass: onSubclass.receiverClass },
+        },
+        { callee: "BaseService.call", declaredAt: place },
+        {
+          callee: "VoidService.call",
+          declaredAt: {
+            ...place,
+            receiverClass: { file: "app/void.rb", name: "VoidService" },
+          },
+        },
+      ],
+    });
+
+    linkCallsToSummaries([caller, onSubclass, own]);
+
+    expect(callsOf(caller)).toEqual([
+      {
+        callee: "CreateService.call",
+        reaches: "app/base.rb::CreateService.call",
+      },
+      { callee: "BaseService.call", reaches: "app/base.rb::BaseService.call" },
+      // No summary on VoidService, since the method does the same there.
+      { callee: "VoidService.call", reaches: "app/base.rb::BaseService.call" },
+    ]);
   });
 
   it("names a summary without an id by its file and export path", () => {
@@ -335,6 +385,51 @@ describe("linkCallsToSummaries", () => {
     expect(declarationKey("src/h.py", { start: 3, end: 9 })).toBe(
       "src/h.py:3-9",
     );
+  });
+});
+
+describe("sameDeclarations", () => {
+  const run = { file: "app/base.rb", span: { start: 10, end: 40 } };
+  const subRun = { file: "app/sub.rb", span: { start: 5, end: 30 } };
+  const onSub = {
+    ...run,
+    receiverClass: { file: "app/sub.rb", name: "Sub" },
+  };
+
+  it("counts two scans the same when their calls go to the same places, whatever subclass each runs on", () => {
+    expect(
+      sameDeclarations(
+        {
+          targets: new Map([["run", run]]),
+          argTargets: new Map([["each", new Map([[0, run]])]]),
+          possibleTargets: new Map([["send", [run, subRun]]]),
+        },
+        {
+          targets: new Map([["run", onSub]]),
+          argTargets: new Map([["each", new Map([[0, onSub]])]]),
+          possibleTargets: new Map([["send", [onSub, subRun]]]),
+        },
+      ),
+    ).toBe(true);
+    expect(sameDeclarations({}, {})).toBe(true);
+  });
+
+  it("tells them apart when one call goes somewhere else", () => {
+    expect(
+      sameDeclarations(
+        { targets: new Map([["run", run]]) },
+        { targets: new Map([["run", subRun]]) },
+      ),
+    ).toBe(false);
+    expect(
+      sameDeclarations(
+        { argTargets: new Map([["each", new Map([[0, run]])]]) },
+        { argTargets: new Map([["each", new Map([[1, run]])]]) },
+      ),
+    ).toBe(false);
+    expect(
+      sameDeclarations({ possibleTargets: new Map([["send", [run]]]) }, {}),
+    ).toBe(false);
   });
 });
 

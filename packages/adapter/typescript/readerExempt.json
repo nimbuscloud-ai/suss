@@ -33,6 +33,7 @@
   "src/resolve/invocationEffects.ts": "isImportedFrom, methodDeclaredIn, extractArg, inlineModuleBinding",
   "src/resolve/reachableClosure.ts": "resolveCallee, resolveJsxReference, recognizerOnlyRoots",
   "src/resolve/readName.ts": "isParameter, read, fromJoin, elementsOf, declarationOf, asCallable",
+  "src/resolve/receiverClass.ts": "classSentTo, typeOf and memberOn ask the type checker which class a receiver is and which member that class has, which is type identity",
   "src/resolve/rethrowEnrichment.ts": "resolveCalleeSummary",
   "src/resolve/unfollowedCall.ts": "declarationsBehind",
   "src/shapes/fieldAccesses.ts": "findResponseAccessor, prefixOfMemberExpr",
