@@ -13,13 +13,14 @@
 import { ioBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
-import { children, field } from "./ast.js";
+import { children, field, rangeOf } from "./ast.js";
 import { callArguments } from "./facts/values.js";
 import { shapeOfReturned } from "./paths/returnedShape.js";
 import { isBuiltin, isStdlibMember, isStdlibModule } from "./stdlibNames.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { PyNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
 export const PYTHON_STREAM_RECOGNITION = "python-stdlib";
@@ -33,8 +34,8 @@ const DEFERRED_BODY_TYPES = new Set(["function_definition", "lambda"]);
 export function streamWriteEffects(
   root: PyNode,
   module: ModuleBinding,
-): Effect[] {
-  const found: Effect[] = [];
+): EffectAt[] {
+  const found: EffectAt[] = [];
   const startScope = module.scopeFor.get(root.id) ?? module.moduleScope;
   walkDescendants<PyNode, Scope>(root, startScope, children, {
     at: (node, scope) => {
@@ -43,7 +44,7 @@ export function streamWriteEffects(
       }
       const write = streamWriteAt(node, scope);
       if (write !== null) {
-        found.push(write);
+        found.push({ effect: write, at: node });
       }
     },
     into: (node, scope) => {
@@ -120,6 +121,7 @@ function writeEffect(site: WriteSite): Effect {
       class: "stream-write",
       ...payloadOf(site.positional, site.scope),
     },
+    location: rangeOf(call),
   };
 }
 

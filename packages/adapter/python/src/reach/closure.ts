@@ -57,7 +57,7 @@ import { argparseFlagReads } from "../flags.js";
 import {
   bodyValueNodes,
   calleeText,
-  invocationEffects,
+  invocationSites,
 } from "../paths/effects.js";
 import { askFileSources } from "../provenance.js";
 import { askWrittenValues, forgetEvaluations } from "../values/evaluator.js";
@@ -973,13 +973,8 @@ export function libraryUnit(
     file.module,
     parameters.map((parameter) => parameter.name),
   );
-  const effects = invocationEffects(node, options.facts);
-  const branches = exitingBranches(
-    node,
-    file.module,
-    effects,
-    options.facts,
-  ) ?? [
+  const calls = invocationSites(node, options.facts);
+  const branches = exitingBranches(node, file.module, calls, options.facts) ?? [
     {
       conditions: [],
       terminal: {
@@ -994,7 +989,7 @@ export function libraryUnit(
         emitEvent: null,
         location: range,
       },
-      effects,
+      effects: calls.map((call) => call.effect),
       location: range,
       isDefault: true,
     },

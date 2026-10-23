@@ -21,6 +21,7 @@ import {
   enclosingDefinition,
   field,
   NodeMap,
+  rangeOf,
   readCallArgs,
   stringLiteralValue,
 } from "./ast.js";
@@ -37,6 +38,7 @@ import { stringValueOf } from "./values/evaluator.js";
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RbNode } from "./parser.js";
+import type { EffectAt } from "./paths/effects.js";
 
 export const RUBY_ENV_RECOGNITION = "ruby-env";
 
@@ -82,7 +84,9 @@ interface NamingArgument {
 }
 
 /** A place in the body's source order: a read found there, or a call still to resolve. */
-type Slot = { readonly read: EnvRead } | { readonly call: RbNode };
+type Slot =
+  | { readonly read: EnvRead; readonly at: RbNode }
+  | { readonly call: RbNode };
 
 /** A method or lambda body runs when it is called, so its reads wait for its own unit. */
 const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
@@ -95,7 +99,7 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
  * With the run's facts, a call to a project helper that reads the
  * environment through one of its parameters reports the read here too.
  */
-export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
+export function envReadEffects(root: RbNode, facts?: EnvFacts): EffectAt[] {
   const helpers = helperFactsOf(facts);
   // The calls are resolved in one batch after the walk, so the walk keeps
   // a slot for each one to preserve source order.
@@ -104,7 +108,7 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
     at: (node) => {
       const read = envReadAt(node);
       if (read !== null) {
-        slots.push({ read });
+        slots.push({ read, at: node });
         return;
       }
       // A bare method call parses as an `identifier` and takes no
@@ -119,11 +123,14 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
   const calls = slots.flatMap((slot) => ("call" in slot ? [slot.call] : []));
   const throughHelpers =
     helpers === null ? new NodeMap<EnvRead[]>() : helperReads(calls, helpers);
-  return slots.flatMap((slot) => {
+  return slots.flatMap((slot): EffectAt[] => {
     if ("read" in slot) {
-      return [configReadEffect(slot.read)];
+      return [{ effect: configReadEffect(slot.read, slot.at), at: slot.at }];
     }
-    return (throughHelpers.get(slot.call) ?? []).map(configReadEffect);
+    return (throughHelpers.get(slot.call) ?? []).map((read) => ({
+      effect: configReadEffect(read, slot.call),
+      at: slot.call,
+    }));
   });
 }
 
@@ -368,7 +375,7 @@ function readsAtCall(
   return [...byName].map(([name, defaulted]) => ({ name, defaulted }));
 }
 
-function configReadEffect(read: EnvRead): Effect {
+function configReadEffect(read: EnvRead, at: RbNode): Effect {
   return {
     type: "interaction",
     binding: runtimeConfigBinding({ recognition: RUBY_ENV_RECOGNITION }),
@@ -378,6 +385,7 @@ function configReadEffect(read: EnvRead): Effect {
       name: read.name,
       defaulted: read.defaulted,
     },
+    location: rangeOf(at),
   };
 }
 

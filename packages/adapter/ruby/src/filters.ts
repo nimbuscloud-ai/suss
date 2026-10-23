@@ -18,14 +18,19 @@ import {
 } from "./ancestry.js";
 import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { withSlotSources } from "./provenance.js";
-import { responseBranches } from "./responseStatus.js";
+import { responseBranches, withEffectsThatRun } from "./responseStatus.js";
 import { constantRefCandidates } from "./scope.js";
 import { stringValueOf } from "./values/evaluator.js";
 import { namesOf } from "./values/literals.js";
 
-import type { WrapperReference } from "@suss/behavioral-ir";
+import type { Effect, WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type {
+  PlacedEffect,
+  RawBranch,
+  RawCodeStructure,
+  RawEffect,
+} from "@suss/extractor";
 import type {
   Ancestry,
   BodyReading,
@@ -359,8 +364,8 @@ export function unreadFilterReference(
 
 /** What the filter method's body does, as `bodyOfMethod` reports it. */
 export interface FilterBody {
-  effects?: RawBranch["effects"];
-  extraEffects?: RawBranch["extraEffects"];
+  effects?: readonly PlacedEffect<RawEffect>[] | undefined;
+  extraEffects?: readonly PlacedEffect<Effect>[] | undefined;
   provenance?: RawBranch["provenance"];
   bodyContent?: RawCodeStructure["bodyContent"];
 }
@@ -426,27 +431,27 @@ export function filterUnit(
 
 /** The one branch of a filter whose body writes no response at all. */
 function handsOn(range: Range, body: FilterBody): RawBranch {
-  return {
-    conditions: [],
-    terminal: {
-      kind: "delegate",
-      statusCode: null,
-      body: null,
-      exceptionType: null,
-      message: null,
-      component: null,
-      renderTree: null,
-      delegateTarget: null,
-      emitEvent: null,
+  return withEffectsThatRun(
+    {
+      conditions: [],
+      terminal: {
+        kind: "delegate",
+        statusCode: null,
+        body: null,
+        exceptionType: null,
+        message: null,
+        component: null,
+        renderTree: null,
+        delegateTarget: null,
+        emitEvent: null,
+        location: range,
+      },
+      effects: [],
       location: range,
+      isDefault: true,
     },
-    effects: body.effects ?? [],
-    ...(body.extraEffects === undefined
-      ? {}
-      : { extraEffects: body.extraEffects }),
-    location: range,
-    isDefault: true,
-  };
+    { effects: body.effects ?? [], extraEffects: body.extraEffects },
+  );
 }
 
 /** The method a receiverless call statement invokes, such as `before_action`. */

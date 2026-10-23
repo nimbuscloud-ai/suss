@@ -41,7 +41,7 @@ import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import {
   bodyCalls,
   enclosingStatement,
-  invocationEffects,
+  invocationSites,
 } from "./paths/effects.js";
 import { raisedResponses } from "./paths/raisedResponses.js";
 import { functionNamed } from "./reach/resolveCallee.js";
@@ -1074,7 +1074,7 @@ function unitAround(
   });
   const continuations = reading.continuations;
   const terminals = bodyTerminals(body, raised, continuations);
-  const effects = invocationEffects(node, options.facts);
+  const effects = invocationSites(node, options.facts);
   const extra = recognizedBodyEffects(
     node,
     file.module,

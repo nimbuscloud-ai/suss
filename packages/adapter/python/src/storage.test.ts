@@ -138,7 +138,7 @@ async function effectsFor(handler: string, base = BASE, inFunction?: string) {
     filePath: handlerPath,
     patterns: SQLALCHEMY,
     couldMatch: new Set(["query", "open_session"]),
-  });
+  }).map((one) => one.effect);
 }
 
 function accessOf(effect: Effect | undefined) {

@@ -710,6 +710,23 @@ export interface StructuredPathConditionsResult<Cond, Terminal> {
   byTerminal: Map<Terminal, ConditionInfo<Cond>[][]>;
   /** Condition lists for paths that fall through the end of the body. */
   fallthrough: ConditionInfo<Cond>[][];
+  /** Where each terminal is written, for the terminals inside a loop or a cleanup body. */
+  placement: Map<Terminal, TerminalPlacement>;
+}
+
+/** Which loop and which try a terminal is written in, as effect placement reads them. */
+export interface TerminalPlacement {
+  /**
+   * The lines of the outermost loop the terminal is in. Anything else
+   * written in those lines may have run on an earlier pass.
+   */
+  loopAround?: { start: number; end: number };
+  /**
+   * For a terminal in a `finally` or `ensure` body, the first line of the
+   * outermost try it cleans up after. It runs on every path that got
+   * that far, including one that left the try early.
+   */
+  cleansUpFrom?: number;
 }
 
 function buildParentMap<Cond>(
@@ -732,6 +749,66 @@ function buildParentMap<Cond>(
     visit(stmt, null);
   }
   return parentOf;
+}
+
+type ParentMap<Cond> = ReadonlyMap<
+  StructuredStatement<Cond>,
+  StructuredStatement<Cond> | null
+>;
+
+/**
+ * Which loop and which try each terminal is written in. A lowering that
+ * gave its loops and tries no `lines` gets no placement for them.
+ */
+export function placeTerminals<Cond, Terminal>(
+  input: Pick<
+    StructuredPathConditionsInput<Cond, Terminal>,
+    "statements" | "terminalsByStmt"
+  >,
+  parentOf: ParentMap<Cond> = buildParentMap(input.statements),
+): Map<Terminal, TerminalPlacement> {
+  const placement = new Map<Terminal, TerminalPlacement>();
+  for (const [home, terminals] of input.terminalsByStmt) {
+    const placed = placementOf(home, parentOf);
+    if (placed.loopAround === undefined && placed.cleansUpFrom === undefined) {
+      continue;
+    }
+    for (const terminal of terminals) {
+      placement.set(terminal, placed);
+    }
+  }
+  return placement;
+}
+
+/** Going outward, so the last loop and the last try seen are the outermost. */
+function placementOf<Cond>(
+  home: StructuredStatement<Cond>,
+  parentOf: ParentMap<Cond>,
+): TerminalPlacement {
+  let loopAround = home.kind === "loop" ? home.lines : undefined;
+  let cleansUpFrom: number | undefined;
+  let child = home;
+  let parent = parentOf.get(home) ?? null;
+  while (parent !== null) {
+    if (parent.kind === "loop" && parent.lines !== undefined) {
+      loopAround = parent.lines;
+    }
+    if (
+      parent.kind === "try" &&
+      parent.lines !== undefined &&
+      (parent.finallyBody ?? []).includes(child)
+    ) {
+      cleansUpFrom = parent.lines.start;
+    }
+    child = parent;
+    parent = parentOf.get(parent) ?? null;
+  }
+  return {
+    ...(loopAround === undefined
+      ? {}
+      : { loopAround: { start: loopAround.start, end: loopAround.end } }),
+    ...(cleansUpFrom === undefined ? {} : { cleansUpFrom }),
+  };
 }
 
 /**
@@ -779,7 +856,11 @@ export function enumerateStructuredPaths<Cond, Terminal>(
     state.fallthrough.push(classify(path, null, isAncestorOrSelf));
   }
 
-  return { byTerminal: state.byTerminal, fallthrough: state.fallthrough };
+  return {
+    byTerminal: state.byTerminal,
+    fallthrough: state.fallthrough,
+    placement: placeTerminals(input, parentOf),
+  };
 }
 
 /**
@@ -812,8 +893,40 @@ export function enumerateOrDegrade<Cond, Terminal>(
     for (const terminal of terminals) {
       byTerminal.set(terminal, [[marker]]);
     }
-    return { byTerminal, fallthrough: [[marker]], degraded: reason };
+    return {
+      byTerminal,
+      fallthrough: [[marker]],
+      placement: placeTerminals(input),
+      degraded: reason,
+    };
   }
+}
+
+/**
+ * The paths to the statements an adapter's calls are written in, each
+ * statement standing in as a terminal, with where each one is written.
+ * A statement in a cleanup body runs on the way out of its try, which
+ * the engine does not enumerate, so it gets its placement and no paths.
+ * Asking for its paths would make the engine give up on the whole body.
+ */
+export function enumerateCallStatements<Cond, Terminal>(
+  input: StructuredPathConditionsInput<Cond, Terminal>,
+  terminals: Iterable<Terminal>,
+): StructuredPathConditionsResult<Cond, Terminal> & {
+  degraded: string | null;
+} {
+  const placement = placeTerminals(input);
+  const enumerable = new Map(
+    [...input.terminalsByStmt].filter(([, found]) =>
+      found.every(
+        (terminal) => placement.get(terminal)?.cleansUpFrom === undefined,
+      ),
+    ),
+  );
+  return {
+    ...enumerateOrDegrade({ ...input, terminalsByStmt: enumerable }, terminals),
+    placement,
+  };
 }
 
 /** What to say about an error the engine threw, or null when it is not one of its own. */

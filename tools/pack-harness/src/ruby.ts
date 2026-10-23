@@ -71,7 +71,7 @@ export function rubyPackUnderTest(...packs: RubyPack[]): RubyPackHarness {
     return storageEffects(callsUnder(read.root), entry, {
       ...options,
       facts: db,
-    });
+    }).map((one) => one.effect);
   };
 
   return {

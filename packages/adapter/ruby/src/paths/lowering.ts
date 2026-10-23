@@ -5,7 +5,14 @@
  * the whole contract between this module and the engine.
  */
 
-import { children, field, NodeMap, NodeSet, OWN_BODY_TYPES } from "../ast.js";
+import {
+  children,
+  field,
+  NodeMap,
+  NodeSet,
+  OWN_BODY_TYPES,
+  rangeOf,
+} from "../ast.js";
 
 import type {
   CaseGroup,
@@ -304,6 +311,7 @@ class Lowerer {
 
     return {
       kind: "try",
+      lines: rangeOf(node),
       tryBody: tryBody.map((statement) => this.lower(statement)),
       catchBody:
         rescues.length > 0
@@ -416,6 +424,7 @@ class Lowerer {
           condition: handleOf(header),
           body: this.lowerBlock(field(node, "body")),
           exitKind: exitKindOf(node),
+          lines: rangeOf(node),
         },
         [header],
       );
@@ -440,6 +449,7 @@ class Lowerer {
           condition: callHeaderOf(node, attachedBlock),
           body: this.lowerBlock(field(attachedBlock, "body") ?? attachedBlock),
           exitKind: exitKindOf(node),
+          lines: rangeOf(node),
         },
         [node],
       );

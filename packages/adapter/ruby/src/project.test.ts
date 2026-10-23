@@ -976,6 +976,39 @@ describe("the class a field is wired to, and the hooks it runs", () => {
     ]);
   });
 
+  it("puts what a hook reads only on the paths that reach the read", async () => {
+    write("app/graphql/types/mutation_type.rb", MUTATION_TYPE);
+    write(
+      "app/graphql/mutations/approve.rb",
+      [
+        "class Mutations::Approve < Mutations::BaseMutation",
+        "  def ready?(**args)",
+        '    return false, { errors: ["closed"] } if Window.closed?',
+        '    ENV.fetch("APPROVALS_OPEN")',
+        "  end",
+        "",
+        "  def resolve",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const hook = (await extractAll()).find((s) => s.identity.name === "ready?");
+    expect(
+      hook?.transitions.map((t) => [
+        t.output.type,
+        t.effects.flatMap((e) =>
+          e.type === "interaction" && e.interaction.class === "config-read"
+            ? [`${e.interaction.name}@${e.location?.start}`]
+            : [],
+        ),
+      ]),
+    ).toEqual([
+      ["return", []],
+      ["delegate", ["APPROVALS_OPEN@4"]],
+    ]);
+  });
+
   it("follows super from a class's hook to the one a concern it includes defines", async () => {
     write(
       "app/graphql/types/mutation_type.rb",

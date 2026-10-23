@@ -11,7 +11,7 @@ interface Read {
 
 async function templateReads(template: string): Promise<Read[]> {
   const tree = await parseRuby(rubyInErbTemplate(template));
-  return envReadEffects(tree.rootNode).flatMap((effect) =>
+  return envReadEffects(tree.rootNode).flatMap(({ effect }) =>
     effect.type === "interaction" && effect.interaction.class === "config-read"
       ? [
           {

@@ -13,7 +13,7 @@ interface Write {
 
 async function writesIn(source: string): Promise<Effect[]> {
   const tree = await parseRuby(source);
-  return streamWriteEffects(tree.rootNode);
+  return streamWriteEffects(tree.rootNode).map((one) => one.effect);
 }
 
 function summarized(effects: Effect[]): Write[] {

@@ -16,7 +16,7 @@ import { storageBinding } from "@suss/ir-core";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { force } from "@suss/values";
 
-import { children, field, stringLiteralValue } from "./ast.js";
+import { children, field, rangeOf, stringLiteralValue } from "./ast.js";
 import { receiverTypeOrigins } from "./receiverTypes.js";
 import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
@@ -71,7 +71,7 @@ export function rawSqlEffects(
   for (const match of matchesIn(calls, options)) {
     for (const access of match.accesses) {
       const effect = effectFor(match, access);
-      found.effects.push(effect);
+      found.effects.push({ effect, at: match.call });
       for (const slot of boundSlots(access, match.binds)) {
         found.slots.push({ ...slot, effect });
       }
@@ -244,6 +244,7 @@ function effectFor(match: RawSqlMatch, access: SqlAccess): Effect {
       ...(access.selector.length > 0 ? { selector: access.selector } : {}),
       operation,
     },
+    location: rangeOf(match.call),
   };
 }
 
