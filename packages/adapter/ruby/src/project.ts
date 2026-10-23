@@ -73,6 +73,7 @@ import {
   envReadEffects,
   settleNamedParameters,
 } from "./envReads.js";
+import { rubyInErbTemplate } from "./erbTemplate.js";
 import { exitSites, markExitCodeFunctions } from "./exits.js";
 import { callbacksIn, emitClassCallbacks } from "./facts/callbacks.js";
 import {
@@ -497,9 +498,47 @@ interface Previous {
   readonly records: ReadonlyMap<string, RubyFileRecord>;
 }
 
+/** A run's options once the packs' boot templates are among the files it walks. */
+interface RunOptions extends ExtractRubyOptions {
+  /** The walked files read as the Ruby in their ERB tags. */
+  readonly templates: ReadonlySet<string>;
+}
+
+/**
+ * Adds the templates the packs say the library renders at boot to the
+ * files the run walks. A boot template's tags run when the app loads, so
+ * the walk reads it the way it reads a file under `config/initializers`.
+ */
+function withBootTemplates(options: ExtractRubyOptions): RunOptions {
+  const walked = new Set(options.files);
+  const templates = [
+    ...new Set(options.packs.flatMap((pack) => pack.bootTemplates?.() ?? [])),
+  ]
+    .filter((file) => !walked.has(file))
+    .sort();
+  return {
+    ...options,
+    files: [...options.files, ...templates],
+    templates: new Set(templates),
+  };
+}
+
+/** The Ruby a file runs: its text, or the code in its tags for a boot template. */
+function rubySourceOf(
+  absPath: string,
+  templates: ReadonlySet<string>,
+): string | null {
+  if (!fs.existsSync(absPath)) {
+    return null;
+  }
+  const text = fs.readFileSync(absPath, "utf8");
+  return templates.has(absPath) ? rubyInErbTemplate(text) : text;
+}
+
 export async function extractRubyProject(
-  options: ExtractRubyOptions,
+  given: ExtractRubyOptions,
 ): Promise<ExtractRubyResult> {
+  const options = withBootTemplates(given);
   const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
 
   const cacheDir = adapterStamp.declineWhenRunFromSource(
@@ -606,7 +645,7 @@ function addForSeed(
 }
 
 async function runRuby(
-  options: ExtractRubyOptions,
+  options: RunOptions,
   cache: RunCache,
   previous: Previous | null,
 ): Promise<ExtractRubyResult> {
@@ -627,8 +666,7 @@ async function runRuby(
   const parses = options.keptParses ?? keptRubyParses();
   const trees = createFileCache(
     (source, absPath) => parses.parse(absPath, source, parseRubyRoot),
-    (absPath) =>
-      fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null,
+    (absPath) => rubySourceOf(absPath, options.templates),
   );
   const fileCache = ledger === null ? trees : watchFileCache(trees, ledger);
 
