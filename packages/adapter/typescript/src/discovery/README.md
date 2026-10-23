@@ -85,7 +85,28 @@ The document argument at the `useQuery` call is `query`, which is a parameter. S
 
 When the argument at a call site is itself a parameter of the caller, the caller is a wrapper too, and the same question is asked of it, up to three levels deep. The parameters already expanded are passed along so that a cycle stops. Once every call has produced a unit, the hook's own summary is dropped, since `useAppQuery.query` is not an operation and a gap on it would be a finding about nothing. When some call could not be followed, the hook keeps its summary, and the gap's reason gives how many callers were read and how many were not.
 
-Two things are left out. The wrapper's other arguments may pick a client, and that choice is not read, so an operation goes to whichever service `operationScopes` assigns its file to. And the callers come from the facts alone. A spelling the rules do not cover needs a new rule, and this code does not fall back to a reference search.
+The callers come from the facts alone. A spelling the rules do not cover needs a new rule, and this code does not fall back to a reference search.
+
+## The client an operation's call passes
+
+A frontend that talks to two GraphQL services often picks the client in that same hook, from an option each caller sets:
+
+```ts
+export function useGraphQLQuery(doc, { nextGen, ...opts } = {}) {
+  const client = nextGen ? appSyncClient : railsClient;
+  return useQuery(doc, { ...opts, client });
+}
+
+useGraphQLQuery(EVENT_LISTING, { variables, nextGen: true });
+```
+
+`graphqlCallClient.ts` reads that choice at each call. The expansion above records the chain of calls from the caller down to the library call, and `evaluatedValueThrough` binds each wrapper's parameters from the call one level out, using the evaluator's own `argumentsAt`, so a destructured option with a default binds the way the call would. Each client construction the pack describes is given to the evaluator as a token of its own, and the value of the `client` option comes out as one token, several, or something else. A pack says where a call passes its client: Apollo's hooks take it as the `client` option of their second argument, and an imperative `client.query` goes through its receiver.
+
+One token is a settled choice, and it goes on the summary as `metadata.graphql.client` with `chosenAtCall` set. Several tokens, or a value that is no token at all, such as a client read from a React context, go on as `metadata.graphql.unresolvedClient` with the reason. A call that passes no client, and an options object the evaluator cannot read, leave the choice to the client the app provides, which the project-wide rule in `graphqlClientConstruction.ts` decides. A receiver the evaluator cannot read is left to the app too, since every imperative call is written on a receiver.
+
+The project-wide pass then settles a chosen client. A `clients` binding or an operation scope gives it a service. Without either, it pairs like the app's client only when it is the app's client: the one client construction in the project, or a client whose endpoint every construction shares. Any other client gets `unresolvedClient` with a reason that says which binding to add, and the checker lists the operation as not checked rather than pairing it with whichever schema shares its field names. A choice that stayed open is cleared when the project builds at most one client, or every construction shares one endpoint, since suss knows of no second endpoint the call could reach. That operation then pairs like one using the app's client.
+
+Two things are left out. The client an `ApolloProvider` supplies is not read, because JSX attributes have no facts yet. So in a project that builds two clients, an operation that passes none keeps pairing with every schema, as it did before. And a client built by a function from its parameter gets one token for every client that function builds.
 
 ## Sibling modules
 

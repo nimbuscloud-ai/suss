@@ -1,0 +1,6 @@
+{
+  "clients": {
+    "/graphql": "schema/legacy.graphql",
+    "https://events.appsync-api.example.com/graphql": "schema/appsync.graphql"
+  }
+}

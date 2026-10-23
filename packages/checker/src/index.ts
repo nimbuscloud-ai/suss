@@ -279,6 +279,7 @@ export interface CheckAllResult {
       name: string;
       key: string | null;
       reason: UnpairableReason;
+      detail?: string;
     }>;
   };
 }
@@ -378,14 +379,25 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
       consumer: summaryIdentifier(consumer),
     });
   }
+  const graphqlUnchecked = new Set(graphql.unchecked.map((u) => u.summary));
   const stillUnmatched = (s: BehavioralSummary): boolean =>
-    !graphqlMatched.has(s) && !reportedByItsOwnPass(s);
+    !graphqlMatched.has(s) &&
+    !graphqlUnchecked.has(s) &&
+    !reportedByItsOwnPass(s);
   const unmatched = {
     providers: restUnmatched.providers.filter(stillUnmatched),
     consumers: restUnmatched.consumers.filter(stillUnmatched),
-    unpairable: restUnmatched.unpairable.filter(
-      (u) => !graphqlMatched.has(u.summary),
-    ),
+    unpairable: [
+      ...restUnmatched.unpairable.filter(
+        (u) =>
+          !graphqlMatched.has(u.summary) && !graphqlUnchecked.has(u.summary),
+      ),
+      ...graphql.unchecked.map((u) => ({
+        summary: u.summary,
+        reason: "unknownService" as const,
+        detail: u.reason,
+      })),
+    ],
   };
 
   // These compare each boundary's declared contracts against each other
@@ -453,7 +465,11 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
         .map(describeUnmatched),
       unpairable: unmatched.unpairable
         .filter((u) => wentUncompared(u.summary))
-        .map((u) => ({ ...describeUnmatched(u.summary), reason: u.reason })),
+        .map((u) => ({
+          ...describeUnmatched(u.summary),
+          reason: u.reason,
+          ...(u.detail === undefined ? {} : { detail: u.detail }),
+        })),
     },
   };
 }

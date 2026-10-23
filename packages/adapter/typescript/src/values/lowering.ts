@@ -547,16 +547,15 @@ function parametersOf(
       },
     ];
   }
-  // A pattern with a default of its own would need the properties read
-  // off that default when the call passes nothing, which is a second
-  // default per name.
-  if (
-    !Node.isObjectBindingPattern(nameNode) ||
-    parameter.getInitializer() !== undefined
-  ) {
+  if (!Node.isObjectBindingPattern(nameNode)) {
     return [];
   }
-  return destructuredNames(nameNode, position, []);
+  // `{ a, b } = {}`: a call that passes nothing has the names read off
+  // the pattern's own default.
+  const patternDefault = parameter.getInitializer();
+  return destructuredNames(nameNode, position, []).map((entry) =>
+    patternDefault === undefined ? entry : { ...entry, patternDefault },
+  );
 }
 
 function destructuredNames(

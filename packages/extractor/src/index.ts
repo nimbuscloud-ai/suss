@@ -275,11 +275,17 @@ export interface RawTerminal {
  * An invocation argument as the adapter read it. An argument that fits none of
  * these variants, arithmetic for instance, comes through as null instead of
  * being dropped, so a reader still knows how many arguments the call had.
+ * JSON null therefore means the adapter could not read the argument, and a
+ * caller that wrote `null` gets `{ kind: "null" }` instead.
  */
 export type EffectArg =
   | { kind: "string"; value: string }
   | { kind: "number"; value: number }
   | { kind: "boolean"; value: boolean }
+  /** A literal `null`, Python's `None` or Ruby's `nil`, which a caller passed on purpose. */
+  | { kind: "null" }
+  /** JavaScript's `undefined`, kept apart from `null` because a parameter default replaces only this one. */
+  | { kind: "undefined" }
   | { kind: "object"; fields: Record<string, EffectArg> }
   /**
    * The element shapes the adapter could read, which is not always one
@@ -489,6 +495,10 @@ export interface RawCodeStructure {
   /** Set when a document reference was recognized but its body could not be
    * read, so an unreadable document is accounted for instead of dropped. */
   graphqlUnresolvedDocument?: { reference: string; reason: string };
+  /** The client the operation's own call passes, when one settled. */
+  graphqlClient?: GraphqlMetadata["client"];
+  /** Why the client the operation's call passes could not be settled. */
+  graphqlUnresolvedClient?: { reference: string; reason: string };
   /**
    * Which part of the boundary the source does not state, and why. The binding
    * still goes out with that part empty, so the unit pairs with nothing rather
@@ -910,6 +920,12 @@ function buildGraphqlMetadataValue(
   }
   if (raw.graphqlUnresolvedDocument !== undefined) {
     graphql.unresolvedDocument = raw.graphqlUnresolvedDocument;
+  }
+  if (raw.graphqlClient !== undefined) {
+    graphql.client = raw.graphqlClient;
+  }
+  if (raw.graphqlUnresolvedClient !== undefined) {
+    graphql.unresolvedClient = raw.graphqlUnresolvedClient;
   }
   return Object.keys(graphql).length > 0 ? graphql : null;
 }

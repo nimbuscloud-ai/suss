@@ -127,6 +127,7 @@ import {
   recordPackFailure,
 } from "./diagnostics.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
+import { clientChosenAt } from "./discovery/graphqlCallClient.js";
 import { stampGraphqlClientRefs } from "./discovery/graphqlClientConstruction.js";
 import {
   buildProjectHelperIndex,
@@ -1609,6 +1610,7 @@ function extractFromSourceFile(
         if (unit.operationInfo.unresolved !== undefined) {
           raw.graphqlUnresolvedDocument = unit.operationInfo.unresolved;
         }
+        stampClientChosenAtCall(raw, unit, pack, resolution);
         // Role "variable" keeps these apart from positional params.
         for (const v of unit.operationInfo.variables) {
           raw.parameters.push({
@@ -1861,6 +1863,35 @@ function stampRequestSpelling(raw: RawCodeStructure, pack: PatternPack): void {
     return;
   }
   raw.requestSpelling = pack.requestSpelling;
+}
+
+/**
+ * Record the client a GraphQL operation's own call passes. Which
+ * service that client talks to is settled later, across the whole run,
+ * once every client construction and the pack's bindings are known.
+ */
+function stampClientChosenAtCall(
+  raw: RawCodeStructure,
+  unit: DiscoveredUnit,
+  pack: PatternPack,
+  resolution: ResolutionStore | undefined,
+): void {
+  const specs = pack.graphqlClients ?? [];
+  if (unit.graphqlCall === undefined || specs.length === 0) {
+    return;
+  }
+  const chosen = clientChosenAt(unit.graphqlCall, specs, resolution);
+  if (chosen?.kind === "settled") {
+    raw.graphqlClient = { ...chosen.client, chosenAtCall: true };
+    return;
+  }
+
+  if (chosen?.kind === "unresolved") {
+    raw.graphqlUnresolvedClient = {
+      reference: chosen.reference,
+      reason: chosen.reason,
+    };
+  }
 }
 
 /**

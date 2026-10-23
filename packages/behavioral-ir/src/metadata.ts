@@ -653,6 +653,17 @@ export const GraphqlMetadataSchema = z.object({
        * matched resolvers from this workspace when it is set.
        */
       workspace: z.string().optional(),
+      /** True when the operation's own call passes this client. */
+      chosenAtCall: z.boolean().optional(),
+    })
+    .optional(),
+  /** Why suss could not tell which service the operation's client talks to; the pairing pass leaves it unpaired. */
+  unresolvedClient: z
+    .object({
+      reference: z.string(),
+      reason: z.string(),
+      /** Set when the project asked for such operations to pair with every match instead. */
+      pairWithAll: z.boolean().optional(),
     })
     .optional(),
 });

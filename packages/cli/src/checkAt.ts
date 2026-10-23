@@ -211,6 +211,7 @@ const WHY_UNPAIRED: Record<string, string> = {
   unnamedBoundary: "its boundary has no name to pair on",
   unknownKind: "its kind is one this version does not know",
   testCode: "it is test code, which is left out of pairing",
+  unknownService: "suss could not tell which service its client talks to",
 };
 
 function renderScoped(
@@ -312,7 +313,7 @@ function renderUnpaired(view: ScopedView): string[] {
   }
   for (const entry of view.unmatched.unpairable) {
     lines.push(
-      `  ${entry.id}: ${WHY_UNPAIRED[entry.reason] ?? "nothing pairs with it"}`,
+      `  ${entry.id}: ${entry.detail ?? WHY_UNPAIRED[entry.reason] ?? "nothing pairs with it"}`,
     );
   }
   if (lines.length === 0) {
