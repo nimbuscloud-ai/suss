@@ -457,8 +457,8 @@ function requiresOtp() {
 }
 
 /** How long a `bin` package waits for its dependencies to read as published. */
-const VISIBLE_TIMEOUT_MS = 15 * 60 * 1000;
-const VISIBLE_POLL_MS = 15 * 1000;
+const VISIBLE_TIMEOUT_MS = 2 * 60 * 1000;
+const VISIBLE_POLL_MS = 5 * 1000;
 
 /**
  * People install the `bin` packages, and npm fails that install while
@@ -505,25 +505,39 @@ function publishOrder(pending) {
   return steps.filter((step) => step.length > 0);
 }
 
+/**
+ * Past the timeout the `bin` packages go out anyway. A few minutes of
+ * failed installs costs less than a release left half published.
+ */
 async function waitUntilVisible(names) {
   const deadline = Date.now() + VISIBLE_TIMEOUT_MS;
   let missing = names;
-  while (missing.length > 0) {
-    missing = missing.filter((name) => !isPublished(name, version));
+  for (;;) {
+    const shown = await Promise.all(missing.map(isVisible));
+    missing = missing.filter((_, at) => !shown[at]);
     if (missing.length === 0) {
       return;
     }
     if (Date.now() > deadline) {
-      fail(
-        `${missing.length} packages still read as missing at ${version} after` +
-          ` ${VISIBLE_TIMEOUT_MS / 60000} minutes: ${missing.join(", ")}.\n` +
-          "Re-run this once they show up; it will pick up only what is left.",
+      console.log(
+        `  ${missing.length} still read as missing, publishing anyway: ${missing.join(", ")}`,
       );
+      return;
     }
     console.log(
       `  waiting for ${missing.length} to show up on the registry...`,
     );
     await new Promise((resolve) => setTimeout(resolve, VISIBLE_POLL_MS));
+  }
+}
+
+/** The same read an install makes, one request per package. */
+async function isVisible(name) {
+  const url = `${REGISTRY}/${name.replace("/", "%2f")}/${version}`;
+  try {
+    return (await fetch(url)).ok;
+  } catch {
+    return false;
   }
 }
 
