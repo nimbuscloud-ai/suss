@@ -114,6 +114,55 @@ describe("linkCallsToSummaries", () => {
     expect(caller.transitions[0]?.effects[0]).not.toHaveProperty("declaredAt");
   });
 
+  it("links a call placed on a subclass to the summary of the method on that subclass", () => {
+    const own = summary({
+      name: "call",
+      file: "app/base.rb",
+      id: "app/base.rb::BaseService.call",
+      start: 3,
+    });
+    const onSubclass = {
+      ...summary({
+        name: "call",
+        file: "app/base.rb",
+        id: "app/base.rb::CreateService.call",
+        start: 3,
+      }),
+      receiverClass: { file: "app/create.rb", name: "CreateService" },
+    };
+    const place = declaredAt(own);
+    const caller = summary({
+      name: "create",
+      file: "app/controller.rb",
+      calls: [
+        {
+          callee: "CreateService.call",
+          declaredAt: { ...place, receiverClass: onSubclass.receiverClass },
+        },
+        { callee: "BaseService.call", declaredAt: place },
+        {
+          callee: "VoidService.call",
+          declaredAt: {
+            ...place,
+            receiverClass: { file: "app/void.rb", name: "VoidService" },
+          },
+        },
+      ],
+    });
+
+    linkCallsToSummaries([caller, onSubclass, own]);
+
+    expect(callsOf(caller)).toEqual([
+      {
+        callee: "CreateService.call",
+        reaches: "app/base.rb::CreateService.call",
+      },
+      { callee: "BaseService.call", reaches: "app/base.rb::BaseService.call" },
+      // No summary on VoidService, since the method does the same there.
+      { callee: "VoidService.call", reaches: "app/base.rb::BaseService.call" },
+    ]);
+  });
+
   it("names a summary without an id by its file and export path", () => {
     const called = summary({ name: "read", file: "src/store.py", start: 30 });
     const caller = summary({

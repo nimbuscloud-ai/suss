@@ -491,9 +491,18 @@ export const OutputSchema = z.discriminatedUnion("type", [
 ]);
 
 /** Where the type checker found something declared, by file and character span. */
+/** A class by the file it is declared in and its name there. */
+const ClassPlaceSchema = z.object({ file: z.string(), name: z.string() });
+
 const DeclarationPlaceSchema = z.object({
   file: z.string(),
   span: z.object({ start: z.number(), end: z.number() }),
+  /**
+   * The subclass the method runs on, when the call reaches a method that
+   * subclass inherits and the method does something else on it. The
+   * link then picks the summary with the same `receiverClass`.
+   */
+  receiverClass: ClassPlaceSchema.optional(),
 });
 
 /**
@@ -579,7 +588,7 @@ export const EffectSchema = z.discriminatedUnion("type", [
      * gives that class still says which class it used. Only a test
      * unit's calls have it.
      */
-    receiverClass: z.object({ file: z.string(), name: z.string() }).optional(),
+    receiverClass: ClassPlaceSchema.optional(),
     args: z.array(z.unknown()),
     async: z.boolean(),
     /** Absent for a call that always fires within its transition. */
@@ -837,6 +846,13 @@ export const BehavioralSummarySchema = z.object({
   inputReads: z
     .array(z.object({ input: z.string(), path: z.array(z.string()) }))
     .optional(),
+  /**
+   * Set when the summary describes a method running on a subclass that
+   * inherits it, and the method does something else there than on the
+   * class it is written in. `location` is still where the method is
+   * written, and the export path starts with the subclass.
+   */
+  receiverClass: ClassPlaceSchema.optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

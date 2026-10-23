@@ -106,6 +106,7 @@ export {
 } from "@suss/ir-core";
 
 export {
+  type BodyPlacements,
   type DeclaredAt,
   declarationKey,
   linkCallsToSummaries,
@@ -118,6 +119,7 @@ export {
   type ReceiverClass,
   ReceiverClasses,
   recordParameterGaps,
+  sameDeclarations,
   TargetPlacements,
 } from "./callLinks.js";
 export {
