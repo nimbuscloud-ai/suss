@@ -207,7 +207,7 @@ async function readIntoTree(
   const present = reads.reads.filter((entry) =>
     fs.existsSync(path.resolve(baseRoot, inputOf(entry))),
   );
-  useConfigFilesFrom(project, baseRoot, reads);
+  useProjectFileFrom(project, baseRoot);
   process.stderr.write(
     `Reading ${revision.ref} at ${revision.commit.slice(0, 7)} into a temporary folder, with the same reads:\n${present.map((entry) => `  ${commandFor(entry)}`).join("\n")}\n`,
   );
@@ -255,27 +255,16 @@ function projectFileText(project: string): string | null {
 
 /**
  * Readers look up `suss.json` beside what they read, for the hosts and
- * modules it lists and the root they measure paths from, and a pack
- * spec reads its config file. The base gets the working tree's copies,
- * which are often not committed yet, so both sides read the same files.
+ * modules it lists and the root they measure paths from. The base gets
+ * the working tree's copy, which is often not committed yet, so a read
+ * of either side finds the same file.
  */
-function useConfigFilesFrom(
-  project: string,
-  baseRoot: string,
-  reads: DeclaredReads,
-): void {
-  if (!fs.existsSync(baseRoot)) {
+function useProjectFileFrom(project: string, baseRoot: string): void {
+  const own = path.join(project, PROJECT_FILE);
+  if (!fs.existsSync(own) || !fs.existsSync(baseRoot)) {
     return;
   }
-  for (const file of configFilesOf(project, reads)) {
-    const own = path.join(project, file);
-    if (!fs.existsSync(own)) {
-      continue;
-    }
-    const copy = path.join(baseRoot, file);
-    fs.mkdirSync(path.dirname(copy), { recursive: true });
-    fs.copyFileSync(own, copy);
-  }
+  fs.copyFileSync(own, path.join(baseRoot, PROJECT_FILE));
 }
 
 /** The folder an extract reads, or the file a contract reads, relative to the project root. */
