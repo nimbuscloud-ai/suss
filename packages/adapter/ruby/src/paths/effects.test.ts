@@ -188,6 +188,43 @@ describe("ruby invocation effects", () => {
     const effects = await effectsFor(["def total", "  1", "end"]);
     expect(effects).toEqual([]);
   });
+
+  it("records a written nil apart from an argument it could not read", async () => {
+    const effects = await effectsFor([
+      "def send_body(sections, count)",
+      "  create_email_body(sections, nil, count + 1)",
+      "end",
+    ]);
+    expect(effects[0]?.args).toEqual([
+      { kind: "identifier", name: "sections" },
+      { kind: "null" },
+      { kind: "identifier", name: "count + 1" },
+    ]);
+  });
+
+  it("does not call an environment read with a nil fallback a nil", async () => {
+    const effects = await effectsFor([
+      "def configure",
+      '  merge!(:alias_url, ENV["ALIAS_HOST"] || ENV.fetch("CLOUDFRONT_HOST", nil))',
+      "end",
+    ]);
+    const merge = effects.find((effect) => effect.callee === "merge!");
+    expect(merge?.args[1]).not.toEqual({ kind: "null" });
+  });
+
+  it("records a constructor called with empty strings as the strings it passed", async () => {
+    const effects = await effectsFor([
+      "def build",
+      '  Mailer.new("", "", nil)',
+      "end",
+    ]);
+    expect(effects[0]?.args).toEqual([
+      { kind: "string", value: "" },
+      { kind: "string", value: "" },
+      { kind: "null" },
+    ]);
+  });
+
   it("writes a float and a false out too", async () => {
     const effects = await effectsFor([
       "def total",

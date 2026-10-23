@@ -19,6 +19,7 @@ import {
   type PropertyAccessExpression,
   type SourceFile,
   type TaggedTemplateExpression,
+  VariableDeclarationKind,
 } from "ts-morph";
 
 import { rawConditionToPredicate } from "@suss/extractor";
@@ -828,6 +829,12 @@ function extractArg(node: Node, depth: number): EffectArg {
   if (Node.isFalseLiteral(node)) {
     return { kind: "boolean", value: false };
   }
+  if (Node.isNullLiteral(node)) {
+    return { kind: "null" };
+  }
+  if (Node.isIdentifier(node) && node.getText() === "undefined") {
+    return { kind: "undefined" };
+  }
   // Template literals with substitutions (`Error: ${x}`): preserve
   // source text so the composition is visible even when runtime
   // value isn't resolvable. Simple template literals without
@@ -1075,6 +1082,13 @@ function inlineModuleBinding(ident: Node, depth: number): EffectArg {
     // closure-over pattern we're targeting is file-scope constants
     // aliased to runtime / platform values.
     if (!isModuleScoped(decl)) {
+      continue;
+    }
+    // A `let client = null` is usually set later, so its initializer says nothing about the call.
+    if (
+      decl.getVariableStatement()?.getDeclarationKind() !==
+      VariableDeclarationKind.Const
+    ) {
       continue;
     }
     const init = decl.getInitializer();

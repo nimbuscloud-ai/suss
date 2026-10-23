@@ -267,11 +267,17 @@ export interface RawTerminal {
  * An invocation argument as the adapter read it. An argument that fits none of
  * these variants, arithmetic for instance, comes through as null instead of
  * being dropped, so a reader still knows how many arguments the call had.
+ * JSON null therefore means the adapter could not read the argument, and a
+ * caller that wrote `null` gets `{ kind: "null" }` instead.
  */
 export type EffectArg =
   | { kind: "string"; value: string }
   | { kind: "number"; value: number }
   | { kind: "boolean"; value: boolean }
+  /** A literal `null`, Python's `None` or Ruby's `nil`, which a caller passed on purpose. */
+  | { kind: "null" }
+  /** JavaScript's `undefined`, kept apart from `null` because a parameter default replaces only this one. */
+  | { kind: "undefined" }
   | { kind: "object"; fields: Record<string, EffectArg> }
   /**
    * The element shapes the adapter could read, which is not always one
