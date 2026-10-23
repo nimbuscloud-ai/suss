@@ -57,18 +57,24 @@ describe("writes to the process's streams", () => {
     expect(write?.binding.semantics).toEqual({ name: "io", target: "stdout" });
   });
 
-  it("keeps a text write as text, and says where each write is", () => {
-    const writes = writesIn(`
+  it("keeps a text write as text, and keys each write on what it writes", () => {
+    const source = `
       export function fail() {
         process.stderr.write("no summaries\\n");
         process.stderr.write("try again\\n");
       }
-    `);
+    `;
+    const writes = writesIn(source);
     expect(writes.map((write) => write.interaction.serialized)).toEqual([
       "text",
       "text",
     ]);
-    expect(writes.map((write) => write.groupId)).toEqual(["3:9", "4:9"]);
+    const ids = writes.map((write) => write.groupId);
+    expect(ids[0]).toMatch(/^process\.stderr\.write:[0-9a-f]{7}$/);
+    expect(new Set(ids).size).toBe(2);
+    expect(writesIn(`\n\n\n${source}`).map((write) => write.groupId)).toEqual(
+      ids,
+    );
   });
 
   it("keys several arguments by position", () => {

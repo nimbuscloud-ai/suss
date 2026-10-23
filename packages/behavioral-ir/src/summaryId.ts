@@ -24,12 +24,13 @@ export interface SummaryIdParts {
 
 /**
  * Extend only the ids that more than one summary ended up with, and
- * leave the rest alone. An id without a collision stays short, and
- * stays the same when the code around it moves. The boundary tells
- * same-named summaries apart first, and the line number settles what
- * the boundary cannot. The adapter runs this after assigning ids, and
- * the parse boundary runs it over a backfilled v1 artifact, whose
- * per-summary backfill can give two summaries one id.
+ * leave the rest alone. An id without a collision stays short. The
+ * boundary tells same-named summaries apart first. What it cannot, the
+ * order in the file settles: the first keeps its id and the later ones
+ * take `@2`, `@3`, so an id stays the same when the code around it
+ * moves. The adapter runs this after assigning ids, and the parse
+ * boundary runs it over a backfilled v1 artifact, whose per-summary
+ * backfill can give two summaries one id.
  */
 export function disambiguateSummaryIds(summaries: BehavioralSummary[]): void {
   settleWith(summaries, (summary) =>
@@ -37,7 +38,41 @@ export function disambiguateSummaryIds(summaries: BehavioralSummary[]): void {
       ? null
       : `#${boundaryKey(summary.identity.boundaryBinding)}`,
   );
-  settleWith(summaries, (summary) => `@${summary.location.range.start}`);
+  numberInFileOrder(summaries);
+}
+
+/** The ids still shared, numbered by where each summary starts in its file. */
+function numberInFileOrder(summaries: BehavioralSummary[]): void {
+  const sharing = new Map<string, BehavioralSummary[]>();
+  for (const summary of summaries) {
+    const id = summary.identity.id;
+    if (id === undefined) {
+      continue;
+    }
+    const group = sharing.get(id);
+    if (group === undefined) {
+      sharing.set(id, [summary]);
+      continue;
+    }
+    group.push(summary);
+  }
+
+  for (const group of sharing.values()) {
+    if (group.length <= 1) {
+      continue;
+    }
+    const ordered = [...group].sort((a, b) => startOf(a) - startOf(b));
+    for (const [at, summary] of ordered.entries()) {
+      if (at > 0) {
+        summary.identity.id = `${summary.identity.id}@${at + 1}`;
+      }
+    }
+  }
+}
+
+/** Where a summary starts, by character when the adapter recorded one. */
+function startOf(summary: BehavioralSummary): number {
+  return summary.location.span?.start ?? summary.location.range.start;
 }
 
 function settleWith(
@@ -87,7 +122,7 @@ export function summaryIdentifier(summary: BehavioralSummary): string {
 }
 
 /**
- * The id a summary has before settling adds a boundary or a line to it.
+ * The id a summary has before settling adds a boundary or a number to it.
  * A reader matches a typed tail against this id, so the tail `evaluate`
  * matches this function's own name and not the export a caller of it
  * was settled with.

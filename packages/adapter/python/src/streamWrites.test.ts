@@ -36,6 +36,12 @@ function summarized(effects: Effect[]): Write[] {
   });
 }
 
+function groupIdsOf(effects: Effect[]): Array<string | undefined> {
+  return effects.map((effect) =>
+    effect.type === "interaction" ? effect.groupId : undefined,
+  );
+}
+
 describe("what a Python body prints", () => {
   it("reads print as a write to stdout, and to stderr when file says so", async () => {
     const effects = await writesIn(
@@ -53,9 +59,17 @@ describe("what a Python body prints", () => {
       { target: "stdout", callee: "sys.stdout.write", serialized: "text" },
       { target: "stderr", callee: "sys.stderr.write", serialized: "text" },
     ]);
-    expect(
-      effects.map((effect) => effect.type === "interaction" && effect.groupId),
-    ).toEqual(["2:1", "3:1", "4:1", "5:1"]);
+    expect(new Set(groupIdsOf(effects)).size).toBe(4);
+  });
+
+  it("keys a write on what it writes and numbers a repeat, so moving the code keeps the key", async () => {
+    const lines = ['print("sending")', 'print("careful")', 'print("sending")'];
+    const before = groupIdsOf(await writesIn(lines.join("\n")));
+    expect(before[0]).toMatch(/^print:[0-9a-f]{7}$/);
+    expect(before[2]).toBe(`${before[0]}#2`);
+
+    const moved = ["", "", "", ...lines].join("\n");
+    expect(groupIdsOf(await writesIn(moved))).toEqual(before);
   });
 
   it("reads a json.dumps report as the shape of what was serialized", async () => {
@@ -73,7 +87,7 @@ describe("what a Python body prints", () => {
           properties: { run: { type: "array" }, passed: { type: "boolean" } },
         },
       },
-      groupId: "2:1",
+      groupId: expect.stringMatching(/^print:[0-9a-f]{7}$/),
     });
   });
 

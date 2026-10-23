@@ -22,7 +22,10 @@ import {
   VariableDeclarationKind,
 } from "ts-morph";
 
-import { rawConditionToPredicate } from "@suss/extractor";
+import {
+  numberRepeatedCallSites,
+  rawConditionToPredicate,
+} from "@suss/extractor";
 
 import {
   collectAncestorConditionInfosBelow,
@@ -517,7 +520,7 @@ export function runInvocationRecognizers(
   if (recognizers.length === 0) {
     return [];
   }
-  const out: RecognizedEffectLocation[] = [];
+  const sites: RecognizedEffectLocation[][] = [];
   const sourceFile = func.getSourceFile();
 
   const calls: CallExpression[] = [];
@@ -545,6 +548,7 @@ export function runInvocationRecognizers(
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, func);
     const cleansUpFrom = cleanupStartLine(node, func);
+    const site: RecognizedEffectLocation[] = [];
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -566,7 +570,7 @@ export function runInvocationRecognizers(
         continue;
       }
       for (const eff of emitted) {
-        out.push({
+        site.push({
           effect: placedAt(withPreconditions(eff, preconditions), node),
           line,
           preconditions,
@@ -575,9 +579,10 @@ export function runInvocationRecognizers(
         });
       }
     }
+    sites.push(site);
   }
 
-  return out;
+  return numberRepeatedCallSites(sites).flat();
 }
 
 /**
