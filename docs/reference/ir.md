@@ -352,7 +352,7 @@ type Interaction =
   | { class: "message-send"; body?: unknown; routingKey?: string }
   | { class: "message-receive"; body?: unknown }
   | { class: "unit-invoke"; payload?: unknown }
-  | { class: "config-read"; name: string; defaulted: boolean }
+  | { class: "config-read"; name: string | null; defaulted: boolean }
   | { class: "metadata-read"; name: string }
   | { class: "schedule"; via: string; hasDelay: boolean;
       callbackRef:
@@ -368,7 +368,7 @@ type Interaction =
 - **`message-send`** covers SQS, Kafka and BullMQ producers. It pairs against a message-bus consumer on `(messageBus, channel)`.
 - **`message-receive`** is the fields a consumer pulls out of a message. It doesn't state a channel, because a handler signature never tells you which channel it is for, so the checker reads the channel off the enclosing summary's binding instead.
 - **`unit-invoke`** is calling a deployed unit by name. It pairs on `(deploymentTarget, instanceName)`, once the invoking unit's environment resolves a name that only exists at deploy time.
-- **`config-read`** is a `process.env.X` access or its equivalent. It pairs against a runtime-config provider on the variable name plus the code scope.
+- **`config-read`** is a `process.env.X` access or its equivalent. It pairs against a runtime-config provider on the variable name plus the code scope. `name` is null when the code works the name out at run time, as a helper reading `process.env[name]` does. Each call to such a helper records its own read with the name it passes, so a read with no name pairs with nothing.
 - **`metadata-read`** is a read of something the runtime provides on its own: `__dirname`, `import.meta.url`, `process.cwd`, `process.platform`. It goes on the same runtime-config boundary as a config read, and nothing pairs against it, because no deploy file declares these.
 - **`schedule`** is a callback handed to `setTimeout`, `process.nextTick` or a library hook. Nothing pairs against these, so the enclosing binding uses `function-call` semantics and the interaction is there for dataflow and for `inspect`. `hasDelay` records only that a delay argument was passed, without its value.
 - **`stream-write`** is a write to one of the process's own streams: `console.log`, `process.stdout.write`, Python's `print`, Ruby's `puts`. The binding uses `io` semantics, whose `target` says which stream. `payload` is the shape of what was written, and `serialized` says whether the code wrote it through `JSON.stringify`, `json.dumps` or `JSON.generate` first, in which case `payload` is the shape of the value it serialized. `groupId` is required on this class, and says which call site the write came from. It is the callee and a hash of the rest of the effect, such as `console.warn:3f2a1bc`, and a second site in the unit that writes the same thing gets `console.warn:3f2a1bc#2`. It never has a line number, so code that moves without changing keeps its ids. Nothing pairs against it, since whoever reads a stream is a person, a shell or a test that no run declares.

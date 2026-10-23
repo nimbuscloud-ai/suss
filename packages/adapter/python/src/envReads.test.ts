@@ -14,7 +14,7 @@ import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 
 interface Read {
-  name: string;
+  name: string | null;
   defaulted: boolean;
 }
 
@@ -154,12 +154,16 @@ describe("os.environ spellings", () => {
     ]);
   });
 
-  it("skips a read whose name is not a string literal", async () => {
+  it("records a read with no name when the name is not a string literal", async () => {
     expect(
       await moduleReads(
         'import os\nA = os.environ[name]\nB = os.environ.get(f"{prefix}_B")\nC = os.getenv(name)\n',
       ),
-    ).toEqual([]);
+    ).toEqual([
+      { name: null, defaulted: false },
+      { name: null, defaulted: false },
+      { name: null, defaulted: false },
+    ]);
   });
 
   it("ignores an environ or getenv that did not come from os", async () => {
@@ -879,9 +883,18 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
   });
 
-  it("says nothing on the helper's own body, where no caller has named anything", async () => {
+  it("records a read with no name on the helper's own body, whatever its callers pass", async () => {
     expect(
       await functionReadsWithFacts(`${SUBSCRIPT_HELPER}A = env("A")\n`, "env"),
+    ).toEqual([{ name: null, defaulted: false }]);
+  });
+
+  it("records nothing at a call that hands the caller's own parameter on", async () => {
+    expect(
+      await functionReadsWithFacts(
+        `${SUBSCRIPT_HELPER}def get_env(key):\n    return env(key)\n\nA = get_env("A")\n`,
+        "get_env",
+      ),
     ).toEqual([]);
   });
 });

@@ -124,6 +124,34 @@ describe("repeat delivery over a queue worker on a shared CodeUri", () => {
     ]);
   });
 
+  it("charges a Ruby helper's read to each call that passed the name", async () => {
+    clearTemplateCache();
+    const { summaries } = await extractRubyProject({
+      files: findRubyFiles(rubyRoot),
+      packs: [lambdaRuby()],
+      workspaceRoot: rubyRoot,
+      cacheDir: null,
+    });
+    const declared = cloudFormationFileToSummaries(
+      path.join(rubyRoot, "template.yaml"),
+    );
+    const envFindings = checkAll([...summaries, ...declared]).findings.filter(
+      (f) => f.boundary.semantics.name === "runtime-config",
+    );
+
+    expect(envFindings.map((f) => f.description)).toEqual([]);
+    expect(
+      configReadNames(
+        summaries,
+        "src/handlers/orders.rb",
+        "OrdersWorker.handler",
+      ),
+    ).toEqual(["ORDERS_LEDGER"]);
+    expect(
+      configReadNames(summaries, "src/lib/settings.rb", "require_env"),
+    ).toEqual([null]);
+  });
+
   it("records the function the template calls next to the file it enters", () => {
     const scopes = cloudFormationFileToSummaries(
       path.join(rubyRoot, "template.yaml"),
@@ -139,6 +167,24 @@ describe("repeat delivery over a queue worker on a shared CodeUri", () => {
     );
   });
 });
+
+/** The variable each config read on one summary names, null for a read with no name. */
+function configReadNames(
+  code: BehavioralSummary[],
+  file: string,
+  name: string,
+): Array<string | null> {
+  const summary = code.find(
+    (s) => s.location.file === file && s.identity.name === name,
+  );
+  return (summary?.transitions ?? [])
+    .flatMap((t) => t.effects)
+    .flatMap((e) =>
+      e.type === "interaction" && e.interaction.class === "config-read"
+        ? [e.interaction.name]
+        : [],
+    );
+}
 
 /** Each handler with a deployable unit, as `<unit> <file> <export path>`. */
 function handlerStarts(code: BehavioralSummary[]): string[] {

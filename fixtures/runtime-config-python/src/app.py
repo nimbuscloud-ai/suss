@@ -7,6 +7,7 @@ import os
 from fastapi import FastAPI
 from mangum import Mangum
 
+from env import require_env
 from settings import PAGE_SIZE
 
 app = FastAPI()
@@ -17,7 +18,8 @@ TABLE = os.environ["TABLE_NAME"]
 @app.get("/items")
 def list_items():
     bucket = os.environ["ASSET_BUCKET"]
-    return {"table": TABLE, "bucket": bucket, "page_size": PAGE_SIZE}
+    table = require_env("TABLE_NAME")
+    return {"table": table, "bucket": bucket, "page_size": PAGE_SIZE}
 
 
 handler = Mangum(app)

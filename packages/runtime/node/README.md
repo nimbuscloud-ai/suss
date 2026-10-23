@@ -104,7 +104,14 @@ const table = requireEnv("TABLE_NAME");
 
 The pack reports `TABLE_NAME` at the call in `handler.ts`, instead of
 at the bracket read in `env.ts`, so the unit that gave the variable's name
-is the unit recorded as reading it.
+is the unit recorded as reading it. The bracket read records a
+`config-read` with no name, and the checker leaves it out of pairing.
+`requireEnv` is shared by every handler, and if it took on each caller's
+name, every function that loads `env.ts` would be charged with every
+variable any caller reads.
+
+Any other index that is not a literal, such as `process.env[key]` in a
+loop, records a read with no name the same way.
 
 The pack declares `process.env` and `import.meta.env` as the
 environment objects. The adapter records a fact for a read from one
