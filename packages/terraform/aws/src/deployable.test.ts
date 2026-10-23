@@ -105,6 +105,7 @@ describe("the Lambda entry", () => {
     expect(unit("confirm").metadata?.codeScope).toEqual({
       kind: "unknown",
       entry: "src/handlers/confirm",
+      entryExport: "handler",
     });
   });
 });

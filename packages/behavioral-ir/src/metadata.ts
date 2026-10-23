@@ -1218,6 +1218,13 @@ const CodeScopeMetadataSchema = z.object({
   /** The file the runtime enters, without an extension. */
   entry: z.string().optional(),
   /**
+   * The function in `entry` the platform calls, written the way that
+   * file's language writes it: `handler`, or `Billing::Handler.process`
+   * for a Ruby class method. It lets a reader find the handler's own
+   * summary when no pack stamped a deployable unit on it.
+   */
+  entryExport: z.string().optional(),
+  /**
    * The project `path` and `entry` are measured from, by the name its
    * code summaries give as their workspace. Absent, they are compared
    * with code in any project.

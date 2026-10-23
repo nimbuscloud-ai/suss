@@ -55,6 +55,10 @@ const READER_DIRECTORIES = [
  */
 const EXEMPT = new Map([
   [
+    "codeScope.entryExport",
+    "The function a template's Handler points at in the entry file. Charging an environment read only to the handlers that reach it will start from it when no pack stamped the handler; until then nothing reads it.",
+  ],
+  [
     "messageBus.subject",
     "The subject a rule routes into the drained queue. Pairing keys on the queue, so nothing compares the subject a producer publishes against the one a consumer drains. #464.",
   ],
