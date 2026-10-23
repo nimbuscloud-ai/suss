@@ -13,13 +13,15 @@
  * class the same way.
  */
 
-import { askResolution } from "@suss/resolution";
+import { answersFor, askResolution, spanOfKey } from "@suss/resolution";
 
+import { blocksDefinedIn } from "./ancestry.js";
 import { NESTING_TYPES } from "./ast.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
 
 import type { Database } from "@suss/datalog";
+import type { AncestorLookup, ReachedBody } from "./ancestry.js";
 import type { RbNode } from "./parser.js";
 
 /**
@@ -40,6 +42,73 @@ export function classBehind(
     facts.lookup("binds", 0, key).map((row) => String(row[1])),
   );
   return bound.size === 1 ? [...bound][0] : undefined;
+}
+
+/**
+ * The class the rules settle a value on, when they settle on exactly
+ * one. With two, picking either would be a guess, so the result is
+ * undefined, as it is for the constant bindings. The rules follow a
+ * constant through an alias the same way they follow a call's receiver.
+ */
+export function classSettledOn(
+  facts: Database,
+  key: string,
+): string | undefined {
+  askResolution(facts, [key], "wanted", RUBY_PROGRAM);
+  const objects = answersFor(facts, "wantedObjectOf", key);
+  return objects.length === 1 ? objects[0] : undefined;
+}
+
+/**
+ * The name a class is declared under, which is how a constant receiver
+ * would have written it. A class reopened in several files binds to one
+ * of them, so only one name comes back.
+ */
+export function declaredName(
+  facts: Database,
+  classKey: string,
+): string | undefined {
+  const names = new Set(
+    facts.lookup("rbConstantName", 0, classKey).map((row) => String(row[1])),
+  );
+  return names.size === 1 ? [...names][0] : undefined;
+}
+
+/**
+ * Finds a class by its full name in whichever files of the run declare
+ * it, so a lookup does not depend on the file being where a naming
+ * convention puts it. A class reopened in several files gives the blocks
+ * of each. Null when no file in the run declares it.
+ */
+export function classesDeclaredInRun(
+  facts: Database,
+  parsedFile: AncestorLookup["parsedFile"],
+): (qualifiedName: string) => Promise<ReachedBody[] | null> {
+  const known = new Map<string, Promise<ReachedBody[] | null>>();
+  const read = async (qualifiedName: string) => {
+    const files = new Set<string>();
+    for (const row of facts.lookup("rbConstantName", 1, qualifiedName)) {
+      const span = spanOfKey(String(row[0]));
+      if (span !== null) {
+        files.add(span.file);
+      }
+    }
+    const blocks: ReachedBody[] = [];
+    for (const file of files) {
+      blocks.push(
+        ...((await blocksDefinedIn(file, qualifiedName, parsedFile)) ?? []),
+      );
+    }
+    return blocks.length === 0 ? null : blocks;
+  };
+  return (qualifiedName) => {
+    let found = known.get(qualifiedName);
+    if (found === undefined) {
+      found = read(qualifiedName);
+      known.set(qualifiedName, found);
+    }
+    return found;
+  };
 }
 
 /**

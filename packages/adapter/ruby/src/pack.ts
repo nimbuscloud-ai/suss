@@ -688,6 +688,24 @@ export interface RbFormatSwitch {
   matchesEvery?: string;
 }
 
+/**
+ * The methods a library runs on a wired class before the one that
+ * resolves the field. A hook that raises ends the field with that
+ * exception. A hook whose value is false or nil stops the field, and the
+ * resolver never runs. Any other value lets the field go on to the next
+ * hook, then to the resolver.
+ */
+export interface RbResolverHooks {
+  /** The hook methods, in the order the library runs them. */
+  methods: string[];
+  /**
+   * True when the library takes a list's first element as the hook's
+   * answer, so `return false, payload` stops the field and returns the
+   * payload in its place.
+   */
+  answerIsListHead?: boolean;
+}
+
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
 export interface GraphqlObjectFields {
   type: "graphqlObjectFields";
@@ -709,6 +727,10 @@ export interface GraphqlObjectFields {
   wiringKeywords: string[];
   /** The method a wired class defines to resolve the field it is wired to. */
   resolverMethodName: string;
+  /** The keyword on a field call that says which of the type's own methods resolves it, in place of the method with the field's name. */
+  resolverMethodKeyword?: string;
+  /** The methods the library runs on a wired class before `resolverMethodName`, any of which can stop the field. */
+  resolverHooks?: RbResolverHooks;
   /** The library's own classes that a project's class chain ends at. */
   ancestryRootClassNames: string[];
   /** The keyword on an argument call that says whether the argument is required. */
