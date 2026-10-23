@@ -16,7 +16,10 @@ import type { AccessRecognizer } from "@suss/extractor";
 
 const FILE_LOCATION_GLOBALS = new Set(["__dirname", "__filename"]);
 
-/** Recognizes `import.meta.url` and any other `import.meta.X` read. */
+/** `import.meta.env` is the environment, and `envVarRecognizer` reads the variables off it. */
+const ENVIRONMENT_PROPERTY = "env";
+
+/** Recognizes `import.meta.url` and any other `import.meta.X` read but `import.meta.env`. */
 export const importMetaRecognizer: AccessRecognizer = (access, _ctx) => {
   const node = access as Node;
   if (!Node.isPropertyAccessExpression(node)) {
@@ -30,6 +33,9 @@ export const importMetaRecognizer: AccessRecognizer = (access, _ctx) => {
   const keyword = inner.getKeywordToken();
   // `new.target` is the other MetaProperty, and its name is `target`.
   if (keyword === undefined || inner.getNameNode().getText() !== "meta") {
+    return null;
+  }
+  if (node.getName() === ENVIRONMENT_PROPERTY) {
     return null;
   }
   return [opaqueRuntimeRead(node.getText())];

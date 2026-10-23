@@ -1,16 +1,15 @@
 /**
  * Environment variable reads, each reported as a `config-read` effect
  * named after the variable. `process.env.FOO`, `process.env["FOO"]` and
- * `const { FOO } = process.env` all count. So do a call to a project
- * helper such as `requireEnv("FOO")` and the keys of a schema parsed
- * against `process.env`. A read is defaulted when the program handles
- * the variable being unset, for example with `??` after the read.
+ * `const { FOO } = process.env` all count, and so does each of them off
+ * `import.meta.env`. So do a call to a project helper such as
+ * `requireEnv("FOO")` and the keys of a schema parsed against the
+ * environment. A read is defaulted when the program handles the variable
+ * being unset, for example with `??` after the read.
  *
- * The three direct spellings share the `process.env` node, so each is
- * recognized there by looking at what encloses it. The variable's name
- * identifies the read for pairing, and the runtime-config checker
- * matches it against the variables a template or task definition
- * declares. The README covers helpers and schemas.
+ * The three direct spellings share the environment object's node, so
+ * each is recognized there by looking at what encloses it. The README
+ * covers helpers and schemas.
  */
 
 import {
@@ -39,6 +38,7 @@ type FunctionLike =
 
 import {
   declarationsBehind,
+  dottedPathOf,
   findEnclosingFunction,
   functionTargetOf,
   isDefaultedAt,
@@ -47,7 +47,7 @@ import {
   toFunctionRoot,
 } from "@suss/adapter-typescript";
 
-import { configBinding } from "./configBinding.js";
+import { configBinding, opaqueRuntimeRead } from "./configBinding.js";
 import { schemaEnvReads, schemaEnvReadsInside } from "./schemaEnv.js";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
@@ -57,32 +57,61 @@ import type { DeploymentOptions } from "./configBinding.js";
 
 export type EnvVarRecognizerOptions = DeploymentOptions;
 
+/**
+ * The objects whose properties are the environment, as the code spells
+ * them. Node gives a program `process.env`. Vite and Bun give it
+ * `import.meta.env`, which a program reads the same way.
+ */
+export const ENVIRONMENT_OBJECTS: readonly string[] = [
+  "process.env",
+  "import.meta.env",
+];
+
+/** The spelling a read gets when the code does not write the object at the read, as with a schema. */
+const PROCESS_ENV = "process.env";
+
+const IMPORT_META_ENV = "import.meta.env";
+
+/**
+ * The keys Vite sets on `import.meta.env` from the build itself: the
+ * mode, the base URL, and whether the build is for production,
+ * development or the server. No deployment declares them, so a read of
+ * one is a metadata read, the way a read of `import.meta.url` is.
+ */
+const VITE_BUILD_KEYS = new Set(["MODE", "BASE_URL", "PROD", "DEV", "SSR"]);
+
 interface EnvRead {
   name: string;
   defaulted: boolean;
   /** Where the read is reported, which sets its line number. */
   node: Node;
+  /** The environment object the read is off, as the code spells it. */
+  object: string;
 }
 
 /**
  * Every spelling gets the dotted name, so a consumer grouping reads by
  * variable never has to parse an index argument or a binding pattern.
  */
-const readName = (name: string): string => `process.env.${name}`;
+const readName = (read: EnvRead): string => `${read.object}.${read.name}`;
 
-function isProcessEnv(node: Node): node is PropertyAccessExpression {
+/** `process.env` or `import.meta.env` as the code spells it, or null for any other node. */
+function environmentSpelling(node: Node): string | null {
   if (!N.isPropertyAccessExpression(node) || node.getName() !== "env") {
-    return false;
+    return null;
   }
-  const root = node.getExpression();
-  return N.isIdentifier(root) && root.getText() === "process";
+  const path = dottedPathOf(node);
+  return path !== null && ENVIRONMENT_OBJECTS.includes(path) ? path : null;
 }
 
 function dottedRead(node: PropertyAccessExpression): EnvRead[] {
-  if (!isProcessEnv(node.getExpression())) {
+  const object = environmentSpelling(node.getExpression());
+  if (object === null) {
     return [];
   }
-  return [{ name: node.getName(), defaulted: isDefaultedAt(node), node }];
+  return [
+    { name: node.getName(), defaulted: isDefaultedAt(node), node, object },
+  ];
 }
 
 /**
@@ -91,6 +120,7 @@ function dottedRead(node: PropertyAccessExpression): EnvRead[] {
  */
 function bracketRead(
   access: ElementAccessExpression,
+  object: string,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   const argument = access.getArgumentExpression();
@@ -105,10 +135,10 @@ function bracketRead(
     if (name.length === 0) {
       return [];
     }
-    return [{ name, defaulted: isDefaultedAt(access), node: access }];
+    return [{ name, defaulted: isDefaultedAt(access), node: access, object }];
   }
   if (N.isIdentifier(argument)) {
-    return readsThroughParameter(access, argument, resolution);
+    return readsThroughParameter(access, argument, object, resolution);
   }
   return [];
 }
@@ -127,13 +157,14 @@ const CALLER_LOOKUPS = new WeakMap<Node, EnvRead[]>();
 function readsThroughParameter(
   access: ElementAccessExpression,
   index: Identifier,
+  object: string,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   const remembered = CALLER_LOOKUPS.get(access);
   if (remembered !== undefined) {
     return remembered;
   }
-  const found = callerLiteralReads(access, index, resolution);
+  const found = callerLiteralReads(access, index, object, resolution);
   CALLER_LOOKUPS.set(access, found);
   return found;
 }
@@ -141,6 +172,7 @@ function readsThroughParameter(
 function callerLiteralReads(
   access: ElementAccessExpression,
   index: Identifier,
+  object: string,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   if (resolution === undefined) {
@@ -173,7 +205,7 @@ function callerLiteralReads(
     for (const passed of resolution.argumentsPassedTo(wanted)) {
       const literal = stringValueOf(passed.argument, resolution);
       if (literal !== null && literal.length > 0) {
-        reads.push({ name: literal, defaulted, node: passed.call });
+        reads.push({ name: literal, defaulted, node: passed.call, object });
         continue;
       }
       const forwarded = forwardedParameter(passed.argument, passed.call);
@@ -205,7 +237,7 @@ function forwardedParameter(
 }
 
 /** The variable read by one element of `const { A, B: c } = process.env`. */
-function bindingRead(element: BindingElement): EnvRead[] {
+function bindingRead(element: BindingElement, object: string): EnvRead[] {
   if (element.getDotDotDotToken() !== undefined) {
     return [];
   }
@@ -227,32 +259,40 @@ function bindingRead(element: BindingElement): EnvRead[] {
       defaulted:
         element.getInitializer() !== undefined || isDefaultedAt(element),
       node: element,
+      object,
     },
   ];
 }
 
-function destructuredReads(declaration: VariableDeclaration): EnvRead[] {
+function destructuredReads(
+  declaration: VariableDeclaration,
+  object: string,
+): EnvRead[] {
   const pattern = declaration.getNameNode();
   if (!N.isObjectBindingPattern(pattern)) {
     return [];
   }
-  return pattern.getElements().flatMap(bindingRead);
+  return pattern
+    .getElements()
+    .flatMap((element) => bindingRead(element, object));
 }
 
 /**
- * Bracket and destructured reads. Both are found from the `process.env`
- * node, because the name is in an index argument or a binding pattern.
+ * Bracket and destructured reads. Both are found from the environment
+ * object's node, because the name is in an index argument or a binding
+ * pattern.
  */
 function readsThroughEnvObject(
   envNode: PropertyAccessExpression,
+  object: string,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   const parent = envNode.getParent();
   if (N.isElementAccessExpression(parent)) {
-    return bracketRead(parent, resolution);
+    return bracketRead(parent, object, resolution);
   }
   if (N.isVariableDeclaration(parent)) {
-    return destructuredReads(parent);
+    return destructuredReads(parent, object);
   }
   return [];
 }
@@ -274,9 +314,10 @@ function envReadsAt(
   if (!N.isPropertyAccessExpression(node)) {
     return [];
   }
-  return isProcessEnv(node)
-    ? readsThroughEnvObject(node, resolution)
-    : dottedRead(node);
+  const object = environmentSpelling(node);
+  return object === null
+    ? dottedRead(node)
+    : readsThroughEnvObject(node, object, resolution);
 }
 
 /**
@@ -295,14 +336,15 @@ function readsThroughHelperCall(
   const parameters = callee.getParameters();
   // One read per variable. It counts as defaulted only when every site
   // that reads it supplies a default.
-  const defaultedByName = new Map<string, boolean>();
+  const byName = new Map<string, { defaulted: boolean; object: string }>();
   call.getArguments().forEach((passed, at) => {
     const parameter = parameters[at];
     if (parameter === undefined) {
       return;
     }
     const sites = sitesNaming(parameter) ?? directEnvReads(callee, parameter);
-    if (sites.length === 0) {
+    const [first] = sites;
+    if (first === undefined) {
       return;
     }
     const literal = stringValueOf(passed, resolution);
@@ -310,18 +352,20 @@ function readsThroughHelperCall(
       return;
     }
     const everywhere = sites.every(isDefaultedAt);
-    defaultedByName.set(
-      literal,
-      (defaultedByName.get(literal) ?? true) && everywhere,
-    );
+    const known = byName.get(literal);
+    byName.set(literal, {
+      defaulted: (known?.defaulted ?? true) && everywhere,
+      object: known?.object ?? objectReadAt(first),
+    });
   });
 
   const wrapped = isDefaultedAt(call);
   return [
-    ...[...defaultedByName].map(([name, atSites]) => ({
+    ...[...byName].map(([name, read]) => ({
       name,
-      defaulted: atSites || wrapped,
+      defaulted: read.defaulted || wrapped,
       node: call,
+      object: read.object,
     })),
     // A config module often parses its schema inside a function that
     // every handler calls, so each call reports the keys that parse reads.
@@ -329,12 +373,24 @@ function readsThroughHelperCall(
   ];
 }
 
-/** Attaches a node to schema reads so they get a line number. */
+/** The environment object a helper's read site is off, or `process.env` when the site does not spell one. */
+function objectReadAt(site: Node): string {
+  if (!N.isElementAccessExpression(site)) {
+    return PROCESS_ENV;
+  }
+  return environmentSpelling(site.getExpression()) ?? PROCESS_ENV;
+}
+
+/**
+ * Attaches a node to schema reads so they get a line number. A schema
+ * read does not spell the object it parses, so it is named as a read of
+ * `process.env`.
+ */
 function anchoredAt(
   reads: readonly { name: string; defaulted: boolean }[],
   node: Node,
 ): EnvRead[] {
-  return reads.map((read) => ({ ...read, node }));
+  return reads.map((read) => ({ ...read, node, object: PROCESS_ENV }));
 }
 
 /** The function a call resolves to, or null when it cannot be followed. */
@@ -422,7 +478,7 @@ function directEnvRead(
   for (const access of fn.getDescendantsOfKind(
     SyntaxKind.ElementAccessExpression,
   )) {
-    if (!isProcessEnv(access.getExpression())) {
+    if (environmentSpelling(access.getExpression()) === null) {
       continue;
     }
     const argument = access.getArgumentExpression();
@@ -437,11 +493,19 @@ function directEnvRead(
   return null;
 }
 
+/** Whether the read is of a key the bundler sets, which is no environment variable. */
+function readsBuildKey(read: EnvRead): boolean {
+  return read.object === IMPORT_META_ENV && VITE_BUILD_KEYS.has(read.name);
+}
+
 function configReadEffect(read: EnvRead, where: DeploymentOptions): Effect {
+  if (readsBuildKey(read)) {
+    return opaqueRuntimeRead(readName(read));
+  }
   return {
     type: "interaction",
     binding: configBinding(where),
-    callee: readName(read.name),
+    callee: readName(read),
     interaction: {
       class: "config-read",
       name: read.name,
@@ -478,7 +542,7 @@ export function findProcessEnvReads(
   sourceFile.forEachDescendant((node) => {
     for (const read of envReadsAt(node, resolution)) {
       const key = `${read.node.getPos()}:${read.name}`;
-      if (seen.has(key)) {
+      if (seen.has(key) || readsBuildKey(read)) {
         continue;
       }
       seen.add(key);

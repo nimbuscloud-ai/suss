@@ -534,7 +534,7 @@ describe("node runtime pack — env-var wiring", () => {
   });
 
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.3.0");
+    expect(nodeRuntimePack().version).toBe("0.4.0");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {
@@ -1907,5 +1907,77 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
       export const config = one({ ORDERS_URL: "orders" });
     `);
     expect(readsOf(file)).toEqual([["PORT", false]]);
+  });
+});
+
+describe("env-var recognizer on the import.meta.env Vite and Bun give a program", () => {
+  it("reads a dotted, a bracket and a destructured read the way it reads process.env", () => {
+    const file = makeProject(`
+      export const api = import.meta.env.VITE_API_URL;
+      export const bracket = import.meta.env["VITE_BRACKET"] ?? "fallback";
+      export const { VITE_X, VITE_Y = "y" } = import.meta.env;
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(
+      reads.map((read) => [
+        read.callee,
+        read.interaction.name,
+        read.interaction.defaulted,
+      ]),
+    ).toEqual([
+      ["import.meta.env.VITE_API_URL", "VITE_API_URL", false],
+      ["import.meta.env.VITE_BRACKET", "VITE_BRACKET", true],
+      ["import.meta.env.VITE_X", "VITE_X", false],
+      ["import.meta.env.VITE_Y", "VITE_Y", true],
+    ]);
+  });
+
+  it("reports a key Vite sets from the build as a metadata read", () => {
+    const file = makeProject(`
+      export const mode = import.meta.env.MODE;
+      export const { DEV } = import.meta.env;
+    `);
+    const effects = recognizeAll(file);
+    expect(configReadEffectsOf(effects)).toEqual([]);
+    expect(
+      effects.flatMap((effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "metadata-read"
+          ? [effect.interaction.name]
+          : [],
+      ),
+    ).toEqual(["import.meta.env.MODE", "import.meta.env.DEV"]);
+    expect(effects).toHaveLength(2);
+  });
+
+  it("follows a literal through a helper that indexes import.meta.env", () => {
+    const file = makeProject(`
+      function env(name: string): string {
+        return import.meta.env[name] ?? "";
+      }
+      export const api = env("VITE_API_URL");
+    `);
+    const reads = configReadEffectsOf(recognizeWithStore(file));
+    expect(reads.map((read) => [read.callee, read.interaction.name])).toEqual([
+      ["import.meta.env.VITE_API_URL", "VITE_API_URL"],
+    ]);
+  });
+
+  it("reports nothing for an index nothing settles, as for process.env", () => {
+    const file = makeProject(`
+      declare const key: string;
+      export const value = import.meta.env[key];
+    `);
+    expect(recognizeWithStore(file)).toEqual([]);
+  });
+
+  it("reads a schema parsed against import.meta.env", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      export const config = z
+        .object({ VITE_API_URL: z.string() })
+        .parse(import.meta.env);
+    `);
+    expect(readsOf(file)).toEqual([["VITE_API_URL", false]]);
   });
 });
