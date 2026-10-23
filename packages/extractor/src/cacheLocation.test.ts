@@ -6,6 +6,7 @@ import {
   CACHE_DIR_ENV,
   extractionCacheDirFor,
   liveRecordFor,
+  mapFolderFor,
 } from "./cacheLocation.js";
 
 const before = process.env[CACHE_DIR_ENV];
@@ -28,6 +29,16 @@ describe("where suss keeps its own files", () => {
     expect(liveRecordFor("/work/shop")).toBe(
       path.join("/work/shop", ".suss", "live", "server.json"),
     );
+    expect(mapFolderFor("/work/shop")).toBe(path.join("/work/shop", ".suss"));
+  });
+
+  it("puts each project's map in its own folder under the chosen directory", () => {
+    process.env[CACHE_DIR_ENV] = "/tmp/state";
+
+    const shop = mapFolderFor("/work/shop");
+
+    expect(shop.startsWith(path.join("/tmp/state", "map"))).toBe(true);
+    expect(shop).not.toBe(mapFolderFor("/work/blog"));
   });
 
   it("is under the chosen directory, apart for each project", () => {

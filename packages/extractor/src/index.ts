@@ -1240,6 +1240,7 @@ export {
   chosenCacheRoot,
   extractionCacheDirFor,
   liveRecordFor,
+  mapFolderFor,
 } from "./cacheLocation.js";
 export { stampMayMissAWrite } from "./cacheStamps.js";
 export { createCodeHasher, processCodeHasher } from "./codeHash.js";
