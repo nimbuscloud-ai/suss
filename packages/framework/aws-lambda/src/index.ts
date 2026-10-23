@@ -18,14 +18,18 @@ import { z } from "zod";
 import { compile, declarationsIn } from "@suss/recognize";
 
 import { awsLambdaDiscovery } from "./discovery.js";
+import { lambdaEntryPoints } from "./entryPoints.js";
 import { invokeDeclarations } from "./invokes.js";
 import { templatesForFiles } from "./templateIndex.js";
 import { HTTP_TERMINALS } from "./terminals.js";
 
+import type { PythonPack } from "@suss/adapter-python";
+import type { RubyPack } from "@suss/adapter-ruby";
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export { awsLambdaDiscovery, METADATA_NAMESPACE } from "./discovery.js";
+export { lambdaEntryPoints } from "./entryPoints.js";
 export { clearTemplateCache } from "./templateIndex.js";
 
 /**
@@ -111,7 +115,54 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-aws-lambda",
   dependencies: [{ ecosystem: "npm", name: "@types/aws-lambda" }],
   reads:
-    "AWS Lambda HTTP handlers, paired with the routes a SAM or CloudFormation template declares.",
+    "AWS Lambda HTTP handlers, paired with the routes a SAM template or serverless.yml declares.",
+};
+
+/**
+ * Python handlers. The template is the gate here too, so the pack reads
+ * no import and declares no dependency.
+ */
+export function awsLambdaPython(): PythonPack {
+  const name = "aws-lambda-python";
+  return {
+    name,
+    protocol: "http",
+    discovery: [],
+    discoveryInputs: templatesForFiles,
+    entryPoints: lambdaEntryPoints(name),
+    // Powertools reads these from its own installed package.
+    libraryEnvVars: [
+      { module: "aws_lambda_powertools", prefixes: ["POWERTOOLS_"] },
+    ],
+  };
+}
+
+export const declaresPython: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-aws-lambda",
+  dependencies: [],
+  reads:
+    "AWS Lambda handlers written in Python, found from the Handler a SAM template or serverless.yml gives each function.",
+};
+
+/** Ruby handlers, found the same way as Python ones. */
+export function awsLambdaRuby(): RubyPack {
+  const name = "aws-lambda-ruby";
+  return {
+    name,
+    protocol: "http",
+    discovery: [],
+    discoveryInputs: templatesForFiles,
+    entryPoints: lambdaEntryPoints(name),
+  };
+}
+
+export const declaresRuby: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-aws-lambda",
+  dependencies: [],
+  reads:
+    "AWS Lambda handlers written in Ruby, found from the Handler a SAM template or serverless.yml gives each function, including a class method written `file.Module::Class.method`.",
 };
 
 export default awsLambdaFramework;

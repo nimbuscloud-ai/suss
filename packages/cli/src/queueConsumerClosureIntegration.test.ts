@@ -5,9 +5,8 @@
  *
  * The directory covers every file, so only the worker's handler entry,
  * followed through the module imports the adapter records, says which
- * POST a second delivery of a message repeats. The Python and Ruby
- * projects have no Lambda pack to stamp a deployable unit, so the entry
- * is all they have.
+ * POST a second delivery of a message repeats, with or without the
+ * Lambda pack that stamps each handler's deployable unit.
  */
 
 import path from "node:path";
@@ -23,6 +22,8 @@ import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
 import {
   awsLambdaFramework,
   clearTemplateCache,
+  awsLambdaPython as lambdaPython,
+  awsLambdaRuby as lambdaRuby,
 } from "@suss/framework-aws-lambda";
 import faradayClient from "@suss/packs/faraday";
 import requestsClient from "@suss/packs/requests";
@@ -56,33 +57,102 @@ describe("repeat delivery over a queue worker on a shared CodeUri", () => {
   });
 
   it("reports the Python worker's own call and its helper's, and nothing else", async () => {
+    for (const packs of [
+      [requestsClient()],
+      [requestsClient(), lambdaPython()],
+    ]) {
+      clearTemplateCache();
+      const { summaries } = await extractPythonProject({
+        files: findPythonFiles(pythonRoot),
+        packs,
+        roots: [pythonRoot],
+        workspaceRoot: pythonRoot,
+      });
+
+      expect(repeatedCallFiles(summaries, pythonRoot)).toEqual([
+        "src/handlers/orders.py",
+        "src/lib/billing.py",
+      ]);
+    }
+  });
+
+  it("reports the Ruby worker's own call and its helper's, and nothing else", async () => {
+    for (const packs of [[faradayClient()], [faradayClient(), lambdaRuby()]]) {
+      clearTemplateCache();
+      const { summaries } = await extractRubyProject({
+        files: findRubyFiles(rubyRoot),
+        packs,
+        workspaceRoot: rubyRoot,
+        cacheDir: null,
+      });
+
+      expect(repeatedCallFiles(summaries, rubyRoot)).toEqual([
+        "src/handlers/orders.rb",
+        "src/lib/billing.rb",
+      ]);
+    }
+  });
+
+  it("starts a Python summary at each handler the template points at, the dotted module included", async () => {
+    clearTemplateCache();
     const { summaries } = await extractPythonProject({
       files: findPythonFiles(pythonRoot),
-      packs: [requestsClient()],
+      packs: [lambdaPython()],
       roots: [pythonRoot],
       workspaceRoot: pythonRoot,
     });
 
-    expect(repeatedCallFiles(summaries, pythonRoot)).toEqual([
-      "src/handlers/orders.py",
-      "src/lib/billing.py",
+    expect(handlerStarts(summaries)).toEqual([
+      "AccountsFunction src/handlers/accounts.py handler",
+      "OrdersWorker src/handlers/orders.py handler",
     ]);
   });
 
-  it("reports the Ruby worker's own call and its helper's, and nothing else", async () => {
+  it("starts a Ruby summary at each handler, a namespaced class method included", async () => {
+    clearTemplateCache();
     const { summaries } = await extractRubyProject({
       files: findRubyFiles(rubyRoot),
-      packs: [faradayClient()],
+      packs: [lambdaRuby()],
       workspaceRoot: rubyRoot,
       cacheDir: null,
     });
 
-    expect(repeatedCallFiles(summaries, rubyRoot)).toEqual([
-      "src/handlers/orders.rb",
-      "src/lib/billing.rb",
+    expect(handlerStarts(summaries)).toEqual([
+      "AccountsFunction src/handlers/accounts.rb handler",
+      "OrdersWorker src/handlers/orders.rb handler",
+      "ReportsFunction src/handlers/reports.rb Reports::Nightly.run",
     ]);
   });
+
+  it("records the function the template calls next to the file it enters", () => {
+    const scopes = cloudFormationFileToSummaries(
+      path.join(rubyRoot, "template.yaml"),
+    )
+      .map((summary) => summary.metadata?.codeScope)
+      .filter((scope) => scope !== undefined);
+
+    expect(scopes).toContainEqual(
+      expect.objectContaining({
+        entry: "src/handlers/reports",
+        entryExport: "Reports::Nightly.run",
+      }),
+    );
+  });
 });
+
+/** Each handler with a deployable unit, as `<unit> <file> <export path>`. */
+function handlerStarts(code: BehavioralSummary[]): string[] {
+  return code
+    .flatMap((summary) => {
+      const unit = summary.identity.deployableUnit;
+      return unit === undefined
+        ? []
+        : [
+            `${unit.instanceName} ${summary.location.file} ${(summary.identity.exportPath ?? []).join(".")}`,
+          ];
+    })
+    .sort();
+}
 
 /** The files whose POST the check says a second delivery would repeat. */
 function repeatedCallFiles(code: BehavioralSummary[], root: string): string[] {

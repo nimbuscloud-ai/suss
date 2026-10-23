@@ -988,6 +988,16 @@ const STANDALONE_LAYOUT: SummaryLayout = {
 };
 
 /**
+ * How the Lambda packs mark a handler unit that lists its events instead
+ * of binding to one: a TypeScript handler with no route, and every
+ * Python or Ruby handler.
+ */
+const UNROUTED_HANDLERS: ReadonlySet<string> = new Set([
+  "recognized-not-http",
+  "handler-entry",
+]);
+
+/**
  * For a deployed function the template declares no trigger for, who
  * invokes it. Without this line a reader cannot tell a function invoked
  * from somewhere else apart from one whose trigger suss failed to read.
@@ -996,7 +1006,10 @@ function untriggeredLine(summary: BehavioralSummary, ctx: RenderCtx): string[] {
   const lambda = summary.metadata?.awsLambda as
     | { eventTypes?: string[]; recognition?: string }
     | undefined;
-  if (lambda?.recognition !== "recognized-not-http") {
+  if (
+    lambda === undefined ||
+    !UNROUTED_HANDLERS.has(lambda.recognition ?? "")
+  ) {
     return [];
   }
   if (lambda.eventTypes === undefined || lambda.eventTypes.length > 0) {
