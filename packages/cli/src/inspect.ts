@@ -155,7 +155,7 @@ const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
 };
 
 /** A body shape on one line, such as `{ id, name, email }`. */
-function formatBodyShape(shape: TypeShape | null | undefined): string {
+export function formatBodyShape(shape: TypeShape | null | undefined): string {
   if (shape == null) {
     return "";
   }
