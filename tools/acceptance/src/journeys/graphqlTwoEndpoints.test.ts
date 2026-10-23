@@ -123,4 +123,49 @@ describe("check a frontend whose own hook picks one of two GraphQL services", ()
       });
     });
   });
+
+  describe("with no client bound and unboundClients set to pairWithAll", () => {
+    it("pairs each operation with both schemas and warns that the match is ambiguous", () => {
+      const summaries = extractInto(
+        "graphql-two-endpoints-pair-with-all",
+        "apolloPairWithAll.json",
+      );
+      const check = runSuss(["check", "--dir", summaries, "--json"]);
+      const report = JSON.parse(check.stdout) as {
+        findings: Array<{ kind: string; description: string }>;
+        pairs: Array<{ provider: string; consumer: string }>;
+        unmatched: { unpairable: Array<{ reason: string }> };
+      };
+
+      expect(
+        report.unmatched.unpairable.filter(
+          (u) => u.reason === "unknownService",
+        ),
+      ).toEqual([]);
+      expect(
+        report.pairs
+          .filter((p) => p.consumer.endsWith("EventListing.EventListing"))
+          .map((p) => p.provider)
+          .sort(),
+      ).toEqual([
+        "schema/appsync.graphql:Query.events::Query.events",
+        "schema/legacy.graphql:Query.events::Query.events",
+      ]);
+      expect(
+        report.findings.some(
+          (f) =>
+            f.kind === "ambiguousProvider" &&
+            f.description.includes('"EventListing.EventListing"'),
+        ),
+      ).toBe(true);
+      // The cost of pairing with both: the older schema has no venue.
+      expect(
+        report.findings.some(
+          (f) =>
+            f.kind === "boundaryFieldUnknown" &&
+            f.description.includes("Event.venue"),
+        ),
+      ).toBe(true);
+    });
+  });
 });

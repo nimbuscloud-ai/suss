@@ -69,6 +69,9 @@ export function stampGraphqlClientRefs(
     clientsBuilt: constructions.filter(
       (construction) => construction.spec.linkProperty !== undefined,
     ).length,
+    pairWithAll: packs.some(
+      (pack) => pack.graphqlUnboundClients === "pairWithAll",
+    ),
   };
   // Walked once, and only when an operation ships a dangling spread.
   let registry: FragmentRegistryStatus | null = null;
@@ -115,9 +118,22 @@ interface Grounding {
   soleClient: (GraphqlClientRef & { workspace?: string }) | null;
   /** How many clients a call can pass the project builds. */
   clientsBuilt: number;
+  /** The project's `unboundClients` setting asks for every match. */
+  pairWithAll: boolean;
 }
 
 type ClientDecision = Pick<GraphqlMetadata, "client" | "unresolvedClient">;
+type UnresolvedClient = NonNullable<GraphqlMetadata["unresolvedClient"]>;
+
+/** The reason, marked so the checker pairs the operation when the project asked it to. */
+function underUnboundSetting(
+  unresolved: UnresolvedClient,
+  grounding: Grounding,
+): UnresolvedClient {
+  return grounding.pairWithAll
+    ? { ...unresolved, pairWithAll: true }
+    : unresolved;
+}
 
 /**
  * Which client an operation goes through, and the service it talks to
@@ -139,8 +155,18 @@ function clientFor(
     existing.client?.chosenAtCall === true ? existing.client : null;
   if (chosen === null) {
     const open = existing.unresolvedClient !== undefined;
-    if (open && !oneEndpointToChoose(grounding)) {
-      return null;
+    if (
+      existing.unresolvedClient !== undefined &&
+      !oneEndpointToChoose(grounding)
+    ) {
+      return grounding.pairWithAll
+        ? {
+            unresolvedClient: {
+              ...existing.unresolvedClient,
+              pairWithAll: true,
+            },
+          }
+        : null;
     }
     const client =
       scoped !== null
@@ -166,7 +192,10 @@ function clientFor(
   if (isTheAppsClient(passed, grounding)) {
     return { client: passed };
   }
-  return { client: passed, unresolvedClient: unboundClient(passed) };
+  return {
+    client: passed,
+    unresolvedClient: underUnboundSetting(unboundClient(passed), grounding),
+  };
 }
 
 function isTheAppsClient(

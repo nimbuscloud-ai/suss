@@ -452,6 +452,52 @@ describe("pairGraphqlOperations", () => {
     ]);
   });
 
+  it("pairs an open client with every schema and warns when the project asked for every match", () => {
+    const summaries = [
+      schemaDocument(
+        "schema/legacy.graphql",
+        "type Listing { id: ID! } type Query { listing: Listing }",
+      ),
+      resolver("Query", "listing", "graphql", {
+        document: "schema/legacy.graphql",
+      }),
+      schemaDocument(
+        "schema/appsync.graphql",
+        "type Listing { id: ID! venue: String } type Query { listing: Listing }",
+      ),
+      resolver("Query", "listing", "graphql", {
+        document: "schema/appsync.graphql",
+      }),
+    ];
+    const op = withGraphql(
+      operation(
+        "useListing",
+        "Listing",
+        "query",
+        "query Listing { listing { id } }",
+      ),
+      {
+        unresolvedClient: {
+          reference: "nextGen ? appSyncClient : railsClient",
+          reason: "the client it passes can be any of 2 clients",
+          pairWithAll: true,
+        },
+      },
+    );
+    const result = pairGraphqlOperations([...summaries, op]);
+    expect(result.unchecked).toEqual([]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([
+      summaries[1],
+      summaries[3],
+    ]);
+    expect(result.findings.map((finding) => finding.kind)).toEqual([
+      "ambiguousProvider",
+    ]);
+    expect(result.findings[0]?.description).toContain(
+      "(schema/appsync.graphql, schema/legacy.graphql)",
+    );
+  });
+
   it("stays quiet when the matching resolvers share one workspace", () => {
     const first = {
       ...resolver("Query", "pet", "apollo"),

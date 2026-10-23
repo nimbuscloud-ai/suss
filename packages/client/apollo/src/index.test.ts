@@ -6,7 +6,11 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { readGraphqlMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
-import { type ApolloClientPackOptions, apolloClientPack } from "./index.js";
+import {
+  type ApolloClientPackOptions,
+  apolloClientPack,
+  optionsSchema,
+} from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -124,6 +128,22 @@ describe("apolloClientPack — client bindings", () => {
     expect(pack.graphqlOperationScopes).toEqual([
       { files: ["src/admin/**"], workspace: "nextgen" },
     ]);
+  });
+
+  it("passes the unbound-clients setting through, and leaves it off by default", () => {
+    expect(
+      apolloClientPack({ unboundClients: "pairWithAll" }).graphqlUnboundClients,
+    ).toBe("pairWithAll");
+    expect(
+      apolloClientPack({ unboundClients: "unchecked" }).graphqlUnboundClients,
+    ).toBe("unchecked");
+    expect(apolloClientPack().graphqlUnboundClients).toBeUndefined();
+  });
+
+  it("rejects an unbound-clients value it does not know", () => {
+    expect(
+      optionsSchema.safeParse({ unboundClients: "pairWithEvery" }).success,
+    ).toBe(false);
   });
 });
 

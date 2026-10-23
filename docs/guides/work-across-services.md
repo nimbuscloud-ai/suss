@@ -165,7 +165,7 @@ A frontend that sends some operations to one GraphQL service and some to another
 }
 ```
 
-Each operation then pairs with its own service's schema. An operation whose client suss cannot tie to one service is listed as not checked, with the reason, instead of being compared with a schema it may never reach. The [Apollo pack](https://github.com/nimbuscloud-ai/suss/blob/main/packages/client/apollo/README.md#which-service-an-operation-goes-to) shows the spellings it reads.
+Each operation then pairs with its own service's schema. An operation whose client suss cannot tie to one service is listed as not checked, with the reason, instead of being compared with a schema it may never reach. Set `"unboundClients": "pairWithAll"` in the same options to compare such an operation with every schema that has its fields instead, with a warning that says the match is ambiguous. The [Apollo pack](https://github.com/nimbuscloud-ai/suss/blob/main/packages/client/apollo/README.md#which-service-an-operation-goes-to) shows the spellings it reads.
 
 ## A spec instead of the other side's code
 

@@ -1462,6 +1462,14 @@ export interface PatternPack {
    */
   graphqlOperationScopes?: Array<{ files: string[]; workspace: string }>;
   /**
+   * What happens to an operation whose client no binding or scope ties
+   * to a service, in a project with clients for more than one endpoint.
+   * `unchecked`, the default, lists it as not checked. `pairWithAll`
+   * pairs it with every resolver that serves its fields, and warns that
+   * the match is ambiguous.
+   */
+  graphqlUnboundClients?: "unchecked" | "pairWithAll";
+  /**
    * Per-access recognizers, the counterpart to `invocationRecognizers` for
    * values read without a call, such as `process.env.X`. A recognizer is
    * handed a property access, a call or a tagged template, and checks the

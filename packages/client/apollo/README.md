@@ -37,7 +37,7 @@ When a project hook passes its own document parameter to one of Apollo's hooks, 
 
 ## Options
 
-Both options tell the pack which service an operation talks to, for a frontend that uses more than one. Pass them to `apolloClientPack()`, or as JSON with `-f apollo-client=packs/apollo.json`.
+These options tell the pack which service an operation talks to, for a frontend that uses more than one. Pass them to `apolloClientPack()`, or as JSON with `-f apollo-client=packs/apollo.json`. In `suss.json`, the extract entry's `packs` list points at the same file, as `"apollo-client=packs/apollo.json"`.
 
 ```json
 {
@@ -47,12 +47,16 @@ Both options tell the pack which service an operation talks to, for a frontend t
   },
   "operationScopes": [
     { "files": ["src/billing/**"], "workspace": "payments-api" }
-  ]
+  ],
+  "unboundClients": "unchecked"
 }
 ```
 
 - `clients`: which service each client talks to, keyed by the endpoint the client is constructed with. The key is the `uri` string itself, or the expression as written when the value is computed, such as an env read like `import.meta.env.VITE_GRAPHQL_URL`. A client built with a `link` instead of a `uri` takes the endpoint of the `HttpLink` or `createHttpLink` that `link` is set to. The value is the provider workspace name, or the path of a schema file a `contract` command reads, measured from the folder `suss.json` is in. One line per client keeps apart two GraphQL services that share root field names.
 - `operationScopes`: which service the operations in a set of files talk to, for an operation whose call does not pass a client of its own. An operation whose file matches gets the entry's workspace, and the first matching entry wins.
+- `unboundClients`: what to do with an operation whose client neither `clients` nor `operationScopes` ties to a service, in a project that builds clients for more than one endpoint. This covers a client nobody bound, and a client the call picks at run time, such as one behind a feature flag.
+  - `"unchecked"`, the default, lists the operation as not checked, with the reason. You get no finding that comes from comparing it with the wrong schema. The cost is that nothing is checked for that operation until you add a `clients` entry.
+  - `"pairWithAll"` pairs the operation with every schema that serves its root fields, and adds an `ambiguousProvider` warning that lists the schemas. Every operation gets checked. The cost is that a field only one service declares is reported as missing from the other, so expect errors that are not bugs. This is how suss behaved before it read the client a call passes.
 
 ## Which service an operation goes to
 

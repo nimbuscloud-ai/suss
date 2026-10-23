@@ -128,7 +128,9 @@ function unknownServiceReason(
   services: ReadonlySet<string>,
 ): string | null {
   if (meta?.unresolvedClient !== undefined) {
-    return meta.unresolvedClient.reason;
+    return meta.unresolvedClient.pairWithAll === true
+      ? null
+      : meta.unresolvedClient.reason;
   }
   const bound = meta?.client?.workspace;
   if (bound === undefined || services.has(bound)) {
@@ -187,7 +189,7 @@ function pairOneOperation(
 
     // Two GraphQL services in one repo can declare the same root field,
     // and the key has no endpoint identity to tell them apart (#224).
-    const workspaces = providerWorkspaces(matchingResolvers);
+    const workspaces = providerWorkspaces(operation, matchingResolvers);
     if (workspaces.length > 1) {
       findings.push(
         ambiguousProviderFinding(
@@ -650,10 +652,24 @@ function scopeToBoundService(
  * The distinct workspaces the matched resolvers came from. A resolver
  * without a workspace is a schema document or a single-project run, and
  * REST pairing does not count either one as a rival service, so this
- * does not either.
+ * does not either. The exception is an operation the project asked to
+ * pair with every match although its client goes to one of several
+ * endpoints: there each schema file counts as a service of its own.
  */
-function providerWorkspaces(resolvers: BehavioralSummary[]): string[] {
-  return servicesOf(resolvers);
+function providerWorkspaces(
+  operation: BehavioralSummary,
+  resolvers: BehavioralSummary[],
+): string[] {
+  if (readGraphqlMetadata(operation)?.unresolvedClient?.pairWithAll !== true) {
+    return servicesOf(resolvers);
+  }
+  const named = resolvers.flatMap((resolver) => {
+    const name =
+      resolver.location.workspace ??
+      readSourceDocumentMetadata(resolver)?.label;
+    return name === undefined ? [] : [name];
+  });
+  return [...new Set(named)].sort();
 }
 
 function ambiguousProviderFinding(

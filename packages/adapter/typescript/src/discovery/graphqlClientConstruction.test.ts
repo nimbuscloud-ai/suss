@@ -675,4 +675,49 @@ describe("stampGraphqlClientRefs, a client the call chose", () => {
     expect(meta?.unresolvedClient).toBeUndefined();
     expect(meta?.client).toBeUndefined();
   });
+
+  describe("with unboundClients set to pairWithAll", () => {
+    const pairWithAll: PatternPack = {
+      ...passablePack,
+      graphqlUnboundClients: "pairWithAll",
+    };
+
+    it("marks an unbound client it passes to pair with every match", () => {
+      const meta = stamp(
+        TWO_CLIENTS,
+        chosenSummary("https://two.example.com"),
+        pairWithAll,
+      );
+      expect(meta?.unresolvedClient?.pairWithAll).toBe(true);
+      expect(meta?.client?.workspace).toBeUndefined();
+    });
+
+    it("marks a choice the call left open to pair with every match", () => {
+      const meta = stamp(TWO_CLIENTS, openChoiceSummary(), pairWithAll);
+      expect(meta?.unresolvedClient?.pairWithAll).toBe(true);
+      expect(meta?.unresolvedClient?.reference).toBe("useAppClient()");
+    });
+
+    it("leaves a bound client bound", () => {
+      const meta = stamp(
+        TWO_CLIENTS,
+        chosenSummary("https://two.example.com"),
+        {
+          ...pairWithAll,
+          graphqlClientBindings: { "https://two.example.com": "two" },
+        },
+      );
+      expect(meta?.unresolvedClient).toBeUndefined();
+      expect(meta?.client?.workspace).toBe("two");
+    });
+  });
+
+  it("leaves an unbound client unmarked under the default setting", () => {
+    const meta = stamp(TWO_CLIENTS, chosenSummary("https://two.example.com"), {
+      ...passablePack,
+      graphqlUnboundClients: "unchecked",
+    });
+    expect(meta?.unresolvedClient).toBeDefined();
+    expect(meta?.unresolvedClient?.pairWithAll).toBeUndefined();
+  });
 });

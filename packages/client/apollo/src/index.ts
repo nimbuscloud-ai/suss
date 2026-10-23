@@ -63,6 +63,12 @@ export const optionsSchema = z
           .strict(),
       )
       .optional(),
+    /**
+     * What to do with an operation whose client neither `clients` nor
+     * `operationScopes` ties to a service, when the project builds
+     * clients for more than one endpoint. `unchecked` is the default.
+     */
+    unboundClients: z.enum(["unchecked", "pairWithAll"]).optional(),
   })
   .strict();
 
@@ -169,6 +175,9 @@ export function apolloClientPack(
       : {}),
     ...(options.operationScopes !== undefined
       ? { graphqlOperationScopes: options.operationScopes }
+      : {}),
+    ...(options.unboundClients !== undefined
+      ? { graphqlUnboundClients: options.unboundClients }
       : {}),
 
     terminals: [
