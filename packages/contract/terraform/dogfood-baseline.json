@@ -1,7 +1,7 @@
 {
   "name": "@suss/contract-terraform",
   "exports": 7,
-  "internal": 119,
-  "consumers": 44,
+  "internal": 118,
+  "consumers": 46,
   "unfollowedCalls": 0
 }

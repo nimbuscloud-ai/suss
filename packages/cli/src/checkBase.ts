@@ -18,7 +18,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { splitSpec } from "./extract.js";
 import { acquireFolderLock, releaseFolderLock } from "./folderLock.js";
+import { PROJECT_FILE } from "./projectFile.js";
 import {
   commandFor,
   declaredReads,
@@ -27,6 +29,7 @@ import {
 } from "./projectRead.js";
 import { UsageError } from "./usageError.js";
 
+import type { ExtractEntry } from "./projectFile.js";
 import type { DeclaredReads, ReadEntry } from "./projectRead.js";
 
 /** The revision a check compared with, as the user named it and as git resolved it. */
@@ -72,11 +75,39 @@ export async function readBase(root: string, ref: string): Promise<BaseRead> {
   }
 
   const summaryDir = await baseFolder(top, project, revision, reads);
+  const configs = configFilesOf(project, reads);
   return {
     ...revision,
     summaryDir,
-    changedFiles: changedFiles(project, revision.commit),
+    changedFiles: changedFiles(project, revision.commit).filter(
+      (file) => !configs.has(file),
+    ),
   };
+}
+
+/**
+ * `suss.json` and the pack config files it lists, relative to the
+ * project. Both sides are read with the working tree's copies, so a
+ * change to one is not a change to the code.
+ */
+function configFilesOf(project: string, reads: DeclaredReads): Set<string> {
+  const packConfigs = reads.reads.flatMap((entry) =>
+    entry.kind === "contract" ? [] : packConfigPaths(project, entry),
+  );
+  return new Set(
+    [PROJECT_FILE, ...packConfigs].map((file) =>
+      file.split(path.sep).join("/"),
+    ),
+  );
+}
+
+function packConfigPaths(project: string, entry: ExtractEntry): string[] {
+  return entry.packs.flatMap((spec) => {
+    const { configPath } = splitSpec(spec);
+    return configPath === undefined
+      ? []
+      : [path.relative(project, path.resolve(project, configPath))];
+  });
 }
 
 async function baseFolder(
@@ -85,7 +116,14 @@ async function baseFolder(
   revision: BaseRevision,
   reads: DeclaredReads,
 ): Promise<string> {
-  const key = JSON.stringify([revision.commit, project, reads.reads]);
+  // The base is read with the working tree's suss.json, and an edit to
+  // its hosts or modules changes what the reads write.
+  const key = JSON.stringify([
+    revision.commit,
+    project,
+    reads.reads,
+    projectFileText(project),
+  ]);
   const running = readsInFlight.get(key);
   if (running !== undefined) {
     return await running;
@@ -169,12 +207,19 @@ async function readIntoTree(
   const present = reads.reads.filter((entry) =>
     fs.existsSync(path.resolve(baseRoot, inputOf(entry))),
   );
+  useProjectFileFrom(project, baseRoot);
   process.stderr.write(
     `Reading ${revision.ref} at ${revision.commit.slice(0, 7)} into a temporary folder, with the same reads:\n${present.map((entry) => `  ${commandFor(entry)}`).join("\n")}\n`,
   );
   for (const entry of reads.reads.filter((one) => !present.includes(one))) {
     process.stderr.write(
       `  skipped, since ${inputOf(entry)} did not exist at ${revision.ref}: ${commandFor(entry)}\n`,
+    );
+  }
+
+  if (present.length === 0) {
+    process.stderr.write(
+      `Nothing these reads cover existed at ${revision.ref}, so everything in the working tree counts as new.\n`,
     );
   }
 
@@ -201,6 +246,25 @@ async function readIntoTree(
     );
   }
   return summaryDir;
+}
+
+function projectFileText(project: string): string | null {
+  const own = path.join(project, PROJECT_FILE);
+  return fs.existsSync(own) ? fs.readFileSync(own, "utf8") : null;
+}
+
+/**
+ * Readers look up `suss.json` beside what they read, for the hosts and
+ * modules it lists and the root they measure paths from. The base gets
+ * the working tree's copy, which is often not committed yet, so a read
+ * of either side finds the same file.
+ */
+function useProjectFileFrom(project: string, baseRoot: string): void {
+  const own = path.join(project, PROJECT_FILE);
+  if (!fs.existsSync(own) || !fs.existsSync(baseRoot)) {
+    return;
+  }
+  fs.copyFileSync(own, path.join(baseRoot, PROJECT_FILE));
 }
 
 /** The folder an extract reads, or the file a contract reads, relative to the project root. */
@@ -269,13 +333,19 @@ function temporaryFolder(): string {
 let cleanupRegistered = false;
 
 function gitTop(project: string): string {
-  const top = git(project, ["rev-parse", "--show-toplevel"]);
+  const top = repositoryOf(project);
   if (top === null) {
     throw new UsageError(
       `--base reads the base revision out of git, and ${project} is not inside a git repository. Compare two folders of summaries with --since instead.`,
     );
   }
-  return fs.realpathSync(top.trim());
+  return top;
+}
+
+/** The top folder of the git repository `folder` is in, or null outside one. */
+export function repositoryOf(folder: string): string | null {
+  const top = git(folder, ["rev-parse", "--show-toplevel"]);
+  return top === null ? null : fs.realpathSync(top.trim());
 }
 
 function resolveBase(project: string, ref: string): BaseRevision {

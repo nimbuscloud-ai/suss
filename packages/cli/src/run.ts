@@ -12,6 +12,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -27,7 +28,7 @@ import {
 } from "./cacheDirFlag.js";
 import { CHANGED_FILES_NEED_SINCE, check, checkDir } from "./check.js";
 import { checkAt } from "./checkAt.js";
-import { readBase } from "./checkBase.js";
+import { readBase, repositoryOf } from "./checkBase.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
 import { extract, languageOfRun } from "./extract.js";
@@ -242,6 +243,8 @@ Options (check):
                    branched from into a temporary folder, without touching
                    the checkout, and reports what --since and
                    --changed-files would for the files changed since it.
+                   With --dir pointing at a project, reads that project
+                   and finds the ref in its git repository.
   --all            Write out every finding and every list. Without it a run
                    prints the errors in full and counts the rest, because a
                    first run over a repository reports far more at warning
@@ -596,10 +599,13 @@ const EXAMPLE_PACK_FLAGS: Record<Language, string> = {
  * temporary directory, print the commands that ran, and pass the
  * directory to the command.
  */
-async function withProjectRead(run: (dir: string) => number): Promise<number> {
+async function withProjectRead(
+  run: (dir: string) => number,
+  root = process.cwd(),
+): Promise<number> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
   try {
-    const report = await readProjectSaying(process.cwd(), dir, true);
+    const report = await readProjectSaying(root, dir, true);
     if (report === null || report.ran.length === 0) {
       return 1;
     }
@@ -1169,7 +1175,8 @@ export async function runCheck(args: string[]): Promise<number> {
   }
 
   refuseWithBase(values, positionals);
-  const earlier = await earlierRunFor(values);
+  const project = await projectForBase(values);
+  const earlier = await earlierRunFor(values, project?.root ?? process.cwd());
 
   const checkFolder = (dir: string): number => {
     if (values.at !== undefined) {
@@ -1190,6 +1197,10 @@ export async function runCheck(args: string[]): Promise<number> {
     throw new UsageError(
       `--dir pairs every summary file in a folder, and files given after it would go unread. Put ${positionals.join(" ")} in the folder, or drop --dir to compare two files.`,
     );
+  }
+
+  if (project?.readsHead === true) {
+    return await withProjectRead(checkFolder, project.root);
   }
 
   if (values.dir !== undefined) {
@@ -1282,17 +1293,61 @@ function refuseWithBase(values: EarlierRunFlags, positionals: string[]): void {
 }
 
 /**
+ * The project `--base` reads at both revisions. `--dir` gives it when the
+ * folder is a project rather than a folder of summaries, and then the
+ * working tree is read from it too. Otherwise it is the working
+ * directory, and a summaries folder from another repository is refused,
+ * since its base would be a commit of a different history.
+ */
+async function projectForBase(
+  values: EarlierRunFlags & { dir?: string },
+): Promise<{ root: string; readsHead: boolean } | undefined> {
+  if (values.base === undefined) {
+    return undefined;
+  }
+
+  const here = process.cwd();
+  if (values.dir === undefined) {
+    return { root: here, readsHead: false };
+  }
+
+  const dir = path.resolve(values.dir);
+  if (await isProjectFolder(dir)) {
+    return { root: dir, readsHead: true };
+  }
+
+  const summariesIn = repositoryOf(dir);
+  if (summariesIn !== null && summariesIn !== repositoryOf(here)) {
+    throw new UsageError(
+      `${values.dir} is a folder of summaries in the git repository at ${summariesIn}, and --base reads ${values.base} from the repository the command runs in. Run it from that repository, or pass the project folder itself: suss check --dir <project> --base ${values.base}`,
+    );
+  }
+  return { root: here, readsHead: false };
+}
+
+/** A folder a pack matches, as opposed to a folder of summaries. */
+async function isProjectFolder(dir: string): Promise<boolean> {
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    return false;
+  }
+  return (await declaredReads(dir)).reads.length > 0;
+}
+
+/**
  * The earlier run to compare with: a folder from `--since`, or the base
  * revision `--base` reads out of git, with the files changed since it.
  */
-async function earlierRunFor(values: EarlierRunFlags): Promise<{
+async function earlierRunFor(
+  values: EarlierRunFlags,
+  project: string,
+): Promise<{
   since?: string;
   changedFiles?: string[];
   base?: BaseRevision;
 }> {
   if (values.base !== undefined) {
     const { summaryDir, changedFiles, ...base } = await readBase(
-      process.cwd(),
+      project,
       values.base,
     );
     return { since: summaryDir, changedFiles, base };

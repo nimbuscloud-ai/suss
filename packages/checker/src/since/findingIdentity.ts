@@ -32,13 +32,56 @@ export function normalizedDescription(finding: Finding): string {
 
 /** A string that is equal for the same finding in two runs. */
 export function findingIdentity(finding: Finding): string {
+  const placed = withoutPlacement(finding.boundary);
   return JSON.stringify([
     finding.kind,
-    boundaryKeyOf(finding.boundary),
-    finding.provider.summary,
-    finding.provider.transitionId ?? null,
-    finding.consumer.summary,
-    finding.consumer.transitionId ?? null,
-    normalizedDescription(finding),
+    placed(boundaryKeyOf(finding.boundary)),
+    placed(finding.provider.summary),
+    placedOrNull(placed, finding.provider.transitionId),
+    placed(finding.consumer.summary),
+    placedOrNull(placed, finding.consumer.transitionId),
+    placed(normalizedDescription(finding)),
   ]);
+}
+
+/**
+ * A deployed resource is named by its logical id after the stacks that
+ * nest it, as in `ApiStack/PingFunction`, and its template's summary by
+ * the template file. Moving the resource into a nested stack changes
+ * both and leaves what the finding says about the resource alone, so
+ * the identity spells the resource by its logical id, with no template
+ * file.
+ */
+function withoutPlacement(binding: BoundaryBinding): (text: string) => string {
+  const instance = deployedInstanceOf(binding);
+  if (instance === null) {
+    return (text) => text;
+  }
+  const logicalId = instance.slice(instance.lastIndexOf("/") + 1);
+  const recognition = binding.recognition;
+  const templateRef = `${recognition}:`;
+  return (text) => {
+    const named = text.replaceAll(instance, logicalId);
+    if (!named.startsWith(templateRef)) {
+      return named;
+    }
+    const unit = named.indexOf("::", templateRef.length);
+    return unit === -1 ? named : `${recognition}:${named.slice(unit)}`;
+  };
+}
+
+function placedOrNull(
+  placed: (text: string) => string,
+  text: string | undefined,
+): string | null {
+  return text === undefined ? null : placed(text);
+}
+
+function deployedInstanceOf(binding: BoundaryBinding): string | null {
+  const semantics: object = binding.semantics;
+  if (!("instanceName" in semantics)) {
+    return null;
+  }
+  const instance = semantics.instanceName;
+  return typeof instance === "string" && instance !== "" ? instance : null;
 }

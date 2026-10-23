@@ -2,6 +2,6 @@
   "name": "@suss/contract-graphql",
   "exports": 8,
   "internal": 27,
-  "consumers": 12,
+  "consumers": 17,
   "unfollowedCalls": 0
 }
