@@ -109,6 +109,7 @@ export function discoverRegistrationCalls(
   }
 
   // Step 3: Walk all call expressions and match registration chains
+  const anonymousLabels = new Map<string, number>();
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
@@ -244,6 +245,7 @@ export function discoverRegistrationCalls(
                 methodName,
                 routeInfo,
                 resolution,
+                anonymousLabels,
               );
         results.push({
           func: handler,
@@ -389,9 +391,10 @@ function routeChainOf(
   methodName: string,
   routeInfo: { method: string; path: string } | null,
   resolution: ResolutionStore | undefined,
+  /** The unnamed wrappers each label and route has had so far in the file. */
+  anonymousLabels: Map<string, number>,
 ): RouteChain {
   const chain: RouteChain = { units: [], references: [], unfollowed: [] };
-  const anonymousLabels = new Map<string, number>();
   for (const arg of listed) {
     const elements = Node.isArrayLiteralExpression(arg)
       ? arg.getElements()
@@ -407,14 +410,12 @@ function routeChainOf(
       }
       const ownName = functionNameOrAnon(target);
       const named = ownName !== "<anon>";
-      const label = factoryNameOf(element) ?? methodName;
+      const label = `${factoryNameOf(element) ?? methodName}@${routeWhere(routeInfo)}`;
       const seen = anonymousLabels.get(label) ?? 0;
       if (!named) {
         anonymousLabels.set(label, seen + 1);
       }
-      const name = named
-        ? ownName
-        : routeWrapperLabel(label, routeInfo, element, seen);
+      const name = named ? ownName : numberedLabel(label, seen);
       chain.units.push({
         func: target,
         kind: pattern.kind,
@@ -431,17 +432,16 @@ function routeChainOf(
   return chain;
 }
 
-function routeWrapperLabel(
-  label: string,
+/** The route an unnamed wrapper is named after, or `?` when the call does not give one. */
+function routeWhere(
   routeInfo: { method: string; path: string } | null,
-  element: Node,
-  seen: number,
 ): string {
-  const where =
-    routeInfo === null
-      ? `L${element.getStartLineNumber()}`
-      : `${routeInfo.method} ${routeInfo.path}`;
-  return seen === 0 ? `${label}@${where}` : `${label}@${where}#${seen + 1}`;
+  return routeInfo === null ? "?" : `${routeInfo.method} ${routeInfo.path}`;
+}
+
+/** The first unnamed wrapper with a label keeps it, and later ones in the file take a number. */
+function numberedLabel(label: string, seen: number): string {
+  return seen === 0 ? label : `${label}#${seen + 1}`;
 }
 
 function withMountPrefix(

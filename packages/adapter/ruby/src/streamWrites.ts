@@ -9,7 +9,12 @@
  */
 
 import { ioBinding } from "@suss/behavioral-ir";
-import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
+import {
+  callSiteKey,
+  numberRepeatedCallSites,
+  SKIP_CHILDREN,
+  walkDescendants,
+} from "@suss/extractor";
 
 import {
   children,
@@ -50,6 +55,12 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
 
 /** The write effects for every print under `root`, in source order. */
 export function streamWriteEffects(root: RbNode): EffectAt[] {
+  return numberRepeatedCallSites(
+    writesUnder(root).map((write) => [write]),
+  ).flat();
+}
+
+function writesUnder(root: RbNode): EffectAt[] {
   const found: EffectAt[] = [];
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
@@ -97,14 +108,14 @@ export function writeEffect(
 ): Effect {
   const receiver = field(call, "receiver");
   const method = field(call, "method")?.text ?? "";
-  return {
+  const effect: Extract<Effect, { type: "interaction" }> = {
     type: "interaction",
     binding: ioBinding({ recognition: RUBY_STREAM_RECOGNITION, target }),
     callee: receiver === null ? method : `${receiver.text}.${method}`,
-    groupId: `${call.startPosition.row + 1}:${call.startPosition.column + 1}`,
     interaction: { class: "stream-write", ...payloadOf(args) },
     location: rangeOf(call),
   };
+  return { ...effect, groupId: callSiteKey(effect) };
 }
 
 /**
