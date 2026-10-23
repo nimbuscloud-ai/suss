@@ -461,6 +461,16 @@ export const FIXTURE_INPUTS = [
       }),
     ),
   ]),
+  fixture("ruby-graphql-resolvers", [
+    ...lang("ruby"),
+    ...dir("fixtures/ruby-graphql-resolvers"),
+    ...packs(
+      withConfig("graphql-ruby", {
+        root: inBase("fixtures/ruby-graphql-resolvers/app/graphql"),
+      }),
+      withConfig("activerecord", POSTGRES),
+    ),
+  ]),
   fixture("ruby-job", [
     ...lang("ruby"),
     ...dir("fixtures/ruby-job"),

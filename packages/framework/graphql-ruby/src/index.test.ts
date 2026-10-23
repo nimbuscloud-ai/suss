@@ -25,9 +25,15 @@ describe("graphqlRubyFramework", () => {
         argumentCallName: "argument",
         wiringKeywords: ["mutation", "resolver"],
         resolverMethodName: "resolve",
+        resolverMethodKeyword: "resolver_method",
+        resolverHooks: {
+          methods: ["ready?", "authorized?"],
+          answerIsListHead: true,
+        },
         ancestryRootClassNames: [
           "GraphQL::Schema::Object",
           "GraphQL::Schema::Mutation",
+          "GraphQL::Schema::RelayClassicMutation",
           "GraphQL::Schema::Resolver",
           "GraphQL::Schema::Interface",
           "GraphQL::Schema::InputObject",

@@ -481,6 +481,8 @@ export function returnPathBranches(
   facts?: Database,
   keepsArms?: KeepsArms<RbNode>,
   raises: readonly EndingCall[] = [],
+  endingOfReturn: ReturnEnding = (_statement, location) =>
+    returnTerminal(location),
 ): RawBranch[] | null {
   const body = field(method, "body");
   if (body === null) {
@@ -532,13 +534,13 @@ export function returnPathBranches(
   for (const statement of returns) {
     push(
       enumerated.byTerminal.get(statement) ?? [],
-      returnTerminal(rangeOf(statement)),
+      endingOfReturn(statement, rangeOf(statement)),
     );
   }
   for (const ending of [...exits, ...raises]) {
     push(enumerated.byTerminal.get(ending.call) ?? [], ending.terminal);
   }
-  push(enumerated.fallthrough, returnTerminal(rangeOf(method)));
+  push(enumerated.fallthrough, endingOfReturn(null, rangeOf(method)));
   return branches.length === 0 ? null : branches;
 }
 
@@ -548,7 +550,17 @@ export interface EndingCall {
   terminal: RawTerminal;
 }
 
-function returnTerminal(location: Range): RawTerminal {
+/**
+ * The terminal for a path that returns at `statement`, or runs off the
+ * end of the body when it is null. A caller whose library reads the
+ * value a method returns decides what each path ends on.
+ */
+export type ReturnEnding = (
+  statement: RbNode | null,
+  location: Range,
+) => RawTerminal;
+
+export function returnTerminal(location: Range): RawTerminal {
   return {
     kind: "return",
     statusCode: null,

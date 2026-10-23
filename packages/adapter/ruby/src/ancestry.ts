@@ -81,6 +81,12 @@ export interface AncestorLookup {
    * file is visible without a file of its own.
    */
   localDefinition?(qualifiedName: string): ReachedBody[] | null;
+  /**
+   * The blocks any file in the run defines under a name, consulted after
+   * `localDefinition` and before the path convention. The path convention
+   * then only finds a class the run did not read.
+   */
+  definedInRun?(qualifiedName: string): Promise<ReachedBody[] | null>;
 }
 
 /**
@@ -124,7 +130,16 @@ async function definedInFileOf(
   if (filePath === null) {
     return null;
   }
-  const fileRoot = await lookup.parsedFile(filePath);
+  return blocksDefinedIn(filePath, qualifiedName, lookup.parsedFile);
+}
+
+/** The blocks one file defines under `qualifiedName`, or null when it defines none. */
+export async function blocksDefinedIn(
+  filePath: string,
+  qualifiedName: string,
+  parsedFile: AncestorLookup["parsedFile"],
+): Promise<ReachedBody[] | null> {
+  const fileRoot = await parsedFile(filePath);
   if (fileRoot === null) {
     return null;
   }
@@ -259,14 +274,19 @@ function unreadConstant(candidates: readonly string[]): AncestorEntry[] {
   return bare === undefined ? [] : [{ type: "unfollowed", name: bare }];
 }
 
-function definitionOf(
+async function definitionOf(
   qualifiedName: string,
   lookup: AncestorLookup,
 ): Promise<ReachedBody[] | null> {
   const local = lookup.localDefinition?.(qualifiedName);
-  return local !== undefined && local !== null
-    ? Promise.resolve(local)
-    : reachDefinition(qualifiedName, lookup);
+  if (local !== undefined && local !== null) {
+    return local;
+  }
+  const inRun = await lookup.definedInRun?.(qualifiedName);
+  if (inRun !== undefined && inRun !== null) {
+    return inRun;
+  }
+  return reachDefinition(qualifiedName, lookup);
 }
 
 /**

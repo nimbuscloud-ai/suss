@@ -36,10 +36,16 @@ import {
   spanOf,
   symbolValue,
 } from "./ast.js";
+import {
+  classesDeclaredInRun,
+  classSettledOn,
+  declaredName,
+} from "./baseClass.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
 import { envReadEffects } from "./envReads.js";
 import { ExceptionReader } from "./exceptionClasses.js";
+import { nodeId, readKey } from "./facts/values.js";
 import {
   controllerFilterChain,
   filterCoversAction,
@@ -57,6 +63,12 @@ import {
 import { raisedStatusBranches } from "./raisedStatuses.js";
 import { escapingRaises, raisedClassRef } from "./raises.js";
 import {
+  hookReference,
+  hooksRun,
+  hookUnit,
+  unsettledHookReading,
+} from "./resolverHooks.js";
+import {
   boundStatusArguments,
   helperResponse,
   responseBranches,
@@ -71,6 +83,7 @@ import { streamWriteEffects } from "./streamWrites.js";
 import { testCaseUnits, testPatternsIn } from "./testCases.js";
 import { testClassPatternsIn, testClassUnits } from "./testClasses.js";
 import { typeShapeFromNode } from "./typeShape.js";
+import { stringValueOf } from "./values/evaluator.js";
 
 import type {
   DispatchTable,
@@ -112,6 +125,7 @@ import type {
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
 import type { HandlerClasses, RaisesRead } from "./raisedStatuses.js";
+import type { HookDefinition } from "./resolverHooks.js";
 import type { RespondingHelper } from "./responseStatus.js";
 import type { ClassInfo } from "./scope.js";
 import type { SharedGroupIndex } from "./testSharedGroups.js";
@@ -202,24 +216,28 @@ interface FieldReadContext {
   facts: Database | undefined;
   /** The facts and body options again, in the form an ancestry lookup takes. */
   read: BodyReading;
+  /** The absolute path of the file being read, which the facts key its expressions on. */
+  file: string;
 }
 
 function fieldReadContext(
   pattern: GraphqlObjectFields,
   cache: FileCache,
   fileBlocks: readonly ReachedBody[],
-  bodyRead: BodyReadOptions,
-  facts?: Database,
+  options: DiscoveryOptions,
 ): FieldReadContext {
+  const facts = options.facts;
+  const parsedFile = (absPath: string) => cache.get(absPath);
   return {
     pattern,
     cache,
-    bodyRead,
+    bodyRead: options,
     facts,
+    file: options.absoluteFile ?? options.filePath,
     read: {
       facts,
-      bodyBlocks: bodyRead.bodyBlocks,
-      dynamicNames: bodyRead.dynamicNames,
+      bodyBlocks: options.bodyBlocks,
+      dynamicNames: options.dynamicNames,
     },
     lookup: {
       root: pattern.root,
@@ -228,8 +246,11 @@ function fieldReadContext(
       acronyms: pattern.acronyms ?? [],
       ancestryRootClassNames: pattern.ancestryRootClassNames,
       constantFiles: cache.constantFiles,
-      parsedFile: (absPath) => cache.get(absPath),
+      parsedFile,
       localDefinition: (name) => sameFileBlocks(name, fileBlocks),
+      ...(facts === undefined
+        ? {}
+        : { definedInRun: classesDeclaredInRun(facts, parsedFile) }),
     },
   };
 }
@@ -395,13 +416,7 @@ async function graphqlObjectFieldUnits(
   ) {
     return [];
   }
-  const ctx = fieldReadContext(
-    pattern,
-    options.cache,
-    fileBlocks,
-    options,
-    options.facts,
-  );
+  const ctx = fieldReadContext(pattern, options.cache, fileBlocks, options);
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
   if (
     !reachesConfiguredBase(ancestry, info.qualifiedName, pattern.baseClassNames)
@@ -427,13 +442,55 @@ async function graphqlObjectFieldUnits(
       declsByName.set(decl.fieldName, decl);
     }
   }
-  return [...declsByName.values()].map((decl) => {
-    const raw = buildFieldUnit(pack, typeName, decl, options.filePath);
+  const decls = [...declsByName.values()];
+  const fields = decls.map((decl) => {
+    const raw = buildFieldUnit(pack, typeName, decl, options);
     if (decl.body.reachSeed !== undefined) {
       options.onReachSeed?.(raw, decl.body.reachSeed);
     }
     return raw;
   });
+  return [...fields, ...hookUnitsOf(decls, pattern, options)];
+}
+
+/** One unit for each hook the fields run, however many fields share it, with the walk started from each. */
+function hookUnitsOf(
+  decls: readonly FieldDeclaration[],
+  pattern: GraphqlObjectFields,
+  options: DiscoveryOptions,
+): RawCodeStructure[] {
+  const hooks = pattern.resolverHooks;
+  if (hooks === undefined) {
+    return [];
+  }
+  const units = new Map<string, RawCodeStructure>();
+  for (const hook of decls.flatMap((decl) => decl.hooks)) {
+    const key = nodeId(hook.block.file, hook.method);
+    if (units.has(key)) {
+      continue;
+    }
+    const raw = hookUnit(hook, {
+      hooks,
+      body: bodyOfMethod(hook.method, hook.block.file, options),
+      displayPath: displayPathIn(options, hook.block.file),
+      facts: options.facts,
+    });
+    units.set(key, raw);
+    options.onReachSeed?.(raw, {
+      file: hook.block.file,
+      node: hook.method,
+      enclosingQualifiedName: hook.block.info.qualifiedName,
+    });
+  }
+  return [...units.values()];
+}
+
+/** The `location.file` a unit written in `file` gets. */
+function displayPathIn(options: DiscoveryOptions, file: string): string {
+  if (file === (options.absoluteFile ?? options.filePath)) {
+    return options.filePath;
+  }
+  return options.displayPathOf?.(file) ?? file;
 }
 
 /**
@@ -588,13 +645,7 @@ async function controllerActionUnits(
         actionName,
         route,
         method,
-        {
-          display:
-            block.file === (options.absoluteFile ?? options.filePath)
-              ? options.filePath
-              : (options.displayPathOf?.(block.file) ?? block.file),
-          absolute: block.file,
-        },
+        { display: displayPathIn(options, block.file), absolute: block.file },
         options,
         around,
         respondingHelper,
@@ -953,6 +1004,8 @@ interface FieldDeclaration {
   node: RbNode;
   contract: FieldContract | null;
   body: BodyReport;
+  /** The hooks the library runs on the wired class before its resolver method, in order. */
+  hooks: readonly HookDefinition[];
 }
 
 /** One branch recording what the resolver does, or none when nothing was read of it. */
@@ -988,6 +1041,7 @@ function branchesFor(body: BodyReport, range: Range): RawBranch[] {
 interface FieldReading {
   contract: FieldContract | null;
   body: BodyReport;
+  hooks?: readonly HookDefinition[];
 }
 
 export interface BodyReport {
@@ -1130,6 +1184,7 @@ async function readFieldCall(
     node: stmt,
     contract: read.contract,
     body: read.body,
+    hooks: read.hooks ?? [],
   };
 }
 
@@ -1144,6 +1199,7 @@ function computedNameDeclaration(
     namedOnTheWire: false,
     node: stmt,
     contract: null,
+    hooks: [],
     body: {
       readings: [
         unreadableReading(
@@ -1185,14 +1241,51 @@ async function readFieldShape(
 
   return {
     contract: literalContract(callArgs, scope, ctx),
-    body: bodyFromLookup(
+    body: methodBehindField(symbol, callArgs, ctx, ancestry, range),
+  };
+}
+
+/**
+ * The type's own method behind a field: the one its resolver-method
+ * keyword gives, or the one with the field's name. The library calls the
+ * keyword's method even when none exists, so that is not a missing body.
+ */
+function methodBehindField(
+  symbol: string,
+  callArgs: CallArgs,
+  ctx: FieldReadContext,
+  ancestry: Ancestry,
+  range: Range,
+): BodyReport {
+  const keyword = ctx.pattern.resolverMethodKeyword;
+  const written = keyword === undefined ? undefined : callArgs.keyword[keyword];
+  if (written === undefined) {
+    return bodyFromLookup(
       methodInAncestry(ancestry, symbol, ctx.read),
       range,
       "This field",
       NO_METHOD_BEHIND_IT,
       ctx.bodyRead,
+    );
+  }
+
+  const name = stringValueOf(written, ctx.facts);
+  if (name === null) {
+    return methodNotSettled(
+      `This field is resolved by the method ${written.text}, which is worked out at run time, so nothing about what it does was read here`,
+      range,
+    );
+  }
+  return bodyFromLookup(
+    methodInAncestry(ancestry, name, ctx.read),
+    range,
+    "This field",
+    methodNotSettled(
+      `This field is resolved by ${name}, which nothing in its type's ancestry defines, so nothing about what it does was read here`,
+      range,
     ),
-  };
+    ctx.bodyRead,
+  );
 }
 
 /** The shape given by a field's own type argument, or null when it has none or the type cannot be read. */
@@ -1212,7 +1305,7 @@ function literalContract(
   return returnType === null ? null : { returnType, args: [] };
 }
 
-/** A wiring keyword points at the class that resolves the field, so that class's ancestry gives both the declared shape and the resolver method. */
+/** A wiring keyword points at the class that resolves the field, so that class's ancestry gives the declared shape, the resolver method and the hooks run before it. */
 async function readWiredClass(
   ref: RbNode,
   scope: FileScope,
@@ -1221,22 +1314,18 @@ async function readWiredClass(
   const range = rangeOf(ref);
 
   const candidates = constantRefCandidates(ref, scope.nesting);
-  if (candidates.length === 0) {
-    return {
-      contract: null,
-      body: methodNotSettled(
-        `This field is wired to ${ref.text}, which is not a constant path this reader follows, so nothing about what it does was read here`,
-        range,
-      ),
-    };
-  }
-
-  const reached = await reachConstant(candidates, ctx.lookup);
+  const reached =
+    (await wiredClassInRun(ref, ctx)) ??
+    (candidates.length === 0
+      ? null
+      : await reachConstant(candidates, ctx.lookup));
   if (reached === null) {
     return {
       contract: null,
       body: methodNotSettled(
-        `This field is wired to ${ref.text}, which this run did not read, so nothing about what it does was read here`,
+        candidates.length === 0
+          ? `This field is wired to ${ref.text}, which is not a constant path this reader follows, so nothing about what it does was read here`
+          : `This field is wired to ${ref.text}, which this run did not read, so nothing about what it does was read here`,
         range,
       ),
     };
@@ -1248,19 +1337,57 @@ async function readWiredClass(
     reached.blocks,
     ctx.lookup,
   );
+  const body = bodyFromLookup(
+    methodInAncestry(ancestry, ctx.pattern.resolverMethodName, ctx.read),
+    range,
+    `This field's ${targetQualifiedName}`,
+    methodNotSettled(
+      `This field is wired to ${targetQualifiedName}, which defines no ${ctx.pattern.resolverMethodName} method anywhere in its ancestry, so nothing about what it does was read here`,
+      range,
+    ),
+    ctx.bodyRead,
+  );
+  const hooks =
+    ctx.pattern.resolverHooks === undefined
+      ? { definitions: [], unsettled: [] }
+      : hooksRun(ancestry, ctx.pattern.resolverHooks, ctx.read);
   return {
     contract: readClassContract(ancestry, ctx.pattern),
-    body: bodyFromLookup(
-      methodInAncestry(ancestry, ctx.pattern.resolverMethodName, ctx.read),
-      range,
-      `This field's ${targetQualifiedName}`,
-      methodNotSettled(
-        `This field is wired to ${targetQualifiedName}, which defines no ${ctx.pattern.resolverMethodName} method anywhere in its ancestry, so nothing about what it does was read here`,
-        range,
-      ),
-      ctx.bodyRead,
-    ),
+    body: {
+      ...body,
+      readings: [
+        ...body.readings,
+        ...hooks.unsettled.map((one) =>
+          unsettledHookReading(targetQualifiedName, one, range),
+        ),
+      ],
+    },
+    hooks: hooks.definitions,
   };
+}
+
+/**
+ * The class a wiring value settles on through the run's facts, the same
+ * way a call's receiver does. It is found in whichever file of the run
+ * declares it, so a class outside `root` is read too. Null when the facts
+ * settle nothing, as for a class the run never read.
+ */
+async function wiredClassInRun(
+  ref: RbNode,
+  ctx: FieldReadContext,
+): Promise<{ name: string; blocks: ReachedBody[] } | null> {
+  const inRun = ctx.lookup.definedInRun;
+  if (ctx.facts === undefined || inRun === undefined) {
+    return null;
+  }
+  const classKey = classSettledOn(ctx.facts, readKey(ctx.file, ref, null));
+  const name =
+    classKey === undefined ? undefined : declaredName(ctx.facts, classKey);
+  if (name === undefined) {
+    return null;
+  }
+  const blocks = await inRun(name);
+  return blocks === null ? null : { name, blocks };
 }
 
 interface ClassContractAccumulator {
@@ -1466,8 +1593,12 @@ function buildFieldUnit(
   pack: RubyPack,
   typeName: string,
   decl: FieldDeclaration,
-  filePath: string,
+  options: DiscoveryOptions,
 ): RawCodeStructure {
+  const filePath = options.filePath;
+  const wrappers = decl.hooks.map((hook) =>
+    hookReference(hook, displayPathIn(options, hook.block.file)),
+  );
   const parameters: RawParameter[] = (
     decl.contract?.methodArgs ??
     decl.contract?.args ??
@@ -1525,5 +1656,6 @@ function buildFieldUnit(
     ...(graphqlDeclaredContract !== undefined
       ? { graphqlDeclaredContract }
       : {}),
+    ...(wrappers.length > 0 ? { wrappers } : {}),
   };
 }

@@ -13,7 +13,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
-import { answersFor, askResolution, classMemberName } from "@suss/resolution";
+import { askResolution, classMemberName } from "@suss/resolution";
 
 import {
   children,
@@ -23,7 +23,12 @@ import {
   stringLiteralValue,
   symbolValue,
 } from "./ast.js";
-import { classBehind, reachesBase } from "./baseClass.js";
+import {
+  classBehind,
+  classSettledOn,
+  declaredName,
+  reachesBase,
+} from "./baseClass.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { loaderPick } from "./loaders.js";
@@ -358,29 +363,6 @@ function storageEffect(
       ...(selector.length > 0 ? { selector } : {}),
     },
   };
-}
-
-/**
- * The class the rules settle a receiver on, when they settle on exactly
- * one. With two, picking either would be a guess, so the result is
- * undefined, as it is for the constant bindings.
- */
-function classSettledOn(facts: Database, key: string): string | undefined {
-  askResolution(facts, [key], "wanted", RUBY_PROGRAM);
-  const objects = answersFor(facts, "wantedObjectOf", key);
-  return objects.length === 1 ? objects[0] : undefined;
-}
-
-/**
- * The name a class is declared under, which is how a constant receiver
- * would have written it. A class reopened in several files binds to one
- * of them, so only one name comes back.
- */
-function declaredName(facts: Database, classKey: string): string | undefined {
-  const names = new Set(
-    facts.lookup("rbConstantName", 0, classKey).map((row) => String(row[1])),
-  );
-  return names.size === 1 ? [...names][0] : undefined;
 }
 
 /**
