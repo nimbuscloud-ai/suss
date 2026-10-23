@@ -3,7 +3,7 @@
  * talks MCP over its stdin and stdout.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -54,6 +54,25 @@ async function waitFor(condition: () => boolean, ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
+
+describe("suss-mcp flags", () => {
+  it("prints its usage for --help instead of serving a project named --help", () => {
+    const run = spawnSync(process.execPath, [BIN, "--help"], {
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("Usage: suss-mcp [project-dir]");
+    expect(run.stderr).not.toContain("matched a pack");
+  });
+
+  it("refuses a flag it does not take", () => {
+    const run = spawnSync(process.execPath, [BIN, "--verbose"], {
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("suss-mcp does not take --verbose");
+  });
+});
 
 describe("suss-mcp", () => {
   it("exits and gives up the socket when the host closes stdin without a signal", async () => {
