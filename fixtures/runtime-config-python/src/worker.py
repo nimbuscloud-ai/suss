@@ -4,7 +4,10 @@
 
 import os
 
+from env import require_env
+
 QUEUE_URL = os.environ["QUEUE_URL"]
+CHECKED_QUEUE_URL = require_env("QUEUE_URL")
 
 
 def handler(event, context):

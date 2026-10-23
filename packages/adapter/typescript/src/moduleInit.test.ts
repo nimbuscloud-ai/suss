@@ -62,7 +62,7 @@ function summaryOf(source: string): BehavioralSummary | null {
   return moduleInitSummary(file, effects);
 }
 
-function varsRead(summary: BehavioralSummary | null): string[] {
+function varsRead(summary: BehavioralSummary | null): Array<string | null> {
   if (summary === null) {
     return [];
   }

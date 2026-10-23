@@ -85,7 +85,32 @@ function recognizeWithStore(sourceFile: SourceFile): Effect[] {
   );
 }
 
+/**
+ * The reads that say which variable. A helper's own `process.env[name]`
+ * records a read with no name, which `namelessReadsOf` returns.
+ */
 function configReadEffectsOf(effects: Effect[]): Array<
+  Extract<Effect, { type: "interaction" }> & {
+    interaction: { class: "config-read"; name: string };
+  }
+> {
+  return allConfigReadsOf(effects).filter(
+    (
+      e,
+    ): e is typeof e & {
+      interaction: { class: "config-read"; name: string };
+    } => e.interaction.name !== null,
+  );
+}
+
+/** How each read with no name was written, as `process.env[name]`. */
+function namelessReadsOf(effects: Effect[]): string[] {
+  return allConfigReadsOf(effects)
+    .filter((e) => e.interaction.name === null)
+    .map((e) => e.callee ?? "");
+}
+
+function allConfigReadsOf(effects: Effect[]): Array<
   Extract<Effect, { type: "interaction" }> & {
     interaction: { class: "config-read" };
   }
@@ -744,8 +769,15 @@ describe("node runtime pack — env-var wiring", () => {
   });
 });
 
-describe("a helper's body resolved from the callers' side", () => {
-  it("follows a literal from a caller in another file", () => {
+/** The variables a file reads, by name. */
+function namesReadIn(file: SourceFile): string[] {
+  return configReadEffectsOf(recognizeWithStore(file))
+    .map((read) => read.interaction.name)
+    .sort();
+}
+
+describe("a helper's own read, which belongs to its callers", () => {
+  it("records a read with no name at the helper and the caller's name at the call", () => {
     const project = createTestProject();
     const helper = project.createSourceFile(
       "env.ts",
@@ -753,16 +785,19 @@ describe("a helper's body resolved from the callers' side", () => {
         return process.env[name] ?? "";
       }`,
     );
-    project.createSourceFile(
+    const handler = project.createSourceFile(
       "handler.ts",
       `import { requireEnv } from "./env.js";
       export const table = requireEnv("TABLE_NAME");`,
     );
-    const reads = configReadEffectsOf(recognizeWithStore(helper));
-    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+    expect(namesReadIn(helper)).toEqual([]);
+    expect(namelessReadsOf(recognizeWithStore(helper))).toEqual([
+      "process.env[name]",
+    ]);
+    expect(namesReadIn(handler)).toEqual(["TABLE_NAME"]);
   });
 
-  it("reads a name the caller built from a prefix and a constant", () => {
+  it("reads a name the caller built from a prefix and a constant at the call", () => {
     const project = createTestProject();
     const helper = project.createSourceFile(
       "env.ts",
@@ -770,17 +805,17 @@ describe("a helper's body resolved from the callers' side", () => {
         return process.env[name] ?? "";
       }`,
     );
-    project.createSourceFile(
+    const handler = project.createSourceFile(
       "handler.ts",
       `import { requireEnv } from "./env.js";
       const suffix = "TABLE";
       export const table = requireEnv("APP_" + suffix);`,
     );
-    const reads = configReadEffectsOf(recognizeWithStore(helper));
-    expect(reads.map((read) => read.interaction.name)).toEqual(["APP_TABLE"]);
+    expect(namesReadIn(helper)).toEqual([]);
+    expect(namesReadIn(handler)).toEqual(["APP_TABLE"]);
   });
 
-  it("follows both literals back through a helper that hands its parameter on", () => {
+  it("gives each caller its own name through a helper that hands its parameter on", () => {
     const project = createTestProject();
     const helper = project.createSourceFile(
       "env.ts",
@@ -791,21 +826,19 @@ describe("a helper's body resolved from the callers' side", () => {
         return inner(key);
       }`,
     );
-    project.createSourceFile(
+    const a = project.createSourceFile(
       "a.ts",
       `import { getEnv } from "./env.js";
       export const table = getEnv("TABLE_NAME");`,
     );
-    project.createSourceFile(
+    const b = project.createSourceFile(
       "b.ts",
       `import { getEnv } from "./env.js";
       export const queue = getEnv("QUEUE_URL");`,
     );
-    const reads = configReadEffectsOf(recognizeWithStore(helper));
-    expect(reads.map((read) => read.interaction.name).sort()).toEqual([
-      "QUEUE_URL",
-      "TABLE_NAME",
-    ]);
+    expect(namesReadIn(helper)).toEqual([]);
+    expect(namesReadIn(a)).toEqual(["TABLE_NAME"]);
+    expect(namesReadIn(b)).toEqual(["QUEUE_URL"]);
   });
 
   it("stops rather than going round two helpers that call each other", () => {
@@ -822,21 +855,13 @@ describe("a helper's body resolved from the callers' side", () => {
         return first(key);
       }`,
     );
-    project.createSourceFile(
+    const a = project.createSourceFile(
       "a.ts",
       `import { getEnv } from "./env.js";
       export const table = getEnv("TABLE_NAME");`,
     );
-    project.createSourceFile(
-      "b.ts",
-      `import { getEnv } from "./env.js";
-      export const queue = getEnv("QUEUE_URL");`,
-    );
-    const reads = configReadEffectsOf(recognizeWithStore(helper));
-    expect(reads.map((read) => read.interaction.name).sort()).toEqual([
-      "QUEUE_URL",
-      "TABLE_NAME",
-    ]);
+    expect(namesReadIn(helper)).toEqual([]);
+    expect(namesReadIn(a)).toEqual(["TABLE_NAME"]);
   });
 
   it("says nothing for a name only the run would know", () => {
@@ -1268,6 +1293,22 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });
 
+  it("finds the helper's own read in its body when there is no store, past an unrelated element access", () => {
+    const sourceFile = makeProject(`
+      const flags = ["a", "b"];
+      function requireEnv(name: string): string {
+        const first = flags[0];
+        return first + (process.env[name] ?? "");
+      }
+      export const table = requireEnv("TABLE_NAME");
+    `);
+    const effects = recognizeWithoutStore(sourceFile);
+    expect(
+      configReadEffectsOf(effects).map((read) => read.interaction.name),
+    ).toEqual(["TABLE_NAME"]);
+    expect(namelessReadsOf(effects)).toEqual(["process.env[name]"]);
+  });
+
   it("does not credit the parameter with a read done by a local that shadows its name", () => {
     const sourceFile = makeProject(`
       function wrap(name: string): string {
@@ -1471,13 +1512,13 @@ describe("a helper call resolved from the caller's side", () => {
 });
 
 /** Every variable a file reads, with whether the program defaults it. */
-function readsOf(sourceFile: SourceFile): Array<[string, boolean]> {
+function readsOf(sourceFile: SourceFile): Array<[string | null, boolean]> {
   return configReadEffectsOf(recognizeWithStore(sourceFile))
-    .map((read): [string, boolean] => [
+    .map((read): [string | null, boolean] => [
       read.interaction.name,
       read.interaction.defaulted === true,
     ])
-    .sort((one, other) => one[0].localeCompare(other[0]));
+    .sort((one, other) => (one[0] ?? "").localeCompare(other[0] ?? ""));
 }
 
 /** A parse whose environment arrives from a caller two calls above it. */
@@ -1963,12 +2004,15 @@ describe("env-var recognizer on the import.meta.env Vite and Bun give a program"
     ]);
   });
 
-  it("reports nothing for an index nothing settles, as for process.env", () => {
+  it("records a read with no name for an index nothing settles, as for process.env", () => {
     const file = makeProject(`
       declare const key: string;
       export const value = import.meta.env[key];
     `);
-    expect(recognizeWithStore(file)).toEqual([]);
+    expect(configReadEffectsOf(recognizeWithStore(file))).toEqual([]);
+    expect(namelessReadsOf(recognizeWithStore(file))).toEqual([
+      "import.meta.env[key]",
+    ]);
   });
 
   it("reads a schema parsed against import.meta.env", () => {

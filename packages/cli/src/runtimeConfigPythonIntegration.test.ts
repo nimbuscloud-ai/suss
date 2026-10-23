@@ -18,7 +18,7 @@ import { checkAll } from "@suss/checker";
 import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
 import { fastapiFramework } from "@suss/framework-fastapi";
 
-import type { Finding } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
 const fixtureRoot = path.resolve(
   __dirname,
@@ -65,9 +65,33 @@ describe("runtime-config over two Python Lambdas on one CodeUri", () => {
     expect(unused).toHaveLength(1);
     expect(unused[0].description).toContain("RETRY_LIMIT");
   });
+
+  it("charges a shared helper's read to the call that passed the name", async () => {
+    const findings = await runPipeline();
+    expect(
+      findings.filter((f) => f.consumer.location.file === "src/env.py"),
+    ).toEqual([]);
+  });
+
+  it("records the helper's own read with no name", async () => {
+    const helper = (await extractCode()).find(
+      (s) => s.identity.name === "require_env",
+    );
+    expect(configReadsOf(helper)).toEqual([
+      { name: null, callee: "os.environ[name]" },
+    ]);
+  });
 });
 
 async function runPipeline(): Promise<Finding[]> {
+  const declared = cloudFormationFileToSummaries(
+    path.join(fixtureRoot, "template.yaml"),
+  );
+
+  return checkAll([...(await extractCode()), ...declared]).findings;
+}
+
+async function extractCode(): Promise<BehavioralSummary[]> {
   const sourceRoot = path.join(fixtureRoot, "src");
   const { summaries } = await extractPythonProject({
     files: findPythonFiles(sourceRoot),
@@ -75,10 +99,18 @@ async function runPipeline(): Promise<Finding[]> {
     roots: [sourceRoot],
     workspaceRoot: fixtureRoot,
   });
+  return summaries;
+}
 
-  const declared = cloudFormationFileToSummaries(
-    path.join(fixtureRoot, "template.yaml"),
-  );
-
-  return checkAll([...summaries, ...declared]).findings;
+/** Each config read on a summary, as its name and how the code wrote it. */
+function configReadsOf(
+  summary: BehavioralSummary | undefined,
+): Array<{ name: string | null; callee: string | undefined }> {
+  return (summary?.transitions ?? [])
+    .flatMap((t) => t.effects)
+    .flatMap((e) =>
+      e.type === "interaction" && e.interaction.class === "config-read"
+        ? [{ name: e.interaction.name, callee: e.callee }]
+        : [],
+    );
 }

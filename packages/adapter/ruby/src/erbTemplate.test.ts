@@ -5,7 +5,7 @@ import { rubyInErbTemplate } from "./erbTemplate.js";
 import { parseRuby } from "./parser.js";
 
 interface Read {
-  name: string;
+  name: string | null;
   defaulted: boolean;
 }
 

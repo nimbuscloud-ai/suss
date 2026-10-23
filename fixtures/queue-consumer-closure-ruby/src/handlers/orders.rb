@@ -4,12 +4,14 @@
 
 require "json"
 require_relative "../lib/billing"
+require_relative "../lib/settings"
 
 def post_receipt(order_id)
   Faraday.post("https://orders.example.internal/v1/receipts", { order_id: order_id }.to_json)
 end
 
 def handler(event:, context:)
+  Settings.require_env("ORDERS_LEDGER")
   event["Records"].each do |record|
     order = JSON.parse(record["body"])
     post_receipt(order["id"])

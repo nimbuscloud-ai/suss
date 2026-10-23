@@ -6,6 +6,7 @@ import {
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
+import { buildInteractionIndex } from "../interactions/dispatcher.js";
 import { checkRuntimeConfig, runtimeReads } from "./runtimeConfigPairing.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
@@ -89,6 +90,21 @@ function calleeOf(
     return {};
   }
   return { callee: callee ?? `process.env.${varName}` };
+}
+
+/** The summary with a helper's own `process.env[name]` read added, which records no name. */
+function withNamelessRead(summary: BehavioralSummary): BehavioralSummary {
+  const [transition] = summary.transitions;
+  if (transition === undefined) {
+    return summary;
+  }
+  transition.effects.push({
+    type: "interaction",
+    binding: runtimeConfigBinding({ recognition: "@suss/runtime-node" }),
+    callee: "process.env[name]",
+    interaction: { class: "config-read", name: null, defaulted: false },
+  });
+  return summary;
 }
 
 function makeCodeSummary(opts: {
@@ -216,6 +232,57 @@ describe("checkRuntimeConfig", () => {
       metadataReads: ["__dirname", "process.cwd"],
     });
     expect(checkRuntimeConfig([runtime, code])).toEqual([]);
+  });
+
+  it("pairs nothing against a read with no name, with or without an interaction index", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "orders",
+      envVars: ["TABLE_NAME"],
+      codeScope: { kind: "codeUri", path: "src/orders/" },
+    });
+    const helper = withNamelessRead(
+      makeCodeSummary({
+        name: "requireEnv",
+        file: "src/orders/env.ts",
+        envReads: [],
+      }),
+    );
+    const caller = makeCodeSummary({
+      name: "ordersHandler",
+      file: "src/orders/index.ts",
+      envReads: ["TABLE_NAME"],
+    });
+    const summaries = [runtime, helper, caller];
+
+    expect(checkRuntimeConfig(summaries)).toEqual([]);
+    expect(
+      checkRuntimeConfig(summaries, buildInteractionIndex(summaries)),
+    ).toEqual([]);
+  });
+
+  it("counts no environment read when the only one has no name", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "orders",
+      envVars: ["TABLE_NAME"],
+      codeScope: { kind: "codeUri", path: "src/orders/" },
+    });
+    const helper = withNamelessRead(
+      makeCodeSummary({
+        name: "requireEnv",
+        file: "src/orders/env.ts",
+        envReads: [],
+      }),
+    );
+    const summaries = [runtime, helper];
+    const findings = checkRuntimeConfig(
+      summaries,
+      buildInteractionIndex(summaries),
+    );
+
+    expect(findings.map((f) => f.severity)).toEqual(["info"]);
+    expect(findings[0]?.description).toContain(
+      "record no environment read anywhere",
+    );
   });
 
   it("counts no environment read when a unit reads only runtime metadata", () => {

@@ -17,6 +17,9 @@ Resources:
     Properties:
       CodeUri: ./
       Handler: src/handlers/orders.handler
+      Environment:
+        Variables:
+          ORDERS_LEDGER: "orders-ledger"
       Events:
         FromOrders:
           Type: SQS
@@ -28,6 +31,9 @@ Resources:
     Properties:
       CodeUri: ./
       Handler: src/handlers/accounts.handler
+      Environment:
+        Variables:
+          ACCOUNTS_REGION: "us-east-1"
       Events:
         CreateAccount:
           Type: HttpApi
