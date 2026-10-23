@@ -104,4 +104,36 @@ function serve(): Promise<void> {
   });
 }
 
-startWithEnoughHeap(serve);
+const USAGE = `Usage: suss-mcp [project-dir] [--cache-dir <path>]
+
+Runs the suss MCP server over stdio for the project in project-dir
+(default: the current directory). An MCP host starts this; you do not
+talk to it directly.
+
+  --cache-dir <path>  Write the cache under <path> instead of the
+                      project's .suss directory. SUSS_CACHE_DIR does
+                      the same.
+  -h, --help          Print this and exit.
+`;
+
+/** A flag this server does not take, which would otherwise be read as the project. */
+function unknownFlag(args: readonly string[]): string | undefined {
+  return args.find(
+    (arg) =>
+      arg.startsWith("-") &&
+      arg !== "--cache-dir" &&
+      !arg.startsWith("--cache-dir="),
+  );
+}
+
+const given = process.argv.slice(2);
+if (given.includes("--help") || given.includes("-h")) {
+  process.stdout.write(USAGE);
+} else if (unknownFlag(given) !== undefined) {
+  process.stderr.write(
+    `suss-mcp does not take ${unknownFlag(given)}.\n\n${USAGE}`,
+  );
+  process.exitCode = 1;
+} else {
+  startWithEnoughHeap(serve);
+}
