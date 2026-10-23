@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { SOURCE_SUFFIXES } from "@suss/adapter-typescript";
+import { SKIP_DIRECTORIES, SOURCE_SUFFIXES } from "@suss/adapter-typescript";
 
 export type Language = "typescript" | "python" | "ruby";
 
@@ -30,24 +30,8 @@ export const LANGUAGE_LABEL: Record<Language, string> = {
   ruby: "Ruby",
 };
 
-/** `suss init` skips these too, so both walks skip the same directories. */
-export const SKIP_DIRECTORIES = new Set([
-  "node_modules",
-  "dist",
-  "build",
-  "out",
-  "coverage",
-  ".git",
-  ".turbo",
-  ".next",
-  ".suss",
-  "vendor",
-  "__pycache__",
-  ".venv",
-  "venv",
-  ".tox",
-  "tmp",
-]);
+/** The TypeScript extract skips the same folders, so detection and extraction agree on what counts as source. */
+export { SKIP_DIRECTORIES };
 
 interface LanguageMarkers {
   /** Relative to the project root. */
