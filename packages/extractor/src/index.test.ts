@@ -231,9 +231,11 @@ describe("assembleSummary: optional metadata plumbing", () => {
       requestSpelling: {
         headers: { path: ["request", "headers"], saysWhichField: true },
       },
+      packMetadata: { awsLambda: { handler: "app.handler" } },
     };
 
     const summary = assembleSummary(raw);
+    expect(summary.metadata?.awsLambda).toEqual({ handler: "app.handler" });
 
     expect(summary.transitions[0].expectedInput).toEqual({
       type: "record",

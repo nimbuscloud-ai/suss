@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Fifty-six packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Fifty-eight packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -50,7 +50,9 @@ A framework pack finds the units a framework defines: a route handler, a compone
 | Name | What it reads | Coverage |
 |---|---|---|
 | [`apollo`](../../packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](../../.github/badges/coverage-apollo.svg) |
-| [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired with the routes a SAM or CloudFormation template declares. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired with the routes a SAM template or serverless.yml declares. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`aws-lambda-python`](../../packages/framework/aws-lambda) | AWS Lambda handlers written in Python, found from the Handler a SAM template or serverless.yml gives each function. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`aws-lambda-ruby`](../../packages/framework/aws-lambda) | AWS Lambda handlers written in Ruby, found from the Handler a SAM template or serverless.yml gives each function, including a class method written `file.Module::Class.method`. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 | [`cloudflare-workers`](../../packages/framework/cloudflare-workers) | A Cloudflare Workers entrypoint: one unit per trigger the default export defines, and the bindings its code reads off the argument they arrive in. | ![](../../.github/badges/coverage-cloudflare-workers.svg) |
 | [`express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |
 | [`fabrication`](../../packages/framework/fabrication) | Fabrication builds in tests (Ruby), typed by the class each fabricator builds, so a test's calls on them are followed. | ![](../../.github/badges/coverage-fabrication.svg) |

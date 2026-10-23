@@ -170,6 +170,7 @@ describe("contract CLI command", () => {
       kind: "codeUri",
       path: "services/orders",
       entry: "index",
+      entryExport: "handler",
     });
   });
 

@@ -25,7 +25,7 @@ import type { SourceFile } from "ts-morph";
 /** Metadata namespace stamped on every unit this pack discovers. */
 export const METADATA_NAMESPACE = "awsLambda";
 
-function deployableUnit(entry: HandlerEntry): DeployableUnit {
+export function deployableUnit(entry: HandlerEntry): DeployableUnit {
   return { deploymentTarget: "lambda", instanceName: entry.functionLogicalId };
 }
 
@@ -158,7 +158,7 @@ const EVENT_WIRES: Record<string, MessageBusSemantics["messageBus"]> = {
  * The one bus every event type behind this unit maps to, or null when a
  * type is unmapped or two types map to different buses.
  */
-function messageBusWire(
+export function messageBusWire(
   eventTypes: string[],
 ): MessageBusSemantics["messageBus"] | null {
   const wires = new Set<MessageBusSemantics["messageBus"] | null>(

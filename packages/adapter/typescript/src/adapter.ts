@@ -60,6 +60,7 @@ import {
   type InputMappingPattern,
   type InvocationRecognizer,
   type LanguageAdapter,
+  libraryEnvReadMarker,
   mergeReadShapes,
   type PartialPlan,
   type PatternPack,
@@ -1930,7 +1931,7 @@ function emitLibraryEnvReadMarkers(
       if (importer === undefined) {
         continue;
       }
-      summaries.push(libraryEnvReadMarker(pack, declared, importer));
+      summaries.push(libraryEnvReadMarker(pack.name, declared, importer));
     }
   }
 }
@@ -1996,38 +1997,6 @@ function schemaDocumentSummary(
       withSourceDocumentMetadata(undefined, { label }),
       { schemaSdl },
     ),
-  };
-}
-
-function libraryEnvReadMarker(
-  pack: PatternPack,
-  declared: { module: string; prefixes?: string[]; names?: string[] },
-  importer: string,
-): BehavioralSummary {
-  return {
-    kind: "library",
-    location: { file: importer, range: { start: 0, end: 0 }, exportName: null },
-    identity: {
-      name: `${declared.module} env reads`,
-      exportPath: null,
-      boundaryBinding: functionCallBinding({
-        transport: "in-process",
-        recognition: pack.name,
-      }),
-    },
-    inputs: [],
-    transitions: [],
-    gaps: [],
-    confidence: { source: "declared", level: "high" },
-    metadata: {
-      libraryEnvReads: {
-        module: declared.module,
-        ...(declared.prefixes !== undefined
-          ? { prefixes: declared.prefixes }
-          : {}),
-        ...(declared.names !== undefined ? { names: declared.names } : {}),
-      },
-    },
   };
 }
 
