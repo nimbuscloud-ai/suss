@@ -45,6 +45,7 @@ export {
 } from "./discovery/resolveValue.js";
 export { findEnclosingFunction, toFunctionRoot } from "./discovery/shared.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
+export { dottedPathOf } from "./facts/extract.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
 // Exported so a pack's test harness can give recognizers the same
 // resolution the adapter threads through at extraction time.

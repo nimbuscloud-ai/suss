@@ -318,6 +318,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       headers: { path: ["request", "headers"], saysWhichField: true },
       params: { path: ["params"], saysWhichField: true },
     },
+    bootTemplates: () => configTemplates(railsRoot),
     // These files change an action's binding without being walked, so the
     // cache key has to list them. This runs before the grammar loads, so
     // nothing here parses Ruby.
@@ -346,6 +347,25 @@ function expandPatterns(
   );
 }
 
+/**
+ * The YAML files directly under `config/`. Rails renders each one through
+ * ERB as it boots, before parsing it: `database.yml`, `cable.yml`,
+ * `storage.yml` and any file `config_for` loads. Solid Queue's
+ * `queue.yml` and Sidekiq's `sidekiq.yml` are rendered the same way.
+ * Locale files are in a subdirectory and are not rendered.
+ */
+function configTemplates(railsRoot: string): string[] {
+  const directory = path.join(railsRoot, "config");
+  if (!fs.existsSync(directory)) {
+    return [];
+  }
+  return fs
+    .readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".yml"))
+    .map((entry) => path.join(directory, entry.name))
+    .sort();
+}
+
 /** Every `.rb` file in the directory `draw(:name)` reads from. */
 function drawableRoutesFiles(routesFile: string): string[] {
   const directory = drawDirectoryOf(routesFile);
@@ -369,7 +389,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "rubygems", name: "railties" },
   ],
   reads:
-    "Rails controller actions (Ruby), bound to the method and path \`config/routes.rb\` gives each one. An action the routes file does not reach is still discovered, with no boundary.",
+    "Rails controller actions (Ruby), bound to the method and path \`config/routes.rb\` gives each one. An action the routes file does not reach is still discovered, with no boundary. The YAML files under \`config/\` that Rails renders through ERB at boot are read as code that runs when the app loads.",
   configuration: {
     file: "suss.rails.json",
     example: {
