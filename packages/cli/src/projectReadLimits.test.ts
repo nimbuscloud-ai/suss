@@ -16,6 +16,7 @@ import {
   readProjectInto,
   readProjectSaying,
 } from "./projectRead.js";
+import { stopEveryRead } from "./readInChild.js";
 
 import type { ReadProgress } from "./projectRead.js";
 import type { ReadLimits } from "./readLimits.js";
@@ -194,6 +195,73 @@ describe("reading a project with limits", () => {
       /\[1\/1\] suss contract --from openapi openapi\.yaml: 1 summary in \d/,
     );
   });
+
+  it("lists the reads and prints what each extract printed, when not quiet", async () => {
+    const root = monorepo([
+      { kind: "extract", language: "typescript", packs: ["axios"] },
+    ]);
+
+    const text = await stderrOf(() =>
+      readProjectSaying(root, tempDir(), false, roomy),
+    );
+
+    expect(text).toContain("\n  suss extract --lang typescript -f axios\n");
+    expect(text).toMatch(/\n {6}Wrote \d+ summar/);
+  }, 180_000);
+
+  it("runs the reads one at a time in this process without limits", async () => {
+    const root = monorepo([
+      { kind: "extract", language: "typescript", packs: ["axios"] },
+    ]);
+
+    const text = await stderrOf(() => readProjectSaying(root, tempDir(), true));
+
+    expect(text).toContain("1 read, one at a time:");
+    expect(text).toMatch(
+      /\[1\/1\] suss extract --lang typescript -f axios: \d+ summar/,
+    );
+  }, 180_000);
+});
+
+async function stderrOf(run: () => Promise<unknown>): Promise<string> {
+  const printed: string[] = [];
+  const write = process.stderr.write;
+  process.stderr.write = ((chunk: string) => {
+    printed.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    await run();
+  } finally {
+    process.stderr.write = write;
+  }
+  return printed.join("");
+}
+
+describe("stopping the reads", () => {
+  it("kills a read still running, as this process does when it exits", async () => {
+    const root = monorepo([
+      { kind: "extract", language: "typescript", packs: ["axios"] },
+    ]);
+
+    const reading = readProjectInto(
+      root,
+      tempDir(),
+      await declaredReads(root),
+      {
+        limits: { ...roomy, timeoutMs: 0 },
+        onProgress: (event) => {
+          if (event.kind === "started") {
+            setTimeout(stopEveryRead, 200);
+          }
+        },
+      },
+    );
+
+    expect((await reading).failed).toEqual([
+      "suss extract --lang typescript -f axios: was stopped by SIGKILL",
+    ]);
+  }, 180_000);
 });
 
 describe("clearing an earlier read", () => {
