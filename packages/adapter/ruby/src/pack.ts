@@ -751,10 +751,11 @@ export interface RbGraphqlTypeWrapper {
   /** Each type the wrapper generates, by name, with its fields. */
   types: Record<string, Record<string, TypeShape>>;
   /**
-   * Keywords the method takes another type under, each with the library
-   * type used when the call passes none. A ref named `{keyword}` is it.
+   * Other types the method takes as keyword arguments, keyed by the ref
+   * name in `types` that each one replaces, with the library type used
+   * when the call passes none.
    */
-  typeArguments?: Record<string, string>;
+  typeArguments?: Record<string, { keyword: string; fallback: string }>;
 }
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */

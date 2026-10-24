@@ -368,7 +368,7 @@ async function coreShape(
     }
     const passed = readCallArgs(field(node, "arguments")).keyword;
     const typeArguments: Record<string, TypeShape> = {};
-    for (const [keyword, fallback] of Object.entries(
+    for (const [placeholder, { keyword, fallback }] of Object.entries(
       wrapper.typeArguments ?? {},
     )) {
       const given = passed[keyword];
@@ -376,7 +376,7 @@ async function coreShape(
         given === undefined
           ? null
           : await coreShape({ ...written, node: given }, reader, definitions);
-      typeArguments[`{${keyword}}`] = read ?? {
+      typeArguments[placeholder] = read ?? {
         type: "ref",
         name: fallback,
         def: fallback,

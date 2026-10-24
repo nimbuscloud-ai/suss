@@ -45,7 +45,12 @@ describe("graphqlRubyFramework", () => {
           }),
           collection_type: expect.objectContaining({
             name: "{type}Collection",
-            typeArguments: { metadata_type: "CollectionMetadata" },
+            typeArguments: {
+              "{metadata_type}": {
+                keyword: "metadata_type",
+                fallback: "CollectionMetadata",
+              },
+            },
           }),
         },
         libraryTypes: {

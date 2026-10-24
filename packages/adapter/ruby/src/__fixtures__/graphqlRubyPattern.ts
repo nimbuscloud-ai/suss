@@ -97,7 +97,12 @@ export const GRAPHQL_OUTPUT_OPTIONS: Partial<GraphqlObjectFields> = {
           metadata: { type: "ref", name: "{metadata_type}" },
         },
       },
-      typeArguments: { metadata_type: "CollectionMetadata" },
+      typeArguments: {
+        "{metadata_type}": {
+          keyword: "metadata_type",
+          fallback: "CollectionMetadata",
+        },
+      },
     },
   },
   libraryTypes: {
