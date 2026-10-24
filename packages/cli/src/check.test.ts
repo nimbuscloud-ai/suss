@@ -2957,6 +2957,30 @@ describe("check over a runtime that loads code its handler never calls", () => {
     );
   });
 
+  it("prints a read the handler does reach once, with the deployments that do not declare it and a rule for the read", () => {
+    const summaries = lambdaWithFlags();
+    const handler = summaries[1];
+    handler?.transitions[0]?.effects.push({
+      type: "invocation",
+      callee: "featureFlag",
+      args: [],
+      async: false,
+      summary: "src/flags.ts::featureFlag",
+    });
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(summaries));
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, allowEmpty: true }),
+    );
+    expect(output).toContain(
+      "process.env.FEATUREFLAG read by featureFlag is not declared in the environment of a deployment that runs it.",
+    );
+    expect(output).toContain("read: src/flags.ts::featureFlag");
+    expect(output).toContain("not declared by: Orders");
+    expect(output).toContain(
+      'consumer: { summary: "src/flags.ts::featureFlag", field: "FEATUREFLAG" }',
+    );
+  });
+
   it("lists each unjudged read in the JSON report", () => {
     fs.writeFileSync(
       path.join(tmpDir, "all.json"),

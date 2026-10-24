@@ -64,8 +64,9 @@ describe("check a Worker against the stores wrangler.toml binds", () => {
 
     expect(check.status).toBe(1);
     expect(check.stdout).toContain(
-      "env.AUDIT_KV read by fetch (worker/edge-cache scope) but edge-cache declares no AUDIT_KV in its environment.",
+      "env.AUDIT_KV read by fetch is not declared in the environment of a deployment that runs it.",
     );
+    expect(check.stdout).toContain("not declared by: edge-cache");
   });
 
   it("answers a writes question the same in either spelling of the table", () => {

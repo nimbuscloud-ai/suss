@@ -77,10 +77,36 @@ export function renderFinding(finding) {
   return [
     `[${finding.severity.toUpperCase()}] ${shortName(finding)}`,
     `  ${oneLine(finding.description)}`,
-    `  provider: ${sideOf(finding.provider)}`,
-    `  consumer: ${sideOf(finding.consumer)}`,
+    ...sideLines(finding),
     ...howToAccept(finding),
     `  When this kind of finding is expected: ${CATALOG}#${finding.kind.toLowerCase()}`,
+  ];
+}
+
+/**
+ * Both sides of a finding. One about a single read has the reader on
+ * both sides and the deployments that lack the variable in `sources`,
+ * so it says where the read is and which deployments those are.
+ *
+ * @param {SinceFinding} finding
+ */
+function sideLines(finding) {
+  const readSite =
+    finding.consumer.field !== undefined &&
+    finding.consumer.summary === finding.provider.summary &&
+    (finding.sources?.length ?? 0) > 0;
+  if (!readSite) {
+    return [
+      `  provider: ${sideOf(finding.provider)}`,
+      `  consumer: ${sideOf(finding.consumer)}`,
+    ];
+  }
+  const names = (finding.sources ?? []).map((id) =>
+    id.slice(id.lastIndexOf("::") + 2),
+  );
+  return [
+    `  read: ${sideOf(finding.consumer)}`,
+    `  not declared by: ${names.join(", ")}`,
   ];
 }
 
@@ -128,7 +154,11 @@ function ruleSideText(side) {
   if ("transitionId" in side) {
     return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
   }
-  return `{ field: ${JSON.stringify(side.field)} }`;
+  const summary =
+    side.summary === undefined
+      ? ""
+      : `summary: ${JSON.stringify(side.summary)}, `;
+  return `{ ${summary}field: ${JSON.stringify(side.field)} }`;
 }
 
 /**

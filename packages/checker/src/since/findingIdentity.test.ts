@@ -159,6 +159,46 @@ describe("findingIdentity", () => {
     expect(findingIdentity(otherFunction)).not.toBe(findingIdentity(flat));
   });
 
+  it("gives a finding about one read the same identity when the function that runs it moves into a nested stack", () => {
+    const readFinding = (stack: string, source: string): Finding => {
+      const side = {
+        summary: `src/ping.ts::${stack}PingFunction.handler`,
+        location: {
+          file: "src/ping.ts",
+          range: { start: 1, end: 6 },
+          exportName: `${stack}PingFunction.handler`,
+        },
+      };
+      return finding({
+        kind: "boundaryFieldUnknown",
+        boundary: {
+          transport: "os",
+          semantics: { name: "runtime-config" },
+          recognition: "@suss/runtime-node",
+        },
+        provider: side,
+        consumer: { ...side, field: "PING_REGION" },
+        description: `process.env.PING_REGION read by ${stack}PingFunction.handler is not declared in the environment of a deployment that runs it.`,
+        sources: [source],
+      });
+    };
+
+    const flat = readFinding("", "cloudformation:template.yaml::PingFunction");
+    expect(
+      findingIdentity(
+        readFinding(
+          "ApiStack/",
+          "cloudformation:template.yaml#ApiStack::PingFunction",
+        ),
+      ),
+    ).toBe(findingIdentity(flat));
+    expect(
+      findingIdentity(
+        readFinding("ApiStack/", "template.yaml::ApiStack/PingFunction"),
+      ),
+    ).toBe(findingIdentity(flat));
+  });
+
   it("tells apart two consumers of one provider status", () => {
     const secondClient = finding({
       consumer: {

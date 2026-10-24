@@ -7,7 +7,10 @@ import {
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
+import { checkAll } from "../index.js";
 import { buildInteractionIndex } from "../interactions/dispatcher.js";
+import { findingIdentity } from "../since/findingIdentity.js";
+import { applySuppressions } from "../suppressions.js";
 import { checkRuntimeConfig, runtimeReads } from "./runtimeConfigPairing.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
@@ -693,7 +696,9 @@ describe("checkRuntimeConfig", () => {
       const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
       expect(unknown).toHaveLength(1);
       expect(unknown[0].description).toContain("RETRY_LIMIT");
-      expect(unknown[0].description).toContain("NotifierFunction");
+      expect(unknown[0].sources).toEqual([
+        expect.stringContaining("NotifierFunction"),
+      ]);
     });
 
     it("gives a helper the unit of the handler in its module", () => {
@@ -796,7 +801,9 @@ describe("checkRuntimeConfig", () => {
       const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
       expect(unknown).toHaveLength(1);
       expect(unknown[0].description).toContain("NOTIFY_TOPIC_ARN");
-      expect(unknown[0].description).toContain("IndexerFunction");
+      expect(unknown[0].sources).toEqual([
+        expect.stringContaining("IndexerFunction"),
+      ]);
     });
 
     it("lets one runtime's directory answer on its own", () => {
@@ -1021,7 +1028,7 @@ describe("checkRuntimeConfig", () => {
       ]);
       const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
       expect(unknown).toHaveLength(1);
-      expect(unknown[0].description).toContain("fnA");
+      expect(unknown[0].sources).toEqual([expect.stringContaining("fnA")]);
       const unplaced = findings.filter((f) => f.kind === "runtimeScopeUnknown");
       expect(unplaced).toHaveLength(0);
     });
@@ -1043,7 +1050,7 @@ describe("checkRuntimeConfig", () => {
       // both, so only fnA has the gap.
       const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
       expect(unknown).toHaveLength(1);
-      expect(unknown[0].description).toContain("fnA");
+      expect(unknown[0].sources).toEqual([expect.stringContaining("fnA")]);
     });
 
     it("stays quiet about an undeclared var the code reads with a fallback", () => {
@@ -1395,10 +1402,10 @@ function unknownVariables(summaries: BehavioralSummary[]): string[] {
 
 describe("charging a read to the runtimes whose calls reach it", () => {
   it("charges a helper's read only to the handler that calls it", () => {
-    const findings = unknownVariables(
+    const findings = checkRuntimeConfig(
       twoHandlersAndAHelper({ firstCalls: "settled" }),
-    );
-    expect(findings).toEqual([expect.stringContaining("orders declares no")]);
+    ).filter((f) => f.kind === "boundaryFieldUnknown");
+    expect(findings.map((f) => f.sources)).toEqual([["template.yaml::orders"]]);
   });
 
   it("lists the read as unchecked for a handler that loads the file and never calls it", () => {
@@ -1481,5 +1488,97 @@ describe("charging a read to the runtimes whose calls reach it", () => {
     expect(unknownVariables([runtime, run, other])).toEqual([
       expect.stringContaining("REPORTS_BUCKET"),
     ]);
+  });
+});
+
+/** Functions whose handlers each call `loadOrders`, which reads TABLE_NAME, and declare nothing. */
+function functionsReaching(names: string[]): BehavioralSummary[] {
+  const loadOrders = makeCodeSummary({
+    name: "loadOrders",
+    file: "src/lib/orders.ts",
+    envReads: ["TABLE_NAME"],
+  });
+  const loadOrdersKind = { ...loadOrders, kind: "library" as const };
+  return [
+    loadOrdersKind,
+    ...names.flatMap((name) => {
+      const handler = makeCodeSummary({
+        name: `${name}Handler`,
+        file: `src/handlers/${name}.ts`,
+        envReads: [],
+        runsInUnit: name,
+        moduleImports: ["src/lib/orders.ts"],
+      });
+      handler.transitions[0]?.effects.push({
+        type: "invocation",
+        callee: "loadOrders",
+        args: [],
+        async: false,
+        summary: summaryIdentifier(loadOrdersKind),
+      });
+      return [
+        makeRuntimeProvider({
+          instanceName: name,
+          envVars: [],
+          namesUnit: true,
+          codeScope: {
+            kind: "codeUri",
+            path: "",
+            entry: `src/handlers/${name}`,
+          },
+        }),
+        handler,
+      ];
+    }),
+  ];
+}
+
+describe("one finding per read", () => {
+  const unknownOf = (summaries: BehavioralSummary[]) =>
+    checkAll(summaries).findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+
+  it("reports a read three functions run once, with the functions in its sources", () => {
+    const [finding, ...more] = unknownOf(
+      functionsReaching(["ListOrders", "GetOrder", "ArchiveOrder"]),
+    );
+    expect(more).toEqual([]);
+    expect(finding?.sources).toEqual([
+      "template.yaml::ArchiveOrder",
+      "template.yaml::GetOrder",
+      "template.yaml::ListOrders",
+    ]);
+    expect(finding?.consumer).toMatchObject({
+      summary: "src/lib/orders.ts::loadOrders",
+      field: "TABLE_NAME",
+    });
+    expect(finding?.boundary.semantics).toEqual({ name: "runtime-config" });
+    expect(finding?.description).not.toContain("ListOrders");
+  });
+
+  it("gives the read the same identity when a branch adds a function that runs it", () => {
+    const before = unknownOf(functionsReaching(["ListOrders", "GetOrder"]));
+    const after = unknownOf(
+      functionsReaching(["AuditOrders", "ListOrders", "GetOrder"]),
+    );
+    expect(after.map(findingIdentity)).toEqual(before.map(findingIdentity));
+  });
+
+  it("is silenced by a rule naming the read's summary and variable", () => {
+    const findings = unknownOf(functionsReaching(["ListOrders", "GetOrder"]));
+    const kept = applySuppressions(findings, [
+      {
+        kind: "boundaryFieldUnknown",
+        consumer: {
+          summary: "src/lib/orders.ts::loadOrders",
+          field: "TABLE_NAME",
+        },
+        reason: "read only on a path the deployed functions never take",
+        effect: "hide",
+        scope: "narrow",
+      },
+    ]);
+    expect(kept).toEqual([]);
   });
 });
