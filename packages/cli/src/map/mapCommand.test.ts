@@ -120,6 +120,26 @@ describe("suss map", () => {
     );
   });
 
+  it("maps the reads that finished and says which one failed", async () => {
+    const project = path.join(work, "shop");
+    fs.cpSync(path.join(FIXTURES, "express"), project, { recursive: true });
+    readsIn(project, [
+      { kind: "extract", language: "typescript", packs: ["express"] },
+      { kind: "extract", language: "typescript", packs: ["no-such-pack"] },
+    ]);
+
+    const run = await quietly(["map", project, "--jobs", "1"]);
+
+    expect(run.exit).toBe(0);
+    expect(run.stderr).toContain("2 reads, one at a time");
+    expect(run.stdout).toContain(
+      "  Not read      1 read failed, so the page leaves out what they cover:\n    suss extract --lang typescript -f no-such-pack exited with code 1",
+    );
+    expect(routesOf(dataOf(path.join(project, ".suss", "map.html")))).toContain(
+      "GET /users/:id",
+    );
+  });
+
   it("maps a Python project and exits 0 when nothing paired", async () => {
     const project = path.join(work, "api");
     write(path.join(project, "pyproject.toml"), "[project]\n");

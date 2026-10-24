@@ -233,8 +233,7 @@ async function readIntoTree(
       ...reads,
       reads: present.map((entry) => withPackConfigsFrom(project, entry)),
     },
-    undefined,
-    true,
+    { quiet: true },
   ).finally(() => {
     // The summaries are all a later question needs, and a large checkout
     // is most of the folder. Removing it leaves the linked node_modules alone.

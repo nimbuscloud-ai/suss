@@ -114,8 +114,9 @@ describe("a bare extract with several reads in suss.json", () => {
     const run = await quietly(["extract", "--dir", project]);
 
     expect(run.exit).toBe(1);
-    expect(run.stderr).toContain("failed: suss extract --lang typescript");
-    expect(run.stderr).toContain("no-such-pack-anywhere");
+    expect(run.stderr).toMatch(
+      /suss extract --lang typescript --dir frontend -f no-such-pack-anywhere: failed after .*\n {6}exited with code 1: Unknown pack: "no-such-pack-anywhere"/,
+    );
     const files = (JSON.parse(run.stdout) as BehavioralSummary[]).map(
       (summary) => summary.location.file,
     );
