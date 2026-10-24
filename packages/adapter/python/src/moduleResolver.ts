@@ -109,6 +109,35 @@ export function resolveAbsoluteModule(
 }
 
 /**
+ * The dotted name a file is imported under, which `resolveAbsoluteModule`
+ * turns back into the file. The deepest root the file is under gives the
+ * name, since a source directory a project declares is inside the
+ * project's own directory. Null when that name would import some other
+ * file, or none, as when two roots have a module by that name.
+ */
+export function dottedModuleOf(
+  file: string,
+  options: ModuleResolverOptions,
+): string | null {
+  const [root] = options.roots
+    .filter((candidate) => isWithinRoot(path.dirname(file), candidate))
+    .sort((a, b) => b.length - a.length);
+  if (root === undefined || !file.endsWith(".py")) {
+    return null;
+  }
+  const segments = path.relative(root, file).slice(0, -3).split(path.sep);
+  if (segments.at(-1) === "__init__") {
+    segments.pop();
+  }
+  const dotted = segments.join(".");
+  if (dotted === "") {
+    return null;
+  }
+  const back = resolveAbsoluteModule(dotted, options);
+  return back.status === "resolved" && back.file === file ? dotted : null;
+}
+
+/**
  * The search starts in the importing file's own directory, because Python
  * resolves a relative import against `__package__` and not against `sys.path`.
  * `options.roots` only limits how far the dots can walk up, so a deeply relative
