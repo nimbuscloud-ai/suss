@@ -219,6 +219,13 @@ export function leavesTheProcess(binding: BoundaryBinding): boolean {
   return behaviorOf(binding.semantics).leavesTheProcess;
 }
 
+/** Whether a send on this binding enqueues a background job nothing settled. */
+export function isUnsettledJob(binding: BoundaryBinding): boolean {
+  return (
+    behaviorOf(binding.semantics).unsettledJob?.(binding.semantics) ?? false
+  );
+}
+
 /**
  * Whether anything can pair with this binding: it has a pairing key,
  * or its protocol pairs keyless boundaries in a dedicated pass.

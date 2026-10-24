@@ -67,6 +67,7 @@ export {
   ioBinding,
   isGraphqlOperationBinding,
   isModuleName,
+  isUnsettledJob,
   leavesTheProcess,
   MESSAGE_BUS_TRAITS,
   messageBusBinding,

@@ -188,6 +188,13 @@ export interface BoundaryBehavior<S extends { name: string }> {
   reportsUnpairedItself: boolean;
 
   /**
+   * Whether a send on this boundary enqueues a background job its pack
+   * could not settle, so the summary says what the job does is missing.
+   * A protocol that never sends a job leaves this undefined.
+   */
+  unsettledJob?(semantics: S): boolean;
+
+  /**
    * Whether a boundary with these semantics can pair with anything.
    * Defaults to a non-null pairing key. A protocol whose dedicated
    * pass pairs keyless boundaries overrides it, the way GraphQL
