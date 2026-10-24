@@ -25,6 +25,18 @@ It reads `package.json`, the Python manifests and the Gemfile for dependencies, 
 
 Every folder below the root with its own `package.json`, `pyproject.toml` or `Gemfile` is a project of its own, whether or not a workspace file lists it, so a server folder and a client folder side by side each get their commands. A folder below the root is shown when a pack matched there, or when its own manifest could not be read and it has source of its own. A Gemfile that only drives a mobile build, for example, does not get a section.
 
+### Shared workspace packages
+
+A service in a workspace usually depends on sibling packages, such as `packages/db` with the database helpers every service calls. The service's read follows its calls into the sibling's code, so `init` gives that read the packs the sibling's dependencies match, and any those dependencies' own dependencies match, at any depth. The report says where each one came from, as in `pg  pg in dependencies of @shop/db`. A sibling's dev dependencies are left out, since none of them run in the service. `init` finds a sibling through the `node_modules` link npm, yarn or pnpm writes, or, before an install, through the workspace declaration.
+
+A workspace package whose packs only read calls made elsewhere, with no framework to find a route, a handler or a component in it, gets no extract of its own: on its own it would come back empty. Its section lists the packages whose reads follow calls into it instead, or says that nothing reaches it when no package that suss reads depends on it. A contract in it, such as a Prisma schema, still gets its command.
+
+```
+  Shared code
+    TypeScript       read through apps/api and apps/web, which depend on it
+                     no extract of its own, since its packs (pg, node) don't find a route or handler in it to start from
+```
+
 fetch and Net::HTTP come with the language, so no manifest lists them. Their packs alone set a project up only once a file in the project's own source calls the library, and the report says which file. For TypeScript and JavaScript, the project's own source is what its tsconfig includes, or, for a folder without one, what the nearest tsconfig above it includes there. Without a tsconfig, as in a Rails app's `app/javascript`, every file in the project counts. In every language, files under a scripts, tools, config, test, `public`, `node_modules`, `vendor`, `dist`, `build` or `coverage` directory don't count, and neither do `*.config.*` files, tests, or minified and bundled files.
 
 When the project depends on a framework suss knows and has no pack for, such as Django, tRPC or Grape, the report says so, including when other packs matched.

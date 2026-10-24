@@ -44,6 +44,7 @@ import {
   TEST_DIRECTORIES,
 } from "./projectSource.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
+import { dependenciesThroughLocalPackages } from "./workspaces.js";
 
 import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
 import type { ContractSource } from "./contract.js";
@@ -99,6 +100,15 @@ export interface InitReport {
   coveredContracts?: CoveredContract[];
   /** Languages whose extract would have no file to read here, so no command reads them. Only `withReadableCode` fills it. */
   emptyExtracts?: EmptyExtract[];
+  /** Set for a workspace package with no entry point of its own, which the packages that import it read. Only `withSharedLibraries` fills it. */
+  sharedLibrary?: SharedLibrary;
+}
+
+export interface SharedLibrary {
+  /** The packs an extract of it alone would have run. */
+  packs: string[];
+  /** The folders whose reads follow calls into it, relative to where init ran. */
+  readBy: string[];
 }
 
 export interface EmptyContract {
@@ -826,92 +836,17 @@ function callOfShippedLibrary(
 }
 
 /**
- * Follows a dependency that resolves inside this repository into that
- * package's own manifest. A service in a monorepo usually depends on its
- * sibling packages, and those declare the SDKs.
+ * The project's npm dependencies, with those of the sibling packages it
+ * depends on. The project's read follows its calls into a sibling's code,
+ * so it needs the sibling's packs to recognise what that code touches.
  */
 function dependenciesOf(root: string): Array<[string, string]> {
-  const found: Array<[string, string]> = [];
-  const seen = new Set<string>();
-  const queue: Array<{ dir: string; through: string | null }> = [
-    { dir: root, through: null },
-  ];
-
-  while (queue.length > 0) {
-    const next = queue.shift();
-    if (next === undefined) {
-      continue;
-    }
-    const manifest = path.join(next.dir, "package.json");
-    if (seen.has(manifest)) {
-      continue;
-    }
-    seen.add(manifest);
-
-    for (const [name, field] of declaredIn(manifest)) {
-      found.push([
-        name,
-        next.through === null ? field : `${field} of ${next.through}`,
-      ]);
-      const inside = packageInsideRepository(root, next.dir, name);
-      if (inside !== null) {
-        queue.push({ dir: inside, through: name });
-      }
-    }
-  }
-  return found;
-}
-
-function declaredIn(manifest: string): Array<[string, string]> {
-  if (!fs.existsSync(manifest)) {
-    return [];
-  }
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(fs.readFileSync(manifest, "utf8"));
-  } catch {
-    return [];
-  }
-
-  const found: Array<[string, string]> = [];
-  for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
-    const deps = parsed[field];
-    if (deps === null || typeof deps !== "object") {
-      continue;
-    }
-    for (const name of Object.keys(deps as Record<string, string>)) {
-      found.push([name, field]);
-    }
-  }
-  return found;
-}
-
-/** A workspace package is a symlink in node_modules, so this follows the link to find where it lives. */
-function packageInsideRepository(
-  root: string,
-  from: string,
-  name: string,
-): string | null {
-  const linked = path.join(from, "node_modules", name);
-  const candidates = [linked, path.join(root, "node_modules", name)];
-  for (const candidate of candidates) {
-    let resolved: string;
-    try {
-      resolved = fs.realpathSync(candidate);
-    } catch {
-      continue;
-    }
-    const withinRoot = resolved.startsWith(
-      `${fs.realpathSync(root)}${path.sep}`,
-    );
-    if (
-      withinRoot &&
-      !resolved.includes(`${path.sep}node_modules${path.sep}`)
-    ) {
-      return resolved;
-    }
-  }
-  return null;
+  return dependenciesThroughLocalPackages(root).map((dependency) => [
+    dependency.name,
+    dependency.through === null
+      ? dependency.field
+      : `${dependency.field} of ${dependency.through}`,
+  ]);
 }
 
 function* filesUnder(
@@ -1234,6 +1169,12 @@ export function formatInitReport(report: InitReport, directory = "."): string {
 
 /** The opening of a report with no command to print. */
 function nothingToReadLines(report: InitReport): string[] {
+  if (report.sharedLibrary !== undefined) {
+    return [
+      `${green("✓")} ${report.root} is shared code with no entry point of its own.`,
+    ];
+  }
+
   if ((report.emptyExtracts ?? []).length > 0) {
     return [
       `${yellow("!")} Packs matched in ${report.root}, but an extract there wouldn't find a file to read.`,
@@ -1254,6 +1195,7 @@ function notReadLines(report: InitReport): string[] {
   return [
     ...recognizedWithoutPackLines(report),
     ...unreadLines(report),
+    ...sharedLibraryLines(report),
     ...emptyExtractLines(report),
     ...emptyContractLines(report),
     ...coveredContractLines(report),
@@ -1436,6 +1378,32 @@ function coveredContractLines(report: InitReport): string[] {
     ),
   );
   return lines;
+}
+
+function sharedLibraryLines(report: InitReport): string[] {
+  const library = report.sharedLibrary;
+  if (library === undefined) {
+    return [];
+  }
+
+  const indent = `    ${"".padEnd(16)} `;
+  const readBy =
+    library.readBy.length === 0
+      ? "nothing reaches it: no package here that suss reads depends on it"
+      : `read through ${joinNames(library.readBy)}, which depend on it`;
+  return [
+    "",
+    `  ${bold("Shared code")}`,
+    `    ${cyan(LANGUAGE_LABEL.typescript.padEnd(16))} ${dim(readBy)}`,
+    `${indent}${dim(`no extract of its own, since its packs (${library.packs.join(", ")}) don't find a route or handler in it to start from`)}`,
+  ];
+}
+
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) {
+    return names[0] ?? "";
+  }
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
 function emptyExtractLines(report: InitReport): string[] {
