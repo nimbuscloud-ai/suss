@@ -467,7 +467,28 @@ export type DiscoveryMatch =
        */
       workspaces?: true;
     }
+  | CallbackArgumentMatch
   | TestCaseMatch;
+
+/**
+ * A function handed to a call or construction of a library export, which
+ * the library then calls with work of its own. BullMQ's
+ * `new Worker("emails", async (job) => {...})` is the case it was written
+ * for: the processor becomes a unit, and a binding the pattern declares
+ * can read its channel off the same call with `callArgument`.
+ *
+ * `new X(...)` and `x(...)` both match. The function is followed the way
+ * any value is, so a processor written in another module and passed by
+ * name is found too. A function the run cannot settle to one body, such
+ * as a parameter or a file path the library loads itself, gives no unit.
+ */
+export interface CallbackArgumentMatch {
+  type: "callbackArgument";
+  importModule: string;
+  importName: string;
+  /** Which argument is the function. */
+  callbackPosition: number;
+}
 
 /**
  * Test cases written as nested calls, the way vitest, jest and mocha
@@ -616,12 +637,15 @@ export type BindingExtraction = {
  *
  * `decoratorArgument` reads the argument off the same decorator the
  * match selected the handler by, so `@EventPattern("order.placed")`
- * gives "order.placed". `literal` is for a wire whose channel the
- * library fixes. `unstated` means the wire is known and the channel is
- * not, and it pairs the same as a null channel.
+ * gives "order.placed". `callArgument` reads an argument of the call a
+ * `callbackArgument` match found the function in, so
+ * `new Worker("emails", fn)` gives "emails". `literal` is for a wire
+ * whose channel the library fixes. `unstated` means the wire is known
+ * and the channel is not, and it pairs the same as a null channel.
  */
 export type ChannelSource =
   | { from: "decoratorArgument"; position: number }
+  | { from: "callArgument"; position: number }
   | { from: "literal"; value: string }
   | { from: "unstated" };
 

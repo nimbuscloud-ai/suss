@@ -153,6 +153,7 @@ export type {
   AccessRecognizer,
   ArgumentParser,
   BindingExtraction,
+  CallbackArgumentMatch,
   ChannelSource,
   ContractPattern,
   DeclaredBinding,
