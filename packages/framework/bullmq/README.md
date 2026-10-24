@@ -18,6 +18,8 @@ new Worker("emails", async (job) => {
 
 `signUp` records a message send on `bus:bullmq emails`, and the worker's processor becomes a consumer on the same channel.
 
+Run it beside `-f node`, as `suss init` does. The pack discovers workers, and a send needs a unit to be recorded on. A file that only adds jobs gets its units from the `node` pack, which makes each exported function one, or from whichever pack discovers the route that calls it.
+
 ## What it reads
 
 - **Workers.** In `new Worker(queueName, processor, opts)`, the processor becomes a unit of kind `consumer`, bound to `message-bus { messageBus: "bullmq", channel: queueName }`. The processor can be written inline or passed by name, including a function imported from another module. Its reads, writes and calls belong to that unit. The processor's first parameter has the role `job` and its second the role `token`.
