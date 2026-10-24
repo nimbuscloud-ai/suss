@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 323,
-      "covered": 312,
+      "total": 325,
+      "covered": 314,
       "skipped": 0,
-      "pct": 96.59
+      "pct": 96.61
     },
     "statements": {
-      "total": 327,
-      "covered": 316,
+      "total": 329,
+      "covered": 318,
       "skipped": 0,
-      "pct": 96.63
+      "pct": 96.65
     },
     "functions": {
       "total": 57,
@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 266,
-      "covered": 226,
+      "total": 270,
+      "covered": 228,
       "skipped": 0,
-      "pct": 84.96
+      "pct": 84.44
     },
     "branchesTrue": {
       "total": 0,
@@ -189,10 +189,10 @@
   },
   "src/serverlessFunctions.ts": {
     "lines": {
-      "total": 41,
-      "covered": 34,
+      "total": 43,
+      "covered": 36,
       "skipped": 0,
-      "pct": 82.92
+      "pct": 83.72
     },
     "functions": {
       "total": 3,
@@ -201,16 +201,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 41,
-      "covered": 34,
+      "total": 43,
+      "covered": 36,
       "skipped": 0,
-      "pct": 82.92
+      "pct": 83.72
     },
     "branches": {
-      "total": 39,
-      "covered": 26,
+      "total": 43,
+      "covered": 28,
       "skipped": 0,
-      "pct": 66.66
+      "pct": 65.11
     }
   },
   "src/templateLoader.ts": {
