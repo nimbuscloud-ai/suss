@@ -176,7 +176,8 @@ function stopProcess(pid: number | undefined): void {
 const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 let listening = false;
 
-function stopRunning(): void {
+/** Kills every read still running, as this process does before it exits. */
+export function stopEveryRead(): void {
   for (const pid of running) {
     stopProcess(pid);
   }
@@ -195,7 +196,7 @@ function stopChildrenOnSignal(): void {
 
   listening = true;
   const onSignal = (signal: NodeJS.Signals): void => {
-    stopRunning();
+    stopEveryRead();
     for (const one of SIGNALS) {
       process.off(one, onSignal);
     }
@@ -204,5 +205,5 @@ function stopChildrenOnSignal(): void {
   for (const signal of SIGNALS) {
     process.on(signal, onSignal);
   }
-  process.on("exit", stopRunning);
+  process.on("exit", stopEveryRead);
 }
