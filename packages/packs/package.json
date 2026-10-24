@@ -97,6 +97,10 @@
       "types": "./dist/celery.d.ts",
       "import": "./dist/celery.js"
     },
+    "./bullmq": {
+      "types": "./dist/bullmq.d.ts",
+      "import": "./dist/bullmq.js"
+    },
     "./cloudflare-workers": {
       "types": "./dist/cloudflare-workers.d.ts",
       "import": "./dist/cloudflare-workers.js"
@@ -321,6 +325,7 @@
     "@suss/framework-bigquery": "*",
     "@suss/framework-bigquery-python": "*",
     "@suss/framework-bigquery-ruby": "*",
+    "@suss/framework-bullmq": "*",
     "@suss/framework-celery": "*",
     "@suss/framework-cloudflare-workers": "*",
     "@suss/framework-drizzle": "*",
