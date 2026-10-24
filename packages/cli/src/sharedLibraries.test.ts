@@ -139,6 +139,42 @@ describe("a service that imports a sibling package", () => {
     );
   });
 
+  it("does not get a framework pack from a sibling, since a read finds units only in its own files", async () => {
+    const root = shop();
+    fs.writeFileSync(
+      path.join(root, "packages/db/package.json"),
+      JSON.stringify({
+        name: "@shop/db",
+        dependencies: { pg: "*", hono: "*" },
+      }),
+    );
+
+    const report = await inspectProject(path.join(root, "apps/api"));
+
+    expect(namesOf(report.suggestions)).toContain("pg");
+    expect(namesOf(report.suggestions)).not.toContain("hono");
+  });
+
+  it("stays out of the report when only a sibling's packs matched and no file here is read", async () => {
+    const root = shop();
+    fs.mkdirSync(path.join(root, "packages/db/plugins/audit"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(root, "packages/db/plugins/audit/package.json"),
+      JSON.stringify({
+        name: "@shop/audit",
+        dependencies: { "@shop/db": "*" },
+      }),
+    );
+
+    const targets = await findInitTargets(root);
+
+    expect(targets.map((target) => target.directory)).not.toContain(
+      "packages/db/plugins/audit",
+    );
+  });
+
   it("does not get the packs of the sibling's dev dependencies", async () => {
     const root = shop();
 

@@ -81,6 +81,8 @@ export interface PackSuggestion {
    */
   calledIn?: string;
   configuration?: PackConfiguration;
+  /** True when a package of this repository the project depends on declares the library, rather than the project itself. */
+  throughLocalPackage?: boolean;
 }
 
 export interface InitReport {
@@ -338,7 +340,12 @@ export async function inspectProject(root: string): Promise<InitReport> {
           candidate.ecosystem === library.ecosystem &&
           candidate.name === library.name,
       );
-      if (dependency === undefined) {
+      // A read finds units only in its own files, and recognises calls in
+      // every body it walks, a sibling package's included.
+      if (
+        dependency === undefined ||
+        (library.inLocalPackage && pack.declares.kind !== "effects")
+      ) {
         continue;
       }
 
@@ -350,6 +357,9 @@ export async function inspectProject(root: string): Promise<InitReport> {
         language: LANGUAGE_OF[dependency.ecosystem],
         ...(pack.declares.configuration !== undefined
           ? { configuration: pack.declares.configuration }
+          : {}),
+        ...(library.inLocalPackage === true
+          ? { throughLocalPackage: true }
           : {}),
       });
     }
@@ -453,7 +463,9 @@ export async function inspectProject(root: string): Promise<InitReport> {
             candidate.ecosystem === library.ecosystem &&
             candidate.dependency === library.name,
         );
-        return entry === undefined ? [] : [entry.label ?? entry.dependency];
+        return entry === undefined || library.inLocalPackage
+          ? []
+          : [entry.label ?? entry.dependency];
       }),
     ),
   ];
@@ -735,15 +747,25 @@ export function withReadableCode(report: InitReport): InitReport {
         suggestion.kind === "contract" ||
         !unreadable.includes(languageOf(suggestion)),
     ),
+    // A pack only a sibling package led to says nothing about this folder.
     emptyExtracts: [
       ...(report.emptyExtracts ?? []),
-      ...unreadable.map((language) => ({
-        language,
-        packs: code
-          .filter((suggestion) => languageOf(suggestion) === language)
-          .map((suggestion) => suggestion.name),
-        reason: whyNoFileIsRead(report.root, language),
-      })),
+      ...unreadable
+        .filter((language) =>
+          code.some(
+            (suggestion) =>
+              languageOf(suggestion) === language &&
+              countsForProject(suggestion) &&
+              suggestion.throughLocalPackage !== true,
+          ),
+        )
+        .map((language) => ({
+          language,
+          packs: code
+            .filter((suggestion) => languageOf(suggestion) === language)
+            .map((suggestion) => suggestion.name),
+          reason: whyNoFileIsRead(report.root, language),
+        })),
     ],
   };
 }
@@ -765,6 +787,8 @@ interface DeclaredLibrary {
   name: string;
   /** The manifest or field that listed it. */
   where: string;
+  /** True when a package of this repository the project depends on listed it, rather than the project itself. */
+  inLocalPackage?: boolean;
 }
 
 /**
@@ -777,9 +801,7 @@ function declaredLibraries(root: string): {
   named: DeclaredLibrary[];
   unread: UnreadDependencies[];
 } {
-  const named: DeclaredLibrary[] = dependenciesOf(root).map(
-    ([name, where]) => ({ ecosystem: "npm", name, where }),
-  );
+  const named: DeclaredLibrary[] = npmDependenciesOf(root);
   const unread: UnreadDependencies[] = [];
 
   const python = readPythonDependencies(root);
@@ -838,15 +860,18 @@ function callOfShippedLibrary(
 /**
  * The project's npm dependencies, with those of the sibling packages it
  * depends on. The project's read follows its calls into a sibling's code,
- * so it needs the sibling's packs to recognise what that code touches.
+ * so it needs the packs that recognise what that code touches.
  */
-function dependenciesOf(root: string): Array<[string, string]> {
-  return dependenciesThroughLocalPackages(root).map((dependency) => [
-    dependency.name,
-    dependency.through === null
-      ? dependency.field
-      : `${dependency.field} of ${dependency.through}`,
-  ]);
+function npmDependenciesOf(root: string): DeclaredLibrary[] {
+  return dependenciesThroughLocalPackages(root).map((dependency) => ({
+    ecosystem: "npm",
+    name: dependency.name,
+    where:
+      dependency.through === null
+        ? dependency.field
+        : `${dependency.field} of ${dependency.through}`,
+    ...(dependency.through === null ? {} : { inLocalPackage: true }),
+  }));
 }
 
 function* filesUnder(
