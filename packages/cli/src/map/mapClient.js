@@ -931,14 +931,27 @@
           o[6] !== null
             ? ` <span class="badge" data-term="early">${icon("guard", "i-guard")}${esc(S[o[6]])}</span>`
             : "";
+        // A GraphQL field's outcome says the type it resolves to, linked
+        // to that type's entry, in place of a status it does not have.
+        const returns =
+          o[7] !== null && o[7] !== undefined
+            ? `<span class="muted">returns</span> <span class="c-type">${typeHtml(S[o[7]])}</span>`
+            : "";
         const cond = o[3].length
-          ? conditionHtml(o[3])
-          : `<span class="cond muted">otherwise</span>`;
-        const word = o[0] === null ? (S[o[1]] === "throw" ? "err" : "?") : null;
+          ? `${conditionHtml(o[3])}${returns ? ` ${returns}` : ""}`
+          : returns || `<span class="cond muted">otherwise</span>`;
+        const word =
+          o[0] === null
+            ? S[o[1]] === "throw"
+              ? "err"
+              : raw.k === "q" && S[o[1]] === "return"
+                ? "ok"
+                : "?"
+            : null;
         const pill =
           word === null
             ? statusPill(o[0])
-            : `<span class="status s-unknown">${word}</span>`;
+            : `<span class="status ${word === "ok" ? "s-2xx" : "s-unknown"}">${word}</span>`;
         return `<div class="outcome">${pill}<div class="cond">${cond}${exc}${from}<div class="site-meta">${loc(o[4], o[5])}</div></div></div>`;
       });
   }

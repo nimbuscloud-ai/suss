@@ -14,6 +14,7 @@ import {
   readGraphqlMetadata,
   readWrapperMetadata,
 } from "@suss/behavioral-ir";
+import { withChildShapes, withDefinitionsInlined } from "@suss/ir-core";
 
 import { formatBodyShape, formatCondition } from "../inspect.js";
 import { repositoryKeyOf, type UnitTable } from "./mapUnits.js";
@@ -216,11 +217,12 @@ function fillFromSummaries(
     entry.framework = first?.identity.boundaryBinding?.recognition ?? "";
   }
 
-  entry.outcomes = code.flatMap((summary) =>
-    summary.transitions.map((transition) =>
-      outcomeOf(transition, units.of(summary)),
-    ),
-  );
+  entry.outcomes = code.flatMap((summary) => {
+    const names = definedNames(summary);
+    return summary.transitions.map((transition) =>
+      outcomeOf(transition, units.of(summary), names),
+    );
+  });
   entry.unread = code.some((summary) =>
     summary.gaps.some((gap) => gap.type === "unreadOutcome"),
   );
@@ -242,12 +244,20 @@ function fillFromSummaries(
   }
 }
 
-function outcomeOf(transition: Transition, unit: number): MapOutcome {
+function outcomeOf(
+  transition: Transition,
+  unit: number,
+  names: ReadonlyMap<string, string>,
+): MapOutcome {
   const output = transition.output;
   return {
     status: statusOf(transition),
     output: output.type,
     exception: output.type === "throw" ? output.exceptionType : null,
+    returns:
+      output.type === "return" && output.value !== null
+        ? formatBodyShape(namesOnly(output.value, names))
+        : null,
     conditions: transition.conditions.map((condition) =>
       formatCondition(condition),
     ),
@@ -255,6 +265,37 @@ function outcomeOf(transition: Transition, unit: number): MapOutcome {
     line: transition.location.start,
     wrapper: readWrapperMetadata(transition)?.from?.name ?? null,
   };
+}
+
+/**
+ * The shape the check put in place of a ref to each type the summary
+ * defines, keyed by its text, so the page can print the type's name
+ * again where the check spelled it out.
+ */
+function definedNames(summary: BehavioralSummary): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const name of Object.keys(summary.definitions ?? {})) {
+    const spelled = withDefinitionsInlined(
+      { type: "ref", name, def: name },
+      summary.definitions,
+    );
+    names.set(JSON.stringify(spelled), name);
+  }
+  return names;
+}
+
+/** The shape with each type down to its name, so the page prints `Campaign` and links it, where `inspect` adds the file. */
+function namesOnly(
+  shape: TypeShape,
+  names: ReadonlyMap<string, string>,
+): TypeShape {
+  if (shape.type === "ref") {
+    return { type: "ref", name: shape.name };
+  }
+  const defined = names.get(JSON.stringify(shape));
+  return defined === undefined
+    ? withChildShapes(shape, (inner) => namesOnly(inner, names))
+    : { type: "ref", name: defined };
 }
 
 /** The status a transition returns: a literal one, or what the framework sends for an uncaught throw. */

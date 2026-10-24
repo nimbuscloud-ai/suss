@@ -2,7 +2,8 @@
  * Every GraphQL type the run knows, with each field's arguments and type.
  *
  * A field's shape comes from what its resolver in code declares, and the
- * schema's type definitions fill in the fields no resolver declares. A
+ * type definitions in the summaries fill in the fields no resolver
+ * declares, such as a connection's. A
  * field whose type is another type the run knows links to it on the page.
  * Types are written the way `inspect` writes them, so a schema's `ID` and
  * `String` both read as `string`: the summaries keep no difference.
@@ -61,20 +62,22 @@ export function gatherGraphqlTypes(
   }
 
   // Every field a schema declares has a copy of the whole schema's
-  // definitions, so each document's are read once.
+  // definitions, so each document's are read once. A resolver in code
+  // has only the types its own output refers to, such as a connection.
   const read = new Set<string>();
-  for (const summary of resolvers) {
+  for (const summary of ordered) {
     const definitions = summary.definitions;
-    const document =
-      readSourceDocumentMetadata(summary)?.label ?? summary.location.file;
-    if (
-      definitions === undefined ||
-      read.has(document) ||
-      !units.isSpec(summary)
-    ) {
+    if (definitions === undefined) {
       continue;
     }
-    read.add(document);
+    if (units.isSpec(summary)) {
+      const document =
+        readSourceDocumentMetadata(summary)?.label ?? summary.location.file;
+      if (read.has(document)) {
+        continue;
+      }
+      read.add(document);
+    }
     for (const [type, shape] of Object.entries(definitions)) {
       if (shape.type !== "record") {
         continue;

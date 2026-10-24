@@ -76,6 +76,8 @@ export interface MapOutcome {
   output: string;
   /** For a throw, the exception's class. */
   exception: string | null;
+  /** For a return, the type it returns, written the way `inspect` writes one. */
+  returns: string | null;
   /** The conditions on the path, as `inspect` prints them. */
   conditions: string[];
   unit: number;
