@@ -14,7 +14,11 @@
 import { Node } from "ts-morph";
 
 import { rootIdentifier } from "../configuredCall.js";
-import { propertyValueOf, stringValuesOf } from "../discovery/resolveValue.js";
+import {
+  propertyValueOf,
+  stringValuesOf,
+  writtenNodeOf,
+} from "../discovery/resolveValue.js";
 import { parameterReads } from "../parameterReads.js";
 import { peelValue } from "../walk/unwrap.js";
 import { functionCalledAt } from "./functionBehind.js";
@@ -69,6 +73,8 @@ interface Receiver {
   /** The whole callee, which is what made the value where there is no receiver. */
   expression: Node;
   resolve: Resolve;
+  /** The run's store, for a receiver a project function made. */
+  resolution?: ResolutionStore | undefined;
   originatesFrom?: OriginatesFrom;
 }
 
@@ -87,13 +93,41 @@ const ORIGIN: Record<
         receiver.originatesFrom,
       ),
     ),
-  constructed: (origin, receiver) =>
-    !goesToProjectMethod(receiver.callee) &&
-    madeFromNamed(origin, madeExpression(receiver)) &&
-    origin.importedFrom.some((module) =>
-      isImportedFrom(madeBy(receiver), module, receiver.originatesFrom),
-    ),
+  constructed: (origin, receiver) => {
+    if (goesToProjectMethod(receiver.callee)) {
+      return false;
+    }
+    // Checked as written first, so a client made straight from the
+    // library costs no question about the project's own functions.
+    const asWritten = madeExpression(receiver, "asWritten");
+    if (madeFromModule(origin, asWritten, receiver)) {
+      return true;
+    }
+    const through = madeExpression(receiver, "throughProjectCalls");
+    return through !== asWritten && madeFromModule(origin, through, receiver);
+  },
 };
+
+/**
+ * How a receiver's construction is read. `throughProjectCalls` takes a
+ * receiver one of the project's own functions made as the construction
+ * that function returns.
+ */
+type MadeReading = "asWritten" | "throughProjectCalls";
+
+/** Whether a construction came from one of the origin's modules. */
+function madeFromModule(
+  origin: ReceiverOrigin,
+  made: Node,
+  receiver: Receiver,
+): boolean {
+  return (
+    madeFromNamed(origin, made) &&
+    origin.importedFrom.some((module) =>
+      isImportedFrom(madeBy(made), module, receiver.originatesFrom),
+    )
+  );
+}
 
 /**
  * Whether the export a value was made from is one the pack asked for.
@@ -156,8 +190,7 @@ const CALL_ORIGIN: Record<
  * through the fact layer as the `new` or the factory call that made it.
  * A call with no receiver made its own value, so its callee says.
  */
-function madeBy(receiver: Receiver): Node {
-  const made = madeExpression(receiver);
+function madeBy(made: Node): Node {
   const expression =
     Node.isNewExpression(made) || Node.isCallExpression(made)
       ? made.getExpression()
@@ -170,11 +203,15 @@ function madeBy(receiver: Receiver): Node {
  * wants the root identifier and the export-name check wants the
  * rightmost part, so both read off this.
  */
-function madeExpression(receiver: Receiver): Node {
+function madeExpression(receiver: Receiver, reading: MadeReading): Node {
   if (receiver.callee === null) {
     return receiver.expression;
   }
-  const written = receiver.resolve(receiver.callee.getExpression());
+  const asWritten = receiver.resolve(receiver.callee.getExpression());
+  const written =
+    reading === "asWritten"
+      ? asWritten
+      : madeThroughProjectCall(asWritten, receiver.resolution);
   if (
     written === null ||
     (!Node.isNewExpression(written) && !Node.isCallExpression(written))
@@ -369,6 +406,7 @@ export function callOpsFor(
         callee,
         expression,
         resolve,
+        resolution: reading.resolution,
         ...(originatesFrom === undefined ? {} : { originatesFrom }),
       }),
     isFrom: (origin) =>
@@ -385,9 +423,7 @@ export function callOpsFor(
     namedCallee: () => Node.isIdentifier(expression),
     parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
-      callee === null
-        ? null
-        : opsOverCall(callee.getExpression(), values, "namesAndFields"),
+      callee === null ? null : opsOverReceiver(callee.getExpression(), values),
     argument: (index) => opsOverCall(argumentsOf()[index], values),
     readingArguments: (first, last) => walk?.settle(first, last),
     readingReceivers: (methods) => walk?.settleReceivers(methods),
@@ -714,13 +750,51 @@ function selectorReadsOf(argument: Node | undefined): readonly string[] | null {
 function opsOverCall(
   value: Node | undefined,
   reading: ValueReading,
-  following: Following = "names",
 ): AstCapableOps | null {
-  const written = settled(value, reading.resolve, following);
+  const written = settled(value, reading.resolve);
   if (written === null || !isCalled(written)) {
     return null;
   }
   return callOpsFor(written, reading);
+}
+
+/**
+ * The call a receiver is, as `opsOverCall` reads a value, except that a
+ * receiver a project function made is the construction that function
+ * returns. `madeExpression` reads it the same way, so the origin a chain
+ * checks and the receiver it then reads are the same call.
+ */
+function opsOverReceiver(
+  value: Node,
+  reading: ValueReading,
+): AstCapableOps | null {
+  const written = madeThroughProjectCall(
+    settled(value, reading.resolve, "namesAndFields"),
+    reading.resolution,
+  );
+  if (written === null || !isCalled(written)) {
+    return null;
+  }
+  return callOpsFor(written, reading);
+}
+
+/**
+ * What a call into one of the project's own functions returns, as the
+ * source wrote it. A queue built inside `createJobsQueue()` is the
+ * `new Queue(...)` there. Any other value comes back as it is.
+ */
+function madeThroughProjectCall(
+  written: Node | null,
+  resolution: ResolutionStore | undefined,
+): Node | null {
+  if (
+    written === null ||
+    resolution === undefined ||
+    !Node.isCallExpression(written)
+  ) {
+    return written;
+  }
+  return writtenNodeOf(written, resolution) ?? written;
 }
 
 /** Whether a value is a call, a construction or a tagged template. */
