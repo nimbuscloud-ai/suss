@@ -14,7 +14,12 @@ import { functionOf } from "@suss/checker";
 import { touchesOfUnits } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { CallFacts, CallPath, FunctionKey } from "@suss/checker";
+import type {
+  CallFacts,
+  CallPath,
+  CallRecord,
+  FunctionKey,
+} from "@suss/checker";
 import type { TargetTouch } from "./target.js";
 
 /** A touch, and the calls from the unit in the question to the unit that makes it. */
@@ -73,15 +78,28 @@ export function shortestFirst(
     );
 }
 
-/** A call that picks its function at run time may never pick the one this path goes through, so the hop says so. */
+/**
+ * A call that picks its function at run time may never pick the one this
+ * path goes through, and an enqueued job runs later, so those hops say so.
+ */
 function hopSpellings(path: CallPath, facts: CallFacts): string[] {
   return path.map((hop) => {
     const picked = hop.to === null ? undefined : facts.units.get(hop.to)?.[0];
-    return hop.recorded === "possible" && picked !== undefined
-      ? `${hop.callee}, which may run ${picked.identity.name}`
-      : hop.callee;
+    if (picked === undefined) {
+      return hop.callee;
+    }
+    return HOP_SPELLING[hop.recorded]?.(hop.callee, picked) ?? hop.callee;
   });
 }
+
+const HOP_SPELLING: Partial<
+  Record<CallRecord, (callee: string, picked: BehavioralSummary) => string>
+> = {
+  possible: (callee, picked) =>
+    `${callee}, which may run ${picked.identity.name}`,
+  sent: (callee, picked) =>
+    `${callee}, which ${picked.identity.name} runs later`,
+};
 
 function touchKey(touch: TargetTouch): string {
   return `${touch.touched.label} ${touch.touched.relation}`;

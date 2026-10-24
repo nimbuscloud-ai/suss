@@ -35,10 +35,13 @@ import {
   rule,
   variable as v,
 } from "@suss/datalog";
+import { parseChannel } from "@suss/ir-core";
 
 import type {
   BehavioralSummary,
+  BoundaryBinding,
   FunctionCallSemantics,
+  MessageBusSemantics,
 } from "@suss/behavioral-ir";
 import type { BodyMatch, Rule, TagAlgebra } from "@suss/datalog";
 
@@ -53,9 +56,16 @@ export type FunctionKey = string;
  * parameter. `wraps` is a wrapper the framework runs in front of the
  * caller, which appears nowhere in the caller's body. `possible` is a
  * call that takes its function out of a table, or picks a member by a
- * computed name, and may run this function or another one listed.
+ * computed name, and may run this function or another one listed. `sent`
+ * is a job the caller puts on a channel, which its consumer runs later.
  */
-export type CallRecord = "written" | "bound" | "passed" | "wraps" | "possible";
+export type CallRecord =
+  | "written"
+  | "bound"
+  | "passed"
+  | "wraps"
+  | "possible"
+  | "sent";
 
 export interface CallHop {
   callee: string;
@@ -102,7 +112,11 @@ export interface CallFacts {
 export interface ReachOptions {
   /** Refuse a hop into something the start's test replaces with a mock. */
   pastMocks?: boolean;
-  /** Take only the calls whose function the source settles, and no `possible` one. */
+  /**
+   * Take only the calls the start runs itself: no `possible` one, and no
+   * `sent` one, since a test that enqueues a job runs it only if the
+   * test drains the queue.
+   */
   certainOnly?: boolean;
 }
 
@@ -156,6 +170,7 @@ export function readCallFacts(
   const provides: Array<[FunctionKey, string]> = [];
   const passes: Array<[FunctionKey, FunctionKey, number, FunctionKey]> = [];
   const callsParameter: Array<[FunctionKey, number, string]> = [];
+  const channels: ChannelFacts = { sends: [], receives: [] };
   const mocks: MockFacts = { module: [], name: [], member: [] };
   const placed: PlaceFacts = { inModule: [], named: [], memberNamed: [] };
 
@@ -166,6 +181,7 @@ export function readCallFacts(
     }
     units.set(fn, [...(units.get(fn) ?? []), summary]);
     addMockFacts(fn, summary, mocks);
+    addChannelFacts(fn, summary, channels);
     for (const reference of wrapperChain(summary)) {
       const wrapper = wrapperFor(chain, reference);
       if (wrapper !== undefined) {
@@ -255,6 +271,12 @@ export function readCallFacts(
     for (const fact of callsParameter) {
       db.add("callsParameter", fact);
     }
+    for (const fact of certainOnly ? [] : channels.sends) {
+      db.add("sends", fact);
+    }
+    for (const fact of channels.receives) {
+      db.add("receives", fact);
+    }
     return db;
   };
 
@@ -337,6 +359,62 @@ function addMockFacts(
       facts.module.push([fn, module]);
     }
   }
+}
+
+/**
+ * The channels a function sends to, and the ones it consumes, each by
+ * the channel's boundary key and its bus part. A side that does not say
+ * which bus has the empty string there, which the `sent` rules read as
+ * agreeing with any bus.
+ */
+interface ChannelFacts {
+  sends: Array<[FunctionKey, string, string, string]>;
+  receives: Array<[FunctionKey, string, string]>;
+}
+
+function addChannelFacts(
+  fn: FunctionKey,
+  summary: BehavioralSummary,
+  facts: ChannelFacts,
+): void {
+  const own = summary.identity.boundaryBinding;
+  if (summary.kind !== "library" && bindingIs(own, "message-bus")) {
+    const channel = channelFact(own);
+    if (channel !== null) {
+      facts.receives.push([fn, ...channel]);
+    }
+  }
+
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (
+        effect.type !== "interaction" ||
+        effect.interaction.class !== "message-send" ||
+        !bindingIs(effect.binding, "message-bus")
+      ) {
+        continue;
+      }
+      const channel = channelFact(effect.binding);
+      if (channel !== null) {
+        facts.sends.push([
+          fn,
+          ...channel,
+          effect.callee ?? displayLabel(effect.binding),
+        ]);
+      }
+    }
+  }
+}
+
+/** The key and bus part of a channel, or null when the binding does not say which channel. */
+function channelFact(
+  binding: BoundaryBinding & { semantics: MessageBusSemantics },
+): [string, string] | null {
+  const key = boundaryKey(binding);
+  if (key === null || binding.semantics.channel === null) {
+    return null;
+  }
+  return [key, parseChannel(binding.semantics.channel).bus ?? ""];
 }
 
 /**
@@ -436,6 +514,26 @@ const CALLS: Rule[] = [
     [F, G, L, constant("possible")],
     [lit("possible", F, G, L)],
     "calls-possible",
+  ),
+  // F sends to a channel G consumes. The buses agree when they match or
+  // when either side does not say which bus, the empty string here.
+  rule(
+    "calls",
+    [F, G, L, constant("sent")],
+    [lit("sends", F, K, B, L), lit("receives", G, K, B)],
+    "calls-sent",
+  ),
+  rule(
+    "calls",
+    [F, G, L, constant("sent")],
+    [lit("sends", F, K, constant(""), L), lit("receives", G, K, B)],
+    "calls-sent-any-bus",
+  ),
+  rule(
+    "calls",
+    [F, G, L, constant("sent")],
+    [lit("sends", F, K, B, L), lit("receives", G, K, constant(""))],
+    "calls-sent-to-any-bus",
   ),
   rule("provided", [K], [lit("provides", G, K)], "provided"),
 ];
@@ -543,6 +641,7 @@ const CALL_RECORD_OF: Record<string, CallRecord> = {
   passed: "passed",
   wraps: "wraps",
   possible: "possible",
+  sent: "sent",
 };
 
 /** The hop recorded by the `calls` fact at `index` in a rule body. */
@@ -577,6 +676,9 @@ const PATH_OF: Record<
   "calls-passed": () => [],
   "calls-wraps": () => [],
   "calls-possible": () => [],
+  "calls-sent": () => [],
+  "calls-sent-any-bus": () => [],
+  "calls-sent-to-any-bus": () => [],
   provided: () => [],
   "reaches-at": () => [],
   "reaches-into": (body) => [callAt(body, 1)],
