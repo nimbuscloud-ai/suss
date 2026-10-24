@@ -894,3 +894,87 @@ describe("a name handed to a project helper", () => {
     ).toEqual([[String(object[0]), `${funcKey[0]}#key`]]);
   });
 });
+
+const LEDGER = [
+  "class Ledger",
+  '  def initialize(table = ENV["LEDGER_TABLE"], region: ENV.fetch("LEDGER_REGION", "eu"))',
+  "    @table = table",
+  "  end",
+  "end",
+  "",
+  "class AuditLedger < Ledger",
+  "end",
+  "",
+].join("\n");
+
+describe("a parameter default", () => {
+  it("is read at the call that leaves its argument out, and not in the method", async () => {
+    expect(await methodReads(LEDGER, "initialize")).toEqual([]);
+    expect(
+      await projectMethodReads(
+        {
+          "ledger.rb": LEDGER,
+          "use.rb": [
+            "def bare",
+            "  Ledger.new",
+            "end",
+            "",
+            "def passed",
+            '  Ledger.new("orders", region: "us")',
+            "end",
+            "",
+          ].join("\n"),
+        },
+        "bare",
+      ),
+    ).toEqual([
+      { name: "LEDGER_TABLE", defaulted: false },
+      { name: "LEDGER_REGION", defaulted: true },
+    ]);
+  });
+
+  it("is not read by a call that passes the argument, positionally or by keyword", async () => {
+    expect(
+      await projectMethodReads(
+        {
+          "ledger.rb": LEDGER,
+          "use.rb": [
+            "def passed",
+            '  Ledger.new("orders", region: "us")',
+            "end",
+            "",
+          ].join("\n"),
+        },
+        "passed",
+      ),
+    ).toEqual([]);
+    expect(
+      await projectMethodReads(
+        {
+          "ledger.rb": LEDGER,
+          "use.rb": ["def keyed", '  Ledger.new(region: "us")', "end", ""].join(
+            "\n",
+          ),
+        },
+        "keyed",
+      ),
+    ).toEqual([{ name: "LEDGER_TABLE", defaulted: false }]);
+  });
+
+  it("runs the inherited initialize for a class that writes none", async () => {
+    expect(
+      await projectMethodReads(
+        {
+          "ledger.rb": LEDGER,
+          "use.rb": [
+            "def audited",
+            '  AuditLedger.new("audit")',
+            "end",
+            "",
+          ].join("\n"),
+        },
+        "audited",
+      ),
+    ).toEqual([{ name: "LEDGER_REGION", defaulted: true }]);
+  });
+});

@@ -4,6 +4,7 @@
 import {
   type ArrowFunction,
   type CaseClause,
+  type ConstructorDeclaration,
   type Expression,
   type FunctionDeclaration,
   type FunctionExpression,
@@ -15,11 +16,17 @@ import { parseConditionExpression } from "./predicates.js";
 
 import type { RawCondition } from "@suss/extractor";
 
+/**
+ * A function a unit is built on. A constructor is one, since `new
+ * Client()` runs its body and its parameters' defaults the way a call
+ * runs a function's.
+ */
 export type FunctionRoot =
   | FunctionDeclaration
   | FunctionExpression
   | ArrowFunction
-  | MethodDeclaration;
+  | MethodDeclaration
+  | ConstructorDeclaration;
 
 /**
  * A condition with its original AST Expression preserved.

@@ -26,7 +26,7 @@
 // the sub-unit, not the parent. Those function nodes are passed in as
 // `barriers`.
 
-import { Node } from "ts-morph";
+import { type ForEachDescendantTraversalControl, Node } from "ts-morph";
 
 import { climbSyntax, peelSyntax } from "./unwrap.js";
 
@@ -45,8 +45,8 @@ export const NO_BARRIERS: DescentBarriers = new Set<Node>();
  *
  * `func` (the unit root) is never a stop: its own body is always
  * walked. For any other node:
- *   - `FunctionDeclaration` / `MethodDeclaration` → stop (named units of
- *     record, summarized elsewhere).
+ *   - `FunctionDeclaration` / `MethodDeclaration` / a constructor → stop
+ *     (named units of record, summarized elsewhere).
  *   - `FunctionExpression` / `ArrowFunction` → descend, unless the node
  *     is a declared sub-unit boundary, in which case stop.
  *   - anything else → not a function boundary, never a stop.
@@ -59,13 +59,67 @@ export function isDescentStop(
   if (node === func) {
     return false;
   }
-  if (Node.isFunctionDeclaration(node) || Node.isMethodDeclaration(node)) {
+  if (
+    Node.isFunctionDeclaration(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isConstructorDeclaration(node)
+  ) {
     return true;
   }
   if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
     return barriers.has(node);
   }
   return false;
+}
+
+type Visit = (node: Node, traversal: ForEachDescendantTraversalControl) => void;
+
+/**
+ * Visit every node a unit's body runs, the way `forEachDescendant` does
+ * from the unit root. A constructor also runs its class's instance field
+ * initializers before its body, so `table = process.env.TABLE` is visited
+ * as part of the constructor. A field set to a function defines a method
+ * and runs nothing, so it is left out.
+ */
+export function forEachInUnitBody(root: Node, visit: Visit): void {
+  root.forEachDescendant(visit);
+  for (const initializer of fieldInitializersRunBy(root)) {
+    let skipped = false;
+    visit(initializer, {
+      stop: () => {
+        skipped = true;
+      },
+      skip: () => {
+        skipped = true;
+      },
+      up: () => {
+        skipped = true;
+      },
+    });
+    if (!skipped) {
+      initializer.forEachDescendant(visit);
+    }
+  }
+}
+
+function fieldInitializersRunBy(root: Node): Node[] {
+  if (!Node.isConstructorDeclaration(root)) {
+    return [];
+  }
+  const owner = root.getParent();
+  if (!Node.isClassDeclaration(owner) && !Node.isClassExpression(owner)) {
+    return [];
+  }
+  return owner.getProperties().flatMap((property) => {
+    const initializer = property.getInitializer();
+    if (initializer === undefined || property.isStatic()) {
+      return [];
+    }
+    const written = peelSyntax(initializer);
+    return Node.isArrowFunction(written) || Node.isFunctionExpression(written)
+      ? []
+      : [initializer];
+  });
 }
 
 /**

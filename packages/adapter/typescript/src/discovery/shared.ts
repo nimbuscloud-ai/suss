@@ -332,13 +332,14 @@ function exportIdentityOf(unit: DiscoveredUnit): string {
   return "";
 }
 
-/** Whether a node is one of the four function-shaped declarations. */
-export function isFunctionRoot(node: Node): boolean {
+/** Whether a node is one of the function-shaped declarations a unit is built on. */
+export function isFunctionRoot(node: Node): node is FunctionRoot {
   return (
     Node.isFunctionDeclaration(node) ||
     Node.isFunctionExpression(node) ||
     Node.isArrowFunction(node) ||
-    Node.isMethodDeclaration(node)
+    Node.isMethodDeclaration(node) ||
+    Node.isConstructorDeclaration(node)
   );
 }
 
@@ -357,7 +358,8 @@ export function isFunctionRoot(node: Node): boolean {
 export function declarationCarryingTheBody(declaration: Node): Node {
   if (
     !Node.isFunctionDeclaration(declaration) &&
-    !Node.isMethodDeclaration(declaration)
+    !Node.isMethodDeclaration(declaration) &&
+    !Node.isConstructorDeclaration(declaration)
   ) {
     return declaration;
   }
@@ -461,12 +463,7 @@ export function toFunctionRoot(node: Node): FunctionRoot | null {
 export function findEnclosingFunction(node: Node): FunctionRoot | null {
   let current = node.getParent();
   while (current !== undefined) {
-    if (
-      Node.isFunctionDeclaration(current) ||
-      Node.isFunctionExpression(current) ||
-      Node.isArrowFunction(current) ||
-      Node.isMethodDeclaration(current)
-    ) {
+    if (isFunctionRoot(current)) {
       return current as FunctionRoot;
     }
     current = current.getParent();

@@ -4,11 +4,18 @@
 
 import { requireEnv } from "../config/env.js";
 import { logLevel } from "../config/logging.js";
+import { IndexClient } from "../lib/indexClient.js";
 
-export async function handler(event: { id: string }): Promise<{
+const clients: Record<string, typeof IndexClient> = { index: IndexClient };
+
+export async function handler(event: { id: string; kind: string }): Promise<{
   statusCode: number;
 }> {
   logLevel();
+  new IndexClient("notify-index").tableName();
+  // Nothing says which class the table gives back, so the walk stops here.
+  const Chosen = clients[event.kind];
+  new Chosen("notify-index");
   await publish(requireEnv("NOTIFY_TOPIC_ARN"), event.id, undefined);
   await publish(
     process.env.NOTIFY_TOPIC_ARN,

@@ -15,6 +15,7 @@
 
 import {
   type CallExpression,
+  type NewExpression,
   Node,
   type PropertyAccessExpression,
   type SourceFile,
@@ -36,6 +37,7 @@ import { lineRangeOf, startLineOf } from "../lines.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
   type DescentBarriers,
+  forEachInUnitBody,
   invokesFunctionInPlace,
   isDescentStop,
   isModuleScopeStop,
@@ -48,6 +50,11 @@ import {
   type WalkArguments,
   walkArguments,
 } from "./callOps.js";
+import {
+  constructionCallee,
+  constructorCalledAt,
+  defaultsRunBy,
+} from "./functionBehind.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -69,7 +76,7 @@ export interface InvocationEffectLocation {
    * `res.json(body)`, is that same node; a call whose result the
    * terminal describes, `return toView(row)`, is a different one.
    */
-  node: CallExpression;
+  node: CallExpression | NewExpression;
   /**
    * Start line of the statement enclosing the call. Used by the
    * assembly pass to assign effects to the right branch.
@@ -454,14 +461,14 @@ function invocationsUnder(
   root: Node,
   isStop: (node: Node) => boolean,
 ): InvocationEffectLocation[] {
-  const calls: CallExpression[] = [];
+  const calls: Array<CallExpression | NewExpression> = [];
 
-  root.forEachDescendant((node, traversal) => {
+  forEachInUnitBody(root, (node, traversal) => {
     if (isStop(node)) {
       traversal.skip();
       return;
     }
-    if (Node.isCallExpression(node)) {
+    if (Node.isCallExpression(node) || runsProjectConstructor(node)) {
       calls.push(node);
     }
   });
@@ -472,15 +479,32 @@ function invocationsUnder(
   return calls.map((call) => invocationAt(call, root));
 }
 
+/**
+ * Whether this is a `new` that runs a constructor the project wrote. A
+ * dependency's class, as `new Map()` or an SDK client, runs nothing the
+ * walk can follow, and recording each one would add an effect per
+ * `new Error()` that says nothing a reader can act on.
+ */
+function runsProjectConstructor(node: Node): node is NewExpression {
+  return Node.isNewExpression(node) && constructorCalledAt(node) !== null;
+}
+
+/** The callee an invocation records: the call's own expression, or `new Client` for a constructor. */
+export function invokedCallee(call: CallExpression | NewExpression): string {
+  return Node.isNewExpression(call)
+    ? constructionCallee(call)
+    : call.getExpression().getText();
+}
+
 function invocationAt(
-  call: CallExpression,
+  call: CallExpression | NewExpression,
   func: Node,
 ): InvocationEffectLocation {
   const preconditions = collectPreconditions(call, func);
   return {
     effect: {
       type: "invocation",
-      callee: call.getExpression().getText(),
+      callee: invokedCallee(call),
       args: extractArgs(call),
       async: isAwaited(call),
       ...(preconditions.length > 0 ? { preconditions } : {}),
@@ -493,7 +517,7 @@ function invocationAt(
 }
 
 /** Whether the caller waits on the result: `await f()`, through any wrapper. */
-function isAwaited(call: CallExpression): boolean {
+function isAwaited(call: CallExpression | NewExpression): boolean {
   const consumer = climbSyntax(call).getParent();
   return consumer !== undefined && Node.isAwaitExpression(consumer);
 }
@@ -524,7 +548,7 @@ export function runInvocationRecognizers(
   const sourceFile = func.getSourceFile();
 
   const calls: CallExpression[] = [];
-  func.forEachDescendant((node, traversal) => {
+  forEachInUnitBody(func, (node, traversal) => {
     if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
@@ -704,45 +728,28 @@ function dispatchAccessRecognizers(
   // effect at the same line; stating it twice adds nothing.
   const seenEffects = new Set<string>();
 
-  const visited: Accessed[] = [];
-  root.forEachDescendant((node, traversal) => {
-    if (isStop(node)) {
-      traversal.skip();
-      return;
-    }
-    // Calls and tagged templates too: `requireEnv("X")` has no property
-    // access (#326), and a library can take its whole argument as one
-    // template, as `prisma.$queryRaw` and `gql` do.
-    if (
-      Node.isPropertyAccessExpression(node) ||
-      Node.isCallExpression(node) ||
-      Node.isTaggedTemplateExpression(node)
-    ) {
-      visited.push(node);
-    }
-  });
+  const visited = accessedIn(root, isStop);
   const walk = walkArguments(
-    visited.filter(
-      (node): node is CallExpression | TaggedTemplateExpression =>
-        !Node.isPropertyAccessExpression(node),
+    visited.flatMap(({ node }) =>
+      Node.isPropertyAccessExpression(node) ? [] : [node],
     ),
     resolution,
   );
 
-  for (const node of visited) {
+  for (const { node, at } of visited) {
     const stated = resolution === undefined ? undefined : new SlotsStated();
     const ctx = accessContextFor(
       node,
-      sourceFile,
+      node.getSourceFile(),
       resolution,
       originatesFrom,
       anchorCallsOf,
       walk,
       stated,
     );
-    const line = enclosingStatementLine(node);
-    const preconditions = collectPreconditions(node, root);
-    const cleansUpFrom = cleanupStartLine(node, root);
+    const line = enclosingStatementLine(at);
+    const preconditions = collectPreconditions(at, root);
+    const cleansUpFrom = cleanupStartLine(at, root);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -766,7 +773,7 @@ function dispatchAccessRecognizers(
         }
         seenEffects.add(key);
         out.push({
-          effect: placedAt(effect, node),
+          effect: placedAt(effect, at),
           line,
           preconditions,
           cleansUpFrom,
@@ -777,6 +784,76 @@ function dispatchAccessRecognizers(
   }
 
   return out;
+}
+
+/** A node a recognizer is handed, and the node in the unit's body it happens at. */
+interface AccessSite {
+  node: Accessed;
+  at: Node;
+}
+
+/**
+ * Every node in the unit's body a recognizer is handed. A parameter
+ * default runs at the call that leaves its argument out, so the unit's
+ * own defaults are left to its callers, and the defaults each call here
+ * runs are visited as happening at that call.
+ */
+function accessedIn(root: Node, isStop: (node: Node) => boolean): AccessSite[] {
+  const sites: AccessSite[] = [];
+  const calls: Array<CallExpression | NewExpression> = [];
+  forEachInUnitBody(root, (node, traversal) => {
+    if (isStop(node) || isOwnParameterDefault(node, root)) {
+      traversal.skip();
+      return;
+    }
+    if (isAccessed(node)) {
+      sites.push({ node, at: node });
+    }
+    if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
+      calls.push(node);
+    }
+  });
+  for (const call of calls) {
+    for (const initializer of defaultsRunBy(call)) {
+      forEachInUnitBody(initializer, (node, traversal) => {
+        if (isStop(node)) {
+          traversal.skip();
+          return;
+        }
+        if (isAccessed(node)) {
+          sites.push({ node, at: call });
+        }
+      });
+      if (isAccessed(initializer)) {
+        sites.push({ node: initializer, at: call });
+      }
+    }
+  }
+  return sites;
+}
+
+/**
+ * Calls and tagged templates as well as property reads: `requireEnv("X")`
+ * has no property access (#326), and a library can take its whole
+ * argument as one template, as `prisma.$queryRaw` and `gql` do.
+ */
+function isAccessed(node: Node): node is Accessed {
+  return (
+    Node.isPropertyAccessExpression(node) ||
+    Node.isCallExpression(node) ||
+    Node.isTaggedTemplateExpression(node)
+  );
+}
+
+/** Whether this is the default of one of the unit's own parameters. */
+function isOwnParameterDefault(node: Node, root: Node): boolean {
+  const parameter = node.getParent();
+  return (
+    parameter !== undefined &&
+    Node.isParameterDeclaration(parameter) &&
+    parameter.getInitializer() === node &&
+    parameter.getParent() === root
+  );
 }
 
 /**
@@ -793,7 +870,7 @@ function dispatchAccessRecognizers(
  */
 const MAX_ARG_DEPTH = 8;
 
-function extractArgs(call: CallExpression): EffectArg[] {
+function extractArgs(call: CallExpression | NewExpression): EffectArg[] {
   return call.getArguments().map((arg) => extractArg(arg, MAX_ARG_DEPTH));
 }
 
