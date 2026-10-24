@@ -8,10 +8,33 @@
 
 import { githubBlobBase } from "./mapHtml.js";
 
-import type { MapModel, MapTouch } from "./mapModel.js";
+import type { MapFinding, MapModel, MapTouch } from "./mapModel.js";
 
 /** How many units with an unfollowed call an entry point lists; the page gives the rest as a count. */
 const UNFOLLOWED_LISTED = 12;
+
+/**
+ * How many findings of one kind an entry point lists; the page gives the
+ * rest as a count. A project with thousands of findings has hundreds of
+ * one kind on a single route, and nobody reads past the first few.
+ */
+export const FINDINGS_LISTED_PER_KIND = 10;
+
+/**
+ * One finding as the inspector shows it: [kind, severity, description,
+ * provider unit, provider line, consumer unit, consumer line]. The rows
+ * go in a compressed block of their own, so they carry their text rather
+ * than places in the string table.
+ */
+export type FindingRow = [
+  string,
+  string,
+  string,
+  number | null,
+  number | null,
+  number | null,
+  number | null,
+];
 
 export interface PageData {
   /** The strings the rest refers to by index. */
@@ -42,19 +65,6 @@ export interface PageData {
   cl: Array<[number, number | null, number | null, number[]]>;
   /** Pages: [unit, path]. */
   pg: Array<[number, number]>;
-  /** Findings: [kind, severity, description, entry, provider unit, provider line, consumer unit, consumer line]. */
-  fi: Array<
-    [
-      number,
-      number,
-      number,
-      number | null,
-      number | null,
-      number | null,
-      number | null,
-      number | null,
-    ]
-  >;
   /** GraphQL types: [name, fields as [name, args, returns, refs, unit, entry]]. */
   ty: Array<
     [
@@ -99,7 +109,10 @@ export interface EntryData {
   /** Reach: [boundary, relations, unit, via, through, line]. */
   r: Array<[number, string, number, number | null, number[], number | null]>;
   c: number[];
+  /** Its findings, as places in the page's list of finding rows. */
   f: number[];
+  /** Findings past the ones listed: [kind, how many more]. */
+  fx: Array<[number, number]>;
   g: number[];
   /** How many units with an unfollowed call its reach crosses in all. */
   gn: number;
@@ -116,7 +129,74 @@ const RELATION_LETTER: Record<string, string> = {
   provides: "p",
 };
 
-export function pageDataOf(model: MapModel): PageData {
+/**
+ * The page's data, and the finding rows its inspector lists. A finding is
+ * listed only on the entry point it was placed on, which is the only
+ * place the page shows one, and only the first of each kind there. The
+ * coverage section counts every finding by kind.
+ */
+export function pageDataOf(model: MapModel): {
+  data: PageData;
+  findings: FindingRow[];
+} {
+  const listed = listedFindings(model);
+  return {
+    data: pageDataWith(model, listed),
+    findings: listed.rows,
+  };
+}
+
+interface ListedFindings {
+  rows: FindingRow[];
+  /** Per entry: the places in `rows` of its findings. */
+  shown: number[][];
+  /** Per entry: [kind, how many more] for each kind with findings past the cap. */
+  more: Array<Array<[string, number]>>;
+}
+
+function listedFindings(model: MapModel): ListedFindings {
+  const listed: ListedFindings = { rows: [], shown: [], more: [] };
+  for (const entry of model.entries) {
+    const perKind = new Map<string, number>();
+    const shown: number[] = [];
+    for (const at of entry.findings) {
+      const finding = model.findings[at];
+      if (finding === undefined) {
+        continue;
+      }
+
+      const ofKind = (perKind.get(finding.kind) ?? 0) + 1;
+      perKind.set(finding.kind, ofKind);
+      if (ofKind > FINDINGS_LISTED_PER_KIND) {
+        continue;
+      }
+
+      shown.push(listed.rows.length);
+      listed.rows.push(findingRow(finding));
+    }
+    listed.shown.push(shown);
+    listed.more.push(
+      [...perKind]
+        .filter(([, count]) => count > FINDINGS_LISTED_PER_KIND)
+        .map(([kind, count]) => [kind, count - FINDINGS_LISTED_PER_KIND]),
+    );
+  }
+  return listed;
+}
+
+function findingRow(finding: MapFinding): FindingRow {
+  return [
+    finding.kind,
+    finding.severity,
+    finding.description,
+    finding.provider.unit,
+    finding.provider.line,
+    finding.consumer.unit,
+    finding.consumer.line,
+  ];
+}
+
+function pageDataWith(model: MapModel, listed: ListedFindings): PageData {
   const strings: string[] = [];
   const stringIndex = new Map<string, number>();
   const s = (text: string): number => {
@@ -172,7 +252,7 @@ export function pageDataOf(model: MapModel): PageData {
       s(boundary.name),
       maybe(boundary.system),
     ]),
-    e: model.entries.map((entry) => ({
+    e: model.entries.map((entry, at) => ({
       k: entry.kind === "rest" ? "h" : "q",
       m: s(entry.method),
       p: s(entry.path),
@@ -191,7 +271,8 @@ export function pageDataOf(model: MapModel): PageData {
       ]),
       r: entry.reach.map(reach),
       c: entry.callers,
-      f: entry.findings,
+      f: listed.shown[at] ?? [],
+      fx: (listed.more[at] ?? []).map(([kind, count]) => [s(kind), count]),
       g: entry.unfollowed.slice(0, UNFOLLOWED_LISTED),
       gn: entry.unfollowed.length,
       nr: entry.unread ? 1 : 0,
@@ -234,16 +315,6 @@ export function pageDataOf(model: MapModel): PageData {
       client.entries,
     ]),
     pg: model.pages.map((page) => [page.unit, s(page.path)]),
-    fi: model.findings.map((finding) => [
-      s(finding.kind),
-      s(finding.severity),
-      s(finding.description),
-      finding.entry,
-      finding.provider.unit,
-      finding.provider.line,
-      finding.consumer.unit,
-      finding.consumer.line,
-    ]),
     ty: model.graphqlTypes.map((type) => [
       s(type.name),
       type.fields.map((field) => [
