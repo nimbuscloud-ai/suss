@@ -1,7 +1,7 @@
 {
   "name": "@suss/manifest-aws",
-  "exports": 16,
-  "internal": 27,
+  "exports": 18,
+  "internal": 28,
   "consumers": 2,
   "unfollowedCalls": 2
 }

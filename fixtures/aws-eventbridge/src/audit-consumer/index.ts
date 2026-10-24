@@ -1,7 +1,6 @@
-// Lambda target of a SAM EventBridgeRule whose Pattern uses a
-// detail-type prefix filter. v0 reduces routing to exact detail-type
-// match, so the pattern is unresolvable and the pairing check surfaces
-// this target as unpaired-unresolvable rather than dropping it.
+// Target of a SAM EventBridgeRule that filters the source with a prefix.
+// suss does not read prefix filters, so a send of OrderAudited only
+// possibly reaches it, and it is reported (info) rather than paired.
 
 interface AuditEvent {
   "detail-type": string;

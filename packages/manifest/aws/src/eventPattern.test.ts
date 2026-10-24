@@ -1,39 +1,54 @@
 import { describe, expect, it } from "vitest";
 
-import { reduceEventPattern, resolveEventBusToken } from "./eventPattern.js";
+import { readEventPattern, resolveEventBusToken } from "./eventPattern.js";
 
-describe("reduceEventPattern", () => {
-  it("reduces a literal detail-type array to its entries", () => {
+describe("readEventPattern", () => {
+  it("reads literal detail-type and source lists", () => {
     expect(
-      reduceEventPattern({ "detail-type": ["order.placed", "order.paid"] }),
-    ).toEqual({ kind: "exact", detailTypes: ["order.placed", "order.paid"] });
-  });
-
-  it("is unresolvable when the pattern is absent", () => {
-    const reduction = reduceEventPattern(undefined);
-    expect(reduction.kind).toBe("unresolvable");
-  });
-
-  it("is unresolvable when detail-type is missing", () => {
-    const reduction = reduceEventPattern({ source: ["orders"] });
-    expect(reduction.kind).toBe("unresolvable");
-  });
-
-  it("is unresolvable when detail-type holds a content filter", () => {
-    const reduction = reduceEventPattern({
-      "detail-type": [{ prefix: "order." }],
+      readEventPattern({
+        source: ["orders"],
+        "detail-type": ["order.placed", "order.paid"],
+      }),
+    ).toEqual({
+      detailTypes: ["order.placed", "order.paid"],
+      sources: ["orders"],
+      unsettled: [],
+      emittedByAws: false,
     });
-    expect(reduction.kind).toBe("unresolvable");
   });
 
-  it("is unresolvable when detail-type is a bare string rather than a list", () => {
-    const reduction = reduceEventPattern({ "detail-type": "order.placed" });
-    expect(reduction.kind).toBe("unresolvable");
+  it("gives null when the rule declares no pattern", () => {
+    expect(readEventPattern(undefined)).toBeNull();
   });
 
-  it("is unresolvable when detail-type is empty", () => {
-    const reduction = reduceEventPattern({ "detail-type": [] });
-    expect(reduction.kind).toBe("unresolvable");
+  it("leaves out a field the pattern does not filter on", () => {
+    expect(readEventPattern({ source: ["orders"] })).toEqual({
+      sources: ["orders"],
+      unsettled: [],
+      emittedByAws: false,
+    });
+  });
+
+  it("lists a field filtered with a prefix as unsettled", () => {
+    expect(
+      readEventPattern({
+        "detail-type": [{ prefix: "order." }],
+        source: [{ prefix: "com." }],
+      }),
+    ).toEqual({ unsettled: ["detail-type", "source"], emittedByAws: false });
+  });
+
+  it("lists a bare string or an empty list as unsettled", () => {
+    expect(
+      readEventPattern({ "detail-type": "order.placed", source: [] })
+        ?.unsettled,
+    ).toEqual(["detail-type", "source"]);
+  });
+
+  it("says when AWS services send the events a source matches", () => {
+    expect(
+      readEventPattern({ source: ["aws.s3", "orders"] })?.emittedByAws,
+    ).toBe(true);
   });
 });
 

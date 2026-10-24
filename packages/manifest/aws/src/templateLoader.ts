@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import YAML from "yaml";
+import YAML, { isMap, isScalar, LineCounter } from "yaml";
 
 import type { CollectionTag } from "yaml";
 
@@ -124,6 +124,19 @@ export const CLOUDFORMATION_YAML_TAGS = [
 export function loadCloudFormationTemplate(
   templatePath: string,
 ): CloudFormationTemplate {
+  return loadCloudFormationDocument(templatePath).template;
+}
+
+export interface LoadedTemplate {
+  template: CloudFormationTemplate;
+  /** The 1-based line each resource's logical id is written on. */
+  resourceLines: Map<string, number>;
+}
+
+/** `loadCloudFormationTemplate`, plus the line each resource starts on. */
+export function loadCloudFormationDocument(
+  templatePath: string,
+): LoadedTemplate {
   const resolved = path.resolve(templatePath);
   if (!fs.existsSync(resolved)) {
     throw new Error(`CloudFormation template not found: ${resolved}`);
@@ -137,7 +150,37 @@ export function loadCloudFormationTemplate(
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`CloudFormation template is not an object: ${resolved}`);
   }
-  return parsed as CloudFormationTemplate;
+  return {
+    template: parsed as CloudFormationTemplate,
+    resourceLines: readResourceLines(raw),
+  };
+}
+
+/**
+ * The line each key under `Resources` is written on. JSON is valid YAML,
+ * so one reader covers both formats. A text that does not parse gives
+ * an empty map, and its summaries keep line 1.
+ */
+export function readResourceLines(raw: string): Map<string, number> {
+  const lines = new Map<string, number>();
+  const lineCounter = new LineCounter();
+  const document = YAML.parseDocument(raw, {
+    customTags: CLOUDFORMATION_YAML_TAGS,
+    lineCounter,
+  });
+  const resources = document.get("Resources", true);
+  if (!isMap(resources)) {
+    return lines;
+  }
+  for (const item of resources.items) {
+    const key = item.key;
+    if (!isScalar(key) || key.range === undefined || key.range === null) {
+      continue;
+    }
+    lines.set(String(key.value), lineCounter.linePos(key.range[0]).line);
+  }
+
+  return lines;
 }
 
 /**

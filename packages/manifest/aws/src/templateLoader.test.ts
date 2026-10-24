@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loadCloudFormationTemplate, refTarget } from "./templateLoader.js";
+import {
+  loadCloudFormationDocument,
+  loadCloudFormationTemplate,
+  readResourceLines,
+  refTarget,
+} from "./templateLoader.js";
 
 const tempFiles: string[] = [];
 
@@ -124,6 +129,51 @@ describe("loadCloudFormationTemplate", () => {
   it("throws when the parsed value is not an object", () => {
     const file = writeTemp("template.yaml", "just a string");
     expect(() => loadCloudFormationTemplate(file)).toThrow(/not an object/);
+  });
+});
+
+describe("loadCloudFormationDocument", () => {
+  it("says which line each resource of a YAML template starts on", () => {
+    const file = writeTemp(
+      "template.yaml",
+      [
+        "Resources:",
+        "  # the queue",
+        "  Orders:",
+        "    Type: AWS::SQS::Queue",
+        "  OrdersDlq:",
+        "    Type: AWS::SQS::Queue",
+      ].join("\n"),
+    );
+
+    const { resourceLines } = loadCloudFormationDocument(file);
+
+    expect(Object.fromEntries(resourceLines)).toEqual({
+      Orders: 3,
+      OrdersDlq: 5,
+    });
+  });
+
+  it("reads the lines of a JSON template the same way", () => {
+    const file = writeTemp(
+      "template.json",
+      JSON.stringify(
+        { Resources: { Orders: { Type: "AWS::SQS::Queue" } } },
+        null,
+        2,
+      ),
+    );
+
+    expect(loadCloudFormationDocument(file).resourceLines.get("Orders")).toBe(
+      3,
+    );
+  });
+});
+
+describe("readResourceLines", () => {
+  it("gives no lines for a document without a Resources map", () => {
+    expect(readResourceLines("Resources: [a, b]\n").size).toBe(0);
+    expect(readResourceLines("Resources:\n  ? [a]\n  : x\n").size).toBe(0);
   });
 });
 

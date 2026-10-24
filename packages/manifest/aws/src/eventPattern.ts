@@ -9,57 +9,62 @@
 
 import { refTarget } from "./templateLoader.js";
 
-/**
- * How far a rule's EventPattern reduced: either to the exact
- * detail-types it lists, or not at all, along with a reason someone can
- * read.
- */
-export type PatternReduction =
-  | { kind: "exact"; detailTypes: string[] }
-  | { kind: "unresolvable"; reason: string };
+/** A pattern field that is not a plain list of strings. */
+export type UnsettledPatternField = "detail-type" | "source";
 
 /**
- * Reduce a rule's EventPattern to the exact set of DetailTypes it
- * matches. Only a literal `detail-type` array reduces. Anything else,
- * such as a missing detail-type, a content filter or an empty array,
- * comes back unresolvable with a reason, and the checker reports it.
+ * What a rule's EventPattern says about the two fields a send states.
+ * A field the pattern leaves out matches every value, so it has no
+ * entry here. A field written as anything but a list of strings, such
+ * as a prefix filter, is listed in `unsettled`.
  */
-export function reduceEventPattern(pattern: unknown): PatternReduction {
+export interface EventPatternFields {
+  detailTypes?: string[];
+  sources?: string[];
+  unsettled: UnsettledPatternField[];
+  /**
+   * A source starts with `aws.`. Only AWS services send those, and
+   * PutEvents refuses them from anyone else.
+   */
+  emittedByAws: boolean;
+}
+
+/** Null when the rule declares no EventPattern at all. */
+export function readEventPattern(pattern: unknown): EventPatternFields | null {
   if (pattern === null || typeof pattern !== "object") {
-    return {
-      kind: "unresolvable",
-      reason: "rule declares no EventPattern",
-    };
+    return null;
   }
-  const detailType = (pattern as Record<string, unknown>)["detail-type"];
-  if (detailType === undefined) {
-    return {
-      kind: "unresolvable",
-      reason:
-        "EventPattern has no detail-type; v0 reduces routing to exact detail-type match only",
-    };
+  const record = pattern as Record<string, unknown>;
+  const detailTypes = literalValues(record["detail-type"]);
+  const sources = literalValues(record.source);
+  const unsettled: UnsettledPatternField[] = [
+    ...(detailTypes === "unsettled" ? ["detail-type" as const] : []),
+    ...(sources === "unsettled" ? ["source" as const] : []),
+  ];
+  return {
+    ...(Array.isArray(detailTypes) ? { detailTypes } : {}),
+    ...(Array.isArray(sources) ? { sources } : {}),
+    unsettled,
+    emittedByAws:
+      Array.isArray(sources) &&
+      sources.some((source) => source.startsWith("aws.")),
+  };
+}
+
+/** Null when the field is left out, so every value matches it. */
+function literalValues(value: unknown): string[] | null | "unsettled" {
+  if (value === undefined) {
+    return null;
   }
-  if (!Array.isArray(detailType)) {
-    return {
-      kind: "unresolvable",
-      reason: "detail-type is not a plain array of string literals",
-    };
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    !value.every((entry) => typeof entry === "string")
+  ) {
+    return "unsettled";
   }
-  const detailTypes: string[] = [];
-  for (const entry of detailType) {
-    if (typeof entry !== "string") {
-      return {
-        kind: "unresolvable",
-        reason:
-          "detail-type contains a content filter (prefix / anything-but / etc.); pattern subsumption is out of v0 scope",
-      };
-    }
-    detailTypes.push(entry);
-  }
-  if (detailTypes.length === 0) {
-    return { kind: "unresolvable", reason: "detail-type array is empty" };
-  }
-  return { kind: "exact", detailTypes };
+
+  return value;
 }
 
 /**

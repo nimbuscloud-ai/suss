@@ -21,11 +21,34 @@ function pickProviders(summaries: BehavioralSummary[]): BehavioralSummary[] {
   );
 }
 
+/** Consumers with code behind them, leaving out the template's own wires. */
 function pickConsumers(summaries: BehavioralSummary[]): BehavioralSummary[] {
   return summaries.filter(
     (s) =>
       s.kind === "consumer" &&
-      s.identity.boundaryBinding?.semantics.name === "message-bus",
+      s.identity.boundaryBinding?.semantics.name === "message-bus" &&
+      readMessageBusMetadata(s)?.wiring === undefined,
+  );
+}
+
+function pickWires(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return summaries.filter(
+    (s) => readMessageBusMetadata(s)?.wiring !== undefined,
+  );
+}
+
+/** The channel each wire delivers to, as `bus channel`. */
+function deliveriesOf(summaries: BehavioralSummary[]): string[] {
+  return summaries.flatMap((s) =>
+    s.transitions.flatMap((t) =>
+      t.effects.flatMap((e) =>
+        e.type === "interaction" &&
+        e.interaction.class === "message-send" &&
+        e.binding.semantics.name === "message-bus"
+          ? [`${e.binding.semantics.messageBus} ${e.binding.semantics.channel}`]
+          : [],
+      ),
+    ),
   );
 }
 
@@ -614,7 +637,7 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     });
   });
 
-  it("marks a rule with no detail-type as unresolvable (never silent)", () => {
+  it("matches a rule with no detail-type by its pattern", () => {
     const out = cloudFormationToSummaries({
       Resources: {
         OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
@@ -637,14 +660,40 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     const consumers = eventBridgeConsumers(out);
     expect(consumers).toHaveLength(1);
     const consumer = consumers[0] ?? raise("no consumer");
-    expect(resolutionOf(consumer)).toBe("unresolvable");
-    // No provider is emitted for an unresolvable pattern.
+    expect(resolutionOf(consumer)).toBe("pattern");
+    expect(channelsOf([consumer])).toEqual(["OrderEventBus#<pattern>"]);
+    expect(readMessageBusMetadata(consumer)?.eventPattern).toEqual({
+      sources: ["orders.service"],
+    });
+    // A provider is for one detail-type, and this pattern lists none.
     expect(eventBridgeProviders(out)).toEqual([]);
-    const reason = readMessageBusMetadata(consumer)?.unresolvableReason;
-    expect(reason).toContain("detail-type");
   });
 
-  it("marks a content-filter detail-type as unresolvable", () => {
+  it("marks a rule with no EventPattern at all as unresolvable", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        AuditConsumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/audit-consumer/" },
+        },
+        NoPatternRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["AuditConsumer", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(resolutionOf(consumer)).toBe("unresolvable");
+    expect(readMessageBusMetadata(consumer)?.unresolvableReason).toContain(
+      "no EventPattern",
+    );
+  });
+
+  it("records a content-filter detail-type as unsettled", () => {
     const out = cloudFormationToSummaries({
       Resources: {
         OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
@@ -666,7 +715,10 @@ describe("buildMessageBusSummaries — EventBridge", () => {
       },
     });
     const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
-    expect(resolutionOf(consumer)).toBe("unresolvable");
+    expect(resolutionOf(consumer)).toBe("pattern");
+    expect(readMessageBusMetadata(consumer)?.eventPattern).toEqual({
+      unsettled: ["detail-type"],
+    });
   });
 
   it("marks a raw AWS::Events::Rule ScheduleExpression as a schedule", () => {
@@ -856,7 +908,7 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(readMessageBusMetadata(consumer)?.enabled).toBe(false);
   });
 
-  it("declares the channel but emits no consumer when a rule's only targets are non-Lambda", () => {
+  it("gives a rule's queue target a wire that takes the channel and delivers to the queue", () => {
     const out = cloudFormationToSummaries({
       Resources: {
         OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
@@ -876,6 +928,123 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(eventBridgeConsumers(out)).toEqual([]);
     expect(channelsOf(eventBridgeProviders(out))).toEqual([
       "OrderEventBus#OrderPlaced",
+    ]);
+    const wires = pickWires(out);
+    expect(wires.map((w) => w.identity.name)).toEqual([
+      "ToQueueRule.t1#OrderPlaced",
+    ]);
+    expect(channelsOf(wires)).toEqual(["OrderEventBus#OrderPlaced"]);
+    expect(deliveriesOf(wires)).toEqual(["aws_sqs DeadLetter"]);
+    expect(readMessageBusMetadata(wires[0] as BehavioralSummary)).toMatchObject(
+      { wiring: "ruleTarget", rule: "ToQueueRule" },
+    );
+  });
+
+  it("delivers a rule's events to a topic, or forwards them to another bus", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Alerts: { Type: "AWS::SNS::Topic", Properties: {} },
+        Archive: { Type: "AWS::Events::EventBus", Properties: {} },
+        Machine: { Type: "AWS::StepFunctions::StateMachine", Properties: {} },
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: {
+              source: ["orders"],
+              "detail-type": ["OrderPlaced"],
+            },
+            Targets: [
+              { Arn: { Ref: "Alerts" }, Id: "toTopic" },
+              { Arn: { "Fn::GetAtt": ["Archive", "Arn"] }, Id: "toBus" },
+              { Arn: { Ref: "Machine" } },
+            ],
+          },
+        },
+      },
+    });
+    const wires = pickWires(out);
+    expect(wires.map((w) => w.identity.name)).toEqual([
+      "Rule.toTopic#OrderPlaced",
+      "Rule.toBus#OrderPlaced",
+      "Rule.Target2#OrderPlaced",
+    ]);
+    expect(deliveriesOf(wires)).toEqual([
+      "aws.sns Alerts",
+      "eventbridge Archive#OrderPlaced",
+    ]);
+    const forward = wires[1]?.transitions[0]?.effects[0];
+    expect(
+      forward?.type === "interaction" &&
+        forward.interaction.class === "message-send"
+        ? forward.interaction.routingKey
+        : null,
+    ).toBe("orders");
+  });
+
+  it("records no forward when the pattern lists no detail-type", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Archive: { Type: "AWS::Events::EventBus", Properties: {} },
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { source: ["orders"] },
+            Targets: [{ Arn: { "Fn::GetAtt": ["Archive", "Arn"] }, Id: "b" }],
+          },
+        },
+      },
+    });
+    const wires = pickWires(out);
+    expect(channelsOf(wires)).toEqual(["default#<pattern>"]);
+    expect(deliveriesOf(wires)).toEqual([]);
+  });
+
+  it("gives a target's DeadLetterConfig queue a delivery from the rule", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Consumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/c/",
+            Events: {
+              OnOrder: {
+                Type: "EventBridgeRule",
+                Properties: {
+                  Pattern: { "detail-type": ["OrderPlaced"] },
+                  DeadLetterConfig: {
+                    Arn: { "Fn::GetAtt": ["SamDlq", "Arn"] },
+                  },
+                },
+              },
+            },
+          },
+        },
+        SamDlq: { Type: "AWS::SQS::Queue", Properties: {} },
+        RuleDlq: { Type: "AWS::SQS::Queue", Properties: {} },
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            ScheduleExpression: "rate(1 hour)",
+            Targets: [
+              {
+                Arn: { "Fn::GetAtt": ["Consumer", "Arn"] },
+                Id: "t",
+                DeadLetterConfig: { Arn: { "Fn::GetAtt": ["RuleDlq", "Arn"] } },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const wires = pickWires(out);
+    expect(wires.map((w) => w.identity.name).sort()).toEqual([
+      "Consumer.OnOrder.DeadLetterConfig",
+      "Rule.t.DeadLetterConfig",
+    ]);
+    expect(wires.every((w) => w.kind === "library")).toBe(true);
+    expect(deliveriesOf(wires).sort()).toEqual([
+      "aws_sqs RuleDlq",
+      "aws_sqs SamDlq",
     ]);
   });
 
@@ -978,19 +1147,22 @@ describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
     );
   });
 
-  it("marks a non-array detail-type as unresolvable", () => {
+  it("records a non-array detail-type as unsettled", () => {
     const out = ruleTemplate({
       EventPattern: { "detail-type": "OrderPlaced" },
     });
-    const unresolvable = out.filter((s) => resolutionOf(s) === "unresolvable");
-    expect(unresolvable.length).toBeGreaterThan(0);
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(readMessageBusMetadata(consumer)?.eventPattern?.unsettled).toEqual([
+      "detail-type",
+    ]);
   });
 
-  it("marks an empty detail-type array as unresolvable", () => {
+  it("records an empty detail-type array as unsettled", () => {
     const out = ruleTemplate({
       EventPattern: { "detail-type": [] },
     });
-    expect(out.some((s) => resolutionOf(s) === "unresolvable")).toBe(true);
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(resolutionOf(consumer)).toBe("pattern");
   });
 
   it("resolves a target Arn given as short-form GetAtt string", () => {
@@ -1009,7 +1181,7 @@ describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
     expect(eventBridgeConsumers(out)).toHaveLength(1);
   });
 
-  it("skips targets whose Arn names a resource missing from the template", () => {
+  it("gives a target missing from the template a wire that delivers nowhere suss reads", () => {
     const out = cloudFormationToSummaries({
       Resources: {
         Rule: {
@@ -1022,6 +1194,9 @@ describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
       },
     });
     expect(eventBridgeConsumers(out)).toHaveLength(0);
+    const wires = pickWires(out);
+    expect(channelsOf(wires)).toEqual(["default#OrderPlaced"]);
+    expect(deliveriesOf(wires)).toEqual([]);
   });
 
   it("skips malformed target entries without an Arn", () => {
@@ -1706,9 +1881,12 @@ describe("buildMessageBusSummaries — SNS", () => {
       };
     }
 
-    it("does not emit its own consumer for a Protocol sqs subscription", () => {
+    it("gives a Protocol sqs subscription a wire from the topic to the queue, not a consumer", () => {
       const out = cloudFormationToSummaries(snsFedQueueTemplate({}));
       expect(snsConsumers(out)).toEqual([]);
+      const wires = pickWires(out);
+      expect(channelsOf(wires)).toEqual(["OrderEvents"]);
+      expect(deliveriesOf(wires)).toEqual(["aws_sqs OrdersQueue"]);
     });
 
     it("routes the queue's Lambda consumer onto the topic's channel", () => {
@@ -2248,9 +2426,12 @@ describe("buildMessageBusSummaries: S3", () => {
       };
     }
 
-    it("does not emit its own consumer for a QueueConfiguration", () => {
+    it("gives a QueueConfiguration a wire from the bucket to the queue, not a consumer", () => {
       const out = cloudFormationToSummaries(s3FedQueueTemplate({}));
       expect(s3Consumers(out)).toEqual([]);
+      const wires = pickWires(out);
+      expect(channelsOf(wires)).toEqual(["Uploads"]);
+      expect(deliveriesOf(wires)).toEqual(["aws_sqs UploadsQueue"]);
     });
 
     it("routes the queue's Lambda consumer onto the bucket's channel", () => {
@@ -2348,8 +2529,8 @@ describe("buildMessageBusSummaries: S3", () => {
     });
   });
 
-  describe("TopicConfiguration records a bucket-channelled bridge consumer", () => {
-    it("names the targeted topic in metadata, since a topic isn't a deployableUnit", () => {
+  describe("TopicConfiguration is a wire from the bucket to the topic", () => {
+    it("takes the bucket's channel and delivers to the topic", () => {
       const out = cloudFormationToSummaries({
         Resources: {
           Uploads: {
@@ -2368,21 +2549,23 @@ describe("buildMessageBusSummaries: S3", () => {
           UploadEvents: { Type: "AWS::SNS::Topic", Properties: {} },
         },
       });
-      const consumers = s3Consumers(out);
-      expect(consumers).toHaveLength(1);
-      const consumer = consumers[0] ?? raise("no consumer");
-      expect(consumer.identity.name).toBe("Uploads.TopicConfiguration0");
-      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      expect(s3Consumers(out)).toEqual([]);
+      const wires = pickWires(out);
+      expect(wires).toHaveLength(1);
+      const wire = wires[0] ?? raise("no wire");
+      expect(wire.kind).toBe("consumer");
+      expect(wire.identity.name).toBe("Uploads.TopicConfiguration0");
+      expect(wire.identity.boundaryBinding?.semantics).toMatchObject({
         name: "message-bus",
         messageBus: "s3",
         channel: "Uploads",
       });
-      expect(consumer.identity.deployableUnit).toBeUndefined();
-      expect(consumer.metadata?.messageBus).toMatchObject({
+      expect(wire.identity.deployableUnit).toBeUndefined();
+      expect(deliveriesOf(wires)).toEqual(["aws.sns UploadEvents"]);
+      expect(wire.metadata?.messageBus).toEqual({
         notification: "Uploads.TopicConfiguration0",
-        topic: "UploadEvents",
         events: ["s3:ObjectCreated:*"],
-        patternResolution: "exact",
+        wiring: "notification",
       });
     });
 

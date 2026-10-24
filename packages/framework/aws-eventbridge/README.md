@@ -17,7 +17,7 @@ await client.send(new PutEventsCommand({
 }));
 ```
 
-Each entry in `Entries` is one send on wire `eventbridge`. `Detail` is the body. `Source` is recorded as the routing key for anyone reading the summary, since it scopes an event on the bus, but pairing does not use it today. The command has to be constructed from `@aws-sdk/client-eventbridge`, so a `PutEventsCommand` from another module is ignored. The pack covers only the AWS SDK v3 call pattern. SDK v2, `new AWS.EventBridge().putEvents(...).promise()`, is not read yet.
+Each entry in `Entries` is one send on wire `eventbridge`. `Detail` is the body. A literal `Source` is recorded as the routing key, and a rule whose pattern lists sources pairs only with a send whose source is one of them. A send whose source is not a literal may reach such a rule, which keeps orphan findings away but compares nothing. The command has to be constructed from `@aws-sdk/client-eventbridge`, so a `PutEventsCommand` from another module is ignored. The pack covers only the AWS SDK v3 call pattern. SDK v2, `new AWS.EventBridge().putEvents(...).promise()`, is not read yet.
 
 ### Channel identity
 
