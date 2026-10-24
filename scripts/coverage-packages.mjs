@@ -71,6 +71,7 @@ export const coveragePackages = [
   ["packages/framework/sqlalchemy", "sqlalchemy"],
   ["packages/framework/sqlmodel", "sqlmodel"],
   ["packages/framework/bigquery-python", "bigquery-python"],
+  ["packages/framework/celery", "celery"],
   ["packages/framework/activerecord", "activerecord"],
   ["packages/framework/graphql-ruby", "graphql-ruby"],
   ["packages/framework/rails", "rails"],

@@ -93,6 +93,10 @@
       "types": "./dist/bigquery-python.d.ts",
       "import": "./dist/bigquery-python.js"
     },
+    "./celery": {
+      "types": "./dist/celery.d.ts",
+      "import": "./dist/celery.js"
+    },
     "./cloudflare-workers": {
       "types": "./dist/cloudflare-workers.d.ts",
       "import": "./dist/cloudflare-workers.js"
@@ -309,6 +313,7 @@
     "@suss/framework-bigquery": "*",
     "@suss/framework-bigquery-python": "*",
     "@suss/framework-bigquery-ruby": "*",
+    "@suss/framework-celery": "*",
     "@suss/framework-cloudflare-workers": "*",
     "@suss/framework-drizzle": "*",
     "@suss/framework-express": "*",
