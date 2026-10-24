@@ -832,6 +832,18 @@ export interface CallArgs {
   keyword: Record<string, RbNode>;
 }
 
+/** The argument at a place a pack declares. When a call passes it both ways, the keyword wins. */
+export function argumentAt(
+  args: CallArgs,
+  place: { readonly at: number; readonly keyword?: string },
+): RbNode | undefined {
+  const keyword = place.keyword;
+  return (
+    (keyword === undefined ? undefined : args.keyword[keyword]) ??
+    args.positional[place.at]
+  );
+}
+
 export function readCallArgs(argumentList: RbNode | null): CallArgs {
   const positional: RbNode[] = [];
   const keyword: Record<string, RbNode> = {};

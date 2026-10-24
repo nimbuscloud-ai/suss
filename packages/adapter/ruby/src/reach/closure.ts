@@ -54,6 +54,7 @@ import { exitingBranches } from "../exits.js";
 import { INVOKE_METHOD, SENDING_METHODS } from "../facts/languageWords.js";
 import { nodeId } from "../facts/values.js";
 import { optionParserFlagReads } from "../flags.js";
+import { jobClaims } from "../jobs.js";
 import {
   bodyCalls,
   calleeMethodName,
@@ -1060,11 +1061,17 @@ function scanBody(
     );
 
     if (outcome.kind === "stopped") {
-      // A call the storage recognizer records is already in the summary as
-      // database work, so it is not reported as a gap.
+      // A call the storage or job recognizer records is already in the
+      // summary as database work or an enqueue, so it is not a gap here.
       const claimed =
-        options.storage !== undefined &&
-        storageClaims(call, callSite.file, options.storage, callSite.method);
+        (options.storage !== undefined &&
+          storageClaims(
+            call,
+            callSite.file,
+            options.storage,
+            callSite.method,
+          )) ||
+        jobClaims(call, callSite.file, options.jobs, callSite.method);
       if (!claimed && worthRecording(outcome.reason)) {
         stops.add({
           callee,
