@@ -68,6 +68,7 @@ import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 import type { PackConfigNeed, PackPathMissing } from "@suss/extractor";
 import type { BaseRevision } from "./checkBase.js";
 import type { CheckOutcome } from "./checkOutcome.js";
+import type { ReadFailure } from "./projectFile.js";
 
 /**
  * Each summary's confidence, keyed by `summaryRef`. The checker writes
@@ -307,32 +308,33 @@ export interface CheckedDirectory {
   packsNeedingConfig: PackConfigNeed[];
   /** Paths in a pack config, used by an extract into this directory, where nothing exists. */
   packPathsMissing: PackPathMissing[];
+  /** Reads of the project that failed, so their summaries are missing here. */
+  readsFailed: ReadFailure[];
 }
 
 /** The parts of an extract's note that `check` reports on. */
 interface PackConfigNote {
   packsNeedingConfig?: PackConfigNeed[];
   packPathsMissing?: PackPathMissing[];
+  readFailed?: ReadFailure;
 }
 
 /**
- * Every extract note in the directory. A note that does not parse is
- * skipped, since the note's job is to warn and a bad one should not stop
- * the check.
+ * Every extract note in the directory, in the order given. A note that
+ * does not parse counts as empty, since the note's job is to warn and a
+ * bad one should not stop the check.
  */
 function packConfigNotesIn(
   dir: string,
   notes: readonly string[],
 ): PackConfigNote[] {
-  return notes.flatMap((note) => {
+  return notes.map((note) => {
     try {
-      return [
-        JSON.parse(
-          fs.readFileSync(path.join(dir, note), "utf8"),
-        ) as PackConfigNote,
-      ];
+      return JSON.parse(
+        fs.readFileSync(path.join(dir, note), "utf8"),
+      ) as PackConfigNote;
     } catch {
-      return [];
+      return {};
     }
   });
 }
@@ -352,6 +354,20 @@ function packPathFindings(missing: readonly PackPathMissing[]): RunFinding[] {
       remedy: `${fix} Then run the extract and the check again.`,
     };
   });
+}
+
+/**
+ * A `readFailed` finding for each read of the project that failed or ran
+ * past its time limit. It is a warning, so the reads that finished are
+ * still checked and a run that paired them passes with this beside it.
+ */
+function readFailedFindings(failures: readonly ReadFailure[]): RunFinding[] {
+  return failures.map((failure) => ({
+    kind: "readFailed",
+    severity: "warning",
+    description: `\`${failure.command}\` ${failure.reason}, so the summaries it would have written are missing from this check.`,
+    remedy: `${failure.remedy ?? "Run that command on its own to see the whole error, and fix what it says."} Then run the check again.`,
+  }));
 }
 
 /**
@@ -390,11 +406,15 @@ export function checkDirectory(options: {
   const entries = fs.readdirSync(resolved);
   const files = summaryFilesAmong(entries);
 
-  // Extract writes this note beside its output when it could not read
-  // every export. Agreement over those summaries covers only part of the
-  // code, so the user has to hear about it.
+  // Agreement over an incomplete extract covers only part of the code.
+  // A note for a read that failed outright becomes a run finding instead.
   const notes = entries.filter((f) => f.endsWith(".incomplete.json"));
-  for (const note of notes) {
+  const packConfigNotes = packConfigNotesIn(resolved, notes);
+  for (const [at, note] of notes.entries()) {
+    if (packConfigNotes[at]?.readFailed !== undefined) {
+      continue;
+    }
+
     process.stderr.write(
       `${note} says the extract that wrote these summaries was incomplete, so agreement here covers only what it could read. Fix what the note lists, re-extract, and it disappears.\n`,
     );
@@ -423,7 +443,6 @@ export function checkDirectory(options: {
   }
 
   const suppressions = loadSuppressionsForOptions(options, resolved);
-  const packConfigNotes = packConfigNotesIn(resolved, notes);
   return {
     summaries,
     sourceFile,
@@ -439,6 +458,9 @@ export function checkDirectory(options: {
     ),
     packPathsMissing: packConfigNotes.flatMap(
       (note) => note.packPathsMissing ?? [],
+    ),
+    readsFailed: packConfigNotes.flatMap((note) =>
+      note.readFailed === undefined ? [] : [note.readFailed],
     ),
   };
 }
@@ -601,6 +623,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     confidence,
     packsNeedingConfig,
     packPathsMissing,
+    readsFailed,
   } = checkDirectory(options);
 
   const since =
@@ -633,6 +656,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
       allSummaries,
       result,
     ),
+    ...readFailedFindings(readsFailed),
     ...packConfigFindings(packsNeedingConfig),
     ...packPathFindings(packPathsMissing),
     ...unreadableFindings(options.failOnUnreadable === true, skipped),

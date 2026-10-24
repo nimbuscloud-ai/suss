@@ -49,11 +49,7 @@ import { writeSummaries } from "./jsonStream.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
 import { runMap } from "./map/mapCommand.js";
 import { prdDraft } from "./prdDraftCommand.js";
-import {
-  PROJECT_FILE,
-  readEntryIndex,
-  readProjectFile,
-} from "./projectFile.js";
+import { PROJECT_FILE, readEntryIndex } from "./projectFile.js";
 import {
   clearEarlierReads,
   commandFor,
@@ -65,6 +61,11 @@ import {
   readProjectSaying,
   whereReadsCameFrom,
 } from "./projectRead.js";
+import {
+  READ_LIMIT_FLAGS,
+  READ_LIMIT_OPTIONS,
+  readLimitsFrom,
+} from "./readLimits.js";
 import { stubDraft } from "./stubDraftCommand.js";
 import { readSummaries } from "./summaryFile.js";
 import { installedVersion, printUpdateNoticeIfBehind } from "./updateNotice.js";
@@ -76,6 +77,7 @@ import type { ContractSource } from "./contract.js";
 import type { ExtractOptions } from "./extract.js";
 import type { Language } from "./language.js";
 import type { ReadEntry } from "./projectRead.js";
+import type { ReadLimits } from "./readLimits.js";
 
 export const USAGE = `
 Usage:
@@ -147,6 +149,13 @@ Options (init, extract, inspect, check, ask, map):
   --cache-dir      Where suss keeps its extraction cache, instead of .suss in
                    the project. SUSS_CACHE_DIR sets the same thing, and the
                    flag wins. Use it to read a checkout you may not write to.
+
+Options (a bare check or map, and extract --out-dir, which run every read):
+  --jobs           How many reads run at once. Up to 4 by default, fewer
+                   on a machine without the cores or memory for that many
+  --read-timeout   Minutes one read may run before it is stopped and the
+                   rest carry on. 10 by default, and 0 turns it off
+  --read-memory    The heap one read may grow to, in megabytes
 
 Options (init):
   --plain          Print the commands instead of asking, even in a terminal
@@ -626,10 +635,11 @@ async function withProjectRead(
   run: (dir: string) => number,
   root = process.cwd(),
   nothingMatched: (root: string) => number = sayNothingMatched,
+  limits: ReadLimits = readLimitsFrom({}),
 ): Promise<number> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
   try {
-    const report = await readProjectSaying(root, dir, true);
+    const report = await readProjectSaying(root, dir, true, limits);
     if (report === null) {
       return nothingMatched(root);
     }
@@ -663,12 +673,13 @@ async function extractProjectInto(
   outDir: string,
   root: string | undefined,
   allowEmpty: boolean,
+  limits: ReadLimits,
   quiet = false,
 ): Promise<number> {
   const resolved = path.resolve(outDir);
   clearEarlierReads(resolved);
   const projectRoot = path.resolve(root ?? process.cwd());
-  const report = await readProjectSaying(projectRoot, resolved, quiet);
+  const report = await readProjectSaying(projectRoot, resolved, quiet, limits);
   if (report === null) {
     return sayNothingMatched(projectRoot);
   }
@@ -695,10 +706,11 @@ async function extractProjectMerged(
   root: string,
   output: string | undefined,
   allowEmpty: boolean,
+  limits: ReadLimits,
 ): Promise<number> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
   try {
-    const code = await extractProjectInto(dir, root, allowEmpty, true);
+    const code = await extractProjectInto(dir, root, allowEmpty, limits, true);
     const files = readdirSync(dir)
       .filter((name) => readEntryIndex(name) !== null)
       .sort((a, b) => (readEntryIndex(a) ?? 0) - (readEntryIndex(b) ?? 0));
@@ -766,12 +778,28 @@ async function runExtract(args: string[]): Promise<number> {
       "fail-on-pack-error": { type: "boolean" },
       "out-dir": { type: "string" },
       intent: { type: "string" },
+      ...READ_LIMIT_OPTIONS,
     },
     allowPositionals: true,
   });
 
   if (values["fail-on-empty"] === true) {
     refuseFailOnEmpty();
+  }
+
+  const root = path.resolve(values.dir ?? process.cwd());
+  const everyRead =
+    values["out-dir"] !== undefined ||
+    (!namesOneRead(values, positionals) &&
+      (await declaredReads(root)).reads.length > 1);
+  const limitFlags = READ_LIMIT_FLAGS.filter(
+    (flag) => values[flag] !== undefined,
+  );
+  if (!everyRead && limitFlags.length > 0) {
+    process.stderr.write(
+      `${limitFlags.map((flag) => `--${flag}`).join(", ")} set how the reads ${PROJECT_FILE} lists run, and this extract runs one read in this process. Drop ${limitFlags.length === 1 ? "it" : "them"}, or use --out-dir to run every read.\n`,
+    );
+    return 1;
   }
 
   if (values["out-dir"] !== undefined) {
@@ -802,18 +830,15 @@ async function runExtract(args: string[]): Promise<number> {
       values["out-dir"],
       values.dir,
       values["allow-empty"] === true,
+      readLimitsFrom(values),
     );
   }
 
-  const root = path.resolve(values.dir ?? process.cwd());
-  if (
-    !namesOneRead(values, positionals) &&
-    (readProjectFile(root)?.read.length ?? 0) > 1
-  ) {
+  if (everyRead) {
     const perRun = flagsEntriesIgnore(values);
     if (perRun.length > 0) {
       process.stderr.write(
-        `${PROJECT_FILE} lists several reads, and a bare extract runs each with its default settings, so ${perRun.map((flag) => `--${flag}`).join(", ")} would go unused. Drop ${perRun.length === 1 ? "it" : "them"}, or run one read with --lang and -f to use ${perRun.length === 1 ? "it" : "them"}.\n`,
+        `This project has several reads, and a bare extract runs each with its default settings, so ${perRun.map((flag) => `--${flag}`).join(", ")} would go unused. Drop ${perRun.length === 1 ? "it" : "them"}, or run one read with --lang and -f to use ${perRun.length === 1 ? "it" : "them"}.\n`,
       );
       return 1;
     }
@@ -822,6 +847,7 @@ async function runExtract(args: string[]): Promise<number> {
       root,
       values.output,
       values["allow-empty"] === true,
+      readLimitsFrom(values),
     );
   }
 
@@ -1004,6 +1030,10 @@ async function runInspect(argv: string[]): Promise<number> {
     // summaries file as if the user had passed it.
     return await withProjectRead((dir) => {
       for (const name of readdirSync(dir).sort()) {
+        if (readEntryIndex(name) === null) {
+          continue;
+        }
+
         inspect({ file: path.join(dir, name), ...types });
       }
       return 0;
@@ -1107,6 +1137,7 @@ export async function runCheck(args: string[]): Promise<number> {
       "fail-on-unreadable": { type: "boolean" },
       sussignore: { type: "string" },
       "no-suppressions": { type: "boolean" },
+      ...READ_LIMIT_OPTIONS,
     },
     allowPositionals: true,
   });
@@ -1115,6 +1146,7 @@ export async function runCheck(args: string[]): Promise<number> {
     refuseFailOnEmpty();
   }
 
+  const limits = readLimitsFrom(values);
   const failOn = values["fail-on"] as
     | "error"
     | "warning"
@@ -1192,7 +1224,12 @@ export async function runCheck(args: string[]): Promise<number> {
   }
 
   if (project?.readsHead === true) {
-    return await withProjectRead(checkFolder, project.root);
+    return await withProjectRead(
+      checkFolder,
+      project.root,
+      sayNothingMatched,
+      limits,
+    );
   }
 
   if (values.dir !== undefined) {
@@ -1201,8 +1238,11 @@ export async function runCheck(args: string[]): Promise<number> {
 
   // With no files given, extract the current project and check that.
   if (positionals.length === 0) {
-    return await withProjectRead(checkFolder, process.cwd(), (root) =>
-      exitCodeOf(checkEmptyProject(root, shared).outcome),
+    return await withProjectRead(
+      checkFolder,
+      process.cwd(),
+      (root) => exitCodeOf(checkEmptyProject(root, shared).outcome),
+      limits,
     );
   }
 
