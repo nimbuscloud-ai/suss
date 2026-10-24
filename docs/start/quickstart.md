@@ -13,6 +13,9 @@ npx @suss/cli extract -o summaries/code.json
 npx @suss/cli inspect summaries/code.json
 ```
 
+A fourth, `npx @suss/cli map`, writes the whole project as one page you
+can open in a browser.
+
 suss does not run your code, and you do not have to annotate anything
 first. The output below comes from a small Hono API with a Prisma schema
 behind it, on Prisma 5.22.0, which is what `^5.0.0` installs.
@@ -209,6 +212,31 @@ to each one, and the status and body it returns there. The `+` lines are
 the calls that branch makes, and the tables it reads and writes. The 200
 body lists the three columns the query selects, and `POST /orders` only
 writes the `Order` table on the branch that returns 201.
+
+## See the whole project on one page
+
+```bash
+npx @suss/cli map
+```
+
+<!-- suss:excerpt -->
+
+```
+suss map wrote .suss/map.html
+  Routes        2 · 1 write a table
+  Tables        1
+  Env vars      0
+  Checked       3 pairs · 1 finding
+  Not followed  0 calls in 0 functions · 0 routes affected
+```
+
+`map` reads the project, runs `check` over it, and writes one HTML page
+with what it found: the routes and the tables they touch, the env vars,
+what `check` compared, and any calls suss could not follow. Open
+`.suss/map.html` in a browser. It loads nothing from the network, so it
+works from disk and you can send it to someone as a file. The
+[lobsters example](https://suss.sh/examples/lobsters.html) is the same
+page for a bigger project. [`suss map`](/reference/cli/map) lists the flags.
 
 ## Compare it against the schema
 

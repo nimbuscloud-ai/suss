@@ -47,6 +47,8 @@ src/handlers/paidWorker.ts
 
 There is nothing to triage at this step. You get a description of the service that came out of the code, and you find out whether suss reads your stack before you put any more time into it.
 
+To see the whole project on one page instead, run `npx @suss/cli map`. It writes an HTML file you open from disk. See [`suss map`](/reference/cli/map).
+
 **What it costs.** A cold run over a few hundred units takes seconds. Later runs read a per-file cache, so a run after editing one file is faster than the first. suss does not build or start anything.
 
 **What a wrong answer looks like.** A unit with this line under it:
