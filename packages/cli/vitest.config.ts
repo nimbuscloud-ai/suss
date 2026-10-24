@@ -3,6 +3,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
+    // Vitest hands back an empty string for a stylesheet unless told to
+    // process it, and the map imports its stylesheet as text.
+    css: { include: [/mapPage\.css/] },
     // The storybook and prisma tests run the whole extract, contract, and
     // check pipeline once per case. A few seconds each on their own, over
     // a minute with v8 coverage instrumentation on and every test file
