@@ -16,7 +16,11 @@ import {
 import { accessDetail } from "@suss/checker-intent";
 import { displayLabel, labelWithDetail } from "@suss/ir-core";
 
-import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  BoundaryBinding,
+  Effect,
+} from "@suss/behavioral-ir";
 import type { Relation } from "@suss/ir-core";
 
 export { interactionDetail, relationsOf } from "@suss/behavioral-ir";
@@ -66,6 +70,17 @@ export interface TouchedBoundary {
   transitionId: string | undefined;
   /** The columns a storage access states. Left out where nobody reads them. */
   access?: Access;
+  /** The line of the call, when the summary records one for the effect. */
+  line?: number;
+}
+
+/**
+ * The first line of an effect's call. An effect with no place of its
+ * own, such as a pytest fixture call, has none, and a reader then links
+ * to the unit.
+ */
+export function effectLine(effect: Effect): number | undefined {
+  return effect.location?.start;
 }
 
 /**
@@ -109,6 +124,7 @@ export function boundariesTouchedBy(
       if (goesThroughRelation(effect.interaction)) {
         continue;
       }
+      const line = effectLine(effect);
       for (const relation of relationsOf(effect.interaction)) {
         touched.push({
           label: boundarySpelling(effect.binding),
@@ -118,6 +134,7 @@ export function boundariesTouchedBy(
           detail: interactionDetail(effect.interaction),
           transitionId: transition.id,
           access: accessDetail(effect.interaction),
+          ...(line === undefined ? {} : { line }),
         });
       }
     }

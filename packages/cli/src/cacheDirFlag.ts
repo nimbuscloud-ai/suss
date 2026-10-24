@@ -20,6 +20,7 @@ export const COMMANDS_WITH_CACHE_DIR: ReadonlySet<string> = new Set([
   "inspect",
   "check",
   "ask",
+  "map",
 ]);
 
 /** The arguments without the flag, and the path it gave, if it was there. */

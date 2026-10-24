@@ -285,6 +285,43 @@ export async function readProjectInto(
 }
 
 /**
+ * Reads the project at `root` into `dir`, saying on stderr which reads
+ * run and which fail. Null when no pack matched, and the caller says so.
+ * A quiet read gives each read's summary count, not its file path.
+ */
+export async function readProjectSaying(
+  root: string,
+  dir: string,
+  quiet: boolean,
+): Promise<ProjectReadReport | null> {
+  const reads = await declaredReads(root);
+  if (reads.reads.length === 0) {
+    return null;
+  }
+  process.stderr.write(
+    [
+      whereReadsCameFrom(root, reads.declared, reads.foldersFound),
+      ...(quiet ? [] : reads.reads.map((entry) => `  ${commandFor(entry)}`)),
+      "",
+    ].join("\n"),
+  );
+
+  const report = await readProjectInto(root, dir, reads, undefined, quiet);
+  if (quiet) {
+    for (const [index, command] of report.ran.entries()) {
+      const count = report.counts[index] ?? 0;
+      process.stderr.write(
+        `  ${command}: ${count} summar${count === 1 ? "y" : "ies"}\n`,
+      );
+    }
+  }
+  for (const line of report.failed) {
+    process.stderr.write(`  failed: ${line}\n`);
+  }
+  return report;
+}
+
+/**
  * Removes the files an earlier `readProjectInto` wrote into `dir`, so an
  * entry that fails this time leaves no summaries from last time behind.
  */

@@ -17,6 +17,7 @@ import { defaultProjectRoot } from "@suss/behavioral-ir/files";
 
 import { writeSummaries } from "./jsonStream.js";
 import { nearestProjectFile } from "./projectModules.js";
+import { repositoryRecord, stampRepository } from "./repositoryRecord.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -352,14 +353,18 @@ async function readWith(
     resolved.fetchedFrom === undefined
       ? undefined
       : `${options.from}:${resolved.fetchedFrom}`;
+  const projectRoot = options.projectRoot ?? contractProjectRoot(resolved.path);
   let summaries: BehavioralSummary[];
   try {
     summaries = await loader(resolved.path, source, {
       ...options,
-      projectRoot: options.projectRoot ?? contractProjectRoot(resolved.path),
+      projectRoot,
     });
   } finally {
     resolved.cleanup?.();
+  }
+  if (resolved.fetchedFrom === undefined) {
+    stampRepository(summaries, repositoryRecord(projectRoot));
   }
   return summaries;
 }

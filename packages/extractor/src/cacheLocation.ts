@@ -57,6 +57,18 @@ export function extractionCacheDirFor(projectDir: string): string {
   return path.join(root, "cache", projectKey(projectDir));
 }
 
+/**
+ * The folder `suss map` writes its page and the summaries behind it to:
+ * `.suss` in the project, or a folder of its own under the chosen root.
+ */
+export function mapFolderFor(projectDir: string): string {
+  const root = chosenCacheRoot();
+  if (root === null) {
+    return path.join(projectDir, ".suss");
+  }
+  return path.join(root, "map", projectKey(projectDir));
+}
+
 /** The file where the server for `projectDir` says how to reach it. */
 export function liveRecordFor(projectDir: string): string {
   const root = chosenCacheRoot();

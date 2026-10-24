@@ -12,6 +12,9 @@ hero:
       text: Quickstart
       link: /start/quickstart
     - theme: alt
+      text: See a map
+      link: https://suss.sh/examples/lobsters.html
+    - theme: alt
       text: Read a pull request
       link: /start/read-a-pull-request
     - theme: alt
@@ -48,6 +51,8 @@ gives you the same answer every time.
 - **Run it now.** [Quickstart](/start/quickstart) walks you through
   `init`, `extract` and `inspect` on a project you already have. At the
   end you have a description of your service, and nothing to triage.
+  [`suss map`](/reference/cli/map) gives you the same as one page you
+  open from disk, as in <a href="/examples/lobsters.html" target="_blank">this map of lobsters</a>.
 - **Put it on pull requests.** [Read a pull request](/start/read-a-pull-request)
   sets up the GitHub Action that posts the diff above as a comment and
   edits it on every push.
