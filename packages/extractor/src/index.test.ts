@@ -1656,7 +1656,7 @@ describe("detectGaps", () => {
   function sendTransition(
     messageBus: "activejob" | "aws_sqs",
     channel: string | null,
-    callee: string,
+    callee: string | undefined,
   ): Transition {
     return {
       id: `t-${callee}`,
@@ -1670,7 +1670,7 @@ describe("detectGaps", () => {
             messageBus,
             channel,
           }),
-          callee,
+          ...(callee === undefined ? {} : { callee }),
           interaction: { class: "message-send" },
         },
       ],
@@ -1696,6 +1696,18 @@ describe("detectGaps", () => {
         type: "unfollowedCall",
         callee: "klass.perform_later",
       }),
+    ]);
+  });
+
+  it("says which boundary an unsettled enqueue was on when it recorded no call", () => {
+    const raw: RawCodeStructure = { ...twoPathRaw, declaredContract: null };
+    const gaps = detectGaps(
+      raw,
+      [sendTransition("activejob", null, undefined)],
+      { gapHandling: "permissive" },
+    );
+    expect(gaps).toEqual([
+      expect.objectContaining({ callee: expect.stringContaining("activejob") }),
     ]);
   });
 
