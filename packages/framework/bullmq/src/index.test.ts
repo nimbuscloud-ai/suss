@@ -334,6 +334,29 @@ describe("a worker", () => {
     });
   });
 
+  it("keeps a job it adds to another queue, and a gap for one whose queue does not settle", async () => {
+    const summaries = await extract({
+      "/worker.ts": `
+        import { Queue, Worker } from "bullmq";
+        const digests = new Queue("digests");
+        const elsewhere = new Queue(process.env.QUEUE as string);
+        export const worker = new Worker("emails", async (job) => {
+          await digests.add("daily", { to: job.data.to });
+          await elsewhere.add("unknown", {});
+        });
+      `,
+    });
+    const [consumer] = consumersOf(summaries);
+    const sends = interactionsOf(
+      consumer?.transitions.flatMap((one) => one.effects) ?? [],
+      "message-send",
+    );
+    expect(channelsOf(sends)).toEqual(["digests", null]);
+    expect(
+      consumer?.gaps.filter((gap) => gap.type === "unfollowedCall"),
+    ).toMatchObject([{ callee: "elsewhere.add" }]);
+  });
+
   it("gives no unit for a processor the library loads from a file", async () => {
     const summaries = await extract({
       "/worker.ts": `
