@@ -59,10 +59,6 @@ function operation(
 const NO_BODY =
   "This unit is a declaration with no body behind it, so nothing about what it does was read here";
 
-/** What it says instead once a body is attached and nothing in it matched a shape the pack looks for. */
-const BODY_READ_NOTHING_MATCHED =
-  "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here";
-
 async function extractFixture() {
   const files = findRubyFiles(graphqlRoot);
   return extractRubyProject({
@@ -111,15 +107,55 @@ describe("extraction over fixtures/ruby-graphql", () => {
     expect(levelOf("Organizer.displayName")).toBe("high");
   });
 
-  it("gives a field with a method behind it one transition carrying what that method calls", async () => {
+  it("gives a field with a method behind it a transition for what that method returns", async () => {
     const { summaries } = await extractFixture();
-    const withTransitions = summaries.filter((s) => s.transitions.length > 0);
-    expect(withTransitions.length).toBeGreaterThan(0);
+    const fields = summaries.filter(
+      (s) => s.kind === "resolver" && s.transitions.length > 0,
+    );
+    expect(fields.length).toBeGreaterThan(0);
     expect(
-      withTransitions.every((s) =>
-        s.transitions.every((transition) => transition.effects.length > 0),
+      fields.every((s) =>
+        s.transitions.every(
+          (transition) => transition.output.type === "return",
+        ),
       ),
     ).toBe(true);
+  });
+
+  it("records the type a field declares as what it returns, with null where the schema allows it", async () => {
+    const { summaries } = await extractFixture();
+    const outputOf = (name: string) =>
+      summaries.find((s) => s.identity.name === name)?.transitions[0]?.output;
+    expect(outputOf("Organizer.phone")).toEqual({
+      type: "return",
+      value: { type: "union", variants: [{ type: "text" }, { type: "null" }] },
+    });
+    expect(outputOf("Organizer.campaigns")).toEqual({
+      type: "return",
+      value: {
+        type: "array",
+        items: {
+          type: "ref",
+          name: "Campaign",
+          def: "Campaign",
+          from: "fixtures/ruby-graphql/app/graphql/types/campaign_type.rb",
+        },
+      },
+    });
+    const campaigns = summaries.find(
+      (s) => s.identity.name === "Organizer.campaigns",
+    );
+    expect(campaigns?.definitions?.Campaign).toEqual({
+      type: "record",
+      properties: {
+        id: { type: "text" },
+        name: { type: "union", variants: [{ type: "text" }, { type: "null" }] },
+        budget: {
+          type: "union",
+          variants: [{ type: "number" }, { type: "null" }],
+        },
+      },
+    });
   });
 
   it("leaves a field with no method behind it transitionless", async () => {
@@ -159,9 +195,14 @@ describe("extraction over fixtures/ruby-graphql", () => {
     });
 
     it("attaches the method a concern the class includes defines", async () => {
-      expect(await gapsFor("Organizer.phone")).toEqual([
-        BODY_READ_NOTHING_MATCHED,
-      ]);
+      // A field with no method behind it gets no transition, so the one
+      // here comes from the concern's `phone`.
+      const { summaries } = await extractFixture();
+      const phone = summaries.find(
+        (s) => s.identity.name === "Organizer.phone",
+      );
+      expect(phone?.transitions).toHaveLength(1);
+      expect(await gapsFor("Organizer.phone")).toEqual([]);
     });
 
     it("attaches the resolve method of the class a mutation-wired field points at", async () => {

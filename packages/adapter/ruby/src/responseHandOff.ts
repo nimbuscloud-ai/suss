@@ -26,22 +26,22 @@ import type { InvocationSite } from "./paths/effects.js";
 import type { EndingCall } from "./responseStatus.js";
 
 /** Every raise that leaves the method, each ending it with a throw that claims no status. */
-export function raiseEndings(method: RbNode): EndingCall[] {
+export function raiseEndings(method: RbNode, facts?: Database): EndingCall[] {
   return escapingRaises(method).map((call) => ({
     call,
-    terminal: raiseTerminal(call),
+    terminal: raiseTerminal(call, facts),
   }));
 }
 
 /** `raise NotFound, "gone"` raises `NotFound`, and `raise "gone"` raises a `RuntimeError`. */
-function raiseTerminal(call: RbNode): RawTerminal {
+function raiseTerminal(call: RbNode, facts: Database | undefined): RawTerminal {
   const [first, second] = readCallArgs(field(call, "arguments")).positional;
   const message = first === undefined ? null : stringLiteralValue(first);
   return {
     kind: "throw",
     statusCode: null,
     body: null,
-    exceptionType: raisedClassRef(call, [])?.text ?? null,
+    exceptionType: raisedClassRef(call, [], facts)?.text ?? null,
     message:
       message ?? (second === undefined ? null : stringLiteralValue(second)),
     component: null,

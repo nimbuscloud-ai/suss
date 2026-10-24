@@ -17,23 +17,17 @@ import {
   unreadableReading,
   walkDescendants,
 } from "@suss/extractor";
-import { constantOf } from "@suss/values";
+import { constantOf, shapeOfValue } from "@suss/values";
 
 import { methodInAncestry } from "./ancestry.js";
-import {
-  bodyStatements,
-  children,
-  field,
-  METHOD_TYPES,
-  rangeOf,
-  spanOf,
-} from "./ast.js";
+import { children, field, METHOD_TYPES, rangeOf, spanOf } from "./ast.js";
+import { implicitReturn } from "./facts/values.js";
 import { withSlotSources } from "./provenance.js";
 import { raiseEndings } from "./responseHandOff.js";
 import { returnPathBranches, withEffectsThatRun } from "./responseStatus.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
-import type { WrapperReference } from "@suss/behavioral-ir";
+import type { TypeShape, WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   RawBranch,
@@ -162,8 +156,8 @@ export interface HookUnitInput {
 
 /**
  * A hook as a unit: one branch per path through it. A path that raises
- * throws, a path whose answer is false or nil returns in place of the
- * field, and every other path hands the field on.
+ * throws, a false or nil one stops the field with its payload, null or
+ * the library's refusal error, and every other path hands the field on.
  */
 export function hookUnit(
   hook: HookDefinition,
@@ -179,10 +173,9 @@ export function hookUnit(
       [],
       facts,
       undefined,
-      raiseEndings(hook.method),
-      (statement, location) =>
-        hookEnding(hook.method, statement, location, input),
-    ) ?? [emptyBodyBranch(range)]
+      raiseEndings(hook.method, facts),
+      (statement, location) => hookEnding(hook, statement, location, input),
+    ) ?? [emptyBodyBranch(hook, range, input.hooks)]
   ).map(
     (branch): RawBranch =>
       withEffectsThatRun(branch, {
@@ -234,24 +227,49 @@ export function unsettledHookReading(
   );
 }
 
-/** Whether the path that returns at `statement`, or runs off the end of the body when it is null, stops the field. */
+/**
+ * What the path that returns at `statement`, or runs off the end of the
+ * body when it is null, does to the field: it goes on, or it stops with
+ * the hook's payload, with null, or with the error the library raises.
+ */
 function hookEnding(
-  method: RbNode,
+  hook: HookDefinition,
   statement: RbNode | null,
   location: Range,
   input: HookUnitInput,
 ): RawTerminal {
-  const values =
-    statement === null ? lastStatement(method) : returnedValues(statement);
-  return stopsTheField(values, input)
-    ? endingTerminal("return", location)
-    : goOn(location);
+  const stop = stopOf(valuesReturnedAt(hook.method, statement), input);
+  if (stop === null) {
+    return goOn(location);
+  }
+  if (stop.payload !== null) {
+    return returnOf(shapeOfValue(stop.payload), location);
+  }
+  const raised = input.hooks.refusalRaises?.[hook.name];
+  return raised === undefined
+    ? returnOf({ type: "null" }, location)
+    : refusalTerminal(raised, location);
 }
 
+/** The values a path ends on: those its `return` writes, or the method's last statement when `statement` is null. */
+export function valuesReturnedAt(
+  method: RbNode,
+  statement: RbNode | null,
+): RbNode[] {
+  return statement === null ? lastStatement(method) : returnedValues(statement);
+}
+
+/** The value a method's body ends on: its last statement before any `rescue`, or the expression an endless `def x = ...` is. */
 function lastStatement(method: RbNode): RbNode[] {
   const body = field(method, "body");
-  const last = body === null ? undefined : bodyStatements(body).at(-1);
-  return last === undefined ? [] : [last];
+  if (body === null) {
+    return [];
+  }
+  if (body.type !== "body_statement") {
+    return [body];
+  }
+  const last = implicitReturn(body);
+  return last === null ? [] : [last];
 }
 
 /** The values a `return` statement writes: none, one, or several for `return a, b`. */
@@ -264,29 +282,38 @@ function returnedValues(statement: RbNode): RbNode[] {
 }
 
 /**
- * Whether the values a path ends on stop the field. A `return` with no
- * value returns nil. `return a, b` hands back a list, and so does
- * `[a, b]`, and a list is never false in Ruby. A library that reads a
- * list's first element as the answer takes `a` from either.
+ * Whether the values a path ends on stop the field, and with what
+ * payload. A `return` with no value returns nil. `return a, b` hands
+ * back a list, and so does `[a, b]`, and a list is never false in Ruby.
+ * A library that reads a list's first element as the answer takes `a`
+ * from either, and `b` is what the field resolves to.
  */
-function stopsTheField(
+function stopOf(
   values: readonly RbNode[],
   input: HookUnitInput,
-): boolean {
+): { payload: Value | null } | null {
   const first = values[0];
   if (first === undefined) {
-    return true;
+    return { payload: null };
   }
   const listHead = input.hooks.answerIsListHead === true;
   if (values.length > 1) {
-    return listHead && isFalsy(evaluatedValue(first, input.facts));
+    const second = values[1];
+    return listHead && isFalsy(evaluatedValue(first, input.facts))
+      ? {
+          payload:
+            second === undefined ? null : evaluatedValue(second, input.facts),
+        }
+      : null;
   }
   const value = evaluatedValue(first, input.facts);
   if (value.kind !== "sequence") {
-    return isFalsy(value);
+    return isFalsy(value) ? { payload: null } : null;
   }
-  const head = value.items[0];
-  return listHead && head !== undefined && isFalsy(head.value);
+  const [head, payload] = value.items;
+  return listHead && head !== undefined && isFalsy(head.value)
+    ? { payload: payload?.value ?? null }
+    : null;
 }
 
 /** Ruby treats only false and nil as false. */
@@ -296,14 +323,33 @@ function isFalsy(value: Value): boolean {
 }
 
 /** A hook with nothing in its body returns nil, which stops the field. */
-function emptyBodyBranch(location: Range): RawBranch {
+function emptyBodyBranch(
+  hook: HookDefinition,
+  location: Range,
+  hooks: RbResolverHooks,
+): RawBranch {
+  const raised = hooks.refusalRaises?.[hook.name];
   return {
     conditions: [],
-    terminal: endingTerminal("return", location),
+    terminal:
+      raised === undefined
+        ? returnOf({ type: "null" }, location)
+        : refusalTerminal(raised, location),
     effects: [],
     location,
     isDefault: true,
   };
+}
+
+function returnOf(shape: TypeShape, location: Range): RawTerminal {
+  return {
+    ...endingTerminal("return", location),
+    body: { typeText: null, shape },
+  };
+}
+
+function refusalTerminal(exceptionType: string, location: Range): RawTerminal {
+  return { ...endingTerminal("throw", location), exceptionType };
 }
 
 function goOn(location: Range): RawTerminal {
@@ -311,7 +357,7 @@ function goOn(location: Range): RawTerminal {
 }
 
 function endingTerminal(
-  kind: "return" | "delegate",
+  kind: "return" | "delegate" | "throw",
   location: Range,
 ): RawTerminal {
   return {

@@ -718,6 +718,43 @@ export interface RbResolverHooks {
    * payload in its place.
    */
   answerIsListHead?: boolean;
+  /**
+   * The class the library raises when a hook listed here returns false
+   * with no payload. A hook not listed makes the field resolve to null
+   * instead. graphql-ruby raises for `authorized?` and returns null for
+   * `ready?`.
+   */
+  refusalRaises?: Record<string, string>;
+}
+
+/** How a library reads whether a field's value, or the items of a list it returns, can be null. */
+export interface RbGraphqlNullability {
+  /** The keyword on a field or type call, and inside a list type, that says whether the value can be null. */
+  keyword: string;
+  /** The class-level call a wired class makes to say whether the field it resolves can be null. */
+  callName?: string;
+  /** Whether a field can be null when nothing says. */
+  nullableByDefault: boolean;
+  /** Whether a list's items can be null when the list type does not say. */
+  listItemsNullableByDefault: boolean;
+}
+
+/**
+ * A type the library generates from another one when a method is called
+ * on it, such as `CampaignType.connection_type`. In every name below,
+ * `{type}` is replaced with the wrapped type's GraphQL name, and a ref
+ * named `{type}` alone is the wrapped type.
+ */
+export interface RbGraphqlTypeWrapper {
+  /** The name of the type the field returns. */
+  name: string;
+  /** Each type the wrapper generates, by name, with its fields. */
+  types: Record<string, Record<string, TypeShape>>;
+  /**
+   * Keywords the method takes another type under, each with the library
+   * type used when the call passes none. A ref named `{keyword}` is it.
+   */
+  typeArguments?: Record<string, string>;
 }
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
@@ -736,6 +773,18 @@ export interface GraphqlObjectFields {
   fieldCallName: string;
   /** The DSL call declaring a referenced class's own return type. */
   typeCallName: string;
+  /** The keyword a field call can give its type under, in place of its second positional argument. */
+  typeKeyword?: string;
+  /** The class-level call that sets a type's GraphQL name, in place of the one `typeNameConvention` derives. */
+  typeNameCallName?: string;
+  /** How a field says its value can be null. Without it, a resolver's output says nothing about null. */
+  nullability?: RbGraphqlNullability;
+  /** Methods that, called on a type class, give a type the library generates from it, keyed by method name. */
+  typeWrappers?: Record<string, RbGraphqlTypeWrapper>;
+  /** Object types the library defines itself, which a generated type refers to, by name with their fields. */
+  libraryTypes?: Record<string, Record<string, TypeShape>>;
+  /** Classes whose instance, when a resolver returns one, the library reports as an error in place of the field's value. */
+  returnedErrorClassNames?: string[];
   argumentCallName: string;
   /** Keywords whose value is a class to read the declared contract from, one hop away. They are tried in the order listed. */
   wiringKeywords: string[];

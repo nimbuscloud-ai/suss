@@ -15,8 +15,12 @@ import { z } from "zod";
 
 import { SCALAR_SHAPES } from "@suss/contract-graphql";
 
-import type { GraphqlObjectFields, RubyPack } from "@suss/adapter-ruby";
-import type { PackDeclaration } from "@suss/ir-core";
+import type {
+  GraphqlObjectFields,
+  RbGraphqlTypeWrapper,
+  RubyPack,
+} from "@suss/adapter-ruby";
+import type { PackDeclaration, TypeShape } from "@suss/ir-core";
 
 /**
  * The CLI checks a `-f graphql-ruby=config.json` file against this
@@ -84,6 +88,68 @@ const DEFAULT_BASE_CLASS_NAMES = [
   "Types::BaseScalar",
 ];
 
+function orNull(shape: TypeShape): TypeShape {
+  return { type: "union", variants: [shape, { type: "null" }] };
+}
+
+/** `Relay::PageInfo`, which every connection's `pageInfo` field returns. */
+const PAGE_INFO_FIELDS: Record<string, TypeShape> = {
+  hasNextPage: { type: "boolean" },
+  hasPreviousPage: { type: "boolean" },
+  startCursor: orNull({ type: "text" }),
+  endCursor: orNull({ type: "text" }),
+};
+
+/**
+ * What `SomeType.connection_type` generates, with the library's default
+ * nullability: `edges` and `nodes` and their items can be null, and
+ * `pageInfo` and an edge's `cursor` cannot.
+ */
+const CONNECTION_TYPE: RbGraphqlTypeWrapper = {
+  name: "{type}Connection",
+  types: {
+    "{type}Connection": {
+      edges: orNull({
+        type: "array",
+        items: orNull({ type: "ref", name: "{type}Edge" }),
+      }),
+      nodes: orNull({
+        type: "array",
+        items: orNull({ type: "ref", name: "{type}" }),
+      }),
+      pageInfo: { type: "ref", name: "PageInfo" },
+    },
+    "{type}Edge": {
+      cursor: { type: "text" },
+      node: orNull({ type: "ref", name: "{type}" }),
+    },
+  },
+};
+
+/** The graphql-pagination gem's default `CollectionMetadataType`. */
+const COLLECTION_METADATA_FIELDS: Record<string, TypeShape> = {
+  currentPage: { type: "number" },
+  limitValue: { type: "number" },
+  totalCount: { type: "number" },
+  totalPages: { type: "number" },
+};
+
+/**
+ * What `SomeType.collection_type` generates. The method comes from the
+ * graphql-pagination gem, which adds it to every graphql-ruby type, and
+ * it takes the metadata type under `metadata_type:`.
+ */
+const COLLECTION_TYPE: RbGraphqlTypeWrapper = {
+  name: "{type}Collection",
+  types: {
+    "{type}Collection": {
+      collection: { type: "array", items: { type: "ref", name: "{type}" } },
+      metadata: { type: "ref", name: "{metadata_type}" },
+    },
+  },
+  typeArguments: { metadata_type: "CollectionMetadata" },
+};
+
 /**
  * A `root` in a config file is relative to that file. Resolved against
  * the working directory, the same config would find nothing when run
@@ -128,7 +194,31 @@ export function graphqlRubyFramework(
     resolverHooks: {
       methods: ["ready?", "authorized?"],
       answerIsListHead: true,
+      // A bare false from `ready?` resolves the field to null. One from
+      // `authorized?` raises, and the schema decides what the client sees.
+      refusalRaises: { "authorized?": "GraphQL::UnauthorizedFieldError" },
     },
+    typeKeyword: "type",
+    typeNameCallName: "graphql_name",
+    // A field, and a mutation's or resolver's own type, can be null unless
+    // it says `null: false`. The items of a list cannot unless the list
+    // type says `[Type, null: true]`.
+    nullability: {
+      keyword: "null",
+      callName: "null",
+      nullableByDefault: true,
+      listItemsNullableByDefault: false,
+    },
+    typeWrappers: {
+      connection_type: CONNECTION_TYPE,
+      collection_type: COLLECTION_TYPE,
+    },
+    libraryTypes: {
+      PageInfo: PAGE_INFO_FIELDS,
+      CollectionMetadata: COLLECTION_METADATA_FIELDS,
+    },
+    // Returning one of these puts it in `errors[]` in place of the value.
+    returnedErrorClassNames: ["GraphQL::ExecutionError"],
     ancestryRootClassNames: [...GRAPHQL_RUBY_ROOT_CLASS_NAMES],
     requiredKeyword: "required",
     // graphql-ruby registers an argument as required unless the call
@@ -186,7 +276,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-graphql-ruby",
   dependencies: [{ ecosystem: "rubygems", name: "graphql" }],
   reads:
-    "graphql-ruby class-based field DSL (Ruby). The pack follows \`mutation:\` and \`resolver:\` wiring to the referenced class, wherever the run declares it, and reads its arguments, its payload, its \`resolve\` method and the \`ready?\` and \`authorized?\` hooks that run first. It follows \`resolver_method:\` to the type's own method. It also records the model a resolver reads through \`dataloader\`, when a storage pack in the run recognizes that model.",
+    "graphql-ruby class-based field DSL (Ruby). The pack follows \`mutation:\` and \`resolver:\` wiring to the referenced class, wherever the run declares it, and reads its arguments, its payload, its \`resolve\` method and the \`ready?\` and \`authorized?\` hooks that run first. It follows \`resolver_method:\` to the type's own method. Each path through that method records what the field returns, from its declared type with null where the schema allows it and the object type's fields, and the errors it raises or returns. It also records the model a resolver reads through \`dataloader\`, when a storage pack in the run recognizes that model.",
   configuration: {
     file: "suss.graphql-ruby.json",
     example: { root: "app/graphql" },

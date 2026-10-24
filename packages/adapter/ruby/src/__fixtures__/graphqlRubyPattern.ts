@@ -1,6 +1,7 @@
 // The values the shipped graphql-ruby pack supplies. The adapter's own source
 // contains none of these strings, so a test that passes proves the pack drives it.
 
+import type { TypeShape } from "@suss/behavioral-ir";
 import type { GraphqlObjectFields, RubyPack } from "../pack.js";
 
 export function graphqlObjectFieldsPattern(
@@ -51,6 +52,65 @@ export function graphqlObjectFieldsPattern(
     ...overrides,
   };
 }
+
+const orNull = (shape: TypeShape): TypeShape => ({
+  type: "union",
+  variants: [shape, { type: "null" }],
+});
+
+/** What the shipped pack says about a field's output: null, type names, generated types and errors. */
+export const GRAPHQL_OUTPUT_OPTIONS: Partial<GraphqlObjectFields> = {
+  typeKeyword: "type",
+  typeNameCallName: "graphql_name",
+  nullability: {
+    keyword: "null",
+    callName: "null",
+    nullableByDefault: true,
+    listItemsNullableByDefault: false,
+  },
+  typeWrappers: {
+    connection_type: {
+      name: "{type}Connection",
+      types: {
+        "{type}Connection": {
+          nodes: orNull({
+            type: "array",
+            items: orNull({ type: "ref", name: "{type}" }),
+          }),
+          edges: orNull({
+            type: "array",
+            items: orNull({ type: "ref", name: "{type}Edge" }),
+          }),
+          pageInfo: { type: "ref", name: "PageInfo" },
+        },
+        "{type}Edge": {
+          cursor: { type: "text" },
+          node: orNull({ type: "ref", name: "{type}" }),
+        },
+      },
+    },
+    collection_type: {
+      name: "{type}Collection",
+      types: {
+        "{type}Collection": {
+          collection: { type: "array", items: { type: "ref", name: "{type}" } },
+          metadata: { type: "ref", name: "{metadata_type}" },
+        },
+      },
+      typeArguments: { metadata_type: "CollectionMetadata" },
+    },
+  },
+  libraryTypes: {
+    PageInfo: { hasNextPage: { type: "boolean" } },
+    CollectionMetadata: { totalCount: { type: "number" } },
+  },
+  returnedErrorClassNames: ["GraphQL::ExecutionError"],
+  resolverHooks: {
+    methods: ["ready?", "authorized?"],
+    answerIsListHead: true,
+    refusalRaises: { "authorized?": "GraphQL::UnauthorizedFieldError" },
+  },
+};
 
 export function graphqlRubyTestPack(
   overrides: Partial<GraphqlObjectFields> = {},
