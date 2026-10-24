@@ -20,6 +20,7 @@ import rails from "@suss/packs/rails";
 import sidekiq from "@suss/packs/sidekiq";
 
 import { answerQuestion } from "./ask.js";
+import { preloadWhyQuestion } from "./askWhy.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -48,6 +49,36 @@ beforeAll(async () => {
 
 afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe("background jobs in a Rails app, asked why", () => {
+  it("says the route enqueues the job and the job runs it later", async () => {
+    await preloadWhyQuestion(root);
+    const question = "why does POST /exports reach bus:sidekiq push#PushWorker";
+    const { answer } = answerQuestion({
+      question,
+      dir,
+      project: root,
+      json: true,
+      output: path.join(dir, "why.json"),
+    });
+    expect(answer?.hops).toEqual([
+      expect.objectContaining({
+        callee: "PushWorker.perform_async",
+        recorded: "sent",
+      }),
+    ]);
+
+    answerQuestion({
+      question,
+      dir,
+      project: root,
+      output: path.join(dir, "why.txt"),
+    });
+    expect(fs.readFileSync(path.join(dir, "why.txt"), "utf8")).toContain(
+      "enqueues PushWorker.perform_async, and PushWorker#perform",
+    );
+  });
 });
 
 describe("background jobs in a Rails app", () => {
