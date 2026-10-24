@@ -173,6 +173,40 @@ describe("ENV spellings", () => {
     ]);
   });
 
+  it("records the value a read falls back to when it settles to one", async () => {
+    const { db, parsed } = await projectFacts(
+      {
+        "use.rb": [
+          'DEFAULT_STAGE = "dev"',
+          'A = ENV.fetch("A", DEFAULT_STAGE)',
+          'B = Integer(ENV["B"].presence || 60)',
+          'C = ENV["C"] || true',
+          'D = ENV.fetch("D") { compute }',
+          'E = ENV["E"] || other',
+          'F = ENV["F"]',
+          "",
+        ].join("\n"),
+      },
+      ["presence"],
+    );
+    const root = parsed[0]?.root as RbNode;
+    expect(
+      envReadEffects(root, { db, file: "use.rb" }).map(({ effect }) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "config-read"
+          ? [effect.interaction.name, effect.interaction.default]
+          : null,
+      ),
+    ).toEqual([
+      ["A", "dev"],
+      ["B", 60],
+      ["C", true],
+      ["D", undefined],
+      ["E", undefined],
+      ["F", undefined],
+    ]);
+  });
+
   it("counts an || after &. calls on the read, which give back nil when the read is nil", async () => {
     expect(
       await fileReads(

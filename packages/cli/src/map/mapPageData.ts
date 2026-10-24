@@ -34,8 +34,8 @@ export interface PageData {
   t: Array<
     [number, Array<[number, number | null]>, Array<[number, number | null]>]
   >;
-  /** Environment reads: [boundary, unit, defaulted]. */
-  env: Array<[number, number, 0 | 1]>;
+  /** Environment reads: [boundary, unit, defaulted, the default as the code writes it, or null]. */
+  env: Array<[number, number, 0 | 1, number | null]>;
   /** GraphQL operations: [unit, type, name, owner, fields]. */
   ops: Array<[number, number, number, number | null, number[]]>;
   /** HTTP calls: [unit, method, path, entries]. */
@@ -218,6 +218,7 @@ export function pageDataOf(model: MapModel): PageData {
       read.boundary,
       read.unit,
       read.defaulted ? 1 : 0,
+      read.value === undefined ? null : s(JSON.stringify(read.value)),
     ]),
     ops: model.operations.map((op) => [
       op.unit,

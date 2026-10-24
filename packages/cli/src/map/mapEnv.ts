@@ -1,8 +1,8 @@
 /**
- * Every place the code reads an environment variable, and whether it
- * gives a value to use when the variable is not set. These are the
- * `config-read` effects in the summaries, one per unit, variable and
- * default, however many paths through the unit repeat the read.
+ * Every place the code reads an environment variable, whether it gives
+ * a value to use when the variable is not set, and that value when it
+ * settles to one. These are the `config-read` effects in the summaries,
+ * one per unit, variable and default, however many paths repeat the read.
  */
 
 import { boundarySpelling } from "../boundaryReach.js";
@@ -45,13 +45,18 @@ export function gatherEnvReads(
           }),
         );
         const unit = units.of(summary);
-        const defaulted = effect.interaction.defaulted;
-        const key = `${boundary} ${unit} ${defaulted}`;
+        const { defaulted, default: value } = effect.interaction;
+        const key = `${boundary} ${unit} ${defaulted} ${JSON.stringify(value)}`;
         if (seen.has(key)) {
           continue;
         }
         seen.add(key);
-        reads.push({ boundary, unit, defaulted });
+        reads.push({
+          boundary,
+          unit,
+          defaulted,
+          ...(value === undefined ? {} : { value }),
+        });
       }
     }
   }

@@ -134,7 +134,11 @@ export function tableAccess(
   };
 }
 
-export function envRead(name: string, defaulted: boolean): Effect {
+export function envRead(
+  name: string,
+  defaulted: boolean,
+  value?: string | number | boolean,
+): Effect {
   return {
     type: "interaction",
     binding: {
@@ -143,7 +147,12 @@ export function envRead(name: string, defaulted: boolean): Effect {
       recognition: "node",
     },
     callee: `process.env.${name}`,
-    interaction: { class: "config-read", name, defaulted },
+    interaction: {
+      class: "config-read",
+      name,
+      defaulted,
+      ...(value === undefined ? {} : { default: value }),
+    },
   };
 }
 

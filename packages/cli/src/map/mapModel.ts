@@ -157,6 +157,8 @@ export interface MapEnvRead {
   unit: number;
   /** True when the code gives a value to use when the variable is not set. */
   defaulted: boolean;
+  /** That value, when it settles to one. */
+  value?: string | number | boolean;
 }
 
 /** A table, with what `ask "what writes"` and `ask "what reads"` list for it. */

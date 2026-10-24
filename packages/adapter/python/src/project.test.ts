@@ -495,7 +495,12 @@ describe("environment reads on a summary", () => {
       );
     const route = summaries.find((s) => s.kind === "handler");
     expect(configReads(route)).toEqual([
-      { class: "config-read", name: "PAGE_SIZE", defaulted: true },
+      {
+        class: "config-read",
+        name: "PAGE_SIZE",
+        defaulted: true,
+        default: "20",
+      },
     ]);
 
     const moduleInit = summaries.find((s) => s.kind === "module-init");

@@ -58,6 +58,18 @@ async function withFacts(source: string): Promise<{
   return { root: tree.rootNode, module, db };
 }
 
+/** Each read in a module and the value it falls back to, with the facts a project run would emit. */
+async function moduleDefaults(
+  source: string,
+): Promise<Array<[string | null, unknown]>> {
+  const { root, module, db } = await withFacts(source);
+  return envReadEffects(root, module, db).map(({ effect }) =>
+    effect.type === "interaction" && effect.interaction.class === "config-read"
+      ? [effect.interaction.name, effect.interaction.default]
+      : [null, null],
+  );
+}
+
 async function moduleReadsWithFacts(source: string): Promise<Read[]> {
   const { root, module, db } = await withFacts(source);
   return readsOf(envReadEffects(root, module, db));
@@ -138,6 +150,20 @@ describe("os.environ spellings", () => {
       { name: "B", defaulted: true },
       { name: "C", defaulted: true },
       { name: "D", defaulted: false },
+    ]);
+  });
+
+  it("records the value a read falls back to when it settles to one", async () => {
+    expect(
+      await moduleDefaults(
+        'import os\nDEFAULT_STAGE = "dev"\nA = os.environ.get("A", DEFAULT_STAGE)\nB = int(os.getenv("B") or 60)\nC = os.environ.get("C", default="1")\nD = os.environ.get("D") or other()\nE = os.environ["E"]\n',
+      ),
+    ).toEqual([
+      ["A", "dev"],
+      ["B", 60],
+      ["C", "1"],
+      ["D", undefined],
+      ["E", undefined],
     ]);
   });
 

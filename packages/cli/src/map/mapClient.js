@@ -1130,7 +1130,7 @@
     }
     const rows = ev.reads.map(
       (r) =>
-        `<span class="unit-name">${esc(unit(r[1]).name)}</span> ${loc(r[1], null, `${short(unit(r[1]).file)}:${unit(r[1]).line}`)} <span class="badge" data-term="default">${r[2] === 1 ? "default" : "no default"}</span>`,
+        `<span class="unit-name">${esc(unit(r[1]).name)}</span> ${loc(r[1], null, `${short(unit(r[1]).file)}:${unit(r[1]).line}`)} <span class="badge" data-term="default">${r[2] !== 1 ? "no default" : r[3] === null || r[3] === undefined ? "default" : `default ${esc(S[r[3]])}`}</span>`,
     );
     showDrawer(
       `${icon("env", "i-env")}Environment variable`,

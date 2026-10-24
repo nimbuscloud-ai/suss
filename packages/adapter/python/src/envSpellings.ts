@@ -21,6 +21,8 @@ export interface EnvReadSpelling {
   name: PyNode;
   /** Whether the read itself supplies a value, as `.get("X", d)` does. */
   hasDefault: boolean;
+  /** The value the read itself supplies, the `d` in `.get("X", d)`. */
+  fallback?: PyNode;
   /** Whether the read raises when the variable is unset, as `os.environ["X"]` does. */
   raises: boolean;
 }
@@ -88,12 +90,17 @@ function callRead(node: PyNode, scope: Scope): EnvReadSpelling | null {
   if (name === undefined) {
     return null;
   }
-  const hasDefault = written.some(
+  const fallback = written.find(
     (argument) =>
       (argument.kind === "positional" && argument.position === 1) ||
       (argument.kind === "keyword" && argument.name === "default"),
   );
-  return { name: name.node, hasDefault, raises: false };
+  return {
+    name: name.node,
+    hasDefault: fallback !== undefined,
+    raises: false,
+    ...(fallback === undefined ? {} : { fallback: fallback.node }),
+  };
 }
 
 /** `os.environ.get` or `os.getenv`, through whatever name the file imported them under. */

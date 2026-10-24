@@ -168,6 +168,31 @@ describe("env-var recognizer — happy path", () => {
     });
   });
 
+  it("records the value a read falls back to when it settles to one", () => {
+    const file = makeProject(`
+      const STAGE_DEFAULT = "dev";
+      declare function other(): string;
+      const stage = process.env.STAGE ?? STAGE_DEFAULT;
+      const timeout = Number(process.env.TIMEOUT || 60);
+      const region = process.env.REGION?.trim() || "eu-west-1";
+      const { DEBUG = false } = process.env;
+      const label = process.env.LABEL ?? other();
+      const bucket = process.env.BUCKET;
+    `);
+    const reads = configReadEffectsOf(recognizeWithStore(file)).map((e) => [
+      e.interaction.name,
+      e.interaction.default,
+    ]);
+    expect(reads).toEqual([
+      ["STAGE", "dev"],
+      ["TIMEOUT", 60],
+      ["REGION", "eu-west-1"],
+      ["DEBUG", false],
+      ["LABEL", undefined],
+      ["BUCKET", undefined],
+    ]);
+  });
+
   it("does NOT mark defaulted when env-var is the FALLBACK side of ??", () => {
     const file = makeProject(`
       function getPort(): string | undefined { return undefined; }
