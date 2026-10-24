@@ -9,6 +9,7 @@ import type {
   MessageBusTechnology,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
+import type { EventPattern } from "./eventPatternMatch.js";
 
 function emptyTransition(id: string, effects: Effect[] = []) {
   return {
@@ -605,6 +606,9 @@ function eventBridgeProducer(opts: {
   name: string;
   filePath: string;
   channel: string;
+  /** The literal `Source` the entry states. */
+  source?: string;
+  bodyFields?: string[];
 }): BehavioralSummary {
   const sendEffect: Effect = {
     type: "interaction",
@@ -617,7 +621,23 @@ function eventBridgeProducer(opts: {
       },
       recognition: "@suss/framework-aws-eventbridge",
     },
-    interaction: { class: "message-send" },
+    interaction: {
+      class: "message-send",
+      ...(opts.source !== undefined ? { routingKey: opts.source } : {}),
+      ...(opts.bodyFields !== undefined
+        ? {
+            body: {
+              kind: "object",
+              fields: Object.fromEntries(
+                opts.bodyFields.map((f) => [
+                  f,
+                  { kind: "identifier", name: f },
+                ]),
+              ),
+            },
+          }
+        : {}),
+    },
   };
   return {
     kind: "handler",
@@ -634,8 +654,14 @@ function eventBridgeProducer(opts: {
   };
 }
 
-function eventBridgeProvider(channel: string): BehavioralSummary {
+function eventBridgeProvider(
+  channel: string,
+  eventPattern?: EventPattern,
+): BehavioralSummary {
   return {
+    ...(eventPattern !== undefined
+      ? { metadata: { messageBus: { eventPattern } } }
+      : {}),
     kind: "library",
     location: {
       file: "template.yaml",
@@ -665,11 +691,13 @@ function eventBridgeProvider(channel: string): BehavioralSummary {
 function eventBridgeConsumer(opts: {
   name: string;
   channel: string;
-  patternResolution: "exact" | "schedule" | "unresolvable";
+  patternResolution: "exact" | "pattern" | "schedule" | "unresolvable";
   rule?: string;
   eventBus?: string;
   unresolvableReason?: string;
   enabled?: boolean;
+  eventPattern?: EventPattern;
+  wiring?: "ruleTarget";
 }): BehavioralSummary {
   return {
     kind: "consumer",
@@ -704,8 +732,43 @@ function eventBridgeConsumer(opts: {
           ? { unresolvableReason: opts.unresolvableReason }
           : {}),
         ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
+        ...(opts.eventPattern !== undefined
+          ? { eventPattern: opts.eventPattern }
+          : {}),
+        ...(opts.wiring !== undefined ? { wiring: opts.wiring } : {}),
       },
     },
+  };
+}
+
+/** A delivery the template declares, such as a redrive, sending to a queue. */
+function deliveryWire(name: string, toQueue: string): BehavioralSummary {
+  const sendEffect: Effect = {
+    type: "interaction",
+    binding: {
+      transport: "aws_sqs",
+      semantics: {
+        name: "message-bus",
+        messageBus: "aws_sqs",
+        channel: toQueue,
+      },
+      recognition: "cloudformation",
+    },
+    interaction: { class: "message-send" },
+  };
+  return {
+    kind: "library",
+    location: {
+      file: "template.yaml",
+      range: { start: 4, end: 4 },
+      exportName: null,
+    },
+    identity: { name, exportPath: null, boundaryBinding: null },
+    inputs: [],
+    transitions: [emptyTransition(`${name}:delivers`, [sendEffect])],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: { messageBus: { wiring: "redrive" } },
   };
 }
 
@@ -1082,6 +1145,255 @@ function snsConsumer(opts: {
     },
   };
 }
+
+describe("deliveries the template declares", () => {
+  it("does not report a dead-letter queue unused when a queue redrives into it", () => {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      queueProvider("OrdersDlq"),
+      deliveryWire("OrdersQueue.RedrivePolicy", "OrdersDlq"),
+      producerSummary({
+        name: "placeOrder",
+        filePath: "src/place/index.ts",
+        channel: "OrdersQueue",
+      }),
+      consumerSummary({
+        name: "Worker.FromOrders",
+        channel: "OrdersQueue",
+        codeScopePath: "src/worker/",
+      }),
+    ]);
+    expect(findings.map((f) => f.kind)).toEqual([]);
+  });
+
+  it("does not orphan a consumer whose only producer is a redrive", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkMessageBus(
+      [
+        queueProvider("OrdersDlq"),
+        deliveryWire("OrdersQueue.RedrivePolicy", "OrdersDlq"),
+        consumerSummary({
+          name: "DlqReplayer.FromDlq",
+          channel: "OrdersDlq",
+          codeScopePath: "src/replayer/",
+        }),
+      ],
+      undefined,
+      compared,
+    );
+    expect(findings).toEqual([]);
+    expect(compared.map((p) => p.consumer)).toContain(
+      "template.yaml::OrdersQueue.RedrivePolicy",
+    );
+  });
+
+  it("does not orphan a queue consumer whose subject a rule routes, when the rule delivers into the queue", () => {
+    const findings = checkMessageBus([
+      deliveryWire("Rule.ToQueue#OrderPlaced", "OrdersQueue"),
+      queueProvider("OrdersQueue"),
+      consumerSummary({
+        name: "Worker.FromOrders",
+        channel: "OrderBus#OrderPlaced",
+        codeScopePath: "src/worker/",
+        queue: "OrdersQueue",
+      }),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("counts a rule's queue target as a receiver, so the rule's channel is not unused", () => {
+    const findings = checkMessageBus([
+      eventBridgeProvider("OrderBus#OrderPlaced", {
+        detailTypes: ["OrderPlaced"],
+      }),
+      eventBridgeConsumer({
+        name: "Rule.ToQueue#OrderPlaced",
+        channel: "OrderBus#OrderPlaced",
+        patternResolution: "exact",
+        eventPattern: { detailTypes: ["OrderPlaced"] },
+        wiring: "ruleTarget",
+      }),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("does not report a delivery nothing in the run reads as an orphan producer", () => {
+    expect(checkMessageBus([deliveryWire("Pipe", "ElsewhereQueue")])).toEqual(
+      [],
+    );
+  });
+
+  it("still reports a dead-letter queue nothing redrives into as unused", () => {
+    const findings = checkMessageBus([queueProvider("OrdersDlq")]);
+    expect(findings.map((f) => f.kind)).toEqual(["messageBusUnused"]);
+  });
+});
+
+describe("rules matched by their pattern", () => {
+  const orderPlaced = (opts: { source?: string; name?: string } = {}) =>
+    eventBridgeProducer({
+      name: opts.name ?? "placeOrder",
+      filePath: "src/place/index.ts",
+      channel: "OrderBus#OrderPlaced",
+      ...(opts.source !== undefined ? { source: opts.source } : {}),
+    });
+
+  const rule = (eventPattern: EventPattern, channel = "OrderBus#OrderPlaced") =>
+    eventBridgeConsumer({
+      name: "Consumer#OrderPlaced",
+      channel,
+      patternResolution:
+        eventPattern.detailTypes === undefined ? "pattern" : "exact",
+      rule: "OrdersRule",
+      eventBus: "OrderBus",
+      eventPattern,
+    });
+
+  it("pairs a send whose source the pattern lists", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkMessageBus(
+      [
+        orderPlaced({ source: "orders" }),
+        rule({ detailTypes: ["OrderPlaced"], sources: ["orders"] }),
+      ],
+      undefined,
+      compared,
+    );
+    expect(findings).toEqual([]);
+    expect(compared).toHaveLength(1);
+  });
+
+  it("orphans both sides when the send states a source the pattern does not list", () => {
+    const findings = checkMessageBus([
+      orderPlaced({ source: "billing" }),
+      rule({ detailTypes: ["OrderPlaced"], sources: ["orders"] }),
+    ]);
+    expect(findings.map((f) => f.kind).sort()).toEqual([
+      "messageBusConsumerOrphan",
+      "messageBusProducerOrphan",
+    ]);
+  });
+
+  it("keeps orphans away but records no pair when the send's source is unknown", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkMessageBus(
+      [
+        orderPlaced(),
+        rule({ detailTypes: ["OrderPlaced"], sources: ["orders"] }),
+      ],
+      undefined,
+      compared,
+    );
+    expect(findings).toEqual([]);
+    expect(compared).toEqual([]);
+  });
+
+  it("matches a rule that lists only a source by that source", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkMessageBus(
+      [
+        orderPlaced({ source: "orders" }),
+        rule({ sources: ["orders"] }, "OrderBus#<pattern>"),
+      ],
+      undefined,
+      compared,
+    );
+    expect(findings).toEqual([]);
+    expect(compared.map((p) => p.key)).toEqual(["bus:eventbridge OrderPlaced"]);
+  });
+
+  it("does not report a rule that lists no detail-type as an orphan", () => {
+    const findings = checkMessageBus([
+      rule({ sources: ["orders"] }, "OrderBus#<pattern>"),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("does not orphan a rule AWS services send to", () => {
+    const findings = checkMessageBus([
+      eventBridgeProvider("default#Object Created", {
+        detailTypes: ["Object Created"],
+        sources: ["aws.s3"],
+        emittedByAws: true,
+      }),
+      eventBridgeConsumer({
+        name: "Indexer#Object Created",
+        channel: "default#Object Created",
+        patternResolution: "exact",
+        eventPattern: {
+          detailTypes: ["Object Created"],
+          sources: ["aws.s3"],
+          emittedByAws: true,
+        },
+      }),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("reports a pattern it cannot settle as info and counts every send on the bus as a possible match", () => {
+    const findings = checkMessageBus([
+      orderPlaced({ source: "orders" }),
+      rule({ detailTypes: ["OrderPlaced"], unsettled: ["source"] }),
+    ]);
+    expect(findings.map((f) => [f.kind, f.severity])).toEqual([
+      ["unsupportedSemantics", "info"],
+    ]);
+    expect(findings[0]?.description).toContain("filters source");
+  });
+
+  it("compares a rule's handler only with sends that match it for certain", () => {
+    const handler = (name: string, scope: string) => ({
+      ...rule({ detailTypes: ["OrderPlaced"], sources: ["orders"] }),
+      identity: {
+        ...rule({ detailTypes: ["OrderPlaced"] }).identity,
+        name,
+        deployableUnit: {
+          deploymentTarget: "lambda" as const,
+          instanceName: name,
+        },
+      },
+      metadata: {
+        codeScope: { kind: "codeUri", path: scope },
+        messageBus: {
+          patternResolution: "exact",
+          eventPattern: { detailTypes: ["OrderPlaced"], sources: ["orders"] },
+        },
+      },
+    });
+    const reader = consumerCodeSummary({
+      name: "handler",
+      filePath: "src/consumer/index.ts",
+      bodyFields: ["orderId"],
+    });
+    const possibleOnly = checkMessageBus([
+      handler("Consumer", "src/consumer/"),
+      reader,
+      eventBridgeProducer({
+        name: "placeOrder",
+        filePath: "src/place/index.ts",
+        channel: "OrderBus#OrderPlaced",
+        bodyFields: ["id"],
+      }),
+    ]);
+    expect(
+      possibleOnly.filter((f) => f.kind === "boundaryFieldUnknown"),
+    ).toEqual([]);
+    const certain = checkMessageBus([
+      handler("Consumer", "src/consumer/"),
+      reader,
+      eventBridgeProducer({
+        name: "placeOrder",
+        filePath: "src/place/index.ts",
+        channel: "OrderBus#OrderPlaced",
+        source: "orders",
+        bodyFields: ["id"],
+      }),
+    ]);
+    expect(
+      certain.filter((f) => f.kind === "boundaryFieldUnknown"),
+    ).toHaveLength(1);
+  });
+});
 
 describe("sns pairing", () => {
   it("flags a consumer orphan for a topic no producer sends to", () => {
