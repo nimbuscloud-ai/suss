@@ -434,7 +434,7 @@ function shareDependencies(top: string, tree: string): void {
 }
 
 /** git's output, or null when it exits non-zero. */
-function git(cwd: string, args: readonly string[]): string | null {
+export function git(cwd: string, args: readonly string[]): string | null {
   try {
     return execFileSync("git", args, {
       cwd,
