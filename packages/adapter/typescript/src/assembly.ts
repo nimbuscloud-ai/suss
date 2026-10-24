@@ -8,7 +8,12 @@
  * attached to the branch they fire on.
  */
 
-import { type CallExpression, type Expression, Node } from "ts-morph";
+import {
+  type CallExpression,
+  type Expression,
+  type NewExpression,
+  Node,
+} from "ts-morph";
 
 import { firesOn, runsBefore, splitAtHandOffs } from "@suss/extractor";
 
@@ -21,6 +26,7 @@ import { computePathConditions } from "./paths/pathConditions.js";
 import { recordProvenance } from "./provenance.js";
 import {
   extractInvocationEffects,
+  invokedCallee,
   runAccessRecognizers,
   runInvocationRecognizers,
 } from "./resolve/invocationEffects.js";
@@ -214,7 +220,7 @@ export type CallAccountingOutcome =
 
 /** One call the invocation walk visited, and where it ended up. */
 export interface CallAccountingEntry {
-  readonly node: CallExpression;
+  readonly node: CallExpression | NewExpression;
   readonly callee: string;
   readonly line: number;
   readonly outcome: CallAccountingOutcome;
@@ -462,7 +468,10 @@ function handOffSites(
 ): HandOffSite[] {
   const sites: HandOffSite[] = [];
   for (const site of invocations) {
-    if (writesTerminal(site.node, terminalNodes)) {
+    if (
+      !Node.isCallExpression(site.node) ||
+      writesTerminal(site.node, terminalNodes)
+    ) {
       continue;
     }
     const handed = responseHandedAt(site.node, handOff);
@@ -510,7 +519,7 @@ function accountFor(
   branches: readonly RawBranch[],
 ): CallAccountingEntry {
   const { node, line } = site;
-  const callee = node.getExpression().getText();
+  const callee = invokedCallee(node);
   if (writesTerminal(node, terminalNodes)) {
     return { node, callee, line, outcome: "terminal" };
   }

@@ -4,6 +4,7 @@
 
 import os
 
+from clients import QueueClient
 from env import require_env
 
 QUEUE_URL = os.environ["QUEUE_URL"]
@@ -11,4 +12,5 @@ CHECKED_QUEUE_URL = require_env("QUEUE_URL")
 
 
 def handler(event, context):
-    return {"queue": QUEUE_URL, "records": len(event.get("Records", []))}
+    client = QueueClient()
+    return {"queue": client.url, "records": len(event.get("Records", []))}

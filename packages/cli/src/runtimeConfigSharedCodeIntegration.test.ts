@@ -106,6 +106,35 @@ describe("runtime-config over two Lambdas on one CodeUri", () => {
     expect(reads[0]?.callee).toBe("process.env[name]");
   });
 
+  it("reads a constructor's default only in the handler whose `new` leaves the argument out", async () => {
+    const code = await extractCode();
+    const readsBy = (name: string) =>
+      code
+        .find((s) => s.identity.name === name)
+        ?.transitions.flatMap((t) => t.effects)
+        .flatMap((e) =>
+          e.type === "interaction" && e.interaction.class === "config-read"
+            ? [e.callee]
+            : [],
+        );
+    expect(readsBy("IndexerFunction.handler")).toContain(
+      "process.env.INDEX_TABLE_NAME",
+    );
+    expect(readsBy("NotifierFunction.handler")).not.toContain(
+      "process.env.INDEX_TABLE_NAME",
+    );
+    expect(readsBy("IndexClient.constructor")).toEqual([]);
+  });
+
+  it("stops at a `new` whose class a table picks", async () => {
+    const notifier = (await extractCode()).find(
+      (s) => s.identity.name === "NotifierFunction.handler",
+    );
+    expect(notifier?.gaps.map((gap) => gap.description)).toEqual([
+      expect.stringContaining("new Chosen"),
+    ]);
+  });
+
   it("does not call either function's declaration unused", async () => {
     const findings = await runPipeline();
     const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");

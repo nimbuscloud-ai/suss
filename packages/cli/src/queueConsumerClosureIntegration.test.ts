@@ -152,6 +152,26 @@ describe("repeat delivery over a queue worker on a shared CodeUri", () => {
     ).toEqual([null]);
   });
 
+  it("reads a Ruby initialize's default only where `new` leaves the argument out", async () => {
+    clearTemplateCache();
+    const { summaries } = await extractRubyProject({
+      files: findRubyFiles(rubyRoot),
+      packs: [lambdaRuby()],
+      workspaceRoot: rubyRoot,
+      cacheDir: null,
+    });
+    expect(
+      configReadNames(
+        summaries,
+        "src/handlers/accounts.rb",
+        "AccountsFunction.handler",
+      ),
+    ).toEqual(["ACCOUNTS_REGION"]);
+    expect(
+      configReadNames(summaries, "src/lib/ledger_client.rb", "initialize"),
+    ).toEqual([]);
+  });
+
   it("records the function the template calls next to the file it enters", () => {
     const scopes = cloudFormationFileToSummaries(
       path.join(rubyRoot, "template.yaml"),
