@@ -123,6 +123,7 @@ export const messageBusSemantics = defineBoundarySemantics({
      * the generic unmatched list leaves them out.
      */
     reportsUnpairedItself: true,
+    consumedAs: ["reads"],
     unsettledJob: (semantics) =>
       semantics.channel === null &&
       MESSAGE_BUS_TRAITS[semantics.messageBus].jobQueue,

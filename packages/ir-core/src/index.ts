@@ -132,6 +132,7 @@ export {
   boundaryLabel,
   bucketsMeet,
   canPair,
+  consumedAs,
   displayLabel,
   exchangesHttpResponses,
   groundBinding,

@@ -7,7 +7,9 @@
  * same effect.
  */
 
-import type { Relation } from "@suss/ir-core";
+import { consumedAs } from "@suss/ir-core";
+
+import type { BoundaryBinding, Relation } from "@suss/ir-core";
 import type { BoundaryRole, Effect } from "./index.js";
 
 export type Interaction = Extract<
@@ -45,10 +47,17 @@ export function relationsOf(interaction: Interaction): Relation[] {
   return handler(interaction);
 }
 
-/** What a unit does at the boundary its own identity is bound to. */
-export const OWN_BINDING: Record<BoundaryRole, Relation[]> = {
-  provider: ["provides"],
-  consumer: ["reads", "writes"],
+/**
+ * What a unit does at the boundary its own identity is bound to. A
+ * consumer's relations come from the protocol, since a client of a route
+ * reads and writes while a consumer of a channel only reads.
+ */
+export const OWN_BINDING: Record<
+  BoundaryRole,
+  (binding: BoundaryBinding) => readonly Relation[]
+> = {
+  provider: () => ["provides"],
+  consumer: (binding) => consumedAs(binding),
 };
 
 /**

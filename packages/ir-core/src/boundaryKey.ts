@@ -15,6 +15,7 @@ import { allBehaviors, behaviorOf } from "./semantics/registry.js";
 import type { Reference } from "./boundaryName.js";
 import type { Deployment } from "./deployment.js";
 import type { BoundaryBinding, Semantics } from "./index.js";
+import type { Relation } from "./relation.js";
 import type { MatchResult } from "./typeShapeMatch.js";
 
 /**
@@ -217,6 +218,11 @@ export function exchangesHttpResponses(binding: BoundaryBinding): boolean {
 /** Whether crossing this boundary leaves the process. */
 export function leavesTheProcess(binding: BoundaryBinding): boolean {
   return behaviorOf(binding.semantics).leavesTheProcess;
+}
+
+/** What a consumer bound to this binding does there, reading and writing unless its protocol says otherwise. */
+export function consumedAs(binding: BoundaryBinding): readonly Relation[] {
+  return behaviorOf(binding.semantics).consumedAs ?? ["reads", "writes"];
 }
 
 /** Whether a send on this binding enqueues a background job nothing settled. */
