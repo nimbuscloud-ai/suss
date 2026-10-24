@@ -167,6 +167,8 @@ suss met a call it could not follow in one unit, of 2, so that one is described 
 
 Errors fail the run and warnings do not, so a first pass over an old codebase does not have to be all or nothing. `--all` lists every pair suss made and every boundary it skipped, so you can tell "no findings" apart from "nothing got compared". `--at src/articles.ts:14` narrows a run to one file, line, boundary or summary.
 
+To see the whole project at once, run `npx @suss/cli map`. It writes `.suss/map.html`, a page of every route, table and env var, what `check` compared, and the calls suss could not follow. [`suss map`](/reference/cli/map) has the details.
+
 When a run turns up nothing, every command prints where it stopped. [Fix a run that found nothing](/guides/fix-an-empty-run) goes through each case.
 
 ## Choose the packs yourself
