@@ -3,6 +3,7 @@
 // file is the dispatch table and dedup pass that callers see.
 
 import { ResolutionStore } from "../facts/store.js";
+import { discoverCallbackArguments } from "./callbackArgument.js";
 import { discoverClientCalls } from "./clientCall.js";
 import { discoverDecoratedMethods } from "./decoratedMethod.js";
 import { discoverDecoratedRoutes } from "./decoratedRoute.js";
@@ -189,6 +190,15 @@ function runPattern(
       pattern.match,
       pattern.kind,
       resolution,
+    );
+  }
+  if (pattern.match.type === "callbackArgument") {
+    return discoverCallbackArguments(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+      pattern.binding,
     );
   }
   return [];
