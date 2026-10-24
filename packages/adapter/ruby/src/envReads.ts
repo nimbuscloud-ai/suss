@@ -109,12 +109,13 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
 export function envReadEffects(root: RbNode, facts?: EnvFacts): EffectAt[] {
   const helpers = helperFactsOf(facts);
   const defaults = facts !== undefined && hasDefaultReads(facts.db);
+  const blankToNil = blankToNilIn(facts?.db);
   // The calls are resolved in one batch after the walk, so the walk keeps
   // a slot for each one to preserve source order.
   const slots: Slot[] = [];
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
-      const read = envReadAt(node);
+      const read = envReadAt(node, blankToNil);
       if (read !== null) {
         slots.push({ read, at: node });
         return;
@@ -251,16 +252,38 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
   return named;
 }
 
+const BLANK_TO_NIL = "rbBlankToNil";
+
+/** Records the methods the run's packs say turn a blank value into nil, for the defaulted rule. */
+export function emitBlankToNilFacts(
+  db: Database,
+  methods: readonly string[],
+): void {
+  for (const method of methods) {
+    db.add(BLANK_TO_NIL, [method]);
+  }
+}
+
+const NO_METHODS: ReadonlySet<string> = new Set();
+
+function blankToNilIn(db: Database | undefined): ReadonlySet<string> {
+  const rows = db?.facts(BLANK_TO_NIL) ?? [];
+  return rows.length === 0
+    ? NO_METHODS
+    : new Set(rows.map((row) => String(row[0])));
+}
+
 /**
  * Records which expressions spell `ENV` and pass it on, so the shared
  * rules can work out which parameters a caller's argument ends up
  * naming. Also records the fallback flag the rules do not carry.
  */
 export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
+  const blankToNil = blankToNilIn(db);
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       if (DEFAULTED_PARAMETER_HOLDERS.has(node.type)) {
-        emitDefaultReads(db, file, node);
+        emitDefaultReads(db, file, node, blankToNil);
       }
       if (isEnv(node) && handsOnward(node)) {
         db.add("environmentObject", [
@@ -271,7 +294,7 @@ export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
       if (
         spelling !== null &&
         stringLiteralValue(spelling.name) === null &&
-        envSiteAt(node)?.defaulted === true
+        envSiteAt(node, blankToNil)?.defaulted === true
       ) {
         db.add(ENV_DEFAULTED, [nodeId(file, node)]);
       }
@@ -316,7 +339,12 @@ const DEFAULT_KIND: Record<string, "positional" | "keyword"> = {
   keyword_parameter: "keyword",
 };
 
-function emitDefaultReads(db: Database, file: string, method: RbNode): void {
+function emitDefaultReads(
+  db: Database,
+  file: string,
+  method: RbNode,
+  blankToNil: ReadonlySet<string>,
+): void {
   const funcKey = nodeId(file, method);
   for (const param of parametersOf(method)) {
     const kind = DEFAULT_KIND[param.type];
@@ -325,7 +353,7 @@ function emitDefaultReads(db: Database, file: string, method: RbNode): void {
     if (kind === undefined || name === null || value === null) {
       continue;
     }
-    for (const read of namedReadsUnder(value)) {
+    for (const read of namedReadsUnder(value, blankToNil)) {
       db.add(DEFAULT_READ, [
         `${funcKey}#${name.text}`,
         kind,
@@ -339,10 +367,11 @@ function emitDefaultReads(db: Database, file: string, method: RbNode): void {
 /** The reads under a node that write out their variable, the node itself included. */
 function namedReadsUnder(
   node: RbNode,
+  blankToNil: ReadonlySet<string>,
 ): Array<{ name: string; defaulted: boolean }> {
   const reads: Array<{ name: string; defaulted: boolean }> = [];
   const take = (at: RbNode): void => {
-    const read = envReadAt(at);
+    const read = envReadAt(at, blankToNil);
     if (read?.name !== null && read?.name !== undefined) {
       reads.push({ name: read.name, defaulted: read.defaulted });
     }
@@ -570,15 +599,21 @@ function configReadEffect(read: EnvRead, at: RbNode): Effect {
   };
 }
 
-function envReadAt(node: RbNode): EnvRead | null {
-  const site = envSiteAt(node);
+function envReadAt(
+  node: RbNode,
+  blankToNil: ReadonlySet<string> = NO_METHODS,
+): EnvRead | null {
+  const site = envSiteAt(node, blankToNil);
   if (site === null) {
     return null;
   }
   return { name: stringLiteralValue(site.name), defaulted: site.defaulted };
 }
 
-function envSiteAt(node: RbNode): EnvSite | null {
+function envSiteAt(
+  node: RbNode,
+  blankToNil: ReadonlySet<string>,
+): EnvSite | null {
   const spelling = envSpellingAt(node);
   if (spelling === null) {
     return null;
@@ -586,6 +621,6 @@ function envSiteAt(node: RbNode): EnvSite | null {
   return {
     read: node,
     name: spelling.name,
-    defaulted: spelling.hasDefault || isDefaultedAt(node, spelling),
+    defaulted: spelling.hasDefault || isDefaultedAt(node, spelling, blankToNil),
   };
 }

@@ -41,12 +41,20 @@ type ReadSubject =
  * `variable` for an environment read, so a test that spells the read
  * another way still counts.
  */
-export function isDefaultedAt(read: RbNode, variable?: EnvSpelling): boolean {
+export function isDefaultedAt(
+  read: RbNode,
+  variable?: EnvSpelling,
+  /** Methods a pack says give back nil for a blank value, as ActiveSupport's `presence`. */
+  blankToNil: ReadonlySet<string> = new Set(),
+): boolean {
   const subject: ReadSubject =
     variable === undefined
       ? { kind: "spelling", text: read.text }
       : { kind: "variable", spelling: variable };
-  if (hasFallbackOperand(read) || isPresentAt(read, subject)) {
+  if (
+    hasFallbackOperand(pastNilPreservingCalls(read, blankToNil)) ||
+    isPresentAt(read, subject)
+  ) {
     return true;
   }
   if (variable?.raises === true) {
@@ -88,6 +96,38 @@ function isKeyOfSubject(
     isEnv(container) &&
     isSameName(key, subject.spelling.name)
   );
+}
+
+/**
+ * The last of the calls on a read that give back nil whenever the read
+ * is nil: `&.strip`, or a method a pack declares such as `.presence`. An
+ * `||` after them falls back from the read. Any other call on a nil
+ * read raises before the `||` runs, so the climb stops there.
+ */
+function pastNilPreservingCalls(
+  read: RbNode,
+  blankToNil: ReadonlySet<string>,
+): RbNode {
+  let child = read;
+  let parent = read.parent;
+  while (
+    parent !== null &&
+    parent.type === "call" &&
+    field(parent, "receiver")?.id === child.id &&
+    keepsNil(parent, blankToNil)
+  ) {
+    child = parent;
+    parent = parent.parent;
+  }
+  return child;
+}
+
+function keepsNil(call: RbNode, blankToNil: ReadonlySet<string>): boolean {
+  if (field(call, "operator")?.text === "&.") {
+    return true;
+  }
+  const method = field(call, "method")?.text;
+  return method !== undefined && blankToNil.has(method);
 }
 
 /**

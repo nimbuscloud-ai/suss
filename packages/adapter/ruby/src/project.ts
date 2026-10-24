@@ -70,6 +70,7 @@ import {
 import { createFileCache, discoverUnits, routingGapUnit } from "./discovery.js";
 import { declaredEntryUnits } from "./entryPoints.js";
 import {
+  emitBlankToNilFacts,
   emitEnvFacts,
   envReadEffects,
   settleNamedParameters,
@@ -305,6 +306,10 @@ export class RunFacts {
     this.testPatterns = testPatternsIn(packs);
     this.associationCalls = associationCallsIn(packs);
     this.inflections = inflectionsIn(packs);
+    emitBlankToNilFacts(
+      db,
+      packs.flatMap((pack) => pack.blankToNil ?? []),
+    );
   }
 
   addFile(file: string, root: RbNode): void {

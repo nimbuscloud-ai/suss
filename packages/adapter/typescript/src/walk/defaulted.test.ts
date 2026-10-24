@@ -66,6 +66,18 @@ describe("isDefaultedAt", () => {
     expect(defaulted('const a = (env.X) ?? "d";')).toBe(true);
     expect(defaulted('const a = (env.X as string) ?? "d";')).toBe(true);
   });
+
+  it("says yes to a fallback after an optional chain off the read, which is undefined when the read is", () => {
+    expect(defaulted('const a = env.X?.trim() || "d";')).toBe(true);
+    expect(defaulted('const a = env.X?.trim().toLowerCase() ?? "d";')).toBe(
+      true,
+    );
+  });
+
+  it("says no to a fallback after a chain with no `?.` off the read, which throws first", () => {
+    expect(defaulted('const a = env.X!.trim() || "d";')).toBe(false);
+    expect(defaulted("const a = env.X?.trim();")).toBe(false);
+  });
 });
 
 describe("isDefaultedAt with a presence test", () => {

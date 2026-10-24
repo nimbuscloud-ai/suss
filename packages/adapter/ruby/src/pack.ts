@@ -112,6 +112,12 @@ export interface RubyPack {
   inflections?: RbInflections;
   /** Methods the library offers that hand back the argument at `argument`, keyed on the module the callee comes from. */
   transparentWrappers?: UnwrapsByName[];
+  /**
+   * Methods the library adds to every object, nil included, that hand
+   * back the receiver or nil when it is blank, such as ActiveSupport's
+   * `presence`. A read followed by one of these and `||` has a fallback.
+   */
+  blankToNil?: string[];
   /** How the library builds test records from named factories. */
   factories?: RbFactories[];
   /** How a class-based test runner declares tests, as Minitest does. */

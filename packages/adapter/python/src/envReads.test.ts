@@ -141,6 +141,18 @@ describe("os.environ spellings", () => {
     ]);
   });
 
+  it("counts a .get() read whose blank value an `or` replaces, through a call on its fallback", async () => {
+    expect(
+      await moduleReads(
+        'import os\nA = int(os.getenv("A") or 60)\nB = (os.environ.get("B") or "").strip() or "anon"\nC = os.environ.get("C", "").strip()\n',
+      ),
+    ).toEqual([
+      { name: "A", defaulted: true },
+      { name: "B", defaulted: true },
+      { name: "C", defaulted: true },
+    ]);
+  });
+
   it("follows the names the file imported os under", async () => {
     expect(
       await moduleReads(

@@ -23,6 +23,7 @@ import { climbSyntax, peelSyntax } from "./unwrap.js";
 import type {
   BinaryExpression,
   BindingElement,
+  CallExpression,
   ElementAccessExpression,
   Identifier,
   PropertyAccessExpression,
@@ -107,7 +108,7 @@ function isSafeUse(use: Node, subject: Subject): boolean {
  * fallback and its absence propagates.
  */
 function hasFallbackOperand(node: Node): boolean {
-  let child = climbSyntax(node);
+  let child = pastOptionalChain(climbSyntax(node));
   let parent = child.getParent();
   while (parent !== undefined) {
     if (!Node.isBinaryExpression(parent)) {
@@ -126,6 +127,44 @@ function hasFallbackOperand(node: Node): boolean {
     parent = child.getParent();
   }
   return false;
+}
+
+/**
+ * The end of an optional chain that starts at the read. `env.X?.trim()`
+ * is undefined whenever `env.X` is, so a `||` after the chain falls back
+ * from the read. A chain with no `?.` off the read throws on a missing
+ * value instead, and the read is returned as it is.
+ */
+function pastOptionalChain(read: Node): Node {
+  let child = read;
+  let optional = false;
+  for (;;) {
+    const parent = child.getParent();
+    if (parent === undefined || !continuesChainOf(parent, child)) {
+      return optional ? child : read;
+    }
+    optional ||= parent.hasQuestionDotToken();
+    if (!optional) {
+      return read;
+    }
+    child = climbSyntax(parent);
+  }
+}
+
+/** Whether `parent` reads a member of `child` or calls it, as the next link of a chain. */
+function continuesChainOf(
+  parent: Node,
+  child: Node,
+): parent is
+  | PropertyAccessExpression
+  | ElementAccessExpression
+  | CallExpression {
+  return (
+    (Node.isPropertyAccessExpression(parent) ||
+      Node.isElementAccessExpression(parent) ||
+      Node.isCallExpression(parent)) &&
+    parent.getExpression() === child
+  );
 }
 
 /**
