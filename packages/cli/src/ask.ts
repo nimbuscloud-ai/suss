@@ -23,7 +23,6 @@ import {
   summaryIdentifier,
   unsettledSummaryId,
 } from "@suss/behavioral-ir";
-import { functionOf } from "@suss/checker";
 
 import { answerCalls, directCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
@@ -54,6 +53,13 @@ import {
   touchesOfUnits,
   unitsServing,
 } from "./target.js";
+import {
+  type ReachedTouch,
+  reachedFunctions,
+  servesItself,
+  shortestFirst,
+  touchesReached,
+} from "./unitReach.js";
 import { UsageError } from "./usageError.js";
 
 import type {
@@ -62,7 +68,7 @@ import type {
   TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
-import type { CallFacts, CallPath, FunctionKey } from "@suss/checker";
+import type { CallFacts, FunctionKey } from "@suss/checker";
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
@@ -206,6 +212,21 @@ export function answerQuestion(options: AskOptions): {
     exitCode: answer.found ? 0 : 1,
     answer: asJson(options.question, answer),
   };
+}
+
+/**
+ * What `ask "what reads <boundary>"` or `"what writes <boundary>"` gives
+ * as JSON, without printing it, for a caller that asks about every table.
+ */
+export function unitsAtBoundary(
+  direction: "reads" | "writes",
+  boundary: string,
+  loaded: LoadedSummaries,
+): AnswerJson {
+  return asJson(
+    `what ${direction} ${boundary}`,
+    answerDirection(direction, boundary, loaded),
+  );
 }
 
 /**
@@ -638,15 +659,9 @@ function reachedFrom(target: ResolvedTarget, facts: CallFacts): ReachedTouch[] {
     target.kind === "boundary"
       ? unitsServing(target.touches)
       : target.summaries;
-  const direct = (
-    target.kind === "boundary" ? touchesOfUnits(start) : target.touches
-  ).filter((touch) => !servesItself(touch));
-  return [...direct, ...throughCalls(start, direct, facts)];
-}
-
-/** A touch, and the calls from the unit in the question to the unit that makes it. */
-interface ReachedTouch extends TargetTouch {
-  through?: string[];
+  const direct =
+    target.kind === "boundary" ? touchesOfUnits(start) : target.touches;
+  return touchesReached(direct, reachedFunctions(start, facts), facts);
 }
 
 /** Units in a module first, grouped by module name, and the rest after in their order. */
@@ -698,70 +713,6 @@ function fromModules(modules: ReadonlyArray<{ module: string }>): string {
     return "";
   }
   return `, from ${sentenceList(modules.map((one) => one.module))}`;
-}
-
-/**
- * What the target's units reach through the calls they make. A route
- * handler that calls a service that reads a table reaches that table.
- * An answer built only from the handler's body would miss it, and would
- * disagree with the why question.
- */
-function throughCalls(
-  start: readonly BehavioralSummary[],
-  direct: readonly TargetTouch[],
-  facts: CallFacts,
-): ReachedTouch[] {
-  const already = new Set(direct.map((touch) => touchKey(touch)));
-  const found: ReachedTouch[] = [];
-  const reached = facts.reachedFrom(start.map((unit) => functionOf(unit)));
-  for (const [fn, through, possible] of shortestFirst(reached, facts)) {
-    for (const touch of touchesOfUnits(facts.units.get(fn) ?? [])) {
-      if (servesItself(touch) || already.has(touchKey(touch))) {
-        continue;
-      }
-      already.add(touchKey(touch));
-      found.push({ ...touch, through, ...(possible ? { possible } : {}) });
-    }
-  }
-  return found;
-}
-
-/** Nearest functions first, so the path shown for a boundary is the shortest one. */
-function shortestFirst(
-  paths: ReadonlyMap<FunctionKey, CallPath>,
-  facts: CallFacts,
-): Array<[FunctionKey, string[], boolean]> {
-  return [...paths]
-    .map(([fn, path]): [FunctionKey, string[], boolean] => [
-      fn,
-      hopSpellings(path, facts),
-      path.some((hop) => hop.recorded === "possible"),
-    ])
-    .sort(
-      ([, a], [, b]) =>
-        a.length - b.length || a.join(" ").localeCompare(b.join(" ")),
-    );
-}
-
-/** A call that picks its function at run time may never pick the one this path goes through, so the hop says so. */
-function hopSpellings(path: CallPath, facts: CallFacts): string[] {
-  return path.map((hop) => {
-    const picked = hop.to === null ? undefined : facts.units.get(hop.to)?.[0];
-    return hop.recorded === "possible" && picked !== undefined
-      ? `${hop.callee}, which may run ${picked.identity.name}`
-      : hop.callee;
-  });
-}
-
-function touchKey(touch: TargetTouch): string {
-  return `${touch.touched.label} ${touch.touched.relation}`;
-}
-
-function servesItself(touch: TargetTouch): boolean {
-  return (
-    touch.touched.relation === "provides" &&
-    touch.touched.binding === touch.summary.identity.boundaryBinding
-  );
 }
 
 /**

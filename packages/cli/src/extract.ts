@@ -53,6 +53,7 @@ import { forgetOwnHosts, projectHosts } from "./projectHosts.js";
 import { projectModules } from "./projectModules.js";
 import { isSameOrUnder } from "./projectSource.js";
 import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
+import { repositoryRecord, stampRepository } from "./repositoryRecord.js";
 import {
   retiredOptionRefusal,
   retiredOptionsUsed,
@@ -1463,6 +1464,7 @@ export async function extract(
     forgetOwnHosts(summary, ownHosts);
     summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
+  stampRepository(summaries, repositoryRecord(projectRoot));
 
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);

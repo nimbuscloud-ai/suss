@@ -47,6 +47,7 @@ import { intentKeep } from "./intentKeep.js";
 import { intentOutcomesCommand } from "./intentOutcomes.js";
 import { writeSummaries } from "./jsonStream.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
+import { runMap } from "./map/mapCommand.js";
 import { prdDraft } from "./prdDraftCommand.js";
 import {
   PROJECT_FILE,
@@ -61,7 +62,7 @@ import {
   extractLanguagesOf,
   packFlags,
   packSpecsOf,
-  readProjectInto,
+  readProjectSaying,
   whereReadsCameFrom,
 } from "./projectRead.js";
 import { stubDraft } from "./stubDraftCommand.js";
@@ -74,7 +75,7 @@ import type { BaseRevision } from "./checkBase.js";
 import type { ContractSource } from "./contract.js";
 import type { ExtractOptions } from "./extract.js";
 import type { Language } from "./language.js";
-import type { ProjectReadReport, ReadEntry } from "./projectRead.js";
+import type { ReadEntry } from "./projectRead.js";
 
 export const USAGE = `
 Usage:
@@ -90,6 +91,7 @@ Usage:
   suss check [--dir <directory>] --since <earlier-directory> [--changed-files <file>] [--json]
   suss check [--dir <directory>] --base <git ref> [--json]
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
+  suss map [directory] [--dir <summaries>] [-o <page.html>]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <framework> ...] [-o <output.json>]
   suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
@@ -114,6 +116,9 @@ Commands:
             reports on one file, line, boundary, or summary instead of
             the whole folder
   ask       Answer one question about one boundary from summaries on disk
+  map       Read the project, check it, and write one HTML page showing
+            its routes, GraphQL fields, tables and env vars, opened from
+            disk with no network. Start here on a new project.
   contract  Describe boundaries from a schema or deploy template
   corroborate  Extract, then run each handler against its own claims
             (experimental). A claim that survives execution is marked
@@ -138,7 +143,7 @@ Commands:
             changes nobody asked for. "intent keep" writes a change
             list's entries as boundary intent documents.
 
-Options (init, extract, inspect, check, ask):
+Options (init, extract, inspect, check, ask, map):
   --cache-dir      Where suss keeps its extraction cache, instead of .suss in
                    the project. SUSS_CACHE_DIR sets the same thing, and the
                    flag wins. Use it to read a checkout you may not write to.
@@ -290,6 +295,15 @@ Options (ask):
                    left. --json is unaffected and always lists all.
   --json           Write the answer as JSON instead of prose
   -o, --output     Write the answer to a file instead of stdout
+
+Options (map):
+  --dir            Map summaries already written to this folder, instead
+                   of reading the project
+  -o, --out        Where to write the page. Default: .suss/map.html, or
+                   under --cache-dir when that is given
+  The summaries it reads stay in a summaries folder next to the default
+  page, so the suss ask commands the page shows run as written. It exits
+  0 when nothing paired, and 1 only when no pack matched the project.
 
 Options (contract):
   --from           What kind of file to read: openapi, cloudformation,
@@ -480,8 +494,11 @@ async function dispatch(args: string[]): Promise<number> {
   if (command === "intent") {
     return runIntent(rest);
   }
+  if (command === "map") {
+    return await runMap(rest);
+  }
   process.stderr.write(
-    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, infer, and intent.\n`,
+    `There is no "${command}" command. suss has init, extract, inspect, check, ask, map, contract, corroborate, infer, and intent.\n`,
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
@@ -632,43 +649,6 @@ function sayNothingMatched(root: string): number {
     `Nothing in ${root} matched a pack, so there is nothing to read. Run \`suss init\` to see what suss looked for, or pass a summaries file.\n`,
   );
   return 1;
-}
-
-/**
- * Reads the project at `root` into `dir`, saying on stderr which reads
- * run and which fail. Null when no pack matched, and the caller says so.
- * A quiet read gives each read's summary count, not its file path.
- */
-async function readProjectSaying(
-  root: string,
-  dir: string,
-  quiet: boolean,
-): Promise<ProjectReadReport | null> {
-  const reads = await declaredReads(root);
-  if (reads.reads.length === 0) {
-    return null;
-  }
-  process.stderr.write(
-    [
-      whereReadsCameFrom(root, reads.declared, reads.foldersFound),
-      ...(quiet ? [] : reads.reads.map((entry) => `  ${commandFor(entry)}`)),
-      "",
-    ].join("\n"),
-  );
-
-  const report = await readProjectInto(root, dir, reads, undefined, quiet);
-  if (quiet) {
-    for (const [index, command] of report.ran.entries()) {
-      const count = report.counts[index] ?? 0;
-      process.stderr.write(
-        `  ${command}: ${count} summar${count === 1 ? "y" : "ies"}\n`,
-      );
-    }
-  }
-  for (const line of report.failed) {
-    process.stderr.write(`  failed: ${line}\n`);
-  }
-  return report;
 }
 
 /**

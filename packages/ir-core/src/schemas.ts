@@ -102,6 +102,22 @@ export const SourceLocationSchema = z.object({
    * modules, and then on every unit whose file is under a module's root.
    */
   module: z.string().optional(),
+  /**
+   * The git repository the extract ran in. Summaries from several
+   * repositories can share a folder, and two of them can both have
+   * `src/index.ts::handler`; this says which one each came from, and
+   * which commit, so a link opens the file that was read. `path` is
+   * where `file` is measured from, relative to the repository's top.
+   * Absent outside a repository.
+   */
+  repository: z
+    .object({
+      name: z.string(),
+      path: z.string(),
+      remote: z.string().optional(),
+      commit: z.string().optional(),
+    })
+    .optional(),
 });
 
 // ---------------------------------------------------------------------------

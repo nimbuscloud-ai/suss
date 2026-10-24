@@ -21,6 +21,7 @@ suss check [--dir <directory>] [--intent <intent-dir>] [--all] [--json] [-o <out
 suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
 suss check [--dir <directory>] --at <file[:line] | boundary | summary-id> [--json]
 suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
+suss map [<directory>] [--dir <summaries>] [-o <page.html>] [--links editor|github]
 suss contract --from <source> <spec> [-o <output.json>]
 suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <pack> ...] [-o <output.json>]
 suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
@@ -44,6 +45,7 @@ In a synopsis, `<...>` marks a required value and `[...]` an optional one.
 | [`check`](/reference/cli/check) | Summary files, and optionally a folder of intent docs | Findings, as text or JSON |
 | [`inspect`](/reference/cli/inspect) | A summary file, a folder of them, or two of them | Text for a person, or JSON under `--diff` and `--flow` |
 | [`ask`](/reference/cli/ask) | Summary files, and the source for a why question | One answer, as text or JSON |
+| [`map`](/reference/cli/map) | The project, the way a bare `check` reads it, or a folder of summaries | One HTML page of the routes, fields, tables and env vars, and the summaries behind it |
 | [`corroborate`](/reference/cli/corroborate) | Source, through the express or fastify packs | Summaries annotated with what running the code showed |
 | [`infer`](/reference/cli/infer) | Observed calls, summaries, or curated intent docs | A YAML draft for you to finish |
 | [`intent`](/reference/cli/intent) | Intent docs, or a change list and the summaries from before and after a change | Outcome ids, verdicts on each change, or intent docs kept from a change list |
@@ -81,7 +83,7 @@ suss check --cache-dir /tmp/suss-cache
 SUSS_CACHE_DIR=/tmp/suss-cache suss extract --dir . -o /tmp/summaries.json
 ```
 
-`init`, `extract`, `inspect`, `check` and `ask` take the flag, and the flag wins over the variable. Several projects can share one directory, because each gets a subfolder named for a hash of its path. The MCP server takes the same flag as an argument (`suss-mcp <project> --cache-dir <path>`) or reads the variable, and keeps its record for the plugin's hooks there too.
+`init`, `extract`, `inspect`, `check`, `ask` and `map` take the flag, and the flag wins over the variable. `map` writes its page and the summaries behind it to `.suss` in the project, or, with the cache moved, to a folder for the project under `map` in the cache directory. Several projects can share one directory, because each gets a subfolder named for a hash of its path. The MCP server takes the same flag as an argument (`suss-mcp <project> --cache-dir <path>`) or reads the variable, and keeps its record for the plugin's hooks there too.
 
 With the cache moved, a command writes into the project only where you asked it to: `-o`, `--into`, `--out-dir`, and the files `init --write` creates. Everything else goes to the system temp folder (the update-check stamp, the temporary summaries a bare `check` reads, and the MCP server's socket).
 

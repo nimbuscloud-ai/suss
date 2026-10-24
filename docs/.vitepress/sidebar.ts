@@ -94,6 +94,7 @@ export const sidebar: SidebarItem[] = [
           { text: "suss check", link: "/reference/cli/check" },
           { text: "suss inspect", link: "/reference/cli/inspect" },
           { text: "suss ask", link: "/reference/cli/ask" },
+          { text: "suss map", link: "/reference/cli/map" },
           {
             text: "suss corroborate",
             link: "/reference/cli/corroborate",
