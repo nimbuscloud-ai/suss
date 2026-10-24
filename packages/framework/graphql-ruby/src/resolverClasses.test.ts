@@ -234,7 +234,7 @@ describe("the hooks a wired class runs before resolve", () => {
       requestReview.transitions.map((t) =>
         t.output.type === "throw" ? t.output.message : t.output.type,
       ),
-    ).toEqual(["Reviews are closed", "Sign in first", "void"]);
+    ).toEqual(["Reviews are closed", "Sign in first", "return"]);
   });
 
   it("gives each hook definition one summary of its own, however many fields share it", async () => {
@@ -255,9 +255,68 @@ describe("the hooks a wired class runs before resolve", () => {
   it("leaves a hook path that lets the field go on off the field", async () => {
     const summaries = await extractFixture();
     const archive = named(summaries, "Mutation.archiveEvent");
-    expect(archive.transitions.map((t) => t.output.type)).toEqual([
-      "return",
-      "void",
+    expect(archive.transitions.map((t) => t.output)).toEqual([
+      {
+        type: "return",
+        value: { type: "record", properties: { event: { type: "null" } } },
+      },
+      {
+        type: "return",
+        value: {
+          type: "record",
+          properties: {
+            event: {
+              type: "union",
+              variants: [{ type: "ref", name: "Event" }, { type: "null" }],
+            },
+          },
+        },
+      },
     ]);
+  });
+
+  it("records what a wired class's own type call declares, and the object type's fields", async () => {
+    const summaries = await extractFixture();
+    const events = named(summaries, "Query.events");
+    expect(events.transitions.map((t) => t.output)).toEqual([
+      {
+        type: "return",
+        value: {
+          type: "array",
+          items: {
+            type: "ref",
+            name: "Event",
+            def: "Event",
+            from: "app/graphql/types/event_type.rb",
+          },
+        },
+      },
+    ]);
+    expect(events.definitions).toEqual({
+      Event: {
+        type: "record",
+        properties: { id: { type: "text" }, name: { type: "text" } },
+      },
+    });
+  });
+
+  it("resolves the field to the payload an authorized? hook returns with its false", async () => {
+    const summaries = await extractFixture();
+    const hook = summaries.find(
+      (s) => s.kind === "middleware" && s.identity.name === "authorized?",
+    );
+    expect(hook?.transitions[0]?.output).toEqual({
+      type: "return",
+      value: {
+        type: "record",
+        properties: {
+          talk: { type: "null" },
+          errors: {
+            type: "array",
+            items: { type: "literal", value: "Only the organizer can approve" },
+          },
+        },
+      },
+    });
   });
 });

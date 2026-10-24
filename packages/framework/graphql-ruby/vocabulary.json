@@ -23,5 +23,10 @@
   "dataload_all": "graphql-ruby: the HasDataloader shortcut for `dataloader.with(source, *args).load_all(keys)`",
   "dataload_record": "graphql-ruby: the HasDataloader shortcut that loads one ActiveRecord row of the given model by a column",
   "dataload_all_records": "graphql-ruby: the HasDataloader shortcut that loads several ActiveRecord rows of the given model by a column",
+  "ref": "suss: the TypeShape variant tag for a type known by its name, defined in @suss/ir-core",
+  "PageInfo": "graphql-ruby: GraphQL::Types::Relay::PageInfo, the type every connection's pageInfo field returns",
+  "CollectionMetadata": "graphql-pagination: the gem's default CollectionMetadataType, the type a collection's metadata field returns when collection_type is given no metadata_type",
+  "metadata_type": "graphql-pagination: the keyword collection_type takes the collection's metadata type under",
+  "graphql_name": "graphql-ruby: the class-level call that sets a type's GraphQL name in place of the one derived from the class name",
   "fetch": "language: Ruby spells Hash#fetch the same way. GraphQL::Dataloader::Source#fetch: the method a Source subclass writes to load a batch of keys"
 }

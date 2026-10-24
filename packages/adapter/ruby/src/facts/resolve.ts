@@ -20,6 +20,7 @@ import {
   SELF_AS_CLASS,
   SELF_AS_INSTANCE,
   writtenValueOf as sharedWrittenValueOf,
+  writtenValuesOf as sharedWrittenValuesOf,
   writtenValueUnder as sharedWrittenValueUnder,
   USES_QUESTION,
   type ValueUses,
@@ -140,6 +141,12 @@ export function writtenValueOf(db: Database, key: string): string | null {
     undefined,
     answersFromTestsLeftOut(key, isTestFile),
   );
+}
+
+/** Every expression a value was written as, such as both arms of a ternary, with a call to a project function followed to what it returns. */
+export function writtenValuesOf(db: Database, key: string): string[] {
+  resolveValues(db, [key]);
+  return sharedWrittenValuesOf(db, key, (keys) => resolveValues(db, keys));
 }
 
 /**

@@ -29,7 +29,39 @@ describe("graphqlRubyFramework", () => {
         resolverHooks: {
           methods: ["ready?", "authorized?"],
           answerIsListHead: true,
+          refusalRaises: { "authorized?": "GraphQL::UnauthorizedFieldError" },
         },
+        typeKeyword: "type",
+        typeNameCallName: "graphql_name",
+        nullability: {
+          keyword: "null",
+          callName: "null",
+          nullableByDefault: true,
+          listItemsNullableByDefault: false,
+        },
+        typeWrappers: {
+          connection_type: expect.objectContaining({
+            name: "{type}Connection",
+          }),
+          collection_type: expect.objectContaining({
+            name: "{type}Collection",
+            typeArguments: {
+              "{metadata_type}": {
+                keyword: "metadata_type",
+                fallback: "CollectionMetadata",
+              },
+            },
+          }),
+        },
+        libraryTypes: {
+          PageInfo: expect.objectContaining({
+            hasNextPage: { type: "boolean" },
+          }),
+          CollectionMetadata: expect.objectContaining({
+            totalCount: { type: "number" },
+          }),
+        },
+        returnedErrorClassNames: ["GraphQL::ExecutionError"],
         ancestryRootClassNames: [
           "GraphQL::Schema::Object",
           "GraphQL::Schema::Mutation",

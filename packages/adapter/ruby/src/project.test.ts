@@ -505,6 +505,19 @@ async function gapsOfOnlyField(file: string): Promise<string[]> {
   return (summaries[0]?.gaps ?? []).map((gap) => gap.description);
 }
 
+/** What one field's summary says it resolves to on each path, which is nothing when no method was found behind it. */
+async function outputsOfOnlyField(file: string): Promise<unknown[]> {
+  const { summaries } = await extractRubyProject({
+    files: [file],
+    packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+  });
+  expect(summaries).toHaveLength(1);
+  return (summaries[0]?.transitions ?? []).map((t) => t.output);
+}
+
+/** A `String, null: false` field read from `object.name`, which the code leaves unread and the declared type fills in. */
+const DECLARED_TEXT = [{ type: "return", value: { type: "text" } }];
+
 describe("the method behind a field", () => {
   beforeEach(writeBaseClasses);
 
@@ -517,9 +530,7 @@ describe("the method behind a field", () => {
       "app/graphql/types/organizer_type.rb",
       "class Types::OrganizerType < Types::BaseObject\n  include Concerns::Displayable\n\n  field :display_name, String, null: false\nend\n",
     );
-    expect(await gapsOfOnlyField(organizerType)).toEqual([
-      "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here",
-    ]);
+    expect(await outputsOfOnlyField(organizerType)).toEqual(DECLARED_TEXT);
   });
 
   it("finds the method a superclass defines", async () => {
@@ -540,9 +551,9 @@ describe("the method behind a field", () => {
         }),
       ],
     });
-    expect(summaries[0]?.gaps.map((gap) => gap.description)).toEqual([
-      "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here",
-    ]);
+    expect(summaries[0]?.transitions.map((t) => t.output)).toEqual(
+      DECLARED_TEXT,
+    );
   });
 
   it("finds the resolve method a wired class inherits, and says nothing about a call on a name nothing declares", async () => {
@@ -602,11 +613,9 @@ describe("the method behind a field", () => {
       "app/graphql/types/organizer_type.rb",
       "class Types::OrganizerType < Types::BaseObject\n  include Concerns::GreeterA\n  include Concerns::GreeterB\n\n  field :display_name, String, null: false\nend\n",
     );
-    // Ruby calls GreeterA's, which has work in it. Reading BaseGreeter's
-    // instead would report a body with nothing in it and no gap at all.
-    expect(await gapsOfOnlyField(organizerType)).toEqual([
-      "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here",
-    ]);
+    // Ruby calls GreeterA's, which reads the name. BaseGreeter's has
+    // nothing in it, so reading that one would resolve the field to null.
+    expect(await outputsOfOnlyField(organizerType)).toEqual(DECLARED_TEXT);
   });
 
   it("mixes a module in once when two includes name it", async () => {
@@ -618,9 +627,7 @@ describe("the method behind a field", () => {
       "app/graphql/types/organizer_type.rb",
       "class Types::OrganizerType < Types::BaseObject\n  include Concerns::Greeter\n  include Concerns::Greeter\n\n  field :display_name, String, null: false\nend\n",
     );
-    expect(await gapsOfOnlyField(organizerType)).toEqual([
-      "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here",
-    ]);
+    expect(await outputsOfOnlyField(organizerType)).toEqual(DECLARED_TEXT);
   });
 
   it("names a mixin written as something other than a constant path", async () => {
@@ -944,7 +951,7 @@ describe("the class a field is wired to, and the hooks it runs", () => {
     );
     const approve = field(await extractAll(), "Mutation.approve");
     expect(approve.gaps).toEqual([]);
-    expect(approve.transitions.map((t) => t.output.type)).toEqual(["void"]);
+    expect(approve.transitions.map((t) => t.output.type)).toEqual(["return"]);
   });
 
   it("reads a hook's return false, payload as stopping the field, and a bare return too", async () => {
@@ -1032,7 +1039,7 @@ describe("the class a field is wired to, and the hooks it runs", () => {
       approve.transitions.map((t) =>
         t.output.type === "throw" ? t.output.message : t.output.type,
       ),
-    ).toEqual(["Closed", "Sign in", "void"]);
+    ).toEqual(["Closed", "Sign in", "return"]);
     // Both fields run the concern's hook, and it gets one summary.
     expect(
       summaries
@@ -1052,9 +1059,10 @@ describe("the class a field is wired to, and the hooks it runs", () => {
       "class Mutations::Approve < Mutations::BaseMutation\n  def authorized?(**args)\n  end\n\n  def resolve\n    Approval.record(:now)\n  end\nend\n",
     );
     const approve = field(await extractAll(), "Mutation.approve");
-    expect(approve.transitions.map((t) => t.output.type)).toEqual([
-      "return",
-      "void",
+    // The hook's nil resolves the field to null before `resolve` runs.
+    expect(approve.transitions.map((t) => t.output)).toEqual([
+      { type: "return", value: { type: "null" } },
+      { type: "return", value: null },
     ]);
   });
 
@@ -1082,7 +1090,7 @@ describe("the class a field is wired to, and the hooks it runs", () => {
       field(summaries, "Mutation.approve").transitions.map(
         (t) => t.output.type,
       ),
-    ).toEqual(["void"]);
+    ).toEqual(["return"]);
   });
 
   it("reads the method a field's resolver_method keyword gives", async () => {

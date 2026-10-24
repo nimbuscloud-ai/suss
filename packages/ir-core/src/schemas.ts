@@ -286,21 +286,41 @@ export function withDefinitionsInlined(
       new Set([...inProgress, key]),
     );
   }
-  if (shape.type === "record") {
+  return withChildShapes(shape, deeper);
+}
+
+type ChildRebuild = (
+  shape: TypeShape,
+  each: (inner: TypeShape) => TypeShape,
+) => TypeShape;
+
+const CHILD_REBUILDS: { [K in TypeShape["type"]]?: ChildRebuild } = {
+  record: (shape, each) => {
+    if (shape.type !== "record") {
+      return shape;
+    }
     const properties: Record<string, TypeShape> = {};
     for (const [name, value] of Object.entries(shape.properties)) {
-      properties[name] = deeper(value);
+      properties[name] = each(value);
     }
     return { ...shape, properties };
-  }
-  if (shape.type === "array") {
-    return { ...shape, items: deeper(shape.items) };
-  }
-  if (shape.type === "dictionary") {
-    return { ...shape, values: deeper(shape.values) };
-  }
-  if (shape.type === "union") {
-    return { ...shape, variants: shape.variants.map(deeper) };
-  }
-  return shape;
+  },
+  array: (shape, each) =>
+    shape.type === "array" ? { ...shape, items: each(shape.items) } : shape,
+  dictionary: (shape, each) =>
+    shape.type === "dictionary"
+      ? { ...shape, values: each(shape.values) }
+      : shape,
+  union: (shape, each) =>
+    shape.type === "union"
+      ? { ...shape, variants: shape.variants.map(each) }
+      : shape,
+};
+
+/** The shape with `each` applied to every shape written directly inside it. One with nothing inside, such as a ref, comes back as it is. */
+export function withChildShapes(
+  shape: TypeShape,
+  each: (inner: TypeShape) => TypeShape,
+): TypeShape {
+  return CHILD_REBUILDS[shape.type]?.(shape, each) ?? shape;
 }

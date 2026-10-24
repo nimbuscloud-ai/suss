@@ -83,7 +83,7 @@ The adapter recognizes Ruby's own `each`, `each_with_index` and `map` as loops w
 
 When only part of a name settles, as in `"category_#{filter}"` with nothing known about `filter`, the adapter keeps a pattern built from the literal parts. A lookup for a name that does not match any pattern continues up the ancestry. A lookup for a name that matches stops at the class, since the loop may be defining it. When a `define_method` name settles on nothing at all, such as a bare variable or a call nothing binds, the class stops every lookup.
 
-The adapter still does not read what the method body does. That needs the path engine: statements to walk, a return value to turn into a type shape, and calls resolved against something that can tell what they return. Filling `RawCodeStructure.dependencyCalls` would not help, because nothing in summary assembly reads it. A field's location stays where the field is declared and does not move to a resolver method in another file, so the path and line numbers on a summary keep pointing at the same place.
+The section below on what a field resolves to says how the method's paths become the field's transitions. A field's location stays where the field is declared and does not move to a resolver method in another file, so the path and line numbers on a summary keep pointing at the same place.
 
 The walk does not discover a `field` declared on a base object type on that type's subclasses. Doing so would change which units exist, where this walk only changes what each unit reports about itself, so it is left out on purpose and belongs to separate work.
 
@@ -96,10 +96,22 @@ graphql-ruby runs `ready?`, then `authorized?`, then `resolve` on a wired class,
 A hook's paths come from the same path engine a controller filter's do:
 
 - A path that raises ends in a `throw`, with the class the raise writes.
-- A path that returns `false` or `nil`, or `false, payload` or `[false, payload]` when the pack says the library reads a list's head, ends in a `return`. The field stops there and `resolve` never runs. A `return` with no value returns nil, and so does a hook with nothing in its body.
+- A path that returns `false` or `nil`, or `false, payload` or `[false, payload]` when the pack says the library reads a list's head, stops the field, and `resolve` never runs. With a payload it ends in a `return` of the payload's shape. Without one it ends in a `throw` of the class the pack's `refusalRaises` gives for that hook, or else in a `return` of null. A `return` with no value returns nil, and so does a hook with nothing in its body.
 - Every other path ends in a `delegate`, which composition leaves off the field because the field's own transition already says what happens next. That includes a path whose answer is worked out at run time.
 
 An unread ancestor in front of every project definition of a hook is usually a gem's module that defines none, so the lookup says nothing about it. When the project does define the hook past an unread ancestor, or a `define_method` may define it, the field gets one sentence saying whether a hook runs was not settled.
+
+## What a field resolves to
+
+`graphqlOutput.ts` gives the method behind a field one branch for each path the path engine finds through it. A raise ends in a `throw`. Every other ending is a `return`, and its value starts from the field's declared type.
+
+The declared type is read the way the contract's return type is, from the field's own type and `null:` keyword, or else the wired class's `type` call and `null` call. The pack says which keyword means null and what the defaults are, and a field whose pack says nothing about null gets no null in its output. The object type behind a named type is found the way a wired class is, and its `field` calls become a record in the summary's `definitions`, keyed by the type's GraphQL name, which the ref's `def` points at. Only that one type is read. A type it refers to stays a ref with no definition, since reading every type a schema reaches would put most of the schema on every field's summary. A wrapper the pack declares, such as `connection_type`, becomes a ref to the type the library generates, and the generated types and the library types they use go into `definitions` too.
+
+The contract keeps the shape a contract read from SDL writes: no null, and refs by name alone. `contractShapeOf` derives it from the output, so the two cannot disagree about which type a field returns.
+
+Each ending's value is then read from the code. The evaluator gives the shape of what the path returns, and the declared type fills in every part it leaves unread: a model a query returns is unread and takes the declared type whole, and a hash the code builds keeps its keys, each filled from the declared record. `nil` stays null. The end of the body also counts the value each `rescue` clause ends on, since a raise the path does not show can land there.
+
+An ending that can return an instance of one of the pack's `returnedErrorClassNames` gets a `throw` of that class beside its `return`, or in place of it when every value it can return is an error. `possibleValueNodes` in the evaluator lists those values from one-hop facts: what the ending's expression is written as, a conditional's arms from `conditionalBranch`, and the values a project method returns from `returnsValue`, at most four conditionals deep.
 
 ## What a body lowers to
 

@@ -55,6 +55,19 @@ import {
   unreadFilterReference,
 } from "./filters.js";
 import {
+  contractShapeOf,
+  declaredOutput,
+  fieldIsNullable,
+  nullKeywordOf,
+  objectTypeFields,
+  orNull,
+  ownGraphqlName,
+  ownTypeNode,
+  resolvedName,
+  resolverBranches,
+  typeContext,
+} from "./graphqlOutput.js";
+import {
   EVERY_ARGLESS_CALL,
   effectSitesIn,
   invocationSites,
@@ -122,6 +135,13 @@ import type { DynamicNames } from "./defineMethod.js";
 import type { ExceptionClass } from "./exceptionClasses.js";
 import type { ControllerFilter, FilterLink } from "./filters.js";
 import type {
+  DeclaredOutput,
+  FileScope,
+  TypeClass,
+  TypeClassReader,
+  WrittenType,
+} from "./graphqlOutput.js";
+import type {
   ControllerActions,
   ControllerRoute,
   GraphqlObjectFields,
@@ -135,7 +155,6 @@ import type { HookDefinition } from "./resolverHooks.js";
 import type { RespondingHelper } from "./responseStatus.js";
 import type { ClassInfo } from "./scope.js";
 import type { SharedGroupIndex } from "./testSharedGroups.js";
-import type { TypeReadContext } from "./typeShape.js";
 
 /**
  * What one run has read from the disk: parsed files by absolute path, so
@@ -208,12 +227,6 @@ export interface ReachSeed {
   readonly enclosingQualifiedName: string | null;
 }
 
-/** What a bare constant is resolved against: the nesting in effect, plus every class the file defines so shadowing can be detected. */
-interface FileScope {
-  nesting: readonly string[];
-  knownClasses: ReadonlySet<string>;
-}
-
 interface FieldReadContext {
   pattern: GraphqlObjectFields;
   cache: FileCache;
@@ -224,6 +237,8 @@ interface FieldReadContext {
   read: BodyReading;
   /** The absolute path of the file being read, which the facts key its expressions on. */
   file: string;
+  /** Reads the class behind a field's declared type. */
+  types: TypeClassReader;
 }
 
 function fieldReadContext(
@@ -232,6 +247,24 @@ function fieldReadContext(
   fileBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
 ): FieldReadContext {
+  const base = fieldLookupContext(pattern, cache, fileBlocks, options);
+  return {
+    ...base,
+    types: {
+      pattern,
+      classAt: (written) => typeClassAt(written, base),
+      displayPath: (file) => displayPathIn(options, file),
+      blockConfigures: blockConfiguresCall(pattern),
+    },
+  };
+}
+
+function fieldLookupContext(
+  pattern: GraphqlObjectFields,
+  cache: FileCache,
+  fileBlocks: readonly ReachedBody[],
+  options: DiscoveryOptions,
+): Omit<FieldReadContext, "types"> {
   const facts = options.facts;
   const parsedFile = (absPath: string) => cache.get(absPath);
   return {
@@ -272,16 +305,24 @@ function sameFileBlocks(
   return matches.length === 0 ? null : matches;
 }
 
-function typeContext(
-  scope: FileScope,
-  pattern: GraphqlObjectFields,
-): TypeReadContext {
+/** The class a declared type's constant refers to, found the way a wiring keyword's class is. */
+async function typeClassAt(
+  written: WrittenType,
+  ctx: Omit<FieldReadContext, "types">,
+): Promise<TypeClass | null> {
+  const candidates = constantRefCandidates(written.node, written.scope.nesting);
+  const reached =
+    (await classInRun(written.node, written.file, ctx)) ??
+    (candidates.length === 0
+      ? null
+      : await reachConstant(candidates, ctx.lookup));
+  if (reached === null) {
+    return null;
+  }
   return {
-    nesting: scope.nesting,
-    knownClasses: scope.knownClasses,
-    scalars: pattern.scalars,
-    scalarNamePrefixes: pattern.scalarNamePrefixes,
-    typeNameConvention: pattern.typeNameConvention,
+    name: reached.name,
+    blocks: reached.blocks,
+    ancestry: await ancestryOf(reached.name, reached.blocks, ctx.lookup),
   };
 }
 
@@ -429,10 +470,12 @@ async function graphqlObjectFieldUnits(
   ) {
     return [];
   }
-  const typeName = graphqlTypeNameFromQualified(
-    info.qualifiedName,
-    pattern.typeNameConvention,
-  );
+  const typeName =
+    ownGraphqlName(ownBlocks, pattern, ctx.types.blockConfigures) ??
+    graphqlTypeNameFromQualified(
+      info.qualifiedName,
+      pattern.typeNameConvention,
+    );
   const knownClasses = ownBlocks[0]?.knownClasses ?? new Set<string>();
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
 
@@ -450,7 +493,7 @@ async function graphqlObjectFieldUnits(
   }
   const decls = [...declsByName.values()];
   const fields = decls.map((decl) => {
-    const raw = buildFieldUnit(pack, typeName, decl, options);
+    const raw = buildFieldUnit(pack, pattern, typeName, decl, options);
     if (decl.body.reachSeed !== undefined) {
       options.onReachSeed?.(raw, decl.body.reachSeed);
     }
@@ -597,6 +640,7 @@ async function controllerActionUnits(
                 filter.method,
                 filter.nesting,
                 exceptions,
+                options.facts,
               ),
               handlers: "eachRoute",
             },
@@ -638,7 +682,12 @@ async function controllerActionUnits(
       .filter((link) => filterCoversAction(filterOf(link), actionName))
       .map((link) => referenceTo(link));
     const raises: RaisesRead = {
-      classes: await raisedClasses(method, block.info.bodyNesting, exceptions),
+      classes: await raisedClasses(
+        method,
+        block.info.bodyNesting,
+        exceptions,
+        options.facts,
+      ),
       handlers: handlersAround(actionName),
     };
     // An action routed twice, such as `update` under both PATCH and PUT,
@@ -698,10 +747,11 @@ async function raisedClasses(
   method: RbNode,
   nesting: readonly string[],
   exceptions: ExceptionReader,
+  facts: Database | undefined,
 ): Promise<NodeMap<ExceptionClass | null>> {
   const classes = new NodeMap<ExceptionClass | null>();
   for (const call of escapingRaises(method)) {
-    const ref = raisedClassRef(call, nesting);
+    const ref = raisedClassRef(call, nesting, facts);
     classes.set(call, ref === null ? null : await exceptions.read(ref));
   }
   return classes;
@@ -1001,6 +1051,8 @@ interface FieldContract {
    * method, so the method's parameters match these instead of `args`.
    */
   methodArgs?: ArgDeclaration[];
+  /** What the field resolves to, with null where the schema allows it, or null when the declared type was not read. */
+  output: DeclaredOutput | null;
 }
 
 interface FieldDeclaration {
@@ -1014,33 +1066,23 @@ interface FieldDeclaration {
   hooks: readonly HookDefinition[];
 }
 
-/** One branch recording what the resolver does, or none when nothing was read of it. */
-function branchesFor(body: BodyReport, range: Range): RawBranch[] {
-  if (body.effects === undefined && body.extraEffects === undefined) {
+/** One branch for each path through the method behind a field, or none when no method was read. */
+function branchesFor(
+  decl: FieldDeclaration,
+  pattern: GraphqlObjectFields,
+  facts: Database | undefined,
+): RawBranch[] {
+  const method = decl.body.reachSeed?.node;
+  if (method === undefined) {
     return [];
   }
-  const branch: RawBranch = {
-    conditions: [],
-    terminal: {
-      kind: "void",
-      statusCode: null,
-      body: null,
-      exceptionType: null,
-      message: null,
-      component: null,
-      renderTree: null,
-      delegateTarget: null,
-      emitEvent: null,
-      location: range,
-    },
-    effects: everyEffect(body.effects),
-    ...(body.extraEffects === undefined
-      ? {}
-      : { extraEffects: everyEffect(body.extraEffects) }),
-    location: range,
-    isDefault: true,
-  };
-  return withSlotSources([branch], body.provenance);
+  return resolverBranches({
+    method,
+    body: decl.body,
+    declared: decl.contract?.output ?? null,
+    facts,
+    errorClassNames: pattern.returnedErrorClassNames ?? [],
+  });
 }
 
 /**
@@ -1253,15 +1295,91 @@ async function readFieldShape(
   ancestry: Ancestry,
   range: Range,
 ): Promise<FieldReading> {
+  const typeNode = ownTypeNode(callArgs, ctx.pattern);
+  // The library lets a field's own type and null keyword win over the
+  // ones its wired class declares.
+  const own: DeclaredType = {
+    written:
+      typeNode === undefined ? null : { node: typeNode, scope, file: ctx.file },
+    nullable: nullKeywordOf(callArgs, ctx.pattern),
+  };
   const oneHopRef = wiringReference(callArgs, ctx.pattern.wiringKeywords);
   if (oneHopRef !== null) {
-    return readWiredClass(oneHopRef, scope, ctx);
+    return readWiredClass(oneHopRef, scope, own, ctx);
   }
 
   return {
-    contract: literalContract(callArgs, scope, ctx),
+    contract: await fieldContract(own, null, ctx),
     body: methodBehindField(symbol, callArgs, ctx, ancestry, range),
   };
+}
+
+/** A type expression a field or its wired class declares, and what the same call says about null. */
+interface DeclaredType {
+  written: WrittenType | null;
+  nullable: boolean | null;
+}
+
+/**
+ * The contract for a field, from its own declared type or else its
+ * wired class's. A class with no type call declares its payload with
+ * field calls. Null when neither declares a shape.
+ */
+async function fieldContract(
+  own: DeclaredType,
+  wired: ClassDeclaration | null,
+  ctx: FieldReadContext,
+): Promise<FieldContract | null> {
+  const pattern = ctx.pattern;
+  const nullable = fieldIsNullable(
+    own.nullable,
+    wired?.type.nullable ?? null,
+    pattern,
+  );
+  const args = { args: wired?.args ?? [], ...wiredMethodArgs(wired) };
+  const written = own.written ?? wired?.type.written ?? null;
+  const literal =
+    written === null
+      ? null
+      : typeShapeFromNode(written.node, typeContext(written.scope, pattern));
+  const output =
+    written === null || literal === null
+      ? null
+      : await declaredOutput(written, nullable, ctx.types);
+  if (literal !== null) {
+    return {
+      returnType: output === null ? literal : contractShapeOf(output.shape),
+      ...args,
+      output,
+    };
+  }
+
+  const payload = wired?.payload ?? {};
+  if (wired === null || Object.keys(payload).length === 0) {
+    return null;
+  }
+  return {
+    returnType: { type: "record", properties: payload },
+    ...args,
+    output: {
+      shape: orNull(
+        {
+          type: "record",
+          properties: objectTypeFields(wired.ancestry, ctx.types),
+        },
+        nullable,
+      ),
+      definitions: {},
+    },
+  };
+}
+
+function wiredMethodArgs(
+  wired: ClassDeclaration | null,
+): Pick<FieldContract, "methodArgs"> {
+  return wired?.methodArgs === undefined
+    ? {}
+    : { methodArgs: wired.methodArgs };
 }
 
 /**
@@ -1307,40 +1425,24 @@ function methodBehindField(
   );
 }
 
-/** The shape given by a field's own type argument, or null when it has none or the type cannot be read. */
-function literalContract(
-  callArgs: CallArgs,
-  scope: FileScope,
-  ctx: FieldReadContext,
-): FieldContract | null {
-  const typeArg = callArgs.positional[1];
-  if (typeArg === undefined) {
-    return null;
-  }
-  const returnType = typeShapeFromNode(
-    typeArg,
-    typeContext(scope, ctx.pattern),
-  );
-  return returnType === null ? null : { returnType, args: [] };
-}
-
 /** A wiring keyword points at the class that resolves the field, so that class's ancestry gives the declared shape, the resolver method and the hooks run before it. */
 async function readWiredClass(
   ref: RbNode,
   scope: FileScope,
+  own: DeclaredType,
   ctx: FieldReadContext,
 ): Promise<FieldReading> {
   const range = rangeOf(ref);
 
   const candidates = constantRefCandidates(ref, scope.nesting);
   const reached =
-    (await wiredClassInRun(ref, ctx)) ??
+    (await classInRun(ref, ctx.file, ctx)) ??
     (candidates.length === 0
       ? null
       : await reachConstant(candidates, ctx.lookup));
   if (reached === null) {
     return {
-      contract: null,
+      contract: await fieldContract(own, null, ctx),
       body: methodNotSettled(
         candidates.length === 0
           ? `This field is wired to ${ref.text}, which is not a constant path this reader follows, so nothing about what it does was read here`
@@ -1371,7 +1473,11 @@ async function readWiredClass(
       ? { definitions: [], unsettled: [] }
       : hooksRun(ancestry, ctx.pattern.resolverHooks, ctx.read);
   return {
-    contract: readClassContract(ancestry, ctx.pattern),
+    contract: await fieldContract(
+      own,
+      readClassDeclaration(ancestry, ctx.pattern),
+      ctx,
+    ),
     body: {
       ...body,
       readings: [
@@ -1385,21 +1491,17 @@ async function readWiredClass(
   };
 }
 
-/**
- * The class a wiring value settles on through the run's facts, the same
- * way a call's receiver does. It is found in whichever file of the run
- * declares it, so a class outside `root` is read too. Null when the facts
- * settle nothing, as for a class the run never read.
- */
-async function wiredClassInRun(
+/** The class a constant written in `file` settles on through the facts, in whichever file of the run declares it, or null for a class the run never read. */
+async function classInRun(
   ref: RbNode,
-  ctx: FieldReadContext,
+  file: string,
+  ctx: Omit<FieldReadContext, "types">,
 ): Promise<{ name: string; blocks: ReachedBody[] } | null> {
   const inRun = ctx.lookup.definedInRun;
   if (ctx.facts === undefined || inRun === undefined) {
     return null;
   }
-  const classKey = classSettledOn(ctx.facts, readKey(ctx.file, ref, null));
+  const classKey = classSettledOn(ctx.facts, readKey(file, ref, null));
   const name =
     classKey === undefined ? undefined : declaredName(ctx.facts, classKey);
   if (name === undefined) {
@@ -1409,42 +1511,68 @@ async function wiredClassInRun(
   return blocks === null ? null : { name, blocks };
 }
 
+/** What a wired class declares about the field it resolves. */
+interface ClassDeclaration {
+  /** The class's type call, which declares the field's type. */
+  type: DeclaredType;
+  /** Built from field calls, which a class with no type call uses to describe its payload. */
+  payload: Record<string, TypeShape>;
+  args: ArgDeclaration[];
+  methodArgs?: ArgDeclaration[];
+  ancestry: Ancestry;
+}
+
 interface ClassContractAccumulator {
-  /** Set by the type call, which a referenced class uses to declare its own return type. */
-  typeCallShape: TypeShape | null;
-  /** Built from field calls, which a referenced class uses to describe its payload. */
+  type: DeclaredType;
   fieldProperties: Record<string, TypeShape>;
   args: Map<string, ArgDeclaration>;
 }
 
 type ClassCallHandler = (
   callArgs: CallArgs,
-  scope: FileScope,
+  written: { scope: FileScope; file: string },
   pattern: GraphqlObjectFields,
   out: ClassContractAccumulator,
 ) => void;
 
 function readTypeCall(
   callArgs: CallArgs,
-  scope: FileScope,
+  written: { scope: FileScope; file: string },
   pattern: GraphqlObjectFields,
   out: ClassContractAccumulator,
 ): void {
   const typeArg = callArgs.positional[0];
   if (typeArg !== undefined) {
-    out.typeCallShape = typeShapeFromNode(typeArg, typeContext(scope, pattern));
+    out.type = {
+      written: { node: typeArg, ...written },
+      nullable: nullKeywordOf(callArgs, pattern) ?? out.type.nullable,
+    };
+  }
+}
+
+/** `null false` in a class body, which says whether the field it resolves can be null. */
+function readNullCall(
+  callArgs: CallArgs,
+  _written: { scope: FileScope; file: string },
+  _pattern: GraphqlObjectFields,
+  out: ClassContractAccumulator,
+): void {
+  const value = callArgs.positional[0];
+  const nullable = value === undefined ? null : booleanLiteralValue(value);
+  if (nullable !== null) {
+    out.type = { ...out.type, nullable };
   }
 }
 
 function readPayloadFieldCall(
   callArgs: CallArgs,
-  scope: FileScope,
+  { scope }: { scope: FileScope; file: string },
   pattern: GraphqlObjectFields,
   out: ClassContractAccumulator,
 ): void {
   const nameArg = callArgs.positional[0];
   const symbol = nameArg !== undefined ? symbolValue(nameArg) : null;
-  const typeArg = callArgs.positional[1];
+  const typeArg = ownTypeNode(callArgs, pattern);
   if (symbol === null || typeArg === undefined) {
     return;
   }
@@ -1457,7 +1585,7 @@ function readPayloadFieldCall(
 
 function readArgumentCall(
   callArgs: CallArgs,
-  scope: FileScope,
+  { scope }: { scope: FileScope; file: string },
   pattern: GraphqlObjectFields,
   out: ClassContractAccumulator,
 ): void {
@@ -1488,20 +1616,22 @@ function readArgumentCall(
 function classCallHandlers(
   pattern: GraphqlObjectFields,
 ): Record<string, ClassCallHandler> {
+  const nullCall = pattern.nullability?.callName;
   return {
+    ...(nullCall === undefined ? {} : { [nullCall]: readNullCall }),
     [pattern.typeCallName]: readTypeCall,
     [pattern.fieldCallName]: readPayloadFieldCall,
     [pattern.argumentCallName]: readArgumentCall,
   };
 }
 
-/** The contract declared across an ancestry, or null when nothing in it declares a shape. */
-function readClassContract(
+/** What a wired class declares across its ancestry, a nearer declaration replacing what it inherits. */
+function readClassDeclaration(
   ancestry: Ancestry,
   pattern: GraphqlObjectFields,
-): FieldContract | null {
+): ClassDeclaration {
   const out: ClassContractAccumulator = {
-    typeCallShape: null,
+    type: { written: null, nullable: null },
     fieldProperties: {},
     args: new Map(),
   };
@@ -1523,29 +1653,30 @@ function readClassContract(
       nesting: block.info.bodyNesting,
       knownClasses: block.knownClasses,
     };
-    handler(readCallArgs(field(statement, "arguments")), scope, pattern, out);
-  }
-
-  const returnType =
-    out.typeCallShape ??
-    (Object.keys(out.fieldProperties).length > 0
-      ? { type: "record" as const, properties: out.fieldProperties }
-      : null);
-  if (returnType === null) {
-    return null;
+    handler(
+      readCallArgs(field(statement, "arguments")),
+      { scope, file: block.file },
+      pattern,
+      out,
+    );
   }
 
   const args = [...out.args.values()];
+  const declared = {
+    type: out.type,
+    payload: out.fieldProperties,
+    ancestry,
+  };
   const wrapping = pattern.argumentWrapping;
   if (wrapping !== undefined && ancestryReaches(ancestry, wrapping)) {
     return {
-      returnType,
+      ...declared,
       args: [wrapInputArgument(args, wrapping)],
       methodArgs: args,
     };
   }
 
-  return { returnType, args };
+  return { ...declared, args };
 }
 
 type ArgumentWrapping = NonNullable<GraphqlObjectFields["argumentWrapping"]>;
@@ -1586,35 +1717,16 @@ function optionalShape(shape: TypeShape): TypeShape {
   return { type: "union", variants: [shape, { type: "undefined" }] };
 }
 
-/** The name the schema exposes a field or argument under. */
-function resolvedName(
-  symbol: string,
-  callArgs: CallArgs,
-  pattern: GraphqlObjectFields,
-): string {
-  const override = callArgs.keyword[pattern.camelizeKeyword];
-  const camelizeThis =
-    override !== undefined
-      ? (booleanLiteralValue(override) ?? pattern.camelizeDefault)
-      : pattern.camelizeDefault;
-  return camelizeThis ? toCamelCase(symbol) : symbol;
-}
-
-function toCamelCase(name: string): string {
-  const [first, ...rest] = name.split("_");
-  return [
-    first,
-    ...rest.map((part) => part.charAt(0).toUpperCase() + part.slice(1)),
-  ].join("");
-}
-
 function buildFieldUnit(
   pack: RubyPack,
+  pattern: GraphqlObjectFields,
   typeName: string,
   decl: FieldDeclaration,
   options: DiscoveryOptions,
 ): RawCodeStructure {
   const filePath = options.filePath;
+  const declared = decl.contract?.output?.definitions ?? {};
+  const definitions = Object.keys(declared).length === 0 ? undefined : declared;
   const wrappers = decl.hooks.map((hook) =>
     hookReference(hook, displayPathIn(options, hook.block.file)),
   );
@@ -1665,12 +1777,13 @@ function buildFieldUnit(
         })
       : null,
     parameters,
-    branches: branchesFor(decl.body, rangeOf(decl.node)),
+    branches: branchesFor(decl, pattern, options.facts),
     ...(decl.body.bodyContent !== undefined
       ? { bodyContent: decl.body.bodyContent }
       : {}),
     dependencyCalls: [],
     declaredContract: null,
+    ...(definitions === undefined ? {} : { definitions }),
     ...(decl.body.readings.length > 0 ? { readings: decl.body.readings } : {}),
     ...(graphqlDeclaredContract !== undefined
       ? { graphqlDeclaredContract }

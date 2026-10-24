@@ -107,6 +107,8 @@ export type {
   RbFactories,
   RbFactoryBuilder,
   RbFormatSwitch,
+  RbGraphqlNullability,
+  RbGraphqlTypeWrapper,
   RbInflections,
   RbPredicateMatcher,
   RbRawSqlPattern,

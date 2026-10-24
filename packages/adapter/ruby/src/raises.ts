@@ -9,7 +9,9 @@ import { children, field, OWN_BODY_TYPES, readCallArgs } from "./ast.js";
 import { MESSAGE_ONLY_EXCEPTION } from "./exceptionClasses.js";
 import { isRaise } from "./paths/lowering.js";
 import { constantRefCandidates } from "./scope.js";
+import { writtenNodeOf } from "./values/evaluator.js";
 
+import type { Database } from "@suss/datalog";
 import type { RbNode } from "./parser.js";
 import type { ConstantRef } from "./scope.js";
 
@@ -72,11 +74,12 @@ function rescues(parent: RbNode, child: RbNode): boolean {
 /**
  * The class a raise raises: `raise NotAllowed`, `raise NotAllowed, "why"`
  * or `raise NotAllowed.new("why")`. A message alone raises RuntimeError.
- * Null for an exception the source computes, such as a local variable.
+ * With the facts, `raise unauthorized_error` raises what the method builds.
  */
 export function raisedClassRef(
   call: RbNode,
   nesting: readonly string[],
+  facts?: Database,
 ): ConstantRef | null {
   const first = readCallArgs(field(call, "arguments")).positional[0];
   if (first === undefined) {
@@ -90,7 +93,28 @@ export function raisedClassRef(
   }
   const constant = constructedClass(first) ?? first;
   const candidates = constantRefCandidates(constant, nesting);
-  return candidates.length === 0 ? null : { text: constant.text, candidates };
+  if (candidates.length > 0) {
+    return { text: constant.text, candidates };
+  }
+  const built = constructedClassOf(first, facts);
+  return built === null
+    ? null
+    : { text: built.text, candidates: constantRefCandidates(built, []) };
+}
+
+/** The class an expression builds, `NotAllowed.new(...)` written there or reached through the facts from a name or a call. */
+export function constructedClassOf(
+  node: RbNode,
+  facts: Database | undefined,
+): RbNode | null {
+  const direct = constructedClass(node);
+  if (direct !== null) {
+    return direct;
+  }
+  const written = facts === undefined ? null : writtenNodeOf(node, facts);
+  return written === null || written.id === node.id
+    ? null
+    : constructedClass(written);
 }
 
 /** The class in `NotAllowed.new(...)`, or null for any other expression. */

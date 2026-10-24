@@ -504,7 +504,7 @@ function callerBranches(method: RbNode, reading: CallerReading): RawBranch[] {
     [],
     reading.facts,
     keepsArms,
-    raiseEndings(method),
+    raiseEndings(method, reading.facts),
   ) ?? [returnBranch(rangeOf(method), effects)];
   return reading.handOff === undefined
     ? found

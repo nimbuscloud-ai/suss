@@ -1378,6 +1378,13 @@ function lastOf(body: RbNode | null): RbNode[] {
   return last === null ? [] : [last];
 }
 
+/** The value each `rescue` clause of a method body ends on, which the method returns when that clause catches. */
+export function rescuedValues(body: RbNode): RbNode[] {
+  return children(body)
+    .filter((child) => child.type === "rescue")
+    .flatMap((rescue) => lastOf(field(rescue, "body")));
+}
+
 /** The expressions a conditional's value can be, by the conditional's node type. */
 const BRANCHES_OF: Partial<Record<string, (node: RbNode) => RbNode[]>> = {
   conditional: (node) =>
@@ -1831,7 +1838,7 @@ function emitInstanceStores(
 }
 
 /** The last expression of a body, which Ruby returns when the body ends without a `return`. */
-function implicitReturn(body: RbNode): RbNode | null {
+export function implicitReturn(body: RbNode): RbNode | null {
   const statements = children(body).filter(
     (child) => child.type !== "rescue" && child.type !== "ensure",
   );

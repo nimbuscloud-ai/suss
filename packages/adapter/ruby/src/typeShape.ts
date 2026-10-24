@@ -1,11 +1,12 @@
 /**
  * Turns a Ruby DSL call's type argument into an IR type shape.
  *
- * The argument is only read when it is a literal constant, or a one-element
- * array wrapping one. A type written as a lambda or a method call abstains
- * rather than guessing at what it evaluates to.
+ * It reads a constant, a one-element array of one, or a wrapper method the
+ * pack declares called on one. A lambda or any other call abstains rather
+ * than guessing at what it evaluates to.
  */
 
+import { field } from "./ast.js";
 import {
   compoundName,
   graphqlTypeNameFromQualified,
@@ -25,6 +26,36 @@ export interface TypeReadContext {
   scalars: Readonly<Record<string, TypeShape>>;
   scalarNamePrefixes: readonly string[];
   typeNameConvention: GraphqlTypeNameConvention;
+  /** The methods that turn a type into one the library generates, with that type's name, as `{type}Connection`. */
+  typeWrapperNames?: Readonly<Record<string, string>>;
+}
+
+/** What `{type}` is replaced with in a wrapper's names. */
+export const WRAPPED_TYPE = "{type}";
+
+/** A generated type's name, given the name of the type it wraps. */
+export function wrappedTypeName(template: string, wrapped: string): string {
+  return template.replaceAll(WRAPPED_TYPE, wrapped);
+}
+
+/** The method in `Types::CampaignType.connection_type` when the pack declares it, or null. */
+export function typeWrapperCall(
+  node: RbNode,
+  wrapperNames: Readonly<Record<string, string>> | undefined,
+): { method: string; wrapped: RbNode } | null {
+  if (node.type !== "call") {
+    return null;
+  }
+  const method = field(node, "method")?.text;
+  const wrapped = field(node, "receiver");
+  if (
+    method === undefined ||
+    wrapped === null ||
+    wrapperNames?.[method] === undefined
+  ) {
+    return null;
+  }
+  return { method, wrapped };
 }
 
 /** Strips the first scalar prefix that matches. A name that matches none is looked up by its full qualified spelling. */
@@ -61,6 +92,15 @@ export function typeShapeFromNode(
     }
     const items = typeShapeFromNode(inner, ctx);
     return items === null ? null : { type: "array", items };
+  }
+
+  const wrapper = typeWrapperCall(node, ctx.typeWrapperNames);
+  if (wrapper !== null) {
+    const wrapped = typeShapeFromNode(wrapper.wrapped, ctx);
+    const template = ctx.typeWrapperNames?.[wrapper.method];
+    return wrapped?.type !== "ref" || template === undefined
+      ? null
+      : { type: "ref", name: wrappedTypeName(template, wrapped.name) };
   }
 
   if (node.type === "constant") {
