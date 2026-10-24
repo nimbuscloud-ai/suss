@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { messageBusBinding } from "@suss/behavioral-ir";
+
 import {
   absentReading,
   ambiguousReading,
@@ -23,7 +25,7 @@ import {
   writtenReading,
 } from "./index.js";
 
-import type { Effect, TypeShape } from "@suss/behavioral-ir";
+import type { Effect, Transition, TypeShape } from "@suss/behavioral-ir";
 
 const makeTerminal = (overrides: Partial<RawTerminal>): RawTerminal => ({
   kind: "void",
@@ -1651,6 +1653,52 @@ describe("assessConfidence", () => {
 });
 
 describe("detectGaps", () => {
+  function sendTransition(
+    messageBus: "activejob" | "aws_sqs",
+    channel: string | null,
+    callee: string,
+  ): Transition {
+    return {
+      id: `t-${callee}`,
+      conditions: [],
+      output: { type: "void" },
+      effects: [
+        {
+          type: "interaction",
+          binding: messageBusBinding({
+            recognition: "test",
+            messageBus,
+            channel,
+          }),
+          callee,
+          interaction: { class: "message-send" },
+        },
+      ],
+      location: { start: 1, end: 1 },
+      isDefault: true,
+    };
+  }
+
+  it("leaves a gap once for each call that enqueues a job nothing settled", () => {
+    const raw: RawCodeStructure = { ...twoPathRaw, declaredContract: null };
+    const gaps = detectGaps(
+      raw,
+      [
+        sendTransition("activejob", null, "klass.perform_later"),
+        sendTransition("activejob", null, "klass.perform_later"),
+        sendTransition("activejob", "ReportJob", "ReportJob.perform_later"),
+        sendTransition("aws_sqs", null, "client.send"),
+      ],
+      { gapHandling: "permissive" },
+    );
+    expect(gaps).toEqual([
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "klass.perform_later",
+      }),
+    ]);
+  });
+
   it("returns no gaps when there is no declared contract", () => {
     const raw: RawCodeStructure = { ...twoPathRaw, declaredContract: null };
     const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
