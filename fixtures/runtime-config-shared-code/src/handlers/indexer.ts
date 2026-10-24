@@ -2,12 +2,14 @@
 // declares. Nothing in the file path says so; the template points at
 // the same CodeUri for the notifier next door.
 
+import { requireEnv } from "../config/env.js";
 import { logLevel } from "../config/logging.js";
 
 export async function handler(event: { id: string }): Promise<{
   statusCode: number;
 }> {
   await writeIndexEntry(indexTable(), `${event.id}:${logLevel()}`);
+  await writeIndexEntry(requireEnv("INDEX_TABLE_NAME"), event.id);
   return { statusCode: 200 };
 }
 
