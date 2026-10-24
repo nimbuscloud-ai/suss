@@ -4,6 +4,7 @@
 
 require "json"
 require_relative "../lib/billing"
+require_relative "../lib/ledger_client"
 require_relative "../lib/settings"
 
 def post_receipt(order_id)
@@ -12,6 +13,7 @@ end
 
 def handler(event:, context:)
   Settings.require_env("ORDERS_LEDGER")
+  LedgerClient.new.ledger
   event["Records"].each do |record|
     order = JSON.parse(record["body"])
     post_receipt(order["id"])

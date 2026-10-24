@@ -3,7 +3,7 @@
 // After pack-based discovery produces summaries for handlers, components,
 // resolvers, and consumers, this pass walks the call graph from those
 // summaries into the rest of the user's code. Every function reachable
-// through a static CallExpression chain becomes a `library`-kind summary
+// through a chain of static calls and `new`s becomes a `library`-kind summary
 // with `boundaryBinding.recognition = "reachable"`, so readers can see
 // the behaviour of internal orchestrators and helpers without the pack
 // author having to enumerate them.
@@ -18,11 +18,17 @@
 //   * A call landing on an interface the project declares goes into the
 //     class the construction site passed, or the one a factory built.
 //   * Function-shaped declarations: FunctionDeclaration, ArrowFunction,
-//     FunctionExpression, MethodDeclaration (as a module-level export).
+//     FunctionExpression, MethodDeclaration (as a module-level export),
+//     and the constructor a `new` runs, which may be a base class's.
 //   * One summary per function node: dedup against pack-produced
 //     summaries to avoid double-coverage.
 
-import { Node, type Project, type SourceFile } from "ts-morph";
+import {
+  type NewExpression,
+  Node,
+  type Project,
+  type SourceFile,
+} from "ts-morph";
 
 import {
   type BodyPlacements,
@@ -48,7 +54,7 @@ import {
   withDependencySink,
 } from "../depTracking.js";
 import { functionValuesOf } from "../discovery/resolveValue.js";
-import { isModuleScopeStop } from "../walk/descent.js";
+import { forEachInUnitBody, isModuleScopeStop } from "../walk/descent.js";
 import {
   fileOfOffsetKey,
   offsetKeyFor,
@@ -65,6 +71,10 @@ import {
   type ScanRecord,
 } from "./closureRecords.js";
 import {
+  baseConstructorCalledAt,
+  classAmong,
+  constructionCallee,
+  constructorCalledAt,
   functionAmong,
   functionTargetOf,
   type ReachableCandidate,
@@ -80,8 +90,10 @@ import {
   declarationsBehind,
   hasBody,
   isDeclaredShape,
+  isInExternalCode,
   parameterIndexOf,
   type UnfollowedCall,
+  type UnfollowedReason,
   unfollowedCallGap,
   worthRecording,
 } from "./unfollowedCall.js";
@@ -245,6 +257,10 @@ function resolveCallee(
     return null;
   }
   const callee = call.getExpression();
+  if (Node.isSuperExpression(callee)) {
+    const base = baseConstructorCalledAt(callee);
+    return base === null ? null : { kind: "followed", candidate: base };
+  }
   const symbol = callee.getSymbol();
   // The same declarations the stop classifier reads, so a call the
   // walk refuses and a call it describes as unfollowed are the same
@@ -303,6 +319,57 @@ function resolveCallee(
     scan,
     parameterIndex,
   );
+}
+
+/**
+ * What `new Client()` comes to: the constructor it runs, or a stop when
+ * nothing says which class it makes. A class the project writes with no
+ * constructor anywhere in its chain runs nothing to follow, and neither
+ * does `new this()`, which the receiver walk reads instead.
+ */
+function resolveConstruction(
+  construction: NewExpression,
+  scan: ScanContext,
+): CallOutcome | null {
+  const made = construction.getExpression();
+  if (Node.isThisExpression(made)) {
+    return null;
+  }
+  const ctor = constructorCalledAt(construction);
+  if (ctor !== null) {
+    return { kind: "followed", candidate: ctor };
+  }
+  const declarations = declarationsBehind(made.getSymbol());
+  if (classAmong(declarations) !== null) {
+    return null;
+  }
+  const callee = constructionCallee(construction);
+  return {
+    kind: "stopped",
+    stop: { callee, reason: constructionStop(made, declarations, scan) },
+    declaration: declarationToReport(declarations, callee, scan),
+  };
+}
+
+/**
+ * Why a `new` of a value the walk could not settle stops there. A value
+ * whose type is a dependency's class, as a model `mongoose.model()`
+ * returns, runs nothing the project wrote, the same as `new Map()`.
+ */
+function constructionStop(
+  made: Node,
+  declarations: Node[],
+  scan: ScanContext,
+): UnfollowedReason {
+  const reason = classifyStop(declarations, scan.scanning);
+  if (reason !== "unsettledValue") {
+    return reason;
+  }
+  const typed = made.getType().getSymbol()?.getDeclarations() ?? [];
+  return typed.length > 0 &&
+    typed.every((one) => isInExternalCode(one.getSourceFile()))
+    ? "outsideRun"
+    : reason;
 }
 
 /**
@@ -756,7 +823,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
   };
 
   const found: FoundCall[] = [];
-  root.forEachDescendant((node, traversal) => {
+  forEachInUnitBody(root, (node, traversal) => {
     if (atModuleScope && isModuleScopeStop(node)) {
       traversal.skip();
       return;
@@ -764,6 +831,13 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     const jsx = resolveJsxReference(node, inFunc);
     if (jsx !== null) {
       found.push({ node, outcome: jsx.outcome });
+      return;
+    }
+    if (Node.isNewExpression(node)) {
+      const outcome = resolveConstruction(node, inFunc);
+      if (outcome !== null) {
+        found.push({ node, calleeText: constructionCallee(node), outcome });
+      }
       return;
     }
     if (!Node.isCallExpression(node)) {

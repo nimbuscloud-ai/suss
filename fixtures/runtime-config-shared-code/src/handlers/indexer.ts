@@ -4,10 +4,12 @@
 
 import { requireEnv } from "../config/env.js";
 import { logLevel } from "../config/logging.js";
+import { IndexClient } from "../lib/indexClient.js";
 
 export async function handler(event: { id: string }): Promise<{
   statusCode: number;
 }> {
+  await writeIndexEntry(new IndexClient().tableName(), event.id);
   await writeIndexEntry(indexTable(), `${event.id}:${logLevel()}`);
   await writeIndexEntry(requireEnv("INDEX_TABLE_NAME"), event.id);
   return { statusCode: 200 };

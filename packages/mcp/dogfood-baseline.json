@@ -1,7 +1,7 @@
 {
   "name": "@suss/mcp",
   "exports": 17,
-  "internal": 50,
+  "internal": 53,
   "consumers": 31,
   "unfollowedCalls": 3
 }
