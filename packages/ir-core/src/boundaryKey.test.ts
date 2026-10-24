@@ -7,6 +7,7 @@ import {
   bucketsMeet,
   canPair,
   compareRanks,
+  consumedAs,
   displayLabel,
   exchangesHttpResponses,
   functionCallBinding,
@@ -621,6 +622,11 @@ describe("what a protocol says about its own checking", () => {
   it("says a route exchanges an HTTP response and a channel does not", () => {
     expect(exchangesHttpResponses(route)).toBe(true);
     expect(exchangesHttpResponses(channel)).toBe(false);
+  });
+
+  it("says a client of a route reads and writes, and a consumer of a channel only reads", () => {
+    expect(consumedAs(route)).toEqual(["reads", "writes"]);
+    expect(consumedAs(channel)).toEqual(["reads"]);
   });
 
   it("says a send is an unsettled job only on a job queue with no channel", () => {
