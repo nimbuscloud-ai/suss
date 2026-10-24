@@ -846,9 +846,12 @@ function callOfShippedLibrary(
     return null;
   }
 
+  // A pack only a sibling package led to leaves this folder's own calls to find.
   const languageAlreadyCounts = suggestions.some(
     (suggestion) =>
-      suggestion.language === language && countsForProject(suggestion),
+      suggestion.language === language &&
+      countsForProject(suggestion) &&
+      suggestion.throughLocalPackage !== true,
   );
   if (languageAlreadyCounts) {
     return null;

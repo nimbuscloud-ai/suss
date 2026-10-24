@@ -219,6 +219,31 @@ describe("a workspace package with no entry point of its own", () => {
     );
   });
 
+  it("keeps the read of a package whose own code calls fetch, when only a sibling led to its other packs", async () => {
+    const root = shop();
+    fs.writeFileSync(
+      path.join(root, "packages/cache/package.json"),
+      JSON.stringify({
+        name: "@shop/cache",
+        dependencies: { "@shop/db": "*" },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(root, "packages/cache/src/cache.ts"),
+      'export const warm = () => fetch("/warm");\n',
+    );
+
+    const targets = await findInitTargets(root);
+    const cache = targets.find(
+      (target) => target.directory === "packages/cache",
+    );
+
+    expect(cache?.report.sharedLibrary).toBeUndefined();
+    expect(namesOf(cache?.report.suggestions ?? [])).toEqual(
+      expect.arrayContaining(["fetch", "pg"]),
+    );
+  });
+
   it("keeps the read of a package with an entry point of its own", async () => {
     const root = shop();
     fs.writeFileSync(
