@@ -31,7 +31,7 @@ import {
   readProjectFile,
 } from "./projectFile.js";
 import { setupReads } from "./projectSetup.js";
-import { readInChild } from "./readInChild.js";
+import { errorLineOf, readInChild } from "./readInChild.js";
 import { durationText } from "./readLimits.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -488,29 +488,10 @@ const CHILD_FAILURE: {
       end.signal === null
         ? `exited with code ${end.exitCode ?? "unknown"}`
         : `was stopped by ${end.signal}`;
-    const last = lastErrorLine(output);
+    const last = errorLineOf(output);
     return { reason: last === null ? how : `${how}: ${last}` };
   },
 };
-
-/**
- * The line that says why a read failed: the message of a stack trace, or
- * else the first line of the last paragraph it printed, since suss puts
- * the problem first and the detail after it.
- */
-function lastErrorLine(output: string): string | null {
-  const lines = output.split("\n").map((line) => line.trim());
-  const error = lines.find((line) => line.startsWith("Error"));
-  if (error !== undefined) {
-    return error;
-  }
-  const paragraphs = lines
-    .join("\n")
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph !== "");
-  return paragraphs.at(-1)?.split("\n")[0] ?? null;
-}
 
 /** The summaries an extract wrote, or 0 when it wrote no file. */
 function summaryCountIn(file: string): number {
