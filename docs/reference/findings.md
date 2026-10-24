@@ -432,7 +432,7 @@ A delivery the template declares counts as a producer: a queue's redrive policy 
 
 **A bug when:** the producer was meant to be here. Nothing sends on the channel, so the consumer never runs and nothing says so at deploy time.
 
-A background job on ActiveJob, Sidekiq or Celery never gets this finding. A scheduler such as `sidekiq.yml`, Solid Queue's `recurring.yml` or Celery beat can enqueue a job by its name from a config file, and suss does not read those files, so a job no code enqueues may still run.
+A background job on ActiveJob, Sidekiq, Celery or BullMQ never gets this finding. A scheduler such as `sidekiq.yml`, Solid Queue's `recurring.yml` or Celery beat can enqueue a job by its name from a config file, and suss does not read those files. A job is also often enqueued by another service, or through code suss cannot follow to the queue. So a job no code in the run enqueues may still run.
 
 ### `messageBusUnused`
 

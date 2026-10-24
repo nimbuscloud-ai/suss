@@ -34,7 +34,7 @@ A worker takes every job on its queue, so the channel is the queue name alone. T
 
 When a queue name does not settle, the send is still recorded, with `channel: null`, and the summary gets an `unfollowedCall` gap on the call saying the job could not be settled. A worker whose queue name does not settle is a consumer with `channel: null`. Neither is paired with anything, because a guessed channel would pair a producer with the wrong worker.
 
-A BullMQ worker that no code adds jobs to is reported as `messageBusConsumerOrphan`, the same as an SQS consumer. A repeatable job is set up in code with `upsertJobScheduler`, which this pack reads, so a worker fed only by a schedule still has a producer.
+A BullMQ worker that no code in the run adds jobs to is never reported as `messageBusConsumerOrphan`, the same as an ActiveJob, Sidekiq or Celery job. Its producer may be another service, or code the run cannot follow to a `new Queue(...)`, such as a queue kept on `globalThis`.
 
 ## What it does not read
 
