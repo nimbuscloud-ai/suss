@@ -17,7 +17,7 @@ import {
   effectKey,
   exchangesHttpResponses,
   foldRepeatedEffects,
-  MESSAGE_BUS_TRAITS,
+  isUnsettledJob,
   normalizeCalleeText,
   unfollowedCallGap,
   withGraphqlMetadata,
@@ -1017,9 +1017,7 @@ function unsettledJobGaps(transitions: readonly Transition[]): Gap[] {
       if (
         effect.type !== "interaction" ||
         effect.interaction.class !== "message-send" ||
-        effect.binding.semantics.name !== "message-bus" ||
-        effect.binding.semantics.channel !== null ||
-        !MESSAGE_BUS_TRAITS[effect.binding.semantics.messageBus].jobQueue
+        !isUnsettledJob(effect.binding)
       ) {
         continue;
       }

@@ -136,6 +136,7 @@ export {
   exchangesHttpResponses,
   groundBinding,
   groundedPairingKey,
+  isUnsettledJob,
   labelWithDetail,
   leavesTheProcess,
   nameReference,

@@ -123,6 +123,9 @@ export const messageBusSemantics = defineBoundarySemantics({
      * the generic unmatched list leaves them out.
      */
     reportsUnpairedItself: true,
+    unsettledJob: (semantics) =>
+      semantics.channel === null &&
+      MESSAGE_BUS_TRAITS[semantics.messageBus].jobQueue,
     /**
      * A channel that is null here can still pair. The dedicated pass
      * follows environment variable chains before comparing, so a

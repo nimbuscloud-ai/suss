@@ -15,6 +15,7 @@ import {
   groundBinding,
   groundedPairingKey,
   hostCanBeOwn,
+  isUnsettledJob,
   labelWithDetail,
   leavesTheProcess,
   messageBusBinding,
@@ -620,6 +621,15 @@ describe("what a protocol says about its own checking", () => {
   it("says a route exchanges an HTTP response and a channel does not", () => {
     expect(exchangesHttpResponses(route)).toBe(true);
     expect(exchangesHttpResponses(channel)).toBe(false);
+  });
+
+  it("says a send is an unsettled job only on a job queue with no channel", () => {
+    const job = (messageBus: "activejob" | "aws_sqs", name: string | null) =>
+      messageBusBinding({ messageBus, channel: name, recognition: "test" });
+    expect(isUnsettledJob(job("activejob", null))).toBe(true);
+    expect(isUnsettledJob(job("activejob", "ReportJob"))).toBe(false);
+    expect(isUnsettledJob(job("aws_sqs", null))).toBe(false);
+    expect(isUnsettledJob(route)).toBe(false);
   });
 
   it("says a request leaves the process and a function call does not", () => {
