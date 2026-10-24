@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-graphql-ruby",
   "exports": 2,
-  "internal": 2,
+  "internal": 3,
   "consumers": 10,
   "unfollowedCalls": 0
 }
