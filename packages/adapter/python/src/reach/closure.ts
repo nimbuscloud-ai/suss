@@ -543,6 +543,7 @@ function scanOnce(
       recognizedCallIds(
         reads.written.map(({ call }) => call),
         options.storageFor(source.file),
+        options.facts,
       ),
       reads,
       options.tests?.impliedCalls(source) ?? [],
