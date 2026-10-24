@@ -557,6 +557,43 @@ The value evaluator remembers what it computed for the rest of the run, and a re
 
 A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it. A file added or removed re-extracts the whole project.
 
+## A job a body enqueues, and the job itself
+
+A pack lists its job library in `jobs`. There are two kinds. `jobClasses` covers ActiveJob and Sidekiq, where a class's `perform` is what a worker runs and a class method enqueues it. `mailers` covers ActionMailer, where every public instance method is a message and `deliver_later` on a built message enqueues it.
+
+```ts
+jobs: [
+  {
+    type: "jobClasses",
+    messageBus: "sidekiq",
+    baseClasses: [],
+    modules: ["Sidekiq::Job", "Sidekiq::Worker"],
+    performMethod: "perform",
+    enqueueMethods: { perform_async: 0, perform_in: 1 },
+    optionMethods: ["set"],
+    queueDeclarations: [{ call: "sidekiq_options", queue: { at: 0, keyword: "queue" } }],
+  },
+]
+```
+
+A class is a job when its ancestry reaches one of `baseClasses`, or when it or a class in its ancestry includes one of `modules`. Both go through the shared ancestry rules: `wantedBaseName` for a base, and `wantedMixinName` for a module, which joins the chain to `mixesInNamed`. The facts record an included module there by the name the project wrote, because a library module such as `Sidekiq::Worker` has no node in the run to point at.
+
+The job's side is a `consumer` unit, bound to a message-bus channel whose subject is the class and whose bus part is the queue its own body declares: `push#PushWorker`. A class that defines no `perform` of its own runs the one its ancestry has, which `wantedMethodBody` finds. When two ancestors define it, the rules do not say which comes first, so the class gets no unit. A mailer's unit is each public method its own body defines, on the channel `UserMailer.welcome`.
+
+The enqueuing side is a `message-send` on the body that makes the call, with the arguments the job is given, starting at the position `enqueueMethods` gives. The receiver is settled the way the storage recognizer settles one: a constant through the bindings, any other value through the rules, and no receiver or `self` as the class the call is written in when it is in one of that class's class methods. Calls in `optionMethods` are looked through, so `Job.set(wait: 1.hour).perform_later(id)` enqueues `Job`. The send says which job only when the job's side has a unit for it, so a send never lacks a consumer because one side settled and the other did not.
+
+| Written as | Recorded as |
+| --- | --- |
+| `ReportJob.perform_later(id)` | a send to `ReportJob`, with `[id]` |
+| `ReportJob.set(wait: 5.minutes).perform_later(id)` | a send to `ReportJob`, with `[id]` |
+| `PushWorker.perform_in(30, id)` | a send to `PushWorker`, with `[id]` |
+| `UserMailer.with(user: u).welcome(u).deliver_later` | a send to `UserMailer.welcome`, with `[u]` |
+| `job_class.perform_later(id)`, where nothing settles `job_class` | a send with no channel, and a gap |
+| `Mailer.public_send(name).deliver_later` | a send with no channel, and a gap |
+| `Thing.perform_later(id)`, where `Thing` is a class the run reads that is no job | nothing; the walk follows it |
+
+A send with no channel gets its `unfollowedCall` gap from the extractor, with the reason `unsettledJob`, the same way in every language. The walk reports no gap of its own for a call the job recognizer records, nor for the `UserMailer.welcome(u)` that `deliver_later` is called on.
+
 ## What a file depends on in the project
 
 Every summary has `metadata.moduleImports`: the project files this file depends on, relative to the workspace root and sorted. Ruby has no import statement, so the list comes from two sources. One is a `require_relative` whose target is a file in the run. The other is a constant the file references that another file in the run defines, so `Settings::REGION` adds the file that defines `Settings`. A plain `require` is not followed, because where it loads from depends on the load path at run time. A file that depends on nothing in the project gets an empty list, and the field is still present. So for a Lambda handler that only requires gems, the checker can still see that its closure is the handler file alone.
