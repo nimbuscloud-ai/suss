@@ -124,7 +124,7 @@ export function renderMapPage(
 
   <footer class="foot">
     <span>Written by suss map from ${plural(model.reads.length, "summary file", "summary files")} in <code>${esc(options.summariesDir)}</code>. Nothing was run.</span>
-    <label>Open links in <select id="editor" aria-label="Which editor links open in"><option value="vscode">VS Code</option><option value="cursor">Cursor</option><option value="file">the browser</option></select></label>
+    <label>Open links in <select id="editor" aria-label="Which editor links open in"><option value="vscode">VS Code</option><option value="cursor">Cursor</option><option value="file">the browser</option><option value="github">GitHub</option></select></label>
   </footer>
 </main>
 <div id="scrim" class="scrim" hidden></div>

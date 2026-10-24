@@ -8,6 +8,7 @@
  * uses. The boundaries come out the same; only the work is shared.
  */
 
+import { bindingIs } from "@suss/behavioral-ir";
 import { functionOf } from "@suss/checker";
 
 import { touchLabel } from "../boundaryReach.js";
@@ -19,7 +20,6 @@ import type { CallPath, FunctionKey } from "@suss/checker";
 import type { TouchedBoundary } from "../boundaryReach.js";
 import type { LoadedSummaries } from "../loadedSummaries.js";
 import type {
-  BoundaryCategory,
   BoundaryTable,
   MapBoundary,
   MapEntry,
@@ -94,36 +94,22 @@ function shortestOfAll(
   return merged;
 }
 
-const CATEGORY_OF: Record<string, BoundaryCategory> = {
-  storage: "table",
-  "runtime-config": "env",
-};
-
 /** The boundary a touch is at, as the page lists it. */
 export function boundaryOf(touched: TouchedBoundary): MapBoundary {
-  const semantics = touched.binding.semantics as Record<string, unknown>;
-  const category = CATEGORY_OF[String(semantics.name)] ?? "other";
-  return {
-    label: touchLabel(touched),
-    category,
-    name: nameOf(category, semantics, touched),
-    system:
-      typeof semantics.storageSystem === "string"
-        ? semantics.storageSystem
-        : null,
-  };
-}
-
-function nameOf(
-  category: BoundaryCategory,
-  semantics: Record<string, unknown>,
-  touched: TouchedBoundary,
-): string {
-  if (category === "table" && typeof semantics.container === "string") {
-    return semantics.container;
+  const { binding } = touched;
+  const label = touchLabel(touched);
+  // A store access whose table suss could not settle, such as a session
+  // commit, is listed with the other boundaries rather than as a table.
+  if (bindingIs(binding, "storage") && binding.semantics.container !== null) {
+    return {
+      label,
+      category: "table",
+      name: binding.semantics.container,
+      system: binding.semantics.storageSystem,
+    };
   }
-  if (category === "env" && touched.detail !== undefined) {
-    return touched.detail;
+  if (bindingIs(binding, "runtime-config") && touched.detail !== undefined) {
+    return { label, category: "env", name: touched.detail, system: null };
   }
-  return touchLabel(touched);
+  return { label, category: "other", name: label, system: null };
 }

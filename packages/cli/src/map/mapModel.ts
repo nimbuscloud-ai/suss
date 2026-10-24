@@ -53,6 +53,17 @@ export interface MapUnit {
   read: number;
   /** True for a unit a spec declared, which has no place in source. */
   spec: boolean;
+  /** Which entry in `repositories` the summary records, or null when it records none. */
+  repository: number | null;
+}
+
+/** A git repository and commit summaries were extracted at. */
+export interface MapRepository {
+  name: string;
+  /** Where the summaries' paths start, relative to the repository's top. */
+  path: string;
+  remote: string | null;
+  commit: string | null;
 }
 
 export type EntryKind = "rest" | "graphql";
@@ -204,7 +215,7 @@ export interface MapCoverage {
   functions: number;
   /** Units that record a call suss could not follow. */
   withUnfollowed: number;
-  /** Distinct calls suss could not follow, counted the way `ask` counts them. */
+  /** Calls suss could not follow, one per line `inspect` prints under "Could not follow". */
   unfollowedCalls: number;
   /** The calls suss most often could not follow, with one unit that makes each. */
   topUnfollowed: Array<{ callee: string; count: number; unit: number }>;
@@ -226,6 +237,8 @@ export interface MapCheck {
 export interface MapModel {
   project: { name: string; languages: string[]; frameworks: string[] };
   reads: MapRead[];
+  /** Every repository and commit the summaries record, in the order units first mention them. */
+  repositories: MapRepository[];
   units: MapUnit[];
   boundaries: MapBoundary[];
   entries: MapEntry[];
@@ -283,6 +296,7 @@ export function buildMapModel(input: MapInput): MapModel {
       ].filter((name) => name !== ""),
     },
     reads: input.reads,
+    repositories: units.repositories(),
     units: units.all(),
     boundaries: boundaries.all(),
     entries: gathered.entries,

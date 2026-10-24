@@ -6,7 +6,7 @@
 
 import { icon } from "./mapIcons.js";
 
-import type { MapEntry, MapModel, MapRead, MapUnit } from "./mapModel.js";
+import type { MapEntry, MapModel, MapRepository, MapUnit } from "./mapModel.js";
 
 export function esc(text: unknown): string {
   return String(text ?? "")
@@ -78,7 +78,7 @@ export function unitLink(
   const exact = line !== null;
   const shown =
     label ?? (exact ? `${shortFile(unit.file)}:${line}` : `in ${unit.name}`);
-  const href = editorHref(unit, model.reads, exact ? line : unit.line);
+  const href = editorHref(unit, model, exact ? line : unit.line);
   const term = exact ? "" : ` data-term="fnline"`;
   const cls = exact ? "loc" : "loc loc-fn";
   if (href === null) {
@@ -87,17 +87,39 @@ export function unitLink(
   return `<a class="${cls}"${term} href="${esc(href)}" data-u="${at}" data-l="${exact ? line : unit.line}">${esc(shown)}</a>`;
 }
 
-/** The link an editor opens a file at a line by. The page can switch the editor; this is the default. */
+/**
+ * Where a link to a unit's line goes: the file on disk in the editor when
+ * the run knows where the file is, or else the file on GitHub at the
+ * commit its summary records. The page can switch the editor.
+ */
 export function editorHref(
   unit: MapUnit,
-  reads: readonly MapRead[],
+  model: Pick<MapModel, "reads" | "repositories">,
   line: number,
 ): string | null {
-  const root = reads[unit.read]?.root;
-  if (root === null || root === undefined || unit.spec) {
+  if (unit.spec) {
     return null;
   }
-  return `vscode://file${encodeURI(`${root}/${unit.file}`)}:${line}`;
+  const root = model.reads[unit.read]?.root;
+  if (root !== null && root !== undefined) {
+    return `vscode://file${encodeURI(`${root}/${unit.file}`)}:${line}`;
+  }
+  const repository =
+    unit.repository === null ? undefined : model.repositories[unit.repository];
+  const base = repository === undefined ? null : githubBlobBase(repository);
+  return base === null ? null : `${base}${encodeURI(unit.file)}#L${line}`;
+}
+
+/** `https://github.com/<owner>/<repo>/blob/<commit>/<path>/`, or null for a remote that is not GitHub or a missing commit. */
+export function githubBlobBase(repository: MapRepository): string | null {
+  const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(
+    repository.remote ?? "",
+  );
+  if (match === null || repository.commit === null) {
+    return null;
+  }
+  const prefix = repository.path === "" ? "" : `${repository.path}/`;
+  return `https://github.com/${match[1]}/blob/${repository.commit}/${encodeURI(prefix)}`;
 }
 
 export function shortFile(file: string): string {

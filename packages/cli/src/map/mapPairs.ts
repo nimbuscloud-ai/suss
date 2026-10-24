@@ -7,7 +7,7 @@
  * listed as a caller.
  */
 
-import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
+import { bindingIs, summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 import type { CheckAllResult } from "@suss/checker";
@@ -143,12 +143,10 @@ function operationsIn(
 
   const operations: MapOperation[] = [];
   for (const summary of summaries) {
-    const semantics = summary.identity.boundaryBinding?.semantics as
-      | Record<string, unknown>
-      | undefined;
+    const binding = summary.identity.boundaryBinding;
     if (
       summary.kind !== "client" ||
-      semantics?.name !== "graphql-operation" ||
+      !bindingIs(binding, "graphql-operation") ||
       units.isSpec(summary)
     ) {
       continue;
@@ -158,8 +156,8 @@ function operationsIn(
     const owner = atPlace.get(placeKey(summary));
     operations.push({
       unit: units.of(summary),
-      type: String(semantics.operationType ?? "query"),
-      name: String(semantics.operationName ?? summary.identity.name),
+      type: binding.semantics.operationType,
+      name: binding.semantics.operationName ?? summary.identity.name,
       owner: owner === undefined ? null : units.of(owner),
       fields: [],
     });
@@ -173,23 +171,18 @@ function clientsIn(
 ): MapClient[] {
   const clients: MapClient[] = [];
   for (const summary of summaries) {
-    const semantics = summary.identity.boundaryBinding?.semantics as
-      | Record<string, unknown>
-      | undefined;
+    const binding = summary.identity.boundaryBinding;
     if (
       summary.kind !== "client" ||
-      semantics?.name !== "rest" ||
+      !bindingIs(binding, "rest") ||
       units.isSpec(summary)
     ) {
       continue;
     }
     clients.push({
       unit: units.of(summary),
-      method:
-        typeof semantics.method === "string"
-          ? semantics.method.toUpperCase()
-          : null,
-      path: typeof semantics.path === "string" ? semantics.path : null,
+      method: binding.semantics.method?.toUpperCase() ?? null,
+      path: binding.semantics.path,
       entries: [],
     });
   }

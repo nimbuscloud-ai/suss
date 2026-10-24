@@ -9,6 +9,7 @@
  */
 
 import {
+  bindingIs,
   readGraphqlMetadata,
   readSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
@@ -100,18 +101,18 @@ export function gatherGraphqlTypes(
 function resolverPlace(
   summary: BehavioralSummary,
 ): { type: string; field: string } | null {
-  const semantics = summary.identity.boundaryBinding?.semantics as
-    | Record<string, unknown>
-    | undefined;
+  const binding = summary.identity.boundaryBinding;
   if (
     summary.kind !== "resolver" ||
-    semantics?.name !== "graphql-resolver" ||
-    typeof semantics.typeName !== "string" ||
-    typeof semantics.fieldName !== "string"
+    !bindingIs(binding, "graphql-resolver") ||
+    binding.semantics.typeName === null
   ) {
     return null;
   }
-  return { type: semantics.typeName, field: semantics.fieldName };
+  return {
+    type: binding.semantics.typeName,
+    field: binding.semantics.fieldName,
+  };
 }
 
 function byRootThenName(a: GraphqlType, b: GraphqlType): number {

@@ -14,11 +14,13 @@ import { LANGUAGE_LABEL, languageOfFile } from "../language.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Language } from "../language.js";
-import type { MapRead, MapUnit } from "./mapModel.js";
+import type { MapRead, MapRepository, MapUnit } from "./mapModel.js";
 
 export class UnitTable {
   private readonly list: MapUnit[] = [];
   private readonly index = new Map<BehavioralSummary, number>();
+  private readonly repoList: MapRepository[] = [];
+  private readonly repoIndex = new Map<string, number>();
 
   constructor(
     private readonly reads: readonly MapRead[],
@@ -44,6 +46,7 @@ export class UnitTable {
       endLine: summary.location.range.end,
       read,
       spec: isSpecSummary(summary, this.reads[read]),
+      repository: this.repositoryOf(summary),
     });
     this.index.set(summary, this.list.length - 1);
     return this.list.length - 1;
@@ -51,6 +54,36 @@ export class UnitTable {
 
   all(): MapUnit[] {
     return this.list;
+  }
+
+  repositories(): MapRepository[] {
+    return this.repoList;
+  }
+
+  /** The place in `repositories()` of the repository and commit the summary records, or null. */
+  private repositoryOf(summary: BehavioralSummary): number | null {
+    const record = summary.location.repository;
+    if (record === undefined) {
+      return null;
+    }
+    const key = JSON.stringify([
+      record.name,
+      record.remote,
+      record.commit,
+      record.path,
+    ]);
+    const seen = this.repoIndex.get(key);
+    if (seen !== undefined) {
+      return seen;
+    }
+    this.repoList.push({
+      name: record.name,
+      path: record.path,
+      remote: record.remote ?? null,
+      commit: record.commit ?? null,
+    });
+    this.repoIndex.set(key, this.repoList.length - 1);
+    return this.repoList.length - 1;
   }
 
   /** True when the summary came from a spec rather than from source. */
@@ -61,6 +94,14 @@ export class UnitTable {
   readIndexOf(summary: BehavioralSummary): number {
     return this.readOf.get(summary) ?? 0;
   }
+}
+
+/** What tells one repository's code from another's: its name and remote. Empty outside a repository. */
+export function repositoryKeyOf(summary: BehavioralSummary): string {
+  const record = summary.location.repository;
+  return record === undefined
+    ? ""
+    : `${record.name}\u0000${record.remote ?? ""}`;
 }
 
 /** The languages of the code summaries, most units first. */

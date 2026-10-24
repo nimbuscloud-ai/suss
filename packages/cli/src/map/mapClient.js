@@ -39,8 +39,17 @@
       read: u[4],
       spec: u[5] === 1,
       id: S[u[6]],
+      repo: u[7] === null ? null : S[D.repos[u[7]][0]],
+      github: u[7] === null ? null : D.repos[u[7]][1],
     };
   };
+
+  // With summaries from more than one repository, a unit says which one it
+  // is in; with one, nothing changes.
+  const repoNames = [...new Set(D.repos.map((r) => S[r[0]]))];
+  const manyRepos = repoNames.length > 1;
+  const inRepo = (u) =>
+    manyRepos && u.repo ? `<span class="badge">${esc(u.repo)}</span> ` : "";
   const boundary = (i) => {
     const b = D.b[i];
     return { i, label: S[b[0]], cat: b[1], name: S[b[2]], system: str(b[3]) };
@@ -61,10 +70,15 @@
     file: (path) => `file://${encodeURI(path)}`,
   };
 
+  /** The file on disk in the chosen editor when the page knows where it is, or else on GitHub at the commit read. */
   function hrefOf(u, line) {
-    const root = D.roots[u.read];
-    if (root === null || root === undefined || u.spec) {
+    if (u.spec) {
       return null;
+    }
+    const root = D.roots[u.read];
+    const github = u.github ? `${u.github}${encodeURI(u.file)}#L${line}` : null;
+    if (root === null || root === undefined || scheme === "github") {
+      return github;
     }
     return (HREF[scheme] || HREF.vscode)(`${root}/${u.file}`, line);
   }
@@ -123,7 +137,7 @@
       ? `<span class="verb verb-write" data-term="writes">${icon("write", "i-write")}writes</span>`
       : `<span class="verb verb-read" data-term="reads">${icon("read", "i-read")}reads</span>`;
   const askLine = (question) =>
-    `<div class="ask-line"><span>Same answer from suss:</span><code>suss ask "${esc(question)}" --dir ${esc(D.askDir)}</code></div>`;
+    `<div class="ask-line"><span>The same from the command line:</span><code>suss ask "${esc(question)}" --dir ${esc(D.askDir)}</code></div>`;
 
   // A pack can describe a condition in words ("request input fails
   // validation"); that reads as text, and anything else as code.
@@ -146,6 +160,12 @@
   // ---------- facts derived for the list ----------
 
   const opOfUnit = new Map(D.ops.map((op, i) => [op[0], i]));
+
+  /** Routes group by file, fields by type, and both by repository first when there are several. */
+  function groupOf(e, first) {
+    const own = e.k === "q" ? S[e.m] : first ? first.file : "";
+    return manyRepos && first?.repo ? `${first.repo} · ${own}` : own;
+  }
 
   const entries = D.e.map((e, i) => {
     const groups = {
@@ -198,7 +218,7 @@
             .map((o) => S[o[6]]),
         ),
       ],
-      group: e.k === "q" ? S[e.m] : first ? first.file : "",
+      group: groupOf(e, first),
       unit: first,
       text: `${S[e.m]} ${S[e.p]} ${S[e.m]}.${S[e.p]} ${first ? `${first.name} ${first.file}` : ""}`.toLowerCase(),
     };
@@ -344,8 +364,16 @@
     },
   };
 
+  const REPO_FACET = {
+    id: "repo",
+    title: "Repository",
+    when: () => manyRepos,
+    values: (e) => [e.unit?.repo || "spec"],
+  };
+
   const FACETS = {
     routes: [
+      REPO_FACET,
       {
         id: "method",
         title: "Method",
@@ -384,6 +412,7 @@
       },
     ],
     graphql: [
+      REPO_FACET,
       {
         id: "type",
         title: "Type",
@@ -574,7 +603,7 @@
   const numCell = (size, kind) =>
     size
       ? `<span class="badge${kind === "w" ? " badge-write" : ""}" data-term="${kind === "w" ? "writes" : "reads"}">${icon(kind === "w" ? "write" : "read", kind === "w" ? "i-write" : "i-read")}${size}</span>`
-      : `<span class="badge none">–</span>`;
+      : `<span class="badge none">·</span>`;
 
   // A flag every row has says nothing about any one of them, so a row
   // shows it only when some rows do not.
@@ -616,7 +645,7 @@
     const returns = raw.sh ? S[raw.sh[1]] : "";
     const callers = raw.c.length
       ? `<span class="badge" data-term="ops">${n(raw.c.length)}</span>`
-      : `<span class="badge none">–</span>`;
+      : `<span class="badge none">·</span>`;
     return `<button type="button" class="item field-item" data-open="entry-${e.i}" data-peek="entry-${e.i}">
       <span class="item-main"><span class="item-path">${esc(S[raw.p])}</span></span>
       <span class="cells"><span class="c-type">${esc(returns)}</span><span class="c-num">${callers}</span><span class="c-num">${numCell(e.writes.size, "w")}</span><span class="c-num">${numCell(e.reads.size, "r")}</span><span class="c-flag">${flagsOf(e)}</span></span>
@@ -931,7 +960,7 @@
       raw.gn,
       `${limited(rows, 6)}${more}`,
       {
-        note: "These functions on the way make a call suss could not follow, so the lists above may be short.",
+        note: "Each makes a call suss could not follow. The lists above may be short.",
         closed: true,
         from: ["inspect", "suss inspect <file>"],
       },
@@ -958,10 +987,10 @@
       if (op) {
         const owner =
           op[3] !== null ? `<span>in ${esc(unit(op[3]).name)}</span>` : "";
-        return `<div class="table-head">${typeBadge(OPERATION_TYPE[S[op[1]]] || S[op[1]])}<span class="unit-name">${esc(S[op[2]])}</span></div><div class="site-meta">${loc(op[0], unit(op[0]).line, `${short(unit(op[0]).file)}:${unit(op[0]).line}`)}${owner}</div>`;
+        return `<div class="table-head">${inRepo(unit(op[0]))}${typeBadge(OPERATION_TYPE[S[op[1]]] || S[op[1]])}<span class="unit-name">${esc(S[op[2]])}</span></div><div class="site-meta">${loc(op[0], unit(op[0]).line, `${short(unit(op[0]).file)}:${unit(op[0]).line}`)}${owner}</div>`;
       }
       const u = unit(ci);
-      return `<span class="unit-name">${esc(u.name)}</span> ${loc(ci, u.line, `${short(u.file)}:${u.line}`)}`;
+      return `${inRepo(u)}<span class="unit-name">${esc(u.name)}</span> ${loc(ci, u.line, `${short(u.file)}:${u.line}`)}`;
     });
     return section(
       isField ? "Operations" : "Callers",
@@ -1004,7 +1033,7 @@
         : "";
     const unread =
       raw.nr === 1
-        ? `<div class="callout callout-partial">${icon("partial", "i-partial")}<div><strong>Not read.</strong> suss did not read what this does, so tables it reaches may be missing below.</div></div>`
+        ? `<div class="callout callout-partial">${icon("partial", "i-partial")}<div><strong>Not read.</strong> Tables it reaches may be missing below.</div></div>`
         : "";
     const outcomes = outcomeRows(raw);
     showDrawer(
@@ -1639,6 +1668,13 @@
   });
 
   const editor = $("#editor");
+  if (!D.repos.some((r) => r[1])) {
+    editor.querySelector('option[value="github"]')?.remove();
+  }
+  // A page with no folder on this machine can only link to GitHub.
+  if (!D.roots.some((root) => root)) {
+    editor.closest("label")?.remove();
+  }
   editor.value = scheme;
   editor.addEventListener("change", () => {
     scheme = editor.value;

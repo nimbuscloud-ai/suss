@@ -9,12 +9,14 @@
  */
 
 import {
+  bindingIs,
   boundaryKey,
   readGraphqlMetadata,
   readWrapperMetadata,
 } from "@suss/behavioral-ir";
 
 import { formatBodyShape, formatCondition } from "../inspect.js";
+import { repositoryKeyOf, type UnitTable } from "./mapUnits.js";
 
 import type {
   BehavioralSummary,
@@ -28,7 +30,6 @@ import type {
   MapEntry,
   MapOutcome,
 } from "./mapModel.js";
-import type { UnitTable } from "./mapUnits.js";
 
 export interface GatheredEntries {
   entries: MapEntry[];
@@ -54,33 +55,28 @@ interface Served {
 /** What a summary serves as an entry point, or null when it serves none. */
 export function entryServedBy(summary: BehavioralSummary): Served | null {
   const binding = summary.identity.boundaryBinding;
-  if (binding === null) {
-    return null;
-  }
-  const semantics = binding.semantics as Record<string, unknown>;
   if (
     summary.kind === "handler" &&
-    semantics.name === "rest" &&
-    typeof semantics.method === "string" &&
-    typeof semantics.path === "string"
+    bindingIs(binding, "rest") &&
+    binding.semantics.method !== null &&
+    binding.semantics.path !== null
   ) {
     return {
       kind: "rest",
-      method: semantics.method.toUpperCase(),
-      path: semantics.path,
+      method: binding.semantics.method.toUpperCase(),
+      path: binding.semantics.path,
     };
   }
   if (
     summary.kind === "resolver" &&
-    semantics.name === "graphql-resolver" &&
-    typeof semantics.typeName === "string" &&
-    typeof semantics.fieldName === "string" &&
-    GRAPHQL_ROOT_TYPES.has(semantics.typeName)
+    bindingIs(binding, "graphql-resolver") &&
+    binding.semantics.typeName !== null &&
+    GRAPHQL_ROOT_TYPES.has(binding.semantics.typeName)
   ) {
     return {
       kind: "graphql",
-      method: semantics.typeName,
-      path: semantics.fieldName,
+      method: binding.semantics.typeName,
+      path: binding.semantics.fieldName,
     };
   }
   return null;
@@ -97,6 +93,39 @@ export function gatherEntries(
   const declaredBy = new Map<MapEntry, BehavioralSummary[]>();
   const pages: Array<{ unit: number; path: string }> = [];
 
+  const add = (
+    summary: BehavioralSummary,
+    index: number,
+    bucket: Map<MapEntry, BehavioralSummary[]>,
+    list: "units" | "specs",
+  ) => {
+    const entry = entries[index] as MapEntry;
+    if (!entryOf.has(summary)) {
+      entryOf.set(summary, index);
+    }
+    bucket.set(entry, [...(bucket.get(entry) ?? []), summary]);
+    entry[list].push(units.of(summary));
+  };
+  const entryAt = (
+    where: string,
+    key: string,
+    served: Served,
+    framework: string,
+  ) => {
+    const seen = byKey.get(where);
+    if (seen !== undefined) {
+      return seen;
+    }
+    byKey.set(where, entries.length);
+    entries.push(emptyEntry(key, served, framework));
+    return entries.length - 1;
+  };
+
+  // Two repositories can each serve `GET /health`, and those are two
+  // routes, so code is keyed by its repository as well. A spec joins every
+  // route in code with its key, whichever repository serves it.
+  const codeByKey = new Map<string, number[]>();
+  const specs: BehavioralSummary[] = [];
   for (const summary of summaries) {
     const page = pagePathOf(summary);
     if (page !== null) {
@@ -110,19 +139,36 @@ export function gatherEntries(
     if (served === null || key === null) {
       continue;
     }
-
-    let index = byKey.get(key);
-    if (index === undefined) {
-      index = entries.length;
-      byKey.set(key, index);
-      entries.push(emptyEntry(key, served, binding?.recognition ?? ""));
+    if (units.isSpec(summary)) {
+      specs.push(summary);
+      continue;
     }
-    const entry = entries[index] as MapEntry;
-    entryOf.set(summary, index);
-    const spec = units.isSpec(summary);
-    const bucket = spec ? declaredBy : servedBy;
-    bucket.set(entry, [...(bucket.get(entry) ?? []), summary]);
-    (spec ? entry.specs : entry.units).push(units.of(summary));
+
+    const index = entryAt(
+      `${repositoryKeyOf(summary)}\u0000${key}`,
+      key,
+      served,
+      binding?.recognition ?? "",
+    );
+    if (!(codeByKey.get(key) ?? []).includes(index)) {
+      codeByKey.set(key, [...(codeByKey.get(key) ?? []), index]);
+    }
+    add(summary, index, servedBy, "units");
+  }
+
+  for (const summary of specs) {
+    const binding = summary.identity.boundaryBinding;
+    const served = entryServedBy(summary);
+    const key = binding === null ? null : boundaryKey(binding);
+    if (served === null || key === null) {
+      continue;
+    }
+    const targets = codeByKey.get(key) ?? [
+      entryAt(`spec\u0000${key}`, key, served, binding?.recognition ?? ""),
+    ];
+    for (const index of targets) {
+      add(summary, index, declaredBy, "specs");
+    }
   }
 
   for (const entry of entries) {
@@ -228,17 +274,11 @@ export function statusOf(transition: Transition): number | null {
 
 /** A component a client-side router serves at a path, or null for anything else. */
 function pagePathOf(summary: BehavioralSummary): string | null {
-  const semantics = summary.identity.boundaryBinding?.semantics as
-    | Record<string, unknown>
-    | undefined;
-  if (
-    summary.kind !== "component" ||
-    semantics?.name !== "rest" ||
-    typeof semantics.path !== "string"
-  ) {
+  const binding = summary.identity.boundaryBinding;
+  if (summary.kind !== "component" || !bindingIs(binding, "rest")) {
     return null;
   }
-  return semantics.path;
+  return binding.semantics.path;
 }
 
 export function graphqlShapeOf(

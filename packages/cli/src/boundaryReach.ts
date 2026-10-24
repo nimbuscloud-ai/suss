@@ -75,12 +75,12 @@ export interface TouchedBoundary {
 }
 
 /**
- * The line an effect's call is on. Summaries written before effects
- * recorded a place have none, and a reader then links to the unit.
+ * The first line of an effect's call. An effect with no place of its
+ * own, such as a pytest fixture call, has none, and a reader then links
+ * to the unit.
  */
 export function effectLine(effect: Effect): number | undefined {
-  const place = (effect as { location?: { start?: unknown } }).location;
-  return typeof place?.start === "number" ? place.start : undefined;
+  return effect.location?.start;
 }
 
 /**

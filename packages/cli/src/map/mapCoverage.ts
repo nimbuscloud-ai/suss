@@ -5,7 +5,6 @@
  * record, which `inspect` prints under "Could not follow".
  */
 
-import { unfollowedCalls } from "../ask.js";
 import { recordsUnfollowedCall } from "./mapReach.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -48,8 +47,12 @@ export function gatherCoverage(
   return {
     functions: code.length,
     withUnfollowed: withUnfollowed.length,
-    unfollowedCalls:
-      withUnfollowed.length === 0 ? 0 : unfollowedCalls(withUnfollowed).count,
+    unfollowedCalls: withUnfollowed.reduce(
+      (total, summary) =>
+        total +
+        summary.gaps.filter((gap) => gap.type === "unfollowedCall").length,
+      0,
+    ),
     topUnfollowed: [...byCallee]
       .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
       .slice(0, TOP_UNFOLLOWED)

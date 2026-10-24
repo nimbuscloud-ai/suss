@@ -40,9 +40,16 @@ export async function runMap(args: string[]): Promise<number> {
     options: {
       dir: { type: "string" },
       out: { type: "string", short: "o" },
+      links: { type: "string" },
     },
     allowPositionals: true,
   });
+  const links = values.links ?? "editor";
+  if (!isLinkTarget(links)) {
+    throw new UsageError(
+      `--links takes "editor" or "github". It got "${links}".`,
+    );
+  }
   if (positionals.length > 1) {
     throw new UsageError(
       `map reads one project. It got ${positionals.join(", ")}. Try: suss map ${positionals[0]}`,
@@ -69,7 +76,7 @@ export async function runMap(args: string[]): Promise<number> {
     checked.sourceFile,
   );
   const model = buildMapModel({
-    projectName: path.basename(root),
+    projectName: projectNameOf(root, checked.summaries),
     loaded: loadedSummaries(checked.summaries),
     check: checked.result,
     reads,
@@ -77,8 +84,8 @@ export async function runMap(args: string[]): Promise<number> {
   });
   const cards = pickCards(model);
   const out = path.resolve(values.out ?? path.join(folder, "map.html"));
-  const page = renderMapPage(model, cards, {
-    summariesDir: shownPath(summariesDir),
+  const page = renderMapPage(LINK_TARGETS[links].model(model), cards, {
+    summariesDir: LINK_TARGETS[links].folder(summariesDir, root),
     sourceLines: sourceReader(model),
   });
   fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -88,6 +95,56 @@ export async function runMap(args: string[]): Promise<number> {
     `${[`suss map wrote ${shownPath(out)}`, ...terminalSummary(model)].join("\n")}\n`,
   );
   return 0;
+}
+
+type LinkTarget = "editor" | "github";
+
+/**
+ * What the page is given to build links from. A page published for
+ * others links to GitHub at the commit read, and leaves out the folders
+ * on this machine, which mean nothing to a reader and say where the
+ * project was checked out.
+ */
+const LINK_TARGETS: Record<
+  LinkTarget,
+  {
+    model: (model: MapModel) => MapModel;
+    /** The summaries folder as the page shows it in its `suss ask` lines. */
+    folder: (summariesDir: string, root: string) => string;
+  }
+> = {
+  editor: { model: (model) => model, folder: (dir) => shownPath(dir) },
+  github: {
+    model: (model) => ({
+      ...model,
+      reads: model.reads.map((read) => ({ ...read, root: null })),
+    }),
+    folder: (dir, root) => {
+      const inProject = path.relative(root, dir);
+      return inProject !== "" && !inProject.startsWith("..")
+        ? inProject
+        : path.basename(dir);
+    },
+  },
+};
+
+/**
+ * What the page calls the project: the repository every summary records,
+ * when they all record the same one, or else the folder it was run on.
+ */
+function projectNameOf(
+  root: string,
+  summaries: readonly BehavioralSummary[],
+): string {
+  const names = new Set(
+    summaries.map((summary) => summary.location.repository?.name),
+  );
+  const [only] = names;
+  return names.size === 1 && only !== undefined ? only : path.basename(root);
+}
+
+function isLinkTarget(value: string): value is LinkTarget {
+  return Object.hasOwn(LINK_TARGETS, value);
 }
 
 /** Reads the project into `dir`, replacing what an earlier map left there. Null when no pack matched. */

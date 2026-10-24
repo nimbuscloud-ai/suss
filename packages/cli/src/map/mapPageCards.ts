@@ -195,7 +195,7 @@ const CARD_VIEWS: Record<CardKind, (card: Card, ctx: CardContext) => CardView> =
 
 export function renderCards(cards: readonly Card[], ctx: CardContext): string {
   if (cards.length === 0) {
-    return `<p class="empty-cards">Nothing here met a card's rule.</p>`;
+    return `<p class="empty-cards">No cards for this project.</p>`;
   }
   const items = cards.map((card, i) => {
     const view = CARD_VIEWS[card.kind](card, ctx);

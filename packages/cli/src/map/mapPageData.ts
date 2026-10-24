@@ -6,6 +6,8 @@
  * times, and this keeps its page to a size a browser opens at once.
  */
 
+import { githubBlobBase } from "./mapHtml.js";
+
 import type { MapModel, MapTouch } from "./mapModel.js";
 
 /** How many units with an unfollowed call an entry point lists; the page gives the rest as a count. */
@@ -19,8 +21,12 @@ export interface PageData {
   roots: Array<string | null>;
   /** Per read: [file, label, packs, spec, code units]. */
   reads: Array<[number, number, number[], 0 | 1, number]>;
-  /** Units: [name, file, line, kind, read, spec, id]. */
-  u: Array<[number, number, number, number, number, 0 | 1, number]>;
+  /** Repositories: [name, the GitHub URL a file's path follows, or null]. */
+  repos: Array<[number, string | null]>;
+  /** Units: [name, file, line, kind, read, spec, id, repository]. */
+  u: Array<
+    [number, number, number, number, number, 0 | 1, number, number | null]
+  >;
   /** Boundaries: [label, category, name, system]. */
   b: Array<[number, string, number, number | null]>;
   e: EntryData[];
@@ -145,6 +151,10 @@ export function pageDataOf(model: MapModel): PageData {
       read.spec ? 1 : 0,
       model.coverage.unitsPerRead[at] ?? 0,
     ]),
+    repos: model.repositories.map((repository) => [
+      s(repository.name),
+      githubBlobBase(repository),
+    ]),
     u: model.units.map((unit) => [
       s(unit.name),
       s(unit.file),
@@ -153,6 +163,7 @@ export function pageDataOf(model: MapModel): PageData {
       unit.read,
       unit.spec ? 1 : 0,
       s(unit.id),
+      unit.repository,
     ]),
     b: model.boundaries.map((boundary) => [
       s(boundary.label),
