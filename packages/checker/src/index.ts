@@ -29,7 +29,10 @@ import { pairSummaries, servingFunction } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
 import { isStory, isTestCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
-import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
+import {
+  checkRuntimeConfig,
+  type UncheckedRead,
+} from "./runtime-config/runtimeConfigPairing.js";
 import { checkSchemaAgreement } from "./storage/schemaAgreement.js";
 import { checkStorage } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
@@ -171,6 +174,7 @@ export {
   type EnvVarRead,
   type RuntimeReads,
   runtimeReads,
+  type UncheckedRead,
 } from "./runtime-config/runtimeConfigPairing.js";
 export {
   type ChangeScope,
@@ -281,6 +285,14 @@ export interface CheckAllResult {
       reason: UnpairableReason;
       detail?: string;
     }>;
+  };
+  /**
+   * What a pass could have reported and did not judge. An environment
+   * read in a file a runtime loads that no call from its handler reaches
+   * is one: it may run there or not, so it is neither a finding nor clear.
+   */
+  unchecked: {
+    runtimeConfig: UncheckedRead[];
   };
 }
 
@@ -420,7 +432,15 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // transition's effects itself, and the walks add up per pass.
   const interactionIndex = buildInteractionIndex(production);
 
-  findings.push(...checkRuntimeConfig(production, interactionIndex, pairInfo));
+  const uncheckedReads: UncheckedRead[] = [];
+  findings.push(
+    ...checkRuntimeConfig(
+      production,
+      interactionIndex,
+      pairInfo,
+      uncheckedReads,
+    ),
+  );
   findings.push(...checkStorage(production, interactionIndex, pairInfo));
   findings.push(
     ...checkSchemaAgreement(production, interactionIndex, pairInfo).findings,
@@ -471,6 +491,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
           ...(u.detail === undefined ? {} : { detail: u.detail }),
         })),
     },
+    unchecked: { runtimeConfig: uncheckedReads },
   };
 }
 

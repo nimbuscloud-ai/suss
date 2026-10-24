@@ -30,7 +30,9 @@ import {
   unitsByFile,
 } from "@suss/behavioral-ir";
 
+import { functionOf } from "../calls/callFacts.js";
 import { makeSide } from "../coverage/responseMatch.js";
+import { chargeRuntimes, type RuntimeCharge } from "./chargedReads.js";
 
 import type {
   BehavioralSummary,
@@ -87,6 +89,8 @@ interface PlacedCode {
   placement: Placement;
   /** Files several runtimes' directories contain, which no runtime claims, keyed by `summaryFileKey`. */
   contested: ReadonlySet<string>;
+  /** What each placed runtime runs, by function. */
+  charges: ReadonlyMap<PlacedRuntime, RuntimeCharge>;
 }
 
 function placeCode(
@@ -95,23 +99,76 @@ function placeCode(
 ): PlacedCode {
   // A runtime-config provider declares variables and never reads them,
   // so every other summary counts as code.
-  const collected = collectEnvVarReads(
-    summaries.filter((s) => !isRuntimeConfigProvider(s)),
-    index,
-  );
+  const code = summaries.filter((s) => !isRuntimeConfigProvider(s));
+  const collected = collectEnvVarReads(code, index);
   const byFile = unitsByFile(summaries);
   const placement = placeRuntimes(summaries);
+  const contested = contestedFiles(
+    collected.reads.map((r) => r.summary),
+    placement.placed.map((p) => p.scope),
+    byFile,
+  );
   return {
     byFile,
     reads: collected.reads,
     sawConfigReadEffect: collected.sawConfigReadEffect,
     placement,
-    contested: contestedFiles(
-      collected.reads.map((r) => r.summary),
-      placement.placed.map((p) => p.scope),
-      byFile,
-    ),
+    contested,
+    charges:
+      collected.reads.length === 0
+        ? new Map()
+        : chargeRuntimes(code, placement.placed, byFile, contested),
   };
+}
+
+/** A read a runtime's code may make that the pass did not judge, and why. */
+export interface UncheckedRead {
+  /** The runtime's summary id. */
+  runtime: string;
+  /** The summary id of the code that reads it. */
+  reader: string;
+  variable: string;
+  /**
+   * `notReached` when the read is in a file the runtime loads and no call
+   * from where the runtime starts reaches it. `possibleCall` when only a
+   * call that takes its function from a table reaches it.
+   */
+  reason: "notReached" | "possibleCall";
+}
+
+/** The reads one runtime is charged with, and the ones it may make that went unjudged. */
+interface ChargedReads {
+  charged: EnvVarRead[];
+  unchecked: Array<{ read: EnvVarRead; reason: UncheckedRead["reason"] }>;
+}
+
+/**
+ * Split the reads in a runtime's code into the ones a call from where it
+ * starts reaches, which are charged, and the rest it may make, which go
+ * unjudged. A read in a contested file that a call reaches is charged,
+ * since the call says which runtime runs it.
+ */
+function chargedReadsOf(placed: PlacedRuntime, code: PlacedCode): ChargedReads {
+  const charge = code.charges.get(placed);
+  const result: ChargedReads = { charged: [], unchecked: [] };
+  for (const read of code.reads) {
+    const fn = functionOf(read.summary);
+    if (charge?.charged.has(fn) === true) {
+      result.charged.push(read);
+      continue;
+    }
+    if (charge?.possibly.has(fn) === true) {
+      result.unchecked.push({ read, reason: "possibleCall" });
+      continue;
+    }
+    if (
+      runsIn(read.summary, placed.scope, code.byFile) &&
+      !code.contested.has(summaryFileKey(read.summary))
+    ) {
+      result.unchecked.push({ read, reason: "notReached" });
+    }
+  }
+  return result;
 }
 
 /** A runtime the set declares, and the reads the pairing checks against it. */
@@ -122,22 +179,18 @@ export interface RuntimeReads {
 }
 
 /**
- * The environment reads of the code each placed runtime runs, placed
- * the way the pairing places them. A read in a file that several
- * runtimes' directories contain goes with none of them. A diff reads
- * this, so a function that starts reading a variable is reported for
- * the same functions this pass would report it missing from.
+ * The environment reads of the code each placed runtime runs, charged
+ * the way the pairing charges them: a read a call from where the
+ * runtime starts reaches. A diff reads this, so a function that starts
+ * reading a variable is reported for the same functions this pass
+ * would report it missing from.
  */
 export function runtimeReads(summaries: BehavioralSummary[]): RuntimeReads[] {
   const code = placeCode(summaries, undefined);
-  return code.placement.placed.map(({ runtime, binding, scope }) => ({
-    runtime,
-    binding,
-    reads: code.reads.filter(
-      (read) =>
-        runsIn(read.summary, scope, code.byFile) &&
-        !code.contested.has(summaryFileKey(read.summary)),
-    ),
+  return code.placement.placed.map((placed) => ({
+    runtime: placed.runtime,
+    binding: placed.binding,
+    reads: chargedReadsOf(placed, code).charged,
   }));
 }
 
@@ -153,39 +206,55 @@ export function checkRuntimeConfig(
   index?: InteractionIndex,
   /** Where to record what this pass compared; see `ComparedPair`. */
   compared?: ComparedPair[],
+  /** Where to record the reads a runtime may make that went unjudged. */
+  unchecked?: UncheckedRead[],
 ): Finding[] {
   const findings: Finding[] = [];
 
+  const code = placeCode(summaries, index);
   const {
     byFile,
     reads: codeReads,
     sawConfigReadEffect,
     placement,
     contested,
-  } = placeCode(summaries, index);
+  } = code;
   for (const { runtime, binding } of placement.unplaced) {
     findings.push(makeScopeUnknownFinding(runtime, binding));
   }
   const placed = placement.placed;
 
   const scoped: ScopedRuntime[] = [];
-  for (const { runtime, binding, scope } of placed) {
+  const chargedSomewhere = new Set<BehavioralSummary>();
+  for (const one of placed) {
+    const { runtime, binding, scope } = one;
     const inScope = codeReads.filter((r) => runsIn(r.summary, scope, byFile));
     const provided = readProvidedEnvVars(runtime);
     const providedSet = new Set(provided);
-    recordCompared(compared, runtime, binding, inScope);
+    const reads = chargedReadsOf(one, code);
+    recordCompared(compared, runtime, binding, reads.charged);
+    // A read with a fallback may be left undeclared on purpose, so only
+    // a read that would have been a finding is worth listing as unjudged.
+    const wouldFind = (read: EnvVarRead): boolean =>
+      !read.defaulted && !providedSet.has(read.name);
+    for (const { read, reason } of reads.unchecked) {
+      if (wouldFind(read)) {
+        unchecked?.push({
+          runtime: summaryIdentifier(runtime),
+          reader: summaryIdentifier(read.summary),
+          variable: read.name,
+          reason,
+        });
+      }
+    }
 
     // One finding per read site and variable, and dedupe collapses the
-    // repeats. A read with a fallback may be left undeclared on purpose.
-    for (const read of inScope) {
-      if (
-        read.defaulted ||
-        providedSet.has(read.name) ||
-        contested.has(summaryFileKey(read.summary))
-      ) {
-        continue;
+    // repeats.
+    for (const read of reads.charged) {
+      chargedSomewhere.add(read.summary);
+      if (wouldFind(read)) {
+        findings.push(makeUnprovidedFinding(runtime, binding, read));
       }
-      findings.push(makeUnprovidedFinding(runtime, binding, read));
     }
 
     scoped.push({
@@ -223,7 +292,14 @@ export function checkRuntimeConfig(
   }
 
   findings.push(...unusedFindings(scoped, sawConfigReadEffect));
-  findings.push(...contestedFindings(codeReads, contested, placed, byFile));
+  findings.push(
+    ...contestedFindings(
+      codeReads.filter((read) => !chargedSomewhere.has(read.summary)),
+      contested,
+      placed,
+      byFile,
+    ),
+  );
 
   return findings;
 }

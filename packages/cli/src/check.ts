@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { summaryRef, wrapperIndex } from "@suss/behavioral-ir";
+import {
+  summaryIdentifier,
+  summaryRef,
+  wrapperIndex,
+} from "@suss/behavioral-ir";
 import {
   applySuppressions,
   boundaryCollisions,
@@ -63,6 +67,7 @@ import type {
   ComparedPair,
   OutcomeOrigin,
   SuppressionRule,
+  UncheckedRead,
 } from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 import type { PackConfigNeed, PackPathMissing } from "@suss/extractor";
@@ -644,6 +649,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     intent,
     pairs: result.pairs,
     unmatched: result.unmatched,
+    unchecked: result.unchecked,
     skipped,
     runtimeNamedCrossings,
     summariesWithGaps,
@@ -1821,6 +1827,51 @@ function renderUnreadArtifacts(
   return `${lines.join("\n")}\n`;
 }
 
+/**
+ * One line per runtime whose code may read variables nothing judged: a
+ * read in a file it loads that no call from its handler reaches, or one
+ * reached only through a call that may run another function.
+ */
+function uncheckedReadLines(
+  unchecked: readonly UncheckedRead[],
+  summaries: readonly BehavioralSummary[],
+): string[] {
+  if (unchecked.length === 0) {
+    return [];
+  }
+  const byRuntime = new Map<string, UncheckedRead[]>();
+  for (const read of unchecked) {
+    byRuntime.set(read.runtime, [...(byRuntime.get(read.runtime) ?? []), read]);
+  }
+  const nameOf = new Map(
+    summaries.map((summary) => [
+      summaryIdentifier(summary),
+      summary.identity.name,
+    ]),
+  );
+  const lines = [""];
+  for (const [runtime, reads] of byRuntime) {
+    const unreached = reads.filter((r) => r.reason === "notReached").length;
+    const possible = reads.length - unreached;
+    const parts = [
+      ...(unreached > 0
+        ? [
+            `${unreached} ${unreached === 1 ? "read" : "reads"} in files it loads ${unreached === 1 ? "was" : "were"} not reached from its handler`,
+          ]
+        : []),
+      ...(possible > 0
+        ? [
+            `${possible} ${possible === 1 ? "read is" : "reads are"} reached only through a call that may run another function`,
+          ]
+        : []),
+    ];
+    lines.push(
+      `${nameOf.get(runtime) ?? runtime}: ${parts.join(", and ")}, so ${reads.length === 1 ? "it was" : "they were"} not checked against its environment.`,
+    );
+  }
+  return lines;
+}
+
 function renderDirHuman(
   result: CheckAllResult,
   confidence: ConfidenceLookup,
@@ -1942,6 +1993,8 @@ function renderDirHuman(
   if (internal !== null) {
     lines.push("", internal);
   }
+
+  lines.push(...uncheckedReadLines(result.unchecked.runtimeConfig, summaries));
 
   const testCode = unpairable.filter((u) => u.reason === "testCode").length;
   if (testCode > 0) {
