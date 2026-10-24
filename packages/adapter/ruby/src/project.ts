@@ -84,6 +84,7 @@ import {
 } from "./facts/constants.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitRequireFacts } from "./facts.js";
+import { jobDeclarationsIn } from "./jobs.js";
 import { moduleExportUnits, settleRubyModules } from "./moduleSurface.js";
 import { bodyBlocksIn, inflectionsIn, scopeCallsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
@@ -715,6 +716,11 @@ async function runRuby(
           rawSql: rawSqlPatterns,
         }
       : undefined;
+  const jobDeclarations = jobDeclarationsIn(options.packs);
+  const jobs =
+    jobDeclarations.length > 0
+      ? { facts: db, declarations: jobDeclarations }
+      : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const declaredModules = settleRubyModules(options.modules);
   const plainContext = await timer.timeAsync("discover", () =>
@@ -822,6 +828,7 @@ async function runRuby(
         absoluteFile: file,
         cache: fileCache,
         ...(storage === undefined ? {} : { storage }),
+        ...(jobs === undefined ? {} : { jobs }),
         inheritedMethods,
         bodyBlocks,
         dynamicNames: watchedNames,
@@ -833,6 +840,7 @@ async function runRuby(
       ...moduleExportUnits(root, file, {
         modules: declaredModules,
         ...(storage === undefined ? {} : { storage }),
+        ...(jobs === undefined ? {} : { jobs }),
         inheritedMethods,
         bodyBlocks,
         dynamicNames: watchedNames,
@@ -843,6 +851,7 @@ async function runRuby(
       ...declaredEntryUnits(root, file, {
         packs: options.packs,
         ...(storage === undefined ? {} : { storage }),
+        ...(jobs === undefined ? {} : { jobs }),
         inheritedMethods,
         bodyBlocks,
         dynamicNames: watchedNames,
@@ -967,6 +976,7 @@ async function runRuby(
       context: reachContext,
       displayPathOf,
       ...(storage === undefined ? {} : { storage }),
+      ...(jobs === undefined ? {} : { jobs }),
       inheritedMethods,
       bodyBlocks,
       dynamicNames: watchedNames,

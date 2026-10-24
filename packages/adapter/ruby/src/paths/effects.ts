@@ -265,7 +265,7 @@ export function calleeText(call: RbNode): string {
   return receiver === null ? method : `${receiver.text}.${method}`;
 }
 
-function argOf(node: RbNode, facts: Database | undefined): EffectArg {
+export function argOf(node: RbNode, facts: Database | undefined): EffectArg {
   const literal = literalArgOf(node, facts);
   if (literal !== null) {
     return literal;
