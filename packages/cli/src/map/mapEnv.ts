@@ -25,9 +25,12 @@ export function gatherEnvReads(
     }
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
+        // A helper that reads a name it is handed doesn't record a name of
+        // its own, and each call to it records the variable it passes.
         if (
           effect.type !== "interaction" ||
-          effect.interaction.class !== "config-read"
+          effect.interaction.class !== "config-read" ||
+          effect.interaction.name === null
         ) {
           continue;
         }
