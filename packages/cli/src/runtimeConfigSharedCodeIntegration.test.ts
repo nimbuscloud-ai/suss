@@ -66,7 +66,9 @@ describe("runtime-config over two Lambdas on one CodeUri", () => {
     // reports it and the indexer next door stays quiet.
     expect(retry).toHaveLength(1);
     expect(retry[0].severity).toBe("error");
-    expect(retry[0].description).toContain("NotifierFunction");
+    expect(retry[0].sources).toEqual([
+      expect.stringContaining("NotifierFunction"),
+    ]);
   });
 
   it("places the shared module in both functions through their entries and reports nothing", async () => {

@@ -79,6 +79,11 @@ export interface EnvVarRead {
   defaulted: boolean;
   /** How the source spelled the read, so a Python finding does not say `process.env`. */
   spelling?: string;
+  /**
+   * The binding the read itself records, which says no deployment. A
+   * read found in a call's arguments, with no config-read effect, has none.
+   */
+  binding?: BoundaryBinding;
 }
 
 /** Every environment read in the code, and where each runtime's code is. */
@@ -248,8 +253,8 @@ export function checkRuntimeConfig(
       }
     }
 
-    // One finding per read site and variable, and dedupe collapses the
-    // repeats.
+    // Every runtime and transition gives the same finding for one read,
+    // and dedupe keeps one with the runtimes in its sources.
     for (const read of reads.charged) {
       chargedSomewhere.add(read.summary);
       if (wouldFind(read)) {
@@ -556,6 +561,7 @@ function namedRead(
     summary,
     transitionId,
     defaulted: effect.interaction.defaulted === true,
+    binding: effect.binding,
     ...(effect.callee === undefined ? {} : { spelling: effect.callee }),
   };
 }
@@ -652,10 +658,6 @@ function collectFromArgLegacy(
   }
 }
 
-function instanceLabel(semantics: RuntimeConfigSemantics): string {
-  return `${semantics.deploymentTarget ?? "runtime"}/${semantics.instanceName ?? "unnamed"}`;
-}
-
 /**
  * How code on each deployment target writes a read. A Node process
  * reads `process.env`, and an edge worker gets its configuration as an
@@ -684,6 +686,14 @@ function readSpelling(semantics: RuntimeConfigSemantics, name: string): string {
   return `${prefix}${name}`;
 }
 
+/**
+ * One finding about the read itself, for one runtime that runs it and
+ * does not declare its variable. Every runtime gives the same finding,
+ * since the read is both sides and the text mentions no runtime, so
+ * `dedupeFindings` keeps one per read and lists the runtimes in
+ * `sources`. A branch that adds a function that runs the read only adds
+ * to that list, so `check --base` reports nothing new.
+ */
 function makeUnprovidedFinding(
   runtime: BehavioralSummary,
   binding: BoundaryBinding,
@@ -693,12 +703,18 @@ function makeUnprovidedFinding(
   return {
     kind: "boundaryFieldUnknown",
     aspect: "read",
-    boundary: binding,
-    provider: makeSide(runtime),
-    consumer: makeSide(read.summary, read.transitionId),
-    description: `${read.spelling ?? readSpelling(semantics, read.name)} read by ${read.summary.identity.name} (${instanceLabel(semantics)} scope) but ${semantics.instanceName} declares no ${read.name} in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.`,
+    boundary: read.binding ?? readSideBinding(binding),
+    provider: makeSide(read.summary),
+    consumer: makeSide(read.summary, undefined, read.name),
+    description: `${read.spelling ?? readSpelling(semantics, read.name)} read by ${read.summary.identity.name} is not declared in the environment of a deployment that runs it. At runtime it resolves to undefined there, changing which execution paths the code takes.`,
     severity: "error",
+    sources: [summaryIdentifier(runtime)],
   };
+}
+
+/** The runtime's binding with its deployment left out, as a read records one. */
+function readSideBinding(binding: BoundaryBinding): BoundaryBinding {
+  return { ...binding, semantics: { name: "runtime-config" } };
 }
 
 /**

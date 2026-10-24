@@ -75,7 +75,9 @@ describe("runtime-config over a template with a Globals section", () => {
     );
     expect(retry).toHaveLength(1);
     expect(retry[0].severity).toBe("error");
-    expect(retry[0].description).toContain("IngestFunction");
+    expect(retry[0].sources).toEqual([
+      expect.stringContaining("IngestFunction"),
+    ]);
   });
 });
 

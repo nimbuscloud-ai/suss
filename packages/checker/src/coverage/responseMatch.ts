@@ -182,6 +182,7 @@ export function refLooksLikeStatus(
 export function makeSide(
   summary: BehavioralSummary,
   transitionId?: string,
+  field?: string,
 ): FindingSide {
   const side: FindingSide = {
     summary: summaryRef(summary),
@@ -189,6 +190,9 @@ export function makeSide(
   };
   if (transitionId) {
     side.transitionId = transitionId;
+  }
+  if (field !== undefined) {
+    side.field = field;
   }
   return side;
 }

@@ -64,7 +64,7 @@ describe("runtime-config integration", () => {
     );
     expect(stripe).toBeDefined();
     expect(stripe?.severity).toBe("error");
-    expect(stripe?.description).toContain("Checkout");
+    expect(stripe?.sources).toEqual([expect.stringContaining("Checkout")]);
   });
 
   it("flags KAFKA_BROKER (omitted from template) as unprovided", async () => {
@@ -77,7 +77,7 @@ describe("runtime-config integration", () => {
     );
     expect(kafka).toBeDefined();
     expect(kafka?.severity).toBe("error");
-    expect(kafka?.description).toContain("WebhookHandler");
+    expect(kafka?.sources).toEqual([expect.stringContaining("WebhookHandler")]);
   });
 
   it("flags LEGACY_FEATURE_FLAG (declared but never read) as unused", async () => {

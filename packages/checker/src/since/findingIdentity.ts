@@ -32,7 +32,7 @@ export function normalizedDescription(finding: Finding): string {
 
 /** A string that is equal for the same finding in two runs. */
 export function findingIdentity(finding: Finding): string {
-  const placed = withoutPlacement(finding.boundary);
+  const placed = withoutPlacement(finding);
   return JSON.stringify([
     finding.kind,
     placed(boundaryKeyOf(finding.boundary)),
@@ -52,12 +52,13 @@ export function findingIdentity(finding: Finding): string {
  * the identity spells the resource by its logical id, with no template
  * file.
  */
-function withoutPlacement(binding: BoundaryBinding): (text: string) => string {
+function withoutPlacement(finding: Finding): (text: string) => string {
+  const binding = finding.boundary;
   const instance = deployedInstanceOf(binding);
   if (instance === null) {
-    return (text) => text;
+    return withoutStacks(nestedSources(finding));
   }
-  const logicalId = instance.slice(instance.lastIndexOf("/") + 1);
+  const logicalId = logicalIdOf(instance);
   const recognition = binding.recognition;
   const templateRef = `${recognition}:`;
   return (text) => {
@@ -68,6 +69,44 @@ function withoutPlacement(binding: BoundaryBinding): (text: string) => string {
     const unit = named.indexOf("::", templateRef.length);
     return unit === -1 ? named : `${recognition}:${named.slice(unit)}`;
   };
+}
+
+function logicalIdOf(instance: string): string {
+  return instance.slice(instance.lastIndexOf("/") + 1);
+}
+
+/**
+ * The nested resources a finding about one read lists in `sources`, as
+ * `ApiStack/PingFunction`. Its boundary gives no resource, and a handler
+ * named after one, as `ApiStack/PingFunction.handler`, is on its sides.
+ */
+function nestedSources(finding: Finding): string[] {
+  return (finding.sources ?? [])
+    .map(instanceOfSource)
+    .filter((name) => name.includes("/"));
+}
+
+/**
+ * The resource a template's summary id spells after its file, with the
+ * stacks around it: `cloudformation:template.yaml#ApiStack::PingFunction`
+ * is `ApiStack/PingFunction`.
+ */
+function instanceOfSource(source: string): string {
+  const hash = source.indexOf("#");
+  const path =
+    hash === -1
+      ? source.slice(source.lastIndexOf("::") + 2)
+      : source.slice(hash + 1);
+  return path.replaceAll("::", "/");
+}
+
+function withoutStacks(instances: readonly string[]): (text: string) => string {
+  return (text) =>
+    instances.reduce(
+      (spelled, instance) =>
+        spelled.replaceAll(instance, logicalIdOf(instance)),
+      text,
+    );
 }
 
 function placedOrNull(
