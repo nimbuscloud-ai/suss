@@ -23,6 +23,8 @@ import type {
   MessageLocation,
   MessageSendEnding,
   MessageSendMethod,
+  OneArgument,
+  WholeMessage,
 } from "./chain.js";
 import type { ReceiverOrigin, UnsettledName } from "./ops.js";
 
@@ -35,13 +37,14 @@ export interface MessageSendsSpec {
   channel: readonly ChannelPart[];
   /** What joins the parts. Defaults to "#", as used between a bus and a subject. */
   channelSeparator?: string;
-  /** The property a message states its body on. */
-  body?: string;
+  /** The property a message states its body on, or the whole message. */
+  body?: string | WholeMessage;
   /**
-   * The property whose literal value is recorded as the routing key. A
-   * reader can filter on it, and it stays out of the channel name.
+   * Where the literal value recorded as the routing key is: a property
+   * of the message, or an argument of the call. A reader can filter on
+   * it, and it stays out of the channel name.
    */
-  routingKey?: string;
+  routingKey?: string | OneArgument;
   /**
    * What a reader gives back for a channel nothing in the source
    * settles. Defaults to keeping the reference, because most queues get
