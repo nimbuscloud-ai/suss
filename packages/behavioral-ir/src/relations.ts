@@ -64,7 +64,7 @@ export function interactionDetail(
     interaction.class === "config-read" ||
     interaction.class === "metadata-read"
   ) {
-    return interaction.name;
+    return interaction.name ?? undefined;
   }
   return undefined;
 }

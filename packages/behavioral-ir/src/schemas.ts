@@ -689,7 +689,13 @@ export const EffectSchema = z.discriminatedUnion("type", [
         }),
         z.object({
           class: z.literal("config-read"),
-          name: z.string(),
+          /**
+           * The variable, or null when the code works the name out at
+           * run time, as a helper reading `process.env[name]` does. Each
+           * call to such a helper records its own read with the name it
+           * passes, so pairing skips a read with no name.
+           */
+          name: z.string().nullable(),
           defaulted: z.boolean(),
         }),
         /**

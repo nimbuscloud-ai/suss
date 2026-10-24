@@ -286,7 +286,8 @@ const configReadsIn = (
     summary.transitions.flatMap((transition) =>
       (transition.effects ?? []).flatMap((effect) =>
         effect.type === "interaction" &&
-        effect.interaction.class === "config-read"
+        effect.interaction.class === "config-read" &&
+        effect.interaction.name !== null
           ? [
               {
                 name: effect.interaction.name,

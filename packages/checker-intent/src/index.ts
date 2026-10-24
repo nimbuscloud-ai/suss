@@ -1560,7 +1560,10 @@ export function accessDetail(interaction: Interaction): {
   payload?: TypeShape;
 } {
   if (interaction.class === "config-read") {
-    return { fields: [interaction.name], by: [] };
+    return {
+      fields: interaction.name === null ? [] : [interaction.name],
+      by: [],
+    };
   }
 
   if (interaction.class === "stream-write") {

@@ -20,7 +20,7 @@ import {
 } from "@suss/framework-aws-lambda";
 import { nodeRuntimePack } from "@suss/runtime-node";
 
-import type { Finding } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
 const fixtureRoot = path.resolve(
   __dirname,
@@ -82,6 +82,30 @@ describe("runtime-config over two Lambdas on one CodeUri", () => {
     );
   });
 
+  it("charges a shared helper's read to the call that passed the name, not to every function that loads it", async () => {
+    const findings = await runPipeline();
+    const fromHelper = findings.filter((f) =>
+      f.consumer.location.file.includes("config/env"),
+    );
+    expect(fromHelper).toEqual([]);
+  });
+
+  it("records the helper's own read with no name", async () => {
+    const helper = (await extractCode()).find(
+      (s) => s.identity.name === "requireEnv",
+    );
+    const reads = (helper?.transitions ?? [])
+      .flatMap((t) => t.effects)
+      .flatMap((e) =>
+        e.type === "interaction" && e.interaction.class === "config-read"
+          ? [{ name: e.interaction.name, callee: e.callee }]
+          : [],
+      );
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.every((read) => read.name === null)).toBe(true);
+    expect(reads[0]?.callee).toBe("process.env[name]");
+  });
+
   it("does not call either function's declaration unused", async () => {
     const findings = await runPipeline();
     const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
@@ -90,6 +114,14 @@ describe("runtime-config over two Lambdas on one CodeUri", () => {
 });
 
 async function runPipeline(): Promise<Finding[]> {
+  const declared = cloudFormationFileToSummaries(
+    path.join(fixtureRoot, "template.yaml"),
+  );
+
+  return checkAll([...(await extractCode()), ...declared]).findings;
+}
+
+async function extractCode(): Promise<BehavioralSummary[]> {
   clearTemplateCache();
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: path.join(fixtureRoot, "tsconfig.json"),
@@ -112,10 +144,5 @@ async function runPipeline(): Promise<Finding[]> {
       };
     }
   }
-
-  const declared = cloudFormationFileToSummaries(
-    path.join(fixtureRoot, "template.yaml"),
-  );
-
-  return checkAll([...codeSummaries, ...declared]).findings;
+  return codeSummaries;
 }

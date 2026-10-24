@@ -20,6 +20,7 @@ import {
   children,
   enclosingFunction,
   field,
+  parameterIdentifier,
   rangeOf,
   stringLiteralValue,
 } from "./ast.js";
@@ -43,7 +44,12 @@ import type { ModuleBinding, Scope } from "./scope.js";
 export const PYTHON_ENV_RECOGNITION = "python-env";
 
 interface EnvRead {
-  name: string;
+  /**
+   * Null when the code works the name out at run time, as a helper's
+   * `os.environ[name]` does. Each call to the helper records its own
+   * read with the name it passes.
+   */
+  name: string | null;
   defaulted: boolean;
 }
 
@@ -83,9 +89,7 @@ export function envReadEffects(
       const syntax = envReadSyntaxAt(node, scope);
       if (syntax !== null) {
         const name = stringLiteralValue(syntax.name);
-        if (name !== null) {
-          slots.push({ read: { name, defaulted: syntax.defaulted }, at: node });
-        }
+        slots.push({ read: { name, defaulted: syntax.defaulted }, at: node });
         return;
       }
       if (readsHelpers && node.type === "call") {
@@ -119,7 +123,7 @@ function configReadEffect(read: EnvRead, at: PyNode): Effect {
   return {
     type: "interaction",
     binding: runtimeConfigBinding({ recognition: PYTHON_ENV_RECOGNITION }),
-    callee: `os.environ["${read.name}"]`,
+    callee: read.name === null ? at.text : `os.environ["${read.name}"]`,
     interaction: {
       class: "config-read",
       name: read.name,
@@ -488,6 +492,23 @@ function argumentsByParameter(
  * has a fallback when every read the call reaches supplies one, or when
  * the caller wrote an `or` of its own around the call.
  */
+/**
+ * Whether the argument is the calling function's own parameter, as in
+ * `get_env(key)` calling `require_env(key)`. The name comes from whoever
+ * calls `get_env`, and the rules follow it to that call, so the
+ * forwarding call records nothing. Settling the parameter here would
+ * give the helper its callers' names.
+ */
+function handsOnParameter(argument: PyNode): boolean {
+  const caller = enclosingFunction(argument);
+  if (argument.type !== "identifier" || caller === null) {
+    return false;
+  }
+  return children(field(caller, "parameters")).some(
+    (param) => parameterIdentifier(param)?.text === argument.text,
+  );
+}
+
 function readsThroughHelper(
   db: Database,
   call: PyNode,
@@ -503,7 +524,7 @@ function readsThroughHelper(
       `${NAMED_PARAMETER}${parameter}`,
       describeSites(sites, siteById),
     );
-    if (sites === undefined) {
+    if (sites === undefined || handsOnParameter(argument)) {
       continue;
     }
     const name = stringLiteralValue(argument) ?? stringValueOf(argument, db);
