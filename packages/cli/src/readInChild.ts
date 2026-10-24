@@ -160,6 +160,25 @@ function endOf(facts: {
   return { kind: "failed", exitCode: facts.exitCode, signal: facts.signal };
 }
 
+/**
+ * The line that says why a read failed: the message of a stack trace, or
+ * else the first line of the last paragraph it printed, since suss puts
+ * the problem first and the detail after it.
+ */
+export function errorLineOf(output: string): string | null {
+  const lines = output.split("\n").map((line) => line.trim());
+  const error = lines.find((line) => line.startsWith("Error"));
+  if (error !== undefined) {
+    return error;
+  }
+  const paragraphs = lines
+    .join("\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph !== "");
+  return paragraphs.at(-1)?.split("\n")[0] ?? null;
+}
+
 /** Kills the read and anything it started. */
 function stopProcess(pid: number | undefined): void {
   if (pid === undefined) {
@@ -195,15 +214,28 @@ function stopChildrenOnSignal(): void {
   }
 
   listening = true;
-  const onSignal = (signal: NodeJS.Signals): void => {
-    stopEveryRead();
-    for (const one of SIGNALS) {
-      process.off(one, onSignal);
-    }
-    process.kill(process.pid, signal);
-  };
   for (const signal of SIGNALS) {
-    process.on(signal, onSignal);
+    process.on(signal, stopReadsAndEnd);
   }
+  process.off("exit", stopEveryRead);
   process.on("exit", stopEveryRead);
+}
+
+/**
+ * Stops every read, then sends the signal on with this handler removed,
+ * so the process ends the way the signal would have ended it. `send` is
+ * there so a test can watch it instead of ending.
+ */
+export function stopReadsAndEnd(
+  signal: NodeJS.Signals,
+  send: (signal: NodeJS.Signals) => void = (one) => {
+    process.kill(process.pid, one);
+  },
+): void {
+  stopEveryRead();
+  for (const one of SIGNALS) {
+    process.off(one, stopReadsAndEnd);
+  }
+  listening = false;
+  send(signal);
 }
