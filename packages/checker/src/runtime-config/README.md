@@ -26,6 +26,10 @@ The import closure is right for module-init and wrong for a function. A client f
 
 The pass builds the call facts once and asks `reachedFromEach` once for every start, with `certainOnly`, so a call that takes its function out of a table charges nothing. A read in a file the runtime loads that no settled call reaches is not a finding and is not clear either. It goes on `unchecked.runtimeConfig` in the `checkAll` result, with `notReached` or, when only a call through a table reaches it, `possibleCall`. Only a read that would otherwise have been a finding is listed, since a declared or defaulted read is fine whether it runs or not. `check` prints one line per runtime that has any.
 
+## One finding per read
+
+A `boundaryFieldUnknown` here is about the read, so the reading summary is on both sides, the consumer side gives the variable as `field`, and the boundary is the read's own binding, which says no deployment. Each runtime that runs the read without declaring the variable contributes the same finding, and `dedupeFindings` keeps one with every such runtime in `sources`. Adding a function that runs the read only adds to `sources`, so the finding keeps its identity and `check --base` reports nothing new. The rule that accepts one is `consumer: { summary, field }`.
+
 `boundaryFieldUnused` still goes by the closure. A variable that code in the runtime's files reads is never called unused, reached or not.
 
 ## Gotchas

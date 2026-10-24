@@ -42,7 +42,7 @@ describe("runtime-config over two Python Lambdas on one CodeUri", () => {
     expect(bucket).toHaveLength(1);
     expect(bucket[0].severity).toBe("error");
     expect(bucket[0].description).toContain('os.environ["ASSET_BUCKET"]');
-    expect(bucket[0].description).toContain("ApiFunction");
+    expect(bucket[0].sources).toEqual([expect.stringContaining("ApiFunction")]);
     expect(bucket[0].consumer.location.file).toBe("src/app.py");
   });
 
