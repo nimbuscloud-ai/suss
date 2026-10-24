@@ -45,6 +45,7 @@ import type {
   InterpolatesLink,
   KindAsAsked,
   Link,
+  ManyIn,
   MatchStart,
   MessageLocation,
   MessageSendEnding,
@@ -748,8 +749,8 @@ function messageSend(matched: Matched): Effect[] | null {
   const sent = messages.length === 0 ? [NOTHING_STATED] : messages;
   const effects: Effect[] = [];
   for (const message of sent) {
-    const channels = channelsOf({ message, input, ending });
-    for (const channel of channels) {
+    const sending = { message, input, subject, ending };
+    for (const channel of channelsOf(sending)) {
       effects.push({
         type: "interaction",
         binding: messageBusBinding({
@@ -761,7 +762,7 @@ function messageSend(matched: Matched): Effect[] | null {
         interaction: {
           class: "message-send",
           ...bodyOf(message, ending),
-          ...routingKeyOf(message, ending),
+          ...routingKeyOf(sending),
         },
       });
     }
@@ -769,16 +770,23 @@ function messageSend(matched: Matched): Effect[] | null {
   return effects;
 }
 
+/** One reading per way a library takes the messages a call sends. */
+const MESSAGES_IN: Record<
+  MessageLocation["each"],
+  (input: ValueOps, location: MessageLocation) => readonly ValueOps[]
+> = {
+  theInput: (input) => [input],
+  in: (input, location) =>
+    input.property((location as ManyIn).property)?.items() ?? [],
+  inTheInput: (input) => input.items(),
+};
+
 /** Each message the call sends, however the library takes them. */
 function messagesIn(
   input: ValueOps,
   location: MessageLocation,
 ): readonly ValueOps[] {
-  if (location.each === "theInput") {
-    return [input];
-  }
-  const collection = input.property(location.property);
-  return collection === null ? [] : collection.items();
+  return MESSAGES_IN[location.each](input, location);
 }
 
 /**
@@ -789,10 +797,11 @@ function messagesIn(
  */
 const CHANNEL_CAP = 16;
 
-/** One message and the call input it was sent with, to read its channel from. */
+/** One message, the call input it was sent with, and the call itself. */
 interface Sending {
   readonly message: ValueOps;
   readonly input: ValueOps;
+  readonly subject: CallOps;
   readonly ending: MessageSendEnding;
 }
 
@@ -880,16 +889,26 @@ function partValues(
   sending: Sending,
   read: PartReading,
 ): readonly string[] | null {
+  const unsettled = part.unsettled ?? sending.ending.unsettledName;
+  if ("argument" in part) {
+    const stated = statedValue(sending.subject, part.argument);
+    return stated === null ? null : READ_PART[read](stated, unsettled);
+  }
   const holder = part.on === "theInput" ? sending.input : sending.message;
   const written = firstWritten(holder, part.property);
   if (written === null) {
     return part.whenAbsent === undefined ? null : [part.whenAbsent];
   }
-  const unsettled = part.unsettled ?? sending.ending.unsettledName;
-  return read === "everyString"
-    ? everyString(written, unsettled)
-    : oneName(written, unsettled);
+  return READ_PART[read](written, unsettled);
 }
+
+const READ_PART: Record<
+  PartReading,
+  (written: ValueOps, unsettled: UnsettledName) => readonly string[] | null
+> = {
+  everyString,
+  oneName,
+};
 
 /**
  * The first of these properties the message wrote. Trying them in order
@@ -922,21 +941,28 @@ function bodyOf(
   if (ending.body === undefined) {
     return {};
   }
-  const stated = unwrapJsonStringify(
-    message.property(ending.body)?.asArg() ?? null,
-  );
+  const written =
+    typeof ending.body === "string" ? message.property(ending.body) : message;
+  const stated = unwrapJsonStringify(written?.asArg() ?? null);
   return stated === null ? {} : { body: stated };
 }
 
-/** The routing key a message states, when it states one as a literal. */
-function routingKeyOf(
-  message: ValueOps,
-  ending: MessageSendEnding,
-): { routingKey?: string } {
-  if (ending.routingKey === undefined) {
+/**
+ * The routing key a send states, when it states one as a literal: on
+ * the message, or as an argument of the call.
+ */
+function routingKeyOf({ message, subject, ending }: Sending): {
+  routingKey?: string;
+} {
+  const where = ending.routingKey;
+  if (where === undefined) {
     return {};
   }
-  const stated = message.property(ending.routingKey)?.text() ?? null;
+  const written =
+    typeof where === "string"
+      ? message.property(where)
+      : statedValue(subject, where);
+  const stated = written?.text() ?? null;
   return stated === null || stated === "" ? {} : { routingKey: stated };
 }
 

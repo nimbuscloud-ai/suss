@@ -11,7 +11,7 @@ import { unitInvokes } from "./unitInvokes.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { StatedSlot } from "@suss/extractor";
-import type { SqlMethod, StorageMethod } from "./chain.js";
+import type { MessageSendMethod, SqlMethod, StorageMethod } from "./chain.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
 /** The container one storage effect reached, or null for anything else. */
@@ -1718,6 +1718,106 @@ describe("a chain that sends many", () => {
       callOps({ method: "send", from: ["tapedeck"], values: { 0: {} } }),
     );
     expect(channelsOf(effects)).toEqual([null]);
+  });
+});
+
+describe("a channel the client was built with", () => {
+  // `queue.add(name, data)` on `new Queue("emails")`.
+  const adds = (
+    over: Partial<Parameters<typeof messageSends>[0]> = {},
+    table: Record<string, MessageSendMethod> = { add: { input: { at: 1 } } },
+  ) =>
+    messageSends({
+      wire: "bullmq",
+      client: declaredBy("tapedeck"),
+      messages: { each: "theInput" },
+      channel: [{ argument: { of: [{ to: "receiver" }], at: 0 } }],
+      body: { whole: "message" },
+      routingKey: { at: 0 },
+      unsettledName: "nothing",
+      ...over,
+    })
+      .methods(table)
+      .example('queue.add("welcome", { userId })');
+
+  // A name the source wrote as something other than a string settles to nothing.
+  const queueBuiltWith = (name: string | boolean) =>
+    callOps({ callee: "Queue", values: { 0: name } });
+
+  const sentOn = (effects: Effect[] | null) =>
+    effects?.[0]?.type === "interaction" &&
+    effects[0].interaction.class === "message-send"
+      ? effects[0].interaction
+      : null;
+
+  it("reads the channel off the construction the receiver was made by", () => {
+    const effects = runSend(
+      adds(),
+      callOps({
+        method: "add",
+        from: ["tapedeck"],
+        callee: "queue.add",
+        receiver: queueBuiltWith("emails"),
+        values: { 0: "welcome", 1: "{}" },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual(["emails"]);
+    expect(sentOn(effects)).toEqual({
+      class: "message-send",
+      body: { kind: "string", value: "{}" },
+      routingKey: "welcome",
+    });
+  });
+
+  it("names no channel when the construction's argument does not settle", () => {
+    const effects = runSend(
+      adds(),
+      callOps({
+        method: "add",
+        from: ["tapedeck"],
+        receiver: queueBuiltWith(true),
+        values: { 1: "{}" },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual([null]);
+    expect(sentOn(effects)?.routingKey).toBeUndefined();
+  });
+
+  it("names no channel when the receiver is no call this run can see", () => {
+    const effects = runSend(
+      adds(),
+      callOps({ method: "add", from: ["tapedeck"], values: { 1: "{}" } }),
+    );
+    expect(channelsOf(effects)).toEqual([null]);
+  });
+
+  it("records one message per item when the input is the list", () => {
+    const effects = runSend(
+      adds(
+        { messages: { each: "inTheInput" }, body: "data", routingKey: "name" },
+        { addBulk: { input: { at: 0 } } },
+      ),
+      callOps({
+        method: "addBulk",
+        from: ["tapedeck"],
+        receiver: queueBuiltWith("emails"),
+        values: {
+          0: [
+            { name: "welcome", data: "{}" },
+            { name: "digest", data: "[]" },
+          ],
+        },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual(["emails", "emails"]);
+    expect(
+      (effects ?? []).map((effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "message-send"
+          ? effect.interaction.routingKey
+          : null,
+      ),
+    ).toEqual(["welcome", "digest"]);
   });
 });
 
