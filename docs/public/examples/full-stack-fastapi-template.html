@@ -1,0 +1,3900 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>full-stack-fastapi-template · suss map</title>
+<meta name="description" content="What suss read in full-stack-fastapi-template: the routes and fields it serves, the tables they touch, and what suss could not follow.">
+<style>/* Overview tiles and a short list of findings on top, a faceted list below, an inspector panel from the right. */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --sunk: #eef0f4;
+  --ink: #12161f;
+  --ink-2: #394151;
+  --muted: #5f6879;
+  --faint: #8a92a2;
+  --line: #e1e4ea;
+  --line-strong: #cbd1da;
+  --accent: #1f4fb8;
+  --accent-ink: #193f93;
+  --accent-soft: #e9effc;
+  --mark-1: #1f4fb8;
+  --mark-2: #3c82f6;
+  --write: #b5410d;
+  --write-soft: #fcefe6;
+  --clash: #7136c9;
+  --clash-soft: #f1eafc;
+  --ok: #217548;
+  --ok-soft: #e6f3eb;
+  --warn: #935700;
+  --warn-soft: #fbf0d9;
+  --bad: #b42318;
+  --bad-soft: #fbe8e6;
+  --hl: #fff2bf;
+  --hl-edge: #d9a900;
+  --shadow: 0 1px 2px rgba(18, 22, 31, 0.05), 0 8px 24px rgba(18, 22, 31, 0.07);
+  --scrim: rgba(13, 16, 22, 0.32);
+  --tk-kw: #7a3db0;
+  --tk-str: #2c6b37;
+  --tk-num: #9c4f0a;
+  --tk-com: #6f7787;
+  --tk-sym: #9a3878;
+
+  --f-ui:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --f-code:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --t-xs: 0.78rem;
+  --t-sm: 0.875rem;
+  --t-md: 0.97rem;
+  --t-lg: 1.1rem;
+  --t-xl: 1.35rem;
+  --t-2xl: 2rem;
+  --t-hero: clamp(2.2rem, 6vw, 3.3rem);
+  --r: 10px;
+  --r-sm: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1016;
+    --surface: #141922;
+    --sunk: #1a202b;
+    --ink: #e8ebf1;
+    --ink-2: #c5cbd6;
+    --muted: #9ba4b4;
+    --faint: #737c8e;
+    --line: #242b37;
+    --line-strong: #333c4b;
+    --accent: #8fb0ff;
+    --accent-ink: #b8cbff;
+    --accent-soft: #1a2540;
+    --mark-1: #6f98ff;
+    --mark-2: #a3c0ff;
+    --write: #ff9d6c;
+    --write-soft: #33211a;
+    --clash: #bb98ff;
+    --clash-soft: #2a2140;
+    --ok: #74d6a0;
+    --ok-soft: #142a1f;
+    --warn: #f1c35d;
+    --warn-soft: #2e2611;
+    --bad: #ff8c82;
+    --bad-soft: #361b1a;
+    --hl: #3b3313;
+    --hl-edge: #c9a227;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+    --scrim: rgba(0, 0, 0, 0.5);
+    --tk-kw: #c99cff;
+    --tk-str: #90d4a0;
+    --tk-num: #f1b273;
+    --tk-com: #7d8698;
+    --tk-sym: #e59bd2;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1016;
+  --surface: #141922;
+  --sunk: #1a202b;
+  --ink: #e8ebf1;
+  --ink-2: #c5cbd6;
+  --muted: #9ba4b4;
+  --faint: #737c8e;
+  --line: #242b37;
+  --line-strong: #333c4b;
+  --accent: #8fb0ff;
+  --accent-ink: #b8cbff;
+  --accent-soft: #1a2540;
+  --mark-1: #6f98ff;
+  --mark-2: #a3c0ff;
+  --write: #ff9d6c;
+  --write-soft: #33211a;
+  --clash: #bb98ff;
+  --clash-soft: #2a2140;
+  --ok: #74d6a0;
+  --ok-soft: #142a1f;
+  --warn: #f1c35d;
+  --warn-soft: #2e2611;
+  --bad: #ff8c82;
+  --bad-soft: #361b1a;
+  --hl: #3b3313;
+  --hl-edge: #c9a227;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --scrim: rgba(0, 0, 0, 0.5);
+  --tk-kw: #c99cff;
+  --tk-str: #90d4a0;
+  --tk-num: #f1b273;
+  --tk-com: #7d8698;
+  --tk-sym: #e59bd2;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+html {
+  scroll-padding-top: 76px;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--f-ui);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+code,
+kbd,
+pre {
+  font-family: var(--f-code);
+  font-variant-ligatures: none;
+}
+button,
+select {
+  font: inherit;
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.muted {
+  color: var(--muted);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* icons: one meaning, one colour, everywhere */
+.ic {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  vertical-align: -2px;
+}
+.i-write {
+  color: var(--write);
+}
+.i-read,
+.i-table,
+.i-env {
+  color: var(--muted);
+}
+.i-clash {
+  color: var(--clash);
+}
+.i-guard {
+  color: var(--ink-2);
+}
+.i-partial {
+  color: var(--faint);
+}
+.i-check {
+  color: var(--ink-2);
+}
+.i-go {
+  color: currentColor;
+}
+
+/* ---------- top bar ---------- */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.brand:hover {
+  text-decoration: none;
+}
+.mark {
+  width: 22px;
+  height: 22px;
+}
+.brand-word {
+  font-size: 1.05rem;
+}
+.bar-repo {
+  color: var(--muted);
+  font-family: var(--f-code);
+  font-size: var(--t-sm);
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.search {
+  position: relative;
+  margin-left: auto;
+  flex: 0 1 400px;
+  min-width: 0;
+}
+.search input,
+.list-tools input {
+  width: 100%;
+  height: 38px;
+  padding: 0 38px 0 36px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--sunk);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-sm);
+}
+.search input::placeholder,
+.list-tools input::placeholder {
+  color: var(--faint);
+}
+.search input:focus,
+.list-tools input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.search-icon {
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+}
+kbd {
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+}
+.search .kbd {
+  position: absolute;
+  right: 10px;
+  top: 9px;
+}
+
+.results {
+  position: absolute;
+  right: 0;
+  top: 44px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding: 6px;
+}
+.res-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-xs);
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 10px 4px;
+}
+.res {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  min-width: 0;
+}
+.res[aria-selected="true"],
+.res:hover {
+  background: var(--accent-soft);
+}
+.res-main {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--f-code);
+  font-size: var(--t-sm);
+}
+.res-side {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+}
+.res-empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.res-hint {
+  display: flex;
+  gap: 12px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: var(--t-xs);
+}
+
+/* ---------- page column ---------- */
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px 48px;
+}
+
+main > section {
+  padding-block: 24px;
+}
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  margin: 0;
+}
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 20px;
+  margin-bottom: 14px;
+}
+.section-head h2 {
+  font-size: var(--t-xl);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.section-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.intro {
+  padding-block: 36px 8px;
+}
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.eyebrow .dot {
+  margin: 0 9px;
+  color: var(--faint);
+}
+h1 {
+  font-size: var(--t-hero);
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+  overflow-wrap: anywhere;
+}
+
+/* overview tiles: each number opens the list, filtered to it */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  overflow: hidden;
+}
+.tile {
+  padding: 14px 16px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin: 0 -1px -1px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tile-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+}
+.tile-main:hover {
+  text-decoration: none;
+}
+.tile-l {
+  color: var(--muted);
+  font-size: var(--t-sm);
+  line-height: 1.3;
+}
+.tile-main:hover .tile-l {
+  color: var(--accent);
+}
+.tile-n {
+  font-size: var(--t-2xl);
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.tile-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tile-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 1px 0;
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  cursor: pointer;
+  text-align: left;
+}
+.tile-fact:hover span {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tile-note {
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+/* ---------- cards ---------- */
+
+.issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.issue + .issue {
+  border-top: 1px solid var(--line);
+}
+.issue summary {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto 18px;
+  align-items: start;
+  gap: 4px 14px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;
+  border-left: 3px solid transparent;
+}
+.issue summary::-webkit-details-marker {
+  display: none;
+}
+.issue summary:hover {
+  background: var(--sunk);
+}
+.issue.tone-clash summary {
+  border-left-color: var(--clash);
+}
+.issue.tone-write summary {
+  border-left-color: var(--write);
+}
+.issue.tone-guard summary {
+  border-left-color: var(--line-strong);
+}
+.issue.tone-hub summary {
+  border-left-color: var(--accent);
+}
+.issue.tone-partial summary {
+  border-left-color: var(--faint);
+  border-left-style: dashed;
+}
+.issue-icon {
+  padding-top: 2px;
+}
+.issue-icon .ic {
+  width: 18px;
+  height: 18px;
+}
+.issue-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.issue-type {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  align-self: flex-start;
+}
+.tone-clash .issue-type {
+  color: var(--clash);
+}
+.tone-write .issue-type {
+  color: var(--write);
+}
+.tone-hub .issue-type {
+  color: var(--accent);
+}
+.issue-title {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+.issue-meta {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-family: var(--f-code);
+  overflow-wrap: anywhere;
+}
+.issue-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+  padding-top: 2px;
+}
+.issue-n {
+  font-size: var(--t-xl);
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+}
+.issue-nl {
+  font-size: var(--t-xs);
+  color: var(--faint);
+}
+.issue-chev {
+  padding-top: 6px;
+  color: var(--faint);
+  transition: transform 150ms ease;
+}
+.issue details[open] .issue-chev {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .issue-chev {
+    transition: none;
+  }
+}
+.issue-body {
+  padding: 0 18px 18px 57px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.issue-lede {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  max-width: 80ch;
+}
+.issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.action:hover {
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+.t-route,
+.t-table {
+  font-family: var(--f-code);
+  font-size: 0.9em;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.t-table .ic {
+  align-self: center;
+}
+.empty-cards {
+  padding: 16px 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rows-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 28px;
+}
+.row {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.rows-2 .row:nth-child(-n + 2),
+.rows > .row:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+.row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 4px;
+}
+.rows-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 2px 14px;
+}
+.rows-grid .row {
+  border-top: 0;
+  padding: 3px 0;
+}
+.unit-name {
+  font-family: var(--f-code);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.count {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--t-xs);
+  font-weight: 600;
+}
+.verb-write {
+  color: var(--write);
+}
+.verb-read {
+  color: var(--muted);
+}
+
+/* references open the inspector; the underline says they are links */
+.ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  border: 0;
+  padding: 1px 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--f-code);
+  font-size: 0.9em;
+  color: var(--ink);
+  text-align: left;
+  min-width: 0;
+}
+.ref .path {
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.ref:hover .path {
+  color: var(--accent-ink);
+  text-decoration-color: var(--accent);
+}
+.ref-table .ic {
+  align-self: center;
+}
+.method {
+  font-family: var(--f-code);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  flex: none;
+}
+.m-post,
+.m-put,
+.m-patch,
+.m-mutation {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.m-type {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.m-delete {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.status {
+  display: inline-block;
+  font-family: var(--f-code);
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.s-2xx {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.s-3xx {
+  background: var(--sunk);
+  color: var(--muted);
+}
+.s-4xx {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.s-5xx {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.s-unknown {
+  background: transparent;
+  color: var(--faint);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.site {
+  min-width: 0;
+}
+.site + .site {
+  margin-top: 8px;
+}
+.site-code {
+  overflow-x: auto;
+}
+.site-code code.src {
+  font-size: 0.8rem;
+  white-space: pre;
+  color: var(--ink-2);
+}
+.site-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+  margin-top: 2px;
+}
+.site-meta code.src {
+  font-size: 0.95em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.loc {
+  font-family: var(--f-code);
+  font-size: 0.95em;
+  overflow-wrap: anywhere;
+}
+.loc-fn {
+  text-decoration: underline dotted var(--faint);
+  text-underline-offset: 3px;
+}
+.through {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.through .hop {
+  font-family: var(--f-code);
+  overflow-wrap: anywhere;
+}
+.arrow {
+  margin: 0 4px;
+  color: var(--faint);
+}
+[data-term] {
+  text-decoration: underline dotted var(--faint);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.tile-fact[data-term],
+.issue-type[data-term] {
+  text-decoration-color: var(--line-strong);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.excerpt {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  min-width: 0;
+  overflow: hidden;
+}
+.excerpt figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-xs);
+  background: var(--surface);
+}
+.ex-title {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.excerpt pre {
+  margin: 0;
+  padding: 8px 0;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+.cl {
+  display: flex;
+  min-width: max-content;
+  padding-right: 14px;
+  border-left: 3px solid transparent;
+}
+.cl.hl {
+  background: var(--hl);
+  border-left-color: var(--hl-edge);
+}
+.ln {
+  flex: none;
+  width: 3.4em;
+  padding-right: 12px;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+.ln:hover {
+  color: var(--accent);
+}
+.cl code.src {
+  white-space: pre;
+  color: var(--ink-2);
+}
+
+.tk-kw {
+  color: var(--tk-kw);
+}
+.tk-str {
+  color: var(--tk-str);
+}
+.tk-num {
+  color: var(--tk-num);
+}
+.tk-com {
+  color: var(--tk-com);
+  font-style: italic;
+}
+.tk-sym {
+  color: var(--tk-sym);
+}
+
+/* ---------- list with facets ---------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.tabs [role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: none;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: var(--t-sm);
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tabs [role="tab"][aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+.tab-n {
+  font-weight: 500;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.workbench {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 20px;
+  padding-top: 16px;
+  align-items: start;
+}
+.facets-wrap {
+  position: sticky;
+  top: 70px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+.facets-toggle {
+  display: none;
+}
+.facets {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.facet h3 {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  margin-bottom: 4px;
+}
+.facet-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 6px;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.facet-opt:hover {
+  background: var(--sunk);
+}
+.facet-opt[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.facet-opt .lbl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.facet-opt .n {
+  color: var(--faint);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+}
+.facet-more {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  color: var(--accent);
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+
+.listing {
+  min-width: 0;
+}
+.list-tools {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.list-tools input {
+  flex: 1;
+  padding-left: 12px;
+}
+.list-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+}
+.tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 0 0;
+}
+.tokens:empty {
+  display: none;
+}
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.token b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.token .ic {
+  width: 12px;
+  height: 12px;
+  color: var(--faint);
+}
+.token:hover {
+  border-color: var(--accent);
+}
+.token-clear {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--t-xs);
+  cursor: pointer;
+  padding: 3px 4px;
+}
+
+.panel {
+  margin-top: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.group + .group {
+  border-top: 1px solid var(--line);
+}
+.group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 12px 16px 6px;
+  background: color-mix(in srgb, var(--sunk) 45%, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+.group-name {
+  font-family: var(--f-code);
+  font-weight: 600;
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+.group-file {
+  color: var(--faint);
+  font-size: var(--t-xs);
+  font-family: var(--f-code);
+  overflow-wrap: anywhere;
+}
+.group-count {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: var(--t-xs);
+}
+.more-rows {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  padding: 10px 16px;
+  color: var(--accent);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  background: none;
+  text-align: left;
+  padding: 8px 16px;
+  cursor: pointer;
+  min-width: 0;
+}
+.group-head + .item {
+  border-top: 0;
+}
+.item:hover {
+  background: var(--sunk);
+}
+.item-path {
+  font-family: var(--f-code);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.item:hover .item-path {
+  color: var(--accent-ink);
+}
+.route-item,
+.route-cols {
+  grid-template-columns: minmax(0, 1fr) 190px 54px 54px 170px;
+}
+.field-item,
+.field-cols {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) 70px 54px 54px 140px;
+}
+.type-item,
+.type-cols {
+  grid-template-columns: minmax(0, 1fr) 80px 110px;
+}
+.route-item .cells,
+.field-item .cells,
+.type-item .cells {
+  display: contents;
+}
+.c-num {
+  display: flex;
+  justify-content: flex-start;
+  min-width: 0;
+}
+.c-type {
+  font-family: var(--f-code);
+  font-size: var(--t-xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.c-flag {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.badge.none {
+  color: var(--line-strong);
+}
+.list-head {
+  display: grid;
+  gap: 4px 16px;
+  padding: 8px 16px;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  border-bottom: 1px solid var(--line);
+}
+.item-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.item-side {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px 12px;
+}
+.statuses {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.badge-write {
+  color: var(--write);
+  font-weight: 600;
+}
+.badge-clash {
+  color: var(--clash);
+  font-weight: 600;
+}
+.badge-partial {
+  color: var(--faint);
+}
+.system {
+  color: var(--faint);
+  font-size: var(--t-xs);
+  margin-left: 6px;
+  font-family: var(--f-ui);
+}
+
+.table-item {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+}
+.bars {
+  display: grid;
+  grid-template-columns: auto auto minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 3px 8px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.bar-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sunk);
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--faint);
+}
+.bar-fill.w {
+  background: var(--write);
+}
+.bars .n {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 2.5em;
+  color: var(--ink-2);
+}
+
+.empty {
+  padding: 28px 16px;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+}
+.empty .action {
+  margin-top: 10px;
+}
+.empty-line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 10px;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+.empty-line .ic {
+  margin-top: 3px;
+}
+
+/* ---------- inspector ---------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 30;
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(660px, 100vw);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  animation: slide 180ms ease-out;
+}
+@keyframes slide {
+  from {
+    transform: translateX(24px);
+    opacity: 0.6;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer {
+    animation: none;
+  }
+}
+.drawer:focus {
+  outline: none;
+}
+.drawer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px 10px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.close {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.drawer-body {
+  overflow-y: auto;
+  padding: 18px 22px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.drawer-body > * {
+  flex-shrink: 0;
+}
+.d-title {
+  font-family: var(--f-code);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.d-title .method {
+  font-size: 0.6em;
+}
+.d-sub {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+.d-sig {
+  margin: 8px 0 0;
+  font-family: var(--f-code);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.d-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.d-stat {
+  padding: 8px 12px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.d-stat:first-child {
+  border-left: 0;
+}
+.d-stat b {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.d-stat-l {
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.d-stat.w b {
+  color: var(--write);
+}
+.d-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--t-md);
+  font-weight: 650;
+  padding: 2px 0 8px;
+}
+.d-section > summary::-webkit-details-marker {
+  display: none;
+}
+.d-section > summary .n {
+  color: var(--faint);
+  font-weight: 500;
+  font-size: var(--t-sm);
+}
+.d-section > summary .ic.i-chev {
+  color: var(--faint);
+  transition: transform 150ms ease;
+  align-self: center;
+}
+.d-section[open] > summary .ic.i-chev {
+  transform: rotate(90deg);
+}
+.d-note {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  margin: -4px 0 8px;
+}
+.d-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.d-list > li {
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.d-list > li:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+.outcome {
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr);
+  gap: 2px 10px;
+  align-items: baseline;
+}
+.outcome .status {
+  justify-self: start;
+}
+.cond {
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  min-width: 0;
+}
+.cond code.src {
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.cond-more {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: var(--t-xs);
+  cursor: pointer;
+  margin-left: 6px;
+}
+.cond-all {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.cond-all code.src {
+  font-size: 0.95em;
+}
+.table-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.show-all {
+  margin-top: 8px;
+}
+.callout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+  background: var(--clash-soft);
+  color: var(--ink-2);
+}
+.callout .ic {
+  margin-top: 3px;
+}
+.callout-partial {
+  background: var(--sunk);
+}
+.shape {
+  display: grid;
+  grid-template-columns: 9em minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+.shape-l {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.shape code.src {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.fields {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+}
+.fields td {
+  padding: 6px 10px 6px 0;
+  border-top: 1px solid var(--line);
+  vertical-align: baseline;
+}
+.fields tr:first-child td {
+  border-top: 0;
+}
+.fields .f-name {
+  font-family: var(--f-code);
+  white-space: nowrap;
+}
+.fields .f-type {
+  font-family: var(--f-code);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.type-ref {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-family: var(--f-code);
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.ask-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.ask-line code {
+  font-size: 0.95em;
+  color: var(--ink-2);
+  background: var(--sunk);
+  border-radius: 4px;
+  padding: 3px 6px;
+  overflow-wrap: anywhere;
+}
+
+/* which command gives the same number; hover says how to run it */
+.from {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 8px;
+}
+.from-tag {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.6;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: help;
+  font-family: var(--f-code);
+}
+.tile .from {
+  margin: auto 0 0;
+  padding: 4px 0 0;
+}
+
+/* hover cards */
+.tip {
+  position: fixed;
+  z-index: 60;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: var(--surface);
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  pointer-events: none;
+}
+.tip b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: var(--t-sm);
+  margin-bottom: 2px;
+}
+.tip .tip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+}
+.tip code {
+  font-size: 0.95em;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- coverage ---------- */
+
+.trust-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.trust-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 16px 18px;
+  min-width: 0;
+}
+.trust-wide {
+  grid-column: 1 / -1;
+}
+.trust-block h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-md);
+  font-weight: 650;
+  margin-bottom: 10px;
+}
+.sub-h {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  margin: 14px 0 6px;
+}
+.sub-note {
+  margin: 12px 0 0;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.num-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--t-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.num-list li {
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+.num-list .num {
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+}
+.num-list code {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.read-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+}
+.read-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.read-table td {
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.read-table tr:last-child td {
+  border-bottom: 0;
+}
+.read-table .num {
+  text-align: right;
+  padding-right: 18px;
+}
+.read-table code {
+  overflow-wrap: anywhere;
+}
+.pack {
+  display: inline-block;
+  font-family: var(--f-code);
+  font-size: 0.78rem;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  margin: 1px 0;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  color: var(--faint);
+  font-size: var(--t-xs);
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 16px;
+}
+.foot label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.foot select {
+  font-size: var(--t-xs);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 1px 4px;
+}
+
+/* ---------- narrow screens ---------- */
+
+@media (max-width: 920px) {
+  .workbench {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .facets-wrap {
+    position: static;
+    max-height: none;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--surface);
+    padding: 0 14px;
+  }
+  .facets-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0;
+    font-weight: 600;
+    font-size: var(--t-sm);
+    cursor: pointer;
+    list-style: none;
+  }
+  .facets-toggle::-webkit-details-marker {
+    display: none;
+  }
+  .facets {
+    padding-bottom: 14px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+  .pair,
+  .trust-grid,
+  .rows-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rows-2 .row:nth-child(2) {
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+  .table-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .route-item,
+  .route-cols {
+    grid-template-columns: minmax(0, 1fr) 150px 44px 44px 130px;
+  }
+  .field-item,
+  .field-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) 56px 44px 44px 110px;
+  }
+}
+
+@media (max-width: 560px) {
+  .bar-repo,
+  .search .kbd {
+    display: none;
+  }
+  .intro {
+    padding-block: 24px 6px;
+  }
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .issue summary {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    padding: 12px 14px;
+  }
+  .issue-chev {
+    display: none;
+  }
+  .issue-body {
+    padding: 0 14px 16px;
+  }
+  .issue-title {
+    font-size: var(--t-md);
+  }
+  .item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .item-side {
+    justify-content: flex-start;
+  }
+  .route-item .cells,
+  .field-item .cells,
+  .type-item .cells {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+  }
+  .c-flag {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  .list-head {
+    display: none;
+  }
+  .badge.none {
+    display: none;
+  }
+  .drawer-body {
+    padding: 16px 16px 40px;
+  }
+  .d-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .d-stat:nth-child(3) {
+    border-left: 0;
+  }
+  .d-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  .tile {
+    padding: 12px 14px;
+  }
+  .tile-n {
+    font-size: var(--t-xl);
+  }
+  .shape {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="#top" aria-label="Back to top"><svg class="mark" viewBox="0 0 32 32" fill="none" stroke-width="5.4" stroke-linecap="round" aria-hidden="true"><path d="M23.5 9.6C23.5 6.6 20.6 5 16 5C11.4 5 8.6 7.2 8.6 10.6C8.6 14.2 11.8 15.6 16 16" stroke="var(--mark-1)"/><path d="M16 16C20.2 16.4 23.4 17.8 23.4 21.4C23.4 24.8 20.6 27 16 27C11.4 27 8.5 25.4 8.5 22.4" stroke="var(--mark-2)"/></svg><span class="brand-word">suss</span></a>
+    <span class="bar-repo">full-stack-fastapi-template</span>
+    <div class="search" role="search">
+      <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 14l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Jump to a route, field or table" aria-label="Jump to a route, field, type, table or variable" aria-controls="results" aria-expanded="false">
+      <kbd class="kbd" aria-hidden="true">/</kbd>
+      <div id="results" class="results" role="listbox" hidden></div>
+    </div>
+  </div>
+</header>
+<main id="top">
+  <section class="intro">
+    <p class="eyebrow"><span>FastAPI</span><span class="dot" aria-hidden="true">·</span><span>TypeScript and Python</span></p>
+    <h1>full-stack-fastapi-template</h1>
+    <div class="tiles"><div class="tile">
+  <button type="button" class="tile-main" data-facet="routes:"><span class="tile-n">23</span><span class="tile-l">Routes</span></button>
+  <ul class="tile-facts"><li><button type="button" class="tile-fact" data-facet="routes:db=writes"><svg class="ic i-write" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/></svg><span>13 write a table</span></button></li><li><button type="button" class="tile-fact" data-facet="routes:status=error"><span class="status s-4xx">4xx</span><span>20 can return an error</span></button></li></ul>
+</div>
+<div class="tile">
+  <button type="button" class="tile-main" data-facet="tables:"><span class="tile-n">2</span><span class="tile-l">Tables</span></button>
+  <ul class="tile-facts"><li><button type="button" class="tile-fact" data-open="table-2"><svg class="ic i-write" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/></svg><span>Most written: User (10)</span></button></li></ul>
+</div>
+<div class="tile">
+  <button type="button" class="tile-main" data-facet="env:"><span class="tile-n">6</span><span class="tile-l">Env vars</span></button>
+  <ul class="tile-facts"><li><button type="button" class="tile-fact" data-facet="env:default=yes"><svg class="ic i-env" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg><span>2 with a default</span></button></li></ul>
+</div>
+<div class="tile">
+  <button type="button" class="tile-main" data-facet="routes:caller=has"><span class="tile-n">0</span><span class="tile-l">Pairs checked</span></button>
+  <ul class="tile-facts"><li><span class="tile-note">No caller found here</span></li></ul>
+</div>
+<div class="tile"><a class="tile-main" href="#coverage"><span class="tile-n">109</span><span class="tile-l">Calls not followed</span></a><ul class="tile-facts"><li><span class="tile-note">in 69 functions</span></li><li><button type="button" class="tile-fact" data-facet="routes:partial=yes"><svg class="ic i-partial" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.6" stroke-dasharray="2.2 2"/></svg><span>0 routes affected</span></button></li></ul></div></div>
+  </section>
+
+  <section class="lead" aria-labelledby="lead-h">
+    <div class="section-head"><h2 id="lead-h">Worth knowing</h2></div>
+    <ol class="issues"><li class="issue tone-write">
+      <details open>
+        <summary>
+          <span class="issue-icon"><svg class="ic i-write" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.8" rx="5" ry="1.8"/><path d="M3 3.8v8.4c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V3.8"/><path d="M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8"/></svg></span>
+          <span class="issue-main">
+            <span class="issue-type" data-tip="The table the most entry points write, when five or more do, with each place that writes it.">Most-written table</span>
+            <span class="issue-title"><span class="t-table"><svg class="ic i-table" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.8" rx="5" ry="1.8"/><path d="M3 3.8v8.4c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V3.8"/><path d="M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8"/></svg>User</span> written by 10 routes</span>
+            <span class="issue-meta">8 places write it</span>
+          </span>
+          <span class="issue-count"><span class="issue-n">10</span><span class="issue-nl">routes</span></span>
+          <span class="issue-chev"><svg class="ic i-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg></span>
+        </summary>
+        <div class="issue-body"><ul class="rows rows-2"><li class="row"><div class="row-head"><span class="unit-name">update_user</span><span class="count">2 routes</span></div><div class="site"><div class="site-code"><code class="src">session.add(db_user)</code></div><div class="site-meta"><a class="loc" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/backend/app/crud.py#L28" data-u="25" data-l="28">app/crud.py:28</a><span class="through" data-term="through">via <span class="hop">crud.update_user</span></span></div></div></li><li class="row"><div class="row-head"><span class="unit-name">create_user</span><span class="count">2 routes</span></div><div class="site"><div class="site-code"><code class="src">session.add(db_obj)</code></div><div class="site-meta"><a class="loc" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/backend/app/crud.py#L14" data-u="26" data-l="14">app/crud.py:14</a><span class="through" data-term="through">via <span class="hop">crud.create_user</span></span></div></div></li><li class="row"><div class="row-head"><span class="unit-name">authenticate</span><span class="count">1 route</span></div><div class="site"><div class="site-code"><code class="src">session.add(db_user)</code></div><div class="site-meta"><a class="loc" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/backend/app/crud.py#L57" data-u="23" data-l="57">app/crud.py:57</a><span class="through" data-term="through">via <span class="hop">crud.authenticate</span></span></div></div></li><li class="row"><div class="row-head"><span class="unit-name">create_user</span><span class="count">1 route</span></div><div class="site"><div class="site-code"><code class="src">session.add(user)</code></div><div class="site-meta"><a class="loc" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/backend/app/api/routes/private.py#L35" data-u="10" data-l="35">…/routes/private.py:35</a></div></div></li><li class="row"><div class="row-head"><span class="unit-name">update_user_me</span><span class="count">1 route</span></div><div class="site"><div class="site-code"><code class="src">session.add(current_user)</code></div><div class="site-meta"><a class="loc" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/backend/app/api/routes/users.py#L97" data-u="13" data-l="97">…/routes/users.py:97</a></div></div></li><li class="row"><div class="row-head"><span class="unit-name">update_password_me</span><span class="count">1 route</span></div><div class="site"><div class="site-code"><code class="src">session.add(current_user)</code></div><div class="site-meta"><a class="loc" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/backend/app/api/routes/users.py#L119" data-u="14" data-l="119">…/routes/users.py:119</a></div></div></li></ul><div class="issue-actions"><button type="button" class="action" data-open="table-2">Inspect the table<svg class="ic i-go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg></button></div><div class="issue-actions"><span class="from"><span class="from-tag" data-tip="suss ask &quot;what writes postgresql:User&quot; --dir .suss/summaries">ask</span></span></div></div>
+      </details>
+    </li>
+<li class="issue tone-guard">
+      <details>
+        <summary>
+          <span class="issue-icon"><svg class="ic i-guard" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l5 2v3.8c0 3.1-2.1 5.6-5 6.6-2.9-1-5-3.5-5-6.6V3.8z"/></svg></span>
+          <span class="issue-main">
+            <span class="issue-type" data-tip="An outcome with a status of 300 or more that a middleware or filter adds to three or more entry points, picking the one most share.">Shared early return</span>
+            <span class="issue-title">6 routes return <span class="status s-4xx" data-status="403">403</span> from <code class="src">get_current_active_superuser</code></span>
+            <span class="issue-meta">when !current_user.is_superuser</span>
+          </span>
+          <span class="issue-count"><span class="issue-n">6</span><span class="issue-nl">routes</span></span>
+          <span class="issue-chev"><svg class="ic i-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg></span>
+        </summary>
+        <div class="issue-body"><ul class="rows rows-grid"><li class="row"><button type="button" class="ref ref-route" data-open="entry-9" data-peek="entry-9"><span class="method m-post">POST</span><span class="path">/api/v1/password-recovery-html-content/{email}</span></button></li><li class="row"><button type="button" class="ref ref-route" data-open="entry-11" data-peek="entry-11"><span class="method m-get">GET</span><span class="path">/api/v1/users/</span></button></li><li class="row"><button type="button" class="ref ref-route" data-open="entry-12" data-peek="entry-12"><span class="method m-post">POST</span><span class="path">/api/v1/users/</span></button></li><li class="row"><button type="button" class="ref ref-route" data-open="entry-19" data-peek="entry-19"><span class="method m-patch">PATCH</span><span class="path">/api/v1/users/{user_id}</span></button></li><li class="row"><button type="button" class="ref ref-route" data-open="entry-20" data-peek="entry-20"><span class="method m-delete">DELETE</span><span class="path">/api/v1/users/{user_id}</span></button></li><li class="row"><button type="button" class="ref ref-route" data-open="entry-21" data-peek="entry-21"><span class="method m-post">POST</span><span class="path">/api/v1/utils/test-email/</span></button></li></ul><div class="issue-actions"><button type="button" class="action" data-facet="routes:early=get_current_active_superuser"><svg class="ic i-go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11L9.5 8.5V13l-3-1.5v-3z"/></svg>Filter the list</button></div><div class="issue-actions"><span class="from"><span class="from-tag" data-tip="suss inspect &lt;route's file&gt;">inspect</span></span></div></div>
+      </details>
+    </li></ol>
+  </section>
+
+  <section class="explore" id="explore" aria-labelledby="explore-h">
+    <div class="section-head"><h2 id="explore-h">Browse</h2></div>
+    <div class="tabs" role="tablist" aria-label="What to list">
+      <button type="button" role="tab" id="tab-routes" data-tab="routes" aria-selected="true" aria-controls="panel"><svg class="ic i-go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h9M8.5 4.5L12 8l-3.5 3.5"/></svg>Routes <span class="tab-n">23</span></button>
+      <button type="button" role="tab" id="tab-tables" data-tab="tables" aria-selected="false" aria-controls="panel"><svg class="ic i-table" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.8" rx="5" ry="1.8"/><path d="M3 3.8v8.4c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V3.8"/><path d="M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8"/></svg>Tables <span class="tab-n">2</span></button>
+      <button type="button" role="tab" id="tab-env" data-tab="env" aria-selected="false" aria-controls="panel"><svg class="ic i-env" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg>Env vars <span class="tab-n">6</span></button>
+    </div>
+    <div class="workbench">
+      <details class="facets-wrap" id="facets-wrap" open>
+        <summary class="facets-toggle"><svg class="ic i-go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11L9.5 8.5V13l-3-1.5v-3z"/></svg>Filters</summary>
+        <div class="facets" id="facets"></div>
+      </details>
+      <div class="listing">
+        <div class="list-tools">
+          <input id="filter" type="search" autocomplete="off" spellcheck="false" placeholder="Filter by path, name or file" aria-label="Filter the list">
+          <p class="list-count" id="list-count" aria-live="polite"></p>
+        </div>
+        <div class="tokens" id="tokens"></div>
+        <div id="panel" class="panel" role="tabpanel"><p class="empty">The list needs JavaScript.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="trust" id="coverage" aria-labelledby="coverage-h">
+  <div class="section-head"><h2 id="coverage-h">Coverage</h2></div>
+  <div class="trust-grid">
+    <div class="trust-block trust-wide">
+      <h3><svg class="ic i-read" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="1.8"/></svg>Read</h3>
+      <div class="table-wrap"><table class="read-table"><thead><tr><th>Read</th><th class="num">Functions</th><th>Packs</th><th>Found</th></tr></thead><tbody><tr><td><code>suss extract --lang typescript --dir frontend -p frontend/tsconfig.json -f react-query -f axios -f react -f fetch -f node</code></td><td class="num">287</td><td><span class="pack">react-query</span> <span class="pack">axios</span> <span class="pack">react</span> <span class="pack">fetch</span> <span class="pack">node</span></td><td><span class="muted">none</span></td></tr><tr><td><code>suss extract --lang typescript --dir packages/react-email -p packages/react-email/tsconfig.json -f react -f fetch -f node</code></td><td class="num">9</td><td><span class="pack">react</span> <span class="pack">fetch</span> <span class="pack">node</span></td><td><span class="muted">none</span></td></tr><tr><td><code>suss extract --lang python --dir backend -f fastapi -f httpx -f sqlmodel=backend/suss.sqlmodel.json</code></td><td class="num">49</td><td><span class="pack">fastapi</span> <span class="pack">httpx</span> <span class="pack">sqlmodel</span></td><td>23 routes</td></tr></tbody></table></div>
+    </div>
+    
+    <div class="trust-block">
+      <h3><svg class="ic i-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.4 8.2l1.8 1.8 3.4-3.6"/></svg>Check<span class="from"><span class="from-tag" data-tip="suss check --dir .suss/summaries --json">check</span></span></h3>
+      <ul class="num-list"><li><span class="num">0</span><span>pairs checked</span></li><li><span class="num">0</span><span>of 23 routes with a caller here</span></li></ul>
+      <p class="sub-note">No findings.</p>
+    </div>
+    <div class="trust-block">
+      <h3><svg class="ic i-partial" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.6" stroke-dasharray="2.2 2"/></svg>Not followed</h3>
+      <ul class="num-list">
+        <li><span class="num">109</span><span>calls not followed</span></li>
+        <li><span class="num">69</span><span>of 345 functions make one</span></li>
+        <li><span class="num">0</span><span>routes reach one</span></li>
+        <li><span class="num">0</span><span>functions with an outcome not read</span></li>
+      </ul>
+      <p class="sub-h">Most often</p><ul class="num-list"><li><span class="num">10</span><span><code>setIsOpen</code> <a class="loc loc-fn" data-term="fnline" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/frontend/src/components/Admin/AddUser.tsx#L55" data-u="35" data-l="55">in AddUser</a></span></li><li><span class="num">9</span><span><code>Comp</code> <a class="loc loc-fn" data-term="fnline" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/frontend/src/components/ui/badge.tsx#L28" data-u="36" data-l="28">in Badge</a></span></li><li><span class="num">9</span><span><code>setTheme</code> <a class="loc loc-fn" data-term="fnline" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/frontend/src/components/Common/Appearance.tsx#L25" data-u="37" data-l="25">in SidebarAppearance</a></span></li><li><span class="num">6</span><span><code>Form</code> <a class="loc loc-fn" data-term="fnline" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/frontend/src/components/Admin/AddUser.tsx#L55" data-u="35" data-l="55">in AddUser</a></span></li><li><span class="num">6</span><span><code>setOpen</code> <a class="loc loc-fn" data-term="fnline" href="https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/frontend/src/components/Admin/UserActionsMenu.tsx#L19" data-u="38" data-l="19">in UserActionsMenu</a></span></li></ul>
+      
+    </div>
+  </div>
+</section>
+
+  <footer class="foot">
+    <span>Written by suss map from 3 summary files in <code>.suss/summaries</code>. Nothing was run.</span>
+    <label>Open links in <select id="editor" aria-label="Which editor links open in"><option value="vscode">VS Code</option><option value="cursor">Cursor</option><option value="file">the browser</option><option value="github">GitHub</option></select></label>
+  </footer>
+</main>
+<div id="scrim" class="scrim" hidden></div>
+<aside id="drawer" class="drawer" aria-labelledby="drawer-title" hidden tabindex="-1">
+  <div class="drawer-bar"><span class="drawer-crumb" id="drawer-crumb"></span><button type="button" class="close" id="close" aria-label="Close the panel"><svg class="ic i-go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg><kbd>Esc</kbd></button></div>
+  <div id="drawer-body" class="drawer-body"></div>
+</aside>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<script id="data" type="application/json">{"s":["0-extract.json","suss extract --lang typescript --dir frontend -p frontend/tsconfig.json -f react-query -f axios -f react -f fetch -f node","react-query","axios","react","fetch","node","1-extract.json","suss extract --lang typescript --dir packages/react-email -p packages/react-email/tsconfig.json -f react -f fetch -f node","2-extract.json","suss extract --lang python --dir backend -f fastapi -f httpx -f sqlmodel=backend/suss.sqlmodel.json","fastapi","httpx","sqlmodel=backend/suss.sqlmodel.json","full-stack-fastapi-template","read_items","app/api/routes/items.py","handler","app/api/routes/items.py::read_items","read_item","app/api/routes/items.py::read_item","create_item","app/api/routes/items.py::create_item","update_item","app/api/routes/items.py::update_item","delete_item","app/api/routes/items.py::delete_item","login_access_token","app/api/routes/login.py","app/api/routes/login.py::login_access_token","test_token","app/api/routes/login.py::test_token","recover_password","app/api/routes/login.py::recover_password","reset_password","app/api/routes/login.py::reset_password","recover_password_html_content","app/api/routes/login.py::recover_password_html_content","create_user","app/api/routes/private.py","app/api/routes/private.py::create_user","read_users","app/api/routes/users.py","app/api/routes/users.py::read_users","app/api/routes/users.py::create_user","update_user_me","app/api/routes/users.py::update_user_me","update_password_me","app/api/routes/users.py::update_password_me","read_user_me","app/api/routes/users.py::read_user_me","delete_user_me","app/api/routes/users.py::delete_user_me","register_user","app/api/routes/users.py::register_user","read_user_by_id","app/api/routes/users.py::read_user_by_id","update_user","app/api/routes/users.py::update_user","delete_user","app/api/routes/users.py::delete_user","test_email","app/api/routes/utils.py","app/api/routes/utils.py::test_email","health_check","app/api/routes/utils.py::health_check","authenticate","app/crud.py","library","app/crud.py::authenticate","get_user_by_email","app/crud.py::get_user_by_email","app/crud.py::update_user","app/crud.py::create_user","playwright.config.ts","module-init","frontend::playwright.config.ts::playwright.config.ts","main.tsx","src/main.tsx","frontend::src/main.tsx::main.tsx","config.ts","tests/config.ts","frontend::tests/config.ts::config.ts","getEnvVar","frontend::tests/config.ts::getEnvVar","waitForEmailHtml","tests/utils/mailpit.ts","frontend::tests/utils/mailpit.ts::waitForEmailHtml","privateApi.ts","tests/utils/privateApi.ts","frontend::tests/utils/privateApi.ts::privateApi.ts","get_current_user","app/api/deps.py","app/api/deps.py::get_current_user","init_db","app/core/db.py","app/core/db.py::init_db","AddUser","src/components/Admin/AddUser.tsx","component","frontend::src/components/Admin/AddUser.tsx::AddUser","Badge","src/components/ui/badge.tsx","frontend::src/components/ui/badge.tsx::Badge","SidebarAppearance","src/components/Common/Appearance.tsx","frontend::src/components/Common/Appearance.tsx::SidebarAppearance","UserActionsMenu","src/components/Admin/UserActionsMenu.tsx","frontend::src/components/Admin/UserActionsMenu.tsx::UserActionsMenu","postgresql:Item","Item","postgresql","postgresql:\u003cunnamed container>","postgresql:User","User","runtime-config PLAYWRIGHT_BASE_URL","PLAYWRIGHT_BASE_URL","runtime-config CI","CI","runtime-config VITE_API_URL","VITE_API_URL","runtime-config FIRST_SUPERUSER","FIRST_SUPERUSER","runtime-config FIRST_SUPERUSER_PASSWORD","FIRST_SUPERUSER_PASSWORD","runtime-config MAILPIT_HOST","MAILPIT_HOST","GET","/api/v1/items/","response","request input fails validation","select(func.count()).select_from(Item)","select(Item).order_by(col(Item.created_at).desc()).offset(skip).limit(limit)","select(func.count()).select_from(Item).where(Item.owner_id == current_user.id)","select(Item).where(Item.owner_id == current_user.id).order_by(col(Item.created_at).desc()).offset(skip).limit(limit)","/api/v1/items/{id}","!item","item","not current_user.is_superuser and (item.owner_id != current_user.id)","!(not current_user.is_superuser and (item.owner_id != current_user.id))","session.get(Item, id)","POST","session.add(item)","session.commit()","session.refresh(item)","PUT","DELETE","session.delete(item)","/api/v1/login/access-token","!user","user","!user().is_active","user().is_active","session.add(db_user)","crud.authenticate","session.refresh(db_user)","/api/v1/login/test-token","/api/v1/password-recovery/{email}","select(User).where(User.email == email)","crud.get_user_by_email","/api/v1/reset-password/","!email","email","crud.update_user","/api/v1/password-recovery-html-content/{email}","!current_user.is_superuser","get_current_active_superuser","/api/v1/private/users/","session.add(user)","/api/v1/users/","select(func.count()).select_from(User)","select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)","session.add(db_obj)","crud.create_user","session.refresh(db_obj)","PATCH","/api/v1/users/me","user_in.email","existing_user and existing_user.id != current_user.id","!(existing_user and existing_user.id != current_user.id)","!user_in.email","session.add(current_user)","session.refresh(current_user)","/api/v1/users/me/password","!verified","verified","body.current_password === body.new_password","!(body.current_password === body.new_password)","current_user.is_superuser","session.delete(current_user)","/api/v1/users/signup","/api/v1/users/{user_id}","user === current_user","!(user === current_user)","user == null","user != null","session.get(User, user_id)","!db_user","db_user","existing_user and existing_user.id != user_id","!(existing_user and existing_user.id != user_id)","delete(Item).where(col(Item.owner_id) == user_id)","session.delete(user)","/api/v1/utils/test-email/","/api/v1/utils/health-check/","session.get(User, token_data.sub)","select(User).where(User.email == settings.FIRST_SUPERUSER)"],"name":"full-stack-fastapi-template","roots":[null,null,null],"reads":[[0,1,[2,3,4,5,6],0,287],[7,8,[4,5,6],0,9],[9,10,[11,12,13],0,49]],"repos":[[14,"https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/backend/"],[14,"https://github.com/fastapi/full-stack-fastapi-template/blob/cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7/frontend/"]],"u":[[15,16,14,17,2,0,18,0],[19,16,49,17,2,0,20,0],[21,16,62,17,2,0,22,0],[23,16,76,17,2,0,24,0],[25,16,100,17,2,0,26,0],[27,28,24,17,2,0,29,0],[30,28,46,17,2,0,31,0],[32,28,54,17,2,0,33,0],[34,28,78,17,2,0,35,0],[36,28,105,17,2,0,37,0],[38,39,24,17,2,0,40,0],[41,42,37,17,2,0,43,0],[38,42,57,17,2,0,44,0],[45,42,82,17,2,0,46,0],[47,42,104,17,2,0,48,0],[49,42,125,17,2,0,50,0],[51,42,133,17,2,0,52,0],[53,42,147,17,2,0,54,0],[55,42,163,17,2,0,56,0],[57,42,187,17,2,0,58,0],[59,42,215,17,2,0,60,0],[61,62,16,17,2,0,63,0],[64,62,30,17,2,0,65,0],[66,67,45,68,2,0,69,0],[70,67,34,68,2,0,71,0],[57,67,20,68,2,0,72,0],[38,67,10,68,2,0,73,0],[74,74,0,75,0,0,76,1],[77,78,0,75,0,0,79,1],[80,81,0,75,0,0,82,1],[83,81,10,68,0,0,84,1],[85,86,7,68,0,0,87,1],[88,89,0,75,0,0,90,1],[91,92,30,68,2,0,93,0],[94,95,15,68,2,0,96,0],[97,98,55,99,0,0,100,1],[101,102,28,99,0,0,103,1],[104,105,25,99,0,0,106,1],[107,108,19,99,0,0,109,1]],"b":[[110,"t",111,112],[113,"o",113,null],[114,"t",115,112],[116,"e",117,null],[118,"e",119,null],[120,"e",121,null],[122,"e",123,null],[124,"e",125,null],[126,"e",127,null]],"e":[{"k":"h","m":128,"p":129,"fw":11,"u":[0],"sp":[],"o":[[200,130,null,[],0,14,null],[422,130,null,[131],0,14,null]],"r":[[0,"r",0,132,[],22],[0,"r",0,133,[],25],[0,"r",0,134,[],30],[0,"r",0,135,[],36]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":128,"p":136,"fw":11,"u":[1],"sp":[],"o":[[404,130,null,[137],1,55,null],[403,130,null,[138,139],1,57,null],[200,130,null,[138,140],1,58,null],[422,130,null,[131],1,49,null]],"r":[[0,"r",1,141,[],53]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":129,"fw":11,"u":[2],"sp":[],"o":[[200,130,null,[],2,72,null],[422,130,null,[131],2,62,null]],"r":[[0,"w",2,143,[],69],[1,"w",2,144,[],70],[0,"r",2,145,[],71]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":146,"p":136,"fw":11,"u":[3],"sp":[],"o":[[404,130,null,[137],3,88,null],[403,130,null,[138,139],3,90,null],[200,130,null,[138,140],3,96,null],[422,130,null,[131],3,76,null]],"r":[[0,"r",3,141,[],86],[0,"w",3,143,[],93],[1,"w",3,144,[],94],[0,"r",3,145,[],95]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":147,"p":136,"fw":11,"u":[4],"sp":[],"o":[[404,130,null,[137],4,108,null],[403,130,null,[138,139],4,110,null],[200,130,null,[138,140],4,113,null],[422,130,null,[131],4,100,null]],"r":[[0,"r",4,141,[],106],[0,"w",4,148,[],111],[1,"w",4,144,[],112]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":149,"fw":11,"u":[5],"sp":[],"o":[[400,130,null,[150],5,34,null],[400,130,null,[151,152],5,36,null],[200,130,null,[151,153],5,38,null]],"r":[[2,"w",23,154,[155],57],[1,"w",23,144,[155],58],[2,"r",23,156,[155],59]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":157,"fw":11,"u":[6],"sp":[],"o":[[200,130,null,[],6,50,null]],"r":[],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":158,"fw":11,"u":[7],"sp":[],"o":[[200,130,null,[],7,54,null],[422,130,null,[131],7,54,null]],"r":[[2,"r",24,159,[160],35]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":161,"fw":11,"u":[8],"sp":[],"o":[[400,130,null,[162],8,84,null],[400,130,null,[163,150],8,88,null],[400,130,null,[163,151,152],8,90,null],[200,130,null,[163,151,153],8,97,null],[422,130,null,[131],8,78,null]],"r":[[2,"r",24,159,[160],35],[2,"w",25,154,[164],28],[1,"w",25,144,[164],29]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":165,"fw":11,"u":[9],"sp":[],"o":[[403,130,null,[166],9,54,167],[404,130,null,[150],9,112,null],[200,130,null,[151],9,121,null],[422,130,null,[131],9,105,null]],"r":[[2,"r",24,159,[160],35]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":168,"fw":11,"u":[10],"sp":[],"o":[[200,130,null,[],10,38,null],[422,130,null,[131],10,24,null]],"r":[[2,"w",10,169,[],35],[1,"w",10,144,[],36]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":128,"p":170,"fw":11,"u":[11],"sp":[],"o":[[403,130,null,[166],11,54,167],[200,130,null,[],11,37,null],[422,130,null,[131],11,37,null]],"r":[[2,"r",11,171,[],42],[2,"r",11,172,[],46]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":170,"fw":11,"u":[12],"sp":[],"o":[[403,130,null,[166],12,54,167],[400,130,null,[151],12,63,null],[200,130,null,[150],12,78,null],[422,130,null,[131],12,57,null]],"r":[[2,"w",26,173,[174],14],[1,"w",26,144,[174],15],[2,"r",26,175,[174],16]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":176,"p":177,"fw":11,"u":[13],"sp":[],"o":[[409,130,null,[178,179],13,92,null],[200,130,null,[178,180],13,100,null],[200,130,null,[181],13,100,null],[422,130,null,[131],13,82,null]],"r":[[2,"w",13,182,[],97],[1,"w",13,144,[],98],[2,"r",13,183,[],99]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":176,"p":184,"fw":11,"u":[14],"sp":[],"o":[[400,130,null,[185],14,112,null],[400,130,null,[186,187],14,114,null],[200,130,null,[186,188],14,121,null],[422,130,null,[131],14,104,null]],"r":[[2,"w",14,182,[],119],[1,"w",14,144,[],120]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":128,"p":177,"fw":11,"u":[15],"sp":[],"o":[[200,130,null,[],15,129,null]],"r":[],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":147,"p":177,"fw":11,"u":[16],"sp":[],"o":[[403,130,null,[189],16,138,null],[200,130,null,[166],16,143,null]],"r":[[2,"w",16,190,[],141],[1,"w",16,144,[],142]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":191,"fw":11,"u":[17],"sp":[],"o":[[400,130,null,[151],17,153,null],[200,130,null,[150],17,159,null],[422,130,null,[131],17,147,null]],"r":[[2,"w",26,173,[174],14],[1,"w",26,144,[174],15],[2,"r",26,175,[174],16]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":128,"p":192,"fw":11,"u":[18],"sp":[],"o":[[200,130,null,[193],18,171,null],[403,130,null,[194,166],18,173,null],[404,130,null,[194,189,195],18,178,null],[200,130,null,[194,189,196],18,179,null],[422,130,null,[131],18,163,null]],"r":[[2,"r",18,197,[],169]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":176,"p":192,"fw":11,"u":[19],"sp":[],"o":[[403,130,null,[166],19,54,167],[404,130,null,[198],19,199,null],[409,130,null,[199,178,200],19,206,null],[200,130,null,[199,178,201],19,211,null],[200,130,null,[199,181],19,211,null],[422,130,null,[131],19,187,null]],"r":[[2,"r",19,197,[],197],[2,"w",25,154,[164],28],[1,"w",25,144,[164],29]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":147,"p":192,"fw":11,"u":[20],"sp":[],"o":[[403,130,null,[166],20,54,167],[404,130,null,[150],20,223,null],[403,130,null,[151,193],20,225,null],[200,130,null,[151,194],20,232,null],[422,130,null,[131],20,215,null]],"r":[[2,"r",20,197,[],221],[0,"w",20,202,[],228],[2,"w",20,203,[],230],[1,"w",20,144,[],231]],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":142,"p":204,"fw":11,"u":[21],"sp":[],"o":[[403,130,null,[166],21,54,167],[201,130,null,[],21,16,null],[422,130,null,[131],21,16,null]],"r":[],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]},{"k":"h","m":128,"p":205,"fw":11,"u":[22],"sp":[],"o":[[200,130,null,[],22,31,null]],"r":[],"c":[],"f":[],"g":[],"gn":0,"nr":0,"sh":null,"ss":[]}],"t":[[0,[[2,143],[3,143],[4,148],[20,202]],[[0,132],[1,141],[2,145],[3,141],[4,141]]],[2,[[10,169],[13,182],[14,182],[16,190],[20,203],[23,154],[25,154],[26,173]],[[11,171],[13,183],[18,197],[19,197],[20,197],[33,206],[23,156],[24,159],[25,156],[26,175],[34,207]]]],"env":[[3,27,1],[4,27,1],[5,28,1],[6,29,0],[7,29,0],[6,30,0],[7,30,0],[8,31,0],[5,32,0]],"ops":[],"cl":[],"pg":[],"fi":[],"ty":[],"cov":{"functions":345,"withUnfollowed":69,"unfollowedCalls":109,"topUnfollowed":[{"callee":"setIsOpen","count":10,"unit":35},{"callee":"Comp","count":9,"unit":36},{"callee":"setTheme","count":9,"unit":37},{"callee":"Form","count":6,"unit":35},{"callee":"setOpen","count":6,"unit":38}],"entriesAffected":0,"withUnreadOutcome":0,"unitsPerRead":[287,9,49]},"chk":{"pairs":0,"byKind":[]},"icons":{"write":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cpath d=\"M10.5 2.5l3 3L6 13H3v-3z\"/>\u003cpath d=\"M9 4l3 3\"/>\u003c/svg>","read":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cpath d=\"M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z\"/>\u003ccircle cx=\"8\" cy=\"8\" r=\"1.8\"/>\u003c/svg>","table":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cellipse cx=\"8\" cy=\"3.8\" rx=\"5\" ry=\"1.8\"/>\u003cpath d=\"M3 3.8v8.4c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V3.8\"/>\u003cpath d=\"M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8\"/>\u003c/svg>","env":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003crect x=\"2\" y=\"3\" width=\"12\" height=\"10\" rx=\"2\"/>\u003cpath d=\"M5 6.5l2 1.5-2 1.5M8.5 10H11\"/>\u003c/svg>","clash":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003ccircle cx=\"8\" cy=\"8\" r=\"6\"/>\u003cpath d=\"M5.2 6.6h5.6M5.2 9.4h5.6M9.8 4.6l-3.6 6.8\"/>\u003c/svg>","guard":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cpath d=\"M8 1.8l5 2v3.8c0 3.1-2.1 5.6-5 6.6-2.9-1-5-3.5-5-6.6V3.8z\"/>\u003c/svg>","partial":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003ccircle cx=\"8\" cy=\"8\" r=\"5.6\" stroke-dasharray=\"2.2 2\"/>\u003c/svg>","check":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003ccircle cx=\"8\" cy=\"8\" r=\"6\"/>\u003cpath d=\"M5.4 8.2l1.8 1.8 3.4-3.6\"/>\u003c/svg>","route":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cpath d=\"M2.5 8h9M8.5 4.5L12 8l-3.5 3.5\"/>\u003c/svg>","type":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003crect x=\"2.5\" y=\"2.5\" width=\"11\" height=\"11\" rx=\"2\"/>\u003cpath d=\"M5.5 6h5M8 6v5\"/>\u003c/svg>","chevron":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cpath d=\"M6 4l4 4-4 4\"/>\u003c/svg>","filter":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cpath d=\"M2.5 3.5h11L9.5 8.5V13l-3-1.5v-3z\"/>\u003c/svg>","close":"\u003csvg class=\"ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">\u003cpath d=\"M4 4l8 8M12 4l-8 8\"/>\u003c/svg>"},"askDir":".suss/summaries"}</script>
+<script>/**
+ * The browser side of the map. It reads the data the page has inline and
+ * builds the faceted list, the inspector, the jump-to search and the
+ * hover cards. It fetches nothing.
+ */
+(() => {
+  const D = JSON.parse(document.getElementById("data").textContent);
+  const S = D.s;
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------- small helpers ----------
+
+  const esc = (s) =>
+    String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const n = (x) => Number(x).toLocaleString("en-US");
+  const plural = (count, one, many) =>
+    `${n(count)} ${count === 1 ? one : many}`;
+  const icon = (name, cls) =>
+    D.icons[name].replace('class="ic"', `class="ic ${cls}"`);
+  const str = (i) => (i === null || i === undefined ? null : S[i]);
+  const short = (path) => {
+    const parts = path.split("/");
+    return parts.length > 3 ? `…/${parts.slice(-2).join("/")}` : path;
+  };
+
+  const unit = (i) => {
+    const u = D.u[i];
+    return {
+      i,
+      name: S[u[0]],
+      file: S[u[1]],
+      line: u[2],
+      kind: S[u[3]],
+      read: u[4],
+      spec: u[5] === 1,
+      id: S[u[6]],
+      repo: u[7] === null ? null : S[D.repos[u[7]][0]],
+      github: u[7] === null ? null : D.repos[u[7]][1],
+    };
+  };
+
+  // With summaries from more than one repository, a unit says which one it
+  // is in; with one, nothing changes.
+  const repoNames = [...new Set(D.repos.map((r) => S[r[0]]))];
+  const manyRepos = repoNames.length > 1;
+  const inRepo = (u) =>
+    manyRepos && u.repo ? `<span class="badge">${esc(u.repo)}</span> ` : "";
+  const boundary = (i) => {
+    const b = D.b[i];
+    return { i, label: S[b[0]], cat: b[1], name: S[b[2]], system: str(b[3]) };
+  };
+
+  // ---------- links into the editor ----------
+
+  let scheme = "vscode";
+  try {
+    scheme = localStorage.getItem("suss-map-editor") || "vscode";
+  } catch (_err) {
+    scheme = "vscode";
+  }
+
+  const HREF = {
+    vscode: (path, line) => `vscode://file${encodeURI(path)}:${line}`,
+    cursor: (path, line) => `cursor://file${encodeURI(path)}:${line}`,
+    file: (path) => `file://${encodeURI(path)}`,
+  };
+
+  /** The file on disk in the chosen editor when the page knows where it is, or else on GitHub at the commit read. */
+  function hrefOf(u, line) {
+    if (u.spec) {
+      return null;
+    }
+    const root = D.roots[u.read];
+    const github = u.github ? `${u.github}${encodeURI(u.file)}#L${line}` : null;
+    if (root === null || root === undefined || scheme === "github") {
+      return github;
+    }
+    return (HREF[scheme] || HREF.vscode)(`${root}/${u.file}`, line);
+  }
+
+  /** A link to a line; without one, a link to the function, marked as such. */
+  function loc(ui, line, label) {
+    const u = unit(ui);
+    const exact = line !== null && line !== undefined;
+    const shown =
+      label || (exact ? `${short(u.file)}:${line}` : `in ${u.name}`);
+    const href = hrefOf(u, exact ? line : u.line);
+    const cls = exact ? "loc" : "loc loc-fn";
+    const term = exact ? "" : ' data-term="fnline"';
+    if (href === null) {
+      return `<span class="${cls}"${term}>${esc(shown)}</span>`;
+    }
+    return `<a class="${cls}"${term} href="${esc(href)}" data-u="${ui}" data-l="${exact ? line : u.line}">${esc(shown)}</a>`;
+  }
+
+  function relink(root) {
+    root.querySelectorAll("a[data-u]").forEach((a) => {
+      const href = hrefOf(unit(Number(a.dataset.u)), Number(a.dataset.l));
+      if (href !== null) {
+        a.setAttribute("href", href);
+      }
+    });
+  }
+
+  // ---------- badges and references ----------
+
+  const code = (text) =>
+    `<code class="src">${esc(String(text).replace(/\s+/g, " "))}</code>`;
+  const statusPill = (s) =>
+    s === null || s === undefined
+      ? `<span class="status s-unknown" data-status="?">?</span>`
+      : `<span class="status s-${Math.floor(s / 100)}xx" data-status="${s}">${s}</span>`;
+  const GQL_BADGE = {
+    Query: "m-get",
+    Subscription: "m-get",
+    Mutation: "m-mutation",
+  };
+  const typeBadge = (name) =>
+    `<span class="method ${GQL_BADGE[name] || "m-type"}">${esc(name)}</span>`;
+  const badge = (e) =>
+    e.k === "q"
+      ? typeBadge(S[e.m])
+      : `<span class="method m-${esc(S[e.m].toLowerCase())}">${esc(S[e.m])}</span>`;
+  const entryRef = (i) =>
+    `<button type="button" class="ref ref-route" data-open="entry-${i}" data-peek="entry-${i}">${badge(D.e[i])}<span class="path">${esc(S[D.e[i].p])}</span></button>`;
+  const tableRef = (b) =>
+    `<button type="button" class="ref ref-table" data-open="table-${b}" data-peek="table-${b}">${icon("table", "i-table")}<span class="path">${esc(boundary(b).name)}</span></button>`;
+  const envRef = (b) =>
+    `<button type="button" class="ref ref-table" data-open="env-${b}">${icon("env", "i-env")}<span class="path">${esc(boundary(b).name)}</span></button>`;
+  const verb = (k) =>
+    k === "w"
+      ? `<span class="verb verb-write" data-term="writes">${icon("write", "i-write")}writes</span>`
+      : `<span class="verb verb-read" data-term="reads">${icon("read", "i-read")}reads</span>`;
+  const askLine = (question) =>
+    `<div class="ask-line"><span>The same from the command line:</span><code>suss ask "${esc(question)}" --dir ${esc(D.askDir)}</code></div>`;
+
+  // A pack can describe a condition in words ("request input fails
+  // validation"); that reads as text, and anything else as code.
+  const isWords = (text) =>
+    /^[a-z][a-z ]+$/i.test(text) && text.split(" ").length >= 4;
+  const condText = (text) => (isWords(text) ? esc(text) : code(text));
+
+  function conditionHtml(list) {
+    if (!list || list.length === 0) {
+      return "";
+    }
+    const last = S[list[list.length - 1]];
+    const more =
+      list.length > 1
+        ? `<button type="button" class="cond-more" data-toggle-conds aria-expanded="false">+${list.length - 1} earlier</button><ol class="cond-all" hidden>${list.map((c) => `<li>${condText(S[c])}</li>`).join("")}</ol>`
+        : "";
+    return `<span class="cond">when ${condText(last)}${more}</span>`;
+  }
+
+  // ---------- facts derived for the list ----------
+
+  const opOfUnit = new Map(D.ops.map((op, i) => [op[0], i]));
+
+  /** Routes group by file, fields by type, and both by repository first when there are several. */
+  function groupOf(e, first) {
+    const own = e.k === "q" ? S[e.m] : first ? first.file : "";
+    return manyRepos && first?.repo ? `${first.repo} · ${own}` : own;
+  }
+
+  const entries = D.e.map((e, i) => {
+    const groups = {
+      writes: new Map(),
+      reads: new Map(),
+      env: new Map(),
+      other: new Map(),
+    };
+    for (const item of e.r) {
+      const b = boundary(item[0]);
+      const rel = item[1];
+      const add = (bucket) => {
+        const list = bucket.get(item[0]) || [];
+        list.push(item);
+        bucket.set(item[0], list);
+      };
+      if (b.cat === "t" && rel.includes("w")) {
+        add(groups.writes);
+      }
+      if (b.cat === "t" && rel.includes("r")) {
+        add(groups.reads);
+      }
+      if (b.cat === "e") {
+        add(groups.env);
+      }
+      if (b.cat === "o") {
+        add(groups.other);
+      }
+    }
+    const statuses = [...new Set(e.o.map((o) => o[0]))].sort(
+      (a, b) => (a === null ? 999 : a) - (b === null ? 999 : b),
+    );
+    const first = e.u.length
+      ? unit(e.u[0])
+      : e.sp.length
+        ? unit(e.sp[0])
+        : null;
+    return {
+      i,
+      gql: e.k === "q",
+      writes: groups.writes,
+      reads: groups.reads,
+      env: groups.env,
+      other: groups.other,
+      statuses,
+      early: [
+        ...new Set(
+          e.o
+            .filter((o) => o[6] !== null && o[0] !== null && o[0] >= 300)
+            .map((o) => S[o[6]]),
+        ),
+      ],
+      group: groupOf(e, first),
+      unit: first,
+      text: `${S[e.m]} ${S[e.p]} ${S[e.m]}.${S[e.p]} ${first ? `${first.name} ${first.file}` : ""}`.toLowerCase(),
+    };
+  });
+
+  const tables = D.t.map((t) => {
+    const b = t[0];
+    return {
+      b,
+      name: boundary(b).name,
+      system: boundary(b).system || "",
+      writers: entries.filter((e) => e.writes.has(b)),
+      readers: entries.filter((e) => e.reads.has(b)),
+      writePlaces: t[1],
+      readPlaces: t[2],
+      text: `${boundary(b).name} ${boundary(b).system || ""}`.toLowerCase(),
+    };
+  });
+  const tableOf = new Map(tables.map((t, i) => [t.b, i]));
+
+  const envByBoundary = new Map();
+  for (const read of D.env) {
+    const list = envByBoundary.get(read[0]) || [];
+    list.push(read);
+    envByBoundary.set(read[0], list);
+  }
+  const envs = [...envByBoundary.entries()]
+    .map(([b, reads]) => ({
+      b,
+      name: boundary(b).name,
+      reads,
+      defaults: reads.filter((r) => r[2] === 1).length,
+      entries: entries.filter((e) => e.env.has(b)),
+      text: `${boundary(b).name} ${reads.map((r) => unit(r[1]).file).join(" ")}`.toLowerCase(),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const envOf = new Map(envs.map((e, i) => [e.b, i]));
+
+  const types = D.ty.map((t, i) => ({
+    i,
+    name: S[t[0]],
+    fields: t[1],
+    resolvers: t[1].filter((f) => f[4] !== null).length,
+    text: `${S[t[0]]} ${t[1].map((f) => S[f[0]]).join(" ")}`.toLowerCase(),
+  }));
+  const typeOf = new Map(types.map((t) => [t.name, t.i]));
+
+  const pages = D.pg.map((p, i) => {
+    const u = unit(p[0]);
+    return {
+      i,
+      unit: u,
+      ui: p[0],
+      path: S[p[1]],
+      text: `${u.name} ${S[p[1]]} ${u.file}`.toLowerCase(),
+    };
+  });
+
+  /** A type as the page prints it, with each name the run knows as a link to that type. */
+  function typeHtml(text) {
+    return esc(text).replace(/[A-Za-z_][\w]*/g, (word) =>
+      typeOf.has(word)
+        ? `<button type="button" class="type-ref" data-open="type-${typeOf.get(word)}">${word}</button>`
+        : word,
+    );
+  }
+
+  function signature(name, args, returns) {
+    const list = args.map(
+      (a) => `${esc(S[a[0]])}: ${typeHtml(S[a[1]])}${a[2] === 1 ? "!" : ""}`,
+    );
+    return `${esc(name)}${list.length ? `(${list.join(", ")})` : ""}: ${typeHtml(S[returns])}`;
+  }
+
+  // ---------- facets ----------
+
+  const STATUS_BANDS = {
+    "2xx": "Success",
+    "3xx": "Redirect",
+    "4xx": "Client error",
+    "5xx": "Server error",
+    "?": "Unknown",
+  };
+  const band = (s) => (s === null ? "?" : `${Math.floor(s / 100)}xx`);
+  const dbValue = (e) =>
+    e.writes.size ? "writes" : e.reads.size ? "reads" : "none";
+  const callerValue = (e) => {
+    const raw = D.e[e.i];
+    if (raw.f.length) {
+      return ["has", "finding"];
+    }
+    return raw.c.length ? ["has"] : ["none"];
+  };
+
+  const CALLER_FACET = {
+    id: "caller",
+    title: "Caller here",
+    values: callerValue,
+    labels: {
+      has: "Has a caller",
+      finding: "Has a finding",
+      none: "No caller",
+    },
+    icons: { finding: ["clash", "i-clash"], has: ["check", "i-check"] },
+  };
+  const DB_FACET = {
+    id: "db",
+    title: "Tables",
+    values: (e) => [dbValue(e)],
+    labels: { writes: "Writes", reads: "Only reads", none: "None reached" },
+    icons: { writes: ["write", "i-write"], reads: ["read", "i-read"] },
+  };
+  const PARTIAL_FACET = {
+    id: "partial",
+    title: "Calls not followed",
+    values: (e) => [D.e[e.i].gn > 0 ? "yes" : "no"],
+    labels: { yes: "On the way", no: "None" },
+    icons: { yes: ["partial", "i-partial"] },
+  };
+  const READ_FACET = {
+    id: "read",
+    title: "Read by suss",
+    when: () => D.e.some((e) => e.nr === 1),
+    values: (e) => [D.e[e.i].nr === 1 ? "no" : "yes"],
+    labels: { yes: "Read", no: "Not read" },
+    icons: { no: ["partial", "i-partial"] },
+  };
+  const SPEC_FACET = {
+    id: "spec",
+    title: "Spec",
+    when: () => D.e.some((e) => e.sp.length > 0),
+    values: (e) => {
+      const raw = D.e[e.i];
+      if (!raw.u.length) {
+        return ["only"];
+      }
+      return [raw.sp.length ? "yes" : "no"];
+    },
+    labels: {
+      yes: "In a spec",
+      no: "Not in a spec",
+      only: "Spec only, no code",
+    },
+  };
+
+  const REPO_FACET = {
+    id: "repo",
+    title: "Repository",
+    when: () => manyRepos,
+    values: (e) => [e.unit?.repo || "spec"],
+  };
+
+  const FACETS = {
+    routes: [
+      REPO_FACET,
+      {
+        id: "method",
+        title: "Method",
+        values: (e) => [S[D.e[e.i].m]],
+        order: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+      },
+      DB_FACET,
+      {
+        id: "status",
+        title: "Returns",
+        values: (e) => [
+          ...new Set(e.statuses.map(band)),
+          ...(e.statuses.some((s) => s !== null && s >= 400) ? ["error"] : []),
+        ],
+        labels: Object.assign({ error: "Any error" }, STATUS_BANDS),
+        hidden: ["error"],
+        order: ["2xx", "3xx", "4xx", "5xx", "?", "error"],
+      },
+      CALLER_FACET,
+      PARTIAL_FACET,
+      READ_FACET,
+      {
+        id: "early",
+        title: "Early return from",
+        values: (e) => e.early,
+        limit: 6,
+        icons: { "*": ["guard", "i-guard"] },
+      },
+      SPEC_FACET,
+      {
+        id: "group",
+        title: "File",
+        values: (e) => [e.group],
+        labelOf: (v) => short(v),
+        limit: 8,
+      },
+    ],
+    graphql: [
+      REPO_FACET,
+      {
+        id: "type",
+        title: "Type",
+        values: (e) => [S[D.e[e.i].m]],
+        order: ["Query", "Mutation", "Subscription"],
+      },
+      CALLER_FACET,
+      READ_FACET,
+      DB_FACET,
+      PARTIAL_FACET,
+      SPEC_FACET,
+    ],
+    types: [
+      {
+        id: "code",
+        title: "Resolvers in code",
+        values: (t) => [
+          t.resolvers === 0
+            ? "none"
+            : t.resolvers === t.fields.length
+              ? "all"
+              : "some",
+        ],
+        labels: { all: "Every field", some: "Some fields", none: "None" },
+      },
+    ],
+    pages: [],
+    tables: [
+      {
+        id: "written",
+        title: "Written by a route",
+        values: (t) => [t.writers.length ? "yes" : "no"],
+        labels: { yes: "Yes", no: "No" },
+        icons: { yes: ["write", "i-write"] },
+      },
+      {
+        id: "read",
+        title: "Read by a route",
+        values: (t) => [t.readers.length ? "yes" : "no"],
+        labels: { yes: "Yes", no: "No" },
+        icons: { yes: ["read", "i-read"] },
+      },
+      { id: "system", title: "System", values: (t) => [t.system || "unknown"] },
+    ],
+    env: [
+      {
+        id: "default",
+        title: "Default",
+        values: (e) => [
+          e.defaults === e.reads.length
+            ? "yes"
+            : e.defaults === 0
+              ? "no"
+              : "some",
+        ],
+        labels: { yes: "At every read", no: "None", some: "At some reads" },
+      },
+    ],
+  };
+
+  const ITEMS = {
+    routes: entries.filter((e) => !e.gql),
+    graphql: entries.filter((e) => e.gql),
+    types,
+    pages,
+    tables,
+    env: envs,
+  };
+  const NOUNS = {
+    routes: ["route", "routes"],
+    graphql: ["field", "fields"],
+    types: ["type", "types"],
+    pages: ["page", "pages"],
+    tables: ["table", "tables"],
+    env: ["variable", "variables"],
+  };
+  const firstTab = $('[role="tab"][aria-selected="true"]');
+  const state = {
+    tab: firstTab ? firstTab.dataset.tab : "routes",
+    facets: {
+      routes: {},
+      graphql: {},
+      types: {},
+      pages: {},
+      tables: {},
+      env: {},
+    },
+    text: {
+      routes: "",
+      graphql: "",
+      types: "",
+      pages: "",
+      tables: "",
+      env: "",
+    },
+    more: {},
+    shown: {},
+  };
+
+  const activeFacets = (tab) => FACETS[tab].filter((f) => !f.when || f.when());
+
+  function matches(tab, item, skip) {
+    for (const f of activeFacets(tab)) {
+      const want = state.facets[tab][f.id];
+      if (want === undefined || f.id === skip) {
+        continue;
+      }
+      if (!f.values(item).includes(want)) {
+        return false;
+      }
+    }
+    const text = state.text[tab].trim().toLowerCase();
+    return !text || text.split(/\s+/).every((t) => item.text.includes(t));
+  }
+
+  const labelFor = (f, v) => (f.labelOf ? f.labelOf(v) : f.labels?.[v] || v);
+  const iconFor = (f, v) => {
+    if (f.id === "status") {
+      return v === "error"
+        ? `<span class="status s-4xx">4xx</span>`
+        : `<span class="status s-${v === "?" ? "unknown" : v}">${esc(v)}</span>`;
+    }
+    const spec = f.icons && (f.icons[v] || f.icons["*"]);
+    return spec ? icon(spec[0], spec[1]) : "";
+  };
+
+  function renderFacets() {
+    const tab = state.tab;
+    const html = activeFacets(tab)
+      .map((f) => {
+        const counts = new Map();
+        for (const item of ITEMS[tab]) {
+          if (!matches(tab, item, f.id)) {
+            continue;
+          }
+          for (const v of f.values(item)) {
+            counts.set(v, (counts.get(v) || 0) + 1);
+          }
+        }
+        const selected = state.facets[tab][f.id];
+        const values = [...counts.keys()].filter(
+          (v) => !(f.hidden || []).includes(v) || v === selected,
+        );
+        values.sort(
+          (a, b) =>
+            (f.order ? f.order.indexOf(a) - f.order.indexOf(b) : 0) ||
+            (counts.get(b) || 0) - (counts.get(a) || 0),
+        );
+        if (values.length === 0 && selected === undefined) {
+          return "";
+        }
+        const key = `${tab}:${f.id}`;
+        const limit =
+          f.limit && !state.more[key] ? f.limit : Number.POSITIVE_INFINITY;
+        const shown = values.slice(0, limit);
+        if (selected !== undefined && !shown.includes(selected)) {
+          shown.push(selected);
+        }
+        const opts = shown
+          .map(
+            (v) =>
+              `<button type="button" class="facet-opt" data-facet-id="${esc(f.id)}" data-facet-value="${esc(v)}" aria-pressed="${selected === v}">${iconFor(f, v)}<span class="lbl" title="${esc(labelFor(f, v))}">${esc(labelFor(f, v))}</span><span class="n">${n(counts.get(v) || 0)}</span></button>`,
+          )
+          .join("");
+        const more =
+          values.length > shown.length
+            ? `<button type="button" class="facet-more" data-facet-more="${esc(key)}">Show ${values.length - shown.length} more</button>`
+            : "";
+        return `<div class="facet"><h3>${esc(f.title)}</h3>${opts}${more}</div>`;
+      })
+      .join("");
+    $("#facets").innerHTML = html;
+    $("#facets-wrap").hidden = html === "";
+
+    const tokens = activeFacets(tab)
+      .filter((f) => state.facets[tab][f.id] !== undefined)
+      .map(
+        (f) =>
+          `<button type="button" class="token" data-facet-id="${esc(f.id)}" data-facet-value="${esc(state.facets[tab][f.id])}" aria-label="Remove filter ${esc(f.title)}: ${esc(labelFor(f, state.facets[tab][f.id]))}">${esc(f.title)}: <b>${esc(labelFor(f, state.facets[tab][f.id]))}</b>${icon("close", "i-go")}</button>`,
+      );
+    $("#tokens").innerHTML = tokens.length
+      ? `${tokens.join("")}<button type="button" class="token-clear" data-clear>Clear all</button>`
+      : "";
+  }
+
+  // ---------- list rows ----------
+
+  const numCell = (size, kind) =>
+    size
+      ? `<span class="badge${kind === "w" ? " badge-write" : ""}" data-term="${kind === "w" ? "writes" : "reads"}">${icon(kind === "w" ? "write" : "read", kind === "w" ? "i-write" : "i-read")}${size}</span>`
+      : `<span class="badge none">·</span>`;
+
+  // A flag every row has says nothing about any one of them, so a row
+  // shows it only when some rows do not.
+  const everyRowUnfollowed = D.e.every((e) => e.gn > 0);
+
+  function flagsOf(e) {
+    const raw = D.e[e.i];
+    const flags = [];
+    if (raw.f.length) {
+      flags.push(
+        `<span class="badge badge-clash" data-term="finding">${icon("clash", "i-clash")}finding</span>`,
+      );
+    }
+    if (raw.nr === 1) {
+      flags.push(
+        `<span class="badge badge-partial" data-term="unread">${icon("partial", "i-partial")}not read</span>`,
+      );
+    } else if (raw.gn > 0 && !everyRowUnfollowed) {
+      flags.push(
+        `<span class="badge badge-partial" data-term="partial">${icon("partial", "i-partial")}calls not followed</span>`,
+      );
+    }
+    if (!raw.u.length) {
+      flags.push(`<span class="badge" data-term="speconly">spec only</span>`);
+    }
+    return flags.join("");
+  }
+
+  function routeItem(e) {
+    const raw = D.e[e.i];
+    return `<button type="button" class="item route-item" data-open="entry-${e.i}" data-peek="entry-${e.i}">
+      <span class="item-main">${badge(raw)}<span class="item-path">${esc(S[raw.p])}</span></span>
+      <span class="cells"><span class="statuses">${e.statuses.map(statusPill).join("")}</span><span class="c-num">${numCell(e.writes.size, "w")}</span><span class="c-num">${numCell(e.reads.size, "r")}</span><span class="c-flag">${flagsOf(e)}</span></span>
+    </button>`;
+  }
+
+  function fieldItem(e) {
+    const raw = D.e[e.i];
+    const returns = raw.sh ? S[raw.sh[1]] : "";
+    const callers = raw.c.length
+      ? `<span class="badge" data-term="ops">${n(raw.c.length)}</span>`
+      : `<span class="badge none">·</span>`;
+    return `<button type="button" class="item field-item" data-open="entry-${e.i}" data-peek="entry-${e.i}">
+      <span class="item-main"><span class="item-path">${esc(S[raw.p])}</span></span>
+      <span class="cells"><span class="c-type">${esc(returns)}</span><span class="c-num">${callers}</span><span class="c-num">${numCell(e.writes.size, "w")}</span><span class="c-num">${numCell(e.reads.size, "r")}</span><span class="c-flag">${flagsOf(e)}</span></span>
+    </button>`;
+  }
+
+  /** At most this many rows per list at first; a button shows the rest. */
+  const PAGE_ROWS = 300;
+
+  function capped(tab, rows) {
+    const limit = state.shown[tab] || PAGE_ROWS;
+    if (rows.length <= limit) {
+      return rows.join("");
+    }
+    return `${rows.slice(0, limit).join("")}<button type="button" class="more-rows" data-more-rows>Show ${n(Math.min(PAGE_ROWS, rows.length - limit))} more of ${n(rows.length - limit)}</button>`;
+  }
+
+  function grouped(tab, shown, head, item, groupHead) {
+    const order = [...new Set(shown.map((x) => x.group))];
+    const rows = [];
+    for (const g of order) {
+      const inGroup = shown.filter((x) => x.group === g);
+      rows.push(groupHead(g, inGroup));
+      for (const x of inGroup) {
+        rows.push(item(x));
+      }
+    }
+    return head + capped(tab, rows);
+  }
+
+  const GQL_RANK = { Query: 0, Mutation: 1, Subscription: 2 };
+
+  const LIST_RENDERERS = {
+    routes: (shown) =>
+      grouped(
+        "routes",
+        shown,
+        `<div class="list-head route-cols" aria-hidden="true"><span>Route</span><span>Returns</span><span>Writes</span><span>Reads</span><span></span></div>`,
+        routeItem,
+        (g, inGroup) =>
+          `<div class="group-head"><span class="group-name">${esc(g || "Declared in a spec")}</span><span class="group-count">${plural(inGroup.length, "route", "routes")}</span></div>`,
+      ),
+    graphql: (shown) =>
+      grouped(
+        "graphql",
+        shown
+          .slice()
+          .sort((a, b) => (GQL_RANK[a.group] ?? 9) - (GQL_RANK[b.group] ?? 9)),
+        `<div class="list-head field-cols" aria-hidden="true"><span>Field</span><span>Type</span><span>Callers</span><span>Writes</span><span>Reads</span><span></span></div>`,
+        fieldItem,
+        (g, inGroup) =>
+          `<div class="group-head">${typeBadge(g)}<span class="group-count">${plural(inGroup.length, "field", "fields")}</span></div>`,
+      ),
+    types: (shown) =>
+      `<div class="list-head type-cols" aria-hidden="true"><span>Type</span><span>Fields</span><span>In code</span></div>${capped(
+        "types",
+        shown.map(
+          (t) =>
+            `<button type="button" class="item type-item" data-open="type-${t.i}"><span class="item-main">${icon("type", "i-go")}<span class="item-path">${esc(t.name)}</span></span><span class="cells"><span class="c-num"><span class="badge">${n(t.fields.length)}</span></span><span class="c-num"><span class="badge">${t.resolvers ? plural(t.resolvers, "resolver", "resolvers") : "schema only"}</span></span></span></button>`,
+        ),
+      )}`,
+    pages: (shown) =>
+      capped(
+        "pages",
+        shown.map(
+          (p) =>
+            `<button type="button" class="item" data-open="page-${p.i}"><span class="item-main">${icon("route", "i-go")}<span class="item-path">${esc(p.path)}</span><span class="system">${esc(p.unit.name)}</span></span><span class="item-side"><span class="badge">${esc(short(p.unit.file))}</span></span></button>`,
+        ),
+      ),
+    tables: (shown) => {
+      const max = Math.max(
+        1,
+        ...tables.map((t) => Math.max(t.writers.length, t.readers.length)),
+      );
+      return capped(
+        "tables",
+        shown
+          .slice()
+          .sort(
+            (a, b) =>
+              b.writers.length - a.writers.length ||
+              b.readers.length - a.readers.length,
+          )
+          .map(
+            (
+              t,
+            ) => `<button type="button" class="item table-item" data-open="table-${t.b}" data-peek="table-${t.b}">
+          <span class="item-main">${icon("table", "i-table")}<span class="item-path">${esc(t.name)}</span><span class="system">${esc(t.system)}</span></span>
+          <span class="bars">
+            ${icon("write", "i-write")}<span>written by</span><span class="bar-track"><span class="bar-fill w" style="width:${(100 * t.writers.length) / max}%"></span></span><span class="n">${plural(t.writers.length, "route", "routes")}</span>
+            ${icon("read", "i-read")}<span>read by</span><span class="bar-track"><span class="bar-fill" style="width:${(100 * t.readers.length) / max}%"></span></span><span class="n">${plural(t.readers.length, "route", "routes")}</span>
+          </span>
+        </button>`,
+          ),
+      );
+    },
+    env: (shown) =>
+      capped(
+        "env",
+        shown.map((e) => {
+          const first = unit(e.reads[0][1]);
+          const def =
+            e.defaults === e.reads.length
+              ? "default at every read"
+              : e.defaults === 0
+                ? "no default"
+                : `default at ${e.defaults} of ${e.reads.length}`;
+          return `<button type="button" class="item" data-open="env-${e.b}">
+          <span class="item-main">${icon("env", "i-env")}<span class="item-path">${esc(e.name)}</span></span>
+          <span class="item-side"><span class="badge">${esc(short(first.file))}${e.reads.length > 1 ? ` +${e.reads.length - 1}` : ""}</span><span class="badge" data-term="default">${esc(def)}</span></span>
+        </button>`;
+        }),
+      ),
+  };
+
+  const EMPTY_TEXT = {
+    routes: "No routes found in the code suss read.",
+    graphql: "No GraphQL fields found in the code suss read.",
+    types: "No GraphQL types found.",
+    pages: "No client-side pages found.",
+    tables:
+      "No tables found. A table shows up when a pack reads the ORM or database client; see Coverage.",
+    env: "No environment variable reads found.",
+  };
+
+  function renderList() {
+    const tab = state.tab;
+    document.querySelectorAll('.tabs [role="tab"]').forEach((el) => {
+      el.setAttribute("aria-selected", String(el.dataset.tab === tab));
+    });
+    $("#panel").setAttribute("aria-labelledby", `tab-${tab}`);
+    $("#filter").value = state.text[tab];
+    renderFacets();
+    const all = ITEMS[tab];
+    const shown = all.filter((item) => matches(tab, item));
+    const [one, many] = NOUNS[tab];
+    $("#list-count").textContent =
+      shown.length === all.length
+        ? plural(all.length, one, many)
+        : `${n(shown.length)} of ${plural(all.length, one, many)}`;
+    if (all.length === 0) {
+      $("#panel").innerHTML = `<p class="empty">${esc(EMPTY_TEXT[tab])}</p>`;
+      return;
+    }
+    if (shown.length === 0) {
+      $("#panel").innerHTML =
+        `<div class="empty"><p class="empty">No ${many} match these filters.</p><button type="button" class="action" data-clear>Clear the filters</button></div>`;
+      return;
+    }
+    $("#panel").innerHTML = LIST_RENDERERS[tab](shown);
+  }
+
+  // ---------- inspector ----------
+
+  function section(title, count, body, opts) {
+    if (!body) {
+      return "";
+    }
+    const open = !opts?.closed;
+    const from = opts?.from
+      ? `<span class="from"><span class="from-tag" data-tip="${esc(opts.from[1])}">${esc(opts.from[0])}</span></span>`
+      : "";
+    return `<details class="d-section"${open ? " open" : ""}><summary>${icon("chevron", "i-chev")}${title}${count !== null && count !== undefined ? ` <span class="n">${n(count)}</span>` : ""}${from}</summary>${opts?.note ? `<p class="d-note">${opts.note}</p>` : ""}${body}</details>`;
+  }
+
+  function limited(items, limit) {
+    if (items.length <= limit) {
+      return `<ul class="d-list">${items.map((x) => `<li>${x}</li>`).join("")}</ul>`;
+    }
+    const head = items
+      .slice(0, limit)
+      .map((x) => `<li>${x}</li>`)
+      .join("");
+    const rest = items
+      .slice(limit)
+      .map((x) => `<li hidden data-rest>${x}</li>`)
+      .join("");
+    return `<ul class="d-list">${head}${rest}</ul><button type="button" class="action show-all" data-show-all>Show all ${n(items.length)}</button>`;
+  }
+
+  function through(hops) {
+    if (!hops || hops.length === 0) {
+      return "";
+    }
+    return `<span class="through" data-term="through">via ${hops.map((h) => `<span class="hop">${esc(S[h])}</span>`).join('<span class="arrow" aria-hidden="true">›</span>')}</span>`;
+  }
+
+  /** One reach item: the call, where it is, and the calls on the way. */
+  function siteHtml(item) {
+    const via =
+      item[3] === null
+        ? ""
+        : `<div class="site-code">${code(S[item[3]])}</div>`;
+    return `<div class="site">${via}<div class="site-meta">${loc(item[2], item[5])}${through(item[4])}</div></div>`;
+  }
+
+  function groupsOf(map, kind, refOf) {
+    return [...map.entries()]
+      .sort((a, b) => boundary(a[0]).name.localeCompare(boundary(b[0]).name))
+      .map(([b, items]) => {
+        const sorted = items.slice().sort((x, y) => x[4].length - y[4].length);
+        const rest =
+          sorted.length > 2
+            ? `<p class="d-note">and ${plural(sorted.length - 2, "more place", "more places")}</p>`
+            : "";
+        return `<div class="table-head">${kind ? verb(kind) : ""}${refOf(b)}</div>${sorted
+          .slice(0, 2)
+          .map(siteHtml)
+          .join("")}${rest}`;
+      });
+  }
+
+  const stat = (value, label, cls) =>
+    `<div class="d-stat ${cls || ""}"><b>${value}</b><span class="d-stat-l">${label}</span></div>`;
+
+  function reachSections(e, ask) {
+    const from = ["ask", ask];
+    return [
+      section(
+        "Writes",
+        e.writes.size,
+        e.writes.size ? limited(groupsOf(e.writes, "w", tableRef), 8) : "",
+        { from },
+      ),
+      section(
+        "Reads",
+        e.reads.size,
+        e.reads.size ? limited(groupsOf(e.reads, "r", tableRef), 6) : "",
+        { closed: e.reads.size > 6, from },
+      ),
+      section(
+        "Env vars",
+        e.env.size,
+        e.env.size ? limited(groupsOf(e.env, null, envRef), 6) : "",
+        { from },
+      ),
+      section(
+        "Other boundaries",
+        e.other.size,
+        e.other.size
+          ? limited(
+              groupsOf(
+                e.other,
+                null,
+                (b) =>
+                  `<span class="unit-name">${esc(boundary(b).label)}</span>`,
+              ),
+              6,
+            )
+          : "",
+        { closed: true, from },
+      ),
+    ].join("");
+  }
+
+  function findingCallouts(raw) {
+    return raw.f
+      .map((fi) => {
+        const f = D.fi[fi];
+        const sides = [
+          f[4] !== null ? `served by ${loc(f[4], f[5])}` : "",
+          f[6] !== null ? `called from ${loc(f[6], f[7])}` : "",
+        ]
+          .filter(Boolean)
+          .join(", ");
+        return `<div class="callout">${icon("clash", "i-clash")}<div><strong>${esc(S[f[0]])}</strong> <span class="muted">${esc(S[f[1]])}</span><br>${esc(S[f[2]])}${sides ? `<div class="site-meta">${sides}</div>` : ""}</div></div>`;
+      })
+      .join("");
+  }
+
+  function outcomeRows(raw) {
+    return raw.o
+      .slice()
+      .sort(
+        (a, b) => (a[0] === null ? 999 : a[0]) - (b[0] === null ? 999 : b[0]),
+      )
+      .map((o) => {
+        const exc =
+          o[2] !== null
+            ? ` <span class="muted">raises ${code(S[o[2]])}</span>`
+            : "";
+        const from =
+          o[6] !== null
+            ? ` <span class="badge" data-term="early">${icon("guard", "i-guard")}${esc(S[o[6]])}</span>`
+            : "";
+        const cond = o[3].length
+          ? conditionHtml(o[3])
+          : `<span class="cond muted">otherwise</span>`;
+        const word = o[0] === null ? (S[o[1]] === "throw" ? "err" : "?") : null;
+        const pill =
+          word === null
+            ? statusPill(o[0])
+            : `<span class="status s-unknown">${word}</span>`;
+        return `<div class="outcome">${pill}<div class="cond">${cond}${exc}${from}<div class="site-meta">${loc(o[4], o[5])}</div></div></div>`;
+      });
+  }
+
+  function gapSection(raw) {
+    if (!raw.gn) {
+      return "";
+    }
+    const rows = raw.g.map(
+      (ui) =>
+        `${loc(ui, null, unit(ui).name)} <span class="muted">${esc(short(unit(ui).file))}</span>`,
+    );
+    const more =
+      raw.gn > raw.g.length
+        ? `<p class="d-note">and ${n(raw.gn - raw.g.length)} more</p>`
+        : "";
+    return section(
+      `${icon("partial", "i-partial")} Calls not followed`,
+      raw.gn,
+      `${limited(rows, 6)}${more}`,
+      {
+        note: "Each makes a call suss could not follow. The lists above may be short.",
+        closed: true,
+        from: ["inspect", "suss inspect <file>"],
+      },
+    );
+  }
+
+  const OPERATION_TYPE = {
+    query: "Query",
+    mutation: "Mutation",
+    subscription: "Subscription",
+  };
+
+  function callersSection(raw, isField) {
+    if (!raw.c.length) {
+      return section(
+        isField ? "Operations" : "Callers",
+        0,
+        `<p class="empty-line">${icon("partial", "i-partial")}<span>No code in this repo calls it. Another client may.</span></p>`,
+        { from: ["check", `suss check --dir ${D.askDir} --json`] },
+      );
+    }
+    const rows = raw.c.map((ci) => {
+      const op = opOfUnit.has(ci) ? D.ops[opOfUnit.get(ci)] : null;
+      if (op) {
+        const owner =
+          op[3] !== null ? `<span>in ${esc(unit(op[3]).name)}</span>` : "";
+        return `<div class="table-head">${inRepo(unit(op[0]))}${typeBadge(OPERATION_TYPE[S[op[1]]] || S[op[1]])}<span class="unit-name">${esc(S[op[2]])}</span></div><div class="site-meta">${loc(op[0], unit(op[0]).line, `${short(unit(op[0]).file)}:${unit(op[0]).line}`)}${owner}</div>`;
+      }
+      const u = unit(ci);
+      return `${inRepo(u)}<span class="unit-name">${esc(u.name)}</span> ${loc(ci, u.line, `${short(u.file)}:${u.line}`)}`;
+    });
+    return section(
+      isField ? "Operations" : "Callers",
+      raw.c.length,
+      limited(rows, 8),
+      {
+        from: ["check", `suss check --dir ${D.askDir} --json`],
+      },
+    );
+  }
+
+  function specSection(raw, e) {
+    if (!raw.sp.length || raw.k === "q") {
+      return "";
+    }
+    const declared = raw.ss.map(statusPill).join("");
+    const coded = e.statuses
+      .filter((s) => s !== null)
+      .map(statusPill)
+      .join("");
+    return section(
+      "Spec",
+      null,
+      `<div class="shape"><span class="shape-l">${esc(unit(raw.sp[0]).file)}</span><span class="statuses">${declared || '<span class="muted">no statuses</span>'}</span></div>${raw.u.length ? `<div class="shape"><span class="shape-l">The code</span><span class="statuses">${coded || '<span class="muted">none read</span>'}</span></div>` : ""}`,
+    );
+  }
+
+  function openEntry(i) {
+    const raw = D.e[i];
+    const e = entries[i];
+    const isField = raw.k === "q";
+    const u = e.unit;
+    const subject = u ? u.id : S[raw.p];
+    const servedBy = raw.u.length
+      ? `${isField ? "Resolver" : "Handler"} ${code(u.name)} ${loc(raw.u[0], u.line, `${short(u.file)}:${u.line}`)}`
+      : "Declared in a spec. No code here serves it.";
+    const sig =
+      isField && raw.sh
+        ? `<p class="d-sig">${signature(S[raw.p], raw.sh[0], raw.sh[1])}</p>`
+        : "";
+    const unread =
+      raw.nr === 1
+        ? `<div class="callout callout-partial">${icon("partial", "i-partial")}<div><strong>Not read.</strong> Tables it reaches may be missing below.</div></div>`
+        : "";
+    const outcomes = outcomeRows(raw);
+    showDrawer(
+      `${icon("route", "i-go")}${isField ? "GraphQL field" : "Route"}`,
+      `<header>
+        <h2 class="d-title" id="drawer-title">${badge(raw)}<span>${esc(S[raw.p])}</span></h2>
+        ${sig}
+        <p class="d-sub">${servedBy}</p>
+      </header>
+      <div class="d-stats">${stat(n(isField ? raw.c.length : e.statuses.length), isField ? (raw.c.length === 1 ? "operation" : "operations") : e.statuses.length === 1 ? "status" : "statuses")}${stat(n(e.writes.size), "tables written", e.writes.size ? "w" : "")}${stat(n(e.reads.size), "tables read")}${stat(n(isField ? e.env.size : raw.c.length), isField ? "env vars" : raw.c.length === 1 ? "caller here" : "callers here")}</div>
+      ${findingCallouts(raw)}
+      ${unread}
+      ${isField ? callersSection(raw, true) : ""}
+      ${section("Returns", outcomes.length, outcomes.length ? limited(outcomes, 8) : "", { from: ["inspect", `suss inspect ${u ? u.file : ""}`] })}
+      ${specSection(raw, e)}
+      ${reachSections(e, `suss ask "what does ${subject} reach" --dir ${D.askDir}`)}
+      ${isField ? "" : callersSection(raw, false)}
+      ${gapSection(raw)}
+      ${askLine(`what does ${subject} reach`)}`,
+    );
+  }
+
+  function openType(t) {
+    const type = types[t];
+    const rows = type.fields
+      .map((f) => {
+        const where =
+          f[4] !== null
+            ? loc(f[4], unit(f[4]).line, short(unit(f[4]).file))
+            : `<span class="muted">schema</span>`;
+        const entry = f[5] !== null ? ` ${entryRef(f[5])}` : "";
+        return `<tr><td class="f-type">${signature(S[f[0]], f[1], f[2])}</td><td>${where}${entry}</td></tr>`;
+      })
+      .join("");
+    showDrawer(
+      `${icon("type", "i-go")}GraphQL type`,
+      `<header><h2 class="d-title" id="drawer-title">${esc(type.name)}</h2><p class="d-sub">${plural(type.fields.length, "field", "fields")}, ${type.resolvers ? `${n(type.resolvers)} with a resolver in code` : "none with a resolver in code"}</p></header>
+      ${section("Fields", type.fields.length, `<table class="fields"><tbody>${rows}</tbody></table>`)}`,
+    );
+  }
+
+  function openTable(b) {
+    const tb = tables[tableOf.get(b)];
+    if (!tb) {
+      return;
+    }
+    const label = boundary(b).label;
+    const entriesAt = (ui, via) =>
+      tb.writers
+        .filter((e) =>
+          (e.writes.get(b) || []).some(
+            (item) => item[2] === ui && (via === null || item[3] === via),
+          ),
+        )
+        .map((e) => e.i);
+    const placeRows = (places, kind) =>
+      places.map((p) => {
+        const reach = kind === "w" ? entriesAt(p[0], p[1]) : [];
+        const chips = reach.length
+          ? `<div class="site-meta">${reach.slice(0, 6).map(entryRef).join(" ")}${reach.length > 6 ? ` and ${reach.length - 6} more` : ""}</div>`
+          : "";
+        return `<div class="site">${p[1] !== null ? `<div class="site-code">${code(S[p[1]])}</div>` : ""}<div class="site-meta"><span class="unit-name">${esc(unit(p[0]).name)}</span>${loc(p[0], null)}</div>${chips}</div>`;
+      });
+    const chips = (list) =>
+      `<ul class="rows rows-grid">${list.map((e) => `<li class="row">${entryRef(e.i)}</li>`).join("")}</ul>`;
+    showDrawer(
+      `${icon("table", "i-table")}Table${tb.system ? ` · ${esc(tb.system)}` : ""}`,
+      `<header><h2 class="d-title" id="drawer-title">${esc(tb.name)}</h2><p class="d-sub">${esc(label)}</p></header>
+      <div class="d-stats">${stat(n(tb.writers.length), "routes write it", tb.writers.length ? "w" : "")}${stat(n(tb.readers.length), "routes read it")}${stat(n(tb.writePlaces.length), "places write it")}${stat(n(tb.readPlaces.length), "places read it")}</div>
+      ${section("Places that write it", tb.writePlaces.length, tb.writePlaces.length ? limited(placeRows(tb.writePlaces, "w"), 6) : `<p class="empty-line">${icon("partial", "i-partial")}<span>No code suss read writes it.</span></p>`, { from: ["ask", `suss ask "what writes ${label}" --dir ${D.askDir}`] })}
+      ${section("Places that read it", tb.readPlaces.length, tb.readPlaces.length ? limited(placeRows(tb.readPlaces, "r"), 6) : "", { closed: true, from: ["ask", `suss ask "what reads ${label}" --dir ${D.askDir}`] })}
+      ${section("Routes that read it", tb.readers.length, tb.readers.length ? chips(tb.readers) : "", { closed: tb.readers.length > 24 })}
+      ${askLine(`what writes ${label}`)}`,
+    );
+  }
+
+  function openEnv(b) {
+    const ev = envs[envOf.get(b)];
+    if (!ev) {
+      return;
+    }
+    const rows = ev.reads.map(
+      (r) =>
+        `<span class="unit-name">${esc(unit(r[1]).name)}</span> ${loc(r[1], null, `${short(unit(r[1]).file)}:${unit(r[1]).line}`)} <span class="badge" data-term="default">${r[2] === 1 ? "default" : "no default"}</span>`,
+    );
+    showDrawer(
+      `${icon("env", "i-env")}Environment variable`,
+      `<header><h2 class="d-title" id="drawer-title">${esc(ev.name)}</h2></header>
+      <div class="d-stats">${stat(n(ev.reads.length), ev.reads.length === 1 ? "place reads it" : "places read it")}${stat(n(ev.defaults), "with a default")}${stat(n(ev.entries.length), "routes reach a read")}${stat(n(new Set(ev.reads.map((r) => unit(r[1]).file)).size), "files")}</div>
+      ${section("Where it is read", ev.reads.length, limited(rows, 10))}
+      ${section("Routes that reach a read", ev.entries.length, ev.entries.length ? `<ul class="rows rows-grid">${ev.entries.map((e) => `<li class="row">${entryRef(e.i)}</li>`).join("")}</ul>` : "")}`,
+    );
+  }
+
+  function openPage(i) {
+    const p = pages[i];
+    showDrawer(
+      `${icon("route", "i-go")}Page`,
+      `<header><h2 class="d-title" id="drawer-title">${esc(p.path)}</h2><p class="d-sub">${code(p.unit.name)} ${loc(p.ui, p.unit.line, `${short(p.unit.file)}:${p.unit.line}`)}</p></header>`,
+    );
+  }
+
+  let lastFocus = null;
+  function showDrawer(crumb, body) {
+    const drawer = $("#drawer");
+    if (drawer.hidden) {
+      lastFocus = document.activeElement;
+    }
+    hideTip();
+    $("#drawer-crumb").innerHTML = crumb;
+    $("#drawer-body").innerHTML = body;
+    $("#drawer-body").scrollTop = 0;
+    drawer.hidden = false;
+    $("#scrim").hidden = false;
+    drawer.focus({ preventScroll: true });
+  }
+
+  function hideDrawer() {
+    $("#drawer").hidden = true;
+    $("#scrim").hidden = true;
+    if (lastFocus && document.contains(lastFocus)) {
+      lastFocus.focus({ preventScroll: true });
+    }
+  }
+
+  const OPENERS = {
+    entry: [openEntry, () => D.e.length],
+    type: [openType, () => types.length],
+    table: [openTable, () => D.b.length],
+    env: [openEnv, () => D.b.length],
+    page: [openPage, () => pages.length],
+  };
+
+  function openFromHash() {
+    const m = /^#(entry|type|table|env|page)-(\d+)$/.exec(location.hash);
+    if (!m) {
+      if (!$("#drawer").hidden) {
+        hideDrawer();
+      }
+      return;
+    }
+    const [opener, size] = OPENERS[m[1]];
+    const i = Number(m[2]);
+    if (i >= 0 && i < size()) {
+      opener(i);
+    }
+  }
+
+  function open(target) {
+    if (location.hash === `#${target}`) {
+      openFromHash();
+      return;
+    }
+    location.hash = target;
+  }
+
+  function close() {
+    try {
+      history.replaceState(null, "", location.pathname + location.search);
+    } catch (_err) {
+      location.hash = "";
+    }
+    hideDrawer();
+  }
+
+  // ---------- hover cards ----------
+
+  const TERMS = {
+    writes: [
+      "Writes",
+      "Inserts, updates or deletes rows, here or in code it calls.",
+    ],
+    reads: ["Reads", "Queries the table, here or in code it calls."],
+    through: [
+      "Via",
+      "The calls between the entry point and the code that does this, outermost first.",
+    ],
+    partial: [
+      "Calls not followed",
+      "A function on the way makes a call suss could not follow, so the lists may be short.",
+    ],
+    unread: [
+      "Not read",
+      "suss did not read what this does. Tables it reaches may be missing.",
+    ],
+    finding: [
+      "Finding",
+      "check compared this with code that calls it, and they disagree.",
+    ],
+    ops: [
+      "Callers",
+      "GraphQL operations in this repo that check paired with the field.",
+    ],
+    default: [
+      "Default",
+      "The code gives a value to use when the variable is not set.",
+    ],
+    early: [
+      "Early return",
+      "A middleware or filter adds this outcome before the handler runs.",
+    ],
+    fnline: [
+      "Function start",
+      "The summaries do not record this call's line, so the link opens the function that makes it.",
+    ],
+    speconly: [
+      "Spec only",
+      "A spec declares it, and no code suss read serves it.",
+    ],
+  };
+  const STATUS_WORDS = {
+    200: "OK",
+    201: "Created",
+    204: "No content",
+    301: "Moved permanently",
+    302: "Found",
+    303: "See other",
+    304: "Not modified",
+    400: "Bad request",
+    401: "Unauthorized",
+    403: "Forbidden",
+    404: "Not found",
+    409: "Conflict",
+    422: "Unprocessable",
+    429: "Too many requests",
+    500: "Server error",
+    503: "Unavailable",
+  };
+
+  function peekEntry(i) {
+    const raw = D.e[i];
+    const e = entries[i];
+    const head = `<b>${badge(raw)} ${esc(S[raw.p])}</b>`;
+    const where = e.unit
+      ? `<div>${esc(e.unit.name)} · ${esc(short(e.unit.file))}:${e.unit.line}</div>`
+      : "<div>spec only</div>";
+    const tableRow = `<span class="verb verb-write">${icon("write", "i-write")}${plural(e.writes.size, "table", "tables")}</span><span class="verb verb-read">${icon("read", "i-read")}${plural(e.reads.size, "table", "tables")}</span>`;
+    const statuses =
+      raw.k === "h"
+        ? `<div class="tip-row">${e.statuses.map(statusPill).join(" ")}</div>`
+        : raw.sh
+          ? `<div class="tip-row"><code>${esc(S[raw.sh[1]])}</code></div>`
+          : "";
+    return `${head}${where}${statuses}<div class="tip-row">${tableRow}${raw.nr === 1 ? `<span>${icon("partial", "i-partial")} not read</span>` : ""}</div>`;
+  }
+
+  function peekTable(b) {
+    const tb = tables[tableOf.get(b)];
+    if (!tb) {
+      return "";
+    }
+    return `<b>${icon("table", "i-table")}${esc(tb.name)}</b><div>${esc(boundary(b).label)}</div><div class="tip-row"><span class="verb verb-write">${icon("write", "i-write")}${plural(tb.writers.length, "route", "routes")}</span><span class="verb verb-read">${icon("read", "i-read")}${plural(tb.readers.length, "route", "routes")}</span></div>`;
+  }
+
+  function tipFor(el) {
+    if (el.dataset.peek) {
+      const [kind, idx] = el.dataset.peek.split("-");
+      return kind === "entry" ? peekEntry(Number(idx)) : peekTable(Number(idx));
+    }
+    if (el.dataset.tip) {
+      return `<code>${esc(el.dataset.tip)}</code>`;
+    }
+    if (el.dataset.term && TERMS[el.dataset.term]) {
+      const [title, text] = TERMS[el.dataset.term];
+      return `<b>${esc(title)}</b>${esc(text)}`;
+    }
+    if (el.dataset.status) {
+      const s = el.dataset.status;
+      return s === "?"
+        ? "<b>Unknown status</b>The summary gives no literal status for this path."
+        : `<b>${esc(s)} ${esc(STATUS_WORDS[s] || "")}</b>Returned on at least one path.`;
+    }
+    return "";
+  }
+
+  const tip = $("#tip");
+  let tipTarget = null;
+  function showTip(el) {
+    const html = tipFor(el);
+    if (!html) {
+      return;
+    }
+    tipTarget = el;
+    tip.innerHTML = html;
+    tip.hidden = false;
+    const box = el.getBoundingClientRect();
+    const w = tip.offsetWidth;
+    const h = tip.offsetHeight;
+    const x = Math.min(Math.max(8, box.left), window.innerWidth - w - 8);
+    const below = box.bottom + 6;
+    const y = below + h > window.innerHeight - 8 ? box.top - h - 6 : below;
+    tip.style.left = `${x}px`;
+    tip.style.top = `${Math.max(8, y)}px`;
+  }
+
+  function hideTip() {
+    tip.hidden = true;
+    tipTarget = null;
+  }
+
+  const TIP_TARGETS = "[data-term], [data-peek], [data-status], [data-tip]";
+  document.addEventListener("mouseover", (ev) => {
+    const el = ev.target.closest(TIP_TARGETS);
+    if (el && el !== tipTarget) {
+      showTip(el);
+      return;
+    }
+    if (!el && tipTarget) {
+      hideTip();
+    }
+  });
+  document.addEventListener("focusin", (ev) => {
+    const el = ev.target.closest?.(TIP_TARGETS);
+    if (el) {
+      showTip(el);
+      return;
+    }
+    hideTip();
+  });
+  window.addEventListener("scroll", hideTip, { passive: true, capture: true });
+
+  // ---------- jump-to search ----------
+
+  const GROUP_ORDER = [
+    "GraphQL fields",
+    "Routes",
+    "Types",
+    "Pages",
+    "Tables",
+    "Env vars",
+  ];
+  const index = [];
+  entries.forEach((e) => {
+    const raw = D.e[e.i];
+    index.push({
+      group: e.gql ? "GraphQL fields" : "Routes",
+      key: `entry-${e.i}`,
+      label: e.gql ? `${S[raw.m]}.${S[raw.p]}` : `${S[raw.m]} ${S[raw.p]}`,
+      side: e.unit ? e.unit.name : "spec",
+      text: e.text,
+    });
+  });
+  types.forEach((t) =>
+    index.push({
+      group: "Types",
+      key: `type-${t.i}`,
+      label: t.name,
+      side: plural(t.fields.length, "field", "fields"),
+      text: t.text,
+    }),
+  );
+  pages.forEach((p) =>
+    index.push({
+      group: "Pages",
+      key: `page-${p.i}`,
+      label: p.path,
+      side: p.unit.name,
+      text: p.text,
+    }),
+  );
+  tables.forEach((t) =>
+    index.push({
+      group: "Tables",
+      key: `table-${t.b}`,
+      label: t.name,
+      side: `written by ${plural(t.writers.length, "route", "routes")}`,
+      text: t.text,
+    }),
+  );
+  envs.forEach((e) =>
+    index.push({
+      group: "Env vars",
+      key: `env-${e.b}`,
+      label: e.name,
+      side: `read in ${plural(e.reads.length, "place", "places")}`,
+      text: e.text,
+    }),
+  );
+
+  const q = $("#q");
+  const results = $("#results");
+  let hits = [];
+  let cursor = 0;
+
+  function search(text) {
+    const terms = text.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) {
+      return [];
+    }
+    const scored = [];
+    for (const entry of index) {
+      const label = entry.label.toLowerCase();
+      if (!terms.every((t) => entry.text.includes(t) || label.includes(t))) {
+        continue;
+      }
+      scored.push({
+        entry,
+        score: (label.includes(terms[0]) ? 0 : 1) + label.length / 1000,
+      });
+    }
+    scored.sort((a, b) => a.score - b.score);
+    const perGroup = {};
+    return scored
+      .filter(({ entry }) => {
+        perGroup[entry.group] = (perGroup[entry.group] || 0) + 1;
+        return perGroup[entry.group] <= 8;
+      })
+      .map((x) => x.entry)
+      .sort(
+        (a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group),
+      );
+  }
+
+  const GROUP_ICONS = {
+    "GraphQL fields": ["route", "i-go"],
+    Routes: ["route", "i-go"],
+    Types: ["type", "i-go"],
+    Pages: ["route", "i-go"],
+    Tables: ["table", "i-table"],
+    "Env vars": ["env", "i-env"],
+  };
+
+  function renderResults() {
+    hits = search(q.value);
+    cursor = Math.min(cursor, Math.max(0, hits.length - 1));
+    if (!q.value.trim()) {
+      results.hidden = true;
+      q.setAttribute("aria-expanded", "false");
+      return;
+    }
+    let lastGroup = "";
+    const rows = hits
+      .map((h, i) => {
+        const head =
+          h.group !== lastGroup
+            ? `<div class="res-group">${icon(GROUP_ICONS[h.group][0], GROUP_ICONS[h.group][1])}${esc(h.group)}</div>`
+            : "";
+        lastGroup = h.group;
+        return `${head}<button type="button" class="res" role="option" id="res-${i}" data-open="${h.key}" aria-selected="${i === cursor}"><span class="res-main">${esc(h.label)}</span><span class="res-side">${esc(h.side)}</span></button>`;
+      })
+      .join("");
+    results.innerHTML = hits.length
+      ? `${rows}<div class="res-hint"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></div>`
+      : `<div class="res-empty">Nothing matches “${esc(q.value)}”.</div>`;
+    results.hidden = false;
+    q.setAttribute("aria-expanded", "true");
+    if (hits.length) {
+      q.setAttribute("aria-activedescendant", `res-${cursor}`);
+    }
+  }
+
+  q.addEventListener("input", () => {
+    cursor = 0;
+    renderResults();
+  });
+  q.addEventListener("focus", renderResults);
+  q.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (hits.length) {
+        cursor =
+          (cursor + (ev.key === "ArrowDown" ? 1 : hits.length - 1)) %
+          hits.length;
+        renderResults();
+        const el = $(`#res-${cursor}`);
+        if (el) {
+          el.scrollIntoView({ block: "nearest" });
+        }
+      }
+      return;
+    }
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      if (hits[cursor]) {
+        results.hidden = true;
+        open(hits[cursor].key);
+      }
+      return;
+    }
+    if (ev.key === "Escape") {
+      q.value = "";
+      results.hidden = true;
+      q.blur();
+    }
+  });
+
+  // ---------- events ----------
+
+  function applyFacetLink(spec) {
+    const colon = spec.indexOf(":");
+    const tab = spec.slice(0, colon);
+    const rest = spec.slice(colon + 1);
+    if (!ITEMS[tab] || !$(`[role="tab"][data-tab="${tab}"]`)) {
+      return;
+    }
+    state.tab = tab;
+    state.facets[tab] = {};
+    state.text[tab] = "";
+    for (const pair of rest.split(",").filter(Boolean)) {
+      const eq = pair.indexOf("=");
+      state.facets[tab][pair.slice(0, eq)] = pair.slice(eq + 1);
+    }
+    renderList();
+    $("#explore").scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  }
+
+  const CLICKS = [
+    [
+      "[data-open]",
+      (el, ev) => {
+        ev.preventDefault();
+        results.hidden = true;
+        open(el.dataset.open);
+      },
+    ],
+    [
+      "[data-facet]",
+      (el, ev) => {
+        ev.preventDefault();
+        applyFacetLink(el.dataset.facet);
+      },
+    ],
+    [
+      '[role="tab"][data-tab]',
+      (el) => {
+        state.tab = el.dataset.tab;
+        renderList();
+      },
+    ],
+    [
+      "[data-facet-id]",
+      (el) => {
+        const facets = state.facets[state.tab];
+        const { facetId, facetValue } = el.dataset;
+        if (facets[facetId] === facetValue) {
+          delete facets[facetId];
+        } else {
+          facets[facetId] = facetValue;
+        }
+        state.shown[state.tab] = 0;
+        renderList();
+      },
+    ],
+    [
+      "[data-clear]",
+      () => {
+        state.facets[state.tab] = {};
+        state.text[state.tab] = "";
+        renderList();
+      },
+    ],
+    [
+      "[data-facet-more]",
+      (el) => {
+        state.more[el.dataset.facetMore] = true;
+        renderFacets();
+      },
+    ],
+    [
+      "[data-more-rows]",
+      () => {
+        state.shown[state.tab] =
+          (state.shown[state.tab] || PAGE_ROWS) + PAGE_ROWS;
+        renderList();
+      },
+    ],
+    [
+      "[data-toggle-conds]",
+      (el) => {
+        const list = el.nextElementSibling;
+        list.hidden = !list.hidden;
+        el.setAttribute("aria-expanded", String(!list.hidden));
+      },
+    ],
+    [
+      "[data-show-all]",
+      (el) => {
+        el.previousElementSibling
+          .querySelectorAll("[data-rest]")
+          .forEach((li) => {
+            li.hidden = false;
+          });
+        el.remove();
+      },
+    ],
+  ];
+
+  document.addEventListener("click", (ev) => {
+    if (!ev.target.closest(".search")) {
+      results.hidden = true;
+      q.setAttribute("aria-expanded", "false");
+    }
+    for (const [selector, handle] of CLICKS) {
+      const el = ev.target.closest(selector);
+      if (el) {
+        handle(el, ev);
+        return;
+      }
+    }
+  });
+
+  $("#filter").addEventListener("input", (ev) => {
+    state.text[state.tab] = ev.target.value;
+    state.shown[state.tab] = 0;
+    renderList();
+    ev.target.focus();
+  });
+  $("#close").addEventListener("click", close);
+  $("#scrim").addEventListener("click", close);
+  window.addEventListener("hashchange", openFromHash);
+  document.addEventListener("keydown", (ev) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(
+      document.activeElement.tagName,
+    );
+    if (ev.key === "Escape") {
+      hideTip();
+      if (!$("#drawer").hidden) {
+        close();
+      }
+      return;
+    }
+    const palette =
+      ev.key === "/" ||
+      ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k");
+    if (palette && (!typing || ev.key !== "/")) {
+      ev.preventDefault();
+      q.focus();
+      q.select();
+    }
+  });
+
+  const editor = $("#editor");
+  if (!D.repos.some((r) => r[1])) {
+    editor.querySelector('option[value="github"]')?.remove();
+  }
+  // A page with no folder on this machine can only link to GitHub.
+  if (!D.roots.some((root) => root)) {
+    editor.closest("label")?.remove();
+  }
+  editor.value = scheme;
+  editor.addEventListener("change", () => {
+    scheme = editor.value;
+    try {
+      localStorage.setItem("suss-map-editor", scheme);
+    } catch (_err) {
+      // the choice lasts until the page closes
+    }
+    relink(document.body);
+  });
+
+  // On a narrow screen the filters start folded so the list comes first.
+  if (window.innerWidth <= 920) {
+    $("#facets-wrap").open = false;
+  }
+
+  // ---------- colour in source excerpts ----------
+
+  const KEYWORDS = {
+    ruby: "def end if elsif else unless return do while until class module self nil true false and or not then yield begin rescue ensure raise case when new",
+    python:
+      "def return if elif else for while in not and or is None True False class import from as with try except finally raise lambda yield await async pass",
+    js: "function return if else for while const let var new this null undefined true false class import from export await async try catch finally throw typeof of in",
+  };
+  const KEYWORD_SETS = Object.fromEntries(
+    Object.entries(KEYWORDS).map(([lang, words]) => [
+      lang,
+      new Set(words.split(" ")),
+    ]),
+  );
+  const TOKEN =
+    /(#.*$|\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|(:[A-Za-z_]\w*)|([A-Za-z_]\w*)/g;
+
+  function tokenClass(m, lang, words) {
+    if (m[1]) {
+      return (lang === "js" ? m[1].startsWith("//") : m[1].startsWith("#"))
+        ? "tk-com"
+        : null;
+    }
+    if (m[2]) {
+      return "tk-str";
+    }
+    if (m[3]) {
+      return "tk-num";
+    }
+    if (m[4]) {
+      return lang === "ruby" ? "tk-sym" : null;
+    }
+    return words.has(m[5]) ? "tk-kw" : null;
+  }
+
+  function colour(el) {
+    const lang = el.dataset.lang;
+    const words = KEYWORD_SETS[lang] || KEYWORD_SETS.js;
+    const text = el.textContent;
+    const parts = [];
+    let at = 0;
+    for (const m of text.matchAll(TOKEN)) {
+      parts.push(esc(text.slice(at, m.index)));
+      at = m.index + m[0].length;
+      const cls = tokenClass(m, lang, words);
+      parts.push(cls ? `<span class="${cls}">${esc(m[0])}</span>` : esc(m[0]));
+    }
+    parts.push(esc(text.slice(at)));
+    el.innerHTML = parts.join("");
+  }
+
+  document.querySelectorAll(".excerpt code.src[data-lang]").forEach(colour);
+  relink(document.body);
+  renderList();
+  openFromHash();
+})();
+</script>
+</body>
+</html>

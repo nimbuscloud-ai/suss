@@ -4,6 +4,8 @@ suss reads your code and checks what it does at every boundary, such as a route 
 
 Code is written faster than anyone can read it. Large pull requests land all day, and no reviewer can keep one of them in their head. A diff shows you which lines of text changed, and you still have to work out what the service does now. Tests written alongside the change only check what their author meant. suss reads the code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches, so you can read that instead. There is no model in it, so the same code gives you the same description every time.
 
+To see a whole project first, run `npx @suss/cli map`. It writes one page of the routes, GraphQL fields, tables and env vars, and what each route reaches, which you open from disk. [See an example](https://suss.sh/examples/lobsters.html).
+
 ## Read one service
 
 ```bash
