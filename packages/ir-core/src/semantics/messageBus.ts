@@ -34,7 +34,11 @@ export const MessageBusSemanticsSchema = z.object({
     "aws_kinesis",
     "aws_firehose",
     "gcp_pubsub",
+    // Job queues. The header says what their channel is.
     "bullmq",
+    "activejob",
+    "sidekiq",
+    "celery",
     "kafka",
     "nats",
     "cloudflare-queues",
@@ -58,6 +62,30 @@ export type MessageBusSemantics = z.infer<typeof MessageBusSemanticsSchema>;
  * so there is no hand-written copy to fall out of step.
  */
 export type MessageBusTechnology = MessageBusSemantics["messageBus"];
+
+/**
+ * Whether a scheduler can put work on the bus from a config file the run
+ * does not read, as Sidekiq's `sidekiq.yml` and Celery beat do. A consumer
+ * on such a bus with no producer in code may still run on a schedule.
+ */
+export const SCHEDULED_FROM_CONFIG: Record<MessageBusTechnology, boolean> = {
+  aws_sqs: false,
+  "aws.sns": false,
+  s3: false,
+  eventbridge: false,
+  aws_kinesis: false,
+  aws_firehose: false,
+  gcp_pubsub: false,
+  bullmq: false,
+  activejob: true,
+  sidekiq: true,
+  celery: true,
+  kafka: false,
+  nats: false,
+  "cloudflare-queues": false,
+  "cloudflare-cron": false,
+  "cloudflare-tail": false,
+};
 
 export const messageBusSemantics = defineBoundarySemantics({
   name: "message-bus",
