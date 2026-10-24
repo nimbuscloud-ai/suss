@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Fifty-eight packs read code today, across forty-seven frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Sixty packs read code today, across forty-nine frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -49,6 +49,7 @@ A framework pack finds the units a framework defines: a route handler, a compone
 
 | Name | What it reads | Coverage |
 |---|---|---|
+| [`activejob`](../../packages/framework/activejob) | ActiveJob jobs and ActionMailer messages (Ruby): each job's perform and each mailer method is a consumer of an activejob channel, and perform_later or deliver_later a send to it. | ![](../../.github/badges/coverage-activejob.svg) |
 | [`apollo`](../../packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](../../.github/badges/coverage-apollo.svg) |
 | [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired with the routes a SAM template or serverless.yml declares. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 | [`aws-lambda-python`](../../packages/framework/aws-lambda) | AWS Lambda handlers written in Python, found from the Handler a SAM template or serverless.yml gives each function. | ![](../../.github/badges/coverage-aws-lambda.svg) |
@@ -74,6 +75,7 @@ A framework pack finds the units a framework defines: a route handler, a compone
 | [`react-query`](../../packages/framework/react-query) | TanStack Query hooks. The pack links a component to the query function that its `useQuery` or `useMutation` call runs. | ![](../../.github/badges/coverage-react-query.svg) |
 | [`react-router`](../../packages/framework/react-router) | React Router loaders, actions and routes. | ![](../../.github/badges/coverage-react-router.svg) |
 | [`rspec`](../../packages/framework/rspec) | RSpec examples, named by their group titles, so a PRD scenario can say which test covers it. | ![](../../.github/badges/coverage-rspec.svg) |
+| [`sidekiq`](../../packages/framework/sidekiq) | Sidekiq jobs (Ruby): each job's perform is a consumer of a sidekiq channel, and perform_async, perform_in or perform_at a send to it. | ![](../../.github/badges/coverage-sidekiq.svg) |
 | [`ts-rest`](../../packages/framework/ts-rest) | ts-rest handlers and clients, and the contract both sides are built from. | ![](../../.github/badges/coverage-ts-rest.svg) |
 | [`vitest`](../../packages/framework/vitest) | vitest cases, named by their titles, so a PRD scenario can say which test covers it. | ![](../../.github/badges/coverage-vitest.svg) |
 
