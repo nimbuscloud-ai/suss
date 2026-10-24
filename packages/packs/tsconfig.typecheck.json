@@ -72,6 +72,9 @@
       "path": "../framework/aws-sqs/tsconfig.typecheck.json"
     },
     {
+      "path": "../framework/bullmq/tsconfig.typecheck.json"
+    },
+    {
       "path": "../framework/cloudflare-workers/tsconfig.typecheck.json"
     },
     {
