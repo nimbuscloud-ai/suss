@@ -13,10 +13,13 @@
 import { createHash } from "node:crypto";
 
 import {
+  displayLabel,
   effectKey,
   exchangesHttpResponses,
   foldRepeatedEffects,
+  MESSAGE_BUS_TRAITS,
   normalizeCalleeText,
+  unfollowedCallGap,
   withGraphqlMetadata,
   withHttpMetadata,
   withMountMetadata,
@@ -997,7 +1000,35 @@ export function detectGaps(
     gaps.push(...contractStatusGaps(raw.declaredContract, transitions));
   }
 
+  gaps.push(...unsettledJobGaps(transitions));
+
   return gaps;
+}
+
+/**
+ * One gap per call that enqueues a job its pack could not settle. The
+ * pack records the send with no channel, in whichever language, and the
+ * gap is written here so every language says it the same way.
+ */
+function unsettledJobGaps(transitions: readonly Transition[]): Gap[] {
+  const callees = new Set<string>();
+  for (const transition of transitions) {
+    for (const effect of transition.effects) {
+      if (
+        effect.type !== "interaction" ||
+        effect.interaction.class !== "message-send" ||
+        effect.binding.semantics.name !== "message-bus" ||
+        effect.binding.semantics.channel !== null ||
+        !MESSAGE_BUS_TRAITS[effect.binding.semantics.messageBus].jobQueue
+      ) {
+        continue;
+      }
+      callees.add(effect.callee ?? displayLabel(effect.binding));
+    }
+  }
+  return [...callees].map((callee) =>
+    unfollowedCallGap({ callee, reason: "unsettledJob" }),
+  );
 }
 
 // =============================================================================

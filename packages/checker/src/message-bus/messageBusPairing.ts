@@ -27,7 +27,7 @@ import {
   bindingIs,
   busIdentityKey,
   displayLabel,
-  SCHEDULED_FROM_CONFIG,
+  MESSAGE_BUS_TRAITS,
 } from "@suss/ir-core";
 
 import {
@@ -211,7 +211,7 @@ export function checkMessageBus(
       continue;
     }
     // A scheduler config the run does not read may enqueue this job.
-    if (SCHEDULED_FROM_CONFIG[semantics.messageBus]) {
+    if (MESSAGE_BUS_TRAITS[semantics.messageBus].scheduledFromConfig) {
       continue;
     }
     findings.push(makeOrphanConsumerFinding(c, semantics));

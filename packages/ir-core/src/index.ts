@@ -56,8 +56,8 @@ export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js
 export { GraphqlResolverSemanticsSchema } from "./semantics/graphqlResolver.js";
 export { IoSemanticsSchema } from "./semantics/io.js";
 export {
+  MESSAGE_BUS_TRAITS,
   MessageBusSemanticsSchema,
-  SCHEDULED_FROM_CONFIG,
 } from "./semantics/messageBus.js";
 export { MetricSemanticsSchema } from "./semantics/metric.js";
 export { SemanticsSchema } from "./semantics/registry.js";

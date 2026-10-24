@@ -68,6 +68,7 @@ export {
   isGraphqlOperationBinding,
   isModuleName,
   leavesTheProcess,
+  MESSAGE_BUS_TRAITS,
   messageBusBinding,
   metricBinding,
   moduleExportBinding,

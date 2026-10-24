@@ -63,28 +63,48 @@ export type MessageBusSemantics = z.infer<typeof MessageBusSemanticsSchema>;
  */
 export type MessageBusTechnology = MessageBusSemantics["messageBus"];
 
-/**
- * Whether a scheduler can put work on the bus from a config file the run
- * does not read, as Sidekiq's `sidekiq.yml` and Celery beat do. A consumer
- * on such a bus with no producer in code may still run on a schedule.
- */
-export const SCHEDULED_FROM_CONFIG: Record<MessageBusTechnology, boolean> = {
-  aws_sqs: false,
-  "aws.sns": false,
-  s3: false,
-  eventbridge: false,
-  aws_kinesis: false,
-  aws_firehose: false,
-  gcp_pubsub: false,
-  bullmq: false,
-  activejob: true,
-  sidekiq: true,
-  celery: true,
-  kafka: false,
-  nats: false,
-  "cloudflare-queues": false,
-  "cloudflare-cron": false,
-  "cloudflare-tail": false,
+/** What a bus is like, where the checks treat one bus differently from another. */
+export interface MessageBusTraits {
+  /** The bus is a background job queue, so a send whose job is unsettled leaves a gap. */
+  jobQueue: boolean;
+  /**
+   * A scheduler can put work on the bus from a config file the run does
+   * not read, as `sidekiq.yml` and Celery beat do, so a consumer with no
+   * producer in code may still run.
+   */
+  scheduledFromConfig: boolean;
+}
+
+const MESSAGES: MessageBusTraits = {
+  jobQueue: false,
+  scheduledFromConfig: false,
+};
+const JOBS: MessageBusTraits = { jobQueue: true, scheduledFromConfig: false };
+const SCHEDULED_JOBS: MessageBusTraits = {
+  jobQueue: true,
+  scheduledFromConfig: true,
+};
+
+export const MESSAGE_BUS_TRAITS: Record<
+  MessageBusTechnology,
+  MessageBusTraits
+> = {
+  aws_sqs: MESSAGES,
+  "aws.sns": MESSAGES,
+  s3: MESSAGES,
+  eventbridge: MESSAGES,
+  aws_kinesis: MESSAGES,
+  aws_firehose: MESSAGES,
+  gcp_pubsub: MESSAGES,
+  bullmq: JOBS,
+  activejob: SCHEDULED_JOBS,
+  sidekiq: SCHEDULED_JOBS,
+  celery: SCHEDULED_JOBS,
+  kafka: MESSAGES,
+  nats: MESSAGES,
+  "cloudflare-queues": MESSAGES,
+  "cloudflare-cron": MESSAGES,
+  "cloudflare-tail": MESSAGES,
 };
 
 export const messageBusSemantics = defineBoundarySemantics({
