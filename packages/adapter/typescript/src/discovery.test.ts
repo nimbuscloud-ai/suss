@@ -13,7 +13,7 @@ import { createTestProject, testCompilerOptions } from "@suss/test-project";
 import { discoverUnits } from "./discovery/index.js";
 import { ResolutionStore } from "./facts/store.js";
 
-import type { DiscoveryPattern } from "@suss/extractor";
+import type { ChannelSource, DiscoveryPattern } from "@suss/extractor";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -4038,12 +4038,7 @@ describe("decoratedRoute with a declared binding", () => {
     }
   `;
 
-  const pattern = (
-    channel:
-      | { from: "decoratorArgument"; position: number }
-      | { from: "literal"; value: string }
-      | { from: "unstated" },
-  ): DiscoveryPattern => ({
+  const pattern = (channel: ChannelSource): DiscoveryPattern => ({
     kind: "consumer",
     match: {
       type: "decoratedRoute",
@@ -4144,6 +4139,123 @@ describe("decoratedRoute with a declared binding", () => {
       pattern({ from: "decoratorArgument", position: 0 }),
     ]);
     expect(units[0]?.channelInfo?.channel).toBe("order.placed");
+  });
+
+  it("leaves the channel unnamed for a source that reads a call no decorator has", () => {
+    const file = createProject().createSourceFile("orders.ts", MICRO_SOURCE);
+    const units = discoverUnits(file, [
+      pattern({ from: "callArgument", position: 0 }),
+    ]);
+    expect(units[0]?.channelInfo?.channel).toBeNull();
+  });
+});
+
+describe("callbackArgument discovery", () => {
+  const WORKER_SOURCE = `
+    import { Worker } from "bullmq";
+
+    const QUEUE = "emails";
+
+    async function sendEmail(job: { data: { to: string } }) {
+      return job.data.to;
+    }
+
+    export const named = new Worker(QUEUE, sendEmail);
+    export const inline = new Worker("digests", async () => {});
+    export const fromFile = new Worker("renders", "./render.js");
+    export const missing = new Worker("idle");
+  `;
+
+  const match = {
+    type: "callbackArgument",
+    importModule: "bullmq",
+    importName: "Worker",
+    callbackPosition: 1,
+  } as const;
+
+  it("makes each function handed to the construction a unit on the channel it states", () => {
+    const file = createProject().createSourceFile("worker.ts", WORKER_SOURCE);
+    const units = discoverUnits(file, [
+      {
+        kind: "consumer",
+        match,
+        binding: {
+          semantics: "message-bus",
+          messageBus: "bullmq",
+          channel: { from: "callArgument", position: 0 },
+        },
+      },
+    ]);
+    expect(units.map((unit) => unit.channelInfo?.channel)).toEqual([
+      "emails",
+      "digests",
+    ]);
+    expect(units.map((unit) => unit.name)).toEqual([
+      "Worker emails",
+      "Worker digests",
+    ]);
+    expect(units[0]?.kind).toBe("consumer");
+  });
+
+  it("labels the unit by its line when the channel does not settle", () => {
+    const file = createProject().createSourceFile(
+      "worker.ts",
+      `
+      import { Worker } from "bullmq";
+      export const worker = new Worker(process.env.QUEUE as string, async () => {});
+    `,
+    );
+    const units = discoverUnits(file, [
+      {
+        kind: "consumer",
+        match,
+        binding: {
+          semantics: "message-bus",
+          messageBus: "bullmq",
+          channel: { from: "callArgument", position: 0 },
+        },
+      },
+    ]);
+    expect(units[0]?.channelInfo?.channel).toBeNull();
+    expect(units[0]?.name).toBe("Worker @3");
+  });
+
+  it("reads no channel off a decorator the call does not have", () => {
+    const file = createProject().createSourceFile("worker.ts", WORKER_SOURCE);
+    const units = discoverUnits(file, [
+      {
+        kind: "consumer",
+        match,
+        binding: {
+          semantics: "message-bus",
+          messageBus: "bullmq",
+          channel: { from: "decoratorArgument", position: 0 },
+        },
+      },
+    ]);
+    expect(units.map((unit) => unit.channelInfo?.channel)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it("gives a unit with no boundary of its own when the pattern declares none", () => {
+    const file = createProject().createSourceFile("worker.ts", WORKER_SOURCE);
+    const units = discoverUnits(file, [{ kind: "handler", match }]);
+    expect(units).toHaveLength(2);
+    expect(units[0]?.channelInfo).toBeUndefined();
+    expect(units[0]?.name).toBe("Worker@10");
+  });
+
+  it("finds nothing when the constructor comes from another module", () => {
+    const file = createProject().createSourceFile(
+      "worker.ts",
+      `
+      import { Worker } from "node:worker_threads";
+      export const worker = new Worker("./thread.js", async () => {});
+    `,
+    );
+    expect(discoverUnits(file, [{ kind: "consumer", match }])).toEqual([]);
   });
 });
 

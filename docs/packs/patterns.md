@@ -375,6 +375,28 @@ Pass exact module specifiers, sub-path included. Several call sites inside one f
 
 `mocks` says how the runner replaces something: the helper object imported from `importModule`, the methods that replace a module given its specifier, and the methods that replace one member given the object and the member's name. A mock applies to the cases in its scope: every case for one at module scope, and the cases inside the suite or case it is written in otherwise. `files` limits the walk to files matching one of the entries on whole path segments from the end. The vitest pack uses it.
 
+### `callbackArgument`
+
+```typescript
+{
+  type: "callbackArgument";
+  importModule: string;      // "bullmq"
+  importName: string;        // "Worker"
+  callbackPosition: number;  // 1
+}
+```
+
+`callbackArgument` finds a function handed to a call or construction of a library export, which the library then runs with work of its own:
+
+```ts
+import { Worker } from "bullmq";
+import { sendEmail } from "./processors";
+
+new Worker("emails", sendEmail);
+```
+
+`new Worker(...)` and `worker(...)` both match, and only when the callee comes from `importModule`, so a class of the project's own with the same name is left alone. The function is followed the way any value is, so `sendEmail` above is the function in `./processors`. A function that does not settle to one body, such as a parameter or a file path the library loads itself, gives no unit. Pair it with a declared `binding` whose channel is `callArgument` to read the boundary off the same call. The BullMQ pack uses it.
+
 ## `BindingExtraction`
 
 `bindingExtraction` on a discovery pattern says where the HTTP method and path come from.
@@ -409,12 +431,13 @@ binding: {
   messageBus: MessageBusTechnology;
   channel:
     | { from: "decoratorArgument"; position: number }
+    | { from: "callArgument"; position: number }
     | { from: "literal"; value: string }
     | { from: "unstated" };
 }
 ```
 
-`decoratorArgument` reads the channel from the decorator that selected the handler, so `@EventPattern("order.placed")` gives `order.placed`. `unstated` means suss has the message bus but not the channel, and the binding pairs the way any null channel pairs. NestJS microservices uses it.
+`decoratorArgument` reads the channel from the decorator that selected the handler, so `@EventPattern("order.placed")` gives `order.placed`. NestJS microservices uses it. `callArgument` reads it from the call a `callbackArgument` match found the function in, so `new Worker("emails", processor)` gives `emails`. BullMQ uses it. A constant passed by name is followed to the string it was written as, and a channel that does not settle to one string is left null. `unstated` means suss has the message bus but not the channel, and the binding pairs the way any null channel pairs.
 
 ## `TerminalMatch` variants
 

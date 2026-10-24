@@ -129,11 +129,11 @@ A listed host matches with or without a port.
 
 ## Pack names
 
-`-f` takes these 58 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
+`-f` takes these 59 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
 
 **Frameworks.** These discover the units a run is about: a route, a resolver, a component, a deployed function.
 
-`apollo`, `aws-lambda`, `aws-lambda-python`, `aws-lambda-ruby`, `cloudflare-workers`, `express`, `fastapi`, `fastify`, `flask-restx`, `graphql-ruby`, `hono`, `nestjs-graphql`, `nestjs-microservices`, `nestjs-rest`, `nextjs`, `package-exports`, `rails`, `react`, `react-query`, `react-router`, `ts-rest`
+`apollo`, `aws-lambda`, `aws-lambda-python`, `aws-lambda-ruby`, `bullmq`, `cloudflare-workers`, `express`, `fastapi`, `fastify`, `flask-restx`, `graphql-ruby`, `hono`, `nestjs-graphql`, `nestjs-microservices`, `nestjs-rest`, `nextjs`, `package-exports`, `rails`, `react`, `react-query`, `react-router`, `ts-rest`
 
 **Tests.** These read the tests a PRD scenario lists under `coveredBy`, one pack per runner, and read only the listed files when the run is given `--intent`.
 

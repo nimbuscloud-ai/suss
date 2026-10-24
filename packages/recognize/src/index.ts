@@ -24,6 +24,7 @@ export type {
 export type {
   AccessKind,
   AccessPathLink,
+  ArgumentPart,
   ArgumentPick,
   ArgumentsFrom,
   CallStep,
@@ -42,6 +43,7 @@ export type {
   KindAsAsked,
   Link,
   LinkFunction,
+  ManyAsTheInput,
   ManyIn,
   MatchStart,
   MessageLocation,
@@ -51,6 +53,7 @@ export type {
   MethodsLink,
   OneArgument,
   OneMessage,
+  PropertyPart,
   ScopeLink,
   SelectorParamPick,
   SqlEnding,
@@ -65,6 +68,7 @@ export type {
   ToReceiver,
   UnitInvokeEnding,
   UnitInvokeMethod,
+  WholeMessage,
 } from "./chain.js";
 export type { RanExample, RunOverCode } from "./example.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
