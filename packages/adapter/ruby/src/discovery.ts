@@ -13,9 +13,11 @@
 import {
   dispatchByType,
   graphqlResolverBinding,
+  messageBusBinding,
   restBinding,
 } from "@suss/behavioral-ir";
 import { absentReading, unreadableReading } from "@suss/extractor";
+import { nodeOfKey, spanOfKey } from "@suss/resolution";
 
 import {
   ancestryOf,
@@ -40,6 +42,7 @@ import {
   classesDeclaredInRun,
   classSettledOn,
   declaredName,
+  enclosingClassKey,
 } from "./baseClass.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
@@ -54,6 +57,7 @@ import {
   filterUnit,
   unreadFilterReference,
 } from "./filters.js";
+import { jobEnqueueEffects, jobHandlersOf, type RbJobOptions } from "./jobs.js";
 import {
   EVERY_ARGLESS_CALL,
   effectSitesIn,
@@ -67,6 +71,7 @@ import {
 } from "./provenance.js";
 import { raisedStatusBranches } from "./raisedStatuses.js";
 import { escapingRaises, raisedClassRef } from "./raises.js";
+import { libraryUnit } from "./reach/closure.js";
 import {
   hookReference,
   hooksRun,
@@ -177,6 +182,8 @@ export interface BodyReadOptions {
   readonly facts?: Database | undefined;
   /** The storage patterns that decide whether a call reads or writes the database. Absent when no pack declares any. */
   readonly storage?: RbStorageOptions | undefined;
+  /** The job patterns that decide whether a call enqueues a background job. Absent when no pack declares any. */
+  readonly jobs?: RbJobOptions | undefined;
   /** The methods the run's packs declare their libraries define. Calls to them are left off an effect list. */
   readonly inheritedMethods?: InheritedMethods | undefined;
   /** The calls whose block the run's packs declare runs as part of the surrounding body. */
@@ -337,6 +344,7 @@ export async function discoverUnits(
         );
       }
     }
+    units.push(...(await jobUnits(info, root, options)));
   }
   const absoluteFile = options.absoluteFile ?? options.filePath;
   units.push(
@@ -370,6 +378,93 @@ export async function discoverUnits(
     }),
   );
   return units;
+}
+
+/**
+ * A consumer unit for each method a worker runs in this class block,
+ * with the walk started from each. An inherited `perform` is read where
+ * the base class writes it.
+ */
+async function jobUnits(
+  info: ClassInfo,
+  root: RbNode,
+  options: DiscoveryOptions,
+): Promise<RawCodeStructure[]> {
+  if (options.jobs === undefined) {
+    return [];
+  }
+  const file = options.absoluteFile ?? options.filePath;
+  const units: RawCodeStructure[] = [];
+  for (const handler of jobHandlersOf(
+    info,
+    file,
+    options.jobs,
+    options.bodyBlocks,
+  )) {
+    const at = spanOfKey(handler.functionKey);
+    const tree = at?.file === file ? root : await treeAt(at?.file, options);
+    const node =
+      at === null || tree === null
+        ? null
+        : nodeOfKey(new Map([[at.file, tree]]), handler.functionKey);
+    if (at === null || node === null) {
+      continue;
+    }
+    const raw = libraryUnit(
+      {
+        file: at.file,
+        node,
+        name: handler.name,
+        exportPath: handler.exportPath,
+      },
+      { ...options, displayPathOf: (one) => displayPathIn(options, one) },
+      messageBusBinding({
+        recognition: handler.declaration.recognition,
+        messageBus: handler.declaration.pattern.messageBus,
+        channel: handler.channel,
+      }),
+    );
+    const unit: RawCodeStructure = {
+      ...raw,
+      identity: { ...raw.identity, kind: "consumer" },
+    };
+    // An inherited `perform` is walked as the base class it is written
+    // in, the same as the base job's own unit, so the two agree.
+    options.onReachSeed?.(unit, {
+      file: at.file,
+      node,
+      enclosingQualifiedName:
+        at.file === file && isWithin(node, info.node)
+          ? info.qualifiedName
+          : writtenIn(node, at.file, options),
+    });
+    units.push(unit);
+  }
+  return units;
+}
+
+function isWithin(node: RbNode, outer: RbNode): boolean {
+  return node.startIndex >= outer.startIndex && node.endIndex <= outer.endIndex;
+}
+
+/** The class a method is written in, by the name it is declared under, or null outside one. */
+function writtenIn(
+  method: RbNode,
+  file: string,
+  options: DiscoveryOptions,
+): string | null {
+  const classKey = enclosingClassKey(method, file);
+  if (classKey === null || options.facts === undefined) {
+    return null;
+  }
+  return declaredName(options.facts, classKey) ?? null;
+}
+
+async function treeAt(
+  file: string | undefined,
+  options: DiscoveryOptions,
+): Promise<RbNode | null> {
+  return file === undefined ? null : options.cache.get(file);
 }
 
 /**
@@ -1101,6 +1196,7 @@ export function bodyOfMethod(
       facts === undefined ? undefined : { db: facts, file },
     ),
     ...database.effects,
+    ...jobEnqueueEffects(method, file, bodyRead.jobs),
     ...streamWriteEffects(method),
   ];
   const siteOf = effectSitesIn(

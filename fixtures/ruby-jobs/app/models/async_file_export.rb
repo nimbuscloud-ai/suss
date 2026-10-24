@@ -1,0 +1,2 @@
+class AsyncFileExport < ApplicationRecord
+end

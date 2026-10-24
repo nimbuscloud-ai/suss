@@ -7,7 +7,11 @@
  * data. This package hardcodes none of it.
  */
 
-import type { RequestSpellingMetadata, TypeShape } from "@suss/behavioral-ir";
+import type {
+  MessageBusTechnology,
+  RequestSpellingMetadata,
+  TypeShape,
+} from "@suss/behavioral-ir";
 import type { DeclaredEntryPoint } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 import type { BodyBlockKind, BodyBlocks } from "./ast.js";
@@ -114,6 +118,61 @@ export interface RubyPack {
   testClasses?: RbTestClasses[];
   /** How the library writes a test, so each one becomes a `test` unit a PRD scenario can list under `coveredBy`. */
   tests?: RbTestCases[];
+  /** How the library runs a method later in a worker, and the calls that enqueue it. */
+  jobs?: RbJobPattern[];
+}
+
+/**
+ * A background job library. A job's method becomes a `consumer` unit on
+ * a message-bus channel, and a call that enqueues it becomes a message
+ * send to that channel. DESIGN.md says how the adapter reads each kind.
+ */
+export type RbJobPattern = RbJobClasses | RbMailers;
+
+/**
+ * Job classes with one method the worker runs, as ActiveJob and Sidekiq
+ * write them: `ReportJob.perform_later(id)` runs `ReportJob#perform(id)`.
+ * The channel is the class, with the queue the class declares in front.
+ */
+export interface RbJobClasses {
+  type: "jobClasses";
+  messageBus: MessageBusTechnology;
+  /** Library bases a job class extends, as a project writes them: `ActiveJob::Base`. */
+  baseClasses: string[];
+  /** Library modules a job class includes: `Sidekiq::Job`. */
+  modules: string[];
+  /** The instance method the worker runs: `perform`. */
+  performMethod: string;
+  /** The class methods that enqueue a job, each with the position its first job argument is at: `perform_in` takes the delay first. */
+  enqueueMethods: Record<string, number>;
+  /** Class methods that return the job with options set, so an enqueue can be called on their result: `set`. */
+  optionMethods: string[];
+  /** The class-body calls that declare the job's queue. */
+  queueDeclarations: RbQueueDeclaration[];
+}
+
+/** A class-body call that declares a job's queue, and where it takes the queue. */
+export interface RbQueueDeclaration {
+  /** `queue_as`, or `sidekiq_options`. */
+  call: string;
+  /** Where the call takes the queue: positionally for `queue_as :exports`, or under a keyword for `sidekiq_options queue: "push"`. */
+  queue: RbArgumentPlace;
+}
+
+/**
+ * Mailers, as ActionMailer writes them: every public instance method is
+ * a message, and `UserMailer.welcome(user).deliver_later` enqueues
+ * `UserMailer#welcome(user)`. The channel is `UserMailer.welcome`.
+ */
+export interface RbMailers {
+  type: "mailers";
+  messageBus: MessageBusTechnology;
+  /** Library bases a mailer extends: `ActionMailer::Base`. */
+  baseClasses: string[];
+  /** The calls on a built message that enqueue it: `deliver_later`. */
+  enqueueMethods: string[];
+  /** Class methods that return the mailer with parameters set, so the message can be built on their result: `with`. */
+  optionMethods: string[];
 }
 
 /**

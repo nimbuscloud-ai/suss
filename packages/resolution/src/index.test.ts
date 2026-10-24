@@ -3267,6 +3267,42 @@ describe("a name followed by every chain that stops somewhere", () => {
         ),
       expected: ["ApplicationJob"],
     },
+    // class ReportWorker < BaseWorker, where only BaseWorker defines perform
+    inheritedMethodChain: {
+      hops: EVERY_HOP,
+      ask: (hop) =>
+        answered(
+          [
+            ["objectValue", "ReportWorker"],
+            ["extends", "ReportWorker", "baseRef"],
+            ["objectValue", "BaseWorker"],
+            ["holdsProperty", "BaseWorker", "perform", "basePerform"],
+            ...hop("baseRef", "BaseWorker"),
+          ],
+          "ReportWorker",
+          "wantedAncestry",
+          "wantedMethodBody",
+        ),
+      expected: ["perform:basePerform"],
+    },
+    // class ReportWorker < BaseWorker, where BaseWorker includes Sidekiq::Job
+    mixinChain: {
+      hops: EVERY_HOP,
+      ask: (hop) =>
+        answered(
+          [
+            ["objectValue", "ReportWorker"],
+            ["extends", "ReportWorker", "baseRef"],
+            ["objectValue", "BaseWorker"],
+            ["mixesInNamed", "BaseWorker", "Sidekiq::Job"],
+            ...hop("baseRef", "BaseWorker"),
+          ],
+          "ReportWorker",
+          "wantedAncestry",
+          "wantedMixinName",
+        ),
+      expected: ["Sidekiq::Job"],
+    },
   };
 
   const cases = Object.entries(CHAINS).flatMap(([name, chain]) =>

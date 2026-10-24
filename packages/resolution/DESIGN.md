@@ -248,6 +248,10 @@ extendsNamed(c, n)          class c's base is written n, which is how a
                             pack matches a library base that no node in
                             the run declares. Only a base written as a
                             name or a dotted name has one
+mixesInNamed(c, n)          class c includes a module written n, which is
+                            how a pack matches a library module such as
+                            Sidekiq::Job that no node in the run
+                            declares (Ruby)
 plainClass(c)               class c is written with no decorator, no
                             keyword such as metaclass=, and no base but
                             object, so nothing generates a constructor

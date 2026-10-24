@@ -1,0 +1,8 @@
+{
+  "sidekiq": "suss: this pack's own name, used as RubyPack.name and as boundaryBinding recognition; also the message-bus technology its channels are on",
+  "jobClasses": "suss: RbJobPattern variant tag, defined in @suss/adapter-ruby",
+  "perform": "Sidekiq: the instance method Sidekiq::Job requires, which a worker runs with the job's arguments",
+  "set": "Sidekiq: Sidekiq::Job::ClassMethods#set, which returns a setter with queue or retry options for the enqueue after it",
+  "sidekiq_options": "Sidekiq: Sidekiq::Job::ClassMethods#sidekiq_options, which declares a job's queue and retry options",
+  "queue": "Sidekiq: the sidekiq_options keyword the job's queue is given under"
+}
