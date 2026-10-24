@@ -176,6 +176,12 @@
       "path": "packages/framework/factory-bot/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/activejob/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/sidekiq/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/fabrication/tsconfig.typecheck.json"
     },
     {
