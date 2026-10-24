@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { withWrapperMetadata } from "@suss/behavioral-ir";
+import { messageBusBinding, withWrapperMetadata } from "@suss/behavioral-ir";
 
 import { callSpellings, functionOf, readCallFacts } from "./callFacts.js";
 
@@ -414,5 +414,106 @@ describe("readCallFacts, reached from each start", () => {
       pastMocks: true,
     });
     expect(refused.get(start)?.keys.size).toBe(0);
+  });
+});
+
+describe("readCallFacts, a job put on a queue", () => {
+  function enqueue(channel: string | null, callee: string): Effect {
+    return {
+      type: "interaction",
+      binding: messageBusBinding({
+        recognition: "test",
+        messageBus: "activejob",
+        channel,
+      }),
+      callee,
+      interaction: { class: "message-send" },
+    };
+  }
+
+  function consumer(name: string, channel: string): BehavioralSummary {
+    const summary = unit(name);
+    return {
+      ...summary,
+      kind: "consumer",
+      identity: {
+        ...summary.identity,
+        boundaryBinding: messageBusBinding({
+          recognition: "test",
+          messageBus: "activejob",
+          channel,
+        }),
+      },
+    };
+  }
+
+  const job = consumer("ReportExportJob.perform", "exports#ReportExportJob");
+  const route = unit("createExport", [
+    enqueue("ReportExportJob", "ReportExportJob.perform_later"),
+  ]);
+
+  it("reaches the job from the code that enqueues it, as a sent call", () => {
+    const reached = readCallFacts([job, route]).reachedFrom([
+      functionOf(route),
+    ]);
+    expect(reached.get(functionOf(job))).toEqual([
+      {
+        callee: "ReportExportJob.perform_later",
+        to: functionOf(job),
+        recorded: "sent",
+      },
+    ]);
+  });
+
+  it("pairs a send and a job that both say the queue only when the queues match", () => {
+    const sameQueue = unit("sameQueue", [
+      enqueue("exports#ReportExportJob", "same"),
+    ]);
+    const otherQueue = unit("otherQueue", [
+      enqueue("low#ReportExportJob", "other"),
+    ]);
+    const facts = readCallFacts([job, sameQueue, otherQueue]);
+    expect(
+      facts.reachedFrom([functionOf(sameQueue)]).has(functionOf(job)),
+    ).toBe(true);
+    expect(
+      facts.reachedFrom([functionOf(otherQueue)]).has(functionOf(job)),
+    ).toBe(false);
+  });
+
+  it("pairs a send that says its queue with a job that does not", () => {
+    const anyQueue = consumer("Cleanup.perform", "Cleanup");
+    const sender = unit("sender", [enqueue("low#Cleanup", "Cleanup.set")]);
+    const reached = readCallFacts([anyQueue, sender]).reachedFrom([
+      functionOf(sender),
+    ]);
+    expect(reached.has(functionOf(anyQueue))).toBe(true);
+  });
+
+  it("follows no send whose job is unsettled", () => {
+    const unsettled = unit("unsettled", [enqueue(null, "klass.perform_later")]);
+    const reached = readCallFacts([job, unsettled]).reachedFrom([
+      functionOf(unsettled),
+    ]);
+    expect(reached.size).toBe(0);
+  });
+
+  it("leaves a sent call out when asked for the calls the start runs itself", () => {
+    const start = functionOf(route);
+    const answers = readCallFacts([job, route]).reachedFromEach([start], {
+      certainOnly: true,
+    });
+    expect(answers.get(start)?.functions.size).toBe(0);
+  });
+
+  it("does not count a queue a template declares as a consumer", () => {
+    const declared = {
+      ...consumer("Queue", "ReportExportJob"),
+      kind: "library" as const,
+    };
+    const reached = readCallFacts([declared, route]).reachedFrom([
+      functionOf(route),
+    ]);
+    expect(reached.size).toBe(0);
   });
 });

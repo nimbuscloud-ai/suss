@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { messageBusBinding, restBinding } from "@suss/ir-core";
+
 import {
   goesThroughRelation,
   interactionDetail,
@@ -73,9 +75,25 @@ describe("relationsOf", () => {
 });
 
 describe("OWN_BINDING", () => {
-  it("has a provider serving its boundary and a consumer going through one", () => {
-    expect(OWN_BINDING.provider).toEqual(["provides"]);
-    expect(OWN_BINDING.consumer).toEqual(["reads", "writes"]);
+  const route = restBinding({
+    transport: "http",
+    method: "GET",
+    path: "/orders",
+    recognition: "test",
+  });
+  const channel = messageBusBinding({
+    messageBus: "activejob",
+    channel: "ReportJob",
+    recognition: "test",
+  });
+
+  it("has a provider serving its boundary and a client going through one", () => {
+    expect(OWN_BINDING.provider(route)).toEqual(["provides"]);
+    expect(OWN_BINDING.consumer(route)).toEqual(["reads", "writes"]);
+  });
+
+  it("has a consumer of a channel only reading it", () => {
+    expect(OWN_BINDING.consumer(channel)).toEqual(["reads"]);
   });
 });
 

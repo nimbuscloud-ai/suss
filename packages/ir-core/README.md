@@ -33,6 +33,10 @@ The two sides rarely know the same amount. A CloudFormation template gives both 
 
 The boundary key uses only the subject, so both forms end up in the same bucket, and `channelsPair` compares the buses within it.
 
+A background job is a message too. For ActiveJob, Sidekiq and Celery the subject is the job class or the task name, and the bus part is the queue the job declares. A job with `queue_as :mailers` is `mailers#ReportExportJob`, and the enqueue `ReportExportJob.perform_later(id)` is `ReportExportJob`, so the two pair whichever queue the job runs on. A BullMQ worker takes every job on its queue, so for BullMQ the subject is the queue.
+
+A job queue's work can also come from a scheduler that reads job names out of a config file, such as Sidekiq's `sidekiq.yml` or Celery beat. `MESSAGE_BUS_TRAITS` marks those buses `scheduledFromConfig`, and the message-bus check does not report a consumer on one of them as having no producer, because the run does not read that config. The same table marks every job queue `jobQueue`, BullMQ included. A send on a job queue whose job a pack could not settle has no channel, and the summary gets an `unfollowedCall` gap with the reason `unsettledJob`, whichever language the send is in.
+
 ## Boundary names
 
 A container or an access path in a summary is a string that means one of three things, and the braces alone decide which:

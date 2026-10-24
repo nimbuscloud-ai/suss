@@ -34,7 +34,11 @@ export const MessageBusSemanticsSchema = z.object({
     "aws_kinesis",
     "aws_firehose",
     "gcp_pubsub",
+    // Job queues. The header says what their channel is.
     "bullmq",
+    "activejob",
+    "sidekiq",
+    "celery",
     "kafka",
     "nats",
     "cloudflare-queues",
@@ -59,6 +63,50 @@ export type MessageBusSemantics = z.infer<typeof MessageBusSemanticsSchema>;
  */
 export type MessageBusTechnology = MessageBusSemantics["messageBus"];
 
+/** What a bus is like, where the checks treat one bus differently from another. */
+export interface MessageBusTraits {
+  /** The bus is a background job queue, so a send whose job is unsettled leaves a gap. */
+  jobQueue: boolean;
+  /**
+   * A scheduler can put work on the bus from a config file the run does
+   * not read, as `sidekiq.yml` and Celery beat do, so a consumer with no
+   * producer in code may still run.
+   */
+  scheduledFromConfig: boolean;
+}
+
+const MESSAGES: MessageBusTraits = {
+  jobQueue: false,
+  scheduledFromConfig: false,
+};
+const JOBS: MessageBusTraits = { jobQueue: true, scheduledFromConfig: false };
+const SCHEDULED_JOBS: MessageBusTraits = {
+  jobQueue: true,
+  scheduledFromConfig: true,
+};
+
+export const MESSAGE_BUS_TRAITS: Record<
+  MessageBusTechnology,
+  MessageBusTraits
+> = {
+  aws_sqs: MESSAGES,
+  "aws.sns": MESSAGES,
+  s3: MESSAGES,
+  eventbridge: MESSAGES,
+  aws_kinesis: MESSAGES,
+  aws_firehose: MESSAGES,
+  gcp_pubsub: MESSAGES,
+  bullmq: JOBS,
+  activejob: SCHEDULED_JOBS,
+  sidekiq: SCHEDULED_JOBS,
+  celery: SCHEDULED_JOBS,
+  kafka: MESSAGES,
+  nats: MESSAGES,
+  "cloudflare-queues": MESSAGES,
+  "cloudflare-cron": MESSAGES,
+  "cloudflare-tail": MESSAGES,
+};
+
 export const messageBusSemantics = defineBoundarySemantics({
   name: "message-bus",
   schema: MessageBusSemanticsSchema,
@@ -75,6 +123,10 @@ export const messageBusSemantics = defineBoundarySemantics({
      * the generic unmatched list leaves them out.
      */
     reportsUnpairedItself: true,
+    consumedAs: ["reads"],
+    unsettledJob: (semantics) =>
+      semantics.channel === null &&
+      MESSAGE_BUS_TRAITS[semantics.messageBus].jobQueue,
     /**
      * A channel that is null here can still pair. The dedicated pass
      * follows environment variable chains before comparing, so a

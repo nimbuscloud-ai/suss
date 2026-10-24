@@ -416,6 +416,8 @@ A consumer is wired to receive from a channel that no code in the project sends 
 
 **A bug when:** the producer was meant to be here. Nothing sends on the channel, so the consumer never runs and nothing says so at deploy time.
 
+A background job on ActiveJob, Sidekiq or Celery never gets this finding. A scheduler such as `sidekiq.yml`, Solid Queue's `recurring.yml` or Celery beat can enqueue a job by its name from a config file, and suss does not read those files, so a job no code enqueues may still run.
+
 ### `messageBusUnused`
 
 **Severity:** warning.

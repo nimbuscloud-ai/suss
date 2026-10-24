@@ -147,7 +147,8 @@ type Semantics =
 type MessageBus =
   | "aws_sqs" | "aws.sns" | "s3" | "eventbridge"
   | "aws_kinesis" | "aws_firehose" | "gcp_pubsub"
-  | "bullmq" | "kafka" | "nats"
+  | "bullmq" | "activejob" | "sidekiq" | "celery"
+  | "kafka" | "nats"
   | "cloudflare-queues" | "cloudflare-cron" | "cloudflare-tail";
 ```
 
