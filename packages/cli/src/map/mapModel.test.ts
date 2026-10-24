@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { checkAll } from "@suss/checker";
+import { checkAll, summaryWithDefinitionsInlined } from "@suss/checker";
 
 import {
   calls,
@@ -279,6 +279,67 @@ describe("the map model", () => {
     expect(type?.fields.map((f) => [f.name, f.shape.returns])).toEqual([
       ["id", "string"],
       ["manager", "Approver"],
+    ]);
+  });
+
+  it("says what a GraphQL field returns on each outcome, and lists the types its code defines", () => {
+    const campaigns = unit({
+      kind: "resolver",
+      file: "app/graphql/types/query_type.rb",
+      name: "Query.campaigns",
+      binding: resolver("Query", "campaigns"),
+      transitions: [
+        {
+          ...transition("Query.campaigns:return"),
+          output: {
+            type: "return",
+            value: {
+              type: "union",
+              variants: [
+                {
+                  type: "ref",
+                  name: "CampaignConnection",
+                  def: "CampaignConnection",
+                  from: "app/graphql/types/campaign_type.rb",
+                },
+                { type: "null" },
+              ],
+            },
+          },
+        },
+        {
+          ...transition("Query.campaigns:throw"),
+          output: {
+            type: "throw",
+            exceptionType: "GraphQL::ExecutionError",
+            message: null,
+          },
+        },
+      ],
+      definitions: {
+        CampaignConnection: {
+          type: "record",
+          properties: { pageInfo: { type: "ref", name: "PageInfo" } },
+        },
+      },
+    });
+
+    const model = modelOf([campaigns]);
+
+    expect(
+      entry(model, "Query", "campaigns").outcomes.map((o) => o.returns),
+    ).toEqual(["CampaignConnection | null", null]);
+    // `check` spells a named type out before the map reads it, and the
+    // page still prints the name.
+    const spelledOut = modelOf([summaryWithDefinitionsInlined(campaigns)]);
+    expect(
+      entry(spelledOut, "Query", "campaigns").outcomes.map((o) => o.returns),
+    ).toEqual(["CampaignConnection | null", null]);
+    const type = model.graphqlTypes.find(
+      (t) => t.name === "CampaignConnection",
+    );
+    expect(type?.fields.map((f) => [f.name, f.shape.returns])).toEqual([
+      ["pageInfo", "PageInfo"],
     ]);
   });
 

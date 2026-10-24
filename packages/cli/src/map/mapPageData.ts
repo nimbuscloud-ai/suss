@@ -83,7 +83,7 @@ export interface EntryData {
   fw: number;
   u: number[];
   sp: number[];
-  /** Outcomes: [status, output, exception, conditions, unit, line, wrapper]. */
+  /** Outcomes: [status, output, exception, conditions, unit, line, wrapper, returns]. */
   o: Array<
     [
       number | null,
@@ -92,6 +92,7 @@ export interface EntryData {
       number[],
       number,
       number,
+      number | null,
       number | null,
     ]
   >;
@@ -186,6 +187,7 @@ export function pageDataOf(model: MapModel): PageData {
         outcome.unit,
         outcome.line,
         maybe(outcome.wrapper),
+        maybe(outcome.returns),
       ]),
       r: entry.reach.map(reach),
       c: entry.callers,

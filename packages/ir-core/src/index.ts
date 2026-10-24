@@ -46,6 +46,7 @@ export {
   SourceLocationSchema,
   TypeShapeSchema,
   typeDefinitionKey,
+  withChildShapes,
   withDefinitionsInlined,
 } from "./schemas.js";
 export {

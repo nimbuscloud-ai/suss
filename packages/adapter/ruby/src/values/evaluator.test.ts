@@ -22,6 +22,7 @@ import {
   evaluatedValue,
   forgetEvaluations,
   methodDefinitionsIn,
+  possibleValueNodes,
   stringValueOf,
 } from "./evaluator.js";
 
@@ -863,6 +864,60 @@ describe("reading a value under one construction", () => {
 
     expect(constructionSitesOf(node, db)).toEqual([]);
     expect(constructionSitesOf(node, undefined)).toEqual([]);
+  });
+
+  it("lists every expression a ternary's value was written as, through a method", async () => {
+    const { db, root } = await boundTo(
+      [
+        "class Resolver",
+        "  def resolve",
+        "    subject = ok? ? found : failure",
+        "  end",
+        "",
+        "  def failure",
+        '    Failure.new("no")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    const method = [...methodDefinitionsIn("f.rb", root).values()].find(
+      (one) => field(one, "name")?.text === "resolve",
+    ) as RbNode;
+    const node = subjectNodeIn(field(method, "body") as RbNode);
+
+    expect(possibleValueNodes(node, db).map((one) => one?.text)).toEqual([
+      "found",
+      'Failure.new("no")',
+    ]);
+    expect(possibleValueNodes(node, undefined)).toEqual([]);
+  });
+
+  it("takes each arm of a case a called method returns", async () => {
+    const { db, root } = await boundTo(
+      [
+        "class Resolver",
+        "  def resolve",
+        "    subject = failure",
+        "  end",
+        "",
+        "  def failure",
+        "    case kind",
+        "    when :a then Missing.new",
+        "    else Failure.new",
+        "    end",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    const method = [...methodDefinitionsIn("f.rb", root).values()].find(
+      (one) => field(one, "name")?.text === "resolve",
+    ) as RbNode;
+    const node = subjectNodeIn(field(method, "body") as RbNode);
+
+    expect(possibleValueNodes(node, db).map((one) => one?.text)).toEqual([
+      "Missing.new",
+      "Failure.new",
+    ]);
   });
 
   it("reads the same value again after forgetting what it computed", async () => {

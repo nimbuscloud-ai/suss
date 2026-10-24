@@ -20,6 +20,7 @@ import {
   resolveValues,
   settledFunction,
   writtenValueOf,
+  writtenValuesOf,
   writtenValueUnder,
 } from "../facts/resolve.js";
 import { nodeId, readKey } from "../facts/values.js";
@@ -127,6 +128,76 @@ export function writtenNodeOf(
 ): RbNode | null {
   const context = db === undefined ? undefined : contexts.get(db);
   return context === undefined ? null : context.writtenTo(node, site);
+}
+
+/** How many conditionals deep `possibleValueNodes` follows, each one through what its arms are written as. */
+const ARMS_DEPTH = 4;
+
+/**
+ * Every expression `node` can come down to: what it is written as, with a
+ * conditional among those replaced by its arms and a project method's
+ * call by the values it returns, each read from one-hop facts. A null is
+ * a value the facts give no expression for. Empty for a database with no
+ * project bound.
+ */
+export function possibleValueNodes(
+  node: RbNode,
+  db: Database | undefined,
+): Array<RbNode | null> {
+  const roots = db === undefined ? undefined : rootsByDb.get(db);
+  const file = filesByTree.get(node.tree);
+  if (db === undefined || roots === undefined || file === undefined) {
+    return [];
+  }
+  const found: Array<RbNode | null> = [];
+  const seen = new Set<string>();
+  const visit = (key: string, depth: number): void => {
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    const written = writtenValuesOf(db, key);
+    for (const answer of written.length === 0 ? [key] : written) {
+      noteKeyRead(db, answer);
+      const value = nodeOfKey(roots, answer);
+      const behind =
+        value === null || depth === 0 ? [] : valuesBehind(value, db);
+      if (behind.length === 0) {
+        found.push(value);
+      }
+      for (const next of behind) {
+        visit(next, depth - 1);
+      }
+    }
+  };
+  visit(readKey(file, node, enclosingDefinition(node)), ARMS_DEPTH);
+  return found;
+}
+
+/** The keys of a conditional's arms, or of the values the project method a call runs returns, or none for any other expression. */
+function valuesBehind(value: RbNode, db: Database): string[] {
+  const file = filesByTree.get(value.tree);
+  if (file === undefined) {
+    return [];
+  }
+  const arms = db
+    .lookup("conditionalBranch", 0, nodeId(file, value))
+    .map((row) => String(row[1]));
+  if (arms.length > 0) {
+    return arms;
+  }
+  const site = readKey(file, value, enclosingDefinition(value));
+  const callees = db.lookup("call", 0, site).map((row) => String(row[1]));
+  if (callees.length === 0) {
+    return [];
+  }
+  resolveValues(db, callees);
+  return callees.flatMap((callee) => {
+    const method = settledFunction(db, callee);
+    return method === null
+      ? []
+      : db.lookup("returnsValue", 0, method).map((row) => String(row[1]));
+  });
 }
 
 /**

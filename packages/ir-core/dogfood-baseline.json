@@ -1,7 +1,7 @@
 {
   "name": "@suss/ir-core",
-  "exports": 94,
-  "internal": 51,
+  "exports": 96,
+  "internal": 55,
   "consumers": 0,
-  "unfollowedCalls": 15
+  "unfollowedCalls": 18
 }

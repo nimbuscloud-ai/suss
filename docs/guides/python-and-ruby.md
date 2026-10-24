@@ -332,7 +332,7 @@ app/controllers/health_controller.rb
 - **Raw SQL is Python only.** A statement passed to SQLAlchemy's or SQLModel's `text("...")` is read for its kind and its table. A bare string passed to `session.execute` is not parsed, and suss does not read raw SQL in Ruby at all.
 - **Queue sends are not classified in either language.** suss records the calls as invocation effects. Nothing turns one into a channel the way the TypeScript packs do.
 - **Plain Flask** (`@app.route`) has no pack yet.
-- **graphql-ruby leaves some of the schema unread:** a `graphql_name` override, and interfaces, unions and enums.
+- **graphql-ruby leaves some of the schema unread:** interfaces, unions and enums. A field's output reads its object type one level deep, so a type nested inside that one is named and not read.
 - **Ruby's predicates are plain source text** instead of structured ones, so a condition prints exactly as it was written.
 - **`suss corroborate` is TypeScript only.**
 
