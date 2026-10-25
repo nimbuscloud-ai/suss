@@ -173,6 +173,15 @@ const BY_FILE: Array<{
     describe: (p) => `a SAM template at ${p}`,
   },
   {
+    // The CloudFormation reader leaves AppSync to its own reader, which
+    // links each field through its resolver to the Lambda behind it.
+    matches: (f, file) =>
+      (f === "template.yaml" || f === "template.yml") && declaresAppSync(file),
+    name: "appsync",
+    packageName: "@suss/contract-appsync",
+    describe: (p) => `an AppSync API in ${p}`,
+  },
+  {
     matches: (f) => f === "serverless.yml" || f === "serverless.yaml",
     name: "serverless",
     packageName: "@suss/contract-serverless",
@@ -276,6 +285,10 @@ function headOf(file: string, bytes: number): string {
       fs.closeSync(handle);
     }
   }
+}
+
+function declaresAppSync(file: string): boolean {
+  return /AWS::AppSync::|AWS::Serverless::GraphQLApi/.test(textOf(file));
 }
 
 function textOf(file: string): string {
@@ -410,7 +423,11 @@ export async function inspectProject(root: string): Promise<InitReport> {
     });
   }
 
-  for (const suggestion of lambdaHandlerPacks(suggestions, languages)) {
+  for (const suggestion of lambdaHandlerPacks(
+    resolved,
+    suggestions,
+    languages,
+  )) {
     add(suggestion);
   }
 
@@ -441,18 +458,21 @@ export async function inspectProject(root: string): Promise<InitReport> {
   };
 }
 
-/** The pack that finds Lambda handlers in each language that has no dependency to suggest it by. */
+/** The pack that finds Lambda handlers in each language. */
 const LAMBDA_HANDLER_PACKS: Partial<Record<Language, string>> = {
+  typescript: "aws-lambda",
   python: "aws-lambda-python",
   ruby: "aws-lambda-ruby",
 };
 
 /**
- * A Python or Ruby Lambda imports nothing that marks it as one, so the
- * SAM template or service file found next to the source is what suggests
- * the pack that finds its handlers.
+ * A Lambda need not import anything that marks it as one. A JavaScript
+ * handler has no types to annotate it with, and a Python or Ruby one
+ * none at all. So the SAM template or service file found next to the
+ * source is what suggests the pack that finds its handlers.
  */
 function lambdaHandlerPacks(
+  root: string,
   suggestions: ReadonlyArray<PackSuggestion>,
   languages: readonly Language[],
 ): PackSuggestion[] {
@@ -460,7 +480,7 @@ function lambdaHandlerPacks(
     (suggestion) =>
       suggestion.name === "cloudformation" || suggestion.name === "serverless",
   );
-  if (manifest?.file === undefined) {
+  if (manifest?.file === undefined || !declaresFunctions(root, manifest)) {
     return [];
   }
   return languages.flatMap((language) => {
@@ -477,6 +497,16 @@ function lambdaHandlerPacks(
           },
         ];
   });
+}
+
+/** A service file always declares functions, and a template may declare none. */
+function declaresFunctions(root: string, manifest: PackSuggestion): boolean {
+  if (manifest.name !== "cloudformation" || manifest.file === undefined) {
+    return true;
+  }
+  return /AWS::Serverless::Function|AWS::Lambda::Function/.test(
+    textOf(path.join(root, manifest.file)),
+  );
 }
 
 /**
