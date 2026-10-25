@@ -1,6 +1,7 @@
 # Runs in AccountsFunction behind an HTTP route. Nothing here reads the
 # queue, so its call is not the worker's to repeat.
 
+require_relative "../lib/ledger_client"
 require_relative "../lib/settings"
 
 def create_account(body)
@@ -8,6 +9,7 @@ def create_account(body)
 end
 
 def handler(event:, context:)
+  LedgerClient.new("accounts-ledger").ledger
   create_account(event["body"])
   { statusCode: 201, region: Settings.require_env("ACCOUNTS_REGION") }
 end

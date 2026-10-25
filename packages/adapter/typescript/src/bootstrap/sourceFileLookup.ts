@@ -23,8 +23,7 @@
 
 import path from "node:path";
 
-import { Node } from "ts-morph";
-
+import { isFunctionRoot } from "../discovery/shared.js";
 import { endLineOf, startLineOf } from "../lines.js";
 import { createPerFileCache } from "../perFileCache.js";
 
@@ -207,12 +206,7 @@ const functionIndexes = createPerFileCache<Map<string, FunctionRoot>>();
 function indexFunctions(sf: SourceFile): Map<string, FunctionRoot> {
   const index = new Map<string, FunctionRoot>();
   sf.forEachDescendant((node) => {
-    if (
-      !Node.isFunctionDeclaration(node) &&
-      !Node.isFunctionExpression(node) &&
-      !Node.isArrowFunction(node) &&
-      !Node.isMethodDeclaration(node)
-    ) {
+    if (!isFunctionRoot(node)) {
       return;
     }
     const bySpan = spanKey({ start: node.getStart(), end: node.getEnd() });

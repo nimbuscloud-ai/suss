@@ -16,8 +16,13 @@ import { describe, expect, it } from "vitest";
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 import { checkAll } from "@suss/checker";
 import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
+import {
+  awsLambdaPython,
+  clearTemplateCache,
+} from "@suss/framework-aws-lambda";
 import { fastapiFramework } from "@suss/framework-fastapi";
 
+import type { PythonPack } from "@suss/adapter-python";
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
 const fixtureRoot = path.resolve(
@@ -73,6 +78,23 @@ describe("runtime-config over two Python Lambdas on one CodeUri", () => {
     ).toEqual([]);
   });
 
+  it("links building a class to its __init__, which keeps its own read", async () => {
+    const code = await extractCode([awsLambdaPython()]);
+    const worker = code.find(
+      (s) => s.identity.name === "WorkerFunction.handler",
+    );
+    const built = worker?.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "QueueClient");
+    const init = code.find(
+      (s) => built?.type === "invocation" && s.identity.id === built.summary,
+    );
+    expect(init?.identity.name).toBe("__init__");
+    expect(configReadsOf(init)).toEqual([
+      { name: "QUEUE_URL", callee: 'os.environ["QUEUE_URL"]' },
+    ]);
+  });
+
   it("records the helper's own read with no name", async () => {
     const helper = (await extractCode()).find(
       (s) => s.identity.name === "require_env",
@@ -91,11 +113,14 @@ async function runPipeline(): Promise<Finding[]> {
   return checkAll([...(await extractCode()), ...declared]).findings;
 }
 
-async function extractCode(): Promise<BehavioralSummary[]> {
+async function extractCode(
+  morePacks: PythonPack[] = [],
+): Promise<BehavioralSummary[]> {
   const sourceRoot = path.join(fixtureRoot, "src");
+  clearTemplateCache();
   const { summaries } = await extractPythonProject({
     files: findPythonFiles(sourceRoot),
-    packs: [fastapiFramework()],
+    packs: [fastapiFramework(), ...morePacks],
     roots: [sourceRoot],
     workspaceRoot: fixtureRoot,
   });

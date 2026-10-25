@@ -1,7 +1,7 @@
 {
   "name": "@suss/contract-intent",
   "exports": 5,
-  "internal": 11,
+  "internal": 13,
   "consumers": 6,
   "unfollowedCalls": 0
 }

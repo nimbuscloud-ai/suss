@@ -14,7 +14,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
-import { noteLookup } from "@suss/resolution";
+import { answersFor, noteLookup } from "@suss/resolution";
 
 import {
   children,
@@ -27,6 +27,8 @@ import {
 } from "./ast.js";
 import { isDefaultedAt } from "./defaulted.js";
 import { envSpellingAt, isEnv } from "./envSpellings.js";
+import { CONSTRUCTOR } from "./facts/languageWords.js";
+import { parametersOf } from "./facts/locals.js";
 import {
   resolvedFunctions,
   resolveEnvObjects,
@@ -36,7 +38,7 @@ import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
 import { stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { Database } from "@suss/datalog";
+import type { Database, Tuple } from "@suss/datalog";
 import type { RbNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 
@@ -106,6 +108,7 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
  */
 export function envReadEffects(root: RbNode, facts?: EnvFacts): EffectAt[] {
   const helpers = helperFactsOf(facts);
+  const defaults = facts !== undefined && hasDefaultReads(facts.db);
   // The calls are resolved in one batch after the walk, so the walk keeps
   // a slot for each one to preserve source order.
   const slots: Slot[] = [];
@@ -117,17 +120,23 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): EffectAt[] {
         return;
       }
       // A bare method call parses as an `identifier` and takes no
-      // arguments, so it cannot pass a name to a helper.
-      if (helpers !== null && node.type === "call") {
+      // arguments, so it cannot pass a name to a helper. `Client.new`
+      // with no parentheses is a `call` and can still run a default.
+      if ((helpers !== null || defaults) && node.type === "call") {
         slots.push({ call: node });
       }
     },
-    into: (node) => (DEFERRED_BODY_TYPES.has(node.type) ? SKIP_CHILDREN : null),
+    into: (node) =>
+      DEFERRED_BODY_TYPES.has(node.type) || isOwnParameter(node, root)
+        ? SKIP_CHILDREN
+        : null,
   });
 
   const calls = slots.flatMap((slot) => ("call" in slot ? [slot.call] : []));
   const throughHelpers =
-    helpers === null ? new NodeMap<EnvRead[]>() : helperReads(calls, helpers);
+    facts === undefined || calls.length === 0
+      ? new NodeMap<EnvRead[]>()
+      : callReads(calls, facts, helpers, defaults);
   return slots.flatMap((slot): EffectAt[] => {
     if ("read" in slot) {
       return [{ effect: configReadEffect(slot.read, slot.at), at: slot.at }];
@@ -197,6 +206,14 @@ export function envLookupAgain(db: Database, id: string): string | null {
       namedParameters(db).get(id.slice(NAMED_PARAMETER.length)),
     );
   }
+  if (id === DEFAULTS_ANY) {
+    return db.facts(DEFAULT_READ).length > 0 ? "some" : "none";
+  }
+  if (id.startsWith(DEFAULT_PARAMETER)) {
+    return describeDefaults(
+      db.lookup(DEFAULT_READ, 0, id.slice(DEFAULT_PARAMETER.length)),
+    );
+  }
   return null;
 }
 
@@ -242,6 +259,9 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
 export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
+      if (DEFAULTED_PARAMETER_HOLDERS.has(node.type)) {
+        emitDefaultReads(db, file, node);
+      }
       if (isEnv(node) && handsOnward(node)) {
         db.add("environmentObject", [
           readKey(file, node, enclosingDefinition(node)),
@@ -258,6 +278,158 @@ export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
     },
     into: () => null,
   });
+}
+
+/**
+ * The reads in each parameter default of a method, keyed by the
+ * parameter the shared facts give it. A default runs at the call that
+ * leaves its argument out, so the call reports the read and the method
+ * does not. The kind says whether a call leaves it out by passing too
+ * few arguments or by not naming its keyword.
+ */
+const DEFAULT_READ = "rbEnvDefaultRead";
+
+const DEFAULTED_PARAMETER_HOLDERS = new Set(["method", "singleton_method"]);
+
+const DEFAULTS_ANY = "envDefaultsAny";
+const DEFAULT_PARAMETER = "envDefault ";
+
+/** Whether any parameter default in the run reads the environment, noted so a later run can tell whether that changed. */
+function hasDefaultReads(db: Database): boolean {
+  const any = db.facts(DEFAULT_READ).length > 0;
+  noteLookup(db, DEFAULTS_ANY, any ? "some" : "none");
+  return any;
+}
+
+/** One parameter default's reads, noted so a later run can tell whether they changed. */
+function defaultReadsOf(db: Database, paramKey: string): readonly Tuple[] {
+  const rows = db.lookup(DEFAULT_READ, 0, paramKey);
+  noteLookup(db, `${DEFAULT_PARAMETER}${paramKey}`, describeDefaults(rows));
+  return rows;
+}
+
+const describeDefaults = (rows: readonly Tuple[]): string =>
+  rows.length === 0 ? "-" : rows.map((row) => row.slice(1).join(":")).join(",");
+
+const DEFAULT_KIND: Record<string, "positional" | "keyword"> = {
+  optional_parameter: "positional",
+  keyword_parameter: "keyword",
+};
+
+function emitDefaultReads(db: Database, file: string, method: RbNode): void {
+  const funcKey = nodeId(file, method);
+  for (const param of parametersOf(method)) {
+    const kind = DEFAULT_KIND[param.type];
+    const name = field(param, "name");
+    const value = field(param, "value");
+    if (kind === undefined || name === null || value === null) {
+      continue;
+    }
+    for (const read of namedReadsUnder(value)) {
+      db.add(DEFAULT_READ, [
+        `${funcKey}#${name.text}`,
+        kind,
+        read.name,
+        read.defaulted ? 1 : 0,
+      ]);
+    }
+  }
+}
+
+/** The reads under a node that write out their variable, the node itself included. */
+function namedReadsUnder(
+  node: RbNode,
+): Array<{ name: string; defaulted: boolean }> {
+  const reads: Array<{ name: string; defaulted: boolean }> = [];
+  const take = (at: RbNode): void => {
+    const read = envReadAt(at);
+    if (read?.name !== null && read?.name !== undefined) {
+      reads.push({ name: read.name, defaulted: read.defaulted });
+    }
+  };
+  take(node);
+  walkDescendants<RbNode, null>(node, null, children, {
+    at: take,
+    into: (inner) =>
+      DEFERRED_BODY_TYPES.has(inner.type) ? SKIP_CHILDREN : null,
+  });
+  return reads;
+}
+
+/** Whether a node is the default of one of `root`'s own parameters. */
+function isOwnParameter(node: RbNode, root: RbNode): boolean {
+  // tree-sitter hands back a new wrapper for each read of a node, so the
+  // two are compared by id.
+  return (
+    DEFAULT_KIND[node.type] !== undefined && node.parent?.parent?.id === root.id
+  );
+}
+
+/**
+ * The reads in the defaults a call runs: those of the parameters it
+ * passes nothing for, across every method the callee settles on.
+ */
+function defaultReadsAtCall(
+  db: Database,
+  call: RbNode,
+  callees: readonly string[],
+): EnvRead[] {
+  const { positional, keyword } = readCallArgs(field(call, "arguments"));
+  const omitted: Array<{ paramKey: string; kind: string }> = [];
+  for (const func of callees.flatMap((key) => functionsRunBy(db, call, key))) {
+    for (const row of db.lookup("paramOf", 0, func)) {
+      if (positional[Number(row[1])] === undefined) {
+        omitted.push({ paramKey: String(row[2]), kind: "positional" });
+      }
+    }
+    for (const row of db.lookup("paramNamed", 0, func)) {
+      if (keyword[String(row[1])] === undefined) {
+        omitted.push({ paramKey: String(row[2]), kind: "keyword" });
+      }
+    }
+  }
+  const byName = new Map<string, boolean>();
+  for (const { paramKey, kind } of omitted) {
+    for (const row of defaultReadsOf(db, paramKey)) {
+      if (row[1] !== kind) {
+        continue;
+      }
+      const name = String(row[2]);
+      const defaulted = row[3] === 1;
+      byName.set(name, (byName.get(name) ?? true) && defaulted);
+    }
+  }
+  return [...byName].map(([name, defaulted]) => ({ name, defaulted }));
+}
+
+/**
+ * The methods a call runs. `Klass.new` runs the `initialize` the class
+ * writes, or the one it inherits when it writes none.
+ */
+function functionsRunBy(db: Database, call: RbNode, key: string): string[] {
+  if (field(call, "method")?.text !== CONSTRUCTOR) {
+    return resolvedFunctions(db, key);
+  }
+  return answersFor(db, "wantedObjectOf", key).flatMap((cls) =>
+    constructorsOf(db, cls, 0),
+  );
+}
+
+/** The deepest a superclass chain is followed, past what any project writes. */
+const MAX_ANCESTORS = 32;
+
+function constructorsOf(db: Database, cls: string, depth: number): string[] {
+  const own = db.lookup("initializes", 0, cls).map((row) => String(row[1]));
+  if (own.length > 0 || depth >= MAX_ANCESTORS) {
+    return own;
+  }
+  const bases = db.lookup("extends", 0, cls).map((row) => String(row[1]));
+  resolveValues(db, bases);
+  return bases.flatMap((base) =>
+    answersFor(db, "wantedComesTo", base).flatMap((ancestor) =>
+      constructorsOf(db, ancestor, depth + 1),
+    ),
+  );
 }
 
 /**
@@ -279,15 +451,18 @@ function handsOnward(node: RbNode): boolean {
 
 /**
  * The environment reads each of a body's calls reaches through a project
- * helper. The callees are resolved in one round, so a body costs one
- * question instead of one per call. Which parameters name a variable
- * was already settled once for the whole run.
+ * helper, or through a parameter default the call runs. The callees are
+ * resolved in one round, so a body costs one question instead of one per
+ * call. Which parameters name a variable was already settled once for
+ * the whole run.
  */
-function helperReads(
+function callReads(
   calls: readonly RbNode[],
-  facts: HelperFacts,
+  facts: EnvFacts,
+  helpers: HelperFacts | null,
+  defaults: boolean,
 ): NodeMap<EnvRead[]> {
-  const { db, file, named } = facts;
+  const { db, file } = facts;
   const callees = new NodeMap<string[]>();
   for (const call of calls) {
     const enclosing = enclosingDefinition(call);
@@ -309,11 +484,12 @@ function helperReads(
   );
 
   for (const [call, callee] of callees) {
-    const args = namingArguments(db, named, call, callee);
-    if (args.length === 0) {
-      continue;
-    }
-    const found = readsAtCall(db, call, args);
+    const args =
+      helpers === null ? [] : namingArguments(db, helpers.named, call, callee);
+    const found = [
+      ...(args.length === 0 ? [] : readsAtCall(db, call, args)),
+      ...(defaults ? defaultReadsAtCall(db, call, callee) : []),
+    ];
     if (found.length > 0) {
       reads.set(call, found);
     }
