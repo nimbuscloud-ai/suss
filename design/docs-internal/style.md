@@ -99,6 +99,10 @@ The same check runs against the language adapters in the other direction. An ada
 
 Sometimes a library picks a name the language already uses. SQLAlchemy has `Session.get` and Python has `dict.get`. ActiveRecord has `first` and Ruby has `Array#first`. Start that entry's note with `language:` and say which built-in name it collides with, and the adapter scan skips it. When the adapter spells one of those names it is reading the language, so no library knowledge has leaked into it.
 
+## What an adapter may claim
+
+The adapter reads the language. It cannot tell whether a function passed to a call ever runs, because that depends on what the library does with it. Packs declare the units, boundaries, effects and callbacks for their library. When the adapter finds a function passed to a call it cannot follow, it records a gap. A pack for that library can declare the function as a unit through `subUnits`. Until someone writes that pack, the function stays unfollowed.
+
 ## Both sides of a metadata field
 
 A field on a metadata namespace in `packages/behavioral-ir/src/metadata.ts` has two sides. A contract reader, a pack or an adapter writes it, and a checker pass, `inspect` or `ask` reads it back. The two halves tend to be built weeks apart, each with a test for its own side, and neither test fails while the other side is missing. So a field can ship with a writer, a schema entry and a passing suite, and still change nothing a user sees. `metadata.http.statusRange` is the example to keep in mind. The OpenAPI reader writes the range a `4XX` response covers, and its own test checks the range. No pass has ever compared a consumer branch against a range, so a spec that uses range codes still gets correct branches reported as errors.
