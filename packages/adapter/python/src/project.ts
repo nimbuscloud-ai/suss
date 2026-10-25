@@ -75,6 +75,11 @@ import { exitSites, type FileExits, markExitCodeFunctions } from "./exits.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
+import {
+  bindJobQueues,
+  jobConsumerUnits,
+  jobQueueEntries,
+} from "./jobQueues.js";
 import { libraryEnvReadMarkers } from "./libraryEnvReads.js";
 import { moduleExportUnits, settlePythonModules } from "./moduleSurface.js";
 import { parsePython } from "./parser.js";
@@ -562,6 +567,8 @@ async function runPython(
     // the client object the statement is passed to.
     rawSqlPatterns.length > 0 ||
     sqlClients.length > 0 ||
+    // A task's receiver is resolved through the rules, and so is its decorator.
+    jobQueueEntries(options.packs).length > 0 ||
     options.packs.some((pack) => (pack.tests ?? []).length > 0);
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns and the call walk can start from a route.
@@ -580,6 +587,7 @@ async function runPython(
     if (needsValues) {
       bindEvaluator(db, { files: bound, definitions });
       bindEnvFacts(db, envFacts);
+      bindJobQueues(db, options.packs, roots);
     }
     bindRequestObjects(
       db,
@@ -736,6 +744,7 @@ async function runPython(
         facts: db,
         storageFor,
       }),
+      ...jobConsumerUnits(boundFile, { facts: db, storageFor }),
       ...(tests === null
         ? []
         : tests.unitsIn(boundFile, { storageFor, facts: db })),

@@ -1,0 +1,17 @@
+{
+  "celery": "celery: the package a project imports, and the message-bus technology its tasks run on",
+  "Celery": "celery: the app class a project builds",
+  "current_app": "celery: the object the library exports for whichever app is running",
+  "task": "celery: the decorator on a Celery app that makes a function a task",
+  "shared_task": "celery: the decorator the library exports that makes a function a task without an app",
+  "name": "suss: the syntax field every adapter reads a definition's name from; also celery: the keyword a task decorator and send_task take the task's name under",
+  "queue": "celery: the keyword a task decorator takes its queue under",
+  "delay": "celery: the Task method that enqueues the task with the arguments it is given",
+  "apply_async": "celery: the Task method that enqueues the task with its arguments packed as args and kwargs",
+  "send_task": "celery: the Celery app method that enqueues a task by its name",
+  "args": "celery: the keyword apply_async and send_task take the positional arguments under",
+  "kwargs": "celery: the keyword apply_async and send_task take the keyword arguments under",
+  "modulePath": "suss: the default task name Celery gives, the module path and the function's name",
+  "spread": "suss: an enqueue that passes the task's arguments as its own",
+  "packed": "suss: an enqueue that passes the task's arguments as one sequence and one mapping"
+}

@@ -107,6 +107,9 @@
       "path": "packages/framework/bigquery-ruby/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/celery/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/aws-sqs/tsconfig.typecheck.json"
     },
     {

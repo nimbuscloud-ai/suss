@@ -52,6 +52,7 @@ import {
 } from "./decorators.js";
 import { routeOnDroppedApp } from "./droppedApps.js";
 import { envReadEffects } from "./envReads.js";
+import { enqueueEffects, enqueuesAmong } from "./jobQueues.js";
 import {
   bodyTerminals,
   enumerateBodyBranches,
@@ -1663,7 +1664,7 @@ export interface BodyEffects {
   provenance: RawProvenance[];
 }
 
-/** What a body does besides calling: config it reads, database work, SQL it writes itself. */
+/** What a body does besides calling: config it reads, database work, SQL it writes itself, jobs it enqueues. */
 export function recognizedBodyEffects(
   definitionNode: PyNode,
   module: ModuleBinding,
@@ -1678,6 +1679,7 @@ export function recognizedBodyEffects(
     ...envReadEffects(definitionNode, module, facts),
     ...storage.effects,
     ...streamWriteEffects(definitionNode, module),
+    ...enqueueEffects(definitionNode, facts),
   ];
   const siteOf = effectSitesIn(
     field(definitionNode, "body"),
@@ -1711,13 +1713,15 @@ export function withBodyEffects(
   };
 }
 
-/** Which of these calls storage recognition already read the meaning of, by node id, so the reach walk does not report them as lost. */
+/** Which of these calls a pack already read the meaning of, by node id, so the reach walk does not report them as lost. */
 export function recognizedCallIds(
   calls: readonly PyNode[],
   storageLookup: StorageLookup | undefined,
+  facts: Database | undefined,
 ): ReadonlySet<number> {
+  const enqueues = enqueuesAmong(calls, facts).map(({ call }) => call.id);
   if (storageLookup === undefined) {
-    return new Set();
+    return new Set(enqueues);
   }
   return new Set([
     ...storageCallIds(calls, {
@@ -1725,6 +1729,7 @@ export function recognizedCallIds(
       filePath: storageLookup.factsPath,
     }),
     ...rawSqlCallIds(calls, rawSqlOptionsOf(storageLookup)),
+    ...enqueues,
   ]);
 }
 

@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-celery",
+  "exports": 4,
+  "internal": 0,
+  "consumers": 2,
+  "unfollowedCalls": 0
+}

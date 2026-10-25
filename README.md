@@ -179,7 +179,7 @@ Reference and theory: [Summary format](./docs/reference/summary-format.md), [IR 
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are still in active development, and the set of packs keeps growing.
 
-Sixty packs read code today. You pick them by name with `-f`:
+Sixty-one packs read code today. You pick them by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -196,7 +196,7 @@ Sixty packs read code today. You pick them by name with `-f`:
 | Object and key-value storage | `aws-s3` `gcs` `aws-dynamodb` |
 | Secrets and parameters | `aws-secrets-manager` `aws-ssm` |
 | Messaging | `aws-sqs` `aws-sns` `aws-eventbridge` `nestjs-microservices` |
-| Background jobs | `activejob` `sidekiq` |
+| Background jobs | `activejob` `sidekiq` `celery` |
 | Runtime surface | `node`, which includes `process.env` |
 | In-process, between workspace packages | `package-exports` |
 | Tests a PRD scenario lists as covering it | `vitest` `pytest` `rspec` `minitest`, with `factory-bot` and `fabrication` for what a Ruby test builds |
