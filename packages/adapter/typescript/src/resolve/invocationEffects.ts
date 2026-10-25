@@ -19,7 +19,9 @@ import {
   Node,
   type PropertyAccessExpression,
   type SourceFile,
+  SyntaxKind,
   type TaggedTemplateExpression,
+  ts,
   VariableDeclarationKind,
 } from "ts-morph";
 
@@ -37,11 +39,13 @@ import { lineRangeOf, startLineOf } from "../lines.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
   type DescentBarriers,
-  forEachInUnitBody,
+  forEachInUnitBodyOfKinds,
+  forEachInUnitBodyWhere,
   invokesFunctionInPlace,
   isDescentStop,
   isModuleScopeStop,
   NO_BARRIERS,
+  withDescentStops,
 } from "../walk/descent.js";
 import { climbSyntax, peelSyntax } from "../walk/unwrap.js";
 import {
@@ -457,20 +461,40 @@ export function extractInvocationEffectsAtModuleScope(
   );
 }
 
+const CALLS_AND_STOPS = withDescentStops(SyntaxKind.CallExpression);
+
+const ACCESSES_CONSTRUCTIONS_AND_STOPS = withDescentStops(
+  SyntaxKind.PropertyAccessExpression,
+  SyntaxKind.CallExpression,
+  SyntaxKind.TaggedTemplateExpression,
+  SyntaxKind.NewExpression,
+);
+
+const INVOCATIONS_AND_STOPS = withDescentStops(
+  SyntaxKind.CallExpression,
+  SyntaxKind.NewExpression,
+);
+
+const ACCESSES_AND_STOPS = withDescentStops(
+  SyntaxKind.PropertyAccessExpression,
+  SyntaxKind.CallExpression,
+  SyntaxKind.TaggedTemplateExpression,
+);
+
 function invocationsUnder(
   root: Node,
   isStop: (node: Node) => boolean,
 ): InvocationEffectLocation[] {
   const calls: Array<CallExpression | NewExpression> = [];
 
-  forEachInUnitBody(root, (node, traversal) => {
+  forEachInUnitBodyOfKinds(root, INVOCATIONS_AND_STOPS, (node) => {
     if (isStop(node)) {
-      traversal.skip();
-      return;
+      return true;
     }
     if (Node.isCallExpression(node) || runsProjectConstructor(node)) {
       calls.push(node);
     }
+    return false;
   });
 
   // A call finishes after everything written inside it, so ordering by
@@ -548,14 +572,14 @@ export function runInvocationRecognizers(
   const sourceFile = func.getSourceFile();
 
   const calls: CallExpression[] = [];
-  forEachInUnitBody(func, (node, traversal) => {
+  forEachInUnitBodyOfKinds(func, CALLS_AND_STOPS, (node) => {
     if (isDescentStop(node, func, barriers)) {
-      traversal.skip();
-      return;
+      return true;
     }
     if (Node.isCallExpression(node)) {
       calls.push(node);
     }
+    return false;
   });
   const walk = walkArguments(calls, resolution);
 
@@ -801,10 +825,15 @@ interface AccessSite {
 function accessedIn(root: Node, isStop: (node: Node) => boolean): AccessSite[] {
   const sites: AccessSite[] = [];
   const calls: Array<CallExpression | NewExpression> = [];
-  forEachInUnitBody(root, (node, traversal) => {
+  const own = root.compilerNode;
+  const accepts = (raw: ts.Node): boolean =>
+    ACCESSES_CONSTRUCTIONS_AND_STOPS.has(raw.kind) ||
+    (ts.isParameter(raw.parent) &&
+      raw.parent.initializer === raw &&
+      raw.parent.parent === own);
+  forEachInUnitBodyWhere(root, accepts, (node) => {
     if (isStop(node) || isOwnParameterDefault(node, root)) {
-      traversal.skip();
-      return;
+      return true;
     }
     if (isAccessed(node)) {
       sites.push({ node, at: node });
@@ -812,17 +841,18 @@ function accessedIn(root: Node, isStop: (node: Node) => boolean): AccessSite[] {
     if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
       calls.push(node);
     }
+    return false;
   });
   for (const call of calls) {
     for (const initializer of defaultsRunBy(call)) {
-      forEachInUnitBody(initializer, (node, traversal) => {
+      forEachInUnitBodyOfKinds(initializer, ACCESSES_AND_STOPS, (node) => {
         if (isStop(node)) {
-          traversal.skip();
-          return;
+          return true;
         }
         if (isAccessed(node)) {
           sites.push({ node, at: call });
         }
+        return false;
       });
       if (isAccessed(initializer)) {
         sites.push({ node: initializer, at: call });

@@ -26,8 +26,14 @@
 // the sub-unit, not the parent. Those function nodes are passed in as
 // `barriers`.
 
-import { type ForEachDescendantTraversalControl, Node } from "ts-morph";
+import {
+  type ForEachDescendantTraversalControl,
+  Node,
+  SyntaxKind,
+  type ts,
+} from "ts-morph";
 
+import { forEachDescendantWhere } from "./rawDescent.js";
 import { climbSyntax, peelSyntax } from "./unwrap.js";
 
 /**
@@ -102,6 +108,34 @@ export function forEachInUnitBody(root: Node, visit: Visit): void {
   }
 }
 
+/**
+ * `forEachInUnitBody` for a walk that acts on a few kinds of node. It
+ * reads compiler nodes and wraps only those kinds, and `visit` returns
+ * true to leave out what is under the node.
+ */
+export function forEachInUnitBodyOfKinds(
+  root: Node,
+  kinds: ReadonlySet<SyntaxKind>,
+  visit: (node: Node) => boolean,
+): void {
+  forEachInUnitBodyWhere(root, (raw) => kinds.has(raw.kind), visit);
+}
+
+/** The same walk, visiting the nodes `accepts` picks from their compiler nodes. */
+export function forEachInUnitBodyWhere(
+  root: Node,
+  accepts: (raw: ts.Node) => boolean,
+  visit: (node: Node) => boolean,
+): void {
+  forEachDescendantWhere(root, accepts, visit);
+  for (const initializer of fieldInitializersRunBy(root)) {
+    if (accepts(initializer.compilerNode) && visit(initializer)) {
+      continue;
+    }
+    forEachDescendantWhere(initializer, accepts, visit);
+  }
+}
+
 function fieldInitializersRunBy(root: Node): Node[] {
   if (!Node.isConstructorDeclaration(root)) {
     return [];
@@ -143,6 +177,29 @@ export function isInlineCallback(
     return false;
   }
   return !barriers.has(node);
+}
+
+/**
+ * Every kind of node `isDescentStop` or `isModuleScopeStop` can stop at,
+ * and a decorator, which the invocation walk also stops at. A walk that
+ * visits only the kinds it acts on adds these so its stops still run.
+ */
+export const DESCENT_STOP_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.Constructor,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.ClassDeclaration,
+  SyntaxKind.ClassExpression,
+  SyntaxKind.Decorator,
+]);
+
+/** `DESCENT_STOP_KINDS` and the kinds a walk acts on, as one set. */
+export function withDescentStops(
+  ...kinds: SyntaxKind[]
+): ReadonlySet<SyntaxKind> {
+  return new Set([...DESCENT_STOP_KINDS, ...kinds]);
 }
 
 /**
