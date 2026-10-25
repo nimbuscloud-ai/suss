@@ -33,6 +33,7 @@ import {
 
 import {
   generatedClientDirs,
+  generatedClientInputs,
   isInGeneratedClient,
   schemaStorageSystem,
 } from "./generatedClient.js";
@@ -800,6 +801,7 @@ export function prismaFramework(
     // `prisma-client` generator writes no schema beside it.
     generatedModuleMarkers: [GENERATED_CLIENT_MARKER],
     generatedModuleDirs: generatedClientDirs,
+    discoveryInputs: generatedClientInputs,
     invocationRecognizers: [makeRecognizer(options)],
     // A tagged template is not an invocation, so the raw chain runs on
     // the access walk, which visits calls as well.
