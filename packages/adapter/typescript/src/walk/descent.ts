@@ -284,25 +284,16 @@ export function crossesNestedFunctionScope(node: Node, func: Node): boolean {
  * so a getter inside a returned object returns for the getter.
  */
 export function startsItsOwnScope(node: Node): boolean {
-  return (
-    Node.isArrowFunction(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isFunctionDeclaration(node) ||
-    Node.isMethodDeclaration(node) ||
-    Node.isGetAccessorDeclaration(node) ||
-    Node.isSetAccessorDeclaration(node) ||
-    Node.isConstructorDeclaration(node)
-  );
+  return OWN_SCOPE_KINDS.has(node.getKind());
 }
 
-/**
- * A type annotation contains no statement and no function body, so a
- * walk looking for either can skip it. It has to for a mapped type: once
- * the checker has printed a type that reuses one, asking the mapped type
- * for its children fails an assertion inside the compiler. The `extends`
- * clause of a class is the one type position that can contain an
- * expression, as in `extends mixin(() => ...)`, so it is still walked.
- */
-export function containsNoCode(node: Node): boolean {
-  return Node.isTypeNode(node) && !Node.isExpressionWithTypeArguments(node);
-}
+/** The kinds `startsItsOwnScope` is true of, for a walk over compiler nodes. */
+export const OWN_SCOPE_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.GetAccessor,
+  SyntaxKind.SetAccessor,
+  SyntaxKind.Constructor,
+]);

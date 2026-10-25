@@ -11,6 +11,8 @@ import {
   Node,
   type Statement,
   type SwitchStatement,
+  SyntaxKind,
+  ts,
 } from "ts-morph";
 
 import {
@@ -24,13 +26,18 @@ import {
 
 import { lineRangeOf } from "../lines.js";
 import {
-  containsNoCode,
   type DescentBarriers,
   isDescentStop,
   isInlineCallback,
   NO_BARRIERS,
+  OWN_SCOPE_KINDS,
   startsItsOwnScope,
 } from "../walk/descent.js";
+import {
+  forEachDescendantOfKinds,
+  isTypeOnlySyntax,
+  wrapperOf,
+} from "../walk/rawDescent.js";
 import { peelValue } from "../walk/unwrap.js";
 
 /**
@@ -59,24 +66,25 @@ interface LowerContext {
 function exitKindOf(stmt: Node, endings: ReadonlySet<Node>): ExitKind {
   let sawReturn = false;
   let sawThrow = false;
-  const visit = (node: Node): void => {
-    if (node !== stmt && startsItsOwnScope(node)) {
-      return;
+  const ending = new Set([...endings].map((node) => node.compilerNode));
+  const root = stmt.compilerNode;
+  const visit = (raw: ts.Node): undefined => {
+    if (raw !== root && OWN_SCOPE_KINDS.has(raw.kind)) {
+      return undefined;
     }
-    if (containsNoCode(node)) {
-      return;
+    if (isTypeOnlySyntax(raw)) {
+      return undefined;
     }
-    if (Node.isReturnStatement(node) || endings.has(node)) {
+    if (raw.kind === SyntaxKind.ReturnStatement || ending.has(raw)) {
       sawReturn = true;
     }
-    if (Node.isThrowStatement(node)) {
+    if (raw.kind === SyntaxKind.ThrowStatement) {
       sawThrow = true;
     }
-    for (const child of node.getChildren()) {
-      visit(child);
-    }
+    ts.forEachChild(raw, visit);
+    return undefined;
   };
-  visit(stmt);
+  visit(root);
   if (sawThrow) {
     return "throw";
   }
@@ -93,12 +101,23 @@ const statementsOf = (stmt: Statement | undefined): Statement[] => {
   return [stmt];
 };
 
-const isLoop = (stmt: Node): boolean =>
-  Node.isForOfStatement(stmt) ||
-  Node.isForInStatement(stmt) ||
-  Node.isForStatement(stmt) ||
-  Node.isWhileStatement(stmt) ||
-  Node.isDoStatement(stmt);
+const LOOP_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ForOfStatement,
+  SyntaxKind.ForInStatement,
+  SyntaxKind.ForStatement,
+  SyntaxKind.WhileStatement,
+  SyntaxKind.DoStatement,
+]);
+
+const isLoop = (stmt: Node): boolean => LOOP_KINDS.has(stmt.getKind());
+
+/** What the clause break check stops at, and the break it looks for. */
+const CLAUSE_BREAK_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  ...OWN_SCOPE_KINDS,
+  ...LOOP_KINDS,
+  SyntaxKind.SwitchStatement,
+  SyntaxKind.BreakStatement,
+]);
 
 function getLoopBody(stmt: Statement): Statement | undefined {
   if (
@@ -195,35 +214,45 @@ function lowerCallbacksIn(
 ): StatementBlock<Expression>[] {
   const bodies: StatementBlock<Expression>[] = [];
 
-  const visit = (node: Node, root: Node): void => {
-    if (node !== root && isDescentStop(node, ctx.func, ctx.barriers)) {
-      return;
+  // Only a node that starts its own scope can be a stop or a callback,
+  // so nothing else is wrapped.
+  const entersScope = (node: Node): boolean => {
+    if (isDescentStop(node, ctx.func, ctx.barriers)) {
+      return false;
     }
     if (
-      node !== root &&
-      (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) &&
-      isInlineCallback(node, ctx.func, ctx.barriers)
+      !(Node.isArrowFunction(node) || Node.isFunctionExpression(node)) ||
+      !isInlineCallback(node, ctx.func, ctx.barriers)
     ) {
-      const body = node.getBody();
-      // A concise body has no statements of its own, but a call in it
-      // can still take a callback, so the walk keeps going through it.
-      if (body !== undefined && Node.isBlock(body)) {
-        bodies.push(lowerList(body.getStatements(), ctx));
-        return;
-      }
-    } else if (node !== root && startsItsOwnScope(node)) {
-      return;
+      return !startsItsOwnScope(node);
     }
-    if (containsNoCode(node)) {
-      return;
+    const body = node.getBody();
+    // A concise body has no statements of its own, but a call in it
+    // can still take a callback, so the walk keeps going through it.
+    if (body !== undefined && Node.isBlock(body)) {
+      bodies.push(lowerList(body.getStatements(), ctx));
+      return false;
     }
-    for (const child of node.getChildren()) {
-      visit(child, root);
-    }
+    return true;
   };
 
   for (const part of parts) {
-    visit(part, part);
+    const root = part.compilerNode;
+    const visit = (raw: ts.Node): undefined => {
+      if (
+        raw !== root &&
+        OWN_SCOPE_KINDS.has(raw.kind) &&
+        !entersScope(wrapperOf(part, raw))
+      ) {
+        return undefined;
+      }
+      if (isTypeOnlySyntax(raw)) {
+        return undefined;
+      }
+      ts.forEachChild(raw, visit);
+      return undefined;
+    };
+    visit(root);
   }
   return bodies;
 }
@@ -420,18 +449,11 @@ function validateClauseBreaks(stmts: readonly Statement[]): void {
     if (Node.isSwitchStatement(stmt) || isLoop(stmt)) {
       continue;
     }
-    stmt.forEachDescendant((node, traversal) => {
-      if (
-        startsItsOwnScope(node) ||
-        Node.isSwitchStatement(node) ||
-        isLoop(node)
-      ) {
-        traversal.skip();
-        return;
-      }
+    forEachDescendantOfKinds(stmt, CLAUSE_BREAK_KINDS, (node) => {
       if (Node.isBreakStatement(node)) {
         throw new UnmodeledFlow("non-trailing break in switch clause");
       }
+      return true;
     });
     if (Node.isBreakStatement(stmt)) {
       throw new UnmodeledFlow("non-trailing break in switch clause");

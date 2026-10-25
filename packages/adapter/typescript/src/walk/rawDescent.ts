@@ -69,7 +69,11 @@ export function forEachDescendantWhere(
   ts.forEachChild(root.compilerNode, walk);
 }
 
-/** Whether a node and everything under it is type syntax the program never runs. */
+/**
+ * Whether a node and everything under it is type syntax the program
+ * never runs. A class's `extends` clause is an expression, as in
+ * `extends mixin(() => ...)`, so it is walked like one.
+ */
 export function isTypeOnlySyntax(raw: ts.Node): boolean {
   return (
     (raw.kind >= ts.SyntaxKind.FirstTypeNode &&
