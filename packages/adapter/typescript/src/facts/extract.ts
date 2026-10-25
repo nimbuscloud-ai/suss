@@ -44,6 +44,7 @@ import {
 
 import {
   declarationCarryingTheBody,
+  FUNCTION_ROOT_KINDS,
   isFunctionRoot,
 } from "../discovery/shared.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
@@ -2195,10 +2196,7 @@ function recordBodyNode(
  * `unwrapExpression` peels off one.
  */
 const BODY_FACT_KINDS: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.FunctionDeclaration,
-  SyntaxKind.FunctionExpression,
-  SyntaxKind.ArrowFunction,
-  SyntaxKind.MethodDeclaration,
+  ...FUNCTION_ROOT_KINDS,
   SyntaxKind.ReturnStatement,
   SyntaxKind.ElementAccessExpression,
   SyntaxKind.BinaryExpression,
@@ -2346,11 +2344,8 @@ const TOP_LEVEL_BLOCKS: ReadonlySet<SyntaxKind> = new Set([
 
 /** An assignment, and the bodies a top-level write under a block is not part of. */
 const TOP_LEVEL_WRITE_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  ...FUNCTION_ROOT_KINDS,
   SyntaxKind.BinaryExpression,
-  SyntaxKind.FunctionDeclaration,
-  SyntaxKind.FunctionExpression,
-  SyntaxKind.ArrowFunction,
-  SyntaxKind.MethodDeclaration,
   SyntaxKind.ClassDeclaration,
 ]);
 

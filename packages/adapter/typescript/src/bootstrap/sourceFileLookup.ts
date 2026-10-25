@@ -23,8 +23,7 @@
 
 import path from "node:path";
 
-import { SyntaxKind } from "ts-morph";
-
+import { FUNCTION_ROOT_KINDS } from "../discovery/shared.js";
 import { endLineOf, startLineOf } from "../lines.js";
 import { createPerFileCache } from "../perFileCache.js";
 import {
@@ -212,7 +211,7 @@ function indexFunctions(sf: SourceFile): Map<string, FunctionRoot> {
   const index = new Map<string, FunctionRoot>();
   forEachDescendantOfKinds(
     sf,
-    FUNCTION_KINDS,
+    FUNCTION_ROOT_KINDS,
     (found) => {
       const node = found as FunctionRoot;
       const bySpan = spanKey({ start: node.getStart(), end: node.getEnd() });
@@ -227,11 +226,3 @@ function indexFunctions(sf: SourceFile): Map<string, FunctionRoot> {
   );
   return index;
 }
-
-const FUNCTION_KINDS: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.FunctionDeclaration,
-  SyntaxKind.FunctionExpression,
-  SyntaxKind.ArrowFunction,
-  SyntaxKind.MethodDeclaration,
-  SyntaxKind.Constructor,
-]);
