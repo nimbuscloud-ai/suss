@@ -33,7 +33,7 @@ suss check [--at <target>] [--since <earlier-directory>] [--intent <intent-dir>]
 
 `--dir` reads every summary file in a folder and pairs them by boundary key, so a provider and its consumer meet whichever file each arrived in. Two positional files skip the pairing and compare every provider in the first against every consumer in the second. Nothing goes unpaired in that form, so a two-file run doesn't report an unpaired count. When either file has no summaries in it, nothing was compared, and the run fails the same way an empty `--dir` run does.
 
-Given no files and no `--dir`, `check` reads the project it is run in: every entry in `suss.json`, or what `init` would pick when there is no file, into a temporary folder, then the `--dir` form over that. It prints the commands it ran to stderr.
+Given no files and no `--dir`, `check` reads the project it is run in: every entry in `suss.json`, or what `init` would pick when there is no file, into a temporary folder, then the `--dir` form over that. In a workspace, `init` picks one read for each package. See [Reading every read of a project](#reading-every-read-of-a-project) for how the reads run and what a failed one does to the report.
 
 When no pack matches anything in the project, there is nothing to read. If the project has TypeScript, JavaScript, Python or Ruby source, the run gets a `noPackMatched` run finding and exits `4`. If it has none, as in a dbt project of SQL and YAML, `check` prints one line saying suss does not cover the project and exits `0`, and `--json` writes a `notCovered` run finding.
 
@@ -53,10 +53,31 @@ When no pack matches anything in the project, there is nothing to read. If the p
 | `--fail-on-unpaired <N\|N%>` | off | Fail when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). It counts boundaries the way the report's first line does, so a route that two summaries serve counts once. It applies to a run over `--dir` and to a bare `check`. The two-file form pairs nothing, so it ignores the flag. The report gets a `mostlyUnpaired` run finding with the numbers. |
 | `--fail-on-unreadable` | off | Fail when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` lists the skipped files either way. |
 | `--cache-dir <path>` | `.suss/cache` under the project, or `SUSS_CACHE_DIR` | Where the extraction cache goes when `check` reads the project itself. See [Where suss writes](/reference/cli/#where-suss-writes). |
+| `--jobs <n>` | up to 4 | When `check` reads the project itself, how many reads run at once. The default is 4, or fewer when the machine has fewer cores or not enough memory for that many reads at `--read-memory`. |
+| `--read-timeout <minutes>` | `20` | When `check` reads the project itself, how long one read may run before it is stopped. `0` turns the limit off. |
+| `--read-memory <MB>` | the heap one `suss` run gets, at most 8192 | When `check` reads the project itself, the heap one read may grow to. |
 | `--sussignore <path>` | the nearest `.sussignore` | Read this suppressions file instead of searching for one. |
 | `--no-suppressions` | off | Report every finding, ignoring any `.sussignore`. |
 
 `--fail-on-empty` is gone. A run that pairs nothing now fails by default, and passing the old flag stops the run and points you at `--allow-empty`.
+
+## Reading every read of a project
+
+A bare `check`, a bare [`suss map`](/reference/cli/map) and [`suss extract --out-dir`](/reference/cli/extract#the-whole-project-into-a-folder) run every read the project has. Each extract runs as its own `suss` process, up to `--jobs` at once, and stderr gets a line as each one starts and as each one ends:
+
+```
+No suss.json in /work/shop, so this reads what `suss init` would pick. Run `suss init` to write that down.
+3 reads, 3 at a time, each stopped after 20m 0s:
+  started  suss extract --lang typescript --dir apps/api -p apps/api/tsconfig.json -f express -f pg -f node
+  started  suss extract --lang typescript --dir apps/web -p apps/web/tsconfig.json -f react -f fetch
+  started  suss contract --from openapi apps/api/openapi.yaml
+  [1/3] suss contract --from openapi apps/api/openapi.yaml: 14 summaries in 310ms
+  [2/3] suss extract --lang typescript --dir apps/web -p apps/web/tsconfig.json -f react -f fetch: 212 summaries in 18.4s
+  [3/3] suss extract --lang typescript --dir apps/api -p apps/api/tsconfig.json -f express -f pg -f node: failed after 20m 0s
+      was stopped after 20m 0s, the time limit for one read. Pass --read-timeout with more minutes to give it longer, or 0 for no limit.
+```
+
+A read that runs past `--read-timeout` is stopped, and one that grows past its `--read-memory` heap dies on its own. Either one, or one that exits with an error, is left out while the others carry on. The check compares what the finished reads wrote, and the report gets a `readFailed` run finding for each read that did not finish, so a run that left part of the project out says so. It is a warning, so it fails the run only under `--fail-on warning`. The same note is left in an `--out-dir` folder, beside the file the read would have written, so a later `check --dir` over that folder reports it too.
 
 A finding that points at one transition prints a `.sussignore` rule for it, ready to paste under `rules:`. See [Accept a finding](/guides/accept-a-finding), and [the findings catalog](/reference/findings) for every kind.
 

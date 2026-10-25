@@ -114,8 +114,9 @@ describe("a bare extract with several reads in suss.json", () => {
     const run = await quietly(["extract", "--dir", project]);
 
     expect(run.exit).toBe(1);
-    expect(run.stderr).toContain("failed: suss extract --lang typescript");
-    expect(run.stderr).toContain("no-such-pack-anywhere");
+    expect(run.stderr).toMatch(
+      /suss extract --lang typescript --dir frontend -f no-such-pack-anywhere: failed after .*\n {6}exited with code 1: Unknown pack: "no-such-pack-anywhere"/,
+    );
     const files = (JSON.parse(run.stdout) as BehavioralSummary[]).map(
       (summary) => summary.location.file,
     );
@@ -129,6 +130,25 @@ describe("a bare extract with several reads in suss.json", () => {
 
     expect(run.exit).toBe(1);
     expect(run.stderr).toContain("--timing");
+  });
+
+  it("refuses the read limits on an extract of one read", async () => {
+    writeReads([PYTHON_READ]);
+
+    const run = await quietly([
+      "extract",
+      "--dir",
+      project,
+      "--jobs",
+      "2",
+      "--read-timeout",
+      "5",
+    ]);
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain(
+      "--jobs, --read-timeout set how the reads suss.json lists run, and this extract runs one read in this process. Drop them",
+    );
   });
 
   it("still reads just the named pack when -f is given", async () => {
