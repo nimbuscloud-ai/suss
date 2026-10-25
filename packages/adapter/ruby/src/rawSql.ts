@@ -14,7 +14,7 @@ import { storageBinding } from "@suss/ir-core";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { piecesOf } from "@suss/values";
 
-import { field, rangeOf, readCallArgs } from "./ast.js";
+import { argumentAt, field, rangeOf, readCallArgs } from "./ast.js";
 import { classBehind, enclosingClassKey, reachesBase } from "./baseClass.js";
 import { compoundName } from "./scope.js";
 import { evaluatedValue, writtenNodeOf } from "./values/evaluator.js";
@@ -357,17 +357,6 @@ function buildsOnOwnClass(
 
   const classKey = enclosingClassKey(node, file);
   return classKey !== null && reachesBase(facts, classKey, bases);
-}
-
-function argumentAt(
-  args: CallArgs,
-  place: RbArgumentPlace,
-): RbNode | undefined {
-  const keyword = place.keyword;
-  return (
-    (keyword === undefined ? undefined : args.keyword[keyword]) ??
-    args.positional[place.at]
-  );
 }
 
 /** The one string an argument settles on, or null when it settles on several or on none. */
