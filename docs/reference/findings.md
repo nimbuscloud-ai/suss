@@ -51,8 +51,16 @@ Runtime config:
 
 ```
 [ERROR] boundaryFieldUnknown
-  process.env.STRIPE_API_KEY read by Checkout.handler (lambda/Checkout scope) but Checkout declares no STRIPE_API_KEY in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.
+  process.env.STRIPE_API_KEY read by chargeCard is not declared in the environment of a deployment that runs it. At runtime it resolves to undefined there, changing which execution paths the code takes.
+  read: src/lib/payments.ts::chargeCard (src/lib/payments.ts:14)
+  not declared by: Checkout, Refund
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: boundaryFieldUnknown
+      consumer: { summary: "src/lib/payments.ts::chargeCard", field: "STRIPE_API_KEY" }
+      reason: TODO say why you accept this
 ```
+
+One finding covers one read, however many deployments run it without the variable. A deployment runs a read when a call from its handler reaches the function that makes it, so a client file every handler imports is charged only to the handlers that call into it. A read in a file a deployment loads that no call reaches is listed under `unchecked.runtimeConfig` instead.
 
 GraphQL:
 

@@ -232,13 +232,16 @@ describe("the environment variable story, on a Lambda service with a SAM templat
 
     expect(output?.decision).toBe("block");
     expect(said(4)).toContain(
-      "suss: this edit changed runtime-config ACCOUNTS_REGION through getAccountService and introduced 2 findings to deal with before moving on.",
+      "suss: this edit changed runtime-config ACCOUNTS_REGION through getAccountService and introduced a finding to deal with before moving on.",
     );
     expect(said(4)).toContain(
-      "[ERROR] boundaryFieldUnknown at runtime-config:GetAccountFunction",
+      "[ERROR] boundaryFieldUnknown at runtime-config ACCOUNTS_REGION",
     );
     expect(said(4)).toContain(
-      "[ERROR] boundaryFieldUnknown at runtime-config:UpdateAccountFunction",
+      "not declared by: GetAccountFunction, UpdateAccountFunction",
+    );
+    expect(said(4)).toContain(
+      'consumer: { summary: "src/composition.ts::getAccountService", field: "ACCOUNTS_REGION" }',
     );
     for (const index of [4, 6, 7]) {
       expect(said(index)).not.toContain("function-call:");
@@ -246,13 +249,13 @@ describe("the environment variable story, on a Lambda service with a SAM templat
     }
   });
 
-  it("names the function whose template entry now declares the variable", () => {
+  it("names the function whose template entry now declares the variable, and resolves the read once every function does", () => {
     expect(stepOf(region, 5).stdout).toBe("");
     expect(said(6)).toBe(
-      "suss: this edit changed runtime-config:GetAccountFunction ACCOUNTS_REGION and resolved boundaryFieldUnknown at runtime-config:GetAccountFunction.",
+      "suss: this edit changed runtime-config:GetAccountFunction ACCOUNTS_REGION.",
     );
     expect(said(7)).toBe(
-      "suss: this edit changed runtime-config:UpdateAccountFunction ACCOUNTS_REGION and resolved boundaryFieldUnknown at runtime-config:UpdateAccountFunction.",
+      "suss: this edit changed runtime-config:UpdateAccountFunction ACCOUNTS_REGION and resolved boundaryFieldUnknown at runtime-config ACCOUNTS_REGION.",
     );
   });
 

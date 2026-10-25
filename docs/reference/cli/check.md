@@ -277,7 +277,7 @@ with `intent` added when `--intent` was passed. `unchecked.runtimeConfig` lists 
 | Key | What it is |
 |---|---|
 | `identity` | A string that is equal for the same finding in both runs. |
-| `boundaryKey` | The boundary's key, the one `.sussignore` rules and `changedBoundaries` use. |
+| `boundaryKey` | The boundary's key, the one `.sussignore` rules and `changedBoundaries` use. A finding about one environment read is at `runtime-config` and the variable, as in `runtime-config ACCOUNTS_REGION`, the key its changed read has. |
 | `atChangedBoundary` | Whether that boundary is in `changedBoundaries`. |
 | `rule` | The `.sussignore` rule that accepts this finding and no other, without its `reason`. Absent when the finding points at no transition, since a rule without one would accept more. |
 
