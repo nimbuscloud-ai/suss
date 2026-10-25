@@ -926,8 +926,8 @@ describe("runCli inspect", () => {
       capture(() => runCli(["inspect"])),
     );
     expect(exit).toBe(0);
-    expect(io.stderr).toContain(
-      "failed: suss contract --from openapi missing.json:",
+    expect(io.stderr).toMatch(
+      /suss contract --from openapi missing\.json: failed after .*\n {6}stopped on an error: OpenAPI spec not found/,
     );
     expect(io.stdout).toContain("/health");
   });
@@ -945,7 +945,9 @@ describe("runCli inspect", () => {
       capture(() => runCli(["inspect"])),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("failed: suss contract --from openapi");
+    expect(io.stderr).toContain(
+      "suss contract --from openapi missing.json: failed after",
+    );
   });
 
   it("prints what a store is called and what it serves", async () => {

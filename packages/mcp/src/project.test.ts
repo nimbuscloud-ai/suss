@@ -52,7 +52,9 @@ function projectWithOneRoute(root: string, routePath: string): void {
 function boundariesIn(dir: string): string[] {
   return fs
     .readdirSync(dir)
-    .filter((name) => name.endsWith(".json"))
+    .filter(
+      (name) => name.endsWith(".json") && !name.endsWith(".incomplete.json"),
+    )
     .flatMap((name) =>
       JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")),
     )
