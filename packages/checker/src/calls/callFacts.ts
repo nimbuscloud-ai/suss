@@ -43,7 +43,7 @@ import type {
   FunctionCallSemantics,
   MessageBusSemantics,
 } from "@suss/behavioral-ir";
-import type { BodyMatch, Rule, TagAlgebra } from "@suss/datalog";
+import type { BodyMatch, Rule, TagAlgebra, Tuple } from "@suss/datalog";
 
 /** What `functionOf` returns. */
 export type FunctionKey = string;
@@ -118,6 +118,13 @@ export interface ReachOptions {
    * test drains the queue.
    */
   certainOnly?: boolean;
+  /**
+   * With `false`, say which functions each start reaches and leave every
+   * path empty. Keeping the shortest path for every pair costs most of
+   * the question, and a caller that only charges a function does not
+   * print the chain.
+   */
+  paths?: boolean;
 }
 
 /** What one start reaches, each with the shortest path to it. */
@@ -315,6 +322,7 @@ export function readCallFacts(
       return reachedFromEachStart(
         options?.pastMocks === true ? pastMocks(db) : db,
         starts,
+        options?.paths !== false,
       );
     },
   };
@@ -756,9 +764,12 @@ function reachedFunctions(
   return paths;
 }
 
+const NO_PATH: CallPath = [];
+
 function reachedFromEachStart(
   db: Database,
   starts: Iterable<FunctionKey>,
+  withPaths: boolean,
 ): Map<FunctionKey, Reached> {
   const answers = new Map<
     FunctionKey,
@@ -768,19 +779,23 @@ function reachedFromEachStart(
     db.add("start", [fn]);
     answers.set(fn, { functions: new Map(), keys: new Map() });
   }
-  evaluate(db, REACHED_EACH, SHORTEST_PATH);
+  if (withPaths) {
+    evaluate(db, REACHED_EACH, SHORTEST_PATH);
+  } else {
+    evaluate(db, REACHED_EACH);
+  }
+  const pathOf = (relation: string, tuple: Tuple): CallPath =>
+    withPaths ? (db.tagOf(relation, tuple) as CallPath) : NO_PATH;
   for (const tuple of db.facts("reachedBy")) {
     const [start, reached] = [String(tuple[0]), String(tuple[1])];
     if (start !== reached) {
-      answers
-        .get(start)
-        ?.functions.set(reached, db.tagOf("reachedBy", tuple) as CallPath);
+      answers.get(start)?.functions.set(reached, pathOf("reachedBy", tuple));
     }
   }
   for (const tuple of db.facts("reachedKey")) {
     answers
       .get(String(tuple[0]))
-      ?.keys.set(String(tuple[1]), db.tagOf("reachedKey", tuple) as CallPath);
+      ?.keys.set(String(tuple[1]), pathOf("reachedKey", tuple));
   }
   return answers;
 }

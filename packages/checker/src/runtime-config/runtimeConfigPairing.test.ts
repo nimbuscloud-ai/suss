@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   runtimeConfigBinding,
   storageBinding,
+  summaryIdentifier,
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
@@ -11,6 +12,7 @@ import { checkRuntimeConfig, runtimeReads } from "./runtimeConfigPairing.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
+import type { UncheckedRead } from "./runtimeConfigPairing.js";
 
 function makeRuntimeProvider(opts: {
   instanceName: string;
@@ -1330,5 +1332,154 @@ describe("runtimeReads", () => {
     expect(
       runtimeReads([first, second, shared]).flatMap((one) => one.reads),
     ).toEqual([]);
+  });
+});
+
+/** Two Lambdas whose handlers both import `src/lib/flags.ts`, built from one directory. */
+function twoHandlersAndAHelper(opts: {
+  helperKind?: BehavioralSummary["kind"];
+  /** How the first handler calls the helper: settled, through a table, or not at all. */
+  firstCalls: "settled" | "possible" | "none";
+}) {
+  const runtimes = ["orders", "billing"].map((name) =>
+    makeRuntimeProvider({
+      instanceName: name,
+      envVars: [],
+      namesUnit: true,
+      codeScope: {
+        kind: "codeUri",
+        path: "",
+        entry: `src/handlers/${name}`,
+      },
+    }),
+  );
+  const helper = {
+    ...makeCodeSummary({
+      name: "flagEnabled",
+      file: "src/lib/flags.ts",
+      envReads: ["FLAG_TABLE"],
+    }),
+    kind: opts.helperKind ?? "library",
+  } satisfies BehavioralSummary;
+  const handlers = ["orders", "billing"].map((name) =>
+    makeCodeSummary({
+      name: `${name}Handler`,
+      file: `src/handlers/${name}.ts`,
+      envReads: [],
+      runsInUnit: name,
+      moduleImports: ["src/lib/flags.ts"],
+    }),
+  );
+  const call = {
+    type: "invocation" as const,
+    callee: "flagEnabled",
+    args: [],
+    async: false,
+  };
+  const [first] = handlers;
+  if (first !== undefined && opts.firstCalls !== "none") {
+    first.transitions[0]?.effects.push(
+      opts.firstCalls === "settled"
+        ? { ...call, summary: summaryIdentifier(helper) }
+        : { ...call, possibleSummaries: [summaryIdentifier(helper)] },
+    );
+  }
+  return [...runtimes, ...handlers, helper];
+}
+
+function unknownVariables(summaries: BehavioralSummary[]): string[] {
+  return checkRuntimeConfig(summaries)
+    .filter((f) => f.kind === "boundaryFieldUnknown")
+    .map((f) => f.description);
+}
+
+describe("charging a read to the runtimes whose calls reach it", () => {
+  it("charges a helper's read only to the handler that calls it", () => {
+    const findings = unknownVariables(
+      twoHandlersAndAHelper({ firstCalls: "settled" }),
+    );
+    expect(findings).toEqual([expect.stringContaining("orders declares no")]);
+  });
+
+  it("lists the read as unchecked for a handler that loads the file and never calls it", () => {
+    const unchecked: UncheckedRead[] = [];
+    checkRuntimeConfig(
+      twoHandlersAndAHelper({ firstCalls: "settled" }),
+      undefined,
+      undefined,
+      unchecked,
+    );
+    expect(unchecked).toEqual([
+      {
+        runtime: "template.yaml::billing",
+        reader: "src/lib/flags.ts::flagEnabled",
+        variable: "FLAG_TABLE",
+        reason: "notReached",
+      },
+    ]);
+  });
+
+  it("charges nothing through a call that takes its function from a table, and says so", () => {
+    const summaries = twoHandlersAndAHelper({ firstCalls: "possible" });
+    const unchecked: UncheckedRead[] = [];
+    const findings = checkRuntimeConfig(
+      summaries,
+      undefined,
+      undefined,
+      unchecked,
+    ).filter((f) => f.kind === "boundaryFieldUnknown");
+    expect(findings).toEqual([]);
+    expect(unchecked.map((one) => `${one.runtime} ${one.reason}`)).toEqual([
+      "template.yaml::orders possibleCall",
+      "template.yaml::billing notReached",
+    ]);
+  });
+
+  it("charges a unit a framework runs from a file the runtime loads, with no call to it", () => {
+    const findings = unknownVariables(
+      twoHandlersAndAHelper({ helperKind: "handler", firstCalls: "none" }),
+    );
+    expect(findings).toHaveLength(2);
+  });
+
+  it("charges a file's load-time read to every runtime that loads the file", () => {
+    const summaries = twoHandlersAndAHelper({ firstCalls: "none" }).map(
+      (summary) =>
+        summary.identity.name === "flagEnabled"
+          ? { ...summary, kind: "module-init" as const }
+          : summary,
+    );
+    expect(unknownVariables(summaries)).toHaveLength(2);
+  });
+
+  it("starts at the function the template's entryExport says, when no pack stamped a handler", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "reports",
+      envVars: [],
+      codeScope: { kind: "codeUri", path: "", entry: "src/reports" },
+    });
+    const scope = runtime.metadata?.codeScope as Record<string, unknown>;
+    scope.entryExport = "Reports::Nightly.run";
+    const run = {
+      ...makeCodeSummary({
+        name: "Reports::Nightly.run",
+        file: "src/reports.rb",
+        envReads: ["REPORTS_BUCKET"],
+      }),
+      kind: "library",
+    } satisfies BehavioralSummary;
+    const cleanup = makeCodeSummary({
+      name: "Reports::Nightly.cleanup",
+      file: "src/reports.rb",
+      envReads: ["CLEANUP_BUCKET"],
+    });
+    const other = {
+      ...cleanup,
+      kind: "library",
+      location: { ...cleanup.location, range: { start: 30, end: 40 } },
+    } satisfies BehavioralSummary;
+    expect(unknownVariables([runtime, run, other])).toEqual([
+      expect.stringContaining("REPORTS_BUCKET"),
+    ]);
   });
 });

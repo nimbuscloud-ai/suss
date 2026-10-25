@@ -9,15 +9,30 @@ This check pairs runtime-config providers (CloudFormation Lambda env blocks, ECS
 ## Key files
 
 - `runtimeConfigPairing.ts:checkRuntimeConfig` is the main orchestrator.
+- `chargedReads.ts:chargeRuntimes` finds where each runtime starts and which functions those starts reach.
 - `runtimeConfigPairing.ts:collectEnvVarReads` pulls env-var names out of `config-read` effects. When there are none it falls back to matching the legacy pattern in invocation arguments.
 - `runtimeConfigPairing.ts:readProvidedEnvVars` parses the declared env-var list out of `metadata.runtimeContract.envVars`.
 - `runtimeConfigPairing.ts:readEnvVarSources` parses the per-variable source map (`platform` vs. `template` provenance).
+
+## Which reads a runtime is charged with
+
+A runtime is charged with a read only when a call from where it starts reaches the function that makes the read. `chargedReads.ts` works this out. A runtime starts at three kinds of unit:
+
+- its handler, which a pack stamped with the runtime's deployable unit, or, when no pack did, the function `codeScope.entryExport` says in the entry file;
+- the module-init unit of every file its import closure contains, since loading a file runs its top level;
+- every unit a framework runs, such as a route or a queue consumer, in a file the runtime loads. A FastAPI app behind `Mangum(app)` has no call from the handler to its routes, and the routes still run in that Lambda.
+
+The import closure is right for module-init and wrong for a function. A client file that three hundred handlers import is loaded by all of them, and its `getFlag()` runs only in the handlers that call it. Charging by the closure reported that read against every one of them.
+
+The pass builds the call facts once and asks `reachedFromEach` once for every start, with `certainOnly`, so a call that takes its function out of a table charges nothing. A read in a file the runtime loads that no settled call reaches is not a finding and is not clear either. It goes on `unchecked.runtimeConfig` in the `checkAll` result, with `notReached` or, when only a call through a table reaches it, `possibleCall`. Only a read that would otherwise have been a finding is listed, since a declared or defaulted read is fine whether it runs or not. `check` prints one line per runtime that has any.
+
+`boundaryFieldUnused` still goes by the closure. A variable that code in the runtime's files reads is never called unused, reached or not.
 
 ## Gotchas
 
 - **Pairing requires `codeScope`.** A runtime-config provider without `metadata.codeScope.kind === "codeUri"`, or with a missing path, emits one `runtimeScopeUnknown` finding and is then skipped. Without a scope there is no way to tell which code reads belong to it.
 - **A directory contains only code in its own project.** The reader records which project a template's paths are measured from as `codeScope.workspace`, the package the template is in. A sibling package's `src/config.ts`, which a TypeScript run can reach through a workspace link, is not under a template's `src` even though its path is. Code or a scope that gives no project, such as a Python file, is compared by path alone.
-- **A directory decides only when it is the only one that could.** When the code says which deployable unit it belongs to, the pairing goes by the two units. When it does not, `scope/`'s `contestedFiles` counts how many runtimes declare a directory that contains the file. A file that two or more of them contain is paired against none of them. A service that builds every function from the service root gives them all the same directory, so going by that directory would report one `process.env` read once per function. Each such file gets one `runtimeScopeUnknown` finding with the number of runtimes that claimed it.
+- **A directory decides only when it is the only one that could.** When the code says which deployable unit it belongs to, the pairing goes by the two units. When it does not, `scope/`'s `contestedFiles` counts how many runtimes declare a directory that contains the file. A file that two or more of them contain is paired against none of them, unless a call from one runtime's handler reaches it, which says that runtime runs it. A service that builds every function from the service root gives them all the same directory, so going by that directory would report one `process.env` read once per function. Each such file gets one `runtimeScopeUnknown` finding with the number of runtimes that claimed it.
 - **When the scope is ambiguous, the check holds back one finding and keeps the other.** A read the directory could not place still counts toward `readNames`. That way `boundaryFieldUnused` never tells a runtime that nothing reads a variable when some code may well read it. Only `boundaryFieldUnknown` is held back.
 - **A runtime whose entry file the run never read gets no unused warning.** Wrangler's `main` and a Lambda handler often point at a bundle a build step writes, such as a framework adapter's generated worker. The directory still places the source, so a read the runtime does not supply is reported. Whether the bundle reads a declared variable is unknown, so the check emits one info `boundaryFieldUnused` per runtime that lists the variables it did not check.
 - **Config-read effects are the preferred form in v0.** The env-var recognizer in `@suss/runtime-node` emits them. The checker falls back to the legacy scan of invocation arguments (looking for the literal pattern `process.env.X` in call arguments) only when no summary in the set has a `config-read` effect. The fallback runs less often as more code is re-extracted with the node runtime pack.

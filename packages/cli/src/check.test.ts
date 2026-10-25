@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   functionCallBinding,
   restBinding,
+  runtimeConfigBinding,
   storageBinding,
 } from "@suss/behavioral-ir";
 
@@ -2837,5 +2838,146 @@ describe("the exit code says how the run ended", () => {
     const json = await suss(["check", "--json"], dir);
     expect(json.exit).toBe(0);
     expect(JSON.parse(json.stdout).run[0].kind).toBe("notCovered");
+  });
+});
+
+/** A config read in a library function at `file`, at its own lines so each is one function. */
+function envReader(
+  name: string,
+  file: string,
+  line: number,
+): BehavioralSummary {
+  return {
+    kind: "library",
+    location: { file, range: { start: line, end: line + 2 }, exportName: name },
+    identity: { name, exportPath: [name], boundaryBinding: null },
+    inputs: [],
+    transitions: [
+      {
+        id: `${name}-t`,
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: runtimeConfigBinding({
+              recognition: "@suss/runtime-node",
+            }),
+            callee: `process.env.${name.toUpperCase()}`,
+            interaction: {
+              class: "config-read",
+              name: name.toUpperCase(),
+              defaulted: false,
+            },
+          },
+        ],
+        location: { start: line, end: line + 2 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+describe("check over a runtime that loads code its handler never calls", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-unreached-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function lambdaWithFlags(): BehavioralSummary[] {
+    const unit = {
+      deploymentTarget: "lambda" as const,
+      instanceName: "Orders",
+    };
+    const runtime: BehavioralSummary = {
+      kind: "library",
+      location: {
+        file: "template.yaml",
+        range: { start: 1, end: 10 },
+        exportName: null,
+      },
+      identity: {
+        name: "Orders",
+        exportPath: null,
+        boundaryBinding: runtimeConfigBinding({
+          recognition: "cloudformation",
+          ...unit,
+        }),
+        deployableUnit: unit,
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: { source: "declared", level: "high" },
+      metadata: {
+        runtimeContract: { envVars: [] },
+        codeScope: { kind: "codeUri", path: "", entry: "src/orders" },
+      },
+    };
+    const unread = envReader("featureFlag", "src/flags.ts", 1);
+    const picked = envReader("pickedFlag", "src/flags.ts", 10);
+    const handler: BehavioralSummary = {
+      ...envReader("handler", "src/orders.ts", 1),
+      kind: "handler",
+      identity: {
+        name: "Orders.handler",
+        exportPath: ["handler"],
+        boundaryBinding: null,
+        deployableUnit: unit,
+      },
+      metadata: { moduleImports: ["src/flags.ts"] },
+    };
+    handler.transitions[0]?.effects.splice(0, 1, {
+      type: "invocation",
+      callee: "handlers[kind]",
+      args: [],
+      async: false,
+      possibleSummaries: ["src/flags.ts::pickedFlag"],
+    });
+    return [runtime, handler, unread, picked];
+  }
+
+  it("prints one line for the runtime saying how many reads it did not judge, and why", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify(lambdaWithFlags()),
+    );
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, allowEmpty: true }),
+    );
+    expect(output).toContain(
+      "Orders: 1 read in files it loads was not reached from its handler, and 1 read is reached only through a call that may run another function, so they were not checked against its environment.",
+    );
+  });
+
+  it("lists each unjudged read in the JSON report", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify(lambdaWithFlags()),
+    );
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, allowEmpty: true, json: true }),
+    );
+    expect(JSON.parse(output).unchecked.runtimeConfig).toEqual([
+      {
+        runtime: "template.yaml::Orders",
+        reader: "src/flags.ts::featureFlag",
+        variable: "FEATUREFLAG",
+        reason: "notReached",
+      },
+      {
+        runtime: "template.yaml::Orders",
+        reader: "src/flags.ts::pickedFlag",
+        variable: "PICKEDFLAG",
+        reason: "possibleCall",
+      },
+    ]);
   });
 });
