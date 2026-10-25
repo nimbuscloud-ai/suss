@@ -30,6 +30,8 @@ import type {
   Expression,
   MethodDeclaration,
   ParameterDeclaration,
+  PostfixUnaryExpression,
+  PrefixUnaryExpression,
   PropertyAccessExpression,
   PropertyDeclaration,
   SourceFile,
@@ -419,9 +421,6 @@ function assignmentsInFile(sourceFile: SourceFile): Map<Written, Write[]> {
 
   forEachDescendantWhere(sourceFile, mayWrite, (node) => {
     const written = writeAt(node);
-    if (written === null) {
-      return false;
-    }
     for (const declaration of declarationsOf(written.target)) {
       const writes = found.get(declaration);
       if (writes === undefined) {
@@ -435,7 +434,10 @@ function assignmentsInFile(sourceFile: SourceFile): Map<Written, Write[]> {
   return found;
 }
 
-/** What `writeAt` reads as a write, decided from the compiler node. */
+/**
+ * Whether a node writes a name: an assignment to a name or a property
+ * read, or `++` and `--` on a name.
+ */
 function mayWrite(raw: ts.Node): boolean {
   if (ts.isBinaryExpression(raw)) {
     return (
@@ -474,39 +476,15 @@ function writesItsWholeValue(kind: SyntaxKind): boolean {
   );
 }
 
-/** The write a node performs on a name, when it performs one. */
-function writeAt(node: Node): { target: Node; write: Write } | null {
+/** The write a node `mayWrite` accepted performs, and the name it writes. */
+function writeAt(node: Node): { target: Node; write: Write } {
   if (Node.isBinaryExpression(node)) {
     const operator = node.getOperatorToken().getKind();
-    const target = node.getLeft();
-    if (
-      !isAssignmentOperator(operator) ||
-      !(Node.isIdentifier(target) || Node.isPropertyAccessExpression(target))
-    ) {
-      return null;
-    }
     const value = writesItsWholeValue(operator) ? node.getRight() : null;
-    return { target, write: { value, node } };
+    return { target: node.getLeft(), write: { value, node } };
   }
-
-  if (
-    Node.isPrefixUnaryExpression(node) ||
-    Node.isPostfixUnaryExpression(node)
-  ) {
-    const operator = node.getOperatorToken();
-    if (
-      operator !== SyntaxKind.PlusPlusToken &&
-      operator !== SyntaxKind.MinusMinusToken
-    ) {
-      return null;
-    }
-    const target = node.getOperand();
-    return Node.isIdentifier(target)
-      ? { target, write: { value: null, node } }
-      : null;
-  }
-
-  return null;
+  const update = node as PrefixUnaryExpression | PostfixUnaryExpression;
+  return { target: update.getOperand(), write: { value: null, node } };
 }
 
 function declarationsOf(name: Node): Written[] {

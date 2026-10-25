@@ -13,6 +13,7 @@ import {
   type Expression,
   type NewExpression,
   Node,
+  type ReturnStatement,
   SyntaxKind,
 } from "ts-morph";
 
@@ -39,7 +40,6 @@ import {
   makeFallthroughTerminal,
 } from "./terminals/index.js";
 import {
-  DESCENT_STOP_KINDS,
   type DescentBarriers,
   isDescentStop,
   NO_BARRIERS,
@@ -188,12 +188,9 @@ export function countUnmatchedReturns(
     if (startsItsOwnScope(node)) {
       return true;
     }
-    if (!Node.isReturnStatement(node)) {
-      return false;
-    }
     // A bare `return;` produces the same result as falling off the end
     // of the function, so nothing was missed by not matching it.
-    if (node.getExpression() === undefined) {
+    if ((node as ReturnStatement).getExpression() === undefined) {
       return false;
     }
     if (!claimed.has(node)) {
@@ -204,8 +201,8 @@ export function countUnmatchedReturns(
   return unmatched;
 }
 
+/** Every function `isDescentStop` stops at also starts its own scope. */
 const RETURNS_AND_SCOPES: ReadonlySet<SyntaxKind> = new Set([
-  ...DESCENT_STOP_KINDS,
   ...OWN_SCOPE_KINDS,
   SyntaxKind.ReturnStatement,
 ]);
