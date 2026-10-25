@@ -310,6 +310,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     inflections,
     // An action reads the request through these, and is handed nothing.
     requestAccessors: ["params", "request"],
+    blankToNil: ["presence"],
     // Rails merges the path, the query string and the body into `params`,
     // so an action's read of one cannot be told from the others and all
     // of them are spelled `params`.

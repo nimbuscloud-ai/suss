@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { emitEnvFacts, envReadEffects } from "./envReads.js";
+import {
+  emitBlankToNilFacts,
+  emitEnvFacts,
+  envReadEffects,
+} from "./envReads.js";
 import {
   collectFileConstants,
   emitConstantBindings,
@@ -72,8 +76,12 @@ function findMethodOrNull(node: RbNode, name: string): RbNode | null {
 }
 
 /** The facts a run over these files would have, with the evaluator bound to them. */
-async function projectFacts(files: Record<string, string>) {
+async function projectFacts(
+  files: Record<string, string>,
+  blankToNil: string[] = [],
+) {
   const db = new Database();
+  emitBlankToNilFacts(db, blankToNil);
   const parsed: { file: string; root: RbNode }[] = [];
   const constants = [];
   const definitions = new Map<string, RbNode>();
@@ -93,8 +101,11 @@ async function projectFacts(files: Record<string, string>) {
 }
 
 /** What `use.rb` reports when it loads, with every other file in the run beside it. */
-async function projectReads(files: Record<string, string>): Promise<Read[]> {
-  const { db, parsed } = await projectFacts(files);
+async function projectReads(
+  files: Record<string, string>,
+  blankToNil: string[] = [],
+): Promise<Read[]> {
+  const { db, parsed } = await projectFacts(files, blankToNil);
   const entry = parsed.find(({ file }) => file === "use.rb");
   if (entry === undefined) {
     throw new Error("no use.rb");
@@ -159,6 +170,33 @@ describe("ENV spellings", () => {
       { name: "B", defaulted: true },
       { name: "C", defaulted: true },
       { name: "D", defaulted: false },
+    ]);
+  });
+
+  it("counts an || after &. calls on the read, which give back nil when the read is nil", async () => {
+    expect(
+      await fileReads(
+        'A = ENV["A"]&.strip || "d"\nB = ENV["B"].strip || "d"\nC = ENV["C"]&.strip\n',
+      ),
+    ).toEqual([
+      { name: "A", defaulted: true },
+      { name: "B", defaulted: false },
+      { name: "C", defaulted: false },
+    ]);
+  });
+
+  it("counts an || after a method a pack says turns a blank value into nil, as ActiveSupport's presence", async () => {
+    const source =
+      'A = Integer(ENV["A"].presence || 60)\nB = ENV["B"]&.presence || fallback\nC = ENV["C"].presence\n';
+    expect(await projectReads({ "use.rb": source }, ["presence"])).toEqual([
+      { name: "A", defaulted: true },
+      { name: "B", defaulted: true },
+      { name: "C", defaulted: false },
+    ]);
+    expect(await projectReads({ "use.rb": source })).toEqual([
+      { name: "A", defaulted: false },
+      { name: "B", defaulted: true },
+      { name: "C", defaulted: false },
     ]);
   });
 
