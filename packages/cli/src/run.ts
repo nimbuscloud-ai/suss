@@ -154,7 +154,7 @@ Options (a bare check or map, and extract --out-dir, which run every read):
   --jobs           How many reads run at once. Up to 4 by default, fewer
                    on a machine without the cores or memory for that many
   --read-timeout   Minutes one read may run before it is stopped and the
-                   rest carry on. 10 by default, and 0 turns it off
+                   rest carry on. 20 by default, and 0 turns it off
   --read-memory    The heap one read may grow to, in megabytes
 
 Options (init):

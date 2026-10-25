@@ -6,7 +6,7 @@
  * Each read runs as its own `suss` process, so a read that hangs or runs
  * out of memory is stopped without taking the others with it. A monorepo
  * can list over a hundred reads, and one of them can run for half an
- * hour, so the defaults stop a read after ten minutes and run up to four
+ * hour, so the defaults stop a read after twenty minutes and run up to four
  * at once. Fewer run at once when the machine does not have the memory
  * for four reads at full heap.
  */
@@ -25,7 +25,7 @@ export interface ReadLimits {
   memoryMb: number;
 }
 
-export const DEFAULT_READ_TIMEOUT_MINUTES = 10;
+export const DEFAULT_READ_TIMEOUT_MINUTES = 20;
 
 const MOST_JOBS_BY_DEFAULT = 4;
 

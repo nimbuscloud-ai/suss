@@ -957,7 +957,7 @@ The read exited with an error, ran past its time limit, or ran out of heap, so t
 
 ```
 warning: readFailed
-  `suss extract --lang typescript --dir apps/api -p apps/api/tsconfig.json -f express -f pg -f node` was stopped after 10m 0s, the time limit for one read, so the summaries it would have written are missing from this check.
+  `suss extract --lang typescript --dir apps/api -p apps/api/tsconfig.json -f express -f pg -f node` was stopped after 20m 0s, the time limit for one read, so the summaries it would have written are missing from this check.
   Pass --read-timeout with more minutes to give it longer, or 0 for no limit. Then run the check again.
 ```
 
