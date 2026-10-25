@@ -13,14 +13,10 @@
  */
 
 import {
-  type ArrowFunction,
   type BindingElement,
   type CallExpression,
   type ElementAccessExpression,
-  type FunctionDeclaration,
-  type FunctionExpression,
   type Identifier,
-  type MethodDeclaration,
   Node as N,
   type Node,
   type ParameterDeclaration,
@@ -29,12 +25,6 @@ import {
   SyntaxKind,
   type VariableDeclaration,
 } from "ts-morph";
-
-type FunctionLike =
-  | FunctionDeclaration
-  | ArrowFunction
-  | FunctionExpression
-  | MethodDeclaration;
 
 import {
   declarationsBehind,
@@ -49,7 +39,10 @@ import {
 import { configBinding, opaqueRuntimeRead } from "./configBinding.js";
 import { schemaEnvReads, schemaEnvReadsInside } from "./schemaEnv.js";
 
-import type { ResolutionStore } from "@suss/adapter-typescript";
+import type {
+  FunctionRoot as FunctionLike,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 import type { DeploymentOptions } from "./configBinding.js";
