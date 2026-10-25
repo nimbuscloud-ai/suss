@@ -237,9 +237,13 @@ import {
   type DescentBarriers,
   isDescentStop,
   NO_BARRIERS,
+  withDescentStops,
 } from "./walk/descent.js";
 import { fileOfOffsetKey, offsetKeyOf } from "./walk/nodeKeys.js";
-import { statementsOfKind } from "./walk/rawDescent.js";
+import {
+  forEachDescendantOfKinds,
+  statementsOfKind,
+} from "./walk/rawDescent.js";
 import {
   expandWorkspacePatterns,
   workspaceExpansionStamp,
@@ -498,19 +502,18 @@ function extractDependencyCalls(
 ): RawDependencyCall[] {
   const results: RawDependencyCall[] = [];
 
-  func.forEachDescendant((node, traversal) => {
+  forEachDescendantOfKinds(func, DECLARATIONS_AND_STOPS, (node) => {
     if (isDescentStop(node, func, barriers)) {
-      traversal.skip();
-      return;
+      return true;
     }
 
     if (!Node.isVariableDeclaration(node)) {
-      return;
+      return false;
     }
 
     const init = node.getInitializer();
     if (init === undefined) {
-      return;
+      return false;
     }
 
     let isAsync = false;
@@ -521,7 +524,7 @@ function extractDependencyCalls(
     }
 
     if (!Node.isCallExpression(callExpr)) {
-      return;
+      return false;
     }
 
     const calleeName = callExpr.getExpression().getText();
@@ -546,10 +549,13 @@ function extractDependencyCalls(
         end: endLineOf(locationNode),
       },
     });
+    return false;
   });
 
   return results;
 }
+
+const DECLARATIONS_AND_STOPS = withDescentStops(SyntaxKind.VariableDeclaration);
 
 /** A truthiness check on fetch's `.ok` becomes a status range comparison. */
 function resolveResponseProperties(

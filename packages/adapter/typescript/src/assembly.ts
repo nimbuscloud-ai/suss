@@ -13,6 +13,7 @@ import {
   type Expression,
   type NewExpression,
   Node,
+  SyntaxKind,
 } from "ts-morph";
 
 import { firesOn, runsBefore, splitAtHandOffs } from "@suss/extractor";
@@ -38,11 +39,14 @@ import {
   makeFallthroughTerminal,
 } from "./terminals/index.js";
 import {
+  DESCENT_STOP_KINDS,
   type DescentBarriers,
   isDescentStop,
   NO_BARRIERS,
+  OWN_SCOPE_KINDS,
   startsItsOwnScope,
 } from "./walk/descent.js";
+import { forEachDescendantOfKinds } from "./walk/rawDescent.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -174,32 +178,37 @@ export function countUnmatchedReturns(
   }
 
   let unmatched = 0;
-  body.forEachDescendant((node, traversal) => {
+  forEachDescendantOfKinds(body, RETURNS_AND_SCOPES, (node) => {
     if (isDescentStop(node, func, barriers)) {
-      traversal.skip();
-      return;
+      return true;
     }
     // A return in a nested scope is that scope's, and it gets its own
     // summary if anything discovers it, so counting it here would
     // report the same return twice.
     if (startsItsOwnScope(node)) {
-      traversal.skip();
-      return;
+      return true;
     }
     if (!Node.isReturnStatement(node)) {
-      return;
+      return false;
     }
     // A bare `return;` produces the same result as falling off the end
     // of the function, so nothing was missed by not matching it.
     if (node.getExpression() === undefined) {
-      return;
+      return false;
     }
     if (!claimed.has(node)) {
       unmatched++;
     }
+    return false;
   });
   return unmatched;
 }
+
+const RETURNS_AND_SCOPES: ReadonlySet<SyntaxKind> = new Set([
+  ...DESCENT_STOP_KINDS,
+  ...OWN_SCOPE_KINDS,
+  SyntaxKind.ReturnStatement,
+]);
 
 /**
  * Where one call the invocation walk visited ended up. `terminal` is a
