@@ -5,10 +5,10 @@ import { durationText, readLimitsFrom } from "./readLimits.js";
 const bigMachine = { memoryMb: 65_536, cpus: 12 };
 
 describe("the limits a project's reads run under", () => {
-  it("runs four reads at once for ten minutes each, at the heap one suss run gets", () => {
+  it("runs four reads at once for twenty minutes each, at the heap one suss run gets", () => {
     expect(readLimitsFrom({}, bigMachine)).toEqual({
       jobs: 4,
-      timeoutMs: 600_000,
+      timeoutMs: 1_200_000,
       memoryMb: 8192,
     });
   });

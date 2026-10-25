@@ -31,7 +31,7 @@ suss map wrote .suss/map.html
 | `--links <target>` | `editor` | `editor` links each line to the file on disk, in VS Code, Cursor or the browser, which the page lets you pick. `github` links to the file on GitHub at the commit that was read, and leaves this machine's folders out of the page. Use `github` for a page you publish. |
 | `--cache-dir <path>` | `.suss` in the project | Where the page, the summaries and the extraction cache go. See [Where suss writes](/reference/cli/#where-suss-writes). |
 | `--jobs <n>` | up to 4 | How many reads run at once. |
-| `--read-timeout <minutes>` | `10` | How long one read may run before it is stopped. `0` turns the limit off. |
+| `--read-timeout <minutes>` | `20` | How long one read may run before it is stopped. `0` turns the limit off. |
 | `--read-memory <MB>` | the heap one `suss` run gets, at most 8192 | The heap one read may grow to. |
 
 `suss map` reads the project the way a bare [`suss check`](/reference/cli/check) does: the reads `suss.json` lists, or the ones [`suss init`](/reference/cli/init) would pick when there is no file, each in its own process with a line on stderr as it starts and ends. A read that fails or runs past its limit is left out and the page shows what the other reads found. See [Reading every read of a project](/reference/cli/check#reading-every-read-of-a-project). It keeps the summaries in `.suss/summaries`, so you can ask about anything on the page:
