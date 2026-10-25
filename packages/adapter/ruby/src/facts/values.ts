@@ -2216,6 +2216,10 @@ function emitMixinFacts(
   for (const [callName, relation] of MIXIN_CALLS) {
     for (const mixin of mixedInConstants(body, callName, statements)) {
       add(emitter, relation, classKey, valueKey(emitter, mixin));
+      // A pack matches a library module, `Sidekiq::Job`, by its written name.
+      if (relation === "extends") {
+        add(emitter, "mixesInNamed", classKey, mixin.text);
+      }
     }
   }
 }
