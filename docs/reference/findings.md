@@ -949,6 +949,24 @@ It is a warning for the same reason as `packNeedsConfig`: the rest of the run wa
 
 **A bug when:** the folder or file exists in the project. Give the path as an absolute one, or keep the config file in the project.
 
+### `readFailed`
+
+**Severity:** warning. Emitted by a bare `suss check`, and by `suss check --dir` over a folder `suss extract --out-dir` wrote, when one of the project's reads did not finish.
+
+The read exited with an error, ran past its time limit, or ran out of heap, so the summaries it would have written are missing. The other reads finished, and the check compared what they wrote.
+
+```
+warning: readFailed
+  `suss extract --lang typescript --dir apps/api -p apps/api/tsconfig.json -f express -f pg -f node` was stopped after 20m 0s, the time limit for one read, so the summaries it would have written are missing from this check.
+  Pass --read-timeout with more minutes to give it longer, or 0 for no limit. Then run the check again.
+```
+
+It is a warning, so a run that paired the other reads passes with this beside it. `--fail-on warning` makes it fail the run.
+
+**Legitimate when:** the read is one you do not need, such as a docs site in the workspace. Leave it out of `suss.json`.
+
+**A bug when:** the read exits with an error. Run the command on its own to see the whole error. A read that runs long or out of heap on a project of ordinary size is worth reporting too.
+
 ### `noPackMatched`
 
 **Severity:** error. Emitted by a bare `suss check`, and by the MCP `suss_check` tool, when the project has source in a language suss reads and no pack matched anything in it.

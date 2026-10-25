@@ -267,7 +267,7 @@ export class Project {
       this.root,
       this.summaryDir,
       reads,
-      this.kept,
+      { kept: this.kept },
     );
     return this.finished({
       summaryDir: this.summaryDir,

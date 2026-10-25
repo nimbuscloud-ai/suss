@@ -10,7 +10,7 @@ description: Write one HTML page that shows a project's routes, GraphQL fields, 
 <a href="/examples/lobsters.html" target="_blank">See an example</a>: lobsters at a pinned commit, with every link going to that commit on GitHub. There is also <a href="/examples/full-stack-fastapi-template.html" target="_blank">the FastAPI template</a>.
 
 ```
-suss map [<directory>] [--dir <summaries>] [-o <page.html>] [--links editor|github] [--cache-dir <path>]
+suss map [<directory>] [--dir <summaries>] [-o <page.html>] [--links editor|github] [--cache-dir <path>] [--jobs <n>] [--read-timeout <minutes>] [--read-memory <MB>]
 ```
 
 ```
@@ -30,8 +30,11 @@ suss map wrote .suss/map.html
 | `-o`, `--out <path>` | `.suss/map.html` | Where to write the page. |
 | `--links <target>` | `editor` | `editor` links each line to the file on disk, in VS Code, Cursor or the browser, which the page lets you pick. `github` links to the file on GitHub at the commit that was read, and leaves this machine's folders out of the page. Use `github` for a page you publish. |
 | `--cache-dir <path>` | `.suss` in the project | Where the page, the summaries and the extraction cache go. See [Where suss writes](/reference/cli/#where-suss-writes). |
+| `--jobs <n>` | up to 4 | How many reads run at once. |
+| `--read-timeout <minutes>` | `20` | How long one read may run before it is stopped. `0` turns the limit off. |
+| `--read-memory <MB>` | the heap one `suss` run gets, at most 8192 | The heap one read may grow to. |
 
-`suss map` reads the project the way a bare [`suss check`](/reference/cli/check) does: the reads `suss.json` lists, or the ones [`suss init`](/reference/cli/init) would pick when there is no file. It keeps the summaries in `.suss/summaries`, so you can ask about anything on the page:
+`suss map` reads the project the way a bare [`suss check`](/reference/cli/check) does: the reads `suss.json` lists, or the ones [`suss init`](/reference/cli/init) would pick when there is no file, each in its own process with a line on stderr as it starts and ends. A read that fails or runs past its limit is left out and the page shows what the other reads found. See [Reading every read of a project](/reference/cli/check#reading-every-read-of-a-project). It keeps the summaries in `.suss/summaries`, so you can ask about anything on the page:
 
 ```bash
 suss ask "what does app/controllers/comments_controller.rb::CommentsController.create reach" --dir .suss/summaries
