@@ -24,6 +24,7 @@ import {
   commandFor,
   readProjectSaying,
 } from "../projectRead.js";
+import { READ_LIMIT_OPTIONS, readLimitsFrom } from "../readLimits.js";
 import { UsageError } from "../usageError.js";
 import { pickCards } from "./mapCards.js";
 import { buildMapModel } from "./mapModel.js";
@@ -32,6 +33,8 @@ import { terminalSummary } from "./mapSummary.js";
 import { absoluteFile } from "./mapUnits.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { ReadFailure } from "../projectFile.js";
+import type { ReadLimits } from "../readLimits.js";
 import type { MapModel, MapRead } from "./mapModel.js";
 
 export async function runMap(args: string[]): Promise<number> {
@@ -41,9 +44,11 @@ export async function runMap(args: string[]): Promise<number> {
       dir: { type: "string" },
       out: { type: "string", short: "o" },
       links: { type: "string" },
+      ...READ_LIMIT_OPTIONS,
     },
     allowPositionals: true,
   });
+  const limits = readLimitsFrom(values);
   const links = values.links ?? "editor";
   if (!isLinkTarget(links)) {
     throw new UsageError(
@@ -60,7 +65,7 @@ export async function runMap(args: string[]): Promise<number> {
   const folder = mapFolderFor(root);
   const summariesDir =
     values.dir === undefined
-      ? await readInto(root, path.join(folder, "summaries"))
+      ? await readInto(root, path.join(folder, "summaries"), limits)
       : path.resolve(values.dir);
   if (summariesDir === null) {
     process.stderr.write(
@@ -92,9 +97,20 @@ export async function runMap(args: string[]): Promise<number> {
   fs.writeFileSync(out, page);
 
   process.stdout.write(
-    `${[`suss map wrote ${shownPath(out)}`, ...terminalSummary(model)].join("\n")}\n`,
+    `${[`suss map wrote ${shownPath(out)}`, ...terminalSummary(model), ...failedReadLines(checked.readsFailed)].join("\n")}\n`,
   );
   return 0;
+}
+
+/** The reads the page leaves out because they failed, each with why. */
+function failedReadLines(failed: readonly ReadFailure[]): string[] {
+  if (failed.length === 0) {
+    return [];
+  }
+  return [
+    `  Not read      ${failed.length === 1 ? "1 read" : `${failed.length} reads`} failed, so the page leaves out what they cover:`,
+    ...failed.map((failure) => `    ${failure.command} ${failure.reason}`),
+  ];
 }
 
 type LinkTarget = "editor" | "github";
@@ -148,9 +164,13 @@ function isLinkTarget(value: string): value is LinkTarget {
 }
 
 /** Reads the project into `dir`, replacing what an earlier map left there. Null when no pack matched. */
-async function readInto(root: string, dir: string): Promise<string | null> {
+async function readInto(
+  root: string,
+  dir: string,
+  limits: ReadLimits,
+): Promise<string | null> {
   clearEarlierReads(dir);
-  const report = await readProjectSaying(root, dir, true);
+  const report = await readProjectSaying(root, dir, true, limits);
   if (report === null) {
     return null;
   }

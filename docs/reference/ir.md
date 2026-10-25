@@ -599,7 +599,8 @@ interface RunFinding {
     | "packNeedsConfig"
     | "packPathMissing"
     | "noPackMatched"
-    | "notCovered";
+    | "notCovered"
+    | "readFailed";
   severity: "error" | "warning" | "info";
   description: string;
   remedy: string;
