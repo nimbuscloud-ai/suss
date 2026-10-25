@@ -30,6 +30,7 @@ import {
 } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
 import { describeMissingPath } from "@suss/extractor";
+import { labelWithDetail } from "@suss/ir-core";
 
 import {
   checkOutcome,
@@ -803,6 +804,17 @@ function hasSummaryFiles(dir: string): boolean {
 }
 
 /**
+ * The boundary a report says a finding is at. A finding about one read
+ * is at a boundary with no label of its own, so it is spelled with the
+ * variable, `runtime-config ACCOUNTS_REGION`, the way a changed read is.
+ */
+function reportedBoundaryKey(finding: Finding): string {
+  return isReadSite(finding) && finding.consumer.field !== undefined
+    ? labelWithDetail(finding.boundary, finding.consumer.field)
+    : boundaryKeyOf(finding.boundary);
+}
+
+/**
  * The `--since` part of the JSON report. Each finding also gets its
  * identity, its boundary key, whether that boundary is one the code
  * changed at, and the `.sussignore` rule that would accept it, so a
@@ -816,7 +828,7 @@ function sinceJson(since: SinceReport): Record<string, unknown> {
   const described = (findings: readonly Finding[]) =>
     findings.map((finding) => {
       const rule = acceptingRule(finding);
-      const key = boundaryKeyOf(finding.boundary);
+      const key = reportedBoundaryKey(finding);
       return {
         ...finding,
         identity: findingIdentity(finding),
@@ -881,7 +893,7 @@ function renderSince(
 
 /** A finding as one line, with the file and line on each side. */
 export function findingInOneLine(finding: Finding): string {
-  return `${finding.kind} at ${boundaryKeyOf(finding.boundary)}: ${normalizedDescription(finding)} (${sideAt(finding.provider)} and ${sideAt(finding.consumer)})`;
+  return `${finding.kind} at ${reportedBoundaryKey(finding)}: ${normalizedDescription(finding)} (${sideAt(finding.provider)} and ${sideAt(finding.consumer)})`;
 }
 
 /**
@@ -1434,6 +1446,12 @@ function sideLines(
   confidence: ConfidenceLookup,
   indent: string,
 ): string[] {
+  if (isReadSite(f)) {
+    return [
+      `${indent}read: ${formatSide(f.consumer, confidence)}`,
+      ...runsInLines(f, indent),
+    ];
+  }
   const mergedSide = mergedSideOf(f);
   return [
     `${indent}provider: ${formatSide(f.provider, confidence)}`,
@@ -1665,11 +1683,17 @@ function ruleSideText(side: AcceptingSide): string {
   if ("transitionId" in side) {
     return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
   }
-  return `{ field: ${JSON.stringify(side.field)} }`;
+  const summary =
+    side.summary === undefined
+      ? ""
+      : `summary: ${JSON.stringify(side.summary)}, `;
+  return `{ ${summary}field: ${JSON.stringify(side.field)} }`;
 }
 
 /** What a printed rule matches one side of a finding by. */
-export type AcceptingSide = { transitionId: string } | { field: string };
+export type AcceptingSide =
+  | { transitionId: string }
+  | { field: string; summary?: string };
 
 /** A `.sussignore` rule without its reason, which the person accepting it writes. */
 export interface AcceptingRule {
@@ -1724,7 +1748,7 @@ function findingTransitionSide(f: Finding): NamedSide | null {
  */
 function findingFieldSide(f: Finding, key: string | null): NamedSide | null {
   if (key === null) {
-    return null;
+    return readSiteSide(f);
   }
   if (f.consumer.field !== undefined) {
     return { name: "consumer", matches: { field: f.consumer.field } };
@@ -1733,6 +1757,36 @@ function findingFieldSide(f: Finding, key: string | null): NamedSide | null {
     return { name: "provider", matches: { field: f.provider.field } };
   }
   return null;
+}
+
+/**
+ * A finding about one read, such as an environment variable a deployment
+ * that runs it does not declare, has the reader on both sides and no
+ * boundary key. The reader's summary and the variable pick it out.
+ */
+function readSiteSide(f: Finding): NamedSide | null {
+  const { field, summary } = f.consumer;
+  if (field === undefined || summary !== f.provider.summary) {
+    return null;
+  }
+  return { name: "consumer", matches: { summary, field } };
+}
+
+/** Whether a finding is about one read, listing in `sources` the deployments it is against. */
+function isReadSite(f: Finding): boolean {
+  return (
+    f.consumer.field !== undefined &&
+    f.consumer.summary === f.provider.summary &&
+    (f.sources?.length ?? 0) > 0
+  );
+}
+
+/** The deployments a finding about one read is against, by name, from the summaries `sources` lists. */
+function runsInLines(f: Finding, indent: string): string[] {
+  const names = (f.sources ?? []).map((id) =>
+    id.slice(id.lastIndexOf("::") + 2),
+  );
+  return [`${indent}not declared by: ${names.join(", ")}`];
 }
 
 function formatRoute(boundary: Finding["boundary"]): string {
