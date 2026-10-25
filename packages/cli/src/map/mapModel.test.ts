@@ -20,6 +20,7 @@ import {
 import { answerQuestion } from "../ask.js";
 import { loadedSummaries } from "../loadedSummaries.js";
 import { editorHref } from "./mapHtml.js";
+import { pageDataOf } from "./mapPageData.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { MapModel } from "./mapModel.js";
@@ -207,6 +208,35 @@ describe("the map model", () => {
         read.defaulted,
       ]),
     ).toEqual([["DATABASE_URL", true]]);
+  });
+
+  it("keeps the value a read falls back to, for the page to show beside it", () => {
+    const config = unit({
+      kind: "library",
+      file: "src/config.ts",
+      name: "stage",
+      line: 1,
+      transitions: [
+        transition("stage:return", {
+          effects: [envRead("STAGE", true, "dev"), envRead("REGION", true)],
+        }),
+      ],
+    });
+    const model = modelOf([config]);
+
+    expect(
+      model.envReads.map((read) => [
+        model.boundaries[read.boundary]?.name,
+        read.value,
+      ]),
+    ).toEqual([
+      ["STAGE", "dev"],
+      ["REGION", undefined],
+    ]);
+    const data = pageDataOf(model);
+    expect(
+      data.env.map(([, , , value]) => (value === null ? null : data.s[value])),
+    ).toEqual(['"dev"', null]);
   });
 
   it("joins a spec with no id to the route the code serves, and keeps its statuses", () => {

@@ -1624,6 +1624,19 @@
                               },
                               "defaulted": {
                                 "type": "boolean"
+                              },
+                              "default": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
                               }
                             },
                             "required": ["class", "name", "defaulted"],

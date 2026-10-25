@@ -108,25 +108,42 @@ function isSafeUse(use: Node, subject: Subject): boolean {
  * fallback and its absence propagates.
  */
 function hasFallbackOperand(node: Node): boolean {
+  return fallbackOperandOf(node) !== null;
+}
+
+/**
+ * The expression that supplies a value when the read comes back empty:
+ * the right side of the `??` or `||` the read falls back through, or a
+ * destructured read's own default, as in `const { X = "d" } = env`.
+ * Null when nothing falls back from the read itself.
+ */
+export function fallbackOf(read: Node): Node | null {
+  if (Node.isBindingElement(read)) {
+    return read.getInitializer() ?? null;
+  }
+  return fallbackOperandOf(read);
+}
+
+function fallbackOperandOf(node: Node): Node | null {
   let child = pastOptionalChain(climbSyntax(node));
   let parent = child.getParent();
   while (parent !== undefined) {
     if (!Node.isBinaryExpression(parent)) {
-      return false;
+      return null;
     }
     // The token text rather than the SyntaxKind enum, which renumbers
     // between TypeScript releases.
     const operator = parent.getOperatorToken().getText();
     if (operator !== "??" && operator !== "||") {
-      return false;
+      return null;
     }
     if (parent.getLeft() === child) {
-      return true;
+      return parent.getRight();
     }
     child = climbSyntax(parent);
     parent = child.getParent();
   }
-  return false;
+  return null;
 }
 
 /**

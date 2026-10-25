@@ -39,6 +39,7 @@ export {
   propertyNameOf,
   propertyOf,
   propertyValueOf,
+  scalarValueOf,
   stringPropertyOf,
   stringValueOf,
   writtenNodeOf,
@@ -113,7 +114,7 @@ export {
   computeAdapterPacksDigest,
   computeContentHash,
 } from "./version.js";
-export { isDefaultedAt } from "./walk/defaulted.js";
+export { fallbackOf, isDefaultedAt } from "./walk/defaulted.js";
 export {
   type DescentBarriers,
   NO_BARRIERS,

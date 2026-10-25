@@ -29,8 +29,10 @@ import {
 import {
   declarationsBehind,
   dottedPathOf,
+  fallbackOf,
   functionTargetOf,
   isDefaultedAt,
+  scalarValueOf,
   stringValueOf,
   symbolBehind,
   toFunctionRoot,
@@ -418,10 +420,17 @@ function readsBuildKey(read: EnvRead): boolean {
   );
 }
 
-function configReadEffect(read: EnvRead, where: DeploymentOptions): Effect {
+function configReadEffect(
+  read: EnvRead,
+  where: DeploymentOptions,
+  resolution: ResolutionStore | undefined,
+): Effect {
   if (readsBuildKey(read)) {
     return opaqueRuntimeRead(readName(read));
   }
+  const fallback = read.defaulted
+    ? defaultValueAt(read.node, resolution)
+    : null;
   return {
     type: "interaction",
     binding: configBinding(where),
@@ -430,8 +439,18 @@ function configReadEffect(read: EnvRead, where: DeploymentOptions): Effect {
       class: "config-read",
       name: read.name,
       defaulted: read.defaulted,
+      ...(fallback === null ? {} : { default: fallback }),
     },
   };
+}
+
+/** The value the code uses when the read comes back empty, when it settles to one. */
+function defaultValueAt(
+  read: Node,
+  resolution: ResolutionStore | undefined,
+): string | number | boolean | null {
+  const fallback = fallbackOf(read);
+  return fallback === null ? null : scalarValueOf(fallback, resolution);
 }
 
 function recognizeProcessEnvRead(
@@ -443,7 +462,7 @@ function recognizeProcessEnvRead(
   if (reads.length === 0) {
     return null;
   }
-  return reads.map((read) => configReadEffect(read, where));
+  return reads.map((read) => configReadEffect(read, where, resolution));
 }
 
 /**

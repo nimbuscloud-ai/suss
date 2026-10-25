@@ -17,6 +17,8 @@ export interface EnvSpelling {
   readonly name: RbNode;
   /** Whether the read itself supplies a value, as `ENV.fetch("X", d)` does. */
   readonly hasDefault: boolean;
+  /** The value the read itself supplies as an argument, the `d` in `ENV.fetch("X", d)`. */
+  readonly fallback?: RbNode;
   /** Whether the read raises when the variable is unset, as `ENV.fetch("X")` does. */
   readonly raises: boolean;
 }
@@ -68,8 +70,14 @@ function fetchSite(node: RbNode): EnvSpelling | null {
   if (name === undefined) {
     return null;
   }
-  const hasDefault = positional.length > 1 || field(node, "block") !== null;
-  return { name, hasDefault, raises: !hasDefault };
+  const fallback = positional[1];
+  const hasDefault = fallback !== undefined || field(node, "block") !== null;
+  return {
+    name,
+    hasDefault,
+    raises: !hasDefault,
+    ...(fallback === undefined ? {} : { fallback }),
+  };
 }
 
 /** The core `ENV` object, written bare or as `::ENV`. */

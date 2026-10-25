@@ -15,6 +15,7 @@
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 import { noteLookup } from "@suss/resolution";
+import { scalarOf } from "@suss/values";
 
 import {
   children,
@@ -24,7 +25,7 @@ import {
   rangeOf,
   stringLiteralValue,
 } from "./ast.js";
-import { isDefaultedAt } from "./defaulted.js";
+import { fallbackOperandOf, isDefaultedAt } from "./defaulted.js";
 import { envReadSpellingAt, isEnviron } from "./envSpellings.js";
 import {
   resolveCalls,
@@ -32,7 +33,11 @@ import {
   resolveEnvObjects,
 } from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
-import { resolutionKeyOf, stringValueOf } from "./values/evaluator.js";
+import {
+  evaluatedValue,
+  resolutionKeyOf,
+  stringValueOf,
+} from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -51,6 +56,8 @@ interface EnvRead {
    */
   name: string | null;
   defaulted: boolean;
+  /** The value used when the variable is not set, when it settles to one. */
+  fallback?: string | number | boolean;
 }
 
 /** A read of the environment, before anything is settled about the variable's name. */
@@ -58,6 +65,8 @@ interface EnvReadSyntax {
   /** The expression the variable's name comes from. */
   name: PyNode;
   defaulted: boolean;
+  /** The expression that supplies a value when the variable is not set. */
+  fallback: PyNode | null;
 }
 
 /** A nested function's reads happen when it is called, so its body waits for its own unit. */
@@ -89,7 +98,15 @@ export function envReadEffects(
       const syntax = envReadSyntaxAt(node, scope);
       if (syntax !== null) {
         const name = stringLiteralValue(syntax.name);
-        slots.push({ read: { name, defaulted: syntax.defaulted }, at: node });
+        const fallback = settledFallback(syntax, facts);
+        slots.push({
+          read: {
+            name,
+            defaulted: syntax.defaulted,
+            ...(fallback === null ? {} : { fallback }),
+          },
+          at: node,
+        });
         return;
       }
       if (readsHelpers && node.type === "call") {
@@ -128,6 +145,7 @@ function configReadEffect(read: EnvRead, at: PyNode): Effect {
       class: "config-read",
       name: read.name,
       defaulted: read.defaulted,
+      ...(read.fallback === undefined ? {} : { default: read.fallback }),
     },
     location: rangeOf(at),
   };
@@ -141,7 +159,18 @@ function envReadSyntaxAt(node: PyNode, scope: Scope): EnvReadSyntax | null {
   return {
     name: spelling.name,
     defaulted: hasFallback(node, spelling, scope),
+    fallback: spelling.fallback ?? fallbackOperandOf(node),
   };
+}
+
+/** The value a defaulted read falls back to, when the evaluator settles it to one. */
+function settledFallback(
+  syntax: EnvReadSyntax,
+  facts: Database | undefined,
+): string | number | boolean | null {
+  return syntax.defaulted && syntax.fallback !== null
+    ? scalarOf(evaluatedValue(syntax.fallback, facts))
+    : null;
 }
 
 function hasFallback(
