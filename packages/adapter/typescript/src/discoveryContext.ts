@@ -13,24 +13,27 @@
 
 import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
-import {
-  couldStillNameAFunction,
-  FUNCTION_ROOT_KINDS,
-  isFunctionRoot,
-  toFunctionRoot,
-} from "./discovery/shared.js";
+import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
 import { ResolutionStore } from "./facts/store.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
 import { forEachDescendantWhere } from "./walk/rawDescent.js";
 import { peelParens } from "./walk/unwrap.js";
 
-const RETURNS_AND_FUNCTIONS: ReadonlySet<SyntaxKind> = new Set([
-  ...FUNCTION_ROOT_KINDS,
-  SyntaxKind.ReturnStatement,
+import type { FunctionRoot } from "./conditions.js";
+
+/** The nested functions whose returns are their own output, not the component's. */
+const NESTED_FUNCTION_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.MethodDeclaration,
 ]);
 
-import type { FunctionRoot } from "./conditions.js";
+const RETURNS_AND_FUNCTIONS: ReadonlySet<SyntaxKind> = new Set([
+  ...NESTED_FUNCTION_KINDS,
+  SyntaxKind.ReturnStatement,
+]);
 
 export interface TsDiscoveryContext {
   /**
@@ -200,7 +203,7 @@ function hasJsxReturn(func: FunctionRoot): boolean {
       // Deliberately stricter than isDescentStop: a JSX return inside a
       // nested arrow (a render prop, a map callback) is that function's
       // output, and descending would make its parent read as a component.
-      if (node !== func && isFunctionRoot(node)) {
+      if (node !== func && NESTED_FUNCTION_KINDS.has(node.getKind())) {
         return true;
       }
       if (Node.isReturnStatement(node)) {

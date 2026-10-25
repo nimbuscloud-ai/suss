@@ -62,6 +62,7 @@ const TERMINAL_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.FunctionExpression,
   SyntaxKind.FunctionDeclaration,
   SyntaxKind.MethodDeclaration,
+  SyntaxKind.Constructor,
 ]);
 
 /**

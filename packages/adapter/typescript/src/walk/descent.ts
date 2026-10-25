@@ -26,12 +26,7 @@
 // the sub-unit, not the parent. Those function nodes are passed in as
 // `barriers`.
 
-import {
-  type ForEachDescendantTraversalControl,
-  Node,
-  SyntaxKind,
-  type ts,
-} from "ts-morph";
+import { Node, SyntaxKind, type ts } from "ts-morph";
 
 import { forEachDescendantWhere } from "./rawDescent.js";
 import { climbSyntax, peelSyntax } from "./unwrap.js";
@@ -78,40 +73,14 @@ export function isDescentStop(
   return false;
 }
 
-type Visit = (node: Node, traversal: ForEachDescendantTraversalControl) => void;
-
 /**
- * Visit every node a unit's body runs, the way `forEachDescendant` does
- * from the unit root. A constructor also runs its class's instance field
- * initializers before its body, so `table = process.env.TABLE` is visited
- * as part of the constructor. A field set to a function defines a method
- * and runs nothing, so it is left out.
- */
-export function forEachInUnitBody(root: Node, visit: Visit): void {
-  root.forEachDescendant(visit);
-  for (const initializer of fieldInitializersRunBy(root)) {
-    let skipped = false;
-    visit(initializer, {
-      stop: () => {
-        skipped = true;
-      },
-      skip: () => {
-        skipped = true;
-      },
-      up: () => {
-        skipped = true;
-      },
-    });
-    if (!skipped) {
-      initializer.forEachDescendant(visit);
-    }
-  }
-}
-
-/**
- * `forEachInUnitBody` for a walk that acts on a few kinds of node. It
- * reads compiler nodes and wraps only those kinds, and `visit` returns
- * true to leave out what is under the node.
+ * Visit the nodes of these kinds that a unit's body runs, in the order
+ * `forEachDescendant` reaches them from the unit root, and leave out
+ * what is under a node when `visit` returns true. A constructor also
+ * runs its class's instance field initializers before its body, so
+ * `table = process.env.TABLE` is visited as part of the constructor. A
+ * field set to a function defines a method and runs nothing, so it is
+ * left out.
  */
 export function forEachInUnitBodyOfKinds(
   root: Node,
