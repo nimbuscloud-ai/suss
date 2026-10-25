@@ -158,10 +158,20 @@ export function createNodeTable(
 }
 
 export function nodeId(node: Node): string {
+  // One string per node, shared by every fact that mentions it, where a
+  // fresh one per call kept a copy in each fact.
+  const known = idByNode.get(node.compilerNode);
+  if (known !== undefined) {
+    return known;
+  }
   // Start alone is ambiguous: a call and its callee, or a declaration
   // and its name, begin at the same offset. The end disambiguates.
-  return `${node.getSourceFile().getFilePath()}:${node.getStart()}-${node.getEnd()}`;
+  const id = `${node.getSourceFile().getFilePath()}:${node.getStart()}-${node.getEnd()}`;
+  idByNode.set(node.compilerNode, id);
+  return id;
 }
+
+const idByNode = new WeakMap<ts.Node, string>();
 
 /**
  * Module key for an import or re-export target: the resolved file path
