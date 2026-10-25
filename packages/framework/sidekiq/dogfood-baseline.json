@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-sidekiq",
+  "exports": 2,
+  "internal": 0,
+  "consumers": 2,
+  "unfollowedCalls": 0
+}

@@ -129,6 +129,49 @@ export function reachesBase(
 }
 
 /**
+ * Whether a class, or a class in its ancestry, includes one of the given
+ * library modules, matched by the name the project wrote, as a base is.
+ */
+export function mixesIn(
+  facts: Database,
+  classKey: string,
+  modules: readonly string[],
+): boolean {
+  askResolution(facts, [classKey], "wantedAncestry", RUBY_PROGRAM);
+  // `include ::Sidekiq::Job` is the same module, written from the top level.
+  return facts
+    .lookup("wantedMixinName", 0, classKey)
+    .some((row) => modules.includes(String(row[1]).replace(/^::/, "")));
+}
+
+/**
+ * The function an instance method runs on a class: the class's own
+ * definition, else the one definition its ancestry has. Undefined when
+ * nothing defines it, or two ancestors do, since the rules do not say
+ * which comes first.
+ */
+export function methodRunOn(
+  facts: Database,
+  classKey: string,
+  name: string,
+): string | undefined {
+  const own = facts
+    .lookup("holdsProperty", 0, classKey)
+    .filter((row) => String(row[1]) === name);
+  if (own.length === 1) {
+    return String(own[0]?.[2]);
+  }
+  askResolution(facts, [classKey], "wantedAncestry", RUBY_PROGRAM);
+  const inherited = new Set(
+    facts
+      .lookup("wantedMethodBody", 0, classKey)
+      .filter((row) => String(row[1]) === name)
+      .map((row) => String(row[2])),
+  );
+  return inherited.size === 1 ? [...inherited][0] : undefined;
+}
+
+/**
  * The key of the class or module body a node is written inside. Null at
  * the top level of a file, where a call with no receiver inherits nothing.
  */

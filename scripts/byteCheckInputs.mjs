@@ -496,6 +496,16 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/ruby-bigquery"),
     ...packs(railsIn("fixtures/ruby-bigquery"), "bigquery-ruby"),
   ]),
+  fixture("ruby-jobs", [
+    ...lang("ruby"),
+    ...dir("fixtures/ruby-jobs"),
+    ...packs(
+      railsIn("fixtures/ruby-jobs"),
+      withConfig("activerecord", POSTGRES),
+      "activejob",
+      "sidekiq",
+    ),
+  ]),
   fixture("ruby-graphql", [
     ...lang("ruby"),
     ...dir("fixtures/ruby-graphql"),
