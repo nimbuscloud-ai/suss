@@ -59,6 +59,14 @@ describe("railsFramework", () => {
     expect(p.defaultStatusCode).toBe(200);
   });
 
+  it("says ActiveSupport's presence gives back nil for a blank value, so `x.presence || y` falls back", () => {
+    const pack = railsFramework({
+      root: path.join(fixtureRoot, "app"),
+      routesFile: path.join(fixtureRoot, "config/routes.rb"),
+    });
+    expect(pack.blankToNil).toEqual(["presence"]);
+  });
+
   it("declares the calls Rails gives an action for sending a response, with the status each redirect defaults to and where render takes a JSON body", () => {
     const p = pattern(railsFramework({ configDirectory: "/repo" }));
     expect(p.responseStatusCalls).toEqual([
