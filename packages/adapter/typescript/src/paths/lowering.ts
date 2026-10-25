@@ -35,7 +35,7 @@ import {
 } from "../walk/descent.js";
 import {
   forEachDescendantOfKinds,
-  isTypeOnlySyntax,
+  runsNothing,
   wrapperOf,
 } from "../walk/rawDescent.js";
 import { peelValue } from "../walk/unwrap.js";
@@ -72,7 +72,7 @@ function exitKindOf(stmt: Node, endings: ReadonlySet<Node>): ExitKind {
     if (raw !== root && OWN_SCOPE_KINDS.has(raw.kind)) {
       return undefined;
     }
-    if (isTypeOnlySyntax(raw)) {
+    if (runsNothing(raw)) {
       return undefined;
     }
     if (raw.kind === SyntaxKind.ReturnStatement || ending.has(raw)) {
@@ -246,7 +246,7 @@ function lowerCallbacksIn(
       ) {
         return undefined;
       }
-      if (isTypeOnlySyntax(raw)) {
+      if (runsNothing(raw)) {
         return undefined;
       }
       ts.forEachChild(raw, visit);

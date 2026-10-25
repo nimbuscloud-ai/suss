@@ -6,9 +6,9 @@
  * wrapper for the rest of the run, so a pass that acts on a few kinds of
  * node pays for a wrapper on every identifier, token and annotation under
  * its root. These walks read the compiler nodes and wrap a node only when
- * its kind is one the pass asked for. Type syntax is never walked, since
- * the program never runs it: nothing under a type annotation, a type
- * alias or an interface is a call, a write or a value.
+ * its kind is one the pass asked for. A walk for code leaves out type
+ * syntax, since the program never runs it: nothing under a type
+ * annotation, a type alias or an interface is a call, a write or a value.
  */
 
 import {
@@ -35,17 +35,22 @@ export function statementsOfKind<Kind extends ts.SyntaxKind>(
   return found;
 }
 
+/** Which subtrees a walk leaves out, decided from the compiler node. */
+export type SkipsSubtree = (raw: ts.Node) => boolean;
+
 /**
  * Calls `visit` for each descendant of `root` whose kind is in `kinds`,
  * in the order `forEachDescendant` reaches them, and goes on below it
- * unless `visit` returns true. Type syntax is left out.
+ * unless `visit` returns true. By default it leaves out what
+ * `runsNothing` says, which suits a walk for calls, writes and values.
  */
 export function forEachDescendantOfKinds(
   root: Node,
   kinds: ReadonlySet<ts.SyntaxKind>,
   visit: (node: Node) => boolean | undefined,
+  skips: SkipsSubtree = runsNothing,
 ): void {
-  forEachDescendantWhere(root, (raw) => kinds.has(raw.kind), visit);
+  forEachDescendantWhere(root, (raw) => kinds.has(raw.kind), visit, skips);
 }
 
 /** The same walk, visiting the descendants `accepts` picks from their compiler nodes. */
@@ -53,9 +58,10 @@ export function forEachDescendantWhere(
   root: Node,
   accepts: (raw: ts.Node) => boolean,
   visit: (node: Node) => boolean | undefined,
+  skips: SkipsSubtree = runsNothing,
 ): void {
   const walk = (raw: ts.Node): undefined => {
-    if (isTypeOnlySyntax(raw)) {
+    if (skips(raw)) {
       return undefined;
     }
 
@@ -70,16 +76,30 @@ export function forEachDescendantWhere(
 }
 
 /**
- * Whether a node and everything under it is type syntax the program
- * never runs. A class's `extends` clause is an expression, as in
- * `extends mixin(() => ...)`, so it is walked like one.
+ * Type syntax and `declare` statements, neither of which runs. A walk
+ * that collects declarations rather than code skips only
+ * `isTypeOnlySyntax`, since a declaration file's functions are all
+ * declared with `declare`.
+ */
+export function runsNothing(raw: ts.Node): boolean {
+  return isTypeOnlySyntax(raw) || isAmbient(raw);
+}
+
+/** For a walk that reads type annotations too, such as a parameter's. */
+export function skipsNothing(): boolean {
+  return false;
+}
+
+/**
+ * Whether a node and everything under it is type syntax. A class's
+ * `extends` clause is an expression, as in `extends mixin(() => ...)`,
+ * so it is walked like one.
  */
 export function isTypeOnlySyntax(raw: ts.Node): boolean {
   return (
     (raw.kind >= ts.SyntaxKind.FirstTypeNode &&
       raw.kind <= ts.SyntaxKind.LastTypeNode) ||
-    TYPE_DECLARATIONS.has(raw.kind) ||
-    isAmbient(raw)
+    TYPE_DECLARATIONS.has(raw.kind)
   );
 }
 
