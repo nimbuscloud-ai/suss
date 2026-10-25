@@ -261,8 +261,16 @@ describe("inspectProject", () => {
       path.join(dir, "Gemfile.lock"),
       "DEPENDENCIES\n  rails (~> 7.1)\n",
     );
-    // ActiveRecord comes with Rails, so the same gem points at both.
-    expect(await names(dir)).toEqual(["activerecord", "rails"]);
+    // ActiveRecord and ActiveJob come with Rails, so the same gem points at all three.
+    expect(await names(dir)).toEqual(["activejob", "activerecord", "rails"]);
+  });
+
+  it("suggests the sidekiq pack for a project depending on the sidekiq gem", async () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "DEPENDENCIES\n  sidekiq (~> 7.2)\n",
+    );
+    expect(await names(dir)).toEqual(["sidekiq"]);
   });
 
   it("prints the config init --write would write, not the pack's example", async () => {

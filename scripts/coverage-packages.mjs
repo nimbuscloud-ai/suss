@@ -78,6 +78,8 @@ export const coveragePackages = [
   ["packages/framework/pg-ruby", "pg-ruby"],
   ["packages/framework/rspec", "rspec"],
   ["packages/framework/factory-bot", "factory-bot"],
+  ["packages/framework/activejob", "activejob"],
+  ["packages/framework/sidekiq", "sidekiq"],
   ["packages/framework/fabrication", "fabrication"],
   ["packages/framework/minitest", "minitest"],
   // Clients

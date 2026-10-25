@@ -1,0 +1,12 @@
+{
+  "activejob": "suss: this pack's own name, used as RubyPack.name and as boundaryBinding recognition; also the message-bus technology its channels are on",
+  "jobClasses": "suss: RbJobPattern variant tag, defined in @suss/adapter-ruby",
+  "mailers": "suss: RbJobPattern variant tag, defined in @suss/adapter-ruby",
+  "ApplicationJob": "Rails: the base class every generated job extends",
+  "ApplicationMailer": "Rails: the base class every generated mailer extends",
+  "perform": "ActiveJob: ActiveJob::Base#perform, the method a worker runs with the job's arguments",
+  "set": "ActiveJob: ActiveJob::Core::ClassMethods#set, which returns the job class with wait, queue or priority options for the enqueue after it",
+  "queue_as": "ActiveJob: ActiveJob::QueueName::ClassMethods#queue_as, which declares the queue a job class runs on",
+  "deliver_later": "ActionMailer: ActionMailer::MessageDelivery#deliver_later, which enqueues a built message to be sent by a worker",
+  "with": "ActionMailer: ActionMailer::Parameterized::ClassMethods#with, which returns the mailer with params set for the message built on it"
+}

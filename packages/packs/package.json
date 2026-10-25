@@ -189,6 +189,14 @@
       "types": "./dist/rspec.d.ts",
       "import": "./dist/rspec.js"
     },
+    "./activejob": {
+      "types": "./dist/activejob.d.ts",
+      "import": "./dist/activejob.js"
+    },
+    "./sidekiq": {
+      "types": "./dist/sidekiq.d.ts",
+      "import": "./dist/sidekiq.js"
+    },
     "./factory-bot": {
       "types": "./dist/factory-bot.d.ts",
       "import": "./dist/factory-bot.js"
@@ -327,7 +335,9 @@
     "@suss/framework-pg": "*",
     "@suss/framework-pg-ruby": "*",
     "@suss/framework-rspec": "*",
+    "@suss/framework-activejob": "*",
     "@suss/framework-factory-bot": "*",
+    "@suss/framework-sidekiq": "*",
     "@suss/framework-fabrication": "*",
     "@suss/framework-minitest": "*",
     "@suss/framework-prisma": "*",
