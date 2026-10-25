@@ -244,10 +244,10 @@ The first read of a base commit costs as much as a full extract. When `SUSS_CACH
 `--dir --json` writes one object:
 
 ```
-{ findings, run, pairs, unmatched, skipped, runtimeNamedCrossings, summariesWithGaps, collisions }
+{ findings, run, pairs, unmatched, unchecked, skipped, runtimeNamedCrossings, summariesWithGaps, collisions }
 ```
 
-with `intent` added when `--intent` was passed. Two positional files write the bare `findings` array instead. When one of the two files was empty and the run failed for it, they write `{ findings, run }` so the `nothingPaired` finding has a place in the report.
+with `intent` added when `--intent` was passed. `unchecked.runtimeConfig` lists the environment reads the check did not judge, one `{ runtime, reader, variable, reason }` each: a read in a file the runtime loads that no call from its handler reaches (`notReached`), or one that only a call through a table reaches (`possibleCall`). Only a read that would otherwise have been a finding is listed, and the text report prints one line per runtime that has any. Two positional files write the bare `findings` array instead. When one of the two files was empty and the run failed for it, they write `{ findings, run }` so the `nothingPaired` finding has a place in the report.
 
 `--at --json` writes `{ at, matched, target, touches, findings, pairs, unmatched, gaps }`, where `touches` is one entry per unit and boundary (`{ boundary, relations, unit, via }`). A target that matched nothing writes `{ at, matched: false, message }`.
 

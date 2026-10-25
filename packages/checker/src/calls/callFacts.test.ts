@@ -275,6 +275,13 @@ describe("readCallFacts, a call that takes its function from a table", () => {
     ).toBe(0);
     expect(facts.reachedFromEach([start]).get(start)?.functions.size).toBe(2);
   });
+
+  it("says which functions a start reaches, with every path left empty, when asked for no paths", () => {
+    const start = functionOf(dispatch);
+    const reached = facts.reachedFromEach([start], { paths: false }).get(start);
+    expect(reached?.functions.size).toBe(2);
+    expect([...(reached?.functions.values() ?? [])]).toEqual([[], []]);
+  });
 });
 
 describe("readCallFacts, reached from each start", () => {
