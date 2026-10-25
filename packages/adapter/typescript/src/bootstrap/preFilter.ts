@@ -14,14 +14,16 @@
 // from `"@foo/bar"` AND `"@foo/bar/sub-path"`. Empty array (or
 // undefined) means "no gate": the pattern applies to every file.
 
+import { type SourceFile, SyntaxKind } from "ts-morph";
+
 import {
   type GeneratedModules,
   generatedModulesOf,
 } from "../facts/generatedModules.js";
 import { namesAnyPackage } from "../facts/moduleGraph.js";
+import { statementsOfKind } from "../walk/rawDescent.js";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
-import type { SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 /**
@@ -64,7 +66,9 @@ export function computePackApplicability(
     for (const sf of sourceFiles) {
       importsByFile.set(
         sf,
-        sf.getImportDeclarations().map((d) => d.getModuleSpecifierValue()),
+        statementsOfKind(sf, SyntaxKind.ImportDeclaration).map((d) =>
+          d.getModuleSpecifierValue(),
+        ),
       );
     }
   }

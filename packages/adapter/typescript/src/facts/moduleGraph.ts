@@ -12,12 +12,13 @@
 // specifiers already name the package settles it by itself,
 // and nothing below it needs resolving.
 
+import { type SourceFile, SyntaxKind } from "ts-morph";
+
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 
 import { createPerFileCache } from "../perFileCache.js";
+import { statementsOfKind } from "../walk/rawDescent.js";
 import { GeneratedModules } from "./generatedModules.js";
-
-import type { SourceFile } from "ts-morph";
 
 const NO_GENERATOR = new GeneratedModules([]);
 
@@ -280,10 +281,16 @@ export class ModuleGraph {
 
 function readModuleSpecifiers(sourceFile: SourceFile): string[] {
   const specifiers: string[] = [];
-  for (const importDecl of sourceFile.getImportDeclarations()) {
+  for (const importDecl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ImportDeclaration,
+  )) {
     specifiers.push(importDecl.getModuleSpecifierValue());
   }
-  for (const exportDecl of sourceFile.getExportDeclarations()) {
+  for (const exportDecl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportDeclaration,
+  )) {
     const specifier = exportDecl.getModuleSpecifierValue();
     if (specifier !== undefined) {
       specifiers.push(specifier);
@@ -311,13 +318,19 @@ function resolveModuleSpecifiers(sourceFile: SourceFile): SourceFile[] {
 
 function resolveModuleSpecifiersOf(sourceFile: SourceFile): SourceFile[] {
   const resolved: SourceFile[] = [];
-  for (const importDecl of sourceFile.getImportDeclarations()) {
+  for (const importDecl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ImportDeclaration,
+  )) {
     const target = importDecl.getModuleSpecifierSourceFile();
     if (target !== undefined) {
       resolved.push(target);
     }
   }
-  for (const exportDecl of sourceFile.getExportDeclarations()) {
+  for (const exportDecl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportDeclaration,
+  )) {
     const target = exportDecl.getModuleSpecifierSourceFile();
     if (target !== undefined) {
       resolved.push(target);

@@ -22,6 +22,7 @@ import {
   type ParameterDeclaration,
   Project,
   type SourceFile,
+  SyntaxKind,
 } from "ts-morph";
 
 import {
@@ -238,6 +239,7 @@ import {
   NO_BARRIERS,
 } from "./walk/descent.js";
 import { fileOfOffsetKey, offsetKeyOf } from "./walk/nodeKeys.js";
+import { statementsOfKind } from "./walk/rawDescent.js";
 import {
   expandWorkspacePatterns,
   workspaceExpansionStamp,
@@ -1946,7 +1948,10 @@ function fileImporting(
       continue;
     }
 
-    for (const imp of sourceFile.getImportDeclarations()) {
+    for (const imp of statementsOfKind(
+      sourceFile,
+      SyntaxKind.ImportDeclaration,
+    )) {
       if (imp.getModuleSpecifierValue().startsWith(modulePrefix)) {
         return sourceFile.getFilePath();
       }
@@ -2016,11 +2021,17 @@ function internalImportsOf(project: Project, file: string): string[] {
       targets.add(target.getFilePath());
     }
   };
-  for (const imp of sourceFile.getImportDeclarations()) {
+  for (const imp of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ImportDeclaration,
+  )) {
     record(imp.getModuleSpecifierSourceFile());
   }
 
-  for (const exp of sourceFile.getExportDeclarations()) {
+  for (const exp of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportDeclaration,
+  )) {
     record(exp.getModuleSpecifierSourceFile());
   }
   return [...targets].sort();
