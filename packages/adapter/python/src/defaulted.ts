@@ -98,6 +98,11 @@ function isKeyOfSubject(
  * stops where the read is the final operand and is itself the fallback.
  */
 function hasFallbackOperand(node: PyNode): boolean {
+  return fallbackOperandOf(node) !== null;
+}
+
+/** The right side of the `or` this read falls back through, or null when nothing falls back from it. */
+export function fallbackOperandOf(node: PyNode): PyNode | null {
   let child = node;
   let parent = node.parent;
   while (parent !== null) {
@@ -110,15 +115,15 @@ function hasFallbackOperand(node: PyNode): boolean {
       parent.type !== "boolean_operator" ||
       field(parent, "operator")?.text !== "or"
     ) {
-      return false;
+      return null;
     }
     if (field(parent, "left")?.id === child.id) {
-      return true;
+      return field(parent, "right");
     }
     child = parent;
     parent = parent.parent;
   }
-  return false;
+  return null;
 }
 
 /**

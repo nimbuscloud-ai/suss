@@ -292,7 +292,12 @@ describe("environment reads on a summary", () => {
       "app/graphql/types/campaign_type.rb",
     );
     expect(configReads(moduleInit)).toEqual([
-      { class: "config-read", name: "PAGE_SIZE", defaulted: true },
+      {
+        class: "config-read",
+        name: "PAGE_SIZE",
+        defaulted: true,
+        default: "20",
+      },
     ]);
   });
 

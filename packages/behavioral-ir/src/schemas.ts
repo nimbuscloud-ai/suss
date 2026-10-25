@@ -699,6 +699,14 @@ export const EffectSchema = z.discriminatedUnion("type", [
            */
           name: z.string().nullable(),
           defaulted: z.boolean(),
+          /**
+           * The value the read falls back to when the variable is not set,
+           * as the code writes it: `"dev"` for `process.env.STAGE ?? "dev"`,
+           * 60 for `ENV.fetch("TIMEOUT", 60)`. It is the read's own
+           * fallback, before anything the code does with the value after.
+           * Present only when it settles to one string, number or boolean.
+           */
+          default: z.union([z.string(), z.number(), z.boolean()]).optional(),
         }),
         /**
          * A read of something the runtime provides on its own: the

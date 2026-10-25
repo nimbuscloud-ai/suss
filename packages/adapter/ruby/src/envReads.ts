@@ -15,6 +15,7 @@
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 import { answersFor, noteLookup } from "@suss/resolution";
+import { scalarOf } from "@suss/values";
 
 import {
   children,
@@ -25,7 +26,7 @@ import {
   readCallArgs,
   stringLiteralValue,
 } from "./ast.js";
-import { isDefaultedAt } from "./defaulted.js";
+import { fallbackOperandOf, isDefaultedAt } from "./defaulted.js";
 import { envSpellingAt, isEnv } from "./envSpellings.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
 import { parametersOf } from "./facts/locals.js";
@@ -35,7 +36,7 @@ import {
   resolveValues,
 } from "./facts/resolve.js";
 import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
-import { stringValueOf } from "./values/evaluator.js";
+import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database, Tuple } from "@suss/datalog";
@@ -72,6 +73,8 @@ interface EnvRead {
    */
   name: string | null;
   defaulted: boolean;
+  /** The value used when the variable is not set, when it settles to one. */
+  fallback?: string | number | boolean;
 }
 
 /** An `ENV` read before its name expression has been read as a string. */
@@ -81,6 +84,8 @@ interface EnvSite {
   /** Where the variable's name comes from. */
   readonly name: RbNode;
   readonly defaulted: boolean;
+  /** The expression that supplies a value when the variable is not set. */
+  readonly fallback: RbNode | null;
 }
 
 /** What a caller passes for a parameter the rules found. */
@@ -115,7 +120,7 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): EffectAt[] {
   const slots: Slot[] = [];
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
-      const read = envReadAt(node, blankToNil);
+      const read = envReadAt(node, blankToNil, facts?.db);
       if (read !== null) {
         slots.push({ read, at: node });
         return;
@@ -594,6 +599,7 @@ function configReadEffect(read: EnvRead, at: RbNode): Effect {
       class: "config-read",
       name: read.name,
       defaulted: read.defaulted,
+      ...(read.fallback === undefined ? {} : { default: read.fallback }),
     },
     location: rangeOf(at),
   };
@@ -602,12 +608,21 @@ function configReadEffect(read: EnvRead, at: RbNode): Effect {
 function envReadAt(
   node: RbNode,
   blankToNil: ReadonlySet<string> = NO_METHODS,
+  db?: Database,
 ): EnvRead | null {
   const site = envSiteAt(node, blankToNil);
   if (site === null) {
     return null;
   }
-  return { name: stringLiteralValue(site.name), defaulted: site.defaulted };
+  const fallback =
+    site.defaulted && site.fallback !== null
+      ? scalarOf(evaluatedValue(site.fallback, db))
+      : null;
+  return {
+    name: stringLiteralValue(site.name),
+    defaulted: site.defaulted,
+    ...(fallback === null ? {} : { fallback }),
+  };
 }
 
 function envSiteAt(
@@ -622,5 +637,6 @@ function envSiteAt(
     read: node,
     name: spelling.name,
     defaulted: spelling.hasDefault || isDefaultedAt(node, spelling, blankToNil),
+    fallback: spelling.fallback ?? fallbackOperandOf(node, blankToNil),
   };
 }

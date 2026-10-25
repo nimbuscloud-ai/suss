@@ -12,7 +12,13 @@
 
 import { Node } from "ts-morph";
 
-import { constantOf, force, literalOf, literalsOf } from "@suss/values";
+import {
+  constantOf,
+  force,
+  literalOf,
+  literalsOf,
+  scalarOf,
+} from "@suss/values";
 
 import { factKeyOf } from "../facts/extract.js";
 import { evaluatedValue } from "../values/evaluator.js";
@@ -326,6 +332,14 @@ export function libraryExportPathsOf(
   return resolution
     .importOriginsOf(asked, modules)
     .map((origin) => [...origin.path, ...member].join("."));
+}
+
+/** The one string, number or boolean this value comes to, or null when it does not settle to one. */
+export function scalarValueOf(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): string | number | boolean | null {
+  return scalarOf(evaluatedValue(value, resolution));
 }
 
 /** The number this value comes to, or null when it does not settle to one. */

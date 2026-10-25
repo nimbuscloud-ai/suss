@@ -136,6 +136,21 @@ function keepsNil(call: RbNode, blankToNil: ReadonlySet<string>): boolean {
  * is the last operand is itself the fallback, so it does not count.
  */
 function hasFallbackOperand(node: RbNode): boolean {
+  return orFallbackOf(node) !== null;
+}
+
+/**
+ * The right side of the `||` this read falls back through, past the
+ * calls that keep a nil read nil, or null when nothing falls back.
+ */
+export function fallbackOperandOf(
+  read: RbNode,
+  blankToNil: ReadonlySet<string> = new Set(),
+): RbNode | null {
+  return orFallbackOf(pastNilPreservingCalls(read, blankToNil));
+}
+
+function orFallbackOf(node: RbNode): RbNode | null {
   let child = node;
   let parent = node.parent;
   while (parent !== null) {
@@ -145,15 +160,15 @@ function hasFallbackOperand(node: RbNode): boolean {
       continue;
     }
     if (parent.type !== "binary" || field(parent, "operator")?.text !== "||") {
-      return false;
+      return null;
     }
     if (field(parent, "left")?.id === child.id) {
-      return true;
+      return field(parent, "right");
     }
     child = parent;
     parent = parent.parent;
   }
-  return false;
+  return null;
 }
 
 /**
