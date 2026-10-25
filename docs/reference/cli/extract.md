@@ -15,6 +15,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
              [--cache-dir <path>] [--allow-empty] [--fail-on-pack-error] [--intent <directory>]
 
 suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
+             [--jobs <n>] [--read-timeout <minutes>] [--read-memory <MB>]
 ```
 
 | Flag | Default | What it does |
@@ -34,6 +35,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 | `--cache-dir <path>` | `.suss/cache` under the folder being read, or `SUSS_CACHE_DIR` | Keep the cache here instead. Use it to read a checkout you may not write to. See [Where suss writes](/reference/cli/#where-suss-writes). With `--out-dir`, it applies to every entry. |
 | `--allow-empty` | off | Exit `0` even when the run produced nothing. Without it that run fails, because a silent zero looks the same in CI as a passing check. |
 | `--fail-on-pack-error` | off | Exit non-zero when a pack throws while it reads, or was left out because an option it needs was not given. By default the run reports it and keeps going with the other packs. |
+| `--jobs <n>`, `--read-timeout <minutes>`, `--read-memory <MB>` | up to 4, `10`, at most 8192 | With `--out-dir`, or a bare extract of a project with several reads: how many reads run at once, and the time and heap limit on each. An extract of one read refuses them. |
 | `--intent <path>` | none | A folder of intent documents. A test pack (`-f vitest`, `-f pytest`, `-f rspec` or `-f minitest`) reads only the test files its PRDs list under `coveredBy`, instead of every test, so `check --intent` can check them. A pack given its own `files` in a config file keeps that list. |
 
 `--fail-on-empty` is gone. A run that finds nothing now fails by default, and passing the old flag stops the run and points you at `--allow-empty`.
@@ -62,7 +64,7 @@ Reading what suss.json says.
 Wrote 2 summaries to /home/dana/shop/.suss/now/0-extract.json in 0.74s
 ```
 
-Files an earlier `--out-dir` run wrote in the folder are removed first, so an entry that fails this time leaves nothing stale behind. The run exits non-zero when any entry failed, because the folder then describes only part of the project. It also exits non-zero when an extract entry didn't write a summary, the same as a single `extract` does, unless you pass `--allow-empty`.
+The reads run in their own processes, several at once, with a time and heap limit on each, and `--jobs`, `--read-timeout` and `--read-memory` set those the way they do for [a bare `check`](/reference/cli/check#reading-every-read-of-a-project). A read that fails leaves a `<n>-extract.incomplete.json` note in place of its file, which `check --dir` reports as a `readFailed` run finding. Files an earlier `--out-dir` run wrote in the folder are removed first, notes included, so an entry that fails this time leaves nothing stale behind. The run exits non-zero when any entry failed, because the folder then describes only part of the project. It also exits non-zero when an extract entry didn't write a summary, the same as a single `extract` does, unless you pass `--allow-empty`.
 
 ## A bare extract in a project with several reads
 

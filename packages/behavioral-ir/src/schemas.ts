@@ -161,6 +161,8 @@ export const RunFindingKindSchema = z.enum([
   "noPackMatched",
   /** The project has no source file in a language suss reads. */
   "notCovered",
+  /** One of the project's reads failed or ran past its time limit, so its summaries are missing. */
+  "readFailed",
 ]);
 
 export const RunFindingSchema = z.object({

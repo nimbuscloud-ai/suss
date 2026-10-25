@@ -170,6 +170,24 @@ export function readEntryIndex(fileName: string): number | null {
   return match === null ? null : Number(match[1]);
 }
 
+/** A read that failed, as the note beside its missing summaries file records it. */
+export interface ReadFailure {
+  /** The command a user would type to run the read. */
+  command: string;
+  /** What happened, as the end of a sentence that starts with the command. */
+  reason: string;
+  /** What to do about it, when the reason points at one of the read's limits. */
+  remedy?: string;
+}
+
+const READ_NOTE_NAME = /^(\d+)-(extract|contract)\.incomplete\.json$/;
+
+/** The place in `read` of the entry whose note this is, or null for any other file. */
+export function readNoteIndex(fileName: string): number | null {
+  const match = READ_NOTE_NAME.exec(fileName);
+  return match === null ? null : Number(match[1]);
+}
+
 /** What a run read, as a check over a folder of summaries can tell. */
 export interface ReadInRun {
   /** Each summary's file, which for a contract is the reader's label for the artifact. */
