@@ -95,10 +95,10 @@ export function boundariesTouchedBy(
   const touched: TouchedBoundary[] = [];
   // The unit's own boundary applies to every line in it, so it is reported
   // even when the caller asks about some transitions. A consumer is bound
-  // to its boundary too and reads and writes there like a service call.
+  // to its boundary too and does there what its protocol says.
   const own = summary.identity.boundaryBinding;
   if (own !== null) {
-    for (const relation of OWN_BINDING[BOUNDARY_ROLE[summary.kind]]) {
+    for (const relation of OWN_BINDING[BOUNDARY_ROLE[summary.kind]](own)) {
       touched.push({
         label: boundarySpelling(own),
         binding: own,

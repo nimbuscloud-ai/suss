@@ -16,6 +16,7 @@
 import type { z } from "zod";
 import type { Reference } from "../boundaryName.js";
 import type { Deployment } from "../deployment.js";
+import type { Relation } from "../relation.js";
 import type { MatchResult } from "../typeShapeMatch.js";
 
 /** One identity field written as an OpenTelemetry attribute. */
@@ -186,6 +187,20 @@ export interface BoundaryBehavior<S extends { name: string }> {
    * paired with nothing, so the generic unmatched list can leave it out.
    */
   reportsUnpairedItself: boolean;
+
+  /**
+   * What a consumer bound to this boundary does there. A client of a
+   * route sends a request and reads the response, which is the default.
+   * A consumer of a channel only receives, so it reads.
+   */
+  consumedAs?: readonly Relation[];
+
+  /**
+   * Whether a send on this boundary enqueues a background job its pack
+   * could not settle, so the summary says what the job does is missing.
+   * A protocol that never sends a job leaves this undefined.
+   */
+  unsettledJob?(semantics: S): boolean;
 
   /**
    * Whether a boundary with these semantics can pair with anything.

@@ -56,7 +56,10 @@ export {
 export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
 export { GraphqlResolverSemanticsSchema } from "./semantics/graphqlResolver.js";
 export { IoSemanticsSchema } from "./semantics/io.js";
-export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
+export {
+  MESSAGE_BUS_TRAITS,
+  MessageBusSemanticsSchema,
+} from "./semantics/messageBus.js";
 export { MetricSemanticsSchema } from "./semantics/metric.js";
 export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
@@ -130,10 +133,12 @@ export {
   boundaryLabel,
   bucketsMeet,
   canPair,
+  consumedAs,
   displayLabel,
   exchangesHttpResponses,
   groundBinding,
   groundedPairingKey,
+  isUnsettledJob,
   labelWithDetail,
   leavesTheProcess,
   nameReference,

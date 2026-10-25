@@ -23,7 +23,12 @@ import {
   summaryIdentifier,
   summaryRef,
 } from "@suss/behavioral-ir";
-import { bindingIs, busIdentityKey, displayLabel } from "@suss/ir-core";
+import {
+  bindingIs,
+  busIdentityKey,
+  displayLabel,
+  MESSAGE_BUS_TRAITS,
+} from "@suss/ir-core";
 
 import {
   buildInteractionIndex,
@@ -203,6 +208,10 @@ export function checkMessageBus(
       continue;
     }
     if (hasPair(producerChannels, semantics.channel)) {
+      continue;
+    }
+    // A scheduler config the run does not read may enqueue this job.
+    if (MESSAGE_BUS_TRAITS[semantics.messageBus].scheduledFromConfig) {
       continue;
     }
     findings.push(makeOrphanConsumerFinding(c, semantics));

@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { checkAll } from "../index.js";
 import { checkMessageBus } from "./messageBusPairing.js";
 
-import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Effect,
+  MessageBusTechnology,
+} from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
 
 function emptyTransition(id: string, effects: Effect[] = []) {
@@ -24,7 +28,7 @@ function consumerSummary(opts: {
   /** The template's `Handler` module, joined under the code scope. */
   entry?: string;
   queue?: string;
-  messageBus?: "aws_sqs" | "eventbridge";
+  messageBus?: MessageBusTechnology;
 }): BehavioralSummary {
   return {
     kind: "consumer",
@@ -71,7 +75,7 @@ function producerSummary(opts: {
   bodyFields?: string[] | null;
   /** A body written out in full, for a send whose fields nest. */
   bodyShape?: unknown;
-  messageBus?: "aws_sqs" | "eventbridge";
+  messageBus?: MessageBusTechnology;
 }): BehavioralSummary {
   const body =
     opts.bodyShape !== undefined
@@ -2076,5 +2080,56 @@ describe("which code a queue consumer runs", () => {
         (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "receive",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("checkMessageBus, a background job", () => {
+  const job = consumerSummary({
+    name: "ReportExportJob.perform",
+    channel: "exports#ReportExportJob",
+    codeScopePath: "app/jobs/",
+    messageBus: "activejob",
+  });
+
+  it("does not report a job no code enqueues, since a scheduler config may", () => {
+    const findings = checkMessageBus([job]);
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+  });
+
+  it("pairs an enqueue that says only the job with a job that says its queue", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkMessageBus(
+      [
+        job,
+        producerSummary({
+          name: "createExport",
+          filePath: "app/graphql/mutations/report_export_create.rb",
+          channel: "ReportExportJob",
+          messageBus: "activejob",
+        }),
+      ],
+      undefined,
+      compared,
+    );
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toEqual([]);
+    expect(compared).toHaveLength(1);
+  });
+
+  it("still reports a queue consumer on a bus nothing schedules from config", () => {
+    const findings = checkMessageBus([
+      consumerSummary({
+        name: "emails",
+        channel: "emails",
+        codeScopePath: "src/",
+        messageBus: "bullmq",
+      }),
+    ]);
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toHaveLength(1);
   });
 });
