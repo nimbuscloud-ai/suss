@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  The directory resolvers. Query.directory is a unit resolver, and
+  Query.person is a pipeline whose one function reads the same data
+  source. The data source is referred to by its Name.
+
+Parameters:
+  ApiId:
+    Type: String
+
+Resources:
+  DirectoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/directory/
+      Handler: index.handler
+      Runtime: nodejs20.x
+
+  DirectoryDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !Ref ApiId
+      Name: dir_Directory
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt DirectoryFunction.Arn
+
+  DirectoryResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !Ref ApiId
+      TypeName: Query
+      FieldName: directory
+      Kind: UNIT
+      DataSourceName: dir_Directory
+      Runtime:
+        Name: APPSYNC_JS
+        RuntimeVersion: "1.0.0"
+      Code: |
+        export function request(ctx) {
+          return { operation: "Invoke", payload: ctx };
+        }
+        export function response(ctx) {
+          return ctx.result;
+        }
+
+  PersonFunction:
+    Type: AWS::AppSync::FunctionConfiguration
+    Properties:
+      ApiId: !Ref ApiId
+      Name: lookupPerson
+      DataSourceName: dir_Directory
+
+  PersonResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !Ref ApiId
+      TypeName: Query
+      FieldName: person
+      Kind: PIPELINE
+      PipelineConfig:
+        Functions:
+          - !GetAtt PersonFunction.FunctionId

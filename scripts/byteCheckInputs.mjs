@@ -101,7 +101,7 @@ export const FIXTURE_INPUTS = [
     ]),
   ),
   contract("appsync", "appsync", "fixtures/appsync/petstore.yaml"),
-  ...["external-schema", "list-form", "serverless"].map((sub) =>
+  ...["external-schema", "list-form", "nested-stack", "serverless"].map((sub) =>
     contract(
       `appsync/${sub}`,
       "appsync",

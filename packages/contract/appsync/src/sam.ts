@@ -9,7 +9,9 @@
  * lookup table, and two GraphQL APIs in one template stay apart.
  */
 
-import { asRecord, resolveLogicalRef, stringField } from "./refs.js";
+import { refTarget } from "@suss/manifest-aws";
+
+import { asRecord, type DocumentRefs, stringField } from "./refs.js";
 
 import type {
   AppSyncConfig,
@@ -38,6 +40,7 @@ const DATA_SOURCE_CATEGORIES: Record<string, string> = {
 
 export function readServerlessGraphQLApis(
   resources: Record<string, CfnResource | undefined>,
+  refs: DocumentRefs,
 ): AppSyncConfig {
   const out: AppSyncConfig = {
     apis: [],
@@ -49,7 +52,7 @@ export function readServerlessGraphQLApis(
     if (resource?.Type !== "AWS::Serverless::GraphQLApi") {
       continue;
     }
-    readOne(logicalId, resource.Properties ?? {}, out);
+    readOne(refs.own(logicalId), resource.Properties ?? {}, out, refs);
   }
   return out;
 }
@@ -58,6 +61,7 @@ function readOne(
   apiLogicalId: string,
   props: Record<string, unknown>,
   out: AppSyncConfig,
+  refs: DocumentRefs,
 ): void {
   out.apis.push({
     logicalId: apiLogicalId,
@@ -65,7 +69,9 @@ function readOne(
     schemaSource: readSchemaSource(props),
     authenticationType: readAuthType(props.Auth),
   });
-  out.dataSources.push(...readDataSources(apiLogicalId, props.DataSources));
+  out.dataSources.push(
+    ...readDataSources(apiLogicalId, props.DataSources, refs),
+  );
   out.functions.push(...readFunctions(apiLogicalId, props.Functions));
   out.resolvers.push(...readResolvers(apiLogicalId, props.Resolvers));
 }
@@ -95,6 +101,7 @@ function readAuthType(auth: unknown): string | null {
 function readDataSources(
   apiLogicalId: string,
   raw: unknown,
+  refs: DocumentRefs,
 ): AppSyncDataSource[] {
   const dataSources = asRecord(raw);
   if (dataSources === null) {
@@ -112,11 +119,10 @@ function readDataSources(
       out.push({
         logicalId: dataSourceId(apiLogicalId, name),
         apiLogicalId,
+        name,
         type,
         lambdaFunctionLogicalId:
-          type === "lambda" && def !== null
-            ? resolveLogicalRef(def.FunctionArn)
-            : null,
+          type === "lambda" && def !== null ? refs.ref(def.FunctionArn) : null,
       });
     }
   }
@@ -136,6 +142,7 @@ function readFunctions(apiLogicalId: string, raw: unknown): AppSyncFunction[] {
       apiLogicalId,
       name,
       dataSourceLogicalId: referencedDataSourceId(apiLogicalId, def.DataSource),
+      dataSourceWritten: null,
       codeUri: stringField(def.CodeUri),
       runtime: readRuntime(def.Runtime),
     });
@@ -178,6 +185,7 @@ function buildResolver(
     dataSourceLogicalId: isPipeline
       ? null
       : referencedDataSourceId(apiLogicalId, def.DataSource),
+    dataSourceWritten: null,
     kind: isPipeline ? "PIPELINE" : "UNIT",
     pipelineFunctionLogicalIds: pipeline,
     codeUri: stringField(def.CodeUri),
@@ -191,7 +199,7 @@ function readPipeline(apiLogicalId: string, raw: unknown): string[] {
   }
   const out: string[] = [];
   for (const entry of raw) {
-    const name = stringField(entry) ?? resolveLogicalRef(entry);
+    const name = stringField(entry) ?? refTarget(entry);
     if (name !== null) {
       out.push(functionId(apiLogicalId, name));
     }

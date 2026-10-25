@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resourcesWithGlobals } from "./globals.js";
 import {
+  documentRef,
   loadTemplateTree,
   MAX_STACK_DEPTH,
   qualifiedLogicalId,
@@ -303,6 +304,57 @@ describe("loadTemplateTree", () => {
     expect(() => loadTemplateTree("/nowhere/template.yaml")).toThrow(
       /not found/,
     );
+  });
+});
+
+describe("parameters a parent passes to a child", () => {
+  it("reads a child's parameter as the parent resource it is set to, through every level", () => {
+    const root = writeTemplates({
+      "template.yaml": [
+        "Resources:",
+        "  Api:",
+        "    Type: AWS::AppSync::GraphQLApi",
+        "  Child:",
+        "    Type: AWS::CloudFormation::Stack",
+        "    Properties:",
+        "      TemplateURL: ./child.yaml",
+        "      Parameters:",
+        "        ApiId: !GetAtt Api.ApiId",
+        "        Stage: prod",
+        "        Missing: !Ref NotDeclared",
+      ].join("\n"),
+      "child.yaml": [
+        "Resources:",
+        "  Grand:",
+        "    Type: AWS::CloudFormation::Stack",
+        "    Properties:",
+        "      TemplateURL: ./grand.yaml",
+        "      Parameters:",
+        "        ParentApi: !Ref ApiId",
+      ].join("\n"),
+      "grand.yaml": "Resources: {}\n",
+    });
+
+    const [, child, grand] = loadTemplateTree(root).documents;
+
+    expect(Object.fromEntries(child?.parameterTargets ?? [])).toEqual({
+      ApiId: "Api",
+    });
+    expect(Object.fromEntries(grand?.parameterTargets ?? [])).toEqual({
+      ParentApi: "Api",
+    });
+  });
+
+  it("qualifies a document's own reference, and gives null for one only known at deploy time", () => {
+    const document = {
+      stackPath: ["Child"],
+      parameterTargets: new Map([["ApiId", "Api"]]),
+    };
+    expect(documentRef(document, { Ref: "ApiId" })).toBe("Api");
+    expect(documentRef(document, { "Fn::GetAtt": ["Fn", "Arn"] })).toBe(
+      "Child/Fn",
+    );
+    expect(documentRef(document, { "Fn::Sub": "x" })).toBeNull();
   });
 });
 

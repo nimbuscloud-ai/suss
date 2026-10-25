@@ -1061,6 +1061,129 @@ describe("appsyncFileToSummaries — file loading", () => {
   });
 });
 
+describe("appsyncFileToSummaries: resolvers in a nested stack", () => {
+  const summaries = appsyncFileToSummaries(
+    path.join(fixturesDir, "nested-stack", "template.yaml"),
+    { warnings: [] },
+  );
+  const metaOf = (name: string) =>
+    summaries.find((s) => s.identity.name === name)?.metadata?.appsync as
+      | Record<string, unknown>
+      | undefined;
+
+  it("reads the child's resolvers as part of the API its parent passes down", () => {
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual([
+      "Query.directory",
+      "Query.person",
+    ]);
+    expect(metaOf("Query.directory")).toMatchObject({
+      apiLogicalId: "Api",
+      schemaMatched: true,
+    });
+  });
+
+  it("follows a data source written by its Name to the Lambda behind it", () => {
+    expect(metaOf("Query.directory")).toMatchObject({
+      dataSourceLogicalId: "DirectoryFunctionsStack/DirectoryDataSource",
+      lambdaFunctionLogicalId: "DirectoryFunctionsStack/DirectoryFunction",
+    });
+  });
+
+  it("follows each pipeline function to the Lambda behind it", () => {
+    expect(metaOf("Query.person")?.pipelineFunctions).toEqual([
+      expect.objectContaining({
+        logicalId: "DirectoryFunctionsStack/PersonFunction",
+        lambdaFunctionLogicalId: "DirectoryFunctionsStack/DirectoryFunction",
+      }),
+    ]);
+  });
+
+  it("reports a child template it cannot open", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-appsync-"));
+    const file = path.join(tmp, "template.yaml");
+    fs.writeFileSync(
+      file,
+      "Resources:\n  Child:\n    Type: AWS::CloudFormation::Stack\n    Properties:\n      TemplateURL: ./missing.yaml\n",
+    );
+    const warnings: string[] = [];
+    try {
+      readAppsyncFile(file, { warnings });
+      expect(warnings).toEqual([
+        expect.stringContaining("could not follow nested stack Child"),
+      ]);
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  });
+});
+
+describe("appsyncFileToSummaries: a child it cannot open, with nowhere to collect warnings", () => {
+  it("says so on stderr", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-appsync-"));
+    const file = path.join(tmp, "template.yaml");
+    fs.writeFileSync(
+      file,
+      "Resources:\n  Child:\n    Type: AWS::CloudFormation::Stack\n    Properties:\n      TemplateURL: s3://bucket/child.yaml\n",
+    );
+    const written: string[] = [];
+    const write = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      readAppsyncFile(file);
+    } finally {
+      process.stderr.write = write;
+      fs.rmSync(tmp, { recursive: true });
+    }
+    expect(written).toEqual([
+      expect.stringContaining(
+        "[suss] appsync: could not follow nested stack Child",
+      ),
+    ]);
+  });
+});
+
+describe("appsyncToSummaries: a data source written by its Name", () => {
+  const template = (dataSourceApi: unknown): CfnTemplate => ({
+    Resources: {
+      Api: { Type: "AWS::AppSync::GraphQLApi", Properties: {} },
+      Other: { Type: "AWS::AppSync::GraphQLApi", Properties: {} },
+      Fn: { Type: "AWS::Lambda::Function", Properties: {} },
+      Ds: {
+        Type: "AWS::AppSync::DataSource",
+        Properties: {
+          ApiId: dataSourceApi,
+          Name: "orders",
+          Type: "AWS_LAMBDA",
+          LambdaConfig: { LambdaFunctionArn: { "Fn::GetAtt": ["Fn", "Arn"] } },
+        },
+      },
+      R: {
+        Type: "AWS::AppSync::Resolver",
+        Properties: {
+          ApiId: { "Fn::GetAtt": ["Api", "ApiId"] },
+          TypeName: "Query",
+          FieldName: "order",
+          DataSourceName: "orders",
+        },
+      },
+    },
+  });
+  const lambdaOf = (summaries: BehavioralSummary[]) =>
+    (summaries[0]?.metadata?.appsync as Record<string, unknown>)
+      .lambdaFunctionLogicalId;
+
+  it("finds it among the resolver's own API's data sources", () => {
+    expect(lambdaOf(appsyncToSummaries(template({ Ref: "Api" })))).toBe("Fn");
+  });
+
+  it("does not take a data source of that name from another API", () => {
+    expect(lambdaOf(appsyncToSummaries(template({ Ref: "Other" })))).toBeNull();
+  });
+});
+
 describe("appsyncFileToSummaries: the schema document", () => {
   const summaries = readAppsyncFile(path.join(fixturesDir, "petstore.yaml"));
 

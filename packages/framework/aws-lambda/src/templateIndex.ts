@@ -84,6 +84,7 @@ function manifestTree(manifestPath: string): TemplateTree {
         stackPath: [],
         template: translated.functions,
         resourceLines: new Map(),
+        parameterTargets: new Map(),
       },
     ],
     unfollowed: [],
