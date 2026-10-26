@@ -340,10 +340,31 @@ export function splitSpec(spec: string): { name: string; configPath?: string } {
  */
 export function packSpecFrom(base: string, spec: string): string {
   const { name, configPath } = splitSpec(spec);
-  if (configPath === undefined) {
+  if (configPath === undefined || isInlineConfig(configPath)) {
     return spec;
   }
   return `${name}=${path.resolve(base, configPath)}`;
+}
+
+/**
+ * A pack's config written in the spec itself, as in
+ * `-f activerecord={"storageSystem":"postgresql"}`. A run with no
+ * `suss.json` passes what `suss init` settles this way, and a path in it
+ * is relative to the directory the run reads, as with no config file.
+ */
+export function isInlineConfig(configPath: string): boolean {
+  return configPath.trimStart().startsWith("{");
+}
+
+function inlineOptions(name: string, written: string): unknown {
+  try {
+    return JSON.parse(written);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new UsageError(
+      `The config given with -f ${name} is not JSON: ${message}`,
+    );
+  }
 }
 
 export function parseFrameworkSpec(spec: string): {
@@ -355,6 +376,9 @@ export function parseFrameworkSpec(spec: string): {
   const { name, configPath } = splitSpec(spec);
   if (configPath === undefined) {
     return { name };
+  }
+  if (isInlineConfig(configPath)) {
+    return { name, options: inlineOptions(name, configPath) };
   }
 
   const resolved = path.resolve(configPath);

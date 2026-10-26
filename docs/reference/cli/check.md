@@ -77,6 +77,8 @@ No suss.json in /work/shop, so this reads what `suss init` would pick. Run `suss
       was stopped after 20m 0s, the time limit for one read. Pass --read-timeout with more minutes to give it longer, or 0 for no limit.
 ```
 
+With no `suss.json`, a pack whose config `suss init` can work out on its own gets it in the command, the way `init` would have written it to a file: a Rails app's ActiveRecord read shows `-f activerecord={"storageSystem":"postgresql"}` when `config/database.yml` gives that adapter.
+
 A read that runs past `--read-timeout` is stopped, and one that grows past its `--read-memory` heap dies on its own. Either one, or one that exits with an error, is left out while the others carry on. The check compares what the finished reads wrote, and the report gets a `readFailed` run finding for each read that did not finish, so a run that left part of the project out says so. It is a warning, so it fails the run only under `--fail-on warning`. The same note is left in an `--out-dir` folder, beside the file the read would have written, so a later `check --dir` over that folder reports it too.
 
 A finding that points at one transition prints a `.sussignore` rule for it, ready to paste under `rules:`. See [Accept a finding](/guides/accept-a-finding), and [the findings catalog](/reference/findings) for every kind.
