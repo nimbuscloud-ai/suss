@@ -374,7 +374,7 @@ function intersectionToShape(
   return { type: "ref", name: printedTypeName(type, ctx) };
 }
 
-function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
+function objectToShape(type: Type, ctx: ConvertContext): TypeShape {
   const key = typeKey(type);
 
   // Cycle: we're already expanding this type on the current path. Collapse
@@ -614,20 +614,17 @@ function namedOnce(type: Type, ctx: ConvertContext): TypeShape | null {
     // Reserved before expanding, so a type that refers to itself meets
     // its own key and stops rather than going round again.
     table.reserve(key);
-    // Expanded as though nothing had been read yet. A definition read
-    // at depth five and reused everywhere would make the summary
-    // depend on which mention the walk reached first, which is a thing
-    // suss is supposed to be free of.
-    const expanded = objectToShape(type, {
-      enclosing: ctx.enclosing,
-      depth: 0,
-      seen: new Set(),
-    });
-    if (expanded === null) {
-      return null;
-    }
-    table.define(key, expanded);
+    // Expanded as though nothing had been read yet, so the definition
+    // does not depend on which mention the walk reached first.
+    table.defer(key, () =>
+      objectToShape(type, {
+        enclosing: ctx.enclosing,
+        depth: 0,
+        seen: new Set(),
+      }),
+    );
   }
+  table.settle();
   return filed;
 }
 
