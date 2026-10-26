@@ -24,6 +24,7 @@
   "generator": "prisma: schema block declaring a client generator",
   "output": "prisma: generator block key giving the directory the client is written to",
   "assignment": "@mrleebo/prisma-ast: node type for a key and value inside a schema block",
+  "runtime": "prisma: folder of the library's own code inside a generated client",
   "read": "suss: access kind",
   "write": "suss: access kind"
 }

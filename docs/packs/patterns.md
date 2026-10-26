@@ -770,7 +770,11 @@ parameterSuppliers?: Array<{ module: string; name: string }>
 discoveryInputs?: (files: readonly string[]) => string[]
 ```
 
-Files under the project the pack reads that are not source files. Their content feeds the same cache key the pack's configuration does, so a run made after somebody edits one reads the project again. The AWS Lambda pack is the case this exists for: a SAM template declares which handlers exist, and no source file changes when that template does. Rails declares `config/routes.rb` the same way.
+Files the pack reads that are not walked source files. Their content feeds the same cache key the pack's configuration does, so a run made after somebody edits one reads the project again. The AWS Lambda pack is the case this exists for: a SAM template declares which handlers exist, and no source file changes when that template does. Rails declares `config/routes.rb` the same way.
+
+Code a library's generator writes belongs here too. The Prisma pack lists the schema and the type files of the client `prisma generate` writes, whether the generator puts it in the project or in `node_modules/.prisma/client`, so a run after `prisma generate` does not hand back summaries read against the old client.
+
+A pack does not need to list a library it reads through `node_modules`. The TypeScript adapter adds the installed `package.json` of every library a pack's `requiresImport` gives, so installing another version of it misses the cache.
 
 ### `responseSemantics` and `failureDelivery`
 

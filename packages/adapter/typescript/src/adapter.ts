@@ -167,6 +167,7 @@ import {
 import { ResolutionStore } from "./facts/store.js";
 import { flagReads } from "./flagReads.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
+import { installedLibraryInputs } from "./installedLibraries.js";
 import { endLineOf, lineRangeOf, startLineOf } from "./lines.js";
 import {
   forgetUnreadableExportFiles,
@@ -2802,7 +2803,19 @@ export function createTypeScriptAdapter(
               cacheFiles =
                 tsconfigFileList ??
                 project.getSourceFiles().map((sf) => sf.getFilePath());
-              return runDigest(packsDigest, config.frameworks, cacheFiles);
+              return runDigest(
+                packsDigest,
+                [
+                  ...config.frameworks,
+                  installedLibraryInputs(
+                    config.frameworks,
+                    config.tsConfigFilePath === undefined
+                      ? runRoot
+                      : path.dirname(config.tsConfigFilePath),
+                  ),
+                ],
+                cacheFiles,
+              );
             });
 
       const cacheInput: CacheInput = {

@@ -1,7 +1,7 @@
 {
   "name": "@suss/adapter-typescript",
   "exports": 150,
-  "internal": 1314,
+  "internal": 1319,
   "consumers": 364,
   "unfollowedCalls": 114
 }
