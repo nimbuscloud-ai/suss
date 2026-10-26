@@ -1256,6 +1256,16 @@ h1 {
 .finding-item:hover {
   background: none;
 }
+.finding-item .status {
+  flex: none;
+}
+.finding-item .site-meta {
+  display: block;
+}
+.finding-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .route-item .cells,
 .field-item .cells,
 .type-item .cells,

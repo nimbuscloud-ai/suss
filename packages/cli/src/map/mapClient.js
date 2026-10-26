@@ -852,12 +852,18 @@
     });
   }
 
+  const SEVERITY_PILL = { error: "s-5xx", warning: "s-4xx", info: "s-unknown" };
+
+  /** One line per finding: its severity and what it says, then where it is. */
   function findingItem(f) {
-    const on =
-      f.entry === null
-        ? ""
-        : `<div class="site-meta">on ${entryRef(f.entry)}</div>`;
-    return `<div class="item finding-item">${findingCallout(findingList[f.i], on)}</div>`;
+    const row = findingList[f.i];
+    const where = [
+      f.entry === null ? "" : `on ${entryRef(f.entry)}`,
+      findingSides(row),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<div class="item finding-item"><span class="item-main"><span class="status ${SEVERITY_PILL[row[1]] ?? "s-unknown"}">${esc(row[1])}</span><span class="finding-text">${esc(row[2])}</span></span>${where ? `<span class="site-meta">${where}</span>` : ""}</div>`;
   }
 
   /** The findings of a kind past the ones the page lists. */
@@ -1070,14 +1076,18 @@
     return `<div class="findings" data-findings="${i}"><p class="muted">Reading the findings…</p></div>`;
   }
 
-  function findingCallout(f, extra) {
-    const sides = [
+  function findingSides(f) {
+    return [
       f[3] !== null ? `served by ${loc(f[3], f[4])}` : "",
       f[5] !== null ? `called from ${loc(f[5], f[6])}` : "",
     ]
       .filter(Boolean)
       .join(", ");
-    return `<div class="callout">${icon("clash", "i-clash")}<div><strong>${esc(f[0])}</strong> <span class="muted">${esc(f[1])}</span><br>${esc(f[2])}${extra || ""}${sides ? `<div class="site-meta">${sides}</div>` : ""}</div></div>`;
+  }
+
+  function findingCallout(f) {
+    const sides = findingSides(f);
+    return `<div class="callout">${icon("clash", "i-clash")}<div><strong>${esc(f[0])}</strong> <span class="muted">${esc(f[1])}</span><br>${esc(f[2])}${sides ? `<div class="site-meta">${sides}</div>` : ""}</div></div>`;
   }
 
   /** Fills the findings of the entry the drawer shows, once their rows are inflated. */
