@@ -2449,6 +2449,20 @@ describe("checkMessageBus, a background job", () => {
     expect(compared).toHaveLength(1);
   });
 
+  it("does not report a job sent by name that no task in the run receives", () => {
+    const findings = checkMessageBus([
+      producerSummary({
+        name: "make_report",
+        filePath: "app/web.py",
+        channel: "billing.charge_invoice",
+        messageBus: "celery",
+      }),
+    ]);
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toEqual([]);
+  });
+
   it("still reports a queue consumer on a bus nothing schedules from config", () => {
     const findings = checkMessageBus([
       consumerSummary({

@@ -410,6 +410,8 @@ The queue may be declared in a stack suss did not read, so the provider side is 
 
 An EventBridge send reaches a rule when the rule's pattern lets it through, so a send whose literal `Source` the pattern does not list is an orphan even when a rule routes its detail-type. A send whose source is not a literal, or a rule that filters with a prefix, may match, and then no finding is reported.
 
+A background job is never reported here. A job sent by its name, such as Celery's `send_task`, usually runs in another service, and one sent through its code always has that code in the run.
+
 **Fix:** add the contract source that declares the queue, or suppress.
 
 ### `messageBusConsumerOrphan`

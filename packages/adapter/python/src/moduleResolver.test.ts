@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  dottedModuleOf,
   resolveAbsoluteModule,
   resolveModule,
   resolveRelativeModule,
@@ -184,6 +185,52 @@ describe("resolveModule", () => {
       { roots: [path.join(tmpDir, "root")] },
     );
     expect(result.status).toBe("resolved");
+  });
+});
+
+describe("dottedModuleOf", () => {
+  it("names a module by its path under the root, and a package by its directory", () => {
+    write("root/proj/tasks.py");
+    write("root/proj/__init__.py");
+    const roots = [path.join(tmpDir, "root")];
+    expect(
+      dottedModuleOf(path.join(tmpDir, "root/proj/tasks.py"), { roots }),
+    ).toBe("proj.tasks");
+    expect(
+      dottedModuleOf(path.join(tmpDir, "root/proj/__init__.py"), { roots }),
+    ).toBe("proj");
+  });
+
+  it("uses the deepest root, since a declared source directory is inside the project", () => {
+    write("src/proj/tasks.py");
+    const roots = [tmpDir, path.join(tmpDir, "src")];
+    expect(
+      dottedModuleOf(path.join(tmpDir, "src/proj/tasks.py"), { roots }),
+    ).toBe("proj.tasks");
+  });
+
+  it("gives nothing when the name would import some other file", () => {
+    write("a/proj/tasks.py");
+    write("b/proj/tasks.py");
+    const roots = [path.join(tmpDir, "a"), path.join(tmpDir, "b")];
+    expect(
+      dottedModuleOf(path.join(tmpDir, "a/proj/tasks.py"), { roots }),
+    ).toBeNull();
+  });
+
+  it("gives nothing for a file outside every root, or one that is not a module", () => {
+    write("root/notes.txt");
+    write("root/__init__.py");
+    const roots = [path.join(tmpDir, "root")];
+    expect(
+      dottedModuleOf(path.join(tmpDir, "elsewhere.py"), { roots }),
+    ).toBeNull();
+    expect(
+      dottedModuleOf(path.join(tmpDir, "root/notes.txt"), { roots }),
+    ).toBeNull();
+    expect(
+      dottedModuleOf(path.join(tmpDir, "root/__init__.py"), { roots }),
+    ).toBeNull();
   });
 });
 

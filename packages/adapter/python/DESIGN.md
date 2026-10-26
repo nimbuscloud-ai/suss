@@ -595,6 +595,43 @@ Not read yet:
 - A parameter default that refers to something other than a function at module scope, such as a method or a variable bound inside a function.
 - Flask's `before_request` on a blueprint. A flask-restx route is decorated on a namespace, and the blueprint is where it is mounted, so only the app's hook is read.
 
+## Background jobs
+
+A pack with `jobQueues` says which of its library's decorators make a function a task and which methods enqueue one. The Celery pack is the one that does:
+
+```ts
+jobQueues: [
+  {
+    messageBus: "celery",
+    module: "celery",
+    taskDecorators: ["task", "shared_task"],
+    nameKeyword: "name",
+    queueKeyword: "queue",
+    defaultName: "modulePath",
+    enqueueMethods: [{ method: "delay", arguments: { type: "spread" } }, ...],
+    sendByName: [{ method: "send_task", name: { argument: 0, keyword: "name" }, ... }],
+    apps: ["Celery", "current_app"],
+  },
+]
+```
+
+A decorator counts when it classifies the way a route's does: `@shared_task` imported from `celery`, or `@app.task` on an object the rules say `Celery(...)` built, in whichever module that happened. A project function that wraps the decorator and passes its parameters through counts as well. The function becomes a `consumer` unit, read the way a reached function is, and the call walk starts from it as it does from a route.
+
+`declaredTask` is the one place a task's name comes from. The consumer asks it about the function it is building, and an enqueue asks it about the function its receiver resolved to, so the two cannot disagree. The name is the decorator's `name=` when one is written and the evaluator settles it, and the pack's default otherwise. Celery's default is the dotted module path and the function's name. `dottedModuleOf` reads the module path from the file and the run's roots: the deepest root the file is under gives the name, and the name has to import that same file again. When it does not, or when the evaluator cannot settle a `name=`, the task's consumer is bound without a channel, and every enqueue of it is a send without one.
+
+An enqueue is a call to one of `enqueueMethods` whose receiver the rules settle on one function, asked the way a callee is. What it records depends on the receiver:
+
+| The receiver is | What is recorded |
+| --- | --- |
+| one function with a task decorator | a `message-send` to the task's name, with no queue in front |
+| one function with no task decorator | nothing |
+| a value built by a call into another library, such as a `multiprocessing` pool | nothing |
+| a parameter, a name bound inside an `if` or `try`, or anything else the rules do not settle | a `message-send` with no channel |
+
+A send with no channel on a job queue gets an `unsettledJob` gap from the extractor, the same in every language, and the walk does not record a stop of its own for the call. A call to one of `sendByName` counts when its receiver is the app, built by one of `apps` or imported as one of them, and its channel is the name argument as the evaluator settles it.
+
+An enqueue at module level is left out, since no unit's body contains it.
+
 ## Tests a PRD scenario can list
 
 A pack with `tests` turns each test its runner collects into a `test` unit, so a PRD scenario can list it under `coveredBy`. The pytest pack is the one that does. A test is a function whose name starts with `functionPrefix` in a file matching one of `filePatterns`, or a method with that prefix on a class pytest collects: one whose name starts with `classPrefix`, or one that extends a `caseBaseClasses` entry directly or through a project class. The unit is named by its classes and then its own name, joined with ` > `, so `tests/test_orders.py::TestCancel::test_twice` in a PRD matches the unit `TestCancel > test_twice` in `tests/test_orders.py`. With `files` set, only the tests in those files become units.

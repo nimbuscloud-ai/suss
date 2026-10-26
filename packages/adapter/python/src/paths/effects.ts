@@ -97,7 +97,7 @@ export function enclosingStatement(call: PyNode, body: PyNode): PyNode | null {
 }
 
 /** The argument's literal when it settles on one, otherwise the call or name as written. */
-function argOf(node: PyNode, facts: Database | undefined): EffectArg {
+export function argOf(node: PyNode, facts: Database | undefined): EffectArg {
   const literal = literalArgOf(node, facts);
   if (literal !== null) {
     return literal;
