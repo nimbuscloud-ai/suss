@@ -1,5 +1,6 @@
 {
   "openapi": "pack name, the OpenAPI spec",
+  "paths": "OpenAPI: document key holding the path items",
   "get": "OpenAPI: path item operation, HTTP GET",
   "post": "OpenAPI: path item operation, HTTP POST",
   "put": "OpenAPI: path item operation, HTTP PUT",

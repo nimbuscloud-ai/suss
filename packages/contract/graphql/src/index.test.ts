@@ -10,6 +10,7 @@ import {
 } from "@suss/behavioral-ir";
 
 import {
+  declaredValueTypes,
   describesOperations,
   describesTypes,
   graphqlSdlFileToSummaries,
@@ -298,5 +299,72 @@ describe("what a graphql file describes", () => {
   it("describes nothing when the text does not parse", () => {
     expect(describesTypes("type {")).toBe(false);
     expect(describesOperations("query {")).toBe(false);
+  });
+});
+
+describe("where a schema declares a field", () => {
+  it("records the line of each root field", () => {
+    const sdl = [
+      "type Query {",
+      "  note(id: ID!): Note",
+      "  notes: [Note!]!",
+      "}",
+    ].join("\n");
+    const lines = new Map(
+      resolvers(graphqlSdlToSummaries(sdl)).map((s) => [
+        s.identity.name,
+        s.location.range.start,
+      ]),
+    );
+
+    expect(lines.get("Query.note")).toBe(2);
+    expect(lines.get("Query.notes")).toBe(3);
+  });
+});
+
+describe("declaredValueTypes", () => {
+  it("lists enums with their values, unions with their members, and custom scalars", () => {
+    const sdl = `
+      scalar DateTime
+      enum Status { ACTIVE ARCHIVED }
+      extend enum Status { DELETED }
+      union SearchResult = Note | Folder
+      type Note { id: ID! }
+      type Folder { id: ID! }
+    `;
+
+    expect(declaredValueTypes(sdl)).toEqual([
+      { name: "DateTime", kind: "scalar", members: [] },
+      {
+        name: "Status",
+        kind: "enum",
+        members: ["ACTIVE", "ARCHIVED", "DELETED"],
+      },
+      { name: "SearchResult", kind: "union", members: ["Note", "Folder"] },
+    ]);
+  });
+
+  it("gives nothing for SDL that does not parse", () => {
+    expect(declaredValueTypes("type {")).toEqual([]);
+  });
+
+  it("adds a union's extension to its members, and keeps a scalar an extension only annotates", () => {
+    const sdl = `
+      directive @tagged on SCALAR | ENUM
+      scalar DateTime
+      extend scalar DateTime @tagged
+      enum Status { ACTIVE }
+      extend enum Status @tagged
+      union SearchResult = Note
+      extend union SearchResult = Folder
+      type Note { id: ID! }
+      type Folder { id: ID! }
+    `;
+
+    expect(declaredValueTypes(sdl)).toEqual([
+      { name: "DateTime", kind: "scalar", members: [] },
+      { name: "Status", kind: "enum", members: ["ACTIVE"] },
+      { name: "SearchResult", kind: "union", members: ["Note", "Folder"] },
+    ]);
   });
 });

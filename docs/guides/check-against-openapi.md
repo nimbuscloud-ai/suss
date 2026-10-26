@@ -96,7 +96,7 @@ suss inspect consumer/contract.json
 
 ```
 openapi:openapi.yaml
-└─ GET /users/{id}  (openapi handler | line 0)
+└─ GET /users/{id}  (openapi handler | line 7)
      Contract: 200, 404, 429
        -> 200 { id, name, email }
        -> 404 { error }
@@ -122,7 +122,7 @@ suss check --dir consumer/ --all
 ────────────────────────────────────────────────────────────
 [WARNING] unhandledProviderCase
   Provider produces status 429 but no consumer branch handles it
-  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
   boundary: openapi (http) GET /users/{id}
   to silence this one, add to the rules in .sussignore.yml:
@@ -133,7 +133,7 @@ suss check --dir consumer/ --all
 ────────────────────────────────────────────────────────────
 [WARNING] consumerContractViolation
   Contract declares response 429 but consumer does not handle it
-  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
   boundary: openapi (http) GET /users/{id}
 ────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ Compared 1 boundary.
 [ERROR] providerContractViolation
   Handler produces status 410 which the openapi document does not declare
   provider: src/server.ts::get (src/server.ts:14)
-  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   boundary: express (http) GET /users/:id
   to silence this one, add to the rules in .sussignore.yml:
     - kind: providerContractViolation
@@ -209,7 +209,7 @@ Compared 1 boundary.
 [WARNING] providerContractViolation
   The openapi document declares response 429, and no path in the handler produces it
   provider: src/server.ts::get (src/server.ts:14)
-  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   boundary: express (http) GET /users/:id
 ────────────────────────────────────────────────────────────
 2 findings: 1 error, 1 warning, 0 info
@@ -246,7 +246,7 @@ Compared 1 boundary.
 ────────────────────────────────────────────────────────────
 [WARNING] unhandledProviderCase
   Provider produces status 429 but no consumer branch handles it
-  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
   boundary: openapi (http) GET /users/{id}
   to silence this one, add to the rules in .sussignore.yml:
@@ -257,14 +257,14 @@ Compared 1 boundary.
 ────────────────────────────────────────────────────────────
 [WARNING] consumerContractViolation
   Contract declares response 429 but consumer does not handle it
-  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
   boundary: openapi (http) GET /users/{id}
 ────────────────────────────────────────────────────────────
 [ERROR] providerContractViolation
   Handler produces status 410 which the openapi document does not declare
   provider: src/server.ts::get (src/server.ts:14)
-  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   boundary: express (http) GET /users/:id
   to silence this one, add to the rules in .sussignore.yml:
     - kind: providerContractViolation
@@ -275,7 +275,7 @@ Compared 1 boundary.
 [WARNING] providerContractViolation
   The openapi document declares response 429, and no path in the handler produces it
   provider: src/server.ts::get (src/server.ts:14)
-  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   boundary: express (http) GET /users/:id
 ────────────────────────────────────────────────────────────
 5 findings: 1 error, 4 warning, 0 info
