@@ -4,6 +4,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { documentSourceLabel } from "@suss/behavioral-ir/files";
+
+import { operationLines } from "./operationLines.js";
 import { readSpecFiles } from "./specFiles.js";
 import { specToSummaries } from "./summaryBuilder.js";
 
@@ -23,6 +26,8 @@ export interface OpenApiFileToSummariesOptions
    * ref that points at nothing. Without it, each goes to stderr.
    */
   warnings?: string[];
+  /** The root the spec's path is measured from in its label, as in `openapi:api/openapi.yaml`. */
+  projectRoot?: string;
 }
 
 /** More unresolved refs than this are counted rather than listed. */
@@ -63,9 +68,12 @@ export function openApiFileToSummaries(
   }
   const unresolved = new Set<string>();
   const summaries = specToSummaries(files.root as OpenApiSpec, {
-    source: options.source ?? `openapi:${path.basename(resolved)}`,
+    source:
+      options.source ??
+      documentSourceLabel("openapi", resolved, options.projectRoot),
     documents: files.documents,
     unresolved,
+    operationLines: operationLines(fs.readFileSync(resolved, "utf8")),
   });
   const messages = unreadMessages(specPath, files, unresolved);
   if (options.warnings !== undefined) {

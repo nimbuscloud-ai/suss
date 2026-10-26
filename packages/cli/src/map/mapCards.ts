@@ -51,7 +51,7 @@ const MOST_FINDINGS = 2;
 export const CARD_RULES: Record<CardKind, CardRule> = {
   finding: {
     name: "Finding",
-    rule: "check reported it between an entry point and code in this repo that calls it, with both sides read from source.",
+    rule: "An entry point and its caller here disagree.",
     pick: (model) =>
       model.findings
         .map((finding, at) => ({ finding, at }))
@@ -76,7 +76,7 @@ export const CARD_RULES: Record<CardKind, CardRule> = {
   },
   mostTablesWritten: {
     name: "Most tables written",
-    rule: "The entry point whose reach writes the most tables, when it writes three or more.",
+    rule: "Writes the most tables, at least three.",
     pick: (model) => {
       const ranked = model.entries
         .map((entry, at) => ({
@@ -128,7 +128,7 @@ export const CARD_RULES: Record<CardKind, CardRule> = {
   },
   mostWrittenTable: {
     name: "Most-written table",
-    rule: "The table the most entry points write, when five or more do, with each place that writes it.",
+    rule: "Written by the most entry points, at least five.",
     pick: (model) => {
       const writers = new Map<number, Set<number>>();
       model.entries.forEach((entry, at) => {
@@ -158,7 +158,7 @@ export const CARD_RULES: Record<CardKind, CardRule> = {
   },
   sharedEarlyReturn: {
     name: "Shared early return",
-    rule: "An outcome with a status of 300 or more that a middleware or filter adds to three or more entry points, picking the one most share.",
+    rule: "A redirect or error that middleware adds to three or more entry points.",
     pick: (model) => {
       const groups = new Map<
         string,
@@ -205,7 +205,7 @@ export const CARD_RULES: Record<CardKind, CardRule> = {
   },
   uncalledFields: {
     name: "Fields with no caller here",
-    rule: "Query and Mutation fields check paired with no operation in this repo, when at least one other field has one.",
+    rule: "Query and Mutation fields no operation here uses.",
     pick: (model) => {
       const fields = model.entries
         .map((entry, at) => ({ entry, at }))
@@ -225,7 +225,7 @@ export const CARD_RULES: Record<CardKind, CardRule> = {
   },
   notRead: {
     name: "Not read",
-    rule: "Entry points whose own summary records an outcome suss did not read, when that is half of them or more.",
+    rule: "Half or more entry points have an outcome suss didn't read.",
     pick: (model) => {
       const unread = model.entries
         .map((entry, at) => ({ entry, at }))

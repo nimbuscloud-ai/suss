@@ -40,6 +40,8 @@ export {
   graphqlDocumentsToSummaries,
 } from "./documents.js";
 export {
+  type DeclaredValueType,
+  declaredValueTypes,
   describesOperations,
   describesTypes,
   SCALAR_SHAPES,
@@ -213,7 +215,10 @@ function buildResolverSummary(
     kind: "resolver",
     location: {
       file: `${source}:${ownerKey}`,
-      range: { start: 0, end: 0 },
+      range: {
+        start: field.loc?.startToken.line ?? 0,
+        end: field.loc?.endToken.line ?? 0,
+      },
       exportName: null,
     },
     identity: {

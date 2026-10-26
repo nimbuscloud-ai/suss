@@ -77,9 +77,13 @@ type ContractLoader = (
 ) => Promise<BehavioralSummary[]>;
 
 const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
-  openapi: async (specPath, _source, options) => {
+  openapi: async (specPath, source, options) => {
     const mod = await import("@suss/contract-openapi");
-    return mod.openApiFileToSummaries(specPath, warningsOf(options));
+    return mod.openApiFileToSummaries(specPath, {
+      ...(source !== undefined ? { source } : {}),
+      ...warningsOf(options),
+      projectRoot: options.projectRoot,
+    });
   },
   cloudformation: async (specPath, source, options) => {
     const mod = await import("@suss/contract-cloudformation");

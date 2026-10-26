@@ -36,6 +36,8 @@ export interface BuildOptions {
   documents?: ReadonlyMap<string, unknown>;
   /** Collects each ref that points at nothing. */
   unresolved?: Set<string>;
+  /** The line each operation starts on, keyed `${path} ${method}` as the document writes them. */
+  operationLines?: ReadonlyMap<string, number>;
 }
 
 type Context = ReturnType<typeof newContext>;
@@ -71,7 +73,10 @@ export function specToSummaries(
         continue;
       }
       summaries.push(
-        buildSummary(ctx, servedPath(spec, path), verb, op, item, sourceFile),
+        buildSummary(ctx, servedPath(spec, path), verb, op, item, {
+          file: sourceFile,
+          line: options.operationLines?.get(`${path} ${verb}`) ?? 0,
+        }),
       );
     }
   }
@@ -111,7 +116,7 @@ function buildSummary(
   method: HttpMethod,
   op: OpenApiOperation,
   pathItem: PathItem,
-  sourceFile: string,
+  declared: { file: string; line: number },
 ): BehavioralSummary {
   const upper = method.toUpperCase();
   const name = op.operationId ?? `${upper} ${path}`;
@@ -129,8 +134,8 @@ function buildSummary(
   return {
     kind: "handler",
     location: {
-      file: sourceFile,
-      range: { start: 0, end: 0 },
+      file: declared.file,
+      range: { start: declared.line, end: declared.line },
       exportName: null,
     },
     identity: {

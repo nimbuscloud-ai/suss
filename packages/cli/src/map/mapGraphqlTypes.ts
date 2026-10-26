@@ -14,6 +14,7 @@ import {
   readGraphqlMetadata,
   readSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
+import { declaredValueTypes } from "@suss/contract-graphql";
 
 import { graphqlShapeOf } from "./mapEntries.js";
 
@@ -96,9 +97,38 @@ export function gatherGraphqlTypes(
     }
   }
 
-  return [...types]
-    .map(([name, fields]) => ({ name, fields: [...fields.values()] }))
-    .sort(byRootThenName);
+  const objects: GraphqlType[] = [...types].map(([name, fields]) => ({
+    name,
+    kind: "object",
+    fields: [...fields.values()],
+    members: [],
+  }));
+  return [...objects, ...valueTypes(summaries, types)].sort(byRootThenName);
+}
+
+/**
+ * The enums, unions and scalars the schemas in the run declare, read from
+ * each schema's SDL once, so a field that returns one links to it.
+ */
+function valueTypes(
+  summaries: readonly BehavioralSummary[],
+  objects: ReadonlyMap<string, unknown>,
+): GraphqlType[] {
+  const found = new Map<string, GraphqlType>();
+  const seen = new Set<string>();
+  for (const summary of summaries) {
+    const sdl = readGraphqlMetadata(summary)?.schemaSdl;
+    if (sdl === undefined || seen.has(sdl)) {
+      continue;
+    }
+    seen.add(sdl);
+    for (const type of declaredValueTypes(sdl)) {
+      if (!objects.has(type.name) && !found.has(type.name)) {
+        found.set(type.name, { ...type, fields: [] });
+      }
+    }
+  }
+  return [...found.values()];
 }
 
 function resolverPlace(

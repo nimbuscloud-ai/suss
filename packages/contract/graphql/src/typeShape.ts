@@ -4,10 +4,16 @@
 
 import {
   type DocumentNode,
+  type EnumTypeDefinitionNode,
+  type EnumTypeExtensionNode,
   parse as graphqlParse,
   Kind,
   type NamedTypeNode,
+  type ScalarTypeDefinitionNode,
+  type ScalarTypeExtensionNode,
   type TypeNode,
+  type UnionTypeDefinitionNode,
+  type UnionTypeExtensionNode,
 } from "graphql";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -119,4 +125,81 @@ function definitionKinds(text: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** A type a schema declares that has no fields: an enum, a union or a custom scalar. */
+export interface DeclaredValueType {
+  name: string;
+  kind: "enum" | "union" | "scalar";
+  /** An enum's values or a union's member types, in the order written, extensions included. */
+  members: string[];
+}
+
+type ValueTypeNode =
+  | EnumTypeDefinitionNode
+  | EnumTypeExtensionNode
+  | UnionTypeDefinitionNode
+  | UnionTypeExtensionNode
+  | ScalarTypeDefinitionNode
+  | ScalarTypeExtensionNode;
+
+const VALUE_TYPE_READERS: Partial<
+  Record<
+    string,
+    (node: ValueTypeNode) => Pick<DeclaredValueType, "kind" | "members">
+  >
+> = {
+  [Kind.ENUM_TYPE_DEFINITION]: enumOf,
+  [Kind.ENUM_TYPE_EXTENSION]: enumOf,
+  [Kind.UNION_TYPE_DEFINITION]: unionOf,
+  [Kind.UNION_TYPE_EXTENSION]: unionOf,
+  [Kind.SCALAR_TYPE_DEFINITION]: () => ({ kind: "scalar", members: [] }),
+  [Kind.SCALAR_TYPE_EXTENSION]: () => ({ kind: "scalar", members: [] }),
+};
+
+// The table picks each reader by the node's kind, so the casts are safe.
+function enumOf(
+  node: ValueTypeNode,
+): Pick<DeclaredValueType, "kind" | "members"> {
+  const values = (node as EnumTypeDefinitionNode).values ?? [];
+  return { kind: "enum", members: values.map((value) => value.name.value) };
+}
+
+function unionOf(
+  node: ValueTypeNode,
+): Pick<DeclaredValueType, "kind" | "members"> {
+  const types = (node as UnionTypeDefinitionNode).types ?? [];
+  return { kind: "union", members: types.map((type) => type.name.value) };
+}
+
+/**
+ * The enums, unions and custom scalars a schema declares. They have no
+ * fields, so they are not in `typeDefinitionsIn`, but a page that links
+ * each type name a field returns needs them. Empty when the SDL does not
+ * parse.
+ */
+export function declaredValueTypes(sdl: string): DeclaredValueType[] {
+  let doc: DocumentNode;
+  try {
+    doc = graphqlParse(sdl);
+  } catch {
+    return [];
+  }
+  const found = new Map<string, DeclaredValueType>();
+  for (const node of doc.definitions) {
+    const read = VALUE_TYPE_READERS[node.kind];
+    if (read === undefined) {
+      continue;
+    }
+    const valueNode = node as ValueTypeNode;
+    const { kind, members } = read(valueNode);
+    const name = valueNode.name.value;
+    const known = found.get(name);
+    found.set(name, {
+      name,
+      kind,
+      members: [...(known?.members ?? []), ...members],
+    });
+  }
+  return [...found.values()];
 }

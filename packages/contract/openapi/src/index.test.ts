@@ -1471,3 +1471,82 @@ describe("the prefix a document states", () => {
     expect(restPathOf(openApiToSummaries(spec)[0])).toBe("/orders");
   });
 });
+
+describe("where an operation is declared", () => {
+  const spec = [
+    "openapi: 3.0.0",
+    "info:",
+    "  title: Pets",
+    '  version: "1"',
+    "paths:",
+    "  /pets:",
+    "    get:",
+    "      operationId: listPets",
+    "      responses:",
+    '        "200":',
+    "          description: ok",
+    "    post:",
+    "      operationId: addPet",
+    "      responses:",
+    '        "201":',
+    "          description: made",
+    "",
+  ].join("\n");
+
+  function written(text: string, name: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-openapi-lines-"));
+    fs.mkdirSync(path.join(dir, "api"));
+    const file = path.join(dir, "api", name);
+    fs.writeFileSync(file, text);
+    return file;
+  }
+
+  it("records the line each operation starts on", () => {
+    const lines = new Map(
+      openApiFileToSummaries(written(spec, "openapi.yaml"), {
+        warnings: [],
+      }).map((s) => [s.identity.name, s.location.range.start]),
+    );
+
+    expect(lines.get("listPets")).toBe(7);
+    expect(lines.get("addPet")).toBe(12);
+  });
+
+  it("reads the lines of a JSON document too", () => {
+    const json = JSON.stringify(
+      {
+        openapi: "3.0.0",
+        info: { title: "Pets", version: "1" },
+        paths: { "/pets": { get: { operationId: "listPets", responses: {} } } },
+      },
+      null,
+      2,
+    );
+    const [summary] = openApiFileToSummaries(written(json, "openapi.json"), {
+      warnings: [],
+    });
+
+    expect(summary?.location.range.start).toBe(9);
+  });
+
+  it("labels the document by its path in the project", () => {
+    const file = written(spec, "openapi.yaml");
+    const [summary] = openApiFileToSummaries(file, {
+      warnings: [],
+      projectRoot: path.dirname(path.dirname(file)),
+    });
+
+    expect(summary?.location.file).toBe("openapi:api/openapi.yaml");
+  });
+
+  it("keeps a source the caller gives, as for a spec fetched from a URL", () => {
+    const [summary] = openApiFileToSummaries(written(spec, "openapi.yaml"), {
+      warnings: [],
+      source: "openapi:https://example.com/openapi.yaml",
+    });
+
+    expect(summary?.location.file).toBe(
+      "openapi:https://example.com/openapi.yaml",
+    );
+  });
+});
