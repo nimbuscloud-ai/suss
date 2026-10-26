@@ -14,7 +14,10 @@ import {
 } from "../__fixtures__/mapSummaries.js";
 import { CARD_RULES, pickCards } from "./mapCards.js";
 import { renderMapPage } from "./mapPage.js";
-import { FINDINGS_LISTED_PER_KIND } from "./mapPageData.js";
+import {
+  FINDINGS_LISTED_IN_ALL,
+  FINDINGS_LISTED_PER_KIND,
+} from "./mapPageData.js";
 
 import type { Card } from "./mapCards.js";
 import type { MapModel } from "./mapModel.js";
@@ -199,7 +202,11 @@ function manyFindings(count: number): MapModel {
 }
 
 function pageParts(html: string): {
-  data: { s: string[]; e: Array<{ f: number[]; fx: Array<[number, number]> }> };
+  data: {
+    s: string[];
+    e: Array<{ f: number[]; fx: Array<[number, number]> }>;
+    fi: Array<[number, number, number | null]>;
+  };
   dataText: string;
   findings: unknown[][];
 } {
@@ -227,7 +234,21 @@ describe("the map page's findings", () => {
     expect(first?.fx.map(([kind, more]) => [data.s[kind], more])).toEqual([
       ["unhandledProviderCase", 25 - FINDINGS_LISTED_PER_KIND],
     ]);
-    expect(findings).toHaveLength(FINDINGS_LISTED_PER_KIND);
+    // Every finding gets a row for the findings list, which caps each kind
+    // much higher than a route does.
+    expect(findings).toHaveLength(26);
+  });
+
+  it("caps each kind in the findings list and keeps the rows a route lists", () => {
+    const { data, findings } = pageParts(
+      render(manyFindings(FINDINGS_LISTED_IN_ALL + 5), []),
+    );
+
+    expect(findings).toHaveLength(FINDINGS_LISTED_IN_ALL + 1);
+    expect(data.fi).toHaveLength(findings.length);
+    for (const at of data.e[0]?.f ?? []) {
+      expect(data.fi[at]?.[2]).toBe(0);
+    }
   });
 
   it("keeps finding text out of the inline data, in a compressed block", () => {
@@ -245,9 +266,21 @@ describe("the map page's findings", () => {
     ]);
   });
 
-  it("leaves out a finding placed on no route, which the page has nowhere to show", () => {
-    const { findings } = pageParts(render(manyFindings(1), []));
+  it("lists a finding placed on no route in the findings list, with its kind and severity", () => {
+    const { data, findings } = pageParts(render(manyFindings(1), []));
 
-    expect(JSON.stringify(findings)).not.toContain("placed on no route");
+    const at = findings.findIndex((row) => row[2] === "placed on no route");
+    expect(at).toBeGreaterThanOrEqual(0);
+    const [kind, severity, entry] = data.fi[at] ?? [];
+    expect([data.s[kind as number], data.s[severity as number], entry]).toEqual(
+      ["providerContractViolation", "error", null],
+    );
+  });
+
+  it("puts a Findings tab in Browse and links the tile to it", () => {
+    const html = render(manyFindings(2), []);
+
+    expect(html).toContain('data-tab="findings"');
+    expect(html).toContain('data-facet="findings:"');
   });
 });

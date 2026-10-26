@@ -313,22 +313,19 @@ function tiles(model: MapModel): string {
     ),
   );
 
-  const placed = model.findings.filter((finding) => finding.entry !== null);
   parts.push(
-    tile(
-      "routes:caller=has",
-      model.check.pairs,
-      "Pairs checked",
-      model.check.pairs === 0
-        ? [note("No caller found here")]
-        : [
+    tile("routes:caller=has", model.check.pairs, "Pairs checked", [
+      ...(model.check.pairs === 0 ? [note("No caller found here")] : []),
+      ...(model.findings.length > 0
+        ? [
             fact(
-              `${fields.length > rest.length ? "graphql" : "routes"}:caller=finding`,
+              "findings:",
               icon("clash", "i-clash"),
-              plural(placed.length, "finding", "findings"),
+              plural(model.findings.length, "finding", "findings"),
             ),
-          ],
-    ),
+          ]
+        : []),
+    ]),
   );
 
   const { coverage } = model;
@@ -397,6 +394,13 @@ function tabs(model: MapModel): string {
     ],
     ["tables", true, icon("table", "i-table"), "Tables", model.tables.length],
     ["env", true, icon("env", "i-env"), "Env vars", envVariables(model).all],
+    [
+      "findings",
+      model.findings.length > 0,
+      icon("clash", "i-clash"),
+      "Findings",
+      model.findings.length,
+    ],
   ];
   const first = fields > rest ? "graphql" : "routes";
   return specs

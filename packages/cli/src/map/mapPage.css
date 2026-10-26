@@ -1249,6 +1249,23 @@ h1 {
 .env-cols {
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.7fr);
 }
+.finding-item {
+  display: block;
+  cursor: default;
+}
+.finding-item:hover {
+  background: none;
+}
+.finding-item .status {
+  flex: none;
+}
+.finding-item .site-meta {
+  display: block;
+}
+.finding-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .route-item .cells,
 .field-item .cells,
 .type-item .cells,
