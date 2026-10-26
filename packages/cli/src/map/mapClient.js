@@ -294,6 +294,17 @@
     };
   });
 
+  // A finding's text arrives when its rows are inflated, and is added to
+  // what the filter matches then.
+  const findings = (D.fi || []).map((x, i) => ({
+    i,
+    kind: S[x[0]],
+    severity: S[x[1]],
+    entry: x[2],
+    group: S[x[0]],
+    text: `${S[x[0]]} ${S[x[1]]} ${x[2] === null ? "" : S[D.e[x[2]].p]}`.toLowerCase(),
+  }));
+
   /** A type as the page prints it, with each name the run knows as a link to that type. */
   function typeHtml(text) {
     return esc(text).replace(/[A-Za-z_][\w]*/g, (word) =>
@@ -488,6 +499,28 @@
         labels: { yes: "At every read", no: "None", some: "At some reads" },
       },
     ],
+    findings: [
+      {
+        id: "severity",
+        title: "Severity",
+        values: (f) => [f.severity],
+        order: ["error", "warning", "info"],
+      },
+      { id: "kind", title: "Kind", values: (f) => [f.kind], limit: 8 },
+      {
+        id: "on",
+        title: "On",
+        values: (f) =>
+          f.entry === null
+            ? ["none"]
+            : [D.e[f.entry].k === "q" ? "field" : "route"],
+        labels: {
+          route: "A route",
+          field: "A GraphQL field",
+          none: "No route or field",
+        },
+      },
+    ],
   };
 
   const ITEMS = {
@@ -497,6 +530,7 @@
     pages,
     tables,
     env: envs,
+    findings,
   };
   const NOUNS = {
     routes: ["route", "routes"],
@@ -505,6 +539,7 @@
     pages: ["page", "pages"],
     tables: ["table", "tables"],
     env: ["variable", "variables"],
+    findings: ["finding", "findings"],
   };
   const firstTab = $('[role="tab"][aria-selected="true"]');
   const state = {
@@ -516,6 +551,7 @@
       pages: {},
       tables: {},
       env: {},
+      findings: {},
     },
     text: {
       routes: "",
@@ -524,6 +560,7 @@
       pages: "",
       tables: "",
       env: "",
+      findings: "",
     },
     more: {},
     shown: {},
@@ -770,7 +807,75 @@
         `<div class="group-head"><span class="group-name group-label">${name}</span><span class="group-count">${plural(list.length, "variable", "variables")}</span></div>`;
       return `${head}${group("Read when the app boots", boot)}${boot.map(envItem).join("")}${inCode.length ? group("Read in code", inCode) + capped("env", inCode.map(envItem)) : ""}`;
     },
+    findings: (shown) => {
+      if (findingList === undefined) {
+        loadFindingList();
+        return `<p class="muted">Reading the findings…</p>`;
+      }
+      if (findingList === null) {
+        return `<p class="muted">This browser cannot inflate the findings. ${code(`suss check --dir ${D.askDir} --json`)} lists them.</p>`;
+      }
+      return grouped(
+        "findings",
+        shown
+          .slice()
+          .sort(
+            (a, b) =>
+              (SEVERITY_RANK[a.severity] ?? 9) -
+                (SEVERITY_RANK[b.severity] ?? 9) ||
+              a.kind.localeCompare(b.kind),
+          ),
+        "",
+        findingItem,
+        (kind, inGroup) =>
+          `<div class="group-head"><span class="group-name"><code>${esc(kind)}</code></span><span class="group-count">${plural(inGroup.length, "finding", "findings")}${unlistedNote(kind)}</span></div>`,
+      );
+    },
   };
+
+  const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
+
+  /** The finding rows, once inflated: undefined before, null when this browser cannot. */
+  let findingList;
+  function loadFindingList() {
+    loadFindingRows().then((rows) => {
+      findingList = rows;
+      for (const f of findings) {
+        const row = rows?.[f.i];
+        if (row) {
+          f.text += ` ${String(row[2]).toLowerCase()}`;
+        }
+      }
+      if (state.tab === "findings") {
+        renderList();
+      }
+    });
+  }
+
+  const SEVERITY_PILL = { error: "s-5xx", warning: "s-4xx", info: "s-unknown" };
+
+  /** One line per finding: its severity and what it says, then where it is. */
+  function findingItem(f) {
+    const row = findingList[f.i];
+    const where = [
+      f.entry === null ? "" : `on ${entryRef(f.entry)}`,
+      findingSides(row),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<div class="item finding-item"><span class="item-main"><span class="status ${SEVERITY_PILL[row[1]] ?? "s-unknown"}">${esc(row[1])}</span><span class="finding-text">${esc(row[2])}</span></span>${where ? `<span class="site-meta">${where}</span>` : ""}</div>`;
+  }
+
+  /** The findings of a kind past the ones the page lists. */
+  function unlistedNote(kind) {
+    const all = D.chk.byKind
+      .filter((row) => row.kind === kind)
+      .reduce((sum, row) => sum + row.count, 0);
+    const listed = findings.filter((f) => f.kind === kind).length;
+    return all > listed
+      ? `, ${n(all - listed)} more not listed: ${code(`suss check --dir ${D.askDir} --json`)}`
+      : "";
+  }
 
   function envItem(e) {
     // A variable a boot config reads shows that file first.
@@ -811,6 +916,7 @@
     pages: "No client-side pages found.",
     tables: "No tables found. A pack for your ORM finds them. See Coverage.",
     env: "No environment variable reads found.",
+    findings: "check reported no findings.",
   };
 
   function renderList() {
@@ -970,13 +1076,17 @@
     return `<div class="findings" data-findings="${i}"><p class="muted">Reading the findings…</p></div>`;
   }
 
-  function findingCallout(f) {
-    const sides = [
+  function findingSides(f) {
+    return [
       f[3] !== null ? `served by ${loc(f[3], f[4])}` : "",
       f[5] !== null ? `called from ${loc(f[5], f[6])}` : "",
     ]
       .filter(Boolean)
       .join(", ");
+  }
+
+  function findingCallout(f) {
+    const sides = findingSides(f);
     return `<div class="callout">${icon("clash", "i-clash")}<div><strong>${esc(f[0])}</strong> <span class="muted">${esc(f[1])}</span><br>${esc(f[2])}${sides ? `<div class="site-meta">${sides}</div>` : ""}</div></div>`;
   }
 

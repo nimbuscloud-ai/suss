@@ -47,7 +47,7 @@ The page opens from disk and loads nothing from the network. Its styles, script 
 
 - **Tiles** count the routes and GraphQL fields the code serves, the tables, the env vars, the pairs `check` compared, and the calls suss could not follow. Each count opens the list filtered to it.
 - **Worth knowing** lists up to five cards. Each card kind has a fixed rule over the facts below, and the rule shows on hover.
-- **Browse** lists every route, field, GraphQL type, page, table and env var, with filters. Clicking one opens it: a route's statuses and the conditions on each, the tables and variables it reaches, its callers, and the calls on the way suss could not follow.
+- **Browse** lists every route, field, GraphQL type, page, table and env var, with filters. Clicking one opens it: a route's statuses and the conditions on each, the tables and variables it reaches, its callers, and the calls on the way suss could not follow. The Findings tab lists every finding `check` reported, errors first and grouped by kind, each with the route it is on and the lines on each side. Past 200 of one kind, it gives the rest as a count.
 - **Coverage** lists each read and what it found, each spec and how much of it the code serves, what `check` compared, and the calls suss could not follow most often.
 
 Press `/` or Cmd-K to jump to anything by name.
