@@ -29,7 +29,15 @@ export const PREFERRED_HEAP_MB = 8192;
  */
 const SHARE_OF_MEMORY = 0.75;
 
+/**
+ * V8's young generation, where new objects start. At Node's default of
+ * 16 MB, a 1.4 million line frontend spent 204 of its 450 seconds in
+ * young collections. At 256 MB it spent 32 and peaked no higher.
+ */
+const PREFERRED_YOUNG_GENERATION_MB = 256;
+
 const HEAP_SIZE_FLAG = /--max[-_]old[-_]space[-_]size/;
+const YOUNG_GENERATION_FLAG = /--max[-_]semi[-_]space[-_]size/;
 
 const MB = 1024 * 1024;
 
@@ -49,10 +57,18 @@ export function heapSizeWasChosen(
   nodeOptions: string | undefined,
   execArgv: readonly string[],
 ): boolean {
-  if (HEAP_SIZE_FLAG.test(nodeOptions ?? "")) {
+  return flagWasChosen(HEAP_SIZE_FLAG, nodeOptions, execArgv);
+}
+
+function flagWasChosen(
+  flag: RegExp,
+  nodeOptions: string | undefined,
+  execArgv: readonly string[],
+): boolean {
+  if (flag.test(nodeOptions ?? "")) {
     return true;
   }
-  return execArgv.some((flag) => HEAP_SIZE_FLAG.test(flag));
+  return execArgv.some((one) => flag.test(one));
 }
 
 /** The heap size suss runs with on a machine with this much memory. */
@@ -60,19 +76,31 @@ export function heapSizeFor(memoryMb: number): number {
   return Math.min(PREFERRED_HEAP_MB, Math.floor(memoryMb * SHARE_OF_MEMORY));
 }
 
+/** The young generation for a heap this size, a sixteenth of it at most. */
+export function youngGenerationFlag(heapMb: number): string {
+  const size = Math.min(PREFERRED_YOUNG_GENERATION_MB, Math.floor(heapMb / 16));
+  return `--max-semi-space-size=${size}`;
+}
+
 /**
- * The heap size to start again with, or undefined when this process
- * should keep running as it is.
+ * The flags to start again with, or none when this process should keep
+ * running as it is. A flag the person running suss chose is kept.
  */
-export function heapSizeToRelaunchWith(facts: HeapFacts): number | undefined {
-  if (heapSizeWasChosen(facts.nodeOptions, facts.execArgv)) {
-    return undefined;
-  }
+export function flagsToRelaunchWith(facts: HeapFacts): string[] {
+  const flags: string[] = [];
   const size = heapSizeFor(facts.memoryMb);
-  if (size <= facts.heapLimitMb) {
-    return undefined;
+  const relaunchedHeap =
+    !heapSizeWasChosen(facts.nodeOptions, facts.execArgv) &&
+    size > facts.heapLimitMb;
+  if (relaunchedHeap) {
+    flags.push(`--max-old-space-size=${size}`);
   }
-  return size;
+  if (
+    !flagWasChosen(YOUNG_GENERATION_FLAG, facts.nodeOptions, facts.execArgv)
+  ) {
+    flags.push(youngGenerationFlag(relaunchedHeap ? size : facts.heapLimitMb));
+  }
+  return flags;
 }
 
 /** How much memory this process may use, in megabytes. */
@@ -99,17 +127,13 @@ function factsAboutThisProcess(): HeapFacts {
  * has to start again, `start` runs there instead and never runs here.
  */
 export function startWithEnoughHeap(start: () => unknown): void {
-  const size = heapSizeToRelaunchWith(factsAboutThisProcess());
-  if (size === undefined) {
+  const flags = flagsToRelaunchWith(factsAboutThisProcess());
+  if (flags.length === 0) {
     start();
     return;
   }
 
-  const args = [
-    ...process.execArgv,
-    `--max-old-space-size=${size}`,
-    ...process.argv.slice(1),
-  ];
+  const args = [...process.execArgv, ...flags, ...process.argv.slice(1)];
   replaceThisProcess(args);
   relaunchAsChild(args, start);
 }
