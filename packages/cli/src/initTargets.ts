@@ -22,6 +22,7 @@ import {
 } from "./init.js";
 import { hasProjectSource, isSameOrUnder } from "./projectSource.js";
 import { filesBelow, isProjectIn, projectsBelow } from "./projectsBelow.js";
+import { withSharedLibraries } from "./sharedLibraries.js";
 import { readWorkspace } from "./workspaces.js";
 
 import type { InitReport } from "./init.js";
@@ -86,8 +87,11 @@ export async function findInitTargets(root: string): Promise<InitTarget[]> {
     report: withReadableCode(reports[index] ?? target.report),
   }));
 
-  const reported =
-    withoutLanguagesCoveredBelow(targets).filter(isWorthReporting);
+  const reported = withSharedLibraries(
+    root,
+    workspace,
+    withoutLanguagesCoveredBelow(targets),
+  ).filter(isWorthReporting);
   return withRepositoryNotesOnce(reported);
 }
 
@@ -105,7 +109,11 @@ function isWorthReporting(target: InitTarget): boolean {
     return worthReporting(report);
   }
 
-  if (readsSomething(report) || (report.emptyExtracts ?? []).length > 0) {
+  if (
+    readsSomething(report) ||
+    (report.emptyExtracts ?? []).length > 0 ||
+    report.sharedLibrary !== undefined
+  ) {
     return true;
   }
 

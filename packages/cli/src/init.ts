@@ -44,6 +44,7 @@ import {
   TEST_DIRECTORIES,
 } from "./projectSource.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
+import { dependenciesThroughLocalPackages } from "./workspaces.js";
 
 import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
 import type { ContractSource } from "./contract.js";
@@ -80,6 +81,8 @@ export interface PackSuggestion {
    */
   calledIn?: string;
   configuration?: PackConfiguration;
+  /** True when a package of this repository the project depends on declares the library, rather than the project itself. */
+  throughLocalPackage?: boolean;
 }
 
 export interface InitReport {
@@ -99,6 +102,15 @@ export interface InitReport {
   coveredContracts?: CoveredContract[];
   /** Languages whose extract would have no file to read here, so no command reads them. Only `withReadableCode` fills it. */
   emptyExtracts?: EmptyExtract[];
+  /** Set for a workspace package with no entry point of its own, which the packages that import it read. Only `withSharedLibraries` fills it. */
+  sharedLibrary?: SharedLibrary;
+}
+
+export interface SharedLibrary {
+  /** The packs an extract of it alone would have run. */
+  packs: string[];
+  /** The folders whose reads follow calls into it, relative to where init ran. */
+  readBy: string[];
 }
 
 export interface EmptyContract {
@@ -328,7 +340,12 @@ export async function inspectProject(root: string): Promise<InitReport> {
           candidate.ecosystem === library.ecosystem &&
           candidate.name === library.name,
       );
-      if (dependency === undefined) {
+      // A read finds units only in its own files, and recognises calls in
+      // every body it walks, a sibling package's included.
+      if (
+        dependency === undefined ||
+        (library.inLocalPackage && pack.declares.kind !== "effects")
+      ) {
         continue;
       }
 
@@ -340,6 +357,9 @@ export async function inspectProject(root: string): Promise<InitReport> {
         language: LANGUAGE_OF[dependency.ecosystem],
         ...(pack.declares.configuration !== undefined
           ? { configuration: pack.declares.configuration }
+          : {}),
+        ...(library.inLocalPackage === true
+          ? { throughLocalPackage: true }
           : {}),
       });
     }
@@ -443,7 +463,9 @@ export async function inspectProject(root: string): Promise<InitReport> {
             candidate.ecosystem === library.ecosystem &&
             candidate.dependency === library.name,
         );
-        return entry === undefined ? [] : [entry.label ?? entry.dependency];
+        return entry === undefined || library.inLocalPackage
+          ? []
+          : [entry.label ?? entry.dependency];
       }),
     ),
   ];
@@ -725,15 +747,25 @@ export function withReadableCode(report: InitReport): InitReport {
         suggestion.kind === "contract" ||
         !unreadable.includes(languageOf(suggestion)),
     ),
+    // A pack only a sibling package led to says nothing about this folder.
     emptyExtracts: [
       ...(report.emptyExtracts ?? []),
-      ...unreadable.map((language) => ({
-        language,
-        packs: code
-          .filter((suggestion) => languageOf(suggestion) === language)
-          .map((suggestion) => suggestion.name),
-        reason: whyNoFileIsRead(report.root, language),
-      })),
+      ...unreadable
+        .filter((language) =>
+          code.some(
+            (suggestion) =>
+              languageOf(suggestion) === language &&
+              countsForProject(suggestion) &&
+              suggestion.throughLocalPackage !== true,
+          ),
+        )
+        .map((language) => ({
+          language,
+          packs: code
+            .filter((suggestion) => languageOf(suggestion) === language)
+            .map((suggestion) => suggestion.name),
+          reason: whyNoFileIsRead(report.root, language),
+        })),
     ],
   };
 }
@@ -755,6 +787,8 @@ interface DeclaredLibrary {
   name: string;
   /** The manifest or field that listed it. */
   where: string;
+  /** True when a package of this repository the project depends on listed it, rather than the project itself. */
+  inLocalPackage?: boolean;
 }
 
 /**
@@ -767,9 +801,7 @@ function declaredLibraries(root: string): {
   named: DeclaredLibrary[];
   unread: UnreadDependencies[];
 } {
-  const named: DeclaredLibrary[] = dependenciesOf(root).map(
-    ([name, where]) => ({ ecosystem: "npm", name, where }),
-  );
+  const named: DeclaredLibrary[] = npmDependenciesOf(root);
   const unread: UnreadDependencies[] = [];
 
   const python = readPythonDependencies(root);
@@ -814,9 +846,12 @@ function callOfShippedLibrary(
     return null;
   }
 
+  // A pack only a sibling package led to leaves this folder's own calls to find.
   const languageAlreadyCounts = suggestions.some(
     (suggestion) =>
-      suggestion.language === language && countsForProject(suggestion),
+      suggestion.language === language &&
+      countsForProject(suggestion) &&
+      suggestion.throughLocalPackage !== true,
   );
   if (languageAlreadyCounts) {
     return null;
@@ -826,92 +861,20 @@ function callOfShippedLibrary(
 }
 
 /**
- * Follows a dependency that resolves inside this repository into that
- * package's own manifest. A service in a monorepo usually depends on its
- * sibling packages, and those declare the SDKs.
+ * The project's npm dependencies, with those of the sibling packages it
+ * depends on. The project's read follows its calls into a sibling's code,
+ * so it needs the packs that recognise what that code touches.
  */
-function dependenciesOf(root: string): Array<[string, string]> {
-  const found: Array<[string, string]> = [];
-  const seen = new Set<string>();
-  const queue: Array<{ dir: string; through: string | null }> = [
-    { dir: root, through: null },
-  ];
-
-  while (queue.length > 0) {
-    const next = queue.shift();
-    if (next === undefined) {
-      continue;
-    }
-    const manifest = path.join(next.dir, "package.json");
-    if (seen.has(manifest)) {
-      continue;
-    }
-    seen.add(manifest);
-
-    for (const [name, field] of declaredIn(manifest)) {
-      found.push([
-        name,
-        next.through === null ? field : `${field} of ${next.through}`,
-      ]);
-      const inside = packageInsideRepository(root, next.dir, name);
-      if (inside !== null) {
-        queue.push({ dir: inside, through: name });
-      }
-    }
-  }
-  return found;
-}
-
-function declaredIn(manifest: string): Array<[string, string]> {
-  if (!fs.existsSync(manifest)) {
-    return [];
-  }
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(fs.readFileSync(manifest, "utf8"));
-  } catch {
-    return [];
-  }
-
-  const found: Array<[string, string]> = [];
-  for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
-    const deps = parsed[field];
-    if (deps === null || typeof deps !== "object") {
-      continue;
-    }
-    for (const name of Object.keys(deps as Record<string, string>)) {
-      found.push([name, field]);
-    }
-  }
-  return found;
-}
-
-/** A workspace package is a symlink in node_modules, so this follows the link to find where it lives. */
-function packageInsideRepository(
-  root: string,
-  from: string,
-  name: string,
-): string | null {
-  const linked = path.join(from, "node_modules", name);
-  const candidates = [linked, path.join(root, "node_modules", name)];
-  for (const candidate of candidates) {
-    let resolved: string;
-    try {
-      resolved = fs.realpathSync(candidate);
-    } catch {
-      continue;
-    }
-    const withinRoot = resolved.startsWith(
-      `${fs.realpathSync(root)}${path.sep}`,
-    );
-    if (
-      withinRoot &&
-      !resolved.includes(`${path.sep}node_modules${path.sep}`)
-    ) {
-      return resolved;
-    }
-  }
-  return null;
+function npmDependenciesOf(root: string): DeclaredLibrary[] {
+  return dependenciesThroughLocalPackages(root).map((dependency) => ({
+    ecosystem: "npm",
+    name: dependency.name,
+    where:
+      dependency.through === null
+        ? dependency.field
+        : `${dependency.field} of ${dependency.through}`,
+    ...(dependency.through === null ? {} : { inLocalPackage: true }),
+  }));
 }
 
 function* filesUnder(
@@ -1234,6 +1197,12 @@ export function formatInitReport(report: InitReport, directory = "."): string {
 
 /** The opening of a report with no command to print. */
 function nothingToReadLines(report: InitReport): string[] {
+  if (report.sharedLibrary !== undefined) {
+    return [
+      `${green("✓")} ${report.root} is shared code with no entry point of its own.`,
+    ];
+  }
+
   if ((report.emptyExtracts ?? []).length > 0) {
     return [
       `${yellow("!")} Packs matched in ${report.root}, but an extract there wouldn't find a file to read.`,
@@ -1254,6 +1223,7 @@ function notReadLines(report: InitReport): string[] {
   return [
     ...recognizedWithoutPackLines(report),
     ...unreadLines(report),
+    ...sharedLibraryLines(report),
     ...emptyExtractLines(report),
     ...emptyContractLines(report),
     ...coveredContractLines(report),
@@ -1436,6 +1406,32 @@ function coveredContractLines(report: InitReport): string[] {
     ),
   );
   return lines;
+}
+
+function sharedLibraryLines(report: InitReport): string[] {
+  const library = report.sharedLibrary;
+  if (library === undefined) {
+    return [];
+  }
+
+  const indent = `    ${"".padEnd(16)} `;
+  const readBy =
+    library.readBy.length === 0
+      ? "nothing reaches it: no package here that suss reads depends on it"
+      : `read through ${joinNames(library.readBy)}, which depend on it`;
+  return [
+    "",
+    `  ${bold("Shared code")}`,
+    `    ${cyan(LANGUAGE_LABEL.typescript.padEnd(16))} ${dim(readBy)}`,
+    `${indent}${dim(`no extract of its own, since its packs (${library.packs.join(", ")}) don't find a route or handler in it to start from`)}`,
+  ];
+}
+
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) {
+    return names[0] ?? "";
+  }
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
 function emptyExtractLines(report: InitReport): string[] {
