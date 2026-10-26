@@ -901,19 +901,65 @@
     ].join("");
   }
 
-  function findingCallouts(raw) {
-    return raw.f
-      .map((fi) => {
-        const f = D.fi[fi];
-        const sides = [
-          f[4] !== null ? `served by ${loc(f[4], f[5])}` : "",
-          f[6] !== null ? `called from ${loc(f[6], f[7])}` : "",
-        ]
-          .filter(Boolean)
-          .join(", ");
-        return `<div class="callout">${icon("clash", "i-clash")}<div><strong>${esc(S[f[0]])}</strong> <span class="muted">${esc(S[f[1]])}</span><br>${esc(S[f[2]])}${sides ? `<div class="site-meta">${sides}</div>` : ""}</div></div>`;
-      })
+  // ---------- findings, inflated the first time an inspector shows one ----------
+
+  let findingRows = null;
+  function loadFindingRows() {
+    if (findingRows === null) {
+      const text = $("#findings")?.textContent.trim() || "";
+      findingRows =
+        text === "" || typeof DecompressionStream === "undefined"
+          ? Promise.resolve(null)
+          : new Response(
+              new Blob([Uint8Array.from(atob(text), (c) => c.charCodeAt(0))])
+                .stream()
+                .pipeThrough(new DecompressionStream("gzip")),
+            )
+              .json()
+              .catch(() => null);
+    }
+    return findingRows;
+  }
+
+  function findingCallouts(raw, i) {
+    if (!raw.f.length) {
+      return "";
+    }
+    return `<div class="findings" data-findings="${i}"><p class="muted">Reading the findings…</p></div>`;
+  }
+
+  function findingCallout(f) {
+    const sides = [
+      f[3] !== null ? `served by ${loc(f[3], f[4])}` : "",
+      f[5] !== null ? `called from ${loc(f[5], f[6])}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return `<div class="callout">${icon("clash", "i-clash")}<div><strong>${esc(f[0])}</strong> <span class="muted">${esc(f[1])}</span><br>${esc(f[2])}${sides ? `<div class="site-meta">${sides}</div>` : ""}</div></div>`;
+  }
+
+  /** Fills the findings of the entry the drawer shows, once their rows are inflated. */
+  async function fillFindings() {
+    const box = $("#drawer-body .findings");
+    if (!box) {
+      return;
+    }
+    const raw = D.e[Number(box.dataset.findings)];
+    const rows = await loadFindingRows();
+    if (!box.isConnected) {
+      return;
+    }
+    if (rows === null) {
+      box.innerHTML = `<p class="muted">This browser cannot inflate the findings. ${code(`suss check --dir ${D.askDir} --json`)} lists them.</p>`;
+      return;
+    }
+    const more = raw.fx
+      .map(
+        (x) =>
+          `<p class="muted">${plural(x[1], `more ${S[x[0]]} finding`, `more ${S[x[0]]} findings`)} here. ${code(`suss check --dir ${D.askDir} --json`)} lists them all.</p>`,
+      )
       .join("");
+    box.innerHTML = raw.f.map((fi) => findingCallout(rows[fi])).join("") + more;
   }
 
   function outcomeRows(raw) {
@@ -1057,7 +1103,7 @@
         <p class="d-sub">${servedBy}</p>
       </header>
       <div class="d-stats">${stat(n(isField ? raw.c.length : e.statuses.length), isField ? (raw.c.length === 1 ? "operation" : "operations") : e.statuses.length === 1 ? "status" : "statuses")}${stat(n(e.writes.size), "tables written", e.writes.size ? "w" : "")}${stat(n(e.reads.size), "tables read")}${stat(n(isField ? e.env.size : raw.c.length), isField ? "env vars" : raw.c.length === 1 ? "caller here" : "callers here")}</div>
-      ${findingCallouts(raw)}
+      ${findingCallouts(raw, i)}
       ${unread}
       ${isField ? callersSection(raw, true) : ""}
       ${section("Returns", outcomes.length, outcomes.length ? limited(outcomes, 8) : "", { from: ["inspect", `suss inspect ${u ? u.file : ""}`] })}
@@ -1162,6 +1208,7 @@
     drawer.hidden = false;
     $("#scrim").hidden = false;
     drawer.focus({ preventScroll: true });
+    fillFindings();
   }
 
   function hideDrawer() {

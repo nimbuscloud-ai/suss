@@ -233,7 +233,7 @@ describe("the map model", () => {
       ["STAGE", "dev"],
       ["REGION", undefined],
     ]);
-    const data = pageDataOf(model);
+    const { data } = pageDataOf(model);
     expect(
       data.env.map(([, , , value]) => (value === null ? null : data.s[value])),
     ).toEqual(['"dev"', null]);

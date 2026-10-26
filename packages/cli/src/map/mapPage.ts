@@ -10,6 +10,8 @@
  * in the browser from the same model.
  */
 
+import { gzipSync } from "node:zlib";
+
 import { entryNoun, firstPerTable } from "./mapCards.js";
 import pageScript from "./mapClient.js?raw";
 import { count, esc, fromTag, joinWords, plural, unitLink } from "./mapHtml.js";
@@ -58,8 +60,9 @@ export function renderMapPage(
     check: `suss check --dir ${dir} --json`,
     sourceLines: options.sourceLines,
   };
+  const { data: pageData, findings } = pageDataOf(model);
   const data = JSON.stringify({
-    ...pageDataOf(model),
+    ...pageData,
     icons: ICONS,
     askDir: dir,
   }).replace(/</g, "\\u003c");
@@ -134,10 +137,21 @@ export function renderMapPage(
 </aside>
 <div id="tip" class="tip" role="tooltip" hidden></div>
 <script id="data" type="application/json">${data}</script>
+<script id="findings" type="application/gzip">${compressedJson(findings)}</script>
 <script>${pageScript}</script>
 </body>
 </html>
 `;
+}
+
+/**
+ * JSON gzipped and written as base64, which the page inflates the first
+ * time it needs it. Finding text repeats one template per kind, so it
+ * shrinks several times over, and a page with thousands of findings
+ * stays small and parses quickly.
+ */
+function compressedJson(value: unknown): string {
+  return gzipSync(JSON.stringify(value)).toString("base64");
 }
 
 const MARK = `<svg class="mark" viewBox="0 0 32 32" fill="none" stroke-width="5.4" stroke-linecap="round" aria-hidden="true"><path d="M23.5 9.6C23.5 6.6 20.6 5 16 5C11.4 5 8.6 7.2 8.6 10.6C8.6 14.2 11.8 15.6 16 16" stroke="var(--mark-1)"/><path d="M16 16C20.2 16.4 23.4 17.8 23.4 21.4C23.4 24.8 20.6 27 16 27C11.4 27 8.5 25.4 8.5 22.4" stroke="var(--mark-2)"/></svg>`;
