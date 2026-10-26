@@ -1031,8 +1031,17 @@
           ? `<span class="badge" data-term="early">${icon("guard", "i-guard")}${esc(S[o[6]])}</span>`
           : "",
       ].filter(Boolean);
-      return `<div class="outcome">${outcomePill(raw, o)}<span class="o-line">${parts.join('<span class="muted">, </span>')}</span><span class="o-at">${loc(o[4], o[5])}</span></div>`;
+      return `<div class="outcome">${outcomePill(raw, o)}<span class="o-line">${parts.join('<span class="muted">, </span>')}</span><span class="o-at">${outcomePlace(o)}</span></div>`;
     });
+  }
+
+  /** Where an outcome happens, by file name and line, so the condition beside it keeps the width. */
+  function outcomePlace(o) {
+    if (o[5] === null || o[5] === undefined) {
+      return loc(o[4], null);
+    }
+    const file = unit(o[4]).file;
+    return loc(o[4], o[5], `${file.slice(file.lastIndexOf("/") + 1)}:${o[5]}`);
   }
 
   function outcomePill(raw, o) {

@@ -1583,6 +1583,8 @@ h1 {
   font-size: var(--t-xs);
   color: var(--muted);
   text-align: right;
+  max-width: 14em;
+  overflow-wrap: anywhere;
 }
 @media (max-width: 560px) {
   .outcome {
