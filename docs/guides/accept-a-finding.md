@@ -123,6 +123,7 @@ rules:
 | `provider.summary` | optional | `${file}::${name}` for the provider side. Also matches a contributor listed in `sources` when two identical findings were collapsed. |
 | `provider.field` | optional | Matches the field the finding is about, as the provider's code spells it. |
 | `scenario` | optional | The title of one PRD scenario. Matches only intent findings about that scenario. |
+| `deployments` | optional | The deployments, by the names `not declared by:` lists, that an environment variable finding is accepted for. The finding is still reported for any deployment the list leaves out. Without it, the rule covers every deployment. |
 | `scope` | optional, default `narrow` | `broad` allows a rule with only a `kind` or only a `boundary`. |
 | `reason` | yes | Free text. It shows in the report next to the suppressed finding. |
 | `effect` | optional, default `mark` | `mark`, `downgrade` or `hide`. |

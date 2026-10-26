@@ -663,3 +663,95 @@ describe("rules for an environment read", () => {
     ).toBe("postgresql:users");
   });
 });
+
+describe("rules that accept a variable for some deployments", () => {
+  function readIn(...deployments: string[]): Finding {
+    const side = {
+      summary: "src/lib/payments.ts::chargeCard",
+      location: {
+        file: "src/lib/payments.ts",
+        range: { start: 1, end: 7 },
+        exportName: "chargeCard",
+      },
+    };
+    return finding({
+      kind: "boundaryFieldUnknown",
+      boundary: runtimeConfigBinding({ recognition: "@suss/runtime-node" }),
+      provider: side,
+      consumer: { ...side, field: "STRIPE_API_KEY" },
+      sources: deployments.map((d) => `cloudformation:template.yaml::${d}`),
+      description:
+        "process.env.STRIPE_API_KEY read by chargeCard is not declared",
+      severity: "error",
+    });
+  }
+
+  function acceptFor(...deployments: string[]): SuppressionRule {
+    return rule({
+      kind: "boundaryFieldUnknown",
+      boundary: "runtime-config STRIPE_API_KEY",
+      consumer: { field: "STRIPE_API_KEY" },
+      deployments,
+      reason: `injected in ${deployments.join(" and ")}`,
+    });
+  }
+
+  it("suppresses a finding when the rule lists every deployment it is against", () => {
+    const [out] = applySuppressions(
+      [readIn("Checkout", "Refund")],
+      [acceptFor("Checkout", "Refund")],
+    );
+    expect(out.suppressed?.reason).toBe("injected in Checkout and Refund");
+  });
+
+  it("keeps a finding for the deployments the rule leaves out", () => {
+    const [out] = applySuppressions(
+      [readIn("Checkout", "Refund")],
+      [acceptFor("Checkout")],
+    );
+    expect(out.suppressed).toBeUndefined();
+    expect(out.sources).toEqual(["cloudformation:template.yaml::Refund"]);
+  });
+
+  it("suppresses a finding that two rules cover between them, with the second rule's reason", () => {
+    const [out] = applySuppressions(
+      [readIn("Checkout", "Refund")],
+      [acceptFor("Checkout"), acceptFor("Refund")],
+    );
+    expect(out.suppressed?.reason).toBe("injected in Refund");
+  });
+
+  it("reports a deployment added after the rule was written", () => {
+    const [out] = applySuppressions(
+      [readIn("Checkout", "Refund", "Invoice")],
+      [acceptFor("Checkout", "Refund")],
+    );
+    expect(out.suppressed).toBeUndefined();
+    expect(out.sources).toEqual(["cloudformation:template.yaml::Invoice"]);
+  });
+
+  it("does not take a deployment off a read of another variable", () => {
+    const other = {
+      ...readIn("Checkout"),
+      consumer: {
+        ...readIn("Checkout").consumer,
+        field: "STRIPE_WEBHOOK_SECRET",
+      },
+    };
+    const [out] = applySuppressions([other], [acceptFor("Checkout")]);
+    expect(out.suppressed).toBeUndefined();
+    expect(out.sources).toEqual(["cloudformation:template.yaml::Checkout"]);
+  });
+
+  it("never matches a finding that is not about one read", () => {
+    const [out] = applySuppressions(
+      [finding()],
+      [rule({ deployments: ["Checkout"] })],
+    );
+    expect(out.suppressed).toBeUndefined();
+  });
+
+  it("refuses an empty list of deployments", () => {
+    expect(() => rule({ deployments: [] })).toThrow();
+  });
+});

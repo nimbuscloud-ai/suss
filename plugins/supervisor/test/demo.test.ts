@@ -242,6 +242,9 @@ describe("the environment variable story, on a Lambda service with a SAM templat
     );
     expect(said(4)).toContain('boundary: "runtime-config ACCOUNTS_REGION"');
     expect(said(4)).toContain('consumer: { field: "ACCOUNTS_REGION" }');
+    expect(said(4)).toContain(
+      'deployments: ["GetAccountFunction","UpdateAccountFunction"]',
+    );
     for (const index of [4, 6, 7]) {
       expect(said(index)).not.toContain("function-call:");
       expect(said(index)).not.toContain("@suss/");

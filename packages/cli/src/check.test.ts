@@ -2978,6 +2978,7 @@ describe("check over a runtime that loads code its handler never calls", () => {
     expect(output).toContain("not declared by: Orders");
     expect(output).toContain('boundary: "runtime-config FEATUREFLAG"');
     expect(output).toContain('consumer: { field: "FEATUREFLAG" }');
+    expect(output).toContain('deployments: ["Orders"]');
   });
 
   it("silences a read with the rule it prints for it", () => {
@@ -2996,7 +2997,7 @@ describe("check over a runtime that loads code its handler never calls", () => {
     const printed = output
       .split("\n")
       .filter((line) =>
-        /^ {4}- kind:|^ {6}(boundary|consumer|reason):/.test(line),
+        /^ {4}- kind:|^ {6}(boundary|consumer|deployments|reason):/.test(line),
       )
       .map((line) => line.slice(2));
     const ignore = path.join(tmpDir, ".sussignore.yml");

@@ -140,6 +140,10 @@ export function renderRule(rule) {
       lines.push(`  ${side}: ${ruleSideText(matched)}`);
     }
   }
+
+  if (rule.deployments !== undefined) {
+    lines.push(`  deployments: ${JSON.stringify(rule.deployments)}`);
+  }
   lines.push("  reason: <why this is intended>");
   return lines;
 }
