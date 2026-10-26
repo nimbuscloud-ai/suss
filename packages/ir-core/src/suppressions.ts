@@ -67,6 +67,13 @@ export const SuppressionRuleSchema = z
      */
     scenario: z.string().optional(),
     /**
+     * The deployments, by name, that a finding about one environment read
+     * is accepted for. The rule takes them off the finding's list, and
+     * the finding stays while any deployment it lists is left. Without
+     * this, a rule covers every deployment.
+     */
+    deployments: z.array(z.string().min(1)).min(1).optional(),
+    /**
      * "narrow", the default, requires `kind` plus one of `boundary`,
      * `scenario`, `consumer.transitionId` or `provider.transitionId`, so
      * the rule targets a specific class of finding. "broad" allows a

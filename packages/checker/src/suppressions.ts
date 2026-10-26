@@ -118,6 +118,21 @@ function mergedSideMatches(
 }
 
 function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
+  if (rule.deployments === undefined) {
+    return ruleMatchesBesidesDeployments(rule, finding);
+  }
+  const names = findingDeployments(finding);
+  return (
+    names.length > 0 &&
+    names.every((name) => rule.deployments?.includes(name) === true) &&
+    ruleMatchesBesidesDeployments(rule, finding)
+  );
+}
+
+function ruleMatchesBesidesDeployments(
+  rule: SuppressionRule,
+  finding: Finding,
+): boolean {
   // A behavioural finding is about no PRD scenario.
   if (rule.scenario !== undefined) {
     return false;
@@ -187,5 +202,65 @@ export function applySuppressions(
   rules: SuppressionRule[],
   opts: { keepHidden?: boolean } = {},
 ): Finding[] {
-  return applySuppressionsToFindings(findings, rules, ruleMatchesFinding, opts);
+  return applySuppressionsToFindings(
+    findings.map((f) => withoutAcceptedDeployments(f, rules)),
+    rules,
+    ruleMatchesFinding,
+    opts,
+  );
+}
+
+/**
+ * A deployment named the way a finding about one read lists it, from the
+ * summary in its `sources`: `cloudformation:template.yaml::Checkout` is
+ * `Checkout`.
+ */
+export function deploymentName(source: string): string {
+  return source.slice(source.lastIndexOf("::") + 2);
+}
+
+/** The deployments a finding about one read is against, or none for any other finding. */
+export function findingDeployments(finding: Finding): string[] {
+  if (readSiteField(finding) === null) {
+    return [];
+  }
+  return (finding.sources ?? []).map(deploymentName);
+}
+
+/**
+ * The finding with the deployments rules accept taken off its list, in
+ * rule order. The rule that would take the last ones off is left for
+ * the matching pass, which then suppresses the finding with that rule's
+ * reason and effect.
+ */
+function withoutAcceptedDeployments(
+  finding: Finding,
+  rules: SuppressionRule[],
+): Finding {
+  let remaining = finding.sources ?? [];
+  if (findingDeployments(finding).length === 0) {
+    return finding;
+  }
+
+  for (const rule of rules) {
+    const accepted = rule.deployments;
+    if (
+      accepted === undefined ||
+      (rule.kind !== undefined && rule.kind !== finding.kind) ||
+      !ruleMatchesBesidesDeployments(rule, finding)
+    ) {
+      continue;
+    }
+
+    const left = remaining.filter(
+      (source) => !accepted.includes(deploymentName(source)),
+    );
+    if (left.length === 0) {
+      break;
+    }
+    remaining = left;
+  }
+  return remaining.length === finding.sources?.length
+    ? finding
+    : { ...finding, sources: remaining };
 }
