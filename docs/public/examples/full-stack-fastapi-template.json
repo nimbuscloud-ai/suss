@@ -1,0 +1,3006 @@
+{
+  "version": 1,
+  "project": {
+    "name": "full-stack-fastapi-template",
+    "languages": [
+      "TypeScript",
+      "Python"
+    ],
+    "frameworks": [
+      "fastapi"
+    ]
+  },
+  "reads": [
+    {
+      "file": "0-extract.json",
+      "label": "suss extract --lang typescript --dir frontend -p frontend/tsconfig.json -f react-query -f axios -f react -f fetch -f node",
+      "root": null,
+      "packs": [
+        "react-query",
+        "axios",
+        "react",
+        "fetch",
+        "node"
+      ],
+      "spec": false
+    },
+    {
+      "file": "1-extract.json",
+      "label": "suss extract --lang typescript --dir packages/react-email -p packages/react-email/tsconfig.json -f react -f fetch -f node",
+      "root": null,
+      "packs": [
+        "react",
+        "fetch",
+        "node"
+      ],
+      "spec": false
+    },
+    {
+      "file": "2-extract.json",
+      "label": "suss extract --lang python --dir backend -f fastapi -f httpx -f sqlmodel=backend/suss.sqlmodel.json",
+      "root": null,
+      "packs": [
+        "fastapi",
+        "httpx",
+        "sqlmodel=backend/suss.sqlmodel.json"
+      ],
+      "spec": false
+    }
+  ],
+  "repositories": [
+    {
+      "name": "full-stack-fastapi-template",
+      "path": "backend",
+      "remote": "https://github.com/fastapi/full-stack-fastapi-template.git",
+      "commit": "cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7"
+    },
+    {
+      "name": "full-stack-fastapi-template",
+      "path": "frontend",
+      "remote": "https://github.com/fastapi/full-stack-fastapi-template.git",
+      "commit": "cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7"
+    }
+  ],
+  "units": [
+    {
+      "id": "app/api/routes/items.py::read_items",
+      "name": "read_items",
+      "kind": "handler",
+      "file": "app/api/routes/items.py",
+      "line": 14,
+      "endLine": 45,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/items.py::read_item",
+      "name": "read_item",
+      "kind": "handler",
+      "file": "app/api/routes/items.py",
+      "line": 49,
+      "endLine": 58,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/items.py::create_item",
+      "name": "create_item",
+      "kind": "handler",
+      "file": "app/api/routes/items.py",
+      "line": 62,
+      "endLine": 72,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/items.py::update_item",
+      "name": "update_item",
+      "kind": "handler",
+      "file": "app/api/routes/items.py",
+      "line": 76,
+      "endLine": 96,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/items.py::delete_item",
+      "name": "delete_item",
+      "kind": "handler",
+      "file": "app/api/routes/items.py",
+      "line": 100,
+      "endLine": 113,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/login.py::login_access_token",
+      "name": "login_access_token",
+      "kind": "handler",
+      "file": "app/api/routes/login.py",
+      "line": 24,
+      "endLine": 42,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/login.py::test_token",
+      "name": "test_token",
+      "kind": "handler",
+      "file": "app/api/routes/login.py",
+      "line": 46,
+      "endLine": 50,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/login.py::recover_password",
+      "name": "recover_password",
+      "kind": "handler",
+      "file": "app/api/routes/login.py",
+      "line": 54,
+      "endLine": 74,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/login.py::reset_password",
+      "name": "reset_password",
+      "kind": "handler",
+      "file": "app/api/routes/login.py",
+      "line": 78,
+      "endLine": 97,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/login.py::recover_password_html_content",
+      "name": "recover_password_html_content",
+      "kind": "handler",
+      "file": "app/api/routes/login.py",
+      "line": 105,
+      "endLine": 123,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/private.py::create_user",
+      "name": "create_user",
+      "kind": "handler",
+      "file": "app/api/routes/private.py",
+      "line": 24,
+      "endLine": 38,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::read_users",
+      "name": "read_users",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 37,
+      "endLine": 51,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::create_user",
+      "name": "create_user",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 57,
+      "endLine": 78,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::update_user_me",
+      "name": "update_user_me",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 82,
+      "endLine": 100,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::update_password_me",
+      "name": "update_password_me",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 104,
+      "endLine": 121,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::read_user_me",
+      "name": "read_user_me",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 125,
+      "endLine": 129,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::delete_user_me",
+      "name": "delete_user_me",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 133,
+      "endLine": 143,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::register_user",
+      "name": "register_user",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 147,
+      "endLine": 159,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::read_user_by_id",
+      "name": "read_user_by_id",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 163,
+      "endLine": 179,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::update_user",
+      "name": "update_user",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 187,
+      "endLine": 211,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/users.py::delete_user",
+      "name": "delete_user",
+      "kind": "handler",
+      "file": "app/api/routes/users.py",
+      "line": 215,
+      "endLine": 232,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/utils.py::test_email",
+      "name": "test_email",
+      "kind": "handler",
+      "file": "app/api/routes/utils.py",
+      "line": 16,
+      "endLine": 26,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/api/routes/utils.py::health_check",
+      "name": "health_check",
+      "kind": "handler",
+      "file": "app/api/routes/utils.py",
+      "line": 30,
+      "endLine": 31,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/crud.py::authenticate",
+      "name": "authenticate",
+      "kind": "library",
+      "file": "app/crud.py",
+      "line": 45,
+      "endLine": 60,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/crud.py::get_user_by_email",
+      "name": "get_user_by_email",
+      "kind": "library",
+      "file": "app/crud.py",
+      "line": 34,
+      "endLine": 37,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/crud.py::update_user",
+      "name": "update_user",
+      "kind": "library",
+      "file": "app/crud.py",
+      "line": 20,
+      "endLine": 31,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/crud.py::create_user",
+      "name": "create_user",
+      "kind": "library",
+      "file": "app/crud.py",
+      "line": 10,
+      "endLine": 17,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "frontend::playwright.config.ts::playwright.config.ts",
+      "name": "playwright.config.ts",
+      "kind": "module-init",
+      "file": "playwright.config.ts",
+      "line": 0,
+      "endLine": 2585,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "frontend::src/main.tsx::main.tsx",
+      "name": "main.tsx",
+      "kind": "module-init",
+      "file": "src/main.tsx",
+      "line": 0,
+      "endLine": 1536,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "frontend::tests/config.ts::config.ts",
+      "name": "config.ts",
+      "kind": "module-init",
+      "file": "tests/config.ts",
+      "line": 0,
+      "endLine": 569,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "frontend::tests/utils/mailpit.ts::waitForEmailHtml",
+      "name": "waitForEmailHtml",
+      "kind": "library",
+      "file": "tests/utils/mailpit.ts",
+      "line": 7,
+      "endLine": 46,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "frontend::tests/utils/privateApi.ts::privateApi.ts",
+      "name": "privateApi.ts",
+      "kind": "module-init",
+      "file": "tests/utils/privateApi.ts",
+      "line": 0,
+      "endLine": 560,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "app/api/deps.py::get_current_user",
+      "name": "get_current_user",
+      "kind": "library",
+      "file": "app/api/deps.py",
+      "line": 30,
+      "endLine": 46,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "app/core/db.py::init_db",
+      "name": "init_db",
+      "kind": "library",
+      "file": "app/core/db.py",
+      "line": 15,
+      "endLine": 33,
+      "read": 2,
+      "spec": false,
+      "document": null,
+      "repository": 0
+    },
+    {
+      "id": "frontend::src/components/Admin/AddUser.tsx::AddUser",
+      "name": "AddUser",
+      "kind": "component",
+      "file": "src/components/Admin/AddUser.tsx",
+      "line": 55,
+      "endLine": 235,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "frontend::src/components/ui/badge.tsx::Badge",
+      "name": "Badge",
+      "kind": "component",
+      "file": "src/components/ui/badge.tsx",
+      "line": 28,
+      "endLine": 44,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "frontend::src/components/Common/Appearance.tsx::SidebarAppearance",
+      "name": "SidebarAppearance",
+      "kind": "component",
+      "file": "src/components/Common/Appearance.tsx",
+      "line": 25,
+      "endLine": 67,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    },
+    {
+      "id": "frontend::src/components/Admin/UserActionsMenu.tsx::UserActionsMenu",
+      "name": "UserActionsMenu",
+      "kind": "component",
+      "file": "src/components/Admin/UserActionsMenu.tsx",
+      "line": 19,
+      "endLine": 40,
+      "read": 0,
+      "spec": false,
+      "document": null,
+      "repository": 1
+    }
+  ],
+  "boundaries": [
+    {
+      "label": "postgresql:Item",
+      "category": "table",
+      "name": "Item",
+      "system": "postgresql"
+    },
+    {
+      "label": "postgresql:<unnamed container>",
+      "category": "other",
+      "name": "postgresql:<unnamed container>",
+      "system": null
+    },
+    {
+      "label": "postgresql:User",
+      "category": "table",
+      "name": "User",
+      "system": "postgresql"
+    },
+    {
+      "label": "runtime-config PLAYWRIGHT_BASE_URL",
+      "category": "env",
+      "name": "PLAYWRIGHT_BASE_URL",
+      "system": null
+    },
+    {
+      "label": "runtime-config CI",
+      "category": "env",
+      "name": "CI",
+      "system": null
+    },
+    {
+      "label": "runtime-config VITE_API_URL",
+      "category": "env",
+      "name": "VITE_API_URL",
+      "system": null
+    },
+    {
+      "label": "runtime-config FIRST_SUPERUSER",
+      "category": "env",
+      "name": "FIRST_SUPERUSER",
+      "system": null
+    },
+    {
+      "label": "runtime-config FIRST_SUPERUSER_PASSWORD",
+      "category": "env",
+      "name": "FIRST_SUPERUSER_PASSWORD",
+      "system": null
+    },
+    {
+      "label": "runtime-config MAILPIT_HOST",
+      "category": "env",
+      "name": "MAILPIT_HOST",
+      "system": null
+    }
+  ],
+  "entries": [
+    {
+      "key": "GET /api/v1/items",
+      "kind": "rest",
+      "method": "GET",
+      "path": "/api/v1/items/",
+      "framework": "fastapi",
+      "units": [
+        0
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 0,
+          "line": 14,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 0,
+          "line": 14,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 0,
+          "via": "select(func.count()).select_from(Item)",
+          "through": [],
+          "line": 22
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 0,
+          "via": "select(Item).order_by(col(Item.created_at).desc()).offset(skip).limit(limit)",
+          "through": [],
+          "line": 25
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 0,
+          "via": "select(func.count()).select_from(Item).where(Item.owner_id == current_user.id)",
+          "through": [],
+          "line": 30
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 0,
+          "via": "select(Item).where(Item.owner_id == current_user.id).order_by(col(Item.created_at).desc()).offset(skip).limit(limit)",
+          "through": [],
+          "line": 36
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "GET /api/v1/items/{id}",
+      "kind": "rest",
+      "method": "GET",
+      "path": "/api/v1/items/{id}",
+      "framework": "fastapi",
+      "units": [
+        1
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 404,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!item"
+          ],
+          "unit": 1,
+          "line": 55,
+          "wrapper": null
+        },
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "item",
+            "not current_user.is_superuser and (item.owner_id != current_user.id)"
+          ],
+          "unit": 1,
+          "line": 57,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "item",
+            "!(not current_user.is_superuser and (item.owner_id != current_user.id))"
+          ],
+          "unit": 1,
+          "line": 58,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 1,
+          "line": 49,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 1,
+          "via": "session.get(Item, id)",
+          "through": [],
+          "line": 53
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/items",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/items/",
+      "framework": "fastapi",
+      "units": [
+        2
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 2,
+          "line": 72,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 2,
+          "line": 62,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 2,
+          "via": "session.add(item)",
+          "through": [],
+          "line": 69
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 2,
+          "via": "session.commit()",
+          "through": [],
+          "line": 70
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 2,
+          "via": "session.refresh(item)",
+          "through": [],
+          "line": 71
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "PUT /api/v1/items/{id}",
+      "kind": "rest",
+      "method": "PUT",
+      "path": "/api/v1/items/{id}",
+      "framework": "fastapi",
+      "units": [
+        3
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 404,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!item"
+          ],
+          "unit": 3,
+          "line": 88,
+          "wrapper": null
+        },
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "item",
+            "not current_user.is_superuser and (item.owner_id != current_user.id)"
+          ],
+          "unit": 3,
+          "line": 90,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "item",
+            "!(not current_user.is_superuser and (item.owner_id != current_user.id))"
+          ],
+          "unit": 3,
+          "line": 96,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 3,
+          "line": 76,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 3,
+          "via": "session.get(Item, id)",
+          "through": [],
+          "line": 86
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 3,
+          "via": "session.add(item)",
+          "through": [],
+          "line": 93
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 3,
+          "via": "session.commit()",
+          "through": [],
+          "line": 94
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 3,
+          "via": "session.refresh(item)",
+          "through": [],
+          "line": 95
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "DELETE /api/v1/items/{id}",
+      "kind": "rest",
+      "method": "DELETE",
+      "path": "/api/v1/items/{id}",
+      "framework": "fastapi",
+      "units": [
+        4
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 404,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!item"
+          ],
+          "unit": 4,
+          "line": 108,
+          "wrapper": null
+        },
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "item",
+            "not current_user.is_superuser and (item.owner_id != current_user.id)"
+          ],
+          "unit": 4,
+          "line": 110,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "item",
+            "!(not current_user.is_superuser and (item.owner_id != current_user.id))"
+          ],
+          "unit": 4,
+          "line": 113,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 4,
+          "line": 100,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 4,
+          "via": "session.get(Item, id)",
+          "through": [],
+          "line": 106
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 4,
+          "via": "session.delete(item)",
+          "through": [],
+          "line": 111
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 4,
+          "via": "session.commit()",
+          "through": [],
+          "line": 112
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/login/access-token",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/login/access-token",
+      "framework": "fastapi",
+      "units": [
+        5
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!user"
+          ],
+          "unit": 5,
+          "line": 34,
+          "wrapper": null
+        },
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user",
+            "!user().is_active"
+          ],
+          "unit": 5,
+          "line": 36,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user",
+            "user().is_active"
+          ],
+          "unit": 5,
+          "line": 38,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 23,
+          "via": "session.add(db_user)",
+          "through": [
+            "crud.authenticate"
+          ],
+          "line": 57
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 23,
+          "via": "session.commit()",
+          "through": [
+            "crud.authenticate"
+          ],
+          "line": 58
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 23,
+          "via": "session.refresh(db_user)",
+          "through": [
+            "crud.authenticate"
+          ],
+          "line": 59
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/login/test-token",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/login/test-token",
+      "framework": "fastapi",
+      "units": [
+        6
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 6,
+          "line": 50,
+          "wrapper": null
+        }
+      ],
+      "reach": [],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/password-recovery/{email}",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/password-recovery/{email}",
+      "framework": "fastapi",
+      "units": [
+        7
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 7,
+          "line": 54,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 7,
+          "line": 54,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 24,
+          "via": "select(User).where(User.email == email)",
+          "through": [
+            "crud.get_user_by_email"
+          ],
+          "line": 35
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/reset-password",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/reset-password/",
+      "framework": "fastapi",
+      "units": [
+        8
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!email"
+          ],
+          "unit": 8,
+          "line": 84,
+          "wrapper": null
+        },
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "email",
+            "!user"
+          ],
+          "unit": 8,
+          "line": 88,
+          "wrapper": null
+        },
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "email",
+            "user",
+            "!user().is_active"
+          ],
+          "unit": 8,
+          "line": 90,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "email",
+            "user",
+            "user().is_active"
+          ],
+          "unit": 8,
+          "line": 97,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 8,
+          "line": 78,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 24,
+          "via": "select(User).where(User.email == email)",
+          "through": [
+            "crud.get_user_by_email"
+          ],
+          "line": 35
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 25,
+          "via": "session.add(db_user)",
+          "through": [
+            "crud.update_user"
+          ],
+          "line": 28
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 25,
+          "via": "session.commit()",
+          "through": [
+            "crud.update_user"
+          ],
+          "line": 29
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/password-recovery-html-content/{email}",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/password-recovery-html-content/{email}",
+      "framework": "fastapi",
+      "units": [
+        9
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!current_user.is_superuser"
+          ],
+          "unit": 9,
+          "line": 54,
+          "wrapper": "get_current_active_superuser"
+        },
+        {
+          "status": 404,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!user"
+          ],
+          "unit": 9,
+          "line": 112,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user"
+          ],
+          "unit": 9,
+          "line": 121,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 9,
+          "line": 105,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 24,
+          "via": "select(User).where(User.email == email)",
+          "through": [
+            "crud.get_user_by_email"
+          ],
+          "line": 35
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/private/users",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/private/users/",
+      "framework": "fastapi",
+      "units": [
+        10
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 10,
+          "line": 38,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 10,
+          "line": 24,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 10,
+          "via": "session.add(user)",
+          "through": [],
+          "line": 35
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 10,
+          "via": "session.commit()",
+          "through": [],
+          "line": 36
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "GET /api/v1/users",
+      "kind": "rest",
+      "method": "GET",
+      "path": "/api/v1/users/",
+      "framework": "fastapi",
+      "units": [
+        11
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!current_user.is_superuser"
+          ],
+          "unit": 11,
+          "line": 54,
+          "wrapper": "get_current_active_superuser"
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 11,
+          "line": 37,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 11,
+          "line": 37,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 11,
+          "via": "select(func.count()).select_from(User)",
+          "through": [],
+          "line": 42
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 11,
+          "via": "select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)",
+          "through": [],
+          "line": 46
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/users",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/users/",
+      "framework": "fastapi",
+      "units": [
+        12
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!current_user.is_superuser"
+          ],
+          "unit": 12,
+          "line": 54,
+          "wrapper": "get_current_active_superuser"
+        },
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user"
+          ],
+          "unit": 12,
+          "line": 63,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!user"
+          ],
+          "unit": 12,
+          "line": 78,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 12,
+          "line": 57,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 26,
+          "via": "session.add(db_obj)",
+          "through": [
+            "crud.create_user"
+          ],
+          "line": 14
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 26,
+          "via": "session.commit()",
+          "through": [
+            "crud.create_user"
+          ],
+          "line": 15
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 26,
+          "via": "session.refresh(db_obj)",
+          "through": [
+            "crud.create_user"
+          ],
+          "line": 16
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "PATCH /api/v1/users/me",
+      "kind": "rest",
+      "method": "PATCH",
+      "path": "/api/v1/users/me",
+      "framework": "fastapi",
+      "units": [
+        13
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 409,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user_in.email",
+            "existing_user and existing_user.id != current_user.id"
+          ],
+          "unit": 13,
+          "line": 92,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user_in.email",
+            "!(existing_user and existing_user.id != current_user.id)"
+          ],
+          "unit": 13,
+          "line": 100,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!user_in.email"
+          ],
+          "unit": 13,
+          "line": 100,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 13,
+          "line": 82,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 13,
+          "via": "session.add(current_user)",
+          "through": [],
+          "line": 97
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 13,
+          "via": "session.commit()",
+          "through": [],
+          "line": 98
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 13,
+          "via": "session.refresh(current_user)",
+          "through": [],
+          "line": 99
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "PATCH /api/v1/users/me/password",
+      "kind": "rest",
+      "method": "PATCH",
+      "path": "/api/v1/users/me/password",
+      "framework": "fastapi",
+      "units": [
+        14
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!verified"
+          ],
+          "unit": 14,
+          "line": 112,
+          "wrapper": null
+        },
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "verified",
+            "body.current_password === body.new_password"
+          ],
+          "unit": 14,
+          "line": 114,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "verified",
+            "!(body.current_password === body.new_password)"
+          ],
+          "unit": 14,
+          "line": 121,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 14,
+          "line": 104,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 14,
+          "via": "session.add(current_user)",
+          "through": [],
+          "line": 119
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 14,
+          "via": "session.commit()",
+          "through": [],
+          "line": 120
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "GET /api/v1/users/me",
+      "kind": "rest",
+      "method": "GET",
+      "path": "/api/v1/users/me",
+      "framework": "fastapi",
+      "units": [
+        15
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 15,
+          "line": 129,
+          "wrapper": null
+        }
+      ],
+      "reach": [],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "DELETE /api/v1/users/me",
+      "kind": "rest",
+      "method": "DELETE",
+      "path": "/api/v1/users/me",
+      "framework": "fastapi",
+      "units": [
+        16
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "current_user.is_superuser"
+          ],
+          "unit": 16,
+          "line": 138,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!current_user.is_superuser"
+          ],
+          "unit": 16,
+          "line": 143,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 16,
+          "via": "session.delete(current_user)",
+          "through": [],
+          "line": 141
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 16,
+          "via": "session.commit()",
+          "through": [],
+          "line": 142
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/users/signup",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/users/signup",
+      "framework": "fastapi",
+      "units": [
+        17
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 400,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user"
+          ],
+          "unit": 17,
+          "line": 153,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!user"
+          ],
+          "unit": 17,
+          "line": 159,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 17,
+          "line": 147,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 26,
+          "via": "session.add(db_obj)",
+          "through": [
+            "crud.create_user"
+          ],
+          "line": 14
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 26,
+          "via": "session.commit()",
+          "through": [
+            "crud.create_user"
+          ],
+          "line": 15
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 26,
+          "via": "session.refresh(db_obj)",
+          "through": [
+            "crud.create_user"
+          ],
+          "line": 16
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "GET /api/v1/users/{user_id}",
+      "kind": "rest",
+      "method": "GET",
+      "path": "/api/v1/users/{user_id}",
+      "framework": "fastapi",
+      "units": [
+        18
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user === current_user"
+          ],
+          "unit": 18,
+          "line": 171,
+          "wrapper": null
+        },
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!(user === current_user)",
+            "!current_user.is_superuser"
+          ],
+          "unit": 18,
+          "line": 173,
+          "wrapper": null
+        },
+        {
+          "status": 404,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!(user === current_user)",
+            "current_user.is_superuser",
+            "user == null"
+          ],
+          "unit": 18,
+          "line": 178,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!(user === current_user)",
+            "current_user.is_superuser",
+            "user != null"
+          ],
+          "unit": 18,
+          "line": 179,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 18,
+          "line": 163,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 18,
+          "via": "session.get(User, user_id)",
+          "through": [],
+          "line": 169
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "PATCH /api/v1/users/{user_id}",
+      "kind": "rest",
+      "method": "PATCH",
+      "path": "/api/v1/users/{user_id}",
+      "framework": "fastapi",
+      "units": [
+        19
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!current_user.is_superuser"
+          ],
+          "unit": 19,
+          "line": 54,
+          "wrapper": "get_current_active_superuser"
+        },
+        {
+          "status": 404,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!db_user"
+          ],
+          "unit": 19,
+          "line": 199,
+          "wrapper": null
+        },
+        {
+          "status": 409,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "db_user",
+            "user_in.email",
+            "existing_user and existing_user.id != user_id"
+          ],
+          "unit": 19,
+          "line": 206,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "db_user",
+            "user_in.email",
+            "!(existing_user and existing_user.id != user_id)"
+          ],
+          "unit": 19,
+          "line": 211,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "db_user",
+            "!user_in.email"
+          ],
+          "unit": 19,
+          "line": 211,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 19,
+          "line": 187,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 19,
+          "via": "session.get(User, user_id)",
+          "through": [],
+          "line": 197
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 25,
+          "via": "session.add(db_user)",
+          "through": [
+            "crud.update_user"
+          ],
+          "line": 28
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 25,
+          "via": "session.commit()",
+          "through": [
+            "crud.update_user"
+          ],
+          "line": 29
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "DELETE /api/v1/users/{user_id}",
+      "kind": "rest",
+      "method": "DELETE",
+      "path": "/api/v1/users/{user_id}",
+      "framework": "fastapi",
+      "units": [
+        20
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!current_user.is_superuser"
+          ],
+          "unit": 20,
+          "line": 54,
+          "wrapper": "get_current_active_superuser"
+        },
+        {
+          "status": 404,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!user"
+          ],
+          "unit": 20,
+          "line": 223,
+          "wrapper": null
+        },
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user",
+            "user === current_user"
+          ],
+          "unit": 20,
+          "line": 225,
+          "wrapper": null
+        },
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "user",
+            "!(user === current_user)"
+          ],
+          "unit": 20,
+          "line": 232,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 20,
+          "line": 215,
+          "wrapper": null
+        }
+      ],
+      "reach": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 20,
+          "via": "session.get(User, user_id)",
+          "through": [],
+          "line": 221
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 20,
+          "via": "delete(Item).where(col(Item.owner_id) == user_id)",
+          "through": [],
+          "line": 228
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 20,
+          "via": "session.delete(user)",
+          "through": [],
+          "line": 230
+        },
+        {
+          "boundary": 1,
+          "relations": [
+            "writes"
+          ],
+          "unit": 20,
+          "via": "session.commit()",
+          "through": [],
+          "line": 231
+        }
+      ],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "POST /api/v1/utils/test-email",
+      "kind": "rest",
+      "method": "POST",
+      "path": "/api/v1/utils/test-email/",
+      "framework": "fastapi",
+      "units": [
+        21
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 403,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "!current_user.is_superuser"
+          ],
+          "unit": 21,
+          "line": 54,
+          "wrapper": "get_current_active_superuser"
+        },
+        {
+          "status": 201,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 21,
+          "line": 16,
+          "wrapper": null
+        },
+        {
+          "status": 422,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [
+            "request input fails validation"
+          ],
+          "unit": 21,
+          "line": 16,
+          "wrapper": null
+        }
+      ],
+      "reach": [],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    },
+    {
+      "key": "GET /api/v1/utils/health-check",
+      "kind": "rest",
+      "method": "GET",
+      "path": "/api/v1/utils/health-check/",
+      "framework": "fastapi",
+      "units": [
+        22
+      ],
+      "specs": [],
+      "outcomes": [
+        {
+          "status": 200,
+          "output": "response",
+          "exception": null,
+          "returns": null,
+          "conditions": [],
+          "unit": 22,
+          "line": 31,
+          "wrapper": null
+        }
+      ],
+      "reach": [],
+      "callers": [],
+      "findings": [],
+      "unfollowed": [],
+      "unread": false,
+      "shape": null,
+      "specStatuses": []
+    }
+  ],
+  "tables": [
+    {
+      "boundary": 0,
+      "writers": [
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 2,
+          "via": "session.add(item)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 3,
+          "via": "session.add(item)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 4,
+          "via": "session.delete(item)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "writes"
+          ],
+          "unit": 20,
+          "via": "delete(Item).where(col(Item.owner_id) == user_id)",
+          "through": [],
+          "line": null
+        }
+      ],
+      "readers": [
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 0,
+          "via": "select(func.count()).select_from(Item)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 1,
+          "via": "session.get(Item, id)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 2,
+          "via": "session.refresh(item)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 3,
+          "via": "session.get(Item, id)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 0,
+          "relations": [
+            "reads"
+          ],
+          "unit": 4,
+          "via": "session.get(Item, id)",
+          "through": [],
+          "line": null
+        }
+      ]
+    },
+    {
+      "boundary": 2,
+      "writers": [
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 10,
+          "via": "session.add(user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 13,
+          "via": "session.add(current_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 14,
+          "via": "session.add(current_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 16,
+          "via": "session.delete(current_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 20,
+          "via": "session.delete(user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 23,
+          "via": "session.add(db_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 25,
+          "via": "session.add(db_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "writes"
+          ],
+          "unit": 26,
+          "via": "session.add(db_obj)",
+          "through": [],
+          "line": null
+        }
+      ],
+      "readers": [
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 11,
+          "via": "select(func.count()).select_from(User)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 13,
+          "via": "session.refresh(current_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 18,
+          "via": "session.get(User, user_id)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 19,
+          "via": "session.get(User, user_id)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 20,
+          "via": "session.get(User, user_id)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 32,
+          "via": "session.get(User, token_data.sub)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 23,
+          "via": "session.refresh(db_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 24,
+          "via": "select(User).where(User.email == email)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 25,
+          "via": "session.refresh(db_user)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 26,
+          "via": "session.refresh(db_obj)",
+          "through": [],
+          "line": null
+        },
+        {
+          "boundary": 2,
+          "relations": [
+            "reads"
+          ],
+          "unit": 33,
+          "via": "select(User).where(User.email == settings.FIRST_SUPERUSER)",
+          "through": [],
+          "line": null
+        }
+      ]
+    }
+  ],
+  "envReads": [
+    {
+      "boundary": 3,
+      "unit": 27,
+      "defaulted": true,
+      "value": "http://localhost:5173"
+    },
+    {
+      "boundary": 4,
+      "unit": 27,
+      "defaulted": true
+    },
+    {
+      "boundary": 3,
+      "unit": 27,
+      "defaulted": true
+    },
+    {
+      "boundary": 5,
+      "unit": 28,
+      "defaulted": true,
+      "value": ""
+    },
+    {
+      "boundary": 6,
+      "unit": 29,
+      "defaulted": false
+    },
+    {
+      "boundary": 7,
+      "unit": 29,
+      "defaulted": false
+    },
+    {
+      "boundary": 8,
+      "unit": 30,
+      "defaulted": false
+    },
+    {
+      "boundary": 5,
+      "unit": 31,
+      "defaulted": false
+    }
+  ],
+  "operations": [],
+  "clients": [],
+  "pages": [],
+  "findings": [],
+  "graphqlTypes": [],
+  "coverage": {
+    "functions": 345,
+    "withUnfollowed": 69,
+    "unfollowedCalls": 109,
+    "topUnfollowed": [
+      {
+        "callee": "setIsOpen",
+        "count": 10,
+        "unit": 34
+      },
+      {
+        "callee": "Comp",
+        "count": 9,
+        "unit": 35
+      },
+      {
+        "callee": "setTheme",
+        "count": 9,
+        "unit": 36
+      },
+      {
+        "callee": "Form",
+        "count": 6,
+        "unit": 34
+      },
+      {
+        "callee": "setOpen",
+        "count": 6,
+        "unit": 37
+      }
+    ],
+    "entriesAffected": 0,
+    "withUnreadOutcome": 0,
+    "unitsPerRead": [
+      287,
+      9,
+      49
+    ]
+  },
+  "check": {
+    "pairs": 0,
+    "byKind": []
+  },
+  "cards": [
+    {
+      "kind": "mostWrittenTable",
+      "entries": [
+        5,
+        8,
+        10,
+        12,
+        13,
+        14,
+        16,
+        17,
+        19,
+        20
+      ],
+      "total": 10,
+      "boundary": 2,
+      "places": [
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 25,
+            "via": "session.add(db_user)",
+            "through": [
+              "crud.update_user"
+            ],
+            "line": 28
+          },
+          "entries": 2
+        },
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 26,
+            "via": "session.add(db_obj)",
+            "through": [
+              "crud.create_user"
+            ],
+            "line": 14
+          },
+          "entries": 2
+        },
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 23,
+            "via": "session.add(db_user)",
+            "through": [
+              "crud.authenticate"
+            ],
+            "line": 57
+          },
+          "entries": 1
+        },
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 10,
+            "via": "session.add(user)",
+            "through": [],
+            "line": 35
+          },
+          "entries": 1
+        },
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 13,
+            "via": "session.add(current_user)",
+            "through": [],
+            "line": 97
+          },
+          "entries": 1
+        },
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 14,
+            "via": "session.add(current_user)",
+            "through": [],
+            "line": 119
+          },
+          "entries": 1
+        },
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 16,
+            "via": "session.delete(current_user)",
+            "through": [],
+            "line": 141
+          },
+          "entries": 1
+        },
+        {
+          "touch": {
+            "boundary": 2,
+            "relations": [
+              "writes"
+            ],
+            "unit": 20,
+            "via": "session.delete(user)",
+            "through": [],
+            "line": 230
+          },
+          "entries": 1
+        }
+      ]
+    },
+    {
+      "kind": "sharedEarlyReturn",
+      "entries": [
+        9,
+        11,
+        12,
+        19,
+        20,
+        21
+      ],
+      "total": 6,
+      "outcome": {
+        "wrapper": "get_current_active_superuser",
+        "status": 403,
+        "condition": "!current_user.is_superuser"
+      }
+    }
+  ]
+}

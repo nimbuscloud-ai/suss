@@ -118,6 +118,32 @@ describe("suss map", () => {
     expect(fs.readdirSync(path.join(project, ".suss", "summaries"))).toContain(
       "0-extract.json",
     );
+
+    const asJson = await quietly([
+      "map",
+      project,
+      "--dir",
+      path.join(project, ".suss", "summaries"),
+      "--json",
+      "--links",
+      "github",
+    ]);
+
+    expect(asJson.exit).toBe(0);
+    const map = JSON.parse(
+      fs.readFileSync(path.join(project, ".suss", "map.json"), "utf8"),
+    );
+    expect(map.version).toBe(1);
+    expect(
+      map.entries.map(
+        (entry: { method: string; path: string }) =>
+          `${entry.method} ${entry.path}`,
+      ),
+    ).toContain("GET /users/:id");
+    expect(map.units.length).toBeGreaterThan(0);
+    expect(map.check.pairs).toBeGreaterThan(0);
+    expect(Array.isArray(map.cards)).toBe(true);
+    expect(JSON.stringify(map)).not.toContain(work);
   });
 
   it("maps the reads that finished and says which one failed", async () => {
