@@ -100,6 +100,76 @@ function textOf(file: string): string {
   }
 }
 
+/**
+ * The files outside the walked sources that the pack reads, for the
+ * extraction cache's key: each project's schema and Prisma
+ * config, and the types of the client `prisma generate` wrote, under the
+ * project or in `node_modules/.prisma/client`. Without them a warm run
+ * after `prisma generate` serves summaries read against the old client.
+ */
+export function generatedClientInputs(walked: readonly string[]): string[] {
+  const roots = new Set<string>();
+  for (const dir of new Set(walked.map((file) => path.dirname(file)))) {
+    const root = projectRootOf(dir);
+    if (root !== null) {
+      roots.add(root);
+    }
+  }
+
+  const inputs = new Set<string>();
+  for (const root of roots) {
+    const project = readProjectAt(root);
+    for (const file of project?.readFrom.keys() ?? []) {
+      inputs.add(file);
+    }
+    for (const dir of [...(project?.dirs ?? []), ...defaultClientDirs(root)]) {
+      for (const file of clientTypeFiles(dir)) {
+        inputs.add(file);
+      }
+    }
+  }
+  return [...inputs].sort();
+}
+
+/** Where `prisma-client-js` writes a client with no `output`: the nearest `node_modules/.prisma/client` up from the project. */
+function defaultClientDirs(root: string): string[] {
+  for (let dir = root; ; dir = path.dirname(dir)) {
+    const client = path.join(dir, "node_modules", ".prisma", "client");
+    if (fs.existsSync(client)) {
+      return [client];
+    }
+
+    if (path.dirname(dir) === dir) {
+      return [];
+    }
+  }
+}
+
+const CLIENT_TYPE_FILE = /(\.d\.[cm]?ts|\.[cm]?ts|\.prisma|^package\.json)$/;
+
+/**
+ * The files of a generated client the checker reads types from. The
+ * `runtime` folder is Prisma's own library, which only changes with the
+ * version its `package.json` records.
+ */
+function clientTypeFiles(dir: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.flatMap((entry) => {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return entry.name === "runtime" || entry.name === "node_modules"
+        ? []
+        : clientTypeFiles(file);
+    }
+    return CLIENT_TYPE_FILE.test(entry.name) ? [file] : [];
+  });
+}
+
 /** Whether a file is in a directory a generator of its own project writes to. */
 export function isInGeneratedClient(filePath: string): boolean {
   return generatedClientDirs(path.dirname(filePath)).some((dir) =>
