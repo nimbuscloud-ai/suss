@@ -136,6 +136,7 @@ export {
   consumedAs,
   displayLabel,
   exchangesHttpResponses,
+  findingsAreReadsByName,
   groundBinding,
   groundedPairingKey,
   isUnsettledJob,

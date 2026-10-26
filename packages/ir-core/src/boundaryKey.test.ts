@@ -10,6 +10,7 @@ import {
   consumedAs,
   displayLabel,
   exchangesHttpResponses,
+  findingsAreReadsByName,
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
@@ -31,6 +32,7 @@ import {
   reportsUnpairedItself,
   restBinding,
   routePathsMeet,
+  runtimeConfigBinding,
   semanticsAgree,
   spansBuckets,
   storageBinding,
@@ -655,6 +657,25 @@ describe("what a protocol says about its own checking", () => {
   it("says the message-bus pass reports its own unpaired channels", () => {
     expect(reportsUnpairedItself(channel)).toBe(true);
     expect(reportsUnpairedItself(route)).toBe(false);
+  });
+
+  it("says a finding at the runtime config is a read of a name, and one at a store is not", () => {
+    expect(
+      findingsAreReadsByName(
+        runtimeConfigBinding({ recognition: "@suss/runtime-node" }),
+      ),
+    ).toBe(true);
+    expect(
+      findingsAreReadsByName(
+        storageBinding({
+          recognition: "prisma",
+          storageSystem: "postgresql",
+          scope: "default",
+          container: "users",
+        }),
+      ),
+    ).toBe(false);
+    expect(findingsAreReadsByName(route)).toBe(false);
   });
 });
 

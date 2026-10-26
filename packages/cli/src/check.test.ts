@@ -2976,9 +2976,40 @@ describe("check over a runtime that loads code its handler never calls", () => {
     );
     expect(output).toContain("read: src/flags.ts::featureFlag");
     expect(output).toContain("not declared by: Orders");
-    expect(output).toContain(
-      'consumer: { summary: "src/flags.ts::featureFlag", field: "FEATUREFLAG" }',
+    expect(output).toContain('boundary: "runtime-config FEATUREFLAG"');
+    expect(output).toContain('consumer: { field: "FEATUREFLAG" }');
+  });
+
+  it("silences a read with the rule it prints for it", () => {
+    const summaries = lambdaWithFlags();
+    summaries[1]?.transitions[0]?.effects.push({
+      type: "invocation",
+      callee: "featureFlag",
+      args: [],
+      async: false,
+      summary: "src/flags.ts::featureFlag",
+    });
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(summaries));
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, allowEmpty: true }),
     );
+    const printed = output
+      .split("\n")
+      .filter((line) =>
+        /^ {4}- kind:|^ {6}(boundary|consumer|reason):/.test(line),
+      )
+      .map((line) => line.slice(2));
+    const ignore = path.join(tmpDir, ".sussignore.yml");
+    fs.writeFileSync(ignore, ["version: 1", "rules:", ...printed].join("\n"));
+
+    const { result } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, allowEmpty: true, sussignore: ignore }),
+    );
+    const read = result.findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+    expect(read).toHaveLength(1);
+    expect(read[0]?.suppressed).toBeDefined();
   });
 
   it("lists each unjudged read in the JSON report", () => {
