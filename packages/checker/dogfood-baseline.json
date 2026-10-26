@@ -1,7 +1,7 @@
 {
   "name": "@suss/checker",
-  "exports": 67,
+  "exports": 69,
   "internal": 382,
-  "consumers": 336,
+  "consumers": 340,
   "unfollowedCalls": 22
 }

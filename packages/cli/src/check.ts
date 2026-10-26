@@ -17,10 +17,11 @@ import {
   checkPair,
   countsForThreshold,
   findingIdentity,
+  findingRuleBoundaryKey,
   groupBySharedCause,
   mergedSideOf,
   normalizedDescription,
-  ruleBoundaryKey,
+  readSiteField,
   summaryWithDefinitionsInlined,
   touchedByChange,
 } from "@suss/checker";
@@ -809,8 +810,9 @@ function hasSummaryFiles(dir: string): boolean {
  * variable, `runtime-config ACCOUNTS_REGION`, the way a changed read is.
  */
 function reportedBoundaryKey(finding: Finding): string {
-  return isReadSite(finding) && finding.consumer.field !== undefined
-    ? labelWithDetail(finding.boundary, finding.consumer.field)
+  const read = readSiteField(finding);
+  return isReadSite(finding) && read !== null
+    ? labelWithDetail(finding.boundary, read)
     : boundaryKeyOf(finding.boundary);
 }
 
@@ -1683,17 +1685,11 @@ function ruleSideText(side: AcceptingSide): string {
   if ("transitionId" in side) {
     return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
   }
-  const summary =
-    side.summary === undefined
-      ? ""
-      : `summary: ${JSON.stringify(side.summary)}, `;
-  return `{ ${summary}field: ${JSON.stringify(side.field)} }`;
+  return `{ field: ${JSON.stringify(side.field)} }`;
 }
 
 /** What a printed rule matches one side of a finding by. */
-export type AcceptingSide =
-  | { transitionId: string }
-  | { field: string; summary?: string };
+export type AcceptingSide = { transitionId: string } | { field: string };
 
 /** A `.sussignore` rule without its reason, which the person accepting it writes. */
 export interface AcceptingRule {
@@ -1713,7 +1709,7 @@ interface NamedSide {
  * null when no rule can be that narrow.
  */
 export function acceptingRule(f: Finding): AcceptingRule | null {
-  const key = ruleBoundaryKey(f.boundary);
+  const key = findingRuleBoundaryKey(f);
   const side = findingTransitionSide(f) ?? findingFieldSide(f, key);
   if (side === null) {
     return null;
@@ -1748,7 +1744,7 @@ function findingTransitionSide(f: Finding): NamedSide | null {
  */
 function findingFieldSide(f: Finding, key: string | null): NamedSide | null {
   if (key === null) {
-    return readSiteSide(f);
+    return null;
   }
   if (f.consumer.field !== undefined) {
     return { name: "consumer", matches: { field: f.consumer.field } };
@@ -1759,26 +1755,9 @@ function findingFieldSide(f: Finding, key: string | null): NamedSide | null {
   return null;
 }
 
-/**
- * A finding about one read, such as an environment variable a deployment
- * that runs it does not declare, has the reader on both sides and no
- * boundary key. The reader's summary and the variable pick it out.
- */
-function readSiteSide(f: Finding): NamedSide | null {
-  const { field, summary } = f.consumer;
-  if (field === undefined || summary !== f.provider.summary) {
-    return null;
-  }
-  return { name: "consumer", matches: { summary, field } };
-}
-
 /** Whether a finding is about one read, listing in `sources` the deployments it is against. */
 function isReadSite(f: Finding): boolean {
-  return (
-    f.consumer.field !== undefined &&
-    f.consumer.summary === f.provider.summary &&
-    (f.sources?.length ?? 0) > 0
-  );
+  return readSiteField(f) !== null && (f.sources?.length ?? 0) > 0;
 }
 
 /** The deployments a finding about one read is against, by name, from the summaries `sources` lists. */

@@ -154,11 +154,7 @@ function ruleSideText(side) {
   if ("transitionId" in side) {
     return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
   }
-  const summary =
-    side.summary === undefined
-      ? ""
-      : `summary: ${JSON.stringify(side.summary)}, `;
-  return `{ ${summary}field: ${JSON.stringify(side.field)} }`;
+  return `{ field: ${JSON.stringify(side.field)} }`;
 }
 
 /**

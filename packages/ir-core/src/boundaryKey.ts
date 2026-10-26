@@ -220,6 +220,11 @@ export function leavesTheProcess(binding: BoundaryBinding): boolean {
   return behaviorOf(binding.semantics).leavesTheProcess;
 }
 
+/** Whether a finding at this binding with the reader on both sides is about one read of the name in its field. */
+export function findingsAreReadsByName(binding: BoundaryBinding): boolean {
+  return behaviorOf(binding.semantics).findingsAreReadsByName === true;
+}
+
 /** What a consumer bound to this binding does there, reading and writing unless its protocol says otherwise. */
 export function consumedAs(binding: BoundaryBinding): readonly Relation[] {
   return behaviorOf(binding.semantics).consumedAs ?? ["reads", "writes"];

@@ -189,6 +189,14 @@ export interface BoundaryBehavior<S extends { name: string }> {
   reportsUnpairedItself: boolean;
 
   /**
+   * Whether a finding with the reader on both sides is about one read,
+   * with the name read as its field, as an environment variable is. A
+   * rule accepts such a finding by the boundary and that name, so it
+   * keeps matching when the reader moves to another file.
+   */
+  findingsAreReadsByName?: boolean;
+
+  /**
    * What a consumer bound to this boundary does there. A client of a
    * route sends a request and reads the response, which is the default.
    * A consumer of a channel only receives, so it reads.
