@@ -16,6 +16,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { isSameOrUnder } from "./projectSource.js";
+
 export interface Workspace {
   /** Relative to the repo root. */
   directory: string;
@@ -236,4 +238,138 @@ function directoriesAtDepth(
 function nameOf(root: string, directory: string): string | null {
   const parsed = readJson(path.join(root, directory, "package.json"));
   return typeof parsed?.name === "string" ? parsed.name : null;
+}
+
+/** A dependency a package declares, or one a package of this repository it depends on declares. */
+export interface DeclaredDependency {
+  name: string;
+  /** The manifest field that lists it. */
+  field: string;
+  /** The package of this repository whose manifest lists it, or null for the package's own. */
+  through: string | null;
+  /** Its folder when it is a package of this repository itself. */
+  local: string | null;
+}
+
+/**
+ * Every dependency the package at `dir` declares, and every dependency
+ * of each package of this repository it depends on, at any depth. A
+ * service in a monorepo usually depends on its sibling packages, and
+ * those declare the SDKs. A sibling's dev dependencies are left out,
+ * since none of them run in the package that depends on it.
+ */
+export function dependenciesThroughLocalPackages(
+  dir: string,
+): DeclaredDependency[] {
+  const found: DeclaredDependency[] = [];
+  const seen = new Set<string>();
+  const queue: Array<{ dir: string; through: string | null }> = [
+    { dir: path.resolve(dir), through: null },
+  ];
+  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+    const manifest = path.join(next.dir, "package.json");
+    if (seen.has(manifest)) {
+      continue;
+    }
+
+    seen.add(manifest);
+    const fields =
+      next.through === null ? OWN_DEPENDENCY_FIELDS : RUNTIME_DEPENDENCY_FIELDS;
+    for (const [name, field] of declaredIn(manifest, fields)) {
+      const local = localPackageDir(next.dir, name);
+      found.push({ name, field, through: next.through, local });
+      if (local !== null) {
+        queue.push({ dir: local, through: name });
+      }
+    }
+  }
+  return found;
+}
+
+const OWN_DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+];
+
+const RUNTIME_DEPENDENCY_FIELDS = ["dependencies", "peerDependencies"];
+
+function declaredIn(
+  manifest: string,
+  fields: readonly string[],
+): Array<[string, string]> {
+  const parsed = readJson(manifest);
+  if (parsed === null) {
+    return [];
+  }
+
+  return fields.flatMap((field) => {
+    const deps = parsed[field];
+    return deps !== null && typeof deps === "object"
+      ? Object.keys(deps).map((name): [string, string] => [name, field])
+      : [];
+  });
+}
+
+/**
+ * The folder of a dependency that is a package in this repository, such
+ * as a sibling in a workspace, or null for one from a registry.
+ *
+ * Node looks for a package in the `node_modules` of the importing folder
+ * and then of each folder above it, and a workspace manager links each
+ * workspace package into one of those. npm and yarn link them at the
+ * root, pnpm beside the importer, so the lookup climbs to the top of the
+ * repository. Before an install there are no links, and the workspace
+ * declaration at the top says where each package is instead.
+ */
+export function localPackageDir(from: string, name: string): string | null {
+  const top = repositoryTopAbove(from);
+  for (const dir of foldersUpTo(from, top)) {
+    const resolved = realPath(path.join(dir, "node_modules", name));
+    if (
+      resolved !== null &&
+      !resolved.split(path.sep).includes("node_modules") &&
+      (top === null || isSameOrUnder(resolved, realPath(top) ?? top))
+    ) {
+      return resolved;
+    }
+  }
+
+  if (top === null) {
+    return null;
+  }
+  const declared = readWorkspace(top).packages.find((pkg) => pkg.name === name);
+  return declared === undefined ? null : path.join(top, declared.directory);
+}
+
+/** The nearest folder at or above `from` with a `.git` entry, which a linked worktree writes as a file. */
+function repositoryTopAbove(from: string): string | null {
+  for (let dir = path.resolve(from); ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, ".git"))) {
+      return dir;
+    }
+
+    if (path.dirname(dir) === dir) {
+      return null;
+    }
+  }
+}
+
+/** `from` and each folder above it, up to and including `top`, or to the filesystem root without one. */
+function foldersUpTo(from: string, top: string | null): string[] {
+  const folders: string[] = [];
+  for (let dir = path.resolve(from); ; dir = path.dirname(dir)) {
+    folders.push(dir);
+    if (dir === top || path.dirname(dir) === dir) {
+      return folders;
+    }
+  }
+}
+
+function realPath(file: string): string | null {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return null;
+  }
 }
