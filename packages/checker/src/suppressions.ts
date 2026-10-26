@@ -16,6 +16,7 @@ import {
 } from "@suss/behavioral-ir";
 import {
   applySuppressionsToFindings,
+  findingsAreReadsByName,
   labelWithDetail,
   ruleBoundaryMatchesKey,
 } from "@suss/ir-core";
@@ -144,16 +145,16 @@ export function ruleBoundaryKey(binding: BoundaryBinding): string | null {
 }
 
 /**
- * The variable a finding about one environment read is about, or null for
- * any other finding. Such a finding has the reader on both sides and the
- * variable as the consumer's field. A column finding between two
- * declarations of a table has that too, so the boundary has to be the
- * runtime config.
+ * The name a finding about one read is about, such as an environment
+ * variable, or null for any other finding. Such a finding has the reader
+ * on both sides and the name as the consumer's field. A column finding
+ * between two declarations of a table has that too, so the boundary's
+ * protocol has to say its findings are reads.
  */
 export function readSiteField(finding: Finding): string | null {
   const { field, summary } = finding.consumer;
   if (
-    finding.boundary.semantics.name !== "runtime-config" ||
+    !findingsAreReadsByName(finding.boundary) ||
     field === undefined ||
     summary !== finding.provider.summary
   ) {

@@ -47,6 +47,7 @@ export const runtimeConfigSemantics = defineBoundarySemantics({
     // comes from outside the code.
     leavesTheProcess: true,
     reportsUnpairedItself: false,
+    findingsAreReadsByName: true,
     identityKey: () => null,
     // A reader sees which deployable's environment this is. Code that
     // reads a variable does not say which deployable runs it, so a read
