@@ -35,6 +35,7 @@ import { absoluteFile, specDocumentPath } from "./mapUnits.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ReadFailure } from "../projectFile.js";
 import type { ReadLimits } from "../readLimits.js";
+import type { Card } from "./mapCards.js";
 import type { MapModel, MapRead } from "./mapModel.js";
 
 export async function runMap(args: string[]): Promise<number> {
@@ -44,6 +45,7 @@ export async function runMap(args: string[]): Promise<number> {
       dir: { type: "string" },
       out: { type: "string", short: "o" },
       links: { type: "string" },
+      json: { type: "boolean" },
       ...READ_LIMIT_OPTIONS,
     },
     allowPositionals: true,
@@ -88,18 +90,39 @@ export async function runMap(args: string[]): Promise<number> {
     readOf,
   });
   const cards = pickCards(model);
-  const out = path.resolve(values.out ?? path.join(folder, "map.html"));
-  const page = renderMapPage(LINK_TARGETS[links].model(model), cards, {
-    summariesDir: LINK_TARGETS[links].folder(summariesDir, root),
-    sourceLines: sourceReader(model),
-  });
+  const shown = LINK_TARGETS[links].model(model);
+  const asJson = values.json === true;
+  const out = path.resolve(
+    values.out ?? path.join(folder, asJson ? "map.json" : "map.html"),
+  );
+  const written = asJson
+    ? `${JSON.stringify(mapJson(shown, cards), null, 2)}\n`
+    : renderMapPage(shown, cards, {
+        summariesDir: LINK_TARGETS[links].folder(summariesDir, root),
+        sourceLines: sourceReader(model),
+      });
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, page);
+  fs.writeFileSync(out, written);
 
   process.stdout.write(
     `${[`suss map wrote ${shownPath(out)}`, ...terminalSummary(model), ...failedReadLines(checked.readsFailed)].join("\n")}\n`,
   );
   return 0;
+}
+
+/** Raised when a field of the JSON changes meaning or goes away. */
+export const MAP_JSON_VERSION = 1;
+
+/**
+ * What `--json` writes: the model the page is drawn from, and the cards
+ * it opens with. Entries, tables and findings refer to units and
+ * boundaries by their place in `units` and `boundaries`.
+ */
+function mapJson(
+  model: MapModel,
+  cards: Card[],
+): { version: number; cards: Card[] } & MapModel {
+  return { version: MAP_JSON_VERSION, ...model, cards };
 }
 
 /** The reads the page leaves out because they failed, each with why. */

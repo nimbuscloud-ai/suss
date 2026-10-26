@@ -10,7 +10,7 @@ description: Write one HTML page that shows a project's routes, GraphQL fields, 
 <a href="/examples/lobsters.html" target="_blank">See an example</a>: lobsters at a pinned commit, with every link going to that commit on GitHub. There is also <a href="/examples/full-stack-fastapi-template.html" target="_blank">the FastAPI template</a>.
 
 ```
-suss map [<directory>] [--dir <summaries>] [-o <page.html>] [--links editor|github] [--cache-dir <path>] [--jobs <n>] [--read-timeout <minutes>] [--read-memory <MB>]
+suss map [<directory>] [--dir <summaries>] [-o <page.html>] [--json] [--links editor|github] [--cache-dir <path>] [--jobs <n>] [--read-timeout <minutes>] [--read-memory <MB>]
 ```
 
 ```
@@ -28,6 +28,7 @@ suss map wrote .suss/map.html
 | `<directory>` | the working directory | The project to read. |
 | `--dir <path>` | none | Map summaries already in this folder, instead of reading the project. The summaries can come from several repositories. |
 | `-o`, `--out <path>` | `.suss/map.html` | Where to write the page. |
+| `--json` | off | Write the map as JSON instead of a page, to `.suss/map.json` unless `-o` says where. See [The map as JSON](#the-map-as-json). |
 | `--links <target>` | `editor` | `editor` links each line to the file on disk, in VS Code, Cursor or the browser, which the page lets you pick. `github` links to the file on GitHub at the commit that was read, and leaves this machine's folders out of the page. Use `github` for a page you publish. |
 | `--cache-dir <path>` | `.suss` in the project | Where the page, the summaries and the extraction cache go. See [Where suss writes](/reference/cli/#where-suss-writes). |
 | `--jobs <n>` | up to 4 | How many reads run at once. |
@@ -74,6 +75,17 @@ A link to a read or a write goes to the line of the call. When a summary has no 
 | Shared early return | An outcome with a status of 300 or more that a middleware or filter adds to three or more entry points. |
 | Not read | Entry points whose own summary records an outcome suss did not read, when that is half of them or more. It always comes last. |
 
+## The map as JSON
+
+`suss map --json` writes the data the page is drawn from. The lobsters example has a copy beside its page: [lobsters.json](https://suss.sh/examples/lobsters.json).
+
+- `version` is 1. It goes up when a field changes meaning or goes away.
+- `units` lists every function, handler and spec operation the map mentions, with its file and line, and `boundaries` lists every table, queue and variable. Elsewhere, a unit or a boundary is its place in one of those two lists, so `units: [3]` on an entry means the fourth unit.
+- `entries` are the routes and GraphQL fields: method and path, the units that serve them, each outcome, what they read and write (`reach`), their callers and their findings.
+- `tables`, `envReads`, `findings`, `graphqlTypes`, `coverage` and `check` are the rest of what the page shows, and `cards` are the cards it opens with.
+
+With `--links github`, the JSON leaves this machine's folders out, as the page does.
+
 ## Summaries from several repositories
 
 Each summary records the git repository it was extracted in, its remote, and the commit. When a `--dir` folder has summaries from more than one repository, two routes with the same path and file in different repositories stay apart, a filter picks a repository, callers say which one they are in, and links go to each repository's own commit on GitHub. With one repository, the page looks the same as before.
@@ -94,4 +106,4 @@ npm run build
 node scripts/buildMapExamples.mjs
 ```
 
-The script clones each app at its pin, runs `suss init --write` and `suss map --links github`, and writes the pages to `docs/public/examples`.
+The script clones each app at its pin, runs `suss init --write` and `suss map --links github`, and writes each page and its JSON to `docs/public/examples`.
