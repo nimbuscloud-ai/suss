@@ -8,7 +8,7 @@
 
 import path from "node:path";
 
-import { summaryIdentifier } from "@suss/behavioral-ir";
+import { parseDocumentLabel, summaryIdentifier } from "@suss/behavioral-ir";
 
 import { LANGUAGE_LABEL, languageOfFile } from "../language.js";
 
@@ -34,6 +34,7 @@ export class UnitTable {
     }
     const read = this.readIndexOf(summary);
     const exportPath = summary.identity.exportPath ?? [];
+    const spec = isSpecSummary(summary, this.reads[read]);
     this.list.push({
       id: summaryIdentifier(summary),
       // A method is clearer with its class in front, which the export
@@ -45,7 +46,8 @@ export class UnitTable {
       line: summary.location.range.start,
       endLine: summary.location.range.end,
       read,
-      spec: isSpecSummary(summary, this.reads[read]),
+      spec,
+      document: spec ? specDocumentPath(summary.location.file) : null,
       repository: this.repositoryOf(summary),
     });
     this.index.set(summary, this.list.length - 1);
@@ -125,13 +127,44 @@ export function languagesOf(
 /**
  * A spec's summaries have no place in source code: `suss.json` says the
  * read was a contract, or the summary's file is a document such as
- * `openapi:api.json` rather than a file a language adapter reads.
+ * `openapi:api.json` rather than a file a language adapter reads. A file
+ * in no language that an extract of code read, such as the
+ * `config/database.yml` Rails renders when it boots, is code.
  */
 export function isSpecSummary(
   summary: BehavioralSummary,
   read: MapRead | undefined,
 ): boolean {
-  return read?.spec === true || languageOfFile(summary.location.file) === null;
+  const file = summary.location.file;
+  if (read?.spec === true) {
+    return true;
+  }
+  if (languageOfFile(file) !== null) {
+    return false;
+  }
+  return read === undefined || parseDocumentLabel(file) !== null;
+}
+
+/** True for a unit of code in a file no language adapter reads, such as a config file the app renders at boot. */
+export function isBootConfig(unit: MapUnit): boolean {
+  return !unit.spec && languageOfFile(unit.file) === null;
+}
+
+/**
+ * The file a spec's summary was read from, relative to the read's root:
+ * `openapi:api/openapi.yaml` is `api/openapi.yaml`, and the GraphQL
+ * reader's `schema.graphql:Query.user` is `schema.graphql`. Null for a
+ * spec fetched from a URL, and for a nested stack, whose label gives the
+ * parent template rather than the file the resource is in.
+ */
+export function specDocumentPath(file: string): string | null {
+  const label = parseDocumentLabel(file);
+  const rest = label === null ? file : label.location;
+  if (rest.includes("#") || /^https?:\/\//i.test(rest)) {
+    return null;
+  }
+  const document = rest.replace(/::.*$/, "").replace(/:[A-Za-z_][\w.]*$/, "");
+  return /\.[A-Za-z]+$/.test(document) ? document : null;
 }
 
 /** Where a link to a unit's file points, or null when the run does not know the root. */
@@ -140,8 +173,9 @@ export function absoluteFile(
   reads: readonly MapRead[],
 ): string | null {
   const root = reads[unit.read]?.root;
-  if (root === null || root === undefined || unit.spec) {
+  const file = unit.spec ? unit.document : unit.file;
+  if (root === null || root === undefined || file === null) {
     return null;
   }
-  return path.join(root, unit.file);
+  return path.join(root, file);
 }

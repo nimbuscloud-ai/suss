@@ -30,7 +30,7 @@ import { pickCards } from "./mapCards.js";
 import { buildMapModel } from "./mapModel.js";
 import { renderMapPage } from "./mapPage.js";
 import { terminalSummary } from "./mapSummary.js";
-import { absoluteFile } from "./mapUnits.js";
+import { absoluteFile, specDocumentPath } from "./mapUnits.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ReadFailure } from "../projectFile.js";
@@ -222,17 +222,25 @@ function readsOf(
         spec: entry.kind === "contract",
       };
     }
-    const first = (byFile.get(file) ?? []).find(
+    const inFile = byFile.get(file) ?? [];
+    const first = inFile.find(
       (summary) => languageOfFile(summary.location.file) !== null,
     );
+    // A spec's summaries give the spec file's path, which says where the
+    // read was rooted as well as a code file's does.
+    const located =
+      first?.location.file ??
+      inFile
+        .map((summary) => specDocumentPath(summary.location.file))
+        .find((document) => document !== null);
     return {
       file,
       label: file,
       root:
-        first === undefined
+        located === undefined || located === null
           ? null
           : (folders.find((folder) =>
-              fs.existsSync(path.join(folder, first.location.file)),
+              fs.existsSync(path.join(folder, located)),
             ) ?? null),
       packs: [],
       spec: first === undefined,

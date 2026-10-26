@@ -7,8 +7,14 @@
  */
 
 import { githubBlobBase } from "./mapHtml.js";
+import { isBootConfig } from "./mapUnits.js";
 
-import type { MapFinding, MapModel, MapTouch } from "./mapModel.js";
+import type {
+  GraphqlType,
+  MapFinding,
+  MapModel,
+  MapTouch,
+} from "./mapModel.js";
 
 /** How many units with an unfollowed call an entry point lists; the page gives the rest as a count. */
 const UNFOLLOWED_LISTED = 12;
@@ -46,9 +52,20 @@ export interface PageData {
   reads: Array<[number, number, number[], 0 | 1, number]>;
   /** Repositories: [name, the GitHub URL a file's path follows, or null]. */
   repos: Array<[number, string | null]>;
-  /** Units: [name, file, line, kind, read, spec, id, repository]. */
+  /** Units: [name, file, line, kind, read, spec, id, repository, spec document, boot config]. */
   u: Array<
-    [number, number, number, number, number, 0 | 1, number, number | null]
+    [
+      number,
+      number,
+      number,
+      number,
+      number,
+      0 | 1,
+      number,
+      number | null,
+      number | null,
+      0 | 1,
+    ]
   >;
   /** Boundaries: [label, category, name, system]. */
   b: Array<[number, string, number, number | null]>;
@@ -65,7 +82,7 @@ export interface PageData {
   cl: Array<[number, number | null, number | null, number[]]>;
   /** Pages: [unit, path]. */
   pg: Array<[number, number]>;
-  /** GraphQL types: [name, fields as [name, args, returns, refs, unit, entry]]. */
+  /** GraphQL types: [name, fields as [name, args, returns, refs, unit, entry], kind, members]. */
   ty: Array<
     [
       number,
@@ -79,6 +96,8 @@ export interface PageData {
           number | null,
         ]
       >,
+      GraphqlType["kind"],
+      number[],
     ]
   >;
   cov: MapModel["coverage"];
@@ -245,6 +264,8 @@ function pageDataWith(model: MapModel, listed: ListedFindings): PageData {
       unit.spec ? 1 : 0,
       s(unit.id),
       unit.repository,
+      maybe(unit.document),
+      isBootConfig(unit) ? 1 : 0,
     ]),
     b: model.boundaries.map((boundary) => [
       s(boundary.label),
@@ -329,6 +350,8 @@ function pageDataWith(model: MapModel, listed: ListedFindings): PageData {
         field.unit,
         field.entry,
       ]),
+      type.kind,
+      type.members.map(s),
     ]),
     cov: model.coverage,
     chk: model.check,
