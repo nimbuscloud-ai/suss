@@ -11,7 +11,10 @@
  * describes what a library defines, and nothing a project chose.
  */
 
-import type { RequestSpellingMetadata } from "@suss/behavioral-ir";
+import type {
+  MessageBusTechnology,
+  RequestSpellingMetadata,
+} from "@suss/behavioral-ir";
 import type {
   DeclaredEntryPoint,
   LibraryEnvVars,
@@ -79,6 +82,72 @@ export interface PythonPack {
   requestSpelling?: RequestSpellingMetadata;
   /** How the library's test runner collects tests, so a PRD scenario can say which test covers it. */
   tests?: PyTestCases[];
+  /** How the library runs a project function as a background job, and the calls that enqueue one. DESIGN.md says how each is read. */
+  jobQueues?: PyJobQueue[];
+}
+
+/**
+ * A library that runs a project's functions off a queue, such as Celery.
+ * A function under one of `taskDecorators` becomes a consumer unit, and a
+ * call that enqueues it becomes a `message-send` on the same channel.
+ * Every name here is one the library defines.
+ */
+export interface PyJobQueue {
+  /** The bus the bindings say, `celery`. */
+  messageBus: MessageBusTechnology;
+  /** The module the library's decorators and app class come from, `celery`. */
+  module: string;
+  /** Decorators that make a function a task: `shared_task`, and `task` on the app. */
+  taskDecorators: string[];
+  /** The keyword a task decorator takes the task's name under: `name`. */
+  nameKeyword: string;
+  /** The keyword a task decorator takes its queue under: `queue`. */
+  queueKeyword: string;
+  /** What the library calls a task whose decorator gives no name. */
+  defaultName: PyDefaultTaskName;
+  /** Methods on a task that enqueue it, and where each takes the task's arguments. */
+  enqueueMethods: PyEnqueueMethod[];
+  /** Methods on the app that enqueue a task by its name, `send_task`. */
+  sendByName?: PySendByName[];
+  /** The app's class, and the objects the module exports that stand for the app: `Celery`, `current_app`. */
+  apps: string[];
+}
+
+/**
+ * `modulePath` is Celery's: the dotted path of the module the function
+ * is written in, a dot, and the function's name.
+ */
+export type PyDefaultTaskName = "modulePath";
+
+/** Where a method takes one of its inputs: a position, a keyword, or both. */
+export interface PyCallArgument {
+  argument?: number;
+  keyword?: string;
+}
+
+/**
+ * How an enqueue call passes the task's arguments. `spread` passes them
+ * as the call's own, `delay(a, b, c=1)`. `packed` passes the positional
+ * ones as one sequence and the keyword ones as one mapping,
+ * `apply_async((a, b), {"c": 1})`.
+ */
+export type PyTaskArguments =
+  | { type: "spread" }
+  | { type: "packed"; args: PyCallArgument; kwargs: PyCallArgument };
+
+export interface PyEnqueueMethod {
+  /** The method's name, `delay`. */
+  method: string;
+  arguments: PyTaskArguments;
+}
+
+export interface PySendByName {
+  /** The method's name, `send_task`. */
+  method: string;
+  /** Where it takes the task's name. */
+  name: PyCallArgument;
+  /** Where it takes the task's arguments. */
+  arguments: PyTaskArguments;
 }
 
 /**
