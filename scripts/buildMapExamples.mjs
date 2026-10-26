@@ -75,10 +75,14 @@ try {
     process.stdout.write(
       run("node", [CLI, "map", "--links", "github", "-o", page], clone),
     );
+    // The same map as JSON, beside the page, for a reader who wants the data.
+    // The second run reads from the extraction cache the first one wrote.
+    const data = path.join(OUT, `${name}.json`);
+    run("node", [CLI, "map", "--links", "github", "--json", "-o", data], clone);
     const size = fs.statSync(page).size;
     const note = size > LARGE_PAGE ? " (over 1 MB)" : "";
     console.log(
-      `${name} at ${pin.commit.slice(0, 7)}: ${(size / 1024).toFixed(0)} KB${note}\n`,
+      `${name} at ${pin.commit.slice(0, 7)}: ${(size / 1024).toFixed(0)} KB${note}, JSON ${(fs.statSync(data).size / 1024).toFixed(0)} KB\n`,
     );
   }
 } finally {

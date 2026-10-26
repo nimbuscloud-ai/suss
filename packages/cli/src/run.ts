@@ -93,7 +93,7 @@ Usage:
   suss check [--dir <directory>] --since <earlier-directory> [--changed-files <file>] [--json]
   suss check [--dir <directory>] --base <git ref> [--json]
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
-  suss map [directory] [--dir <summaries>] [-o <page.html>]
+  suss map [directory] [--dir <summaries>] [-o <page.html>] [--json] [--links editor|github]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <framework> ...] [-o <output.json>]
   suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
