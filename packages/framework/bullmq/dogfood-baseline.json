@@ -1,0 +1,7 @@
+{
+  "name": "@suss/framework-bullmq",
+  "exports": 2,
+  "internal": 0,
+  "consumers": 5,
+  "unfollowedCalls": 0
+}

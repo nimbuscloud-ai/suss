@@ -1,0 +1,11 @@
+{
+  "FlowProducer": "bullmq: the class that adds a tree of jobs across queues",
+  "Queue": "bullmq: the class jobs are added to, constructed with the queue's name",
+  "Worker": "bullmq: the class that runs a processor over every job on a queue",
+  "bullmq": "the BullMQ package, and its message-bus name in suss",
+  "data": "bullmq: the job's payload, on a bulk entry, a flow job and a scheduler template",
+  "job": "bullmq: the first argument a processor receives",
+  "name": "language: bullmq's key for the job name on a bulk entry, a flow job and a scheduler template, a word every adapter also spells for its own nodes",
+  "queueName": "bullmq: the queue a flow job goes on",
+  "token": "bullmq: the lock token a processor receives as its second argument"
+}

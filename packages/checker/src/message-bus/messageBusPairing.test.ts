@@ -2463,13 +2463,27 @@ describe("checkMessageBus, a background job", () => {
     ).toEqual([]);
   });
 
-  it("still reports a queue consumer on a bus nothing schedules from config", () => {
+  it("does not report a BullMQ worker no code adds to, since its producer may be out of reach", () => {
     const findings = checkMessageBus([
       consumerSummary({
         name: "emails",
         channel: "emails",
         codeScopePath: "src/",
         messageBus: "bullmq",
+      }),
+    ]);
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+  });
+
+  it("still reports a queue consumer on a bus that carries no jobs", () => {
+    const findings = checkMessageBus([
+      consumerSummary({
+        name: "OrdersQueue",
+        channel: "OrdersQueue",
+        codeScopePath: "src/",
+        messageBus: "aws_sqs",
       }),
     ]);
     expect(

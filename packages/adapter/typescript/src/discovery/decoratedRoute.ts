@@ -8,6 +8,7 @@ import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 import { force, literalOf } from "@suss/values";
 
 import { evaluatedValue } from "../values/evaluator.js";
+import { declaredChannelOf } from "./declaredChannel.js";
 import {
   decoratedCallablesOf,
   importedDecoratorLocals,
@@ -23,12 +24,10 @@ import {
   numberValueOf,
   objectLiteralOf,
   propertyOf,
-  stringValueOf,
 } from "./resolveValue.js";
 import { routeVersionSegments, routeVersionsIn } from "./routeVersioning.js";
 
 import type {
-  ChannelSource,
   DeclaredBinding,
   DeclaredStatusDecorators,
   DiscoveryPattern,
@@ -101,34 +100,6 @@ function joinRoutePath(prefix: string, suffix: string): string {
     }
   }
   return `/${segments.join("/")}`;
-}
-
-/**
- * The channel a declared binding's source reads off the handler's own
- * decorator. A constant passed by name resolves to its written string,
- * the same hop a route path gets, and a value the run cannot settle
- * leaves the channel null rather than spelling something wrong.
- */
-function declaredChannelOf(
-  source: ChannelSource,
-  decorator: Node,
-  resolution: ResolutionStore | undefined,
-): string | null {
-  if (source.from === "literal") {
-    return source.value;
-  }
-  if (source.from === "unstated") {
-    return null;
-  }
-  if (!Node.isDecorator(decorator)) {
-    return null;
-  }
-  const arg = decorator.getArguments()[source.position];
-  if (arg === undefined) {
-    return null;
-  }
-  const text = stringValueOf(arg, resolution);
-  return text === null || text === "" ? null : text;
 }
 
 /**
@@ -362,7 +333,7 @@ export function discoverDecoratedRoutes(
             messageBus: binding.messageBus,
             channel: declaredChannelOf(
               binding.channel,
-              handler.decorator,
+              { decorator: handler.decorator },
               resolution,
             ),
           },
