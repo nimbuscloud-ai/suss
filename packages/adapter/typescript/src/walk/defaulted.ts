@@ -14,7 +14,7 @@
  * define the same rule for their own syntax.
  */
 
-import { Node, SyntaxKind } from "ts-morph";
+import { Node, SyntaxKind, ts } from "ts-morph";
 
 import { findEnclosingFunction, isFunctionRoot } from "../discovery/shared.js";
 import { symbolBehind } from "../resolve/functionBehind.js";
@@ -624,11 +624,30 @@ function declarationInitializedBy(
   return null;
 }
 
-/** Every place the function reads or writes the local, other than where it is declared. */
+/**
+ * Every place the function reads or writes the local, other than where it
+ * is declared. The walk reads compiler nodes and wraps only an identifier
+ * spelled like the local, since ts-morph keeps every wrapper it makes for
+ * the rest of the run, and this runs once for each environment read.
+ */
 function usesOf(local: Local): Identifier[] {
-  return local.scope
-    .getDescendantsOfKind(SyntaxKind.Identifier)
-    .filter(
-      (identifier) => identifier !== local.name && refersTo(identifier, local),
-    );
+  const name = local.name.getText();
+  const file = local.scope.getSourceFile();
+  const uses: Identifier[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === name) {
+      const found = file.getDescendantAtPos(node.getStart(file.compilerNode));
+      if (
+        found !== undefined &&
+        Node.isIdentifier(found) &&
+        found !== local.name &&
+        refersTo(found, local)
+      ) {
+        uses.push(found);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(local.scope.compilerNode, visit);
+  return uses;
 }
