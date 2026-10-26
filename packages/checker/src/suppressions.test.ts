@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { restBinding, storageBinding } from "@suss/behavioral-ir";
+import {
+  restBinding,
+  runtimeConfigBinding,
+  storageBinding,
+} from "@suss/behavioral-ir";
 
 import {
   applySuppressions,
   countsForThreshold,
+  findingRuleBoundaryKey,
   type SuppressionRule,
   SuppressionRuleSchema,
   validateRule,
@@ -569,5 +574,92 @@ describe("rules for a store", () => {
       ],
     );
     expect(out.suppressed).toBeUndefined();
+  });
+});
+
+describe("rules for an environment read", () => {
+  function readFinding(file: string, variable: string): Finding {
+    const side = {
+      summary: `${file}::chargeCard`,
+      location: {
+        file,
+        range: { start: 1, end: 7 },
+        exportName: "chargeCard",
+      },
+    };
+    return finding({
+      kind: "boundaryFieldUnknown",
+      boundary: runtimeConfigBinding({ recognition: "@suss/runtime-node" }),
+      provider: side,
+      consumer: { ...side, field: variable },
+      sources: ["cloudformation:template.yaml::Checkout"],
+      description: `process.env.${variable} read by chargeCard is not declared`,
+      severity: "error",
+    });
+  }
+
+  const accepted = rule({
+    kind: "boundaryFieldUnknown",
+    boundary: "runtime-config STRIPE_API_KEY",
+    consumer: { field: "STRIPE_API_KEY" },
+  });
+
+  it("is at the boundary and the variable", () => {
+    expect(
+      findingRuleBoundaryKey(
+        readFinding("src/lib/payments.ts", "STRIPE_API_KEY"),
+      ),
+    ).toBe("runtime-config STRIPE_API_KEY");
+  });
+
+  it("matches a rule that gives the variable, and passes as a narrow rule", () => {
+    const [out] = applySuppressions(
+      [readFinding("src/lib/payments.ts", "STRIPE_API_KEY")],
+      [accepted],
+    );
+    expect(validateRule(accepted)).toBeNull();
+    expect(out.suppressed?.reason).toBe("accepted");
+  });
+
+  it("keeps matching after the code that reads the variable moves to another file", () => {
+    const [out] = applySuppressions(
+      [readFinding("src/billing/payments.ts", "STRIPE_API_KEY")],
+      [accepted],
+    );
+    expect(out.suppressed?.reason).toBe("accepted");
+  });
+
+  it("does not match a read of another variable", () => {
+    const [out] = applySuppressions(
+      [readFinding("src/lib/payments.ts", "STRIPE_WEBHOOK_SECRET")],
+      [accepted],
+    );
+    expect(out.suppressed).toBeUndefined();
+  });
+
+  it("leaves a column finding between two declarations of a table at its store", () => {
+    const users = storageBinding({
+      recognition: "prisma",
+      storageSystem: "postgresql",
+      scope: "default",
+      container: "users",
+    });
+    const side = {
+      summary: "prisma/schema.prisma::users",
+      location: {
+        file: "prisma/schema.prisma",
+        range: { start: 1, end: 1 },
+        exportName: null,
+      },
+    };
+    expect(
+      findingRuleBoundaryKey(
+        finding({
+          boundary: users,
+          provider: side,
+          consumer: { ...side, field: "email" },
+        }),
+      ),
+    ).toBe("postgresql:users");
   });
 });

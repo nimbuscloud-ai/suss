@@ -56,11 +56,12 @@ Runtime config:
   not declared by: Checkout, Refund
   to silence this one, add to the rules in .sussignore.yml:
     - kind: boundaryFieldUnknown
-      consumer: { summary: "src/lib/payments.ts::chargeCard", field: "STRIPE_API_KEY" }
+      boundary: "runtime-config STRIPE_API_KEY"
+      consumer: { field: "STRIPE_API_KEY" }
       reason: TODO say why you accept this
 ```
 
-One finding covers one read, however many deployments run it without the variable. A deployment runs a read when a call from its handler reaches the function that makes it, so a client file every handler imports is charged only to the handlers that call into it. A read in a file a deployment loads that no call reaches is listed under `unchecked.runtimeConfig` instead.
+One finding covers one read, however many deployments run it without the variable. The rule it prints accepts the variable, so it covers every read of it and keeps matching when the code that reads it moves to another file. A deployment runs a read when a call from its handler reaches the function that makes it, so a client file every handler imports is charged only to the handlers that call into it. A read in a file a deployment loads that no call reaches is listed under `unchecked.runtimeConfig` instead.
 
 GraphQL:
 

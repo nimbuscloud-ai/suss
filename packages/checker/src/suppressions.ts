@@ -16,6 +16,7 @@ import {
 } from "@suss/behavioral-ir";
 import {
   applySuppressionsToFindings,
+  labelWithDetail,
   ruleBoundaryMatchesKey,
 } from "@suss/ir-core";
 
@@ -123,7 +124,7 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
 
   if (
     rule.boundary !== undefined &&
-    !ruleBoundaryMatchesKey(rule.boundary, ruleBoundaryKey(finding.boundary))
+    !ruleBoundaryMatchesKey(rule.boundary, findingRuleBoundaryKey(finding))
   ) {
     return false;
   }
@@ -140,6 +141,39 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
  */
 export function ruleBoundaryKey(binding: BoundaryBinding): string | null {
   return boundaryKey(binding) ?? storageBoundaryKey(binding.semantics);
+}
+
+/**
+ * The variable a finding about one environment read is about, or null for
+ * any other finding. Such a finding has the reader on both sides and the
+ * variable as the consumer's field. A column finding between two
+ * declarations of a table has that too, so the boundary has to be the
+ * runtime config.
+ */
+export function readSiteField(finding: Finding): string | null {
+  const { field, summary } = finding.consumer;
+  if (
+    finding.boundary.semantics.name !== "runtime-config" ||
+    field === undefined ||
+    summary !== finding.provider.summary
+  ) {
+    return null;
+  }
+  return field;
+}
+
+/**
+ * The key a rule's `boundary` matches this finding at. A finding about
+ * one read is at the boundary and the name read, as the report prints
+ * it (`runtime-config STRIPE_API_KEY`), so a rule accepting it keeps
+ * matching when the code that reads it moves to another file.
+ */
+export function findingRuleBoundaryKey(finding: Finding): string | null {
+  const field = readSiteField(finding);
+  if (field !== null) {
+    return labelWithDetail(finding.boundary, field);
+  }
+  return ruleBoundaryKey(finding.boundary);
 }
 
 /**
