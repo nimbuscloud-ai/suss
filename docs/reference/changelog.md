@@ -7,6 +7,100 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.37.0 (2026-10-26)
+
+0.37.0 follows a request into the background jobs it enqueues, reads the deliveries a CloudFormation template declares, and turns a missing environment variable into one finding per read, with a rule you can paste that keeps working when the code moves.
+
+### Breaking changes
+
+**A `.sussignore` rule for a missing environment variable needs rewriting.** suss used to report one `boundaryFieldUnknown` per deployment and per path through the code that read the variable, and the rule it printed pointed at one path:
+
+```yaml
+- kind: boundaryFieldUnknown
+  consumer: { transitionId: "chargeCard:return:da39a3e" }
+```
+
+Now there is one finding per place the code reads the variable, listing the deployments that run that code without declaring it, and the rule gives the variable and those deployments:
+
+```yaml
+- kind: boundaryFieldUnknown
+  boundary: "runtime-config STRIPE_API_KEY"
+  consumer: { field: "STRIPE_API_KEY" }
+  deployments: ["Checkout"]
+```
+
+A rule keyed on `transitionId` no longer matches, so the finding comes back. Delete it, run `suss check`, and paste the rule printed under the finding. A deployment the rule leaves out, including one added later, is still reported ([#1325](https://github.com/nimbuscloud-ai/suss/pull/1325), [#1338](https://github.com/nimbuscloud-ai/suss/pull/1338), [#1339](https://github.com/nimbuscloud-ai/suss/pull/1339)).
+
+**OpenAPI summaries are labelled by the spec's path.** `openapi:openapi.yaml` is now `openapi:api/openapi.yaml`, as the CloudFormation and serverless readers already label their documents. A `.sussignore` rule that gives only the file name still matches. A `check --since` against summaries from 0.36.0 sees each OpenAPI operation as renamed once ([#1340](https://github.com/nimbuscloud-ai/suss/pull/1340)).
+
+### Changes to the summary format
+
+- `config-read` effects record `default`, the value a read falls back to when the variable is unset, when it settles to one ([#1332](https://github.com/nimbuscloud-ai/suss/pull/1332)).
+- OpenAPI operations and GraphQL schema fields record the line they are declared on, where every one used to be line 0 ([#1340](https://github.com/nimbuscloud-ai/suss/pull/1340)).
+- Template summaries point at their resource's line instead of line 1, and EventBridge rules record `metadata.messageBus.eventPattern`. A template delivery is a summary marked `metadata.messageBus.wiring` ([#1331](https://github.com/nimbuscloud-ai/suss/pull/1331)).
+- `.sussignore` rules take `deployments` ([#1339](https://github.com/nimbuscloud-ai/suss/pull/1339)).
+
+### Background jobs
+
+A Rails request that enqueues a job used to stop at the enqueue, and the job's own reads and writes belonged to nobody:
+
+```ruby
+ReportExportJob.perform_later(export.id)
+```
+
+The new `activejob`, `sidekiq`, `celery` and `bullmq` packs make each job's handler a consumer and each enqueue a send to it. `suss ask "what does ExportsController#create reach"` now goes on into `ReportExportJob#perform` and the tables it touches, and `.delay()` in Celery and `queue.add()` in BullMQ do the same. A job is never reported as an orphan from either end, since a scheduler config or another service can enqueue it, and Celery's `send_task` usually sends to a worker in another service. `suss init` suggests the packs from your Gemfile, requirements or package.json ([#1327](https://github.com/nimbuscloud-ai/suss/pull/1327), [#1328](https://github.com/nimbuscloud-ai/suss/pull/1328), [#1329](https://github.com/nimbuscloud-ai/suss/pull/1329), [#1326](https://github.com/nimbuscloud-ai/suss/pull/1326)).
+
+### Deliveries a CloudFormation template declares
+
+suss reported dead-letter queues as unused and queue consumers as orphans, because nothing in code sends to them:
+
+```yaml
+OrdersQueue:
+  Type: AWS::SQS::Queue
+  Properties:
+    RedrivePolicy:
+      deadLetterTargetArn: !GetAtt OrdersDlq.Arn
+```
+
+The CloudFormation reader now reads a queue's redrive, a dead-letter config, Lambda destinations, SNS subscriptions to SQS, S3 notifications, pipes, schedules and alarm actions as deliveries. An EventBridge send pairs with a rule when the rule's pattern lets it through, so a send from a source the pattern does not list is an orphan. A rule that also filters on `detail` matches only possibly, and nothing is compared across it ([#1331](https://github.com/nimbuscloud-ai/suss/pull/1331)).
+
+AppSync fields declared in a nested stack now pair with the Lambda behind them, through the parameters the parent stack passes, in TypeScript, Python and Ruby ([#1336](https://github.com/nimbuscloud-ai/suss/pull/1336)).
+
+### One environment variable finding per read
+
+A flag read in a shared `utils.ts` was reported missing from every function that imported the file, though only one of them called it. A function is now charged only with the reads its own calls reach. On one public SAM app with 25 handlers, the false errors went from 24 to 0. Reads behind a call suss cannot follow are listed under `unchecked.runtimeConfig` instead of being reported ([#1322](https://github.com/nimbuscloud-ai/suss/pull/1322), [#1323](https://github.com/nimbuscloud-ai/suss/pull/1323)).
+
+Each finding now covers one read, lists the deployments that lack the variable, and the rule it prints is the one above. A fallback after a call that keeps a missing value missing, such as `ENV["X"].presence || "dev"`, counts as a default ([#1325](https://github.com/nimbuscloud-ai/suss/pull/1325), [#1330](https://github.com/nimbuscloud-ai/suss/pull/1330)).
+
+### suss map
+
+The page is easier to read:
+
+- Each outcome of a route takes one line: its status, when it happens, and where.
+- A route or field a spec declares links to the line in the spec, and one nothing serves says why suss didn't find what serves it.
+- Every GraphQL type name links, enums, unions and scalars included.
+- The env list shows each variable's default, and groups the variables a config file such as `config/database.yml` reads when the app boots. Those reads never showed in 0.36.0.
+- A project with thousands of findings keeps a small page: each entry lists ten findings of a kind and counts the rest ([#1335](https://github.com/nimbuscloud-ai/suss/pull/1335), [#1340](https://github.com/nimbuscloud-ai/suss/pull/1340)).
+
+### Large repositories without a suss.json
+
+A bare `suss map` or `suss check` on a large monorepo used to print one line and then nothing for half an hour. With no `suss.json`, it now runs the reads `suss init` would write, one per workspace package, each in its own process with a time and memory limit, several at once, and prints each one as it starts and ends:
+
+```
+23 reads, 3 at a time, each stopped after 20m 0s:
+  [10/23] suss extract --lang typescript --dir apps/web ...: 3791 summaries in 2m 40s
+  [23/23] suss extract --lang typescript --dir packages/features ...: failed after 20m 0s
+```
+
+A read that fails is left out, the rest are checked, and the report says which failed. `--jobs`, `--read-timeout` and `--read-memory` change the limits ([#1333](https://github.com/nimbuscloud-ai/suss/pull/1333)). A package shared between services is read through the services that import it, and `suss init` finds the packages beside it ([#1334](https://github.com/nimbuscloud-ai/suss/pull/1334)).
+
+### Fixes and improvements
+
+- TypeScript follows `new` into the constructor it runs, and reads a parameter default at a call that leaves the argument out ([#1322](https://github.com/nimbuscloud-ai/suss/pull/1322)).
+- A graphql-ruby field's outcomes say the type each path resolves to ([#1324](https://github.com/nimbuscloud-ai/suss/pull/1324)).
+- A warm `extract` misses the cache after `prisma generate` rewrites the client or an install changes a library a pack reads ([#1337](https://github.com/nimbuscloud-ai/suss/pull/1337)).
+- `suss map` is in the quickstart and adoption guides ([#1321](https://github.com/nimbuscloud-ai/suss/pull/1321)).
+
 ## 0.34.1 (2026-10-20)
 
 0.34.1 makes a first run on someone else's code report a sixth as many findings, and lets suss read back summary files of any size.
