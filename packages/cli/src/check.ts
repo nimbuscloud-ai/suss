@@ -16,6 +16,8 @@ import {
   checkAll,
   checkPair,
   countsForThreshold,
+  deploymentName,
+  findingDeployments,
   findingIdentity,
   findingRuleBoundaryKey,
   groupBySharedCause,
@@ -1677,6 +1679,10 @@ function ruleLines(heading: string, rule: AcceptingRule): string[] {
       lines.push(`      ${side}: ${ruleSideText(matched)}`);
     }
   }
+
+  if (rule.deployments !== undefined) {
+    lines.push(`      deployments: ${JSON.stringify(rule.deployments)}`);
+  }
   lines.push("      reason: TODO say why you accept this");
   return lines;
 }
@@ -1697,6 +1703,7 @@ export interface AcceptingRule {
   boundary?: string;
   provider?: AcceptingSide;
   consumer?: AcceptingSide;
+  deployments?: string[];
 }
 
 interface NamedSide {
@@ -1714,10 +1721,12 @@ export function acceptingRule(f: Finding): AcceptingRule | null {
   if (side === null) {
     return null;
   }
+  const deployments = findingDeployments(f);
   return {
     kind: f.kind,
     ...(key !== null ? { boundary: key } : {}),
     [side.name]: side.matches,
+    ...(deployments.length > 0 ? { deployments } : {}),
   };
 }
 
@@ -1762,9 +1771,7 @@ function isReadSite(f: Finding): boolean {
 
 /** The deployments a finding about one read is against, by name, from the summaries `sources` lists. */
 function runsInLines(f: Finding, indent: string): string[] {
-  const names = (f.sources ?? []).map((id) =>
-    id.slice(id.lastIndexOf("::") + 2),
-  );
+  const names = (f.sources ?? []).map(deploymentName);
   return [`${indent}not declared by: ${names.join(", ")}`];
 }
 
