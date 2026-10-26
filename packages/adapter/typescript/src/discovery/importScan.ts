@@ -14,9 +14,17 @@
 
 import path from "node:path";
 
+import {
+  type ImportDeclaration,
+  type Project,
+  type SourceFile,
+  SyntaxKind,
+} from "ts-morph";
+
 import { commonDirectoryOf } from "@suss/extractor";
 
-import type { ImportDeclaration, Project, SourceFile } from "ts-morph";
+import { statementsOfKind } from "../walk/rawDescent.js";
+
 import type { ResolutionStore } from "../facts/store.js";
 
 export interface ImportScanOptions {
@@ -116,7 +124,10 @@ export function moduleImportedWholeAs(
   sourceFile: SourceFile,
   local: string,
 ): string | null {
-  for (const decl of sourceFile.getImportDeclarations()) {
+  for (const decl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ImportDeclaration,
+  )) {
     const bound =
       decl.getNamespaceImport()?.getText() ??
       decl.getDefaultImport()?.getText();
@@ -140,7 +151,10 @@ export function specifierImportedAs(
   sourceFile: SourceFile,
   local: string,
 ): string | null {
-  for (const decl of sourceFile.getImportDeclarations()) {
+  for (const decl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ImportDeclaration,
+  )) {
     const bound = [
       decl.getDefaultImport()?.getText(),
       decl.getNamespaceImport()?.getText(),
@@ -206,15 +220,14 @@ export function matchingImportDeclarations(
     ? resolvedModuleFile(sourceFile.getProject(), importModule, resolution)
     : null;
   if (target !== null) {
-    return sourceFile
-      .getImportDeclarations()
-      .filter((decl) => decl.getModuleSpecifierSourceFile() === target);
-  }
-  return sourceFile
-    .getImportDeclarations()
-    .filter((decl) =>
-      specifierMatches(decl.getModuleSpecifierValue(), importModule, subpaths),
+    return statementsOfKind(sourceFile, SyntaxKind.ImportDeclaration).filter(
+      (decl) => decl.getModuleSpecifierSourceFile() === target,
     );
+  }
+  return statementsOfKind(sourceFile, SyntaxKind.ImportDeclaration).filter(
+    (decl) =>
+      specifierMatches(decl.getModuleSpecifierValue(), importModule, subpaths),
+  );
 }
 
 /** A relative or absolute specifier points at a location rather than a package. */

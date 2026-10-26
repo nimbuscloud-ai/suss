@@ -28,6 +28,7 @@ import {
   pathFromProperty,
   statesLocalUrl,
 } from "../resolve/routePath.js";
+import { forEachDescendantOfKinds, skipsNothing } from "../walk/rawDescent.js";
 import { resolvedModuleFile } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 import { stringPropertyOf, writtenNodesOf } from "./resolveValue.js";
@@ -37,6 +38,13 @@ import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
 import type { CallExpression, NewExpression } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
+
+const CALL_KIND: ReadonlySet<SyntaxKind> = new Set([SyntaxKind.CallExpression]);
+
+const BINDING_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.VariableDeclaration,
+  SyntaxKind.Parameter,
+]);
 
 /** The objects a global is reachable through, in a browser or in Node. */
 const GLOBAL_OBJECTS = new Set(["globalThis", "window", "self", "global"]);
@@ -55,10 +63,9 @@ export function discoverClientCalls(
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
   const calls: CallExpression[] = [];
-  sourceFile.forEachDescendant((node) => {
-    if (Node.isCallExpression(node)) {
-      calls.push(node);
-    }
+  forEachDescendantOfKinds(sourceFile, CALL_KIND, (node) => {
+    calls.push(node as CallExpression);
+    return false;
   });
 
   const matched =
@@ -428,7 +435,7 @@ export function clientReceiverCheckFor(
   // One walk at any depth: a client built inside a hook body, handed in
   // through a parameter, or known only by its type annotation is still
   // this pack's client, and a scan of the top level misses all three.
-  sourceFile.forEachDescendant((node) => {
+  const visit = (node: Node): boolean => {
     if (Node.isVariableDeclaration(node)) {
       const init = node.getInitializer();
       if (
@@ -440,7 +447,7 @@ export function clientReceiverCheckFor(
       if (localName !== null && typedAsClient(node.getTypeNode(), localName)) {
         constructedHere.add(node.getName());
       }
-      return;
+      return false;
     }
     if (
       Node.isParameterDeclaration(node) &&
@@ -452,7 +459,10 @@ export function clientReceiverCheckFor(
         constructedHere.add(written.getText());
       }
     }
-  });
+    return false;
+  };
+  // A parameter in a type signature can be typed as the client, so types are walked.
+  forEachDescendantOfKinds(sourceFile, BINDING_KINDS, visit, skipsNothing);
   const creating = creationCallsAmong(
     [...initializedBy.keys()],
     match,

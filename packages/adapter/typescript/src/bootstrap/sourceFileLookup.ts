@@ -23,9 +23,13 @@
 
 import path from "node:path";
 
-import { isFunctionRoot } from "../discovery/shared.js";
+import { FUNCTION_ROOT_KINDS } from "../discovery/shared.js";
 import { endLineOf, startLineOf } from "../lines.js";
 import { createPerFileCache } from "../perFileCache.js";
+import {
+  forEachDescendantOfKinds,
+  isTypeOnlySyntax,
+} from "../walk/rawDescent.js";
 
 import type { Project, SourceFile } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
@@ -205,16 +209,20 @@ const functionIndexes = createPerFileCache<Map<string, FunctionRoot>>();
 
 function indexFunctions(sf: SourceFile): Map<string, FunctionRoot> {
   const index = new Map<string, FunctionRoot>();
-  sf.forEachDescendant((node) => {
-    if (!isFunctionRoot(node)) {
-      return;
-    }
-    const bySpan = spanKey({ start: node.getStart(), end: node.getEnd() });
-    index.set(bySpan, node);
-    const key = rangeKey({ start: startLineOf(node), end: endLineOf(node) });
-    if (!index.has(key)) {
-      index.set(key, node);
-    }
-  });
+  forEachDescendantOfKinds(
+    sf,
+    FUNCTION_ROOT_KINDS,
+    (found) => {
+      const node = found as FunctionRoot;
+      const bySpan = spanKey({ start: node.getStart(), end: node.getEnd() });
+      index.set(bySpan, node);
+      const key = rangeKey({ start: startLineOf(node), end: endLineOf(node) });
+      if (!index.has(key)) {
+        index.set(key, node);
+      }
+      return false;
+    },
+    isTypeOnlySyntax,
+  );
   return index;
 }

@@ -4,7 +4,7 @@
 // being analysed and dispatches each node through the matchers in
 // pattern order.
 
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 
 import { endLineOf } from "../lines.js";
 import {
@@ -13,6 +13,7 @@ import {
   isDescentStop,
   NO_BARRIERS,
 } from "../walk/descent.js";
+import { forEachDescendantOfKinds } from "../walk/rawDescent.js";
 import { tryMatchParameterCall } from "./continuation.js";
 import { declaredStatusCode } from "./extract.js";
 import { tryMatchJsxReturn } from "./jsx.js";
@@ -48,6 +49,23 @@ const NESTED_ESCAPING_MATCH_TYPES: ReadonlySet<
 > = new Set(["parameterMethodCall"]);
 
 /**
+ * The kinds a matcher below can match, and the functions the walk stops
+ * at. A matcher that starts accepting another kind has to be listed here.
+ */
+const TERMINAL_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ObjectLiteralExpression,
+  SyntaxKind.ReturnStatement,
+  SyntaxKind.ThrowStatement,
+  SyntaxKind.CallExpression,
+  SyntaxKind.NewExpression,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.Constructor,
+]);
+
+/**
  * Walk every descendant of `func` and try each pattern in order (first match
  * wins per node). Returns all matched terminals across the whole function.
  *
@@ -67,10 +85,9 @@ export function findTerminals(
 ): FoundTerminal[] {
   const results: FoundTerminal[] = [];
 
-  func.forEachDescendant((node, traversal) => {
+  forEachDescendantOfKinds(func, TERMINAL_KINDS, (node) => {
     if (isDescentStop(node, func, barriers)) {
-      traversal.skip();
-      return;
+      return true;
     }
 
     const nested = crossesNestedFunctionScope(node, func);
@@ -150,6 +167,7 @@ export function findTerminals(
         break;
       }
     }
+    return false;
   });
 
   // Fallback for expression-body arrows (`(v) => setValue(v)`, `() => <X />`):

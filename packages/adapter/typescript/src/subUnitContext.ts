@@ -19,10 +19,12 @@ import {
   type CallExpression,
   type JsxExpression,
   Node,
+  SyntaxKind,
 } from "ts-morph";
 
 import { resolveDecl } from "./resolve/functionBehind.js";
-import { isDescentStop } from "./walk/descent.js";
+import { isDescentStop, withDescentStops } from "./walk/descent.js";
+import { forEachDescendantOfKinds } from "./walk/rawDescent.js";
 
 import type { FunctionRoot } from "./conditions.js";
 
@@ -117,29 +119,25 @@ export function createTsSubUnitContext(): TsSubUnitContext {
   };
 }
 
-function skipNestedFunctions(parent: FunctionRoot) {
-  return (node: Node, traversal: { skip: () => void }): boolean => {
-    if (isDescentStop(node, parent)) {
-      traversal.skip();
-      return true;
-    }
-    return false;
-  };
-}
+const JSX_ELEMENTS_AND_STOPS = withDescentStops(
+  SyntaxKind.JsxOpeningElement,
+  SyntaxKind.JsxSelfClosingElement,
+);
+
+const CALLS_AND_STOPS = withDescentStops(SyntaxKind.CallExpression);
 
 function findJsxAttributes(parent: FunctionRoot): TsJsxAttributeLocation[] {
   const out: TsJsxAttributeLocation[] = [];
-  const skip = skipNestedFunctions(parent);
 
-  parent.forEachDescendant((node, traversal) => {
-    if (skip(node, traversal)) {
-      return;
+  forEachDescendantOfKinds(parent, JSX_ELEMENTS_AND_STOPS, (node) => {
+    if (isDescentStop(node, parent)) {
+      return true;
     }
     if (
       !Node.isJsxOpeningElement(node) &&
       !Node.isJsxSelfClosingElement(node)
     ) {
-      return;
+      return false;
     }
     const tag = node.getTagNameNode().getText();
     for (const attr of node.getAttributes()) {
@@ -165,6 +163,7 @@ function findJsxAttributes(parent: FunctionRoot): TsJsxAttributeLocation[] {
         valueExpression,
       });
     }
+    return false;
   });
 
   return out;
@@ -175,19 +174,19 @@ function findCallExpressionsByName(
   name: string,
 ): CallExpression[] {
   const out: CallExpression[] = [];
-  const skip = skipNestedFunctions(parent);
 
-  parent.forEachDescendant((node, traversal) => {
-    if (skip(node, traversal)) {
-      return;
+  forEachDescendantOfKinds(parent, CALLS_AND_STOPS, (node) => {
+    if (isDescentStop(node, parent)) {
+      return true;
     }
     if (!Node.isCallExpression(node)) {
-      return;
+      return false;
     }
     const callee = node.getExpression();
     if (Node.isIdentifier(callee) && callee.getText() === name) {
       out.push(node);
     }
+    return false;
   });
 
   return out;
