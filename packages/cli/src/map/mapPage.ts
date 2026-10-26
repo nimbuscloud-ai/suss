@@ -569,7 +569,7 @@ function unfollowedBlock(model: MapModel): string {
         <li><span class="num">${count(coverage.withUnreadOutcome)}</span><span>functions with an outcome not read</span></li>
       </ul>
       ${top === "" ? "" : `<p class="sub-h">Most often</p><ul class="num-list">${top}</ul>`}
-      ${exact ? "" : `<p class="sub-note">Links to a read or write open the function that makes it. These summaries do not record the call's line.</p>`}
+      ${exact ? "" : `<p class="sub-note">Read and write links open the function, not the exact line.</p>`}
     </div>`;
 }
 

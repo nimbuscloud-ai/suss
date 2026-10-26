@@ -41,6 +41,8 @@
       id: S[u[6]],
       repo: u[7] === null ? null : S[D.repos[u[7]][0]],
       github: u[7] === null ? null : D.repos[u[7]][1],
+      doc: u[8] === null || u[8] === undefined ? null : S[u[8]],
+      boot: u[9] === 1,
     };
   };
 
@@ -71,16 +73,19 @@
   };
 
   /** The file on disk in the chosen editor when the page knows where it is, or else on GitHub at the commit read. */
+  /** A spec's unit links to the spec file, at the line it was declared on when the reader records one. */
   function hrefOf(u, line) {
-    if (u.spec) {
+    const file = u.spec ? u.doc : u.file;
+    if (file === null) {
       return null;
     }
+    const at = line > 0 ? line : 1;
     const root = D.roots[u.read];
-    const github = u.github ? `${u.github}${encodeURI(u.file)}#L${line}` : null;
+    const github = u.github ? `${u.github}${encodeURI(file)}#L${at}` : null;
     if (root === null || root === undefined || scheme === "github") {
       return github;
     }
-    return (HREF[scheme] || HREF.vscode)(`${root}/${u.file}`, line);
+    return (HREF[scheme] || HREF.vscode)(`${root}/${file}`, at);
   }
 
   /** A link to a line; without one, a link to the function, marked as such. */
@@ -251,6 +256,8 @@
       name: boundary(b).name,
       reads,
       defaults: reads.filter((r) => r[2] === 1).length,
+      // Read by a config file the app renders when it boots, such as Rails' database.yml.
+      boot: reads.some((r) => unit(r[1]).boot),
       entries: entries.filter((e) => e.env.has(b)),
       text: `${boundary(b).name} ${reads.map((r) => unit(r[1]).file).join(" ")}`.toLowerCase(),
     }))
@@ -261,9 +268,19 @@
     i,
     name: S[t[0]],
     fields: t[1],
+    kind: t[2] || "object",
+    members: (t[3] || []).map((m) => S[m]),
     resolvers: t[1].filter((f) => f[4] !== null).length,
-    text: `${S[t[0]]} ${t[1].map((f) => S[f[0]]).join(" ")}`.toLowerCase(),
+    text: `${S[t[0]]} ${t[1].map((f) => S[f[0]]).join(" ")} ${(t[3] || []).map((m) => S[m]).join(" ")}`.toLowerCase(),
   }));
+
+  /** What the type list and the drawer say a type has: its fields, or an enum's values, a union's members, or that it is a scalar. */
+  const TYPE_CONTENTS = {
+    object: (t) => plural(t.fields.length, "field", "fields"),
+    enum: (t) => plural(t.members.length, "value", "values"),
+    union: (t) => plural(t.members.length, "member", "members"),
+    scalar: () => "scalar",
+  };
   const typeOf = new Map(types.map((t) => [t.name, t.i]));
 
   const pages = D.pg.map((p, i) => {
@@ -704,7 +721,7 @@
         "types",
         shown.map(
           (t) =>
-            `<button type="button" class="item type-item" data-open="type-${t.i}"><span class="item-main">${icon("type", "i-go")}<span class="item-path">${esc(t.name)}</span></span><span class="cells"><span class="c-num"><span class="badge">${n(t.fields.length)}</span></span><span class="c-num"><span class="badge">${t.resolvers ? plural(t.resolvers, "resolver", "resolvers") : "schema only"}</span></span></span></button>`,
+            `<button type="button" class="item type-item" data-open="type-${t.i}"><span class="item-main">${icon("type", "i-go")}<span class="item-path">${esc(t.name)}</span></span><span class="cells"><span class="c-num"><span class="badge">${t.kind === "object" ? n(t.fields.length) : TYPE_CONTENTS[t.kind](t)}</span></span><span class="c-num"><span class="badge">${t.resolvers ? plural(t.resolvers, "resolver", "resolvers") : "schema only"}</span></span></span></button>`,
         ),
       )}`,
     pages: (shown) =>
@@ -742,32 +759,57 @@
           ),
       );
     },
-    env: (shown) =>
-      capped(
-        "env",
-        shown.map((e) => {
-          const first = unit(e.reads[0][1]);
-          const def =
-            e.defaults === e.reads.length
-              ? "default at every read"
-              : e.defaults === 0
-                ? "no default"
-                : `default at ${e.defaults} of ${e.reads.length}`;
-          return `<button type="button" class="item" data-open="env-${e.b}">
-          <span class="item-main">${icon("env", "i-env")}<span class="item-path">${esc(e.name)}</span></span>
-          <span class="item-side"><span class="badge">${esc(short(first.file))}${e.reads.length > 1 ? ` +${e.reads.length - 1}` : ""}</span><span class="badge" data-term="default">${esc(def)}</span></span>
-        </button>`;
-        }),
-      ),
+    env: (shown) => {
+      const head = `<div class="list-head env-cols" aria-hidden="true"><span>Variable</span><span>Read in</span><span>Default</span></div>`;
+      const boot = shown.filter((e) => e.boot);
+      const inCode = shown.filter((e) => !e.boot);
+      if (boot.length === 0) {
+        return head + capped("env", inCode.map(envItem));
+      }
+      const group = (name, list) =>
+        `<div class="group-head"><span class="group-name group-label">${name}</span><span class="group-count">${plural(list.length, "variable", "variables")}</span></div>`;
+      return `${head}${group("Read when the app boots", boot)}${boot.map(envItem).join("")}${inCode.length ? group("Read in code", inCode) + capped("env", inCode.map(envItem)) : ""}`;
+    },
   };
 
+  function envItem(e) {
+    // A variable a boot config reads shows that file first.
+    const first = unit(
+      (e.boot ? e.reads.find((r) => unit(r[1]).boot) : e.reads[0])[1],
+    );
+    return `<button type="button" class="item env-item" data-open="env-${e.b}">
+          <span class="item-main">${icon("env", "i-env")}<span class="item-path">${esc(e.name)}</span></span>
+          <span class="cells"><span class="c-type">${esc(short(first.file))}${e.reads.length > 1 ? ` +${e.reads.length - 1}` : ""}</span><span class="c-type" data-term="default">${envDefaultCell(e)}</span></span>
+        </button>`;
+  }
+
+  /** The value the code falls back to when the variable is unset, or how its reads differ. */
+  function envDefaultCell(e) {
+    if (e.defaults === 0) {
+      return `<span class="muted">none</span>`;
+    }
+    const values = [
+      ...new Set(
+        e.reads
+          .filter((r) => r[2] === 1 && r[3] !== null && r[3] !== undefined)
+          .map((r) => S[r[3]]),
+      ),
+    ];
+    const shown =
+      values.length === 1
+        ? esc(values[0])
+        : `<span class="muted">${values.length > 1 ? `${values.length} values` : "yes"}</span>`;
+    return e.defaults === e.reads.length
+      ? shown
+      : `${shown} <span class="muted">at ${e.defaults} of ${e.reads.length} reads</span>`;
+  }
+
   const EMPTY_TEXT = {
-    routes: "No routes found in the code suss read.",
-    graphql: "No GraphQL fields found in the code suss read.",
+    routes: "No routes found.",
+    graphql: "No GraphQL fields found.",
     types: "No GraphQL types found.",
     pages: "No client-side pages found.",
-    tables:
-      "No tables found. A table shows up when a pack reads the ORM or database client; see Coverage.",
+    tables: "No tables found. A pack for your ORM finds them. See Coverage.",
     env: "No environment variable reads found.",
   };
 
@@ -962,44 +1004,47 @@
     box.innerHTML = raw.f.map((fi) => findingCallout(rows[fi])).join("") + more;
   }
 
+  /** One line per outcome: its status, when it happens and what it gives, then where. */
   function outcomeRows(raw) {
-    return raw.o
+    const sorted = raw.o
       .slice()
       .sort(
         (a, b) => (a[0] === null ? 999 : a[0]) - (b[0] === null ? 999 : b[0]),
-      )
-      .map((o) => {
-        const exc =
-          o[2] !== null
-            ? ` <span class="muted">raises ${code(S[o[2]])}</span>`
-            : "";
-        const from =
-          o[6] !== null
-            ? ` <span class="badge" data-term="early">${icon("guard", "i-guard")}${esc(S[o[6]])}</span>`
-            : "";
-        // A GraphQL field's outcome says the type it resolves to, linked
-        // to that type's entry, in place of a status it does not have.
-        const returns =
-          o[7] !== null && o[7] !== undefined
-            ? `<span class="muted">returns</span> <span class="c-type">${typeHtml(S[o[7]])}</span>`
-            : "";
-        const cond = o[3].length
-          ? `${conditionHtml(o[3])}${returns ? ` ${returns}` : ""}`
-          : returns || `<span class="cond muted">otherwise</span>`;
-        const word =
-          o[0] === null
-            ? S[o[1]] === "throw"
-              ? "err"
-              : raw.k === "q" && S[o[1]] === "return"
-                ? "ok"
-                : "?"
-            : null;
-        const pill =
-          word === null
-            ? statusPill(o[0])
-            : `<span class="status ${word === "ok" ? "s-2xx" : "s-unknown"}">${word}</span>`;
-        return `<div class="outcome">${pill}<div class="cond">${cond}${exc}${from}<div class="site-meta">${loc(o[4], o[5])}</div></div></div>`;
-      });
+      );
+    return sorted.map((o) => {
+      const parts = [
+        o[3].length
+          ? conditionHtml(o[3])
+          : `<span class="muted">${sorted.length === 1 ? "always" : "otherwise"}</span>`,
+        // A GraphQL field's outcome gives the type it resolves to, in place
+        // of a status it does not have.
+        o[7] !== null && o[7] !== undefined
+          ? `<span class="muted">returns</span> <span class="c-type">${typeHtml(S[o[7]])}</span>`
+          : "",
+        o[2] !== null
+          ? `<span class="muted">raises</span> ${code(S[o[2]])}`
+          : "",
+        o[0] === null && S[o[1]] === "return" && raw.k !== "q"
+          ? `<span class="muted">status set at runtime</span>`
+          : "",
+        o[6] !== null
+          ? `<span class="badge" data-term="early">${icon("guard", "i-guard")}${esc(S[o[6]])}</span>`
+          : "",
+      ].filter(Boolean);
+      return `<div class="outcome">${outcomePill(raw, o)}<span class="o-line">${parts.join('<span class="muted">, </span>')}</span><span class="o-at">${loc(o[4], o[5])}</span></div>`;
+    });
+  }
+
+  function outcomePill(raw, o) {
+    if (o[0] !== null) {
+      return statusPill(o[0]);
+    }
+    if (S[o[1]] === "throw") {
+      return `<span class="status s-unknown">err</span>`;
+    }
+    return raw.k === "q" && S[o[1]] === "return"
+      ? `<span class="status s-2xx">ok</span>`
+      : `<span class="status s-unknown">?</span>`;
   }
 
   function gapSection(raw) {
@@ -1019,7 +1064,7 @@
       raw.gn,
       `${limited(rows, 6)}${more}`,
       {
-        note: "Each makes a call suss could not follow. The lists above may be short.",
+        note: "Calls suss couldn't follow. Lists above may be short.",
         closed: true,
         from: ["inspect", "suss inspect <file>"],
       },
@@ -1061,6 +1106,29 @@
     );
   }
 
+  /** Where a spec declares it, as a link to the file and line, or the reader's label when it gives no file. */
+  function specPlace(ui) {
+    const s = unit(ui);
+    if (s.doc === null) {
+      return code(s.file);
+    }
+    return loc(
+      ui,
+      s.line > 0 ? s.line : 1,
+      s.line > 0 ? `${short(s.doc)}:${s.line}` : short(s.doc),
+    );
+  }
+
+  /** Why no code serves an entry a spec declares. */
+  function notServedReason(raw) {
+    if (!D.u.some((u) => u[5] === 0)) {
+      return "This run read only specs.";
+    }
+    return raw.k === "q"
+      ? `No resolver in the code it read is bound to ${esc(S[raw.m])}.${esc(S[raw.p])}.`
+      : `No handler in the code it read serves ${esc(S[raw.m])} ${esc(S[raw.p])}.`;
+  }
+
   function specSection(raw, e) {
     if (!raw.sp.length || raw.k === "q") {
       return "";
@@ -1073,7 +1141,7 @@
     return section(
       "Spec",
       null,
-      `<div class="shape"><span class="shape-l">${esc(unit(raw.sp[0]).file)}</span><span class="statuses">${declared || '<span class="muted">no statuses</span>'}</span></div>${raw.u.length ? `<div class="shape"><span class="shape-l">The code</span><span class="statuses">${coded || '<span class="muted">none read</span>'}</span></div>` : ""}`,
+      `<div class="shape"><span class="shape-l">The spec</span><span class="statuses">${declared || '<span class="muted">no statuses</span>'}</span></div>${raw.u.length ? `<div class="shape"><span class="shape-l">The code</span><span class="statuses">${coded || '<span class="muted">none read</span>'}</span></div>` : ""}<div class="site-meta">Declared in ${specPlace(raw.sp[0])}</div>`,
     );
   }
 
@@ -1085,7 +1153,7 @@
     const subject = u ? u.id : S[raw.p];
     const servedBy = raw.u.length
       ? `${isField ? "Resolver" : "Handler"} ${code(u.name)} ${loc(raw.u[0], u.line, `${short(u.file)}:${u.line}`)}`
-      : "Declared in a spec. No code here serves it.";
+      : `Declared in ${raw.sp.length ? specPlace(raw.sp[0]) : "a spec"}. suss didn't find what serves this. ${notServedReason(raw)}`;
     const sig =
       isField && raw.sh
         ? `<p class="d-sig">${signature(S[raw.p], raw.sh[0], raw.sh[1])}</p>`
@@ -1127,6 +1195,17 @@
         return `<tr><td class="f-type">${signature(S[f[0]], f[1], f[2])}</td><td>${where}${entry}</td></tr>`;
       })
       .join("");
+    if (type.kind !== "object") {
+      const members = type.members.map((m) =>
+        type.kind === "union" ? typeHtml(m) : code(m),
+      );
+      showDrawer(
+        `${icon("type", "i-go")}GraphQL ${type.kind}`,
+        `<header><h2 class="d-title" id="drawer-title">${esc(type.name)}</h2><p class="d-sub">${TYPE_CONTENTS[type.kind](type)}</p></header>
+        ${section(type.kind === "enum" ? "Values" : "Members", members.length, members.length ? limited(members, 24) : "")}`,
+      );
+      return;
+    }
     showDrawer(
       `${icon("type", "i-go")}GraphQL type`,
       `<header><h2 class="d-title" id="drawer-title">${esc(type.name)}</h2><p class="d-sub">${plural(type.fields.length, "field", "fields")}, ${type.resolvers ? `${n(type.resolvers)} with a resolver in code` : "none with a resolver in code"}</p></header>
@@ -1262,47 +1341,20 @@
   // ---------- hover cards ----------
 
   const TERMS = {
-    writes: [
-      "Writes",
-      "Inserts, updates or deletes rows, here or in code it calls.",
-    ],
+    writes: ["Writes", "Changes rows, here or in code it calls."],
     reads: ["Reads", "Queries the table, here or in code it calls."],
-    through: [
-      "Via",
-      "The calls between the entry point and the code that does this, outermost first.",
-    ],
+    through: ["Via", "The calls from the entry point to here."],
     partial: [
       "Calls not followed",
-      "A function on the way makes a call suss could not follow, so the lists may be short.",
+      "Some calls weren't followed. Lists may be short.",
     ],
-    unread: [
-      "Not read",
-      "suss did not read what this does. Tables it reaches may be missing.",
-    ],
-    finding: [
-      "Finding",
-      "check compared this with code that calls it, and they disagree.",
-    ],
-    ops: [
-      "Callers",
-      "GraphQL operations in this repo that check paired with the field.",
-    ],
-    default: [
-      "Default",
-      "The code gives a value to use when the variable is not set.",
-    ],
-    early: [
-      "Early return",
-      "A middleware or filter adds this outcome before the handler runs.",
-    ],
-    fnline: [
-      "Function start",
-      "The summaries do not record this call's line, so the link opens the function that makes it.",
-    ],
-    speconly: [
-      "Spec only",
-      "A spec declares it, and no code suss read serves it.",
-    ],
+    unread: ["Not read", "suss didn't read this code. Tables may be missing."],
+    finding: ["Finding", "This and its caller disagree."],
+    ops: ["Callers", "GraphQL operations in this repo that use it."],
+    default: ["Default", "Used when the variable isn't set."],
+    early: ["Early return", "Middleware returns this before the handler runs."],
+    fnline: ["Function start", "Links to the function, not the exact line."],
+    speconly: ["Spec only", "A spec declares it. No code serves it."],
   };
   const STATUS_WORDS = {
     200: "OK",
@@ -1363,8 +1415,8 @@
     if (el.dataset.status) {
       const s = el.dataset.status;
       return s === "?"
-        ? "<b>Unknown status</b>The summary gives no literal status for this path."
-        : `<b>${esc(s)} ${esc(STATUS_WORDS[s] || "")}</b>Returned on at least one path.`;
+        ? "<b>Unknown status</b>The code sets it at runtime."
+        : `<b>${esc(s)} ${esc(STATUS_WORDS[s] || "")}</b>Returned on some path.`;
     }
     return "";
   }

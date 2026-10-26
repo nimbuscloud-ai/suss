@@ -53,6 +53,8 @@ export interface MapUnit {
   read: number;
   /** True for a unit a spec declared, which has no place in source. */
   spec: boolean;
+  /** For a spec's unit, the spec file relative to its read's root, or null when the label gives none. */
+  document: string | null;
   /** Which entry in `repositories` the summary records, or null when it records none. */
   repository: number | null;
 }
@@ -201,7 +203,11 @@ export interface MapFinding {
 /** A GraphQL type and its fields, from the code's resolvers and the schema. */
 export interface GraphqlType {
   name: string;
+  /** "object" covers interfaces and input types, which also have fields. */
+  kind: "object" | "enum" | "union" | "scalar";
   fields: GraphqlField[];
+  /** An enum's values or a union's member types. */
+  members: string[];
 }
 
 export interface GraphqlField {
