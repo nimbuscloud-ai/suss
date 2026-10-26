@@ -49,8 +49,41 @@ export function stableTypeText(
   enclosing?: Node,
   flags?: ts.TypeFormatFlags,
 ): string {
-  const checker = reader.getProject().getTypeChecker().compilerObject;
   const format = flags ?? defaultFlags(enclosing);
+  // The text depends only on the type, where it is printed and the flags,
+  // and the checker keeps one object per type, so each is printed once.
+  const place = enclosing?.compilerNode ?? NOWHERE;
+  const atPlace =
+    printedAt.get(place) ??
+    new WeakMap<ts.Type, Map<ts.TypeFormatFlags, string>>();
+  printedAt.set(place, atPlace);
+  const byFormat =
+    atPlace.get(type.compilerType) ?? new Map<ts.TypeFormatFlags, string>();
+  atPlace.set(type.compilerType, byFormat);
+  const kept = byFormat.get(format);
+  if (kept !== undefined) {
+    return kept;
+  }
+  const text = printedType(type, reader, enclosing, format);
+  byFormat.set(format, text);
+  return text;
+}
+
+/** The key the table below uses when there is no enclosing node. */
+const NOWHERE = {};
+
+const printedAt = new WeakMap<
+  object,
+  WeakMap<ts.Type, Map<ts.TypeFormatFlags, string>>
+>();
+
+function printedType(
+  type: Type,
+  reader: Node,
+  enclosing: Node | undefined,
+  format: ts.TypeFormatFlags,
+): string {
+  const checker = reader.getProject().getTypeChecker().compilerObject;
   const enclosingNode = enclosing?.compilerNode;
   const typeNode = checker.typeToTypeNode(
     type.compilerType,
