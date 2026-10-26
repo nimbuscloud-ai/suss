@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-aws-lambda",
   "exports": 15,
-  "internal": 16,
-  "consumers": 21,
+  "internal": 17,
+  "consumers": 22,
   "unfollowedCalls": 0
 }

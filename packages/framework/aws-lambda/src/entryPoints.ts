@@ -7,18 +7,22 @@
  * the call walk starts from it, as it does from a TypeScript handler.
  *
  * Neither adapter reads a Lambda's response envelope yet, so a handler
- * gets no route or resolver binding. Its events are listed on the unit
- * instead. A handler whose events all come from one message bus is that
- * bus's consumer, as in TypeScript, and any other handler is bound as
- * the deployed function, invoked by name.
+ * gets no route binding. A field AppSync routes here binds the handler
+ * to that field. A handler whose events all come from one message bus
+ * is that bus's consumer, and any other is bound as the deployed function.
  */
 
-import { messageBusBinding, unitInvocationBinding } from "@suss/behavioral-ir";
+import {
+  graphqlResolverBinding,
+  messageBusBinding,
+  unitInvocationBinding,
+} from "@suss/behavioral-ir";
 
 import {
   deployableUnit,
   METADATA_NAMESPACE,
   messageBusWire,
+  operationFields,
 } from "./discovery.js";
 import { type HandlerEntry, handlersForFile } from "./templateIndex.js";
 
@@ -36,8 +40,55 @@ export function lambdaEntryPoints(
   return (filePath) =>
     handlersForFile(filePath).map((entry) => ({
       name: entry.exportName,
-      units: [handlerUnit(entry, recognition)],
+      units: entryUnits(entry, recognition),
     }));
+}
+
+/**
+ * AppSync passes a field's arguments to the handler and takes what it
+ * returns as the field's value, with no envelope to read, so a field
+ * AppSync routes here binds the handler to that field, as in TypeScript.
+ * A handler that something else also reaches keeps its own unit for it.
+ */
+function entryUnits(
+  entry: HandlerEntry,
+  recognition: string,
+): DeclaredEntryUnit[] {
+  const operations = operationFields(entry);
+  const fields = operations.map((field) =>
+    resolverUnit(entry, field, recognition),
+  );
+  const reachedOtherwise =
+    entry.httpRoutes.length > 0 ||
+    entry.nonHttpEvents.length > 0 ||
+    entry.graphqlFields.length > operations.length;
+  return fields.length > 0 && !reachedOtherwise
+    ? fields
+    : [...fields, handlerUnit(entry, recognition)];
+}
+
+function resolverUnit(
+  entry: HandlerEntry,
+  field: { typeName: string; fieldName: string },
+  recognition: string,
+): DeclaredEntryUnit {
+  return {
+    kind: "handler",
+    name: `${entry.functionLogicalId}.${entry.exportName}`,
+    binding: graphqlResolverBinding({
+      transport: "aws-https",
+      recognition,
+      typeName: field.typeName,
+      fieldName: field.fieldName,
+    }),
+    deployableUnit: deployableUnit(entry),
+    metadata: {
+      [METADATA_NAMESPACE]: {
+        handler: entry.handler,
+        recognition: "appsync-resolver",
+      },
+    },
+  };
 }
 
 function handlerUnit(

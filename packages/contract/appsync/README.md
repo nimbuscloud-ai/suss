@@ -11,7 +11,11 @@ This package builds suss `BehavioralSummary[]` from an [AWS AppSync](https://doc
 - **Raw resources**: `AWS::AppSync::GraphQLApi`, `AWS::AppSync::GraphQLSchema`, `AWS::AppSync::Resolver`, `AWS::AppSync::FunctionConfiguration` and `AWS::AppSync::DataSource`.
 - **The SAM shorthand** `AWS::Serverless::GraphQLApi`. Its inline `SchemaInline` / `SchemaUri`, `DataSources`, `Functions` and `Resolvers` blocks are converted into the same model before any summary is built. Generated logical ids are prefixed with the API's logical id, so two GraphQL APIs in one template stay apart.
 
-The SDL comes from the inline `Definition` / `SchemaInline` property, or from a local file when `DefinitionS3Location` / `SchemaUri` is a path, resolved against the template's directory. A static reader cannot fetch an `s3://` or `http(s)://` URI, or a location the template computes with an intrinsic. Both cases are recorded under `metadata.appsync.schemaSource` with a `status` of `"unresolved"` and a reason, so a schema the reader could not open is always reported.
+A resolver or a pipeline function can point at its data source by logical id or by the data source's `Name`. A name is looked up among the data sources of the same API, so two APIs can each have a data source called `orders`.
+
+The reader also reads every template the file embeds through an `AWS::CloudFormation::Stack` or `AWS::Serverless::Application`, and treats them as one API surface. A child's resources get the stack path in front of their logical id, as in `DirectoryStack/DirectoryFunction`, the same id the aws-lambda pack gives that function. When a parent passes a resource to a child as a parameter, such as `ApiId: !GetAtt Api.ApiId`, the child's `!Ref ApiId` reads as that resource, so a child's resolvers attach to the API and schema the root declares. A child it cannot open is reported by name.
+
+The SDL comes from the inline `Definition` / `SchemaInline` property, or from a local file when `DefinitionS3Location` / `SchemaUri` is a path, resolved against the directory of the template that declares it. A static reader cannot fetch an `s3://` or `http(s)://` URI, or a location the template computes with an intrinsic. Both cases are recorded under `metadata.appsync.schemaSource` with a `status` of `"unresolved"` and a reason, so a schema the reader could not open is always reported.
 
 ## What it produces
 
@@ -36,7 +40,7 @@ Data source types are normalized from `AWS_LAMBDA`, `AMAZON_DYNAMODB`, `AMAZON_E
 - **Dynamic intrinsics.** A resolver whose `TypeName` or `FieldName` comes from a `!Ref` or an `Fn::Join` is skipped, so the reader never guesses. A pipeline whose `Functions` array cannot be resolved statically still reports `kind: "PIPELINE"`, with an empty chain.
 - **Remote schemas.** Nothing is fetched over the network.
 - **Authorization.** The API's `AuthenticationType` is recorded on each resolver, and does not add transitions.
-- **Nested stacks.** Only the template you point at is walked.
+- **Stack outputs.** A parent that reads a child's resource through `!GetAtt Child.Outputs.X` points at nothing the reader follows.
 
 ## Worked example
 

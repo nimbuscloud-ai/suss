@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  An AppSync API whose resolvers, data source and Lambda live in a nested
+  stack. The root passes the API's id down as a stack parameter.
+
+Resources:
+  Api:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: directory
+      AuthenticationType: API_KEY
+
+  Schema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt Api.ApiId
+      DefinitionS3Location: ./schema.graphql
+
+  DirectoryFunctionsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./directory-template.yaml
+      Parameters:
+        ApiId: !GetAtt Api.ApiId
