@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { packSpecFrom } from "./extract.js";
+import { youngGenerationFlag } from "./heapSize.js";
 
 import type { ExtractEntry } from "./projectFile.js";
 import type { ReadLimits } from "./readLimits.js";
@@ -90,6 +91,7 @@ export function readInChild(
 ): Promise<ChildRead> {
   const args = [
     `--max-old-space-size=${limits.memoryMb}`,
+    youngGenerationFlag(limits.memoryMb),
     sussExecutable(),
     ...childArgsFor(entry, root, out),
   ];
