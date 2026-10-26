@@ -1002,9 +1002,29 @@ describe("parseFrameworkSpec", () => {
     const file = writeConfig("producers: []");
     expect(() => parseFrameworkSpec(`aws-sqs=${file}`)).toThrow(/is not JSON/);
   });
+
+  it("reads a config written in the spec", () => {
+    expect(
+      parseFrameworkSpec('activerecord={"storageSystem":"postgresql"}'),
+    ).toEqual({
+      name: "activerecord",
+      options: { storageSystem: "postgresql" },
+    });
+  });
+
+  it("says so when a config written in the spec is not JSON", () => {
+    expect(() => parseFrameworkSpec("activerecord={storageSystem}")).toThrow(
+      /given with -f activerecord is not JSON/,
+    );
+  });
 });
 
 describe("packSpecFrom", () => {
+  it("leaves a config written in the spec as it is", () => {
+    const spec = 'rails={"root":"app"}';
+    expect(packSpecFrom("/project", spec)).toBe(spec);
+  });
+
   it("resolves a relative config path against the directory it is given", () => {
     expect(packSpecFrom("/project", "aws-sqs=suss/sqs.json")).toBe(
       `aws-sqs=${path.resolve("/project", "suss/sqs.json")}`,

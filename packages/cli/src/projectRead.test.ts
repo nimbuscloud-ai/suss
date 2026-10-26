@@ -215,3 +215,31 @@ describe("reading a suss.json written from the root", () => {
     expect(found.reads).toEqual(written);
   });
 });
+
+describe("reading a project with no suss.json", () => {
+  it("gives a pack the config init works out for it, in the spec", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-bare-config-"));
+    const write = (file: string, text: string) => {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), text);
+    };
+    write("Gemfile", 'source "https://rubygems.org"\ngem "rails"\ngem "pg"\n');
+    write(
+      "Gemfile.lock",
+      "GEM\n  specs:\n    rails (7.1.0)\n    pg (1.5.4)\n\nDEPENDENCIES\n  pg\n  rails\n",
+    );
+    write("config/database.yml", "default: &default\n  adapter: postgresql\n");
+    write("config/routes.rb", "Rails.application.routes.draw do\nend\n");
+    write("app/models/order.rb", "class Order < ApplicationRecord\nend\n");
+
+    const found = await declaredReads(root);
+    const ruby = found.reads.find(
+      (entry) => entry.kind === "extract" && entry.language === "ruby",
+    );
+
+    expect(found.declared).toBe(false);
+    expect(ruby?.kind === "extract" ? ruby.packs : []).toContain(
+      'activerecord={"storageSystem":"postgresql"}',
+    );
+  });
+});
