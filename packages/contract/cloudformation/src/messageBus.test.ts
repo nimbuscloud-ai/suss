@@ -1147,6 +1147,19 @@ describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
     );
   });
 
+  it("records a pattern that also filters on detail", () => {
+    const out = ruleTemplate({
+      EventPattern: {
+        "detail-type": ["OrderPlaced"],
+        detail: { status: ["paid"] },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(
+      readMessageBusMetadata(consumer)?.eventPattern?.filtersOtherFields,
+    ).toBe(true);
+  });
+
   it("records a non-array detail-type as unsettled", () => {
     const out = ruleTemplate({
       EventPattern: { "detail-type": "OrderPlaced" },

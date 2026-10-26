@@ -23,11 +23,19 @@ export interface EventPatternFields {
   sources?: string[];
   unsettled: UnsettledPatternField[];
   /**
+   * The pattern also filters on a field a send does not state, such as
+   * `detail`, so a send that agrees on source and detail-type still
+   * reaches the rule only for some events.
+   */
+  filtersOtherFields: boolean;
+  /**
    * A source starts with `aws.`. Only AWS services send those, and
    * PutEvents refuses them from anyone else.
    */
   emittedByAws: boolean;
 }
+
+const STATED_FIELDS = new Set(["detail-type", "source"]);
 
 /** Null when the rule declares no EventPattern at all. */
 export function readEventPattern(pattern: unknown): EventPatternFields | null {
@@ -45,6 +53,9 @@ export function readEventPattern(pattern: unknown): EventPatternFields | null {
     ...(Array.isArray(detailTypes) ? { detailTypes } : {}),
     ...(Array.isArray(sources) ? { sources } : {}),
     unsettled,
+    filtersOtherFields: Object.keys(record).some(
+      (key) => !STATED_FIELDS.has(key),
+    ),
     emittedByAws:
       Array.isArray(sources) &&
       sources.some((source) => source.startsWith("aws.")),

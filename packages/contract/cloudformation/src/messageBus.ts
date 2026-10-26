@@ -554,6 +554,7 @@ function patternMetadata(fields: EventPatternFields): EventPatternMetadata {
       : {}),
     ...(fields.sources !== undefined ? { sources: fields.sources } : {}),
     ...(fields.unsettled.length > 0 ? { unsettled: fields.unsettled } : {}),
+    ...(fields.filtersOtherFields ? { filtersOtherFields: true } : {}),
     ...(fields.emittedByAws ? { emittedByAws: true } : {}),
   };
 }

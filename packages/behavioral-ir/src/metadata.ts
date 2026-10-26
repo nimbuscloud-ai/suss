@@ -81,6 +81,11 @@ export const MessageBusMetadataSchema = z.object({
       sources: z.array(z.string()).optional(),
       unsettled: z.array(z.enum(["detail-type", "source"])).optional(),
       /**
+       * The pattern also filters on a field a send does not state, such
+       * as `detail`, so a send can only possibly match it.
+       */
+      filtersOtherFields: z.boolean().optional(),
+      /**
        * A source starts with `aws.`, which only AWS services can send,
        * so events reach the rule with nothing in code sending them.
        */

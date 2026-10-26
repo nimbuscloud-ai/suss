@@ -13,6 +13,7 @@ describe("readEventPattern", () => {
       detailTypes: ["order.placed", "order.paid"],
       sources: ["orders"],
       unsettled: [],
+      filtersOtherFields: false,
       emittedByAws: false,
     });
   });
@@ -25,8 +26,18 @@ describe("readEventPattern", () => {
     expect(readEventPattern({ source: ["orders"] })).toEqual({
       sources: ["orders"],
       unsettled: [],
+      filtersOtherFields: false,
       emittedByAws: false,
     });
+  });
+
+  it("says when the pattern also filters on a field a send does not state", () => {
+    expect(
+      readEventPattern({
+        "detail-type": ["order.placed"],
+        detail: { status: ["paid"] },
+      })?.filtersOtherFields,
+    ).toBe(true);
   });
 
   it("lists a field filtered with a prefix as unsettled", () => {
@@ -35,7 +46,11 @@ describe("readEventPattern", () => {
         "detail-type": [{ prefix: "order." }],
         source: [{ prefix: "com." }],
       }),
-    ).toEqual({ unsettled: ["detail-type", "source"], emittedByAws: false });
+    ).toEqual({
+      unsettled: ["detail-type", "source"],
+      filtersOtherFields: false,
+      emittedByAws: false,
+    });
   });
 
   it("lists a bare string or an empty list as unsettled", () => {

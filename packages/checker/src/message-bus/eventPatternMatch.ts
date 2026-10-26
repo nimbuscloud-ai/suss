@@ -59,7 +59,7 @@ export function patternMatch(
   if (fields.includes(null)) {
     return null;
   }
-  if (fields.includes("possible")) {
+  if (fields.includes("possible") || pattern.filtersOtherFields === true) {
     return "possible";
   }
 

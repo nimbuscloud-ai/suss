@@ -1288,6 +1288,24 @@ describe("rules matched by their pattern", () => {
     expect(compared).toEqual([]);
   });
 
+  it("keeps orphans away but records no pair when the rule also filters on detail", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkMessageBus(
+      [
+        orderPlaced({ source: "orders" }),
+        rule({
+          detailTypes: ["OrderPlaced"],
+          sources: ["orders"],
+          filtersOtherFields: true,
+        }),
+      ],
+      undefined,
+      compared,
+    );
+    expect(findings).toEqual([]);
+    expect(compared).toEqual([]);
+  });
+
   it("matches a rule that lists only a source by that source", () => {
     const compared: ComparedPair[] = [];
     const findings = checkMessageBus(
