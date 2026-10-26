@@ -1,3 +1,5 @@
+import { gunzipSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,6 +14,7 @@ import {
 } from "../__fixtures__/mapSummaries.js";
 import { CARD_RULES, pickCards } from "./mapCards.js";
 import { renderMapPage } from "./mapPage.js";
+import { FINDINGS_LISTED_PER_KIND } from "./mapPageData.js";
 
 import type { Card } from "./mapCards.js";
 import type { MapModel } from "./mapModel.js";
@@ -164,5 +167,87 @@ describe("the map page", () => {
 
     expect(html).toMatch(/<style>[^<]*--f-ui:/);
     expect(html).toContain("The browser side of the map");
+  });
+});
+
+/** A model whose first route has `count` findings of one kind, and one finding placed on no route. */
+function manyFindings(count: number): MapModel {
+  const model = everyCard();
+  const placed = Array.from({ length: count }, (_, at) => ({
+    kind: "unhandledProviderCase" as const,
+    severity: "warning" as const,
+    description: `Provider produces status ${400 + at} but no consumer branch handles it`,
+    entry: 0,
+    provider: { unit: 0, line: 12 },
+    consumer: { unit: 1, line: null },
+  }));
+  model.findings = [
+    ...placed,
+    {
+      kind: "providerContractViolation",
+      severity: "error",
+      description: "placed on no route",
+      entry: null,
+      provider: { unit: null, line: null },
+      consumer: { unit: null, line: null },
+    },
+  ];
+  (model.entries[0] as MapModel["entries"][number]).findings = placed.map(
+    (_, at) => at,
+  );
+  return model;
+}
+
+function pageParts(html: string): {
+  data: { s: string[]; e: Array<{ f: number[]; fx: Array<[number, number]> }> };
+  dataText: string;
+  findings: unknown[][];
+} {
+  const dataText =
+    /<script id="data" type="application\/json">([\s\S]*?)<\/script>/.exec(
+      html,
+    )?.[1] ?? "";
+  const blob =
+    /<script id="findings" type="application\/gzip">([\s\S]*?)<\/script>/.exec(
+      html,
+    )?.[1] ?? "";
+  return {
+    data: JSON.parse(dataText),
+    dataText,
+    findings: JSON.parse(gunzipSync(Buffer.from(blob, "base64")).toString()),
+  };
+}
+
+describe("the map page's findings", () => {
+  it("lists the first findings of each kind on a route and counts the rest", () => {
+    const { data, findings } = pageParts(render(manyFindings(25), []));
+
+    const first = data.e[0];
+    expect(first?.f).toHaveLength(FINDINGS_LISTED_PER_KIND);
+    expect(first?.fx.map(([kind, more]) => [data.s[kind], more])).toEqual([
+      ["unhandledProviderCase", 25 - FINDINGS_LISTED_PER_KIND],
+    ]);
+    expect(findings).toHaveLength(FINDINGS_LISTED_PER_KIND);
+  });
+
+  it("keeps finding text out of the inline data, in a compressed block", () => {
+    const { dataText, findings } = pageParts(render(manyFindings(3), []));
+
+    expect(dataText).not.toContain("Provider produces status 401");
+    expect(findings[1]).toEqual([
+      "unhandledProviderCase",
+      "warning",
+      "Provider produces status 401 but no consumer branch handles it",
+      0,
+      12,
+      1,
+      null,
+    ]);
+  });
+
+  it("leaves out a finding placed on no route, which the page has nowhere to show", () => {
+    const { findings } = pageParts(render(manyFindings(1), []));
+
+    expect(JSON.stringify(findings)).not.toContain("placed on no route");
   });
 });
