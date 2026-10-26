@@ -1,7 +1,7 @@
 {
   "name": "@suss/cli",
   "exports": 69,
-  "internal": 1264,
+  "internal": 1276,
   "consumers": 617,
   "unfollowedCalls": 40
 }
