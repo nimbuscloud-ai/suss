@@ -192,10 +192,13 @@ export function checkMessageBus(
         .filter((hit) => hit.match === "certain")
         .map((hit) => hit.declarer.owner),
     ];
-    // When nothing in this run reads what a template delivers, no code is
-    // wrong, so a wire is never reported as an orphan producer.
+    // A template's wire and a job sent by name are never orphan producers
+    // (see the README).
     if (declarers.length === 0 && byPattern.length === 0) {
-      if (isWire(p.summary)) {
+      if (
+        isWire(p.summary) ||
+        MESSAGE_BUS_TRAITS[semantics.messageBus].jobQueue
+      ) {
         continue;
       }
       findings.push(
