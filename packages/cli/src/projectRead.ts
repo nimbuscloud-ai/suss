@@ -21,6 +21,7 @@ import {
   packSpecFrom,
   splitSpec,
 } from "./extract.js";
+import { valuesFor } from "./init.js";
 import { findInitTargets } from "./initTargets.js";
 import {
   PROJECT_FILE,
@@ -36,6 +37,7 @@ import { durationText } from "./readLimits.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ContractSource } from "./contract.js";
+import type { InitReport } from "./init.js";
 import type { KeptAdapters } from "./keptAdapters.js";
 import type { Language } from "./language.js";
 import type {
@@ -96,9 +98,37 @@ export async function declaredReads(root: string): Promise<DeclaredReads> {
  */
 async function detectedReads(root: string): Promise<readonly ReadEntry[]> {
   const targets = await findInitTargets(root);
-  return targets.flatMap(
-    (target) => projectFileFor(target.report, target.directory)?.read ?? [],
+  return targets.flatMap((target) =>
+    (projectFileFor(target.report, target.directory)?.read ?? []).map((entry) =>
+      withSettledConfig(entry, target.report),
+    ),
   );
+}
+
+/**
+ * The entry with each pack that has no config file given the values
+ * `suss init` works out for it on its own, such as the database
+ * `config/database.yml` gives, written in the spec. Without them a pack
+ * that needs a value reads nothing, though init would have written the
+ * file.
+ */
+function withSettledConfig(entry: ReadEntry, report: InitReport): ReadEntry {
+  if (entry.kind !== "extract") {
+    return entry;
+  }
+  return {
+    ...entry,
+    packs: entry.packs.map((spec) => {
+      const configuration = report.suggestions.find(
+        (one) => one.name === spec,
+      )?.configuration;
+      const values =
+        configuration === undefined
+          ? null
+          : valuesFor(configuration, report.root);
+      return values === null ? spec : `${spec}=${JSON.stringify(values)}`;
+    }),
+  };
 }
 
 /**
