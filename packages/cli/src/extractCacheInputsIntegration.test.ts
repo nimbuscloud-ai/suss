@@ -63,6 +63,19 @@ function copyFixture(name: string): string {
 
 describe("a warm extract after a pack's outside input changed", () => {
   it("re-reads TypeScript after `prisma generate` writes the client", () => {
+    // The client is not checked in. Prisma writes it beside the fixture's
+    // schema, and only inside the repo can it find its own package.
+    const generate = spawnSync(
+      "npx",
+      [
+        "prisma",
+        "generate",
+        `--schema=${path.join(FIXTURES, "prisma-generated-client/schema.prisma")}`,
+        "--no-hints",
+      ],
+      { cwd: path.dirname(FIXTURES), encoding: "utf8" },
+    );
+    expect(generate.status, generate.stderr).toBe(0);
     const project = copyFixture("prisma-generated-client");
     fs.writeFileSync(
       path.join(project, "package.json"),
