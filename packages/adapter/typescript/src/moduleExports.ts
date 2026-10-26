@@ -1,4 +1,4 @@
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 
 import {
   importedFilePathsOf,
@@ -6,6 +6,7 @@ import {
 } from "./bootstrap/lazyProjectInit.js";
 import { recordFileDependency } from "./depTracking.js";
 import { createPerFileCache } from "./perFileCache.js";
+import { statementsOfKind } from "./walk/rawDescent.js";
 
 import type {
   ImportDeclaration,
@@ -193,7 +194,7 @@ function reExportShapeOf(file: SourceFile, reach: Reach): ReExportShape {
   const exportNodes: Node[] = [];
   const localNames = new Set<string>();
 
-  for (const decl of file.getExportDeclarations()) {
+  for (const decl of statementsOfKind(file, SyntaxKind.ExportDeclaration)) {
     const target = decl.getModuleSpecifierSourceFile();
     if (target !== undefined) {
       targets.push(target);
@@ -207,7 +208,10 @@ function reExportShapeOf(file: SourceFile, reach: Reach): ReExportShape {
     }
   }
 
-  for (const assignment of file.getExportAssignments()) {
+  for (const assignment of statementsOfKind(
+    file,
+    SyntaxKind.ExportAssignment,
+  )) {
     exportNodes.push(assignment);
     const expression = assignment.getExpression();
     if (Node.isIdentifier(expression)) {
@@ -216,7 +220,7 @@ function reExportShapeOf(file: SourceFile, reach: Reach): ReExportShape {
   }
 
   const importNodes: Node[] = [];
-  for (const decl of file.getImportDeclarations()) {
+  for (const decl of statementsOfKind(file, SyntaxKind.ImportDeclaration)) {
     const all = importBindingsOf(decl);
     const bindings =
       reach === "every import"

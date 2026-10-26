@@ -17,11 +17,12 @@
 // ordered this way. `valueLeftByWrites` takes the values and that
 // answer, and says what the name comes down to.
 
-import { Node, SyntaxKind, VariableDeclarationKind } from "ts-morph";
+import { Node, SyntaxKind, ts, VariableDeclarationKind } from "ts-morph";
 
 import { valueLeftByWrites } from "@suss/resolution";
 
 import { createPerFileCache } from "../perFileCache.js";
+import { forEachDescendantWhere, wrapperOf } from "../walk/rawDescent.js";
 
 import type { NameWrite } from "@suss/resolution";
 import type {
@@ -29,6 +30,8 @@ import type {
   Expression,
   MethodDeclaration,
   ParameterDeclaration,
+  PostfixUnaryExpression,
+  PrefixUnaryExpression,
   PropertyAccessExpression,
   PropertyDeclaration,
   SourceFile,
@@ -416,11 +419,8 @@ function assignmentsInFile(sourceFile: SourceFile): Map<Written, Write[]> {
   const found = new Map<Written, Write[]>();
   byFile.set(sourceFile, found);
 
-  sourceFile.forEachDescendant((node) => {
+  forEachDescendantWhere(sourceFile, mayWrite, (node) => {
     const written = writeAt(node);
-    if (written === null) {
-      return;
-    }
     for (const declaration of declarationsOf(written.target)) {
       const writes = found.get(declaration);
       if (writes === undefined) {
@@ -429,8 +429,30 @@ function assignmentsInFile(sourceFile: SourceFile): Map<Written, Write[]> {
         writes.push(written.write);
       }
     }
+    return false;
   });
   return found;
+}
+
+/**
+ * Whether a node writes a name: an assignment to a name or a property
+ * read, or `++` and `--` on a name.
+ */
+function mayWrite(raw: ts.Node): boolean {
+  if (ts.isBinaryExpression(raw)) {
+    return (
+      isAssignmentOperator(raw.operatorToken.kind) &&
+      (ts.isIdentifier(raw.left) || ts.isPropertyAccessExpression(raw.left))
+    );
+  }
+  if (ts.isPrefixUnaryExpression(raw) || ts.isPostfixUnaryExpression(raw)) {
+    return (
+      (raw.operator === SyntaxKind.PlusPlusToken ||
+        raw.operator === SyntaxKind.MinusMinusToken) &&
+      ts.isIdentifier(raw.operand)
+    );
+  }
+  return false;
 }
 
 /** Whether a token is `=` or one of the compound assignments. */
@@ -454,39 +476,15 @@ function writesItsWholeValue(kind: SyntaxKind): boolean {
   );
 }
 
-/** The write a node performs on a name, when it performs one. */
-function writeAt(node: Node): { target: Node; write: Write } | null {
+/** The write a node `mayWrite` accepted performs, and the name it writes. */
+function writeAt(node: Node): { target: Node; write: Write } {
   if (Node.isBinaryExpression(node)) {
     const operator = node.getOperatorToken().getKind();
-    const target = node.getLeft();
-    if (
-      !isAssignmentOperator(operator) ||
-      !(Node.isIdentifier(target) || Node.isPropertyAccessExpression(target))
-    ) {
-      return null;
-    }
     const value = writesItsWholeValue(operator) ? node.getRight() : null;
-    return { target, write: { value, node } };
+    return { target: node.getLeft(), write: { value, node } };
   }
-
-  if (
-    Node.isPrefixUnaryExpression(node) ||
-    Node.isPostfixUnaryExpression(node)
-  ) {
-    const operator = node.getOperatorToken();
-    if (
-      operator !== SyntaxKind.PlusPlusToken &&
-      operator !== SyntaxKind.MinusMinusToken
-    ) {
-      return null;
-    }
-    const target = node.getOperand();
-    return Node.isIdentifier(target)
-      ? { target, write: { value: null, node } }
-      : null;
-  }
-
-  return null;
+  const update = node as PrefixUnaryExpression | PostfixUnaryExpression;
+  return { target: update.getOperand(), write: { value: null, node } };
 }
 
 function declarationsOf(name: Node): Written[] {
@@ -568,43 +566,51 @@ function isReadBefore(
 ): boolean {
   const name = declaration.getName();
   const sourceFile = declaration.getSourceFile();
+  const file = sourceFile.compilerNode;
 
-  let read = false;
-  sourceFile.forEachDescendant((node, traversal) => {
-    if (read) {
-      traversal.stop();
-      return;
+  const readsHere = (raw: ts.Node): boolean => {
+    if (!ts.isIdentifier(raw) || raw.getText(file) !== name) {
+      return false;
     }
-    if (node.getStart() >= position) {
-      traversal.skip();
-      return;
-    }
-    if (startsItsOwnBody(node)) {
-      traversal.skip();
-      return;
-    }
-    if (!Node.isIdentifier(node) || node.getText() !== name) {
-      return;
-    }
+    const node = wrapperOf(sourceFile, raw);
     if (node === declaration.getNameNode() || isWriteTarget(node)) {
-      return;
+      return false;
     }
-    if (declarationsOf(node).includes(declaration)) {
-      read = true;
-    }
-  });
-  return read;
+    return declarationsOf(node).includes(declaration);
+  };
+  return someBefore(file, position, readsHere);
 }
 
-function startsItsOwnBody(node: Node): boolean {
-  return (
-    Node.isFunctionDeclaration(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isArrowFunction(node) ||
-    Node.isMethodDeclaration(node) ||
-    Node.isClassDeclaration(node)
-  );
+/**
+ * Whether `test` is true of a node that starts before `position`, outside
+ * any body that runs later. Type syntax is searched too, since `typeof x`
+ * reads the binding `x`.
+ */
+function someBefore(
+  root: ts.Node,
+  position: number,
+  test: (raw: ts.Node) => boolean,
+): boolean {
+  const file = root.getSourceFile();
+  const visit = (raw: ts.Node): true | undefined => {
+    if (raw.getStart(file) >= position || OWN_BODY_KINDS.has(raw.kind)) {
+      return undefined;
+    }
+    if (test(raw)) {
+      return true;
+    }
+    return ts.forEachChild(raw, visit);
+  };
+  return ts.forEachChild(root, visit) === true;
 }
+
+const OWN_BODY_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.ClassDeclaration,
+]);
 
 /** Whether a name occurrence is the target of an assignment to it. */
 function isWriteTarget(name: Node): boolean {
@@ -780,24 +786,14 @@ function isPropertyReadBefore(
   property: string,
   position: number,
 ): boolean {
-  let read = false;
-  statements.forEachDescendant((node, traversal) => {
-    if (read) {
-      traversal.stop();
-      return;
-    }
-    if (node.getStart() >= position || startsItsOwnBody(node)) {
-      traversal.skip();
-      return;
-    }
-    if (
-      Node.isPropertyAccessExpression(node) &&
-      node.getName() === property &&
-      node.getExpression().getText() === name &&
-      !isWriteTarget(node)
-    ) {
-      read = true;
-    }
-  });
-  return read;
+  const file = statements.getSourceFile().compilerNode;
+  return someBefore(
+    statements.compilerNode,
+    position,
+    (raw) =>
+      ts.isPropertyAccessExpression(raw) &&
+      raw.name.getText(file) === property &&
+      raw.expression.getText(file) === name &&
+      !isWriteTarget(wrapperOf(statements, raw)),
+  );
 }

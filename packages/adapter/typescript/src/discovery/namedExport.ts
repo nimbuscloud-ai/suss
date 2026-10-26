@@ -8,10 +8,12 @@ import {
   type FunctionExpression,
   Node,
   type SourceFile,
+  SyntaxKind,
 } from "ts-morph";
 
 import { isWrittenAgain } from "../facts/assignments.js";
 import { exportedDeclarationsOf } from "../moduleExports.js";
+import { statementsOfKind } from "../walk/rawDescent.js";
 import {
   couldStillNameAFunction,
   type DiscoveredUnit,
@@ -320,7 +322,10 @@ function defaultExportUnits(
   resolution: ResolutionStore | undefined,
   options: NamedExportOptions,
 ): DiscoveredUnit[] {
-  for (const assignment of sourceFile.getExportAssignments()) {
+  for (const assignment of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportAssignment,
+  )) {
     if (assignment.isExportEquals()) {
       continue;
     }

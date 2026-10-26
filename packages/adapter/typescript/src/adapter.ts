@@ -22,6 +22,7 @@ import {
   type ParameterDeclaration,
   Project,
   type SourceFile,
+  SyntaxKind,
 } from "ts-morph";
 
 import {
@@ -236,8 +237,13 @@ import {
   type DescentBarriers,
   isDescentStop,
   NO_BARRIERS,
+  withDescentStops,
 } from "./walk/descent.js";
 import { fileOfOffsetKey, offsetKeyOf } from "./walk/nodeKeys.js";
+import {
+  forEachDescendantOfKinds,
+  statementsOfKind,
+} from "./walk/rawDescent.js";
 import {
   expandWorkspacePatterns,
   workspaceExpansionStamp,
@@ -496,19 +502,18 @@ function extractDependencyCalls(
 ): RawDependencyCall[] {
   const results: RawDependencyCall[] = [];
 
-  func.forEachDescendant((node, traversal) => {
+  forEachDescendantOfKinds(func, DECLARATIONS_AND_STOPS, (node) => {
     if (isDescentStop(node, func, barriers)) {
-      traversal.skip();
-      return;
+      return true;
     }
 
     if (!Node.isVariableDeclaration(node)) {
-      return;
+      return false;
     }
 
     const init = node.getInitializer();
     if (init === undefined) {
-      return;
+      return false;
     }
 
     let isAsync = false;
@@ -519,7 +524,7 @@ function extractDependencyCalls(
     }
 
     if (!Node.isCallExpression(callExpr)) {
-      return;
+      return false;
     }
 
     const calleeName = callExpr.getExpression().getText();
@@ -544,10 +549,13 @@ function extractDependencyCalls(
         end: endLineOf(locationNode),
       },
     });
+    return false;
   });
 
   return results;
 }
+
+const DECLARATIONS_AND_STOPS = withDescentStops(SyntaxKind.VariableDeclaration);
 
 /** A truthiness check on fetch's `.ok` becomes a status range comparison. */
 function resolveResponseProperties(
@@ -1946,7 +1954,10 @@ function fileImporting(
       continue;
     }
 
-    for (const imp of sourceFile.getImportDeclarations()) {
+    for (const imp of statementsOfKind(
+      sourceFile,
+      SyntaxKind.ImportDeclaration,
+    )) {
       if (imp.getModuleSpecifierValue().startsWith(modulePrefix)) {
         return sourceFile.getFilePath();
       }
@@ -2016,11 +2027,17 @@ function internalImportsOf(project: Project, file: string): string[] {
       targets.add(target.getFilePath());
     }
   };
-  for (const imp of sourceFile.getImportDeclarations()) {
+  for (const imp of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ImportDeclaration,
+  )) {
     record(imp.getModuleSpecifierSourceFile());
   }
 
-  for (const exp of sourceFile.getExportDeclarations()) {
+  for (const exp of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportDeclaration,
+  )) {
     record(exp.getModuleSpecifierSourceFile());
   }
   return [...targets].sort();

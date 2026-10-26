@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { valueLeftByWrites } from "@suss/resolution";
 import { createTestProject } from "@suss/test-project";
 
-import { describeWrites, writesToBinding } from "./assignments.js";
+import {
+  describeWrites,
+  isWrittenAgain,
+  writesToBinding,
+} from "./assignments.js";
 
 import type { Project } from "ts-morph";
 
@@ -24,6 +28,23 @@ function settledText(project: Project, name: string): string | null {
   const key = valueLeftByWrites(describeWrites(values), inOrder);
   return key === null ? null : (values[Number(key)]?.getText() ?? null);
 }
+
+describe("isWrittenAgain", () => {
+  it("counts ++ and -- on the name as writes, and a read as none", () => {
+    const project = projectOf(`
+      let up = 0;
+      let down = 0;
+      let read = 0;
+      up++;
+      --down;
+      console.log(read + 1);
+    `);
+
+    expect(isWrittenAgain(bindingOf(project, "up"))).toBe(true);
+    expect(isWrittenAgain(bindingOf(project, "down"))).toBe(true);
+    expect(isWrittenAgain(bindingOf(project, "read"))).toBe(false);
+  });
+});
 
 describe("describeWrites", () => {
   it("settles on the construction a guard writes once", () => {

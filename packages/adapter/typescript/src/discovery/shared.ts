@@ -11,6 +11,7 @@ import {
   Node,
   type ParameterDeclaration,
   type SourceFile,
+  SyntaxKind,
   type VariableDeclaration,
 } from "ts-morph";
 
@@ -334,14 +335,17 @@ function exportIdentityOf(unit: DiscoveredUnit): string {
 
 /** Whether a node is one of the function-shaped declarations a unit is built on. */
 export function isFunctionRoot(node: Node): node is FunctionRoot {
-  return (
-    Node.isFunctionDeclaration(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isArrowFunction(node) ||
-    Node.isMethodDeclaration(node) ||
-    Node.isConstructorDeclaration(node)
-  );
+  return FUNCTION_ROOT_KINDS.has(node.getKind());
 }
+
+/** The kinds `isFunctionRoot` is true of, for a walk over compiler nodes. */
+export const FUNCTION_ROOT_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.Constructor,
+]);
 
 /**
  * The declaration that is the function, for a name the language lets be

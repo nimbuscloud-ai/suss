@@ -50,7 +50,7 @@
 // lists (and therefore transition IDs) are byte-identical on shapes
 // the legacy pipeline handled soundly.
 
-import { type Expression, Node } from "ts-morph";
+import { type Expression, Node, SyntaxKind } from "ts-morph";
 
 import {
   enumerateStructuredPaths,
@@ -71,7 +71,9 @@ import {
   type DescentBarriers,
   isDescentStop,
   NO_BARRIERS,
+  withDescentStops,
 } from "../walk/descent.js";
+import { forEachDescendantWhere } from "../walk/rawDescent.js";
 import {
   type LoweredFunctionBody,
   lowerExpressionBodyCallbacks,
@@ -112,18 +114,21 @@ function containsUnmodeledFlow(
   barriers: DescentBarriers,
 ): boolean {
   let found = false;
-  body.forEachDescendant((node, traversal) => {
-    if (isDescentStop(node, func, barriers)) {
-      traversal.skip();
-      return;
-    }
-    if (Node.isLabeledStatement(node)) {
-      found = true;
-      traversal.stop();
-    }
-  });
+  forEachDescendantWhere(
+    body,
+    (raw) => !found && LABELS_AND_STOPS.has(raw.kind),
+    (node) => {
+      if (isDescentStop(node, func, barriers)) {
+        return true;
+      }
+      found = Node.isLabeledStatement(node);
+      return found;
+    },
+  );
   return found;
 }
+
+const LABELS_AND_STOPS = withDescentStops(SyntaxKind.LabeledStatement);
 
 /**
  * An arrow written without braces has no statement flow, so its whole

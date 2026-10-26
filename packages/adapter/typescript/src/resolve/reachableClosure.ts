@@ -28,6 +28,7 @@ import {
   Node,
   type Project,
   type SourceFile,
+  SyntaxKind,
 } from "ts-morph";
 
 import {
@@ -54,7 +55,10 @@ import {
   withDependencySink,
 } from "../depTracking.js";
 import { functionValuesOf } from "../discovery/resolveValue.js";
-import { forEachInUnitBody, isModuleScopeStop } from "../walk/descent.js";
+import {
+  forEachInUnitBodyOfKinds,
+  isModuleScopeStop,
+} from "../walk/descent.js";
 import {
   fileOfOffsetKey,
   offsetKeyFor,
@@ -737,6 +741,25 @@ interface FoundCall {
   outcome: CallOutcome;
 }
 
+/** What a scan reads in a body: calls, constructions, and JSX elements that name a component. */
+const BODY_SCAN_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.CallExpression,
+  SyntaxKind.NewExpression,
+  SyntaxKind.JsxOpeningElement,
+  SyntaxKind.JsxSelfClosingElement,
+]);
+
+/** The same at module scope, with the definitions `isModuleScopeStop` ends a scan at. */
+const MODULE_SCAN_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  ...BODY_SCAN_KINDS,
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.ClassDeclaration,
+  SyntaxKind.ClassExpression,
+]);
+
 function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
   const atModuleScope = Node.isSourceFile(root);
   const inFunc: ScanContext = atModuleScope
@@ -823,31 +846,32 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
   };
 
   const found: FoundCall[] = [];
-  forEachInUnitBody(root, (node, traversal) => {
+  const kinds = atModuleScope ? MODULE_SCAN_KINDS : BODY_SCAN_KINDS;
+  forEachInUnitBodyOfKinds(root, kinds, (node) => {
     if (atModuleScope && isModuleScopeStop(node)) {
-      traversal.skip();
-      return;
+      return true;
     }
     const jsx = resolveJsxReference(node, inFunc);
     if (jsx !== null) {
       found.push({ node, outcome: jsx.outcome });
-      return;
+      return false;
     }
     if (Node.isNewExpression(node)) {
       const outcome = resolveConstruction(node, inFunc);
       if (outcome !== null) {
         found.push({ node, calleeText: constructionCallee(node), outcome });
       }
-      return;
+      return false;
     }
     if (!Node.isCallExpression(node)) {
-      return;
+      return false;
     }
     const calleeText = normalizeCalleeText(node.getExpression().getText());
     const outcome = resolveCallee(node, calleeText, inFunc);
     if (outcome !== null) {
       found.push({ node, calleeText, outcome });
     }
+    return false;
   });
 
   const settle = settleThroughStore(

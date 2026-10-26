@@ -11,15 +11,29 @@
 // Helpers stay narrow on purpose. They cover the cases real packs need
 // without exposing arbitrary ts-morph surface to pack authors.
 
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
 import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
 import { ResolutionStore } from "./facts/store.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
+import { forEachDescendantWhere } from "./walk/rawDescent.js";
 import { peelParens } from "./walk/unwrap.js";
 
 import type { FunctionRoot } from "./conditions.js";
+
+/** The nested functions whose returns are their own output, not the component's. */
+const NESTED_FUNCTION_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.MethodDeclaration,
+]);
+
+const RETURNS_AND_FUNCTIONS: ReadonlySet<SyntaxKind> = new Set([
+  ...NESTED_FUNCTION_KINDS,
+  SyntaxKind.ReturnStatement,
+]);
 
 export interface TsDiscoveryContext {
   /**
@@ -182,32 +196,23 @@ function hasJsxReturn(func: FunctionRoot): boolean {
   }
 
   let found = false;
-  body.forEachDescendant((node, traversal) => {
-    if (found) {
-      traversal.stop();
-      return;
-    }
-    // Deliberately stricter than isDescentStop: a JSX return inside a
-    // nested arrow (a render prop, a map callback) is that function's
-    // output, and descending would make its parent read as a
-    // component.
-    if (
-      node !== func &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
-      traversal.skip();
-      return;
-    }
-    if (Node.isReturnStatement(node)) {
-      const expr = node.getExpression();
-      if (expr !== undefined && isJsxOrFragment(expr)) {
-        found = true;
+  forEachDescendantWhere(
+    body,
+    (raw) => !found && RETURNS_AND_FUNCTIONS.has(raw.kind),
+    (node) => {
+      // Deliberately stricter than isDescentStop: a JSX return inside a
+      // nested arrow (a render prop, a map callback) is that function's
+      // output, and descending would make its parent read as a component.
+      if (node !== func && NESTED_FUNCTION_KINDS.has(node.getKind())) {
+        return true;
       }
-    }
-  });
+      if (Node.isReturnStatement(node)) {
+        const expr = node.getExpression();
+        found = expr !== undefined && isJsxOrFragment(expr);
+      }
+      return found;
+    },
+  );
   return found;
 }
 

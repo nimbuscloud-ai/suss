@@ -6,7 +6,9 @@
  * barrels to the same answer.
  */
 
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile, ts } from "ts-morph";
+
+import { forEachDescendantWhere } from "../walk/rawDescent.js";
 
 import type { CallExpression, NewExpression } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
@@ -47,28 +49,51 @@ export function callsByOriginName(
   module: string,
   names: ReadonlySet<string>,
 ): Map<CallExpression | NewExpression, string> {
-  const candidates: Array<CallExpression | NewExpression> = [];
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node) && !Node.isNewExpression(node)) {
-      return;
-    }
-    const callee = node.getExpression();
-    if (Node.isIdentifier(callee) && !declaredLocally(callee)) {
-      candidates.push(node);
-    }
-  });
+  return callsNamed(importedCallOrigins(sourceFile, resolution, module), names);
+}
 
-  const matched = new Map<CallExpression | NewExpression, string>();
+/** A file's calls of names it did not declare, with what each callee is in one module. */
+export interface ImportedCallOrigins {
+  candidates: Array<CallExpression | NewExpression>;
+  origins: Map<Node, Array<{ module: string; path: string[] }>>;
+}
+
+/**
+ * The store's answer for every call `callsByOriginName` asks about, so a
+ * caller matching several names from one module asks once.
+ */
+export function importedCallOrigins(
+  sourceFile: SourceFile,
+  resolution: ResolutionStore,
+  module: string,
+): ImportedCallOrigins {
+  const candidates: Array<CallExpression | NewExpression> = [];
+  forEachDescendantWhere(sourceFile, callsANamedCallee, (node) => {
+    const call = node as CallExpression | NewExpression;
+    if (!declaredLocally(call.getExpression())) {
+      candidates.push(call);
+    }
+    return false;
+  });
   if (candidates.length === 0) {
-    return matched;
+    return { candidates, origins: new Map() };
   }
 
   const origins = resolution.importOriginsOfMany(
     candidates.map((call) => call.getExpression()),
     [module],
   );
-  for (const call of candidates) {
-    const origin = (origins.get(call.getExpression()) ?? []).find(
+  return { candidates, origins };
+}
+
+/** The calls among `found` whose callee is one of `names`, each with the name it is. */
+export function callsNamed(
+  found: ImportedCallOrigins,
+  names: ReadonlySet<string>,
+): Map<CallExpression | NewExpression, string> {
+  const matched = new Map<CallExpression | NewExpression, string>();
+  for (const call of found.candidates) {
+    const origin = (found.origins.get(call.getExpression()) ?? []).find(
       (one) => one.path.length === 1 && names.has(one.path[0] ?? ""),
     );
     const name = origin?.path[0];
@@ -77,6 +102,14 @@ export function callsByOriginName(
     }
   }
   return matched;
+}
+
+/** A call or a construction whose callee is a bare name. */
+function callsANamedCallee(raw: ts.Node): boolean {
+  return (
+    (ts.isCallExpression(raw) || ts.isNewExpression(raw)) &&
+    ts.isIdentifier(raw.expression)
+  );
 }
 
 /** Whether every declaration behind a name is this project's own function or class. */

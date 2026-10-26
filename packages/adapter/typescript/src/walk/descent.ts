@@ -26,8 +26,9 @@
 // the sub-unit, not the parent. Those function nodes are passed in as
 // `barriers`.
 
-import { type ForEachDescendantTraversalControl, Node } from "ts-morph";
+import { Node, SyntaxKind, type ts } from "ts-morph";
 
+import { forEachDescendantWhere } from "./rawDescent.js";
 import { climbSyntax, peelSyntax } from "./unwrap.js";
 
 /**
@@ -72,33 +73,35 @@ export function isDescentStop(
   return false;
 }
 
-type Visit = (node: Node, traversal: ForEachDescendantTraversalControl) => void;
-
 /**
- * Visit every node a unit's body runs, the way `forEachDescendant` does
- * from the unit root. A constructor also runs its class's instance field
- * initializers before its body, so `table = process.env.TABLE` is visited
- * as part of the constructor. A field set to a function defines a method
- * and runs nothing, so it is left out.
+ * Visit the nodes of these kinds that a unit's body runs, in the order
+ * `forEachDescendant` reaches them from the unit root, and leave out
+ * what is under a node when `visit` returns true. A constructor also
+ * runs its class's instance field initializers before its body, so
+ * `table = process.env.TABLE` is visited as part of the constructor. A
+ * field set to a function defines a method and runs nothing, so it is
+ * left out.
  */
-export function forEachInUnitBody(root: Node, visit: Visit): void {
-  root.forEachDescendant(visit);
+export function forEachInUnitBodyOfKinds(
+  root: Node,
+  kinds: ReadonlySet<SyntaxKind>,
+  visit: (node: Node) => boolean,
+): void {
+  forEachInUnitBodyWhere(root, (raw) => kinds.has(raw.kind), visit);
+}
+
+/** The same walk, visiting the nodes `accepts` picks from their compiler nodes. */
+export function forEachInUnitBodyWhere(
+  root: Node,
+  accepts: (raw: ts.Node) => boolean,
+  visit: (node: Node) => boolean,
+): void {
+  forEachDescendantWhere(root, accepts, visit);
   for (const initializer of fieldInitializersRunBy(root)) {
-    let skipped = false;
-    visit(initializer, {
-      stop: () => {
-        skipped = true;
-      },
-      skip: () => {
-        skipped = true;
-      },
-      up: () => {
-        skipped = true;
-      },
-    });
-    if (!skipped) {
-      initializer.forEachDescendant(visit);
+    if (accepts(initializer.compilerNode) && visit(initializer)) {
+      continue;
     }
+    forEachDescendantWhere(initializer, accepts, visit);
   }
 }
 
@@ -143,6 +146,29 @@ export function isInlineCallback(
     return false;
   }
   return !barriers.has(node);
+}
+
+/**
+ * Every kind of node `isDescentStop` or `isModuleScopeStop` can stop at,
+ * and a decorator, which the invocation walk also stops at. A walk that
+ * visits only the kinds it acts on adds these so its stops still run.
+ */
+export const DESCENT_STOP_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.Constructor,
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.ClassDeclaration,
+  SyntaxKind.ClassExpression,
+  SyntaxKind.Decorator,
+]);
+
+/** `DESCENT_STOP_KINDS` and the kinds a walk acts on, as one set. */
+export function withDescentStops(
+  ...kinds: SyntaxKind[]
+): ReadonlySet<SyntaxKind> {
+  return new Set([...DESCENT_STOP_KINDS, ...kinds]);
 }
 
 /**
@@ -227,25 +253,16 @@ export function crossesNestedFunctionScope(node: Node, func: Node): boolean {
  * so a getter inside a returned object returns for the getter.
  */
 export function startsItsOwnScope(node: Node): boolean {
-  return (
-    Node.isArrowFunction(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isFunctionDeclaration(node) ||
-    Node.isMethodDeclaration(node) ||
-    Node.isGetAccessorDeclaration(node) ||
-    Node.isSetAccessorDeclaration(node) ||
-    Node.isConstructorDeclaration(node)
-  );
+  return OWN_SCOPE_KINDS.has(node.getKind());
 }
 
-/**
- * A type annotation contains no statement and no function body, so a
- * walk looking for either can skip it. It has to for a mapped type: once
- * the checker has printed a type that reuses one, asking the mapped type
- * for its children fails an assertion inside the compiler. The `extends`
- * clause of a class is the one type position that can contain an
- * expression, as in `extends mixin(() => ...)`, so it is still walked.
- */
-export function containsNoCode(node: Node): boolean {
-  return Node.isTypeNode(node) && !Node.isExpressionWithTypeArguments(node);
-}
+/** The kinds `startsItsOwnScope` is true of, for a walk over compiler nodes. */
+export const OWN_SCOPE_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.GetAccessor,
+  SyntaxKind.SetAccessor,
+  SyntaxKind.Constructor,
+]);

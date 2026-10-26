@@ -17,7 +17,11 @@ import {
 } from "@suss/behavioral-ir";
 
 import { ResolutionStore } from "../facts/store.js";
-import { callsByOriginName } from "./importedCalls.js";
+import {
+  callsNamed,
+  type ImportedCallOrigins,
+  importedCallOrigins,
+} from "./importedCalls.js";
 import { namedImportsOf } from "./importScan.js";
 import {
   objectLiteralOf,
@@ -362,14 +366,17 @@ export function graphqlClientConstructions(
   const store = resolution ?? new ResolutionStore();
   const found: GraphqlClientConstruction[] = [];
   for (const sourceFile of sourceFiles) {
+    // Most specs share a module, and the file's calls are asked about once for it.
+    const byModule = new Map<string, ImportedCallOrigins>();
     for (const spec of specs) {
-      const constructions = callsByOriginName(
-        sourceFile,
-        store,
-        spec.importModule,
+      const origins =
+        byModule.get(spec.importModule) ??
+        importedCallOrigins(sourceFile, store, spec.importModule);
+      byModule.set(spec.importModule, origins);
+      for (const node of callsNamed(
+        origins,
         new Set([spec.importName]),
-      );
-      for (const node of constructions.keys()) {
+      ).keys()) {
         found.push({ node, spec });
       }
     }

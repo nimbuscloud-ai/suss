@@ -2,7 +2,6 @@
   "src/shapes/typeShapes.ts": "reads shapes off the type checker rather than values off expressions",
   "src/promiseThen.ts": "receiverIsPromiseTyped asks whether a type is Promise, which is type identity",
   "src/adapter.ts": "bindingPatternNames, componentPropsParameters, bindingRole, extractParameters, extractDependencyCalls, fileImporting, internalImportsOf, synthesizeCallerSummaries",
-  "src/bootstrap/preFilter.ts": "computePackApplicability",
   "src/discovery/clientCall.ts": "discoverClientCalls, clientReceiverCheckFor",
   "src/discovery/decoratedMembers.ts": "callableOf",
   "src/discovery/decoratedMethod.ts": "resolveResolverClassTypeName",

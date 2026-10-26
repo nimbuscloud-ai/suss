@@ -44,10 +44,16 @@ import {
 
 import {
   declarationCarryingTheBody,
+  FUNCTION_ROOT_KINDS,
   isFunctionRoot,
 } from "../discovery/shared.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import { propertyNameOf } from "../walk/propertyName.js";
+import {
+  forEachDescendantOfKinds,
+  forEachDescendantWhere,
+  statementsOfKind,
+} from "../walk/rawDescent.js";
 import { climbSyntax } from "../walk/unwrap.js";
 import {
   type BodyPropertyWrites,
@@ -152,10 +158,20 @@ export function createNodeTable(
 }
 
 export function nodeId(node: Node): string {
+  // One string per node, shared by every fact that mentions it, where a
+  // fresh one per call kept a copy in each fact.
+  const known = idByNode.get(node.compilerNode);
+  if (known !== undefined) {
+    return known;
+  }
   // Start alone is ambiguous: a call and its callee, or a declaration
   // and its name, begin at the same offset. The end disambiguates.
-  return `${node.getSourceFile().getFilePath()}:${node.getStart()}-${node.getEnd()}`;
+  const id = `${node.getSourceFile().getFilePath()}:${node.getStart()}-${node.getEnd()}`;
+  idByNode.set(node.compilerNode, id);
+  return id;
 }
+
+const idByNode = new WeakMap<ts.Node, string>();
 
 /**
  * Module key for an import or re-export target: the resolved file path
@@ -772,9 +788,40 @@ function spellingsHandedOn(
   if (!paths.some((path) => text.includes(path))) {
     return [];
   }
-  return sourceFile
-    .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
-    .filter((node) => spellsOneOf(paths, node) && flowsOnward(node));
+  const file = sourceFile.compilerNode;
+  const found: Node[] = [];
+  forEachDescendantWhere(
+    sourceFile,
+    (raw) =>
+      ts.isPropertyAccessExpression(raw) &&
+      paths.includes(compilerDottedPathOf(raw, file) ?? ""),
+    (node) => {
+      if (flowsOnward(node)) {
+        found.push(node);
+      }
+      return false;
+    },
+  );
+  return found;
+}
+
+/** `dottedPathOf`, read off the compiler node so nothing is wrapped to ask. */
+function compilerDottedPathOf(
+  raw: ts.Node,
+  file: ts.SourceFile,
+): string | null {
+  if (ts.isIdentifier(raw)) {
+    return raw.getText(file);
+  }
+  if (ts.isMetaProperty(raw)) {
+    const keyword = ts.tokenToString(raw.keywordToken);
+    return `${keyword}.${raw.name.getText(file)}`;
+  }
+  if (!ts.isPropertyAccessExpression(raw)) {
+    return null;
+  }
+  const object = compilerDottedPathOf(raw.expression, file);
+  return object === null ? null : `${object}.${raw.name.getText(file)}`;
 }
 
 /** Whether anything but a named read of one variable is done with the object. */
@@ -1943,11 +1990,9 @@ function emitConstructorFacts(
     return;
   }
   const writes = propertyWritesOf(implementation, body);
-  body.forEachDescendant((descendant, traversal) => {
-    if (recordBodyCalls(db, table, classId, descendant, writes)) {
-      traversal.skip();
-    }
-  });
+  forEachDescendantOfKinds(body, BODY_FACT_KINDS, (descendant) =>
+    recordBodyCalls(db, table, classId, descendant, writes),
+  );
   emitNamedStores(db, table, writes);
 }
 
@@ -2037,11 +2082,9 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
         returns.stated = true;
         recordBodyNode(db, table, fnId, body, returns, writes);
       }
-      body.forEachDescendant((descendant, traversal) => {
-        if (recordBodyNode(db, table, fnId, descendant, returns, writes)) {
-          traversal.skip();
-        }
-      });
+      forEachDescendantOfKinds(body, BODY_FACT_KINDS, (descendant) =>
+        recordBodyNode(db, table, fnId, descendant, returns, writes),
+      );
       emitNamedStores(db, table, writes);
     }
 
@@ -2158,6 +2201,24 @@ function recordBodyNode(
 }
 
 /**
+ * The kinds `recordBodyNode` states anything about: a function, a return,
+ * a keyed read, an assignment, and a call, with the wrappers
+ * `unwrapExpression` peels off one.
+ */
+const BODY_FACT_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  ...FUNCTION_ROOT_KINDS,
+  SyntaxKind.ReturnStatement,
+  SyntaxKind.ElementAccessExpression,
+  SyntaxKind.BinaryExpression,
+  SyntaxKind.CallExpression,
+  SyntaxKind.NewExpression,
+  SyntaxKind.AwaitExpression,
+  SyntaxKind.ParenthesizedExpression,
+  SyntaxKind.AsExpression,
+  SyntaxKind.SatisfiesExpression,
+]);
+
+/**
  * The same walk with what the body gives back left out, which is what a
  * constructor wants: it is keyed on the class, and a class is not a
  * function that returns anything.
@@ -2254,12 +2315,12 @@ function emitTopLevelStatements(
     // A write under a branch or a loop settles nothing on its own, but
     // it still decides whether the other writes to that property do.
     if (TOP_LEVEL_BLOCKS.has(statement.getKind())) {
-      statement.forEachDescendant((node, traversal) => {
+      forEachDescendantOfKinds(statement, TOP_LEVEL_WRITE_KINDS, (node) => {
         if (isFunctionRoot(node) || Node.isClassDeclaration(node)) {
-          traversal.skip();
-          return;
+          return true;
         }
         notePropertyWrite(writes, node);
+        return false;
       });
     }
   }
@@ -2291,6 +2352,13 @@ const TOP_LEVEL_BLOCKS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.DoStatement,
 ]);
 
+/** An assignment, and the bodies a top-level write under a block is not part of. */
+const TOP_LEVEL_WRITE_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  ...FUNCTION_ROOT_KINDS,
+  SyntaxKind.BinaryExpression,
+  SyntaxKind.ClassDeclaration,
+]);
+
 /** Whether a nested function expression is directly under a return. */
 function descendantIsReturned(fn: Node): boolean {
   const consumer = climbSyntax(fn).getParent();
@@ -2306,8 +2374,8 @@ function descendantIsReturned(fn: Node): boolean {
 export function importedModuleKeys(sourceFile: SourceFile): string[] {
   const keys: string[] = [];
   for (const declaration of [
-    ...sourceFile.getImportDeclarations(),
-    ...sourceFile.getExportDeclarations(),
+    ...statementsOfKind(sourceFile, SyntaxKind.ImportDeclaration),
+    ...statementsOfKind(sourceFile, SyntaxKind.ExportDeclaration),
   ]) {
     const moduleKey = moduleKeyOf(declaration);
     if (moduleKey !== null) {
@@ -2321,7 +2389,10 @@ export function importedModuleKeys(sourceFile: SourceFile): string[] {
 function extractReExportFacts(db: Database, sourceFile: SourceFile): void {
   const filePath = sourceFile.getFilePath();
 
-  for (const exportDecl of sourceFile.getExportDeclarations()) {
+  for (const exportDecl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportDeclaration,
+  )) {
     const moduleKey = moduleKeyOf(exportDecl);
     if (moduleKey === null) {
       // `export { local }` without a specifier: handled by the full
@@ -2446,7 +2517,10 @@ function emitLocalExportLists(
   sourceFile: SourceFile,
   filePath: string,
 ): void {
-  for (const exportDecl of sourceFile.getExportDeclarations()) {
+  for (const exportDecl of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportDeclaration,
+  )) {
     if (exportDecl.getModuleSpecifier() !== undefined) {
       continue;
     }
@@ -2461,7 +2535,10 @@ function emitLocalExportLists(
   // `export default x` takes the value x has where the statement
   // runs, not the live binding an export list gives, so a reassigned
   // name is left unstated; the README beside this file says why.
-  for (const assignment of sourceFile.getExportAssignments()) {
+  for (const assignment of statementsOfKind(
+    sourceFile,
+    SyntaxKind.ExportAssignment,
+  )) {
     if (assignment.isExportEquals()) {
       continue;
     }
