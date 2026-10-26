@@ -379,7 +379,7 @@ suss contract --from cloudformation fixtures/aws-lambda/template.yaml -o cfn.jso
 suss inspect cfn.json
 ```
 
-That template gives 29 summaries, and `inspect` prints all of them, about a hundred lines. Six are routes, and each looks like this:
+That template gives 31 summaries, and `inspect` prints all of them, about a hundred lines. Six are routes, and each looks like this:
 
 <!-- suss:excerpt -->
 
@@ -395,17 +395,17 @@ cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
 
 Neither status is in the Lambda. API Gateway produces the 504 on an integration timeout and the 502 on an integration failure, and a caller receives both the same as any other response. The template is the only place they are written down, and this reader exists to read them from there. `Contract:` is empty because this route declares no responses of its own, and `!! undeclared` on each line says the same thing from the other side: the declaration never mentions the status.
 
-The other 23 are the template's own resources, printed as one tree under the template's name. Here is where that tree starts:
+The other 25 are the template's own resources, printed as one tree under the template's name. Here is where that tree starts:
 
 <!-- suss:excerpt -->
 
 ```
 cloudformation:fixtures/aws-lambda/template.yaml
-├─ runtime-config:ConfirmTokenFunction  (cloudformation library | line 1)
+├─ runtime-config:ConfirmTokenFunction  (cloudformation library | line 17)
 │
-├─ runtime-config:ListWidgetsFunction  (cloudformation library | line 1)
+├─ runtime-config:ListWidgetsFunction  (cloudformation library | line 28)
 │
-├─ runtime-config:WidgetItemFunction  (cloudformation library | line 1)
+├─ runtime-config:WidgetItemFunction  (cloudformation library | line 40)
 ```
 
 and where it ends:
@@ -413,14 +413,14 @@ and where it ends:
 <!-- suss:excerpt -->
 
 ```
-├─ ScheduledSyncFunction.Nightly → eventbridge schedule:ScheduledSyncFunction.Nightly  (cloudformation consumer | line 1)
+├─ MixedTriggerFunction.Drain → aws_sqs JobsQueue  (cloudformation consumer | line 162)
 │
-└─ MixedTriggerFunction.Sweep → eventbridge schedule:MixedTriggerFunction.Sweep  (cloudformation consumer | line 1)
+└─ MixedTriggerFunction.Sweep → eventbridge schedule:MixedTriggerFunction.Sweep  (cloudformation consumer | line 162)
 
-29 summaries.
+31 summaries.
 ```
 
-A Lambda becomes a `library` summary for the environment the template gives it, printed as `runtime-config:<function>`, and a queue becomes one too. The wiring between them becomes a `consumer` summary that says which function reads which queue, and one of those reads `OrderIndexerFunction.Orders → aws_sqs default#order.placed`: the template routes that EventBridge subject into a queue, and that queue feeds that Lambda, so the reader followed the rule to the queue to the function. The `29 summaries.` line at the end is the count to check when a resource you expected goes missing.
+A Lambda becomes a `library` summary for the environment the template gives it, printed as `runtime-config:<function>`, and a queue becomes one too. The wiring between them becomes a `consumer` summary that says which function reads which queue, and one of those reads `OrderIndexerFunction.Orders → aws_sqs default#order.placed`: the template routes that EventBridge subject into a queue, and that queue feeds that Lambda, so the reader followed the rule to the queue to the function. The rule's delivery into each queue is a summary of its own, `OrderPlacedRule.indexer#order.placed`, which `writes bus:aws_sqs OrderIndexerQueue`. Each summary's line is the line its resource starts on. The `31 summaries.` line at the end is the count to check when a resource you expected goes missing.
 
 The three layers, and why each one is separate:
 

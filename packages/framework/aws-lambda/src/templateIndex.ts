@@ -83,6 +83,7 @@ function manifestTree(manifestPath: string): TemplateTree {
         path: path.resolve(manifestPath),
         stackPath: [],
         template: translated.functions,
+        resourceLines: new Map(),
       },
     ],
     unfollowed: [],

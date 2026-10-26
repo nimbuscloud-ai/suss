@@ -408,6 +408,8 @@ Code sends to a queue or a topic that no provider in the analyzed scope declares
 
 The queue may be declared in a stack suss did not read, so the provider side is not in the run and no outcome can be stated.
 
+An EventBridge send reaches a rule when the rule's pattern lets it through, so a send whose literal `Source` the pattern does not list is an orphan even when a rule routes its detail-type. A send whose source is not a literal, or a rule that filters with a prefix, may match, and then no finding is reported.
+
 **Fix:** add the contract source that declares the queue, or suppress.
 
 ### `messageBusConsumerOrphan`
@@ -421,6 +423,8 @@ A consumer is wired to receive from a channel that no code in the project sends 
   ChargeWorkerFunction.FromCharges is wired to receive messages from aws_sqs channel "ChargesQueue" but no code in the project sends to this channel. Either nothing uses the channel any more, or the producer lives outside this repository.
   boundary: cloudformation (aws_sqs)
 ```
+
+A delivery the template declares counts as a producer: a queue's redrive policy fills its dead-letter queue, and a rule target or an SNS subscription fills its queue. So a consumer of a dead-letter queue, or of a queue a rule delivers to, is not reported. Neither is a rule whose pattern matches events AWS services send, such as `source: [aws.s3]`, or a rule that lists no detail-type.
 
 **Legitimate when:** the producer is in another repository, which one run cannot see.
 
@@ -441,6 +445,8 @@ A queue or a topic is declared in infrastructure and neither produced to nor con
 ```
 
 Nothing breaks at runtime, so removing it is a judgement.
+
+A queue that another queue redrives into, that a rule or a subscription delivers to, or that a function uses as its dead-letter queue or destination has a producer, so it is not reported. A rule's channel is not reported when the rule has any target, even one suss does not read, such as a state machine.
 
 **Legitimate when:** something outside the project uses it, or it is kept on purpose for a consumer that has not landed.
 
@@ -546,7 +552,7 @@ A pack found a boundary but cannot work out its other side. The finding records 
   boundary: cloudformation (aws.sns)
 ```
 
-It is also reported for a boundary no pack can summarise, such as a WebSocket subscription handler or a gRPC streaming method.
+It is also reported for an EventBridge rule whose pattern filters `source` or `detail-type` with something other than a list of strings, such as a prefix. Every send on the bus may reach that rule, so neither side is reported as an orphan, and nothing sent to it is compared. It is also reported for a boundary no pack can summarise, such as a WebSocket subscription handler or a gRPC streaming method.
 
 **Legitimate when:** the channel is decided outside the code, by a deploy-time value or a change somebody made in a console, so the source does not state it.
 

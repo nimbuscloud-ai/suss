@@ -52,6 +52,12 @@ import {
   pairingOwners,
   parseChannel,
 } from "./channelPairing.js";
+import {
+  type EventPattern,
+  type PatternMatch,
+  patternMatch,
+  sentEventOf,
+} from "./eventPatternMatch.js";
 
 import type {
   BehavioralSummary,
@@ -110,6 +116,9 @@ export function checkMessageBus(
     if (resolution === "schedule") {
       continue;
     }
+    if (!isWire(consumer) && (patternOf(consumer)?.unsettled ?? []).length) {
+      findings.push(makeUnsettledPatternFinding(consumer));
+    }
     consumers.push(consumer);
   }
   const producers: ProducerRecord[] = interactionsOf(
@@ -121,50 +130,39 @@ export function checkMessageBus(
   const deployment = deploymentScope(summaries);
   resolveProducerChannels(producers, summaries, deployment);
 
-  const providerChannels: ChannelSet = createChannelSet();
+  // Who a send reaches by channel: providers, consumers and handlers
+  // without a pattern. A rule with a pattern is matched by the pattern.
+  const declaredChannels: ChannelSet = createChannelSet();
+  // Who takes messages off a channel, for the unused check.
   const consumerChannels: ChannelSet = createChannelSet();
   const producerChannels: ChannelSet = createChannelSet();
   const disabledChannels: ChannelSet = createChannelSet();
+  const patternDeclarers: PatternDeclarer[] = [];
 
   for (const c of disabledConsumers) {
-    const ch = channelOf(c);
-    if (ch !== null) {
+    for (const ch of drainedChannels(c)) {
       addChannel(disabledChannels, ch, summaryIdentifier(c));
     }
-    const queue = consumedQueueOf(c);
-    if (queue !== null) {
-      addChannel(disabledChannels, queue, summaryIdentifier(c));
-    }
   }
-  for (const c of consumers) {
-    const ch = channelOf(c);
-    if (ch !== null) {
+  for (const c of [...consumers, ...codeReceivers]) {
+    for (const ch of drainedChannels(c)) {
       addChannel(consumerChannels, ch, summaryIdentifier(c));
     }
-    // A consumer channelled by subject still drains a concrete queue,
-    // which would otherwise be reported unused.
-    const queue = consumedQueueOf(c);
-    if (queue !== null) {
-      addChannel(consumerChannels, queue, summaryIdentifier(c));
-    }
   }
-  for (const r of codeReceivers) {
-    const ch = channelOf(r);
-    if (ch !== null) {
-      addChannel(consumerChannels, ch, summaryIdentifier(r));
-    }
+  for (const c of [...consumers, ...codeReceivers]) {
+    declare(c, declaredChannels, patternDeclarers);
   }
   for (const p of queueProviders) {
     const ch = channelOf(p);
-    if (ch === null) {
-      continue;
-    }
     // A channel whose every subscription is disabled has no receiver, so
     // a producer sending to it is still an orphan.
-    if (declaredOnlyDisabled(ch, disabledChannels, consumerChannels)) {
+    if (
+      ch === null ||
+      declaredOnlyDisabled(ch, disabledChannels, consumerChannels)
+    ) {
       continue;
     }
-    addChannel(providerChannels, ch, summaryIdentifier(p));
+    declare(p, declaredChannels, patternDeclarers);
   }
   for (const p of producers) {
     const ch = effectiveChannel(p);
@@ -185,11 +183,21 @@ export function checkMessageBus(
     if (ch === null) {
       continue;
     }
+    const byPattern = patternDeclarers
+      .map((declarer) => ({ declarer, match: sendMatches(declarer, p) }))
+      .filter((hit) => hit.match !== null);
     const declarers = [
-      ...pairingOwners(providerChannels, ch),
-      ...pairingOwners(consumerChannels, ch),
+      ...pairingOwners(declaredChannels, ch),
+      ...byPattern
+        .filter((hit) => hit.match === "certain")
+        .map((hit) => hit.declarer.owner),
     ];
-    if (declarers.length === 0) {
+    // When nothing in this run reads what a template delivers, no code is
+    // wrong, so a wire is never reported as an orphan producer.
+    if (declarers.length === 0 && byPattern.length === 0) {
+      if (isWire(p.summary)) {
+        continue;
+      }
       findings.push(
         makeOrphanProducerFinding(p, semantics, ch, {
           onlySubscriberDisabled: hasPair(disabledChannels, ch),
@@ -204,10 +212,18 @@ export function checkMessageBus(
 
   for (const c of consumers) {
     const semantics = c.identity.boundaryBinding?.semantics;
-    if (semantics?.name !== "message-bus" || semantics.channel === null) {
+    // A wire the template declares has no code to be missing a producer.
+    // A rule that lists no detail-type is not waiting on any one subject,
+    // and its sender is often a service integration suss does not read.
+    if (
+      semantics?.name !== "message-bus" ||
+      semantics.channel === null ||
+      isWire(c) ||
+      readPatternResolution(c) === "pattern"
+    ) {
       continue;
     }
-    if (hasPair(producerChannels, semantics.channel)) {
+    if (isProducedTo(c, semantics.channel, producers, producerChannels)) {
       continue;
     }
     // A scheduler config the run does not read may enqueue this job.
@@ -250,7 +266,10 @@ export function checkMessageBus(
       continue;
     }
     const drainers = pairingOwners(consumerChannels, semantics.channel);
-    if (hasPair(producerChannels, semantics.channel) || drainers.length > 0) {
+    if (
+      drainers.length > 0 ||
+      isProducedTo(p, semantics.channel, producers, producerChannels)
+    ) {
       recordCompared(
         compared,
         semantics.messageBus,
@@ -457,6 +476,103 @@ function channelOf(s: BehavioralSummary): string | null {
   return sem?.name === "message-bus" ? sem.channel : null;
 }
 
+/** A summary the template declares to move messages, such as a redrive. */
+function isWire(s: BehavioralSummary): boolean {
+  return readMessageBusMetadata(s)?.wiring !== undefined;
+}
+
+function patternOf(s: BehavioralSummary): EventPattern | undefined {
+  return readMessageBusMetadata(s)?.eventPattern;
+}
+
+/** A rule's summary, which a send reaches by matching its pattern. */
+interface PatternDeclarer {
+  owner: string;
+  bus: string | null;
+  pattern: EventPattern;
+}
+
+/** Its own channel, and the queue it drains when it took a subject's channel. */
+function drainedChannels(s: BehavioralSummary): string[] {
+  return [channelOf(s), consumedQueueOf(s)].filter(
+    (ch): ch is string => ch !== null,
+  );
+}
+
+/**
+ * Adds a summary to what sends can reach. A rule's summary goes on the
+ * pattern list, and only the queue it drains, if any, is a channel.
+ */
+function declare(
+  s: BehavioralSummary,
+  channels: ChannelSet,
+  patterns: PatternDeclarer[],
+): void {
+  const owner = summaryIdentifier(s);
+  const pattern = patternOf(s);
+  const ch = channelOf(s);
+  if (pattern === undefined || ch === null) {
+    for (const drained of drainedChannels(s)) {
+      addChannel(channels, drained, owner);
+    }
+    return;
+  }
+  patterns.push({ owner, bus: parseChannel(ch).bus, pattern });
+  const queue = consumedQueueOf(s);
+  if (queue !== null) {
+    addChannel(channels, queue, owner);
+  }
+}
+
+/** How a send reaches a rule, or null when it does not. Only EventBridge sends do. */
+function sendMatches(
+  declarer: { bus: string | null; pattern: EventPattern },
+  p: ProducerRecord,
+): PatternMatch | null {
+  const sem = p.effect.binding.semantics;
+  const ch = effectiveChannel(p);
+  if (sem.name !== "message-bus" || sem.messageBus !== "eventbridge") {
+    return null;
+  }
+  if (ch === null || p.effect.interaction.class !== "message-send") {
+    return null;
+  }
+
+  return patternMatch(
+    declarer.pattern,
+    declarer.bus,
+    sentEventOf(ch, p.effect.interaction.routingKey),
+  );
+}
+
+/**
+ * Whether anything sends to this summary's channel, or to the queue it
+ * drains. A rule whose pattern AWS services send to is sent to with no
+ * code doing it, and a possible match counts, since a finding needs
+ * certainty that nothing sends.
+ */
+function isProducedTo(
+  s: BehavioralSummary,
+  channel: string,
+  producers: ProducerRecord[],
+  producerChannels: ChannelSet,
+): boolean {
+  const queue = consumedQueueOf(s);
+  if (queue !== null && hasPair(producerChannels, queue)) {
+    return true;
+  }
+  const pattern = patternOf(s);
+  if (pattern === undefined) {
+    return hasPair(producerChannels, channel);
+  }
+  if (pattern.emittedByAws === true) {
+    return true;
+  }
+  const declarer = { bus: parseChannel(channel).bus, pattern };
+
+  return producers.some((p) => sendMatches(declarer, p) !== null);
+}
+
 /**
  * Whether every subscription on this channel is deployed disabled. Two
  * rules can route one channel, so a disabled rule only takes the
@@ -574,7 +690,7 @@ function splitBusChannel(
 /** How the reader resolved the consumer's routing pattern, or null when it recorded nothing. */
 function readPatternResolution(
   summary: BehavioralSummary,
-): "exact" | "schedule" | "unresolvable" | null {
+): "exact" | "pattern" | "schedule" | "unresolvable" | null {
   return readMessageBusMetadata(summary)?.patternResolution ?? null;
 }
 
@@ -616,6 +732,25 @@ function makeOrphanConsumerFinding(
     consumer: makeSide(consumer),
     description: `${consumer.identity.name} is wired to receive messages from ${semantics.messageBus} channel "${semantics.channel}" but no code in the project sends to this channel. Either nothing uses the channel any more, or the producer lives outside this repository.`,
     severity: "warning",
+  };
+}
+
+/**
+ * A rule whose pattern filters source or detail-type with something
+ * other than a list of strings, such as a prefix. Every send on the bus
+ * may reach it, so it is never an orphan, and nothing is compared.
+ */
+function makeUnsettledPatternFinding(consumer: BehavioralSummary): Finding {
+  const binding = consumer.identity.boundaryBinding as BoundaryBinding;
+  const meta = readMessageBusMetadata(consumer);
+  const fields = (meta?.eventPattern?.unsettled ?? []).join(" and ");
+  return {
+    kind: "unsupportedSemantics",
+    boundary: binding,
+    provider: makeSide(consumer),
+    consumer: makeSide(consumer),
+    description: `EventBridge rule "${meta?.rule ?? consumer.identity.name}" on bus "${meta?.eventBus ?? "default"}" routes to ${consumer.identity.name}, but its pattern filters ${fields} with something other than a list of strings, such as a prefix. suss counts any send on the bus as one that may reach it, so it is not reported as an orphan, and what reaches it went unchecked.`,
+    severity: "info",
   };
 }
 
@@ -689,7 +824,7 @@ function defaultUnresolvableReason(
   if (messageBus === "s3") {
     return "the Filter couldn't be reduced to the whole bucket";
   }
-  return "the EventPattern couldn't be reduced to exact detail-types";
+  return "the rule declares no EventPattern";
 }
 
 function unresolvableDescription(
@@ -708,7 +843,7 @@ function unresolvableDescription(
   }
   const rule = meta?.rule ?? consumer.identity.name;
   const eventBus = meta?.eventBus ?? "default";
-  return `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. suss pairs a producer with a rule only when the detail-type matches exactly, and does not read prefix or content-based patterns, so no producer was paired with this rule and what reaches it went unchecked.`;
+  return `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. No producer was paired with it, so what reaches it went unchecked.`;
 }
 
 function makeSide(
@@ -768,7 +903,10 @@ function checkBodyShapes(opts: {
       continue;
     }
 
-    const supplied = suppliedBodies(opts.producers, channel);
+    const supplied = suppliedBodies(cfnConsumer, opts.producers, channel);
+    if (supplied === null) {
+      continue;
+    }
     for (const receive of receives) {
       const result = compareSupplied(receive.reads, supplied);
       if (!result.compared) {
@@ -865,15 +1003,28 @@ function parameterReceive(summary: BehavioralSummary): ReceiveRecord | null {
   return { summary, reads: result.reads };
 }
 
-/** Every body sent to this channel, opaque ones included. */
+/**
+ * Every body sent to this channel, opaque ones included. A rule's
+ * consumer takes the bodies of every send its pattern may match, and is
+ * compared only when at least one send matches it for certain.
+ */
 function suppliedBodies(
+  consumer: BehavioralSummary,
   producers: ProducerRecord[],
   channel: string,
-): unknown[] {
+): unknown[] | null {
+  const pattern = patternOf(consumer);
+  const matches = producers.map((producer) =>
+    pattern === undefined
+      ? channelMatch(producer, channel)
+      : sendMatches({ bus: parseChannel(channel).bus, pattern }, producer),
+  );
+  if (pattern !== undefined && !matches.includes("certain")) {
+    return null;
+  }
   const out: unknown[] = [];
-  for (const producer of producers) {
-    const producerChannel = effectiveChannel(producer);
-    if (producerChannel === null || !channelsPair(producerChannel, channel)) {
+  for (const [index, producer] of producers.entries()) {
+    if (matches[index] === null) {
       continue;
     }
     const sent = producer.effect.interaction;
@@ -883,6 +1034,16 @@ function suppliedBodies(
     out.push(sent.body);
   }
   return out;
+}
+
+function channelMatch(
+  producer: ProducerRecord,
+  channel: string,
+): PatternMatch | null {
+  const producerChannel = effectiveChannel(producer);
+  return producerChannel !== null && channelsPair(producerChannel, channel)
+    ? "certain"
+    : null;
 }
 
 /** Null for any body that is not an object literal, which is opaque here. */

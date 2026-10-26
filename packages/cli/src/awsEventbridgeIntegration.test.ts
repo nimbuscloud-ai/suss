@@ -15,8 +15,8 @@
 //     OrderConsumer → paired, no orphan.
 //   - OrderShipped: routed by the same rule but no producer publishes it
 //     → messageBusConsumerOrphan.
-//   - AuditConsumer: SAM EventBridgeRule with a detail-type prefix
-//     filter → unresolvable → unsupportedSemantics (info).
+//   - AuditConsumer: SAM EventBridgeRule with a source prefix filter
+//     → a possible match only → unsupportedSemantics (info).
 //   - DigestFunction: SAM Type Schedule → time-triggered, no orphan.
 //   - IdleRule (State: DISABLED, #460): consumer reported disabled
 //     (info); the OrderCancelled send it alone routes is a producer
@@ -90,13 +90,14 @@ describe("aws-eventbridge integration", () => {
     );
     expect(providers.map((p) => p.identity.name).sort()).toEqual([
       "OrderEventBus#OrderArchived",
+      "OrderEventBus#OrderAudited",
       "OrderEventBus#OrderCancelled",
       "OrderEventBus#OrderPlaced",
       "OrderEventBus#OrderShipped",
     ]);
   });
 
-  it("CFN walker emits target-Lambda consumers, an unresolvable marker, and a schedule marker", () => {
+  it("CFN walker emits target-Lambda consumers, an unsettled pattern, and a schedule marker", () => {
     const consumers = stub.filter(
       (s) =>
         s.kind === "consumer" &&
@@ -109,12 +110,18 @@ describe("aws-eventbridge integration", () => {
         .map((c) => c.identity.name)
         .sort();
     expect(byResolution("exact")).toEqual([
+      "AuditConsumer#OrderAudited",
       "IdleConsumer#OrderArchived",
       "IdleConsumer#OrderCancelled",
       "OrderConsumer#OrderPlaced",
       "OrderConsumer#OrderShipped",
     ]);
-    expect(byResolution("unresolvable")).toHaveLength(1);
+    const audit = consumers.find(
+      (c) => c.identity.name === "AuditConsumer#OrderAudited",
+    );
+    expect(
+      readMessageBusMetadata(audit as BehavioralSummary)?.eventPattern,
+    ).toEqual({ detailTypes: ["OrderAudited"], unsettled: ["source"] });
     expect(byResolution("schedule")).toHaveLength(1);
   });
 
@@ -184,7 +191,7 @@ describe("aws-eventbridge integration", () => {
     expect(orphan).toBeUndefined();
   });
 
-  it("surfaces the unresolvable AuditConsumer rule as unsupportedSemantics (info)", () => {
+  it("surfaces the unsettled AuditConsumer rule as unsupportedSemantics (info), not as an orphan", () => {
     const unresolvable = findings.find(
       (f) =>
         f.kind === "unsupportedSemantics" &&
@@ -192,7 +199,7 @@ describe("aws-eventbridge integration", () => {
     );
     expect(unresolvable).toBeDefined();
     expect(unresolvable?.severity).toBe("info");
-    expect(unresolvable?.description).toContain("detail-type");
+    expect(unresolvable?.description).toContain("filters source");
   });
 
   it("does NOT flag the scheduled DigestFunction as a consumer orphan", () => {

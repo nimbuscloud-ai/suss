@@ -96,6 +96,11 @@ export interface CloudFormationToSummariesOptions {
    * points at the file a person wrote. Defaults to "cloudformation".
    */
   recognition?: string;
+  /**
+   * The line each resource is written on, so a summary built from one
+   * points there. Without it every summary is on line 1.
+   */
+  resourceLines?: ReadonlyMap<string, number>;
 }
 
 export interface CloudFormationFileToSummariesOptions
@@ -166,12 +171,18 @@ export function cloudFormationToSummaries(
       sourceFile,
       inheritedEnvVars(template),
       recognition,
+      options.resourceLines,
     ),
   );
 
   // 5. SQS, SNS, EventBridge and S3 notification channels and consumers.
   summaries.push(
-    ...buildMessageBusSummaries(resources, sourceFile, recognition),
+    ...buildMessageBusSummaries(
+      resources,
+      sourceFile,
+      recognition,
+      options.resourceLines,
+    ),
   );
 
   // 6. Load balancer and DNS routing edges for the reachability walk.
@@ -180,7 +191,12 @@ export function cloudFormationToSummaries(
 
   // 7. DynamoDB tables and their secondary indexes.
   summaries.push(
-    ...buildDynamoTableSummaries(resources, sourceFile, recognition),
+    ...buildDynamoTableSummaries(
+      resources,
+      sourceFile,
+      recognition,
+      options.resourceLines,
+    ),
   );
 
   const stackPath = options.stackPath ?? [];
@@ -1118,6 +1134,7 @@ export function cloudFormationFileToSummaries(
     return cloudFormationToSummaries(document.template, {
       source: nestedDocumentLabel(rootLabel, document.stackPath),
       stackPath: document.stackPath,
+      resourceLines: document.resourceLines,
     }).map((summary) => withCodeScopeWorkspace(summary, workspace));
   });
 }

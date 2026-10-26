@@ -124,6 +124,10 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/aws-eventbridge-unions/tsconfig.json"),
     ...packs("aws-lambda", "aws-eventbridge"),
   ]),
+  fixture("aws-template-wiring", [
+    ...project("fixtures/aws-template-wiring/tsconfig.json"),
+    ...packs("aws-lambda", "aws-eventbridge"),
+  ]),
   // aws-sqs too, so the SQS receive in its helper is read.
   fixture("aws-lambda", [
     ...dir("fixtures/aws-lambda"),

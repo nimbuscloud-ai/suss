@@ -18,7 +18,7 @@ import path from "node:path";
 
 import {
   type CloudFormationTemplate,
-  loadCloudFormationTemplate,
+  loadCloudFormationDocument,
 } from "./templateLoader.js";
 
 /**
@@ -49,6 +49,8 @@ export interface TemplateDocument {
    */
   stackPath: string[];
   template: CloudFormationTemplate;
+  /** The 1-based line each resource's logical id is written on. */
+  resourceLines: Map<string, number>;
 }
 
 /**
@@ -104,7 +106,7 @@ export function loadTemplateTree(rootPath: string): TemplateTree {
   const root: TemplateDocument = {
     path: rootFile,
     stackPath: [],
-    template: loadCloudFormationTemplate(rootFile),
+    ...loadCloudFormationDocument(rootFile),
   };
 
   const documents: TemplateDocument[] = [root];
@@ -252,7 +254,7 @@ function childStack(opts: {
       document: {
         path: childPath,
         stackPath,
-        template: loadCloudFormationTemplate(childPath),
+        ...loadCloudFormationDocument(childPath),
       },
     };
   } catch (err) {

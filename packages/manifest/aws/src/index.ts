@@ -24,9 +24,10 @@ export {
   resolveTopicChannel,
 } from "./arn.js";
 export {
-  type PatternReduction,
-  reduceEventPattern,
+  type EventPatternFields,
+  readEventPattern,
   resolveEventBusToken,
+  type UnsettledPatternField,
 } from "./eventPattern.js";
 export { inheritedEnvVars, resourcesWithGlobals } from "./globals.js";
 export {
@@ -51,6 +52,9 @@ export {
   CLOUDFORMATION_YAML_TAGS,
   type CloudFormationResource,
   type CloudFormationTemplate,
+  type LoadedTemplate,
+  loadCloudFormationDocument,
   loadCloudFormationTemplate,
+  readResourceLines,
   refTarget,
 } from "./templateLoader.js";
