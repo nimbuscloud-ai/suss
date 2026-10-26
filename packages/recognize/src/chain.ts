@@ -456,13 +456,13 @@ export interface SqlEnding {
 /**
  * Where the messages a call sends are written.
  *
- * A library either takes one message as the call's input or takes a
- * collection of them under a property. Which one applies depends on the
+ * A library takes one message as the call's input, or a collection of
+ * them on a property or as the input. Which one applies depends on the
  * command, so a library offering both gets two declarations. SQS has
  * `SendMessageCommand` and `SendMessageBatchCommand`, and their inputs
  * differ.
  */
-export type MessageLocation = OneMessage | ManyIn;
+export type MessageLocation = OneMessage | ManyIn | ManyAsTheInput;
 
 /** The call's input is the message. */
 export interface OneMessage {
@@ -476,14 +476,31 @@ export interface ManyIn {
   readonly property: string;
 }
 
+/** The call's input is the list of messages, as in BullMQ's `addBulk([...])`. */
+export interface ManyAsTheInput {
+  readonly each: "inTheInput";
+}
+
 /**
- * One part of the channel a message goes to, read off the message.
- *
- * A channel is one name on some wires and several on others. SQS has a
- * queue, EventBridge has a bus and a subject on it, and both are read
- * the same way, so a pack states the parts in the order they join.
+ * One part of the channel a message goes to. SQS has a queue, and
+ * EventBridge has a bus and a subject on it, so a pack states the parts
+ * in the order they join.
  */
-export interface ChannelPart {
+export type ChannelPart = PropertyPart | ArgumentPart;
+
+/**
+ * A part the call states as an argument, usually of a call next to it.
+ * A BullMQ queue takes its name when it is built, so the pack reads
+ * `{ of: [{ to: "receiver" }], at: 0 }`.
+ */
+export interface ArgumentPart {
+  readonly argument: OneArgument;
+  /** What a reader gives back when nothing in the source settles it. */
+  readonly unsettled?: UnsettledName;
+}
+
+/** A part the message, or the call's input, states as a property. */
+export interface PropertyPart {
   /**
    * The properties the message may state this part on, tried in order.
    * A library that lets one destination be written more than one way
@@ -522,14 +539,19 @@ export interface MessageSendEnding {
   readonly channel: readonly ChannelPart[];
   /** What joins the parts, when there is more than one. */
   readonly channelSeparator?: string;
-  /** The property the message states its body on, when the pack can say. */
-  readonly body?: string;
   /**
-   * The property whose literal value is recorded as the routing key. It
-   * stays out of the channel, so a reader can filter on it but the two
-   * sides do not pair on it.
+   * The property the message states its body on, or the whole message,
+   * when the pack can say. `queue.add(name, data)` hands the body over
+   * as its own argument, so the message is the body.
    */
-  readonly routingKey?: string;
+  readonly body?: string | WholeMessage;
+  /**
+   * Where the literal value recorded as the routing key is: a property
+   * of the message, or an argument of the call. It stays out of the
+   * channel, so a reader can filter on it but the two sides do not
+   * pair on it.
+   */
+  readonly routingKey?: string | OneArgument;
   /**
    * What a reader gives back for a channel nothing in the source
    * settles. A queue URL only exists at deploy time, so the code writes
@@ -537,6 +559,11 @@ export interface MessageSendEnding {
    * sides of the boundary agree on. `"reference"` keeps that name.
    */
   readonly unsettledName: UnsettledName;
+}
+
+/** The message itself, as the body a send records. */
+export interface WholeMessage {
+  readonly whole: "message";
 }
 
 /**

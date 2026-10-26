@@ -64,6 +64,7 @@ export const coveragePackages = [
   ["packages/framework/aws-secrets-manager", "aws-secrets-manager"],
   ["packages/framework/aws-ssm", "aws-ssm"],
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],
+  ["packages/framework/bullmq", "bullmq"],
   ["packages/framework/aws-lambda", "aws-lambda"],
   ["packages/framework/cloudflare-workers", "cloudflare-workers"],
   ["packages/framework/flask-restx", "flask-restx"],

@@ -487,6 +487,47 @@ expression written there, and a column the rule reported from a fixed
 list gets nothing. A pack written as code states its slots itself,
 as the Prisma pack does for `where` and the write payloads.
 
+## A send whose channel is on the client
+
+The `messageSend` ending was written against the AWS SDK, where a
+command states the queue beside the message. A job queue such as
+BullMQ states it once, when the queue is built, and each add passes
+only the job:
+
+```ts
+const emails = new Queue("emails");
+await emails.add("welcome", { userId });
+```
+
+A channel part can be an argument pick instead of a property, so the
+pack reads the queue off the construction the receiver was made by:
+
+```ts
+messageSends({
+  wire: "bullmq",
+  client: constructedFrom({ from: ["bullmq"], named: ["Queue"] }),
+  messages: { each: "theInput" },
+  channel: [{ argument: { of: [{ to: "receiver" }], at: 0 } }],
+  body: { whole: "message" },
+  routingKey: { at: 0 },
+  unsettledName: "nothing",
+}).methods({ add: { input: { at: 1 } } });
+```
+
+Three more things follow from the add taking its job as positional
+arguments. `body: { whole: "message" }` records the message itself as
+the body, since `data` is its own argument. `routingKey` takes an
+argument pick as well as a property, so the job name is recorded as the
+routing key and stays out of the channel. And `{ each: "inTheInput" }`
+reads a call whose input is the list of messages itself, as
+`addBulk([{ name, data }, ...])` is.
+
+A receiver a project function made, such as a queue built inside
+`createJobsQueue()` and kept in a module-level singleton, is the
+construction that function returns. The TypeScript adapter works out
+both the origin check and the `{ to: "receiver" }` step with the same
+store question, so the call the chain checks is the call it then reads.
+
 ## The example every declaration states
 
 ```ts

@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Sixty-one packs read code today, across fifty frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Sixty-two packs read code today, across fifty-one frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -35,6 +35,7 @@ The first column of every table below is the name `-f` takes, and `-f` is repeat
 | Next.js route handlers | `-f nextjs` |
 | React and GraphQL | `-f react -f apollo-client` |
 | Lambda and SQS | `-f aws-sqs -f node`, and `contract --from cloudformation` |
+| BullMQ workers and the code that adds jobs | add `-f bullmq` |
 | Cloudflare Worker | `-f cloudflare-workers`, and `contract --from wrangler` |
 | Postgres through Prisma | add `-f prisma`, and `contract --from prisma` |
 | Postgres through Drizzle | add `-f drizzle` |
@@ -54,6 +55,7 @@ A framework pack finds the units a framework defines: a route handler, a compone
 | [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired with the routes a SAM template or serverless.yml declares. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 | [`aws-lambda-python`](../../packages/framework/aws-lambda) | AWS Lambda handlers written in Python, found from the Handler a SAM template or serverless.yml gives each function. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 | [`aws-lambda-ruby`](../../packages/framework/aws-lambda) | AWS Lambda handlers written in Ruby, found from the Handler a SAM template or serverless.yml gives each function, including a class method written `file.Module::Class.method`. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`bullmq`](../../packages/framework/bullmq) | BullMQ workers and queues: each worker's processor is a consumer on its queue, and each add to a queue is a message send on it. | ![](../../.github/badges/coverage-bullmq.svg) |
 | [`celery`](../../packages/framework/celery) | Celery tasks (Python). A function under `@app.task` or `@shared_task` is the consumer of its task, and `.delay`, `.apply_async` and `send_task` are sends to it, so a route that enqueues a task reaches what the task does. | ![](../../.github/badges/coverage-celery.svg) |
 | [`cloudflare-workers`](../../packages/framework/cloudflare-workers) | A Cloudflare Workers entrypoint: one unit per trigger the default export defines, and the bindings its code reads off the argument they arrive in. | ![](../../.github/badges/coverage-cloudflare-workers.svg) |
 | [`express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |

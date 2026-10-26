@@ -244,6 +244,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "aws-sqs": "@suss/packs/aws-sqs",
   "aws-sns": "@suss/packs/aws-sns",
   "aws-eventbridge": "@suss/packs/aws-eventbridge",
+  bullmq: "@suss/packs/bullmq",
   "aws-dynamodb": "@suss/packs/aws-dynamodb",
   "aws-s3": "@suss/packs/aws-s3",
   "aws-secrets-manager": "@suss/packs/aws-secrets-manager",

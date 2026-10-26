@@ -65,25 +65,17 @@ export type MessageBusTechnology = MessageBusSemantics["messageBus"];
 
 /** What a bus is like, where the checks treat one bus differently from another. */
 export interface MessageBusTraits {
-  /** The bus is a background job queue, so a send whose job is unsettled leaves a gap. */
-  jobQueue: boolean;
   /**
-   * A scheduler can put work on the bus from a config file the run does
-   * not read, as `sidekiq.yml` and Celery beat do, so a consumer with no
-   * producer in code may still run.
+   * The bus is a background job queue. A send whose job is unsettled
+   * leaves a gap, and a job no code enqueues is never an orphan: a
+   * scheduler config, another service, or code the run cannot follow
+   * may enqueue it.
    */
-  scheduledFromConfig: boolean;
+  jobQueue: boolean;
 }
 
-const MESSAGES: MessageBusTraits = {
-  jobQueue: false,
-  scheduledFromConfig: false,
-};
-const JOBS: MessageBusTraits = { jobQueue: true, scheduledFromConfig: false };
-const SCHEDULED_JOBS: MessageBusTraits = {
-  jobQueue: true,
-  scheduledFromConfig: true,
-};
+const MESSAGES: MessageBusTraits = { jobQueue: false };
+const JOBS: MessageBusTraits = { jobQueue: true };
 
 export const MESSAGE_BUS_TRAITS: Record<
   MessageBusTechnology,
@@ -97,9 +89,9 @@ export const MESSAGE_BUS_TRAITS: Record<
   aws_firehose: MESSAGES,
   gcp_pubsub: MESSAGES,
   bullmq: JOBS,
-  activejob: SCHEDULED_JOBS,
-  sidekiq: SCHEDULED_JOBS,
-  celery: SCHEDULED_JOBS,
+  activejob: JOBS,
+  sidekiq: JOBS,
+  celery: JOBS,
   kafka: MESSAGES,
   nats: MESSAGES,
   "cloudflare-queues": MESSAGES,

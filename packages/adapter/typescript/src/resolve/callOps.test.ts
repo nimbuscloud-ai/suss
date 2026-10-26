@@ -195,6 +195,38 @@ describe("pinning down the receiver", () => {
     expect(ops.receiverIsFrom(constructed)).toBe(true);
   });
 
+  it("matches a client a project function built and handed back", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      const createDeck = () => new Deck();
+      const getDeck = async () => {
+        const deck = createDeck();
+        return { deck };
+      };
+      export async function play() {
+        const { deck } = await getDeck();
+        return deck.play("a");
+      }
+    `);
+
+    expect(ops.receiverIsFrom(constructed)).toBe(true);
+    // The receiver a chain then reads is the same construction.
+    expect(ops.receiver()?.calleeText()).toBe("Deck");
+  });
+
+  it("leaves a client a project function built from somewhere else alone", () => {
+    const ops = opsForLastCall(`
+      class Deck { play(track: string) {} }
+      const createDeck = () => new Deck();
+      export function play() {
+        const deck = createDeck();
+        return deck.play("a");
+      }
+    `);
+
+    expect(ops.receiverIsFrom(constructed)).toBe(false);
+  });
+
   it("says no when nothing in the source says what made the receiver", () => {
     const ops = opsForLastCall(`
       declare const deck: any;

@@ -229,8 +229,9 @@ export function checkMessageBus(
     if (isProducedTo(c, semantics.channel, producers, producerChannels)) {
       continue;
     }
-    // A scheduler config the run does not read may enqueue this job.
-    if (MESSAGE_BUS_TRAITS[semantics.messageBus].scheduledFromConfig) {
+    // A scheduler config, another service, or code the run cannot follow
+    // may enqueue this job.
+    if (MESSAGE_BUS_TRAITS[semantics.messageBus].jobQueue) {
       continue;
     }
     findings.push(makeOrphanConsumerFinding(c, semantics));
