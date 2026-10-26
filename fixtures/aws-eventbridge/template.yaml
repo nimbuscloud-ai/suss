@@ -7,9 +7,9 @@ Description: |
        rule routes OrderPlaced to OrderConsumer.
     2. Reducible rule, consumer-orphan: the same rule also routes
        OrderShipped to OrderConsumer, but no code publishes OrderShipped.
-    3. Irreducible pattern (content filter): AuditConsumer's SAM
-       EventBridgeRule matches a detail-type prefix, which v0 can't
-       reduce to exact detail-types → surfaced as unpaired-unresolvable.
+    3. Unsettled pattern (content filter): AuditConsumer's SAM
+       EventBridgeRule matches a source prefix, which suss does not
+       read, so a send of its detail-type only possibly reaches it.
     4. Schedule: DigestFunction is time-triggered, no message producer.
     5. Disabled rule (#460): IdleRule deploys State: DISABLED, so its
        consumer is reported disabled (info) rather than orphaned. The
@@ -60,8 +60,8 @@ Resources:
       Runtime: nodejs20.x
 
   # Rule 2 (SAM Events Type: EventBridgeRule) with a content-filter
-  # detail-type. v0 reduces routing to exact detail-type match, so this
-  # prefix filter is unresolvable — surfaced, never silently dropped.
+  # source. suss does not read prefix filters, so the rule is reported
+  # (info) and pairs only as a possible match.
   AuditConsumer:
     Type: AWS::Serverless::Function
     Properties:
@@ -75,9 +75,9 @@ Resources:
             EventBusName: !Ref OrderEventBus
             Pattern:
               source:
-                - orders.service
+                - prefix: orders.
               detail-type:
-                - prefix: Order
+                - OrderAudited
 
   # Rule 3 (raw AWS::Events::Rule, State: DISABLED): routes
   # OrderCancelled + OrderArchived to IdleConsumer, but deploys switched

@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Fixture for deliveries the template declares and rules matched by
+  their pattern.
+    1. OrdersRule matches source orders.service and detail-type
+       OrderPlaced, and delivers to OrdersQueue. OrderProducer publishes
+       that event, so the rule, the queue and Fulfilment all pair.
+    2. OrdersQueue redrives into OrdersDlq, and the rule's target puts
+       what it cannot deliver on RuleDlq. Neither queue is unused, and
+       DlqReplayer, which drains OrdersDlq, is not an orphan.
+    3. BillingRule matches source payments.service, but OrderProducer
+       publishes InvoicePaid from billing.service. Both sides are orphans.
+    4. UploadsRule matches events S3 sends, so Indexer is not an orphan.
+    5. LeftoverQueue is wired to nothing and is reported unused.
+
+Resources:
+  OrderEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: order-events
+
+  OrderProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          ORDER_EVENT_BUS_NAME: !Ref OrderEventBus
+
+  OrdersRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref OrderEventBus
+      EventPattern:
+        source:
+          - orders.service
+        detail-type:
+          - OrderPlaced
+      Targets:
+        - Arn: !GetAtt OrdersQueue.Arn
+          Id: OrdersQueueTarget
+          DeadLetterConfig:
+            Arn: !GetAtt RuleDlq.Arn
+
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt OrdersDlq.Arn
+        maxReceiveCount: 3
+
+  OrdersDlq:
+    Type: AWS::SQS::Queue
+
+  RuleDlq:
+    Type: AWS::SQS::Queue
+
+  Fulfilment:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/fulfilment/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        FromOrders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  DlqReplayer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/replayer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        FromDlq:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersDlq.Arn
+
+  BillingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref OrderEventBus
+      EventPattern:
+        source:
+          - payments.service
+        detail-type:
+          - InvoicePaid
+      Targets:
+        - Arn: !GetAtt Billing.Arn
+          Id: BillingTarget
+
+  Billing:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/billing/
+      Handler: index.handler
+      Runtime: nodejs20.x
+
+  UploadsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+      Targets:
+        - Arn: !GetAtt Indexer.Arn
+          Id: IndexerTarget
+
+  Indexer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/indexer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+
+  LeftoverQueue:
+    Type: AWS::SQS::Queue

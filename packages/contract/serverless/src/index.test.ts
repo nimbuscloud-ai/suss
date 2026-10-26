@@ -388,7 +388,7 @@ describe("an eventBridge event", () => {
     expect(readMessageBusMetadata(consumer)?.patternResolution).toBe("exact");
   });
 
-  it("says a pattern it cannot reduce rather than guessing a subject", () => {
+  it("matches a pattern with no detail-type by its source rather than guessing a subject", () => {
     const summaries = serverlessToSummaries({
       functions: {
         onAny: {
@@ -401,7 +401,8 @@ describe("an eventBridge event", () => {
 
     expect(readMessageBusMetadata(consumer as BehavioralSummary)).toMatchObject(
       {
-        patternResolution: "unresolvable",
+        patternResolution: "pattern",
+        eventPattern: { sources: ["orders"] },
       },
     );
   });

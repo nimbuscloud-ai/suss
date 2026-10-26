@@ -61,8 +61,56 @@ export const MessageBusMetadataSchema = z.object({
   topic: z.string().optional(),
   /** SAM event name the subscription was declared under. */
   eventName: z.string().optional(),
-  /** How far an EventPattern, an SNS FilterPolicy, or an S3 notification Filter reduced; see the CFN reader. */
-  patternResolution: z.enum(["exact", "schedule", "unresolvable"]).optional(),
+  /**
+   * How far an EventPattern, an SNS FilterPolicy, or an S3 notification
+   * Filter reduced; see the CFN reader. "pattern" is an EventBridge rule
+   * with no literal detail-type list, which `eventPattern` matches.
+   */
+  patternResolution: z
+    .enum(["exact", "pattern", "schedule", "unresolvable"])
+    .optional(),
+  /**
+   * What an EventBridge rule's EventPattern says about source and
+   * detail-type. A field left out matches every value. A field written
+   * as something other than a list of strings, such as a prefix filter,
+   * is listed in `unsettled`, and a send can only possibly match it.
+   */
+  eventPattern: z
+    .object({
+      detailTypes: z.array(z.string()).optional(),
+      sources: z.array(z.string()).optional(),
+      unsettled: z.array(z.enum(["detail-type", "source"])).optional(),
+      /**
+       * The pattern also filters on a field a send does not state, such
+       * as `detail`, so a send can only possibly match it.
+       */
+      filtersOtherFields: z.boolean().optional(),
+      /**
+       * A source starts with `aws.`, which only AWS services can send,
+       * so events reach the rule with nothing in code sending them.
+       */
+      emittedByAws: z.boolean().optional(),
+    })
+    .optional(),
+  /**
+   * Set on a summary the template declares to move messages from one
+   * resource to another, such as a queue's redrive policy or a rule's
+   * queue target. Its send effect says where the messages go, and its
+   * binding, when it has one, is the channel it takes them from.
+   */
+  wiring: z
+    .enum([
+      "redrive",
+      "deadLetter",
+      "destination",
+      "ruleTarget",
+      "subscription",
+      "notification",
+      "pipe",
+      "schedule",
+      "alarm",
+    ])
+    .optional(),
   /** Present when unresolvable: what stopped the reduction. */
   unresolvableReason: z.string().optional(),
   /**

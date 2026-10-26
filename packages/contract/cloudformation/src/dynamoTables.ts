@@ -10,6 +10,12 @@
 
 import { namePatternFromSub, storageBinding } from "@suss/behavioral-ir";
 
+import {
+  locationOf,
+  type TemplatePlace,
+  templatePlace,
+} from "./templatePlace.js";
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CloudFormationResource } from "@suss/manifest-aws";
 
@@ -25,8 +31,10 @@ export function buildDynamoTableSummaries(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
   recognition: string,
+  lines?: ReadonlyMap<string, number>,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
+  const place = templatePlace(sourceFile, lines);
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::DynamoDB::Table") {
       continue;
@@ -40,7 +48,7 @@ export function buildDynamoTableSummaries(
           props,
           shape,
           types,
-          sourceFile,
+          place,
           recognition,
         }),
       );
@@ -54,7 +62,7 @@ function tableSummary(opts: {
   props: Record<string, unknown>;
   shape: KeyedShape;
   types: AttributeTypes;
-  sourceFile: string;
+  place: TemplatePlace;
   recognition: string;
 }): BehavioralSummary {
   const { logicalId, props, shape, types } = opts;
@@ -67,11 +75,7 @@ function tableSummary(opts: {
 
   return {
     kind: "library",
-    location: {
-      file: opts.sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(opts.place, logicalId),
     identity: {
       name,
       exportPath: null,

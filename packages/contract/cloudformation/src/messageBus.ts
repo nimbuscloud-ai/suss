@@ -5,9 +5,8 @@
  *
  * A provider summary (kind library) says a channel exists, and producers
  * in code pair with it. A consumer summary (kind consumer) says a Lambda
- * receives from a channel, and has the same channel as the provider.
- *
- * A queue's consumers take the channel of the single subject routed into
+ * receives from a channel, and has the same channel as the provider. A
+ * queue's consumers take the channel of the single subject routed into
  * the queue, when there is one, so a producer upstream pairs with the
  * Lambda that ends up handling its message.
  */
@@ -15,8 +14,8 @@
 import { messageBusBinding, withMessageBusMetadata } from "@suss/behavioral-ir";
 import { formatChannel } from "@suss/ir-core";
 import {
-  type PatternReduction,
-  reduceEventPattern,
+  type EventPatternFields,
+  readEventPattern,
   refTarget,
   resolveBucketChannel,
   resolveEventBusToken,
@@ -24,9 +23,25 @@ import {
   resolveTopicChannel,
 } from "@suss/manifest-aws";
 
+import {
+  buildWiringSummaries,
+  channelTargetOf,
+  eventBusTargetOf,
+  type Wire,
+  type WireTarget,
+  wireSummary,
+} from "./messageWiring.js";
 import { readCodeScope } from "./runtimeConfig.js";
+import {
+  locationOf,
+  type TemplatePlace,
+  templatePlace,
+} from "./templatePlace.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  MessageBusMetadata,
+} from "@suss/behavioral-ir";
 
 interface CloudFormationResource {
   Type?: string;
@@ -34,22 +49,33 @@ interface CloudFormationResource {
   Metadata?: Record<string, unknown>;
 }
 
+type EventPatternMetadata = NonNullable<MessageBusMetadata["eventPattern"]>;
+
+/**
+ * The subject of a rule's channel when its pattern lists no literal
+ * detail-types. The rule's `eventPattern` metadata decides which sends
+ * reach it.
+ */
+export const PATTERN_SUBJECT = "<pattern>";
+
 /**
  * Every message-bus provider and consumer summary in the template.
- * Producers are not emitted here; the aws-sqs, aws-sns and
- * aws-eventbridge packs find them in code.
+ * Producers in code come from the aws-sqs, aws-sns and aws-eventbridge
+ * packs. The template's own deliveries are summaries with a send effect.
  *
  * A consumer's `metadata.codeScope` matches its function's runtime-config
  * summary, so code reads can be scoped to the consumer. When a queue's
  * consumer takes an upstream subject's channel, the queue's logical id
  * moves to `metadata.messageBus.queue`, so accounting per queue still
- * sees the consumer.
+ * sees the consumer. `lines` gives each summary its resource's line.
  */
 export function buildMessageBusSummaries(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
   recognition = "cloudformation",
+  lines?: ReadonlyMap<string, number>,
 ): BehavioralSummary[] {
+  const place = templatePlace(sourceFile, lines);
   const summaries: BehavioralSummary[] = [];
   const snsSubscriptions = collectSnsSubscriptions(resources);
   const s3Notifications = collectS3Notifications(resources);
@@ -68,7 +94,7 @@ export function buildMessageBusSummaries(
       continue;
     }
     summaries.push(
-      buildQueueProviderSummary(logicalId, resource, sourceFile, recognition),
+      buildQueueProviderSummary(logicalId, resource, place, recognition),
     );
   }
 
@@ -103,7 +129,8 @@ export function buildMessageBusSummaries(
             eventName,
             channel,
             routed: singleRoutedSubjectOf(queueSubjects, channel),
-            sourceFile,
+            declaredAt: logicalId,
+            place,
             recognition,
           }),
         );
@@ -122,7 +149,8 @@ export function buildMessageBusSummaries(
             topicId,
             filterPolicy: eventDef.Properties?.FilterPolicy,
             sqsSubscription: eventDef.Properties?.SqsSubscription,
-            sourceFile,
+            declaredAt: logicalId,
+            place,
             recognition,
           }),
         );
@@ -142,7 +170,8 @@ export function buildMessageBusSummaries(
             bucketId,
             event: eventDef.Properties?.Events,
             filter: eventDef.Properties?.Filter,
-            sourceFile,
+            declaredAt: logicalId,
+            place,
             recognition,
           }),
         );
@@ -152,7 +181,7 @@ export function buildMessageBusSummaries(
 
   // 3. Consumers from an EventSourceMapping, which plain CloudFormation
   //    declares where SAM would use an SQS event.
-  for (const [, resource] of Object.entries(resources)) {
+  for (const [mappingId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::Lambda::EventSourceMapping") {
       continue;
     }
@@ -177,26 +206,24 @@ export function buildMessageBusSummaries(
         eventName: "EventSourceMapping",
         channel,
         routed: singleRoutedSubjectOf(queueSubjects, channel),
-        sourceFile,
+        declaredAt: mappingId,
+        place,
         recognition,
       }),
     );
   }
 
   // 4. EventBridge rules and SAM EventBridgeRule and Schedule events.
-  summaries.push(
-    ...buildEventBridgeSummaries(resources, sourceFile, recognition),
-  );
+  summaries.push(...buildEventBridgeSummaries(resources, place, recognition));
 
   // 5. SNS topics, and a consumer per "lambda" subscription. An "sqs"
-  //    subscription was already counted in queueSubjects, and other
-  //    protocols do not reach code.
+  //    subscription is a wire, and other protocols do not reach code.
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::SNS::Topic") {
       continue;
     }
     summaries.push(
-      buildTopicProviderSummary(logicalId, resource, sourceFile, recognition),
+      buildTopicProviderSummary(logicalId, resource, place, recognition),
     );
   }
   for (const sub of snsSubscriptions) {
@@ -208,11 +235,7 @@ export function buildMessageBusSummaries(
       continue;
     }
     const lambdaResource = resources[lambdaId];
-    if (
-      lambdaResource === undefined ||
-      (lambdaResource.Type !== "AWS::Serverless::Function" &&
-        lambdaResource.Type !== "AWS::Lambda::Function")
-    ) {
+    if (lambdaResource === undefined || !isFunction(lambdaResource)) {
       continue;
     }
     summaries.push(
@@ -222,14 +245,15 @@ export function buildMessageBusSummaries(
         label: sub.label,
         topicId: sub.topicId,
         filterPolicy: sub.filterPolicy,
-        sourceFile,
+        declaredAt: sub.declaredAt,
+        place,
         recognition,
       }),
     );
   }
 
-  // 6. Buckets with a notification, and their Lambda and topic consumers.
-  //    A QueueConfiguration was already counted in queueSubjects.
+  // 6. Buckets with a notification, and their Lambda consumers. A
+  //    QueueConfiguration or TopicConfiguration is a wire.
   const notifiedBuckets = new Set([
     ...s3Notifications.lambda.map((n) => n.bucketId),
     ...s3Notifications.queue.map((n) => n.bucketId),
@@ -244,7 +268,7 @@ export function buildMessageBusSummaries(
       buildBucketProviderSummary(
         bucketId,
         resources[bucketId],
-        sourceFile,
+        place,
         recognition,
       ),
     );
@@ -255,11 +279,7 @@ export function buildMessageBusSummaries(
       continue;
     }
     const lambdaResource = resources[lambdaId];
-    if (
-      lambdaResource === undefined ||
-      (lambdaResource.Type !== "AWS::Serverless::Function" &&
-        lambdaResource.Type !== "AWS::Lambda::Function")
-    ) {
+    if (lambdaResource === undefined || !isFunction(lambdaResource)) {
       continue;
     }
     summaries.push(
@@ -270,40 +290,36 @@ export function buildMessageBusSummaries(
         bucketId: notification.bucketId,
         event: notification.event,
         filter: notification.filter,
-        sourceFile,
+        declaredAt: notification.bucketId,
+        place,
         recognition,
       }),
     );
   }
-  for (const notification of s3Notifications.topic) {
-    const consumer = buildS3TopicBridgeConsumerSummary(
-      notification,
-      resources,
-      sourceFile,
-      recognition,
-    );
-    if (consumer !== null) {
-      summaries.push(consumer);
-    }
-  }
+
+  // 7. Deliveries the template makes with no code doing them.
+  summaries.push(...buildWiringSummaries(resources, place, recognition));
 
   return summaries;
+}
+
+function isFunction(resource: CloudFormationResource): boolean {
+  return (
+    resource.Type === "AWS::Serverless::Function" ||
+    resource.Type === "AWS::Lambda::Function"
+  );
 }
 
 function buildQueueProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
-  sourceFile: string,
+  place: TemplatePlace,
   recognition: string,
 ): BehavioralSummary {
   const fifoQueue = resource.Properties?.FifoQueue === true;
   return {
     kind: "library",
-    location: {
-      file: sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(place, logicalId),
     identity: {
       name: logicalId,
       exportPath: null,
@@ -329,17 +345,13 @@ function buildQueueProviderSummary(
 function buildTopicProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
-  sourceFile: string,
+  place: TemplatePlace,
   recognition: string,
 ): BehavioralSummary {
   const fifoTopic = resource.Properties?.FifoTopic === true;
   return {
     kind: "library",
-    location: {
-      file: sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(place, logicalId),
     identity: {
       name: logicalId,
       exportPath: null,
@@ -362,7 +374,14 @@ function buildTopicProviderSummary(
   };
 }
 
-interface LambdaConsumerOpts {
+/** Where a consumer summary points a reader: the resource that wires it. */
+interface Declared {
+  declaredAt: string;
+  place: TemplatePlace;
+  recognition: string;
+}
+
+interface LambdaConsumerOpts extends Declared {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
   eventName: string;
@@ -370,8 +389,6 @@ interface LambdaConsumerOpts {
   channel: string;
   // Null when no subject, or more than one, is routed into the queue.
   routed: RoutedSubject | null;
-  sourceFile: string;
-  recognition: string;
 }
 
 function buildLambdaConsumerSummary(
@@ -380,11 +397,7 @@ function buildLambdaConsumerSummary(
   const codeScope = readCodeScope(opts.lambdaResource);
   return {
     kind: "consumer",
-    location: {
-      file: opts.sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(opts.place, opts.declaredAt),
     identity: {
       // The event name keeps several events on one Lambda apart.
       name: `${opts.lambdaId}.${opts.eventName}`,
@@ -416,6 +429,9 @@ function buildLambdaConsumerSummary(
               ...(opts.routed.eventBus !== undefined
                 ? { eventBus: opts.routed.eventBus }
                 : {}),
+              ...(opts.routed.eventPattern !== undefined
+                ? { eventPattern: opts.routed.eventPattern }
+                : {}),
             }
           : {}),
       },
@@ -424,17 +440,19 @@ function buildLambdaConsumerSummary(
 }
 
 // A subject routed into a queue from an EventBridge rule, an SNS topic or
-// an S3 bucket. `eventBus` and `detailType` are only set for a rule.
+// an S3 bucket. `eventBus`, `detailType` and `eventPattern` are only set
+// for a rule.
 interface RoutedSubject {
   // `<bus>#<detailType>` for a rule, or the topic's or bucket's logical id.
   channel: string;
   eventBus?: string;
   detailType?: string;
+  eventPattern?: EventPatternMetadata;
 }
 
-// The subjects routed into each queue, keyed by channel so one subject
-// routed twice counts once. A rule's DeadLetterConfig queue gets failed
-// deliveries only, so only a target's own `Arn` counts.
+// The subjects routed into each queue. Two rules routing one subject
+// with different patterns count twice. A rule's DeadLetterConfig queue
+// gets failed deliveries only, so only a target's own `Arn` counts.
 function buildQueueSubjectMap(
   resources: Record<string, CloudFormationResource>,
   snsSubscriptions: SnsSubscription[],
@@ -449,8 +467,8 @@ function buildQueueSubjectMap(
     if (typeof scheduleExpr === "string" && scheduleExpr.length > 0) {
       continue;
     }
-    const reduction = reduceEventPattern(resource.Properties?.EventPattern);
-    if (reduction.kind !== "exact") {
+    const pattern = readEventPattern(resource.Properties?.EventPattern);
+    if (pattern?.detailTypes === undefined) {
       continue;
     }
     const targets = resource.Properties?.Targets;
@@ -467,9 +485,15 @@ function buildQueueSubjectMap(
         continue;
       }
       const routed = map.get(queueId) ?? new Map<string, RoutedSubject>();
-      for (const detailType of reduction.detailTypes) {
+      for (const detailType of pattern.detailTypes) {
         const channel = formatChannel(eventBus, detailType);
-        routed.set(channel, { channel, eventBus, detailType });
+        const eventPattern = channelPattern(pattern, { detailType });
+        routed.set(`${channel}\0${JSON.stringify(eventPattern)}`, {
+          channel,
+          eventBus,
+          detailType,
+          eventPattern,
+        });
       }
       map.set(queueId, routed);
     }
@@ -522,54 +546,130 @@ function singleRoutedSubjectOf(
 // EventBridge
 // ---------------------------------------------------------------------------
 
+/** What the checker needs from a pattern, with empty parts left out. */
+function patternMetadata(fields: EventPatternFields): EventPatternMetadata {
+  return {
+    ...(fields.detailTypes !== undefined
+      ? { detailTypes: fields.detailTypes }
+      : {}),
+    ...(fields.sources !== undefined ? { sources: fields.sources } : {}),
+    ...(fields.unsettled.length > 0 ? { unsettled: fields.unsettled } : {}),
+    ...(fields.filtersOtherFields ? { filtersOtherFields: true } : {}),
+    ...(fields.emittedByAws ? { emittedByAws: true } : {}),
+  };
+}
+
+/**
+ * The pattern as one channel of the rule sees it. A rule listing two
+ * detail-types has a summary per detail-type, and each one matches only
+ * its own.
+ */
+function channelPattern(
+  fields: EventPatternFields,
+  channel: { detailType?: string },
+): EventPatternMetadata {
+  const whole = patternMetadata(fields);
+  return channel.detailType === undefined
+    ? whole
+    : { ...whole, detailTypes: [channel.detailType] };
+}
+
+/** One rule, whether an AWS::Events::Rule or a SAM EventBridgeRule event. */
+interface RuleRouting {
+  // The rule's logical id, or the SAM event name.
+  label: string;
+  // The resource whose line the rule's summaries point at.
+  declaredAt: string;
+  eventBus: string;
+  // Null when the rule declares no EventPattern.
+  pattern: EventPatternFields | null;
+  // Whether the rule is deployed enabled, when the template says.
+  enabled?: boolean;
+}
+
+/** One channel a rule routes, with its detail-type when the pattern lists one. */
+interface RuleChannel {
+  channel: string;
+  detailType?: string;
+}
+
+/**
+ * The channels a rule routes: one per literal detail-type, or a single
+ * channel whose subject is PATTERN_SUBJECT when the pattern lists none.
+ */
+function ruleChannels(pattern: EventPatternFields, bus: string): RuleChannel[] {
+  if (pattern.detailTypes === undefined) {
+    return [{ channel: formatChannel(bus, PATTERN_SUBJECT) }];
+  }
+  return pattern.detailTypes.map((detailType) => ({
+    channel: formatChannel(bus, detailType),
+    detailType,
+  }));
+}
+
+function patternResolutionOf(
+  pattern: EventPatternFields | null,
+): "exact" | "pattern" | "unresolvable" {
+  if (pattern === null) {
+    return "unresolvable";
+  }
+  if (pattern.detailTypes === undefined) {
+    return "pattern";
+  }
+
+  return "exact";
+}
+
 interface RuleTarget {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
 }
 
-interface EventBridgeConsumerOpts {
+interface EventBridgeConsumerOpts extends Declared {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
   // The rule's logical id, or the SAM event name.
   ruleLabel: string;
   channel: string;
-  patternResolution: "exact" | "schedule" | "unresolvable";
+  patternResolution: "exact" | "pattern" | "schedule" | "unresolvable";
   eventBus: string;
-  sourceFile: string;
-  recognition: string;
   // Whether the rule is deployed enabled, when the template says.
   enabled?: boolean;
   detailType?: string;
+  eventPattern?: EventPatternMetadata;
   unresolvableReason?: string;
 }
 
 function buildEventBridgeSummaries(
   resources: Record<string, CloudFormationResource>,
-  sourceFile: string,
+  place: TemplatePlace,
   recognition: string,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  // Two rules can route the same bus and detail type, and the checker
-  // pairs by channel, so one provider per channel is enough.
-  const emittedProviderChannels = new Set<string>();
+  // Two rules can route the same bus and detail type. One provider per
+  // channel and pattern is enough, since the checker matches a send
+  // against each pattern once.
+  const emittedProviders = new Set<string>();
 
   function emitProvider(
-    channel: string,
-    eventBus: string,
-    detailType: string,
-    ruleLabel: string,
+    rule: RuleRouting,
+    channel: RuleChannel,
+    eventPattern: EventPatternMetadata,
   ): void {
-    if (emittedProviderChannels.has(channel)) {
+    const key = `${channel.channel}\0${JSON.stringify(eventPattern)}`;
+    if (channel.detailType === undefined || emittedProviders.has(key)) {
       return;
     }
-    emittedProviderChannels.add(channel);
+    emittedProviders.add(key);
     summaries.push(
       buildRuleProviderSummary({
-        channel,
-        eventBus,
-        detailType,
-        ruleLabel,
-        sourceFile,
+        channel: channel.channel,
+        eventBus: rule.eventBus,
+        detailType: channel.detailType,
+        ruleLabel: rule.label,
+        eventPattern,
+        declaredAt: rule.declaredAt,
+        place,
         recognition,
       }),
     );
@@ -584,13 +684,16 @@ function buildEventBridgeSummaries(
     if (!Array.isArray(rawTargets) || rawTargets.length === 0) {
       continue;
     }
-    // A rule that only targets a queue has no Lambda consumer, but it
-    // still gets a provider so the producer is not reported as an orphan.
-    const targets = readRuleTargets(rawTargets, resources);
+    const targets = readRuleTargets(ruleId, rawTargets, resources);
     const eventBus = resolveEventBusToken(resource.Properties?.EventBusName);
+    summaries.push(
+      ...targets.deadLetters.map((wire) =>
+        wireSummary(wire, place, recognition),
+      ),
+    );
     const scheduleExpr = resource.Properties?.ScheduleExpression;
     if (typeof scheduleExpr === "string" && scheduleExpr.length > 0) {
-      for (const target of targets) {
+      for (const target of targets.lambdas) {
         summaries.push(
           buildEventBridgeConsumerSummary({
             lambdaId: target.lambdaId,
@@ -599,7 +702,8 @@ function buildEventBridgeSummaries(
             channel: `schedule:${ruleId}`,
             patternResolution: "schedule",
             eventBus,
-            sourceFile,
+            declaredAt: ruleId,
+            place,
             recognition,
             ...ruleEnablement(resource.Properties?.State),
           }),
@@ -607,17 +711,19 @@ function buildEventBridgeSummaries(
       }
       continue;
     }
-    const reduction = reduceEventPattern(resource.Properties?.EventPattern);
     emitRuleSummaries({
-      reduction,
-      eventBus,
-      ruleLabel: ruleId,
+      rule: {
+        label: ruleId,
+        declaredAt: ruleId,
+        eventBus,
+        pattern: readEventPattern(resource.Properties?.EventPattern),
+        ...ruleEnablement(resource.Properties?.State),
+      },
       targets,
-      sourceFile,
+      place,
       recognition,
       emitProvider,
       out: summaries,
-      ...ruleEnablement(resource.Properties?.State),
     });
   }
 
@@ -641,7 +747,6 @@ function buildEventBridgeSummaries(
         Type?: unknown;
         Properties?: Record<string, unknown>;
       };
-      const target: RuleTarget = { lambdaId, lambdaResource: resource };
       if (eventDef.Type === "Schedule" || eventDef.Type === "ScheduleV2") {
         summaries.push(
           buildEventBridgeConsumerSummary({
@@ -651,7 +756,8 @@ function buildEventBridgeSummaries(
             channel: `schedule:${lambdaId}.${eventName}`,
             patternResolution: "schedule",
             eventBus: "default",
-            sourceFile,
+            declaredAt: lambdaId,
+            place,
             recognition,
             ...(typeof eventDef.Properties?.Enabled === "boolean"
               ? { enabled: eventDef.Properties.Enabled }
@@ -663,18 +769,23 @@ function buildEventBridgeSummaries(
       if (eventDef.Type !== "EventBridgeRule") {
         continue;
       }
-      const eventBus = resolveEventBusToken(eventDef.Properties?.EventBusName);
-      const reduction = reduceEventPattern(eventDef.Properties?.Pattern);
       emitRuleSummaries({
-        reduction,
-        eventBus,
-        ruleLabel: eventName,
-        targets: [target],
-        sourceFile,
+        rule: {
+          label: eventName,
+          declaredAt: lambdaId,
+          eventBus: resolveEventBusToken(eventDef.Properties?.EventBusName),
+          pattern: readEventPattern(eventDef.Properties?.Pattern),
+          ...ruleEnablement(eventDef.Properties?.State),
+        },
+        targets: {
+          lambdas: [{ lambdaId, lambdaResource: resource }],
+          others: [],
+          deadLetters: [],
+        },
+        place,
         recognition,
         emitProvider,
         out: summaries,
-        ...ruleEnablement(eventDef.Properties?.State),
       });
     }
   }
@@ -683,63 +794,131 @@ function buildEventBridgeSummaries(
 }
 
 interface EmitRuleOpts {
-  reduction: PatternReduction;
-  eventBus: string;
-  ruleLabel: string;
-  targets: RuleTarget[];
-  sourceFile: string;
+  rule: RuleRouting;
+  targets: RuleTargets;
+  place: TemplatePlace;
   recognition: string;
-  // From the rule's State, when it is set (#207).
-  enabled?: boolean;
   emitProvider: (
-    channel: string,
-    eventBus: string,
-    detailType: string,
-    ruleLabel: string,
+    rule: RuleRouting,
+    channel: RuleChannel,
+    eventPattern: EventPatternMetadata,
   ) => void;
   out: BehavioralSummary[];
 }
 
 function emitRuleSummaries(opts: EmitRuleOpts): void {
-  if (opts.reduction.kind === "unresolvable") {
-    for (const target of opts.targets) {
+  const { rule, targets, place, recognition } = opts;
+  if (rule.pattern === null) {
+    for (const target of targets.lambdas) {
       opts.out.push(
         buildEventBridgeConsumerSummary({
           lambdaId: target.lambdaId,
           lambdaResource: target.lambdaResource,
-          ruleLabel: opts.ruleLabel,
-          channel: `${opts.eventBus}#<unresolved>`,
+          ruleLabel: rule.label,
+          channel: formatChannel(rule.eventBus, PATTERN_SUBJECT),
           patternResolution: "unresolvable",
-          eventBus: opts.eventBus,
-          sourceFile: opts.sourceFile,
-          recognition: opts.recognition,
-          unresolvableReason: opts.reduction.reason,
-          ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
+          eventBus: rule.eventBus,
+          declaredAt: rule.declaredAt,
+          place,
+          recognition,
+          unresolvableReason: "the rule declares no EventPattern",
+          ...(rule.enabled !== undefined ? { enabled: rule.enabled } : {}),
         }),
       );
     }
     return;
   }
-  for (const detailType of opts.reduction.detailTypes) {
-    const channel = formatChannel(opts.eventBus, detailType);
-    opts.emitProvider(channel, opts.eventBus, detailType, opts.ruleLabel);
-    for (const target of opts.targets) {
+  const resolution = patternResolutionOf(rule.pattern);
+  for (const channel of ruleChannels(rule.pattern, rule.eventBus)) {
+    const eventPattern = channelPattern(rule.pattern, channel);
+    opts.emitProvider(rule, channel, eventPattern);
+    for (const target of targets.lambdas) {
       opts.out.push(
         buildEventBridgeConsumerSummary({
           lambdaId: target.lambdaId,
           lambdaResource: target.lambdaResource,
-          ruleLabel: opts.ruleLabel,
-          channel,
-          patternResolution: "exact",
-          eventBus: opts.eventBus,
-          detailType,
-          sourceFile: opts.sourceFile,
-          recognition: opts.recognition,
-          ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
+          ruleLabel: rule.label,
+          channel: channel.channel,
+          patternResolution: resolution,
+          eventBus: rule.eventBus,
+          declaredAt: rule.declaredAt,
+          place,
+          recognition,
+          eventPattern,
+          ...(channel.detailType !== undefined
+            ? { detailType: channel.detailType }
+            : {}),
+          ...(rule.enabled !== undefined ? { enabled: rule.enabled } : {}),
         }),
       );
     }
+    for (const target of targets.others) {
+      opts.out.push(
+        wireSummary(
+          ruleTargetWire(rule, channel, target, eventPattern),
+          place,
+          recognition,
+        ),
+      );
+    }
   }
+}
+
+/**
+ * A target that is not a function takes the rule's events off the bus
+ * and delivers them to a queue, a topic, another bus, or a service suss
+ * does not read, such as a state machine. Either way the rule's channel
+ * has a receiver.
+ */
+function ruleTargetWire(
+  rule: RuleRouting,
+  channel: RuleChannel,
+  target: OtherRuleTarget,
+  eventPattern: EventPatternMetadata,
+): Wire {
+  const suffix =
+    channel.detailType === undefined ? "" : `#${channel.detailType}`;
+  return {
+    name: `${rule.label}.${target.id}${suffix}`,
+    declaredAt: rule.declaredAt,
+    wiring: "ruleTarget",
+    from: { messageBus: "eventbridge", channel: channel.channel },
+    to: targetDelivery(target, channel, eventPattern),
+    metadata: {
+      rule: rule.label,
+      eventBus: rule.eventBus,
+      patternResolution: patternResolutionOf(rule.pattern),
+      eventPattern,
+      ...(channel.detailType !== undefined
+        ? { detailType: channel.detailType }
+        : {}),
+      ...(rule.enabled !== undefined ? { enabled: rule.enabled } : {}),
+    },
+  };
+}
+
+/**
+ * An event forwarded to another bus keeps its detail-type and source, so
+ * a forward is a send on that bus only when the pattern says which
+ * detail-type it carries.
+ */
+function targetDelivery(
+  target: OtherRuleTarget,
+  channel: RuleChannel,
+  eventPattern: EventPatternMetadata,
+): WireTarget | null {
+  if (target.delivers !== null) {
+    return target.delivers;
+  }
+  if (target.forwardsToBus === null || channel.detailType === undefined) {
+    return null;
+  }
+  const sources = eventPattern.sources ?? [];
+  return {
+    messageBus: "eventbridge",
+    channel: formatChannel(target.forwardsToBus, channel.detailType),
+    ...(sources.length === 1 ? { routingKey: sources[0] } : {}),
+  };
 }
 
 function buildRuleProviderSummary(opts: {
@@ -747,16 +926,14 @@ function buildRuleProviderSummary(opts: {
   eventBus: string;
   detailType: string;
   ruleLabel: string;
-  sourceFile: string;
+  eventPattern: EventPatternMetadata;
+  declaredAt: string;
+  place: TemplatePlace;
   recognition: string;
 }): BehavioralSummary {
   return {
     kind: "library",
-    location: {
-      file: opts.sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(opts.place, opts.declaredAt),
     identity: {
       name: opts.channel,
       exportPath: null,
@@ -774,6 +951,7 @@ function buildRuleProviderSummary(opts: {
       eventBus: opts.eventBus,
       detailType: opts.detailType,
       rule: opts.ruleLabel,
+      eventPattern: opts.eventPattern,
     }),
   };
 }
@@ -788,11 +966,7 @@ function buildEventBridgeConsumerSummary(
       : `.${opts.ruleLabel}`;
   return {
     kind: "consumer",
-    location: {
-      file: opts.sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(opts.place, opts.declaredAt),
     identity: {
       name: `${opts.lambdaId}${nameSuffix}`,
       exportPath: null,
@@ -820,6 +994,9 @@ function buildEventBridgeConsumerSummary(
         ...(opts.detailType !== undefined
           ? { detailType: opts.detailType }
           : {}),
+        ...(opts.eventPattern !== undefined
+          ? { eventPattern: opts.eventPattern }
+          : {}),
         ...(opts.unresolvableReason !== undefined
           ? { unresolvableReason: opts.unresolvableReason }
           : {}),
@@ -841,38 +1018,69 @@ function ruleEnablement(state: unknown): { enabled?: boolean } {
   return {};
 }
 
-// Only Lambda targets. A queue target is handled by buildQueueSubjectMap,
-// and other targets are skipped.
+/** A target that is not a declared function. */
+interface OtherRuleTarget {
+  // The target's Id, or its position when it has none.
+  id: string;
+  // A declared queue or topic the target delivers to.
+  delivers: WireTarget | null;
+  // A declared event bus the target forwards to.
+  forwardsToBus: string | null;
+}
+
+interface RuleTargets {
+  lambdas: RuleTarget[];
+  others: OtherRuleTarget[];
+  // A target's DeadLetterConfig queue, which gets what the rule could
+  // not deliver.
+  deadLetters: Wire[];
+}
+
 function readRuleTargets(
-  targets: unknown,
+  ruleId: string,
+  targets: unknown[],
   resources: Record<string, CloudFormationResource>,
-): RuleTarget[] {
-  if (!Array.isArray(targets)) {
-    return [];
-  }
-  const out: RuleTarget[] = [];
-  for (const target of targets) {
+): RuleTargets {
+  const read: RuleTargets = { lambdas: [], others: [], deadLetters: [] };
+  for (const [index, target] of targets.entries()) {
     if (target === null || typeof target !== "object") {
       continue;
     }
-    const arn = (target as { Arn?: unknown }).Arn;
-    const lambdaId = refTarget(arn);
-    if (lambdaId === null) {
+    const record = target as Record<string, unknown>;
+    if (record.Arn === undefined) {
       continue;
     }
-    const lambdaResource = resources[lambdaId];
-    if (lambdaResource === undefined) {
-      continue;
+    const id = typeof record.Id === "string" ? record.Id : `Target${index}`;
+    const deadLetter = channelTargetOf(
+      (record.DeadLetterConfig as { Arn?: unknown } | undefined)?.Arn,
+      resources,
+    );
+    if (deadLetter !== null) {
+      read.deadLetters.push({
+        name: `${ruleId}.${id}.DeadLetterConfig`,
+        declaredAt: ruleId,
+        wiring: "deadLetter",
+        from: null,
+        to: deadLetter,
+      });
     }
+    const lambdaId = refTarget(record.Arn);
+    const lambdaResource = lambdaId === null ? undefined : resources[lambdaId];
     if (
-      lambdaResource.Type !== "AWS::Serverless::Function" &&
-      lambdaResource.Type !== "AWS::Lambda::Function"
+      lambdaId !== null &&
+      lambdaResource !== undefined &&
+      isFunction(lambdaResource)
     ) {
+      read.lambdas.push({ lambdaId, lambdaResource });
       continue;
     }
-    out.push({ lambdaId, lambdaResource });
+    read.others.push({
+      id,
+      delivers: channelTargetOf(record.Arn, resources),
+      forwardsToBus: eventBusTargetOf(record.Arn, resources),
+    });
   }
-  return out;
+  return read;
 }
 
 // ---------------------------------------------------------------------------
@@ -886,6 +1094,8 @@ interface SnsSubscription {
   // The standalone resource's logical id, or a made-up label for an
   // inline entry, which has none.
   label: string;
+  // The resource that declares the subscription.
+  declaredAt: string;
   protocol: string;
   endpoint: unknown;
   filterPolicy: unknown;
@@ -913,6 +1123,7 @@ function collectSnsSubscriptions(
     out.push({
       topicId,
       label: subId,
+      declaredAt: subId,
       protocol,
       endpoint: resource.Properties?.Endpoint,
       filterPolicy: resource.Properties?.FilterPolicy,
@@ -938,6 +1149,7 @@ function collectSnsSubscriptions(
       out.push({
         topicId,
         label: `${topicId}.Subscription${index}`,
+        declaredAt: topicId,
         protocol,
         endpoint: (entry as { Endpoint?: unknown }).Endpoint,
         // Only the standalone resource can have a FilterPolicy.
@@ -949,7 +1161,7 @@ function collectSnsSubscriptions(
   return out;
 }
 
-interface SnsLambdaConsumerOpts {
+interface SnsLambdaConsumerOpts extends Declared {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
   // The subscription's label, or the SAM event name.
@@ -959,8 +1171,6 @@ interface SnsLambdaConsumerOpts {
   // A SAM event's SqsSubscription, which puts a queue between the topic
   // and the function (#154).
   sqsSubscription?: unknown;
-  sourceFile: string;
-  recognition: string;
 }
 
 // `true` makes SAM create a queue that exists only once deployed, and the
@@ -990,11 +1200,7 @@ function buildSnsLambdaConsumerSummary(
   const delivery = sqsDeliveryOf(opts.sqsSubscription);
   return {
     kind: "consumer",
-    location: {
-      file: opts.sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(opts.place, opts.declaredAt),
     identity: {
       name: `${opts.lambdaId}.${opts.label}`,
       exportPath: null,
@@ -1057,32 +1263,23 @@ interface S3LambdaNotification {
 
 interface S3QueueNotification {
   bucketId: string;
-  label: string;
   queueRef: unknown;
-  event: unknown;
   filter: unknown;
 }
 
-interface S3TopicNotification {
-  bucketId: string;
-  label: string;
-  topicRef: unknown;
-  event: unknown;
-  filter: unknown;
-}
-
-// S3 notifications are always inline on the bucket and have no logical id
-// of their own, so each label is made from the bucket, kind and position.
+// S3 notifications are inline on the bucket and have no logical id, so
+// each label is made from the bucket, kind and position. A queue or
+// topic notification is a wire, so only its bucket and routing are read.
 function collectS3Notifications(
   resources: Record<string, CloudFormationResource>,
 ): {
   lambda: S3LambdaNotification[];
   queue: S3QueueNotification[];
-  topic: S3TopicNotification[];
+  topic: Array<{ bucketId: string }>;
 } {
   const lambda: S3LambdaNotification[] = [];
   const queue: S3QueueNotification[] = [];
-  const topic: S3TopicNotification[] = [];
+  const topic: Array<{ bucketId: string }> = [];
 
   for (const [bucketId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::S3::Bucket") {
@@ -1094,74 +1291,48 @@ function collectS3Notifications(
     }
     const config = notificationConfig as Record<string, unknown>;
 
-    const lambdaConfigs = config.LambdaConfigurations;
-    if (Array.isArray(lambdaConfigs)) {
-      for (const [index, entry] of lambdaConfigs.entries()) {
-        if (entry === null || typeof entry !== "object") {
-          continue;
-        }
-        const e = entry as Record<string, unknown>;
-        lambda.push({
-          bucketId,
-          label: `${bucketId}.LambdaConfiguration${index}`,
-          functionRef: e.Function,
-          event: e.Event,
-          filter: e.Filter,
-        });
-      }
+    for (const [index, e] of objectEntries(config.LambdaConfigurations)) {
+      lambda.push({
+        bucketId,
+        label: `${bucketId}.LambdaConfiguration${index}`,
+        functionRef: e.Function,
+        event: e.Event,
+        filter: e.Filter,
+      });
     }
-
-    const queueConfigs = config.QueueConfigurations;
-    if (Array.isArray(queueConfigs)) {
-      for (const [index, entry] of queueConfigs.entries()) {
-        if (entry === null || typeof entry !== "object") {
-          continue;
-        }
-        const e = entry as Record<string, unknown>;
-        queue.push({
-          bucketId,
-          label: `${bucketId}.QueueConfiguration${index}`,
-          queueRef: e.Queue,
-          event: e.Event,
-          filter: e.Filter,
-        });
-      }
+    for (const [, e] of objectEntries(config.QueueConfigurations)) {
+      queue.push({ bucketId, queueRef: e.Queue, filter: e.Filter });
     }
-
-    const topicConfigs = config.TopicConfigurations;
-    if (Array.isArray(topicConfigs)) {
-      for (const [index, entry] of topicConfigs.entries()) {
-        if (entry === null || typeof entry !== "object") {
-          continue;
-        }
-        const e = entry as Record<string, unknown>;
-        topic.push({
-          bucketId,
-          label: `${bucketId}.TopicConfiguration${index}`,
-          topicRef: e.Topic,
-          event: e.Event,
-          filter: e.Filter,
-        });
-      }
+    if (objectEntries(config.TopicConfigurations).length > 0) {
+      topic.push({ bucketId });
     }
   }
 
   return { lambda, queue, topic };
 }
 
+/** The entries of a list that are objects, each with its position. */
+function objectEntries(
+  value: unknown,
+): Array<[number, Record<string, unknown>]> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...value.entries()].filter(
+    (entry): entry is [number, Record<string, unknown>] =>
+      entry[1] !== null && typeof entry[1] === "object",
+  );
+}
+
 function buildBucketProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
-  sourceFile: string,
+  place: TemplatePlace,
   recognition: string,
 ): BehavioralSummary {
   return {
     kind: "library",
-    location: {
-      file: sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(place, logicalId),
     identity: {
       name: logicalId,
       exportPath: null,
@@ -1183,7 +1354,7 @@ function buildBucketProviderSummary(
   };
 }
 
-interface S3LambdaConsumerOpts {
+interface S3LambdaConsumerOpts extends Declared {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
   // The LambdaConfiguration's label, or the SAM event name.
@@ -1191,8 +1362,6 @@ interface S3LambdaConsumerOpts {
   bucketId: string;
   event: unknown;
   filter: unknown;
-  sourceFile: string;
-  recognition: string;
 }
 
 function buildS3LambdaConsumerSummary(
@@ -1203,11 +1372,7 @@ function buildS3LambdaConsumerSummary(
   const events = eventList(opts.event);
   return {
     kind: "consumer",
-    location: {
-      file: opts.sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(opts.place, opts.declaredAt),
     identity: {
       name: `${opts.lambdaId}.${opts.label}`,
       exportPath: null,
@@ -1236,53 +1401,6 @@ function buildS3LambdaConsumerSummary(
           : {}),
       },
     ),
-  };
-}
-
-// Nothing lets a source upstream of a topic change its subscribers'
-// channel, as buildQueueSubjectMap does for a queue, so the bucket gets a
-// consumer that records the topic. Null when the topic is not declared.
-function buildS3TopicBridgeConsumerSummary(
-  notification: S3TopicNotification,
-  resources: Record<string, CloudFormationResource>,
-  sourceFile: string,
-  recognition: string,
-): BehavioralSummary | null {
-  const topicId = resolveTopicChannel(notification.topicRef);
-  if (topicId === null || resources[topicId]?.Type !== "AWS::SNS::Topic") {
-    return null;
-  }
-  const resolution = reduceS3Filter(notification.filter);
-  const events = eventList(notification.event);
-  return {
-    kind: "consumer",
-    location: {
-      file: sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
-    identity: {
-      name: notification.label,
-      exportPath: null,
-      boundaryBinding: messageBusBinding({
-        recognition,
-        messageBus: "s3",
-        channel: notification.bucketId,
-      }),
-    },
-    inputs: [],
-    transitions: [],
-    gaps: [],
-    confidence: { source: "declared", level: "high" },
-    metadata: withMessageBusMetadata(undefined, {
-      notification: notification.label,
-      topic: topicId,
-      ...(events !== undefined ? { events } : {}),
-      patternResolution: resolution.kind,
-      ...(resolution.kind === "unresolvable"
-        ? { unresolvableReason: resolution.reason }
-        : {}),
-    }),
   };
 }
 

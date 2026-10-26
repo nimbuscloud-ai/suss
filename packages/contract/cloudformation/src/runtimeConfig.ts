@@ -22,6 +22,12 @@ import {
 } from "@suss/ir-core";
 import { parseHandler, refTarget } from "@suss/manifest-aws";
 
+import {
+  locationOf,
+  type TemplatePlace,
+  templatePlace,
+} from "./templatePlace.js";
+
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 
 interface CloudFormationResource {
@@ -41,8 +47,10 @@ export function buildRuntimeConfigSummaries(
   sourceFile: string,
   inheritedEnvVars: Record<string, string[]> = {},
   recognition = "cloudformation",
+  lines?: ReadonlyMap<string, number>,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
+  const place = templatePlace(sourceFile, lines);
 
   for (const [logicalId, resource] of Object.entries(resources)) {
     const type = resource.Type;
@@ -56,7 +64,7 @@ export function buildRuntimeConfigSummaries(
       const summary = buildLambdaSummary({
         logicalId,
         resource,
-        sourceFile,
+        place,
         inherited: inheritedEnvVars[logicalId] ?? [],
         recognition,
       });
@@ -65,7 +73,7 @@ export function buildRuntimeConfigSummaries(
       }
     } else if (type === "AWS::ECS::TaskDefinition") {
       summaries.push(
-        ...buildEcsTaskSummaries(logicalId, resource, sourceFile, recognition),
+        ...buildEcsTaskSummaries(logicalId, resource, place, recognition),
       );
     }
   }
@@ -76,12 +84,12 @@ export function buildRuntimeConfigSummaries(
 function buildLambdaSummary(opts: {
   logicalId: string;
   resource: CloudFormationResource;
-  sourceFile: string;
+  place: TemplatePlace;
   /** Variables the SAM Globals section supplies to this function. */
   inherited: string[];
   recognition: string;
 }): BehavioralSummary | null {
-  const { logicalId, resource, sourceFile } = opts;
+  const { logicalId, resource } = opts;
   const props = resource.Properties ?? {};
   const envVariables =
     (props.Environment as { Variables?: Record<string, unknown> } | undefined)
@@ -93,7 +101,8 @@ function buildLambdaSummary(opts: {
   const runtime = props.Runtime;
   return buildSummary({
     logicalId,
-    sourceFile,
+    declaredAt: logicalId,
+    place: opts.place,
     deploymentTarget: "lambda",
     templateVars,
     inheritedVars: opts.inherited,
@@ -108,7 +117,7 @@ function buildLambdaSummary(opts: {
 function buildEcsTaskSummaries(
   logicalId: string,
   resource: CloudFormationResource,
-  sourceFile: string,
+  place: TemplatePlace,
   recognition: string,
 ): BehavioralSummary[] {
   const props = resource.Properties ?? {};
@@ -134,7 +143,8 @@ function buildEcsTaskSummaries(
       // The ALB flow reader's `fronts` edges build the container's
       // instance name with the same helper, so the two match.
       logicalId: ecsContainerInstanceName(logicalId, containerName),
-      sourceFile,
+      declaredAt: logicalId,
+      place,
       deploymentTarget: "ecs-task",
       templateVars,
       codeScope,
@@ -149,7 +159,9 @@ function buildEcsTaskSummaries(
 
 function buildSummary(opts: {
   logicalId: string;
-  sourceFile: string;
+  // The resource that declares the variables, whose line the summary takes.
+  declaredAt: string;
+  place: TemplatePlace;
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment";
   templateVars: string[];
   // The variables in `templateVars` that came from SAM Globals.
@@ -185,11 +197,7 @@ function buildSummary(opts: {
 
   return {
     kind: "library",
-    location: {
-      file: opts.sourceFile,
-      range: { start: 1, end: 1 },
-      exportName: null,
-    },
+    location: locationOf(opts.place, opts.declaredAt),
     identity: {
       name: opts.logicalId,
       exportPath: null,
