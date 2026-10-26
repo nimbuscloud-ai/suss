@@ -102,6 +102,8 @@ export interface PageData {
   >;
   cov: MapModel["coverage"];
   chk: MapModel["check"];
+  /** Per finding row: [kind, severity, the entry it is on or null], for the findings list. */
+  fi: Array<[number, number, number | null]>;
 }
 
 export interface EntryData {
@@ -149,10 +151,16 @@ const RELATION_LETTER: Record<string, string> = {
 };
 
 /**
- * The page's data, and the finding rows its inspector lists. A finding is
- * listed only on the entry point it was placed on, which is the only
- * place the page shows one, and only the first of each kind there. The
- * coverage section counts every finding by kind.
+ * How many findings of one kind the findings list shows across the
+ * project; the page gives the rest as a count.
+ */
+export const FINDINGS_LISTED_IN_ALL = 200;
+
+/**
+ * The page's data, and the finding rows its inspector and its findings
+ * list show. An entry point lists the first of each kind placed on it,
+ * and the findings list adds the first of each kind across the project,
+ * including findings placed on no entry point.
  */
 export function pageDataOf(model: MapModel): {
   data: PageData;
@@ -161,20 +169,32 @@ export function pageDataOf(model: MapModel): {
   const listed = listedFindings(model);
   return {
     data: pageDataWith(model, listed),
-    findings: listed.rows,
+    findings: listed.findings.map((at) => findingRow(model.findings[at])),
   };
 }
 
 interface ListedFindings {
-  rows: FindingRow[];
-  /** Per entry: the places in `rows` of its findings. */
+  /** The findings that get a row, as places in the model's findings. */
+  findings: number[];
+  /** Per entry: the places in the rows of its findings. */
   shown: number[][];
   /** Per entry: [kind, how many more] for each kind with findings past the cap. */
   more: Array<Array<[string, number]>>;
 }
 
 function listedFindings(model: MapModel): ListedFindings {
-  const listed: ListedFindings = { rows: [], shown: [], more: [] };
+  const listed: ListedFindings = { findings: [], shown: [], more: [] };
+  const rowOf = new Map<number, number>();
+  const row = (at: number): number => {
+    const known = rowOf.get(at);
+    if (known !== undefined) {
+      return known;
+    }
+    rowOf.set(at, listed.findings.length);
+    listed.findings.push(at);
+    return listed.findings.length - 1;
+  };
+
   for (const entry of model.entries) {
     const perKind = new Map<string, number>();
     const shown: number[] = [];
@@ -190,8 +210,7 @@ function listedFindings(model: MapModel): ListedFindings {
         continue;
       }
 
-      shown.push(listed.rows.length);
-      listed.rows.push(findingRow(finding));
+      shown.push(row(at));
     }
     listed.shown.push(shown);
     listed.more.push(
@@ -200,6 +219,15 @@ function listedFindings(model: MapModel): ListedFindings {
         .map(([kind, count]) => [kind, count - FINDINGS_LISTED_PER_KIND]),
     );
   }
+
+  const inAll = new Map<string, number>();
+  model.findings.forEach((finding, at) => {
+    const ofKind = (inAll.get(finding.kind) ?? 0) + 1;
+    inAll.set(finding.kind, ofKind);
+    if (ofKind <= FINDINGS_LISTED_IN_ALL) {
+      row(at);
+    }
+  });
   return listed;
 }
 
@@ -355,6 +383,10 @@ function pageDataWith(model: MapModel, listed: ListedFindings): PageData {
     ]),
     cov: model.coverage,
     chk: model.check,
+    fi: listed.findings.map((at) => {
+      const finding = model.findings[at] as MapFinding;
+      return [s(finding.kind), s(finding.severity), finding.entry];
+    }),
   };
 }
 
