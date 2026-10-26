@@ -3,11 +3,20 @@
  * SAM AWS::Serverless::GraphQLApi reader finds, so both ways of writing
  * an API reach the summary builder as one model.
  *
- * A value written with a dynamic intrinsic, such as `!Ref` to a
- * parameter, is left unresolved and reported. The reader never guesses it.
+ * A value written with a dynamic intrinsic is left unresolved and
+ * reported. The reader never guesses it. A `!Ref` to a parameter the
+ * parent stack sets to a resource is read as that resource, which is how
+ * a nested stack's resolvers find the API their parent declares.
  */
 
-import { asRecord, resolveLogicalRef, stringField } from "./refs.js";
+import { apiScopedKey } from "@suss/manifest-aws";
+
+import {
+  asRecord,
+  type DocumentRefs,
+  OWN_DOCUMENT,
+  stringField,
+} from "./refs.js";
 import { readServerlessGraphQLApis } from "./sam.js";
 
 export interface CfnTemplate {
@@ -37,12 +46,10 @@ export interface AppSyncApi {
   authenticationType: string | null;
 }
 
-export interface AppSyncResolver {
+export interface AppSyncResolver extends DataSourceReference {
   logicalId: string;
-  apiLogicalId: string | null;
   typeName: string;
   fieldName: string;
-  dataSourceLogicalId: string | null;
   /** `"UNKNOWN"` when the template sets a Kind AppSync does not define. */
   kind: "UNIT" | "PIPELINE" | "UNKNOWN";
   /**
@@ -59,11 +66,9 @@ export interface AppSyncResolver {
   runtime: string | null;
 }
 
-export interface AppSyncFunction {
+export interface AppSyncFunction extends DataSourceReference {
   logicalId: string;
-  apiLogicalId: string | null;
   name: string | null;
-  dataSourceLogicalId: string | null;
   codeUri: string | null;
   runtime: string | null;
 }
@@ -77,6 +82,8 @@ export interface AppSyncFunction {
 export interface AppSyncDataSource {
   logicalId: string;
   apiLogicalId: string | null;
+  /** The `Name` a resolver can refer to it by, within its API. */
+  name: string | null;
   /**
    * The AppSync type in lowercase, such as `"lambda"`, or `"unknown"` for
    * a type AppSync does not define.
@@ -96,16 +103,20 @@ export interface AppSyncConfig {
  * Collects AppSync APIs, resolvers, functions and data sources from both
  * the raw resources and the SAM shorthand. An entry missing a required
  * field is skipped, so one partial block does not fail the whole read.
+ * `refs` qualifies every logical id by the document it comes from.
  */
-export function readAppSyncFromCfn(template: CfnTemplate): AppSyncConfig {
+export function readAppSyncFromCfn(
+  template: CfnTemplate,
+  refs: DocumentRefs = OWN_DOCUMENT,
+): AppSyncConfig {
   const resources = template.Resources ?? {};
   const raw: AppSyncConfig = {
-    apis: collectApis(resources),
-    resolvers: collectResolvers(resources),
-    functions: collectFunctions(resources),
-    dataSources: collectDataSources(resources),
+    apis: collectApis(resources, refs),
+    resolvers: collectResolvers(resources, refs),
+    functions: collectFunctions(resources, refs),
+    dataSources: collectDataSources(resources, refs),
   };
-  const sam = readServerlessGraphQLApis(resources);
+  const sam = readServerlessGraphQLApis(resources, refs);
   return {
     apis: [...raw.apis, ...sam.apis],
     resolvers: [...raw.resolvers, ...sam.resolvers],
@@ -114,21 +125,79 @@ export function readAppSyncFromCfn(template: CfnTemplate): AppSyncConfig {
   };
 }
 
+/** Several documents of one stack tree, read as one model. */
+export function mergeConfigs(configs: AppSyncConfig[]): AppSyncConfig {
+  const merged: AppSyncConfig = {
+    apis: configs.flatMap((c) => c.apis),
+    resolvers: configs.flatMap((c) => c.resolvers),
+    functions: configs.flatMap((c) => c.functions),
+    dataSources: configs.flatMap((c) => c.dataSources),
+  };
+  return withDataSourcesByName(merged);
+}
+
+/**
+ * A resolver or a function can name its data source by the `Name`
+ * property instead of the logical id, and a name means something only
+ * within one API. A reference that is not a data source's logical id is
+ * looked up by name against the referring resource's own API.
+ */
+function withDataSourcesByName(config: AppSyncConfig): AppSyncConfig {
+  const byId = new Set(config.dataSources.map((ds) => ds.logicalId));
+  const byName = new Map<string, string>();
+  for (const ds of config.dataSources) {
+    if (ds.name !== null) {
+      byName.set(apiScopedKey(ds.apiLogicalId, ds.name), ds.logicalId);
+    }
+  }
+  const resolve = <T extends DataSourceReference>(entry: T): T => {
+    const { dataSourceLogicalId, dataSourceWritten } = entry;
+    if (dataSourceLogicalId !== null && byId.has(dataSourceLogicalId)) {
+      return entry;
+    }
+    const named =
+      dataSourceWritten === null
+        ? undefined
+        : byName.get(apiScopedKey(entry.apiLogicalId, dataSourceWritten));
+    return named === undefined
+      ? entry
+      : { ...entry, dataSourceLogicalId: named };
+  };
+  return {
+    ...config,
+    resolvers: config.resolvers.map(resolve),
+    functions: config.functions.map(resolve),
+  };
+}
+
+/** A resolver or a function, which both point at a data source. */
+export interface DataSourceReference {
+  apiLogicalId: string | null;
+  dataSourceLogicalId: string | null;
+  /**
+   * `DataSourceName` when it is a plain string, which is either a data
+   * source's logical id or its `Name`. Null for a reference.
+   */
+  dataSourceWritten: string | null;
+}
+
 function collectApis(
   resources: Record<string, CfnResource | undefined>,
+  refs: DocumentRefs,
 ): AppSyncApi[] {
   const apis: AppSyncApi[] = [];
-  const schemaByApi = indexSchemasByApi(resources);
+  const schemaByApi = indexSchemasByApi(resources, refs);
 
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource?.Type !== "AWS::AppSync::GraphQLApi") {
       continue;
     }
     const props = resource.Properties ?? {};
+    const id = refs.own(logicalId);
     apis.push({
-      logicalId,
+      logicalId: id,
       name: stringField(props.Name),
-      schemaSource: schemaByApi.get(logicalId) ?? { kind: "absent" },
+      schemaSource: schemaByApi.get(id) ?? { kind: "absent" },
       authenticationType: stringField(props.AuthenticationType),
     });
   }
@@ -138,6 +207,7 @@ function collectApis(
 /** A GraphQLSchema resource points back at its API through `ApiId`. */
 function indexSchemasByApi(
   resources: Record<string, CfnResource | undefined>,
+  refs: DocumentRefs,
 ): Map<string, RawSchemaSource> {
   const out = new Map<string, RawSchemaSource>();
   for (const resource of Object.values(resources)) {
@@ -145,7 +215,7 @@ function indexSchemasByApi(
       continue;
     }
     const props = resource.Properties ?? {};
-    const apiRef = resolveLogicalRef(props.ApiId);
+    const apiRef = refs.ref(props.ApiId);
     if (apiRef === null) {
       continue;
     }
@@ -175,6 +245,7 @@ function indexSchemasByApi(
 
 function collectResolvers(
   resources: Record<string, CfnResource | undefined>,
+  refs: DocumentRefs,
 ): AppSyncResolver[] {
   const out: AppSyncResolver[] = [];
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -188,13 +259,17 @@ function collectResolvers(
       continue;
     }
     out.push({
-      logicalId,
-      apiLogicalId: resolveLogicalRef(props.ApiId),
+      logicalId: refs.own(logicalId),
+      apiLogicalId: refs.ref(props.ApiId),
       typeName,
       fieldName,
-      dataSourceLogicalId: resolveLogicalRef(props.DataSourceName),
+      dataSourceLogicalId: refs.ref(props.DataSourceName),
+      dataSourceWritten: stringField(props.DataSourceName),
       kind: resolverKind(stringField(props.Kind)),
-      pipelineFunctionLogicalIds: pipelineFunctionIds(props.PipelineConfig),
+      pipelineFunctionLogicalIds: pipelineFunctionIds(
+        props.PipelineConfig,
+        refs,
+      ),
       codeUri: null,
       runtime: null,
     });
@@ -207,7 +282,10 @@ function collectResolvers(
  * logical id `Fn`. An entry only known at deploy time, such as `Fn::Sub`,
  * is dropped.
  */
-function pipelineFunctionIds(pipelineConfig: unknown): string[] {
+function pipelineFunctionIds(
+  pipelineConfig: unknown,
+  refs: DocumentRefs,
+): string[] {
   const config = asRecord(pipelineConfig);
   if (config === null) {
     return [];
@@ -218,7 +296,7 @@ function pipelineFunctionIds(pipelineConfig: unknown): string[] {
   }
   const out: string[] = [];
   for (const entry of functions) {
-    const ref = resolveLogicalRef(entry);
+    const ref = refs.ref(entry);
     if (ref !== null) {
       out.push(ref);
     }
@@ -228,6 +306,7 @@ function pipelineFunctionIds(pipelineConfig: unknown): string[] {
 
 function collectFunctions(
   resources: Record<string, CfnResource | undefined>,
+  refs: DocumentRefs,
 ): AppSyncFunction[] {
   const out: AppSyncFunction[] = [];
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -236,10 +315,11 @@ function collectFunctions(
     }
     const props = resource.Properties ?? {};
     out.push({
-      logicalId,
-      apiLogicalId: resolveLogicalRef(props.ApiId),
+      logicalId: refs.own(logicalId),
+      apiLogicalId: refs.ref(props.ApiId),
       name: stringField(props.Name),
-      dataSourceLogicalId: resolveLogicalRef(props.DataSourceName),
+      dataSourceLogicalId: refs.ref(props.DataSourceName),
+      dataSourceWritten: stringField(props.DataSourceName),
       codeUri: null,
       runtime: null,
     });
@@ -249,6 +329,7 @@ function collectFunctions(
 
 function collectDataSources(
   resources: Record<string, CfnResource | undefined>,
+  refs: DocumentRefs,
 ): AppSyncDataSource[] {
   const out: AppSyncDataSource[] = [];
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -258,13 +339,12 @@ function collectDataSources(
     const props = resource.Properties ?? {};
     const lambdaConfig = asRecord(props.LambdaConfig);
     out.push({
-      logicalId,
-      apiLogicalId: resolveLogicalRef(props.ApiId),
+      logicalId: refs.own(logicalId),
+      apiLogicalId: refs.ref(props.ApiId),
+      name: stringField(props.Name),
       type: dataSourceType(stringField(props.Type)),
       lambdaFunctionLogicalId:
-        lambdaConfig === null
-          ? null
-          : resolveLogicalRef(lambdaConfig.LambdaFunctionArn),
+        lambdaConfig === null ? null : refs.ref(lambdaConfig.LambdaFunctionArn),
     });
   }
   return out;

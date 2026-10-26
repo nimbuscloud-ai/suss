@@ -263,6 +263,28 @@ describe("the map model", () => {
     );
   });
 
+  it("counts a Lambda the template routes a field to as the code that serves it", () => {
+    const lambda = unit({
+      kind: "handler",
+      file: "src/directory/index.ts",
+      name: "DirectoryFunction.handler",
+      binding: resolver("Query", "directory"),
+      transitions: [transition("DirectoryFunction.handler:return")],
+    });
+    const schema = unit({
+      kind: "resolver",
+      file: "schema.graphql:Query.directory",
+      name: "Query.directory",
+      binding: resolver("Query", "directory", "graphql"),
+      noId: true,
+    });
+
+    const field = entry(modelOf([lambda], [schema]), "Query", "directory");
+    expect(field.units).toHaveLength(1);
+    expect(field.specs).toHaveLength(1);
+    expect(field.outcomes).toHaveLength(1);
+  });
+
   it("gives every GraphQL field a type, from the code or else from the schema", () => {
     const approver = unit({
       kind: "resolver",

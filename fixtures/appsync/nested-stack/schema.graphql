@@ -1,0 +1,9 @@
+type Person {
+  id: ID!
+  name: String!
+}
+
+type Query {
+  directory(team: String!): [Person!]!
+  person(id: ID!): Person
+}

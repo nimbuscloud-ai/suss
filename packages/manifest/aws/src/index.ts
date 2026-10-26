@@ -15,6 +15,7 @@
 
 export {
   type AppSyncResolverBinding,
+  apiScopedKey,
   readAppSyncResolvers,
 } from "./appsyncResolvers.js";
 export {
@@ -31,6 +32,7 @@ export {
 } from "./eventPattern.js";
 export { inheritedEnvVars, resourcesWithGlobals } from "./globals.js";
 export {
+  documentRef,
   loadTemplateTree,
   MAX_STACK_DEPTH,
   qualifiedLogicalId,

@@ -95,6 +95,44 @@ Resources:
 `,
   );
   write("graphql/notes.py", "def handler(event, context):\n  pass\n");
+  write(
+    "graphql-mixed/template.yaml",
+    `
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  NotesApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties: { Name: notes, AuthenticationType: API_KEY }
+  NotesDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      Name: NotesLambda
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt NotesFunction.Arn
+  QueryNoteResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      TypeName: Query
+      FieldName: note
+      DataSourceName: NotesLambda
+  Jobs:
+    Type: AWS::SQS::Queue
+  NotesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Runtime: python3.12
+      Handler: notes.handler
+      Events:
+        FromJobs:
+          Type: SQS
+          Properties: { Queue: !GetAtt Jobs.Arn }
+`,
+  );
+  write("graphql-mixed/notes.py", "def handler(event, context):\n  pass\n");
 });
 
 afterAll(() => {
@@ -121,22 +159,31 @@ describe("the Python and Ruby packs", () => {
 });
 
 describe("lambdaEntryPoints", () => {
-  it("binds a handler AppSync routes a field to as the deployed function, listing the field", () => {
+  it("binds a handler AppSync routes a field to as that field's resolver", () => {
     const [entry] = entryPoints(path.join(root, "graphql/notes.py"));
 
+    expect(entry?.units).toHaveLength(1);
     expect(entry?.units[0]?.binding.semantics).toEqual({
-      name: "unit-invocation",
+      name: "graphql-resolver",
+      typeName: "Query",
+      fieldName: "note",
+    });
+    expect(entry?.units[0]?.deployableUnit).toEqual({
       deploymentTarget: "lambda",
       instanceName: "NotesFunction",
     });
     expect(entry?.units[0]?.metadata).toEqual({
-      awsLambda: {
-        handler: "notes.handler",
-        recognition: "handler-entry",
-        eventTypes: [],
-        graphqlTypeFields: [{ typeName: "Query", fieldName: "note" }],
-      },
+      awsLambda: { handler: "notes.handler", recognition: "appsync-resolver" },
     });
+  });
+
+  it("keeps a unit for a queue that also reaches a handler serving a field", () => {
+    const [entry] = entryPoints(path.join(root, "graphql-mixed/notes.py"));
+
+    expect(entry?.units.map((unit) => unit.binding.semantics.name)).toEqual([
+      "graphql-resolver",
+      "unit-invocation",
+    ]);
   });
 
   it("finds a Python handler whose module the template writes with dots", () => {

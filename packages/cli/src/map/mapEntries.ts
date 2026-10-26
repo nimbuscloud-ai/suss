@@ -47,6 +47,11 @@ const GRAPHQL_ROOT_TYPES: ReadonlySet<string> = new Set([
   "Subscription",
 ]);
 
+const SERVES_A_FIELD: ReadonlySet<BehavioralSummary["kind"]> = new Set([
+  "resolver",
+  "handler",
+]);
+
 interface Served {
   kind: EntryKind;
   method: string;
@@ -68,8 +73,10 @@ export function entryServedBy(summary: BehavioralSummary): Served | null {
       path: binding.semantics.path,
     };
   }
+  // A Lambda that AppSync routes a field to is a handler, which the
+  // template binds to the field, so it serves the field as a resolver does.
   if (
-    summary.kind === "resolver" &&
+    SERVES_A_FIELD.has(summary.kind) &&
     bindingIs(binding, "graphql-resolver") &&
     binding.semantics.typeName !== null &&
     GRAPHQL_ROOT_TYPES.has(binding.semantics.typeName)

@@ -18,6 +18,8 @@ import type { InitReport } from "./init.js";
 /** Contract files each reader gives a summary for, since init asks the reader before it suggests one. */
 const TEMPLATE =
   "Resources:\n  Orders:\n    Type: AWS::DynamoDB::Table\n    Properties:\n      TableName: orders\n";
+const FUNCTION_TEMPLATE =
+  "Resources:\n  Worker:\n    Type: AWS::Serverless::Function\n    Properties:\n      Handler: app.handler\n";
 const OPENAPI_PATHS =
   "paths:\n  /orders:\n    get:\n      responses:\n        '200':\n          description: ok\n";
 const STORY = [
@@ -98,6 +100,21 @@ describe("inspectProject", () => {
     expect(await names(dir)).toEqual(["cloudformation"]);
     const contract = report.suggestions.find((s) => s.kind === "contract");
     expect(contract?.file).toBe("template.yaml");
+  });
+
+  it("suggests the Lambda pack for a JavaScript handler, which imports nothing that marks it", async () => {
+    writeManifest({ dependencies: {} });
+    fs.writeFileSync(path.join(dir, "template.yaml"), FUNCTION_TEMPLATE);
+    expect(await names(dir)).toEqual(["aws-lambda", "cloudformation"]);
+  });
+
+  it("offers the AppSync reader too for a template that declares an AppSync API", async () => {
+    writeManifest({ dependencies: {} });
+    fs.writeFileSync(
+      path.join(dir, "template.yaml"),
+      "Resources:\n  Api:\n    Type: AWS::AppSync::GraphQLApi\n",
+    );
+    expect(await names(dir)).toEqual(["appsync", "cloudformation"]);
   });
 
   it("offers the packs for what the runtime itself ships", async () => {
@@ -383,7 +400,7 @@ describe("inspectProject", () => {
   });
 
   it("suggests the Lambda pack for Python and Ruby handlers a template points at", async () => {
-    fs.writeFileSync(path.join(dir, "template.yaml"), TEMPLATE);
+    fs.writeFileSync(path.join(dir, "template.yaml"), FUNCTION_TEMPLATE);
     fs.writeFileSync(path.join(dir, "requirements.txt"), "boto3\n");
     fs.writeFileSync(path.join(dir, "Gemfile"), 'gem "aws-sdk-s3"\n');
     const suggested = (await inspectProject(dir)).suggestions

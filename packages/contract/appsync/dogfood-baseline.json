@@ -1,7 +1,7 @@
 {
   "name": "@suss/contract-appsync",
   "exports": 2,
-  "internal": 44,
-  "consumers": 13,
+  "internal": 46,
+  "consumers": 19,
   "unfollowedCalls": 0
 }

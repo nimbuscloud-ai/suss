@@ -33,7 +33,7 @@ The `Handler` string is split the way each runtime reads it:
 | Ruby | `src/orders.handler` | `def handler` at the top of `src/orders.rb` |
 | Ruby | `app.Billing::Handler.process` | `def self.process` in `Billing::Handler`, in `app.rb` |
 
-Neither adapter reads a Lambda response envelope yet, so a Python or Ruby handler gets no route or resolver binding. Its events are listed on the summary under `awsLambda.eventTypes`. A handler whose events all come from one bus is that bus's consumer, and any other handler is bound as the deployed function, `unit:lambda <logical id>`. A name the module binds without a body, such as `handler = Mangum(app)`, gets no summary.
+Neither adapter reads a Lambda response envelope yet, so a Python or Ruby handler gets no route binding. AppSync passes a field's arguments straight to the handler and takes its return value as the field's value, so a handler the template routes a `Query`, `Mutation` or `Subscription` field to gets a resolver binding for that field, as in TypeScript. Its other events are listed on the summary under `awsLambda.eventTypes`. A handler whose events all come from one bus is that bus's consumer, and any other handler is bound as the deployed function, `unit:lambda <logical id>`. A name the module binds without a body, such as `handler = Mangum(app)`, gets no summary.
 
 The Python pack also declares the `POWERTOOLS_` variables that `aws_lambda_powertools` reads from its installed package, the way the TypeScript pack does for `@aws-lambda-powertools/`.
 

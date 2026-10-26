@@ -66,7 +66,7 @@ function httpRouteUnits(
  */
 const OPERATION_ROOT_TYPES = ["Query", "Mutation", "Subscription"];
 
-function operationFields(
+export function operationFields(
   entry: HandlerEntry,
 ): Array<{ typeName: string; fieldName: string }> {
   return entry.graphqlFields.filter((f) =>

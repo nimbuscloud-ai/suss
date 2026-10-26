@@ -19,6 +19,7 @@ import path from "node:path";
 import {
   type CloudFormationTemplate,
   loadCloudFormationDocument,
+  refTarget,
 } from "./templateLoader.js";
 
 /**
@@ -51,6 +52,67 @@ export interface TemplateDocument {
   template: CloudFormationTemplate;
   /** The 1-based line each resource's logical id is written on. */
   resourceLines: Map<string, number>;
+  /**
+   * The resource each of this document's parameters points at, for a
+   * parameter the parent stack sets to a reference. The id is qualified
+   * by its own document's stack path, so a child's `!Ref ApiId` can be
+   * read as the API its parent declares. Empty for the root.
+   */
+  parameterTargets: Map<string, string>;
+}
+
+/**
+ * The qualified logical id a reference in this document points at: the
+ * resource the parent passed in as a parameter, or the document's own.
+ * Null for a value only known at deploy time.
+ */
+export function documentRef(
+  document: Pick<TemplateDocument, "stackPath" | "parameterTargets">,
+  value: unknown,
+): string | null {
+  const id = refTarget(value);
+  if (id === null) {
+    return null;
+  }
+
+  return (
+    document.parameterTargets.get(id) ??
+    qualifiedLogicalId(document.stackPath, id)
+  );
+}
+
+/**
+ * What a child's parameters point at, read from the values its parent's
+ * stack resource passes. A value that refers to the parent's own
+ * parameter takes what that one points at, since the parent was read first.
+ */
+function parameterTargetsOf(
+  parent: TemplateDocument,
+  passed: unknown,
+): Map<string, string> {
+  const targets = new Map<string, string>();
+  if (passed === null || typeof passed !== "object") {
+    return targets;
+  }
+  const resources = parent.template.Resources ?? {};
+  for (const [name, value] of Object.entries(
+    passed as Record<string, unknown>,
+  )) {
+    const id = refTarget(value);
+    if (id === null || typeof value === "string") {
+      continue;
+    }
+    const target =
+      parent.parameterTargets.get(id) ??
+      (resources[id] === undefined
+        ? null
+        : qualifiedLogicalId(parent.stackPath, id));
+    if (target !== null) {
+      targets.set(name, target);
+    }
+  }
+
+  return targets;
 }
 
 /**
@@ -107,6 +169,7 @@ export function loadTemplateTree(rootPath: string): TemplateTree {
     path: rootFile,
     stackPath: [],
     ...loadCloudFormationDocument(rootFile),
+    parameterTargets: new Map(),
   };
 
   const documents: TemplateDocument[] = [root];
@@ -176,6 +239,7 @@ function childStacksOf(
         ancestors,
         logicalId,
         location: resource.Properties?.[property],
+        parameters: resource.Properties?.Parameters,
       }),
     );
   }
@@ -187,6 +251,7 @@ function childStack(opts: {
   ancestors: string[];
   logicalId: string;
   location: unknown;
+  parameters: unknown;
 }): ChildStack {
   const stackPath = [...opts.document.stackPath, opts.logicalId];
   const report = (
@@ -255,6 +320,7 @@ function childStack(opts: {
         path: childPath,
         stackPath,
         ...loadCloudFormationDocument(childPath),
+        parameterTargets: parameterTargetsOf(opts.document, opts.parameters),
       },
     };
   } catch (err) {

@@ -231,7 +231,7 @@ function fromRawResources(
 }
 
 /** A name only means something next to the API it was declared in. */
-function apiScopedKey(apiId: string | null, name: string): string {
+export function apiScopedKey(apiId: string | null, name: string): string {
   return `${apiId ?? ""}::${name}`;
 }
 
