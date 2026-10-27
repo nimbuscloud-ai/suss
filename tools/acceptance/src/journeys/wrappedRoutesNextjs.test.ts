@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
@@ -35,7 +35,7 @@ describe("read a Next.js app whose routes are wrapped in calls", () => {
   });
 
   it("gives every route export a summary", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     expect(routesOf(summaries)).toEqual([
       "GET /api/admin/stats",
       "GET /api/health",
@@ -47,7 +47,7 @@ describe("read a Next.js app whose routes are wrapped in calls", () => {
   });
 
   it("records a library's wrapper as a layer around the route", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const job = routeFor(summaries, "POST", "/api/jobs/process/{jobName}");
 
     expect(job.metadata?.wrappers).toEqual({
@@ -62,7 +62,7 @@ describe("read a Next.js app whose routes are wrapped in calls", () => {
   });
 
   it("adds the statuses of the project's own wrapper inside the library's", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const create = routeFor(summaries, "POST", "/api/links");
 
     expect(wrapperNamesOf(create)).toEqual([
@@ -73,7 +73,7 @@ describe("read a Next.js app whose routes are wrapped in calls", () => {
   });
 
   it("adds the statuses of a closure the project's wrapper hands back", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const stats = routeFor(summaries, "GET", "/api/admin/stats");
 
     expect(wrapperNamesOf(stats)).toEqual(["withAdmin(handler)"]);

@@ -3,9 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 /**
  * One helper, called twice for two different resources, in a file that
@@ -29,7 +27,7 @@ describe("read a helper called twice from a file with no import", () => {
     ]);
     expect(run.status, run.stderr).toBe(0);
 
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const routes = summaries.flatMap((one) => {
       const semantics = one.identity.boundaryBinding?.semantics;
       return semantics?.name === "rest"
@@ -40,7 +38,7 @@ describe("read a helper called twice from a file with no import", () => {
   });
 
   it("keeps each call's own handler behind its own route", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const bodies = summaries
       .filter((one) => one.identity.boundaryBinding?.semantics.name === "rest")
       .map((one) =>

@@ -7,6 +7,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { readHttpMetadata } from "@suss/behavioral-ir";
+import { readSummaryFile } from "@suss/behavioral-ir/files";
 
 import { extract } from "./extract.js";
 import { inspect } from "./inspect.js";
@@ -265,9 +266,7 @@ describe("extract: ts-rest", () => {
       output: outPath,
     });
 
-    const onDisk = JSON.parse(
-      fs.readFileSync(outPath, "utf-8"),
-    ) as BehavioralSummary[];
+    const onDisk = readSummaryFile(outPath);
 
     // Round-trip through the normalizer so volatile paths and hashes cancel.
     expect(onDisk.map(normalize)).toEqual(inMemory.map(normalize));
@@ -1130,9 +1129,7 @@ describe("end-to-end: semantic bridging: soft-delete motivating example", () => 
       });
 
       // Verify provider has multiple 200 transitions
-      const providerSummaries: BehavioralSummary[] = JSON.parse(
-        fs.readFileSync(providerOutPath, "utf8"),
-      );
+      const providerSummaries = readSummaryFile(providerOutPath);
       const getUser = providerSummaries.find(
         (s) => s.identity.name === "getUser",
       );

@@ -2,9 +2,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 /**
  * The two halves of grounding meet here. The adapter writes what a
@@ -42,7 +40,7 @@ describe("check a storage layer that is told which table to read", () => {
   });
 
   it("records the argument the table name comes out of, and the field", () => {
-    const extracted = readJson(codeFile) as BehavioralSummary[];
+    const extracted = readSummaries(codeFile);
     const containers = extracted.flatMap((summary) =>
       summary.transitions.flatMap((transition) =>
         transition.effects.flatMap((effect) =>

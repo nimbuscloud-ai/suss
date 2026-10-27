@@ -2,9 +2,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 const DECLARED_ROUTES = [
   "GET /users/:id",
@@ -56,7 +54,7 @@ describe("read a TypeScript service", () => {
   });
 
   it("writes summaries another command can read", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     expect(Array.isArray(summaries)).toBe(true);
 
     const paths = summaries

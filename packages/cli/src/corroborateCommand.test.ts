@@ -10,6 +10,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { readSummaryFile } from "@suss/behavioral-ir/files";
+
 import { runCli } from "./run.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -124,9 +126,7 @@ describe("runCli — corroborate", () => {
     expect(io.stdout).toContain("GET /users");
     expect(io.stdout).toContain("held up");
 
-    const written = JSON.parse(
-      fs.readFileSync(outFile, "utf8"),
-    ) as BehavioralSummary[];
+    const written = readSummaryFile(outFile);
     const handler = written.find((s) => s.kind === "handler");
     expect(handler).toBeDefined();
     const verdicts = (handler as BehavioralSummary).transitions

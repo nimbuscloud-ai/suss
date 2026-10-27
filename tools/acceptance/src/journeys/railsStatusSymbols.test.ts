@@ -2,9 +2,9 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type { Finding } from "@suss/behavioral-ir";
 
 /**
  * A Rails controller that sends 422 as `:unprocessable_content`, the
@@ -44,7 +44,7 @@ describe("read the status symbols Rack 3 renamed", () => {
   });
 
   it("reads :unprocessable_content as 422", () => {
-    const summaries = readJson(railsFile) as BehavioralSummary[];
+    const summaries = readSummaries(railsFile);
     const create = summaries.find((one) => one.identity.name === "create");
 
     expect(

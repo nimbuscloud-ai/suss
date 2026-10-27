@@ -3,9 +3,15 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import {
+  fixture,
+  readJson,
+  readSummaries,
+  runSuss,
+  workspace,
+} from "../harness.js";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type { Finding } from "@suss/behavioral-ir";
 
 /**
  * One Lambda calling another, with nothing in the template to say so.
@@ -67,10 +73,7 @@ describe("one Lambda invoking another", () => {
 
     fs.writeFileSync(
       together,
-      JSON.stringify([
-        ...(readJson(codeFile) as BehavioralSummary[]),
-        ...(readJson(infraFile) as BehavioralSummary[]),
-      ]),
+      JSON.stringify([...readSummaries(codeFile), ...readSummaries(infraFile)]),
     );
   }, 120_000);
 
