@@ -37,6 +37,32 @@ export function withDependencySink<T>(sink: DependencySink, fn: () => T): T {
   }
 }
 
+/**
+ * Run `fn` and give back the files it read, which still go to whichever
+ * sink is active, so work that is not repeated can report them again.
+ */
+export function withFilesNoted<T>(fn: () => T): { value: T; files: string[] } {
+  const outer = activeSink;
+  const noted = createDependencySink();
+  activeSink = noted;
+  let value: T;
+  try {
+    value = fn();
+  } finally {
+    activeSink = outer;
+  }
+  if (outer !== null) {
+    for (const filePath of noted.files) {
+      outer.files.add(filePath);
+    }
+    for (const [childId, prefix] of noted.mountPrefixes) {
+      outer.mountPrefixes.set(childId, prefix);
+    }
+    outer.claims.push(...noted.claims);
+  }
+  return { value, files: [...noted.files] };
+}
+
 export function recordFileDependency(filePath: string): void {
   activeSink?.files.add(filePath);
 }

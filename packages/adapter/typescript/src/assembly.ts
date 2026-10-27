@@ -19,6 +19,7 @@ import {
 
 import { firesOn, runsBefore, splitAtHandOffs } from "@suss/extractor";
 
+import { walkBodyOnce } from "./bodyWalks.js";
 import {
   type ConditionInfo,
   conditionInfoToRawCondition,
@@ -267,33 +268,50 @@ export function extractRawBranches(
   keepsArms?: KeepsArms<Expression>,
   handOff?: ResponseHandOffOptions,
 ): RawBranchResult {
-  const terminals = findTerminals(
+  const { terminals, invocations, recognized } = walkBodyOnce(
     func,
-    terminalPatterns,
-    barriers,
-    resolution,
-    originatesFrom,
-    resolveCallee,
-  );
-  const invocations = extractInvocationEffects(func, barriers);
-  const recognized = [
-    ...runInvocationRecognizers(
-      func,
+    {
+      terminalPatterns,
       invocationRecognizers,
-      barriers,
-      resolution,
-      originatesFrom,
-      anchorCallsOf,
-    ),
-    ...runAccessRecognizers(
-      func,
       accessRecognizers,
       barriers,
       resolution,
-      originatesFrom,
-      anchorCallsOf,
-    ),
-  ];
+      callbacks: [
+        originatesFrom !== undefined,
+        anchorCallsOf !== undefined,
+        resolveCallee !== undefined,
+      ],
+    },
+    () => ({
+      terminals: findTerminals(
+        func,
+        terminalPatterns,
+        barriers,
+        resolution,
+        originatesFrom,
+        resolveCallee,
+      ),
+      invocations: extractInvocationEffects(func, barriers),
+      recognized: [
+        ...runInvocationRecognizers(
+          func,
+          invocationRecognizers,
+          barriers,
+          resolution,
+          originatesFrom,
+          anchorCallsOf,
+        ),
+        ...runAccessRecognizers(
+          func,
+          accessRecognizers,
+          barriers,
+          resolution,
+          originatesFrom,
+          anchorCallsOf,
+        ),
+      ],
+    }),
+  );
 
   // One condition list per path from entry to terminal. Anything the
   // path engine cannot enumerate comes back as the enclosing conditions

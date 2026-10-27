@@ -38,6 +38,8 @@ export interface DefinitionTable {
   settle(): void;
   /** Every definition worth carrying, or null when there are none. */
   collected(): Record<string, TypeShape> | null;
+  /** The shape written under a key, null while it is only reserved. */
+  shapeOf(key: string): TypeShape | null | undefined;
 }
 
 let current: DefinitionTable | null = null;
@@ -88,7 +90,76 @@ export function createDefinitionTable(): DefinitionTable {
       }
       return any ? out : null;
     },
+    shapeOf: (key) => shapes.get(key),
   };
+}
+
+/**
+ * Run `read` and give back every definition it looked up or wrote, so
+ * a read that is not repeated can write the same ones into another
+ * unit's table. Null when one of them was still being expanded, since
+ * then there is no finished shape to hand on.
+ */
+export function withDefinitionsNoted<T>(read: () => T): {
+  value: T;
+  noted: Array<[string, TypeShape]> | null;
+} {
+  const table = current;
+  if (table === null) {
+    return { value: read(), noted: [] };
+  }
+  const keys = new Set<string>();
+  current = {
+    has: (key) => {
+      keys.add(key);
+      return table.has(key);
+    },
+    reserve: (key) => {
+      keys.add(key);
+      table.reserve(key);
+    },
+    define: (key, shape) => {
+      keys.add(key);
+      table.define(key, shape);
+    },
+    defer: (key, expand) => {
+      keys.add(key);
+      table.defer(key, expand);
+    },
+    settle: () => table.settle(),
+    collected: () => table.collected(),
+    shapeOf: (key) => table.shapeOf(key),
+  };
+  let value: T;
+  try {
+    value = read();
+  } finally {
+    current = table;
+  }
+  const noted: Array<[string, TypeShape]> = [];
+  for (const key of keys) {
+    const shape = table.shapeOf(key);
+    if (shape === null || shape === undefined) {
+      return { value, noted: null };
+    }
+    noted.push([key, shape]);
+  }
+  return { value, noted };
+}
+
+/** Write definitions `withDefinitionsNoted` gave back into this unit's table. */
+export function writeNotedDefinitions(
+  noted: ReadonlyArray<readonly [string, TypeShape]>,
+): void {
+  const table = current;
+  if (table === null) {
+    return;
+  }
+  for (const [key, shape] of noted) {
+    if (!table.has(key)) {
+      table.define(key, structuredClone(shape));
+    }
+  }
 }
 
 /**
