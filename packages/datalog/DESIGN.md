@@ -71,7 +71,10 @@ have an atom no other fact shares in their first or second column,
 such as a node id, so most of those maps had one entry. On a
 6,000-file TypeScript frontend with 6.1 million facts, storing the key
 at the first column no other tuple shares took the live heap after the
-reachable closure from 8.3 GB to 7.3 GB.
+reachable closure from 8.3 GB to 7.3 GB. The column indexes had the
+same pattern: 5.2 million of their 6 million buckets had one tuple, each
+in an array of its own. A bucket now keeps a lone tuple as it is, and a
+lookup wraps it in an array when asked, which took the heap to 6.95 GB.
 
 The join makes that check constantly. Every candidate a rule derives
 goes to `add`, and on a large project almost all of them are facts the

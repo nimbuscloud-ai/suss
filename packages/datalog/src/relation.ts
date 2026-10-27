@@ -22,7 +22,7 @@ export interface Relation {
    * encoding it first would build a string out of every node id on every
    * lookup and buy nothing.
    */
-  columns: (Map<Atom, Tuple[]> | undefined)[];
+  columns: (Map<Atom, Bucket> | undefined)[];
   /**
    * Per set of columns, the tuples under each combination of values at
    * those columns, keyed by a bitmask of the column positions. Built and
@@ -38,6 +38,43 @@ export interface Relation {
 export interface CombinedIndex {
   columns: readonly number[];
   root: Map<Atom, unknown>;
+}
+
+/**
+ * The tuples an index has under one value, in the order they arrived.
+ * Most values in a column of node ids belong to a single tuple, and an
+ * array for each of those cost more than the tuple itself, so a lone
+ * tuple is kept on its own.
+ */
+type Bucket = Tuple | Tuple[];
+
+/** A tuple's atoms are never arrays, and a bucket's entries always are. */
+const isLone = (bucket: Bucket): bucket is Tuple =>
+  typeof bucket[0] !== "object";
+
+const NO_TUPLES: readonly Tuple[] = [];
+
+function tuplesIn(bucket: Bucket | undefined): readonly Tuple[] {
+  if (bucket === undefined) {
+    return NO_TUPLES;
+  }
+  return isLone(bucket) ? [bucket] : bucket;
+}
+
+/** Add a tuple to an index's bucket for `key`, after the ones already there. */
+export function fileUnder(
+  buckets: Map<Atom, Bucket>,
+  key: Atom,
+  tuple: Tuple,
+): void {
+  const bucket = buckets.get(key);
+  if (bucket === undefined) {
+    buckets.set(key, tuple);
+  } else if (isLone(bucket)) {
+    buckets.set(key, [bucket, tuple]);
+  } else {
+    bucket.push(tuple);
+  }
 }
 
 const sameTuple = (a: Tuple, b: Tuple): boolean =>
@@ -58,22 +95,28 @@ export function storedTuplesOf(
     return null;
   }
   const stored = facts.map((fact) =>
-    buckets.get(fact[column] as Atom)?.find((tuple) => sameTuple(tuple, fact)),
+    tuplesIn(buckets.get(fact[column] as Atom)).find((tuple) =>
+      sameTuple(tuple, fact),
+    ),
   );
   return stored.every((tuple) => tuple !== undefined)
     ? (stored as Tuple[])
     : null;
 }
 
-function removeFrom<K>(buckets: Map<K, Tuple[]>, key: K, tuple: Tuple): void {
+function removeFrom(buckets: Map<Atom, Bucket>, key: Atom, tuple: Tuple): void {
   const bucket = buckets.get(key);
-  const at = bucket?.indexOf(tuple) ?? -1;
-  if (bucket === undefined || at === -1) {
+  if (bucket === undefined) {
     return;
   }
-  bucket.splice(at, 1);
-  if (bucket.length === 0) {
+  // The tuple is the relation's own, so it is in the bucket for its value.
+  if (isLone(bucket)) {
     buckets.delete(key);
+    return;
+  }
+  bucket.splice(bucket.indexOf(tuple), 1);
+  if (bucket.length === 1) {
+    buckets.set(key, bucket[0] as Tuple);
   }
 }
 
@@ -105,7 +148,7 @@ export function removeTuples(
       }
       if (level !== undefined) {
         removeFrom(
-          level as Map<Atom, Tuple[]>,
+          level as Map<Atom, Bucket>,
           tuple[index.columns[last]] as Atom,
           tuple,
         );
@@ -141,8 +184,8 @@ export function addToCombined(index: CombinedIndex, tuple: Tuple): void {
     }
     level = next;
   }
-  addToBucket(
-    level as Map<Atom, Tuple[]>,
+  fileUnder(
+    level as Map<Atom, Bucket>,
     tuple[index.columns[last]] as Atom,
     tuple,
   );
@@ -171,10 +214,10 @@ export function combinedBucketIn(
   for (const value of values) {
     level = (level as Map<Atom, unknown>).get(value);
     if (level === undefined) {
-      return [];
+      return NO_TUPLES;
     }
   }
-  return level as Tuple[];
+  return tuplesIn(level as Bucket);
 }
 
 export function addToBucket(
@@ -202,10 +245,10 @@ export function bucketIn(
     for (const tuple of relation.tuples) {
       const at = tuple[column];
       if (at !== undefined) {
-        addToBucket(buckets, at, tuple);
+        fileUnder(buckets, at, tuple);
       }
     }
     relation.columns[column] = buckets;
   }
-  return buckets.get(value) ?? [];
+  return tuplesIn(buckets.get(value));
 }
