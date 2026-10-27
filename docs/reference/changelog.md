@@ -7,6 +7,58 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.38.0 (2026-10-27)
+
+0.38.0 reads a large TypeScript project in less than half the time and memory 0.37.1 needed, and writes summary files about a tenth the size, which moves the summary format to version 7.
+
+### Breaking changes
+
+**A summaries file writes a repeated value once.** An object or array that appears more than once, and prints to 32 characters or more, is written in full the first time and as a reference after that. Before:
+
+```
+{"schemaVersion":6,"kind":"client","transitions":[{"id":"Orders.list:return:none:a57768c","effects":[{"type":"invocation","callee":"fetchOrders","args":[]}]}]},
+{"schemaVersion":6,"kind":"client","transitions":[{"id":"Orders.refresh:return:none:a57768c","effects":[{"type":"invocation","callee":"fetchOrders","args":[]}]}]}
+```
+
+After:
+
+```
+{"schemaVersion":7,"kind":"client","transitions":[{"id":"Orders.list:return:none:a57768c","effects":[{"$def":1,"$value":{"type":"invocation","callee":"fetchOrders","args":[]}}]}]},
+{"schemaVersion":7,"kind":"client","transitions":[{"id":"Orders.refresh:return:none:a57768c","effects":[{"$ref":1}]}]}
+```
+
+`suss check`, `inspect`, `ask`, `map` and the MCP server read both versions. So do `parseSummaries` and `readSummaryFile` from `@suss/behavioral-ir`, and what they return doesn't change. A tool that parses a summaries file with plain `JSON.parse` has to put the values back itself: replace `{"$def":n,"$value":v}` with `v`, and `{"$ref":n}` with a copy of the `v` of the `$def` with the same `n`, reading the lines in order. [Summary format](/reference/summary-format#values-written-once) describes it ([#1361](https://github.com/nimbuscloud-ai/suss/pull/1361)).
+
+### Faster TypeScript reads in less memory
+
+A large TypeScript project took minutes to read and needed more heap than the 8 GB `suss check` gives each read, so a bare `check` over a monorepo with a big frontend ran out of memory. Several changes cut both, and each writes the same summaries as before:
+
+- When suss asks its fact store a question it asked before, and no new facts have arrived since, it reuses the earlier result ([#1352](https://github.com/nimbuscloud-ai/suss/pull/1352)).
+- A body several units read is walked once ([#1356](https://github.com/nimbuscloud-ai/suss/pull/1356)), and each effect's key is worked out once per summary ([#1357](https://github.com/nimbuscloud-ai/suss/pull/1357)).
+- suss checked whether an overloaded call's argument was untyped only after printing every overload's return type. It now checks first ([#1353](https://github.com/nimbuscloud-ai/suss/pull/1353)). Two narrower questions are asked only when they can matter ([#1354](https://github.com/nimbuscloud-ai/suss/pull/1354), [#1355](https://github.com/nimbuscloud-ai/suss/pull/1355)).
+- The fact store kept a map for every column of every fact, and an array for every value in a column's index, though most facts have a node id of their own. It now keeps a fact's key at the first column no other fact shares, and a lone tuple without an array around it. On the private frontend below that took the live heap from 8.3 GB to 7.0 GB, and the saving reaches Python and Ruby reads too ([#1360](https://github.com/nimbuscloud-ai/suss/pull/1360)).
+
+| Project | 0.37.1 | 0.38.0 |
+|---|---:|---:|
+| A private frontend of about 1.4 million lines | 282 s, and more heap than the default 8 GB | 132 s in the default 8 GB |
+| mastodon (Ruby), peak memory | 3.9 GB | 3.0 GB |
+| dispatch (Python), peak memory | 2.3 GB | 1.5 GB |
+| cal.com `apps/web` | 38 s, 5.2 GB | 40 s, 5.1 GB |
+
+cal.com is about 2 seconds slower, because writing a file with each repeated value once takes longer than writing it plain.
+
+### Summary files about a tenth the size
+
+A GraphQL client summary has a copy of its component's transitions, so a component with 68 operations wrote the same 34 transitions 68 times. With the format change above, the private frontend's summaries went from 653 MB to 52 MB, and reading them back from 7.8 s to 5.2 s. Every summary reads back the same as before ([#1361](https://github.com/nimbuscloud-ai/suss/pull/1361)).
+
+### Tests no longer stand in for a wrapper's callers
+
+suss reads a project's own REST or GraphQL wrapper once for each caller, to work out the request each one sends. A test calling the wrapper passes stand-in values, which describe no request the app makes. A Cloudflare worker whose tests called its fetch handler about a thousand times took more than four hours to read. suss now leaves out a test file's calls to a production wrapper, and that worker reads in about two minutes ([#1358](https://github.com/nimbuscloud-ai/suss/pull/1358), [#1359](https://github.com/nimbuscloud-ai/suss/pull/1359)).
+
+### Fixes
+
+- A number written with underscores, such as `ENV.fetch("MAX_FOLLOWS_THRESHOLD", 7_500)`, read as `null` in Ruby and Python, and mastodon's summaries then failed validation in `suss check`. Ruby, Python and TypeScript now read underscores, base prefixes, and Ruby's leading-zero octal ([#1362](https://github.com/nimbuscloud-ai/suss/pull/1362)).
+
 ## 0.37.1 (2026-10-26)
 
 0.37.1 reads large TypeScript projects in well under half the time 0.37.0 took, and lets `suss map` list every finding and write its data as JSON.
