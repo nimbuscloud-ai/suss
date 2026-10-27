@@ -65,12 +65,15 @@ export function effectKey(effect: Effect): string {
  * One entry per effect, in the order they first appeared, with `count`
  * set on any that turned up more than once.
  */
-export function foldRepeatedEffects(effects: readonly Effect[]): Effect[] {
+export function foldRepeatedEffects(
+  effects: readonly Effect[],
+  keyOf: (effect: Effect, at: number) => string = effectKey,
+): Effect[] {
   const kept: Effect[] = [];
   const firstAt = new Map<string, number>();
 
-  for (const effect of effects) {
-    const key = effectKey(effect);
+  for (const [index, effect] of effects.entries()) {
+    const key = keyOf(effect, index);
     const at = firstAt.get(key);
     if (at === undefined) {
       firstAt.set(key, kept.length);
