@@ -101,6 +101,15 @@ describe("classifyDecorator: direct import", () => {
       name: "TodoResponse",
     });
   });
+
+  it("reads a number written with an underscore or a base prefix", async () => {
+    const { decorator, module, db } = await firstDecorator(
+      'from myapp.wrappers.restx import route\n\n\n@route("/items", status_code=2_01, limit=0x10)\ndef f():\n    pass\n',
+    );
+    const result = classifyDecorator(decorator, module, db);
+    expect(result.keywordArgs.status_code).toMatchObject({ value: 201 });
+    expect(result.keywordArgs.limit).toMatchObject({ value: 16 });
+  });
 });
 
 describe("classifyDecorator: attribute access", () => {

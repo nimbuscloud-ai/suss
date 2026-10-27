@@ -8,7 +8,12 @@
  * modelled here stays opaque, with its source text.
  */
 
-import { booleanLiteralValue, field, stringLiteralValue } from "../ast.js";
+import {
+  booleanLiteralValue,
+  field,
+  numberLiteralValue,
+  stringLiteralValue,
+} from "../ast.js";
 
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
 import type { RbNode } from "../parser.js";
@@ -179,8 +184,8 @@ function valueRefOf(node: RbNode, inputs: GuardInputs | undefined): ValueRef {
 
 function literalOf(node: RbNode): ValueRef | null {
   if (node.type === "integer") {
-    const value = Number.parseInt(node.text, 10);
-    return Number.isNaN(value) ? null : { type: "literal", value };
+    const value = numberLiteralValue(node);
+    return value === null ? null : { type: "literal", value };
   }
   const string = stringLiteralValue(node);
   if (string !== null) {

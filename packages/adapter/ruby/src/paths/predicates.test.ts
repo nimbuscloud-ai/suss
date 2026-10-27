@@ -24,6 +24,12 @@ describe("what a Ruby condition says", () => {
     });
   });
 
+  it("reads a literal written with an underscore as the number it is", async () => {
+    expect(await read("response.status == 4_04")).toMatchObject({
+      right: { type: "literal", value: 404 },
+    });
+  });
+
   it("reads through the conversion a string status is put through", async () => {
     expect(await read("response.code.to_i == 404")).toMatchObject({
       left: { type: "dependency", name: "response", accessChain: ["code"] },

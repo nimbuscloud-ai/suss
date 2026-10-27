@@ -4,7 +4,7 @@
  * returned expression instead when it can.
  */
 
-import { children, field } from "../ast.js";
+import { children, field, numberLiteralValue } from "../ast.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { PyNode } from "../parser.js";
@@ -60,10 +60,8 @@ export function shapeOfReturned(node: PyNode, depth = 0): TypeShape {
     return { type: "literal", value: node.text.slice(1, -1) };
   }
   if (node.type === "integer") {
-    const value = Number.parseInt(node.text, 10);
-    return Number.isNaN(value)
-      ? { type: "integer" }
-      : { type: "literal", value };
+    const value = numberLiteralValue(node);
+    return value === null ? { type: "integer" } : { type: "literal", value };
   }
   if (node.type === "float") {
     return { type: "number" };

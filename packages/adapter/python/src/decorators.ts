@@ -17,6 +17,7 @@ import {
   children,
   enclosingFunction,
   field,
+  numberLiteralValue,
   rangeOf,
   stringLiteralValue,
 } from "./ast.js";
@@ -127,8 +128,8 @@ function argShapeOf(node: PyNode): DecoratorArgShape {
     return { kind: "string", value: literal };
   }
   if (node.type === "integer") {
-    const value = Number.parseInt(node.text, 10);
-    if (Number.isFinite(value)) {
+    const value = numberLiteralValue(node);
+    if (value !== null) {
       return { kind: "number", value };
     }
     return { kind: "other" };

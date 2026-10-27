@@ -207,6 +207,34 @@ describe("ENV spellings", () => {
     ]);
   });
 
+  it("reads a fallback written with underscores, a 0d prefix, or a leading zero for octal", async () => {
+    const { db, parsed } = await projectFacts({
+      "use.rb": [
+        'A = ENV.fetch("A", 7_500).to_i',
+        'B = ENV.fetch("B", 0d12)',
+        'C = ENV.fetch("C", 017)',
+        'D = ENV.fetch("D", 1_000.5)',
+        'E = ENV.fetch("E", 1e400)',
+        "",
+      ].join("\n"),
+    });
+    const root = parsed[0]?.root as RbNode;
+    expect(
+      envReadEffects(root, { db, file: "use.rb" }).map(({ effect }) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "config-read"
+          ? [effect.interaction.name, effect.interaction.default]
+          : null,
+      ),
+    ).toEqual([
+      ["A", 7500],
+      ["B", 12],
+      ["C", 15],
+      ["D", 1000.5],
+      ["E", undefined],
+    ]);
+  });
+
   it("counts an || after &. calls on the read, which give back nil when the read is nil", async () => {
     expect(
       await fileReads(

@@ -159,6 +159,17 @@ export function stringLiteralValue(node: PyNode): string | null {
   return content;
 }
 
+/**
+ * The number an `integer` or `float` node writes, or null when it has no
+ * plain number to give. Python allows `7_500`, and a `j` suffix makes the
+ * number complex.
+ */
+export function numberLiteralValue(node: PyNode): number | null {
+  const text = node.text.replaceAll("_", "");
+  const value = /[jJ]$/.test(text) ? Number.NaN : Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
 export function booleanLiteralValue(node: PyNode): boolean | null {
   if (node.type === "true") {
     return true;

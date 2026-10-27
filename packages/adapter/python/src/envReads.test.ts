@@ -167,6 +167,19 @@ describe("os.environ spellings", () => {
     ]);
   });
 
+  it("reads a fallback written with underscores or a base prefix, and no fallback for a complex one", async () => {
+    expect(
+      await moduleDefaults(
+        'import os\nA = int(os.getenv("A", 7_500))\nB = os.getenv("B", 0x1F)\nC = os.getenv("C", 1_000.5)\nD = os.getenv("D", 2j)\n',
+      ),
+    ).toEqual([
+      ["A", 7500],
+      ["B", 31],
+      ["C", 1000.5],
+      ["D", undefined],
+    ]);
+  });
+
   it("counts a .get() read whose blank value an `or` replaces, through a call on its fallback", async () => {
     expect(
       await moduleReads(
