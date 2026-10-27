@@ -8,10 +8,11 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import {
   availableMemoryMb,
+  flagsToRelaunchWith,
   heapSizeFor,
-  heapSizeToRelaunchWith,
   heapSizeWasChosen,
   PREFERRED_HEAP_MB,
+  youngGenerationFlag,
 } from "./heapSize.js";
 
 describe("heapSizeWasChosen", () => {
@@ -46,40 +47,67 @@ describe("heapSizeFor", () => {
   });
 });
 
-describe("heapSizeToRelaunchWith", () => {
+describe("youngGenerationFlag", () => {
+  it("uses the preferred size for a large heap", () => {
+    expect(youngGenerationFlag(PREFERRED_HEAP_MB)).toBe(
+      "--max-semi-space-size=256",
+    );
+  });
+
+  it("keeps to a sixteenth of a small heap", () => {
+    expect(youngGenerationFlag(1024)).toBe("--max-semi-space-size=64");
+  });
+});
+
+describe("flagsToRelaunchWith", () => {
   const unset = {
     nodeOptions: undefined,
     execArgv: [],
     heapLimitMb: 4144,
     memoryMb: 32768,
   };
+  const young = youngGenerationFlag(PREFERRED_HEAP_MB);
 
-  it("relaunches when nobody chose a size and the default is smaller", () => {
-    expect(heapSizeToRelaunchWith(unset)).toBe(PREFERRED_HEAP_MB);
+  it("relaunches with both when nobody chose either", () => {
+    expect(flagsToRelaunchWith(unset)).toEqual([
+      `--max-old-space-size=${PREFERRED_HEAP_MB}`,
+      young,
+    ]);
   });
 
-  it("leaves a size from NODE_OPTIONS alone, even a small one", () => {
+  it("leaves a size from NODE_OPTIONS alone, and sizes the young generation to it", () => {
     expect(
-      heapSizeToRelaunchWith({
+      flagsToRelaunchWith({
         ...unset,
         nodeOptions: "--max-old-space-size=1024",
+        heapLimitMb: 1072,
       }),
-    ).toBeUndefined();
+    ).toEqual([youngGenerationFlag(1072)]);
   });
 
   it("leaves a size passed to node alone", () => {
     expect(
-      heapSizeToRelaunchWith({
+      flagsToRelaunchWith({
         ...unset,
         execArgv: ["--max-old-space-size=1024"],
+        heapLimitMb: 1072,
       }),
-    ).toBeUndefined();
+    ).toEqual([youngGenerationFlag(1072)]);
   });
 
-  it("does not relaunch when the default is already as large", () => {
+  it("leaves a young generation passed to node alone", () => {
     expect(
-      heapSizeToRelaunchWith({ ...unset, heapLimitMb: 9000 }),
-    ).toBeUndefined();
+      flagsToRelaunchWith({
+        ...unset,
+        execArgv: ["--max-old-space-size=1024", "--max_semi_space_size=32"],
+      }),
+    ).toEqual([]);
+  });
+
+  it("asks only for the young generation when the default heap is already as large", () => {
+    expect(flagsToRelaunchWith({ ...unset, heapLimitMb: 9000 })).toEqual([
+      youngGenerationFlag(9000),
+    ]);
   });
 });
 

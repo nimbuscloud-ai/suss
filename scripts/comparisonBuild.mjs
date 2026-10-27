@@ -83,17 +83,20 @@ function runOrFail(cwd, command, args, env = {}) {
 }
 
 /**
- * Gives every build the heap this checkout's CLI picks, so the CLI never
- * starts itself again and the measured process is the one doing the work.
+ * Gives every build the heap and young generation this checkout's CLI
+ * picks, so the CLI never starts itself again and the measured process
+ * is the one doing the work.
  */
 export async function heapFlags() {
   const heap = await import(
     pathToFileURL(path.join(ROOT, "packages", "cli", "dist", "heapSize.js"))
       .href
   );
+  const size = heap.heapSizeFor(heap.availableMemoryMb());
+  const young = heap.youngGenerationFlag(size);
   // A size set in NODE_OPTIONS reaches every build and wins.
   if (heap.heapSizeWasChosen(process.env.NODE_OPTIONS, [])) {
-    return [];
+    return [young];
   }
-  return [`--max-old-space-size=${heap.heapSizeFor(heap.availableMemoryMb())}`];
+  return [`--max-old-space-size=${size}`, young];
 }
