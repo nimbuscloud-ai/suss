@@ -3,13 +3,14 @@
  *
  * The checker numbers types in the order it creates them and keeps a union's
  * members sorted by that number. A run that reads the program in a different
- * order, such as one that re-reads only the files that changed since the
- * cache was written, numbers them differently, so the checker's own printer
- * writes `"b" | "a"` where the first run wrote `"a" | "b"`. A property keyed
- * by a symbol has the same problem: its name ends in the symbol's number.
+ * order numbers them differently, so the checker's own printer writes
+ * `"b" | "a"` where the first run wrote `"a" | "b"`. An object type the
+ * checker builds, such as `Omit<A & B, "x">`, lists its members in that
+ * order too, and a property keyed by a symbol ends in the symbol's number.
  *
  * Anything written into a summary goes through here instead. The text is
- * what the checker would print, with each union's members in a fixed order.
+ * what the checker would print, with each union's members and each object
+ * type's members in a fixed order.
  */
 
 import { ts } from "ts-morph";
@@ -98,8 +99,8 @@ function printedType(
   }
 
   const file = enclosing?.getSourceFile().compilerNode ?? NO_FILE;
-  const ordered = containsUnion(typeNode)
-    ? withUnionMembersOrdered(typeNode, file)
+  const ordered = containsReordered(typeNode)
+    ? withMembersOrdered(typeNode, file)
     : typeNode;
   return withoutImportQualifiers(printed(ordered, file));
 }
@@ -124,16 +125,21 @@ function printed(node: ts.Node, file: ts.SourceFile): string {
   );
 }
 
-function containsUnion(node: ts.Node): boolean {
-  if (ts.isUnionTypeNode(node)) {
+/** A union or an object type, whose members the checker orders by when it made them. */
+const isReordered = (node: ts.Node): boolean =>
+  ts.isUnionTypeNode(node) || ts.isTypeLiteralNode(node);
+
+function containsReordered(node: ts.Node): boolean {
+  if (isReordered(node)) {
     return true;
   }
   return (
-    ts.forEachChild(node, (child) => containsUnion(child) || undefined) === true
+    ts.forEachChild(node, (child) => containsReordered(child) || undefined) ===
+    true
   );
 }
 
-function withUnionMembersOrdered(
+function withMembersOrdered(
   root: ts.TypeNode,
   file: ts.SourceFile,
 ): ts.TypeNode {
@@ -141,13 +147,19 @@ function withUnionMembersOrdered(
     (context) => {
       const visit = (node: ts.Node): ts.Node => {
         const visited = ts.visitEachChild(node, visit, context);
-        if (!ts.isUnionTypeNode(visited)) {
-          return visited;
+        if (ts.isUnionTypeNode(visited)) {
+          return context.factory.updateUnionTypeNode(
+            visited,
+            context.factory.createNodeArray(inStableOrder(visited.types, file)),
+          );
         }
-        return context.factory.updateUnionTypeNode(
-          visited,
-          context.factory.createNodeArray(inStableOrder(visited.types, file)),
-        );
+        if (ts.isTypeLiteralNode(visited)) {
+          return context.factory.updateTypeLiteralNode(
+            visited,
+            context.factory.createNodeArray(inNameOrder(visited.members, file)),
+          );
+        }
+        return visited;
       };
       return (node) => visit(node) as ts.TypeNode;
     },
@@ -155,6 +167,24 @@ function withUnionMembersOrdered(
   const [ordered] = result.transformed;
   result.dispose();
   return ordered;
+}
+
+/**
+ * An object type's members sorted by name. Index, call and construct
+ * signatures have none and come first, and overloads of one method keep
+ * the order they were written in.
+ */
+function inNameOrder(
+  members: ts.NodeArray<ts.TypeElement>,
+  file: ts.SourceFile,
+): ts.TypeElement[] {
+  return members
+    .map((member) => ({
+      member,
+      name: member.name === undefined ? "" : printed(member.name, file),
+    }))
+    .sort((a, b) => compareText(a.name, b.name))
+    .map(({ member }) => member);
 }
 
 function inStableOrder(
