@@ -56,6 +56,17 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedMembers",
 ];
 
+/**
+ * Relations the rules derive that keep one question's rows only. Each
+ * is taken back with the question, so a rule joining one reads what
+ * this question found instead of what every earlier question left.
+ * The forwards a question derives are new to it each time, and joined
+ * against every chain ever asked they reread rows that add nothing.
+ */
+export const QUESTION_SCOPED_RELATIONS: readonly string[] = [
+  "callOriginImportAsked",
+];
+
 const NO_LANGUAGE_RULES: readonly Rule[] = [];
 
 const programs = new WeakMap<readonly Rule[], OnDemandRules>();
@@ -133,7 +144,11 @@ export function queryFacts(program: OnDemandRules): readonly string[] {
   if (program.demandDriven.length === 0) {
     return [];
   }
-  return [...program.demandDriven, ...ASKING_RELATIONS];
+  return [
+    ...program.demandDriven,
+    ...ASKING_RELATIONS,
+    ...QUESTION_SCOPED_RELATIONS,
+  ];
 }
 
 // A cache's ledger, which keeps an answer until something behind it
