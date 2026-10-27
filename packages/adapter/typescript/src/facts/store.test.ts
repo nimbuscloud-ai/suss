@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { profileEvaluation } from "@suss/datalog";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
+import { createDependencySink, withDependencySink } from "../depTracking.js";
 import { ResolutionStore } from "./store.js";
 
 function projectOf(files: Record<string, string>): Project {
@@ -819,6 +820,25 @@ describe("a query rooted at a wrapped value", () => {
     );
 
     expect(resolved?.getText()).toContain('path: "/x"');
+  });
+
+  it("gives a repeated question the same answer and still counts the files it read", () => {
+    const project = projectOf({
+      "/contract.ts": `export const route = { method: "get", path: "/x" };`,
+      "/mod.ts": `
+        import { route } from "./contract";
+        app.openapi(route, async () => "h");
+      `,
+    });
+    const store = new ResolutionStore();
+    const route = argumentOf(project, "/mod.ts", "app.openapi", 0);
+    const first = store.resolveObject(route);
+    const sink = createDependencySink();
+    const second = withDependencySink(sink, () => store.resolveObject(route));
+
+    expect(first?.getText()).toContain('path: "/x"');
+    expect(second).toBe(first);
+    expect([...sink.files]).toContain("/contract.ts");
   });
 });
 

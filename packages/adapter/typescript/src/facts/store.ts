@@ -104,6 +104,16 @@ const NOT_BASE_FACTS = new Set([
   ...ASKING_RELATIONS,
 ]);
 
+/**
+ * Every relation either program derives. The rest are facts read from
+ * source, which are only ever added, so their count changes exactly
+ * when the facts do.
+ */
+const DERIVED_RELATIONS = new Set([
+  ...NOT_BASE_FACTS,
+  ...resolutionUnderProgram().rules.map((r) => r.head.relation),
+]);
+
 type Question =
   | "wanted"
   | "wantedWritten"
@@ -287,6 +297,11 @@ export class ResolutionStore {
   private readonly constructionSites = new Map<string, string[]>();
   /** What each local's reads do with it, by its declaration. A local's function is walked whole, so an answer stays true. */
   private readonly localUses = new Map<string, ValueUses>();
+  /** See `remembered`. */
+  private readonly answers = new Map<
+    string,
+    { answer: unknown; walked: string[]; facts: number }
+  >();
   /** Files the most recent query read, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   /** See `environmentSiteFiles`; null until the first env question. */
@@ -349,12 +364,17 @@ export class ResolutionStore {
    */
   resolveCallableSources(value: Node, alsoFrom?: SourceFile): Node[] {
     const target = factKeyOf(value);
-    return this.askAbout(
-      target,
-      "wanted",
-      () => this.lookupSources(target),
-      alsoFrom,
-    );
+    const key = `sources|${nodeId(target)}|${alsoFrom?.getFilePath() ?? ""}`;
+    return [
+      ...this.remembered(key, () =>
+        this.askAbout(
+          target,
+          "wanted",
+          () => this.lookupSources(target),
+          alsoFrom,
+        ),
+      ),
+    ];
   }
 
   /**
@@ -429,7 +449,41 @@ export class ResolutionStore {
 
   resolveObject(value: Node): Node | null {
     const target = factKeyOf(value);
-    return this.askAbout(target, "wanted", () => this.lookupObject(target));
+    return this.remembered(`object|${nodeId(target)}`, () =>
+      this.askAbout(target, "wanted", () => this.lookupObject(target)),
+    );
+  }
+
+  /**
+   * A question asked again over the same facts reads the same files and
+   * derives the same answer, so the store gives back the one it found
+   * before. The files that answer read still count as read.
+   */
+  private remembered<T>(key: string, ask: () => T): T {
+    const known = this.answers.get(key);
+    if (known !== undefined && known.facts === this.sourceFactCount()) {
+      for (const walkedPath of known.walked) {
+        recordFileDependency(walkedPath);
+      }
+      return known.answer as T;
+    }
+    const answer = ask();
+    this.answers.set(key, {
+      answer,
+      walked: [...this.lastQueryWalked],
+      facts: this.sourceFactCount(),
+    });
+    return answer;
+  }
+
+  private sourceFactCount(): number {
+    let count = 0;
+    for (const relation of this.db.relationNames()) {
+      if (!DERIVED_RELATIONS.has(relation)) {
+        count += this.db.size(relation);
+      }
+    }
+    return count;
   }
 
   /**
