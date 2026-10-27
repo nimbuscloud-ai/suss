@@ -94,6 +94,20 @@ describe("reading a type the same way whatever the checker read first", () => {
     expect(Object.keys(recordProperties(cold.shape))).toEqual(["id", "total"]);
   });
 
+  it("prints an object type the checker builds with its members in name order", () => {
+    const source = [
+      'declare const view: { [K in "status" | "total" | "id"]: string };',
+      "const value = view;",
+    ].join("\n");
+    const [cold, primed] = bothWays(
+      source,
+      'export declare const early: "id";',
+    );
+
+    expect(primed).toEqual(cold);
+    expect(cold.text).toBe("{ id: string; status: string; total: string; }");
+  });
+
   it("names a property keyed by a symbol the way the source writes it", () => {
     const node = valueAfter(
       [
