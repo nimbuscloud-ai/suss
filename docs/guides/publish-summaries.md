@@ -24,7 +24,7 @@ The file works on any machine, because `extract` writes every path in it relativ
     "workspace": "catalog-api"
   },
   "confidence": { "source": "inferred_static", "level": "high" },
-  "schemaVersion": 6
+  "schemaVersion": 7
 }
 ```
 

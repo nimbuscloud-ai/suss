@@ -9,7 +9,7 @@ A summary file is a JSON array of objects, one per code unit:
 
 ```json
 [
-  { "schemaVersion": 6, "kind": "handler", "identity": { }, "transitions": [ ] }
+  { "schemaVersion": 7, "kind": "handler", "identity": { }, "transitions": [ ] }
 ]
 ```
 
@@ -17,12 +17,23 @@ The file has one summary per line and no indentation. The `[` and the `]` are on
 
 ```
 [
-{"schemaVersion":6,"kind":"handler","identity":{},"transitions":[]},
-{"schemaVersion":6,"kind":"client","identity":{},"transitions":[]}
+{"schemaVersion":7,"kind":"handler","identity":{},"transitions":[]},
+{"schemaVersion":7,"kind":"client","identity":{},"transitions":[]}
 ]
 ```
 
-Any JSON parser reads it. A tool that reads a file too large for one string can read it a line at a time and parse each line, after dropping the trailing comma. For indented output to read, run `jq . summaries.json`. suss writes the file under a temporary name and renames it into place at the end, so a run killed while writing leaves the previous file. Files written by releases before 0.34.1 are indented, and suss still reads them when they are under about 512 MB.
+Any JSON parser reads it. A tool that reads a file too large for one string can read it a line at a time and parse each line, after dropping the trailing comma. suss writes the file under a temporary name and renames it into place at the end, so a run killed while writing leaves the previous file. Files written by releases before 0.34.1 are indented, and suss still reads them when they are under about 512 MB.
+
+### Values written once
+
+Summaries repeat a lot of what they say. A GraphQL client summary has a copy of its component's transitions, and a transition lists every effect reached before it returns. From version 7, a file writes an object or array that appears more than once, and prints to 32 characters or more, in full the first time and as a reference after that:
+
+```
+{"schemaVersion":7,"kind":"client","transitions":[{"id":"Orders.list:return:none:a57768c","effects":[{"$def":1,"$value":{"type":"invocation","callee":"fetchOrders","args":[]}}]}]},
+{"schemaVersion":7,"kind":"client","transitions":[{"id":"Orders.refresh:return:none:a57768c","effects":[{"$ref":1}]}]}
+```
+
+A reader replaces `{"$def":n,"$value":v}` with `v`, and `{"$ref":n}` with the `v` of the `$def` that has the same `n`, which comes earlier in the same file. A summary itself is never a reference, so each line is still one summary. `parseSummaries` and `readSummaryFile` put every value back before they validate, so what they return is the same as for a file written without references. A tool that parses the JSON itself has to do the same, reading the lines in order. On a 6,000-file frontend this took the file from 653 MB to 52 MB.
 
 `suss extract` writes one, `suss contract` writes one from a schema or a deploy template, and `suss check`, `suss inspect` and `suss ask` all read them. The zod schemas in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) are the one place the format is written by hand. [IR types](/reference/ir) goes through every type field by field.
 
@@ -84,7 +95,7 @@ Here is a whole summary, from `suss extract --dir fixtures/express -f express`, 
     }
   ],
   "confidence": { "source": "inferred_static", "level": "high" },
-  "schemaVersion": 6
+  "schemaVersion": 7
 }
 ```
 
@@ -232,7 +243,7 @@ A hole's name is what the code called it, or a placeholder such as `value` where
 
 ## Versions
 
-Every summary this build writes says `"schemaVersion": 6`. A summary without the field is version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read every version ever published, so a published artifact never needs rewriting.
+Every summary this build writes says `"schemaVersion": 7`. A summary without the field is version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read every version ever published, so a published artifact never needs rewriting.
 
 | Version | What changed |
 |---|---|
@@ -242,6 +253,7 @@ Every summary this build writes says `"schemaVersion": 6`. A summary without the
 | 4 | One `storage` variant replaces `storage-relational`. |
 | 5 | A store and a bus go by the names OpenTelemetry's semantic conventions give them, so a summary and a span spell one boundary the same way. |
 | 6 | A metric's measurement words are OpenTelemetry's too: `histogram`, and `gauge`, `delta`, `cumulative` for what one measurement covers. |
+| 7 | A file writes a value it repeats once and refers back to it after, as [values written once](#values-written-once) describes. A summary means the same as at 6. |
 
 Two of those bumps needed a hand edit. Moving to 5 changes a suppression that says which bus (`bus:sqs order.placed` becomes `bus:aws_sqs order.placed`), and a `storageSystem` of `postgres` in pack config becomes `postgresql`. Nothing else, at any version, needs one.
 
