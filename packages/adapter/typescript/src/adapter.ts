@@ -85,6 +85,7 @@ import {
   countUnmatchedReturns,
   extractRawBranches,
 } from "./assembly.js";
+import { noteRecognizerTally } from "./bodyWalks.js";
 import { pinAutomaticTypes } from "./bootstrap/automaticTypes.js";
 import {
   admitListedFiles,
@@ -1243,13 +1244,15 @@ function reportingTo<TCtx>(
   recognize: (node: unknown, ctx: TCtx) => Effect[] | null,
   tally: PackTally,
 ): (node: unknown, ctx: TCtx) => Effect[] | null {
-  return (node, ctx) => {
+  const reporting = (node: unknown, ctx: TCtx): Effect[] | null => {
     const effects = recognize(node, ctx);
     if (effects !== null) {
       tally.effectsRecognized += effects.length;
     }
     return effects;
   };
+  noteRecognizerTally(reporting, tally);
+  return reporting;
 }
 
 function collectInvocationRecognizers(

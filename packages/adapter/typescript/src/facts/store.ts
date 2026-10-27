@@ -476,7 +476,12 @@ export class ResolutionStore {
     return answer;
   }
 
-  private sourceFactCount(): number {
+  /**
+   * How many facts the store has read from source. They are only ever
+   * added, so work that asked the store questions and found this number
+   * unchanged afterwards would get the same answers asking again.
+   */
+  sourceFactCount(): number {
     let count = 0;
     for (const relation of this.db.relationNames()) {
       if (!DERIVED_RELATIONS.has(relation)) {
