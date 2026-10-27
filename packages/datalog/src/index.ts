@@ -988,6 +988,8 @@ function narrowedFurther(
 interface ConstantColumns {
   columns: readonly number[];
   values: readonly Atom[];
+  /** Which of a round's sorted new facts the first constant reads, as `deltaBucketKey` spells it. */
+  bucketKey: string;
 }
 
 const constantColumns = new WeakMap<Literal, ConstantColumns | null>();
@@ -1003,7 +1005,14 @@ function constantColumnsOf(literal: Literal): ConstantColumns | null {
         values.push(term.value);
       }
     });
-    known = columns.length === 0 ? null : { columns, values };
+    known =
+      columns.length === 0
+        ? null
+        : {
+            columns,
+            values,
+            bucketKey: deltaBucketKey(literal.relation, columns[0] as number),
+          };
     constantColumns.set(literal, known);
   }
   return known;
@@ -1036,9 +1045,7 @@ function hasNoNewRows(
   if (rows.length === 0 || constants === null) {
     return rows.length === 0;
   }
-  const buckets = deltaBuckets
-    .get(deltas)
-    ?.get(deltaBucketKey(literal.relation, constants.columns[0]));
+  const buckets = deltaBuckets.get(deltas)?.get(constants.bucketKey);
   return buckets !== undefined && !buckets.has(constants.values[0]);
 }
 
@@ -1065,7 +1072,7 @@ function deltaRows(
     deltaBuckets.set(deltas, byColumn);
   }
   const column = constants.columns[0];
-  const key = deltaBucketKey(literal.relation, column);
+  const key = constants.bucketKey;
   let buckets = byColumn.get(key);
   if (buckets === undefined) {
     buckets = new Map();
@@ -1536,6 +1543,20 @@ function runRules<Tag>(
   // what the strata below it just derived.
   const marks = canResume(rules, state) ? state.marks : undefined;
 
+  // Facts only arrive while the strata run, so a rule found able to
+  // produce stays able for the rest of this evaluation.
+  const producible = new Set<Rule>();
+  const canProduce = (r: Rule): boolean => {
+    if (producible.has(r)) {
+      return true;
+    }
+    if (!couldProduce(db, r)) {
+      return false;
+    }
+    producible.add(r);
+    return true;
+  };
+
   const runStratum = (stratum: Stratum): void => {
     let delta = new Map<string, Tuple[]>();
 
@@ -1619,7 +1640,7 @@ function runRules<Tag>(
     ): void => {
       for (const at of rulesReading(stratum, seed, derivedOnly)) {
         const r = stratum.rules[at];
-        if (!couldProduce(db, r)) {
+        if (!canProduce(r)) {
           continue;
         }
         const positives = positivesOf(r);
@@ -1643,7 +1664,7 @@ function runRules<Tag>(
       // Seed round: naive evaluation with every positive literal drawn
       // from the full database.
       for (const r of stratum.rules) {
-        if (!couldProduce(db, r)) {
+        if (!canProduce(r)) {
           continue;
         }
         const all = new Map<string, readonly Tuple[]>();

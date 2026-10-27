@@ -10,7 +10,11 @@ import { Node, type SourceFile, ts } from "ts-morph";
 
 import { forEachDescendantWhere } from "../walk/rawDescent.js";
 
-import type { CallExpression, NewExpression } from "ts-morph";
+import type {
+  CallExpression,
+  ImportDeclaration,
+  NewExpression,
+} from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 export interface ImportedCallSpec {
@@ -70,7 +74,11 @@ export function importedCallOrigins(
   const candidates: Array<CallExpression | NewExpression> = [];
   forEachDescendantWhere(sourceFile, callsANamedCallee, (node) => {
     const call = node as CallExpression | NewExpression;
-    if (!declaredLocally(call.getExpression())) {
+    const callee = call.getExpression();
+    if (
+      !declaredLocally(callee) &&
+      !importedFromAnotherPackage(callee, module)
+    ) {
       candidates.push(call);
     }
     return false;
@@ -109,6 +117,51 @@ function callsANamedCallee(raw: ts.Node): boolean {
   return (
     (ts.isCallExpression(raw) || ts.isNewExpression(raw)) &&
     ts.isIdentifier(raw.expression)
+  );
+}
+
+/** Whether `specifier` is `module`, a path inside it, or a package `module` is inside. */
+const samePackage = (specifier: string, module: string): boolean =>
+  specifier === module ||
+  specifier.startsWith(`${module}/`) ||
+  module.startsWith(`${specifier}/`);
+
+/** The import a named or default import binding comes from. */
+function importOf(declaration: Node): ImportDeclaration | undefined {
+  if (Node.isImportSpecifier(declaration)) {
+    return declaration.getImportDeclaration();
+  }
+  const parent = Node.isImportClause(declaration)
+    ? declaration.getParent()
+    : undefined;
+  return parent !== undefined && Node.isImportDeclaration(parent)
+    ? parent
+    : undefined;
+}
+
+/**
+ * Whether every declaration behind a name is an import from a package
+ * other than `module`. The store reads a package only as far as its
+ * name, so a name imported from one never comes out as another's export.
+ * An import that resolves to a project file can re-export anything.
+ */
+function importedFromAnotherPackage(callee: Node, module: string): boolean {
+  const declarations = callee.getSymbol()?.getDeclarations() ?? [];
+  return (
+    declarations.length > 0 &&
+    declarations.every((declaration) => {
+      const from = importOf(declaration);
+      if (from === undefined) {
+        return false;
+      }
+      const resolved = from.getModuleSpecifierSourceFile();
+      const specifier = from.getModuleSpecifierValue();
+      return (
+        (resolved === undefined || resolved.isInNodeModules()) &&
+        !specifier.startsWith(".") &&
+        !samePackage(specifier, module)
+      );
+    })
   );
 }
 
