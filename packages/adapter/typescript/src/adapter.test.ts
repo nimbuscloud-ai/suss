@@ -5480,6 +5480,55 @@ describe("wrapper expansion", () => {
     ).toBe("getJson");
   });
 
+  it("reads no request from a test calling the wrapper, since a test passes a stand-in", async () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function getPet(id: number) {
+        return getJson<unknown>(\`/pet/\${id}\`);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.test.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function fetchesAStandIn() {
+        return getJson<unknown>("/stand-in");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(summaries.find((s) => s.identity.name === "getPet")?.kind).toBe(
+      "client",
+    );
+    expect(
+      summaries.find((s) => s.identity.name === "fetchesAStandIn"),
+    ).toBeUndefined();
+  });
+
   it("tells a wrapper's caller how the client delivers failures and redirects", async () => {
     const throwingPack: PatternPack = {
       ...axiosLikePack,
