@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -43,7 +43,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
   });
 
   it("points the route at the app's dependency, the middleware, the router's and its own dependency, and the error handler", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
 
     expect(
       routeFor(summaries, "POST", "/v1/tenants").metadata?.wrappers,
@@ -66,7 +66,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
   });
 
   it("gives a route written in another file on an imported router that router's dependency", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
 
     const audit = routeFor(summaries, "GET", "/v1/tenants/{tenant_id}/audit");
     expect(audit.metadata?.wrappers).toEqual({
@@ -81,7 +81,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
   });
 
   it("puts the statuses on the wrappers that produce them", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const statuses = summaries.map((one) => [
       one.identity.name,
       statusesOf(one),
@@ -94,7 +94,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
   });
 
   it("reports the wrappers' statuses as the route's own, in the order they run", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
 
     expect(
       statusesOf(routeFor(summaries, "GET", "/v1/tenants/{tenant_id}")),
@@ -141,7 +141,7 @@ describe("read a flask-restx service whose statuses come from around the handler
   });
 
   it("reports the hook's 401 and the handler's 500 as the resource's own", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
 
     expect(
       statusesOf(routeFor(summaries, "GET", "/v1/tenants/{tenant_id}")),

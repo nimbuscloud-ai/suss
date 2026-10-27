@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -17,7 +17,7 @@ describe("read the routes a project's own helpers register", () => {
   const summariesFile = path.join(out, "api.json");
 
   function routes(): string[] {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     return summaries
       .flatMap((one) => {
         const semantics = one.identity.boundaryBinding?.semantics;
@@ -58,7 +58,7 @@ describe("read the routes a project's own helpers register", () => {
   });
 
   it("reports the status the call site's own handler sends", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const created = summaries.find((one) => {
       const semantics = one.identity.boundaryBinding?.semantics;
       return semantics?.name === "rest" && semantics.path === "/users";
@@ -75,7 +75,7 @@ describe("read the routes a project's own helpers register", () => {
   });
 
   it("says nothing extra when the one caller settles the app", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     // The cache object's `onHit` runs the arrow its caller passes.
     expect(
       summaries.flatMap((one) =>
@@ -108,7 +108,7 @@ describe("say which registration a second app took away", () => {
     ]);
     expect(extract.status, extract.stderr).toBe(0);
 
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const stops = summaries
       .flatMap((one) => one.gaps)
       .filter((gap) => gap.type === "unfollowedCall");
@@ -118,7 +118,7 @@ describe("say which registration a second app took away", () => {
   });
 
   it("claims no route it could not attribute", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const routes = summaries.flatMap((one) => {
       const semantics = one.identity.boundaryBinding?.semantics;
       return semantics?.name === "rest" ? [semantics.path] : [];

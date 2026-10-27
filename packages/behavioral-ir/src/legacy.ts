@@ -13,25 +13,22 @@
  * run uses.
  */
 
+import { SharedValueReader } from "./sharedValues.js";
 import { summaryIdFromParts } from "./summaryId.js";
 
 /**
  * The summary format version this build writes. Absent means version 1.
  *
  * 1: an identity field a source did not name is the empty string.
- * 2: those fields are null instead, the empty string is invalid, and
- *    `"*"` is the REST method wildcard.
- * 3: a parameter input's `role` is null where nobody could read it.
- *    Older artifacts always have one, so nothing is rewritten on the
- *    way in and the bump only marks that null as allowed.
+ * 2: those fields are null instead, and `"*"` is the REST method wildcard.
+ * 3: a parameter input's `role` may be null, and nothing is rewritten.
  * 4: one `storage` variant replaces `storage-relational`.
- * 5: a store and a bus go by the name OpenTelemetry's semantic
- *    conventions give them, so a summary and a span spell the same
- *    boundary the same way.
- * 6: a metric's measurement words are OpenTelemetry's too: histogram,
- *    and gauge, delta, cumulative for what one covers.
+ * 5: a store and a bus go by OpenTelemetry's semantic convention names.
+ * 6: a metric's measurement words are OpenTelemetry's too.
+ * 7: a file writes a value it repeats once and refers back to it after.
+ *    The reader puts it back first, so a summary reads as it did at 6.
  */
-export const SUMMARY_SCHEMA_VERSION = 6;
+export const SUMMARY_SCHEMA_VERSION = 7;
 
 /** An empty identity field at or above this version is invalid, not legacy. */
 const NULL_IDENTITY_VERSION = 2;
@@ -252,10 +249,11 @@ function backfillIdentityId(input: LooseRecord): boolean {
 }
 
 /**
- * Normalize every element, and report whether any id was backfilled. A
- * per-summary backfill can give two summaries of the same function one
- * id, so the parse boundary settles collisions afterward, and only in
- * that case: an artifact that wrote its own ids keeps them.
+ * Put back the values the artifact wrote once, normalize every element,
+ * and report whether any id was backfilled. A per-summary backfill can
+ * give two summaries of the same function one id, so the parse boundary
+ * settles collisions afterward, and only in that case: an artifact that
+ * wrote its own ids keeps them.
  */
 export function normalizeLegacyArray(input: unknown): {
   value: unknown;
@@ -265,8 +263,11 @@ export function normalizeLegacyArray(input: unknown): {
     return { value: input, anyIdBackfilled: false };
   }
   let anyIdBackfilled = false;
+  const shared = new SharedValueReader();
   const value = input.map((element) => {
-    const { value: normalized, idBackfilled } = normalizeOne(element);
+    const { value: normalized, idBackfilled } = normalizeOne(
+      shared.expand(element),
+    );
     anyIdBackfilled = anyIdBackfilled || idBackfilled;
     return normalized;
   });

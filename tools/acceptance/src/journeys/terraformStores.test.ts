@@ -2,9 +2,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 /**
  * The stores a Terraform module declares, paired against the code that
@@ -46,9 +44,7 @@ describe("check code against the stores a Terraform module declares", () => {
   });
 
   it("reads a bucket and a cache cluster out of the configuration", () => {
-    const declared = (readJson(infraFile) as BehavioralSummary[]).map(
-      (s) => s.identity.name,
-    );
+    const declared = readSummaries(infraFile).map((s) => s.identity.name);
     expect(declared).toContain("google_storage_bucket.uploads");
     expect(declared).toContain("aws_elasticache_cluster.sessions");
     expect(declared).toContain("aws_s3_bucket.archive");

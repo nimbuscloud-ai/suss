@@ -18,6 +18,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { diffSummaries } from "@suss/behavioral-ir";
+import { readSummaryFile } from "@suss/behavioral-ir/files";
 
 import { runCli } from "./run.js";
 
@@ -203,7 +204,7 @@ async function extractTo(
     out,
   ]);
   expect(code).toBe(0);
-  return JSON.parse(fs.readFileSync(out, "utf8")) as BehavioralSummary[];
+  return readSummaryFile(out);
 }
 
 function writesOf(summary: BehavioralSummary) {
