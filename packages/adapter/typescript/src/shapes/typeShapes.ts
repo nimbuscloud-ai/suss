@@ -108,16 +108,19 @@ function overloadIsAGuess(node: Node): boolean {
   if (signatures.length < 2) {
     return false;
   }
-  const returns = new Set(
-    signatures.map((signature) => signature.getReturnType().getText(node)),
-  );
-  if (returns.size < 2) {
-    return false;
-  }
-  return node.getArguments().some((argument) => {
+  // Printing every overload's return type is the costly part, and an
+  // argument the checker could not type is rare, so that comes first.
+  const untypedArgument = node.getArguments().some((argument) => {
     const type = argument.getType();
     return type.isAny() || type.isNever();
   });
+  if (!untypedArgument) {
+    return false;
+  }
+  const returns = new Set(
+    signatures.map((signature) => signature.getReturnType().getText(node)),
+  );
+  return returns.size >= 2;
 }
 
 /**
