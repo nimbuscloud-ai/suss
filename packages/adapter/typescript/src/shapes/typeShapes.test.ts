@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
+import { withDefinitions } from "./definitions.js";
 import { shapeFromNodeType } from "./typeShapes.js";
 
 import type { Node } from "ts-morph";
@@ -140,6 +141,27 @@ describe("shapeFromNodeType", () => {
       expect(shapeFromNodeType(callWith("declare const row: never;"))).toEqual({
         type: "unknown",
       });
+    });
+  });
+
+  describe("named types written once", () => {
+    it("writes down every link of a long chain of named types", () => {
+      const links = 3000;
+      const chain = Array.from(
+        { length: links },
+        (_, at) => `interface Link${at} { next: Link${at + 1}; at: number }`,
+      ).join("\n");
+      const node = lastInitializer(
+        {},
+        `${chain}\ninterface Link${links} { at: number }\ndeclare const head: Link0;\nconst value = head;`,
+      );
+
+      const { value, definitions } = withDefinitions(() =>
+        shapeFromNodeType(node),
+      );
+
+      expect(value).toMatchObject({ type: "ref", name: "Link0" });
+      expect(Object.keys(definitions ?? {})).toHaveLength(links + 1);
     });
   });
 });

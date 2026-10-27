@@ -28,6 +28,14 @@ export interface DefinitionTable {
    */
   reserve(key: string): void;
   define(key: string, shape: TypeShape): void;
+  /**
+   * Expand a reserved key once the expansion under way is done. One
+   * named type mentions another, and expanding each inside the last ran
+   * out of stack on a long enough chain of them.
+   */
+  defer(key: string, expand: () => TypeShape): void;
+  /** Expand every deferred key, unless an outer call is already doing it. */
+  settle(): void;
   /** Every definition worth carrying, or null when there are none. */
   collected(): Record<string, TypeShape> | null;
 }
@@ -39,6 +47,8 @@ export const definitionsInProgress = (): DefinitionTable | null => current;
 
 export function createDefinitionTable(): DefinitionTable {
   const shapes = new Map<string, TypeShape | null>();
+  const deferred: Array<{ key: string; expand: () => TypeShape }> = [];
+  let settling = false;
   return {
     has: (key) => shapes.has(key),
     reserve: (key) => {
@@ -46,6 +56,22 @@ export function createDefinitionTable(): DefinitionTable {
     },
     define: (key, shape) => {
       shapes.set(key, shape);
+    },
+    defer: (key, expand) => {
+      deferred.push({ key, expand });
+    },
+    settle: () => {
+      if (settling) {
+        return;
+      }
+      settling = true;
+      try {
+        for (let next = deferred.shift(); next; next = deferred.shift()) {
+          shapes.set(next.key, next.expand());
+        }
+      } finally {
+        settling = false;
+      }
     },
     // Sorted because the walk meets types in the checker's union order,
     // which changes between runs.
