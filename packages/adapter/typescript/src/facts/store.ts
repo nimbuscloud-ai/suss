@@ -14,7 +14,6 @@
 
 import { Node } from "ts-morph";
 
-import { isTestFile } from "@suss/behavioral-ir";
 import {
   clearRelations,
   Database,
@@ -52,6 +51,7 @@ import {
 import { checkerReads, sourceFileFor } from "../bootstrap/sourceFileLookup.js";
 import { recordFileDependency } from "../depTracking.js";
 import { isFunctionRoot } from "../discovery/shared.js";
+import { inTestFile } from "../testCode.js";
 import { emitContainerWrites } from "./containerWrites.js";
 import {
   createNodeTable,
@@ -2201,10 +2201,6 @@ function namesPackage(moduleKey: string, packages: string[]): boolean {
     [moduleKey, ...packagesDeclaring(moduleKey)],
     packages,
   );
-}
-
-function inTestFile(node: Node): boolean {
-  return isTestFile(node.getSourceFile().getFilePath());
 }
 
 /** A value that refers to nothing speaks for itself. */

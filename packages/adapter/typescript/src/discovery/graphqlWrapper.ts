@@ -12,6 +12,7 @@
 
 import { Node } from "ts-morph";
 
+import { testCallingProduction } from "../testCode.js";
 import { peelSyntax } from "../walk/unwrap.js";
 import {
   enclosingFunctionRoot,
@@ -137,6 +138,11 @@ function expandParameter(
   const units: DiscoveredUnit[] = [];
   let unfollowed = 0;
   for (const { call, argument } of passed) {
+    // A test passes the wrapper a stand-in document, which is no
+    // operation production code sends.
+    if (testCallingProduction(call, parameter)) {
+      continue;
+    }
     const caller = enclosingFunctionRoot(call);
     if (caller === null || !Node.isCallExpression(call)) {
       unfollowed++;
