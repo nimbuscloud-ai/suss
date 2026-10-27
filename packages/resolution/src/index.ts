@@ -2556,13 +2556,22 @@ export const RESOLUTION_QUESTIONS = [
     ],
   ),
   // An import of a project barrel is an import of what the barrel
-  // forwards, so the pair surfaces the module behind the chain.
+  // forwards, so the pair surfaces the module behind the chain. The
+  // forwards meet only the imports this question's chains end at.
+  rule(
+    "callOriginImportAsked",
+    [v("m"), v("n"), v("x")],
+    [
+      lit("callOriginChain", v("x"), v("y")),
+      lit("wantedCallOrigin", v("x")),
+      lit("imports", v("y"), v("m"), v("n")),
+    ],
+  ),
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m2"), v("n2")],
     [
-      lit("callOriginChain", v("x"), v("y")),
-      lit("imports", v("y"), v("m"), v("n")),
+      lit("callOriginImportAsked", v("m"), v("n"), v("x")),
       lit("moduleForwards", v("m"), v("n"), v("m2"), v("n2")),
     ],
   ),
