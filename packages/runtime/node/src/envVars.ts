@@ -262,7 +262,9 @@ function readsThroughHelperCall(
     });
   });
 
-  const wrapped = isDefaultedAt(call);
+  // Most calls pass no variable name, and whether the call itself is
+  // defaulted costs a walk over its uses, so it is asked only when needed.
+  const wrapped = byName.size > 0 && isDefaultedAt(call);
   return [
     ...[...byName].map(([name, read]) => ({
       name,
