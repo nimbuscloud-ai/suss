@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -44,7 +44,7 @@ describe("read a service whose statuses come from around the handler", () => {
   });
 
   it("points the route at each wrapper's own summary", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const route = routeFor(summaries, "/v1/tenants/:id");
 
     expect(route.metadata?.wrappers).toEqual({
@@ -70,7 +70,7 @@ describe("read a service whose statuses come from around the handler", () => {
   });
 
   it("puts the statuses on the wrappers that produce them", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const statuses = summaries.map((one) => [
       one.identity.name,
       one.transitions.flatMap((transition) =>
@@ -87,7 +87,7 @@ describe("read a service whose statuses come from around the handler", () => {
   });
 
   it("reports the middleware's 401, the hook's 400 and the error handler's 500 as the route's own behaviour", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
 
     expect(statusesOf(routeFor(summaries, "/v1/tenants/:id"))).toEqual([
       401, 400, 404, 200,
@@ -98,7 +98,7 @@ describe("read a service whose statuses come from around the handler", () => {
   });
 
   it("says which wrapper each of those came from", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const route = routeFor(summaries, "/v1/tenants");
 
     expect(
@@ -120,7 +120,7 @@ describe("read a service whose statuses come from around the handler", () => {
   });
 
   it("reports the hook's 400 on a route outside the middleware's path pattern", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const health = routeFor(summaries, "/health");
 
     expect(statusesOf(health)).toEqual([400, 200]);
@@ -141,7 +141,7 @@ describe("read a service whose statuses come from around the handler", () => {
   });
 
   it("says on every route that a factory it could not read registered something", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
 
     for (const path of [
       "/v1/tenants/:id",
@@ -156,7 +156,7 @@ describe("read a service whose statuses come from around the handler", () => {
   });
 
   it("compares a route's declared responses against what its wrappers produce", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const usage = routeFor(summaries, "/v1/tenants/{id}/usage");
 
     expect(statusesOf(usage)).toEqual([401, 429, 400, 200]);

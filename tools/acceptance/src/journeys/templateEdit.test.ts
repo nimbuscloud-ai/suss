@@ -3,9 +3,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { copyOfFixture, readJson, runSuss } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { copyOfFixture, readSummaries, runSuss } from "../harness.js";
 
 /**
  * Wire a Lambda to something else in the SAM template and run extract
@@ -34,7 +32,7 @@ describe("extract after the template changed and nothing else did", () => {
       codeFile,
     ]);
     expect(run.status, run.stderr).toBe(0);
-    const summaries = readJson(codeFile) as BehavioralSummary[];
+    const summaries = readSummaries(codeFile);
     return {
       output: run.output,
       wires: summaries.flatMap((summary) => {

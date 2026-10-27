@@ -11,6 +11,8 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { readSummaryFile } from "@suss/behavioral-ir/files";
+
 import { runCli } from "./run.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -156,9 +158,7 @@ beforeAll(async () => {
       path.join(out, "code.json"),
     ]),
   ).toBe(0);
-  summaries = JSON.parse(
-    fs.readFileSync(path.join(out, "code.json"), "utf8"),
-  ) as BehavioralSummary[];
+  summaries = readSummaryFile(path.join(out, "code.json"));
 
   const report = path.join(root, "check.json");
   await run([
@@ -297,11 +297,9 @@ describe.each(OTHER_RUNNERS)("a PRD listing $runner tests", (each) => {
         path.join(summaries, "code.json"),
       ]),
     ).toBe(0);
-    tests = (
-      JSON.parse(
-        fs.readFileSync(path.join(summaries, "code.json"), "utf8"),
-      ) as BehavioralSummary[]
-    ).filter((one) => one.kind === "test");
+    tests = readSummaryFile(path.join(summaries, "code.json")).filter(
+      (one) => one.kind === "test",
+    );
 
     const report = path.join(out, "check.json");
     await run([

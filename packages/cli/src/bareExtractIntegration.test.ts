@@ -10,9 +10,10 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runCli } from "./run.js";
+import { parseSummaries } from "@suss/behavioral-ir";
+import { readSummaryFile } from "@suss/behavioral-ir/files";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { runCli } from "./run.js";
 
 const PYTHON = `from fastapi import FastAPI
 
@@ -74,7 +75,7 @@ describe("a bare extract with several reads in suss.json", () => {
     expect(run.stderr).not.toContain("failed:");
     expect(run.exit).toBe(0);
     const languages = new Set(
-      (JSON.parse(run.stdout) as BehavioralSummary[]).map((summary) =>
+      parseSummaries(JSON.parse(run.stdout)).map((summary) =>
         path.extname(summary.location.file),
       ),
     );
@@ -94,9 +95,7 @@ describe("a bare extract with several reads in suss.json", () => {
       "suss extract --lang python -f fastapi: 1 summary",
     );
     expect(run.stderr).toMatch(/Wrote \d+ summaries to .*all\.json\n$/);
-    const files = (
-      JSON.parse(fs.readFileSync(out, "utf8")) as BehavioralSummary[]
-    ).map((summary) => summary.location.file);
+    const files = readSummaryFile(out).map((summary) => summary.location.file);
     expect(files).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/main\.py$/),
@@ -117,7 +116,7 @@ describe("a bare extract with several reads in suss.json", () => {
     expect(run.stderr).toMatch(
       /suss extract --lang typescript --dir frontend -f no-such-pack-anywhere: failed after .*\n {6}exited with code 1: Unknown pack: "no-such-pack-anywhere"/,
     );
-    const files = (JSON.parse(run.stdout) as BehavioralSummary[]).map(
+    const files = parseSummaries(JSON.parse(run.stdout)).map(
       (summary) => summary.location.file,
     );
     expect(files).toEqual([expect.stringMatching(/main\.py$/)]);
@@ -177,7 +176,7 @@ describe("a bare extract with one read in suss.json", () => {
 
     expect(run.exit).toBe(0);
     expect(run.stderr).toContain("Reading what suss.json says.");
-    const files = (JSON.parse(run.stdout) as BehavioralSummary[]).map(
+    const files = parseSummaries(JSON.parse(run.stdout)).map(
       (summary) => summary.location.file,
     );
     expect(files).toEqual([expect.stringMatching(/main\.py$/)]);

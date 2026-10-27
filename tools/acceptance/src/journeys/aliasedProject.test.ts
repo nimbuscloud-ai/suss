@@ -13,12 +13,10 @@ import { describe, expect, it } from "vitest";
 import {
   copyOfFixture,
   fixture,
-  readJson,
+  readSummaries,
   runSuss,
   workspace,
 } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const ROUTES = [
   "GET /v1/tenants/{tenantId}",
@@ -26,7 +24,7 @@ const ROUTES = [
 ];
 
 function routesIn(file: string): string[] {
-  const summaries = readJson(file) as BehavioralSummary[];
+  const summaries = readSummaries(file);
   return summaries
     .map((summary) => summary.identity.boundaryBinding)
     .flatMap((binding) =>

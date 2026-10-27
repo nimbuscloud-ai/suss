@@ -15,6 +15,8 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { readSummaryFile } from "@suss/behavioral-ir/files";
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const BIN = path.resolve(__dirname, "../dist/bin.js");
@@ -44,12 +46,7 @@ beforeAll(() => {
     { encoding: "utf8", timeout: 120_000 },
   );
   expect(extract.status, extract.stderr).toBe(0);
-  summaries = Object.values(
-    JSON.parse(fs.readFileSync(output, "utf8")) as Record<
-      string,
-      BehavioralSummary
-    >,
-  );
+  summaries = readSummaryFile(output);
 });
 
 function requestsByName(): Record<string, string> {

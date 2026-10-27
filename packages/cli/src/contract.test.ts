@@ -7,6 +7,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { parseSummaries } from "@suss/behavioral-ir";
+
 import {
   contract,
   firstBatchWithSummaries,
@@ -201,7 +203,7 @@ describe("contract CLI command", () => {
     ]);
 
     expect(exit).toBe(0);
-    const scopes = (JSON.parse(stdout) as BehavioralSummary[]).map(
+    const scopes = parseSummaries(JSON.parse(stdout)).map(
       (summary) => summary.metadata?.codeScope,
     );
     expect(scopes).toEqual([

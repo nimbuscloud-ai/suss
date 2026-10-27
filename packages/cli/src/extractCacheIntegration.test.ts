@@ -9,6 +9,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { parseSummaries } from "@suss/behavioral-ir";
+
 const BIN = path.resolve(__dirname, "../dist/bin.js");
 
 let tmpDir: string;
@@ -164,7 +166,7 @@ function extract(
 }
 
 function ordersStatuses(written: string): unknown[] {
-  const summaries = JSON.parse(written) as Array<{
+  const summaries = parseSummaries(JSON.parse(written)) as Array<{
     identity: { boundaryBinding?: { semantics?: { path?: string } } | null };
     transitions: Array<{
       output: { statusCode?: { type: string; value?: unknown } };

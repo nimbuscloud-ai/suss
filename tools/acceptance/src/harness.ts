@@ -17,6 +17,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { readSummaryFile } from "@suss/behavioral-ir/files";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+
 export const SUSS_BIN = path.resolve(
   import.meta.dirname,
   "../../../packages/cli/dist/bin.js",
@@ -97,6 +101,11 @@ export function filesUnder(dir: string): string[] {
 
 export function readJson(file: string): unknown {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+/** A summaries file the way `check` reads it, with the values it wrote once put back. */
+export function readSummaries(file: string): BehavioralSummary[] {
+  return readSummaryFile(file);
 }
 
 /** Returns the path, ready to hand straight to `-f <pack>=<file>`. */

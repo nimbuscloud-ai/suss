@@ -7,9 +7,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { copyOfFixture, readJson, runSuss } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { copyOfFixture, readJson, readSummaries, runSuss } from "../harness.js";
 
 interface ReadEntry {
   kind: string;
@@ -26,7 +24,7 @@ const SUMMARIES = [
 ].sort();
 
 function summariesIn(file: string): string[] {
-  return (readJson(file) as BehavioralSummary[])
+  return readSummaries(file)
     .map((summary) => {
       const semantics = summary.identity.boundaryBinding?.semantics;
       const boundary =

@@ -22,4 +22,8 @@ export {
   pathInProject,
   projectNameOf,
 } from "./projectPath.js";
-export { readSummaryFile, writeSummaryFile } from "./summaryFile.js";
+export {
+  readSummaryFile,
+  summaryFilePieces,
+  writeSummaryFile,
+} from "./summaryFile.js";

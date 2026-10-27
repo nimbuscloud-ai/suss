@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -28,7 +28,7 @@ describe("read a job that does its work while the module loads", () => {
       codeFile,
     ]);
     expect(code.status, code.stderr).toBe(0);
-    extracted = readJson(codeFile) as BehavioralSummary[];
+    extracted = readSummaries(codeFile);
   });
 
   function tablesIn(name: string): string[] {

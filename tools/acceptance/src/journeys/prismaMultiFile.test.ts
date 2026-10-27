@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { copyOfFixture, readJson, runSuss } from "../harness.js";
+import { copyOfFixture, readSummaries, runSuss } from "../harness.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -53,13 +53,11 @@ describe("read a Prisma schema split over a folder", () => {
   });
 
   it("binds the client's calls to the database the schema's datasource says", () => {
-    expect(storageTouchedBy(readJson(code) as BehavioralSummary[])).toEqual([
-      "mysql:Link",
-    ]);
+    expect(storageTouchedBy(readSummaries(code))).toEqual(["mysql:Link"]);
   });
 
   it("reads the models in every file of the schema", () => {
-    const models = (readJson(schema) as BehavioralSummary[])
+    const models = readSummaries(schema)
       .map((summary) => `${summary.identity.name} ${summary.location.file}`)
       .sort();
 

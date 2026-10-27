@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
-import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { Effect } from "@suss/behavioral-ir";
 
 /**
  * A service that signs and posts its own DynamoDB request writes no SDK
@@ -19,7 +19,7 @@ describe("read a project's own signed DynamoDB request", () => {
   const summariesFile = path.join(out, "api.json");
 
   function accesses(): string[] {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     return summaries
       .flatMap((one) => one.transitions)
       .flatMap((transition) => transition.effects as Effect[])
@@ -51,7 +51,7 @@ describe("read a project's own signed DynamoDB request", () => {
   });
 
   it("takes the operation the wire states as read or write", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const operations = summaries
       .flatMap((one) => one.transitions)
       .flatMap((transition) => transition.effects as Effect[])

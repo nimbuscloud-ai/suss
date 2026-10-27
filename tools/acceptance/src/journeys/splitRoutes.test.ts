@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -37,7 +37,7 @@ describe("read a service that registers on an app built in another file", () => 
   });
 
   it("composes both prefixes a route was mounted under, one of them stated in another file", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const routes = summaries.flatMap((one) => {
       const binding = one.identity.boundaryBinding;
       return binding?.semantics.name === "rest" ? [binding.semantics] : [];
@@ -49,7 +49,7 @@ describe("read a service that registers on an app built in another file", () => 
   });
 
   it("reports the middleware's 401 as the route's own behaviour", () => {
-    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const summaries = readSummaries(summariesFile);
     const route = summaries.find((one) => {
       const semantics = one.identity.boundaryBinding?.semantics;
       return (

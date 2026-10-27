@@ -13,7 +13,7 @@ import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 
-import { documentPieces, writeSummaryFile } from "@suss/behavioral-ir/files";
+import { summaryFilePieces, writeSummaryFile } from "@suss/behavioral-ir/files";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -302,7 +302,7 @@ export async function writeSummaries(
     writeSummaryFile(file, summaries);
     return;
   }
-  await writePieces(documentPieces(summaries), stdoutSink());
+  await writePieces(summaryFilePieces(summaries), stdoutSink());
 }
 
 async function writePieces(pieces: Iterable<string>, sink: Sink) {

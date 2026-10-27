@@ -10,9 +10,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { fixture, readJson, runSuss, workspace } from "../harness.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { fixture, readSummaries, runSuss, workspace } from "../harness.js";
 
 /** Where `const app = express()` is written, and the path that file serves. */
 const POSITIONS: ReadonlyArray<readonly [string, string]> = [
@@ -41,7 +39,7 @@ describe("an app built in any of the places a language allows", () => {
   ]);
 
   const served = new Set(
-    (readJson(out) as BehavioralSummary[]).flatMap((summary) => {
+    readSummaries(out).flatMap((summary) => {
       const binding = summary.identity.boundaryBinding;
       return binding != null && binding.semantics.name === "rest"
         ? [binding.semantics.path]
