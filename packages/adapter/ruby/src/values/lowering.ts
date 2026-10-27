@@ -20,6 +20,7 @@ import {
   field,
   hashKeySymbolName,
   isRaiseCall,
+  numberLiteralValue,
   stringLiteralValue,
   symbolValue,
 } from "../ast.js";
@@ -82,9 +83,14 @@ const NAME_TYPES = new Set([
   "self",
 ]);
 
+const numberLiteral = (node: RbNode): Expression<RbNode> => {
+  const value = numberLiteralValue(node);
+  return value === null ? { kind: "opaque" } : { kind: "literal", value };
+};
+
 const LITERAL_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
-  integer: (node) => ({ kind: "literal", value: Number(node.text) }),
-  float: (node) => ({ kind: "literal", value: Number(node.text) }),
+  integer: numberLiteral,
+  float: numberLiteral,
   true: () => ({ kind: "literal", value: true }),
   false: () => ({ kind: "literal", value: false }),
   nil: () => ({ kind: "literal", value: null }),

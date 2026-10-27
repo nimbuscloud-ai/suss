@@ -190,6 +190,26 @@ describe("reading a local response helper", () => {
     });
   });
 
+  it("decides a guard whose number is written with a separator", () => {
+    const terminals = terminalsFor(`
+      function json(statusCode: number, payload: unknown) {
+        if (statusCode < 4_00) {
+          return { statusCode, body: JSON.stringify(payload) };
+        }
+        return { statusCode, body: JSON.stringify({ error: payload }) };
+      }
+      export function handler() {
+        return json(200, { status: "ok" });
+      }
+    `);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.terminal.body?.shape).toEqual({
+      type: "record",
+      properties: { status: { type: "literal", value: "ok" } },
+    });
+  });
+
   it("takes the error branch when that is the one the caller reaches", () => {
     const terminals = terminalsFor(`
       function json(statusCode: number, payload: unknown) {

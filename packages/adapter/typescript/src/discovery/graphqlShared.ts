@@ -1308,7 +1308,7 @@ function evaluateObjectLiteralAsJson(node: Node): unknown {
     return node.getLiteralValue();
   }
   if (Node.isNumericLiteral(node)) {
-    return Number(node.getText());
+    return node.getLiteralValue();
   }
   const kind = node.getText();
   if (kind === "true") {

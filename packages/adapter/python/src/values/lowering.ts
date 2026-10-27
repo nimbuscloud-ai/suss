@@ -13,6 +13,7 @@ import {
   allChildren,
   children,
   field,
+  numberLiteralValue,
   stringContentValue,
   stringLiteralValue,
 } from "../ast.js";
@@ -52,9 +53,14 @@ export interface LoweringOptions {
 
 const ROOT_TYPES = new Set(["module", "function_definition", "lambda"]);
 
+const numberLiteral = (node: PyNode): Expression<PyNode> => {
+  const value = numberLiteralValue(node);
+  return value === null ? { kind: "opaque" } : { kind: "literal", value };
+};
+
 const LITERAL_TYPES: Record<string, (node: PyNode) => Expression<PyNode>> = {
-  integer: (node) => ({ kind: "literal", value: Number(node.text) }),
-  float: (node) => ({ kind: "literal", value: Number(node.text) }),
+  integer: numberLiteral,
+  float: numberLiteral,
   true: () => ({ kind: "literal", value: true }),
   false: () => ({ kind: "literal", value: false }),
   none: () => ({ kind: "literal", value: null }),

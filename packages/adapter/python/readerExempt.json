@@ -1,4 +1,3 @@
 {
-  "src/decorators.ts": "argShapeOf",
   "src/paths/returnedShape.ts": "recordShape, shapeOfReturned"
 }
