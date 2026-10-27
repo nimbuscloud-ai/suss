@@ -15,9 +15,9 @@
 
 import { Node } from "ts-morph";
 
-import { isTestFile } from "@suss/behavioral-ir";
 import { hole } from "@suss/values";
 
+import { testCallingProduction } from "../testCode.js";
 import { evaluatedValueUnder } from "../values/evaluator.js";
 import { enclosingFunctionRoot } from "./graphqlShared.js";
 
@@ -152,12 +152,10 @@ interface CallSite {
  * Every call of `func`, with the argument written at each parameter. A
  * parameter written as a pattern rather than a name is skipped, since
  * the evaluator binds by name and a pattern has none. A test calling
- * production code passes a stand-in, so its calls ground nothing, the
- * same rule the store and pairing keep for test code.
+ * production code passes a stand-in, so its calls ground nothing.
  */
 function callSitesOf(func: FunctionRoot, store: ResolutionStore): CallSite[] {
   const byCall = new Map<string, CallSite>();
-  const fromProduction = !inTestFile(func);
   for (const parameter of func.getParameters()) {
     const nameNode = parameter.getNameNode();
     if (!Node.isIdentifier(nameNode)) {
@@ -167,7 +165,7 @@ function callSitesOf(func: FunctionRoot, store: ResolutionStore): CallSite[] {
       if (!Node.isCallExpression(passed.call)) {
         continue;
       }
-      if (fromProduction && inTestFile(passed.call)) {
+      if (testCallingProduction(passed.call, func)) {
         continue;
       }
       const key = siteKey(passed.call);
@@ -180,10 +178,6 @@ function callSitesOf(func: FunctionRoot, store: ResolutionStore): CallSite[] {
     }
   }
   return [...byCall.values()];
-}
-
-function inTestFile(node: Node): boolean {
-  return isTestFile(node.getSourceFile().getFilePath());
 }
 
 function siteKey(call: CallExpression): string {
