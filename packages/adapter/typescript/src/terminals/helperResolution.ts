@@ -242,7 +242,7 @@ function numberFor(
     Node.isIdentifier(node) && substitutions.has(node.getText())
       ? (substitutions.get(node.getText()) as TsNode)
       : node;
-  return Node.isNumericLiteral(resolved) ? Number(resolved.getText()) : null;
+  return Node.isNumericLiteral(resolved) ? resolved.getLiteralValue() : null;
 }
 
 type LocalHelper =

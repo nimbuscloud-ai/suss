@@ -399,6 +399,19 @@ export function stringLiteralValue(node: RbNode): string | null {
   return content;
 }
 
+/**
+ * The number an `integer` or `float` node writes, or null when it is too
+ * large for one. Ruby allows `7_500`, a `0d` prefix for decimal, and a
+ * leading zero for octal, so `017` is 15.
+ */
+export function numberLiteralValue(node: RbNode): number | null {
+  const text = node.text.replaceAll("_", "");
+  const value = /^0[0-7]+$/.test(text)
+    ? Number.parseInt(text, 8)
+    : Number(text.replace(/^0[dD]/, ""));
+  return Number.isFinite(value) ? value : null;
+}
+
 /** A `simple_symbol`'s name without its leading colon, or null for any other node. */
 export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
