@@ -7,6 +7,42 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.37.1 (2026-10-26)
+
+0.37.1 reads large TypeScript projects in well under half the time 0.37.0 took, and lets `suss map` list every finding and write its data as JSON.
+
+### Faster TypeScript reads
+
+A large TypeScript project could take many minutes and many gigabytes to read. Four changes cut that down, and each one writes the same summaries as before:
+
+- suss printed a type's text every time the code mentioned the type, and printing is slow because the compiler works out how to name each symbol in it. It now prints each type once at each place ([#1344](https://github.com/nimbuscloud-ai/suss/pull/1344)).
+- To check whether an environment read has a default, suss wrapped every node of the function in a ts-morph object that lives for the rest of the run. It now wraps only the identifiers spelled like the variable ([#1345](https://github.com/nimbuscloud-ai/suss/pull/1345)).
+- Most of the adapter's other walks did the same, wrapping every identifier, token and type annotation they passed. They now read the compiler's nodes, wrap only the kinds they act on, and skip type syntax ([#1348](https://github.com/nimbuscloud-ai/suss/pull/1348)).
+- Node gives a process a 16 MB young generation, the part of the heap where new objects start, and suss spent almost half of a large read collecting it. Each read now starts with 256 MB, or a sixteenth of the heap when the heap is smaller. A size you set in `NODE_OPTIONS` or on the node command line is kept ([#1350](https://github.com/nimbuscloud-ai/suss/pull/1350)).
+
+| Project | 0.37.0 | 0.37.1 |
+|---|---:|---:|
+| cal.com `packages/features` | 232 s, 9.9 GB | 46 s, 4.5 GB |
+| A private frontend of about 1.4 million lines | 706 s | 282 s |
+
+### Every finding in the map
+
+`suss map` showed a finding only inside the route or field it was on, so you had to open routes one at a time, and a finding on no route at all showed only as a count. Browse now has a Findings tab with one line per finding, errors first and grouped by kind, with the route it is on and the lines on each side. You can filter by severity, by kind, and by whether the finding is on a route. Past 200 findings of one kind, the tab gives the rest as a count ([#1347](https://github.com/nimbuscloud-ai/suss/pull/1347)).
+
+### The map as JSON
+
+`suss map --json` writes the data the page is drawn from to `.suss/map.json`: every route and field with its outcomes, what it reads and writes, its callers and its findings, plus the tables, env vars and cards. The format has a `version`, which goes up when a field changes meaning or goes away. The examples on suss.sh have a copy beside each page ([#1346](https://github.com/nimbuscloud-ai/suss/pull/1346)).
+
+### Fixes
+
+- A function whose types lead through a long chain of named types, such as Prisma's, could fail to read with "Maximum call stack size exceeded" on some runs and not others, and its summary then described none of its body. suss now expands each named type after the one that mentions it ([#1349](https://github.com/nimbuscloud-ai/suss/pull/1349)).
+- A bare `suss check` or `suss map` with no `suss.json` gives each pack the options `suss init` works out for it, such as the database `activerecord` reads from `config/database.yml`. On a private Rails app the map went from 0 tables to 78 ([#1343](https://github.com/nimbuscloud-ai/suss/pull/1343)).
+- The map examples on suss.sh are rebuilt with this release ([#1342](https://github.com/nimbuscloud-ai/suss/pull/1342)).
+
+### Known issues
+
+- The private frontend above needs about 18 GB of heap, and suss gives a read 8 GB unless you set more, so the read stops with "JavaScript heap out of memory". Give it more with `--read-memory` on `check` and `map`, or `NODE_OPTIONS=--max-old-space-size=20000` on `extract`.
+
 ## 0.37.0 (2026-10-26)
 
 0.37.0 follows a request into the background jobs it enqueues, reads the deliveries a CloudFormation template declares, and turns a missing environment variable into one finding per read, with a rule you can paste that keeps working when the code moves.
