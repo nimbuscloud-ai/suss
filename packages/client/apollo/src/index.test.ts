@@ -1185,6 +1185,36 @@ describe("apolloClientPack — a project hook wrapping the library's", () => {
     });
   });
 
+  it("reads no operation from a test calling the hook, since a test passes a stand-in", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "profile.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const ProfileQuery = gql\`query Profile { me { id } }\`;
+        export function Profile() {
+          return useAppQuery(ProfileQuery);
+        }
+      `,
+      "profile.test.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const StandIn = gql\`query StandIn { me { id } }\`;
+        export function rendersAStandIn() {
+          return useAppQuery(StandIn);
+        }
+      `,
+    });
+
+    expect(operationOf(summaries, "Profile.Profile")).toEqual({
+      operationType: "query",
+      operationName: "Profile",
+    });
+    expect(
+      summaries.filter((s) => s.location.file.includes("profile.test.ts")),
+    ).toEqual([]);
+  });
+
   it("puts each operation in the file the component is written in", async () => {
     const summaries = await runInMemoryFiles({
       "hooks.ts": WRAPPER_HOOKS,
