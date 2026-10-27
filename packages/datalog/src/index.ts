@@ -28,6 +28,7 @@ import {
   addToCombined,
   bucketIn,
   combinedBucketIn,
+  fileUnder,
   type Relation,
   removeTuples,
   storedTuplesOf,
@@ -213,7 +214,7 @@ export class Database {
       const buckets = relation.columns[column];
       const value = tuple[column];
       if (buckets !== undefined && value !== undefined) {
-        addToBucket(buckets, value, tuple);
+        fileUnder(buckets, value, tuple);
       }
     }
     for (const combined of relation.combined.values()) {
