@@ -59,12 +59,19 @@ packs `suss init` suggests, the sort and the index over several columns
 took the rows read from 64.3 million to 39.3 million with
 byte-identical summaries.
 
-Each relation stores its facts in a trie keyed on the tuple's atoms: a
-tree of maps with one level per column. The node at the end of a walk
-is the fact. If the node exists, the fact is known, and the node stores
-the fact's tag. Checking whether a tuple is already known costs one map
-lookup per column, stops at the first column that misses, and builds
-nothing along the way.
+Each relation stores its facts in a trie keyed on the tuple's atoms. A
+walk takes one map lookup per column until it reaches the first column
+where no other tuple shares the atoms so far. The fact's key is stored
+there, along with its tag, and the walk compares the rest of the tuple
+with the key's own. Checking whether a tuple is already known stops at
+the first column that misses and builds nothing along the way.
+
+The trie used to keep a map at every column of every fact. Most facts
+have an atom no other fact shares in their first or second column,
+such as a node id, so most of those maps had one entry. On a
+6,000-file TypeScript frontend with 6.1 million facts, storing the key
+at the first column no other tuple shares took the live heap after the
+reachable closure from 8.3 GB to 7.3 GB.
 
 The join makes that check constantly. Every candidate a rule derives
 goes to `add`, and on a large project almost all of them are facts the
