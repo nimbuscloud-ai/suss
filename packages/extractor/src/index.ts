@@ -690,12 +690,29 @@ function unreadSentences(raw: RawCodeStructure): string[] {
 }
 
 /** A recognizer builds its own effects in IR form, so only the raw ones convert. */
-function effectsOfBranch(branch: RawBranch): Effect[] {
+/**
+ * Branches before a return list the same effect objects again, so one
+ * summary keys each of them once, by the object it was converted from.
+ */
+function effectsOfBranch(
+  branch: RawBranch,
+  keysBySource: Map<object, string>,
+): Effect[] {
+  const sources: object[] = [...branch.effects, ...(branch.extraEffects ?? [])];
   const effects = [
     ...branch.effects.map(effectToIR),
     ...(branch.extraEffects ?? []),
-  ];
-  return foldRepeatedEffects(effects.map(withNormalizedCallee));
+  ].map(withNormalizedCallee);
+  return foldRepeatedEffects(effects, (effect, at) => {
+    const source = sources[at] as object;
+    const known = keysBySource.get(source);
+    if (known !== undefined) {
+      return known;
+    }
+    const key = effectKey(effect);
+    keysBySource.set(source, key);
+    return key;
+  });
 }
 
 /**
@@ -763,13 +780,14 @@ export function assembleSummary(
   raw: RawCodeStructure,
   options: ExtractorOptions = DEFAULT_OPTIONS,
 ): BehavioralSummary {
+  const keysBySource = new Map<object, string>();
   const transitions: Transition[] = raw.branches.map((rawBranch) => {
     const branch = branchWithCollapsedReadings(rawBranch);
     const conditions: Predicate[] = branch.conditions.map(
       rawConditionToPredicate,
     );
 
-    const effects = effectsOfBranch(branch);
+    const effects = effectsOfBranch(branch, keysBySource);
     const transition: Transition = {
       id: makeTransitionId(raw.identity.name, branch),
       conditions,
