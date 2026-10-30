@@ -18,8 +18,10 @@ import {
   clearRelations,
   Database,
   evaluate,
+  noteReads,
   type OnDemandRules,
   proofOf,
+  type ReadsNoted,
   tupleKey,
   tupleKeyParts,
   witnesses,
@@ -146,6 +148,9 @@ export interface SourceFound {
  * relations stay, and a repeated query reads its result from those.
  */
 const QUERY_FACTS: readonly string[] = queryFacts(RESOLUTION_PROGRAM);
+
+/** A question derives these again from nothing, so a remembered answer's reads leave them out. */
+const DERIVED_AGAIN: ReadonlySet<string> = new Set(QUERY_FACTS);
 
 /**
  * A rule consults another module through its export table, so a demand
@@ -300,7 +305,7 @@ export class ResolutionStore {
   /** See `remembered`. */
   private readonly answers = new Map<
     string,
-    { answer: unknown; walked: string[]; facts: number }
+    { answer: unknown; walked: string[]; check: ReadsNoted | number }
   >();
   /** Files the most recent query read, for the memo to keep. */
   private lastQueryWalked: string[] = [];
@@ -455,25 +460,49 @@ export class ResolutionStore {
   }
 
   /**
-   * A question asked again over the same facts reads the same files and
-   * derives the same answer, so the store gives back the one it found
-   * before. The files that answer read still count as read.
+   * A question asked again, when no fact its derivation looked up has
+   * arrived since, reads the same files and derives the same answer, so
+   * the store gives back the one it found before. The files that answer
+   * read still count as read.
+   *
+   * Noting the lookups costs the question a share of its time, and most
+   * questions are asked once, so a question notes them only once it has
+   * had to be asked again. Until then, as without demand, only an
+   * unchanged fact count says the answer is the same. Without demand the
+   * rules keep every conclusion between questions, so a question's own
+   * lookups miss what earlier questions derived for it. A question that
+   * started on another question's leftovers gets the count too.
    */
   private remembered<T>(key: string, ask: () => T): T {
     const known = this.answers.get(key);
-    if (known !== undefined && known.facts === this.sourceFactCount()) {
+    if (known !== undefined && this.stillDerives(known.check)) {
       for (const walkedPath of known.walked) {
         recordFileDependency(walkedPath);
       }
       return known.answer as T;
     }
-    const answer = ask();
+    const { value, reads } =
+      known === undefined || QUERY_FACTS.length === 0
+        ? { value: ask(), reads: null }
+        : noteReads(this.db, DERIVED_AGAIN, ask);
     this.answers.set(key, {
-      answer,
+      answer: value,
       walked: [...this.lastQueryWalked],
-      facts: this.sourceFactCount(),
+      check: reads ?? this.sourceFactCount(),
     });
-    return answer;
+    return value;
+  }
+
+  /**
+   * Facts added since the last derivation have not reached the relations
+   * the rules keep between questions, so the reads cannot say yet what
+   * those facts change.
+   */
+  private stillDerives(check: ReadsNoted | number): boolean {
+    if (typeof check === "number") {
+      return check === this.sourceFactCount();
+    }
+    return !this.stale && check.unchangedIn(this.db);
   }
 
   /**
