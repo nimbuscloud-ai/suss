@@ -840,6 +840,38 @@ describe("a query rooted at a wrapped value", () => {
     expect(second).toBe(first);
     expect([...sink.files]).toContain("/contract.ts");
   });
+
+  it("keeps an answer it had to ask again while the files read since add nothing it looked up", () => {
+    const elsewhere = (path: string) => `
+      const elsewhere = { method: "get", path: "${path}" };
+      app.openapi(elsewhere, async () => "o");
+    `;
+    const project = projectOf({
+      "/contract.ts": `export const route = { method: "get", path: "/x" };`,
+      "/mod.ts": `
+        import { route } from "./contract";
+        app.openapi(route, async () => "h");
+      `,
+      // Read first, so that no relation the question finds empty gets
+      // its first fact from a file read afterwards.
+      "/earlier.ts": elsewhere("/w"),
+      "/between.ts": elsewhere("/v"),
+      "/other.ts": elsewhere("/y"),
+    });
+    const store = new ResolutionStore();
+    const objectIn = (file: string) =>
+      store.resolveObject(argumentOf(project, file, "app.openapi", 0));
+    objectIn("/earlier.ts");
+    objectIn("/mod.ts");
+    objectIn("/between.ts");
+    const askedAgain = objectIn("/mod.ts");
+    objectIn("/other.ts");
+    const kept = profileEvaluation(() => objectIn("/mod.ts"));
+
+    expect(askedAgain?.getText()).toContain('path: "/x"');
+    expect(kept.result).toBe(askedAgain);
+    expect(kept.profile.evaluations).toBe(0);
+  });
 });
 
 describe("filesImportingTransitively", () => {
