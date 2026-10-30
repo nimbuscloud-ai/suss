@@ -29,6 +29,8 @@ export interface Relation {
    * kept up to date the same way as `columns`.
    */
   combined: Map<number, CombinedIndex>;
+  /** How many facts have ever been retracted, which `ReadsNoted` checks before trusting a count. */
+  removed: number;
 }
 
 /**
@@ -233,12 +235,7 @@ export function addToBucket(
   }
 }
 
-/** The facts with `value` at `column`, indexing the column if nobody has yet. */
-export function bucketIn(
-  relation: Relation,
-  column: number,
-  value: Atom,
-): readonly Tuple[] {
+function columnIndex(relation: Relation, column: number): Map<Atom, Bucket> {
   let buckets = relation.columns[column];
   if (buckets === undefined) {
     buckets = new Map();
@@ -250,5 +247,27 @@ export function bucketIn(
     }
     relation.columns[column] = buckets;
   }
-  return tuplesIn(buckets.get(value));
+  return buckets;
+}
+
+/** The facts with `value` at `column`, indexing the column if nobody has yet. */
+export function bucketIn(
+  relation: Relation,
+  column: number,
+  value: Atom,
+): readonly Tuple[] {
+  return tuplesIn(columnIndex(relation, column).get(value));
+}
+
+/** How many facts `bucketIn` would give, without building a list for a lone one. */
+export function bucketSize(
+  relation: Relation,
+  column: number,
+  value: Atom,
+): number {
+  const bucket = columnIndex(relation, column).get(value);
+  if (bucket === undefined) {
+    return 0;
+  }
+  return isLone(bucket) ? 1 : bucket.length;
 }

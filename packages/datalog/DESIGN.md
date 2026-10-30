@@ -433,6 +433,73 @@ facts come from somewhere else, fetch those, evaluate again, and stop
 when no demand row is new. The rules then determine what gets loaded,
 and the caller never has to guess how far a chain runs.
 
+### Telling whether an answer read before is still right
+
+A caller that asks the same question again after facts arrived
+elsewhere can skip the work when none of those facts could change the
+answer. `noteReads` runs the question and notes what the join looked
+up. Each lookup is a relation, a column, and the value the join wanted
+there. A relation the join read whole, or found empty when deciding
+whether a rule could run at all, is noted whole. When the question
+ends, it counts the facts each lookup finds. Later, `unchangedIn`
+counts again and says whether every count is the same.
+
+```ts
+const skipped = new Set([...program.demandDriven, "asked"]);
+const { value, reads } = noteReads(db, skipped, () => {
+  db.add("asked", ["a"]);
+  evaluate(db, program.rules);
+  return db.lookup("answer", 0, "a");
+});
+clearRelations(db, program.rules, [...skipped]);
+
+db.add("edge", ["m", "o"]);
+evaluate(db, program.rules);
+reads?.unchangedIn(db); // true: the chain from a never looked up m
+db.add("edge", ["c", "d"]);
+evaluate(db, program.rules);
+reads?.unchangedIn(db); // false: it looked up what leaves c
+```
+
+Here is why a fact nothing looked up cannot change the answer. Suppose
+asking again would derive something new, and take the first rule
+application in that derivation that uses a new fact. Every other fact
+in that application was there the first time, and at least one of them
+was derived during the question, because the skipped relations started
+empty. When the last of them arrived, the join ran the rule with the
+same bindings and reached the new fact's literal in one of three ways.
+It looked the literal up by a column the new fact agrees with, it read
+the relation whole, or it found the relation empty and skipped the
+rule. All three are noted, so the new fact changes a count.
+
+One column per lookup is enough, because a fact that would join agrees
+with every column the join fixed. The join notes a column a variable
+fixed before one written as a constant, since a constant such as a
+node's kind matches facts from every file. When the join reads a
+literal before a round's new facts, it notes each new fact's value for
+the variable the two share, which is the lookup it would have made
+the other way round.
+
+The argument needs four things, and the first two are checked for you.
+The skipped relations have to be empty when the question starts and
+when the answer is checked. Otherwise the question could build on facts
+nothing noted, so `noteReads` returns null reads in the first case and
+`unchangedIn` says no in the second. Nothing may be retracted from a
+noted relation, which also lets one sum of the counts stand for all of
+them, and `unchangedIn` says no after a retraction. The rules may not
+use negation, which `deriveOnDemand` already refuses. Last, evaluate
+after adding facts and before checking, since a fact added since the
+last evaluation has not yet reached the relations kept between
+questions.
+
+A question tends to look the same values up in many columns: one that
+follows a value through a TypeScript project looks up about 950 values
+across about 40 columns, 7,000 lookups in all. So the reads keep each
+value once, as a reference to the atom the facts already contain, and
+each column keeps a bit per value. Nothing is indexed by lookup. A
+check first adds up the sizes of the relations read, and counts the
+lookups again only when one of those relations has grown.
+
 The fact sets one extraction produces run to thousands of tuples. If
 they grow far past that, replace this evaluator and keep the rule data
 model.

@@ -23,10 +23,12 @@ import {
   chargeRule,
   isProfiling,
 } from "./profile.js";
+import { noteIn, type ReadLog } from "./reads.js";
 import {
   addToBucket,
   addToCombined,
   bucketIn,
+  bucketSize,
   combinedBucketIn,
   fileUnder,
   type Relation,
@@ -53,6 +55,7 @@ export {
   type QuestionTally,
   type RuleCost,
 } from "./profile.js";
+export { noteReads, type ReadsNoted } from "./reads.js";
 export { tupleKey, tupleKeyParts } from "./tupleKey.js";
 export {
   type Proof,
@@ -150,6 +153,9 @@ const FEW_REMOVED = 16;
 export class Database {
   private readonly store = new Map<string, Relation>();
 
+  /** @internal Where reads are noted while `noteReads` runs. */
+  readLog: ReadLog | null = null;
+
   private relation(name: string): Relation {
     const existing = this.store.get(name);
     if (existing !== undefined) {
@@ -160,6 +166,7 @@ export class Database {
       tuples: [],
       columns: [],
       combined: new Map(),
+      removed: 0,
     };
     this.store.set(name, created);
     return created;
@@ -225,6 +232,7 @@ export class Database {
 
   /** The tag stored for this fact, or undefined when there is none. */
   tagOf(relationName: string, tuple: Tuple): unknown {
+    this.noteTupleRead(relationName, tuple);
     const relation = this.store.get(relationName);
     if (relation === undefined) {
       return undefined;
@@ -234,10 +242,22 @@ export class Database {
   }
 
   has(relationName: string, tuple: Tuple): boolean {
+    this.noteTupleRead(relationName, tuple);
     return this.store.get(relationName)?.index.find(tuple) !== undefined;
   }
 
+  /** A fact matching the whole tuple agrees on its first column, so that lookup is enough to note. */
+  private noteTupleRead(relationName: string, tuple: Tuple): void {
+    const first = tuple[0];
+    if (first === undefined) {
+      this.readLog?.readWhole(relationName);
+      return;
+    }
+    this.readLog?.lookedUp(relationName, 0, first);
+  }
+
   facts(relationName: string): readonly Tuple[] {
+    this.readLog?.readWhole(relationName);
     return this.store.get(relationName)?.tuples ?? [];
   }
 
@@ -251,6 +271,7 @@ export class Database {
    * gets an index.
    */
   lookup(relationName: string, column: number, value: Atom): readonly Tuple[] {
+    this.readLog?.lookedUp(relationName, column, value);
     const relation = this.store.get(relationName);
     return relation === undefined ? [] : bucketIn(relation, column, value);
   }
@@ -288,6 +309,7 @@ export class Database {
     for (const key of going) {
       index.remove(key);
     }
+    relation.removed += going.size;
     // `clearRelations` empties relations after every question. When
     // nothing is left, reset the list instead of filtering every tuple
     // out of it.
@@ -333,6 +355,7 @@ export class Database {
       return 0;
     }
     const removed = relation.tuples.length;
+    relation.removed += removed;
     relation.tuples = [];
     relation.index.clear();
     relation.columns.length = 0;
@@ -342,13 +365,23 @@ export class Database {
   }
 
   size(relationName: string): number {
-    return this.store.get(relationName)?.tuples.length ?? 0;
+    this.readLog?.readWhole(relationName);
+    return sizeOf(this, relationName);
   }
 
   relationNames(): string[] {
     return [...this.store.keys()];
   }
 }
+
+// The engine's own bookkeeping, such as which facts are new since the
+// last run, reads relations through these, so `noteReads` lists only
+// what a join looked up.
+const tuplesOf = (db: Database, relation: string): readonly Tuple[] =>
+  db.relationOf(relation)?.tuples ?? [];
+
+const sizeOf = (db: Database, relation: string): number =>
+  db.relationOf(relation)?.tuples.length ?? 0;
 
 // ---------------------------------------------------------------------------
 // Tag algebra
@@ -733,6 +766,7 @@ function evaluateRule(
   // the new facts that agree with it on the variable the two share.
   const byValue = newFactsByColumn(rows, start.column, budget);
   const first = body[start.index];
+  noteSharedLookups(db, first, start, rows);
   for (const tuple of start.source) {
     budget.examined++;
     if (budget.examined > budget.limit) {
@@ -803,7 +837,7 @@ function smallerStart(
       continue;
     }
     const source =
-      narrowedSource(db, literal, null) ?? db.facts(literal.relation);
+      narrowedSource(db, literal, null) ?? tuplesOf(db, literal.relation);
     const worthIt = indexed?.has(column)
       ? source.length < rows.length
       : source.length * 2 < rows.length;
@@ -895,6 +929,7 @@ function nextLiteral(
       continue;
     }
     if (source.length === 0) {
+      noteLookup(db, literal, bindings);
       return -1;
     }
     if (narrowest === null || source.length < narrowest.length) {
@@ -903,6 +938,7 @@ function nextLiteral(
     }
   }
   if (narrowest !== null) {
+    noteLookup(db, body[pick], bindings);
     nextSource = narrowedFurther(db, body[pick], bindings, narrowest);
     return nextSource.length === 0 ? -1 : pick;
   }
@@ -915,6 +951,85 @@ function nextLiteral(
   // Only negated literals with a variable nothing binds are left, and
   // the caller grounding one reports it.
   return body.findIndex((_, index) => !(taken & (1 << index)));
+}
+
+/**
+ * Note, while `noteReads` runs, the lookup the join made for a literal
+ * with a fixed column. A fact that would join there agrees with every
+ * fixed column, so noting one is enough. The first column a variable
+ * fixed is noted before any written as a constant, since a constant
+ * such as a node's kind is shared by facts from every file.
+ */
+function noteLookup(
+  db: Database,
+  literal: Literal,
+  bindings: Bindings | null,
+): void {
+  const reads = db.readLog?.readsOf(literal.relation) ?? null;
+  if (reads === null) {
+    return;
+  }
+  for (let column = 0; column < literal.terms.length; column++) {
+    const term = literal.terms[column] as Term;
+    if (term.type === "variable") {
+      const value = boundValue(bindings, term.name);
+      if (value !== undefined) {
+        noteIn(reads, column, value);
+        return;
+      }
+    }
+  }
+  const column = fewestFactsUnderConstant(db, literal);
+  const term = literal.terms[column];
+  if (term?.type === "constant") {
+    noteIn(reads, column, term.value);
+  }
+}
+
+/** Of the columns a literal writes a constant in, the one with the fewest facts under it. */
+function fewestFactsUnderConstant(db: Database, literal: Literal): number {
+  const relation = db.relationOf(literal.relation);
+  let best = -1;
+  let bestFacts = Number.POSITIVE_INFINITY;
+  for (let column = 0; column < literal.terms.length; column++) {
+    const term = literal.terms[column] as Term;
+    if (term.type !== "constant") {
+      continue;
+    }
+    const facts =
+      relation === undefined ? 0 : bucketSize(relation, column, term.value);
+    if (facts < bestFacts) {
+      best = column;
+      bestFacts = facts;
+    }
+  }
+  return best;
+}
+
+/**
+ * Note the lookups a join reading `first` before a round's new facts
+ * would otherwise have made, one per new fact. A fact in `first` that
+ * arrives later would join one of them on the variable they share.
+ */
+function noteSharedLookups(
+  db: Database,
+  first: Literal,
+  start: SmallerStart,
+  rows: readonly Tuple[],
+): void {
+  const reads = db.readLog?.readsOf(first.relation) ?? null;
+  if (reads === null) {
+    return;
+  }
+  const column = first.terms.findIndex(
+    (term) => term.type === "variable" && term.name === start.variable,
+  );
+  for (const row of rows) {
+    const value = row[start.column];
+    if (value !== undefined) {
+      noteIn(reads, column, value);
+    }
+  }
 }
 
 /**
@@ -1323,7 +1438,7 @@ function factsSince(
 ): Map<string, readonly Tuple[]> {
   const added = new Map<string, readonly Tuple[]>();
   for (const name of db.relationNames()) {
-    const all = db.facts(name);
+    const all = tuplesOf(db, name);
     const mark = marks.get(name) ?? 0;
     if (all.length > mark) {
       added.set(name, all.slice(mark));
@@ -1335,7 +1450,7 @@ function factsSince(
 function currentMarks(db: Database): Map<string, number> {
   const marks = new Map<string, number>();
   for (const name of db.relationNames()) {
-    marks.set(name, db.size(name));
+    marks.set(name, sizeOf(db, name));
   }
   return marks;
 }
@@ -1462,11 +1577,18 @@ function shapeOf(rules: Rule[]): RuleSetShape {
  * positive literal, so one of them being empty means there is nothing to
  * find, and a rule set has rules for code patterns a given project never uses.
  * A relation that fills up later gets the rule run in a later round.
+ * Any fact in the empty relation could change that, so the read is the
+ * whole relation.
  */
 function couldProduce(db: Database, rule: Rule): boolean {
-  return rule.body.every(
-    (literal) => literal.negated || db.size(literal.relation) > 0,
+  const empty = rule.body.find(
+    (literal) => !literal.negated && sizeOf(db, literal.relation) === 0,
   );
+  if (empty === undefined) {
+    return true;
+  }
+  db.readLog?.readWhole(empty.relation);
+  return false;
 }
 
 /**
@@ -1619,7 +1741,7 @@ function runRules<Tag>(
         return;
       }
       const startedAt = performance.now();
-      const before = db.size(r.head.relation);
+      const before = sizeOf(db, r.head.relation);
       const readBefore = budget.examined;
       deriveInto(r, seed, deltaIndex);
       chargeRule(
@@ -1627,7 +1749,7 @@ function runRules<Tag>(
         r.head.relation,
         r.body.map(literalName),
         performance.now() - startedAt,
-        db.size(r.head.relation) - before,
+        sizeOf(db, r.head.relation) - before,
         budget.examined - readBefore,
       );
     };
@@ -1670,7 +1792,7 @@ function runRules<Tag>(
         const all = new Map<string, readonly Tuple[]>();
         for (const l of r.body) {
           if (!l.negated) {
-            all.set(l.relation, db.facts(l.relation));
+            all.set(l.relation, tuplesOf(db, l.relation));
           }
         }
         runOneRule(r, all, -1);
@@ -1716,7 +1838,7 @@ function runRules<Tag>(
   state.marks = currentMarks(db);
   if (isProfiling()) {
     chargeRelationSizes(
-      db.relationNames().map((name) => [name, db.size(name)]),
+      db.relationNames().map((name) => [name, sizeOf(db, name)]),
       derivedRelations,
     );
   }
