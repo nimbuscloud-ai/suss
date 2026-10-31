@@ -7,6 +7,39 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.38.1 (2026-10-30)
+
+0.38.1 reads TypeScript projects faster where suss asks about the same values many times, and prints an object type's members in one order however suss came to the type.
+
+### Faster TypeScript reads
+
+To work out what a value comes down to, such as the function a route runs or the object a client was built from, suss asks its fact store, and it remembers the answer. Until now it threw every remembered answer away as soon as it read another fact. It reads facts all through a run, so a project that asks about the same values many times kept working out answers that hadn't changed. Two changes cut that, and both write the same summaries as before:
+
+- An answer suss has had to work out a second time now keeps a list of the facts it looked up, and suss keeps the answer until a fact arrives that one of those lookups would find ([#1367](https://github.com/nimbuscloud-ai/suss/pull/1367)).
+- The rules engine remembers, for the rest of one evaluation, which rules have the facts to run, where it used to check every rule again each round. Looking for GraphQL clients, suss also stops asking where calls imported from other packages come from ([#1366](https://github.com/nimbuscloud-ai/suss/pull/1366)).
+
+| Project | 0.38.0 | 0.38.1 |
+|---|---:|---:|
+| A private Cloudflare worker | 113 s | 92 s |
+| A private frontend of about 1.4 million lines | 132 s | 127 s |
+
+A project that asks about each value only a few times, such as cal.com, reads in the same time as before.
+
+### Object types print their members by name
+
+TypeScript lists the members of an object type it builds, such as `Omit<A & B, "x">` or a mapped type, in the order it happened to create them. A summary could then print the same type two ways, depending on what suss had read before it, so a run with a warm cache and a run without one could disagree. Object members now print by name, as union members already did:
+
+```tsx
+export function Profile(props: { id: number; completedOnboarding?: boolean }) {
+```
+
+```
+0.38.0  "shape":{"type":"ref","name":"{ id: number; completedOnboarding?: boolean | undefined; }"}
+0.38.1  "shape":{"type":"ref","name":"{ completedOnboarding?: boolean | undefined; id: number; }"}
+```
+
+The first run after upgrading changes the text of those types once. A diff between summaries written by 0.38.0 and by 0.38.1 shows their members reordered, and the short hash in a type definition's name changes with them ([#1365](https://github.com/nimbuscloud-ai/suss/pull/1365)).
+
 ## 0.38.0 (2026-10-27)
 
 0.38.0 reads a large TypeScript project in less than half the time and memory 0.37.1 needed, and writes summary files about a tenth the size, which moves the summary format to version 7.
