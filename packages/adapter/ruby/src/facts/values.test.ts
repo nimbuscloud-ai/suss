@@ -1613,4 +1613,16 @@ describe("ruby value facts", () => {
     );
     expect(rows(db, "readsKeyed")).toEqual([]);
   });
+
+  it("compares the two sides of a comparison, inside a block too, and not an append", async () => {
+    const source =
+      "def expensive(items)\n  DB[:items].where { price > 100 }\n  items << 1\nend\n";
+    const db = await factsFor(source);
+    const compared = rows(db, "compares");
+
+    expect(compared).toHaveLength(1);
+    expect(compared[0]?.[0]).toBe(keyOf(source, "price > 100"));
+    expect(textAt(source, compared[0]?.[1] ?? "")).toBe("price");
+    expect(compared[0]?.[2]).toBe(keyOf(source, "100"));
+  });
 });

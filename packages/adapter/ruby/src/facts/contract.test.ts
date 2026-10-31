@@ -95,6 +95,12 @@ const SOURCES: Record<string, CaseFiles> = {
     "f.rb":
       "def positions(users)\n  users.each_with_index { |user, at| at }\nend\n",
   },
+  "a call made on what another call returns": {
+    "f.rb": "QUERY = build().where(first)\n",
+  },
+  "a function comparing its two parameters": {
+    "f.rb": "def same(left, right)\n  left == right\nend\n",
+  },
 };
 
 /**

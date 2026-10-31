@@ -129,6 +129,14 @@ const SOURCES: Record<string, CaseFiles> = {
     "/f.ts":
       "import { value as renamed } from './source';\nexport const used = renamed;\n",
   },
+  "a call made on what another call returns": {
+    "/f.ts":
+      "declare function build(): { where(c: unknown): unknown };\ndeclare const first: unknown;\nexport const query = build().where(first);\n",
+  },
+  "a function comparing its two parameters": {
+    "/f.ts":
+      "export function same(left: unknown, right: unknown) {\n  return left === right;\n}\n",
+  },
 };
 
 /** The cases this adapter meets another way, and why. */
@@ -138,6 +146,8 @@ const KNOWN = {
       "extraction is lazy, so the store reads the writes into a table when a call through that table is asked about, and file extraction states none",
     "a template string with a hole":
       "extraction is lazy, so the value in a hole gets its facts when a question reaches it, and file extraction states only its key",
+    "a function comparing its two parameters":
+      "query builders written in TypeScript compare through calls such as eq(), which call and callArg state, and stating every comparison would ask the checker about more nodes",
   },
 };
 

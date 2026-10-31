@@ -1083,6 +1083,29 @@ const TEMPLATE_PIECES: Partial<
   concatenated_string: adjacentPieces,
 };
 
+/**
+ * `User.id == user_id`, which SQLAlchemy reads as a condition on the
+ * column. `a < b < c` compares each operand with the next one.
+ */
+function emitComparison(emitter: Emitter, comparison: PyNode): void {
+  const operands = children(comparison).filter(
+    (child) => child.type !== "comment",
+  );
+  const comparisonKey = nodeId(emitter.filePath, comparison);
+  for (const [at, left] of operands.entries()) {
+    const right = operands[at + 1];
+    if (right !== undefined) {
+      add(
+        emitter,
+        "compares",
+        comparisonKey,
+        valueKey(emitter, left),
+        valueKey(emitter, right),
+      );
+    }
+  }
+}
+
 /** What one expression says about itself, whichever walk reached it. */
 function emitExpressionFact(
   emitter: Emitter,
@@ -1127,6 +1150,9 @@ function emitExpressionFact(
   }
   if (type === "for_in_clause") {
     emitElementVariables(emitter, child);
+  }
+  if (type === "comparison_operator") {
+    emitComparison(emitter, child);
   }
   const pieces = TEMPLATE_PIECES[type]?.(emitter, child) ?? [];
   if (pieces.length > 0) {
