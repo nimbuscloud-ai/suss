@@ -55,6 +55,28 @@ describe("emitModuleImportFacts", () => {
     ]);
   });
 
+  it("records a wildcard import as forwarding every name the module declares", async () => {
+    write("root/myapp/models/group.py", "class Group: ...\n");
+    const initFile = write(
+      "root/myapp/models/__init__.py",
+      "from .group import *\nfrom fastapi import *\n",
+    );
+    const tree = await parsePython(fs.readFileSync(initFile, "utf8"));
+
+    const db = new Database();
+    emitModuleImportFacts(db, initFile, bindModule(tree.rootNode), {
+      roots: [path.join(tmpDir, "root")],
+    });
+
+    const group = path.join(tmpDir, "root/myapp/models/group.py");
+    expect(db.facts("reExportsAll")).toEqual([[initFile, group]]);
+    expect(db.facts("importsFile")).toEqual([[initFile, group]]);
+    expect(db.facts("importsModule")).toEqual([
+      [initFile, ".group"],
+      [initFile, "fastapi"],
+    ]);
+  });
+
   it("records an import written inside a function, which Python code uses to break a cycle", async () => {
     write("root/myapp/wrappers/restx.py");
     const importingFile = write(
