@@ -627,6 +627,9 @@ describe("python value facts", () => {
     ).toEqual([
       ["Child", "#Bare"],
       ["Dotted", "models.Bare"],
+      // Subscripting a base fills its type parameters and generates no
+      // constructor, so the class is plain when the base is.
+      ["Generic", "#Base"],
     ]);
   });
 
@@ -751,11 +754,14 @@ describe("python value facts", () => {
     expect(rows(db, "extendsNamed").map((row) => row[1])).toEqual(["SQLModel"]);
   });
 
-  it("says the dotted name too, and nothing for a subscript", async () => {
+  it("says the dotted name too, and the class a subscript refers to", async () => {
     const db = await factsFor(
       ["class Item(db.Model, Generic[T]):", "    pass", ""].join("\n"),
     );
-    expect(rows(db, "extendsNamed").map((row) => row[1])).toEqual(["db.Model"]);
+    expect(rows(db, "extendsNamed").map((row) => row[1])).toEqual([
+      "db.Model",
+      "Generic",
+    ]);
   });
 
   it("keeps a class attribute under its name", async () => {

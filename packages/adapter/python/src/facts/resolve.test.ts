@@ -191,6 +191,68 @@ describe("resolving a value across files", () => {
     expect(baseSave).not.toBe(ownSave);
   });
 
+  it("finds a method a class inherits through a subscripted base", async () => {
+    const { facts } = await factsFor({
+      "repos.py": [
+        "class Repository[Model]:",
+        "    def get_one(self, key):",
+        "        return key",
+        "",
+        "class GroupRepository[Model](Repository[Model]):",
+        "    pass",
+        "",
+        "def load():",
+        "    return GroupRepository().get_one(1)",
+        "",
+      ].join("\n"),
+    });
+
+    const read = String(
+      facts
+        .facts("readsProperty")
+        .find((row) => String(row[2]) === "get_one")?.[0],
+    );
+    const getOne = facts
+      .facts("holdsProperty")
+      .find((row) => String(row[1]) === "get_one")?.[2];
+    resolveCalls(facts, [read]);
+    expect(resolvedFunctions(facts, read)).toEqual([String(getOne)]);
+  });
+
+  it("reads a method off what a property's getter stores on the instance the first time it runs", async () => {
+    const { facts } = await factsFor({
+      "controllers.py": [
+        "class Repositories:",
+        "    def tools(self):",
+        "        return 1",
+        "",
+        "class Controller:",
+        "    _repos = None",
+        "",
+        "    @property",
+        "    def repos(self):",
+        "        if not self._repos:",
+        "            self._repos = Repositories()",
+        "        return self._repos",
+        "",
+        "def load():",
+        "    return Controller().repos.tools()",
+        "",
+      ].join("\n"),
+    });
+
+    const read = String(
+      facts
+        .facts("readsProperty")
+        .find((row) => String(row[2]) === "tools")?.[0],
+    );
+    const tools = facts
+      .facts("holdsProperty")
+      .find((row) => String(row[1]) === "tools")?.[2];
+    resolveCalls(facts, [read]);
+    expect(resolvedFunctions(facts, read)).toEqual([String(tools)]);
+  });
+
   it("keeps both methods for a receiver that can be the base or the subclass", async () => {
     const { facts } = await factsFor({
       "users.py": [
