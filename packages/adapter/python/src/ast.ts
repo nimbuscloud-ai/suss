@@ -191,6 +191,17 @@ export function children(node: PyNode | null | undefined): PyNode[] {
   return [...node.namedChildren];
 }
 
+/**
+ * The bases a class statement lists, each as the class it refers to. A
+ * subscripted base such as `Repository[Model]` refers to `Repository`:
+ * the class subclasses it, and the brackets only fill its type parameters.
+ */
+export function classBases(classNode: PyNode): PyNode[] {
+  return children(field(classNode, "superclasses")).map((base) =>
+    base.type === "subscript" ? (field(base, "value") ?? base) : base,
+  );
+}
+
 /** Every child, the unnamed ones such as an operator's token included. */
 export function allChildren(node: PyNode): PyNode[] {
   return [...node.children];

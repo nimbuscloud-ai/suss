@@ -8,7 +8,13 @@
 
 import { createHash } from "node:crypto";
 
-import { children, field, fields, stringLiteralValue } from "./ast.js";
+import {
+  children,
+  classBases,
+  field,
+  fields,
+  stringLiteralValue,
+} from "./ast.js";
 import { resolveName } from "./scope.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -425,12 +431,11 @@ function classFields(
 
 /**
  * The bases a class statement lists by a plain name, first to last. A
- * keyword such as `metaclass=` and a generic such as `Generic[T]` give
- * no fields.
+ * keyword such as `metaclass=` gives no fields, and neither does
+ * `Generic[T]`, since `Generic` is not a class of the project's own.
  */
 function baseClassNames(classNode: PyNode): string[] {
-  const superclasses = field(classNode, "superclasses");
-  return children(superclasses).flatMap((child) =>
+  return classBases(classNode).flatMap((child) =>
     child.type === "identifier" ? [child.text] : [],
   );
 }
