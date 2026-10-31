@@ -1560,4 +1560,23 @@ describe("python value facts", () => {
     );
     expect(rows(db, "readsKeyed")).toEqual([]);
   });
+
+  it("compares each operand of a comparison with the next one", async () => {
+    const source = "inside = low < value <= high\n";
+    const span = (text: string): string => {
+      const start = source.indexOf(text);
+      return `:${start}-${start + text.length}`;
+    };
+    const db = await factsFor(source);
+
+    expect(
+      rows(db, "compares").map(([comparison, ...operands]) => [
+        comparison,
+        ...operands.map((key) => key.replace(/^.*#/, "")),
+      ]),
+    ).toEqual([
+      [span("low < value <= high"), "low", "value"],
+      [span("low < value <= high"), "value", "high"],
+    ]);
+  });
 });

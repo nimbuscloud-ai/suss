@@ -114,8 +114,8 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     // node linked by `binds`. Both join; what fails is a read that reaches
     // its declaration by neither.
     check: (facts) => {
-      const param = facts("paramOf")[0]?.[2];
-      const returned = facts("returnsValue")[0]?.[1];
+      const [fn, , param] = facts("paramOf")[0] ?? [];
+      const returned = facts("returnsValue").find((row) => row[0] === fn)?.[1];
       if (param === undefined || returned === undefined) {
         return "expected one parameter and one return";
       }
@@ -501,6 +501,51 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
       return crosses
         ? null
         : "nothing links a name read in one file to what another file declares, so a value cannot leave the file it is written in";
+    },
+  },
+  {
+    name: "a call made on what another call returns",
+    requires:
+      "a module-level name assigned the call build().where(first), with no other calls",
+    // The chainedCall rule joins these two rows and nothing else, so the
+    // method has to be read off the inner call's own key.
+    check: (facts) => {
+      const calls = new Set(facts("call").map((row) => row[0] ?? ""));
+      const method = facts("readsProperty").find(
+        (row) => row[2] === "where" && calls.has(row[1] ?? ""),
+      );
+      if (method === undefined) {
+        return "no readsProperty of where is read off the inner call's key, so nothing says the outer call is made on what the inner one returns";
+      }
+      return facts("call").some((row) => row[1] === method[0])
+        ? null
+        : "the call to where is not a call whose callee is that read, so a chain of calls has no step";
+    },
+  },
+  {
+    name: "a function comparing its two parameters",
+    requires:
+      "a function with two parameters that returns whether the first equals the second",
+    check: (facts) => {
+      const params = facts("paramOf").map((row) => row[2] ?? "");
+      const isParameter = (key: string): boolean =>
+        params.includes(key) ||
+        facts("binds").some(
+          (row) => row[0] === key && params.includes(row[1] ?? ""),
+        );
+      const comparison = facts("compares")[0];
+      if (comparison === undefined) {
+        return "no compares row, so a reader cannot tell which values a condition is about";
+      }
+      if (
+        !isParameter(comparison[1] ?? "") ||
+        !isParameter(comparison[2] ?? "")
+      ) {
+        return "a compared operand is neither a parameter nor bound to one, so the comparison does not join what it compares";
+      }
+      return facts("returnsValue").some((row) => row[1] === comparison[0])
+        ? null
+        : "the function does not return the comparison's own key, so the comparison is keyed apart from the expression it is";
     },
   },
 ];

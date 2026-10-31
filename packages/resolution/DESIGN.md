@@ -96,6 +96,11 @@ holeAt(t, k, x)             the template t puts the value of x at position
                             k. Python and Ruby state each string of
                             adjacent strings, "a" f"{b}", as a hole of the
                             whole. No rule reads it yet
+compares(x, a, b)           the comparison x compares a with b, whatever
+                            the operator, as User.id == user_id in
+                            SQLAlchemy or price > 100 in a Sequel block.
+                            a < b < c is two rows. No rule reads it yet
+                            (Python, Ruby)
 converts(r, a, n)           the call r converts a to another type with
                             the language's own n, as Number(x), int(x)
                             or x.to_i. Only the source walk reads it
@@ -1090,6 +1095,22 @@ so that a callee that is itself a call, as in `daoBuilder()()`, needs
 one rule instead of a copy of every other rule. It differs from
 `callsFunction`, which starts from the function, because a caller
 asking for call sites already has the function.
+
+One relation follows a chain of calls outward from the call it starts at:
+
+```
+chainedCall(r, r2, m)       r2 calls the method m on what r returns, or
+                            on what a call chained on r returns, as
+                            db.update(t).set(v).where(c) reaches .set
+                            and .where from db.update(t). No rule reads
+                            it yet
+```
+
+A query builder takes its table from the first call and its columns
+from a call further out, so a reader starts at the first call and asks
+for the call to `where` or `values` however far out it is. The chain is
+the one-hop `call` and `readsProperty` facts every adapter already
+states, so the closure needs no bound and no adapter walks it.
 
 ## Where a value goes
 

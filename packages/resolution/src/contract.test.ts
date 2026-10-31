@@ -58,6 +58,12 @@ function conformingFacts(): Database {
   db.add("elementPartOf", ["block:2#name", "fn:a#loader", "0"]);
   db.add("elementPartOf", ["block:2#kind", "fn:a#loader", "1"]);
   db.add("holdsUnderKey", ["comprehension:2", "block:2#name"]);
+  db.add("readsProperty", ["callee:where", "call:1", "where"]);
+  db.add("call", ["call:where", "callee:where"]);
+  db.add("paramOf", ["fn:c", "0", "fn:c#left"]);
+  db.add("paramOf", ["fn:c", "1", "fn:c#right"]);
+  db.add("compares", ["compare:1", "fn:c#left", "fn:c#right"]);
+  db.add("returnsValue", ["fn:c", "compare:1"]);
   return db;
 }
 
@@ -177,6 +183,7 @@ describe("the fact contract", () => {
       db.retract("call", [
         ["call:1", "f#build"],
         ["call:2", "fn:a#loader"],
+        ["call:where", "callee:where"],
       ]);
       return db;
     });
@@ -311,6 +318,56 @@ describe("the fact contract", () => {
       return db;
     });
     expect(failures).toEqual([]);
+  });
+
+  it("catches a chained method read off something other than the inner call, and one that is never called", async () => {
+    const offName = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("readsProperty", [["callee:where", "call:1", "where"]]);
+      db.add("readsProperty", ["callee:where", "f#build", "where"]);
+      return db;
+    });
+    const uncalled = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("call", [["call:where", "callee:where"]]);
+      return db;
+    });
+
+    expect(offName.map((f) => f.problem)).toEqual([
+      expect.stringContaining("off the inner call's key"),
+    ]);
+    expect(uncalled.map((f) => f.problem)).toEqual([
+      expect.stringContaining("is not a call whose callee is that read"),
+    ]);
+  });
+
+  it("catches a comparison left out, one of something other than the parameters, and one nobody returns", async () => {
+    const problemWith = async (
+      change: (db: Database) => void,
+    ): Promise<string[]> => {
+      const failures = await checkFactContract(everyCase, () => {
+        const db = conformingFacts();
+        change(db);
+        return db;
+      });
+      return failures.map((f) => f.problem);
+    };
+    const comparison = ["compare:1", "fn:c#left", "fn:c#right"];
+
+    expect(
+      await problemWith((db) => db.retract("compares", [comparison])),
+    ).toEqual([expect.stringContaining("no compares row")]);
+    expect(
+      await problemWith((db) => {
+        db.retract("compares", [comparison]);
+        db.add("compares", ["compare:1", "fn:c#left", "f#other"]);
+      }),
+    ).toEqual([expect.stringContaining("neither a parameter nor bound")]);
+    expect(
+      await problemWith((db) =>
+        db.retract("returnsValue", [["fn:c", "compare:1"]]),
+      ),
+    ).toEqual([expect.stringContaining("does not return the comparison")]);
   });
 
   it("accepts a read linked to its parameter by binds rather than keyed as it", async () => {
