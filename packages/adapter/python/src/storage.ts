@@ -521,6 +521,9 @@ function modelNamed(
     if (isClassName(node.text)) {
       return node.text;
     }
+    if (declaredAsLibraryType(node, options)) {
+      return null;
+    }
     const declared = declaredTypeName(node.text, from, options);
     return declared === null ? null : classBehind(declared, options);
   }
@@ -541,6 +544,25 @@ function modelNamed(
   }
   return null;
 }
+
+/**
+ * Whether a variable is declared as one of the library's own types, such
+ * as `query: Select` or `column: ColumnElement` in SQLAlchemy. Those are
+ * statements and columns, never one of the project's models.
+ */
+function declaredAsLibraryType(
+  variable: PyNode,
+  options: StorageOptions,
+): boolean {
+  const libraries = new Set(
+    options.patterns.map((pattern) => topPackage(pattern.module)),
+  );
+  return receiverTypeOrigins(variable, options).some((origin) =>
+    libraries.has(topPackage(origin.module)),
+  );
+}
+
+const topPackage = (module: string): string => module.split(".")[0] ?? module;
 
 /**
  * The class a declared type is an alias of. `current_user: CurrentUser`
