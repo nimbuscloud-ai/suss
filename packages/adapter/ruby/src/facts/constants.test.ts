@@ -118,6 +118,21 @@ describe("a Ruby constant", () => {
     ).toMatch(/^one\.rb:/);
   });
 
+  it("does not read the name a class or module is declared with as a use of it", async () => {
+    const db = await factsFor({
+      "billing.rb": "module Billing\nend\n",
+      "store.rb": "module Billing\n  Limit = 1\nend\n",
+    });
+
+    expect(
+      bindingsOf(db).filter(
+        ([from, to]) =>
+          from.startsWith("store.rb") && to?.startsWith("billing.rb"),
+      ),
+    ).toEqual([]);
+    expect(db.facts("importsFile")).toEqual([]);
+  });
+
   it("says nothing when two files assign one name", async () => {
     const db = await factsFor({
       "one.rb": "Limit = 1\n",
