@@ -127,6 +127,20 @@ describe("a shared repository method, read per construction", () => {
     ]);
   });
 
+  it("lists the routes that reach a table, and not the methods on the way", () => {
+    const boundaries = itemsFor<{ boundary?: string }>(
+      "what reaches postgresql:Tool",
+    )
+      .map((item) => item.boundary)
+      .sort();
+
+    expect(boundaries).toEqual([
+      "GET /factory-tools/{key}",
+      "GET /tools-first",
+      "GET /tools/{key}",
+    ]);
+  });
+
   it("counts a call the copies repeat once in the warning about unresolved calls", () => {
     const unresolved = readSummaryFile(path.join(summaries, "summaries.json"))
       .flatMap((summary) => summary.transitions)
