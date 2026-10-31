@@ -10,6 +10,7 @@
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
+import { writtenFunctionOf } from "@suss/checker";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
@@ -76,7 +77,7 @@ export function directCalls(
   callers: BehavioralSummary[];
   calls: readonly DirectCall[];
 } {
-  const calls = facts.callersOf(target);
+  const calls = withoutCopiedCallers(facts, facts.callersOf(target));
   const callers = [...new Set(calls.map((call) => call.caller))].map((fn) =>
     representativeUnit(facts, fn),
   );
@@ -101,6 +102,30 @@ export function directCalls(
     };
   });
   return { items, callers, calls };
+}
+
+/**
+ * The calls with each one a copy of a method makes for one construction
+ * of its receiver left out when the method itself is listed, since the
+ * copy makes the same call. A copy listed alone stays.
+ */
+function withoutCopiedCallers(
+  facts: CallFacts,
+  calls: readonly DirectCall[],
+): DirectCall[] {
+  const unitOf = (call: DirectCall) => representativeUnit(facts, call.caller);
+  const listed = new Set(
+    calls.flatMap((call) =>
+      unitOf(call).receiverConstruction === undefined ? [call.caller] : [],
+    ),
+  );
+  return calls.filter((call) => {
+    const unit = unitOf(call);
+    return (
+      unit.receiverConstruction === undefined ||
+      !listed.has(writtenFunctionOf(unit))
+    );
+  });
 }
 
 /** "may call" when every call found may run another function instead, since none of them is sure to reach the subject. */

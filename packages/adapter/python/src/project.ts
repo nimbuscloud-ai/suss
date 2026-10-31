@@ -21,6 +21,7 @@ import {
   placeCalleeParameters,
   placeCalls,
   placePossibleCalls,
+  placeReceivers,
   recordParameterGaps,
   summaryIdFromParts,
   unfollowedCallGap,
@@ -628,6 +629,7 @@ async function runPython(
           new Map(bound.map((one) => [one.module, one.file])),
         );
 
+  const filesByPath = new Map(bound.map((one) => [one.file, one]));
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
     storagePatterns.length > 0 ||
     rawSqlPatterns.length > 0 ||
@@ -635,6 +637,7 @@ async function runPython(
       ? {
           facts: db,
           factsPath: file.file,
+          files: filesByPath,
           patterns: storagePatterns,
           couldMatch,
           rawSql: rawSqlPatterns,
@@ -654,7 +657,6 @@ async function runPython(
   );
 
   const importedDefinition = importedDefinitionLookup(db, bound);
-  const filesByPath = new Map(bound.map((one) => [one.file, one]));
   const tests = pythonTestIndex(options.packs, {
     filesByPath,
     roots,
@@ -924,6 +926,7 @@ async function runPython(
     placeArgTargets(summary, reached.argTargetsByKey.get(key));
     placePossibleCalls(summary, reached.possibleTargetsByKey.get(key));
     placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
+    placeReceivers(summary, reached.receiversByKey.get(key));
   };
   for (const [key, owners] of summariesBySeed) {
     for (const summary of owners) {

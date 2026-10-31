@@ -75,6 +75,7 @@ export {
   moduleExportBinding,
   type NamePart,
   NOTHING_DEPLOYED,
+  namedBinding,
   namePatternFromSub,
   namePatternKey,
   nameReference,
@@ -118,8 +119,10 @@ export {
   placeCalls,
   placePossibleCalls,
   placeReceiverClasses,
+  placeReceivers,
   type ReceiverClass,
   ReceiverClasses,
+  type ReceiverOf,
   recordParameterGaps,
   sameDeclarations,
   TargetPlacements,
@@ -134,6 +137,7 @@ export {
   type Polarity,
   polarityOf,
 } from "./conditions.js";
+export { dropIdleReceivers, withConstructions } from "./constructions.js";
 export { sameUnit, withDeclaredDelivery } from "./declaredDelivery.js";
 export {
   deploymentOf,
@@ -281,6 +285,7 @@ export {
 export {
   disambiguateSummaryIds,
   fileReference,
+  originalIdOf,
   referencedFile,
   referencedFileKey,
   renderTargetKey,

@@ -13,7 +13,7 @@ import {
   boundaryKey,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
-import { functionOf } from "@suss/checker";
+import { functionOf, writtenFunctionOf } from "@suss/checker";
 
 import { resolveTarget, unitsServing } from "./target.js";
 
@@ -70,15 +70,23 @@ export function functionsSpelled(
     };
   }
 
-  const target = reachTargetOfUnits(units);
+  const written = writtenFunctions(units);
+  const writtenSet = new Set(written);
+  // A call into a copy of one of these is a call into it too.
+  const copies = summaries.filter(
+    (summary) =>
+      summary.receiverConstruction !== undefined &&
+      writtenSet.has(writtenFunctionOf(summary)),
+  );
+  const target = reachTargetOfUnits([...new Set([...units, ...copies])]);
   const byName = !resolution.matched || resolution.target.kind === "summary";
-  if (byName && target.functions.length > 1) {
-    const candidates = target.functions.map((fn) =>
+  if (byName && written.length > 1) {
+    const candidates = written.map((fn) =>
       summaryIdentifier(representativeUnit(facts, fn)),
     );
     return {
       found: false,
-      headline: `${spec} could mean ${target.functions.length} functions here: ${candidates.join(", ")}. Ask about one of them.`,
+      headline: `${spec} could mean ${written.length} functions here: ${candidates.join(", ")}. Ask about one of them.`,
     };
   }
 
@@ -86,12 +94,24 @@ export function functionsSpelled(
     found: true,
     target,
     label:
-      target.functions.length === 1
-        ? summaryIdentifier(representativeUnit(facts, target.functions[0]))
+      written.length === 1
+        ? summaryIdentifier(representativeUnit(facts, written[0]))
         : spec,
     matched: resolution.matched ? resolution.target.kind : "name",
     units,
   };
+}
+
+/**
+ * The functions as written that these units are summaries of. A copy of
+ * a method for one construction of its receiver is the method itself
+ * here, so a name that matches a method and its copies is not ambiguous.
+ * Every copy has an original, which the call facts key the same way.
+ */
+function writtenFunctions(
+  units: ReadonlyArray<BehavioralSummary>,
+): FunctionKey[] {
+  return [...new Set(units.map(writtenFunctionOf))];
 }
 
 /**

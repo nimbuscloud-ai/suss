@@ -17,6 +17,7 @@ import {
   placeCalleeParameters,
   placeCalls,
   placePossibleCalls,
+  placeReceivers,
   recordParameterGaps,
   StopList,
   sameDeclarations,
@@ -67,6 +68,11 @@ import {
 import { askFileSources } from "../provenance.js";
 import { askWrittenValues, forgetEvaluations } from "../values/evaluator.js";
 import {
+  onOwnReceiver,
+  receiverConstructions,
+  receiverOf,
+} from "./receivers.js";
+import {
   calleeSpellings,
   dispatchedCalls,
   functionNamed,
@@ -81,6 +87,7 @@ import type {
   BoundaryBinding,
   DeclaredAt,
   ParameterCall,
+  ReceiverOf,
   UnfollowedCall,
 } from "@suss/behavioral-ir";
 import type {
@@ -152,6 +159,7 @@ export interface StoredScan {
   readonly possibleTargets: [string, DeclaredAt[]][];
   readonly parameterCalls: ParameterCall[];
   readonly passedPositions: string[];
+  readonly receivers: [string, ReceiverOf][];
 }
 
 /** A discovered unit's function, keyed the way its summary's span is. */
@@ -180,6 +188,8 @@ export interface ReachedUnits {
   >;
   /** The calls each scanned body makes through one of its own parameters, by the scanned function's key. */
   readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
+  /** What each scanned body's followed method calls run on, by callee text, keyed by the scanned function's key. */
+  readonly receiversByKey: ReadonlyMap<string, ReadonlyMap<string, ReceiverOf>>;
   /** The project functions each scanned body could step into, by the scanned function's key. */
   readonly callsByKey: ReadonlyMap<string, readonly string[]>;
   /** Every (function, position) some scanned body passed a named project function into, across the whole run. */
@@ -226,6 +236,7 @@ export function reachedFunctions(
     ReadonlyMap<string, readonly DeclaredAt[]>
   >();
   const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
+  const receiversByKey = new Map<string, ReadonlyMap<string, ReceiverOf>>();
   const callsByKey = new Map<string, string[]>();
   // Every (function, position) some scanned body passes a named project
   // function or a lambda it writes into. A variable does not count, so a
@@ -301,6 +312,9 @@ export function reachedFunctions(
       possibleTargetsByKey.set(key, scan.possibleTargets);
       if (scan.parameterCalls.length > 0) {
         parameterCallsByKey.set(key, scan.parameterCalls);
+      }
+      if (scan.receivers.size > 0) {
+        receiversByKey.set(key, scan.receivers);
       }
       for (const position of scan.passedPositions) {
         passedPositions.add(position);
@@ -392,6 +406,7 @@ export function reachedFunctions(
       placeArgTargets(summary, argTargetsByKey.get(key));
       placePossibleCalls(summary, possibleTargetsByKey.get(key));
       placeCalleeParameters(summary, parameterCallsByKey.get(key));
+      placeReceivers(summary, receiversByKey.get(key));
       return summary;
     };
     const summary =
@@ -420,6 +435,7 @@ export function reachedFunctions(
     argTargetsByKey,
     possibleTargetsByKey,
     parameterCallsByKey,
+    receiversByKey,
     callsByKey,
     passedPositions,
     scans,
@@ -458,6 +474,8 @@ type BodyReads = BodyCalls & {
   passed: ReadonlyMap<string, CalleeOutcome>;
   /** What each stopped call may run when it takes its function from a table, by call node id. */
   dispatched: ReadonlyMap<number, DispatchedCall>;
+  /** The constructions a followed method call's receiver was made at, by call node id. */
+  receivers: ReadonlyMap<number, ReceiverOf>;
 };
 
 /**
@@ -507,6 +525,7 @@ function batchedReads(
     ctx,
   );
   const dispatched = dispatchedAmong(written, spellings, ctx);
+  const receivers = receiversAmong(bodies, spellings, ctx);
   return new Map(
     bodies.map((body) => [
       body.key,
@@ -516,9 +535,34 @@ function batchedReads(
         spellings,
         passed,
         dispatched,
+        receivers,
       },
     ]),
   );
+}
+
+/**
+ * The constructions behind the receivers of the method calls these bodies
+ * follow into a function of the run. A call on the body's own receiver
+ * is left out, since it runs on whatever object the body runs on.
+ */
+function receiversAmong(
+  bodies: readonly ({ source: ReachedFunction } & BodyCalls)[],
+  spellings: CalleeSpellings,
+  ctx: ResolveContext,
+): ReadonlyMap<number, ReceiverOf> {
+  const asked = bodies.flatMap(({ source, written }) =>
+    written.flatMap(({ call, site }) => {
+      const receiver = receiverOf(call);
+      return receiver === null ||
+        onOwnReceiver(call, ctx.facts, source.file.file, source.node) !==
+          null ||
+        resolveCallee(call, site, ctx, spellings).kind !== "followed"
+        ? []
+        : [{ call, receiver, file: source.file }];
+    }),
+  );
+  return receiverConstructions(asked, ctx.facts, ctx.filesByPath);
 }
 
 /**
@@ -576,6 +620,7 @@ function ownReads(source: ReachedFunction, ctx: ResolveContext): BodyReads {
       ctx,
     ),
     dispatched: dispatchedAmong(body.written, spellings, ctx),
+    receivers: receiversAmong([{ source, ...body }], spellings, ctx),
   };
 }
 
@@ -601,6 +646,7 @@ function storedScan(scan: Scan): StoredScan {
     ]),
     parameterCalls: [...scan.parameterCalls],
     passedPositions: [...scan.passedPositions],
+    receivers: [...scan.receivers],
   };
 }
 
@@ -621,6 +667,7 @@ function scanFromStored(
     possibleTargets: new Map(stored.possibleTargets),
     parameterCalls: stored.parameterCalls,
     passedPositions: new Set(stored.passedPositions),
+    receivers: new Map(stored.receivers),
   };
 }
 
@@ -704,6 +751,8 @@ interface Scan {
   readonly possibleTargets: ReadonlyMap<string, readonly DeclaredAt[]>;
   readonly parameterCalls: readonly ParameterCall[];
   readonly passedPositions: ReadonlySet<string>;
+  /** What each followed method call runs on, by callee text. */
+  readonly receivers: ReadonlyMap<string, ReceiverOf>;
 }
 
 const EMPTY_SCAN: Scan = {
@@ -714,6 +763,7 @@ const EMPTY_SCAN: Scan = {
   possibleTargets: new Map(),
   parameterCalls: [],
   passedPositions: new Set(),
+  receivers: new Map(),
 };
 
 /** A body's calls, read before the round asks the rules about all of them at once. */
@@ -944,6 +994,12 @@ function scanBody(
       return;
     }
     follow(outcome.target);
+    placements.placeReceiver(
+      callee,
+      onOwnReceiver(call, ctx.facts, file.file, node) ??
+        read.receivers.get(call.id) ??
+        null,
+    );
   };
 
   for (const { call, site } of written) {
@@ -965,6 +1021,7 @@ function scanBody(
     possibleTargets: placements.possibleTargets,
     parameterCalls,
     passedPositions,
+    receivers: placements.receivers,
   };
 }
 

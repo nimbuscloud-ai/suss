@@ -161,6 +161,14 @@ export interface BoundaryBehavior<S extends { name: string }> {
   nameReference?(semantics: S): Reference | null;
 
   /**
+   * The semantics with its name set to `name`. An adapter leaves the
+   * name out when it depends on which object the code runs on, and a
+   * reader that knows the object fills it in here. A protocol whose
+   * names never depend on that leaves this undefined.
+   */
+  named?(semantics: S, name: string): S;
+
+  /**
    * The semantics with a host the project says it serves left out of
    * the name, or null when the name has none of them. A protocol whose
    * names never carry a host leaves this undefined.

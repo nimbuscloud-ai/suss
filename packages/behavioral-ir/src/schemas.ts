@@ -591,6 +591,14 @@ export const EffectSchema = z.discriminatedUnion("type", [
      * unit's calls have it.
      */
     receiverClass: ClassPlaceSchema.optional(),
+    /**
+     * Where the call's receiver can have been made, each a construction
+     * written `file:line:column`. A field the callee reads off its
+     * receiver then has the value that construction gave it.
+     */
+    receiverConstructions: z.array(z.string()).optional(),
+    /** Set when the call is on this unit's own receiver, so it runs on the same object. */
+    onOwnReceiver: z.literal(true).optional(),
     args: z.array(z.unknown()),
     async: z.boolean(),
     /** Absent for a call that always fires within its transition. */
@@ -626,6 +634,12 @@ export const EffectSchema = z.discriminatedUnion("type", [
       /** All the effects from one call site share this id. */
       groupId: z.string().optional(),
       preconditions: z.array(PredicateSchema).optional(),
+      /**
+       * The container this access reaches when the unit runs on an object
+       * made at each construction, keyed `file:line:column`. Set when the
+       * container depends on which object that is, so `binding` has none.
+       */
+      containerByConstruction: z.record(z.string(), z.string()).optional(),
       interaction: z.discriminatedUnion("class", [
         z.object({
           class: z.literal("storage-access"),
@@ -869,6 +883,12 @@ export const BehavioralSummarySchema = z.object({
    * written, and the export path starts with the subclass.
    */
   receiverClass: ClassPlaceSchema.optional(),
+  /**
+   * Set on the copy `withConstructions` makes of a summary for one
+   * construction of its receiver, and never in a summary file. The copy's
+   * containers are the ones that construction gives.
+   */
+  receiverConstruction: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

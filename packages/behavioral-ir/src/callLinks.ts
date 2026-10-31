@@ -61,6 +61,39 @@ export function placeCalls(
 }
 
 /**
+ * What a walk found about a call's receiver: that the call is on the
+ * body's own receiver, or the constructions the receiver was made at.
+ */
+export interface ReceiverOf {
+  own?: true;
+  made?: readonly string[];
+}
+
+/** Record on each invocation effect what its receiver is, matched by callee text as `placeCalls` matches. */
+export function placeReceivers(
+  summary: BehavioralSummary,
+  receivers: ReadonlyMap<string, ReceiverOf> | undefined,
+): void {
+  if (receivers === undefined) {
+    return;
+  }
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (effect.type !== "invocation") {
+        continue;
+      }
+      const receiver = receivers.get(normalizeCalleeText(effect.callee));
+      if (receiver?.own === true) {
+        effect.onOwnReceiver = true;
+      }
+      if (receiver?.made !== undefined && receiver.made.length > 0) {
+        effect.receiverConstructions = [...receiver.made];
+      }
+    }
+  }
+}
+
+/**
  * Where a scanned body's calls, and the arguments passed by name into
  * them, are declared. A walk fills it with `place`, `placeStop` and
  * `placeArg` as it visits each call, and reads it back through `targets`
@@ -79,6 +112,32 @@ export class TargetPlacements {
     Map<number, DeclaredAt | null>
   >();
   private readonly possibleByCallee = new Map<string, DeclaredAt[] | null>();
+  private readonly receiversByCallee = new Map<string, ReceiverOf | null>();
+
+  /**
+   * Record what a followed call runs on, or null when the walk could not
+   * tell. Calls written the same way share one record, so two that run
+   * on different objects leave it out.
+   */
+  placeReceiver(calleeText: string, receiver: ReceiverOf | null): void {
+    const key = normalizeCalleeText(calleeText);
+    const known = this.receiversByCallee.get(key);
+    if (known === undefined) {
+      this.receiversByCallee.set(key, receiver);
+      return;
+    }
+    if (
+      known !== null &&
+      (receiver === null || !sameReceiver(known, receiver))
+    ) {
+      this.receiversByCallee.set(key, null);
+    }
+  }
+
+  /** What each callee text runs on, where every call written that way agrees, as `placeReceivers` takes it. */
+  get receivers(): ReadonlyMap<string, ReceiverOf> {
+    return onlySettled(this.receiversByCallee);
+  }
 
   /**
    * Record where a callee is declared. When one callee text is placed at
@@ -254,6 +313,12 @@ function samePlaces(
   return (
     a.length === b.length &&
     a.every((place, at) => byDeclaration(place, b[at] as DeclaredAt) === 0)
+  );
+}
+
+function sameReceiver(a: ReceiverOf, b: ReceiverOf): boolean {
+  return (
+    a.own === b.own && (a.made ?? []).join("\n") === (b.made ?? []).join("\n")
   );
 }
 

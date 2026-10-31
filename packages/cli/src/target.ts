@@ -18,6 +18,7 @@ import path from "node:path";
 import {
   BOUNDARY_ROLE,
   boundaryKey,
+  originalIdOf,
   settlingSuffix,
   summaryIdentifier,
   summaryRef,
@@ -461,7 +462,7 @@ export function collapseTouches(
       const provides = providesKeyOf(summary);
       return {
         boundary: touchLabel(touched),
-        unit: summaryIdentifier(summary),
+        unit: originalIdOf(summary),
         relations,
         callee: touched.callee,
         ...(provides !== undefined ? { provides } : {}),
@@ -478,18 +479,34 @@ export function collapseTouches(
  */
 export function oneTouchPerCall<T extends TargetTouch>(
   touches: ReadonlyArray<T>,
-): Array<T & { relations: Relation[] }> {
-  const byCall = new Map<string, T & { relations: Relation[] }>();
+): Array<T & { relations: Relation[]; constructions: string[] }> {
+  const byCall = new Map<
+    string,
+    T & { relations: Relation[]; constructions: string[] }
+  >();
   for (const touch of touches) {
-    const key = `${touchLabel(touch.touched)}\u0000${summaryIdentifier(touch.summary)}\u0000${touch.touched.callee ?? ""}`;
+    // Copies of one method for several constructions of its receiver
+    // make the same call, so they are one touch on those constructions.
+    const key = `${touchLabel(touch.touched)}\u0000${originalIdOf(touch.summary)}\u0000${touch.touched.callee ?? ""}`;
+    const construction = touch.summary.receiverConstruction;
     const seen = byCall.get(key);
     if (seen === undefined) {
-      byCall.set(key, { ...touch, relations: [touch.touched.relation] });
+      byCall.set(key, {
+        ...touch,
+        relations: [touch.touched.relation],
+        constructions: construction === undefined ? [] : [construction],
+      });
       continue;
     }
 
     if (!seen.relations.includes(touch.touched.relation)) {
       seen.relations.push(touch.touched.relation);
+    }
+    if (
+      construction !== undefined &&
+      !seen.constructions.includes(construction)
+    ) {
+      seen.constructions.push(construction);
     }
   }
   return [...byCall.values()];
