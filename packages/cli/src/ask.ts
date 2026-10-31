@@ -747,7 +747,18 @@ function unresolvedCallCount(summaries: BehavioralSummary[]): number {
 
 /** The boundaries a function serves, one per summary of it that serves one. */
 function ownBoundariesOf(facts: CallFacts, fn: FunctionKey): TargetTouch[] {
-  return touchesOfUnits(facts.units.get(fn) ?? []).filter(servesItself);
+  return touchesOfUnits(facts.units.get(fn) ?? []).filter(
+    (touch) => servesItself(touch) && !reachedOnTheWay(touch.summary),
+  );
+}
+
+/**
+ * A library function the walk reached from something else. Its binding
+ * addresses nothing, so it serves no boundary of its own, where a
+ * package's export has a key that a caller in another package uses.
+ */
+function reachedOnTheWay(summary: BehavioralSummary): boolean {
+  return summary.kind === "library" && providesKeyOf(summary) === undefined;
 }
 
 /**
