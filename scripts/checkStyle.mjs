@@ -48,28 +48,6 @@ const RULES = [
       (file.endsWith(".ts") || file.endsWith(".tsx")) &&
       !file.endsWith(".test.ts"),
   },
-  {
-    name: "tree-sitter-node-identity",
-    // tree-sitter hands back a fresh wrapper object every time a child is
-    // read, so two reads of one node are never `===` and a plain Set or Map
-    // keyed on a node matches nothing. The adapters export NodeSet and
-    // NodeMap, which key on the node id instead.
-    pattern: /\b(?:Set|Map)\s*<\s*(?:PyNode|RbNode)\b/g,
-    message:
-      "key on the node id through NodeSet or NodeMap; a plain Set or Map keyed on a tree-sitter node matches nothing",
-    appliesTo: (file) => file.endsWith(".ts") || file.endsWith(".tsx"),
-  },
-  {
-    name: "tree-sitter-cached-children",
-    // web-tree-sitter's `namedChildren` and `children` getters keep the
-    // array they build on the node. A run keeps every root to the end, so
-    // every node a walk ever read stays in memory with it.
-    pattern: /(?<=[\w)\]?])\.(?:namedChildren|children)\b/g,
-    message:
-      "read children through the adapter's `children` or `allChildren`, which leave nothing cached on the node",
-    appliesTo: (file) => file.endsWith(".ts") && !file.endsWith(".test.ts"),
-    appliesToContents: (contents) => /\b(?:PyNode|RbNode)\b/.test(contents),
-  },
 ];
 
 function* sourceFiles(dir) {

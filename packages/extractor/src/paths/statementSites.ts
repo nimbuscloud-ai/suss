@@ -5,8 +5,7 @@
  *
  * The Python and the Ruby adapter ask here once per body. The statements
  * stand in as the engine's terminals, so one enumeration covers every
- * call in the body. tree-sitter hands back a new wrapper for a node each
- * time one is read, so statements are matched by id.
+ * call in the body. Statements are matched by id.
  */
 
 import { enumerateCallStatements } from "./enumeratePaths.js";

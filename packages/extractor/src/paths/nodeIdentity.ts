@@ -1,5 +1,4 @@
-// tree-sitter hands back a fresh wrapper object on every read, so a plain Set
-// or Map keyed on the object never matches. These collections key on the id.
+// Collections of parse tree nodes that key on each node's id.
 
 export interface Identified {
   readonly id: number;
