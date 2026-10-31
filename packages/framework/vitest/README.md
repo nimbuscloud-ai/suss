@@ -54,6 +54,41 @@ suss extract -f vitest=vitest.json
 A file matches on whole path segments from the end, so a repo-relative
 path matches a file the run reads from a package directory.
 
+## Tests that use vitest's globals
+
+With `test: { globals: true }` in the config, a test calls `describe`,
+`it` and `vi` without importing them:
+
+```ts
+// vitest.config.ts
+export default defineConfig({ test: { globals: true } });
+
+// src/orders.test.ts
+describe("cancel", () => {
+  it("marks the order cancelled", () => { ... });
+});
+```
+
+The pack reads `vitest.config.*`, or `vite.config.*` when there is none,
+in the directory the run reads, and turns globals on when the config
+writes `globals: true` inside its `test` block. It then reads every file
+named like `*.test.*` or `*.spec.*`, whatever the file imports, and
+takes a `describe`, `it`, `test` or `vi` the file does not import or
+declare itself as vitest's. A file that imports its own `test`, as a
+Playwright spec does, is left alone. The pack also reads a config that a
+`package.json` script hands vitest with `--config`. Point `config` at
+one it would not find, or set `globals` to decide for yourself, for
+instance when the config builds its options in a function the pack
+cannot read:
+
+```json
+{ "config": "tools/vitest.unit.mjs" }
+```
+
+```json
+{ "globals": true }
+```
+
 ## What it records
 
 - The case's title path: each `describe` or `suite` title, then the
@@ -78,6 +113,7 @@ way.
 - `it.each` and `it.for` declare one case per row. The pack reads the
   case once, under the title as written with its placeholders, and
   records that title as unresolved.
-- Tests written with vitest's globals, with no import from `vitest`.
+- With globals on, a test file named outside the default pattern, as a
+  config that sets `test.include` to something else can arrange.
 - A spy on an object's member matches any method of that name, since
   the pack cannot tell which object the spy was on.

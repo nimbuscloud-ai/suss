@@ -112,6 +112,41 @@ describe("createLazyProject", () => {
     ]);
   });
 
+  it("loads a test file by its name when the runner's functions are globals", async () => {
+    const { tsconfigPath } = await makeTempProject({
+      "orders.test.ts": `it("cancels", () => {});`,
+      "orders.ts": "export const x = 1;",
+    });
+    const runnerPack: PatternPack = {
+      name: "test-runner",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "test",
+          match: {
+            type: "testCase",
+            style: "block",
+            importModule: "runner",
+            suiteNames: ["describe"],
+            caseNames: ["it"],
+            skipModifiers: [],
+            argumentModifiers: [],
+            rowModifiers: [],
+            globalsIn: ["*.test.*"],
+          },
+          requiresImport: ["runner"],
+        },
+      ],
+      terminals: [],
+      inputMapping: { type: "allPositional" },
+    };
+    const result = await createLazyProject(tsconfigPath, [runnerPack]);
+    expect(result.candidatePaths.map((p) => path.basename(p))).toEqual([
+      "orders.test.ts",
+    ]);
+  });
+
   it("loads a consumer that reaches the gated package through its own wrapper", async () => {
     const { tsconfigPath } = await makeTempProject({
       "wrapper.ts": `import { foo } from "@gated/lib"; export const call = () => foo;`,

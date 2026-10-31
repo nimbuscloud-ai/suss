@@ -115,6 +115,17 @@ export function importedRootsOf(
   return roots;
 }
 
+/** Whether any of this file's imports binds `name`, from whichever module. */
+export function importBindsName(sourceFile: SourceFile, name: string): boolean {
+  const modules = sourceFile
+    .getImportDeclarations()
+    .map((decl) => decl.getModuleSpecifierValue());
+  return (
+    importedNamesOf(sourceFile, modules).has(name) ||
+    importedRootsOf(sourceFile, modules).has(name)
+  );
+}
+
 /**
  * The module a default or namespace import binds to this local name:
  * the project file it resolves to, or the specifier as written when it

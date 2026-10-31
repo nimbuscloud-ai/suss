@@ -45,6 +45,9 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
+  "peerDependencies": {
+    "ts-morph": "^23.0.0"
+  },
   "dependencies": {
     "@suss/extractor": "0.38.2",
     "zod": "^4.0.0"
