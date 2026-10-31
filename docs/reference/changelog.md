@@ -9,7 +9,7 @@ One section per release, newest first.
 
 ## 0.38.2 (2026-10-31)
 
-0.38.2 reads Ruby and Python projects in 35 to 40% less time, makes the rules engine cheaper in every language, and stops Ruby files that reopen a module from listing each other as imports.
+0.38.2 reads Ruby and Python projects in 35 to 40% less time, makes the rules engine cheaper in every language, follows Python routes into generic repositories, and stops Ruby files that reopen a module from listing each other as imports.
 
 ### Background
 
@@ -49,6 +49,29 @@ module Admin
 ```
 
 suss builds the module graph from `moduleImports` to work out which files run inside a deployable unit, such as a Lambda handler, so those false edges could pull in files a handler never loads. On mastodon, 52 files listed one of these imports. Upgrading changes `moduleImports` in Ruby summaries once, and only by removing entries ([#1369](https://github.com/nimbuscloud-ai/suss/pull/1369)).
+
+### Python routes that go through a generic repository
+
+A FastAPI app often reaches its tables through one repository class that many models share, made once per model and handed out by properties:
+
+```python
+class RepositoryGeneric[Schema, Model]:
+    def get_one(self, key): ...
+
+class GroupRepositoryGeneric[Schema, Model](RepositoryGeneric[Schema, Model]):
+    ...
+
+class BaseController:
+    @property
+    def repos(self):
+        if not self._repos:
+            self._repos = AllRepositories(self.session)
+        return self._repos
+```
+
+suss read the base `RepositoryGeneric[Schema, Model]` as nothing, so the subclass inherited none of its methods, and it never found what a property's getter stores on the instance. A route's call such as `self.repos.tools.get_one(id)` linked to nothing, and on mealie 22 of 196 routes reached the database at all. In 0.38.2, 87 do. Most of them reach it through a method such as `select(self.model)`, where the table depends on which repository the route went through, and those show the table as `postgresql:<unnamed container>`.
+
+A variable declared as one of SQLAlchemy's own types, such as `query: Select`, is no longer read as the model a query works on. A pagination helper that takes one used to read a table called `Select`. Upgrading adds call links and summaries to Python projects written this way ([#1373](https://github.com/nimbuscloud-ai/suss/pull/1373)).
 
 Upgrade with `npm install -g @suss/cli@0.38.2`, or `npx @suss/cli@0.38.2`.
 
