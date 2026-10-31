@@ -60,6 +60,17 @@ export function resolveCalls(db: Database, callKeys: readonly string[]): void {
   askResolution(db, callKeys, "wanted", programFor(db));
 }
 
+/** The keys among these whose value passes one of a function's parameters on the way to what it is written as. */
+export function passingParameters(
+  db: Database,
+  keys: readonly string[],
+): Set<string> {
+  askResolution(db, keys, "wantedParameters", programFor(db));
+  return new Set(
+    keys.filter((key) => db.lookup("wantedParameterBehind", 0, key).length > 0),
+  );
+}
+
 /** Asks where these values came from, for a reader that will look up the answers later. */
 export function askSourceQuestions(
   db: Database,

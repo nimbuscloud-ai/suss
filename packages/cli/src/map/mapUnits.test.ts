@@ -11,6 +11,8 @@ import {
 import { pageDataOf } from "./mapPageData.js";
 import { specDocumentPath } from "./mapUnits.js";
 
+import type { Effect } from "@suss/behavioral-ir";
+
 describe("specDocumentPath", () => {
   it.each([
     ["openapi:api/openapi.yaml", "api/openapi.yaml"],
@@ -117,5 +119,80 @@ describe("the GraphQL types a schema declares without fields", () => {
     });
     expect(byName.get("DateTime")).toMatchObject({ kind: "scalar" });
     expect(pageDataOf(model).data.ty.some((t) => t[2] === "enum")).toBe(true);
+  });
+});
+
+describe("a repository method every model shares", () => {
+  const sharedRead: Effect = {
+    type: "interaction",
+    binding: {
+      transport: "postgresql",
+      semantics: {
+        name: "storage",
+        storageSystem: "postgresql",
+        scope: "default",
+        container: null,
+        accessPath: null,
+      },
+      recognition: "sqlalchemy",
+    },
+    callee: "select(self.model)",
+    containerByConstruction: {
+      "app/main.py:3:5": "tools",
+      "app/main.py:9:5": "tags",
+    },
+    interaction: { class: "storage-access", kind: "read", fields: ["*"] },
+  };
+  const getOne = unit({
+    kind: "library",
+    file: "app/repos.py",
+    name: "Repository.get_one",
+    line: 20,
+    transitions: [transition("get_one:return", { effects: [sharedRead] })],
+  });
+  const route = (path: string, construction: string, line: number) =>
+    unit({
+      kind: "handler",
+      file: "app/main.py",
+      name: path.slice(1),
+      line,
+      binding: rest("GET", path),
+      transitions: [
+        transition(`${path}:200`, {
+          status: 200,
+          effects: [
+            {
+              type: "invocation",
+              callee: "repo.get_one",
+              summary: getOne.identity.id,
+              args: [],
+              async: false,
+              receiverConstructions: [construction],
+            },
+          ],
+        }),
+      ],
+    });
+
+  it("is one unit on the page, reading each table a construction passes", () => {
+    const model = modelOf([
+      route("/tools", "app/main.py:3:5", 1),
+      route("/tags", "app/main.py:9:5", 7),
+      getOne,
+    ]);
+    const readersOf = (table: string) =>
+      model.tables
+        .filter((one) => model.boundaries[one.boundary]?.label === table)
+        .flatMap((one) => one.readers.map((r) => model.units[r.unit]?.id));
+
+    expect(
+      model.units.filter((one) => one.name === "Repository.get_one"),
+    ).toHaveLength(1);
+    expect(readersOf("postgresql:tools")).toEqual([
+      "app/repos.py::Repository.get_one",
+    ]);
+    expect(readersOf("postgresql:tags")).toEqual([
+      "app/repos.py::Repository.get_one",
+    ]);
   });
 });

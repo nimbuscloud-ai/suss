@@ -294,11 +294,13 @@ type Effect = ({ count?: number; location?: { start: number; end: number } }) & 
       possibleSummaries?: string[];
       calleeParameter?: number;
       receiverClass?: { file: string; name: string };
+      receiverConstructions?: string[]; onOwnReceiver?: true;
       preconditions?: Predicate[] }
   | { type: "emission"; event: string; payload?: unknown }
   | { type: "stateChange"; variable: string; newValue?: unknown }
   | { type: "interaction"; binding: BoundaryBinding; callee?: string;
       groupId?: string; preconditions?: Predicate[];
+      containerByConstruction?: Record<string, string>;
       interaction: Interaction }
 );
 
@@ -321,6 +323,8 @@ A transition lists only the effects that can run before its terminal. A write af
 **Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that something happened: a call fired, a state variable was set, an event went out. They are there for impact analysis, the kind where you want to say "this change edits a handler that writes `users`, and here is who reads `users`".
 
 On an `invocation`, `summary` is the summary this call reaches, the one whose unit is declared where the type checker resolved `callee`. It is absent when the callee is declared outside the run, when more than one summary describes that unit, or when nothing resolved and no summary in the same file has that name. `declaredAt` and `argsDeclaredAt` are the raw declaration places an adapter sets while extracting; naming turns them into `summary` and `argsSummary` and removes them, so you see them only in the extraction cache. `possibleSummaries` lists the summaries a call may reach when it takes its function out of a table or picks a member by a name it works out at run time, as `COMMANDS[name](args)` or Ruby's `send(kind)` does. One of them runs, and the source does not say which, so the call has no `summary`. A call the source narrows to one entry gets `summary` instead. `possibleDeclaredAt` is the raw form, with the same lifecycle as `declaredAt`. `calleeParameter` is set when the callee is one of this unit's own parameters, and gives its index among them, so a caller that passes a function into that parameter reaches this call through it. `receiverClass` is the file and qualified name of the class the call was sent to: the receiver's class, or the class itself for a class method. It is set when the adapter settled the receiver on a class the run defines, even when the method comes from a module the class includes or from the library, as `Account.find(id)` does. Only a test unit's calls have it, and the intent check reads it to decide whether a test reached the class a scenario is about.
+
+A method that every repository in a project shares can read the table its constructor stored, as `select(self.model)` does, and which table that is depends on which repository the call ran on. The storage read in that method then has `container: null`, and `containerByConstruction` lists the table each construction gives, keyed by where the construction is written as `file:line:column`, such as `"repos/factory.py:215:16": "Tool"`. A call whose receiver can only have been made at known constructions lists them in `receiverConstructions`, and a call on the method's own `self` has `onOwnReceiver`. Both appear only on calls into a method that does something different on some construction, either through such a read or through a call on its own `self` into one that does. `suss ask`, `suss map` and the MCP server copy the method once for each construction a caller passes, with that construction's table filled in, so the answer to `what does GET /tools reach` includes `Tool`. The copies are never written to a file, and an answer that lists the method lists it once, with the constructions it covers. Today the Python adapter sets these.
 
 `args` has one entry per argument, in the order the call wrote them, and each entry's `kind` says what was passed:
 

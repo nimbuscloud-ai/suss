@@ -275,7 +275,7 @@ export interface MapInput {
 
 export function buildMapModel(input: MapInput): MapModel {
   const { summaries } = input.loaded;
-  const units = new UnitTable(input.reads, input.readOf);
+  const units = new UnitTable(input.reads, input.readOf, summaries);
   const boundaries = new BoundaryTable();
 
   const gathered = gatherEntries(summaries, units);

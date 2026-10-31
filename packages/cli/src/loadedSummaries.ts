@@ -9,9 +9,11 @@
  * every question until the directory changes.
  *
  * The call facts are built on first use, because a question about what a
- * boundary declares never needs them.
+ * boundary declares never needs them. A method a call runs on one
+ * construction of its receiver gets a copy with that construction's tables.
  */
 
+import { withConstructions } from "@suss/behavioral-ir";
 import { readCallFacts } from "@suss/checker";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -22,9 +24,8 @@ export interface LoadedSummaries {
   readonly callFacts: CallFacts;
 }
 
-export function loadedSummaries(
-  summaries: BehavioralSummary[],
-): LoadedSummaries {
+export function loadedSummaries(read: BehavioralSummary[]): LoadedSummaries {
+  const summaries = withConstructions(read);
   let facts: CallFacts | null = null;
   return {
     summaries,

@@ -121,6 +121,23 @@ export function summaryIdentifier(summary: BehavioralSummary): string {
   });
 }
 
+/** The id of a reader's copy of the summary `target` for one construction of its receiver. */
+export function constructionCopyId(
+  target: string,
+  construction: string,
+): string {
+  return `${target} on ${construction}`;
+}
+
+/** The id of the summary a copy was made from, or the summary's own id when it is not a copy. */
+export function originalIdOf(summary: BehavioralSummary): string {
+  const id = summaryIdentifier(summary);
+  const construction = summary.receiverConstruction;
+  const suffix =
+    construction === undefined ? "" : constructionCopyId("", construction);
+  return id.slice(0, id.length - suffix.length);
+}
+
 /**
  * The id a summary has before settling adds a boundary or a number to it.
  * A reader matches a typed tail against this id, so the tail `evaluate`
@@ -141,7 +158,7 @@ export function unsettledSummaryId(summary: BehavioralSummary): string {
  * summary can disagree about the workspace, so the match leaves it out.
  */
 export function settlingSuffix(summary: BehavioralSummary): string {
-  const id = summaryIdentifier(summary);
+  const id = originalIdOf(summary);
   const withoutWorkspace = summaryIdFromParts({
     workspace: undefined,
     file: summary.location.file,

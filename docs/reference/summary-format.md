@@ -200,6 +200,8 @@ A transition lists only the effects that can run before it ends. A route that re
 
 Every `interaction` includes the `BoundaryBinding` of the resource it reaches, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The nine classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read`, `schedule` and `stream-write`. [IR types](/reference/ir#effect) has each one's fields.
 
+A read in a method that many objects share, which reads the table its constructor stored, has `"container": null` and lists the table for each construction in `containerByConstruction`. The calls that run it list where their receiver was made in `receiverConstructions`. [IR types](/reference/ir#effect) says how a reader puts the two together.
+
 ## Where a value came from
 
 A transition whose effects write a column or pick rows by one records where each of those values came from, under `provenance`. The GetItem above, written in an Express route as `{ Key: { invoiceId: req.params.id } }`, gives:

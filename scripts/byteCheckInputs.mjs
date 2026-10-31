@@ -374,6 +374,14 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/path-aliases/tsconfig.json"),
     ...packs("hono"),
   ]),
+  fixture("per-construction-python", [
+    ...lang("python"),
+    ...dir("fixtures/per-construction-python"),
+    ...packs(
+      "fastapi",
+      "sqlalchemy=fixtures/per-construction-python/suss.sqlalchemy.json",
+    ),
+  ]),
   fixture("per-site-client", [
     ...dir("fixtures/per-site-client"),
     ...packs("axios"),

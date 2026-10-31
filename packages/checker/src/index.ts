@@ -88,6 +88,7 @@ export {
   type ReachOptions,
   type ReachTarget,
   readCallFacts,
+  writtenFunctionOf,
 } from "./calls/callFacts.js";
 export { checkConsumerContract } from "./consumer/consumerContract.js";
 export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
