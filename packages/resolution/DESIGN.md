@@ -294,8 +294,9 @@ imports(x, m, n)            x is the name n imported from module m. n
                             (TypeScript, Python)
 exportsAs(m, n, v)          the file m exports v under the name n
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
-reExportsAll(m, m2)         m forwards everything m2 exports
-                            (TypeScript)
+reExportsAll(m, m2)         m forwards everything m2 exports: export *
+                            from in TypeScript, from m2 import * in
+                            Python
 importsModule(f, m)         the file f imports the module m, as written.
                             A pack reader asks whether a file imports
                             its library with it, and no rule reads it

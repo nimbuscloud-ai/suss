@@ -70,4 +70,32 @@ export function emitModuleImportFacts(
       db.add("imports", [nameKey, moduleText, exportedName]);
     }
   }
+  emitWildcardImportFacts(db, filePath, module, resolverOptions);
+}
+
+/**
+ * A `from x import *` binds every name `x` declares, so another file can
+ * import any of them from this one, as a package's `__init__.py` lets it
+ * import a class from a module beside it. The shared rules forward them
+ * the way they forward TypeScript's `export * from`.
+ */
+function emitWildcardImportFacts(
+  db: Database,
+  filePath: string,
+  module: ModuleBinding,
+  resolverOptions: ModuleResolverOptions,
+): void {
+  for (const written of module.openImports) {
+    const relativeLevel = written.length - written.replace(/^\.+/, "").length;
+    const resolution = resolveModule(
+      filePath,
+      { module: written.slice(relativeLevel), relativeLevel },
+      resolverOptions,
+    );
+    db.add("importsModule", [filePath, written]);
+    if (resolution.status === "resolved") {
+      db.add("importsFile", [filePath, resolution.file]);
+      db.add("reExportsAll", [filePath, resolution.file]);
+    }
+  }
 }

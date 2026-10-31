@@ -259,4 +259,46 @@ describe("where a construction's model comes from", () => {
       "app/main.py:32:12": "Tag",
     });
   });
+
+  it("follows a model its package brings in with a wildcard import", async () => {
+    write("app/__init__.py", []);
+    write("app/models/__init__.py", ["from .tool import *"]);
+    write("app/models/tool.py", [
+      "from sqlalchemy.orm import DeclarativeBase",
+      "",
+      "class Base(DeclarativeBase):",
+      "    pass",
+      "",
+      "class Tool(Base):",
+      '    __tablename__ = "tools"',
+    ]);
+    write("app/repos.py", [
+      "from sqlalchemy import select",
+      "",
+      "class Repository:",
+      "    def __init__(self, session, sql_model):",
+      "        self.session = session",
+      "        self.model = sql_model",
+      "",
+      "    def get_one(self, key):",
+      "        return self.session.execute(select(self.model)).scalar_one()",
+    ]);
+    write("app/main.py", [
+      "from fastapi import FastAPI",
+      "",
+      "from app.models import Tool",
+      "from app.repos import Repository",
+      "",
+      "app = FastAPI()",
+      "session = None",
+      "",
+      '@app.get("/tools")',
+      "def tools():",
+      "    return Repository(session, Tool).get_one(1)",
+    ]);
+
+    const { byConstruction } = readIn(await extract(tmpDir), tmpDir);
+
+    expect(byConstruction).toEqual({ "app/main.py:11:12": "Tool" });
+  });
 });
