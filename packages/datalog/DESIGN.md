@@ -140,6 +140,29 @@ witness still lists the body in the order the rule was written. When it
 read bodies in written order instead, a witness pass over one Rails
 project read 8.4 billion rows where the untagged pass read 3 million.
 
+Picking the order at every step means working out, at every step,
+which columns of each remaining literal already have a value. That
+depends only on which literals have matched so far, so the engine works
+it out once per rule and per set of matched literals, the first time a
+join gets there. Each variable and constant in a rule gets a numbered
+slot, and the join keeps its bindings in one array of those slots. A
+step reads the plan for where it is, looks up how many rows each
+remaining literal has under the values in its fixed columns, and writes
+a match's values into the slots. The bindings used to be a chain of
+name and value pairs, so every lookup compared variable names along the
+chain and every match allocated a link. The join still picks the
+literal with the fewest rows, and the earlier one on a tie, so it reads
+the same rows and derives the same facts in the same order. On a
+TypeScript service that writes about a thousand summaries, this took a
+read from 92 to 86 seconds, and Ruby and Python reads got about 3%
+faster.
+
+Ruby and Python run millions of joins that each read one new row, so
+what a join costs before it reads anything matters as much as the
+steps. A join finds its plan with one lookup, finds the relations it
+reads by the plan's number on the database, and an untagged join
+reuses the plan's array of slots instead of copying it.
+
 `evaluate` resumes from where it stopped. Call it again with the same
 rules after adding facts, and it starts from the facts you added instead
 of redoing the whole fixpoint. A caller that goes back and forth between

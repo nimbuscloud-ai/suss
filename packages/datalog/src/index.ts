@@ -13,6 +13,17 @@
  */
 
 import { FactIndex, type FactKey } from "./factIndex.js";
+import {
+  followingStep,
+  groundNegated,
+  headTuple,
+  type JoinPlan,
+  joinPlanOf,
+  type LiteralStep,
+  type StepPlan,
+  unboundNegated,
+  unify,
+} from "./joinPlan.js";
 import { isDemandRewritten } from "./onDemand.js";
 import {
   chargeEngine,
@@ -155,6 +166,9 @@ export class Database {
 
   /** @internal Where reads are noted while `noteReads` runs. */
   readLog: ReadLog | null = null;
+
+  /** @internal Per join plan, by its id, the relation behind each body literal. */
+  joinRelations: (readonly (Relation | undefined)[] | undefined)[] = [];
 
   private relation(name: string): Relation {
     const existing = this.store.get(name);
@@ -524,118 +538,32 @@ export function stratify(rules: Rule[]): Rule[][] {
 // ---------------------------------------------------------------------------
 
 /**
- * One variable bound to one value, on top of what was bound before
- * it. A chain instead of a Map because the join extends bindings once
- * per matched fact, and copying a Map there was most of the
- * evaluator's allocation; a body binds a handful of variables, so
- * walking the chain costs less than the copies did.
- */
-interface Bindings {
-  readonly name: string;
-  readonly value: Atom;
-  readonly parent: Bindings | null;
-}
-
-function boundValue(bindings: Bindings | null, name: string): Atom | undefined {
-  for (let b = bindings; b !== null; b = b.parent) {
-    if (b.name === name) {
-      return b.value;
-    }
-  }
-  return undefined;
-}
-
-const NO_MATCH = Symbol("no-match");
-
-function unify(
-  literal: Literal,
-  tuple: Tuple,
-  bindings: Bindings | null,
-): Bindings | null | typeof NO_MATCH {
-  if (literal.terms.length !== tuple.length) {
-    return NO_MATCH;
-  }
-  let next = bindings;
-  for (let i = 0; i < literal.terms.length; i++) {
-    const term = literal.terms[i];
-    const value = tuple[i];
-    if (term.type === "constant") {
-      if (term.value !== value) {
-        return NO_MATCH;
-      }
-      continue;
-    }
-    const bound = boundValue(next, term.name);
-    if (bound === undefined) {
-      next = { name: term.name, value, parent: next };
-      continue;
-    }
-    if (bound !== value) {
-      return NO_MATCH;
-    }
-  }
-  return next;
-}
-
-/** Instantiate a negated literal's tuple; every variable must be bound. */
-function groundNegated(literal: Literal, bindings: Bindings | null): Tuple {
-  return literal.terms.map((term) => {
-    if (term.type === "constant") {
-      return term.value;
-    }
-    const bound = boundValue(bindings, term.name);
-    if (bound === undefined) {
-      throw new Error(
-        `unbound variable "${term.name}" in negated literal "${literal.relation}": ` +
-          "negated literals may only use variables bound by earlier positive literals",
-      );
-    }
-    return bound;
-  });
-}
-
-function headTuple(head: Rule["head"], bindings: Bindings | null): Tuple {
-  return head.terms.map((term) => {
-    if (term.type === "constant") {
-      return term.value;
-    }
-    const bound = boundValue(bindings, term.name);
-    if (bound === undefined) {
-      throw new Error(
-        `unbound variable "${term.name}" in head of "${head.relation}"`,
-      );
-    }
-    return bound;
-  });
-}
-
-const positiveLiterals = new WeakMap<Rule, readonly number[]>();
-
-/** The body positions of a rule's positive literals, in written order. */
-function positivesOf(r: Rule): readonly number[] {
-  let positives = positiveLiterals.get(r);
-  if (positives === undefined) {
-    positives = r.body
-      .map((literal, index) => (literal.negated ? -1 : index))
-      .filter((index) => index !== -1);
-    positiveLiterals.set(r, positives);
-  }
-  return positives;
-}
-
-/**
  * Which body literal the `deltaIndex`-th positive literal is, or -1
  * when the rule has fewer positive literals than that.
  */
-function deltaLiteral(r: Rule, deltaIndex: number): number {
-  return positivesOf(r)[deltaIndex] ?? -1;
+function deltaLiteral(plan: JoinPlan, deltaIndex: number): number {
+  return plan.positives[deltaIndex] ?? -1;
 }
 
-const allBound = (literal: Literal, bindings: Bindings | null): boolean =>
-  literal.terms.every(
-    (term) =>
-      term.type === "constant" || boundValue(bindings, term.name) !== undefined,
-  );
+/**
+ * The relation behind each body literal, looked up once per rule and
+ * database. A rule runs only once each of its positive literals has
+ * facts, and a database keeps every relation object it makes, so the
+ * ones the join reads stay the same on every later run. A negated
+ * literal's relation may not exist yet, and the join checks that one
+ * through `has` instead.
+ */
+function relationsOf(
+  db: Database,
+  plan: JoinPlan,
+): readonly (Relation | undefined)[] {
+  let relations = db.joinRelations[plan.id];
+  if (relations === undefined) {
+    relations = plan.rule.body.map((l) => db.relationOf(l.relation));
+    db.joinRelations[plan.id] = relations;
+  }
+  return relations;
+}
 
 /**
  * How many rows the joins of one evaluation may read, and how many they
@@ -711,75 +639,75 @@ function evaluateRule(
 ): Tuple[] {
   const results: Tuple[] = [];
   const body = r.body;
-  const deltaAt = deltaLiteral(r, deltaIndex);
-  const whole = 2 ** body.length - 1;
+  const plan = joinPlanOf(r);
+  const deltaAt = deltaLiteral(plan, deltaIndex);
+  const values = plan.slots;
+  const relations = relationsOf(db, plan);
 
   const walk = (
     index: number,
     source: readonly Tuple[],
-    taken: number,
-    bindings: Bindings | null,
+    at: StepPlan,
   ): void => {
-    const literal = body[index];
+    const reading = at.literals[index] as LiteralStep;
+    const next = followingStep(plan, at, index);
     for (const tuple of source) {
       budget.examined++;
       if (budget.examined > budget.limit) {
         throw OUT_OF_BUDGET;
       }
-      const next = unify(literal, tuple, bindings);
-      if (next !== NO_MATCH) {
-        step(taken | (1 << index), next);
+      if (unify(reading, tuple, values)) {
+        step(next);
       }
     }
   };
 
-  const step = (taken: number, bindings: Bindings | null): void => {
-    if (taken === whole) {
-      results.push(headTuple(r.head, bindings));
+  const step = (at: StepPlan): void => {
+    if (at.taken === plan.whole) {
+      results.push(headTuple(plan, values));
       return;
     }
-    const index = nextLiteral(db, body, taken, bindings);
+    const index = nextLiteral(db, plan, at, relations, values);
     if (index === -1) {
       return;
     }
     const literal = body[index];
     if (literal.negated) {
-      if (!db.has(literal.relation, groundNegated(literal, bindings))) {
-        step(taken | (1 << index), bindings);
+      if (!db.has(literal.relation, groundNegated(plan, index, values))) {
+        step(followingStep(plan, at, index));
       }
       return;
     }
-    walk(index, nextSource, taken, bindings);
+    walk(index, nextSource, at);
   };
 
   if (deltaAt === -1) {
-    step(0, null);
+    step(plan.start);
     return results;
   }
   const rows = deltaRows(deltas, body[deltaAt], budget);
-  const start = smallerStart(db, body, deltaAt, rows);
+  const start = smallerStart(db, plan, relations, deltaAt, rows);
   if (start === null) {
-    walk(deltaAt, rows, 0, null);
+    walk(deltaAt, rows, plan.start);
     return results;
   }
   // The smaller literal is read whole, and each of its rows reads only
   // the new facts that agree with it on the variable the two share.
   const byValue = newFactsByColumn(rows, start.column, budget);
-  const first = body[start.index];
-  noteSharedLookups(db, first, start, rows);
+  const reading = plan.start.literals[start.index] as LiteralStep;
+  const after = followingStep(plan, plan.start, start.index);
+  noteSharedLookups(db, plan, start, rows);
   for (const tuple of start.source) {
     budget.examined++;
     if (budget.examined > budget.limit) {
       throw OUT_OF_BUDGET;
     }
-    const bindings = unify(first, tuple, null);
-    if (bindings === NO_MATCH) {
+    if (!unify(reading, tuple, values)) {
       continue;
     }
-    const value = boundValue(bindings, start.variable);
-    const matching = value === undefined ? undefined : byValue.get(value);
+    const matching = byValue.get(values[start.slot] as Atom);
     if (matching !== undefined) {
-      walk(deltaAt, matching, 1 << start.index, bindings);
+      walk(deltaAt, matching, after);
     }
   }
   return results;
@@ -794,9 +722,9 @@ interface SmallerStart {
   index: number;
   /** Its rows, narrowed by any constants it writes. */
   source: readonly Tuple[];
-  /** The variable both literals name. */
-  variable: string;
-  /** Where the new facts' literal names that variable. */
+  /** The slot of the variable both literals have. */
+  slot: number;
+  /** The column of that variable in the new facts' literal. */
   column: number;
 }
 
@@ -820,10 +748,12 @@ const newFactIndexes = new WeakMap<
  */
 function smallerStart(
   db: Database,
-  body: readonly Literal[],
+  plan: JoinPlan,
+  relations: readonly (Relation | undefined)[],
   deltaAt: number,
   rows: readonly Tuple[],
 ): SmallerStart | null {
+  const body = plan.rule.body;
   const newFacts = body[deltaAt];
   const indexed = newFactIndexes.get(rows);
   let best: SmallerStart | null = null;
@@ -836,8 +766,17 @@ function smallerStart(
     if (column === -1) {
       continue;
     }
+    // Nothing is bound before the first literal, so its fixed columns
+    // are the ones it writes a constant in.
+    const reading = plan.start.literals[index] as LiteralStep;
     const source =
-      narrowedSource(db, literal, null) ?? tuplesOf(db, literal.relation);
+      reading.fixedColumns.length === 0
+        ? tuplesOf(db, literal.relation)
+        : narrowestRows(
+            relations[index] as Relation,
+            reading,
+            plan.initialSlots,
+          );
     const worthIt = indexed?.has(column)
       ? source.length < rows.length
       : source.length * 2 < rows.length;
@@ -845,7 +784,7 @@ function smallerStart(
       best = {
         index,
         source,
-        variable: (newFacts.terms[column] as { name: string }).name,
+        slot: plan.termSlots[deltaAt][column] as number,
         column,
       };
     }
@@ -853,7 +792,7 @@ function smallerStart(
   return best;
 }
 
-/** The first column of `from` whose variable `other` names too, or -1. */
+/** The first column of `from` whose variable `other` has too, or -1. */
 function sharedColumn(from: Literal, other: Literal): number {
   return from.terms.findIndex(
     (term) =>
@@ -896,61 +835,63 @@ function newFactsByColumn(
 let nextSource: readonly Tuple[] = [];
 
 /**
- * Which body literal a join reads next, once the literals in `taken`
- * have matched under `bindings`. A negated literal only filters, so it
- * comes as soon as its variables are bound. Otherwise the positive
- * literal with the fewest rows under the bindings comes next, and one
- * that shares no bound variable is scanned whole only when nothing
- * else is left. For a positive literal, the join reads the rows it
- * finds in `nextSource`. Returns -1 when a literal has no rows under
- * its bindings, which ends the branch.
+ * Which body literal a join reads next, once the literals the step has
+ * taken have matched and filled `values`. A negated literal only
+ * filters, so it comes as soon as its variables are bound. Otherwise the
+ * positive literal with the fewest rows under the bound values comes
+ * next, and one that shares no bound variable is scanned whole only when
+ * nothing else is left. For a positive literal, the join reads the rows
+ * it finds in `nextSource`. Returns -1 when a literal has no rows under
+ * the bound values, which ends the branch.
  */
 function nextLiteral(
   db: Database,
-  body: readonly Literal[],
-  taken: number,
-  bindings: Bindings | null,
+  plan: JoinPlan,
+  at: StepPlan,
+  relations: readonly (Relation | undefined)[],
+  values: readonly (Atom | undefined)[],
 ): number {
   let pick = -1;
-  let narrowest: readonly Tuple[] | null = null;
-  for (let index = 0; index < body.length; index++) {
-    if (taken & (1 << index)) {
-      continue;
-    }
-    const literal = body[index];
-    if (literal.negated) {
-      if (allBound(literal, bindings)) {
-        return index;
-      }
-      continue;
-    }
-    const source = narrowedSource(db, literal, bindings);
-    if (source === null) {
-      continue;
-    }
-    if (source.length === 0) {
-      noteLookup(db, literal, bindings);
-      return -1;
-    }
-    if (narrowest === null || source.length < narrowest.length) {
-      pick = index;
-      narrowest = source;
-    }
-  }
-  if (narrowest !== null) {
-    noteLookup(db, body[pick], bindings);
-    nextSource = narrowedFurther(db, body[pick], bindings, narrowest);
-    return nextSource.length === 0 ? -1 : pick;
-  }
-  for (let index = 0; index < body.length; index++) {
-    if (!(taken & (1 << index)) && !body[index].negated) {
-      nextSource = db.facts(body[index].relation);
+  let pickColumn = 0;
+  let fewest = 0;
+  for (const index of at.candidates) {
+    const reading = at.literals[index] as LiteralStep;
+    if (reading.negated) {
       return index;
     }
+    const column = narrowestFixed(
+      relations[index] as Relation,
+      reading,
+      values,
+    );
+    if (fewestRows === 0) {
+      noteLookup(db, plan.rule.body[index], reading, values);
+      return -1;
+    }
+    if (pick === -1 || fewestRows < fewest) {
+      pick = index;
+      pickColumn = column;
+      fewest = fewestRows;
+    }
   }
-  // Only negated literals with a variable nothing binds are left, and
-  // the caller grounding one reports it.
-  return body.findIndex((_, index) => !(taken & (1 << index)));
+  if (pick !== -1) {
+    const reading = at.literals[pick] as LiteralStep;
+    noteLookup(db, plan.rule.body[pick], reading, values);
+    nextSource = narrowedFurther(
+      relations[pick] as Relation,
+      reading,
+      pickColumn,
+      fewest,
+      values,
+    );
+    return nextSource.length === 0 ? -1 : pick;
+  }
+  if (at.scanWhole !== -1) {
+    nextSource = db.facts(plan.rule.body[at.scanWhole].relation);
+    return at.scanWhole;
+  }
+  // Only negated literals with a variable nothing binds are left.
+  throw unboundNegated(plan, at);
 }
 
 /**
@@ -963,21 +904,16 @@ function nextLiteral(
 function noteLookup(
   db: Database,
   literal: Literal,
-  bindings: Bindings | null,
+  reading: LiteralStep,
+  values: readonly (Atom | undefined)[],
 ): void {
   const reads = db.readLog?.readsOf(literal.relation) ?? null;
   if (reads === null) {
     return;
   }
-  for (let column = 0; column < literal.terms.length; column++) {
-    const term = literal.terms[column] as Term;
-    if (term.type === "variable") {
-      const value = boundValue(bindings, term.name);
-      if (value !== undefined) {
-        noteIn(reads, column, value);
-        return;
-      }
-    }
+  if (reading.noteColumn !== -1) {
+    noteIn(reads, reading.noteColumn, values[reading.noteSlot] as Atom);
+    return;
   }
   const column = fewestFactsUnderConstant(db, literal);
   const term = literal.terms[column];
@@ -1013,17 +949,16 @@ function fewestFactsUnderConstant(db: Database, literal: Literal): number {
  */
 function noteSharedLookups(
   db: Database,
-  first: Literal,
+  plan: JoinPlan,
   start: SmallerStart,
   rows: readonly Tuple[],
 ): void {
-  const reads = db.readLog?.readsOf(first.relation) ?? null;
+  const reads =
+    db.readLog?.readsOf(plan.rule.body[start.index].relation) ?? null;
   if (reads === null) {
     return;
   }
-  const column = first.terms.findIndex(
-    (term) => term.type === "variable" && term.name === start.variable,
-  );
+  const column = plan.termSlots[start.index].indexOf(start.slot);
   for (const row of rows) {
     const value = row[start.column];
     if (value !== undefined) {
@@ -1032,71 +967,82 @@ function noteSharedLookups(
   }
 }
 
+/** How many rows the column `narrowestFixed` picked has, or 0 when one of the columns is empty. */
+let fewestRows = 0;
+
 /**
- * The facts worth trying for a literal with a term already fixed, either
- * written as a constant or bound by an earlier literal: the index on
- * that column gives them directly. Null when nothing is fixed, so the
- * caller can tell a scan from a lookup.
+ * Of a literal's fixed columns, the one with the fewest facts under its
+ * value, since it feeds the join the fewest candidates to reject. It
+ * returns the column's position in `fixedColumns` and leaves its count
+ * in `fewestRows`. A column with no facts ends the search, and an
+ * earlier column wins a tie. The literal must have a fixed column.
  */
-function narrowedSource(
-  db: Database,
-  literal: Literal,
-  bindings: Bindings | null,
-): readonly Tuple[] | null {
-  // Of the columns already fixed, the one with the fewest facts under
-  // its value feeds the join the fewest candidates to reject.
-  const relation = db.relationOf(literal.relation);
-  let narrowest: readonly Tuple[] | null = null;
-  for (let column = 0; column < literal.terms.length; column++) {
-    const term = literal.terms[column];
-    const value =
-      term.type === "constant" ? term.value : boundValue(bindings, term.name);
-    if (value === undefined) {
-      continue;
+function narrowestFixed(
+  relation: Relation,
+  reading: LiteralStep,
+  values: readonly (Atom | undefined)[],
+): number {
+  const columns = reading.fixedColumns;
+  const slots = reading.fixedSlots;
+  let best = 0;
+  for (let k = 0; k < columns.length; k++) {
+    const size = bucketSize(
+      relation,
+      columns[k] as number,
+      values[slots[k] as number] as Atom,
+    );
+    if (size === 0) {
+      fewestRows = 0;
+      return k;
     }
-    const bucket =
-      relation === undefined ? [] : bucketIn(relation, column, value);
-    if (bucket.length === 0) {
-      return bucket;
-    }
-    if (narrowest === null || bucket.length < narrowest.length) {
-      narrowest = bucket;
+    if (k === 0 || size < fewestRows) {
+      best = k;
+      fewestRows = size;
     }
   }
-  return narrowest;
+  return best;
+}
+
+/** The rows under the fixed column `narrowestFixed` picks for a literal. */
+function narrowestRows(
+  relation: Relation,
+  reading: LiteralStep,
+  values: readonly (Atom | undefined)[],
+): readonly Tuple[] {
+  const k = narrowestFixed(relation, reading, values);
+  return bucketIn(
+    relation,
+    reading.fixedColumns[k] as number,
+    values[reading.fixedSlots[k] as number] as Atom,
+  );
 }
 
 /**
- * The rows of `source`, a one-column bucket, that also agree with the
- * literal's other fixed columns. They come in the same order, so the
+ * The rows under the literal's narrowest fixed column that also agree
+ * with its other fixed columns. They come in the same order, so the
  * join finds the same matches in the same order and reads no row that
  * would fail to unify on a fixed column.
  */
 function narrowedFurther(
-  db: Database,
-  literal: Literal,
-  bindings: Bindings | null,
-  source: readonly Tuple[],
+  relation: Relation,
+  reading: LiteralStep,
+  narrowest: number,
+  rows: number,
+  values: readonly (Atom | undefined)[],
 ): readonly Tuple[] {
-  if (source.length <= 1) {
-    return source;
+  if (rows <= 1 || reading.combinedSlots.length < 2) {
+    return bucketIn(
+      relation,
+      reading.fixedColumns[narrowest] as number,
+      values[reading.fixedSlots[narrowest] as number] as Atom,
+    );
   }
-  let mask = 0;
-  const values: Atom[] = [];
-  for (let column = 0; column < literal.terms.length && column < 31; column++) {
-    const term = literal.terms[column];
-    const value =
-      term.type === "constant" ? term.value : boundValue(bindings, term.name);
-    if (value !== undefined) {
-      mask |= 1 << column;
-      values.push(value);
-    }
+  const combined = reading.combinedValues;
+  const slots = reading.combinedSlots;
+  for (let k = 0; k < slots.length; k++) {
+    combined[k] = values[slots[k] as number] as Atom;
   }
-  const relation = db.relationOf(literal.relation);
-  if (values.length < 2 || relation === undefined) {
-    return source;
-  }
-  return combinedBucketIn(relation, mask, values);
+  return combinedBucketIn(relation, reading.combinedMask, combined);
 }
 
 /** Where a literal writes constants, worked out once per literal. */
@@ -1236,8 +1182,12 @@ function evaluateRuleTagged<Tag>(
 ): TaggedDerivation<Tag>[] {
   const results: TaggedDerivation<Tag>[] = [];
   const body = r.body;
-  const deltaAt = deltaLiteral(r, deltaIndex);
-  const whole = 2 ** body.length - 1;
+  const plan = joinPlanOf(r);
+  const deltaAt = deltaLiteral(plan, deltaIndex);
+  // `combine` is caller code and could start another evaluation of this
+  // rule, so a tagged join works in a copy of the slots.
+  const values = plan.initialSlots.slice();
+  const relations = relationsOf(db, plan);
   const bodyTags: Tag[] = new Array(body.length);
   const bodyMatches: BodyMatch[] = new Array(body.length);
   const readsTags = algebra.ignoresBodyTags !== true;
@@ -1245,17 +1195,17 @@ function evaluateRuleTagged<Tag>(
   const walk = (
     index: number,
     source: readonly Tuple[],
-    taken: number,
-    bindings: Bindings | null,
+    at: StepPlan,
   ): void => {
     const literal = body[index];
+    const reading = at.literals[index] as LiteralStep;
+    const next = followingStep(plan, at, index);
     for (const tuple of source) {
       // Counted for the profile, never given up on: a tagged
       // evaluation is refused a budget, since it could not take an
       // improved tag back.
       budget.examined++;
-      const next = unify(literal, tuple, bindings);
-      if (next !== NO_MATCH) {
+      if (unify(reading, tuple, values)) {
         if (readsTags) {
           const stored = db.tagOf(literal.relation, tuple);
           bodyTags[index] =
@@ -1266,15 +1216,15 @@ function evaluateRuleTagged<Tag>(
           relation: literal.relation,
           tuple,
         };
-        step(taken | (1 << index), next);
+        step(next);
       }
     }
   };
 
-  const step = (taken: number, bindings: Bindings | null): void => {
-    if (taken === whole) {
+  const step = (at: StepPlan): void => {
+    if (at.taken === plan.whole) {
       results.push({
-        tuple: headTuple(r.head, bindings),
+        tuple: headTuple(plan, values),
         tag: algebra.combine(readsTags ? bodyTags.slice() : EMPTY_TAGS, {
           rule: r,
           body: bodyMatches.slice(),
@@ -1282,13 +1232,13 @@ function evaluateRuleTagged<Tag>(
       });
       return;
     }
-    const index = nextLiteral(db, body, taken, bindings);
+    const index = nextLiteral(db, plan, at, relations, values);
     if (index === -1) {
       return;
     }
     const literal = body[index];
     if (literal.negated) {
-      const grounded = groundNegated(literal, bindings);
+      const grounded = groundNegated(plan, index, values);
       if (!db.has(literal.relation, grounded)) {
         if (readsTags) {
           bodyTags[index] = algebra.absent;
@@ -1298,17 +1248,17 @@ function evaluateRuleTagged<Tag>(
           relation: literal.relation,
           tuple: grounded,
         };
-        step(taken | (1 << index), bindings);
+        step(followingStep(plan, at, index));
       }
       return;
     }
-    walk(index, nextSource, taken, bindings);
+    walk(index, nextSource, at);
   };
 
   if (deltaAt === -1) {
-    step(0, null);
+    step(plan.start);
   } else {
-    walk(deltaAt, deltaRows(deltas, body[deltaAt], budget), 0, null);
+    walk(deltaAt, deltaRows(deltas, body[deltaAt], budget), plan.start);
   }
   return results;
 }
@@ -1765,7 +1715,7 @@ function runRules<Tag>(
         if (!canProduce(r)) {
           continue;
         }
-        const positives = positivesOf(r);
+        const positives = joinPlanOf(r).positives;
         for (let i = 0; i < positives.length; i++) {
           const literal = r.body[positives[i]];
           // Within one evaluation the base facts do not change, so only

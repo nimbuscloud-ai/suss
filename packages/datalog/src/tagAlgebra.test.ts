@@ -210,6 +210,21 @@ describe("evaluate with a tag algebra", () => {
     expect(db.tagOf("path", ["a", "b"])).toBe(1);
   });
 
+  it("tags only the rows that match a variable written twice", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["c", "c"], 4);
+
+    evaluate(
+      db,
+      [rule("loop", [V("x")], [lit("edge", V("x"), V("x"))])],
+      costAlgebra,
+    );
+
+    expect(db.has("loop", ["a"])).toBe(false);
+    expect(db.tagOf("loop", ["c"])).toBe(5);
+  });
+
   it("does not store a merge that settles on asserted for an untagged fact", () => {
     const db = new Database();
     db.add("a", ["x"]);
