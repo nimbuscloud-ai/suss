@@ -75,9 +75,15 @@ writes `globals: true` inside its `test` block. It then reads every file
 named like `*.test.*` or `*.spec.*`, whatever the file imports, and
 takes a `describe`, `it`, `test` or `vi` the file does not import or
 declare itself as vitest's. A file that imports its own `test`, as a
-Playwright spec does, is left alone. Set `globals` in the pack's config
-to decide for yourself, for instance when the config builds its options
-in a function the pack cannot read:
+Playwright spec does, is left alone. The pack also reads a config that a
+`package.json` script hands vitest with `--config`. Point `config` at
+one it would not find, or set `globals` to decide for yourself, for
+instance when the config builds its options in a function the pack
+cannot read:
+
+```json
+{ "config": "tools/vitest.unit.mjs" }
+```
 
 ```json
 { "globals": true }

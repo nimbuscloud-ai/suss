@@ -30,6 +30,12 @@ export const optionsSchema = z
      * reads that setting from the config in `configDirectory`.
      */
     globals: z.boolean().optional(),
+    /**
+     * The vitest config to read `test.globals` from, for a project that
+     * hands vitest its config some way the pack does not look. Relative
+     * to `configDirectory`.
+     */
+    config: z.string().min(1).optional(),
     /** Where the run reads from. The CLI fills it in. */
     configDirectory: z.string().optional(),
   })
@@ -42,16 +48,17 @@ const TEST_FILE_NAMES = ["*.test.*", "*.spec.*"];
 
 export function vitestFramework(options: VitestPackOptions = {}): PatternPack {
   const { configDirectory } = options;
+  const where =
+    configDirectory === undefined
+      ? null
+      : { directory: configDirectory, config: options.config };
   const globals =
-    options.globals ??
-    (configDirectory !== undefined && configSetsGlobals(configDirectory));
+    options.globals ?? (where !== null && configSetsGlobals(where));
   return {
     name: "vitest",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
-    ...(configDirectory === undefined
-      ? {}
-      : { discoveryInputs: () => configInputs(configDirectory) }),
+    ...(where === null ? {} : { discoveryInputs: () => configInputs(where) }),
 
     discovery: [
       {
@@ -104,6 +111,13 @@ export const declares: PackDeclaration = {
   dependencies: [],
   reads:
     "vitest cases, named by their titles, so a PRD scenario can say which test covers it.",
+  configuration: {
+    file: "suss.vitest.json",
+    example: { config: "test/vitest.config.mjs" },
+    required: false,
+    why: "the vitest config that says whether tests call describe and it without importing them, when vitest gets it some way other than its own default names or a --config in a package.json script.",
+    paths: ["config"],
+  },
 };
 
 export default vitestFramework;

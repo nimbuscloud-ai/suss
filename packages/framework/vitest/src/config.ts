@@ -21,12 +21,22 @@ const EXTENSIONS = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"];
 const CONFIG_FLAG =
   /(?:--config|-c)(?:=|\s+)(?:"(?<double>[^"]+)"|'(?<single>[^']+)'|(?<bare>[^\s;&|"']+))/g;
 
+/** The directory a run reads, and the config the pack was told to read there, if any. */
+export interface ConfigPlace {
+  directory: string;
+  config?: string | undefined;
+}
+
 /**
- * Every file whose text decides whether globals are on in `directory`,
- * present or not: `package.json`, and each config vitest could read.
- * Editing or adding any of them changes the answer.
+ * Every file whose text decides whether globals are on, present or not:
+ * the config the pack was told to read, or else `package.json` and each
+ * config vitest could read. Editing or adding any of them changes the
+ * answer.
  */
-export function configInputs(directory: string): string[] {
+export function configInputs({ directory, config }: ConfigPlace): string[] {
+  if (config !== undefined) {
+    return [path.resolve(directory, config)];
+  }
   return [
     path.join(directory, "package.json"),
     ...defaultConfigs(directory),
@@ -34,13 +44,19 @@ export function configInputs(directory: string): string[] {
   ];
 }
 
-/** Whether any config vitest reads in `directory` sets `test.globals`. */
-export function configSetsGlobals(directory: string): boolean {
-  const byDefault = defaultConfigs(directory).find((one) => fs.existsSync(one));
-  return [
-    ...(byDefault === undefined ? [] : [byDefault]),
-    ...configsPassedByScripts(directory),
-  ]
+/** Whether a config vitest reads there sets `test.globals`. */
+export function configSetsGlobals(place: ConfigPlace): boolean {
+  const byDefault = defaultConfigs(place.directory).find((one) =>
+    fs.existsSync(one),
+  );
+  const read =
+    place.config !== undefined
+      ? configInputs(place)
+      : [
+          ...(byDefault === undefined ? [] : [byDefault]),
+          ...configsPassedByScripts(place.directory),
+        ];
+  return read
     .filter((file) => fs.existsSync(file))
     .some((file) => setsGlobals(parsed(file)));
 }

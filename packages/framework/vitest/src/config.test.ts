@@ -29,20 +29,20 @@ describe("configSetsGlobals", () => {
        export default defineConfig({ test: { globals: true, environment: "node" } });`,
     );
 
-    expect(configSetsGlobals(dir)).toBe(true);
+    expect(configSetsGlobals({ directory: dir })).toBe(true);
   });
 
   it("falls back to the vite config, as vitest does", () => {
     write("vite.config.mjs", `export default { test: { "globals": true } };`);
 
-    expect(configSetsGlobals(dir)).toBe(true);
+    expect(configSetsGlobals({ directory: dir })).toBe(true);
   });
 
   it("reads the vitest config ahead of the vite config", () => {
     write("vitest.config.mts", "export default { test: { globals: false } };");
     write("vite.config.ts", "export default { test: { globals: true } };");
 
-    expect(configSetsGlobals(dir)).toBe(false);
+    expect(configSetsGlobals({ directory: dir })).toBe(false);
   });
 
   it("counts only a globals written as true inside a test block", () => {
@@ -54,11 +54,11 @@ describe("configSetsGlobals", () => {
        };`,
     );
 
-    expect(configSetsGlobals(dir)).toBe(false);
+    expect(configSetsGlobals({ directory: dir })).toBe(false);
   });
 
   it("finds nothing set in a directory with no config", () => {
-    expect(configSetsGlobals(dir)).toBe(false);
+    expect(configSetsGlobals({ directory: dir })).toBe(false);
   });
 
   it("reads a config a package.json script hands vitest", () => {
@@ -77,8 +77,8 @@ describe("configSetsGlobals", () => {
       }),
     );
 
-    expect(configSetsGlobals(dir)).toBe(true);
-    expect(configInputs(dir)).toContain(
+    expect(configSetsGlobals({ directory: dir })).toBe(true);
+    expect(configInputs({ directory: dir })).toContain(
       path.join(dir, "test/vitest.config.mjs"),
     );
   });
@@ -96,15 +96,15 @@ describe("configSetsGlobals", () => {
       }),
     );
 
-    expect(configSetsGlobals(dir)).toBe(true);
+    expect(configSetsGlobals({ directory: dir })).toBe(true);
   });
 
   it("reads no scripts from a package.json it cannot parse, or one with none", () => {
     write("package.json", "{ not json");
-    expect(configSetsGlobals(dir)).toBe(false);
+    expect(configSetsGlobals({ directory: dir })).toBe(false);
 
     write("package.json", JSON.stringify({ name: "app" }));
-    expect(configSetsGlobals(dir)).toBe(false);
+    expect(configSetsGlobals({ directory: dir })).toBe(false);
   });
 });
 
@@ -119,7 +119,29 @@ describe("the pack's globals", () => {
       "*.test.*",
       "*.spec.*",
     ]);
-    expect(pack.discoveryInputs?.([])).toEqual(configInputs(dir));
+    expect(pack.discoveryInputs?.([])).toEqual(
+      configInputs({ directory: dir }),
+    );
+  });
+
+  it("reads only the config it is told to, against the run's directory", () => {
+    fs.mkdirSync(path.join(dir, "tools"));
+    write("tools/unit.mjs", "export default { test: { globals: true } };");
+    write("vitest.config.ts", "export default { test: { globals: false } };");
+
+    const pack = vitestFramework({
+      configDirectory: dir,
+      config: "tools/unit.mjs",
+    });
+    const match = pack.discovery[0]?.match;
+
+    expect(match?.type === "testCase" && match.globalsIn).toEqual([
+      "*.test.*",
+      "*.spec.*",
+    ]);
+    expect(pack.discoveryInputs?.([])).toEqual([
+      path.join(dir, "tools/unit.mjs"),
+    ]);
   });
 
   it("follows the option over the config", () => {
