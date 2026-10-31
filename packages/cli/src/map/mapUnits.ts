@@ -8,7 +8,11 @@
 
 import path from "node:path";
 
-import { parseDocumentLabel, summaryIdentifier } from "@suss/behavioral-ir";
+import {
+  originalIdOf,
+  parseDocumentLabel,
+  summaryIdentifier,
+} from "@suss/behavioral-ir";
 
 import { LANGUAGE_LABEL, languageOfFile } from "../language.js";
 
@@ -21,13 +25,26 @@ export class UnitTable {
   private readonly index = new Map<BehavioralSummary, number>();
   private readonly repoList: MapRepository[] = [];
   private readonly repoIndex = new Map<string, number>();
+  private readonly originals: ReadonlyMap<string, BehavioralSummary>;
 
   constructor(
     private readonly reads: readonly MapRead[],
     private readonly readOf: ReadonlyMap<BehavioralSummary, number>,
-  ) {}
+    summaries: readonly BehavioralSummary[] = [],
+  ) {
+    this.originals = new Map(
+      summaries
+        .filter((summary) => summary.receiverConstruction === undefined)
+        .map((summary) => [summaryIdentifier(summary), summary]),
+    );
+  }
 
-  of(summary: BehavioralSummary): number {
+  /** The unit's place in the list. A copy of a method for one construction of its receiver is the method itself on the page. */
+  of(given: BehavioralSummary): number {
+    const summary =
+      given.receiverConstruction === undefined
+        ? given
+        : (this.originals.get(originalIdOf(given)) ?? given);
     const seen = this.index.get(summary);
     if (seen !== undefined) {
       return seen;

@@ -474,11 +474,16 @@ function lastSegment(name: string): string {
  * its own, so a route that uses one repository reaches only that one's tables.
  */
 export function functionOf(summary: BehavioralSummary): FunctionKey {
-  const { file, range, workspace } = summary.location;
-  const key = [workspace ?? "", file, range.start, range.end].join(" ");
+  const key = writtenFunctionOf(summary);
   return summary.receiverConstruction === undefined
     ? key
     : `${key} on ${summary.receiverConstruction}`;
+}
+
+/** The function as written, the same for every copy made of it for one construction of its receiver. */
+export function writtenFunctionOf(summary: BehavioralSummary): FunctionKey {
+  const { file, range, workspace } = summary.location;
+  return [workspace ?? "", file, range.start, range.end].join(" ");
 }
 
 // ---------------------------------------------------------------------------

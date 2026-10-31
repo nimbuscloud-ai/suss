@@ -16,6 +16,7 @@ import path from "node:path";
 
 import {
   bindingIs,
+  originalIdOf,
   readHttpMetadata,
   readRuntimeContractMetadata,
   readStorageContractMetadata,
@@ -355,9 +356,7 @@ function unitLabel(summary: BehavioralSummary, withWorkspace: boolean): string {
   // The settling suffix contains its own `::`, so split the id without it.
   const settledWith = settlingSuffix(summary);
   const parts = (
-    settledWith === ""
-      ? summaryIdentifier(summary)
-      : unsettledSummaryId(summary)
+    settledWith === "" ? originalIdOf(summary) : unsettledSummaryId(summary)
   ).split("::");
   const symbol = `${parts[parts.length - 1] ?? summary.identity.name}${settledWith}`;
   return withWorkspace && parts.length > 2 ? `${parts[0]}::${symbol}` : symbol;
@@ -365,6 +364,13 @@ function unitLabel(summary: BehavioralSummary, withWorkspace: boolean): string {
 
 function spansWorkspaces(summaries: ReadonlyArray<BehavioralSummary>): boolean {
   return new Set(summaries.map((s) => s.location.workspace)).size > 1;
+}
+
+/** ", on the objects made at app/main.py:12:12 and app/repos.py:31:16", or nothing for a unit that is not a copy. */
+function constructionsClause(constructions: readonly string[]): string {
+  return constructions.length === 0
+    ? ""
+    : `, on the objects made at ${sentenceList([...constructions].sort())}`;
 }
 
 /** ", which grounds to prod-x via wrangler.toml", or nothing. */
@@ -592,20 +598,25 @@ function answerAtBoundary(
   // A question that lists more than one relation says which on each line.
   const saysRelations = LISTED_RELATIONS[shape].length > 1;
   const items = [
-    ...matching.map(({ summary, touched, grounding, relations }) => ({
-      text: `${moduleTag(summary)}${unitLabel(summary, named)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}${saysRelations ? `, ${sentenceList(relations)}` : ""}`,
-      data: {
-        unit: summaryIdentifier(summary),
-        file: summary.location.file,
-        line: summary.location.range.start,
-        ...(summary.location.module !== undefined
-          ? { module: summary.location.module }
-          : {}),
-        ...(touched.callee !== undefined ? { via: touched.callee } : {}),
-        ...(grounding !== undefined ? { grounding } : {}),
-        ...(saysRelations ? { relations } : {}),
-      },
-    })),
+    ...matching.map(
+      ({ summary, touched, grounding, relations, constructions }) => ({
+        text: `${moduleTag(summary)}${unitLabel(summary, named)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}${constructionsClause(constructions)}${saysRelations ? `, ${sentenceList(relations)}` : ""}`,
+        data: {
+          unit: originalIdOf(summary),
+          file: summary.location.file,
+          line: summary.location.range.start,
+          ...(summary.location.module !== undefined
+            ? { module: summary.location.module }
+            : {}),
+          ...(touched.callee !== undefined ? { via: touched.callee } : {}),
+          ...(grounding !== undefined ? { grounding } : {}),
+          ...(constructions.length > 0
+            ? { constructions: [...constructions].sort() }
+            : {}),
+          ...(saysRelations ? { relations } : {}),
+        },
+      }),
+    ),
     ...direct.items,
   ];
   const listed = [...matching.map((touch) => touch.summary), ...direct.callers];
@@ -722,7 +733,7 @@ function fromModules(modules: ReadonlyArray<{ module: string }>): string {
  */
 function unresolvedCallCount(summaries: BehavioralSummary[]): number {
   let count = 0;
-  for (const summary of summaries) {
+  for (const summary of writtenOnly(summaries)) {
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
         if (effect.type === "invocation" && effect.summary === undefined) {
@@ -1122,6 +1133,15 @@ function runCaveats(
   return [hiddenBehindLine(unfollowedCalls(withGaps), HIDDEN_ACTOR[shape])];
 }
 
+/** The summaries as written. A copy made for one construction of a receiver repeats its original's calls, so it is left out. */
+function writtenOnly(
+  summaries: ReadonlyArray<BehavioralSummary>,
+): BehavioralSummary[] {
+  return summaries.filter(
+    (summary) => summary.receiverConstruction === undefined,
+  );
+}
+
 /** The distinct calls the run stopped at across these units. */
 export function unfollowedCalls(summaries: ReadonlyArray<BehavioralSummary>): {
   count: number;
@@ -1129,7 +1149,7 @@ export function unfollowedCalls(summaries: ReadonlyArray<BehavioralSummary>): {
 } {
   const callees = new Set<string>();
   let nameless = 0;
-  for (const summary of summaries) {
+  for (const summary of writtenOnly(summaries)) {
     for (const gap of summary.gaps) {
       if (gap.type !== "unfollowedCall") {
         continue;

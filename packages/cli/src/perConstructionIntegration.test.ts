@@ -14,6 +14,8 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { readSummaryFile } from "@suss/behavioral-ir/files";
+
 import { answerQuestion } from "./ask.js";
 import { extract } from "./extract.js";
 
@@ -92,13 +94,58 @@ describe("a shared repository method, read per construction", () => {
     ]);
   });
 
-  it("lists only the copy for the construction that passes a table", () => {
-    const units = itemsFor<{ unit?: string }>("what reads postgresql:Tag").map(
-      (item) => item.unit,
-    );
+  it("lists the shared method once for a table, with the constructions that pass it", () => {
+    expect(itemsFor("what reads postgresql:Tag")).toEqual([
+      expect.objectContaining({
+        unit: "app/repos.py::Repository.get_one",
+        constructions: ["app/repos.py:35:16"],
+      }),
+    ]);
+    expect(itemsFor("what reads postgresql:Tool")).toEqual([
+      expect.objectContaining({
+        unit: "app/repos.py::Repository.get_one",
+        constructions: [
+          "app/main.py:12:12",
+          "app/main.py:17:12",
+          "app/repos.py:31:16",
+        ],
+      }),
+    ]);
+  });
 
-    expect(units).toEqual([
-      "app/repos.py::Repository.get_one on app/repos.py:35:16",
+  it("lists every caller of the shared method, whichever copy a call reaches", () => {
+    const callers = itemsFor<{ unit?: string }>("what calls get_one")
+      .map((item) => item.unit)
+      .sort();
+
+    expect(callers).toEqual([
+      "app/main.py::get_factory_tool",
+      "app/main.py::get_tag",
+      "app/main.py::get_tool",
+      "app/main.py::read_through",
+      "app/repos.py::Repository.first",
+    ]);
+  });
+
+  it("counts a call the copies repeat once in the warning about unresolved calls", () => {
+    const unresolved = readSummaryFile(path.join(summaries, "summaries.json"))
+      .flatMap((summary) => summary.transitions)
+      .flatMap((transition) => transition.effects)
+      .filter(
+        (effect) =>
+          effect.type === "invocation" && effect.summary === undefined,
+      ).length;
+    const { answer } = answerQuestion({
+      question: "what reaches postgresql:Tool",
+      dir: summaries,
+      json: true,
+      output: path.join(out, "answer.json"),
+    });
+
+    expect(answer?.caveats).toEqual([
+      expect.stringMatching(
+        new RegExp(`^warning: ${unresolved} calls here resolved to no unit`),
+      ),
     ]);
   });
 });

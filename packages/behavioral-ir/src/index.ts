@@ -137,7 +137,7 @@ export {
   type Polarity,
   polarityOf,
 } from "./conditions.js";
-export { withConstructions } from "./constructions.js";
+export { dropIdleReceivers, withConstructions } from "./constructions.js";
 export { sameUnit, withDeclaredDelivery } from "./declaredDelivery.js";
 export {
   deploymentOf,
@@ -285,6 +285,7 @@ export {
 export {
   disambiguateSummaryIds,
   fileReference,
+  originalIdOf,
   referencedFile,
   referencedFileKey,
   renderTargetKey,

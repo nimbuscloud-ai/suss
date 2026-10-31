@@ -24,6 +24,7 @@ import {
   workspaceRootFor,
 } from "@suss/adapter-typescript";
 import {
+  dropIdleReceivers,
   readTestMetadata,
   readWrapperMetadata,
   SUMMARY_SCHEMA_VERSION,
@@ -1495,6 +1496,7 @@ export async function extract(
     forgetOwnHosts(summary, ownHosts);
     summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
+  dropIdleReceivers(summaries);
   stampRepository(summaries, repositoryRecord(projectRoot));
 
   if (options.output !== undefined) {

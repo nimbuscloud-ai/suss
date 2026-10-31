@@ -6,7 +6,8 @@
 import { describe, expect, it } from "vitest";
 
 import { placeReceivers, TargetPlacements } from "./callLinks.js";
-import { withConstructions } from "./constructions.js";
+import { dropIdleReceivers, withConstructions } from "./constructions.js";
+import { originalIdOf } from "./summaryId.js";
 
 import type { BehavioralSummary, Effect } from "./index.js";
 
@@ -14,6 +15,7 @@ type Invocation = Extract<Effect, { type: "invocation" }>;
 
 const TOOLS = "app/main.py:12:12";
 const TAGS = "app/main.py:20:12";
+const OTHER = "app/main.py:30:5";
 
 function summary(id: string, effects: Effect[], start = 1): BehavioralSummary {
   return {
@@ -126,16 +128,34 @@ describe("withConstructions", () => {
     ]);
   });
 
-  it("leaves a read unnamed on a construction that passes no table", () => {
+  it("keeps the method itself for a construction it does nothing different on", () => {
     const route = summary("route", [
       call("repo.get_one", {
         summary: "get_one",
-        receiverConstructions: ["app/main.py:30:5"],
+        receiverConstructions: [OTHER],
       }),
     ]);
-    const read = byId(withConstructions([route, getOne]));
+    const read = withConstructions([route, getOne]);
 
-    expect(containerOf(read.get("get_one on app/main.py:30:5"))).toBeNull();
+    expect(read).toHaveLength(2);
+    expect(linkOf(byId(read).get("route"))?.summary).toBe("get_one");
+  });
+
+  it("offers the method itself beside a copy when only one construction gives a table", () => {
+    const route = summary("route", [
+      call("repo.get_one", {
+        summary: "get_one",
+        receiverConstructions: [TOOLS, OTHER],
+      }),
+    ]);
+    const linked = linkOf(
+      byId(withConstructions([route, getOne])).get("route"),
+    );
+
+    expect(linked?.possibleSummaries).toEqual([
+      `get_one on ${TOOLS}`,
+      "get_one",
+    ]);
   });
 
   it("keeps a call on the method's own receiver on the same construction", () => {
@@ -180,6 +200,56 @@ describe("withConstructions", () => {
 
     expect(read).toHaveLength(1);
     expect(linkOf(read[0])?.summary).toBe("absent");
+  });
+});
+
+describe("dropIdleReceivers", () => {
+  it("keeps the records on calls into a method that does something different per construction", () => {
+    const route = summary("route", [
+      call("repo.first", { summary: "first", receiverConstructions: [TOOLS] }),
+    ]);
+    const summaries = [route, structuredClone(first), getOne];
+
+    dropIdleReceivers(summaries);
+
+    expect(linkOf(summaries[0])?.receiverConstructions).toEqual([TOOLS]);
+    expect(linkOf(summaries[1])?.onOwnReceiver).toBe(true);
+  });
+
+  it("takes them off calls into a method that does the same thing on every construction", () => {
+    const plain = summary("plain", [], 40);
+    const route = summary("route", [
+      call("repo.plain", { summary: "plain", receiverConstructions: [TOOLS] }),
+      call("self.plain", { summary: "plain", onOwnReceiver: true }),
+      call("repo.get_one", {
+        summary: "get_one",
+        receiverConstructions: [OTHER],
+      }),
+    ]);
+
+    dropIdleReceivers([route, plain, getOne]);
+
+    for (const effect of route.transitions[0]?.effects ?? []) {
+      expect(effect).not.toHaveProperty("receiverConstructions");
+      expect(effect).not.toHaveProperty("onOwnReceiver");
+    }
+  });
+});
+
+describe("originalIdOf", () => {
+  it("gives the id a copy was made from", () => {
+    const route = summary("route", [
+      call("repo.get_one", {
+        summary: "get_one",
+        receiverConstructions: [TAGS],
+      }),
+    ]);
+    const copy = byId(withConstructions([route, getOne])).get(
+      `get_one on ${TAGS}`,
+    );
+
+    expect(copy === undefined ? null : originalIdOf(copy)).toBe("get_one");
+    expect(originalIdOf(getOne)).toBe("get_one");
   });
 });
 
