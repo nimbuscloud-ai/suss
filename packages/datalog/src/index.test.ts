@@ -93,6 +93,26 @@ describe("evaluate: positive rules", () => {
     ]);
   });
 
+  it("joins a literal wider than 31 columns on a column past the 31st", () => {
+    const db = new Database();
+    const filler = Array.from({ length: 31 }, (_, i) => `f${i}`);
+    db.add("wide", ["a", ...filler, "k1"]);
+    db.add("wide", ["a", ...filler, "k2"]);
+    db.add("wide", ["b", ...filler, "k2"]);
+    db.add("want", ["a", "k2"]);
+
+    const columns = [V("x"), ...filler.map((name) => V(name)), V("k")];
+    evaluate(db, [
+      rule(
+        "found",
+        [V("x"), V("k")],
+        [lit("want", V("x"), V("k")), lit("wide", ...columns)],
+      ),
+    ]);
+
+    expect(sorted(db.facts("found"))).toEqual(["a,k2"]);
+  });
+
   it("terminates on cyclic graphs", () => {
     const db = new Database();
     db.add("edge", ["a", "b"]);
@@ -230,6 +250,16 @@ describe("evaluate: stratified negation", () => {
         rule("p", [V("x")], [lit("thing", V("x")), notLit("q", V("y"))]),
       ]),
     ).toThrow(/unbound variable "y"/);
+  });
+
+  it("rejects a head variable that only a negated literal has", () => {
+    const db = new Database();
+    db.add("thing", ["x"]);
+    expect(() =>
+      evaluate(db, [
+        rule("p", [V("y")], [lit("thing", V("x")), notLit("q", V("x"))]),
+      ]),
+    ).toThrow('unbound variable "y" in head of "p"');
   });
 });
 
