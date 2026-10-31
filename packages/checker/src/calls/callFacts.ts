@@ -468,10 +468,17 @@ function lastSegment(name: string): string {
   return name.slice(name.lastIndexOf(".") + 1);
 }
 
-/** A function's key is its location, since every summary of one function shares it. */
+/**
+ * A function's key is its location, since every summary of one function
+ * shares it. A copy for one construction of its receiver is a function of
+ * its own, so a route that uses one repository reaches only that one's tables.
+ */
 export function functionOf(summary: BehavioralSummary): FunctionKey {
   const { file, range, workspace } = summary.location;
-  return [workspace ?? "", file, range.start, range.end].join(" ");
+  const key = [workspace ?? "", file, range.start, range.end].join(" ");
+  return summary.receiverConstruction === undefined
+    ? key
+    : `${key} on ${summary.receiverConstruction}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -94,6 +94,19 @@ describe("readCallFacts", () => {
     expect(facts.units.get(functionOf(store))).toHaveLength(2);
   });
 
+  it("keys a copy for one construction of its receiver apart from the function", () => {
+    const copy = {
+      ...store,
+      identity: { ...store.identity, id: "loadOrder on src/app.ts:4:9" },
+      receiverConstruction: "src/app.ts:4:9",
+    };
+    const facts = readCallFacts([store, copy]);
+
+    expect(functionOf(copy)).toBe(`${functionOf(store)} on src/app.ts:4:9`);
+    expect(facts.units.get(functionOf(store))).toEqual([store]);
+    expect(facts.units.get(functionOf(copy))).toEqual([copy]);
+  });
+
   it("lists every call from one function to another", () => {
     const edges = readCallFacts([store, service, route]).edges();
     expect(edges).toEqual(

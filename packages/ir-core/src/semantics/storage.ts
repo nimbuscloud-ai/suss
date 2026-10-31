@@ -97,6 +97,7 @@ export const storageSemantics = defineBoundarySemantics({
       return name === null ? null : { ...semantics, container: name };
     },
     nameReference: containerReference,
+    named: (semantics, name) => ({ ...semantics, container: name }),
   },
 });
 

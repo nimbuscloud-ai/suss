@@ -2000,6 +2000,39 @@ export function relativizeSummaryPaths(
   relativizeTypeRefs(summary, projectRoot);
   relativizeMockedModules(summary, projectRoot);
   relativizeReceiverClasses(summary, projectRoot);
+  relativizeConstructions(summary, projectRoot);
+}
+
+/**
+ * A construction is written `file:line:column`, and a reader matches a
+ * call's receiver against a read's table by that text, so every one is
+ * rewritten the way the unit's own file is.
+ */
+function relativizeConstructions(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  const rewrite = (ref: string): string => {
+    const at = /^(.*):(\d+):(\d+)$/.exec(ref);
+    return at === null
+      ? ref
+      : `${locationFileIn(projectRoot, at[1] as string)}:${at[2]}:${at[3]}`;
+  };
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects ?? []) {
+      if (effect.type === "interaction" && effect.containerByConstruction) {
+        effect.containerByConstruction = Object.fromEntries(
+          Object.entries(effect.containerByConstruction).map(
+            ([ref, container]) => [rewrite(ref), container],
+          ),
+        );
+      }
+      if (effect.type === "invocation" && effect.receiverConstructions) {
+        effect.receiverConstructions =
+          effect.receiverConstructions.map(rewrite);
+      }
+    }
+  }
 }
 
 /** A unit read from a wrapper's own behavior records the wrapper's file. */

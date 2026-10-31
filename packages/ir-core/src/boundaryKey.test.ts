@@ -24,6 +24,7 @@ import {
   methodsAgree,
   metricBinding,
   NOTHING_DEPLOYED,
+  namedBinding,
   nameReference,
   normalizePath,
   operationKey,
@@ -1135,5 +1136,24 @@ describe("bindingIs", () => {
   it("says no rather than throwing when there is no binding", () => {
     expect(bindingIs(null, "message-bus")).toBe(false);
     expect(bindingIs(undefined, "message-bus")).toBe(false);
+  });
+});
+
+describe("namedBinding", () => {
+  it("fills in the table of a read the adapter left unnamed", () => {
+    const read = storageBinding({
+      recognition: "sqlalchemy",
+      storageSystem: "postgresql",
+      scope: "default",
+      container: null,
+    });
+
+    expect(displayLabel(namedBinding(read, "Tool"))).toBe("postgresql:Tool");
+  });
+
+  it("keeps a binding whose names never depend on the object", () => {
+    const route = getAt("/tools");
+
+    expect(namedBinding(route, "Tool")).toBe(route);
   });
 });

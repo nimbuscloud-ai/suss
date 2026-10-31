@@ -105,6 +105,19 @@ export function groundBinding(
 }
 
 /**
+ * The same boundary named `name`, for a reader that knows which object
+ * the code ran on. A protocol whose names never depend on that keeps
+ * the binding as it was.
+ */
+export function namedBinding(
+  binding: BoundaryBinding,
+  name: string,
+): BoundaryBinding {
+  const named = behaviorOf(binding.semantics).named?.(binding.semantics, name);
+  return named === undefined ? binding : { ...binding, semantics: named };
+}
+
+/**
  * The reference in this boundary's name, or null when the source gave
  * the name outright. A report that explains why two sides did not pair
  * uses it to say which input would settle the name.

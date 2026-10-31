@@ -15,16 +15,23 @@ import {
   field,
   rangeOf,
 } from "./ast.js";
+import {
+  classesNamed,
+  classNameOf,
+  constructionRef,
+  fieldArguments,
+} from "./constructions.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { bodyCalls } from "./paths/effects.js";
 import { rawSqlEffects, rawSqlOptionsOf } from "./rawSql.js";
+import { ownReceiverName } from "./reach/receivers.js";
 import {
   firstInBody,
   receiverTypeOrigins,
   statedTypeName,
 } from "./receiverTypes.js";
-import { evaluationScope } from "./values/evaluator.js";
+import { constructionSitesOf, evaluationScope } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -35,6 +42,7 @@ import type {
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
+import type { BoundPythonFile } from "./routers.js";
 
 /** One call chain, from the call that starts it to the call that ends it. */
 interface Chain {
@@ -627,6 +635,11 @@ function effectFor(
     },
     location: rangeOf(chain.last),
   };
+  const byConstruction =
+    model === null ? containerByConstruction(chain, options) : null;
+  if (effect.type === "interaction" && byConstruction !== null) {
+    effect.containerByConstruction = byConstruction;
+  }
   if (options.statesSlots !== undefined) {
     const slots = slotsOf(chain, valueMethods);
     if (slots.length > 0) {
@@ -634,6 +647,62 @@ function effectFor(
     }
   }
   return effect;
+}
+
+/**
+ * The model a chain reads off its method's own receiver, as
+ * `select(self.model)` does, under each construction of the method's
+ * class. A method every repository shares has one model per repository,
+ * so the binding has no container and a reader picks the one the
+ * caller's repository gives. Null when no construction settles one.
+ */
+function containerByConstruction(
+  chain: Chain,
+  options: StorageOptions,
+): Record<string, string> | null {
+  const files = options.files;
+  const model = receiverFieldModel(chain, options);
+  const name =
+    model === null ? null : (field(model, "attribute")?.text ?? null);
+  if (files === undefined || model === null || name === null) {
+    return null;
+  }
+  const sites = constructionSitesOf(model, options.facts);
+  const argumentKeys = fieldArguments(name, sites, options.facts, files);
+  const classes = classesNamed(
+    [...argumentKeys.values()],
+    options.facts,
+    files,
+  );
+  const found: Record<string, string> = {};
+  for (const [site, key] of argumentKeys) {
+    const cls = classes.get(key);
+    const className = cls === undefined ? null : classNameOf(cls);
+    const ref = constructionRef(site, files);
+    if (className !== null && ref !== null) {
+      found[ref] = className;
+    }
+  }
+  return Object.keys(found).length === 0 ? null : found;
+}
+
+/** The statement's model argument when it is a field of the method's own receiver, `self.model`, or null. */
+function receiverFieldModel(
+  chain: Chain,
+  options: StorageOptions,
+): PyNode | null {
+  const args = field(chain.root, "arguments");
+  const first = (args === null ? [] : children(args)).find(
+    (argument) => argument.type !== "keyword_argument",
+  );
+  const object = first?.type === "attribute" ? field(first, "object") : null;
+  const fn = first === undefined ? null : enclosingFunction(first);
+  if (first === undefined || object?.type !== "identifier" || fn === null) {
+    return null;
+  }
+  return object.text === ownReceiverName(options.facts, options.filePath, fn)
+    ? first
+    : null;
 }
 
 /** The file part of a node key, which says where a definition was written. */
@@ -651,6 +720,8 @@ function returnTypeName(options: StorageOptions, key: string): string | null {
 export interface StorageOptions {
   readonly facts: Database;
   readonly filePath: string;
+  /** Every file in the run by absolute path, for naming a construction a model depends on. */
+  readonly files?: ReadonlyMap<string, BoundPythonFile>;
   readonly patterns: readonly StoragePattern[];
   /** Method names a file importing the library declares, the only ones that can match. */
   readonly couldMatch: ReadonlySet<string>;
@@ -665,6 +736,8 @@ export interface StorageOptions {
 export interface StorageLookup {
   readonly facts: Database;
   readonly factsPath: string;
+  /** Every file in the run by absolute path, for naming a construction a model depends on. */
+  readonly files?: ReadonlyMap<string, BoundPythonFile>;
   readonly patterns: readonly StoragePattern[];
   readonly couldMatch: ReadonlySet<string>;
   /** What a pack says about statements a project writes as SQL itself. */

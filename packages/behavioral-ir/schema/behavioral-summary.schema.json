@@ -1048,6 +1048,16 @@
                         "required": ["file", "name"],
                         "additionalProperties": false
                       },
+                      "receiverConstructions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "onOwnReceiver": {
+                        "type": "boolean",
+                        "const": true
+                      },
                       "args": {
                         "type": "array",
                         "items": {}
@@ -1505,6 +1515,15 @@
                         "type": "array",
                         "items": {
                           "$ref": "#/$defs/__schema1"
+                        }
+                      },
+                      "containerByConstruction": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
                         }
                       },
                       "interaction": {
@@ -2000,6 +2019,9 @@
         },
         "required": ["file", "name"],
         "additionalProperties": false
+      },
+      "receiverConstruction": {
+        "type": "string"
       },
       "metadata": {
         "type": "object",

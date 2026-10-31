@@ -1297,6 +1297,37 @@ const STATED_RULES = [
     ],
   ),
 
+  // The parameters a value passes on its way to what it is written as,
+  // its function's or those of a function it is the return value of. Any
+  // caller's argument can arrive through one.
+  rule("parameter", [v("p")], [lit("paramOf", v("f"), v("k"), v("p"))]),
+  rule("parameter", [v("p")], [lit("paramNamed", v("f"), v("n"), v("p"))]),
+  rule("parameterBehind", [v("p"), v("p")], [lit("parameter", v("p"))]),
+  rule(
+    "parameterBehind",
+    [v("x"), v("p")],
+    [lit("reaches", v("x"), v("p"), VALUE_STEP), lit("parameter", v("p"))],
+  ),
+  rule(
+    "parameterBehind",
+    [v("x"), v("p")],
+    [
+      lit("invokes", v("x"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("parameterBehind", v("ret"), v("p")),
+    ],
+  ),
+  rule(
+    "parameterBehind",
+    [v("x"), v("p")],
+    [
+      lit("reaches", v("x"), v("y"), VALUE_STEP),
+      lit("invokes", v("y"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("parameterBehind", v("ret"), v("p")),
+    ],
+  ),
+
   // The fallbacks, `a || b`, a value passes on the way to what it is
   // written as. A reader of values takes one whole when every answer came
   // through it, so the reader's own `||` decides which branches count.
@@ -1867,6 +1898,31 @@ const STATED_RULES = [
     [v("r"), v("cls")],
     [lit("objectValue", v("cls")), lit("callsNamed", v("r"), v("cls"))],
   ),
+  // The classes written with a class among their bases, by name the way
+  // `callsNamed` finds a call, and their subclasses in turn. Asking what
+  // every base comes to costs a question per class in the project.
+  rule(
+    "subclassNamed",
+    [v("sub"), v("cls")],
+    [lit("binds", v("b"), v("cls")), lit("extends", v("sub"), v("b"))],
+  ),
+  rule(
+    "subclassNamed",
+    [v("sub"), v("cls")],
+    [
+      lit("moduleExport", v("m"), v("n"), v("cls")),
+      lit("imports", v("b"), v("m"), v("n")),
+      lit("extends", v("sub"), v("b")),
+    ],
+  ),
+  rule(
+    "subclassNamed",
+    [v("sub"), v("cls")],
+    [
+      lit("subclassNamed", v("mid"), v("cls")),
+      lit("subclassNamed", v("sub"), v("mid")),
+    ],
+  ),
 
   // Each construction is an object of its own containing what its
   // class stores, so two sites are two objects.
@@ -2264,6 +2320,23 @@ export const RESOLUTION_QUESTIONS = [
       lit("constructsNamed", v("site"), v("cls")),
       lit("allocates", v("site"), v("cls")),
     ],
+  ),
+  // A subclass's constructions run the methods it inherits, so they are
+  // the base class's too for a reader of a method written there.
+  rule(
+    "wantedAllocatedAt",
+    [v("cls"), v("site")],
+    [
+      lit("wantedSites", v("cls")),
+      lit("subclassNamed", v("sub"), v("cls")),
+      lit("constructsNamed", v("site"), v("sub")),
+      lit("allocates", v("site"), v("sub")),
+    ],
+  ),
+  rule(
+    "wantedParameterBehind",
+    [v("x"), v("p")],
+    [lit("wantedParameters", v("x")), lit("parameterBehind", v("x"), v("p"))],
   ),
   rule(
     "wantedComesToUnder",

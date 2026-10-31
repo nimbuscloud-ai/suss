@@ -142,6 +142,7 @@ export {
   isUnsettledJob,
   labelWithDetail,
   leavesTheProcess,
+  namedBinding,
   nameReference,
   operationKey,
   pairingKey,
