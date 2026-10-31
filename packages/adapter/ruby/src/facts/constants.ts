@@ -67,10 +67,10 @@ function isDeclaration(node: RbNode, parent: RbNode | null): boolean {
     return false;
   }
   if (NESTING_TYPES.has(parent.type)) {
-    return field(parent, "name") === node;
+    return field(parent, "name")?.id === node.id;
   }
   if (parent.type === "assignment") {
-    return field(parent, "left") === node;
+    return field(parent, "left")?.id === node.id;
   }
   // The outer `scope_resolution` is the reference; its parts are not.
   return parent.type === "scope_resolution";
