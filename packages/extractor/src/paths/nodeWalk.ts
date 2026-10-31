@@ -6,11 +6,8 @@
  * more places for a statement than anyone remembers to list. So an adapter
  * does not list the containers to descend into. The walk visits every
  * named child, and the adapter only lists the nodes whose body belongs to
- * what they declare, because that list is short.
- *
- * The adapter also says how to read a node's children. Its parser's own
- * getters keep the array they build on the node, so each adapter reads
- * children through one accessor of its own that leaves nothing behind.
+ * what they declare, because that list is short. The adapter also says
+ * how to read a node's children.
  */
 
 /**

@@ -3,10 +3,10 @@
  * to one of the engine's expressions or statements when the engine asks.
  *
  * A root is the module, a function or a lambda. A class body is opaque to
- * the module around it. The engine keys nodes by `node.id`, because
- * tree-sitter returns a new wrapper on every read. The two questions that
- * cross files, which expression a name was written as and which function
- * a callee is, go to the resolution facts through `EvaluationContext`.
+ * the module around it. The engine keys nodes by `node.id`. The two
+ * questions that cross files, which expression a name was written as and
+ * which function a callee is, go to the resolution facts through
+ * `EvaluationContext`.
  */
 
 import {

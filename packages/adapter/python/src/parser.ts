@@ -13,7 +13,11 @@ import { fileURLToPath } from "node:url";
 
 import { Language, Parser } from "web-tree-sitter";
 
-import type { Tree } from "web-tree-sitter";
+import {
+  copyAndFree,
+  type MirroredNode,
+  type MirroredTree,
+} from "@suss/extractor";
 
 const GRAMMAR_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -46,7 +50,7 @@ function loadLanguage(): Promise<Language> {
  * not fight over one parser's mutable `language` field. The compiled `Language`
  * is loaded once per process and shared.
  */
-export async function parsePython(source: string): Promise<Tree> {
+export async function parsePython(source: string): Promise<MirroredTree> {
   const language = await loadLanguage();
   return parseWith(language, source);
 }
@@ -65,7 +69,7 @@ export async function preloadPythonGrammar(): Promise<void> {
  * async. Throws if `preloadPythonGrammar` (or `parsePython`) has not
  * already loaded the grammar in this process.
  */
-export function parsePythonSync(source: string): Tree {
+export function parsePythonSync(source: string): MirroredTree {
   if (loadedLanguage === null) {
     throw new Error(
       "the Python grammar has not been loaded yet; call preloadPythonGrammar first",
@@ -74,7 +78,7 @@ export function parsePythonSync(source: string): Tree {
   return parseWith(loadedLanguage, source);
 }
 
-function parseWith(language: Language, source: string): Tree {
+function parseWith(language: Language, source: string): MirroredTree {
   const parser = new Parser();
   parser.setLanguage(language);
   try {
@@ -82,10 +86,10 @@ function parseWith(language: Language, source: string): Tree {
     if (tree === null) {
       throw new Error("tree-sitter produced no tree for this source");
     }
-    return tree;
+    return copyAndFree(source, tree);
   } finally {
     parser.delete();
   }
 }
 
-export type { Node as PyNode, Tree as PyTree } from "web-tree-sitter";
+export type { MirroredNode as PyNode, MirroredTree as PyTree };
