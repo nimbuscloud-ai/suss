@@ -194,30 +194,45 @@ export function writeFileAtomically(
 }
 
 /**
+ * Changes the text of a file before it is parsed: each line of a file in
+ * the line layout, or the whole text of one that is not. It must leave
+ * the newlines alone.
+ */
+export type TextRewrite = (text: string) => string;
+
+const unchanged: TextRewrite = (text) => text;
+
+/**
  * Opens a JSON file once and reads it. A top-level array comes back as
  * its elements, which a file in the line layout yields one line at a
  * time. Iterate them once with `for...of`: the loop ending, or a `break`
  * out of it, closes the file.
  */
-export function openJsonFile(file: string): JsonDocument {
+export function openJsonFile(
+  file: string,
+  rewrite: TextRewrite = unchanged,
+): JsonDocument {
   const resolved = path.resolve(file);
   const fd = openForReading(resolved);
   let closesItself = false;
   try {
     const start = firstBytes(resolved, fd);
     if (!isLineLayout(start)) {
-      const value = readWhole(resolved, fd);
+      const value = readWhole(resolved, fd, rewrite);
       return Array.isArray(value)
         ? { kind: "array", elements: releasedAsRead(value) }
         : { kind: "value", value };
     }
 
     if (start[0] === OPEN_BRACE) {
-      return { kind: "value", value: lineLayoutObject(resolved, fd) };
+      return { kind: "value", value: lineLayoutObject(resolved, fd, rewrite) };
     }
 
     closesItself = true;
-    return { kind: "array", elements: lineLayoutElements(resolved, fd) };
+    return {
+      kind: "array",
+      elements: lineLayoutElements(resolved, fd, rewrite),
+    };
   } finally {
     if (!closesItself) {
       fs.closeSync(fd);
@@ -226,8 +241,11 @@ export function openJsonFile(file: string): JsonDocument {
 }
 
 /** Reads a JSON file of any layout into one value. */
-export function readJsonFile(file: string): unknown {
-  const document = openJsonFile(file);
+export function readJsonFile(
+  file: string,
+  rewrite: TextRewrite = unchanged,
+): unknown {
+  const document = openJsonFile(file, rewrite);
   return document.kind === "array" ? [...document.elements] : document.value;
 }
 
@@ -277,7 +295,7 @@ function isLineLayout(start: Buffer): boolean {
   );
 }
 
-function readWhole(file: string, fd: number): unknown {
+function readWhole(file: string, fd: number, rewrite: TextRewrite): unknown {
   const size = unlessUnreadable(file, () => fs.fstatSync(fd).size);
   if (size > MAX_STRING_CHARS) {
     throw new JsonFileError({
@@ -286,7 +304,9 @@ function readWhole(file: string, fd: number): unknown {
       detail: `is ${Math.round(size / (1024 * 1024))} MB of JSON written as one indented or single-line document, more than suss can read in one piece. Releases before 0.34.1 wrote summaries that way. Run the extract again to write it one summary per line.`,
     });
   }
-  const text = unlessUnreadable(file, () => fs.readFileSync(fd, "utf-8"));
+  const text = rewrite(
+    unlessUnreadable(file, () => fs.readFileSync(fd, "utf-8")),
+  );
   try {
     return JSON.parse(text) as unknown;
   } catch (error) {
@@ -317,7 +337,7 @@ interface Line {
  * The file's lines, split on the newline byte. A multi-byte UTF-8
  * character never contains that byte, so a split cannot cut one.
  */
-function* linesOf(fd: number): Generator<Line> {
+function* linesOf(fd: number, rewrite: TextRewrite): Generator<Line> {
   const chunk = Buffer.allocUnsafe(CHUNK_BYTES);
   let partial: Buffer[] = [];
   let number = 0;
@@ -334,7 +354,10 @@ function* linesOf(fd: number): Generator<Line> {
       end = view.indexOf(NEWLINE, start)
     ) {
       number++;
-      yield { text: decoded(partial, view.subarray(start, end)), number };
+      yield {
+        text: rewrite(decoded(partial, view.subarray(start, end))),
+        number,
+      };
       partial = [];
       start = end + 1;
     }
@@ -345,7 +368,7 @@ function* linesOf(fd: number): Generator<Line> {
   }
   if (partial.length > 0) {
     number++;
-    yield { text: decoded(partial, Buffer.alloc(0)), number };
+    yield { text: rewrite(decoded(partial, Buffer.alloc(0))), number };
   }
 }
 
@@ -404,9 +427,13 @@ function expectNothingAfter(file: string, lines: Iterator<Line>): void {
 }
 
 /** Owns `fd` and closes it when the iteration ends or is stopped. */
-function* lineLayoutElements(file: string, fd: number): Generator<unknown> {
+function* lineLayoutElements(
+  file: string,
+  fd: number,
+  rewrite: TextRewrite,
+): Generator<unknown> {
   try {
-    const lines = linesOf(fd);
+    const lines = linesOf(fd, rewrite);
     lines.next();
     yield* elementsUntilClose(file, lines, ["]"]);
     expectNothingAfter(file, lines);
@@ -415,8 +442,12 @@ function* lineLayoutElements(file: string, fd: number): Generator<unknown> {
   }
 }
 
-function lineLayoutObject(file: string, fd: number): Record<string, unknown> {
-  const lines = linesOf(fd);
+function lineLayoutObject(
+  file: string,
+  fd: number,
+  rewrite: TextRewrite,
+): Record<string, unknown> {
+  const lines = linesOf(fd, rewrite);
   const result: Record<string, unknown> = {};
   lines.next();
   for (let next = lines.next(); next.done !== true; next = lines.next()) {
