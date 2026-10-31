@@ -6,11 +6,11 @@
  * of. The method has one summary, so the table it reads stays out of the
  * binding and is listed per construction in `containerByConstruction`. A
  * call whose receiver settled on constructions lists them too. Reading
- * the summaries, this copies the callee once for each such construction,
- * fills in the containers that construction gives, and points the call at
- * the copy. A call the copy makes on its own receiver goes to the copy
- * for the same construction, so a route's reach follows one repository
- * all the way down. The copies are never written to a file.
+ * the summaries, this copies the callee for each construction it reads a
+ * table for, itself or through a call on its own receiver, fills in that
+ * table, and points the call at the copy. A call the copy makes on its own
+ * receiver goes to the copy for the same construction, so a route's reach
+ * follows one repository all the way down. No copy is written to a file.
  */
 
 import { namedBinding } from "@suss/ir-core";
