@@ -76,14 +76,14 @@ An interactive run ends with one line on stderr when a newer suss is on the regi
 
 ## Where suss writes
 
-A command that extracts keeps a cache so the next run reads only what changed. It goes in `.suss/cache` under the folder being read, with a `.gitignore` inside it. In a checkout you may only read, that write fails or dirties the tree. Point the cache somewhere else with `--cache-dir`, or with `SUSS_CACHE_DIR` for every command in a shell:
+A command that extracts keeps a cache so the next run reads only what changed. It goes in `.suss/cache` under the folder being read, with a `.gitignore` inside it. In a git worktree, it goes in the same folder of the main checkout instead, so every worktree of a repository shares one cache, and a new worktree's first run reads again only the files that differ from what another checkout stored. In a checkout you may only read, that write fails or dirties the tree. Point the cache somewhere else with `--cache-dir`, or with `SUSS_CACHE_DIR` for every command in a shell:
 
 ```bash
 suss check --cache-dir /tmp/suss-cache
 SUSS_CACHE_DIR=/tmp/suss-cache suss extract --dir . -o /tmp/summaries.json
 ```
 
-`init`, `extract`, `inspect`, `check`, `ask` and `map` take the flag, and the flag wins over the variable. `map` writes its page and the summaries behind it to `.suss` in the project, or, with the cache moved, to a folder for the project under `map` in the cache directory. Several projects can share one directory, because each gets a subfolder named for a hash of its path. The MCP server takes the same flag as an argument (`suss-mcp <project> --cache-dir <path>`) or reads the variable, and keeps its record for the plugin's hooks there too.
+`init`, `extract`, `inspect`, `check`, `ask` and `map` take the flag, and the flag wins over the variable. `map` writes its page and the summaries behind it to `.suss` in the project, or, with the cache moved, to a folder for the project under `map` in the cache directory. Several projects can share one directory, because each gets a subfolder named for a hash of its path. For the extraction cache in a git repository, the hash is of the repository and the folder's place in it, so the worktrees still share one cache there. The MCP server takes the same flag as an argument (`suss-mcp <project> --cache-dir <path>`) or reads the variable, and keeps its record for the plugin's hooks there too.
 
 With the cache moved, a command writes into the project only where you asked it to: `-o`, `--into`, `--out-dir`, and the files `init --write` creates. Everything else goes to the system temp folder (the update-check stamp, the temporary summaries a bare `check` reads, and the MCP server's socket).
 

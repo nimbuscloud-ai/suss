@@ -111,6 +111,19 @@ describe("writeDocumentFile and readJsonFile", () => {
     expect(readJsonFile(file)).toEqual(value);
   });
 
+  it("rewrites the text before parsing it, in either layout", () => {
+    const value = { root: "<here>/a.ts", files: ["<here>/b.ts", "c.ts"] };
+    const rewrite = (text: string) => text.replaceAll("<here>", "/work");
+    const expected = { root: "/work/a.ts", files: ["/work/b.ts", "c.ts"] };
+    const lines = fileWith("");
+    writeDocumentFile(lines, value);
+
+    expect(readJsonFile(lines, rewrite)).toEqual(expected);
+    expect(readJsonFile(fileWith(JSON.stringify(value)), rewrite)).toEqual(
+      expected,
+    );
+  });
+
   it("yields a line-layout array one element at a time", () => {
     const file = fileWith("");
     writeDocumentFile(file, [{ a: 1 }, { a: 2 }, { a: 3 }]);

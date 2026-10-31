@@ -1297,6 +1297,7 @@ export {
   liveRecordFor,
   mapFolderFor,
 } from "./cacheLocation.js";
+export { storedPathsOfRun } from "./cachePaths.js";
 export { stampMayMissAWrite } from "./cacheStamps.js";
 export { createCodeHasher, processCodeHasher } from "./codeHash.js";
 export {
