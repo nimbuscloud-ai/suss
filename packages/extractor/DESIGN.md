@@ -71,9 +71,9 @@ Guards are compared by the condition's polarity and the text it was written as, 
 
 ## Extraction cache
 
-A second run over an unchanged repository returns the first run's summaries from disk, and a run after an edit re-extracts only the files the edit can affect. The TypeScript adapter keeps the cache in `.suss/cache/` beside the tsconfig, or in the walked directory when a run reads only part of the tsconfig, and turns it off for a project the caller supplied. `--no-cache` skips it for one run. The rest of this section describes the design.
+A second run over an unchanged repository returns the first run's summaries from disk, and a run after an edit re-extracts only the files the edit can affect. The TypeScript adapter keeps the cache in `.suss/cache/` beside the tsconfig, or in the walked directory when a run reads only part of the tsconfig, and turns it off for a project the caller supplied. `--no-cache` skips it for one run. In a git repository that directory is the one in the main checkout, at the same place, so every worktree of the repository uses one cache. "Worktrees share one cache" below says how. The rest of this section describes the design.
 
-The Python and Ruby adapters keep the same on-disk cache, rooted at `.suss/cache/` beside the project root. Neither has a config file of its own to guard an entry the way the TypeScript adapter's tsconfig does, so their key depends on the walked file list, the packs digest and the run options. The files a pack reads without walking, such as Rails' routes, are part of the key through `discoveryInputs`. Both store a record per file in the root's `meta`: what the file's discovery found and what it depended on, and what the walk found for each function written in the file. After an edit they parse every file and emit every fact again, replay the records whose dependencies did not change, and re-extract the rest. The DESIGN.md of `@suss/resolution`, under "What a piece of work depended on", says how a record's dependencies are worked out. A file added or removed re-extracts the whole project.
+The Python and Ruby adapters keep the same on-disk cache, rooted at `.suss/cache/` beside the project root, and placed the same way in a worktree. Neither has a config file of its own to guard an entry the way the TypeScript adapter's tsconfig does, so their key depends on the walked file list, the packs digest and the run options. The files a pack reads without walking, such as Rails' routes, are part of the key through `discoveryInputs`. Both store a record per file in the root's `meta`: what the file's discovery found and what it depended on, and what the walk found for each function written in the file. After an edit they parse every file and emit every fact again, replay the records whose dependencies did not change, and re-extract the rest. The DESIGN.md of `@suss/resolution`, under "What a piece of work depended on", says how a record's dependencies are worked out. A file added or removed re-extracts the whole project.
 
 ### The key
 
@@ -128,27 +128,44 @@ A file's record can also list the files it imports, in the order the adapter's l
 
 ### Where the summaries are kept
 
-An entry directory has a manifest, an index, a folder of shards and a folder of records:
+An entry directory has a folder for each checkout that wrote it, a folder of shards and a folder of records. Each checkout's folder has its own manifest and index:
 
 ```
 key-04b06afa04ac7344/
-  manifest.json            file stamps, each walked file's record, and which shard has each file
-  index.json               files, boundaries and call spellings, each to units in shards
+  checkouts/5be2a07c…/     one checkout, named by a hash of its root, or local outside git
+    manifest.json          file stamps, each walked file's record, and which shard has each file
+    index.json             files, boundaries and call spellings, each to units in shards
+    stored.json            the shards and records this checkout's last two manifests list
+    root.txt               the checkout's root
   shards/3f/3fa9c2….json   one source file's units
   records/8d/8d04e1….json  the adapter's meta for one walked file
 ```
 
 A summary goes to the shard for its `location.file`. A walked file's `meta` goes to a record of its own, because only a partial run reads it: a hit opens the shards alone. Walked files whose meta is the same share one record, which on a TypeScript project is most of them. The manifest lists, for each shard, where each of its units comes in the run's summary list and which walked files own each one, so a hit gives back the list in the order the run wrote it. A shard keeps each distinct condition and effect once, in a table at its top, and its transitions and gaps refer to them by position. Effects repeat across a file's branches: interning takes trpc's summaries from 194 MB to 167 MB, and directus's from 195 MB to 10 MB. Reading a shard gives back a separate copy for every place a value was interned, because a caller may change one transition's effect.
 
-Shards and records are named by a hash of their own text. A write skips every one that is already there, so a run after an edit writes only the files whose content moved, and the index copies the entries of every shard whose name is unchanged. After the new manifest is in place, the write deletes every shard and record that neither it nor the previous manifest lists. A reader that opened the previous manifest can still read what it lists. A shard that cannot be read makes the entry a miss, and a shard or record that cannot be read makes a partial plan return null.
+Shards and records are named by a hash of their own text. A write skips every one that is already there, so a run after an edit writes only the files whose content moved, and the index copies the entries of every shard whose name is unchanged. After the new manifest is in place, the write deletes every shard and record that no checkout's current or previous manifest lists. A reader that opened the previous manifest can still read what it lists. A shard that cannot be read makes the entry a miss, and a shard or record that cannot be read makes a partial plan return null.
 
 The index maps a boundary, by the label a report prints for it, to the units that serve it or call it, and a callee's spelling to the units with an invocation of it. A unit there is its file's position in `files` and its own position in that file's shard. The index describes the summaries as stored, before wrappers are composed.
+
+### Worktrees share one cache
+
+Worktrees of one repository contain nearly the same files, so a new worktree, or one switched to another branch, should not extract the whole project again. The cache directory is therefore worked out from the repository, not the checkout: `.suss/cache/` under the main checkout, at the project's path in the repository. With `SUSS_CACHE_DIR` set, the folder under it is named by a hash of the repository's shared git directory and that path. A directory outside git keeps a cache of its own.
+
+What a checkout stores refers to its own files by absolute path: the manifest's file list, the summaries' locations, the paths in the adapter's records, and the config path in the key. So the text of every stored file has the checkout's root replaced by a placeholder on the way to disk, and the reading checkout's root put back on the way in. The root is replaced where it starts a path: written as it is, as the run spells it through a symlink, percent-encoded as in a key on a subclass, and after an escape in JSON text such as the NUL between the parts of an id. Two checkouts with the same files then store the same text, hash it to the same key, and give their shards and records the same names, so they share them. Working on the text covers every field with a path in it, including fields added later.
+
+Each checkout keeps its own manifest and index, because its stamps are its own. A checkout with no manifest yet plans from the newest one another checkout wrote. None of its stamps match, so the plan hashes every file, and each file whose content and recorded reads match is reused. On a public FastAPI app of 659 files, a new worktree's first run takes 0.8 s against 10 s cold, and after a one-line edit it re-extracts 2 files and reuses 657. The config file counts as unchanged when its content hash matches, since a new checkout gives it a new stamp too.
+
+The Python and Ruby adapters hash what each piece of work depended on, and those values include paths. They hash the checkout-relative text, so a replay in another checkout compares like with like.
+
+A write drops the folder of a checkout whose root is gone, as after `git worktree remove`, and keeps the eight most recent checkouts. It deletes only the shards and records that no kept checkout lists. While more than one checkout shares the entry, it also leaves anything written in the last minute, since another checkout may be between writing its shards and writing its manifest.
 
 ### Known gaps
 
 A type read more than one import hop away, through a chain that no recorded mechanism followed, can change a summary's printed types without invalidating it. The middle file of a deep re-export chain has the same gap when the compiler resolved the chain and the store did not. A dependency upgrade under `node_modules` invalidates nothing, because the pack and adapter hashes stand in for knowledge of the libraries. Stage two of #422 closes these gaps by recording what each answer read, per answer.
 
 The code hash follows imports only into `@suss` packages. A new TypeScript compiler or tree-sitter runtime changes no key, and neither does replacing a grammar file the Python or Ruby adapter reads off disk, until the adapter's own code or version changes with it. A pack from outside suss is hashed through its own files and the `@suss` packages it imports, and the other packages it imports count as libraries here.
+
+Two checkouts writing one entry at the same moment can race. One's cleanup can delete a shard or record that the other's new manifest lists when nothing else listed it, and the other's next run then cannot read it and misses. The race costs a cold run and never serves stale summaries. A project directory that exists in a worktree and not in the main checkout, such as a package added on a branch, gets that directory created in the main checkout, containing only the ignored `.suss`.
 
 A re-extracted summary can also be represented differently from one produced by a run without the cache. Type-shape expansion shares a memo across the run, so a run that walks five files can expand a shape to a different depth than a run that walks a thousand, and the shape digest changes with it. The summary was computed fresh either way, and nothing served is stale.
 
