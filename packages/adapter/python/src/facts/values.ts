@@ -94,7 +94,10 @@ export function nodeAt(
   }
   /* v8 ignore stop */
 
-  let found = root.descendantForIndex(start, Math.max(start, end - 1));
+  let found: PyNode | null = root.descendantForIndex(
+    start,
+    Math.max(start, end - 1),
+  );
   while (
     found !== null &&
     (found.startIndex !== start || found.endIndex !== end)

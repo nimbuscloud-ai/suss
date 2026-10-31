@@ -1,7 +1,7 @@
 {
   "name": "@suss/adapter-ruby",
-  "exports": 75,
-  "internal": 986,
-  "consumers": 357,
+  "exports": 56,
+  "internal": 985,
+  "consumers": 358,
   "unfollowedCalls": 115
 }

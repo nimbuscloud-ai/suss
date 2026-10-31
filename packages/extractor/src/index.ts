@@ -118,6 +118,13 @@ export {
   UnmodeledFlow,
 } from "./paths/enumeratePaths.js";
 export { sharedGatingConditions } from "./paths/gatingConditions.js";
+export {
+  copyAndFree,
+  MirroredNode,
+  MirroredTree,
+  type Point,
+  type TreeSitterTree,
+} from "./paths/mirroredTree.js";
 export { IdMap, IdSet } from "./paths/nodeIdentity.js";
 export { EnclosingNodes } from "./paths/nodeReads.js";
 export { SKIP_CHILDREN, walkDescendants } from "./paths/nodeWalk.js";

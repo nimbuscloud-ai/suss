@@ -181,37 +181,19 @@ export function booleanLiteralValue(node: PyNode): boolean | null {
 }
 
 /**
- * A node's named children, and nothing for an absent node. Every read of
- * children in this adapter goes through here or `allChildren`, because the
- * library's `namedChildren` and `children` getters keep the array on the
- * node, and the run keeps every root to the end.
+ * A node's named children, and nothing for an absent node. The list is
+ * the caller's own, so changing it leaves the tree alone.
  */
 export function children(node: PyNode | null | undefined): PyNode[] {
   if (node === null || node === undefined) {
     return [];
   }
-  const found: PyNode[] = [];
-  const count = node.namedChildCount;
-  for (let index = 0; index < count; index++) {
-    const child = node.namedChild(index);
-    if (child !== null) {
-      found.push(child);
-    }
-  }
-  return found;
+  return [...node.namedChildren];
 }
 
 /** Every child, the unnamed ones such as an operator's token included. */
 export function allChildren(node: PyNode): PyNode[] {
-  const found: PyNode[] = [];
-  const count = node.childCount;
-  for (let index = 0; index < count; index++) {
-    const child = node.child(index);
-    if (child !== null) {
-      found.push(child);
-    }
-  }
-  return found;
+  return [...node.children];
 }
 
 export function bodyStatements(body: PyNode): PyNode[] {
@@ -347,11 +329,8 @@ export function resultUsedAsValue(node: PyNode): boolean {
   return parent !== null && used !== undefined && used(parent, child);
 }
 
-/**
- * A set of nodes keyed on the node id. tree-sitter returns a new wrapper
- * each time a child is read, so two reads of one node are never `===`.
- */
+/** A set of nodes keyed on the node id. */
 export class NodeSet extends IdSet<PyNode> {}
 
-/** A map keyed on the node id, for the same reason as `NodeSet`. */
+/** A map keyed on the node id. */
 export class NodeMap<V> extends IdMap<PyNode, V> {}

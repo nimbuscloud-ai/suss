@@ -3,14 +3,11 @@
  * its parse is.
  *
  * A fact key includes the function a node is written in, so an adapter
- * looks it up for every read it keys, and each step up the tree is a call
- * into tree-sitter's wasm module that builds a fresh wrapper. A parse tree
- * does not change once it is built, so each result is kept in a WeakMap
- * keyed on the tree. The results go when the tree does, and a parse made
- * in a later run starts with nothing kept.
- *
- * Only this read is kept. Keeping each node's children and fields too
- * cost more memory than it saved time.
+ * looks it up for every read it keys, and walking up from a deep node
+ * passes every block around it. A parse tree does not change once it is
+ * built, so each result is kept in a WeakMap keyed on the tree. The
+ * results go when the tree does, and a parse made in a later run starts
+ * with nothing kept.
  */
 
 /** What the reader needs from a parse tree node. */

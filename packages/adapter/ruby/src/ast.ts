@@ -44,37 +44,19 @@ export function isType(node: RbNode, ...types: string[]): boolean {
 }
 
 /**
- * A node's named children, and nothing for an absent node. Every read of
- * children in this adapter goes through here or `allChildren`, because the
- * library's `namedChildren` and `children` getters keep the array on the
- * node, and the run keeps every root to the end.
+ * A node's named children, and nothing for an absent node. The list is
+ * the caller's own, so changing it leaves the tree alone.
  */
 export function children(node: RbNode | null | undefined): RbNode[] {
   if (node === null || node === undefined) {
     return [];
   }
-  const found: RbNode[] = [];
-  const count = node.namedChildCount;
-  for (let index = 0; index < count; index++) {
-    const child = node.namedChild(index);
-    if (child !== null) {
-      found.push(child);
-    }
-  }
-  return found;
+  return [...node.namedChildren];
 }
 
 /** Every child, the unnamed ones such as an operator's token included. */
 export function allChildren(node: RbNode): RbNode[] {
-  const found: RbNode[] = [];
-  const count = node.childCount;
-  for (let index = 0; index < count; index++) {
-    const child = node.child(index);
-    if (child !== null) {
-      found.push(child);
-    }
-  }
-  return found;
+  return [...node.children];
 }
 
 export function bodyStatements(body: RbNode): RbNode[] {
@@ -953,12 +935,8 @@ export function resultUsedAsValue(node: RbNode): boolean {
   return VALUE_USED_UNDER[parent.type]?.(parent, child) ?? false;
 }
 
-/**
- * A set of nodes keyed on node id. tree-sitter returns a new wrapper
- * object each time a child is read, so two reads of one node are never
- * `===`, and a plain Set would miss the match.
- */
+/** A set of nodes keyed on node id. */
 export class NodeSet extends IdSet<RbNode> {}
 
-/** A map keyed on node id, for the same reason as `NodeSet`. */
+/** A map keyed on node id. */
 export class NodeMap<V> extends IdMap<RbNode, V> {}

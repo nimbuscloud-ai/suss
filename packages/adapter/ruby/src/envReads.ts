@@ -392,8 +392,6 @@ function namedReadsUnder(
 
 /** Whether a node is the default of one of `root`'s own parameters. */
 function isOwnParameter(node: RbNode, root: RbNode): boolean {
-  // tree-sitter hands back a new wrapper for each read of a node, so the
-  // two are compared by id.
   return (
     DEFAULT_KIND[node.type] !== undefined && node.parent?.parent?.id === root.id
   );

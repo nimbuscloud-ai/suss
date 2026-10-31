@@ -83,8 +83,6 @@ class Lowerer {
   >();
   readonly terminalHome = new NodeMap<StructuredStatement<PyNode>>();
 
-  // tree-sitter hands back a fresh wrapper object each time a child is
-  // read, so a terminal is matched by its stable node id.
   constructor(
     private readonly terminals: ReadonlyMap<number, PyNode>,
     private readonly thrown: NodeSet,
