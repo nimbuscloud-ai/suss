@@ -16,5 +16,6 @@
   "mock": "vitest: vi.mock, which replaces a module for the whole file",
   "doMock": "vitest: vi.doMock, which replaces a module for the imports after it",
   "spyOn": "vitest: vi.spyOn, which replaces one member of an object",
+  "globals": "vitest: the test option that lets a test call describe, it and vi without importing them",
   "allPositional": "suss: input-mapping kind, one input per declared parameter"
 }

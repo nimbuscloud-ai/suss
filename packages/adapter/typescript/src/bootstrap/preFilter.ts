@@ -16,6 +16,8 @@
 
 import { type SourceFile, SyntaxKind } from "ts-morph";
 
+import { matchesTestFileName } from "@suss/extractor";
+
 import {
   type GeneratedModules,
   generatedModulesOf,
@@ -47,6 +49,7 @@ export function computePackApplicability(
   const gatedPacks: Array<{
     pack: PatternPack;
     gates: string[];
+    named: string[];
     generated: GeneratedModules;
   }> = [];
   for (const pack of packs) {
@@ -57,6 +60,7 @@ export function computePackApplicability(
     gatedPacks.push({
       pack,
       gates: collectPackGates(pack),
+      named: collectPackNameGates(pack),
       generated: generatedModulesOf([pack]),
     });
   }
@@ -82,21 +86,19 @@ export function computePackApplicability(
   // would be work nobody needs.
   const gateMatches = (
     sf: SourceFile,
-    gates: string[],
-    generated: GeneratedModules,
+    { gates, named, generated }: (typeof gatedPacks)[number],
   ): boolean =>
     namesAnyPackage(importsOf(sf), gates) ||
+    matchesTestFileName(sf.getFilePath(), named) ||
     generated.reachedFrom(sf.getFilePath(), importsOf(sf));
 
   const reachingByPack = new Map<PatternPack, ReadonlySet<SourceFile>>();
   if (resolution !== undefined && gatedPacks.length > 0) {
     const answers = resolution.filesImportingTransitively(
-      gatedPacks.map(({ gates, generated }) => ({
-        sourceFiles: sourceFiles.filter(
-          (sf) => !gateMatches(sf, gates, generated),
-        ),
-        packages: gates,
-        generated,
+      gatedPacks.map((gated) => ({
+        sourceFiles: sourceFiles.filter((sf) => !gateMatches(sf, gated)),
+        packages: gated.gates,
+        generated: gated.generated,
       })),
     );
     gatedPacks.forEach(({ pack }, i) => {
@@ -107,9 +109,10 @@ export function computePackApplicability(
   const result = new Map<SourceFile, PatternPack[]>();
   for (const sf of sourceFiles) {
     const applicable: PatternPack[] = [...ungatedPacks];
-    for (const { pack, gates, generated } of gatedPacks) {
+    for (const gated of gatedPacks) {
+      const { pack } = gated;
       if (
-        gateMatches(sf, gates, generated) ||
+        gateMatches(sf, gated) ||
         reachingByPack.get(pack)?.has(sf) === true
       ) {
         applicable.push(pack);
@@ -175,6 +178,16 @@ export function packIsUngated(pack: PatternPack): boolean {
 export function collectPackMarks(pack: PatternPack): string[] {
   const find = pack.projectHelpers?.find;
   return find?.by === "text" ? [...find.contains] : [];
+}
+
+/**
+ * File names that make a gated pack applicable to a file whatever it
+ * imports: the files where a test runner's functions are globals.
+ */
+export function collectPackNameGates(pack: PatternPack): string[] {
+  return pack.discovery.flatMap((pattern) =>
+    pattern.match.type === "testCase" ? (pattern.match.globalsIn ?? []) : [],
+  );
 }
 
 /** Every import specifier that makes a gated pack applicable to a file. */
