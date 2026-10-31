@@ -19,11 +19,14 @@ import path from "node:path";
 
 import { type Project, type SourceFile, ts } from "ts-morph";
 
+import { matchesTestFileName } from "@suss/extractor";
+
 import { generatedModulesOf } from "../facts/generatedModules.js";
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 import {
   collectPackGates,
   collectPackMarks,
+  collectPackNameGates,
   packIsUngated,
 } from "./preFilter.js";
 
@@ -514,10 +517,16 @@ async function selectCandidateFiles(
   if (ungatedExists) {
     return [...allFiles];
   }
-  const gates = collectAllGates(packs);
-  const marks = collectAllMarks(packs);
+  const gates = unionOver(packs, collectPackGates);
+  const marks = unionOver(packs, collectPackMarks);
+  const named = unionOver(packs, collectPackNameGates);
   const generated = generatedModulesOf(packs);
-  if (gates.length === 0 && marks.length === 0 && !generated.declared) {
+  if (
+    gates.length === 0 &&
+    marks.length === 0 &&
+    named.length === 0 &&
+    !generated.declared
+  ) {
     return [];
   }
 
@@ -527,6 +536,7 @@ async function selectCandidateFiles(
     if (
       marked ||
       namesAnyPackage(importedModules, gates) ||
+      matchesTestFileName(p, named) ||
       generated.reachedFrom(p, importedModules)
     ) {
       matched.add(p);
@@ -622,24 +632,12 @@ function internalSpecifierResolver(
   };
 }
 
-function collectAllGates(packs: ReadonlyArray<PatternPack>): string[] {
-  const gates = new Set<string>();
-  for (const pack of packs) {
-    for (const g of collectPackGates(pack)) {
-      gates.add(g);
-    }
-  }
-  return [...gates];
-}
-
-function collectAllMarks(packs: ReadonlyArray<PatternPack>): string[] {
-  const marks = new Set<string>();
-  for (const pack of packs) {
-    for (const mark of collectPackMarks(pack)) {
-      marks.add(mark);
-    }
-  }
-  return [...marks];
+/** What `collect` gives for any of the packs, each once. */
+function unionOver(
+  packs: ReadonlyArray<PatternPack>,
+  collect: (pack: PatternPack) => string[],
+): string[] {
+  return [...new Set(packs.flatMap(collect))];
 }
 
 /** Bounded so a huge project does not exhaust the file-handle limit. */

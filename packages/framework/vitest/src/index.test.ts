@@ -16,7 +16,7 @@ export function cancelOrder(id: string) {
 
 async function extract(
   files: Record<string, string>,
-  options: { files?: string[] } = {},
+  options: { files?: string[]; globals?: boolean } = {},
 ): Promise<BehavioralSummary[]> {
   const project = createTestProject();
   for (const [name, source] of Object.entries(files)) {
@@ -224,5 +224,58 @@ describe("vitestFramework", () => {
     expect(optionsSchema.safeParse({ files: ["a.test.ts"] }).success).toBe(
       true,
     );
+  });
+});
+
+describe("vitestFramework with the runner's globals", () => {
+  it("reads a case that calls describe, it and vi without importing them", async () => {
+    const tests = await extract(
+      {
+        "/repo/src/orders.ts": ORDERS,
+        "/repo/src/orders.test.ts": `
+          import { cancelOrder } from "./orders.js";
+          vi.mock("./orders.js");
+          describe("orders", () => {
+            it("cancels", () => { cancelOrder("o-1"); });
+            it.skip("refunds", () => {});
+          });
+        `,
+      },
+      { globals: true },
+    );
+
+    expect(tests.map((one) => one.identity.name).sort()).toEqual([
+      "orders > cancels",
+      "orders > refunds",
+    ]);
+    expect(readTestMetadata(named(tests, "orders > cancels"))?.mocks).toEqual([
+      { module: "/repo/src/orders.ts", written: 'vi.mock("./orders.js")' },
+    ]);
+    expect(readTestMetadata(named(tests, "orders > refunds"))?.skipped).toBe(
+      true,
+    );
+  });
+
+  it("leaves a test file alone when it brings in its own test function", async () => {
+    const tests = await extract(
+      {
+        "src/checkout.spec.ts": `
+          import { test } from "@playwright/test";
+          test("pays", async () => {});
+        `,
+      },
+      { globals: true },
+    );
+
+    expect(tests).toEqual([]);
+  });
+
+  it("reads globals only in a file vitest runs, and only when they are on", async () => {
+    const source = `it("runs", () => {});`;
+
+    expect(
+      await extract({ "src/helpers.ts": source }, { globals: true }),
+    ).toEqual([]);
+    expect(await extract({ "src/a.test.ts": source })).toEqual([]);
   });
 });

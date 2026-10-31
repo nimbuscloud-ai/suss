@@ -13,9 +13,13 @@ import path from "node:path";
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import { testUnitName } from "@suss/behavioral-ir";
-import { isListedTestFile } from "@suss/extractor";
+import { isListedTestFile, matchesTestFileName } from "@suss/extractor";
 
-import { moduleImportedWholeAs, namedImportsOf } from "./importScan.js";
+import {
+  importBindsName,
+  moduleImportedWholeAs,
+  namedImportsOf,
+} from "./importScan.js";
 import { functionValueOf, stringValueOf } from "./resolveValue.js";
 
 import type { TestMock } from "@suss/behavioral-ir";
@@ -40,7 +44,7 @@ export function discoverTestCases(
   if (!isListedTestFile(sourceFile.getFilePath(), match.files)) {
     return [];
   }
-  const spellings = runnerSpellings(sourceFile, match.importModule);
+  const spellings = runnerSpellings(sourceFile, match);
   if (spellings.size === 0) {
     return [];
   }
@@ -148,16 +152,46 @@ function unresolvedTitleOf(
   return null;
 }
 
-/** Local spelling to the name the runner exports it as. */
+/**
+ * Local spelling to the name the runner exports it as. In a file where
+ * the runner's functions are globals, a runner name the file does not
+ * bind itself is the runner's own.
+ */
 function runnerSpellings(
   sourceFile: SourceFile,
-  importModule: string,
+  match: TestCaseMatch,
 ): Map<string, string> {
   const spellings = new Map<string, string>();
-  for (const one of namedImportsOf(sourceFile, [importModule])) {
+  for (const one of namedImportsOf(sourceFile, [match.importModule])) {
     spellings.set(one.local, one.canonical);
   }
+  if (!matchesTestFileName(sourceFile.getFilePath(), match.globalsIn ?? [])) {
+    return spellings;
+  }
+  for (const name of runnerNames(match)) {
+    if (!spellings.has(name) && !bindsAtTopLevel(sourceFile, name)) {
+      spellings.set(name, name);
+    }
+  }
   return spellings;
+}
+
+function runnerNames(match: TestCaseMatch): string[] {
+  return [
+    ...match.suiteNames,
+    ...match.caseNames,
+    ...(match.mocks === undefined ? [] : [match.mocks.object]),
+  ];
+}
+
+/** Whether the file imports `name` or declares it outside any function. */
+function bindsAtTopLevel(sourceFile: SourceFile, name: string): boolean {
+  return (
+    importBindsName(sourceFile, name) ||
+    sourceFile.getVariableDeclaration(name) !== undefined ||
+    sourceFile.getFunction(name) !== undefined ||
+    sourceFile.getClass(name) !== undefined
+  );
 }
 
 /**

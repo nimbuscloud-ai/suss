@@ -543,6 +543,14 @@ export interface TestCaseMatch {
    * out, every file that imports the runner is walked.
    */
   files?: string[];
+  /**
+   * Names of the files where the runner's functions can be globals that
+   * need no import, as vitest's `globals: true` makes them, with `*` for
+   * any run of characters: `*.test.*`. Such a file is read whatever it
+   * imports, and a suite, case or mock name it does not bind itself is
+   * the runner's.
+   */
+  globalsIn?: string[];
 }
 
 export type BindingExtraction = {

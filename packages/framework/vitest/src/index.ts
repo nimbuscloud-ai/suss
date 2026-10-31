@@ -10,6 +10,8 @@
 
 import { z } from "zod";
 
+import { configInputs, configSetsGlobals } from "./config.js";
+
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
@@ -22,16 +24,34 @@ export const optionsSchema = z
      * file that imports vitest is read.
      */
     files: z.array(z.string().min(1)).optional(),
+    /**
+     * Whether tests call vitest's functions without importing them, as
+     * `test.globals` in the vitest config allows. Left out, the pack
+     * reads that setting from the config in `configDirectory`.
+     */
+    globals: z.boolean().optional(),
+    /** Where the run reads from. The CLI fills it in. */
+    configDirectory: z.string().optional(),
   })
   .strict();
 
 export type VitestPackOptions = z.infer<typeof optionsSchema>;
 
+/** The files vitest runs by default, where its globals are in scope. */
+const TEST_FILE_NAMES = ["*.test.*", "*.spec.*"];
+
 export function vitestFramework(options: VitestPackOptions = {}): PatternPack {
+  const { configDirectory } = options;
+  const globals =
+    options.globals ??
+    (configDirectory !== undefined && configSetsGlobals(configDirectory));
   return {
     name: "vitest",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
+    ...(configDirectory === undefined
+      ? {}
+      : { discoveryInputs: () => configInputs(configDirectory) }),
 
     discovery: [
       {
@@ -51,6 +71,7 @@ export function vitestFramework(options: VitestPackOptions = {}): PatternPack {
             memberMethods: ["spyOn"],
           },
           ...(options.files !== undefined ? { files: options.files } : {}),
+          ...(globals ? { globalsIn: TEST_FILE_NAMES } : {}),
         },
         requiresImport: ["vitest"],
       },
