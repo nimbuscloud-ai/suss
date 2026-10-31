@@ -34,6 +34,7 @@ import { annotationTarget, typeNameOf } from "../annotations.js";
 import {
   allChildren,
   children,
+  classBases,
   enclosingFunction,
   FUNCTION_TYPES,
   field,
@@ -1811,10 +1812,7 @@ function emitPlainness(emitter: Emitter, cls: PyNode, classKey: string): void {
     return;
   }
 
-  const bases = field(cls, "superclasses");
-  const written = (bases === null ? [] : children(bases)).filter(
-    (base) => base.type !== "comment",
-  );
+  const written = classBases(cls).filter((base) => base.type !== "comment");
   const [only] = written;
   if (only === undefined) {
     add(emitter, "plainClass", classKey);
@@ -1842,8 +1840,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   const classKey = nodeId(emitter.filePath, cls);
   add(emitter, "objectValue", classKey);
 
-  const bases = field(cls, "superclasses");
-  for (const base of bases === null ? [] : children(bases)) {
+  for (const base of classBases(cls)) {
     add(emitter, "extends", classKey, valueKey(emitter, base));
     const written = writtenBaseName(base);
     if (written !== null) {
@@ -1875,13 +1872,15 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
     const memberKey = declaredMemberKey(emitter, member, classKey);
     const name = field(member, "name");
     if (memberKey !== null && name !== null) {
-      for (const held of readUnderName(
-        emitter,
-        statement,
-        memberKey,
-        accessed,
-      )) {
+      const part = accessorPart(statement, accessed);
+      for (const held of readUnderName(emitter, part, memberKey)) {
         add(emitter, "holdsProperty", classKey, name.text, held);
+      }
+      // A read of the name gives what the getter returns, so the getter
+      // itself is not under the name, and its writes to the receiver
+      // reach the class through this instead.
+      if (part === "getter") {
+        add(emitter, "getterOf", classKey, name.text, memberKey);
       }
       if (name.text === INIT_METHOD) {
         add(emitter, "initializes", classKey, memberKey);
@@ -1929,6 +1928,26 @@ function accessorNames(statements: readonly PyNode[]): Set<string> {
   return names;
 }
 
+/** Which part of a property a def in the class body is, or null for a plain method. */
+function accessorPart(
+  statement: PyNode,
+  accessed: ReadonlySet<string>,
+): "getter" | "setter" | "deleter" | null {
+  const decorators = decoratorsOf(statement);
+  const part = decorators
+    .map((decorator) => ACCESSOR_PART.exec(decorator)?.[2])
+    .find((found) => found !== undefined);
+  if (part === "setter" || part === "deleter") {
+    return part;
+  }
+  const name = field(declaredBy(statement), "name")?.text ?? "";
+  const getter =
+    part === "getter" ||
+    accessed.has(name) ||
+    decorators.some((decorator) => PROPERTY_DECORATORS.has(decorator));
+  return getter ? "getter" : null;
+}
+
 /**
  * What a read of a def's name finds on the class. For a plain method that
  * is the function. Reading a property runs its getter, so a read finds
@@ -1936,24 +1955,14 @@ function accessorNames(statements: readonly PyNode[]): Set<string> {
  */
 function readUnderName(
   emitter: Emitter,
-  statement: PyNode,
+  part: ReturnType<typeof accessorPart>,
   funcKey: string,
-  accessed: ReadonlySet<string>,
 ): string[] {
-  const decorators = decoratorsOf(statement);
-  const part = decorators
-    .map((decorator) => ACCESSOR_PART.exec(decorator)?.[2])
-    .find((found) => found !== undefined);
-  if (part === "setter" || part === "deleter") {
-    return [];
-  }
-  const name = field(declaredBy(statement), "name")?.text ?? "";
-  const getter =
-    part === "getter" ||
-    accessed.has(name) ||
-    decorators.some((decorator) => PROPERTY_DECORATORS.has(decorator));
-  if (!getter) {
+  if (part === null) {
     return [funcKey];
+  }
+  if (part !== "getter") {
+    return [];
   }
   return emitter.db
     .lookup("returnsValue", 0, funcKey)

@@ -192,6 +192,11 @@ returnsNamed(f, n)          f's return annotation is written n, read
                             against a pack's query types (Python)
 containsFn(f, g)            g is declared inside f
 initializes(cls, f)         f runs when one of cls is made
+getterOf(cls, n, f)         reading n on one of cls runs the getter f,
+                            as a property does. holdsProperty gives
+                            what f returns under n, so this is how a
+                            write f makes to its receiver reaches cls
+                            (Python)
 storesProperty(r, n, x, k)  x is written to the property n of r. k is
                             receiver when r is a method writing its own
                             receiver's n, or the class for a TypeScript
@@ -247,7 +252,9 @@ prepends(c, m)              the Ruby class c prepends the module m, whose
 extendsNamed(c, n)          class c's base is written n, which is how a
                             pack matches a library base that no node in
                             the run declares. Only a base written as a
-                            name or a dotted name has one
+                            name or a dotted name has one, and a
+                            subscripted base such as Repository[Model]
+                            has the name of the class it subscripts
 mixesInNamed(c, n)          class c includes a module written n, which is
                             how a pack matches a library module such as
                             Sidekiq::Job that no node in the run

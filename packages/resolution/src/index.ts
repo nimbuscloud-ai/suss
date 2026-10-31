@@ -1755,6 +1755,17 @@ const STATED_RULES = [
     ],
     "method store",
   ),
+  // What a property's getter put there, as a getter that fills a field
+  // the first time something reads it does.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("getterOf", v("cls"), v("m"), v("f")),
+      lit("storesProperty", v("f"), v("n"), v("held"), RECEIVER_STORE),
+    ],
+    "getter store",
+  ),
   // A write through a name, `client.timeout = 5`, lands on the object the
   // name refers to. The writes to the property asked about come off an
   // index, and each name is checked forward against the one object.

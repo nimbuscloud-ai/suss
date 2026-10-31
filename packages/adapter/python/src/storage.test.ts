@@ -813,6 +813,36 @@ describe("the database work a Python body does", () => {
       null,
     ]);
   });
+
+  it("charges nothing to a statement or a column declared as one of the library's own types", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import ColumnElement, Select, func, select",
+        "",
+        "def count(query: Select):",
+        "    return select(func.count()).select_from(query.order_by(None).subquery())",
+        "",
+        "def ordered(query: Select, column: ColumnElement):",
+        "    return query.order_by(column)",
+        "",
+      ].join("\n"),
+      BASE,
+      "ordered",
+    );
+    expect(effects.map((effect) => containerOf(effect))).toEqual([null]);
+    const counted = await effectsFor(
+      [
+        "from sqlalchemy import Select, func, select",
+        "",
+        "def count(query: Select):",
+        "    return select(func.count()).select_from(query.order_by(None).subquery())",
+        "",
+      ].join("\n"),
+      BASE,
+      "count",
+    );
+    expect(counted.map((effect) => containerOf(effect))).toEqual([null, null]);
+  });
 });
 
 /** A helper that takes its session bare, for the callers in `callers` to hand one to. */
