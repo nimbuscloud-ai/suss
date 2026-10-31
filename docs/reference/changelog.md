@@ -7,6 +7,51 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.38.2 (2026-10-31)
+
+0.38.2 reads Ruby and Python projects in 35 to 40% less time, makes the rules engine cheaper in every language, and stops Ruby files that reopen a module from listing each other as imports.
+
+### Background
+
+suss reads Ruby and Python source with tree-sitter, a parser that runs as WebAssembly. Each time an adapter asked a node for its type, its children or its text, the question went into WebAssembly and the answer came back as a new JavaScript object. Once the source is read, suss works out what values come down to with a rules engine, which matches each rule against the facts it has one part of the rule at a time.
+
+In 0.38.2 the Ruby and Python adapters copy each parse into plain JavaScript objects once and free tree-sitter's copy. The rules engine works out once per rule what each step of that matching needs, where it used to work it out again at every step.
+
+### Faster reads
+
+Both changes write the same summaries as before:
+
+- The Ruby and Python adapters read a JavaScript copy of each parse, so asking a node for its children or its text no longer goes through WebAssembly ([#1370](https://github.com/nimbuscloud-ai/suss/pull/1370)).
+- The rules engine numbers each rule's variables and keeps their values in one array. For each set of the rule's parts that have matched, it works out once which values the remaining parts are looked up by. It still picks the next part the same way, so it derives the same facts in the same order ([#1371](https://github.com/nimbuscloud-ai/suss/pull/1371)).
+
+| Project | 0.38.1 | 0.38.2 |
+|---|---:|---:|
+| mastodon (Ruby) | 23.5 s | 14.0 s |
+| A private Rails app | 26.3 s | 15.8 s |
+| dispatch (Python) | 12.8 s | 8.3 s |
+| A private Cloudflare worker (TypeScript) | 94 s | 86 s |
+
+Peak memory on mastodon falls from 3.1 GB to 2.3 GB, and on the Rails app from 3.2 GB to about 2.5 GB. A TypeScript project that spends less of its time in the rules, such as cal.com, reads in the same time as before.
+
+### Ruby files that reopen a module no longer import each other
+
+Ruby lets any number of files open the same module. suss read the name in `module Admin` as a use of `Admin`, so every file that opened `Admin` was recorded as importing the first file that declared it:
+
+```ruby
+# app/controllers/admin/base_controller.rb
+module Admin
+  class BaseController < ApplicationController
+```
+
+```
+0.38.1  "moduleImports": ["app/controllers/admin/account_actions_controller.rb", "app/controllers/application_controller.rb", ...]
+0.38.2  "moduleImports": ["app/controllers/application_controller.rb", ...]
+```
+
+suss builds the module graph from `moduleImports` to work out which files run inside a deployable unit, such as a Lambda handler, so those false edges could pull in files a handler never loads. On mastodon, 52 files listed one of these imports. Upgrading changes `moduleImports` in Ruby summaries once, and only by removing entries ([#1369](https://github.com/nimbuscloud-ai/suss/pull/1369)).
+
+Upgrade with `npm install -g @suss/cli@0.38.2`, or `npx @suss/cli@0.38.2`.
+
 ## 0.38.1 (2026-10-30)
 
 0.38.1 reads TypeScript projects faster where suss asks about the same values many times, and prints an object type's members in one order however suss came to the type.

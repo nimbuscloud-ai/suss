@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-celery",
-  "version": "0.38.1",
+  "version": "0.38.2",
   "type": "module",
   "description": "Pattern pack that reads Celery tasks as consumers and the calls that enqueue them as sends, so a route reaches the task it enqueues.",
   "keywords": [
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.38.1"
+    "@suss/adapter-python": "0.38.2"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
