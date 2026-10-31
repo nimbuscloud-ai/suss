@@ -38,6 +38,7 @@ import {
   packConfigCheck,
   packPathCheck,
   processCodeHasher,
+  storedPathsOfRun,
 } from "@suss/extractor";
 
 import { testFilesListedIn } from "./coveringTests.js";
@@ -173,10 +174,16 @@ function resolvePackFile(specifier: string): string | null {
   }
 }
 
-/** Ignores key order, so reordering a config's keys keeps the cache entry. */
+/**
+ * Ignores key order, so reordering a config's keys keeps the cache entry.
+ * A config that spells out paths in the checkout the command runs in
+ * digests them relative to it, as the cache key does, so every worktree
+ * of the repository shares the entry.
+ */
 function digest(options: unknown): string {
+  const { paths } = storedPathsOfRun(path.join(process.cwd(), "suss.json"));
   return createHash("sha256")
-    .update(canonicalize(options))
+    .update(paths.keyText(canonicalize(options)))
     .digest("hex")
     .slice(0, 12);
 }

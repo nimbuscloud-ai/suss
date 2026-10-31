@@ -164,20 +164,25 @@ export function computeContentHash(paths: readonly string[]): string {
  * Stamp for a set of project files a run reads without walking them: a
  * SAM template, a workspace package.json. Both the paths and the
  * content go in, so a file that moves counts as a change even when
- * every byte in it stayed the same.
+ * every byte in it stayed the same. A path goes in as `asStored` writes
+ * it, which for a cached run is relative to the checkout, so two
+ * worktrees with the same files get the same stamp.
  *
  * A file that cannot be read is hashed as absent, where
  * `computeContentHash` would return an empty stamp. These files belong
  * to the project, so a missing one is a change the next run should see.
  */
-export function projectFileStamp(paths: readonly string[]): string {
+export function projectFileStamp(
+  paths: readonly string[],
+  asStored: (text: string) => string = (text) => text,
+): string {
   if (paths.length === 0) {
     return "none";
   }
 
   const hash = createHash("sha256");
   for (const file of [...paths].sort()) {
-    hash.update(file);
+    hash.update(asStored(file));
     hash.update("\0");
     try {
       hash.update(fs.readFileSync(file));
@@ -248,7 +253,8 @@ export function runDigest(
     discoveryInputs?: (files: readonly string[]) => string[];
   }>,
   files: readonly string[],
+  asStored?: (text: string) => string,
 ): string {
   const inputs = packs.flatMap((pack) => pack.discoveryInputs?.(files) ?? []);
-  return `${packsDigest}|reads:${projectFileStamp(inputs)}`;
+  return `${packsDigest}|reads:${projectFileStamp(inputs, asStored)}`;
 }

@@ -12,9 +12,10 @@
  */
 
 import { BOUNDARY_ROLE, displayLabel } from "@suss/behavioral-ir";
-import { readJsonFile, writeDocumentFile } from "@suss/behavioral-ir/files";
+import { documentPieces, writeFileAtomically } from "@suss/behavioral-ir/files";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { StoredPaths } from "./cachePaths.js";
 
 export type IndexRole = "serves" | "calls";
 
@@ -125,17 +126,24 @@ export function entriesByShard(index: StoreIndex): Map<string, ShardEntries> {
 }
 
 /** The index at `file`, or null when there is none or it cannot be read. */
-export function readStoreIndex(file: string): StoreIndex | null {
+export function readStoreIndex(
+  file: string,
+  paths: StoredPaths,
+): StoreIndex | null {
   try {
-    const index = readJsonFile(file) as StoreIndex;
+    const index = paths.read(file) as StoreIndex;
     return Array.isArray(index.files) ? index : null;
   } catch {
     return null;
   }
 }
 
-export function writeStoreIndex(file: string, index: StoreIndex): void {
-  writeDocumentFile(file, index);
+export function writeStoreIndex(
+  file: string,
+  index: StoreIndex,
+  paths: StoredPaths,
+): void {
+  writeFileAtomically(file, [...documentPieces(index)].map(paths.storedPiece));
 }
 
 /**

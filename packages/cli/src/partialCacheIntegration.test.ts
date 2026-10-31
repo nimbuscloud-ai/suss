@@ -215,11 +215,18 @@ function recordedFiles(): string[] {
     .readdirSync(cacheDir)
     .filter((name) => name.startsWith("key-"));
   for (const entry of entries) {
-    const manifest = JSON.parse(
-      fs.readFileSync(path.join(cacheDir, entry, "manifest.json"), "utf8"),
-    ) as { depPaths?: string[]; units?: Array<{ file: number }> };
-    for (const unit of manifest.units ?? []) {
-      files.push(manifest.depPaths?.[unit.file] ?? "");
+    // Each checkout that shares the entry keeps a manifest of its own.
+    const checkouts = path.join(cacheDir, entry, "checkouts");
+    for (const checkout of fs.readdirSync(checkouts)) {
+      const manifest = JSON.parse(
+        fs.readFileSync(
+          path.join(checkouts, checkout, "manifest.json"),
+          "utf8",
+        ),
+      ) as { depPaths?: string[]; units?: Array<{ file: number }> };
+      for (const unit of manifest.units ?? []) {
+        files.push(manifest.depPaths?.[unit.file] ?? "");
+      }
     }
   }
   return files;

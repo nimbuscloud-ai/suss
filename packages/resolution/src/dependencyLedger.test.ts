@@ -203,6 +203,25 @@ describe("DependencyLedger", () => {
     expect(unpackHashes(stored.values)).toEqual([hashString(`${ORDERS}:1-9`)]);
     expect(stored.checks).toEqual([["blocks Order", 7]]);
   });
+
+  it("hashes a value the same in two checkouts, with paths as the cache writes them", () => {
+    const inCheckout = (root: string): DependencyLedger =>
+      new DependencyLedger([`${root}/orders.rb`], (text) =>
+        text.replaceAll(root, "<checkout>"),
+      );
+    const one = inCheckout("/work/one");
+    const two = inCheckout("/work/two");
+
+    expect(one.hashOf("/work/one/orders.rb:1-9")).toBe(
+      two.hashOf("/work/two/orders.rb:1-9"),
+    );
+    expect(one.hashOfText("blocks /work/one/orders.rb")).toBe(
+      two.hashOfText("blocks /work/two/orders.rb"),
+    );
+    expect(one.hashOf("/work/one/orders.rb:1-9")).not.toBe(
+      hashString("/work/one/orders.rb:1-9"),
+    );
+  });
 });
 
 describe("stillValid", () => {

@@ -42,12 +42,12 @@ import {
   runDigest,
   stampModuleImports,
   stampModules,
+  storedPathsOfRun,
 } from "@suss/extractor";
 import {
   addPackWords,
   DependencyLedger,
   FactLog,
-  hashString,
   importedFilesByFile,
   mergeStoredDependencies,
   noDependencies,
@@ -404,7 +404,12 @@ export async function extractPythonProject(
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : runDigest(packsDigest, options.packs, options.files),
+        : runDigest(
+            packsDigest,
+            options.packs,
+            options.files,
+            storedPathsOfRun(options.files[0]).paths.keyText,
+          ),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     layer.lookup(input),
@@ -491,7 +496,13 @@ async function runPython(
   const tallies = createPackTallies(options.packs);
   // With a cache, every question and every read of another file is charged
   // to the file's discovery or the function's scan that made it.
-  const ledger = cacheDir === null ? null : new DependencyLedger(options.files);
+  const ledger =
+    cacheDir === null
+      ? null
+      : new DependencyLedger(
+          options.files,
+          storedPathsOfRun(options.files[0]).paths.keyText,
+        );
   const log = ledger === null ? null : new FactLog(db, ledger);
   if (ledger !== null) {
     observeDemand(db, ledger);
@@ -664,12 +675,15 @@ async function runPython(
   });
 
   const reuse: PythonEntryReuse | null =
-    previous === null || log === null
+    previous === null || log === null || ledger === null
       ? null
       : timer.time("cache.plan", () => {
           const changedFiles = previous.plan.changed;
           const changes: Changes = {
-            files: new Set([...changedFiles].map(hashString)),
+            files: new Set(
+              [...changedFiles].map((file) => ledger.hashOf(file)),
+            ),
+            hash: (text) => ledger.hashOfText(text),
             values: log.changedValues(
               changedFiles,
               new Map(

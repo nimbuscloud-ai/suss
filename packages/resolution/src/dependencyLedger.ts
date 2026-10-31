@@ -38,7 +38,15 @@ export class DependencyLedger {
   private readonly valuesByAsked = new Map<string, ReadonlySet<string>>();
   private readonly active: Dependencies[] = [];
 
-  constructor(files: Iterable<string>) {
+  /**
+   * `asStored` writes the paths in a value the way the cache stores them,
+   * relative to the checkout, so a hash taken in one worktree matches the
+   * same value in another.
+   */
+  constructor(
+    files: Iterable<string>,
+    private readonly asStored: (text: string) => string = (text) => text,
+  ) {
     this.files = new Set(files);
   }
 
@@ -96,16 +104,24 @@ export class DependencyLedger {
 
   private readonly hashByValue = new Map<string, number>();
 
-  /** Dependencies as a cache stores them. The same values come up in many charges, so each is hashed once. */
+  /** A value's hash as a cache stores it. The same values come up in many charges, so each is hashed once. */
+  hashOf(value: string): number {
+    let known = this.hashByValue.get(value);
+    if (known === undefined) {
+      known = this.hashOfText(value);
+      this.hashByValue.set(value, known);
+    }
+    return known;
+  }
+
+  /** The same for text seen once, which is not kept. */
+  hashOfText(text: string): number {
+    return hashString(this.asStored(text));
+  }
+
+  /** Dependencies as a cache stores them. */
   store(dependencies: Dependencies): StoredDependencies {
-    const hash = (value: string): number => {
-      let known = this.hashByValue.get(value);
-      if (known === undefined) {
-        known = hashString(value);
-        this.hashByValue.set(value, known);
-      }
-      return known;
-    };
+    const hash = (value: string): number => this.hashOf(value);
     return {
       files: packHashes([...dependencies.files].map(hash)),
       values: packHashes([...dependencies.values].map(hash)),
@@ -144,7 +160,7 @@ export class DependencyLedger {
     if (this.active.length === 0) {
       return;
     }
-    const digest = hashString(found);
+    const digest = this.hashOfText(found);
     for (const charge of this.active) {
       charge.checks.set(id, digest);
     }
@@ -276,6 +292,8 @@ export interface Changes {
   readonly values: ReadonlySet<number>;
   /** The lookup stored under `id`, made again in this run, or null when this run cannot make it. */
   lookAgain(id: string): string | null;
+  /** How the ledger that stored the lookups hashed what they found. The text as it is by default. */
+  hash?(text: string): number;
 }
 
 /**
@@ -299,9 +317,10 @@ export function stillValid(
       }
     }
   }
+  const hash = changes.hash ?? hashString;
   return stored.checks.every(([id, digest]) => {
     const found = changes.lookAgain(id);
-    return found !== null && hashString(found) === digest;
+    return found !== null && hash(found) === digest;
   });
 }
 
@@ -359,10 +378,10 @@ class Digests {
   }
 
   /** Each value's hash followed by its digest. */
-  pairs(values: Iterable<string>): number[] {
+  pairs(values: Iterable<string>, hash: (value: string) => number): number[] {
     const pairs: number[] = [];
     for (const value of values) {
-      pairs.push(hashString(value), this.digestOf(value));
+      pairs.push(hash(value), this.digestOf(value));
     }
     return pairs;
   }
@@ -458,6 +477,9 @@ export class FactLog {
 
   private readonly atomHashes = new Map<string, AtomHashes>();
 
+  private readonly hashOfValue = (value: string): number =>
+    this.ledger.hashOf(value);
+
   /**
    * An atom's hash as written, and with its node offsets left out, so a
    * row that mentions a key next to another hashes the same after an edit
@@ -470,7 +492,7 @@ export class FactLog {
       return known;
     }
     const file = this.fileOf(atom);
-    const exact = hashString(atom);
+    const exact = this.ledger.hashOfText(atom);
     const span =
       file === null ? null : SPAN_AT_START.exec(atom.slice(file.length));
     known = {
@@ -479,7 +501,9 @@ export class FactLog {
       loose:
         file === null || span === null
           ? exact
-          : hashString(`${file}:*${atom.slice(file.length + span[0].length)}`),
+          : this.ledger.hashOfText(
+              `${file}:*${atom.slice(file.length + span[0].length)}`,
+            ),
     };
     this.atomHashes.set(atom, known);
     return known;
@@ -568,12 +592,15 @@ export class FactLog {
         own = before.own;
       } else {
         const digests = this.ownDigests(file);
-        own = packHashes(digests.pairs(digests.sums.keys()));
+        own = packHashes(digests.pairs(digests.sums.keys(), this.hashOfValue));
       }
       out.set(file, {
         own,
         joined: packHashes(
-          joined.digests.pairs(joined.keysByFile.get(file) ?? []),
+          joined.digests.pairs(
+            joined.keysByFile.get(file) ?? [],
+            this.hashOfValue,
+          ),
         ),
       });
     }
@@ -590,7 +617,9 @@ export class FactLog {
       const digests = this.ownDigests(file);
       differing(
         pairsOf(previous.get(file)?.own ?? ""),
-        pairsOf(packHashes(digests.pairs(digests.sums.keys()))),
+        pairsOf(
+          packHashes(digests.pairs(digests.sums.keys(), this.hashOfValue)),
+        ),
         values,
       );
     }
@@ -600,7 +629,12 @@ export class FactLog {
       differing(
         pairsOf(previous.get(file)?.joined ?? ""),
         pairsOf(
-          packHashes(joined.digests.pairs(joined.keysByFile.get(file) ?? [])),
+          packHashes(
+            joined.digests.pairs(
+              joined.keysByFile.get(file) ?? [],
+              this.hashOfValue,
+            ),
+          ),
         ),
         values,
       );

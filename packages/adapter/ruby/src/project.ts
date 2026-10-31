@@ -43,12 +43,12 @@ import {
   runDigest,
   stampModuleImports,
   stampModules,
+  storedPathsOfRun,
 } from "@suss/extractor";
 import {
   addPackWords,
   DependencyLedger,
   FactLog,
-  hashString,
   importedFilesByFile,
   mergeStoredDependencies,
   noDependencies,
@@ -574,7 +574,12 @@ export async function extractRubyProject(
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : runDigest(packsDigest, options.packs, walked.files),
+        : runDigest(
+            packsDigest,
+            options.packs,
+            walked.files,
+            storedPathsOfRun(walked.files[0]).paths.keyText,
+          ),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     layer.lookup(input),
@@ -664,7 +669,13 @@ async function runRuby(
   const tallies = createPackTallies(options.packs);
   // With a cache, every question and every read of another file is charged
   // to the file's discovery or the method's scan that made it.
-  const ledger = cacheDir === null ? null : new DependencyLedger(walked.files);
+  const ledger =
+    cacheDir === null
+      ? null
+      : new DependencyLedger(
+          walked.files,
+          storedPathsOfRun(walked.files[0]).paths.keyText,
+        );
   const log = ledger === null ? null : new FactLog(db, ledger);
   if (ledger !== null) {
     observeDemand(db, ledger);
@@ -748,12 +759,15 @@ async function runRuby(
       : file;
 
   const reuse =
-    previous === null || log === null
+    previous === null || log === null || ledger === null
       ? null
       : timer.time("cache.plan", () => {
           const changedFiles = previous.plan.changed;
           const changes: Changes = {
-            files: new Set([...changedFiles].map(hashString)),
+            files: new Set(
+              [...changedFiles].map((file) => ledger.hashOf(file)),
+            ),
+            hash: (text) => ledger.hashOfText(text),
             values: log.changedValues(
               changedFiles,
               new Map(
