@@ -76,6 +76,7 @@ import {
   splitAtHandOffs,
   stampModuleImports,
   stampModules,
+  storedPathsOfRun,
   type TerminalPattern,
 } from "@suss/extractor";
 import { force, hostOf, literalOf, pathOf, type Value } from "@suss/values";
@@ -2625,6 +2626,13 @@ export function createTypeScriptAdapter(
     TsCacheMeta,
     ScanRecord
   >(cacheDir);
+  // The paths in the key as the cache writes them, which the stamps of
+  // files a pack reads off disk have to match.
+  const keyPaths =
+    cacheDir === null
+      ? undefined
+      : storedPathsOfRun(config.tsConfigFilePath ?? config.walkedDirectory)
+          .paths.keyText;
   const packsDigest = `${computeAdapterPacksDigest(
     config.frameworks.map((p) =>
       p.version !== undefined
@@ -2636,7 +2644,7 @@ export function createTypeScriptAdapter(
     includeReachable: config.includeReachable !== false,
     modules,
     walkedDirectory: config.walkedDirectory,
-  })}|ws:${workspaceExpansionStamp(config.frameworks)}`;
+  })}|ws:${workspaceExpansionStamp(config.frameworks, keyPaths)}`;
 
   // The cache stores summaries before their wrappers are composed, so every
   // path composes on the way out, a cache hit included.
@@ -2835,6 +2843,7 @@ export function createTypeScriptAdapter(
                   ),
                 ],
                 cacheFiles,
+                keyPaths,
               );
             });
 

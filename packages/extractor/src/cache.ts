@@ -1,22 +1,30 @@
 /**
- * The on-disk extraction cache, shared by every language adapter.
+ * The on-disk extraction cache, shared by every language adapter and by
+ * every worktree of a repository.
  *
  * A run reuses the previous run's summaries whole when nothing changed,
  * and per file when some files did. The entry directory's name is a hash
  * of the schema version, the adapter and packs digest, and the config
- * path. The manifest inside records a stamp and content hash per file,
- * the files each summary belongs to, and the other files each walk read.
- * The summaries are in one shard per source file, beside an index of the
- * boundaries and calls in each. An adapter's own data on a file's record,
- * `meta`, goes in a file of its own, and the cache never reads it. The
- * package's design notes describe the cache in full.
+ * path. Each checkout's manifest records a stamp and content hash per
+ * file, the files each summary belongs to, and the other files each walk
+ * read, and a checkout without one starts from another's. The summaries
+ * are in one shard per source file that every checkout shares. An
+ * adapter's own data on a file's record, `meta`, goes in a file of its
+ * own. The package's design notes describe the cache in full.
  */
 
 import { createHash } from "node:crypto";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { readJsonFile, writeDocumentFile } from "@suss/behavioral-ir/files";
+import { documentPieces, writeFileAtomically } from "@suss/behavioral-ir/files";
 
 import {
   entriesByShard,
@@ -25,6 +33,7 @@ import {
   readStoreIndex,
   writeStoreIndex,
 } from "./cacheIndex.js";
+import { storedPathsOfRun } from "./cachePaths.js";
 import {
   readShard,
   recordReader,
@@ -44,14 +53,33 @@ import {
 import { makeIgnoredDirectory } from "./ignoredDirectory.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { StoredPaths } from "./cachePaths.js";
 import type { ShardContent } from "./cacheShards.js";
 import type { FileStamp, RunStart } from "./cacheStamps.js";
 
-// 10: summaries and each file's meta moved out of the manifest into shards.
-const SCHEMA_VERSION = "10";
+// 11: one manifest per checkout, and paths stored relative to it.
+const SCHEMA_VERSION = "11";
 
+const CHECKOUTS = "checkouts";
 const MANIFEST = "manifest.json";
 const INDEX = "index.json";
+/** The shards and records a checkout's manifest and the one before it list. */
+const STORED = "stored.json";
+/** The checkout's root, as it is, so a later write can tell it was removed. */
+const ROOT = "root.txt";
+
+/**
+ * How many checkouts an entry keeps a manifest for. Each one keeps its
+ * shards on disk, and a worktree removed without a run since is dropped
+ * at the next write anyway.
+ */
+const MAX_CHECKOUTS = 8;
+
+/**
+ * How long a shard nothing lists yet stays, while another checkout shares
+ * the entry. Its write puts the shards on disk before the list naming them.
+ */
+const SHARED_GRACE_MS = 60_000;
 
 /**
  * How many entries a cache directory keeps. Two lets a pair of builds
@@ -303,41 +331,51 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
   const runs = new WeakMap<CacheInput, RunStart>();
   const runFor = async (input: CacheInput): Promise<RunStart> =>
     runs.get(input) ?? (await startRun(input.files, input.configPath));
+  const places = new WeakMap<CacheInput, Place>();
+  const placeFor = (input: CacheInput): Place => {
+    const known = places.get(input);
+    if (known !== undefined) {
+      return known;
+    }
+    const place = placeOf(cacheDir, input);
+    places.set(input, place);
+    return place;
+  };
 
   const lookupWith = async (
     input: CacheInput,
     run: RunStart,
   ): Promise<CacheLookup> => {
-    const entryDir = entryDirFor(cacheDir, input);
+    const place = placeFor(input);
     const manifest = await manifests.readAtRunStart(
-      path.join(entryDir, MANIFEST),
+      path.join(place.checkoutDir, MANIFEST),
+      place.paths,
     );
     if (manifest === null) {
+      // Another checkout's manifest can still say which files are
+      // unchanged, which only a plan works out.
+      if (newestSiblingManifest(place) !== null) {
+        return missDiag("files-changed");
+      }
       // The entry directory's name is a hash of the schema, digest and
       // config path, so a manifest found here already agrees with this
       // run on all three.
       return missDiag(await describeAbsentEntry(cacheDir));
     }
-    if (
-      !(await stillMatches(
-        manifest.configStamp,
-        run.config?.stamp ?? null,
-        run,
-      ))
-    ) {
+    if (!(await sameConfig(manifest.configStamp, run))) {
       return missDiag("config-changed");
     }
     if (!(await filesStillMatch(manifest.files, run))) {
       return missDiag("files-changed");
     }
-    const summaries = storedSummaries(entryDir, manifest);
+    const summaries = storedSummaries(place, manifest);
     if (summaries === null) {
       // Another process may have replaced the entry between the two reads.
       return missDiag("no-manifest");
     }
     // Eviction keeps the most recently used entries, and a run that hits
     // never writes, so the hit has to mark the entry as used.
-    await markUsed(entryDir);
+    await markUsed(place.entryDir);
     manifests.forget();
     return {
       kind: "hit",
@@ -363,8 +401,19 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       return result;
     },
     async plan(input: CacheInput): Promise<PartialPlan<Meta, UnitData> | null> {
-      const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await manifests.readAgain(path.join(entryDir, MANIFEST));
+      const place = placeFor(input);
+      // A checkout with no manifest of its own starts from the one another
+      // checkout wrote last, and keeps whatever its files' content matches.
+      const own = await manifests.readAgain(
+        path.join(place.checkoutDir, MANIFEST),
+        place.paths,
+      );
+      const sibling = own === null ? newestSiblingManifest(place) : null;
+      const manifest =
+        own ??
+        (sibling === null
+          ? null
+          : await manifests.readAgain(sibling, place.paths));
       if (
         manifest === null ||
         manifest.roots === undefined ||
@@ -373,22 +422,16 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         return null;
       }
       const run = await runFor(input);
-      if (
-        !(await stillMatches(
-          manifest.configStamp,
-          run.config?.stamp ?? null,
-          run,
-        ))
-      ) {
+      if (!(await sameConfig(manifest.configStamp, run))) {
         return null;
       }
-      const summaries = storedSummaries(entryDir, manifest);
+      const summaries = storedSummaries(place, manifest);
       // Every unchanged file's record is checked again, so every record is read.
-      const records = storedRecords<Meta, UnitData>(entryDir, manifest);
+      const records = storedRecords<Meta, UnitData>(place, manifest);
       if (summaries === null || records === null) {
         return null;
       }
-      await markUsed(entryDir);
+      await markUsed(place.entryDir);
       return buildPlan(manifest, records, summaries, run);
     },
     async write(
@@ -396,9 +439,13 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       summaries: BehavioralSummary[],
       attribution?: CacheAttribution<Meta, UnitData>,
     ): Promise<void> {
-      const entryDir = entryDirFor(cacheDir, input);
+      const place = placeFor(input);
+      const { entryDir, checkoutDir, paths } = place;
       // Only the file stamps and stored ids are read from the previous entry.
-      const previous = await manifests.readAgain(path.join(entryDir, MANIFEST));
+      const previous = await manifests.readAgain(
+        path.join(checkoutDir, MANIFEST),
+        paths,
+      );
       manifests.forget();
       // A write with no lookup before it stats the files now, after they
       // were read, so it can only guard the files changed recently.
@@ -423,12 +470,12 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         attribution === undefined
           ? null
           : encodeAttribution(attribution, (meta) =>
-              writeRecord(entryDir, meta),
+              writeRecord(entryDir, meta, paths),
             );
       makeIgnoredDirectory(cacheDir);
       // The records, shards and index go first, so a manifest on disk
       // only ever lists files that are there.
-      const shards = writeShards(entryDir, summaries, encoded);
+      const shards = writeShards(place, summaries, encoded);
       const manifest: Manifest<UnitData> = {
         schemaVersion: SCHEMA_VERSION,
         adapterPacksDigest: input.adapterPacksDigest,
@@ -438,14 +485,153 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         shards,
         ...(encoded === null ? {} : encoded.stored),
       };
-      writeDocumentFile(path.join(entryDir, MANIFEST), manifest);
+      writeFileAtomically(
+        path.join(checkoutDir, MANIFEST),
+        [...documentPieces(manifest)].map(paths.storedPiece),
+      );
+      writeFileSync(
+        path.join(checkoutDir, STORED),
+        JSON.stringify([...storedIds(manifest), ...storedIds(previous)]),
+      );
+      if (place.root !== null) {
+        writeFileSync(path.join(checkoutDir, ROOT), place.root);
+      }
+      const checkouts = await keptCheckouts(entryDir, checkoutDir);
       removeStoredOutside(
         entryDir,
-        new Set([...storedIds(manifest), ...storedIds(previous)]),
+        new Set(checkouts.flatMap(storedBy)),
+        checkouts.length > 1 ? SHARED_GRACE_MS : 0,
       );
       await evictOldEntries(cacheDir, entryDir);
     },
   };
+}
+
+/**
+ * Where an input's entry is, which checkout's manifest in it is the run's
+ * own, and how its paths are stored. The checkout is the one the config
+ * file is in, or the first walked file when there is none.
+ */
+interface Place {
+  entryDir: string;
+  checkoutDir: string;
+  paths: StoredPaths;
+  /** The checkout's root, or null for a run outside git. */
+  root: string | null;
+}
+
+function placeOf(cacheDir: string, input: CacheInput): Place {
+  const { paths, root } = storedPathsOfRun(input.configPath ?? input.files[0]);
+  const entryDir = entryDirFor(cacheDir, input, paths);
+  return {
+    entryDir,
+    checkoutDir: path.join(
+      entryDir,
+      CHECKOUTS,
+      root === null ? "local" : shortHash(root),
+    ),
+    paths,
+    root,
+  };
+}
+
+/** The manifest another checkout of the entry wrote last, or null when there is none. */
+function newestSiblingManifest(place: Place): string | null {
+  let newest: { file: string; at: number } | null = null;
+  for (const name of namesIn(path.join(place.entryDir, CHECKOUTS))) {
+    const dir = path.join(place.entryDir, CHECKOUTS, name);
+    const at = writtenAt(path.join(dir, MANIFEST));
+    if (dir !== place.checkoutDir && at !== null && at > (newest?.at ?? -1)) {
+      newest = { file: path.join(dir, MANIFEST), at };
+    }
+  }
+  return newest?.file ?? null;
+}
+
+/**
+ * The checkout folders an entry keeps after a write by `own`: those whose
+ * checkout is still on disk, newest first, up to the limit. The rest are
+ * removed here.
+ */
+async function keptCheckouts(entryDir: string, own: string): Promise<string[]> {
+  const all = namesIn(path.join(entryDir, CHECKOUTS)).map((name) => {
+    const dir = path.join(entryDir, CHECKOUTS, name);
+    return { dir, at: writtenAt(path.join(dir, MANIFEST)) ?? 0 };
+  });
+  const present = all.filter(
+    ({ dir }) => dir === own || checkoutStillThere(dir),
+  );
+  const kept = present
+    .sort(
+      (a, b) => Number(b.dir === own) - Number(a.dir === own) || b.at - a.at,
+    )
+    .slice(0, MAX_CHECKOUTS)
+    .map(({ dir }) => dir);
+  const keptSet = new Set(kept);
+  await Promise.all(
+    all
+      .filter(({ dir }) => !keptSet.has(dir))
+      .map(({ dir }) => fs.rm(dir, { recursive: true, force: true })),
+  );
+  return kept;
+}
+
+/** A checkout outside git doesn't record a root, so it stays until the limit drops it. */
+function checkoutStillThere(checkoutDir: string): boolean {
+  const rootFile = path.join(checkoutDir, ROOT);
+  if (!existsSync(rootFile)) {
+    return true;
+  }
+  return existsSync(readFileSync(rootFile, "utf8"));
+}
+
+/** The shards and records one checkout's manifests list, or none when its list cannot be read. */
+function storedBy(checkoutDir: string): string[] {
+  try {
+    const ids = JSON.parse(
+      readFileSync(path.join(checkoutDir, STORED), "utf8"),
+    );
+    return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writtenAt(file: string): number | null {
+  return statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? null;
+}
+
+function namesIn(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+function shortHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 16);
+}
+
+/**
+ * Whether the config file is the one the manifest was written with: the
+ * same stamp, or the same content behind another stamp. Another checkout
+ * wrote its file at another time, and so does a touch.
+ */
+async function sameConfig(
+  stored: FileStamp | null,
+  run: RunStart,
+): Promise<boolean> {
+  const found = run.config?.stamp ?? null;
+  if (await stillMatches(stored, found, run)) {
+    return true;
+  }
+  return (
+    stored?.contentHash !== undefined &&
+    found !== null &&
+    stored.path === found.path &&
+    (await hashOf(run, found.path)) === stored.contentHash
+  );
 }
 
 /** The shards and records a manifest lists. */
@@ -464,7 +650,7 @@ function storedIds<UnitData>(manifest: Manifest<UnitData> | null): string[] {
  * of shards.
  */
 function writeShards<UnitData>(
-  entryDir: string,
+  { entryDir, checkoutDir, paths }: Place,
   summaries: readonly BehavioralSummary[],
   encoded: EncodedAttribution<UnitData> | null,
 ): ManifestShard[] {
@@ -485,13 +671,13 @@ function writeShards<UnitData>(
     shard.owners.push(encoded?.owners[position] ?? []);
   });
 
-  const indexFile = path.join(entryDir, INDEX);
-  const before = readStoreIndex(indexFile);
+  const indexFile = path.join(checkoutDir, INDEX);
+  const before = readStoreIndex(indexFile, paths);
   const known = before === null ? new Map() : entriesByShard(before);
   // Map keys are distinct, so no two compare equal.
   const sorted = [...byFile].sort(([a], [b]) => (a < b ? -1 : 1));
   const written = sorted.map(([file, { content, order, owners }]) => {
-    const id = writeShard(entryDir, content);
+    const id = writeShard(entryDir, content, paths);
     return {
       shard: {
         file,
@@ -511,6 +697,7 @@ function writeShards<UnitData>(
         entries,
       })),
     ),
+    paths,
   );
   return written.map(({ shard }) => shard);
 }
@@ -521,14 +708,14 @@ function writeShards<UnitData>(
  * empty, which a caller treats as no entry at all.
  */
 function storedSummaries<UnitData>(
-  entryDir: string,
+  { entryDir, paths }: Place,
   manifest: Manifest<UnitData>,
 ): BehavioralSummary[] | null {
   const summaries = new Array<BehavioralSummary | undefined>(
     manifest.summaryCount,
   );
   for (const shard of manifest.shards) {
-    const content = readShard(entryDir, shard.id, shard.file);
+    const content = readShard(entryDir, shard.id, shard.file, paths);
     if (content === null || content.units.length !== shard.order.length) {
       return null;
     }
@@ -546,12 +733,12 @@ function storedSummaries<UnitData>(
 
 /** Each root's meta, by the root's path. Null when one cannot be read. */
 function storedRecords<Meta, UnitData>(
-  entryDir: string,
+  { entryDir, paths }: Place,
   manifest: Manifest<UnitData>,
 ): Map<string, Meta> | null {
   const records = new Map<string, Meta>();
   const roots = manifest.roots ?? [];
-  const readRecord = recordReader<Meta>(entryDir);
+  const readRecord = recordReader<Meta>(entryDir, paths);
   for (const [i, root] of (manifest.rootMeta ?? []).entries()) {
     const rootPath = roots[i];
     if (rootPath === undefined || root.record === undefined) {
@@ -834,16 +1021,21 @@ async function describeAbsentEntry(
 /**
  * The directory for this run's entry. Everything a hit depends on besides
  * the file stamps goes into the name, so two builds that disagree write to
- * different directories instead of overwriting each other.
+ * different directories instead of overwriting each other. Paths under
+ * the checkout go in as the placeholder its stored files use, so every
+ * checkout of the repository finds the same entry.
  */
-function entryDirFor(cacheDir: string, input: CacheInput): string {
-  const key = [
-    SCHEMA_VERSION,
-    input.adapterPacksDigest,
-    input.configPath ?? "",
-  ].join(" ");
-  const name = createHash("sha256").update(key).digest("hex").slice(0, 16);
-  return path.join(cacheDir, `${ENTRY_PREFIX}${name}`);
+function entryDirFor(
+  cacheDir: string,
+  input: CacheInput,
+  paths: StoredPaths,
+): string {
+  const key = paths.keyText(
+    [SCHEMA_VERSION, input.adapterPacksDigest, input.configPath ?? ""].join(
+      " ",
+    ),
+  );
+  return path.join(cacheDir, `${ENTRY_PREFIX}${shortHash(key)}`);
 }
 
 /**
@@ -931,14 +1123,18 @@ class ManifestReads<UnitData> {
 
   async readAtRunStart(
     manifestPath: string,
+    paths: StoredPaths,
   ): Promise<Manifest<UnitData> | null> {
     const stamp = await manifestStamp(manifestPath);
-    const manifest = await readManifest<UnitData>(manifestPath);
+    const manifest = await readManifest<UnitData>(manifestPath, paths);
     this.last = { path: manifestPath, stamp, manifest };
     return manifest;
   }
 
-  async readAgain(manifestPath: string): Promise<Manifest<UnitData> | null> {
+  async readAgain(
+    manifestPath: string,
+    paths: StoredPaths,
+  ): Promise<Manifest<UnitData> | null> {
     const last = this.last;
     if (
       last !== null &&
@@ -948,7 +1144,7 @@ class ManifestReads<UnitData> {
     ) {
       return last.manifest;
     }
-    return await this.readAtRunStart(manifestPath);
+    return await this.readAtRunStart(manifestPath, paths);
   }
 
   forget(): void {
@@ -968,9 +1164,10 @@ async function manifestStamp(manifestPath: string): Promise<string | null> {
 
 async function readManifest<UnitData>(
   manifestPath: string,
+  paths: StoredPaths,
 ): Promise<Manifest<UnitData> | null> {
   try {
-    const manifest = readJsonFile(manifestPath) as Manifest<UnitData>;
+    const manifest = paths.read(manifestPath) as Manifest<UnitData>;
     return Array.isArray(manifest.shards) ? manifest : null;
   } catch {
     // A missing, unparseable or unreadable manifest is a miss. The worst

@@ -16,13 +16,10 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  documentPieces,
-  readJsonFile,
-  writeFileAtomically,
-} from "@suss/behavioral-ir/files";
+import { documentPieces, writeFileAtomically } from "@suss/behavioral-ir/files";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { StoredPaths } from "./cachePaths.js";
 
 const SHARDS_DIR = "shards";
 const RECORDS_DIR = "records";
@@ -42,8 +39,12 @@ interface StoredShard {
 }
 
 /** Writes the shard unless one with the same text is there already, and returns its id. */
-export function writeShard(entryDir: string, content: ShardContent): string {
-  return writeOnce(path.join(entryDir, SHARDS_DIR), interned(content));
+export function writeShard(
+  entryDir: string,
+  content: ShardContent,
+  paths: StoredPaths,
+): string {
+  return writeOnce(path.join(entryDir, SHARDS_DIR), interned(content), paths);
 }
 
 /** The shard's content with fresh copies of every interned value, or null when it cannot be read. */
@@ -51,8 +52,9 @@ export function readShard(
   entryDir: string,
   id: string,
   file: string,
+  paths: StoredPaths,
 ): ShardContent | null {
-  const stored = readStored(path.join(entryDir, SHARDS_DIR), id) as
+  const stored = readStored(path.join(entryDir, SHARDS_DIR), id, paths) as
     | StoredShard
     | undefined;
   if (stored?.file !== file || !Array.isArray(stored.units)) {
@@ -66,13 +68,21 @@ export function readShard(
 }
 
 /** Writes a walked file's meta unless an equal one is there already, and returns its id. */
-export function writeRecord(entryDir: string, meta: unknown): string {
-  return writeOnce(path.join(entryDir, RECORDS_DIR), { meta });
+export function writeRecord(
+  entryDir: string,
+  meta: unknown,
+  paths: StoredPaths,
+): string {
+  return writeOnce(path.join(entryDir, RECORDS_DIR), { meta }, paths);
 }
 
 /** The meta stored under `id`, or null when it cannot be read. */
-function readRecord<Meta>(entryDir: string, id: string): { meta: Meta } | null {
-  const stored = readStored(path.join(entryDir, RECORDS_DIR), id);
+function readRecord<Meta>(
+  entryDir: string,
+  id: string,
+  paths: StoredPaths,
+): { meta: Meta } | null {
+  const stored = readStored(path.join(entryDir, RECORDS_DIR), id, paths);
   return typeof stored === "object" && stored !== null
     ? (stored as { meta: Meta })
     : null;
@@ -85,11 +95,12 @@ function readRecord<Meta>(entryDir: string, id: string): { meta: Meta } | null {
  */
 export function recordReader<Meta>(
   entryDir: string,
+  paths: StoredPaths,
 ): (id: string) => { meta: Meta } | null {
   const opened = new Map<string, { meta: Meta } | null>();
   return (id) => {
     if (!opened.has(id)) {
-      const record = readRecord<Meta>(entryDir, id);
+      const record = readRecord<Meta>(entryDir, id, paths);
       opened.set(id, record);
       return record;
     }
@@ -101,23 +112,36 @@ export function recordReader<Meta>(
 /**
  * Deletes every shard and record outside `keep`. A reader that opened the
  * previous manifest may still be reading what it lists, so a caller keeps
- * those too.
+ * those too. A file written less than `graceMs` ago stays as well, for
+ * another checkout whose write has stored it and not yet listed it.
  */
 export function removeStoredOutside(
   entryDir: string,
   keep: ReadonlySet<string>,
+  graceMs = 0,
 ): void {
+  const now = Date.now();
   for (const kind of [SHARDS_DIR, RECORDS_DIR]) {
     const root = path.join(entryDir, kind);
     for (const prefix of namesIn(root)) {
       const dir = path.join(root, prefix);
       for (const name of namesIn(dir)) {
-        if (STORED_ID.test(name) && !keep.has(name.slice(0, -".json".length))) {
-          fs.rmSync(path.join(dir, name), { force: true });
+        const file = path.join(dir, name);
+        if (
+          STORED_ID.test(name) &&
+          !keep.has(name.slice(0, -".json".length)) &&
+          (graceMs === 0 || now - modifiedAt(file) > graceMs)
+        ) {
+          fs.rmSync(file, { force: true });
         }
       }
     }
   }
+}
+
+/** When the file was last written, or now for one already gone. */
+function modifiedAt(file: string): number {
+  return fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? Date.now();
 }
 
 function namesIn(dir: string): string[] {
@@ -128,9 +152,13 @@ function namesIn(dir: string): string[] {
   }
 }
 
-/** Writes `value` in the line layout under the hash of its text, unless that file exists. */
-function writeOnce(root: string, value: unknown): string {
-  const pieces = [...documentPieces(value)];
+/**
+ * Writes `value` in the line layout under the hash of its stored text,
+ * unless that file exists. The text has the checkout's root written as a
+ * placeholder, so two checkouts storing the same value share one file.
+ */
+function writeOnce(root: string, value: unknown, paths: StoredPaths): string {
+  const pieces = [...documentPieces(value)].map(paths.storedPiece);
   const hash = createHash("sha256");
   for (const piece of pieces) {
     hash.update(piece);
@@ -143,9 +171,9 @@ function writeOnce(root: string, value: unknown): string {
   return id;
 }
 
-function readStored(root: string, id: string): unknown {
+function readStored(root: string, id: string, paths: StoredPaths): unknown {
   try {
-    return readJsonFile(storedPath(root, id));
+    return paths.read(storedPath(root, id));
   } catch {
     return undefined;
   }

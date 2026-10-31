@@ -11,6 +11,7 @@ export {
   type JsonFileIssue,
   type JsonFileProblem,
   readJsonFile,
+  type TextRewrite,
   writeDocumentFile,
   writeFileAtomically,
 } from "./documentFile.js";

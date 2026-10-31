@@ -188,6 +188,17 @@ describe("projectFileStamp", () => {
   it("says none when no pack reads anything", () => {
     expect(projectFileStamp([])).toBe("none");
   });
+
+  it("gives two checkouts of the same files one stamp, with paths as the cache writes them", () => {
+    const stamps = ["a", "b"].map(() => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-project-"));
+      fs.writeFileSync(path.join(dir, "template.yaml"), "Resources: {}");
+      return projectFileStamp([path.join(dir, "template.yaml")], (text) =>
+        text.replace(dir, "<checkout>"),
+      );
+    });
+    expect(stamps[0]).toBe(stamps[1]);
+  });
 });
 
 describe("extractionConfigStamp", () => {

@@ -217,6 +217,7 @@ function expandPattern(
  */
 export function workspaceExpansionStamp(
   frameworks: ReadonlyArray<PatternPack>,
+  asStored?: (text: string) => string,
 ): string {
   const paths = frameworks
     .flatMap((pack) => pack.discovery)
@@ -226,7 +227,7 @@ export function workspaceExpansionStamp(
         ? [pattern.match.packageJsonPath]
         : [],
     );
-  return projectFileStamp(paths);
+  return projectFileStamp(paths, asStored);
 }
 
 export function expandWorkspacePatterns(

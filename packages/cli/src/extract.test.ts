@@ -1,9 +1,10 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { safeParseSummaries } from "@suss/behavioral-ir";
 import { createCodeHasher } from "@suss/extractor";
@@ -169,6 +170,54 @@ describe("resolveFramework", () => {
     );
 
     expect(two.version).toBe(one.version);
+  });
+
+  it("stamps a config that spells out the checkout's own paths the same in every worktree", async () => {
+    const main = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-config-checkout-")),
+    );
+    const linked = `${main}-linked`;
+    const git = (...args: string[]): void => {
+      execFileSync("git", args, { cwd: main, stdio: "ignore" });
+    };
+    fs.mkdirSync(path.join(main, "app"));
+    fs.mkdirSync(path.join(main, "config"));
+    fs.writeFileSync(path.join(main, "app", "application.rb"), "");
+    fs.writeFileSync(path.join(main, "config", "routes.rb"), "");
+    git("init", "-q");
+    git("add", ".");
+    git(
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@example.com",
+      "commit",
+      "-qm",
+      "first",
+    );
+    git("worktree", "add", "-q", linked);
+    const versionIn = async (checkout: string): Promise<string | undefined> => {
+      const cwd = vi.spyOn(process, "cwd").mockReturnValue(checkout);
+      try {
+        const config = {
+          root: path.join(checkout, "app"),
+          routesFile: path.join(checkout, "config", "routes.rb"),
+        };
+        const pack = await resolveRubyPack(
+          `rails=${writeConfig(JSON.stringify(config))}`,
+        );
+        return pack.version;
+      } finally {
+        cwd.mockRestore();
+      }
+    };
+
+    try {
+      expect(await versionIn(linked)).toBe(await versionIn(main));
+    } finally {
+      fs.rmSync(main, { recursive: true, force: true });
+      fs.rmSync(linked, { recursive: true, force: true });
+    }
   });
 
   it("names every framework pack the CLI ships with, and loads each", async () => {

@@ -1070,9 +1070,12 @@ describe("the store of shards", () => {
       }
       return found.sort();
     };
+    // A run outside git has the one checkout folder.
+    const checkoutDir = async (): Promise<string> =>
+      path.join(await entryDir(), "checkouts", "local");
     const index = async () =>
       JSON.parse(
-        await fs.readFile(path.join(await entryDir(), "index.json"), "utf8"),
+        await fs.readFile(path.join(await checkoutDir(), "index.json"), "utf8"),
       );
     return {
       cache,
@@ -1080,6 +1083,7 @@ describe("the store of shards", () => {
       dir,
       write,
       entryDir,
+      checkoutDir,
       shardFiles: () => storedIn("shards"),
       recordFiles: () => storedIn("records"),
       index,
@@ -1101,7 +1105,7 @@ describe("the store of shards", () => {
     expect(await store.shardFiles()).toHaveLength(2);
     expect(await store.recordFiles()).toHaveLength(2);
     const manifest = await fs.readFile(
-      path.join(await store.entryDir(), "manifest.json"),
+      path.join(await store.checkoutDir(), "manifest.json"),
       "utf8",
     );
     expect(manifest).not.toContain("first");
@@ -1252,7 +1256,7 @@ describe("the store of shards", () => {
   it("misses when the manifest counts a summary no shard has", async () => {
     const store = await storeOf({ "a.ts": "export const a = 1;" });
     await store.write([unitIn(path.join(store.dir, "a.ts"), "first")]);
-    const manifestFile = path.join(await store.entryDir(), "manifest.json");
+    const manifestFile = path.join(await store.checkoutDir(), "manifest.json");
     const manifest = JSON.parse(await fs.readFile(manifestFile, "utf8"));
     manifest.summaryCount += 1;
     await fs.writeFile(manifestFile, JSON.stringify(manifest));
