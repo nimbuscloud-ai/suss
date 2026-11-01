@@ -1,26 +1,26 @@
 {
   "total": {
     "lines": {
-      "total": 4172,
-      "covered": 3983,
+      "total": 4174,
+      "covered": 3985,
       "skipped": 0,
-      "pct": 95.46
+      "pct": 95.47
     },
     "statements": {
-      "total": 4270,
-      "covered": 4078,
+      "total": 4272,
+      "covered": 4080,
       "skipped": 0,
       "pct": 95.5
     },
     "functions": {
-      "total": 948,
-      "covered": 907,
+      "total": 949,
+      "covered": 908,
       "skipped": 0,
       "pct": 95.67
     },
     "branches": {
-      "total": 2913,
-      "covered": 2576,
+      "total": 2915,
+      "covered": 2578,
       "skipped": 0,
       "pct": 88.43
     },
@@ -241,28 +241,28 @@
   },
   "src/calls/callFacts.ts": {
     "lines": {
-      "total": 267,
-      "covered": 255,
-      "skipped": 0,
-      "pct": 95.5
-    },
-    "functions": {
-      "total": 52,
-      "covered": 48,
-      "skipped": 0,
-      "pct": 92.3
-    },
-    "statements": {
       "total": 269,
       "covered": 257,
       "skipped": 0,
       "pct": 95.53
     },
-    "branches": {
-      "total": 122,
-      "covered": 99,
+    "functions": {
+      "total": 53,
+      "covered": 49,
       "skipped": 0,
-      "pct": 81.14
+      "pct": 92.45
+    },
+    "statements": {
+      "total": 271,
+      "covered": 259,
+      "skipped": 0,
+      "pct": 95.57
+    },
+    "branches": {
+      "total": 124,
+      "covered": 101,
+      "skipped": 0,
+      "pct": 81.45
     }
   },
   "src/consumer/consumerContract.ts": {
