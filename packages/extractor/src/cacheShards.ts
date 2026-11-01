@@ -121,22 +121,32 @@ export function removeStoredOutside(
   graceMs = 0,
 ): void {
   const now = Date.now();
+  for (const { id, file } of storedFilesOf(entryDir)) {
+    if (!keep.has(id) && (graceMs === 0 || now - modifiedAt(file) > graceMs)) {
+      fs.rmSync(file, { force: true });
+    }
+  }
+}
+
+/** Every shard and record in an entry, by id. */
+export function storedFilesOf(
+  entryDir: string,
+): { id: string; file: string }[] {
+  const found: { id: string; file: string }[] = [];
   for (const kind of [SHARDS_DIR, RECORDS_DIR]) {
     const root = path.join(entryDir, kind);
     for (const prefix of namesIn(root)) {
-      const dir = path.join(root, prefix);
-      for (const name of namesIn(dir)) {
-        const file = path.join(dir, name);
-        if (
-          STORED_ID.test(name) &&
-          !keep.has(name.slice(0, -".json".length)) &&
-          (graceMs === 0 || now - modifiedAt(file) > graceMs)
-        ) {
-          fs.rmSync(file, { force: true });
+      for (const name of namesIn(path.join(root, prefix))) {
+        if (STORED_ID.test(name)) {
+          found.push({
+            id: name.slice(0, -".json".length),
+            file: path.join(root, prefix, name),
+          });
         }
       }
     }
   }
+  return found;
 }
 
 /** When the file was last written, or now for one already gone. */

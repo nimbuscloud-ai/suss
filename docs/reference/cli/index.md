@@ -72,6 +72,7 @@ An interactive run ends with one line on stderr when a newer suss is on the regi
 | `CI` | Set it to anything and the update notice is off. `suss init` detects CI separately and prints its commands rather than prompting, the same as `--plain`. |
 | `SUSS_NO_UPDATE_NOTICE` | Set it to anything and the update notice is off. |
 | `SUSS_CACHE_DIR` | A directory to keep suss's own files in, instead of `.suss` in the project. See [Where suss writes](#where-suss-writes). The `--cache-dir` flag overrides it. |
+| `SUSS_CACHE_MAX_MB` | How many megabytes the extraction cache keeps, 1024 when it is not set. See [Where suss writes](#where-suss-writes). |
 | `NODE_OPTIONS` | A heap size set here with `--max-old-space-size` is the one suss runs with. Without one, suss picks its own, as [Memory](#memory) describes. |
 
 ## Where suss writes
@@ -84,6 +85,8 @@ SUSS_CACHE_DIR=/tmp/suss-cache suss extract --dir . -o /tmp/summaries.json
 ```
 
 `init`, `extract`, `inspect`, `check`, `ask` and `map` take the flag, and the flag wins over the variable. `map` writes its page and the summaries behind it to `.suss` in the project, or, with the cache moved, to a folder for the project under `map` in the cache directory. Several projects can share one directory, because each gets a subfolder named for a hash of its path. For the extraction cache in a git repository, the hash is of the repository and the folder's place in it, so the worktrees still share one cache there. The MCP server takes the same flag as an argument (`suss-mcp <project> --cache-dir <path>`) or reads the variable, and keeps its record for the plugin's hooks there too.
+
+The extraction cache keeps 1 GB, or the number of megabytes `SUSS_CACHE_MAX_MB` says. When a write takes it past that, suss removes what the checkouts used longest ago stored, and a file two checkouts share stays as long as one of them does. The checkout that is writing keeps what it stored however large it is. What a removed worktree stored goes at the next write.
 
 With the cache moved, a command writes into the project only where you asked it to: `-o`, `--into`, `--out-dir`, and the files `init --write` creates. Everything else goes to the system temp folder (the update-check stamp, the temporary summaries a bare `check` reads, and the MCP server's socket).
 

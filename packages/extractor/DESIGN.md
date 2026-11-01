@@ -171,4 +171,12 @@ A re-extracted summary can also be represented differently from one produced by 
 
 ### Invalidating every entry
 
-The schema version is part of the entry directory's name. A format change therefore makes every old entry unreachable, so it is never misread, and the eviction pass deletes it in time. `MAX_ENTRIES` limits a cache directory to two entries.
+The schema version is part of the entry directory's name. A format change therefore makes every old entry unreachable, so it is never misread, and the eviction pass deletes it in time.
+
+### Keeping the cache to a size
+
+A cache directory keeps 1 GiB unless `SUSS_CACHE_MAX_MB` sets another budget. After every write, `keepWithinBudget` takes each checkout of each entry, most recently used first, and counts the bytes keeping it adds: its own folder, and the shards and records its manifests list that a more recently used checkout of the same entry did not. The first checkout that would take the total past the budget is removed, and so is every checkout used less recently. A checkout whose worktree is gone is removed whatever the total. The writing checkout always stays, so a project larger than the budget still keeps its own entry.
+
+A checkout's folder time says when it was last used: a write renames its manifest into it, and a hit touches it. An entry an older layout wrote, with no checkout folders, counts as one checkout of its whole size. An entry that lost a checkout deletes the shards and records none of its remaining checkouts lists, waiting `SHARED_GRACE_MS` on new ones in case another process is writing to it, and an entry left with no checkout is deleted.
+
+Counting each checkout on its own lets many worktrees of one repository share an entry, each keeping the shards it reads, and lets a pair of builds alternate without either losing its entry, as long as both fit.

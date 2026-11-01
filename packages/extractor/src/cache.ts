@@ -14,18 +14,22 @@
  */
 
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { readdirSync, statSync, writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import { documentPieces, writeFileAtomically } from "@suss/behavioral-ir/files";
 
+import {
+  CHECKOUTS,
+  cacheBudget,
+  ENTRY_PREFIX,
+  isEntryDir,
+  keepWithinBudget,
+  MANIFEST,
+  ROOT,
+  STORED,
+} from "./cacheEviction.js";
 import {
   entriesByShard,
   entriesOf,
@@ -37,7 +41,6 @@ import { storedPathsOfRun } from "./cachePaths.js";
 import {
   readShard,
   recordReader,
-  removeStoredOutside,
   writeRecord,
   writeShard,
 } from "./cacheShards.js";
@@ -60,36 +63,7 @@ import type { FileStamp, RunStart } from "./cacheStamps.js";
 // 11: one manifest per checkout, and paths stored relative to it.
 const SCHEMA_VERSION = "11";
 
-const CHECKOUTS = "checkouts";
-const MANIFEST = "manifest.json";
 const INDEX = "index.json";
-/** The shards and records a checkout's manifest and the one before it list. */
-const STORED = "stored.json";
-/** The checkout's root, as it is, so a later write can tell it was removed. */
-const ROOT = "root.txt";
-
-/**
- * How many checkouts an entry keeps a manifest for. Each one keeps its
- * shards on disk, and a worktree removed without a run since is dropped
- * at the next write anyway.
- */
-const MAX_CHECKOUTS = 8;
-
-/**
- * How long a shard nothing lists yet stays, while another checkout shares
- * the entry. Its write puts the shards on disk before the list naming them.
- */
-const SHARED_GRACE_MS = 60_000;
-
-/**
- * How many entries a cache directory keeps. Two lets a pair of builds
- * alternate, as on a branch switch or an adapter rebuild and revert,
- * without either losing its entry, and keeps a directory to two manifests.
- */
-export const MAX_ENTRIES = 2;
-
-const ENTRY_PREFIX = "key-";
-const ENTRY_DIR_NAME = new RegExp(`^${ENTRY_PREFIX}[0-9a-f]{16}$`);
 
 /**
  * What one walked file contributed to the run, and what its walk read.
@@ -373,9 +347,9 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       // Another process may have replaced the entry between the two reads.
       return missDiag("no-manifest");
     }
-    // Eviction keeps the most recently used entries, and a run that hits
-    // never writes, so the hit has to mark the entry as used.
-    await markUsed(place.entryDir);
+    // Eviction keeps the most recently used checkouts, and a run that hits
+    // never writes, so the hit has to mark its checkout as used.
+    await markUsed(place);
     manifests.forget();
     return {
       kind: "hit",
@@ -431,7 +405,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       if (summaries === null || records === null) {
         return null;
       }
-      await markUsed(place.entryDir);
+      await markUsed(place);
       return buildPlan(manifest, records, summaries, run);
     },
     async write(
@@ -496,13 +470,7 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       if (place.root !== null) {
         writeFileSync(path.join(checkoutDir, ROOT), place.root);
       }
-      const checkouts = await keptCheckouts(entryDir, checkoutDir);
-      removeStoredOutside(
-        entryDir,
-        new Set(checkouts.flatMap(storedBy)),
-        checkouts.length > 1 ? SHARED_GRACE_MS : 0,
-      );
-      await evictOldEntries(cacheDir, entryDir);
+      await evict(cacheDir, checkoutDir);
     },
   };
 }
@@ -549,51 +517,16 @@ function newestSiblingManifest(place: Place): string | null {
 }
 
 /**
- * The checkout folders an entry keeps after a write by `own`: those whose
- * checkout is still on disk, newest first, up to the limit. The rest are
- * removed here.
+ * Keeps the cache directory within its budget, and deletes the single
+ * `manifest.json` that older versions wrote straight into it.
  */
-async function keptCheckouts(entryDir: string, own: string): Promise<string[]> {
-  const all = namesIn(path.join(entryDir, CHECKOUTS)).map((name) => {
-    const dir = path.join(entryDir, CHECKOUTS, name);
-    return { dir, at: writtenAt(path.join(dir, MANIFEST)) ?? 0 };
-  });
-  const present = all.filter(
-    ({ dir }) => dir === own || checkoutStillThere(dir),
-  );
-  const kept = present
-    .sort(
-      (a, b) => Number(b.dir === own) - Number(a.dir === own) || b.at - a.at,
-    )
-    .slice(0, MAX_CHECKOUTS)
-    .map(({ dir }) => dir);
-  const keptSet = new Set(kept);
-  await Promise.all(
-    all
-      .filter(({ dir }) => !keptSet.has(dir))
-      .map(({ dir }) => fs.rm(dir, { recursive: true, force: true })),
-  );
-  return kept;
-}
-
-/** A checkout outside git doesn't record a root, so it stays until the limit drops it. */
-function checkoutStillThere(checkoutDir: string): boolean {
-  const rootFile = path.join(checkoutDir, ROOT);
-  if (!existsSync(rootFile)) {
-    return true;
-  }
-  return existsSync(readFileSync(rootFile, "utf8"));
-}
-
-/** The shards and records one checkout's manifests list, or none when its list cannot be read. */
-function storedBy(checkoutDir: string): string[] {
+async function evict(cacheDir: string, own: string): Promise<void> {
   try {
-    const ids = JSON.parse(
-      readFileSync(path.join(checkoutDir, STORED), "utf8"),
-    );
-    return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+    await fs.rm(path.join(cacheDir, "manifest.json"), { force: true });
+    await keepWithinBudget(cacheDir, own, cacheBudget());
   } catch {
-    return [];
+    // A failed eviction only leaves extra files on disk, whether another
+    // process is writing to the directory or the run lacks permission.
   }
 }
 
@@ -1038,58 +971,17 @@ function entryDirFor(
   return path.join(cacheDir, `${ENTRY_PREFIX}${shortHash(key)}`);
 }
 
-/**
- * Eviction deletes recursively and a caller can point `cacheDir` at any
- * directory, so it only touches directories whose names this module
- * could have written.
- */
-function isEntryDir(name: string): boolean {
-  return ENTRY_DIR_NAME.test(name);
-}
-
-/** Record that an entry is still in use, for eviction to read later. */
-async function markUsed(entryDir: string): Promise<void> {
+/** Record that a checkout's entry is still in use, for eviction to read later. */
+async function markUsed(place: Place): Promise<void> {
   const now = new Date();
-  try {
-    await fs.utimes(entryDir, now, now);
-  } catch {
-    // Another process may have evicted the entry since the read. The
-    // worst case is that the entry is evicted early and a later run
-    // re-extracts.
-  }
-}
-
-/**
- * Keep the most recently used entries and delete the rest, along with
- * the single `manifest.json` that older versions wrote straight into
- * the cache directory.
- */
-async function evictOldEntries(
-  cacheDir: string,
-  keepDir: string,
-): Promise<void> {
-  try {
-    await fs.rm(path.join(cacheDir, "manifest.json"), { force: true });
-    const entries = await fs.readdir(cacheDir, { withFileTypes: true });
-    const dirs = await Promise.all(
-      entries
-        .filter((e) => e.isDirectory() && isEntryDir(e.name))
-        .map(async (e) => {
-          const dir = path.join(cacheDir, e.name);
-          const stat = await fs.stat(dir);
-          return { dir, mtimeMs: stat.mtimeMs };
-        }),
-    );
-    const doomed = dirs
-      .filter((d) => d.dir !== keepDir)
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)
-      .slice(MAX_ENTRIES - 1);
-    await Promise.all(
-      doomed.map((d) => fs.rm(d.dir, { recursive: true, force: true })),
-    );
-  } catch {
-    // A failed eviction only leaves extra entries on disk, whether another
-    // process is writing to the directory or the run lacks permission.
+  for (const dir of [place.entryDir, place.checkoutDir]) {
+    try {
+      await fs.utimes(dir, now, now);
+    } catch {
+      // Another process may have evicted it since the read, or a checkout
+      // seeded from another has no folder yet. The worst case is that it
+      // is evicted early and a later run re-extracts.
+    }
   }
 }
 
