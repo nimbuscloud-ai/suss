@@ -1266,8 +1266,11 @@ function emitExpressionFact(
       valueKey(emitter, branch, child),
     );
   }
-  if (type === "binary" && field(child, "operator")?.text === APPEND) {
-    emitAppend(emitter, child);
+  if (type === "binary") {
+    const operator = field(child, "operator")?.text;
+    if (operator !== undefined) {
+      BINARY_FACTS[operator]?.(emitter, child);
+    }
   }
   if (type === "block_argument") {
     emitBlockArgument(emitter, child);
@@ -1357,6 +1360,33 @@ function emitAppend(emitter: Emitter, binary: RbNode): void {
     );
   }
 }
+
+/** `price > 100` inside Sequel's `where { }`, which reads it as a condition on the column. */
+function emitComparison(emitter: Emitter, binary: RbNode): void {
+  const left = field(binary, "left");
+  const right = field(binary, "right");
+  if (left !== null && right !== null) {
+    add(
+      emitter,
+      "compares",
+      nodeId(emitter.filePath, binary),
+      valueKey(emitter, left, binary),
+      valueKey(emitter, right, binary),
+    );
+  }
+}
+
+const COMPARISON_OPERATORS = ["==", "!=", "<", "<=", ">", ">=", "===", "<=>"];
+
+/** What a binary expression states, by its operator. */
+const BINARY_FACTS: Partial<
+  Record<string, (emitter: Emitter, binary: RbNode) => void>
+> = {
+  [APPEND]: emitAppend,
+  ...Object.fromEntries(
+    COMPARISON_OPERATORS.map((operator) => [operator, emitComparison]),
+  ),
+};
 
 /** What a block gives back to whatever runs it: its last expression. */
 function emitBlockValue(emitter: Emitter, block: RbNode): void {

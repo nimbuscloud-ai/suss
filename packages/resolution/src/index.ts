@@ -1550,6 +1550,30 @@ const STATED_RULES = [
     [lit("call", v("r"), v("c")), lit("givesBack", v("c"), v("f"))],
   ),
 
+  // A call made on what another call returns, however many calls the
+  // chain has in between: `db.update(t).set(v).where(c)` reaches `.set`
+  // and then `.where` from `db.update(t)`.
+  rule(
+    "chainedCall",
+    [v("r"), v("r2"), v("m")],
+    [
+      lit("call", v("r"), v("c0")),
+      lit("readsProperty", v("c"), v("r"), v("m")),
+      lit("call", v("r2"), v("c")),
+    ],
+    "chained call",
+  ),
+  rule(
+    "chainedCall",
+    [v("r"), v("r3"), v("m")],
+    [
+      lit("chainedCall", v("r"), v("r2"), v("m1")),
+      lit("readsProperty", v("c"), v("r2"), v("m")),
+      lit("call", v("r3"), v("c")),
+    ],
+    "chained call",
+  ),
+
   // The object an expression refers to: a name through `comesTo`, a
   // factory call through what it gives back. Naming the step is what
   // makes `routes.list` and `make(body).handle` one rule.

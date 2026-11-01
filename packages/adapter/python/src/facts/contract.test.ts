@@ -112,6 +112,12 @@ const SOURCES: Record<string, CaseFiles> = {
     "f.py":
       "def positions(users):\n    return [at for at, user in enumerate(users)]\n",
   },
+  "a call made on what another call returns": {
+    "f.py": "query = build().where(first)\n",
+  },
+  "a function comparing its two parameters": {
+    "f.py": "def same(left, right):\n    return left == right\n",
+  },
 };
 
 /**
