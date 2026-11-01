@@ -150,6 +150,14 @@ describe("keepWithinBudget", () => {
     expect(exists(legacy)).toBe(false);
   });
 
+  it("does nothing when the cache directory is gone", async () => {
+    const gone = path.join(cacheDir, "gone");
+
+    await expect(
+      keepWithinBudget(gone, path.join(gone, "own"), 1),
+    ).resolves.toBeUndefined();
+  });
+
   it("leaves a directory it did not write alone", async () => {
     const mine = entry("a1");
     shard(mine, "a1", 100 * KB);

@@ -111,7 +111,11 @@ export async function keepWithinBudget(
     ),
   ]);
   for (const entryDir of touched) {
-    const left = kept.filter((holder) => holder.entryDir === entryDir);
+    const left = kept.flatMap((holder) =>
+      holder.entryDir === entryDir && holder.checkoutDir !== null
+        ? [holder.checkoutDir]
+        : [],
+    );
     if (left.length === 0) {
       await fs.rm(entryDir, { recursive: true, force: true });
       continue;
@@ -120,7 +124,7 @@ export async function keepWithinBudget(
     const alone = entryDir === ownEntry && left.length === 1;
     removeStoredOutside(
       entryDir,
-      new Set(left.flatMap((holder) => storedBy(holder.checkoutDir))),
+      new Set(left.flatMap(storedBy)),
       alone ? 0 : SHARED_GRACE_MS,
     );
   }
@@ -160,10 +164,7 @@ function stillThere(holder: Holder): boolean {
 }
 
 /** The shards and records one checkout's manifests list, or none when its list cannot be read. */
-export function storedBy(checkoutDir: string | null): string[] {
-  if (checkoutDir === null) {
-    return [];
-  }
+export function storedBy(checkoutDir: string): string[] {
   try {
     const ids = JSON.parse(
       readFileSync(path.join(checkoutDir, STORED), "utf8"),
@@ -223,11 +224,7 @@ function fileSize(file: string): number {
 }
 
 function namesIn(dir: string): string[] {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
+  return direntsIn(dir).map((entry) => entry.name);
 }
 
 function direntsIn(dir: string) {
