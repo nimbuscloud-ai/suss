@@ -8,9 +8,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CacheAttribution,
   createCacheLayer,
-  MAX_ENTRIES,
   ownersWhereWritten,
 } from "./cache.js";
+import { CACHE_BUDGET_ENV } from "./cacheEviction.js";
 
 import type {
   BehavioralSummary,
@@ -35,6 +35,16 @@ async function writeFiles(
     paths.push(abs);
   }
   return { dir, paths };
+}
+
+/** Bytes under a directory. */
+function sizeOf(dir: string): number {
+  let bytes = 0;
+  for (const entry of fsSync.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    bytes += entry.isDirectory() ? sizeOf(full) : fsSync.statSync(full).size;
+  }
+  return bytes;
 }
 
 const fakeSummary: BehavioralSummary = {
@@ -264,12 +274,14 @@ describe("createCacheLayer", () => {
     await fs.writeFile(path.join(cacheDir, ".gitignore"), "manifest.json\n");
     const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(cacheDir);
+    vi.stubEnv(CACHE_BUDGET_ENV, "0.000001");
 
-    for (let index = 0; index <= MAX_ENTRIES; index += 1) {
+    for (let index = 0; index < 3; index += 1) {
       await cache.write({ files: paths, adapterPacksDigest: `test@${index}` }, [
         fakeSummary,
       ]);
     }
+    vi.unstubAllEnvs();
 
     expect(await fs.readFile(path.join(cacheDir, ".gitignore"), "utf8")).toBe(
       "manifest.json\n",
@@ -298,7 +310,16 @@ describe("createCacheLayer", () => {
       expect(await cache.tryHit(first)).toEqual([fakeSummary]);
     });
 
-    it("keeps only the most recently used keys", async () => {
+    /** A budget in megabytes that fits `count` entries the size of the one `cacheDir` has. */
+    async function budgetFor(cacheDir: string, count: number): Promise<string> {
+      const [entry] = (await fs.readdir(cacheDir)).filter((name) =>
+        name.startsWith("key-"),
+      );
+      const bytes = sizeOf(path.join(cacheDir, entry ?? ""));
+      return String(((count + 0.5) * bytes) / 1024 ** 2);
+    }
+
+    it("keeps only the most recently used keys that fit the budget", async () => {
       const cacheDir = await makeTempDir();
       const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
@@ -306,15 +327,19 @@ describe("createCacheLayer", () => {
         await cache.write({ files: paths, adapterPacksDigest: digest }, [
           fakeSummary,
         ]);
+        if (digest === "test@1") {
+          vi.stubEnv(CACHE_BUDGET_ENV, await budgetFor(cacheDir, 2));
+        }
         // Eviction orders entries by timestamp, so the writes have to
         // land in different milliseconds for the order to mean anything.
         await new Promise((r) => setTimeout(r, 10));
       }
+      vi.unstubAllEnvs();
 
       const entries = (await fs.readdir(cacheDir)).filter((name) =>
         name.startsWith("key-"),
       );
-      expect(entries).toHaveLength(MAX_ENTRIES);
+      expect(entries).toHaveLength(2);
       expect(
         await cache.tryHit({ files: paths, adapterPacksDigest: "test@1" }),
       ).toBeNull();
@@ -331,11 +356,11 @@ describe("createCacheLayer", () => {
       // Eviction orders entries by timestamp, so the steps have to land
       // in different milliseconds for the order to mean anything.
       const tick = () => new Promise((r) => setTimeout(r, 10));
+      const middle = { files: paths, adapterPacksDigest: "test@2" };
       await cache.write(oldest, [fakeSummary]);
+      vi.stubEnv(CACHE_BUDGET_ENV, await budgetFor(cacheDir, 2));
       await tick();
-      await cache.write({ files: paths, adapterPacksDigest: "test@2" }, [
-        fakeSummary,
-      ]);
+      await cache.write(middle, [fakeSummary]);
       await tick();
       // Reading it is the only way to move it back to the front of the
       // eviction order, since a run that hits the cache never writes.
@@ -344,8 +369,10 @@ describe("createCacheLayer", () => {
       await cache.write({ files: paths, adapterPacksDigest: "test@3" }, [
         fakeSummary,
       ]);
+      vi.unstubAllEnvs();
 
       expect(await cache.tryHit(oldest)).toEqual([fakeSummary]);
+      expect(await cache.tryHit(middle)).toBeNull();
     });
 
     it("clears out the single manifest older versions wrote", async () => {
