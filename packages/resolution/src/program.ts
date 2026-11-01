@@ -167,6 +167,18 @@ export function noteLookup(db: Database, id: string, found: string): void {
   observersByDb.get(db)?.looked(id, found);
 }
 
+/** Lookups of a path among the run's files start with this. */
+export const FILE_LOOKUP = "file ";
+
+/**
+ * Tell whoever observes `db` that work looked a path up among the run's
+ * files and found nothing there, so a later run looks again once a file
+ * at that path joins. A file it found is charged when the work reads it.
+ */
+export function noteFileMissing(db: Database, file: string): void {
+  noteLookup(db, `${FILE_LOOKUP}${file}`, "");
+}
+
 /** Whether anybody observes `db`, for a lookup whose description costs something to build. */
 export function isObserved(db: Database): boolean {
   return observersByDb.has(db);

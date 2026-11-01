@@ -31,8 +31,11 @@ export {
 } from "./dispatch.js";
 export {
   EntryReuse,
+  type FileChanges,
+  factsKeptFrom,
   fileOfKey,
   recordsToReplay,
+  replayChanges,
   type StoredFileRecord,
   type StoredWalkRecord,
   walkRecordsByFile,
@@ -84,6 +87,7 @@ export {
   askResolution,
   askResolutionUnder,
   isObserved,
+  noteFileMissing,
   noteKeyRead,
   noteLookup,
   observeDemand,

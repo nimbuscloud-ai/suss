@@ -555,7 +555,9 @@ Ruby binds a constant to its definition in `emitConstantBindings`, by name, once
 
 The value evaluator remembers what it computed for the rest of the run, and a remembered value asks no questions. A recording run starts each piece of work with nothing remembered, so every question a piece of work depends on is charged to it.
 
-A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it. A file added or removed re-extracts the whole project.
+A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it.
+
+A file added or removed since the stored run is handled the way the resolution DESIGN.md describes under "What a piece of work depended on". Two lookups depend on which files exist without going through a fact, so the adapter records them. A constant looked for under the naming convention, such as a controller's base class, is looked for on disk again in a later run, so a base class whose file was added since is found. Which files of the run declare a class by its full name is looked up again the same way.
 
 ## A job a body enqueues, and the job itself
 

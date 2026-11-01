@@ -49,6 +49,7 @@ import {
   addPackWords,
   DependencyLedger,
   FactLog,
+  factsKeptFrom,
   importedFilesByFile,
   mergeStoredDependencies,
   noDependencies,
@@ -56,6 +57,7 @@ import {
   observeDemand,
   type PackWords,
   recordsToReplay,
+  replayChanges,
   underQuestionSpend,
   walkRecordsByFile,
 } from "@suss/resolution";
@@ -144,11 +146,7 @@ import type {
   Timer,
   TimingReport,
 } from "@suss/extractor";
-import type {
-  Changes,
-  StoredDependencies,
-  StoredFacts,
-} from "@suss/resolution";
+import type { StoredDependencies, StoredFacts } from "@suss/resolution";
 import type { BodyBlocks, Range } from "./ast.js";
 import type { ReachSeed } from "./discovery.js";
 import type {
@@ -615,9 +613,7 @@ export async function extractRubyProject(
 
   const cache: RunCache = { timer, cacheDir, layer, input };
   const records =
-    plan === null
-      ? null
-      : recordsToReplay<RubyFileRecord>(plan.roots, plan.changed, plan.removed);
+    plan === null ? null : recordsToReplay<RubyFileRecord>(plan.roots);
   if (plan !== null && records !== null) {
     try {
       return await runRuby(options, walked, cache, { plan, records });
@@ -762,24 +758,19 @@ async function runRuby(
     previous === null || log === null || ledger === null
       ? null
       : timer.time("cache.plan", () => {
-          const changedFiles = previous.plan.changed;
-          const changes: Changes = {
-            files: new Set(
-              [...changedFiles].map((file) => ledger.hashOf(file)),
-            ),
-            hash: (text) => ledger.hashOfText(text),
-            values: log.changedValues(
-              changedFiles,
-              new Map(
-                [...previous.records].map(([file, record]) => [
-                  file,
-                  record.facts,
-                ]),
-              ),
-            ),
+          const changes = replayChanges({
+            files: parsed.map(({ file }) => file),
+            plan: previous.plan,
+            records: previous.records,
+            ledger,
+            log,
             lookAgain: lookAgainIn(plainContext, dynamicNames),
-          };
-          return rubyEntryReuse(previous.records, changedFiles, changes);
+          });
+          return rubyEntryReuse(
+            previous.records,
+            previous.plan.changed,
+            changes,
+          );
         });
   const nodeOf = (key: string): RbNode | null => nodeOfKey(rootsByFile, key);
 
@@ -1167,12 +1158,9 @@ async function runRuby(
                     record.facts,
                   ]),
                 ),
-                new Set(
-                  previous === null
-                    ? []
-                    : parsed
-                        .map(({ file }) => file)
-                        .filter((file) => !previous.plan.changed.has(file)),
+                factsKeptFrom(
+                  parsed.map(({ file }) => file),
+                  previous?.plan ?? null,
                 ),
               ),
             }),

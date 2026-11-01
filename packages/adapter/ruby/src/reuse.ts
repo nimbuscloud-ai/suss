@@ -17,6 +17,11 @@ import {
 } from "@suss/resolution";
 
 import { instanceMethodsByName, singletonMethodsByName } from "./ast.js";
+import { filesDeclaring } from "./baseClass.js";
+import {
+  createConstantFileCache,
+  resolveConstantFileAgain,
+} from "./constantPath.js";
 import { envLookupAgain } from "./envReads.js";
 import { nodeId } from "./facts/values.js";
 
@@ -95,6 +100,17 @@ const ANCESTRY = "ancestry";
 const TOP_LEVEL = "topLevel";
 const BLOCKS = "blocks";
 const DYNAMIC = "dynamic";
+const CONSTANT_FILE = "constantFile";
+const CLASSES_IN_RUN = "classesInRun";
+
+/** Note which files of the run declare a class, so a later run looks again, since an added or edited file can declare it too. */
+export function noteClassesInRun(
+  db: Database,
+  qualifiedName: string,
+  files: readonly string[],
+): void {
+  noteLookup(db, `${CLASSES_IN_RUN} ${qualifiedName}`, files.join("\n"));
+}
 
 /** A block by its key and every method it defines, which is what a lookup in it reads. */
 function describeBlock(block: ReachedBody, bodyBlocks: BodyBlocks): string {
@@ -214,13 +230,17 @@ export function watchDynamicNames(
   return watched(names, db, DYNAMIC, describeDefined);
 }
 
-/** A file cache whose every read is charged as a file the work read. */
+/** A file cache whose every read is charged as a file the work read, and every constant lookup as a lookup. */
 export function watchFileCache(
   cache: FileCache,
   ledger: DependencyLedger,
 ): FileCache {
   return {
-    constantFiles: cache.constantFiles,
+    constantFiles: {
+      ...cache.constantFiles,
+      looked: (key, found) =>
+        ledger.looked(`${CONSTANT_FILE} ${key}`, found ?? ""),
+    },
     get: (absPath) => {
       ledger.readFile(absPath);
       return cache.get(absPath);
@@ -233,6 +253,7 @@ export function lookAgainIn(
   ctx: ReachContext,
   names: DynamicNames,
 ): (id: string) => string | null {
+  const onDisk = createConstantFileCache();
   const table: Record<string, (argument: string) => string> = {
     [ANCESTRY]: (name) =>
       describeAncestry(ctx.ancestries.get(name), ctx.bodyBlocks),
@@ -240,6 +261,8 @@ export function lookAgainIn(
     [BLOCKS]: (name) =>
       describeBlocks(ctx.lookup.localDefinition?.(name), ctx.bodyBlocks),
     [DYNAMIC]: (classKey) => describeDefined(names.get(classKey)),
+    [CONSTANT_FILE]: (key) => resolveConstantFileAgain(key, onDisk) ?? "",
+    [CLASSES_IN_RUN]: (name) => filesDeclaring(ctx.facts, name).join("\n"),
   };
   return (id) => {
     const space = id.indexOf(" ");
