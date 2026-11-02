@@ -109,14 +109,18 @@ async function summariesWith(
   return summaries;
 }
 
-function declaredEffects(summaries: readonly BehavioralSummary[]) {
+type Interaction = Extract<Effect, { type: "interaction" }>;
+
+function declaredEffects(
+  summaries: readonly BehavioralSummary[],
+): Interaction[] {
   return summaries
     .filter((summary) => summary.identity.name === "load")
     .flatMap((summary) =>
       summary.transitions.flatMap((transition) => transition.effects),
     )
     .filter(
-      (effect) =>
+      (effect): effect is Interaction =>
         effect.type === "interaction" &&
         effect.binding?.recognition === "@suss/declared",
     );
