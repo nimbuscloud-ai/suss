@@ -132,7 +132,7 @@ class FactCall implements CallOps {
     const subject = this.member?.object ?? this.calleeKey;
     const matching = new Set(
       this.source
-        .anchorCalls(subject)
+        .anchorCalls(subject, origin)
         .filter((candidate) => this.madeFrom(origin, candidate)),
     );
     const [one] = matching;

@@ -315,8 +315,12 @@ export interface FactSource {
   read(key: string): void;
   /** The key a name or field was written as, by the adapter's own rules, or null. */
   writtenAs(key: string): string | null;
-  /** Every call the anchor rules reach behind a value. */
-  anchorCalls(key: string): readonly string[];
+  /**
+   * Every call the anchor rules reach behind a value. An adapter may leave
+   * out the calls its own check of the origin turns down; the ops check
+   * each one that comes back against the origin as well.
+   */
+  anchorCalls(key: string, origin: ReceiverOrigin): readonly string[];
   /** Whether the value at this key was imported from the module. */
   importedFrom(key: string, module: string): boolean;
   /** Whether a written-out value is an object, a list, or neither. */

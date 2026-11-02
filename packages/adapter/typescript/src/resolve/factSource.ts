@@ -10,7 +10,12 @@ import { Node } from "ts-morph";
 import { stringValuesOf, writtenNodeOf } from "../discovery/resolveValue.js";
 import { nodeId } from "../facts/extract.js";
 import { peelValue } from "../walk/unwrap.js";
-import { literalFlag, literalText, noteValueNode } from "./callOps.js";
+import {
+  anchorAccepts,
+  literalFlag,
+  literalText,
+  noteValueNode,
+} from "./callOps.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
   effectArgOf,
@@ -58,8 +63,18 @@ export function factSourceFor(
     extendValue: (key, ops) => at(key, ops, (node) => noteValueNode(ops, node)),
     read: (key) => at(key, undefined, access.state),
     writtenAs: (key) => at(key, null, (node) => keyOf(resolve(node))),
-    anchorCalls: (key) =>
-      at(key, [], (node) => store.anchorCallsOf(node, () => true).map(nodeId)),
+    // TypeScript keeps callOpsFor's anchor check, which asks only the
+    // store's import origins, so a run gives the same answer as before.
+    anchorCalls: (key, origin) =>
+      originatesFrom === undefined
+        ? []
+        : at(key, [], (node) =>
+            store
+              .anchorCallsOf(node, (candidate) =>
+                anchorAccepts(candidate, origin, originatesFrom),
+              )
+              .map(nodeId),
+          ),
     importedFrom: (key, module) =>
       at(key, false, (node) => isImportedFrom(node, module, originatesFrom)),
     shapeOf: (key) => at(key, null, shapeOf),
