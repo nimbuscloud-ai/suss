@@ -1,22 +1,30 @@
 import { describe, expect, it } from "vitest";
 
+import { Database } from "@suss/datalog";
+
 import {
   type Changes,
   DependencyLedger,
+  FactLog,
   hashString,
   mergeStoredDependencies,
   noDependencies,
   packHashes,
   type StoredDependencies,
+  type StoredFacts,
+  stillValid,
 } from "./dependencyLedger.js";
 import {
   EntryReuse,
+  factsKeptFrom,
   fileOfKey,
   recordsToReplay,
+  replayChanges,
   type StoredFileRecord,
   type StoredWalkRecord,
   walkRecordsByFile,
 } from "./entryReuse.js";
+import { noteFileMissing, observeDemand } from "./program.js";
 
 const ORDERS = "/project/orders.rb";
 const BILLING = "/project/billing.rb";
@@ -166,18 +174,167 @@ describe("recordsToReplay", () => {
     [BILLING, { meta: { discovery: dependsOn() } }],
   ]);
 
-  it("gives every root's record when no file was added or removed", () => {
-    expect(recordsToReplay(roots, new Set([ORDERS]), new Set())?.size).toBe(2);
+  it("gives every root's record, a removed file's too", () => {
+    expect(recordsToReplay(roots)?.size).toBe(2);
   });
 
-  it("gives nothing when a file was removed, added, or written without records", () => {
-    expect(recordsToReplay(roots, new Set(), new Set([ORDERS]))).toBeNull();
-    expect(
-      recordsToReplay(roots, new Set(["/project/new.rb"]), new Set()),
-    ).toBeNull();
-    expect(
-      recordsToReplay(new Map([[ORDERS, { meta: {} }]]), new Set(), new Set()),
-    ).toBeNull();
-    expect(recordsToReplay(new Map(), new Set(), new Set())).toBeNull();
+  it("gives nothing when a root was written without a record", () => {
+    expect(recordsToReplay(new Map([[ORDERS, { meta: {} }]]))).toBeNull();
+    expect(recordsToReplay(new Map())).toBeNull();
+  });
+});
+
+const ADDED = "/project/billing/__init__.rb";
+
+/** One run's facts, each file's own rows emitted in turn, as an adapter logs them. */
+function factsOf(own: Record<string, [string, string[]][]>): {
+  ledger: DependencyLedger;
+  log: FactLog;
+} {
+  const db = new Database();
+  const ledger = new DependencyLedger(Object.keys(own));
+  const log = new FactLog(db, ledger);
+  for (const [file, rows] of Object.entries(own)) {
+    log.startFile();
+    for (const [relation, row] of rows) {
+      db.add(relation, row);
+    }
+    log.endFile(file);
+  }
+  log.startJoined();
+  log.endJoined();
+  return { ledger, log };
+}
+
+function storedRecords(
+  own: Record<string, [string, string[]][]>,
+): Map<string, { facts: StoredFacts }> {
+  const files = Object.keys(own);
+  const stored = factsOf(own).log.stored(files, new Map(), new Set());
+  return new Map(
+    [...stored].map(([file, facts]) => [file, { facts }] as const),
+  );
+}
+
+describe("replayChanges", () => {
+  const importOf = (target: string): [string, string[]] => [
+    "importsFile",
+    [`${ORDERS}:1-9`, target],
+  ];
+
+  it("compares a file nobody edited once another file joins, since its import can resolve to the new one", () => {
+    const records = storedRecords({
+      [ORDERS]: [importOf(BILLING)],
+      [BILLING]: [["func", [`${BILLING}:10-40`]]],
+    });
+    const after = factsOf({
+      [ORDERS]: [importOf(ADDED)],
+      [BILLING]: [["func", [`${BILLING}:10-40`]]],
+      [ADDED]: [],
+    });
+    const changes = replayChanges({
+      files: [ORDERS, BILLING, ADDED],
+      plan: {
+        changed: new Set([ADDED]),
+        added: new Set([ADDED]),
+        removed: new Set(),
+      },
+      records,
+      ...after,
+      lookAgain: () => null,
+    });
+    expect(changes.values.has(hashString(`${ORDERS}:1-9`))).toBe(true);
+    expect(changes.values.has(hashString(`${BILLING}:10-40`))).toBe(false);
+    expect(changes.files.has(hashString(ADDED))).toBe(true);
+    // Work that read the orders file's syntax read an import that moved.
+    expect(changes.files.has(hashString(ORDERS))).toBe(true);
+    expect(changes.files.has(hashString(BILLING))).toBe(false);
+  });
+
+  it("looks a path up again among this run's files", () => {
+    const changes = replayChanges({
+      files: [ORDERS, ADDED],
+      plan: { changed: new Set(), added: new Set(), removed: new Set() },
+      records: new Map(),
+      ...factsOf({ [ORDERS]: [], [ADDED]: [] }),
+      lookAgain: (id) => `asked ${id}`,
+    });
+    expect(changes.lookAgain(`file ${ADDED}`)).toBe("present");
+    expect(changes.lookAgain(`file ${BILLING}`)).toBe("");
+    expect(changes.lookAgain("router x")).toBe("asked router x");
+  });
+
+  it("does work again that looked for a file a later run has", () => {
+    const before = new Database();
+    const ledger = new DependencyLedger([ORDERS]);
+    observeDemand(before, ledger);
+    const charge = noDependencies();
+    ledger.charging(charge, () => noteFileMissing(before, ADDED));
+    const stored = ledger.store(charge);
+    const changesWith = (files: string[]) =>
+      replayChanges({
+        files,
+        plan: {
+          changed: new Set(files.filter((file) => file === ADDED)),
+          added: new Set(files.filter((file) => file === ADDED)),
+          removed: new Set(),
+        },
+        records: new Map(),
+        ...factsOf(Object.fromEntries(files.map((file) => [file, []]))),
+        lookAgain: () => null,
+      });
+
+    expect(stillValid(stored, changesWith([ORDERS]))).toBe(true);
+    expect(stillValid(stored, changesWith([ORDERS, ADDED]))).toBe(false);
+  });
+
+  it("counts a removed file and every key in it as changed", () => {
+    const records = storedRecords({
+      [ORDERS]: [importOf(BILLING)],
+      [BILLING]: [["func", [`${BILLING}:10-40`]]],
+    });
+    const changes = replayChanges({
+      files: [ORDERS],
+      plan: {
+        changed: new Set(),
+        added: new Set(),
+        removed: new Set([BILLING]),
+      },
+      records,
+      ...factsOf({ [ORDERS]: [importOf(BILLING)] }),
+      lookAgain: () => null,
+    });
+    expect(changes.values.has(hashString(`${BILLING}:10-40`))).toBe(true);
+    expect(changes.values.has(hashString(`${ORDERS}:1-9`))).toBe(false);
+    expect(changes.files.has(hashString(BILLING))).toBe(true);
+  });
+});
+
+describe("factsKeptFrom", () => {
+  const files = [ORDERS, BILLING];
+
+  it("keeps the stored facts of every file whose content is the same, while the set of files is too", () => {
+    const plan = {
+      changed: new Set([ORDERS]),
+      added: new Set<string>(),
+      removed: new Set<string>(),
+    };
+    expect([...factsKeptFrom(files, plan)]).toEqual([BILLING]);
+  });
+
+  it("keeps none once a file joined or left the set, or without a stored entry", () => {
+    const joined = {
+      changed: new Set([ADDED]),
+      added: new Set([ADDED]),
+      removed: new Set<string>(),
+    };
+    const left = {
+      changed: new Set<string>(),
+      added: new Set<string>(),
+      removed: new Set([ADDED]),
+    };
+    expect(factsKeptFrom(files, joined).size).toBe(0);
+    expect(factsKeptFrom(files, left).size).toBe(0);
+    expect(factsKeptFrom(files, null).size).toBe(0);
   });
 });

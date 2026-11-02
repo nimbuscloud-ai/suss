@@ -207,6 +207,8 @@ export type CacheLookup =
 export interface PartialPlan<Meta = unknown, UnitData = unknown> {
   /** Paths whose content hash differs, plus paths new to the set. */
   changed: Set<string>;
+  /** Paths new to the set, which are among `changed` too. */
+  added: Set<string>;
   removed: Set<string>;
   /**
    * The stored import list of every file whose content is unchanged, when
@@ -776,6 +778,7 @@ async function buildPlan<Meta, UnitData>(
   const ownerPaths = ownersInRunOrder(manifest);
   return {
     changed,
+    added,
     removed,
     resolvedImports,
     roots,

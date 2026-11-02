@@ -17,6 +17,7 @@ import {
   calleeOutcomes,
   dispatchOutcomes,
   fileOfKey,
+  isObserved,
   memberOf,
   nodeOfKey,
   noteKeyRead,
@@ -32,6 +33,7 @@ import { children, enclosingFunction, field, isFunction } from "../ast.js";
 import { resolveCalls } from "../facts/resolve.js";
 import { nodeId, readKey } from "../facts/values.js";
 import { resolveModule } from "../moduleResolver.js";
+import { moduleFound, noteModuleNamed } from "../reuse.js";
 import { resolveName } from "../scope.js";
 
 import type { UnfollowedReason } from "@suss/behavioral-ir";
@@ -779,6 +781,14 @@ function moduleNamed(
     { module, relativeLevel },
     { roots: ctx.roots },
   );
+  if (isObserved(ctx.facts)) {
+    noteModuleNamed(
+      ctx.facts,
+      from.file,
+      { module, relativeLevel },
+      moduleFound(resolution, (file) => ctx.filesByPath.has(file)),
+    );
+  }
   // A dotted name with no file of its own may still head a package
   // without an `__init__.py`, so its members are looked for as modules.
   if (resolution.status !== "resolved") {

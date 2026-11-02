@@ -607,21 +607,33 @@ export class FactLog {
     return out;
   }
 
-  /** The hashes of every value whose facts changed since `previous` was stored. `changed` lists the files whose content changed. */
+  /**
+   * The hashes of every value whose facts changed since `previous` was
+   * stored. `changed` lists the files whose own rows are compared, and
+   * each of them whose own rows differ is added to `ownChanged`.
+   */
   changedValues(
     changed: ReadonlySet<string>,
     previous: ReadonlyMap<string, StoredFacts>,
+    ownChanged?: Set<string>,
   ): Set<number> {
     const values = new Set<number>();
     for (const file of changed) {
       const digests = this.ownDigests(file);
+      const own = new Set<number>();
       differing(
         pairsOf(previous.get(file)?.own ?? ""),
         pairsOf(
           packHashes(digests.pairs(digests.sums.keys(), this.hashOfValue)),
         ),
-        values,
+        own,
       );
+      if (own.size > 0) {
+        ownChanged?.add(file);
+        for (const hash of own) {
+          values.add(hash);
+        }
+      }
     }
     const joined = this.joinedDigests();
     const files = new Set([...previous.keys(), ...joined.keysByFile.keys()]);

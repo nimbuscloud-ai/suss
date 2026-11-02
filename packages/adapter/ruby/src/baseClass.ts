@@ -13,12 +13,18 @@
  * class the same way.
  */
 
-import { answersFor, askResolution, spanOfKey } from "@suss/resolution";
+import {
+  answersFor,
+  askResolution,
+  noteKeyRead,
+  spanOfKey,
+} from "@suss/resolution";
 
 import { blocksDefinedIn } from "./ancestry.js";
 import { NESTING_TYPES } from "./ast.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
+import { noteClassesInRun } from "./reuse.js";
 
 import type { Database } from "@suss/datalog";
 import type { AncestorLookup, ReachedBody } from "./ancestry.js";
@@ -85,14 +91,7 @@ export function classesDeclaredInRun(
   parsedFile: AncestorLookup["parsedFile"],
 ): (qualifiedName: string) => Promise<ReachedBody[] | null> {
   const known = new Map<string, Promise<ReachedBody[] | null>>();
-  const read = async (qualifiedName: string) => {
-    const files = new Set<string>();
-    for (const row of facts.lookup("rbConstantName", 1, qualifiedName)) {
-      const span = spanOfKey(String(row[0]));
-      if (span !== null) {
-        files.add(span.file);
-      }
-    }
+  const read = async (qualifiedName: string, files: readonly string[]) => {
     const blocks: ReachedBody[] = [];
     for (const file of files) {
       blocks.push(
@@ -102,13 +101,35 @@ export function classesDeclaredInRun(
     return blocks.length === 0 ? null : blocks;
   };
   return (qualifiedName) => {
+    const files = filesDeclaring(facts, qualifiedName);
+    // Every caller depends on the lookup and on the files it read, the
+    // answer having been worked out for an earlier caller or not.
+    noteClassesInRun(facts, qualifiedName, files);
+    for (const file of files) {
+      noteKeyRead(facts, file);
+    }
     let found = known.get(qualifiedName);
     if (found === undefined) {
-      found = read(qualifiedName);
+      found = read(qualifiedName, files);
       known.set(qualifiedName, found);
     }
     return found;
   };
+}
+
+/** The files of the run that declare a class by its full name, in a stable order. */
+export function filesDeclaring(
+  facts: Database,
+  qualifiedName: string,
+): string[] {
+  const files = new Set<string>();
+  for (const row of facts.lookup("rbConstantName", 1, qualifiedName)) {
+    const span = spanOfKey(String(row[0]));
+    if (span !== null) {
+      files.add(span.file);
+    }
+  }
+  return [...files].sort();
 }
 
 /**

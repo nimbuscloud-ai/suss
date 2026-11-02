@@ -21,6 +21,7 @@ import {
 } from "@suss/resolution";
 
 import { envLookupAgain } from "./envReads.js";
+import { resolveModule } from "./moduleResolver.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -29,6 +30,7 @@ import type {
   StoredFileRecord,
   StoredWalkRecord,
 } from "@suss/resolution";
+import type { ModuleResolution, RelativeModuleSpec } from "./moduleResolver.js";
 import type { PythonDiscoveryPattern, PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { StoredScan, StoredTarget } from "./reach/closure.js";
@@ -167,7 +169,37 @@ export class WalkReplay {
 const COULD_MATCH = "couldMatch ";
 const ROUTER = "router ";
 const ROUTER_BUILT = "routerBuilt ";
+const MODULE_NAMED = "moduleNamed ";
 const SEPARATOR = "\u0000";
+
+/**
+ * What a module name led to from a file: a file of the run, a package
+ * with no file of its own, or nothing. A file added at that path changes
+ * the answer, which no fact of the run says.
+ */
+export function moduleFound(
+  resolution: ModuleResolution,
+  inRun: (file: string) => boolean,
+): string {
+  if (resolution.status !== "resolved") {
+    return resolution.reason === "external" ? "package" : "none";
+  }
+  return inRun(resolution.file) ? resolution.file : "none";
+}
+
+/** Note what a module name led to from a file, so a later run looks it up again. */
+export function noteModuleNamed(
+  db: Database,
+  from: string,
+  spec: RelativeModuleSpec,
+  found: string,
+): void {
+  noteLookup(
+    db,
+    `${MODULE_NAMED}${[from, spec.module, spec.relativeLevel].join(SEPARATOR)}`,
+    found,
+  );
+}
 
 /** The run's packs, patterns and forms by position, so a stored record can name one. */
 export class PackPositions {
@@ -278,6 +310,7 @@ export function lookAgainIn(args: {
   wrapperIndex: PythonWrapperIndex;
   positions: PackPositions;
   moduleOfFile: ReadonlyMap<string, ModuleBinding>;
+  roots: string[];
 }): (id: string) => string | null {
   const router = (
     rest: string,
@@ -314,6 +347,19 @@ export function lookAgainIn(args: {
     if (id.startsWith(ROUTER)) {
       return router(id.slice(ROUTER.length), (pattern, module, [name]) =>
         args.routerIndex.resolve(pattern, module, name ?? ""),
+      );
+    }
+    if (id.startsWith(MODULE_NAMED)) {
+      const [from = "", module = "", level = "0"] = id
+        .slice(MODULE_NAMED.length)
+        .split(SEPARATOR);
+      return moduleFound(
+        resolveModule(
+          from,
+          { module, relativeLevel: Number(level) },
+          { roots: args.roots },
+        ),
+        (file) => args.moduleOfFile.has(file),
       );
     }
     return args.wrapperIndex.lookAgain(id) ?? envLookupAgain(args.db, id);

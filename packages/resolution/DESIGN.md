@@ -1707,6 +1707,10 @@ itself:
 - A lookup in an index the run builds over every file, such as methods
   by name or a router's prefix. `noteLookup` records an id the next run
   can repeat and a description of what came back.
+- A path looked up among the run's files that was not there, such as
+  a pytest `conftest.py` above a test. `noteFileMissing` records it, and
+  in the next run `replayChanges` checks whether that path is among the
+  run's files. A file that was there is charged as syntax read.
 
 `FactLog` stores, for every file, a digest of the rows each key appears
 in: the rows the file emitted on its own, and the rows an adapter adds
@@ -1725,6 +1729,15 @@ of its files changed, none of its keys' facts changed, and every lookup
 it made comes back the same. A file's discovery record also needs the
 walk records of the functions its units start from, because those
 units' summaries carry what the walk placed on them.
+
+`replayChanges` works out what changed. A file added since the entry was
+stored counts as changed and has no record, so its work is done fresh.
+A removed file counts as changed too, and every key it had counts as a
+key whose facts changed. Once a file joins or leaves the set, an import
+in a file nobody edited can resolve to another file, so the own rows of
+every file are compared, not only the edited ones. A file whose own rows
+changed that way counts as changed, so work that read its syntax runs
+again.
 
 One case is not seen: a derivation that joins through a base row and
 uses a key only inside that join, so the key never appears in a

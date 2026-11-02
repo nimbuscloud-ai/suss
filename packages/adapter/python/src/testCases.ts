@@ -17,7 +17,7 @@ import path from "node:path";
 
 import { testUnitName } from "@suss/behavioral-ir";
 import { isListedTestFile, matchesTestFileName } from "@suss/extractor";
-import { isObserved, noteKeyRead } from "@suss/resolution";
+import { isObserved, noteFileMissing, noteKeyRead } from "@suss/resolution";
 import { constantOf, literalOf } from "@suss/values";
 
 import { children, field, isFunction, parameterNameAndType } from "./ast.js";
@@ -380,8 +380,11 @@ export class PythonTestIndex {
     let dir = path.dirname(file.file);
     for (;;) {
       for (const shared of pattern.sharedFixtureFiles) {
-        const found = this.context.filesByPath.get(path.join(dir, shared));
-        if (found !== undefined && found !== file) {
+        const sharedPath = path.join(dir, shared);
+        const found = this.context.filesByPath.get(sharedPath);
+        if (found === undefined) {
+          noteFileMissing(this.context.facts, sharedPath);
+        } else if (found !== file) {
           yield found;
         }
       }
