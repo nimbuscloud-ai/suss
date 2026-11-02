@@ -2038,6 +2038,26 @@ export class ResolutionStore {
   }
 
   /**
+   * The store's facts, for ops that read them directly. `state` puts in
+   * the facts about one node, since a file's extraction reaches only the
+   * values that hang off its exports.
+   */
+  factAccess(): {
+    db: Database;
+    nodeOf(key: string): Node | undefined;
+    state(node: Node): void;
+  } {
+    return {
+      db: this.db,
+      nodeOf: (key) => this.table.byId.get(key),
+      state: (node) => {
+        this.extractFile(node.getSourceFile());
+        this.seedValue(node);
+      },
+    };
+  }
+
+  /**
    * Read these files' facts now, before anything asks a question.
    *
    * A query follows the imports of the file it starts in, which is

@@ -59,6 +59,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@suss/recognize": "*",
     "@suss/resolution": "*",
     "@suss/test-project": "*",
     "@types/node": "*",

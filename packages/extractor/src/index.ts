@@ -1346,6 +1346,8 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  FactRows,
+  FactSource,
   OpsCarrier,
   ReceiverOrigin,
   StatedSlot,
