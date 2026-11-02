@@ -124,7 +124,7 @@ describe("extractRubyProject's on-disk cache", () => {
     });
   });
 
-  it("starts over when a file is added, since a new file can change which definition a name binds", async () => {
+  it("replays the rest when a file is added", async () => {
     const files = schemaProject();
     const packs = testPacks();
     const diagnostics: CacheDiagnostic[] = [];
@@ -147,7 +147,39 @@ describe("extractRubyProject's on-disk cache", () => {
       onCacheDiagnostic,
     });
 
-    expect(diagnostics[1]?.kind).toBe("miss");
+    expect(diagnostics[1]?.kind).toBe("partial");
+  });
+
+  it("gives what a run without the cache gives after the file of a type's base class is added", async () => {
+    const packs = testPacks();
+    const run = (cacheDir?: null) =>
+      extractRubyProject({
+        files: findRubyFiles(tmpDir),
+        packs,
+        projectRoot: tmpDir,
+        ...(cacheDir === null ? { cacheDir } : {}),
+      });
+    write(
+      "app/graphql/types/campaign_type.rb",
+      "module Types\n  class CampaignType < Types::BaseObject\n    field :id, ID, null: false\n    field :title, String, null: false\n\n    def title\n      object.headline\n    end\n  end\nend\n",
+    );
+    write("app/graphql/schema.rb", "class Schema\nend\n");
+    const before = await run(null);
+    await run();
+    write(
+      "app/graphql/types/base_object.rb",
+      "module Types\n  class BaseObject < GraphQL::Schema::Object\n    field_class Types::BaseField\n  end\nend\n",
+    );
+
+    const replayed = await run();
+    const fresh = await run(null);
+
+    expect(JSON.stringify(fresh.summaries)).not.toBe(
+      JSON.stringify(before.summaries),
+    );
+    expect(JSON.stringify(replayed.summaries)).toBe(
+      JSON.stringify(fresh.summaries),
+    );
   });
 
   it("misses with key-changed once a pack's declared version changes", async () => {
@@ -407,6 +439,75 @@ describe("extractRubyProject's on-disk cache", () => {
 
       const { cached, cold } = await bothRuns(files(), packs, diagnostics);
 
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
+    it("gives what a run without the cache gives after a model a controller named is added", async () => {
+      const { files, packs } = shopProject();
+      write(
+        "app/controllers/items_controller.rb",
+        "class ItemsController < ApplicationController\n  def index\n    Invoice.where(open: true)\n  end\nend\n",
+      );
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files(), packs, diagnostics);
+      write(
+        "app/models/invoice.rb",
+        "class Invoice < ApplicationRecord\nend\n",
+      );
+
+      const { cached, cold } = await bothRuns(files(), packs, diagnostics);
+
+      expect(cold).not.toBe(before.cold);
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
+    it("gives what a run without the cache gives after a model a controller read is removed", async () => {
+      const { files, packs } = shopProject();
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files(), packs, diagnostics);
+      fs.rmSync(path.join(tmpDir, "app/models/item.rb"));
+
+      const { cached, cold } = await bothRuns(files(), packs, diagnostics);
+
+      expect(cold).not.toBe(before.cold);
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
+    it("gives what a run without the cache gives after the file of a controller's base class is added", async () => {
+      const { files, packs } = shopProject();
+      write(
+        "app/controllers/accounts_controller.rb",
+        "class AccountsController < AdminController\n  def index\n    current_account\n  end\nend\n",
+      );
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files(), packs, diagnostics);
+      write(
+        "app/controllers/admin_controller.rb",
+        "class AdminController < ApplicationController\n  def current_account\n    Item.find(params[:id])\n  end\nend\n",
+      );
+
+      const { cached, cold } = await bothRuns(files(), packs, diagnostics);
+
+      expect(cold).not.toBe(before.cold);
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
+    it("gives what a run without the cache gives after a file is added that shadows a constant", async () => {
+      const { files, packs } = shopProject();
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files(), packs, diagnostics);
+      write(
+        "app/models/shop/order.rb",
+        "module Shop\n  class Order\n  end\nend\n",
+      );
+
+      const { cached, cold } = await bothRuns(files(), packs, diagnostics);
+
+      expect(cold).not.toBe(before.cold);
       expect(cached).toBe(cold);
       expect(diagnostics[1]?.kind).toBe("partial");
     });

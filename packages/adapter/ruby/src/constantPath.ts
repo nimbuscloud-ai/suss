@@ -69,6 +69,8 @@ export interface ConstantFileCache {
   readonly autoloadDirectories: Map<string, readonly string[]>;
   /** The file each root and relative path resolved to, or null. */
   readonly resolved: Map<string, string | null>;
+  /** Told of every lookup, answered from here or not, so a cache can make it again in a later run, where a file may have been added. */
+  readonly looked?: (key: string, found: string | null) => void;
 }
 
 export function createConstantFileCache(): ConstantFileCache {
@@ -95,13 +97,27 @@ export function resolveConstantFile(
 ): string | null {
   const relative = `${PATH_CONVENTIONS[convention](qualifiedName, acronyms)}.rb`;
   const key = [root, ...autoloadRoots, relative].join("\0");
-  const known = cache.resolved.get(key);
-  if (known !== undefined) {
-    return known;
+  let found = cache.resolved.get(key);
+  if (found === undefined) {
+    found = firstExisting(root, relative, cache, autoloadRoots);
+    cache.resolved.set(key, found);
   }
-  const found = firstExisting(root, relative, cache, autoloadRoots);
-  cache.resolved.set(key, found);
+  cache.looked?.(key, found);
   return found;
+}
+
+/** A lookup `resolveConstantFile` made, made again from its key through `cache`. */
+export function resolveConstantFileAgain(
+  key: string,
+  cache: ConstantFileCache,
+): string | null {
+  const parts = key.split("\0");
+  return firstExisting(
+    parts[0] ?? "",
+    parts.at(-1) ?? "",
+    cache,
+    parts.slice(1, -1),
+  );
 }
 
 function firstExisting(

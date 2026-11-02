@@ -20,7 +20,7 @@ import {
   type SettledModule,
   settleModules,
 } from "@suss/extractor";
-import { noteKeyRead } from "@suss/resolution";
+import { noteFileMissing, noteKeyRead } from "@suss/resolution";
 
 import { children, field, isFunction, stripDecorators } from "./ast.js";
 import { originsOf } from "./facts/resolve.js";
@@ -69,6 +69,7 @@ export function moduleExportUnits(
   for (const publicPath of module.public) {
     const publicFile = options.filesByPath.get(publicPath);
     if (publicFile === undefined) {
+      noteFileMissing(options.facts, publicPath);
       continue;
     }
     noteKeyRead(options.facts, publicPath);

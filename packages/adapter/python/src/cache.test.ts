@@ -324,6 +324,85 @@ describe("extractPythonProject's on-disk cache", () => {
       expect(diagnostics[1]?.kind).toBe("partial");
     });
 
+    it("gives what a run without the cache gives after a file is added that an import named before it existed", async () => {
+      const callsAudit = ITEMS.replace(
+        "from app.deps import current_user",
+        "from app.deps import current_user\nfrom app import audit_log\nimport app.events",
+      ).replace(
+        "    return fetch_items(user)",
+        "    audit_log.record(user)\n    app.events.publish(user)\n    return fetch_items(user)",
+      );
+      const files = shopProject();
+      write("app/routes/items.py", callsAudit);
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files, diagnostics);
+      write(
+        "app/audit_log.py",
+        "def record(user):\n    return lookup()\n\n\ndef lookup():\n    return None\n",
+      );
+      write("app/events.py", "def publish(user):\n    return None\n");
+
+      const { cached, cold } = await bothRuns(
+        findPythonFiles(tmpDir),
+        diagnostics,
+      );
+
+      expect(cold).not.toBe(before.cold);
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
+    it("gives what a run without the cache gives after a submodule a route reached through its package is added", async () => {
+      const files = shopProject();
+      write("app/tasks/__init__.py", "");
+      write(
+        "app/routes/items.py",
+        ITEMS.replace(
+          "from app.deps import current_user",
+          "from app.deps import current_user\nfrom app import tasks",
+        ).replace(
+          "    return fetch_items(user)",
+          "    tasks.cleanup.run(user)\n    return fetch_items(user)",
+        ),
+      );
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(findPythonFiles(tmpDir), diagnostics);
+      write(
+        "app/tasks/cleanup.py",
+        "def run(user):\n    return purge()\n\n\ndef purge():\n    return None\n",
+      );
+
+      const { cached, cold } = await bothRuns(
+        findPythonFiles(tmpDir),
+        diagnostics,
+      );
+
+      expect(files.length).toBeGreaterThan(0);
+      expect(cold).not.toBe(before.cold);
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
+    it("gives what a run without the cache gives after a file a route called into is removed", async () => {
+      const files = shopProject();
+      write(
+        "app/helpers.py",
+        "def unrelated():\n    return 1\n\n\ndef summarize():\n    return unrelated()\n",
+      );
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files, diagnostics);
+      fs.rmSync(path.join(tmpDir, "app/helpers.py"));
+
+      const { cached, cold } = await bothRuns(
+        findPythonFiles(tmpDir),
+        diagnostics,
+      );
+
+      expect(cold).not.toBe(before.cold);
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
     const withStorage: PythonPack = {
       ...fastapiLike,
       discovery: [
@@ -723,5 +802,31 @@ describe("a test run replayed from the cache", () => {
         (one) => one.kind === "library" && one.identity.name === "ship_order",
       ),
     ).toBe(true);
+  });
+
+  it("finds a fixture in a shared fixture file added since, the same as a run without the cache", async () => {
+    write("app/orders.py", "def ship_order(order_id):\n    return order_id\n");
+    write("tests/__init__.py", "");
+    write(
+      "tests/test_orders.py",
+      "def test_reads(order):\n    pass\n\n\ndef test_other():\n    pass\n",
+    );
+    const run = (cacheDir?: null) =>
+      extractPythonProject({
+        files: findPythonFiles(tmpDir),
+        roots: [tmpDir],
+        packs: [pytestLike],
+        projectRoot: tmpDir,
+        ...(cacheDir === null ? { cacheDir } : {}),
+      });
+
+    const before = await run(null);
+    await run();
+    write("tests/conftest.py", fixtureCalling("ship_order"));
+    const replayed = await run();
+    const fresh = await run(null);
+
+    expect(fresh.summaries).not.toEqual(before.summaries);
+    expect(replayed.summaries).toEqual(fresh.summaries);
   });
 });

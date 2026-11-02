@@ -668,7 +668,9 @@ Python has no binding by name across the whole run like Ruby's constants. A name
 
 The value evaluator remembers what it computed for the rest of the run, and a remembered value asks no questions. A recording run starts each piece of work with nothing remembered, so every question a piece of work depends on is charged to it. The lookup of where an imported name is defined keeps its answers too, and asks its question again on every lookup so whoever looks is charged.
 
-A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it. A file added or removed re-extracts the whole project.
+A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it.
+
+A file added or removed since the stored run is handled the way the resolution DESIGN.md describes under "What a piece of work depended on". Two lookups depend on which files exist without going through a fact, so the adapter records them. The walk records where a dotted module name led from a file, such as `tasks.cleanup` through a package whose `__init__.py` says nothing about `cleanup`, and a later run resolves the name again. A test records each shared fixture file it looked for and did not find, so a `conftest.py` added above it brings its fixtures in.
 
 ## What a file imports from the project
 

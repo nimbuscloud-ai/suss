@@ -48,12 +48,14 @@ import {
   addPackWords,
   DependencyLedger,
   FactLog,
+  factsKeptFrom,
   importedFilesByFile,
   mergeStoredDependencies,
   noDependencies,
   observeDemand,
   type PackWords,
   recordsToReplay,
+  replayChanges,
   underQuestionSpend,
   walkRecordsByFile,
 } from "@suss/resolution";
@@ -119,7 +121,6 @@ import type {
   TimingReport,
 } from "@suss/extractor";
 import type {
-  Changes,
   Dependencies,
   StoredDependencies,
   StoredFacts,
@@ -455,13 +456,7 @@ export async function extractPythonProject(
 
   const cache: RunCache = { timer, cacheDir, layer, input };
   const records =
-    plan === null
-      ? null
-      : recordsToReplay<PythonFileRecord>(
-          plan.roots,
-          plan.changed,
-          plan.removed,
-        );
+    plan === null ? null : recordsToReplay<PythonFileRecord>(plan.roots);
   let summaries: BehavioralSummary[] | null = null;
   let facts: Database | null = null;
   if (plan !== null && records !== null) {
@@ -678,21 +673,12 @@ async function runPython(
     previous === null || log === null || ledger === null
       ? null
       : timer.time("cache.plan", () => {
-          const changedFiles = previous.plan.changed;
-          const changes: Changes = {
-            files: new Set(
-              [...changedFiles].map((file) => ledger.hashOf(file)),
-            ),
-            hash: (text) => ledger.hashOfText(text),
-            values: log.changedValues(
-              changedFiles,
-              new Map(
-                [...previous.records].map(([file, record]) => [
-                  file,
-                  record.facts,
-                ]),
-              ),
-            ),
+          const changes = replayChanges({
+            files: options.files,
+            plan: previous.plan,
+            records: previous.records,
+            ledger,
+            log,
             lookAgain: lookAgainIn({
               db,
               couldMatch: namesNearStorage,
@@ -700,9 +686,14 @@ async function runPython(
               wrapperIndex,
               positions,
               moduleOfFile: new Map(bound.map((one) => [one.file, one.module])),
+              roots,
             }),
-          };
-          return pythonEntryReuse(previous.records, changedFiles, changes);
+          });
+          return pythonEntryReuse(
+            previous.records,
+            previous.plan.changed,
+            changes,
+          );
         });
 
   // Which wrappers the discovery being charged registered, so a replay of
@@ -1082,13 +1073,7 @@ async function runPython(
                     record.facts,
                   ]),
                 ),
-                new Set(
-                  previous === null
-                    ? []
-                    : bound
-                        .map(({ file }) => file)
-                        .filter((file) => !previous.plan.changed.has(file)),
-                ),
+                factsKeptFrom(options.files, previous?.plan ?? null),
               ),
             }),
       );

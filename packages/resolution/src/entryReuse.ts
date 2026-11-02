@@ -11,10 +11,13 @@
  */
 
 import { stillValid } from "./dependencyLedger.js";
+import { FILE_LOOKUP } from "./program.js";
 
 import type {
   Changes,
   Dependencies,
+  DependencyLedger,
+  FactLog,
   StoredDependencies,
   StoredFacts,
 } from "./dependencyLedger.js";
@@ -143,17 +146,13 @@ export function walkRecordsByFile<Scan, Summary>(args: {
 }
 
 /**
- * The records an entry's roots carry, when every root has one and no
- * file was added or removed since. An added or removed file can change
- * what a name binds to and which file a path leads to, which no record
- * says, so the run starts over instead.
+ * The records an entry's roots carry, when every root has one. A removed
+ * file's record stays in, so a replay can tell whose facts went with it.
  */
 export function recordsToReplay<Record extends { readonly discovery: unknown }>(
   roots: ReadonlyMap<string, { readonly meta: unknown }>,
-  changed: ReadonlySet<string>,
-  removed: ReadonlySet<string>,
 ): Map<string, Record> | null {
-  if (removed.size > 0 || roots.size === 0) {
+  if (roots.size === 0) {
     return null;
   }
   const records = new Map<string, Record>();
@@ -164,10 +163,76 @@ export function recordsToReplay<Record extends { readonly discovery: unknown }>(
     }
     records.set(file, meta);
   }
-  for (const file of changed) {
-    if (!records.has(file)) {
-      return null;
-    }
-  }
   return records;
+}
+
+/** Which files changed since a stored entry, as its plan says. Added files are among `changed` too. */
+export interface FileChanges {
+  readonly changed: ReadonlySet<string>;
+  readonly added: ReadonlySet<string>;
+  readonly removed: ReadonlySet<string>;
+}
+
+/**
+ * The files whose own facts a replay compares with the stored ones. Once a
+ * file joins or leaves the set, an import in a file nobody edited can
+ * resolve to another file, so every file is compared, and a removed one
+ * counts as having no facts.
+ */
+export function filesToCompare(
+  files: readonly string[],
+  plan: FileChanges,
+): Set<string> {
+  if (plan.added.size === 0 && plan.removed.size === 0) {
+    return new Set(plan.changed);
+  }
+  return new Set([...files, ...plan.removed]);
+}
+
+/** What a replay checks each stored record against. */
+export function replayChanges(args: {
+  files: readonly string[];
+  plan: FileChanges;
+  records: ReadonlyMap<string, { readonly facts: StoredFacts }>;
+  ledger: DependencyLedger;
+  log: FactLog;
+  lookAgain: (id: string) => string | null;
+}): Changes {
+  const { ledger, plan } = args;
+  const inRun = new Set(args.files);
+  // A file nobody edited whose imports now resolve elsewhere counts as
+  // changed too, so work that read its syntax is done again.
+  const ownChanged = new Set<string>();
+  const values = args.log.changedValues(
+    filesToCompare(args.files, plan),
+    new Map([...args.records].map(([file, record]) => [file, record.facts])),
+    ownChanged,
+  );
+  return {
+    files: new Set(
+      [...plan.changed, ...plan.removed, ...ownChanged].map((file) =>
+        ledger.hashOf(file),
+      ),
+    ),
+    hash: (text) => ledger.hashOfText(text),
+    values,
+    lookAgain: (id) => {
+      if (!id.startsWith(FILE_LOOKUP)) {
+        return args.lookAgain(id);
+      }
+      return inRun.has(id.slice(FILE_LOOKUP.length)) ? "present" : "";
+    },
+  };
+}
+
+/** The files whose own facts a cache write can copy from the stored entry, since the replay found them the same. */
+export function factsKeptFrom(
+  files: readonly string[],
+  plan: FileChanges | null,
+): Set<string> {
+  if (plan === null) {
+    return new Set();
+  }
+  const compared = filesToCompare(files, plan);
+  return new Set(files.filter((file) => !compared.has(file)));
 }
