@@ -143,6 +143,12 @@ export function writtenValueOf(db: Database, key: string): string | null {
   );
 }
 
+/** Every call the anchor rules reach behind a value. The resolution DESIGN.md says why the caller picks among them. */
+export function anchorCallsOf(db: Database, key: string): string[] {
+  askResolution(db, [key], "wantedAnchor", RUBY_PROGRAM);
+  return db.lookup("wantedAnchorCall", 0, key).map((row) => String(row[1]));
+}
+
 /** Every expression a value was written as, such as both arms of a ternary, with a call to a project function followed to what it returns. */
 export function writtenValuesOf(db: Database, key: string): string[] {
   resolveValues(db, [key]);

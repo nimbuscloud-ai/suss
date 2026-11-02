@@ -1,8 +1,8 @@
 /**
  * One pack declared with `@suss/recognize`, run over the same code written
- * in TypeScript and in Python. The hooks it compiles to read only the ops
- * on their context, and each adapter hands them the ops over its own facts,
- * so the two languages have to give the same effects.
+ * in TypeScript, Python and Ruby. The hooks it compiles to read only the
+ * ops on their context, and each adapter hands them the ops over its own
+ * facts, so the three languages have to give the same effects.
  */
 
 import fs from "node:fs";
@@ -13,6 +13,7 @@ import { Node } from "ts-morph";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { extractPythonProject } from "@suss/adapter-python";
+import { extractRubyProject } from "@suss/adapter-ruby";
 import {
   accessContextFor,
   invocationContextFor,
@@ -28,9 +29,11 @@ import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 
+// Ruby has no imports, so a client comes from a library through the
+// library's own constant, which each origin lists beside the module.
 const CACHE_CALLS = storageCalls({
   system: "redis",
-  client: constructedFrom("kvcache"),
+  client: constructedFrom("kvcache", "Kvcache"),
 })
   .methods({ get: { kind: "read", selector: { at: 0 } } })
   .example('cache.get("user_online:42")');
@@ -38,18 +41,19 @@ const CACHE_CALLS = storageCalls({
 const QUERIES = sqlStatements({
   system: "postgresql",
   dialect: "postgresql",
-  client: constructedFrom("sqldb"),
+  client: constructedFrom("sqldb", "Sqldb"),
 })
   .methods({ query: { statement: { at: 0 } } })
   .example('db.query("SELECT id, email FROM users")');
 
+const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
   pack("declared-cache", [CACHE_CALLS], {
-    languages: ["typescript", "python"],
+    languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
   }),
   pack("declared-sql", [QUERIES], {
-    languages: ["typescript", "python"],
+    languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
   }),
 ];
@@ -79,6 +83,16 @@ db = Pool()
 def load():
     cache.get("user_online:42")
     db.query("SELECT id, email FROM users")
+`;
+
+const RUBY = `module Store
+  def self.load
+    cache = Kvcache::Cache.new
+    db = Sqldb::Pool.new
+    cache.get("user_online:42")
+    db.query("SELECT id, email FROM users")
+  end
+end
 `;
 
 const LIBRARIES: Record<string, string> = {
@@ -136,32 +150,26 @@ beforeAll(() => {
   );
   fs.mkdirSync(path.join(root, "store"));
   fs.writeFileSync(path.join(root, "store/__init__.py"), PYTHON);
+  fs.mkdirSync(path.join(root, "lib/store"), { recursive: true });
+  fs.writeFileSync(path.join(root, "lib/store.rb"), RUBY);
 });
 
 afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-/** The pack's effects on the Python function's summary. */
-async function pythonEffects(): Promise<Effect[]> {
-  const { summaries } = await extractPythonProject({
-    files: [path.join(root, "store/__init__.py")],
-    roots: [root],
-    packs: [
-      {
-        name: "declared",
-        protocol: "in-process",
-        discovery: [],
-        invocationRecognizers: INVOCATION,
-        accessRecognizers: ACCESS,
-      },
-    ],
-    modules: [{ name: "store", root: path.join(root, "store") }],
-    workspaceRoot: root,
-    cacheDir: null,
-  });
+const DECLARED = {
+  name: "declared",
+  protocol: "in-process",
+  discovery: [],
+  invocationRecognizers: INVOCATION,
+  accessRecognizers: ACCESS,
+};
+
+/** The pack's effects on the summary of the function called `load`. */
+function effectsOfLoad(summaries: readonly BehavioralSummary[]): Effect[] {
   return summaries
-    .filter((summary: BehavioralSummary) => summary.identity.name === "load")
+    .filter((summary) => summary.identity.name.endsWith("load"))
     .flatMap((summary) =>
       summary.transitions.flatMap((transition) => transition.effects),
     )
@@ -172,7 +180,30 @@ async function pythonEffects(): Promise<Effect[]> {
     );
 }
 
-/** An effect without where it was written, which differs between the two sources. */
+async function pythonEffects(): Promise<Effect[]> {
+  const { summaries } = await extractPythonProject({
+    files: [path.join(root, "store/__init__.py")],
+    roots: [root],
+    packs: [DECLARED],
+    modules: [{ name: "store", root: path.join(root, "store") }],
+    workspaceRoot: root,
+    cacheDir: null,
+  });
+  return effectsOfLoad(summaries);
+}
+
+async function rubyEffects(): Promise<Effect[]> {
+  const { summaries } = await extractRubyProject({
+    files: [path.join(root, "lib/store.rb")],
+    packs: [DECLARED],
+    modules: [{ name: "store", root: path.join(root, "lib/store") }],
+    workspaceRoot: root,
+    cacheDir: null,
+  });
+  return effectsOfLoad(summaries);
+}
+
+/** An effect without where it was written, which differs between the sources. */
 function placeless(effect: Effect): unknown {
   const { location: _location, ...rest } = effect as Effect & {
     location?: unknown;
@@ -181,11 +212,11 @@ function placeless(effect: Effect): unknown {
 }
 
 describe("a pack declared once", () => {
-  it("records the same storage and SQL effects in TypeScript and in Python", async () => {
+  it("records the same storage and SQL effects in TypeScript, Python and Ruby", async () => {
     const fromTypeScript = typescriptEffects().map(placeless);
-    const fromPython = (await pythonEffects()).map(placeless);
 
     expect(fromTypeScript).toHaveLength(2);
-    expect(fromPython).toEqual(fromTypeScript);
+    expect((await pythonEffects()).map(placeless)).toEqual(fromTypeScript);
+    expect((await rubyEffects()).map(placeless)).toEqual(fromTypeScript);
   });
 });

@@ -719,13 +719,20 @@ async function runRuby(
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const loaderPatterns = options.packs.flatMap((pack) => pack.loaders ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
+  const declaredHooks = options.packs.flatMap((pack) => [
+    ...(pack.invocationRecognizers ?? []),
+    ...(pack.accessRecognizers ?? []),
+  ]);
   const storage =
-    storagePatterns.length > 0 || rawSqlPatterns.length > 0
+    storagePatterns.length > 0 ||
+    rawSqlPatterns.length > 0 ||
+    declaredHooks.length > 0
       ? {
           facts: db,
           patterns: storagePatterns,
           loaders: loaderPatterns,
           rawSql: rawSqlPatterns,
+          declared: declaredHooks,
         }
       : undefined;
   const jobDeclarations = jobDeclarationsIn(options.packs);

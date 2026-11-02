@@ -251,6 +251,38 @@ describe("factCallOps, further", () => {
   });
 });
 
+describe("factCallOps, over an adapter that spells a class's own method its own way", () => {
+  /** `Order.create(...)`, stated once as the class's own method and once as an instance's. */
+  function classCall(over: Partial<FactSource> = {}): FactSource {
+    const base = source();
+    const db = base.db as Database;
+    db.add("call", ["create", "Order.create"]);
+    db.add("readsProperty", ["Order.create", "Order", "::create"]);
+    db.add("readsProperty", ["Order.create", "Order", "create"]);
+    return { ...base, db, ...over };
+  }
+
+  it("reads the plain name back from the adapter's spelling", () => {
+    const plain = classCall({
+      memberName: (stated) => stated.replace(/^::/, ""),
+    });
+
+    expect(opsAt("create", plain).method()).toBe("create");
+  });
+
+  it("gives no method while two spellings disagree, and leaves out one the adapter drops", () => {
+    expect(opsAt("create", classCall()).method()).toBeNull();
+    expect(
+      opsAt(
+        "create",
+        classCall({
+          memberName: (stated) => (stated.startsWith("::") ? null : stated),
+        }),
+      ).method(),
+    ).toBe("create");
+  });
+});
+
 describe("factCallOps, where nothing settles", () => {
   it("finds no receiver construction for a bare call, or for a receiver written as nothing", () => {
     const unwritten = source({ writtenAs: () => null });

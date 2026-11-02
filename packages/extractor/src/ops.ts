@@ -325,6 +325,12 @@ export interface FactSource {
   importedFrom(key: string, module: string): boolean;
   /** Whether a written-out value is an object, a list, or neither. */
   shapeOf(key: string): "object" | "list" | null;
+  /**
+   * The method a stated member read spells, for an adapter that states a
+   * class's own method under a spelling of its own. Null leaves the read
+   * out. Unset takes every name as it is stated.
+   */
+  memberName?(stated: string): string | null;
   /** The source text at the key. */
   textOf(key: string): string;
   /** The string, number or boolean written at the key, or null when it is not one. */

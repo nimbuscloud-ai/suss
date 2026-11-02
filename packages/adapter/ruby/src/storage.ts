@@ -13,6 +13,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
+import { factCallOps } from "@suss/recognize/ops";
 import { askResolution, classMemberName } from "@suss/resolution";
 
 import {
@@ -30,6 +31,7 @@ import {
   declaredName,
   reachesBase,
 } from "./baseClass.js";
+import { rubyFactSource } from "./factSource.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { loaderPick } from "./loaders.js";
@@ -48,6 +50,7 @@ import {
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { InvocationRecognizer } from "@suss/extractor";
 import type {
   RbArgumentPlace,
   RbLoaderPattern,
@@ -86,6 +89,8 @@ export interface RbStorageOptions {
   readonly rawSql?: readonly RbRawSqlPattern[];
   /** Told the value each effect's columns are given, when somebody listens. */
   readonly statesSlots?: (effect: Effect, slots: readonly SlotValue[]) => void;
+  /** The hooks packs declared with `@suss/recognize`, run over every call in a method. */
+  readonly declared?: readonly InvocationRecognizer[];
 }
 
 function isConstant(node: RbNode): boolean {
@@ -767,8 +772,9 @@ function recognizeMethodStorage(
   options: RbStorageOptions,
 ): SlottedEffects {
   const slots: EffectSlot[] = [];
+  const calls = callsUnder(method);
   const effects = storageEffects(
-    callsUnder(method),
+    calls,
     file,
     {
       ...options,
@@ -778,7 +784,39 @@ function recognizeMethodStorage(
     },
     method,
   );
-  return { effects, slots };
+  return {
+    effects: [...effects, ...declaredEffects(calls, file, options)],
+    slots,
+  };
+}
+
+/**
+ * What the hooks a pack declared with `@suss/recognize` make of each
+ * call, over the ops in `@suss/recognize/ops`. A hook reads only the ops
+ * on its context, so it runs here unchanged from TypeScript.
+ */
+function declaredEffects(
+  calls: readonly RbNode[],
+  file: string,
+  options: RbStorageOptions,
+): EffectAt[] {
+  const hooks = options.declared ?? [];
+  if (hooks.length === 0) {
+    return [];
+  }
+  const source = rubyFactSource(options.facts);
+  return calls.flatMap((call) => {
+    const ops = factCallOps(nodeId(file, call), source);
+    if (ops === null) {
+      return [];
+    }
+    return hooks.flatMap((hook) =>
+      (hook(call, { ops }) ?? []).map((effect) => ({
+        effect: { ...effect, location: rangeOf(call) },
+        at: call,
+      })),
+    );
+  });
 }
 
 function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {

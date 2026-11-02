@@ -488,11 +488,18 @@ function memberRead(
   key: string,
   source: FactSource,
 ): { object: string; name: string } | null {
-  const [row, ...more] = source.db.lookup("readsProperty", 0, key);
-  if (row === undefined || more.length > 0) {
-    return null;
+  const reads = new Map<string, { object: string; name: string }>();
+  for (const row of source.db.lookup("readsProperty", 0, key)) {
+    const stated = String(row[2]);
+    const name =
+      source.memberName === undefined ? stated : source.memberName(stated);
+    if (name !== null) {
+      const read = { object: String(row[1]), name };
+      reads.set(`${read.object}\u0000${name}`, read);
+    }
   }
-  return { object: String(row[1]), name: String(row[2]) };
+  const [only, ...more] = reads.values();
+  return only === undefined || more.length > 0 ? null : only;
 }
 
 /** The leftmost name of a member read, `aws` in `aws.sqs.send`. */
