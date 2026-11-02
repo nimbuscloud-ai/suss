@@ -100,6 +100,16 @@ function hashAfterRebuilding(copy: BuildCopy, name: string): string {
   }
 }
 
+/**
+ * Dependencies of a package an adapter imports only a part of, which that
+ * part never imports, so no edit to them reaches the adapter. The
+ * adapters import `@suss/recognize/ops`, and only the rest of recognize
+ * reads SQL.
+ */
+const UNUSED_THROUGH: Record<string, readonly string[]> = {
+  "@suss/recognize": ["@suss/sql"],
+};
+
 function declaredSussDependencies(name: string): string[] {
   const found = new Set<string>();
   const pending = [name];
@@ -111,8 +121,13 @@ function declaredSussDependencies(name: string): string[] {
         "utf8",
       ),
     ) as { dependencies?: Record<string, string> };
+    const unused = next === name ? [] : (UNUSED_THROUGH[next] ?? []);
     for (const dependency of Object.keys(manifest.dependencies ?? {})) {
-      if (!dependency.startsWith("@suss/") || found.has(dependency)) {
+      if (
+        !dependency.startsWith("@suss/") ||
+        found.has(dependency) ||
+        unused.includes(dependency)
+      ) {
         continue;
       }
       found.add(dependency);

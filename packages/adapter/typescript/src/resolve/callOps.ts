@@ -255,6 +255,12 @@ export function nodeOfValue(value: ValueOps): Node | null {
   return nodesOfValues.get(value) ?? null;
 }
 
+/** Note the node a value handed to a pack was read from, for ops built somewhere else. */
+export function noteValueNode(value: ValueOps, node: Node): ValueOps {
+  nodesOfValues.set(value, node);
+  return value;
+}
+
 /** What the values inside a call, and the calls inside those, are read through. */
 interface ValueReading {
   readonly resolve: Resolve;
