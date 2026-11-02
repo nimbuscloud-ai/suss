@@ -35,6 +35,11 @@
       "types": "./dist/ast.d.ts",
       "import": "./dist/ast.js",
       "require": "./dist/ast.cjs"
+    },
+    "./ops": {
+      "types": "./dist/factOps.d.ts",
+      "import": "./dist/factOps.js",
+      "require": "./dist/factOps.cjs"
     }
   },
   "files": [
@@ -52,6 +57,7 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "0.38.2",
+    "@suss/datalog": "0.38.2",
     "@suss/extractor": "0.38.2",
     "@suss/sql": "0.38.2"
   },
