@@ -339,6 +339,14 @@ export interface FactSource {
   returnedBy?(call: string): string | null;
   /** Whether a library declared the method the call reaches for, when the adapter can tell. */
   declares?(call: string, module: string): boolean;
+  /**
+   * The ops for a call with the adapter's own members added, such as the
+   * class an argument refers to. Every call the fact ops reach goes
+   * through this, a receiver or an argument as much as the call in hand.
+   */
+  extend?(call: string, ops: CallOps): CallOps;
+  /** The ops for a value, after the adapter has noted which of its own nodes they read, so a slot a pack states can be traced back. */
+  extendValue?(value: string, ops: ValueOps): ValueOps;
 }
 
 /**
