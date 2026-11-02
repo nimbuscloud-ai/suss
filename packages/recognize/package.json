@@ -57,11 +57,11 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "0.38.2",
-    "@suss/datalog": "0.38.2",
     "@suss/extractor": "0.38.2",
     "@suss/sql": "0.38.2"
   },
   "devDependencies": {
+    "@suss/datalog": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

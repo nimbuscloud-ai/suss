@@ -696,7 +696,7 @@ function itemsOf(value: Node, reading: ValueReading): ValueOps[] {
 }
 
 /** The text of a string the source writes out, or null for anything else. */
-function literalText(value: Node): string | null {
+export function literalText(value: Node): string | null {
   return Node.isStringLiteral(value) ||
     Node.isNoSubstitutionTemplateLiteral(value)
     ? value.getLiteralValue()
@@ -709,7 +709,7 @@ function literalText(value: Node): string | null {
  * accepts a number in place of the boolean, so both are read the same
  * way round.
  */
-function literalFlag(value: Node): boolean | null {
+export function literalFlag(value: Node): boolean | null {
   if (Node.isTrueLiteral(value) || Node.isFalseLiteral(value)) {
     return Node.isTrueLiteral(value);
   }

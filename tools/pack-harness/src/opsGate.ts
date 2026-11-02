@@ -9,7 +9,12 @@
 
 import fs from "node:fs";
 
-import { factOpsFor, ResolutionStore } from "@suss/adapter-typescript";
+import {
+  factSourceFor,
+  ResolutionStore,
+  statedFactKey,
+} from "@suss/adapter-typescript";
+import { factCallOps } from "@suss/recognize/ops";
 
 import { isKnownDifference } from "./knownDifferences.js";
 
@@ -45,8 +50,9 @@ export class OpsGate {
     ctx: object,
     fromNodes: Effect[] | null,
   ): void {
-    const ops = factOpsFor(node, this.store, (value, module) =>
-      this.originatesFrom(value, module),
+    const ops = factCallOps(
+      statedFactKey(node, this.store),
+      factSourceFor(this.store, this.originatesFrom),
     );
     let fromFacts: Effect[] | null;
     try {

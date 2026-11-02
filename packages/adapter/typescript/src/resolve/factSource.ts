@@ -7,11 +7,10 @@
 
 import { Node } from "ts-morph";
 
-import { type FactSource, factCallOps } from "@suss/recognize/ops";
-
 import { stringValuesOf, writtenNodeOf } from "../discovery/resolveValue.js";
 import { nodeId } from "../facts/extract.js";
 import { peelValue } from "../walk/unwrap.js";
+import { literalFlag, literalText } from "./callOps.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
   effectArgOf,
@@ -21,7 +20,7 @@ import {
 } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
-import type { CallOps } from "@suss/extractor";
+import type { FactSource } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 
 /** The fact source for one run's store. */
@@ -86,14 +85,10 @@ export function factSourceFor(
   };
 }
 
-/** The fact-based ops for one call, with the call's own facts stated first. */
-export function factOpsFor(
-  call: Node,
-  store: ResolutionStore,
-  originatesFrom?: OriginatesFrom,
-): CallOps | null {
+/** The key the facts give a call, with the call's own facts stated first. */
+export function statedFactKey(call: Node, store: ResolutionStore): string {
   store.factAccess().state(call);
-  return factCallOps(nodeId(call), factSourceFor(store, originatesFrom));
+  return nodeId(call);
 }
 
 /** The expression a computed key is written with, for the value of that entry, or null. */
@@ -118,19 +113,11 @@ function shapeOf(node: Node): "object" | "list" | null {
   return Node.isArrayLiteralExpression(node) ? "list" : null;
 }
 
-/** A string, number or boolean the source writes out, or null for anything else. */
-function literalOf(node: Node): string | number | boolean | null {
-  if (
-    Node.isStringLiteral(node) ||
-    Node.isNoSubstitutionTemplateLiteral(node)
-  ) {
-    return node.getLiteralValue();
-  }
-  if (Node.isNumericLiteral(node)) {
-    return node.getLiteralValue();
-  }
-  if (Node.isTrueLiteral(node) || Node.isFalseLiteral(node)) {
-    return Node.isTrueLiteral(node);
-  }
-  return null;
+/**
+ * A string, or a flag, the source writes out, read as `callOpsFor`
+ * reads them. A number comes back as a flag, true unless it is zero,
+ * since the ops read a number only as a flag.
+ */
+function literalOf(node: Node): string | boolean | null {
+  return literalText(node) ?? literalFlag(node);
 }

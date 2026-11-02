@@ -13,48 +13,17 @@
  * DESIGN.md, under "The ops over the facts", has the fact behind each member.
  */
 
-import type { Database } from "@suss/datalog";
 import type {
   CallOps,
   EffectArg,
+  FactSource,
   ReceiverOrigin,
   UnsettledName,
   ValueEntry,
   ValueOps,
 } from "@suss/extractor";
 
-/** What an adapter hands the ops: its facts, and the reads only it can make. */
-export interface FactSource {
-  readonly db: Database;
-  /** Make sure the facts about this key are in `db`. An adapter that states every fact up front does nothing. */
-  read(key: string): void;
-  /** The key a name or field was written as, by the adapter's own rules, or null. */
-  writtenAs(key: string): string | null;
-  /** Every call the anchor rules reach behind a value. */
-  anchorCalls(key: string): readonly string[];
-  /** Whether the value at this key was imported from the module. */
-  importedFrom(key: string, module: string): boolean;
-  /** Whether a written-out value is an object, a list, or neither. */
-  shapeOf(key: string): "object" | "list" | null;
-  /** The source text at the key. */
-  textOf(key: string): string;
-  /** The literal written at the key, or null when it is not one. */
-  literalOf(key: string): string | number | boolean | null;
-  /** The name the value gives, read the adapter's way. */
-  nameOf(key: string, unsettled: UnsettledName): string | null;
-  /** The name the key of an object entry gives when the source computes it, `{ [table]: ... }`, read the way `nameOf` reads. */
-  computedKeyOf?(held: string, unsettled: UnsettledName): string | null;
-  /** Every string the value can be, when the adapter limits it to a few. */
-  namesOf?(key: string, cap: number): readonly string[] | null;
-  /** The value as an effect argument. */
-  argOf(key: string): EffectArg | null;
-  /** Whether the call goes to a method the project wrote, which no library made. */
-  callsProjectMethod?(call: string): boolean;
-  /** What a call into one of the project's own functions returns, as written. */
-  returnedBy?(call: string): string | null;
-  /** Whether a library declared the method the call reaches for, when the adapter can tell. */
-  declares?(call: string, module: string): boolean;
-}
+export type { FactRows, FactSource } from "@suss/extractor";
 
 /** The ops for the call at `key`, or null when no call is stated there. */
 export function factCallOps(key: string, source: FactSource): CallOps | null {

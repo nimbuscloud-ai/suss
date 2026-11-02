@@ -118,7 +118,7 @@ describe("factCallOps", () => {
     expect(
       put?.isFrom(
         constructedFrom({
-          from: "@aws-sdk/lib-dynamodb",
+          from: ["@aws-sdk/lib-dynamodb"],
           named: ["GetCommand"],
         }),
       ),
@@ -144,6 +144,126 @@ describe("factCallOps", () => {
       true,
     );
     expect(opsAt("set").receiverIsFrom(declaredBy("ioredis"))).toBe(false);
+  });
+});
+
+/**
+ * More facts, for:
+ *
+ *   aws.sqs.send(makeClient(), { [table]: true, plain: "q" }, "text");
+ *   query();
+ *
+ * where makeClient is a project function that returns `new SQS()`.
+ */
+function moreSource(over: Partial<FactSource> = {}): FactSource {
+  const base = source();
+  const db = base.db as Database;
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("call", "sqsSend", "aws.sqs.send");
+  add("readsProperty", "aws.sqs.send", "aws.sqs", "send");
+  add("readsProperty", "aws.sqs", "aws", "sqs");
+  add("callArg", "sqsSend", "0", "make");
+  add("callArg", "sqsSend", "1", "bag");
+  add("callArg", "sqsSend", "2", "str");
+  add("call", "make", "makeClient");
+  add("writtenValue", "make");
+  add("call", "newSqs", "SQS");
+  add("writtenValue", "newSqs");
+  add("objectValue", "bag");
+  add("holdsUnderKey", "bag", "yes");
+  add("holdsProperty", "bag", "plain", "q");
+  add("writtenEntryAt", "bag", "0", "yes", "value");
+  add("writtenEntryAt", "bag", "1", "q", "value");
+  add("writtenValue", "str");
+  add("call", "bare", "query");
+  return {
+    ...base,
+    db,
+    textOf: (key) => key,
+    literalOf: (key) =>
+      ({ yes: true, q: "q", str: "text" })[key as "yes" | "q" | "str"] ?? null,
+    nameOf: (key, unsettled) => (unsettled === "reference" ? `{${key}}` : null),
+    computedKeyOf: (held) => (held === "yes" ? "orders" : null),
+    namesOf: (key) => (key === "str" ? ["text"] : null),
+    shapeOf: (key) => (key === "bag" ? "object" : base.shapeOf(key)),
+    importedFrom: (key, module) =>
+      (key === "aws" && module === "aws-sdk") ||
+      (key === "SQS" && module === "aws-sdk"),
+    returnedBy: (call) => (call === "make" ? "newSqs" : null),
+    ...over,
+  };
+}
+
+describe("factCallOps, further", () => {
+  it("reads a call with no receiver, and a member read more than one level deep", () => {
+    const send = opsAt("sqsSend", moreSource());
+
+    expect(opsAt("bare", moreSource()).receiver()).toBeNull();
+    expect(send.method()).toBe("send");
+    expect(send.isFrom(constructedFrom("aws-sdk"))).toBe(true);
+    expect(send.receiverIsFrom(constructedFrom("aws-sdk"))).toBe(true);
+    expect(send.nameAt(2, "reference")).toBe("{str}");
+    expect(send.nameAt(9, "nothing")).toBeNull();
+    expect(send.callee()).toBeNull();
+  });
+
+  it("reads a construction a project function returns as the argument's call", () => {
+    const made = opsAt("sqsSend", moreSource()).argument(0);
+
+    expect(made?.calleeText()).toBe("makeClient");
+    expect(
+      opsAt("sqsSend", moreSource()).propertyAt(1, "plain", "nothing"),
+    ).toBeNull();
+    expect(
+      opsAt("sqsSend", moreSource()).propertyAt(2, "plain", "nothing"),
+    ).toBeNull();
+  });
+
+  it("says a call to a project method was not made by a library", () => {
+    const project = moreSource({ callsProjectMethod: () => true });
+
+    expect(
+      opsAt("sqsSend", project).receiverIsFrom(constructedFrom("aws-sdk")),
+    ).toBe(false);
+    expect(opsAt("sqsSend", project).isFrom(declaredBy("aws-sdk"))).toBe(false);
+  });
+
+  it("follows a receiver a project function made to the construction it returns", () => {
+    const fromProject = moreSource({
+      writtenAs: (key) => (key === "client" ? "make" : null),
+      importedFrom: (key, module) => key === "SQS" && module === "aws-sdk",
+    });
+
+    expect(
+      opsAt("set", fromProject).receiverIsFrom(constructedFrom("aws-sdk")),
+    ).toBe(true);
+    expect(
+      opsAt("set", fromProject).receiverIsFrom(constructedFrom("ioredis")),
+    ).toBe(false);
+  });
+});
+
+describe("factValueOps, further", () => {
+  it("reads a computed key through the adapter, and a flag the source wrote", () => {
+    const bag = opsAt("sqsSend", moreSource()).valueAt(1);
+    const entries = bag?.entries("nothing") ?? [];
+
+    expect(entries.map((entry) => entry.key)).toEqual(["orders", "plain"]);
+    expect(entries[0]?.value.flag()).toBe(true);
+    expect(bag?.property("plain")?.text()).toBe("q");
+    expect(bag?.text()).toBeNull();
+    expect(bag?.parts()).toBeNull();
+  });
+
+  it("reads a string as one piece, and asks the adapter for its name and its strings", () => {
+    const text = factValueOps("str", moreSource());
+
+    expect(text.parts()).toEqual(["text"]);
+    expect(text.name("reference")).toBe("{str}");
+    expect(text.names?.(4)).toEqual(["text"]);
+    expect(text.entries("nothing")).toEqual([]);
+    expect(text.property("plain")).toBeNull();
+    expect(text.flag()).toBeNull();
   });
 });
 
