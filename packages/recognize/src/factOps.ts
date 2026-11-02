@@ -141,14 +141,21 @@ class FactCall implements CallOps {
       : null;
   }
 
-  /** Whether the library behind `origin` declared this call's method. */
+  /**
+   * Whether the library behind `origin` declared this call's method. An
+   * adapter that cannot read declarations checks what made the receiver
+   * instead, which is where TypeScript's own check ends up when a method
+   * has no declaration to read.
+   */
   declaredBy(origin: ReceiverOrigin): boolean {
+    if (this.member === null) {
+      return false;
+    }
     const declares = this.source.declares;
-    return (
-      this.member !== null &&
-      declares !== undefined &&
-      origin.importedFrom.some((module) => declares(this.key, module))
-    );
+    if (declares === undefined) {
+      return this.receiverConstructed(origin);
+    }
+    return origin.importedFrom.some((module) => declares(this.key, module));
   }
 
   /** Whether the receiver was made from one of the origin's modules, as written or through a project function. */

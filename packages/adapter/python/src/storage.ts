@@ -6,6 +6,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
+import { factCallOps } from "@suss/recognize/ops";
 import { answersFor } from "@suss/resolution";
 
 import {
@@ -21,6 +22,7 @@ import {
   constructionRef,
   fieldArguments,
 } from "./constructions.js";
+import { pythonFactSource } from "./factSource.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { bodyCalls } from "./paths/effects.js";
@@ -35,6 +37,7 @@ import { constructionSitesOf, evaluationScope } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { InvocationRecognizer } from "@suss/extractor";
 import type {
   RawSqlPattern,
   SqlClientPattern,
@@ -744,6 +747,8 @@ export interface StorageLookup {
   readonly rawSql?: readonly RawSqlPattern[];
   /** What a pack says about the client objects its library hands a project. */
   readonly sqlClients?: readonly SqlClientPattern[];
+  /** The hooks packs declared with `@suss/recognize`, run over every call in a body. */
+  readonly declared?: readonly InvocationRecognizer[];
 }
 
 /**
@@ -969,7 +974,35 @@ function recognizeBodyStorage(
   });
   const raw = rawSqlEffects(calls, rawSqlOptionsOf(lookup));
   return {
-    effects: [...effects, ...raw.effects],
+    effects: [...effects, ...raw.effects, ...declaredEffects(calls, lookup)],
     slots: [...slots, ...raw.slots],
   };
+}
+
+/**
+ * What the hooks a pack declared with `@suss/recognize` make of each
+ * call, over the ops in `@suss/recognize/ops`. A hook reads only the ops
+ * on its context, so it runs here unchanged from TypeScript.
+ */
+function declaredEffects(
+  calls: readonly PyNode[],
+  lookup: StorageLookup,
+): EffectAt[] {
+  const hooks = lookup.declared ?? [];
+  if (hooks.length === 0) {
+    return [];
+  }
+  const source = pythonFactSource(lookup.facts);
+  return calls.flatMap((call) => {
+    const ops = factCallOps(nodeId(lookup.factsPath, call), source);
+    if (ops === null) {
+      return [];
+    }
+    return hooks.flatMap((hook) =>
+      (hook(call, { ops }) ?? []).map((effect) => ({
+        effect: { ...effect, location: rangeOf(call) },
+        at: call,
+      })),
+    );
+  });
 }

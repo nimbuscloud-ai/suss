@@ -140,8 +140,8 @@ should not crash the run.
 resolution rules read, so an adapter that states those facts runs every
 declared pack without writing `CallOps` itself. The adapter hands over a
 `FactSource`: its database, and the reads only it can make. The
-TypeScript adapter hands every declared pack these ops, and Python and
-Ruby come next.
+TypeScript and Python adapters hand every declared pack these ops, and
+Ruby comes next. No shipped pack lists Python among its languages yet.
 
 | op | read from |
 |---|---|

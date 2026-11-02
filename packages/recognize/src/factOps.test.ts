@@ -143,7 +143,15 @@ describe("factCallOps", () => {
     expect(opsAt("set", declares).receiverIsFrom(declaredBy("ioredis"))).toBe(
       true,
     );
-    expect(opsAt("set").receiverIsFrom(declaredBy("ioredis"))).toBe(false);
+    expect(opsAt("set", declares).receiverIsFrom(declaredBy("redis"))).toBe(
+      true,
+    );
+  });
+
+  it("checks what made the receiver when the adapter cannot read declarations", () => {
+    expect(opsAt("set").receiverIsFrom(declaredBy("ioredis"))).toBe(true);
+    expect(opsAt("set").receiverIsFrom(declaredBy("redis"))).toBe(false);
+    expect(opsAt("send").isFrom(declaredBy("ioredis"))).toBe(false);
   });
 });
 

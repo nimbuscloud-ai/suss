@@ -180,6 +180,12 @@ export interface SubjectOrigin {
   name: string;
 }
 
+/** Every call the anchor rules reach behind a value. The resolution DESIGN.md says why the caller picks among them. */
+export function anchorCallsOf(db: Database, key: string): string[] {
+  askResolution(db, [key], "wantedAnchor", programFor(db));
+  return db.lookup("wantedAnchorCall", 0, key).map((row) => String(row[1]));
+}
+
 /**
  * Where a name came from, through any aliases and re-exports the project
  * put between it and the import. Empty when nothing in the project
