@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 2077,
-      "covered": 2048,
+      "total": 2130,
+      "covered": 2102,
       "skipped": 0,
-      "pct": 98.6
+      "pct": 98.68
     },
     "statements": {
-      "total": 2138,
-      "covered": 2107,
+      "total": 2192,
+      "covered": 2162,
       "skipped": 0,
-      "pct": 98.55
+      "pct": 98.63
     },
     "functions": {
-      "total": 581,
-      "covered": 573,
+      "total": 588,
+      "covered": 581,
       "skipped": 0,
-      "pct": 98.62
+      "pct": 98.8
     },
     "branches": {
-      "total": 1525,
-      "covered": 1384,
+      "total": 1566,
+      "covered": 1422,
       "skipped": 0,
-      "pct": 90.75
+      "pct": 90.8
     },
     "branchesTrue": {
       "total": 0,
@@ -59,28 +59,54 @@
   },
   "src/cache.ts": {
     "lines": {
-      "total": 325,
-      "covered": 320,
+      "total": 283,
+      "covered": 278,
       "skipped": 0,
-      "pct": 98.46
+      "pct": 98.23
     },
     "functions": {
-      "total": 93,
-      "covered": 91,
+      "total": 77,
+      "covered": 75,
       "skipped": 0,
-      "pct": 97.84
+      "pct": 97.4
     },
     "statements": {
-      "total": 341,
-      "covered": 336,
+      "total": 298,
+      "covered": 293,
       "skipped": 0,
-      "pct": 98.53
+      "pct": 98.32
     },
     "branches": {
-      "total": 211,
-      "covered": 191,
+      "total": 197,
+      "covered": 178,
       "skipped": 0,
-      "pct": 90.52
+      "pct": 90.35
+    }
+  },
+  "src/cacheEviction.ts": {
+    "lines": {
+      "total": 92,
+      "covered": 92,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 22,
+      "covered": 22,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 94,
+      "covered": 94,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 54,
+      "covered": 49,
+      "skipped": 0,
+      "pct": 90.74
     }
   },
   "src/cacheIndex.ts": {
@@ -163,28 +189,28 @@
   },
   "src/cacheShards.ts": {
     "lines": {
-      "total": 92,
-      "covered": 91,
+      "total": 95,
+      "covered": 95,
       "skipped": 0,
-      "pct": 98.91
+      "pct": 100
     },
     "functions": {
-      "total": 27,
-      "covered": 26,
+      "total": 28,
+      "covered": 28,
       "skipped": 0,
-      "pct": 96.29
+      "pct": 100
     },
     "statements": {
-      "total": 93,
-      "covered": 92,
+      "total": 96,
+      "covered": 96,
       "skipped": 0,
-      "pct": 98.92
+      "pct": 100
     },
     "branches": {
-      "total": 53,
-      "covered": 41,
+      "total": 54,
+      "covered": 43,
       "skipped": 0,
-      "pct": 77.35
+      "pct": 79.62
     }
   },
   "src/cacheStamps.ts": {
