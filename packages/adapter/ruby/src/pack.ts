@@ -12,7 +12,7 @@ import type {
   RequestSpellingMetadata,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { DeclaredEntryPoint } from "@suss/extractor";
+import type { DeclaredEntryPoint, InvocationRecognizer } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
@@ -95,6 +95,18 @@ export interface RubyPack {
   storage?: RbStoragePattern[];
   /** The calls the library offers for sending the store a statement the project wrote itself. */
   rawSql?: RbRawSqlPattern[];
+  /**
+   * The hooks a pack declared with `@suss/recognize` compiles to. Each one
+   * is run over every call in a method, with the ops over the facts on its
+   * context, as the TypeScript adapter runs them.
+   */
+  invocationRecognizers?: readonly InvocationRecognizer[];
+  /**
+   * The same pack's hooks for a statement written as SQL, which TypeScript
+   * also runs over a tagged template. Ruby has none, so these run over
+   * every call too.
+   */
+  accessRecognizers?: readonly InvocationRecognizer[];
   /**
    * The methods an action calls with no receiver to read the request,
    * such as Rails' `params` and `request`. An action is handed no
