@@ -37,8 +37,15 @@ const SOURCE = `
   }
 `;
 
-/** Both kinds of ops for each call in the fixture, in source order. */
-function bothOps(): { fromNodes: CallOps; fromFacts: CallOps | null }[] {
+/**
+ * Both kinds of ops for each call in the fixture, in source order. A
+ * function the run reaches as a library gets no import check from the
+ * store, so `storeImports: false` builds the ops the way it gets them.
+ */
+function bothOps({ storeImports = true } = {}): {
+  fromNodes: CallOps;
+  fromFacts: CallOps | null;
+}[] {
   const project = createTestProject();
   project.createSourceFile(
     "/node_modules/tapedeck/package.json",
@@ -47,8 +54,10 @@ function bothOps(): { fromNodes: CallOps; fromFacts: CallOps | null }[] {
   project.createSourceFile("/node_modules/tapedeck/index.d.ts", LIBRARY);
   const file = project.createSourceFile("/repo.ts", SOURCE);
   const store = new ResolutionStore();
-  const originatesFrom = (value: Node, module: string): boolean =>
-    store.importOriginsOf(value, [module]).length > 0;
+  const originatesFrom = storeImports
+    ? (value: Node, module: string): boolean =>
+        store.importOriginsOf(value, [module]).length > 0
+    : undefined;
   const calls: CallExpression[] = [];
   file.forEachDescendant((node) => {
     if (Node.isCallExpression(node)) {
@@ -59,7 +68,7 @@ function bothOps(): { fromNodes: CallOps; fromFacts: CallOps | null }[] {
     fromNodes: callOpsFor(call, {
       resolve: (value) => store.resolveWrittenValue(value),
       resolution: store,
-      originatesFrom,
+      ...(originatesFrom === undefined ? {} : { originatesFrom }),
       anchorCallsOf: (value, matches) => store.anchorCallsOf(value, matches),
     }),
     fromFacts: factCallOps(
@@ -126,5 +135,19 @@ describe("the fact source", () => {
       method: "run",
       statement: ["SELECT * FROM tracks WHERE id = ", ""],
     });
+  });
+
+  it("finds the construction behind a receiver through the file's import when the store's check is missing", () => {
+    const anchorsOf = (storeImports: boolean) =>
+      bothOps({ storeImports })
+        .filter(({ fromNodes }) => fromNodes.method() !== null)
+        .map(({ fromNodes, fromFacts }) => [
+          answers(fromNodes).anchor,
+          answers(fromFacts).anchor,
+        ]);
+    const anchors = anchorsOf(false);
+
+    expect(anchors[0]).toEqual(["Deck", "Deck"]);
+    expect(anchors).toEqual(anchorsOf(true));
   });
 });
