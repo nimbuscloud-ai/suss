@@ -391,6 +391,12 @@ A model can also take a statement, through `find_by_sql` and `count_by_sql`. `st
 
 A library with its own bind placeholder produces statements no SQL dialect parses. `bindPlaceholder` declares the token, such as ActiveRecord's `?`. The adapter splits the statement at each one, so the parser sees a parameter where the value would go.
 
+## A pack declared with `@suss/recognize`
+
+A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`, compiles to hooks that read only the ops on their context. A `RubyPack` takes those hooks as `invocationRecognizers` and `accessRecognizers`, as a TypeScript pack does, and both lists run over every call in a method, inside `methodStorage` beside the storage patterns.
+
+`rubyFactSource` hands the ops from `@suss/recognize/ops` what only Ruby can read. A call's callee is keyed on the method's name, so its text is the receiver and the name as written, `cache.get`. A class's own method is stated under a spelling of its own, which the ops read back as the plain name. Ruby has no imports, so a value comes from a library when the constant it was made from is the library's constant or one inside it: `Aws::SQS::Client.new` comes from `Aws`. A pack that serves Ruby lists that constant beside the module name the other languages import.
+
 ## What a read picked and what a write set
 
 `selector` lists what the chain picks rows by. It has the keywords of every read along the chain, whether written bare or inside braces, plus the primary key when a method in `byPrimaryKey` gets a positional argument. On a write, `fields` lists what the write was given as data. On a read, it lists only the columns the call asked for by name:

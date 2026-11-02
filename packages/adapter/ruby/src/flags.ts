@@ -95,7 +95,7 @@ function flagsDeclaredIn(construction: RbNode): string[] {
 function flagOf(args: readonly RbNode[]): string | null {
   const written = args
     .map((arg) => stringLiteralValue(arg))
-    .filter((text): text is string => text !== null && text.startsWith("-"));
+    .filter((text): text is string => text?.startsWith("-"));
   const chosen =
     written.find((text) => text.startsWith("--")) ?? written[0] ?? null;
   if (chosen === null) {
