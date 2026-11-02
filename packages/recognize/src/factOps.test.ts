@@ -243,6 +243,39 @@ describe("factCallOps, further", () => {
   });
 });
 
+describe("factCallOps, where nothing settles", () => {
+  it("finds no receiver construction for a bare call, or for a receiver written as nothing", () => {
+    const unwritten = source({ writtenAs: () => null });
+
+    expect(
+      opsAt("bare", moreSource()).receiverIsFrom(constructedFrom("aws-sdk")),
+    ).toBe(false);
+    expect(opsAt("set", unwritten).receiver()).toBeNull();
+    expect(
+      opsAt("set", unwritten).receiverIsFrom(constructedFrom("ioredis")),
+    ).toBe(false);
+  });
+
+  it("checks the export a receiver was made from when the origin lists some", () => {
+    expect(
+      opsAt("set").receiverIsFrom(
+        constructedFrom({ from: ["ioredis"], named: ["Cluster"] }),
+      ),
+    ).toBe(false);
+    expect(
+      opsAt("set").receiverIsFrom(
+        constructedFrom({ from: ["ioredis"], named: ["Redis"] }),
+      ),
+    ).toBe(true);
+  });
+
+  it("reads no property off an argument the call does not pass", () => {
+    expect(opsAt("send").propertyAt(5, "TableName", "nothing")).toBeNull();
+    expect(opsAt("send").valueAt(5)).toBeNull();
+    expect(opsAt("send").argument(5)).toBeNull();
+  });
+});
+
 describe("factValueOps, further", () => {
   it("reads a computed key through the adapter, and a flag the source wrote", () => {
     const bag = opsAt("sqsSend", moreSource()).valueAt(1);
