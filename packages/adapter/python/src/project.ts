@@ -530,6 +530,10 @@ async function runPython(
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
   const sqlClients = options.packs.flatMap((pack) => pack.sqlClients ?? []);
+  const declaredHooks = options.packs.flatMap((pack) => [
+    ...(pack.invocationRecognizers ?? []),
+    ...(pack.accessRecognizers ?? []),
+  ]);
   const modelQueries = options.packs.flatMap((pack) => pack.models ?? []);
   // A module's public exports are discovered like a pack's routes.
   const declaredModules = settlePythonModules(options.modules);
@@ -574,6 +578,8 @@ async function runPython(
     // the client object the statement is passed to.
     rawSqlPatterns.length > 0 ||
     sqlClients.length > 0 ||
+    // A declared pack's hooks read the value facts through the ops.
+    declaredHooks.length > 0 ||
     // A task's receiver is resolved through the rules, and so is its decorator.
     jobQueueEntries(options.packs).length > 0 ||
     options.packs.some((pack) => (pack.tests ?? []).length > 0);
@@ -639,7 +645,8 @@ async function runPython(
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
     storagePatterns.length > 0 ||
     rawSqlPatterns.length > 0 ||
-    sqlClients.length > 0
+    sqlClients.length > 0 ||
+    declaredHooks.length > 0
       ? {
           facts: db,
           factsPath: file.file,
@@ -648,6 +655,7 @@ async function runPython(
           couldMatch,
           rawSql: rawSqlPatterns,
           sqlClients,
+          declared: declaredHooks,
         }
       : undefined;
 

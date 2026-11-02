@@ -289,6 +289,12 @@ The adapter reads a `statements` argument through the value evaluator, so an f-s
 
 For a table written as `project.dataset.table` or `dataset.table`, the adapter puts the last part in `container` and the part before it in `scope`. A part the statement left as a parameter contributes nothing. So a name whose group part is unsettled keeps `scope` at `default`, and a statement whose table is unsettled does not produce an effect. Neither do `BEGIN`, `COMMIT`, and the other statements that do not touch a table.
 
+## A pack declared with `@suss/recognize`
+
+A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`, compiles to hooks that read only the ops on their context. A `PythonPack` takes those hooks as `invocationRecognizers` and `accessRecognizers`, the same two lists a TypeScript pack has. TypeScript runs the second list over tagged templates as well, and Python has none, so both lists run over every call in a body. They run inside `bodyStorage`, beside the storage patterns, so their effects are kept and placed the same way.
+
+Each hook gets the ops from `@suss/recognize/ops` over this run's facts. `pythonFactSource` hands those ops what only Python can read: a literal off its node, a name through the value evaluator, an import's origin through `originsOf`, and what a name was written as through `writtenValueOf`. A bare name is keyed by its scope and has no node of its own, so a name is read through what it was written as. Python cannot tell which library declared a method, so a `declaredBy` origin is checked through the construction behind the receiver, as `constructedFrom` is.
+
 ## What a model query gives back
 
 A handler also uses a query to get an instance of one of the project's own model classes, and the methods it then calls on that instance are project code:
