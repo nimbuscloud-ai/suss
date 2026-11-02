@@ -12,6 +12,8 @@ import {
 } from "@suss/adapter-typescript";
 import { createTestProject } from "@suss/test-project";
 
+import { OpsGate } from "./opsGate.js";
+
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   AccessRecognizer,
@@ -171,6 +173,7 @@ function effectsOver(
     store.importOriginsOf(value, [module]).length > 0;
   const anchors = (value: Node, matches: (call: Node) => boolean): Node[] =>
     store.anchorCallsOf(value, matches);
+  const gate = new OpsGate(pack, originatesFrom);
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
     if (Node.isCallExpression(node)) {
@@ -179,6 +182,7 @@ function effectsOver(
         invocations,
         node,
         invocationContextFor(node, store, originatesFrom, anchors),
+        gate,
       );
     }
     // The access walk reaches a tagged template as well, which is how a
@@ -193,6 +197,7 @@ function effectsOver(
         accesses,
         node,
         accessContextFor(node, sourceFile, store, originatesFrom, anchors),
+        Node.isPropertyAccessExpression(node) ? null : gate,
       );
     }
   });
@@ -227,15 +232,17 @@ function contributedBy(
   ];
 }
 
-/** What one set of recognizers makes of one node. */
+/** What one set of recognizers makes of one node, each answer checked against the fact ops when a gate is given. */
 function collect(
   effects: Effect[],
   recognizers: ReadonlyArray<(node: Node, ctx: unknown) => Effect[] | null>,
   node: Node,
-  ctx: unknown,
+  ctx: object,
+  gate: OpsGate | null,
 ): void {
   for (const recognizer of recognizers) {
     const emitted = recognizer(node, ctx);
+    gate?.compare(recognizer, node, ctx, emitted);
     if (emitted !== null) {
       effects.push(...emitted);
     }

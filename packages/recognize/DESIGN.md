@@ -134,6 +134,34 @@ On an adapter with no ops, a chain matches nothing and does not throw.
 A pack loaded into the wrong adapter is a configuration mistake, and it
 should not crash the run.
 
+## The ops over the facts
+
+`@suss/recognize/ops` works out what each op returns from the facts the
+resolution rules read, so an adapter that states those facts runs every
+declared pack without writing `CallOps` itself. The adapter hands over a
+`FactSource`: its database, and the reads only it can make. Nothing in
+production uses these ops yet. The TypeScript adapter moves onto them
+next, and Python and Ruby after it.
+
+| op | read from |
+|---|---|
+| `method()`, `calleeText()` | `call(r, c)`, then `readsProperty(c, o, n)` for the method, or the source text of `c` |
+| `argumentCount()`, `argument(k)`, `nameAt(k)`, `valueAt(k)` | `callArg(r, k, a)`, and `callArgCount` where an adapter states it |
+| `receiver()`, `callee()`, `argument(k)` | a name or field followed to what it was written as, through the adapter's `writtenAs` |
+| `propertyAt`, `property`, `entries`, `items` | `holdsProperty`, `writtenEntryAt` and `holdsUnderKey`, with a computed key read through `computedKeyOf` |
+| `parts()`, `holes()`, `interpolated()` | `partAt` and `holeAt` |
+| `text()`, `flag()`, `name()`, `names()`, `asArg()` | the adapter's own reading of the value, `literalOf`, `nameOf`, `namesOf` and `argOf` |
+| `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
+| `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
+| `anchorCall` | the adapter's `anchorCalls`, with the single-answer policy |
+
+`classAt`, `namedCallee`, `parameterReadsAt`, `statesSlots` and the two
+batching hints are left out. Each comes in with the pack that reads it.
+
+The pack harness runs every recognizer a pack test runs a second time
+over these ops, and fails the test on any difference that
+`tools/pack-harness/src/knownDifferences.ts` does not list with a reason.
+
 ## Reaching a call next to this one
 
 In two of the three storage call patterns, what a pack needs is on a

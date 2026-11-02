@@ -91,11 +91,15 @@ partAt(t, k, s)             the template string t writes the text s at
                             position k, counting its parts and its holes
                             together in source order: a template literal,
                             an f-string, or a Ruby string or symbol with
-                            #{} in it. No rule reads it yet
+                            #{} in it. A tagged template, sql`...`, has
+                            its template's pieces under the whole
+                            expression. The ops in @suss/recognize/ops
+                            read it, and no rule does
 holeAt(t, k, x)             the template t puts the value of x at position
                             k. Python and Ruby state each string of
                             adjacent strings, "a" f"{b}", as a hole of the
-                            whole. No rule reads it yet
+                            whole. The ops in @suss/recognize/ops read it,
+                            and no rule does
 compares(x, a, b)           the comparison x compares a with b, whatever
                             the operator, as User.id == user_id in
                             SQLAlchemy or price > 100 in a Sequel block.

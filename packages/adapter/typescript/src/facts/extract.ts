@@ -1062,6 +1062,19 @@ export function emitValue(
     addTemplateRows(rowsInto(db), id, templatePieces(table, expression));
   }
 
+  // A tag is handed the template's pieces, so the pieces go under the
+  // whole expression, which is what an argument written that way is.
+  if (Node.isTaggedTemplateExpression(expression)) {
+    const template = expression.getTemplate();
+    addTemplateRows(
+      rowsInto(db),
+      id,
+      Node.isTemplateExpression(template)
+        ? templatePieces(table, template)
+        : [{ text: template.getLiteralText() }],
+    );
+  }
+
   // Everything left is written out here and refers to nothing further:
   // a template literal, a tag call's result, a ternary. A name for one
   // of these ends its chain here, and the caller decides whether what
