@@ -173,7 +173,7 @@ function effectsOver(
     store.importOriginsOf(value, [module]).length > 0;
   const anchors = (value: Node, matches: (call: Node) => boolean): Node[] =>
     store.anchorCallsOf(value, matches);
-  const gate = new OpsGate(pack, originatesFrom);
+  const gate = new OpsGate(pack, store, originatesFrom);
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
     if (Node.isCallExpression(node)) {
@@ -241,8 +241,19 @@ function collect(
   gate: OpsGate | null,
 ): void {
   for (const recognizer of recognizers) {
-    const emitted = recognizer(node, ctx);
-    gate?.compare(recognizer, node, ctx, emitted);
+    // A recognizer that never reads the ops gives the same answer over
+    // either, and some keep state that a second run would see.
+    let readOps = false;
+    const watched = new Proxy(ctx, {
+      get: (target, property, receiver) => {
+        readOps ||= property === "ops";
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const emitted = recognizer(node, watched);
+    if (readOps) {
+      gate?.compare(recognizer, node, ctx, emitted);
+    }
     if (emitted !== null) {
       effects.push(...emitted);
     }

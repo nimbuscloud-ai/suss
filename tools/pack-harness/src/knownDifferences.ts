@@ -13,17 +13,7 @@ interface KnownDifference {
   readonly reason: string;
 }
 
-const NO_CLASS_AT =
-  "typeorm reads the table off the entity class through classAt, which the fact ops leave out until typeorm moves onto them";
-
-const NO_SELECTOR_READS =
-  "zustand reads a selector through namedCallee and parameterReadsAt, which the fact ops leave out until zustand moves onto them";
-
-const KNOWN: readonly KnownDifference[] = [
-  { pack: "typeorm", call: "this.orders.", reason: NO_CLASS_AT },
-  { pack: "typeorm", call: "this.lines.", reason: NO_CLASS_AT },
-  { pack: "zustand", call: "useAppStore((s)", reason: NO_SELECTOR_READS },
-];
+const KNOWN: readonly KnownDifference[] = [];
 
 export function isKnownDifference(difference: OpsDifference): boolean {
   return KNOWN.some(
