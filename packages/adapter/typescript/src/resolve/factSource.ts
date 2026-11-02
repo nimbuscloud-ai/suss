@@ -10,7 +10,12 @@ import { Node } from "ts-morph";
 import { stringValuesOf, writtenNodeOf } from "../discovery/resolveValue.js";
 import { nodeId } from "../facts/extract.js";
 import { peelValue } from "../walk/unwrap.js";
-import { literalFlag, literalText } from "./callOps.js";
+import {
+  anchorAccepts,
+  literalFlag,
+  literalText,
+  noteValueNode,
+} from "./callOps.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
   effectArgOf,
@@ -20,18 +25,29 @@ import {
 } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
-import type { FactSource } from "@suss/extractor";
+import type { CallOps, FactSource } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
+
+/** What a caller can put in place of the store's own reads. */
+export interface FactSourceOptions {
+  /** What a name was written as, such as a walk's answers asked in one question for every call it visits. */
+  readonly resolve?: (value: Node) => Node | null;
+  /** The adapter's own members for the call at a node, added to the fact ops for it. */
+  readonly extend?: (call: Node, ops: CallOps) => CallOps;
+}
 
 /** The fact source for one run's store. */
 export function factSourceFor(
   store: ResolutionStore,
   originatesFrom?: OriginatesFrom,
+  options: FactSourceOptions = {},
 ): FactSource {
   const access = store.factAccess();
   const nodeOf = (key: string): Node | null => access.nodeOf(key) ?? null;
-  const resolve = (value: Node): Node | null =>
-    store.resolveWrittenValue(value);
+  const resolve =
+    options.resolve ??
+    ((value: Node): Node | null => store.resolveWrittenValue(value));
+  const { extend } = options;
   const keyOf = (node: Node | null): string | null =>
     node === null ? null : nodeId(peelValue(node));
   const at = <T>(key: string, empty: T, read: (node: Node) => T): T => {
@@ -41,10 +57,24 @@ export function factSourceFor(
 
   return {
     db: access.db,
+    ...(extend === undefined
+      ? {}
+      : { extend: (key, ops) => at(key, ops, (node) => extend(node, ops)) }),
+    extendValue: (key, ops) => at(key, ops, (node) => noteValueNode(ops, node)),
     read: (key) => at(key, undefined, access.state),
     writtenAs: (key) => at(key, null, (node) => keyOf(resolve(node))),
-    anchorCalls: (key) =>
-      at(key, [], (node) => store.anchorCallsOf(node, () => true).map(nodeId)),
+    // TypeScript keeps callOpsFor's anchor check, which asks only the
+    // store's import origins, so a run gives the same answer as before.
+    anchorCalls: (key, origin) =>
+      originatesFrom === undefined
+        ? []
+        : at(key, [], (node) =>
+            store
+              .anchorCallsOf(node, (candidate) =>
+                anchorAccepts(candidate, origin, originatesFrom),
+              )
+              .map(nodeId),
+          ),
     importedFrom: (key, module) =>
       at(key, false, (node) => isImportedFrom(node, module, originatesFrom)),
     shapeOf: (key) => at(key, null, shapeOf),

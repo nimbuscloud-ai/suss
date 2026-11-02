@@ -48,17 +48,13 @@ import {
   withDescentStops,
 } from "../walk/descent.js";
 import { climbSyntax, peelSyntax } from "../walk/unwrap.js";
-import {
-  callOpsFor,
-  nodeOfValue,
-  type WalkArguments,
-  walkArguments,
-} from "./callOps.js";
+import { nodeOfValue, type WalkArguments, walkArguments } from "./callOps.js";
 import {
   constructionCallee,
   constructorCalledAt,
   defaultsRunBy,
 } from "./functionBehind.js";
+import { opsOverFacts } from "./opsOverFacts.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -265,7 +261,7 @@ export function invocationContextFor(
     resolveWrittenValue,
     ...(resolution === undefined ? {} : { resolution }),
     get ops(): CallOps {
-      ops ??= callOpsFor(call, {
+      ops ??= opsOverFacts(call, {
         resolve: resolveWrittenValue,
         resolution,
         originatesFrom,
@@ -722,7 +718,7 @@ export function accessContextFor(
   return {
     ...given,
     get ops(): CallOps {
-      ops ??= callOpsFor(node, {
+      ops ??= opsOverFacts(node, {
         resolve: resolveWrittenValue,
         resolution,
         originatesFrom,
