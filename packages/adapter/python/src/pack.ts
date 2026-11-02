@@ -17,6 +17,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   DeclaredEntryPoint,
+  InvocationRecognizer,
   LibraryEnvVars,
   RedirectOption,
 } from "@suss/extractor";
@@ -69,6 +70,18 @@ export interface PythonPack {
   rawSql?: RawSqlPattern[];
   /** The client objects the library hands a project, and the calls on one that reach the database. */
   sqlClients?: SqlClientPattern[];
+  /**
+   * The hooks a pack declared with `@suss/recognize` compiles to. Each one
+   * is run over every call in a body, with the ops over the facts on its
+   * context, as the TypeScript adapter runs them.
+   */
+  invocationRecognizers?: readonly InvocationRecognizer[];
+  /**
+   * The same pack's hooks for a statement written as SQL, which TypeScript
+   * also runs over a tagged template. Python has none, so these run over
+   * every call too.
+   */
+  accessRecognizers?: readonly InvocationRecognizer[];
   /** Functions the library exports that hand back the argument at `argument`, such as a decorator that returns the function it was given. */
   transparentWrappers?: UnwrapsByName[];
   /**

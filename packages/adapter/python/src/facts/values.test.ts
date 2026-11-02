@@ -804,7 +804,7 @@ describe("python value facts", () => {
       ),
     );
     expect(rows(db, "paramOf").map((row) => [row[1], row[2]])).toEqual([
-      ["0", rows(db, "func")[0]?.[0] + "#key"],
+      ["0", `${rows(db, "func")[0]?.[0]}#key`],
     ]);
     expect(rows(db, "paramNamed").map((row) => row[1])).toEqual([
       "self",
