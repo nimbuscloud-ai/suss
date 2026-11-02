@@ -139,9 +139,9 @@ should not crash the run.
 `@suss/recognize/ops` works out what each op returns from the facts the
 resolution rules read, so an adapter that states those facts runs every
 declared pack without writing `CallOps` itself. The adapter hands over a
-`FactSource`: its database, and the reads only it can make. Nothing in
-production uses these ops yet. The TypeScript adapter moves onto them
-next, and Python and Ruby after it.
+`FactSource`: its database, and the reads only it can make. The
+TypeScript adapter hands every declared pack these ops, and Python and
+Ruby come next.
 
 | op | read from |
 |---|---|
@@ -157,9 +157,12 @@ next, and Python and Ruby after it.
 
 `classAt`, `namedCallee`, `parameterReadsAt`, `statesSlots` and the two
 batching hints are left out. Each comes in with the pack that reads it.
+Until then an adapter adds them through `FactSource.extend`, which every
+call the ops reach goes through, and TypeScript takes them from
+`callOpsFor` at the same node.
 
-The pack harness runs every recognizer a pack test runs a second time
-over these ops, and fails the test on any difference that
+The pack harness runs every recognizer that reads the ops a second time
+over `callOpsFor`, and fails the test on any difference that
 `tools/pack-harness/src/knownDifferences.ts` does not list with a reason.
 
 ## Reaching a call next to this one

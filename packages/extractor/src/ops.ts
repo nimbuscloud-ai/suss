@@ -315,8 +315,12 @@ export interface FactSource {
   read(key: string): void;
   /** The key a name or field was written as, by the adapter's own rules, or null. */
   writtenAs(key: string): string | null;
-  /** Every call the anchor rules reach behind a value. */
-  anchorCalls(key: string): readonly string[];
+  /**
+   * Every call the anchor rules reach behind a value. An adapter may leave
+   * out the calls its own check of the origin turns down; the ops check
+   * each one that comes back against the origin as well.
+   */
+  anchorCalls(key: string, origin: ReceiverOrigin): readonly string[];
   /** Whether the value at this key was imported from the module. */
   importedFrom(key: string, module: string): boolean;
   /** Whether a written-out value is an object, a list, or neither. */
@@ -339,6 +343,14 @@ export interface FactSource {
   returnedBy?(call: string): string | null;
   /** Whether a library declared the method the call reaches for, when the adapter can tell. */
   declares?(call: string, module: string): boolean;
+  /**
+   * The ops for a call with the adapter's own members added, such as the
+   * class an argument refers to. Every call the fact ops reach goes
+   * through this, a receiver or an argument as much as the call in hand.
+   */
+  extend?(call: string, ops: CallOps): CallOps;
+  /** The ops for a value, after the adapter has noted which of its own nodes they read, so a slot a pack states can be traced back. */
+  extendValue?(value: string, ops: ValueOps): ValueOps;
 }
 
 /**

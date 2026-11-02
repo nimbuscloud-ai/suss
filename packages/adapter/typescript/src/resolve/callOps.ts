@@ -255,6 +255,12 @@ export function nodeOfValue(value: ValueOps): Node | null {
   return nodesOfValues.get(value) ?? null;
 }
 
+/** Note the node a value handed to a pack was read from, for ops built somewhere else. */
+export function noteValueNode(value: ValueOps, node: Node): ValueOps {
+  nodesOfValues.set(value, node);
+  return value;
+}
+
 /** What the values inside a call, and the calls inside those, are read through. */
 interface ValueReading {
   readonly resolve: Resolve;
@@ -505,6 +511,31 @@ function decoratorOn(
  * origin and keeps the single-answer policy: two distinct matches say
  * nothing, since picking one would depend on fact order.
  */
+/**
+ * Whether a call the anchor rules reached is the construction the origin
+ * asks for. Only the store's import origins count here, where a
+ * receiver's own check also asks the checker.
+ */
+export function anchorAccepts(
+  candidate: Node,
+  origin: ReceiverOrigin,
+  originatesFrom: OriginatesFrom,
+): boolean {
+  if (!Node.isCallExpression(candidate) && !Node.isNewExpression(candidate)) {
+    return false;
+  }
+  if (
+    origin.origin === "constructed" &&
+    origin.named !== undefined &&
+    !origin.named.includes(constructorName(candidate))
+  ) {
+    return false;
+  }
+  const callee = calleeOf(candidate);
+  const root = rootIdentifier(callee) ?? callee;
+  return origin.importedFrom.some((module) => originatesFrom(root, module));
+}
+
 function anchorCallBehind(
   subject: Node,
   origin: ReceiverOrigin,
@@ -519,20 +550,9 @@ function anchorCallBehind(
     return null;
   }
 
-  const found = anchorCallsOf(subject, (candidate) => {
-    if (!Node.isCallExpression(candidate) && !Node.isNewExpression(candidate)) {
-      return false;
-    }
-    const candidateCallee = calleeOf(candidate as Called);
-    if (
-      origin.named !== undefined &&
-      !origin.named.includes(constructorName(candidate))
-    ) {
-      return false;
-    }
-    const root = rootIdentifier(candidateCallee) ?? candidateCallee;
-    return origin.importedFrom.some((module) => originatesFrom(root, module));
-  });
+  const found = anchorCallsOf(subject, (candidate) =>
+    anchorAccepts(candidate, origin, originatesFrom),
+  );
 
   const distinct = [...new Set(found)];
   const only = distinct[0];

@@ -1,26 +1,23 @@
 /**
- * Every recognizer a pack test runs is run a second time over the ops in
- * `@suss/recognize/ops`, which read the facts instead of ts-morph nodes.
- * A difference fails the test unless knownDifferences.ts lists it with a
- * reason. The comparison uses a store of its own, so the second run
- * cannot change what the pack's own test sees. `SUSS_OPS_GATE=report.jsonl`
+ * Every recognizer a pack test runs is run a second time over
+ * `callOpsFor`, which reads ts-morph nodes, while the test itself runs
+ * over the ops the adapter hands a pack, which read the facts. A
+ * difference fails the test unless knownDifferences.ts lists it with a
+ * reason. The second run uses the test's own store, which a test may
+ * have set up beyond what a fresh one knows. `SUSS_OPS_GATE=report.jsonl`
  * writes every difference to that file instead of failing.
  */
 
 import fs from "node:fs";
 
-import {
-  factSourceFor,
-  ResolutionStore,
-  statedFactKey,
-} from "@suss/adapter-typescript";
-import { factCallOps } from "@suss/recognize/ops";
+import { Node } from "ts-morph";
+
+import { callOpsFor, type ResolutionStore } from "@suss/adapter-typescript";
 
 import { isKnownDifference } from "./knownDifferences.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
-import type { Node } from "ts-morph";
+import type { CallOps, PatternPack } from "@suss/extractor";
 
 type Recognizer = (node: Node, ctx: unknown) => Effect[] | null;
 
@@ -34,31 +31,24 @@ export interface OpsDifference {
 
 /** The comparison for one run of a pack over one file. */
 export class OpsGate {
-  private readonly store: ResolutionStore;
-
   constructor(
     private readonly pack: PatternPack,
+    private readonly store: ResolutionStore,
     private readonly originatesFrom: (value: Node, module: string) => boolean,
-  ) {
-    this.store = ResolutionStore.forPacks([pack]);
-  }
+  ) {}
 
-  /** Run `recognizer` over the fact ops and compare with what it gave over the node ops. */
+  /** Run `recognizer` over the node ops and compare with what it gave over the fact ops. */
   compare(
     recognizer: Recognizer,
     node: Node,
     ctx: object,
-    fromNodes: Effect[] | null,
+    fromFacts: Effect[] | null,
   ): void {
-    const ops = factCallOps(
-      statedFactKey(node, this.store),
-      factSourceFor(this.store, this.originatesFrom),
-    );
-    let fromFacts: Effect[] | null;
+    let fromNodes: Effect[] | null;
     try {
-      fromFacts = recognizer(node, { ...ctx, ops: ops ?? undefined });
+      fromNodes = recognizer(node, { ...ctx, ops: this.nodeOps(node) });
     } catch (error) {
-      fromFacts = [{ thrown: String(error) } as unknown as Effect];
+      fromNodes = [{ thrown: String(error) } as unknown as Effect];
     }
     const nodes = JSON.stringify(fromNodes ?? []);
     const facts = JSON.stringify(fromFacts ?? []);
@@ -82,5 +72,22 @@ export class OpsGate {
     throw new Error(
       `The ops over the facts gave ${this.pack.name} a different answer at ${difference.call}.\n  from nodes: ${nodes}\n  from facts: ${facts}\nFix the difference, or list it in tools/pack-harness/src/knownDifferences.ts with the reason.`,
     );
+  }
+
+  private nodeOps(node: Node): CallOps | undefined {
+    if (
+      !Node.isCallExpression(node) &&
+      !Node.isNewExpression(node) &&
+      !Node.isTaggedTemplateExpression(node)
+    ) {
+      return undefined;
+    }
+    const store = this.store;
+    return callOpsFor(node, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      resolution: store,
+      originatesFrom: this.originatesFrom,
+      anchorCallsOf: (value, matches) => store.anchorCallsOf(value, matches),
+    });
   }
 }

@@ -32,12 +32,14 @@ export function factCallOps(key: string, source: FactSource): CallOps | null {
   if (callee === null) {
     return null;
   }
-  return new FactCall(key, callee, source);
+  const ops = new FactCall(key, callee, source);
+  return source.extend?.(key, ops) ?? ops;
 }
 
 /** The ops for the value at `key`. */
 export function factValueOps(key: string, source: FactSource): ValueOps {
-  return new FactValue(key, source);
+  const ops = new FactValue(key, source);
+  return source.extendValue?.(key, ops) ?? ops;
 }
 
 class FactCall implements CallOps {
@@ -130,7 +132,7 @@ class FactCall implements CallOps {
     const subject = this.member?.object ?? this.calleeKey;
     const matching = new Set(
       this.source
-        .anchorCalls(subject)
+        .anchorCalls(subject, origin)
         .filter((candidate) => this.madeFrom(origin, candidate)),
     );
     const [one] = matching;
