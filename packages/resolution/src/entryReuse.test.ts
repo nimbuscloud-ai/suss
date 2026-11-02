@@ -12,6 +12,7 @@ import {
   packHashes,
   type StoredDependencies,
   type StoredFacts,
+  stillValid,
 } from "./dependencyLedger.js";
 import {
   EntryReuse,
@@ -23,6 +24,7 @@ import {
   type StoredWalkRecord,
   walkRecordsByFile,
 } from "./entryReuse.js";
+import { noteFileMissing, observeDemand } from "./program.js";
 
 const ORDERS = "/project/orders.rb";
 const BILLING = "/project/billing.rb";
@@ -260,6 +262,30 @@ describe("replayChanges", () => {
     expect(changes.lookAgain(`file ${ADDED}`)).toBe("present");
     expect(changes.lookAgain(`file ${BILLING}`)).toBe("");
     expect(changes.lookAgain("router x")).toBe("asked router x");
+  });
+
+  it("does work again that looked for a file a later run has", () => {
+    const before = new Database();
+    const ledger = new DependencyLedger([ORDERS]);
+    observeDemand(before, ledger);
+    const charge = noDependencies();
+    ledger.charging(charge, () => noteFileMissing(before, ADDED));
+    const stored = ledger.store(charge);
+    const changesWith = (files: string[]) =>
+      replayChanges({
+        files,
+        plan: {
+          changed: new Set(files.filter((file) => file === ADDED)),
+          added: new Set(files.filter((file) => file === ADDED)),
+          removed: new Set(),
+        },
+        records: new Map(),
+        ...factsOf(Object.fromEntries(files.map((file) => [file, []]))),
+        lookAgain: () => null,
+      });
+
+    expect(stillValid(stored, changesWith([ORDERS]))).toBe(true);
+    expect(stillValid(stored, changesWith([ORDERS, ADDED]))).toBe(false);
   });
 
   it("counts a removed file and every key in it as changed", () => {
