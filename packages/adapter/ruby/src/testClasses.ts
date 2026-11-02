@@ -157,7 +157,9 @@ function testMethodName(
   pattern: RbTestClasses,
 ): string | null {
   const name = statement.type === "method" ? field(statement, "name") : null;
-  return name?.text.startsWith(pattern.testMethodPrefix) ? name.text : null;
+  return name !== null && name.text.startsWith(pattern.testMethodPrefix)
+    ? name.text
+    : null;
 }
 
 /** The block of a `test "..." do` call, or null when the statement is none. */
