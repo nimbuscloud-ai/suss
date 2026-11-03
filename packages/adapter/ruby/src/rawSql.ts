@@ -16,6 +16,7 @@ import { piecesOf } from "@suss/values";
 
 import { argumentAt, field, rangeOf, readCallArgs } from "./ast.js";
 import { classBehind, enclosingClassKey, reachesBase } from "./baseClass.js";
+import { calleeText } from "./paths/effects.js";
 import { compoundName } from "./scope.js";
 import { evaluatedValue, writtenNodeOf } from "./values/evaluator.js";
 
@@ -210,7 +211,7 @@ function effectOf(
       scope: address.scope ?? store.scope ?? "default",
       container: address.container,
     }),
-    callee: call.text,
+    callee: calleeText(call),
     interaction: {
       class: "storage-access",
       kind: access.kind,

@@ -316,6 +316,26 @@ describe("a statement handed to a client object", () => {
     });
   });
 
+  it("spells the call the way the other languages do, the callee as written and the method as the operation", async () => {
+    const effects = await warehouseEffects({
+      "handler.py": [
+        "from google.cloud import bigquery",
+        "",
+        "def load():",
+        "    client = bigquery.Client()",
+        '    return client.query("SELECT id FROM `analytics.core.dim_account`")',
+      ].join("\n"),
+    });
+
+    const [effect] = effects;
+    expect(effect?.type === "interaction" && effect.callee).toBe(
+      "client.query",
+    );
+    expect(storageOf(effect as Effect).interaction).toMatchObject({
+      operation: "query",
+    });
+  });
+
   it("reads a client another module built", async () => {
     const effects = await warehouseEffects({
       "clients.py": [
