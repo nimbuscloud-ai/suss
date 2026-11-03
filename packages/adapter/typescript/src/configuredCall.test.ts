@@ -89,7 +89,7 @@ describe("readConfiguredCall", () => {
 
     expect(readAll(sf)).toEqual([
       {
-        subject: "order.placed",
+        subjects: ["order.placed"],
         body: {
           kind: "object",
           fields: {
@@ -113,7 +113,7 @@ describe("readConfiguredCall", () => {
       }
     `);
 
-    expect(readAll(sf).map((r) => r.subject)).toEqual(["push.send"]);
+    expect(readAll(sf).flatMap((r) => r.subjects)).toEqual(["push.send"]);
   });
 
   it("peels an as-const subject", () => {
@@ -124,7 +124,7 @@ describe("readConfiguredCall", () => {
       }
     `);
 
-    expect(readAll(sf).map((r) => r.subject)).toEqual(["order.placed"]);
+    expect(readAll(sf).flatMap((r) => r.subjects)).toEqual(["order.placed"]);
   });
 
   it("reads the send with no subject when the subject is a parameter", () => {
@@ -137,7 +137,7 @@ describe("readConfiguredCall", () => {
 
     expect(readAll(sf, DISPATCH, new ResolutionStore())).toEqual([
       {
-        subject: null,
+        subjects: [null],
         body: {
           kind: "object",
           fields: { id: { kind: "string", value: "1" } },
@@ -160,16 +160,30 @@ describe("readConfiguredCall", () => {
     `);
 
     const read = readAll(sf, DISPATCH, new ResolutionStore());
-    expect(read.map((one) => [one.subject, one.body])).toEqual([
+    expect(read.map((one) => [one.subjects, one.body])).toEqual([
       [
-        "order.audited",
+        ["order.audited"],
         { kind: "object", fields: { id: { kind: "string", value: "1" } } },
       ],
       [
-        "orders",
+        ["orders"],
         { kind: "object", fields: { id: { kind: "string", value: "1" } } },
       ],
     ]);
+  });
+
+  it("reads one subject per member of a union-typed subject", () => {
+    const sf = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      type Topic = "order.shipped" | "order.cancelled";
+      export async function send(dispatcher: CommandDispatcher, topic: Topic) {
+        await dispatcher.dispatch(topic, {}, {});
+      }
+    `);
+
+    expect(
+      readAll(sf, DISPATCH, new ResolutionStore()).map((one) => one.subjects),
+    ).toEqual([["order.cancelled", "order.shipped"]]);
   });
 
   it("carries no body when the spec names no body argument", () => {
@@ -187,7 +201,11 @@ describe("readConfiguredCall", () => {
       subjectArg: 0,
     });
     expect(read).toEqual([
-      { subject: "email.send", body: null, callee: "dispatcher.dispatchBatch" },
+      {
+        subjects: ["email.send"],
+        body: null,
+        callee: "dispatcher.dispatchBatch",
+      },
     ]);
   });
 
@@ -262,7 +280,7 @@ describe("readConfiguredCall", () => {
     `);
 
     expect(readAll(sf)).toEqual([
-      { subject: null, body: null, callee: "(dispatcher as any).dispatch" },
+      { subjects: [null], body: null, callee: "(dispatcher as any).dispatch" },
     ]);
   });
 
@@ -274,7 +292,7 @@ describe("readConfiguredCall", () => {
       }
     `);
 
-    expect(readAll(sf).map((r) => r.subject)).toEqual(["order.placed"]);
+    expect(readAll(sf).flatMap((r) => r.subjects)).toEqual(["order.placed"]);
   });
 
   it("matches a project-relative module the file spells from its own directory", () => {
@@ -301,7 +319,9 @@ describe("readConfiguredCall", () => {
       ...DISPATCH,
       module: "./messaging/dispatcher",
     };
-    expect(readAll(sf, spec).map((r) => r.subject)).toEqual(["order.placed"]);
+    expect(readAll(sf, spec).flatMap((r) => r.subjects)).toEqual([
+      "order.placed",
+    ]);
   });
 });
 
@@ -363,7 +383,7 @@ describe("readConfiguredCall on an export", () => {
 
     expect(readExports(project)).toEqual([
       {
-        subject: "ledger-queue",
+        subjects: ["ledger-queue"],
         body: {
           kind: "object",
           fields: { amount: { kind: "string", value: "9" } },
@@ -384,7 +404,7 @@ describe("readConfiguredCall on an export", () => {
       false,
     );
 
-    expect(readExports(project).map((read) => read.subject)).toEqual([
+    expect(readExports(project).flatMap((read) => read.subjects)).toEqual([
       "ledger-queue",
     ]);
   });
@@ -420,7 +440,7 @@ describe("readConfiguredCall on an export", () => {
       subject: { at: 0 },
     };
     expect(readExports(project, spec)).toEqual([
-      { subject: "ledger-queue", body: null, callee: "ledger.append" },
+      { subjects: ["ledger-queue"], body: null, callee: "ledger.append" },
     ]);
   });
 
@@ -447,7 +467,7 @@ describe("readConfiguredCall on an export", () => {
 
     expect(readExports(project)).toEqual([
       {
-        subject: null,
+        subjects: [null],
         body: { kind: "identifier", name: "entry" },
         callee: "publishEntry",
       },
@@ -471,7 +491,7 @@ describe("readConfiguredCall on an export", () => {
     };
     // Nothing ties a parameter to the constructor, so the call on it is
     // not attributed to the export, and only the receiver form reads it.
-    expect(readAll(sf, spec).map((read) => read.subject)).toEqual([
+    expect(readAll(sf, spec).flatMap((read) => read.subjects)).toEqual([
       "order.placed",
     ]);
   });

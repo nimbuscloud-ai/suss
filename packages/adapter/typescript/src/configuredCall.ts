@@ -20,7 +20,12 @@ import { attributedCall } from "./discovery/packageImport.js";
 import { ResolutionStore } from "./facts/store.js";
 import { receiverTypesOf } from "./values/receiverType.js";
 
-import type { CallOps, configuredCallOption, EffectArg } from "@suss/extractor";
+import type {
+  CallOps,
+  configuredCallOption,
+  EffectArg,
+  ValueOps,
+} from "@suss/extractor";
 import type { z } from "zod";
 
 /**
@@ -42,10 +47,10 @@ interface ArgumentPositions {
 
 export interface ConfiguredCallRead {
   /**
-   * The subject the call sends to, or null when nothing in the source
-   * settles it.
+   * Each subject the call can send to, one per string a subject typed as
+   * a few strings can be, or a lone null when nothing settles it.
    */
-  subject: string | null;
+  subjects: readonly (string | null)[];
   /** The body argument's extracted shape, or null when none applies. */
   body: EffectArg | null;
   /** Source text of the callee, for the effect's `callee` field. */
@@ -79,17 +84,35 @@ export function readConfiguredCall(
     return null;
   }
 
-  const subject = ctx.ops.valueAt(positions.subject)?.name("nothing") ?? null;
   const body =
     positions.body === undefined
       ? null
       : (ctx.ops.valueAt(positions.body)?.asArg() ?? null);
 
   return {
-    subject: subject === "" ? null : subject,
+    subjects: subjectsOf(ctx.ops.valueAt(positions.subject)),
     body,
     callee: call.getExpression().getText(),
   };
+}
+
+/** How many subjects one call is read as sending to before it is read as one. */
+const SUBJECT_CAP = 16;
+
+/**
+ * The strings a subject can be. `topic: "a" | "b"` is two sends, and a
+ * subject that is only ever one string, or could be anything, is one.
+ */
+function subjectsOf(written: ValueOps | null): readonly (string | null)[] {
+  if (written === null) {
+    return [null];
+  }
+  const each = written.names?.(SUBJECT_CAP) ?? null;
+  if (each !== null && each.length > 1 && !each.includes("")) {
+    return each;
+  }
+  const one = written.name("nothing");
+  return [one === "" ? null : one];
 }
 
 /** Where the subject and body are when `call` is the one `spec` describes, or null. */
