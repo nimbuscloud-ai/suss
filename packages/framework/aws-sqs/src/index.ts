@@ -250,9 +250,9 @@ function extractDestructuredFields(
 }
 
 /**
- * A send method on a project's own dispatcher. A service that wraps the
- * SDK never writes `SendMessageCommand`, so the SDK declaration never
- * matches its sends.
+ * A send through a project's own dispatcher, a method on it or a function
+ * its package exports. A service that wraps the SDK never writes
+ * `SendMessageCommand`, so the SDK declaration never matches its sends.
  */
 export type SqsProducer = ConfiguredCallSpec;
 

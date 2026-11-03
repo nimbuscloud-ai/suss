@@ -47,4 +47,41 @@ describe("configuredCallOption", () => {
     });
     expect(parsed.success).toBe(false);
   });
+
+  it("takes an export with the positions of its subject and payload", () => {
+    expect(
+      configuredCallOption.safeParse({
+        module: "@acme/ledger-native",
+        export: "publishEntry",
+        subject: { at: 0 },
+        payload: { at: 1 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("takes a dispatcher that keeps the export a draft wrote", () => {
+    expect(
+      configuredCallOption.safeParse({
+        module: "@acme/async",
+        export: "CommandDispatcher.dispatch",
+        receiver: "CommandDispatcher",
+        method: "dispatch",
+        subjectArg: 0,
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["no export", { subject: { at: 0 } }],
+    ["a bare number for the subject", { export: "send", subject: 0 }],
+    ["a negative position", { export: "send", subject: { at: -1 } }],
+    [
+      "keys from both forms",
+      { export: "send", subject: { at: 0 }, method: "send" },
+    ],
+  ])("refuses an export call with %s", (_, spec) => {
+    expect(
+      configuredCallOption.safeParse({ module: "@acme/kit", ...spec }).success,
+    ).toBe(false);
+  });
 });

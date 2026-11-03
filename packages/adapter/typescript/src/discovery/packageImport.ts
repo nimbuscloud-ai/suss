@@ -80,34 +80,30 @@ function enclosingFunctionName(func: FunctionRoot): string {
   return "<anon>";
 }
 
-/** One call site attributed to a package export. */
-export interface AttributedCall {
-  readonly call: CallExpression;
+/** The package export a call reaches, as a stub draft writes it. */
+export interface CallAttribution {
   readonly packageName: string;
   readonly exportPath: string[];
 }
+
+/** One call site attributed to a package export. */
+export interface AttributedCall extends CallAttribution {
+  readonly call: CallExpression;
+}
+
+type ImportOrigins = Map<Node, Array<{ module: string; path: string[] }>>;
 
 export function attributedCalls(
   sourceFile: SourceFile,
   packages: readonly string[],
   resolution: ResolutionStore,
 ): AttributedCall[] {
-  if (packages.length === 0) {
-    return [];
-  }
-
-  // A file that cannot reach the package has no call to attribute,
-  // and asking the store per call pays the demand walk for every miss.
-  const [reaching] = resolution.filesImportingTransitively([
-    { sourceFiles: [sourceFile], packages: [...packages] },
-  ]);
-  if (reaching === undefined || !reaching.has(sourceFile)) {
+  if (!reachesAnyPackage(sourceFile, packages, resolution)) {
     return [];
   }
 
   // Every callee and receiver in the file goes into one batched ask,
-  // so the whole file pays one demand set and one derivation. Names
-  // that can never be a package's export are not seeded.
+  // so the whole file pays one demand set and one derivation.
   const calls: CallExpression[] = [];
   const candidates = new Set<Node>();
   sourceFile.forEachDescendant((node) => {
@@ -115,15 +111,8 @@ export function attributedCalls(
       return;
     }
     calls.push(node);
-    const callee = node.getExpression();
-    if (couldBePackageLinked(callee, packages)) {
-      candidates.add(callee);
-    }
-    if (
-      Node.isPropertyAccessExpression(callee) &&
-      couldBePackageLinked(callee.getExpression(), packages)
-    ) {
-      candidates.add(callee.getExpression());
+    for (const candidate of calleeCandidates(node, packages)) {
+      candidates.add(candidate);
     }
   });
   const origins = resolution.importOriginsOfMany(
@@ -131,56 +120,123 @@ export function attributedCalls(
     [...packages],
   );
 
-  // The store refuses two candidates rather than picking one, and so
-  // does this: one origin is an attribution, several are an ambiguity.
-  function originOf(
-    value: Node,
-  ): { packageName: string; exportPath: string[] } | null {
-    const found = origins.get(value) ?? [];
-    const first = found[0];
-    if (first === undefined || found.length > 1) {
-      return null;
-    }
-    const { packageName, subPath } = splitPackageSpec(first.module);
-    return { packageName, exportPath: [...subPath, ...first.path] };
-  }
-
-  function attributeCall(
-    callee: Node,
-  ): { packageName: string; exportPath: string[] } | null {
-    const direct = originOf(callee);
-    if (direct !== null) {
-      return direct;
-    }
-
-    if (!Node.isPropertyAccessExpression(callee)) {
-      return null;
-    }
-    const subject = originOf(callee.getExpression());
-    if (subject === null) {
-      return null;
-    }
-    // A method the package declares extends the export path. One the
-    // language gives every value (`.map`, `.then`) is no call into the
-    // package: a call it was made on is attributed on its own already.
-    if (!methodComesFromSource(callee)) {
-      return null;
-    }
-    return {
-      packageName: subject.packageName,
-      exportPath: [...subject.exportPath, callee.getName()],
-    };
-  }
-
   const results: AttributedCall[] = [];
   for (const call of calls) {
-    const provenance = attributeCall(call.getExpression());
+    const provenance = attributionOf(call.getExpression(), origins);
     if (provenance !== null) {
       results.push({ call, ...provenance });
     }
   }
 
   return results;
+}
+
+/**
+ * What `attributedCalls` says about one call, for a reader that meets
+ * calls one at a time. A stub statement drafted from the batch then
+ * matches the same calls when a pack reads them back.
+ */
+export function attributedCall(
+  call: CallExpression,
+  packages: readonly string[],
+  resolution: ResolutionStore,
+): CallAttribution | null {
+  if (!reachesAnyPackage(call.getSourceFile(), packages, resolution)) {
+    return null;
+  }
+
+  const candidates = calleeCandidates(call, packages);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const origins = resolution.importOriginsOfMany(candidates, [...packages]);
+  return attributionOf(call.getExpression(), origins);
+}
+
+/**
+ * A file that cannot reach the package has no call to attribute, and
+ * asking the store per call pays the demand walk for every miss.
+ */
+function reachesAnyPackage(
+  sourceFile: SourceFile,
+  packages: readonly string[],
+  resolution: ResolutionStore,
+): boolean {
+  if (packages.length === 0) {
+    return false;
+  }
+
+  const [reaching] = resolution.filesImportingTransitively([
+    { sourceFiles: [sourceFile], packages: [...packages] },
+  ]);
+  return reaching?.has(sourceFile) === true;
+}
+
+/**
+ * The callee and its receiver, the two values attribution asks the
+ * store about. Names that can never be a package's export are left out.
+ */
+function calleeCandidates(
+  call: CallExpression,
+  packages: readonly string[],
+): Node[] {
+  const callee = call.getExpression();
+  const candidates: Node[] = [];
+  if (couldBePackageLinked(callee, packages)) {
+    candidates.push(callee);
+  }
+
+  if (
+    Node.isPropertyAccessExpression(callee) &&
+    couldBePackageLinked(callee.getExpression(), packages)
+  ) {
+    candidates.push(callee.getExpression());
+  }
+
+  return candidates;
+}
+
+/**
+ * The store refuses two candidates rather than picking one, and so
+ * does this: one origin is an attribution, several are an ambiguity.
+ */
+function originOf(value: Node, origins: ImportOrigins): CallAttribution | null {
+  const found = origins.get(value) ?? [];
+  const first = found[0];
+  if (first === undefined || found.length > 1) {
+    return null;
+  }
+  const { packageName, subPath } = splitPackageSpec(first.module);
+  return { packageName, exportPath: [...subPath, ...first.path] };
+}
+
+function attributionOf(
+  callee: Node,
+  origins: ImportOrigins,
+): CallAttribution | null {
+  const direct = originOf(callee, origins);
+  if (direct !== null) {
+    return direct;
+  }
+
+  if (!Node.isPropertyAccessExpression(callee)) {
+    return null;
+  }
+  const subject = originOf(callee.getExpression(), origins);
+  if (subject === null) {
+    return null;
+  }
+  // A method the package declares extends the export path. One the
+  // language gives every value (`.map`, `.then`) is no call into the
+  // package: a call it was made on is attributed on its own already.
+  if (!methodComesFromSource(callee)) {
+    return null;
+  }
+  return {
+    packageName: subject.packageName,
+    exportPath: [...subject.exportPath, callee.getName()],
+  };
 }
 
 /**

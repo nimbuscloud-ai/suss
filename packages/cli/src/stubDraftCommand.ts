@@ -79,9 +79,22 @@ function statementLines(one: StubCallEvidence): string[] {
     "  - kind: performs-call",
     `    export: ${JSON.stringify(name)}`,
     `    system: ""  # what the call reaches: aws.sqs, aws.events, axios`,
-    "    spec: {}  # argument meanings, e.g. { subject: { at: 0 }, payload: { at: 1 } }",
+    "    spec: {}  # aws.sqs and aws.events take { subject: { at: 0 }, payload: { at: 1 } }; axios takes {}",
   ];
   return lines;
+}
+
+/** The lines every draft starts with, whichever language it was drafted from. */
+function draftHeader(firstLine: string, packageName: string): string[] {
+  return [
+    `# ${firstLine}`,
+    "# Fill each blank from the package's own source, then delete the notes.",
+    "# The statement kinds are in https://suss.sh/guides/teach-a-dependency.",
+    `package: ${JSON.stringify(packageName)}`,
+    `authored: ""  # who filled the blanks, e.g. agent`,
+    `from: ""  # what the claims were read from, e.g. crate source at 1.4.2`,
+    "statements:",
+  ];
 }
 
 export function draftYaml(
@@ -89,15 +102,10 @@ export function draftYaml(
   evidence: StubCallEvidence[],
 ): string {
   const sites = evidence.reduce((sum, one) => sum + one.calls.length, 0);
-  const header = [
-    `# Draft stub for ${packageName}, from ${sites} observed call sites.`,
-    `# Fill each blank from the package's own source, then delete the`,
-    "# notes. The statement kinds are in design/proposals/dependency-stubs.md.",
-    `package: ${JSON.stringify(packageName)}`,
-    `authored: ""  # who filled the blanks, e.g. agent`,
-    `from: ""  # what the claims were read from, e.g. crate source at 1.4.2`,
-    "statements:",
-  ];
+  const header = draftHeader(
+    `Draft stub for ${packageName}, from ${sites} observed call sites.`,
+    packageName,
+  );
   return [...header, ...evidence.flatMap(statementLines), ""].join("\n");
 }
 
@@ -167,15 +175,10 @@ export function draftPythonYaml(
   moduleName: string,
   evidence: PythonImportEvidence,
 ): string {
-  const header = [
-    `# Draft stub for ${moduleName}, from ${evidence.sites.length} observed import sites.`,
-    "# Fill each blank from the package's own source, then delete the",
-    "# notes. The statement kinds are in design/proposals/dependency-stubs.md.",
-    `package: ${JSON.stringify(moduleName)}`,
-    `authored: ""  # who filled the blanks, e.g. agent`,
-    `from: ""  # what the claims were read from, e.g. crate source at 1.4.2`,
-    "statements:",
-  ];
+  const header = draftHeader(
+    `Draft stub for ${moduleName}, from ${evidence.sites.length} observed import sites.`,
+    moduleName,
+  );
   return [...header, ...pythonStatementLines(evidence), ""].join("\n");
 }
 
@@ -275,15 +278,10 @@ export function draftRubyYaml(
   evidence: RubyStubEvidence,
 ): string {
   const sites = evidence.extendsSites.length + evidence.requires.length;
-  const header = [
-    `# Draft stub for ${packageName}, from ${sites} observed sites.`,
-    "# Fill each blank from the package's own source, then delete the",
-    "# notes. The statement kinds are in design/proposals/dependency-stubs.md.",
-    `package: ${JSON.stringify(packageName)}`,
-    `authored: ""  # who filled the blanks, e.g. agent`,
-    `from: ""  # what the claims were read from, e.g. crate source at 1.4.2`,
-    "statements:",
-  ];
+  const header = draftHeader(
+    `Draft stub for ${packageName}, from ${sites} observed sites.`,
+    packageName,
+  );
   return [...header, ...rubyStatementLines(evidence), ""].join("\n");
 }
 
