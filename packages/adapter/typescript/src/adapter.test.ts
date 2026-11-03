@@ -6951,3 +6951,73 @@ describe("the client a GraphQL operation's call passes", () => {
     );
   });
 });
+
+describe("a client that ends the process", () => {
+  it("records the exit as an outcome and leaves the exit call out of its effects", async () => {
+    const exitingClientPack: PatternPack = {
+      name: "fetch",
+      protocol: "http",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "client",
+          match: {
+            type: "clientCall",
+            importModule: "global",
+            importName: "fetch",
+          },
+          bindingExtraction: {
+            method: { type: "literal", value: "GET" },
+            path: { type: "fromArgument", position: 0 },
+          },
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+        {
+          kind: "exit",
+          match: { type: "functionCall", functionName: "process.exit" },
+          extraction: { statusCode: { from: "argument", position: 0 } },
+        },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+      responseSemantics: [
+        {
+          name: "ok",
+          access: "property",
+          semantics: { type: "statusRange", min: 200, max: 299 },
+        },
+      ],
+    };
+    const project = createTestProject();
+    project.createSourceFile(
+      "/health.ts",
+      `
+        export async function checkHealth() {
+          const response = await fetch("/health");
+          if (!response.ok) {
+            process.exit(1);
+          }
+          return response;
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [exitingClientPack],
+      includeReachable: false,
+    });
+    const summaries = await adapter.extractAll();
+
+    const client = summaries.find((s) => s.identity.name === "checkHealth");
+    expect(client?.transitions.map((t) => t.output.type).sort()).toEqual([
+      "exit",
+      "return",
+    ]);
+    const callees = (client?.transitions ?? []).flatMap((t) =>
+      t.effects.flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+    );
+    expect(callees).toContain("fetch");
+    expect(callees).not.toContain("process.exit");
+  });
+});

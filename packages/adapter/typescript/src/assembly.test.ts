@@ -238,6 +238,105 @@ describe("ts-rest style: returnShape", () => {
   });
 });
 
+describe("a concise arrow that returns a call", () => {
+  const returns: TerminalPattern[] = [
+    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+  ];
+
+  /** The arrow each `const` in the source is set to, by the constant's name. */
+  function arrowsIn(source: string): Map<string, FunctionRoot> {
+    const file = createProject().createSourceFile("test.ts", source);
+    return new Map(
+      file.getVariableDeclarations().flatMap((decl) => {
+        const initializer = decl.getInitializer();
+        return initializer !== undefined && Node.isArrowFunction(initializer)
+          ? [[decl.getName(), initializer as FunctionRoot] as const]
+          : [];
+      }),
+    );
+  }
+
+  function readBranches(arrow: FunctionRoot | undefined) {
+    if (arrow === undefined) {
+      throw new Error("expected an arrow");
+    }
+    return extractRawBranches(arrow, returns).branches.map((branch) => ({
+      effects: branch.effects.map((effect) => ({
+        ...effect,
+        location: undefined,
+      })),
+      body: branch.terminal.body,
+    }));
+  }
+
+  it("records a function it calls, as `return work(id)` does", () => {
+    const arrows = arrowsIn(`
+      declare function work(id: string): number;
+      export const concise = (id: string) => work(id);
+      export const block = (id: string) => {
+        return work(id);
+      };
+    `);
+
+    const concise = readBranches(arrows.get("concise"));
+    expect(concise).toEqual(readBranches(arrows.get("block")));
+    expect(
+      concise[0]?.effects.map((e) => e.type === "invocation" && e.callee),
+    ).toEqual(["work"]);
+  });
+
+  it("records each call in a method chain it returns, as a return statement does", () => {
+    const arrows = arrowsIn(`
+      declare const api: { users(): { list(): string[] } };
+      export const concise = () => api.users().list();
+      export const block = () => {
+        return api.users().list();
+      };
+    `);
+
+    const concise = readBranches(arrows.get("concise"));
+    expect(concise).toEqual(readBranches(arrows.get("block")));
+    expect(
+      concise[0]?.effects.map((e) => e.type === "invocation" && e.callee),
+    ).toEqual(["api.users", "api.users().list"]);
+  });
+
+  it("records no effect when the body is not a call", () => {
+    const arrows = arrowsIn(`
+      export const concise = (user: { name: string }) => user.name;
+      export const block = (user: { name: string }) => {
+        return user.name;
+      };
+    `);
+
+    const concise = readBranches(arrows.get("concise"));
+    expect(concise).toEqual(readBranches(arrows.get("block")));
+    expect(concise).toHaveLength(1);
+    expect(concise[0]?.effects).toEqual([]);
+  });
+
+  it("leaves out a call a terminal pattern matched as the response it writes", () => {
+    const file = createProject().createSourceFile(
+      "test.ts",
+      `
+      export const handler = (req: any, res: any) => res.status(201).json({ ok: true });
+    `,
+    );
+    const arrow = file
+      .getVariableDeclarationOrThrow("handler")
+      .getInitializerOrThrow() as FunctionRoot;
+
+    const branches = extractRawBranches(arrow, [
+      ...expressTerminals,
+      ...returns,
+    ]).branches;
+    expect(branches.map((branch) => branch.terminal.kind)).toEqual([
+      "response",
+    ]);
+    expect(branches[0]?.effects).toEqual([]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Express style
 // ---------------------------------------------------------------------------
