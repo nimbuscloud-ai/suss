@@ -76,6 +76,43 @@ describe("settling ids that more than one summary has", () => {
   });
 });
 
+describe("the id of a summary named by a label", () => {
+  /** An Express handler, which discovery names after its method. */
+  function route(path: string, line: number): BehavioralSummary {
+    const summary = summaryAt("svc::src/a.ts::get", line);
+    summary.identity.nameKind = "label";
+    summary.identity.boundaryBinding = {
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path },
+      recognition: "express",
+    };
+    return summary;
+  }
+
+  it("has its route even when nothing else in the file is named the same", () => {
+    const summaries = [route("/a", 5)];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual(["svc::src/a.ts::get#GET /a"]);
+  });
+
+  it("stays the same when a second route is added to the file", () => {
+    const alone = [route("/a", 5)];
+    const withAnother = [route("/a", 5), route("/b", 20)];
+    disambiguateSummaryIds(alone);
+    disambiguateSummaryIds(withAnother);
+    expect(withAnother[0]?.identity.id).toBe(alone[0]?.identity.id);
+  });
+
+  it("is numbered by file order when two share a route", () => {
+    const summaries = [route("/a", 20), route("/a", 5)];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([
+      "svc::src/a.ts::get#GET /a@2",
+      "svc::src/a.ts::get#GET /a",
+    ]);
+  });
+});
+
 describe("a path one summary records for another file", () => {
   it("puts the other project's name in front, and reads it back", () => {
     const written = fileReference("@acme/shared", "src/routes.ts");

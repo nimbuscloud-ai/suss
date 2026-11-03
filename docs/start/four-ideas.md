@@ -17,10 +17,10 @@ format. `check` prints the two sides it paired on each one:
 ```
 Compared 2 of 3 boundaries:
   GET /orders/{reference}
-    orders-api::src/api.ts::get <-> orders-api::src/client.ts::loadOrder
+    orders-api::src/api.ts::get#GET /orders/{reference} <-> orders-api::src/client.ts::loadOrder
   postgresql:Order
-    prisma/schema.prisma::Order <-> orders-api::src/api.ts::get
-    prisma/schema.prisma::Order <-> orders-api::src/api.ts::post
+    prisma/schema.prisma::Order <-> orders-api::src/api.ts::get#GET /orders/{reference}
+    prisma/schema.prisma::Order <-> orders-api::src/api.ts::post#POST /orders
 ```
 
 ## Summary
