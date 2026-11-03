@@ -26,9 +26,8 @@ import {
 import {
   functionValueOf,
   objectLiteralOf,
-  propertiesOf,
   propertyFunctionOf,
-  propertyNameOf,
+  propertyNamed,
   propertyValueOf,
   stringValueOf,
 } from "./resolveValue.js";
@@ -453,8 +452,8 @@ function constructorOptionOf(
   if (options === null) {
     return undefined;
   }
-  return propertiesOf(options, resolution).find(
-    (property) => propertyNameOf(property) === wraps.constructorOption,
+  return (
+    propertyNamed(options, wraps.constructorOption, resolution) ?? undefined
   );
 }
 
