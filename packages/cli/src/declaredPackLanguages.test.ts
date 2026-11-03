@@ -22,10 +22,13 @@ import {
 import {
   anyOf,
   constructedFrom,
+  imported,
+  messageSends,
   pack,
   returnedBy,
   sqlStatements,
   storageCalls,
+  typed,
 } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
@@ -78,9 +81,47 @@ const RECORD_PUTS = storageCalls({
   .container({ at: 0, property: ["table"] })
   .example('records.put({ table: "orders", name: "x" })');
 
+// A project's own dispatcher, whose call is the message: the subject is
+// the channel and the body is the next argument. Ruby declares no types,
+// so a typed receiver there is one the class made.
+const SPREAD_OVER_THE_CALL = {
+  wire: "aws_sqs",
+  messages: { each: "theCall" },
+  channel: [{ argument: { at: 0 } }],
+  body: { argument: { at: 1 } },
+  unsettledName: "nothing",
+} as const;
+
+const DISPATCHES = messageSends({
+  ...SPREAD_OVER_THE_CALL,
+  client: typed({ from: ["relay", "Relay"], named: ["Dispatcher"] }),
+})
+  .methods({ dispatch: {} })
+  .example('to.dispatch("orders", { id: 1 })');
+
+const LEDGER_SENDS = messageSends({
+  ...SPREAD_OVER_THE_CALL,
+  client: imported({ from: ["ledger", "Ledger"], named: ["*"] }),
+})
+  .methods({ publish: {} })
+  .example('Ledger.publish("ledger", { id: 2 })');
+
+// Ruby has no function a file imports, so only TypeScript and Python
+// write this one.
+const BARE_PUBLISHES = messageSends({
+  ...SPREAD_OVER_THE_CALL,
+  client: imported({ from: ["ledger"], named: ["publish"] }),
+})
+  .calls({})
+  .example('publish("ledger", { id: 3 })');
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
   pack("declared-records", [RECORD_PUTS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
+  pack("declared-sends", [DISPATCHES, LEDGER_SENDS, BARE_PUBLISHES], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
   }),
@@ -102,6 +143,9 @@ const ACCESS = PACKS.flatMap((one) => one.accessRecognizers ?? []);
 
 const TYPESCRIPT = `
   import { Admin, Cache, Records } from "kvcache";
+  import * as Ledger from "ledger";
+  import { publish } from "ledger";
+  import { Dispatcher } from "relay";
   import { Pool } from "sqldb";
 
   const cache = new Cache();
@@ -116,9 +160,21 @@ const TYPESCRIPT = `
     admin.tables().drop({ name: "core.events" });
     records.put({ ...draft, table: "orders", name: "x" });
   }
+
+  export function deliver(to: Dispatcher) {
+    to.dispatch("orders", "placed");
+    Ledger.publish("ledger", "entered");
+  }
+
+  export function record() {
+    publish("ledger", "recorded");
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
+import ledger as Ledger
+from ledger import publish
+from relay import Dispatcher
 from sqldb import Pool
 
 cache = Cache()
@@ -133,6 +189,15 @@ def load():
     db.query("SELECT id, email FROM users")
     admin.tables().drop(table={"name": "core.events"})
     records.put({**draft, "table": "orders", "name": "x"})
+
+
+def deliver(to: Dispatcher):
+    to.dispatch("orders", "placed")
+    Ledger.publish("ledger", "entered")
+
+
+def record():
+    publish("ledger", "recorded")
 `;
 
 const RUBY = `module Store
@@ -147,6 +212,12 @@ const RUBY = `module Store
     admin.tables().drop(table: { name: "core.events" })
     records.put({ **draft, table: "orders", name: "x" })
   end
+
+  def self.deliver
+    to = Relay::Dispatcher.new
+    to.dispatch("orders", "placed")
+    Ledger.publish("ledger", "entered")
+  end
 end
 `;
 
@@ -157,11 +228,15 @@ const LIBRARIES: Record<string, string> = {
     export declare class Admin { tables(): Tables; }
     export declare class Records { put(record: unknown): unknown; }
   `,
+  ledger:
+    "export declare function publish(queue: string, body: unknown): void;",
+  relay:
+    "export declare class Dispatcher { dispatch(subject: string, body: unknown): void; }",
   sqldb: "export declare class Pool { query(statement: string): unknown; }",
 };
 
-/** What the pack's hooks make of every call in the TypeScript source. */
-function typescriptEffects(): Effect[] {
+/** What the pack's hooks make of every call inside the TypeScript function `unit`. */
+function typescriptEffects(unit: string): Effect[] {
   const project = createTestProject();
   for (const [module, declarations] of Object.entries(LIBRARIES)) {
     project.createSourceFile(
@@ -179,7 +254,7 @@ function typescriptEffects(): Effect[] {
     store.importOriginsOf(value, [module]).length > 0;
   const effects: Effect[] = [];
   file.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
+    if (!Node.isCallExpression(node) || enclosingFunction(node) !== unit) {
       return;
     }
     const anchors = (value: Node, matches: (call: Node) => boolean) =>
@@ -200,6 +275,11 @@ function typescriptEffects(): Effect[] {
     }
   });
   return effects;
+}
+
+/** The name of the function declaration a node is written inside. */
+function enclosingFunction(node: Node): string | undefined {
+  return node.getFirstAncestor(Node.isFunctionDeclaration)?.getName();
 }
 
 let root: string;
@@ -226,10 +306,13 @@ const DECLARED = {
   accessRecognizers: ACCESS,
 };
 
-/** The pack's effects on the summary of the function called `load`. */
-function effectsOfLoad(summaries: readonly BehavioralSummary[]): Effect[] {
+/** The pack's effects on the summary of the function called `unit`. */
+function effectsOf(
+  summaries: readonly BehavioralSummary[],
+  unit: string,
+): Effect[] {
   return summaries
-    .filter((summary) => summary.identity.name.endsWith("load"))
+    .filter((summary) => summary.identity.name.endsWith(unit))
     .flatMap((summary) =>
       summary.transitions.flatMap((transition) => transition.effects),
     )
@@ -240,7 +323,7 @@ function effectsOfLoad(summaries: readonly BehavioralSummary[]): Effect[] {
     );
 }
 
-async function pythonEffects(): Promise<Effect[]> {
+async function pythonEffects(unit: string): Promise<Effect[]> {
   const { summaries } = await extractPythonProject({
     files: [path.join(root, "store/__init__.py")],
     roots: [root],
@@ -249,10 +332,10 @@ async function pythonEffects(): Promise<Effect[]> {
     workspaceRoot: root,
     cacheDir: null,
   });
-  return effectsOfLoad(summaries);
+  return effectsOf(summaries, unit);
 }
 
-async function rubyEffects(): Promise<Effect[]> {
+async function rubyEffects(unit: string): Promise<Effect[]> {
   const { summaries } = await extractRubyProject({
     files: [path.join(root, "lib/store.rb")],
     packs: [DECLARED],
@@ -260,7 +343,7 @@ async function rubyEffects(): Promise<Effect[]> {
     workspaceRoot: root,
     cacheDir: null,
   });
-  return effectsOfLoad(summaries);
+  return effectsOf(summaries, unit);
 }
 
 /** An effect without where it was written, which differs between the sources. */
@@ -273,7 +356,7 @@ function placeless(effect: Effect): unknown {
 
 describe("a pack declared once", () => {
   it("records the same storage and SQL effects in TypeScript, Python and Ruby", async () => {
-    const fromTypeScript = typescriptEffects().map(placeless);
+    const fromTypeScript = typescriptEffects("load").map(placeless);
 
     expect(fromTypeScript).toHaveLength(4);
     expect(fromTypeScript).toContainEqual(
@@ -296,7 +379,50 @@ describe("a pack declared once", () => {
         }),
       }),
     );
-    expect((await pythonEffects()).map(placeless)).toEqual(fromTypeScript);
-    expect((await rubyEffects()).map(placeless)).toEqual(fromTypeScript);
+    expect((await pythonEffects("load")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("load")).map(placeless)).toEqual(fromTypeScript);
+  });
+
+  it("records the same sends off a typed receiver and a module imported whole", async () => {
+    const fromTypeScript = typescriptEffects("deliver").map(placeless);
+
+    expect(fromTypeScript).toEqual([
+      sendOf("orders", "to.dispatch", "placed"),
+      sendOf("ledger", "Ledger.publish", "entered"),
+    ]);
+    expect((await pythonEffects("deliver")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("deliver")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+  });
+
+  it("records the same send off a bare call of an imported function in TypeScript and Python", async () => {
+    const fromTypeScript = typescriptEffects("record").map(placeless);
+
+    expect(fromTypeScript).toEqual([sendOf("ledger", "publish", "recorded")]);
+    expect((await pythonEffects("record")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
   });
 });
+
+/** A send the declared sends record, without where it was written. */
+function sendOf(channel: string, callee: string, body: string): unknown {
+  return {
+    type: "interaction",
+    binding: {
+      transport: "aws_sqs",
+      semantics: { name: "message-bus", messageBus: "aws_sqs", channel },
+      recognition: "@suss/declared-test",
+    },
+    callee,
+    interaction: {
+      class: "message-send",
+      body: { kind: "string", value: body },
+    },
+  };
+}

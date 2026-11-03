@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-aws-sqs",
   "exports": 2,
-  "internal": 6,
+  "internal": 5,
   "consumers": 12,
   "unfollowedCalls": 0
 }

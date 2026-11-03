@@ -521,7 +521,7 @@ describe("eventbridge pack metadata", () => {
     expect(pack.invocationRecognizers).toHaveLength(1);
   });
 
-  it("adds a recognizer and an import gate per configured producer", () => {
+  it("adds a declaration and an import gate per configured producer", () => {
     const pack = eventBridgeFramework(PUBLISHER_OPTIONS);
     expect(pack.invocationRecognizers).toHaveLength(2);
     expect(pack.requiresImport).toEqual([

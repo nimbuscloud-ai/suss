@@ -19,13 +19,14 @@ import {
   storageBinding,
   unitInvocationBinding,
 } from "@suss/behavioral-ir";
-import { unwrapJsonStringify } from "@suss/extractor";
+import { byOrigin, unwrapJsonStringify } from "@suss/extractor";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
 import { opsIn } from "./ops.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
+  ByOrigin,
   EffectArg,
   InvocationRecognizer,
   StatedSlot,
@@ -181,8 +182,8 @@ function linkIn<TAsks extends Link<MethodMeaning>["asks"]>(
 /**
  * A bare call of the tracked client itself, when the chain has a calls
  * link. There is no method name to look up, so the link's one meaning
- * applies. The call matches only when its callee is a bound name whose
- * written value came from the chain's origin.
+ * applies. The call matches only when its callee is a bound name that
+ * came from the chain's origin.
  */
 function bareCall(
   chain: Chain<MethodMeaning>,
@@ -196,11 +197,30 @@ function bareCall(
   if (ops.method() !== null || ops.namedCallee?.() !== true) {
     return null;
   }
-  const written = ops.callee();
-  if (written === null || !written.isFrom(start.at.origin)) {
+  if (!byOrigin(BARE_CALL_FROM, start.at.origin, ops)) {
     return null;
   }
   return { method: ops.calleeText(), meaning: link.meaning };
+}
+
+/**
+ * Where a bare call's callee came from. An imported function is the
+ * name itself, and anything else is the call the name was written as,
+ * such as the `create(...)` behind a store hook.
+ */
+const BARE_CALL_FROM: ByOrigin<boolean, [CallOps]> = {
+  imported: (origin, ops) => ops.isFrom(origin),
+  declaredBy: (origin, ops) => writtenFrom(origin, ops),
+  constructed: (origin, ops) => writtenFrom(origin, ops),
+  returnedBy: (origin, ops) => writtenFrom(origin, ops),
+  typed: (origin, ops) => writtenFrom(origin, ops),
+  anyOf: (origin, ops) =>
+    origin.of.some((one) => byOrigin(BARE_CALL_FROM, one, ops)),
+};
+
+/** Whether the call the callee was written as came from the origin. */
+function writtenFrom(origin: ReceiverOrigin, ops: CallOps): boolean {
+  return ops.callee()?.isFrom(origin) === true;
 }
 
 /** The methods link, which every chain that recognizes calls states. */
@@ -829,10 +849,7 @@ function nameIn(
 function messageSend(matched: Matched): Effect[] | null {
   const { ops, subject, chain, recognition } = matched;
   const ending = chain.ending as MessageSendEnding;
-  const input = statedValue(
-    subject,
-    (matched.meaning as MessageSendMethod).input,
-  );
+  const input = inputOf(matched, ending);
   if (input === null) {
     return null;
   }
@@ -856,13 +873,25 @@ function messageSend(matched: Matched): Effect[] | null {
         callee: ops.calleeText(),
         interaction: {
           class: "message-send",
-          ...bodyOf(message, ending),
+          ...bodyOf(sending),
           ...routingKeyOf(sending),
         },
       });
     }
   }
   return effects;
+}
+
+/**
+ * The value the call states its messages in. A call whose own arguments
+ * are the message states no such value, so nothing is read off one.
+ */
+function inputOf(matched: Matched, ending: MessageSendEnding): ValueOps | null {
+  const { input } = matched.meaning as MessageSendMethod;
+  if (input === undefined) {
+    return ending.messages.each === "theCall" ? NOTHING_STATED : null;
+  }
+  return statedValue(matched.subject, input);
 }
 
 /** One reading per way a library takes the messages a call sends. */
@@ -874,6 +903,7 @@ const MESSAGES_IN: Record<
   in: (input, location) =>
     input.property((location as ManyIn).property)?.items() ?? [],
   inTheInput: (input) => input.items(),
+  theCall: (input) => [input],
 };
 
 /** Each message the call sends, however the library takes them. */
@@ -1029,17 +1059,22 @@ function firstWritten(
  * as `JSON.stringify({...})` is recorded as the object that went in,
  * since the consumer reads the fields back after `JSON.parse`.
  */
-function bodyOf(
-  message: ValueOps,
-  ending: MessageSendEnding,
-): { body?: EffectArg } {
-  if (ending.body === undefined) {
-    return {};
-  }
-  const written =
-    typeof ending.body === "string" ? message.property(ending.body) : message;
+function bodyOf(sending: Sending): { body?: EffectArg } {
+  const written = bodyWritten(sending);
   const stated = unwrapJsonStringify(written?.asArg() ?? null);
   return stated === null ? {} : { body: stated };
+}
+
+/** Where the body is: a property of the message, the message, or an argument of the call. */
+function bodyWritten({ message, subject, ending }: Sending): ValueOps | null {
+  const where = ending.body;
+  if (where === undefined) {
+    return null;
+  }
+  if (typeof where === "string") {
+    return message.property(where);
+  }
+  return "argument" in where ? statedValue(subject, where.argument) : message;
 }
 
 /**

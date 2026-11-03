@@ -2,6 +2,7 @@ import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { profileEvaluation } from "@suss/datalog";
+import { imported, typed } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
@@ -11,6 +12,7 @@ import {
   type WalkArguments,
   walkArguments,
 } from "./callOps.js";
+import { opsOverFacts } from "./opsOverFacts.js";
 
 import type { CallOps, ReceiverOrigin } from "@suss/recognize";
 import type {
@@ -33,6 +35,7 @@ const LIBRARY = `
   export declare class PlayCommand { constructor(input: unknown); }
   export declare function sql(parts: TemplateStringsArray, ...values: unknown[]): unknown;
   export declare function tape(name: string): unknown;
+  export declare class Cassette { eject(): void; }
 `;
 
 function withLibrary(): Project {
@@ -1114,4 +1117,90 @@ describe("the class a call is handed", () => {
   it("gives nothing for an argument that is not a class", () => {
     expect(classHanded("export const Order = 1;")).toBeNull();
   });
+});
+
+describe("a receiver typed as a library's type, and a value the file imported", () => {
+  const SOURCE = `
+    import Deck, { Cassette as Tape, tape } from "tapedeck";
+    import * as deckModule from "tapedeck";
+    import { tape as reel } from "tapedeck";
+    import { Recorder } from "uninstalled";
+    class Cassette {
+      eject(): void {}
+    }
+    export function go(deck: Deck, kept: Tape, local: Cassette, recorder: Recorder) {
+      deck.play("a");
+      kept.eject();
+      local.eject();
+      recorder.record();
+      deckModule.tape("c");
+      tape("d");
+      reel("e");
+    }
+  `;
+
+  /** The ops for each call in the source, by callee, read off the nodes and off the facts. */
+  function opsByCallee(): Record<"nodes" | "facts", Map<string, CallOps>> {
+    const project = withLibrary();
+    const file = project.createSourceFile("/repo.ts", SOURCE);
+    const store = new ResolutionStore();
+    const reading: CallReading = {
+      resolve: (value) => store.resolveWrittenValue(value),
+      resolution: store,
+    };
+    const nodes = new Map<string, CallOps>();
+    const facts = new Map<string, CallOps>();
+    for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const callee = call.getExpression().getText();
+      nodes.set(callee, callOpsFor(call, reading));
+      facts.set(callee, opsOverFacts(call, reading));
+    }
+    return { nodes, facts };
+  }
+
+  const cassette = typed({ from: ["tapedeck"], named: ["Cassette"] });
+  const wholeModule = imported({ from: ["tapedeck"], named: ["*"] });
+  const tapeExport = imported({ from: ["tapedeck"], named: ["tape"] });
+
+  it.each(["nodes", "facts"] as const)(
+    "takes a receiver of the type the library exports, and not a local class of the same name, over the %s",
+    (reading) => {
+      const ops = opsByCallee()[reading];
+
+      expect(ops.get("kept.eject")?.receiverIsFrom(cassette)).toBe(true);
+      expect(ops.get("local.eject")?.receiverIsFrom(cassette)).toBe(false);
+      expect(
+        ops
+          .get("kept.eject")
+          ?.receiverIsFrom(typed({ from: ["elsewhere"], named: ["Cassette"] })),
+      ).toBe(false);
+      // Nothing declares the type of a package that is not installed, so
+      // the file's import of the name is what says where it is from.
+      expect(
+        ops
+          .get("recorder.record")
+          ?.receiverIsFrom(
+            typed({ from: ["uninstalled"], named: ["Recorder"] }),
+          ),
+      ).toBe(true);
+    },
+  );
+
+  it.each(["nodes", "facts"] as const)(
+    "takes the module imported whole and a function imported by name or alias, over the %s",
+    (reading) => {
+      const ops = opsByCallee()[reading];
+
+      expect(ops.get("deckModule.tape")?.receiverIsFrom(wholeModule)).toBe(
+        true,
+      );
+      expect(ops.get("deck.play")?.receiverIsFrom(wholeModule)).toBe(false);
+      expect(ops.get("tape")?.isFrom(tapeExport)).toBe(true);
+      expect(ops.get("reel")?.isFrom(tapeExport)).toBe(true);
+      expect(ops.get("tape")?.isFrom(imported({ from: ["tapedeck"] }))).toBe(
+        true,
+      );
+      expect(ops.get("deck.play")?.isFrom(tapeExport)).toBe(false);
+    },
+  );
 });

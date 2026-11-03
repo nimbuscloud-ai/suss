@@ -4,7 +4,7 @@ Pattern pack for AWS SQS. It reads the producer side, where a service sends a me
 
 ## What this package is
 
-`@suss/framework-aws-sqs` exports a `PatternPack` built from a `@suss/recognize` declaration and two function recognizers:
+`@suss/framework-aws-sqs` exports a `PatternPack` built from `@suss/recognize` declarations and one function recognizer:
 
 - **Sends**: `client.send(new SendMessageCommand({ QueueUrl, MessageBody }))`, and the batch form `SendMessageBatchCommand`, where each entry in `Entries` is one message and the queue is given once next to the list. Each message becomes an `interaction(class: "message-send")` effect on wire `aws_sqs`, with `MessageBody` as the body. The command class has to come from `@aws-sdk/client-sqs`, so a class with the same name from another module is ignored.
 - **Receives**: `JSON.parse(record.body)` inside a `for (const record of event.Records)` loop, which becomes an `interaction(class: "message-receive")` effect.
@@ -75,7 +75,7 @@ The `producers` pack option did the same job until 0.21.0 removed it. A config f
 
 ## Where it fits in suss
 
-The pack depends on `@suss/recognize`, which compiles the send declarations into the recognizer hooks the adapters call. It also uses `@suss/behavioral-ir` for the message-bus binding, `@suss/adapter-typescript` for the configured-call reader, and `@suss/extractor` for the `PatternPack` type. `ts-morph` is a peer dependency.
+The pack depends on `@suss/recognize`, which compiles the send declarations, and the ones it makes for each stated dispatcher, into the recognizer hooks the adapters call. The receive recognizer uses `@suss/behavioral-ir` for the message-bus binding and `@suss/adapter-typescript` to read the handler's syntax, and `@suss/extractor` supplies the `PatternPack` type. `ts-morph` is a peer dependency.
 
 A consumer-side handler gets its queue boundary binding from the pass in `@suss/contract-cloudformation` that walks CloudFormation and SAM `Events: { Type: SQS }` event source mappings.
 

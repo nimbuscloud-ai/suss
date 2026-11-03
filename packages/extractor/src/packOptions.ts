@@ -97,3 +97,5 @@ export const configuredCallOption = z.union([
   receiverCallOption,
   exportCallOption,
 ]);
+
+export type ConfiguredCallSpec = z.infer<typeof configuredCallOption>;

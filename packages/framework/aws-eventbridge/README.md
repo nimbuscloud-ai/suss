@@ -81,7 +81,7 @@ The `producers` pack option did the same job until 0.21.0 removed it. A config f
 
 ## Where it fits in suss
 
-The pack depends on `@suss/recognize`, which compiles the send declaration into the recognizer hooks the adapters call. It also uses `@suss/behavioral-ir` for the message-bus binding, `@suss/adapter-typescript` for the configured-call reader, and `@suss/extractor` for the `PatternPack` type. `ts-morph` is a peer dependency.
+The pack depends on `@suss/recognize`, which compiles the send declaration, and the ones it makes for each stated publisher, into the recognizer hooks the adapters call. `@suss/extractor` supplies the `PatternPack` type. `ts-morph` is a peer dependency.
 
 ## Coverage
 
