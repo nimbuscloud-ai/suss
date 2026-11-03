@@ -1,10 +1,7 @@
-import { defineConfig } from "vitest/config";
+import { toolConfig } from "../../vitest.shared.js";
 
-export default defineConfig({
-  test: {
-    include: ["src/**/*.test.ts"],
-    // Every case runs a whole extraction, and the first one in a worker
-    // pays for parsing the default libraries.
-    testTimeout: 60_000,
-  },
+export default toolConfig({
+  // Every case runs a whole extraction, and the first one in a worker
+  // pays for parsing the default libraries.
+  testTimeout: 60_000,
 });

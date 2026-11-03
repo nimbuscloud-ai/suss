@@ -1,7 +1,3 @@
-import { defineConfig } from "vitest/config";
+import { toolConfig } from "../../vitest.shared.js";
 
-export default defineConfig({
-  test: {
-    include: ["src/**/*.test.ts"],
-  },
-});
+export default toolConfig();
