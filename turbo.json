@@ -9,12 +9,20 @@
     "test": {
       "dependsOn": ["build"],
       "outputs": [],
-      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!coverage/**",
+        "$TURBO_ROOT$/vitest.shared.ts"
+      ]
     },
     "test:coverage": {
       "dependsOn": ["build"],
       "outputs": ["coverage/**"],
-      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!coverage/**",
+        "$TURBO_ROOT$/vitest.shared.ts"
+      ]
     },
     "lint": {
       "outputs": [],

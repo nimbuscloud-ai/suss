@@ -131,7 +131,7 @@ Two packages break this rule. `@suss/datalog` and `@suss/differential` are named
 
 ## Tests
 
-- We test with Vitest. Each package has its own `vitest.config.ts` and one or more `*.test.ts` files next to the source.
+- We test with Vitest. Each package has its own `vitest.config.ts` and one or more `*.test.ts` files next to the source. The config calls `packageConfig` (or `toolConfig`, for a tool or plugin) from `vitest.shared.ts` at the repo root and passes only what differs for that package, such as a coverage threshold. The shared file sets the 20 second test timeout, so a package does not set its own unless it needs longer.
 - Name a test file after its source file: `index.test.ts` next to `index.ts`. One test file per source file is typical but not required.
 - Prefer hand-written data fixtures to file-based fixtures when the data fits on one screen. They are easier to understand and update.
 - Tests describe *behavior*, not implementation: `it("wraps null-structured conditions as opaque")` not `it("assembleSummary works")`.

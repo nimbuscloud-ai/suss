@@ -1,9 +1,6 @@
-import { defineConfig } from "vitest/config";
+import { toolConfig } from "../../vitest.shared.js";
 
-export default defineConfig({
-  test: {
-    include: ["src/**/*.test.ts"],
-    // The self-run parses every TypeScript file this workspace ships.
-    testTimeout: 120_000,
-  },
+export default toolConfig({
+  // The self-run parses every TypeScript file this workspace ships.
+  testTimeout: 120_000,
 });
