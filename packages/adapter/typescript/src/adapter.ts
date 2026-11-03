@@ -1396,7 +1396,7 @@ function extractFromSourceFile(
   const everyUnit = everyUnitDeclarationsOf(frameworks);
   const gatedIn: PackTally[] = [];
   let unitsWalkedHere = 0;
-  const subUnitCtx = createTsSubUnitContext();
+  const subUnitCtx = createTsSubUnitContext(resolution);
 
   // Pack order in `frameworks` is the user's precedence: the first pack
   // to claim a (function, kind) keeps it. The map is per run, because a
@@ -3109,6 +3109,7 @@ export function createTypeScriptAdapter(
           project,
           config.frameworks,
           packsByFile,
+          resolution,
           config.extractorOptions,
           tallies,
           (created, parent) => {
@@ -3701,6 +3702,7 @@ function synthesizeSubUnits(
   project: Project,
   frameworks: PatternPack[],
   packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>,
+  resolution: ResolutionStore | undefined,
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
   onCreated?: (created: BehavioralSummary, parent: BehavioralSummary) => void,
@@ -3723,7 +3725,7 @@ function synthesizeSubUnits(
   const everyUnit = everyUnitDeclarationsOf(frameworks);
 
   const synthesized: BehavioralSummary[] = [];
-  const subUnitCtx = createTsSubUnitContext();
+  const subUnitCtx = createTsSubUnitContext(resolution);
   let lookup: SourceFileLookup | null = null;
 
   for (const parent of summaries) {
