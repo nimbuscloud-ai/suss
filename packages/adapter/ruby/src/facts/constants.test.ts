@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { GLOBAL_MODULE } from "@suss/resolution";
 
+import { rubyFactSource } from "../factSource.js";
 import { parseRuby } from "../parser.js";
+import { bindEvaluator } from "../values/evaluator.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import { resolveValues } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
@@ -11,12 +14,15 @@ import { emitValueFacts } from "./values.js";
 async function factsFor(files: Record<string, string>) {
   const db = new Database();
   const constants = [];
+  const parsed = [];
   for (const [file, source] of Object.entries(files)) {
     const tree = await parseRuby(source);
     emitValueFacts(db, file, tree.rootNode);
     constants.push(collectFileConstants(file, tree.rootNode));
+    parsed.push({ file, root: tree.rootNode });
   }
   emitConstantBindings(db, constants);
+  bindEvaluator(db, { files: parsed, definitions: new Map() });
   return db;
 }
 
@@ -28,6 +34,59 @@ function width(key: string): number {
   const [start, end] = (key.split(":")[1] ?? "").split("-").map(Number);
   return (end ?? 0) - (start ?? 0);
 }
+
+describe("a Ruby constant a library defines", () => {
+  const importsOf = (db: Database): string[][] =>
+    db.facts("imports").map((row) => row.map(String));
+
+  it("is imported from the global module under its path when no file defines its root", async () => {
+    const db = await factsFor({
+      "send.rb": [
+        "module Orders",
+        "  def self.send_one",
+        "    Aws::SQS::Client.new.send_message(queue_url: 'q')",
+        "    Ledger.publish('ledger')",
+        "  end",
+        "end",
+      ].join("\n"),
+    });
+
+    const imports = importsOf(db);
+    expect(imports).toContainEqual(["send.rb#Ledger", GLOBAL_MODULE, "Ledger"]);
+    expect(imports).toContainEqual([
+      expect.stringMatching(/^send\.rb:/),
+      GLOBAL_MODULE,
+      "Aws::SQS::Client",
+    ]);
+  });
+
+  it("is read by the fact source as coming from the library whose constant its path starts with", async () => {
+    const db = await factsFor({
+      "send.rb": "Aws::SQS::Client.new.send_message(queue_url: 'q')\n",
+    });
+    const [client] = importsOf(db).map(([ref]) => ref as string);
+    const source = rubyFactSource(db);
+
+    expect(source.textOf(client as string)).toBe("Aws::SQS::Client");
+    expect(source.importedFrom(client as string, "Aws::SQS")).toBe(true);
+    expect(source.importedFrom(client as string, "Aws::SQS::Client")).toBe(
+      true,
+    );
+    expect(source.importedFrom(client as string, "Aws::S3")).toBe(false);
+  });
+
+  it("is not imported when a file in the run defines its root, even one reopened under it", async () => {
+    const db = await factsFor({
+      "ledger.rb": "module Ledger\nend\n",
+      "client.rb": "class Aws::SQS::Client\nend\n",
+      "use.rb": "Ledger.publish('ledger')\nAws::SQS::Client.new\n",
+    });
+
+    expect(importsOf(db)).toEqual([
+      [expect.stringMatching(/^use\.rb:/), GLOBAL_MODULE, "Aws::SQS::Client"],
+    ]);
+  });
+});
 
 describe("a Ruby constant", () => {
   it("binds to the class another file declares", async () => {

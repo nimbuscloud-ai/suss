@@ -299,8 +299,10 @@ imports(x, m, n)            x is the name n imported from module m. n
                             is * for the whole module and default for
                             its default export. A global that only
                             library declarations declare is imported
-                            from GLOBAL_MODULE under its dotted name
-                            (TypeScript, Python)
+                            from GLOBAL_MODULE under its dotted name.
+                            Ruby states only that: a constant whose
+                            root no file in the run defines, under its
+                            path, Aws::SQS::Client
 exportsAs(m, n, v)          the file m exports v under the name n
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
 reExportsAll(m, m2)         m forwards everything m2 exports: export *

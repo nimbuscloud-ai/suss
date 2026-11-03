@@ -7,13 +7,13 @@
  * Three readings are Ruby's own. A call's callee is keyed on the method's
  * name, so its text is the receiver and the name as written. A class's own
  * method is stated under a spelling of its own, which the ops read back as
- * the plain name. And Ruby has no imports, so a value counts as coming
- * from a library when the constant it was made from starts with the
- * library's own constant, as `Aws::SQS::Client` starts with `Aws`.
+ * the plain name. And a value comes from a library when the constant it
+ * reads is one the facts state as imported from the global module, under
+ * a path that starts with the library's own constant.
  */
 
 import { referenceName } from "@suss/behavioral-ir";
-import { classMemberOf } from "@suss/resolution";
+import { classMemberOf, GLOBAL_MODULE } from "@suss/resolution";
 
 import { numberLiteralValue, stringLiteralValue } from "./ast.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
@@ -42,7 +42,10 @@ export function rubyFactSource(db: Database): FactSource {
     read: () => undefined,
     writtenAs: (key) => writtenValueOf(db, key),
     anchorCalls: (key) => anchorCallsOf(db, key),
-    importedFrom: (key, module) => fromConstant(textOf(key), module),
+    importedFrom: (key, module) =>
+      libraryPathsOf(db, key).some(
+        (path) => pathInModule(path, module) !== null,
+      ),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     memberName: (stated) => classMemberOf(stated) ?? stated,
     constructedClass: (callee) => constructedClass(nodeAt(callee)),
@@ -97,10 +100,24 @@ function constructedClass(method: RbNode | null): string | null {
   return named?.type === "constant" ? named.text : null;
 }
 
-/** Whether a constant path is the library's own constant or one inside it. */
-function fromConstant(path: string, module: string): boolean {
-  const constant = path.startsWith("::") ? path.slice(2) : path;
-  return constant === module || constant.startsWith(`${module}::`);
+/** The constant paths a library defines that the value at this key reads. */
+function libraryPathsOf(db: Database, key: string): string[] {
+  return db
+    .lookup("imports", 0, key)
+    .filter((row) => row[1] === GLOBAL_MODULE)
+    .map((row) => String(row[2]));
+}
+
+/**
+ * Where a constant path is inside the library's own constant: `*` for
+ * the constant itself, `Client` for `Aws::SQS::Client` inside `Aws::SQS`,
+ * and null for a path outside it.
+ */
+function pathInModule(path: string, module: string): string | null {
+  if (path === module) {
+    return "*";
+  }
+  return path.startsWith(`${module}::`) ? path.slice(module.length + 2) : null;
 }
 
 const SHAPES: Record<string, "object" | "list"> = {
