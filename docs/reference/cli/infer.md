@@ -41,8 +41,8 @@ MCP hosts get the same skeleton from the `suss_stub_draft` tool.
 ```
 $ suss infer stub axios -p tsconfig.json -o -
 # Draft stub for axios, from 2 observed call sites.
-# Fill each blank from the package's own source, then delete the
-# notes. The statement kinds are in design/proposals/dependency-stubs.md.
+# Fill each blank from the package's own source, then delete the notes.
+# The statement kinds are in https://suss.sh/guides/teach-a-dependency.
 package: "axios"
 authored: ""  # who filled the blanks, e.g. agent
 from: ""  # what the claims were read from, e.g. crate source at 1.4.2
@@ -53,8 +53,10 @@ statements:
   - kind: performs-call
     export: "default.create"
     system: ""  # what the call reaches: aws.sqs, aws.events, axios
-    spec: {}  # argument meanings, e.g. { subject: { at: 0 }, payload: { at: 1 } }
+    spec: {}  # aws.sqs and aws.events take { subject: { at: 0 }, payload: { at: 1 } }; axios takes {}
 ```
+
+The guide to [teaching suss a dependency](/guides/teach-a-dependency#the-file) says what each `system` takes in `spec`. When a filled statement is in a shape the pack does not read, `extract` stops and says which field is wrong.
 
 ## `suss infer intent`
 

@@ -19,7 +19,7 @@ statements:
     spec: { subject: { at: 0 }, payload: { at: 1 } }
 ```
 
-With that file in place, suss records every call to `publishEntry(queue, body)` in the project as a send to the queue in its first argument, and `suss ask "what writes aws.sqs:ledger-queue"` lists the callers.
+With that file in place, suss records every call to `publishEntry(queue, body)` in the project as a send to the queue in its first argument, and `suss ask "what writes bus:aws_sqs ledger-queue"` lists the callers. A call counts whether the code imports `publishEntry` by name or calls it as `ledger.publishEntry` through `import * as ledger`. When the queue is not a literal string in the source, suss doesn't record a send for that call, because a guessed queue would pair the call with the wrong consumer.
 
 You need a stub for a package that extraction cannot see inside. A napi-rs crate compiles to a binary before npm ever sees it, and a private wrapper ships only its build output. Extraction follows a call as far as the package's exports and stops there, so the queue the wrapper publishes to never shows up in a summary.
 
@@ -34,8 +34,8 @@ suss builds the draft from the calls your project already makes. It leaves the s
 
 ```yaml
 # Draft stub for @acme/ledger-native, from 3 observed call sites.
-# Fill each blank from the package's own source, then delete the
-# notes. The statement kinds are in design/proposals/dependency-stubs.md.
+# Fill each blank from the package's own source, then delete the notes.
+# The statement kinds are in https://suss.sh/guides/teach-a-dependency.
 package: "@acme/ledger-native"
 authored: ""  # who filled the blanks, e.g. agent
 from: ""  # what the claims were read from, e.g. crate source at 1.4.2
@@ -45,15 +45,17 @@ statements:
   - kind: performs-call
     export: "closeLedger"
     system: ""  # what the call reaches: aws.sqs, aws.events, axios
-    spec: {}  # argument meanings, e.g. { subject: { at: 0 }, payload: { at: 1 } }
+    spec: {}  # aws.sqs and aws.events take { subject: { at: 0 }, payload: { at: 1 } }; axios takes {}
   # publishEntry: 2 calls
   #   src/ledger.ts:6  (config.queueUrl, entry)
   #   src/ledger.ts:10  ("ledger-refunds", entry)
   - kind: performs-call
     export: "publishEntry"
     system: ""  # what the call reaches: aws.sqs, aws.events, axios
-    spec: {}  # argument meanings, e.g. { subject: { at: 0 }, payload: { at: 1 } }
+    spec: {}  # aws.sqs and aws.events take { subject: { at: 0 }, payload: { at: 1 } }; axios takes {}
 ```
+
+Filled in, the `publishEntry` statement is the one at the top of this page. A statement for an export that sends nothing, like `closeLedger` here, can be deleted.
 
 The draft is built from different evidence in each language. In TypeScript, suss collects every call into the package, groups the calls by export, and writes the arguments from each call site in as comments. In Python it collects every import of the package or of one of its submodules. A `re-exports` statement matches one module exactly, so the draft writes one file per imported module. Leave `-o` off for this case:
 
@@ -79,7 +81,27 @@ Each file has a `package` and at least one statement. It can also have `authored
 | `re-exports` | `of` | the package re-exports a framework |
 | `extends-base` | `class`, `extends` | a class in the package a project extends, and the root class it descends from |
 
-suss sends a `performs-call` statement to a pack according to its `system`. `aws.sqs` goes to the aws-sqs pack, `aws.events` goes to aws-eventbridge, and `axios` goes to axios. Any other `system` parses and then goes nowhere. The `spec` fields are the ones the matching pack takes, so a statement can express anything you could configure on the pack.
+suss sends a `performs-call` statement to a pack according to its `system`. `aws.sqs` goes to the aws-sqs pack, `aws.events` goes to aws-eventbridge, and `axios` goes to axios. Any other `system` parses and then goes nowhere.
+
+What goes in `spec` depends on the system:
+
+| system | `export` | `spec` |
+|---|---|---|
+| `aws.sqs`, `aws.events` | the function that sends | `{ subject: { at: 0 }, payload: { at: 1 } }`, the positions of the subject and the body. Leave `payload` out when no single argument is the body. |
+| `aws.sqs`, `aws.events` | not needed | `{ receiver: CommandDispatcher, method: dispatch, subjectArg: 0, bodyArg: 1 }`, for a method called on any value of that type |
+| `axios` | the function that builds a client, the way `axios.create` does | `{}` |
+
+An export can be a method on an instance the package's class makes. The draft writes it as `Ledger.append`, and a call on a `new Ledger()` the code made counts. A call on a `Ledger` the code received as a parameter does not, so for that case use the second form.
+
+When the pack in the run cannot read a statement, extract stops and prints which field is wrong and the forms that pack takes:
+
+```
+/work/shop/suss/stubs/acme-ledger-native.yaml has a statement the aws-sqs pack cannot read:
+  statements.0.spec.subject: Invalid input: expected object, received number
+The aws-sqs pack reads a performs-call statement written one of these ways:
+  export: <function>, spec: { subject: { at: 0 }, payload: { at: 1 } }
+  spec: { receiver: <type>, method: <method>, subjectArg: 0, bodyArg: 1 }
+```
 
 `composes-decorator` statements go to the NestJS packs, for `@nestjs/common`'s `Controller` and `@nestjs/graphql`'s `Resolver`. `re-exports` statements go to the fastapi and flask-restx packs, for a Python module of yours that wraps either one. `extends-base` statements go to graphql-ruby, rails, or both. The value of `extends:` picks which, and a root class in neither pack's list goes to both.
 
