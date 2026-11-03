@@ -3761,14 +3761,15 @@ function synthesizeSubUnits(
       kind: parent.kind,
     };
 
-    const claimedFuncs = new Set<unknown>();
+    const claimedFuncs = new Set<Node>();
     const subUnits: DiscoveredSubUnit[] = [];
     for (const pack of hooked) {
       for (const subUnit of pack.subUnits?.(parentHandle, subUnitCtx) ?? []) {
-        if (claimedFuncs.has(subUnit.func)) {
+        const func = subUnit.func as Node;
+        if (claimedFuncs.has(func)) {
           continue;
         }
-        claimedFuncs.add(subUnit.func);
+        claimedFuncs.add(func);
         subUnits.push(subUnit);
       }
     }
@@ -3779,6 +3780,7 @@ function synthesizeSubUnits(
         parent,
         parentFunc,
         { invocation: allInvocationRecognizers, access: allAccessRecognizers },
+        claimedFuncs,
         everyUnit,
         options,
       );
@@ -3829,6 +3831,7 @@ function buildSubUnitSummary(
     invocation: InvocationRecognizer[];
     access: AccessRecognizer[];
   },
+  claimed: DescentBarriers,
   everyUnit: EveryUnitDeclarations,
   options?: ExtractorOptions,
 ): BehavioralSummary | null {
@@ -3852,12 +3855,14 @@ function buildSubUnitSummary(
     name: subUnit.name,
   };
 
+  // A sub-unit of the same parent written inside this one, such as a
+  // timer set in a click handler, is read on its own summary.
   const raw = extractCodeStructure(
     unit,
     scaffoldPack,
     recognizers.invocation,
     recognizers.access,
-    undefined,
+    claimed,
     undefined,
     undefined,
     undefined,
@@ -3872,6 +3877,7 @@ function buildSubUnitSummary(
     parent.inputs.flatMap((input) =>
       input.type === "parameter" ? [input.name] : [],
     ),
+    claimed,
   );
   if (parentReads.length > 0) {
     raw.extraInputReads = [...(raw.extraInputReads ?? []), ...parentReads];

@@ -78,8 +78,9 @@ export function enclosingParameterReads(
   subUnit: FunctionRoot,
   enclosing: FunctionRoot,
   parameterNames: ReadonlyArray<string>,
+  barriers: DescentBarriers = NO_BARRIERS,
 ): InputRead[] {
-  return readsOfParameters(subUnit, enclosing, parameterNames, NO_BARRIERS);
+  return readsOfParameters(subUnit, enclosing, parameterNames, barriers);
 }
 
 function readsOfParameters(
