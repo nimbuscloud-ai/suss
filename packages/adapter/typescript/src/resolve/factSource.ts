@@ -63,18 +63,14 @@ export function factSourceFor(
     extendValue: (key, ops) => at(key, ops, (node) => noteValueNode(ops, node)),
     read: (key) => at(key, undefined, access.state),
     writtenAs: (key) => at(key, null, (node) => keyOf(resolve(node))),
-    // TypeScript keeps callOpsFor's anchor check, which asks only the
-    // store's import origins, so a run gives the same answer as before.
     anchorCalls: (key, origin) =>
-      originatesFrom === undefined
-        ? []
-        : at(key, [], (node) =>
-            store
-              .anchorCallsOf(node, (candidate) =>
-                anchorAccepts(candidate, origin, originatesFrom),
-              )
-              .map(nodeId),
-          ),
+      at(key, [], (node) =>
+        store
+          .anchorCallsOf(node, (candidate) =>
+            anchorAccepts(candidate, origin, originatesFrom),
+          )
+          .map(nodeId),
+      ),
     importedFrom: (key, module) =>
       at(key, false, (node) => isImportedFrom(node, module, originatesFrom)),
     shapeOf: (key) => at(key, null, shapeOf),
