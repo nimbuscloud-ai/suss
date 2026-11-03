@@ -32,6 +32,7 @@ import {
   projectPlaceOf,
   propertiesOf,
   propertyFunctionOf,
+  propertyNamed,
   propertyNameOf,
   propertyOf,
   propertyValueOf,
@@ -224,11 +225,9 @@ function renderPropsOf(
   componentName: string,
   resolution: ResolutionStore,
 ): string[] | null {
-  const property = propertiesOf(storyOrMeta, resolution).find(
-    (candidate) => propertyNameOf(candidate) === "render",
-  );
+  const property = propertyNamed(storyOrMeta, "render", resolution);
   const render =
-    property === undefined ? null : propertyFunctionOf(property, resolution);
+    property === null ? null : propertyFunctionOf(property, resolution);
   if (render === null) {
     return null;
   }

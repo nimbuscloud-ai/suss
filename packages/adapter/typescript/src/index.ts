@@ -36,6 +36,7 @@ export {
   objectLiteralOf,
   propertiesOf,
   propertyFunctionOf,
+  propertyNamed,
   propertyNameOf,
   propertyOf,
   propertyValueOf,
