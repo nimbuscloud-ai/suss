@@ -39,8 +39,16 @@ export interface ScanFindings {
   argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
   /** Where each function a table call may run is declared, by callee text. */
   possibleTargets: ReadonlyMap<string, readonly DeclaredAt[]>;
-  parameterCalls: ReadonlyArray<{ callee: string; parameterIndex: number }>;
+  parameterCalls: ReadonlyArray<ParameterCall>;
   passedPositions: ReadonlySet<string>;
+}
+
+/** A call through one of the scanned function's own parameters. */
+export interface ParameterCall {
+  callee: string;
+  parameterIndex: number;
+  /** Set when every such call is written inside another unit, whose own summary notes it. */
+  inNestedUnit?: true;
 }
 
 /**
@@ -64,7 +72,7 @@ export interface ScanRecord {
   targets?: Array<[string, ...StoredPlace]>;
   argTargets?: Array<[string, Array<[number, ...StoredPlace]>]>;
   possible?: Array<[string, StoredPlace[]]>;
-  parameterCalls?: Array<{ callee: string; parameterIndex: number }>;
+  parameterCalls?: ParameterCall[];
   passed?: string[];
 }
 

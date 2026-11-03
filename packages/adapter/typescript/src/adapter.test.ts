@@ -10,7 +10,7 @@ import {
   storageBinding,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
-import { assembleSummary } from "@suss/extractor";
+import { assembleSummary, httpRouteDiscovery } from "@suss/extractor";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
@@ -6767,29 +6767,64 @@ describe("walker descent", () => {
     });
   });
 
-  it("reads a sub-unit written inside another sub-unit only on its own summary", async () => {
-    const nestedDeferPack: PatternPack = {
-      ...expressResPack,
-      name: "nested-defer-pack",
-      subUnits: (parent, ctx) => {
-        const c = ctx as TsSubUnitContext;
-        const parentFunc = parent.func as FunctionRoot;
-        return c
-          .findCallExpressionsByName(parentFunc, "defer")
-          .flatMap((call, index) => {
-            const fn = c.getCallArgumentFunction(call, 0);
-            return fn === null
-              ? []
-              : [
-                  {
-                    func: fn,
-                    kind: "handler" as const,
-                    name: `${parent.name}.defer#${index}`,
-                  },
-                ];
+  const nestedDeferPack: PatternPack = {
+    ...expressResPack,
+    name: "nested-defer-pack",
+    subUnits: (parent, ctx) => {
+      const c = ctx as TsSubUnitContext;
+      const parentFunc = parent.func as FunctionRoot;
+      return c
+        .findCallExpressionsByName(parentFunc, "defer")
+        .flatMap((call, index) => {
+          const fn = c.getCallArgumentFunction(call, 0);
+          return fn === null
+            ? []
+            : [
+                {
+                  func: fn,
+                  kind: "handler" as const,
+                  name: `${parent.name}.defer#${index}`,
+                },
+              ];
+        });
+    },
+  };
+
+  it("notes a call it could not follow only on the sub-unit that makes it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "handler.ts",
+      `
+        declare function defer(cb: () => void): void;
+        declare function work(): void;
+        declare function prepare(): void;
+        export function handleUser(req: any, res: any, done: () => void) {
+          prepare();
+          defer(() => {
+            work();
+            done();
           });
-      },
-    };
+          res.json({ ok: true });
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [nestedDeferPack],
+    });
+    const summaries = await adapter.extractAll();
+
+    const notedBy = (name: string) =>
+      summaries
+        .find((s) => s.identity.name === name)
+        ?.gaps.flatMap((gap) =>
+          gap.type === "unfollowedCall" ? [gap.callee] : [],
+        );
+    expect(notedBy("handleUser")).toEqual(["prepare", "defer"]);
+    expect(notedBy("handleUser.defer#0")).toEqual(["work", "done"]);
+  });
+
+  it("reads a sub-unit written inside another sub-unit only on its own summary", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "handler.ts",
@@ -6834,6 +6869,47 @@ describe("walker descent", () => {
         ?.inputReads?.map((read) => read.input);
     expect(readsOf("handleUser.defer#0") ?? []).not.toContain("req");
     expect(readsOf("handleUser.defer#1")).toContain("req");
+  });
+});
+
+describe("a route handler written inside an exported function", () => {
+  it("notes a call through the function's parameter on the handler that makes it", async () => {
+    const pack: PatternPack = {
+      ...expressResPack,
+      discovery: [
+        ...httpRouteDiscovery({
+          importModule: "express",
+          importNames: ["express"],
+          methods: [".get"],
+        }),
+        { kind: "handler", match: { type: "namedExport", names: ["mount"] } },
+      ],
+    };
+    const project = createTestProject();
+    project.createSourceFile(
+      "routes.ts",
+      `
+        import express from "express";
+        const app = express();
+        export function mount(audit: () => void) {
+          app.get("/x", (req: any, res: any) => {
+            audit();
+            res.json({ ok: true });
+          });
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [pack] });
+    const summaries = await adapter.extractAll();
+
+    const mount = summaries.find((s) => s.identity.name === "mount");
+    const handler = summaries.find((s) => s.identity.name === "get");
+    const noted = (summary: BehavioralSummary | undefined) =>
+      (summary?.gaps ?? []).flatMap((gap) =>
+        gap.type === "unfollowedCall" ? [gap.callee] : [],
+      );
+    expect(noted(mount)).not.toContain("audit");
+    expect(noted(handler)).toContain("audit");
   });
 });
 
