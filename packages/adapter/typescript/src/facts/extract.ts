@@ -54,7 +54,7 @@ import {
   forEachDescendantWhere,
   statementsOfKind,
 } from "../walk/rawDescent.js";
-import { climbSyntax } from "../walk/unwrap.js";
+import { climbSyntax, peelValue, VALUE_WRAPPER_KINDS } from "../walk/unwrap.js";
 import {
   type BodyPropertyWrites,
   describeWrites,
@@ -299,7 +299,7 @@ function moduleKeysOf(
  * the expression is something else or the specifier is computed.
  */
 function dynamicImportKeysOf(expression: Expression): string[] | null {
-  const call = unwrapExpression(expression);
+  const call = peelValue(expression);
   if (
     !Node.isCallExpression(call) ||
     call.getExpression().getKind() !== SyntaxKind.ImportKeyword
@@ -522,7 +522,7 @@ function packagesDescribedByTypes(owner: string): string[] {
  * ever emitted a fact for.
  */
 export function factKeyOf(value: Node): Node {
-  return Node.isExpression(value) ? unwrapExpression(value) : value;
+  return Node.isExpression(value) ? peelValue(value) : value;
 }
 
 /** The name an index expression states, when it states one at all. */
@@ -688,7 +688,7 @@ function templatePieces(
  * reader that follows the key. The README says why they wait.
  */
 function keyLeftUnstated(table: NodeTable, value: Expression): string {
-  const expression = unwrapExpression(value);
+  const expression = peelValue(value);
   const id = nodeId(expression);
   table.byId.set(id, expression);
   return id;
@@ -867,26 +867,6 @@ function asFallbackExpression(expression: Expression): BinaryExpression | null {
     : null;
 }
 
-/** Peel await, parentheses, satisfies, and as-casts. */
-function unwrapExpression(expression: Expression): Expression {
-  let current = expression;
-  for (;;) {
-    if (Node.isAwaitExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isParenthesizedExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isAsExpression(current) || Node.isSatisfiesExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    return current;
-  }
-}
-
 /**
  * Record that `value` is a value of interest and emit the facts that
  * let the rules resolve it: its own identity, and a binds edge when it
@@ -901,7 +881,7 @@ export function emitValue(
   table: NodeTable,
   value: Expression,
 ): string {
-  const expression = unwrapExpression(value);
+  const expression = peelValue(value);
 
   // Ahead of the guard below, since the key is the class's rather than
   // this node's and every read of `this` has to arrive at the same one.
@@ -1175,7 +1155,7 @@ function memberReadName(read: PropertyAccessExpression): string {
 }
 
 function readsOffClassItself(receiver: Expression): boolean {
-  const written = unwrapExpression(receiver);
+  const written = peelValue(receiver);
   if (written.getKind() === SyntaxKind.ThisKeyword) {
     return thisIsTheClass(written);
   }
@@ -1214,7 +1194,7 @@ function holdsAClass(declaration: Node, seen: Set<Node>): boolean {
   const { values } = writesToBinding(declaration);
   return (
     values.length > 0 &&
-    values.every((value) => isClassReference(unwrapExpression(value), seen))
+    values.every((value) => isClassReference(peelValue(value), seen))
   );
 }
 
@@ -1584,7 +1564,7 @@ function emitCallFacts(
   const callId = nodeId(call as unknown as Node);
   table.byId.set(callId, call as unknown as Node);
 
-  const callee = unwrapExpression(call.getExpression());
+  const callee = peelValue(call.getExpression());
   const calleeId = emitValue(db, table, callee);
   fact(db, "call", callId, calleeId);
   if (!insideMethodBody(call as unknown as Node)) {
@@ -1706,7 +1686,7 @@ function propertyTakenBy(element: BindingElement): string | null {
 
 /** `new Map(...)`, the language's own map, which a program fills through `set`. */
 function isMapConstruction(construction: NewExpression): boolean {
-  return globalNameOf(unwrapExpression(construction.getExpression())) === "Map";
+  return globalNameOf(peelValue(construction.getExpression())) === "Map";
 }
 
 /** Whether a value is a map, by the type the checker gives it. */
@@ -2216,7 +2196,7 @@ function recordBodyNode(
 /**
  * The kinds `recordBodyNode` states anything about: a function, a return,
  * a keyed read, an assignment, and a call, with the wrappers
- * `unwrapExpression` peels off one.
+ * `peelValue` peels off one.
  */
 const BODY_FACT_KINDS: ReadonlySet<SyntaxKind> = new Set([
   ...FUNCTION_ROOT_KINDS,
@@ -2225,10 +2205,7 @@ const BODY_FACT_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.BinaryExpression,
   SyntaxKind.CallExpression,
   SyntaxKind.NewExpression,
-  SyntaxKind.AwaitExpression,
-  SyntaxKind.ParenthesizedExpression,
-  SyntaxKind.AsExpression,
-  SyntaxKind.SatisfiesExpression,
+  ...VALUE_WRAPPER_KINDS,
 ]);
 
 /**
@@ -2259,12 +2236,12 @@ function recordBodyCalls(
   }
   notePropertyWrite(writes, node);
   emitExitCodeWrite(db, table, node);
-  const call = unwrapExpression(node);
+  const call = peelValue(node);
   if (!isCall(call)) {
     return false;
   }
   fact(db, "makesCall", fnId, emitValue(db, table, call));
-  const callee = unwrapExpression(call.getExpression());
+  const callee = peelValue(call.getExpression());
   // A name or a property read: `body(e)` and `opts.body(e)` both say
   // this function runs its argument, and the property rule needs the
   // second to see which property it was.
@@ -2345,9 +2322,9 @@ function emitTopLevelStatements(
  * promise away, so the call is what runs.
  */
 function statementExpressionOf(statement: ExpressionStatement): Expression {
-  const expression = unwrapExpression(statement.getExpression());
+  const expression = peelValue(statement.getExpression());
   return Node.isVoidExpression(expression)
-    ? unwrapExpression(expression.getExpression())
+    ? peelValue(expression.getExpression())
     : expression;
 }
 
