@@ -82,18 +82,18 @@ describe("a zustand store access", () => {
     });
   });
 
-  it("skips a spread entry and keeps the stated fields", () => {
+  it("writes the fields a spread puts in, in the order they are written", () => {
     const effects = effectsIn(`
       ${STORE}
-      const base = { honey: 1 };
+      const base = { honey: 1, bears: 0 };
       export function refill() {
-        useAppStore.setState({ ...base, bears: 2 });
+        useAppStore.setState({ ...base, bears: 2, pots: 3 });
       }
     `);
 
     expect(storageOf(effects[0]).interaction).toMatchObject({
       kind: "write",
-      fields: ["bears"],
+      fields: ["honey", "bears", "pots"],
     });
   });
 

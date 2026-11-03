@@ -158,7 +158,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `method()`, `calleeText()` | `call(r, c)`, then `readsProperty(c, o, n)` for the method, with the adapter's `memberName` turning a class's own spelling back into the plain name, or the source text of `c` |
 | `argumentCount()`, `argument(k)`, `nameAt(k)`, `valueAt(k)` | `callArg(r, k, a)`, and `callArgCount` where an adapter states it |
 | `receiver()`, `callee()`, `argument(k)` | a name or field followed to what it was written as, through the adapter's `writtenAs` |
-| `propertyAt`, `property`, `entries`, `items` | `holdsProperty`, `writtenEntryAt` and `holdsUnderKey`, with a computed key read through `computedKeyOf` |
+| `propertyAt`, `property`, `entries`, `items` | `holdsProperty`, `writtenEntryAt` and `holdsUnderKey`, with a computed key read through `computedKeyOf`. An object's spread is read in its place, its name followed through `writtenAs`, and a key written twice keeps its first place and takes the later value. A list's spread is left out |
 | `parts()`, `holes()`, `interpolated()` | `partAt` and `holeAt` |
 | `text()`, `flag()`, `name()`, `names()`, `asArg()` | the adapter's own reading of the value, `literalOf`, `nameOf`, `namesOf` and `argOf` |
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |

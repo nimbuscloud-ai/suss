@@ -197,6 +197,32 @@ export interface ValueEntry {
 }
 
 /**
+ * An object's entries as they are once the object is built. A key
+ * written twice, directly or through a spread, keeps the place it was
+ * first written at and takes the value written last, which is what
+ * JavaScript, Python and Ruby all do. An entry whose key nothing settles
+ * stays where it is, since it cannot be matched against another.
+ */
+export function lastValueWins<T extends { readonly key: string | null }>(
+  entries: readonly T[],
+): T[] {
+  const kept: T[] = [];
+  const placeOf = new Map<string, number>();
+  for (const entry of entries) {
+    const place = entry.key === null ? undefined : placeOf.get(entry.key);
+    if (place !== undefined) {
+      kept[place] = entry;
+      continue;
+    }
+    if (entry.key !== null) {
+      placeOf.set(entry.key, kept.length);
+    }
+    kept.push(entry);
+  }
+  return kept;
+}
+
+/**
  * One call site, as the questions a chain asks about it.
  *
  * An adapter builds one of these per call and hands it to the

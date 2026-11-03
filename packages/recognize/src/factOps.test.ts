@@ -368,6 +368,107 @@ describe("factValueOps", () => {
 });
 
 /**
+ * The facts for, in source order, with `x` keyed by its name the way
+ * Python and Ruby key one, so two entries share it:
+ *
+ *   base = { table: "drafts", id: 1 }
+ *   row = { ...base, table: "orders", name: x, alias: x, ...make() }
+ *   ring = { ...ring, own: 2 }
+ *   put(row)
+ */
+function spreads(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("objectValue", "base");
+  add("holdsProperty", "base", "table", "drafts");
+  add("holdsProperty", "base", "id", "one");
+  add("writtenEntryAt", "base", "0", "drafts", "value");
+  add("writtenEntryAt", "base", "1", "one", "value");
+  add("objectValue", "row");
+  add("writtenEntryAt", "row", "0", "baseName", "spread");
+  add("holdsProperty", "row", "table", "orders");
+  add("writtenEntryAt", "row", "1", "orders", "value");
+  add("holdsProperty", "row", "name", "x");
+  add("holdsProperty", "row", "alias", "x");
+  add("writtenEntryAt", "row", "2", "x", "value");
+  add("writtenEntryAt", "row", "3", "x", "value");
+  add("call", "made", "make");
+  add("writtenEntryAt", "row", "4", "made", "spread");
+  add("objectValue", "ring");
+  add("writtenEntryAt", "ring", "0", "ringName", "spread");
+  add("holdsProperty", "ring", "own", "two");
+  add("writtenEntryAt", "ring", "1", "two", "value");
+  add("call", "put", "put");
+  add("callArg", "put", "0", "rowName");
+
+  const written: Record<string, string> = {
+    baseName: "base",
+    ringName: "ring",
+    rowName: "row",
+  };
+  const literal: Record<string, string | number> = {
+    drafts: "drafts",
+    orders: "orders",
+    one: 1,
+    two: 2,
+  };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => written[key] ?? null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    shapeOf: (key) => (["base", "row", "ring"].includes(key) ? "object" : null),
+    textOf: (key) => key,
+    literalOf: (key) => literal[key] ?? null,
+    nameOf: (key) => {
+      const stated = literal[key];
+      return typeof stated === "string" ? stated : null;
+    },
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+}
+
+describe("factValueOps over a spread", () => {
+  it("puts the entries a spread unpacks in its place, a key written again keeping its place and taking the later value", () => {
+    const row = factValueOps("rowName", spreads());
+    const entries = row.entries("nothing");
+
+    expect(entries.map((entry) => entry.key)).toEqual([
+      "table",
+      "id",
+      "name",
+      "alias",
+    ]);
+    expect(entries[0]?.value.text()).toBe("orders");
+    expect(entries[1]?.value.flag()).toBe(true);
+  });
+
+  it("reads a property through a spread, the last one written winning", () => {
+    const row = factValueOps("rowName", spreads());
+
+    expect(row.property("table")?.text()).toBe("orders");
+    expect(row.property("id")?.flag()).toBe(true);
+    expect(row.property("alias")?.asArg()).toEqual({
+      kind: "identifier",
+      name: "x",
+    });
+    expect(row.property("missing")).toBeNull();
+    expect(opsAt("put", spreads()).propertyAt(0, "table", "nothing")).toBe(
+      "orders",
+    );
+  });
+
+  it("reads an object that spreads itself once", () => {
+    const ring = factValueOps("ring", spreads());
+
+    expect(ring.entries("nothing").map((entry) => entry.key)).toEqual(["own"]);
+    expect(ring.property("own")?.flag()).toBe(true);
+    expect(ring.property("missing")).toBeNull();
+  });
+});
+
+/**
  * The facts for, in source order:
  *
  *   hook = Hook()

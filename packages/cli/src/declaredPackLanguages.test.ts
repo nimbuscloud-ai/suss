@@ -30,6 +30,7 @@ import {
 import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { InputRule } from "@suss/recognize";
 
 // Ruby has no imports, so a client comes from a library through the
 // library's own constant, which each origin lists beside the module.
@@ -62,8 +63,27 @@ const TABLE_DROPS = storageCalls({
   .container({ at: 0, keyword: "table", path: ["name"] }, { qualified: true })
   .example('admin.tables().drop({ name: "core.events" })');
 
+// A record written with a spread in it. The table is the one written
+// last, and the fields come in the order their keys were first written.
+const KEYS: InputRule = ({ input }) =>
+  input
+    .entries("nothing")
+    .flatMap((entry) => (entry.key === null ? [] : [entry.key]));
+
+const RECORD_PUTS = storageCalls({
+  system: "records",
+  client: constructedFrom("kvcache", "Kvcache"),
+})
+  .methods({ put: { kind: "write", fields: { of: { at: 0 }, by: KEYS } } })
+  .container({ at: 0, property: ["table"] })
+  .example('records.put({ table: "orders", name: "x" })');
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-records", [RECORD_PUTS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-tables", [TABLE_DROPS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -81,32 +101,38 @@ const INVOCATION = PACKS.flatMap((one) => one.invocationRecognizers ?? []);
 const ACCESS = PACKS.flatMap((one) => one.accessRecognizers ?? []);
 
 const TYPESCRIPT = `
-  import { Admin, Cache } from "kvcache";
+  import { Admin, Cache, Records } from "kvcache";
   import { Pool } from "sqldb";
 
   const cache = new Cache();
   const db = new Pool();
   const admin = new Admin();
+  const records = new Records();
+  const draft = { table: "drafts", id: 1 };
 
   export function load() {
     cache.get("user_online:42");
     db.query("SELECT id, email FROM users");
     admin.tables().drop({ name: "core.events" });
+    records.put({ ...draft, table: "orders", name: "x" });
   }
 `;
 
-const PYTHON = `from kvcache import Admin, Cache
+const PYTHON = `from kvcache import Admin, Cache, Records
 from sqldb import Pool
 
 cache = Cache()
 db = Pool()
 admin = Admin()
+records = Records()
+draft = {"table": "drafts", "id": 1}
 
 
 def load():
     cache.get("user_online:42")
     db.query("SELECT id, email FROM users")
     admin.tables().drop(table={"name": "core.events"})
+    records.put({**draft, "table": "orders", "name": "x"})
 `;
 
 const RUBY = `module Store
@@ -114,9 +140,12 @@ const RUBY = `module Store
     cache = Kvcache::Cache.new
     db = Sqldb::Pool.new
     admin = Kvcache::Admin.new
+    records = Kvcache::Records.new
+    draft = { table: "drafts", id: 1 }
     cache.get("user_online:42")
     db.query("SELECT id, email FROM users")
     admin.tables().drop(table: { name: "core.events" })
+    records.put({ **draft, table: "orders", name: "x" })
   end
 end
 `;
@@ -126,6 +155,7 @@ const LIBRARIES: Record<string, string> = {
     export declare class Cache { get(key: string): unknown; }
     export declare class Tables { drop(spec: unknown): unknown; }
     export declare class Admin { tables(): Tables; }
+    export declare class Records { put(record: unknown): unknown; }
   `,
   sqldb: "export declare class Pool { query(statement: string): unknown; }",
 };
@@ -245,7 +275,7 @@ describe("a pack declared once", () => {
   it("records the same storage and SQL effects in TypeScript, Python and Ruby", async () => {
     const fromTypeScript = typescriptEffects().map(placeless);
 
-    expect(fromTypeScript).toHaveLength(3);
+    expect(fromTypeScript).toHaveLength(4);
     expect(fromTypeScript).toContainEqual(
       expect.objectContaining({
         binding: expect.objectContaining({
@@ -253,6 +283,16 @@ describe("a pack declared once", () => {
             scope: "core",
             container: "events",
           }),
+        }),
+      }),
+    );
+    expect(fromTypeScript).toContainEqual(
+      expect.objectContaining({
+        binding: expect.objectContaining({
+          semantics: expect.objectContaining({ container: "orders" }),
+        }),
+        interaction: expect.objectContaining({
+          fields: ["table", "id", "name"],
         }),
       }),
     );
