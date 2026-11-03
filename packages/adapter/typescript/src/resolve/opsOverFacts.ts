@@ -78,6 +78,7 @@ function withNodeMembers(
     valueAt: (index) => ops.valueAt(index),
     anchorCall: (origin) => ops.anchorCall?.(origin) ?? null,
     namedCallee: () => nodes().namedCallee?.() ?? false,
+    calleeImportedAs: (modules) => ops.calleeImportedAs?.(modules) ?? null,
     parameterReadsAt: (index) => nodes().parameterReadsAt?.(index) ?? null,
     classAt: (index) => nodes().classAt?.(index) ?? null,
     readingArguments: (first, last) => nodes().readingArguments?.(first, last),

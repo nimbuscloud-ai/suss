@@ -1579,13 +1579,30 @@ export class ResolutionStore {
    * decorators.
    */
   importedNamesOf(value: Node, modules: string[]): string[] {
+    return this.namesReached(value, modules, "importedOrCalled");
+  }
+
+  /**
+   * The names from `modules` this value was imported under, as those
+   * modules export them, through an alias or a project barrel. A value
+   * that only calls into one of them is left out.
+   */
+  importedAsOf(value: Node, modules: string[]): string[] {
+    return this.namesReached(value, modules, "imported");
+  }
+
+  private namesReached(
+    value: Node,
+    modules: string[],
+    reach: NameReach,
+  ): string[] {
     let refersTo = this.declarations.get(value);
     if (refersTo === undefined) {
       refersTo = declarationOf(value);
       this.declarations.set(value, refersTo);
     }
 
-    const declaration = `${nodeId(refersTo)}|${modules.join(",")}`;
+    const declaration = `${nodeId(refersTo)}|${modules.join(",")}|${reach}`;
     const cached = this.importedNames.get(declaration);
     if (cached !== undefined) {
       // A memo hit walks nothing, but whoever is collecting file
@@ -1597,7 +1614,7 @@ export class ResolutionStore {
     }
     const target = factKeyOf(value);
     const found = this.askAbout(target, "wantedOrigin", () =>
-      this.lookupImportedNames(target, modules),
+      this.lookupImportedNames(target, modules, reach),
     );
     this.importedNames.set(declaration, {
       names: found,
@@ -1746,13 +1763,21 @@ export class ResolutionStore {
       .sort((a, b) => a.path.join(".").localeCompare(b.path.join(".")));
   }
 
-  private lookupImportedNames(value: Node, modules: string[]): string[] {
+  private lookupImportedNames(
+    value: Node,
+    modules: string[],
+    reach: NameReach,
+  ): string[] {
     this.derive();
 
     const reached = new Set(
       this.answerPairsFor("wantedComesFrom", nodeId(value)),
     );
-    for (const target of this.answersFor("wantedComesTo", nodeId(value))) {
+    const called =
+      reach === "imported"
+        ? []
+        : this.answersFor("wantedComesTo", nodeId(value));
+    for (const target of called) {
       for (const entry of this.answerPairsFor("wantedCallsInto", target)) {
         reached.add(entry);
       }
@@ -2213,6 +2238,12 @@ function onlySource(sources: readonly Node[]): Node | null {
   const only = sources[0];
   return sources.length === 1 && only !== undefined ? only : null;
 }
+
+/**
+ * Which names a value comes down to: only those it was imported under,
+ * or also those it ends up calling.
+ */
+type NameReach = "imported" | "importedOrCalled";
 
 function namesFrom(pairs: string[], packages: string[]): string[] {
   const names = new Set<string>();

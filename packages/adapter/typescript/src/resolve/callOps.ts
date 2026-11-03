@@ -155,11 +155,33 @@ export function importedAsAsked(
   }
   return origin.importedFrom.some((module) =>
     resolution
-      .importedNamesOf(value, [module])
+      .importedAsOf(value, [module])
       .some(
         (name) => origin.named === undefined || origin.named.includes(name),
       ),
   );
+}
+
+/**
+ * The one export of these modules the callee was imported as, or null.
+ * The whole module, imported as `*` or as its default, says nothing about
+ * which export the call reaches.
+ */
+function calleeImportedAs(
+  callee: Node,
+  modules: readonly string[],
+  resolution: ResolutionStore | undefined,
+): string | null {
+  if (resolution === undefined) {
+    return null;
+  }
+  const names = new Set(
+    resolution
+      .importedAsOf(callee, [...modules])
+      .filter((name) => name !== "*" && name !== "default"),
+  );
+  const [one] = names;
+  return names.size === 1 && one !== undefined ? one : null;
 }
 
 /** Whether `made` is a call of the origin's method on a receiver from its `on`. */
@@ -192,11 +214,10 @@ function madeFromModule(
   made: Node,
   receiver: Receiver,
 ): boolean {
-  return (
-    madeFromNamed(origin, made) &&
-    origin.importedFrom.some((module) =>
+  return origin.importedFrom.some(
+    (module) =>
+      madeFromNamed(origin, made, module, receiver.resolution) &&
       isImportedFrom(madeBy(made), module, receiver.originatesFrom),
-    )
   );
 }
 
@@ -207,27 +228,44 @@ function madeFromModule(
  * `send`, so without this a batch send and a single send are the same
  * call.
  *
- * The export's own name is the rightmost part of the constructor
- * expression. Through a namespace import the source writes
- * `new eb.PutEventsCommand(...)`, and the root identifier is the
- * namespace, which no pack ever asked for by name.
+ * The export is the one the constructor was imported as, so
+ * `import { Queue as BullQueue }` is `Queue`. Otherwise it is the
+ * rightmost part of the constructor expression: through a namespace
+ * import the source writes `new eb.PutEventsCommand(...)`, and the root
+ * identifier is the namespace, which no pack ever asked for by name.
  */
-function madeFromNamed(origin: ConstructedFrom, made: Node): boolean {
-  if (origin.named === undefined) {
+function madeFromNamed(
+  origin: ConstructedFrom,
+  made: Node,
+  module: string,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  const named = origin.named;
+  if (named === undefined || named.includes(constructorName(made))) {
     return true;
   }
-  return origin.named.includes(constructorName(made));
+  const expression = constructorExpression(made);
+  return (
+    resolution !== undefined &&
+    Node.isIdentifier(expression) &&
+    resolution
+      .importedAsOf(expression, [module])
+      .some((name) => named.includes(name))
+  );
 }
 
 /** The rightmost name of what a value was constructed with. */
 function constructorName(made: Node): string {
-  const expression =
-    Node.isNewExpression(made) || Node.isCallExpression(made)
-      ? made.getExpression()
-      : made;
+  const expression = constructorExpression(made);
   return Node.isPropertyAccessExpression(expression)
     ? expression.getName()
     : expression.getText();
+}
+
+function constructorExpression(made: Node): Node {
+  return Node.isNewExpression(made) || Node.isCallExpression(made)
+    ? made.getExpression()
+    : made;
 }
 
 /**
@@ -242,13 +280,19 @@ function constructorName(made: Node): string {
 const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
   declaredBy: ORIGIN.declaredBy,
   constructed: (origin, receiver) =>
-    madeFromNamed(origin, receiver.expression) &&
-    origin.importedFrom.some((module) =>
-      isImportedFrom(
-        rootIdentifier(receiver.expression) ?? receiver.expression,
-        module,
-        receiver.originatesFrom,
-      ),
+    origin.importedFrom.some(
+      (module) =>
+        madeFromNamed(
+          origin,
+          receiver.expression,
+          module,
+          receiver.resolution,
+        ) &&
+        isImportedFrom(
+          rootIdentifier(receiver.expression) ?? receiver.expression,
+          module,
+          receiver.originatesFrom,
+        ),
     ),
   anyOf: (origin, receiver) =>
     origin.of.some((one) => byOrigin(CALL_ORIGIN, one, receiver)),
@@ -505,6 +549,8 @@ export function callOpsFor(
       nameAt(argumentsOf()[index], unsettled, resolve),
     calleeText: () => expression.getText(),
     namedCallee: () => Node.isIdentifier(expression),
+    calleeImportedAs: (modules) =>
+      calleeImportedAs(expression, modules, reading.resolution),
     parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
       callee === null ? null : opsOverReceiver(callee.getExpression(), values),
@@ -574,6 +620,7 @@ function decoratorOn(
           callee: null,
           expression: written.getExpression(),
           resolve: reading.resolve ?? (() => null),
+          resolution: reading.resolution,
           ...(originatesFrom === undefined ? {} : { originatesFrom }),
         }),
     );
@@ -591,6 +638,7 @@ export function anchorAccepts(
   candidate: Node,
   origin: ReceiverOrigin,
   originatesFrom: OriginatesFrom | undefined,
+  resolution?: ResolutionStore,
 ): boolean {
   if (!Node.isCallExpression(candidate) && !Node.isNewExpression(candidate)) {
     return false;
@@ -599,17 +647,13 @@ export function anchorAccepts(
   if (origin.origin !== "constructed" && origin.origin !== "declaredBy") {
     return false;
   }
-  if (
-    origin.origin === "constructed" &&
-    origin.named !== undefined &&
-    !origin.named.includes(constructorName(candidate))
-  ) {
-    return false;
-  }
   const callee = calleeOf(candidate);
   const root = rootIdentifier(callee) ?? callee;
-  return origin.importedFrom.some((module) =>
-    isImportedFrom(root, module, originatesFrom),
+  return origin.importedFrom.some(
+    (module) =>
+      (origin.origin !== "constructed" ||
+        madeFromNamed(origin, candidate, module, resolution)) &&
+      isImportedFrom(root, module, originatesFrom),
   );
 }
 
@@ -630,7 +674,7 @@ function anchorCallBehind(
   }
 
   const found = anchorCallsOf(subject, (candidate) =>
-    anchorAccepts(candidate, origin, originatesFrom),
+    anchorAccepts(candidate, origin, originatesFrom, reading.resolution),
   );
 
   const distinct = [...new Set(found)];

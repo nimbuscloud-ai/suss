@@ -22,7 +22,7 @@ import {
 import { byOrigin, unwrapJsonStringify } from "@suss/extractor";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
-import { opsIn } from "./ops.js";
+import { modulesOf, opsIn } from "./ops.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -101,13 +101,14 @@ export function compile(
   recognition: string,
 ): InvocationRecognizer {
   const receiverMethods = methodsWhoseReceiversAreAsked(chain);
+  const modules = modulesOfChain(chain);
   return (_call: unknown, ctx: unknown): Effect[] | null => {
     const ops = opsIn(ctx);
     if (ops === null) {
       return null;
     }
 
-    const bare = bareCall(chain, ops);
+    const bare = bareCall(chain, ops, modules);
     if (bare !== null) {
       return YIELD[chain.ending.yields]({
         ops,
@@ -127,22 +128,85 @@ export function compile(
       ops.readingReceivers?.(receiverMethods);
     }
     for (const subject of subjectsOf(chain, ops)) {
-      const method = operationOf(subject);
-      const meaning = method === null ? null : listed(methods, method);
-      if (method === null || meaning === null || !startsHere(chain, subject)) {
+      const matched = methodMatched(chain, methods, subject, modules);
+      if (matched === null) {
         continue;
       }
       return YIELD[chain.ending.yields]({
         ops,
         subject,
-        method,
-        meaning,
+        method: matched.method,
+        meaning: matched.meaning,
         chain,
         recognition,
       });
     }
     return null;
   };
+}
+
+/**
+ * The operation a subject goes to and what the table says it does, once
+ * the chain's start accepts the subject. A call with no receiver that the
+ * table does not list as written is read as the export its callee was
+ * imported as, so `new Get(...)` after `import { GetCommand as Get }` is
+ * `GetCommand`. That question asks the store, so it comes last.
+ */
+function methodMatched(
+  chain: Chain<MethodMeaning>,
+  methods: MethodsLink<MethodMeaning>,
+  subject: CallOps,
+  modules: readonly string[],
+): { method: string; meaning: MethodMeaning } | null {
+  const written = operationOf(subject);
+  const meaning = listed(methods, written);
+  if (meaning !== null) {
+    return startsHere(chain, subject) ? { method: written, meaning } : null;
+  }
+  if (subject.method() !== null || !startsHere(chain, subject)) {
+    return null;
+  }
+  const exported = subject.calleeImportedAs?.(modules) ?? null;
+  const byExport = exported === null ? null : listed(methods, exported);
+  return exported === null || byExport === null
+    ? null
+    : { method: exported, meaning: byExport };
+}
+
+/**
+ * Every module a chain's origins mention: where its match starts, the
+ * command a subject step steps to, and what an interpolated value must
+ * come from. A file that imports none of them cannot match the chain.
+ */
+export function modulesOfChain(chain: Chain<MethodMeaning>): string[] {
+  const modules = new Set<string>();
+  for (const origin of originsIn(chain)) {
+    for (const module of modulesOf(origin)) {
+      modules.add(module);
+    }
+  }
+  return [...modules];
+}
+
+function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
+  const found: ReceiverOrigin[] = [];
+  for (const link of chain.links) {
+    if (link.asks === "start" && link.at.starts === "receiver") {
+      found.push(link.at.origin);
+    }
+    if (link.asks === "interpolates" && link.from !== undefined) {
+      found.push(link.from);
+    }
+    if (link.asks !== "subject") {
+      continue;
+    }
+    for (const step of link.of) {
+      if (step.to === "argument" && step.origin !== undefined) {
+        found.push(step.origin);
+      }
+    }
+  }
+  return found;
 }
 
 /**
@@ -188,6 +252,7 @@ function linkIn<TAsks extends Link<MethodMeaning>["asks"]>(
 function bareCall(
   chain: Chain<MethodMeaning>,
   ops: CallOps,
+  modules: readonly string[],
 ): { method: string; meaning: MethodMeaning } | null {
   const link = linkIn(chain, "calls");
   const start = linkIn(chain, "start");
@@ -200,7 +265,10 @@ function bareCall(
   if (!byOrigin(BARE_CALL_FROM, start.at.origin, ops)) {
     return null;
   }
-  return { method: ops.calleeText(), meaning: link.meaning };
+  return {
+    method: ops.calleeImportedAs?.(modules) ?? ops.calleeText(),
+    meaning: link.meaning,
+  };
 }
 
 /**
@@ -231,11 +299,11 @@ function methodsIn(
 }
 
 /**
- * The name the call goes to. A method call says it as the method, and a
- * call that reaches for no receiver, `new GetObjectCommand(...)`, says
- * it as the callee.
+ * The name the call goes to, as written. A method call says it as the
+ * method, and a call that reaches for no receiver, `new
+ * GetObjectCommand(...)`, says it as the callee.
  */
-function operationOf(ops: CallOps): string | null {
+function operationOf(ops: CallOps): string {
   return ops.method() ?? ops.calleeText();
 }
 

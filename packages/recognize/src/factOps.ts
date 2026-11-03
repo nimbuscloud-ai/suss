@@ -237,12 +237,19 @@ class FactCall implements CallOps {
 
   /** Whether the callee as the source wrote it came from one of the origin's modules. */
   calleeConstructed(origin: ConstructedFrom): boolean {
-    return (
-      namedAs(origin, constructorName(this.calleeKey, this.source)) &&
-      origin.importedFrom.some((module) =>
-        this.source.importedFrom(rootOf(this.calleeKey, this.source), module),
-      )
+    return writtenFrom(origin, this.calleeKey, this.source);
+  }
+
+  calleeImportedAs(modules: readonly string[]): string | null {
+    const names = new Set(
+      modules.flatMap((module) =>
+        this.source
+          .importedAs(this.calleeKey, module)
+          .filter((name) => !WHOLE_MODULE.has(name)),
+      ),
     );
+    const [one] = names;
+    return names.size === 1 && one !== undefined ? one : null;
   }
 
   private madeExpression(reading: "asWritten" | "throughProjectCalls"): string {
@@ -266,14 +273,7 @@ class FactCall implements CallOps {
     made: string,
   ): boolean {
     const callee = calleeOf(made, this.source);
-    const written = callee ?? made;
-    if (!namedAs(origin, constructorName(written, this.source))) {
-      return false;
-    }
-    const root = rootOf(written, this.source);
-    return origin.importedFrom.some((module) =>
-      this.source.importedFrom(root, module),
-    );
+    return writtenFrom(origin, callee ?? made, this.source);
   }
 
   private arguments(): Map<number, string> {
@@ -723,14 +723,46 @@ function importedAsAsked(
   );
 }
 
-/** Whether the export a value was made from is one the origin asks for. Unset takes any. */
-function namedAs(origin: ReceiverOrigin, name: string): boolean {
-  return (
-    origin.origin !== "constructed" ||
-    origin.named === undefined ||
-    origin.named.includes(name)
+/**
+ * Whether `written`, the callee a value was made by, came from one of the
+ * origin's modules under an export the origin asks for.
+ */
+function writtenFrom(
+  origin: DeclaredBy | ConstructedFrom,
+  written: string,
+  source: FactSource,
+): boolean {
+  const root = rootOf(written, source);
+  return origin.importedFrom.some(
+    (module) =>
+      namedAs(origin, written, module, source) &&
+      source.importedFrom(root, module),
   );
 }
+
+/**
+ * Whether the export a value was made from is one the origin asks for:
+ * the name the callee is written with, or the export it was imported as,
+ * so an alias matches. Unset takes any.
+ */
+function namedAs(
+  origin: ReceiverOrigin,
+  written: string,
+  module: string,
+  source: FactSource,
+): boolean {
+  if (origin.origin !== "constructed" || origin.named === undefined) {
+    return true;
+  }
+  const asked = origin.named;
+  return (
+    asked.includes(constructorName(written, source)) ||
+    source.importedAs(written, module).some((name) => asked.includes(name))
+  );
+}
+
+/** The names an import of the whole module goes by, which say nothing about which export a callee is. */
+const WHOLE_MODULE: ReadonlySet<string> = new Set(["*", "default"]);
 
 /** The one value in a column of these rows, or null for none or several. */
 function only(
