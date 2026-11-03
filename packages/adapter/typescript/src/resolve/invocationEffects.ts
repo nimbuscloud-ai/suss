@@ -48,6 +48,7 @@ import {
   NO_BARRIERS,
   withDescentStops,
 } from "../walk/descent.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 import { climbSyntax, peelSyntax } from "../walk/unwrap.js";
 import { nodeOfValue, type WalkArguments, walkArguments } from "./callOps.js";
 import {
@@ -374,8 +375,7 @@ export function methodDeclaredIn(
   }
   const declarations = callee.getNameNode().getSymbol()?.getDeclarations();
   if (
-    declarations !== undefined &&
-    declarations.some((declaration) =>
+    declarations?.some((declaration) =>
       declaration
         .getSourceFile()
         .getFilePath()
@@ -930,7 +930,7 @@ function extractArg(node: Node, depth: number): EffectArg {
   if (Node.isNullLiteral(node)) {
     return { kind: "null" };
   }
-  if (Node.isIdentifier(node) && node.getText() === "undefined") {
+  if (writesUndefined(node)) {
     return { kind: "undefined" };
   }
   // Template literals with substitutions (`Error: ${x}`): preserve

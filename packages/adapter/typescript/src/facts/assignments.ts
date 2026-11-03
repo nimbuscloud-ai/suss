@@ -23,6 +23,7 @@ import { valueLeftByWrites } from "@suss/resolution";
 
 import { createPerFileCache } from "../perFileCache.js";
 import { forEachDescendantWhere, wrapperOf } from "../walk/rawDescent.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 
 import type { NameWrite } from "@suss/resolution";
 import type {
@@ -158,10 +159,7 @@ export function describeWrites(values: ReadonlyArray<Node>): NameWrite[] {
 
 /** A `null` or `undefined` literal, which a later write is expected to replace. */
 function isNotYetPlaceholder(value: Node): boolean {
-  return (
-    value.getKind() === SyntaxKind.NullKeyword ||
-    (Node.isIdentifier(value) && value.getText() === "undefined")
-  );
+  return value.getKind() === SyntaxKind.NullKeyword || writesUndefined(value);
 }
 
 /** A call, a `new`, or an object or array literal: a value built where it is written. */
