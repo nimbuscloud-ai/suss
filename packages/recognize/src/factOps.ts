@@ -13,7 +13,7 @@
  * DESIGN.md, under "The ops over the facts", has the fact behind each member.
  */
 
-import { byOrigin } from "@suss/extractor";
+import { byOrigin, lastValueWins } from "@suss/extractor";
 
 import type {
   ByOrigin,
@@ -311,30 +311,9 @@ class FactValue implements ValueOps {
   }
 
   entries(unsettled: UnsettledName): readonly ValueEntry[] {
-    const object = this.written();
-    if (this.source.shapeOf(object) !== "object") {
-      return [];
-    }
-    const named = new Map(
-      this.source.db
-        .lookup("holdsProperty", 0, object)
-        .map((row) => [String(row[2]), String(row[1])]),
-    );
-    const computed = new Set(
-      this.source.db
-        .lookup("holdsUnderKey", 0, object)
-        .map((row) => String(row[1])),
-    );
-    return entriesInOrder(object, this.source).flatMap((held) => {
-      const value = factValueOps(held, this.source);
-      const key = named.get(held);
-      if (key !== undefined) {
-        return [{ key, value }];
-      }
-      return computed.has(held)
-        ? [{ key: this.source.computedKeyOf?.(held, unsettled) ?? null, value }]
-        : [];
-    });
+    return lastValueWins(
+      spreadEntries(this.written(), unsettled, this.source),
+    ).map(({ key, held }) => ({ key, value: factValueOps(held, this.source) }));
   }
 
   items(): readonly ValueOps[] {
@@ -348,11 +327,7 @@ class FactValue implements ValueOps {
   }
 
   property(name: string): ValueOps | null {
-    const object = this.written();
-    if (this.source.shapeOf(object) !== "object") {
-      return null;
-    }
-    const held = propertyOf(object, name, this.source);
+    const held = propertyOf(this.written(), name, this.source);
     return held === null ? null : factValueOps(held, this.source);
   }
 
@@ -434,17 +409,145 @@ function entriesInOrder(key: string, source: FactSource): string[] {
     .map((row) => String(row[2]));
 }
 
-/** The value an object has under a name, or null. */
+/** One value an object is written with, and the key it is under, null for a computed key nothing settles. */
+interface HeldEntry {
+  readonly key: string | null;
+  readonly held: string;
+}
+
+/** An entry of an object as the source wrote it: a value under a key, or a spread of another collection. */
+type WrittenEntry = HeldEntry | { readonly spread: string };
+
+/**
+ * How a key the source computes is read: the way `nameOf` reads a name
+ * nothing settles, or not at all, which leaves the key null. A reader
+ * after one named property has no use for a computed key, and settling
+ * one can cost a question to the store.
+ */
+type ComputedKeys = UnsettledName | "unread";
+
+/**
+ * The entries an object is written with, in source order. A value is
+ * under the key the source writes for it, or under a key the source
+ * computes, read the way `computedKeys` says. Python and Ruby key a name
+ * by its scope, so in `{"a": x, "b": x}` both entries have the same value
+ * key, and each place where it is written takes the next of its keys in
+ * turn.
+ */
+function writtenEntries(
+  object: string,
+  computedKeys: ComputedKeys,
+  source: FactSource,
+): WrittenEntry[] {
+  const names = new Map<string, string[]>();
+  for (const row of source.db.lookup("holdsProperty", 0, object)) {
+    const held = String(row[2]);
+    names.set(held, [...(names.get(held) ?? []), String(row[1])]);
+  }
+  const computed = new Set(
+    source.db.lookup("holdsUnderKey", 0, object).map((row) => String(row[1])),
+  );
+  const turns = new Map<string, number>();
+  return [...source.db.lookup("writtenEntryAt", 0, object)]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .flatMap((row): WrittenEntry[] => {
+      const held = String(row[2]);
+      if (row[3] === "spread") {
+        return [{ spread: held }];
+      }
+      const turn = turns.get(held) ?? 0;
+      turns.set(held, turn + 1);
+      const name = names.get(held)?.[turn];
+      if (name !== undefined) {
+        return [{ key: name, held }];
+      }
+      return computed.has(held)
+        ? [{ key: computedKeyOf(held, computedKeys, source), held }]
+        : [];
+    });
+}
+
+function computedKeyOf(
+  held: string,
+  computedKeys: ComputedKeys,
+  source: FactSource,
+): string | null {
+  if (computedKeys === "unread") {
+    return null;
+  }
+  return source.computedKeyOf?.(held, computedKeys) ?? null;
+}
+
+/**
+ * Every entry an object is written with, a spread replaced by the
+ * entries of the object it unpacks, in source order. A spread of
+ * anything but an object adds nothing, and an object that spreads its
+ * way back into itself adds nothing the second time.
+ */
+function spreadEntries(
+  object: string,
+  unsettled: UnsettledName,
+  source: FactSource,
+  within: ReadonlySet<string> = new Set(),
+): HeldEntry[] {
+  if (within.has(object) || source.shapeOf(object) !== "object") {
+    return [];
+  }
+  const inside = new Set(within).add(object);
+  return writtenEntries(object, unsettled, source).flatMap((entry) =>
+    "spread" in entry
+      ? spreadEntries(
+          spreadObject(entry.spread, source),
+          unsettled,
+          source,
+          inside,
+        )
+      : [entry],
+  );
+}
+
+/**
+ * The value an object has under a name, or null. The last entry written
+ * under it wins, a spread counting as the entries of the object it
+ * unpacks. Reading from the end means a spread before the last entry of
+ * that name is never settled.
+ */
 function propertyOf(
   object: string,
   name: string,
   source: FactSource,
+  within: ReadonlySet<string> = new Set(),
 ): string | null {
-  const held = source.db
-    .lookup("holdsProperty", 0, object)
-    .filter((row) => row[1] === name)
-    .map((row) => String(row[2]));
-  return held.length === 1 ? (held[0] as string) : null;
+  if (within.has(object) || source.shapeOf(object) !== "object") {
+    return null;
+  }
+  const inside = new Set(within).add(object);
+  const entries = writtenEntries(object, "unread", source);
+  for (let at = entries.length - 1; at >= 0; at -= 1) {
+    const entry = entries[at] as WrittenEntry;
+    if (!("spread" in entry)) {
+      if (entry.key === name) {
+        return entry.held;
+      }
+      continue;
+    }
+    const found = propertyOf(
+      spreadObject(entry.spread, source),
+      name,
+      source,
+      inside,
+    );
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/** The object a spread unpacks, settled the way any value is: a name is what the source wrote it as. */
+function spreadObject(spread: string, source: FactSource): string {
+  source.read(spread);
+  return settled(spread, source, "names");
 }
 
 /**

@@ -12,7 +12,7 @@
 
 import { Node } from "ts-morph";
 
-import { byOrigin } from "@suss/extractor";
+import { byOrigin, lastValueWins } from "@suss/extractor";
 
 import { rootIdentifier } from "../configuredCall.js";
 import {
@@ -628,10 +628,7 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     items: () => itemsOf(written(), reading),
     asArg: () => effectArgOf(written()),
     property: (name) => {
-      const object = written();
-      const inside = Node.isObjectLiteralExpression(object)
-        ? initializerOf(object, name)
-        : null;
+      const inside = initializerOf(written(), name, resolve);
       return inside === null ? null : valueOpsFor(inside, reading);
     },
     parts: () => literalParts(written()),
@@ -699,32 +696,53 @@ function untagged(value: Node): Node {
   return Node.isTaggedTemplateExpression(value) ? value.getTemplate() : value;
 }
 
-/** What an object states, entry by entry. */
+/** What an object states, entry by entry, with a spread read in its place. */
 function entriesOf(
   value: Node,
   unsettled: UnsettledName,
   reading: ValueReading,
 ): ValueEntry[] {
-  if (!Node.isObjectLiteralExpression(value)) {
+  return lastValueWins(spreadEntries(value, unsettled, reading.resolve)).map(
+    ({ key, stated }) => ({ key, value: valueOpsFor(stated, reading) }),
+  );
+}
+
+/**
+ * Every entry an object is written with, in source order, a spread
+ * replaced by the entries of the object it unpacks. An object that
+ * spreads its way back into itself adds nothing the second time.
+ */
+function spreadEntries(
+  value: Node,
+  unsettled: UnsettledName,
+  resolve: Resolve,
+  within: ReadonlySet<Node> = new Set(),
+): { key: string | null; stated: Node }[] {
+  if (!Node.isObjectLiteralExpression(value) || within.has(value)) {
     return [];
   }
-  const found: ValueEntry[] = [];
-  for (const written of value.getProperties()) {
+  const inside = new Set(within).add(value);
+  return value.getProperties().flatMap((written) => {
+    if (Node.isSpreadAssignment(written)) {
+      const spread = settled(written.getExpression(), resolve);
+      return spread === null
+        ? []
+        : spreadEntries(spread, unsettled, resolve, inside);
+    }
     if (Node.isShorthandPropertyAssignment(written)) {
       const name = written.getNameNode();
-      found.push({ key: name.getText(), value: valueOpsFor(name, reading) });
-      continue;
+      return [{ key: name.getText(), stated: name }];
     }
     if (!Node.isPropertyAssignment(written)) {
-      continue;
+      return [];
     }
-    const stated = written.getInitializer();
-    found.push({
-      key: entryKey(written, unsettled, reading.resolve),
-      value: valueOpsFor(stated ?? written, reading),
-    });
-  }
-  return found;
+    return [
+      {
+        key: entryKey(written, unsettled, resolve),
+        stated: written.getInitializer() ?? written,
+      },
+    ];
+  });
 }
 
 /**
@@ -942,7 +960,8 @@ function propertyAt(
   resolve: Resolve,
 ): string | null {
   const stated = objectAt(argument, resolve);
-  const written = stated === null ? null : initializerOf(stated, property);
+  const written =
+    stated === null ? null : initializerOf(stated, property, resolve);
   return written === null ? null : readName(written, { resolve, unsettled });
 }
 
@@ -968,13 +987,32 @@ function objectAt(
 /**
  * What one property of an object literal was written as. A shorthand
  * property, `{ text }`, states its name as the value, the same as
- * `{ text: text }` would.
+ * `{ text: text }` would. The last entry written under the name wins, a
+ * spread counting as the entries of the object it unpacks, so reading
+ * from the end never settles a spread written before that entry.
  */
 function initializerOf(
-  object: ObjectLiteralExpression,
+  object: Node,
   property: string,
+  resolve: Resolve,
+  within: ReadonlySet<Node> = new Set(),
 ): Node | null {
-  for (const written of object.getProperties()) {
+  if (!Node.isObjectLiteralExpression(object) || within.has(object)) {
+    return null;
+  }
+  const inside = new Set(within).add(object);
+  for (const written of [...object.getProperties()].reverse()) {
+    if (Node.isSpreadAssignment(written)) {
+      const spread = settled(written.getExpression(), resolve);
+      const found =
+        spread === null
+          ? null
+          : initializerOf(spread, property, resolve, inside);
+      if (found !== null) {
+        return found;
+      }
+      continue;
+    }
     if (
       (Node.isPropertyAssignment(written) ||
         Node.isShorthandPropertyAssignment(written)) &&
