@@ -115,15 +115,13 @@ export function importedRootsOf(
   return roots;
 }
 
-/** Whether any of this file's imports binds `name`, from whichever module. */
+/**
+ * Whether any of this file's imports binds `name`, from whichever module.
+ * Any module will do, so the import clauses answer it without resolving
+ * a specifier to a file.
+ */
 export function importBindsName(sourceFile: SourceFile, name: string): boolean {
-  const modules = sourceFile
-    .getImportDeclarations()
-    .map((decl) => decl.getModuleSpecifierValue());
-  return (
-    importedNamesOf(sourceFile, modules).has(name) ||
-    importedRootsOf(sourceFile, modules).has(name)
-  );
+  return specifierImportedAs(sourceFile, name) !== null;
 }
 
 /**

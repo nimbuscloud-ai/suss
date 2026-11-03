@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createTestProject } from "@suss/test-project";
 
 import {
+  importBindsName,
   importedNamesOf,
   importedRootsOf,
   namedImportsOf,
@@ -77,5 +78,21 @@ describe("the import scan", () => {
       canonical: "BehavioralSummarySchema",
       specifier: "@suss/behavioral-ir/schemas",
     });
+  });
+
+  it("says a name is imported whichever file a relative specifier points at", () => {
+    // `./a` from src/feature means src/feature/a.ts. Resolved from the
+    // project's common directory it would be src/a.ts, a different file.
+    const project = createTestProject();
+    project.createSourceFile("/src/a.ts", "export const other = 1;");
+    project.createSourceFile("/src/feature/a.ts", "export const thing = 1;");
+    const file = project.createSourceFile(
+      "/src/feature/use.ts",
+      `import { thing } from "./a";\nimport * as All from "./a";\n`,
+    );
+
+    expect(importBindsName(file, "thing")).toBe(true);
+    expect(importBindsName(file, "All")).toBe(true);
+    expect(importBindsName(file, "other")).toBe(false);
   });
 });
