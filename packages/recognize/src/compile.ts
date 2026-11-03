@@ -20,7 +20,7 @@ import {
   unitInvocationBinding,
 } from "@suss/behavioral-ir";
 import { unwrapJsonStringify } from "@suss/extractor";
-import { readSqlAccess, sqlFromParts } from "@suss/sql";
+import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
 import { opsIn } from "./ops.js";
 
@@ -385,12 +385,56 @@ function storageAccess(matched: Matched): Effect[] | null {
   if (kind === null || (link !== null && input === null)) {
     return null;
   }
-  return reachedBy(chain, subject, unsettled).map((reached) =>
-    accessEffect(matched, { input, kind, reached, unsettled }),
-  );
+  const effects = reachedBy(chain, subject, unsettled).flatMap((reached) => {
+    const effect = accessEffect(matched, { input, kind, reached, unsettled });
+    return effect === null ? [] : [effect];
+  });
+  return effects.length > 0 ? effects : null;
 }
 
-function accessEffect(matched: Matched, access: Access): Effect {
+/** The namespace and the container one access reached. */
+interface Address {
+  readonly scope: string;
+  readonly container: string | null;
+}
+
+/**
+ * Where one access landed. A container the chain reads as a qualified
+ * name gives its own namespace, the way a table written in a statement
+ * does, and a name that does not settle leaves the access with no
+ * address at all.
+ */
+function addressOf(
+  matched: Matched,
+  access: Access,
+  selector: readonly string[],
+): Address | null {
+  const { subject, chain } = matched;
+  const { reached, unsettled } = access;
+  const scope =
+    scopeOf(chain, subject, unsettled) ?? (chain.ending as StorageEnding).scope;
+  if (reached.stated) {
+    return { scope, container: reached.container };
+  }
+  const link: ContainerLink | null = linkIn(chain, "container");
+  if (link === null || "from" in link || link.qualified !== true) {
+    return {
+      scope,
+      container: containerOf(chain, selector, subject, unsettled),
+    };
+  }
+  const [name] = namesAt(subject, link.argument, unsettled);
+  const split = name === undefined ? null : splitQualifiedTable(name);
+  if (split === null) {
+    return null;
+  }
+  return {
+    scope: split.qualifier[split.qualifier.length - 1] ?? scope,
+    container: split.table,
+  };
+}
+
+function accessEffect(matched: Matched, access: Access): Effect | null {
   const { ops, subject, method, chain, recognition } = matched;
   const meaning = matched.meaning as StorageMethod;
   const ending = chain.ending as StorageEnding;
@@ -413,6 +457,10 @@ function accessEffect(matched: Matched, access: Access): Effect {
     unsettled,
     fieldsRead,
   );
+  const address = addressOf(matched, access, selector);
+  if (address === null) {
+    return null;
+  }
 
   const effect: Effect = {
     type: "interaction",
@@ -422,10 +470,8 @@ function accessEffect(matched: Matched, access: Access): Effect {
       ...(ending.transport === undefined
         ? {}
         : { transport: ending.transport }),
-      scope: scopeOf(chain, subject, unsettled) ?? ending.scope,
-      container: reached.stated
-        ? reached.container
-        : containerOf(chain, selector, subject, unsettled),
+      scope: address.scope,
+      container: address.container,
       accessPath: accessPathOf(chain, subject, unsettled),
     }),
     callee: ops.calleeText(),
@@ -620,7 +666,7 @@ function scopeOf(
 /** The value the call states where a pick points, or null for none. */
 function statedValue(subject: CallOps, pick: OneArgument): ValueOps | null {
   for (const ops of walk([subject], pick.of ?? [])) {
-    const stated = ops.valueAt(pick.at);
+    const stated = pickedIn(ops, pick, pick.at);
     if (stated === null) {
       continue;
     }
@@ -704,6 +750,33 @@ function namesAt(
   return names;
 }
 
+/**
+ * The value a pick points at in one call: under its keyword when the call
+ * passes one there, else at `index`, then down its path.
+ */
+function pickedIn(
+  ops: CallOps,
+  pick: ArgumentPick,
+  index: number,
+): ValueOps | null {
+  const keyword = "keyword" in pick ? pick.keyword : undefined;
+  const passed =
+    (keyword === undefined ? null : (ops.keywordAt?.(keyword) ?? null)) ??
+    ops.valueAt(index);
+  let at = passed;
+  for (const key of ("path" in pick ? pick.path : undefined) ?? []) {
+    at = at?.property(key) ?? null;
+  }
+  return at;
+}
+
+/** Whether a pick reads past the plain argument, so only the value ops can follow it. */
+function readsPastArgument(pick: ArgumentPick): boolean {
+  return (
+    "at" in pick && (pick.keyword !== undefined || pick.path !== undefined)
+  );
+}
+
 /** What one argument says: the argument itself, or a property inside it. */
 function nameOf(
   ops: CallOps,
@@ -711,11 +784,33 @@ function nameOf(
   index: number,
   unsettled: UnsettledName,
 ): string | null {
+  if (readsPastArgument(pick)) {
+    const value = pickedIn(ops, pick, index);
+    return value === null ? null : nameIn(value, pick.property, unsettled);
+  }
   if (pick.property === undefined) {
     return ops.nameAt(index, unsettled);
   }
   for (const property of pick.property) {
     const name = ops.propertyAt(index, property, unsettled);
+    if (name !== null) {
+      return name;
+    }
+  }
+  return null;
+}
+
+/** The name a value gives, or the first of its properties that gives one. */
+function nameIn(
+  value: ValueOps,
+  properties: readonly string[] | undefined,
+  unsettled: UnsettledName,
+): string | null {
+  if (properties === undefined) {
+    return value.name(unsettled);
+  }
+  for (const property of properties) {
+    const name = value.property(property)?.name(unsettled) ?? null;
     if (name !== null) {
       return name;
     }

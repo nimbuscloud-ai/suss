@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { type FactSource, factCallOps, factValueOps } from "./factOps.js";
-import { constructedFrom, declaredBy } from "./ops.js";
+import { anyOf, constructedFrom, declaredBy, returnedBy } from "./ops.js";
 
 /**
  * The facts for, in source order:
@@ -364,5 +364,97 @@ describe("factValueOps", () => {
       { kind: "identifier", name: "id" },
     ]);
     expect(template.holes()).toEqual([null]);
+  });
+});
+
+/**
+ * The facts for, in source order:
+ *
+ *   hook = Hook()
+ *   hook.get_client().query(sql="SELECT 1")
+ *   conn = PG::Connection.new
+ *   conn.exec("SELECT 2")
+ */
+function clients(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("call", "mk", "Hook");
+  add("writtenValue", "mk");
+  add("call", "gc", "hook.get_client");
+  add("readsProperty", "hook.get_client", "hook", "get_client");
+  add("call", "q", "gc.query");
+  add("readsProperty", "gc.query", "gc", "query");
+  add("callKeywordArg", "q", "sql", "stmt");
+  add("writtenValue", "stmt");
+  add("call", "pg", "PG::Connection.new");
+  add("readsProperty", "PG::Connection.new", "PG::Connection", "new");
+  add("writtenValue", "pg");
+  add("call", "ex", "conn.exec");
+  add("readsProperty", "conn.exec", "conn", "exec");
+
+  const made: Record<string, string> = { hook: "mk", conn: "pg" };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => made[key] ?? null,
+    anchorCalls: () => [],
+    importedFrom: (key, module) =>
+      (key === "Hook" && module === "airflow") ||
+      (key === "PG::Connection" && module === "PG"),
+    shapeOf: () => null,
+    constructedClass: (callee) =>
+      callee === "PG::Connection.new" ? "Connection" : null,
+    textOf: (key) => key,
+    literalOf: (key) => (key === "stmt" ? "SELECT 1" : null),
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+}
+
+describe("the ops over a keyword, a client a method returned and a class made by its constructor method", () => {
+  const hook = constructedFrom("airflow");
+
+  it("reads an argument passed under a keyword, and nothing under another", () => {
+    const query = opsAt("q", clients());
+
+    expect(query.keywordAt?.("sql")?.text()).toBe("SELECT 1");
+    expect(query.keywordAt?.("query") ?? null).toBeNull();
+  });
+
+  it("takes a receiver a library method returned when that method was called on the origin it names", () => {
+    const query = opsAt("q", clients());
+
+    expect(query.receiverIsFrom(returnedBy("get_client", hook))).toBe(true);
+    expect(query.receiverIsFrom(returnedBy("get_conn", hook))).toBe(false);
+    expect(
+      query.receiverIsFrom(returnedBy("get_client", constructedFrom("other"))),
+    ).toBe(false);
+    expect(opsAt("gc", clients()).isFrom(returnedBy("get_client", hook))).toBe(
+      true,
+    );
+  });
+
+  it("takes a receiver any one of several origins accepts", () => {
+    const query = opsAt("q", clients());
+
+    expect(
+      query.receiverIsFrom(
+        anyOf(constructedFrom("other"), returnedBy("get_client", hook)),
+      ),
+    ).toBe(true);
+    expect(query.receiverIsFrom(anyOf(constructedFrom("other")))).toBe(false);
+  });
+
+  it("names a construction written through the class's constructor method after the class", () => {
+    const exec = opsAt("ex", clients());
+
+    expect(
+      exec.receiverIsFrom(
+        constructedFrom({ from: ["PG"], named: ["Connection"] }),
+      ),
+    ).toBe(true);
+    expect(
+      exec.receiverIsFrom(constructedFrom({ from: ["PG"], named: ["new"] })),
+    ).toBe(false);
   });
 });

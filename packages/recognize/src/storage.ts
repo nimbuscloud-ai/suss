@@ -71,6 +71,7 @@ export interface StorageCalls {
     says:
       | ArgumentPick
       | LinkFunction<[readonly string[], CallOps], string | null>,
+    options?: { qualified?: boolean },
   ): StorageCalls;
   /** Which way into the container the call took, when it states one. */
   accessPath(says: ArgumentPick): StorageCalls;
@@ -133,11 +134,15 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
         ignoringCase: options?.ignoringCase ?? false,
       }),
     calls: (meaning) => adding({ asks: "calls", meaning }),
-    container: (says) =>
+    container: (says, options) =>
       adding(
         typeof says === "function"
           ? { asks: "container", from: says }
-          : { asks: "container", argument: says },
+          : {
+              asks: "container",
+              argument: says,
+              ...(options?.qualified === true ? { qualified: true } : {}),
+            },
       ),
     accessPath: (says) => adding({ asks: "accessPath", argument: says }),
     scope: (says) => adding({ asks: "scope", argument: says }),

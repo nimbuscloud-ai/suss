@@ -8,6 +8,7 @@
  */
 
 export type {
+  AnyOf,
   AstCapableOps,
   CallOps,
   ClassOps,
@@ -15,16 +16,23 @@ export type {
   DeclaredBy,
   OpsCarrier,
   ReceiverOrigin,
+  ReturnedBy,
   UnsettledName,
   ValueEntry,
   ValueOps,
 } from "@suss/extractor";
 
+import { byOrigin } from "@suss/extractor";
+
 import type {
+  AnyOf,
+  ByOrigin,
   CallOps,
   ConstructedFrom,
   DeclaredBy,
   OpsCarrier,
+  ReceiverOrigin,
+  ReturnedBy,
 } from "@suss/extractor";
 
 /**
@@ -59,6 +67,28 @@ export function constructedFrom(
     };
   }
   return { origin: "constructed", importedFrom: args as readonly string[] };
+}
+
+/** A receiver any one of these origins accepts, such as a client a program makes itself or gets from another client. */
+export function anyOf(...of: readonly ReceiverOrigin[]): AnyOf {
+  return { origin: "anyOf", of };
+}
+
+/** A receiver `method` returned, called on a receiver from `on`. */
+export function returnedBy(method: string, on: ReceiverOrigin): ReturnedBy {
+  return { origin: "returnedBy", method, on };
+}
+
+const MODULES: ByOrigin<readonly string[]> = {
+  declaredBy: (origin) => origin.importedFrom,
+  constructed: (origin) => origin.importedFrom,
+  anyOf: (origin) => origin.of.flatMap((one) => modulesOf(one)),
+  returnedBy: (origin) => modulesOf(origin.on),
+};
+
+/** Every module an origin mentions, which a file has to import before it can match. */
+export function modulesOf(origin: ReceiverOrigin): readonly string[] {
+  return byOrigin(MODULES, origin);
 }
 
 /** The ops in a recognizer context, or null when the adapter has none. */

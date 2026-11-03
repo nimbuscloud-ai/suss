@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import { astLink } from "./ast.js";
 import { examplesMissing, runExamples } from "./example.js";
 import { messageSends } from "./messageSends.js";
-import { constructedFrom, declaredBy, opsIn } from "./ops.js";
+import {
+  anyOf,
+  constructedFrom,
+  declaredBy,
+  modulesOf,
+  opsIn,
+  returnedBy,
+} from "./ops.js";
 import { pack } from "./pack.js";
 import { sqlStatements } from "./sqlStatements.js";
 import { storageCalls } from "./storage.js";
@@ -35,6 +42,8 @@ function callOps(over: {
   properties?: Record<number, Record<string, string>>;
   /** What each argument states, by position, as plain data. */
   values?: Record<number, unknown>;
+  /** What each keyword argument states, by keyword, as plain data. */
+  keywords?: Record<string, unknown>;
   /** The call the callee was written as. */
   writtenAs?: CallOps;
   /** Whether the callee is a bound name. */
@@ -45,13 +54,15 @@ function callOps(over: {
   const args = over.args ?? [];
   const from = over.from ?? [];
   const values = over.values ?? {};
+  const keywords = over.keywords ?? {};
   return {
     valueAt: (index) => (index in values ? valueOps(values[index]) : null),
+    keywordAt: (name) => (name in keywords ? valueOps(keywords[name]) : null),
     method: () => over.method ?? null,
     receiverIsFrom: (origin: ReceiverOrigin) =>
-      origin.importedFrom.some((module) => from.includes(module)),
+      modulesOf(origin).some((module) => from.includes(module)),
     isFrom: (origin: ReceiverOrigin) =>
-      origin.importedFrom.some((module) => from.includes(module)),
+      modulesOf(origin).some((module) => from.includes(module)),
     argumentCount: () => args.length,
     nameAt: (index) => args[index] ?? null,
     calleeText: () => over.callee ?? "client.get",
@@ -314,6 +325,72 @@ describe("a namespace the call says rather than the pack", () => {
     expect(effects?.[0]).toMatchObject({
       binding: { semantics: { scope: "default" } },
     });
+  });
+});
+
+describe("a container written the way a statement writes a table", () => {
+  const tables = store().container({ at: 0 }, { qualified: true });
+
+  it("takes the part before the table as the scope", () => {
+    expect(
+      run(
+        tables,
+        callOps({ method: "get", from: ["tapedeck"], args: ["archive.tapes"] }),
+      )?.[0],
+    ).toMatchObject({
+      binding: { semantics: { scope: "archive", container: "tapes" } },
+    });
+  });
+
+  it("records no access when the name does not settle", () => {
+    expect(
+      run(tables, callOps({ method: "get", from: ["tapedeck"], args: [null] })),
+    ).toBeNull();
+  });
+});
+
+describe("an argument passed under a keyword, or inside an object", () => {
+  const byKeyword = store().container({ at: 0, keyword: "table" });
+
+  it("reads the keyword when the call passes it there, and the position when it does not", () => {
+    const keyword = run(
+      byKeyword,
+      callOps({ method: "get", from: ["tapedeck"], keywords: { table: "a" } }),
+    );
+    const position = run(
+      byKeyword,
+      callOps({ method: "get", from: ["tapedeck"], values: { 0: "b" } }),
+    );
+
+    expect([containerOf(keyword?.[0]), containerOf(position?.[0])]).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("reads down the path of keys a pick gives", () => {
+    const nested = store().container({ at: 0, path: ["job", "table"] });
+    const found = run(
+      nested,
+      callOps({
+        method: "get",
+        from: ["tapedeck"],
+        values: { 0: { job: { table: "reels" } } },
+      }),
+    );
+    const missing = run(
+      nested,
+      callOps({
+        method: "get",
+        from: ["tapedeck"],
+        values: { 0: { copy: { table: "reels" } } },
+      }),
+    );
+
+    expect([containerOf(found?.[0]), containerOf(missing?.[0])]).toEqual([
+      "reels",
+      null,
+    ]);
   });
 });
 
@@ -1063,6 +1140,20 @@ describe("a pack that reads more files than its chains match in", () => {
     });
 
     expect(gated.requiresImport).toEqual(["tapedeck", "reel-to-reel"]);
+  });
+
+  it("gates on every module an origin built from others mentions", () => {
+    const either = storageCalls({
+      system: "cassette",
+      client: anyOf(
+        declaredBy("tapedeck"),
+        returnedBy("deck", constructedFrom("player")),
+      ),
+    })
+      .methods({ get: READ_KEY })
+      .example('deck.get("side_a:1")');
+
+    expect(packOf(either).requiresImport).toEqual(["tapedeck", "player"]);
   });
 });
 

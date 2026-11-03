@@ -42,6 +42,8 @@ The starts that begin at a receiver form their own union,
 |---|---|---|
 | `declaredBy` | a receiver whose method one of these modules declared | yes |
 | `constructed` | a client made from one of these modules' exports | yes |
+| `anyOf` | a receiver any one of several origins accepts | yes |
+| `returnedBy` | what a library method returned, called on a receiver from another origin: `hook.get_client()` | yes |
 | `factoryMade` | `app = express()` | no |
 | `imported` | a function the file imports | no |
 | `anchored` | a chain read from its anchor call | no |
@@ -52,7 +54,15 @@ A pack uses `declaredBy` when the source never writes out which client
 it is using. In `const redis = await this.getClient()` nothing mentions
 ioredis, but the declaration behind `redis.get` comes from ioredis.
 `constructed` looks at where the receiver itself was made, so it still
-works where the method has no type.
+works where the method has no type. In Ruby, `X.new` is made from the
+class `X`, so `named` lists `Connection` for `PG::Connection.new`, and
+any other method called on a constant is a factory named after the
+method, as `connect` is in `PG.connect`.
+
+Nothing in a program says what a library method returns, so the pack
+does. `returnedBy("get_client", declaredBy(HOOK))` takes the receiver
+of `hook.get_client().query(sql)`, and `anyOf` lets a chain take that
+client and one the program made itself.
 
 A chain can also match a call made directly on the tracked value, with
 no method, by adding `.calls(meaning)` next to its methods table. A
@@ -236,6 +246,19 @@ the argument is. It tries the properties in order, so `property:
 ["Key", "Prefix"]` means "the key, or the prefix a listing asked for
 instead". A pick unwraps a construction first, because a command takes
 its inputs in its constructor.
+
+In Python and Ruby a call can pass the argument under a keyword
+instead, so `{ at: 0, keyword: "query" }` reads `query=` where the call
+passes it and the first argument otherwise. `path` reads down through
+keys before `property` is tried: `{ at: 0, keyword: "configuration",
+path: ["query", "query"] }` reads the statement in
+`insert_job(configuration={"query": {"query": sql}})`.
+
+A container written the way a statement writes a table,
+`get_table("analytics.events")`, takes `.container(pick, { qualified:
+true })`. The part before the table is the scope, and a name that does
+not settle leaves the call without an access, the same as a statement
+whose table does not settle.
 
 ## A call that states one request object
 
