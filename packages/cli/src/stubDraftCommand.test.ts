@@ -61,6 +61,12 @@ describe("draftYaml", () => {
     expect(yaml).toContain('#   src/ledger.ts:4  ("ledger-queue", entry)');
     expect(yaml).toContain('export: "publishEntry"');
     expect(yaml).toContain('system: ""');
+    // The spec each system takes, as the guide shows it, so a filled
+    // draft is one the pack reads.
+    expect(yaml).toContain(
+      "aws.sqs and aws.events take { subject: { at: 0 }, payload: { at: 1 } }; axios takes {}",
+    );
+    expect(yaml).toContain("https://suss.sh/guides/teach-a-dependency");
   });
 
   it("prints a written null as null and keeps ? for an argument it could not read", () => {

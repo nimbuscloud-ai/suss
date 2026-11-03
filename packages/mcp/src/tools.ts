@@ -389,7 +389,9 @@ export async function attempt(
 
 export const STUB_DRAFT_DESCRIPTION = `Draft a dependency stub for a package this project uses but suss cannot read into: a compiled binding, a private wrapper, anything without readable source.
 
-For TypeScript the draft is built from the project's own call sites: one performs-call skeleton per export the code reaches, with the argument shapes observed at each site. For a Python project whose routes go through a wrapper module, it drafts a re-exports skeleton per imported module instead. For Ruby it drafts an extends-base skeleton from every require and every class whose superclass is spelled from the package. The semantic blanks are yours to fill from the package's own source, then save the file where the answer says and re-run extract.`;
+For TypeScript the draft is built from the project's own call sites: one performs-call skeleton per export the code reaches, with the argument shapes observed at each site. For a Python project whose routes go through a wrapper module, it drafts a re-exports skeleton per imported module instead. For Ruby it drafts an extends-base skeleton from every require and every class whose superclass is spelled from the package. The semantic blanks are yours to fill from the package's own source, then save the file where the answer says and re-run extract.
+
+To fill a performs-call, set system to what the call reaches: aws.sqs, aws.events or axios. For aws.sqs and aws.events, spec says which arguments are the subject and the message body, as in { subject: { at: 0 }, payload: { at: 1 } }, and extract then records a send for each call of that export whose subject is a literal string. For axios the export is a function that builds a client, and spec stays {}. When a statement is in a shape the pack does not read, extract stops and says which field is wrong.`;
 
 export const INTENT_OUTCOMES_DESCRIPTION = `List every outcome the project's boundary intent documents declare, as the \`<intent-name>.<outcome-id>\` a PRD scenario puts in its \`link\`.
 
