@@ -652,6 +652,28 @@ describe("sqs configured producer", () => {
     ]);
   });
 
+  it("records one send per member of a union-typed subject", () => {
+    const source = `
+      import { CommandDispatcher } from "@acme/async";
+      type Topic = "order.shipped" | "order.cancelled";
+      export async function move(dispatcher: CommandDispatcher, topic: Topic) {
+        await dispatcher.dispatch(topic, { at: 1 }, {});
+      }
+    `;
+
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, DISPATCHER_OPTIONS),
+    );
+    expect(sends.map((send) => send.binding.semantics)).toEqual([
+      {
+        name: "message-bus",
+        messageBus: "aws_sqs",
+        channel: "order.cancelled",
+      },
+      { name: "message-bus", messageBus: "aws_sqs", channel: "order.shipped" },
+    ]);
+  });
+
   it("reads a subject a constant settles, and a body a local holds", () => {
     const source = `
       import { CommandDispatcher } from "@acme/async";

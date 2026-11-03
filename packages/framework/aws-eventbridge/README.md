@@ -52,7 +52,7 @@ statements:
       bodyArg: 1
 ```
 
-With that stub, `publisher.emit("user.deleted", data, opts)` is read as a send on channel `user.deleted`, with no bus part. A publisher takes its bus from constructor config that the call site never shows, and the checker treats a missing bus as matching any bus, so the subject alone pairs with the rule that routes it. A subject kept in a constant, or an env var with a fallback, is read as the string it settles to. When nothing in the source settles the subject, the pack records the send with no channel.
+With that stub, `publisher.emit("user.deleted", data, opts)` is read as a send on channel `user.deleted`, with no bus part. A publisher takes its bus from constructor config that the call site never shows, and the checker treats a missing bus as matching any bus, so the subject alone pairs with the rule that routes it. A subject kept in a constant, or an env var with a fallback, is read as the string it settles to, and one typed as a few strings records a send to each of them. When nothing in the source settles the subject, the pack records the send with no channel.
 
 The stub's `package` is the module that declares the receiver's type, and the pack also reads files that import that module. In the `spec`:
 

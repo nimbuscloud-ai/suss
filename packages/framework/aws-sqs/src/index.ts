@@ -289,21 +289,21 @@ function configuredProducerRecognizer(
     if (read === null) {
       return null;
     }
-    return [
-      {
+    return read.subjects.map(
+      (subject): Effect => ({
         type: "interaction",
         binding: messageBusBinding({
           recognition: "@suss/framework-aws-sqs",
           messageBus: "aws_sqs",
-          channel: read.subject,
+          channel: subject,
         }),
         callee: read.callee,
         interaction: {
           class: "message-send",
           ...(read.body !== null ? { body: read.body } : {}),
         },
-      },
-    ];
+      }),
+    );
   }) as InvocationRecognizer;
 }
 
