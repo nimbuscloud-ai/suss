@@ -23,7 +23,11 @@ import {
 } from "ts-morph";
 
 import { resolveDecl } from "./resolve/functionBehind.js";
-import { isDescentStop, withDescentStops } from "./walk/descent.js";
+import {
+  callsInUnitBody,
+  isDescentStop,
+  withDescentStops,
+} from "./walk/descent.js";
 import { forEachDescendantOfKinds } from "./walk/rawDescent.js";
 
 import type { FunctionRoot } from "./conditions.js";
@@ -34,9 +38,8 @@ import type { FunctionRoot } from "./conditions.js";
  * the resolution helpers packs need to map AST nodes back to function
  * bodies and source text.
  *
- * All walks are scoped to the parent function and deliberately do NOT
- * recurse into nested function bodies, sub-units of nested functions
- * belong to those functions' summaries, not to the enclosing parent.
+ * The walks descend the way the parent's body walk does, so a sub-unit
+ * inside a nested declaration belongs to that declaration's summary.
  */
 export interface TsSubUnitContext {
   /**
@@ -49,8 +52,8 @@ export interface TsSubUnitContext {
 
   /**
    * Yield every call expression matching `name` (bare identifier
-   * callee only: e.g. `useEffect(...)`, not `React.useEffect(...)`).
-   * Nested function bodies are skipped.
+   * callee only: e.g. `useEffect(...)`, not `React.useEffect(...)`),
+   * from the calls the parent's body walk reaches.
    */
   findCallExpressionsByName(
     parent: FunctionRoot,
@@ -124,8 +127,6 @@ const JSX_ELEMENTS_AND_STOPS = withDescentStops(
   SyntaxKind.JsxSelfClosingElement,
 );
 
-const CALLS_AND_STOPS = withDescentStops(SyntaxKind.CallExpression);
-
 function findJsxAttributes(parent: FunctionRoot): TsJsxAttributeLocation[] {
   const out: TsJsxAttributeLocation[] = [];
 
@@ -173,23 +174,10 @@ function findCallExpressionsByName(
   parent: FunctionRoot,
   name: string,
 ): CallExpression[] {
-  const out: CallExpression[] = [];
-
-  forEachDescendantOfKinds(parent, CALLS_AND_STOPS, (node) => {
-    if (isDescentStop(node, parent)) {
-      return true;
-    }
-    if (!Node.isCallExpression(node)) {
-      return false;
-    }
-    const callee = node.getExpression();
-    if (Node.isIdentifier(callee) && callee.getText() === name) {
-      out.push(node);
-    }
-    return false;
+  return callsInUnitBody(parent).filter((call) => {
+    const callee = call.getExpression();
+    return Node.isIdentifier(callee) && callee.getText() === name;
   });
-
-  return out;
 }
 
 function resolveAttributeValueFunction(
