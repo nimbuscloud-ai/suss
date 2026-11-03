@@ -8,7 +8,11 @@
 
 import { Node } from "ts-morph";
 
-import { callsInUnitBody, importBindsName } from "@suss/adapter-typescript";
+import {
+  callsInUnitBody,
+  importBindsName,
+  writesUndefined,
+} from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
 import type {
@@ -85,6 +89,11 @@ function callbackExpressionOf(call: CallExpression, hook: string): Node | null {
       if (prop !== undefined && Node.isMethodDeclaration(prop)) {
         return prop;
       }
+      continue;
+    }
+    // `useQuery(key, undefined, { queryFn })` passes no function in that
+    // place, and the options after it still say which one runs.
+    if (writesUndefined(arg)) {
       continue;
     }
     if (
