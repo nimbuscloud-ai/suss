@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-aws-eventbridge",
   "exports": 2,
-  "internal": 4,
-  "consumers": 18,
+  "internal": 3,
+  "consumers": 17,
   "unfollowedCalls": 0
 }

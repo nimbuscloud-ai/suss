@@ -12,20 +12,17 @@
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
 
-import {
-  climbSyntax,
-  readConfiguredCall,
-  receiverTypesOf,
-} from "@suss/adapter-typescript";
+import { climbSyntax, receiverTypesOf } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
 import { configuredCallOption } from "@suss/extractor";
-import { constructedFrom, messageSends, pack } from "@suss/recognize";
+import {
+  configuredSends,
+  constructedFrom,
+  messageSends,
+  pack,
+} from "@suss/recognize";
 
-import type {
-  ConfiguredCallContext,
-  ConfiguredCallSpec,
-  ReceiverType,
-} from "@suss/adapter-typescript";
+import type { ReceiverType } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   EffectArg,
@@ -33,7 +30,7 @@ import type {
   PatternPack,
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { Match } from "@suss/recognize";
+import type { ConfiguredCallSpec, Match } from "@suss/recognize";
 
 const SQS = "@aws-sdk/client-sqs";
 
@@ -263,8 +260,8 @@ export type SqsProducer = ConfiguredCallSpec;
 export const optionsSchema = z
   .object({
     /**
-     * Each dispatcher adds a recognizer, and the pack also reads files
-     * that import the dispatcher's module.
+     * Each dispatcher adds the declarations for its sends, and the pack
+     * also reads files that import the dispatcher's module.
      */
     producers: z.array(configuredCallOption).optional(),
   })
@@ -273,57 +270,22 @@ export const optionsSchema = z
 export type SqsPackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * The channel is the subject the call passes. A wrapper picks its queue
- * only at run time, and the consumer expects the same subject, so the
- * subject alone is enough to pair the two.
- */
-function configuredProducerRecognizer(
-  spec: ConfiguredCallSpec,
-): InvocationRecognizer {
-  return ((call: unknown, ctx: unknown): Effect[] | null => {
-    const read = readConfiguredCall(
-      call as CallExpression,
-      ctx as ConfiguredCallContext,
-      spec,
-    );
-    if (read === null) {
-      return null;
-    }
-    return read.subjects.map(
-      (subject): Effect => ({
-        type: "interaction",
-        binding: messageBusBinding({
-          recognition: "@suss/framework-aws-sqs",
-          messageBus: "aws_sqs",
-          channel: subject,
-        }),
-        callee: read.callee,
-        interaction: {
-          class: "message-send",
-          ...(read.body !== null ? { body: read.body } : {}),
-        },
-      }),
-    );
-  }) as InvocationRecognizer;
-}
-
-/**
  * Reads SDK sends, handler reads of `record.body`, and sends through
- * each configured dispatcher.
+ * each configured dispatcher. A dispatcher's channel is the subject it
+ * is passed, which is what the consumer expects too.
  */
 export function sqsFramework(options: SqsPackOptions = {}): PatternPack {
-  const producers = options.producers ?? [];
-  return pack("sqs", sendDeclarations(), {
+  const producers = (options.producers ?? []).flatMap((producer) =>
+    configuredSends(producer, "aws_sqs"),
+  );
+  return pack("sqs", [...sendDeclarations(), ...producers], {
     languages: ["typescript", "javascript"],
     recognizedAs: "@suss/framework-aws-sqs",
     protocol: "sqs",
     // A handler file imports `SQSEvent` from aws-lambda and often never
     // imports the SQS client.
-    requiresImport: ["aws-lambda", ...producers.map((p) => p.module)],
-    recognizers: [
-      messageReceiveRecognizer as InvocationRecognizer,
-      ...producers.map(configuredProducerRecognizer),
-    ],
+    requiresImport: ["aws-lambda"],
+    recognizers: [messageReceiveRecognizer as InvocationRecognizer],
   });
 }
 

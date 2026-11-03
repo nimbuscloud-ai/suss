@@ -11,19 +11,17 @@
 
 import { z } from "zod";
 
-import { readConfiguredCall } from "@suss/adapter-typescript";
-import { messageBusBinding } from "@suss/behavioral-ir";
 import { configuredCallOption } from "@suss/extractor";
-import { constructedFrom, messageSends, pack } from "@suss/recognize";
+import {
+  configuredSends,
+  constructedFrom,
+  messageSends,
+  pack,
+} from "@suss/recognize";
 
-import type {
-  ConfiguredCallContext,
-  ConfiguredCallSpec,
-} from "@suss/adapter-typescript";
-import type { Effect } from "@suss/behavioral-ir";
-import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { CallExpression } from "ts-morph";
+import type { ConfiguredCallSpec } from "@suss/recognize";
 
 const EVENTBRIDGE = "@aws-sdk/client-eventbridge";
 
@@ -36,8 +34,8 @@ export type EventBridgeProducer = ConfiguredCallSpec;
 export const optionsSchema = z
   .object({
     /**
-     * Each publisher adds a recognizer, and the pack also reads files that
-     * import the publisher's module.
+     * Each publisher adds the declarations for its sends, and the pack
+     * also reads files that import the publisher's module.
      */
     producers: z.array(configuredCallOption).optional(),
   })
@@ -46,49 +44,17 @@ export const optionsSchema = z
 export type EventBridgePackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * The channel is the subject the call passes, with no bus part. A
- * publisher takes its bus from constructor config that the call site
- * never shows, and the checker treats a missing bus as matching any bus,
- * so the subject alone pairs with the rule that routes it.
- *
- * This recognizer is written by hand because the message-send ending
- * reads a channel only from a property of a message, and here the
- * channel is a bare argument.
+ * A configured publisher's channel is the subject the call passes, with
+ * no bus part. A publisher takes its bus from constructor config that the
+ * call site never shows, and the checker treats a missing bus as matching
+ * any bus, so the subject alone pairs with the rule that routes it.
  */
-function configuredProducerRecognizer(
-  spec: ConfiguredCallSpec,
-): InvocationRecognizer {
-  return ((call: unknown, ctx: unknown): Effect[] | null => {
-    const read = readConfiguredCall(
-      call as CallExpression,
-      ctx as ConfiguredCallContext,
-      spec,
-    );
-    if (read === null) {
-      return null;
-    }
-    return read.subjects.map(
-      (subject): Effect => ({
-        type: "interaction",
-        binding: messageBusBinding({
-          recognition: "@suss/framework-aws-eventbridge",
-          messageBus: "eventbridge",
-          channel: subject,
-        }),
-        callee: read.callee,
-        interaction: {
-          class: "message-send",
-          ...(read.body !== null ? { body: read.body } : {}),
-        },
-      }),
-    );
-  }) as InvocationRecognizer;
-}
-
 export function eventBridgeFramework(
   options: EventBridgePackOptions = {},
 ): PatternPack {
-  const producers = options.producers ?? [];
+  const producers = (options.producers ?? []).flatMap((producer) =>
+    configuredSends(producer, "eventbridge"),
+  );
   return pack(
     "eventbridge",
     [
@@ -128,13 +94,12 @@ export function eventBridgeFramework(
         .example(
           'client.send(new PutEventsCommand({ Entries: [{ DetailType: "OrderPlaced", Detail: "{}" }] }))',
         ),
+      ...producers,
     ],
     {
       languages: ["typescript", "javascript"],
       recognizedAs: "@suss/framework-aws-eventbridge",
       protocol: "eventbridge",
-      requiresImport: producers.map((p) => p.module),
-      recognizers: producers.map(configuredProducerRecognizer),
     },
   );
 }

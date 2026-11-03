@@ -427,6 +427,7 @@ function spreads(): FactSource {
     writtenAs: (key) => written[key] ?? null,
     anchorCalls: () => [],
     importedFrom: () => false,
+    importedAs: () => [],
     shapeOf: (key) => (["base", "row", "ring"].includes(key) ? "object" : null),
     textOf: (key) => key,
     literalOf: (key) => literal[key] ?? null,

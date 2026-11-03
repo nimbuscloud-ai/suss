@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { boundaryKey } from "@suss/ir-core";
 import { interactionsOf, packUnderTest } from "@suss/pack-harness";
+import { examplesMissing } from "@suss/recognize";
 
 import { sqsFramework } from "./index.js";
 
@@ -551,6 +552,25 @@ describe("sqs message-receive recognizer", () => {
     expect(messageReceiveEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
+  it("reads no fields off a body handed straight on, and nothing off a parse with a reviver or of an indexed record", () => {
+    const source = `
+      import type { SQSEvent } from "aws-lambda";
+      declare function handle(order: unknown): void;
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          handle(JSON.parse(record.body));
+          JSON.parse(record.body, (key, value) => value);
+          JSON.parse(event.Records[0].body);
+        }
+      }
+    `;
+
+    const receives = messageReceiveEffectsOf(recognizeAll(source));
+    expect(receives.map((receive) => receive.interaction)).toEqual([
+      { class: "message-receive" },
+    ]);
+  });
+
   it("ignores parse calls that aren't JSON.parse", () => {
     const source = `
       import type { SQSEvent } from "aws-lambda";
@@ -602,14 +622,15 @@ describe("sqs pack metadata", () => {
     expect(pack.invocationRecognizers).toHaveLength(3);
   });
 
-  it("adds a recognizer and an import gate per configured producer", () => {
+  it("adds a declaration and an import gate per configured producer", () => {
     const pack = sqsFramework(DISPATCHER_OPTIONS);
     expect(pack.invocationRecognizers).toHaveLength(5);
     expect(pack.requiresImport).toEqual([
       "@aws-sdk/client-sqs",
-      "aws-lambda",
       "@acme/async",
+      "aws-lambda",
     ]);
+    expect(examplesMissing(pack)).toEqual([]);
   });
 });
 
@@ -787,6 +808,22 @@ describe("sqs configured producer", () => {
     expect(sends.map((send) => [channelOf(send), send.callee])).toEqual([
       ["push.send", "this.dispatcher.dispatch"],
     ]);
+  });
+
+  it("reads nothing off a type of the same name that the module does not export", () => {
+    const source = `
+      import { CommandDispatcher as Imported } from "@acme/async";
+      class CommandDispatcher {
+        async dispatch(subject: string, data: unknown, opts: unknown) {}
+      }
+      export async function place(dispatcher: CommandDispatcher, kept: Imported) {
+        await dispatcher.dispatch("order.placed", {}, {});
+      }
+    `;
+
+    expect(
+      messageSendEffectsOf(recognizeAll(source, DISPATCHER_OPTIONS)),
+    ).toEqual([]);
   });
 
   it("reads a dispatcher imported through a sub-path of its module", () => {
