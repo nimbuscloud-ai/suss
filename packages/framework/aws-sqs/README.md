@@ -55,6 +55,22 @@ The stub's `package` is the module that declares the receiver's type, and the pa
 - `subjectArg`: which argument position the subject is in.
 - `bodyArg`: which argument is the message body. Leave it out when the method does not take a single body argument, such as a batch method that takes a list of entries. No body is reported then.
 
+A package that sends from a plain function gets a stub that says which export it is and where the subject and body are:
+
+```yaml
+# suss/stubs/acme-ledger-native.yaml
+package: "@acme/ledger-native"
+statements:
+  - kind: performs-call
+    export: publishEntry
+    system: aws.sqs
+    spec: { subject: { at: 0 }, payload: { at: 1 } }
+```
+
+With that stub, `publishEntry("ledger-queue", entry)` is read as a send on channel `ledger-queue`, and so is `ledger.publishEntry(...)` through `import * as ledger`. Write `export` the way `suss infer stub` drafts it, so `Ledger.append` covers a call on an instance the code made with `new Ledger()`. Leave `payload` out when no single argument is the body.
+
+A stub statement the pack cannot read in either form stops the run, with the field that is wrong.
+
 The `producers` pack option did the same job until 0.21.0 removed it. A config file that sets it now stops the run and points here.
 
 ## Where it fits in suss

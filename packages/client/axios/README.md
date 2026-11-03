@@ -51,6 +51,7 @@ statements:
   - kind: performs-call
     system: axios
     export: createApiClient
+    spec: {}
 ```
 
 Every site that imports `createApiClient` from `@acme/http` and calls it then counts as a client instance, the same as the result of `axios.create()`.

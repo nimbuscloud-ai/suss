@@ -62,6 +62,7 @@ import {
   retiredOptionWarning,
 } from "./retiredOptions.js";
 import {
+  assertStubsReadable,
   loadStubs,
   type StubOverlay,
   stubOnlyOptionRefusal,
@@ -535,6 +536,8 @@ interface LoadedFactory {
   options: unknown;
   /** The same options, plus `configDirectory` when the pack reads it. The factory gets these. */
   handedOver: unknown;
+  /** What the pack says it takes, for checking the stub statements added to its options. */
+  optionsSchema: z.ZodObject<z.ZodRawShape> | undefined;
   factory: PackFactory;
   specifier: string;
   /** Whether the pack takes a `files` list, as a test pack does. */
@@ -694,6 +697,7 @@ async function loadPackFactory(
         projectRoot,
         mod.optionsSchema,
       ),
+      optionsSchema: mod.optionsSchema,
       factory: mod.default,
       specifier,
       takesFiles: mod.optionsSchema?.shape.files !== undefined,
@@ -855,6 +859,7 @@ function withStubbedOptions(
   if (overlay === undefined || !overlay.has(loaded.name)) {
     return loaded;
   }
+  assertStubsReadable(loaded.name, loaded.optionsSchema, overlay);
   return {
     ...loaded,
     options: withStubOptions(loaded.name, loaded.options, overlay),

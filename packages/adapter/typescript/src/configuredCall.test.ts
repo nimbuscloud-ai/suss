@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createTestProject } from "@suss/test-project";
 
 import { readConfiguredCall } from "./configuredCall.js";
+import { ResolutionStore } from "./facts/store.js";
 
 import type { EffectArg } from "@suss/extractor";
 import type { ConfiguredCallSpec } from "./configuredCall.js";
@@ -48,10 +49,14 @@ export declare class EventPublisher {
   return project.createSourceFile("user.ts", userSource);
 }
 
-/** Read every call in the file with the given spec. */
+/**
+ * Read every call in the file with the given spec, through the run's
+ * store when one is given, as extraction hands a recognizer.
+ */
 function readAll(
   sourceFile: SourceFile,
   spec: ConfiguredCallSpec = DISPATCH,
+  resolution?: ResolutionStore,
 ): Array<{ subject: string; body: EffectArg | null; callee: string }> {
   const out: Array<{
     subject: string;
@@ -64,7 +69,11 @@ function readAll(
     }
     const read = readConfiguredCall(
       node,
-      { sourceFile, extractArgs: () => extractArgsForTest(node) },
+      {
+        sourceFile,
+        extractArgs: () => extractArgsForTest(node),
+        ...(resolution === undefined ? {} : { resolution }),
+      },
       spec,
     );
     if (read !== null) {
@@ -294,5 +303,171 @@ describe("readConfiguredCall", () => {
       module: "./messaging/dispatcher",
     };
     expect(readAll(sf, spec).map((r) => r.subject)).toEqual(["order.placed"]);
+  });
+});
+
+/** The stub the teach-a-dependency guide shows, as the CLI hands it to the pack. */
+const PUBLISH_ENTRY: ConfiguredCallSpec = {
+  module: "@acme/ledger-native",
+  export: "publishEntry",
+  subject: { at: 0 },
+  payload: { at: 1 },
+};
+
+/**
+ * A project whose native package ships only declarations, the way a
+ * napi-rs crate does. `installed: false` leaves the package off disk.
+ */
+function ledgerProject(
+  userSource: string,
+  installed = true,
+): { sourceFile: SourceFile; store: ResolutionStore } {
+  const project = createTestProject();
+  if (installed) {
+    project.createSourceFile(
+      "node_modules/@acme/ledger-native/package.json",
+      JSON.stringify({ name: "@acme/ledger-native", types: "index.d.ts" }),
+    );
+    project.createSourceFile(
+      "node_modules/@acme/ledger-native/index.d.ts",
+      `
+export declare function publishEntry(queue: string, body: unknown): Promise<void>;
+export declare function closeLedger(): Promise<void>;
+export declare class Ledger {
+  append(queue: string, body: unknown): Promise<void>;
+}
+`,
+    );
+  }
+
+  return {
+    sourceFile: project.createSourceFile("user.ts", userSource),
+    store: new ResolutionStore(),
+  };
+}
+
+function readExports(
+  { sourceFile, store }: { sourceFile: SourceFile; store: ResolutionStore },
+  spec: ConfiguredCallSpec = PUBLISH_ENTRY,
+): Array<{ subject: string; body: EffectArg | null; callee: string }> {
+  return readAll(sourceFile, spec, store);
+}
+
+describe("readConfiguredCall on an export", () => {
+  it("reads a bare call of a named import, with the subject and payload where the spec says", () => {
+    const project = ledgerProject(`
+      import { publishEntry } from "@acme/ledger-native";
+      export async function record(entry: object) {
+        await publishEntry("ledger-queue", { amount: "9" });
+      }
+    `);
+
+    expect(readExports(project)).toEqual([
+      {
+        subject: "ledger-queue",
+        body: {
+          kind: "object",
+          fields: { amount: { kind: "string", value: "9" } },
+        },
+        callee: "publishEntry",
+      },
+    ]);
+  });
+
+  it("reads the call when the package is not installed at all", () => {
+    const project = ledgerProject(
+      `
+      import { publishEntry } from "@acme/ledger-native";
+      export async function record(entry: object) {
+        await publishEntry("ledger-queue", entry);
+      }
+    `,
+      false,
+    );
+
+    expect(readExports(project).map((read) => read.subject)).toEqual([
+      "ledger-queue",
+    ]);
+  });
+
+  it("reads a call through an alias and through a namespace import", () => {
+    const project = ledgerProject(`
+      import { publishEntry as publish } from "@acme/ledger-native";
+      import * as ledger from "@acme/ledger-native";
+      export async function record(entry: object) {
+        await publish("ledger-queue", entry);
+        await ledger.publishEntry("ledger-audit", entry);
+      }
+    `);
+
+    expect(readExports(project).map((read) => read.callee)).toEqual([
+      "publish",
+      "ledger.publishEntry",
+    ]);
+  });
+
+  it("reads a method on an instance the package's class made, for an export written Class.method", () => {
+    const project = ledgerProject(`
+      import { Ledger } from "@acme/ledger-native";
+      const ledger = new Ledger();
+      export async function record(entry: object) {
+        await ledger.append("ledger-queue", entry);
+      }
+    `);
+
+    const spec: ConfiguredCallSpec = {
+      module: "@acme/ledger-native",
+      export: "Ledger.append",
+      subject: { at: 0 },
+    };
+    expect(readExports(project, spec)).toEqual([
+      { subject: "ledger-queue", body: null, callee: "ledger.append" },
+    ]);
+  });
+
+  it("reads nothing for another export of the same package, or a local function of the same name", () => {
+    const project = ledgerProject(`
+      import { closeLedger } from "@acme/ledger-native";
+      function publishEntry(queue: string, body: unknown) {}
+      export async function record(entry: object) {
+        await closeLedger();
+        publishEntry("ledger-queue", entry);
+      }
+    `);
+
+    expect(readExports(project)).toEqual([]);
+  });
+
+  it("reads nothing when the subject is not a literal", () => {
+    const project = ledgerProject(`
+      import { publishEntry } from "@acme/ledger-native";
+      export async function record(queue: string, entry: object) {
+        await publishEntry(queue, entry);
+      }
+    `);
+
+    expect(readExports(project)).toEqual([]);
+  });
+
+  it("asks a store of its own when the context brings none", () => {
+    const sf = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      const made = new CommandDispatcher();
+      export async function send(given: CommandDispatcher) {
+        await made.dispatch("order.placed", {}, {});
+        await given.dispatch("order.given", {}, {});
+      }
+    `);
+
+    const spec: ConfiguredCallSpec = {
+      module: "@acme/async",
+      export: "CommandDispatcher.dispatch",
+      subject: { at: 0 },
+    };
+    // Nothing ties a parameter to the constructor, so the call on it is
+    // not attributed to the export, and only the receiver form reads it.
+    expect(readAll(sf, spec).map((read) => read.subject)).toEqual([
+      "order.placed",
+    ]);
   });
 });

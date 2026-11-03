@@ -27,6 +27,10 @@ export declare class EventPublisher {
   emit(subject: string, data: unknown, opts: unknown): Promise<void>;
 }
 `,
+  // A package that publishes from a plain function.
+  "@acme/events": `
+export declare function publishEvent(detailType: string, detail: unknown): Promise<void>;
+`,
 };
 
 /** The publisher config the configured-producer tests run with. */
@@ -583,5 +587,33 @@ describe("eventbridge configured producer", () => {
     `;
 
     expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
+  });
+
+  it("reads each call of a publishing function the stub states as an export", () => {
+    const source = `
+      import { publishEvent } from "@acme/events";
+      import * as events from "@acme/events";
+      export async function announce() {
+        await publishEvent("user.deleted", { userId: "u-1" });
+        await events.publishEvent("user.archived", { userId: "u-1" });
+      }
+    `;
+
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, {
+        producers: [
+          {
+            module: "@acme/events",
+            export: "publishEvent",
+            subject: { at: 0 },
+            payload: { at: 1 },
+          },
+        ],
+      }),
+    );
+    expect(sends.map((send) => [channelOf(send), send.callee])).toEqual([
+      ["user.deleted", "publishEvent"],
+      ["user.archived", "events.publishEvent"],
+    ]);
   });
 });

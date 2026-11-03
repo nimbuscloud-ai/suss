@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { optionsSchema as sqsOptions } from "@suss/packs/aws-sqs";
+import { optionsSchema as axiosOptions } from "@suss/packs/axios";
+
 import {
+  assertStubsReadable,
   loadStubs,
   stubOnlyOptionRefusal,
   stubOnlyOptionsOf,
@@ -12,7 +16,21 @@ import {
   withStubOptions,
 } from "./stubs.js";
 
+import type { StubOverlay } from "./stubs.js";
+
 const created: string[] = [];
+
+/** The values a stub adds under one option of one pack. */
+function valuesOf(
+  overlay: StubOverlay,
+  pack: string,
+  option: string,
+): unknown[] | undefined {
+  return overlay
+    .get(pack)
+    ?.get(option)
+    ?.map((item) => item.value);
+}
 
 afterEach(() => {
   for (const dir of created.splice(0)) {
@@ -83,12 +101,12 @@ describe("routing statements into pack options", () => {
     const root = projectWith({ "kit.yaml": DECORATOR_STUB });
     const overlay = stubOverlayOf(loadStubs(root));
 
-    expect(overlay.get("nestjs-rest")?.get("classDecorators")).toEqual([
+    expect(valuesOf(overlay, "nestjs-rest", "classDecorators")).toEqual([
       "ApiController",
     ]);
-    expect(overlay.get("nestjs-microservices")?.get("classDecorators")).toEqual(
-      ["ApiController"],
-    );
+    expect(
+      valuesOf(overlay, "nestjs-microservices", "classDecorators"),
+    ).toEqual(["ApiController"]);
   });
 
   it("refuses a statement kind no pack consumes any more", () => {
@@ -118,13 +136,15 @@ statements:
 `,
     });
     const overlay = stubOverlayOf(loadStubs(root));
-    expect(overlay.get("graphql-ruby")?.get("baseClassNames")).toEqual([
+    expect(valuesOf(overlay, "graphql-ruby", "baseClassNames")).toEqual([
       "AcmeResolver",
     ]);
-    expect(overlay.get("rails")?.get("baseClassNames")).toEqual([
+    expect(valuesOf(overlay, "rails", "baseClassNames")).toEqual([
       "AcmeResolver",
     ]);
-    expect(overlay.get("fastapi")?.get("wrapperModules")).toEqual(["acme_api"]);
+    expect(valuesOf(overlay, "fastapi", "wrapperModules")).toEqual([
+      "acme_api",
+    ]);
   });
 
   it("gives a base class to graphql-ruby alone when it extends one of that pack's roots", () => {
@@ -138,7 +158,7 @@ statements:
 `,
     });
     const overlay = stubOverlayOf(loadStubs(root));
-    expect(overlay.get("graphql-ruby")?.get("baseClassNames")).toEqual([
+    expect(valuesOf(overlay, "graphql-ruby", "baseClassNames")).toEqual([
       "AcmeGraphql::AuthenticatedObject",
     ]);
     expect(overlay.get("rails")).toBeUndefined();
@@ -155,7 +175,7 @@ statements:
 `,
     });
     const overlay = stubOverlayOf(loadStubs(root));
-    expect(overlay.get("rails")?.get("baseClassNames")).toEqual([
+    expect(valuesOf(overlay, "rails", "baseClassNames")).toEqual([
       "Acme::ApiController",
     ]);
     expect(overlay.get("graphql-ruby")).toBeUndefined();
@@ -188,7 +208,7 @@ statements:
 `,
     });
     const overlay = stubOverlayOf(loadStubs(root));
-    expect(overlay.get("aws-sqs")?.get("producers")).toEqual([
+    expect(valuesOf(overlay, "aws-sqs", "producers")).toEqual([
       {
         module: "@acme/ledger-native",
         export: "publishEntry",
@@ -227,6 +247,110 @@ describe("merging the overlay into a pack's options", () => {
     });
 
     expect(withStubOptions("express", { a: 1 }, overlay)).toEqual({ a: 1 });
+  });
+});
+
+/** The guide's stub with its spec swapped for `spec`, loaded from disk. */
+function sqsStubWithSpec(spec: string): StubOverlay {
+  const root = projectWith({
+    "acme-ledger-native.yaml": `
+package: "@acme/ledger-native"
+statements:
+  - kind: performs-call
+    export: publishEntry
+    system: aws.sqs
+    spec: ${spec}
+`,
+  });
+  return stubOverlayOf(loadStubs(root));
+}
+
+function refusalFor(
+  pack: string,
+  schema: Parameters<typeof assertStubsReadable>[1],
+  overlay: StubOverlay,
+): string {
+  try {
+    assertStubsReadable(pack, schema, overlay);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return "";
+}
+
+describe("checking what a stub adds against the pack that reads it", () => {
+  it("takes the stub the teach-a-dependency guide shows", () => {
+    const overlay = sqsStubWithSpec(
+      "{ subject: { at: 0 }, payload: { at: 1 } }",
+    );
+    expect(refusalFor("aws-sqs", sqsOptions, overlay)).toBe("");
+  });
+
+  it("takes a dispatcher stated by its receiver type", () => {
+    const overlay = sqsStubWithSpec(
+      "{ receiver: Ledger, method: append, subjectArg: 0, bodyArg: 1 }",
+    );
+    expect(refusalFor("aws-sqs", sqsOptions, overlay)).toBe("");
+  });
+
+  it("says which file and which field a shape the pack cannot read went wrong at", () => {
+    const overlay = sqsStubWithSpec("{ subject: 0, payload: { at: 1 } }");
+    const said = refusalFor("aws-sqs", sqsOptions, overlay);
+
+    expect(said).toMatch(
+      /acme-ledger-native\.yaml has a statement the aws-sqs pack cannot read:/,
+    );
+    expect(said).toContain("statements.0.spec.subject: Invalid input");
+    expect(said).toContain(
+      "export: <function>, spec: { subject: { at: 0 }, payload: { at: 1 } }",
+    );
+  });
+
+  it("names a field neither form reads", () => {
+    const overlay = sqsStubWithSpec("{ queue: { at: 0 } }");
+    const said = refusalFor("aws-sqs", sqsOptions, overlay);
+
+    expect(said).toContain(
+      "statements.0.spec.queue is not a field the aws-sqs pack reads.",
+    );
+    expect(said).toContain("statements.0.spec.subject: Invalid input");
+  });
+
+  it("refuses a drafted stub whose spec was left blank", () => {
+    const overlay = sqsStubWithSpec("{}");
+    expect(refusalFor("aws-sqs", sqsOptions, overlay)).toContain(
+      "statements.0.spec.subject",
+    );
+  });
+
+  it("takes an axios factory as before, and refuses one with a spec axios does not read", () => {
+    const factory = (spec: string) =>
+      stubOverlayOf(
+        loadStubs(
+          projectWith({
+            "acme-http.yaml": `
+package: "@acme/http"
+statements:
+  - kind: performs-call
+    system: axios
+    export: createApiClient
+    spec: ${spec}
+`,
+          }),
+        ),
+      );
+
+    expect(refusalFor("axios", axiosOptions, factory("{}"))).toBe("");
+    expect(
+      refusalFor("axios", axiosOptions, factory("{ subject: { at: 0 } }")),
+    ).toContain(
+      "statements.0.spec.subject is not a field the axios pack reads.",
+    );
+  });
+
+  it("leaves a pack the stub says nothing to alone", () => {
+    const overlay = sqsStubWithSpec("{ subject: 0 }");
+    expect(refusalFor("aws-eventbridge", sqsOptions, overlay)).toBe("");
   });
 });
 
