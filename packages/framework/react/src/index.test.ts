@@ -680,6 +680,44 @@ describe("reactFramework, the props a component's handlers and effects use", () 
   });
 });
 
+describe("reactFramework, an effect written off the React import", () => {
+  const EFFECT_BODY = `(() => {
+            document.title = label;
+          }, [label])`;
+
+  it.each([
+    ["a default import", `import React from "react";`, "React.useEffect"],
+    [
+      "a namespace import",
+      `import * as React from "react";`,
+      "React.useEffect",
+    ],
+    ["an alias", `import { useEffect as useMount } from "react";`, "useMount"],
+  ])(
+    "gives %s its own unit, as a bare useEffect gets",
+    async (_, line, call) => {
+      const summaries = await summariesOf({
+        "/src/title.tsx": `
+        ${line}
+        export function Title({ label }: { label: string }) {
+          ${call}${EFFECT_BODY};
+          return <h1>{label}</h1>;
+        }
+      `,
+      });
+
+      const effect = summaries.find(
+        (s) => s.identity.name === "Title.effect#0",
+      );
+      expect(effect?.metadata?.react).toMatchObject({
+        kind: "effect",
+        deps: ["label"],
+      });
+      expect(effect?.inputReads?.map((read) => read.input)).toEqual(["label"]);
+    },
+  );
+});
+
 const PANEL_SOURCE = `
 export function Panel() {
   return <div/>;
