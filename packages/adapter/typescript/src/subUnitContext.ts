@@ -32,6 +32,7 @@ import {
 import { forEachDescendantOfKinds } from "./walk/rawDescent.js";
 
 import type { FunctionRoot } from "./conditions.js";
+import type { ResolutionStore } from "./facts/store.js";
 
 /**
  * The context the TypeScript adapter passes to a pack's `subUnits`
@@ -97,6 +98,14 @@ export interface TsSubUnitContext {
    * with the node's full text. Null means no deps argument was given.
    */
   readArrayLiteralText(node: Node | null): string[] | null;
+
+  /**
+   * The run's store, the same one a recognizer's context has, so a pack
+   * that claims a callback off a call it recognized can ask the store
+   * the same questions about that call. Undefined when the run has no
+   * store.
+   */
+  readonly resolution?: ResolutionStore;
 }
 
 /**
@@ -114,7 +123,9 @@ export interface TsJsxAttributeLocation {
 // Implementation
 // ---------------------------------------------------------------------------
 
-export function createTsSubUnitContext(): TsSubUnitContext {
+export function createTsSubUnitContext(
+  resolution?: ResolutionStore,
+): TsSubUnitContext {
   return {
     findJsxAttributes,
     findCallExpressionsByName,
@@ -122,6 +133,7 @@ export function createTsSubUnitContext(): TsSubUnitContext {
     getCallArgumentFunction,
     getCallArgument,
     readArrayLiteralText,
+    ...(resolution === undefined ? {} : { resolution }),
   };
 }
 

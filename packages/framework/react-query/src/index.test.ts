@@ -24,9 +24,10 @@ const QUERY_TYPES: Readonly<Record<string, string>> = {
 async function extract(
   source: string,
   packs: PatternPack[] = [reactQueryFramework()],
+  files: Readonly<Record<string, string>> = {},
 ): Promise<BehavioralSummary[]> {
   const project = createTestProject();
-  for (const [file, text] of Object.entries(QUERY_TYPES)) {
+  for (const [file, text] of Object.entries({ ...QUERY_TYPES, ...files })) {
     project.createSourceFile(file, text);
   }
   project.createSourceFile("/app/Orders.tsx", source);
@@ -187,6 +188,34 @@ describe("the react-query pack", () => {
       via: "useOrders",
       callbackRef: { type: "identifier", name: "queryFn" },
     });
+  });
+
+  it("matches a hook a project file re-exports", async () => {
+    const summaries = await extract(
+      `
+      import { useQuery as useBarrelQuery } from "./queryHooks";
+
+      export function OrderDetail() {
+        const q = useBarrelQuery({ queryKey: ["order"], queryFn: async () => [] });
+        return <p>{String(q)}</p>;
+      }
+    `,
+      [reactFramework(), reactQueryFramework()],
+      {
+        "/app/queryHooks.ts": `export { useMutation, useQuery } from "@tanstack/react-query";`,
+      },
+    );
+
+    expect(schedules(summaries)).toContainEqual({
+      unit: "OrderDetail",
+      via: "useBarrelQuery",
+      callbackRef: { type: "literal" },
+    });
+    expect(
+      summaries.find(
+        (one) => one.identity.name === "OrderDetail.useBarrelQuery#0",
+      )?.kind,
+    ).toBe("scheduled-callback");
   });
 
   it("records a function it cannot resolve as opaque", async () => {

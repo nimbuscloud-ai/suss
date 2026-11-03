@@ -19,6 +19,7 @@ export { readContract, readContractForClientCall } from "./contract.js";
 export { buildProjectHelperIndex } from "./discovery/helperIndex.js";
 export {
   type ImportScanOptions,
+  importBindsName,
   importDeclarationsOf,
   importedNamesOf,
   importedRootsOf,
