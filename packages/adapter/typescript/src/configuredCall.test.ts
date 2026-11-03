@@ -49,10 +49,14 @@ export declare class EventPublisher {
   return project.createSourceFile("user.ts", userSource);
 }
 
-/** Read every call in the file with the given spec. */
+/**
+ * Read every call in the file with the given spec, through the run's
+ * store when one is given, as extraction hands a recognizer.
+ */
 function readAll(
   sourceFile: SourceFile,
   spec: ConfiguredCallSpec = DISPATCH,
+  resolution?: ResolutionStore,
 ): Array<{ subject: string; body: EffectArg | null; callee: string }> {
   const out: Array<{
     subject: string;
@@ -65,7 +69,11 @@ function readAll(
     }
     const read = readConfiguredCall(
       node,
-      { sourceFile, extractArgs: () => extractArgsForTest(node) },
+      {
+        sourceFile,
+        extractArgs: () => extractArgsForTest(node),
+        ...(resolution === undefined ? {} : { resolution }),
+      },
       spec,
     );
     if (read !== null) {
@@ -338,34 +346,11 @@ export declare class Ledger {
   };
 }
 
-/** Read every call in the file with the spec, through the run's store. */
 function readExports(
   { sourceFile, store }: { sourceFile: SourceFile; store: ResolutionStore },
   spec: ConfiguredCallSpec = PUBLISH_ENTRY,
 ): Array<{ subject: string; body: EffectArg | null; callee: string }> {
-  const out: Array<{
-    subject: string;
-    body: EffectArg | null;
-    callee: string;
-  }> = [];
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const read = readConfiguredCall(
-      node,
-      {
-        sourceFile,
-        extractArgs: () => extractArgsForTest(node),
-        resolution: store,
-      },
-      spec,
-    );
-    if (read !== null) {
-      out.push(read);
-    }
-  });
-  return out;
+  return readAll(sourceFile, spec, store);
 }
 
 describe("readConfiguredCall on an export", () => {
