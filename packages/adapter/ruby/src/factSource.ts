@@ -16,6 +16,7 @@ import { referenceName } from "@suss/behavioral-ir";
 import { classMemberOf } from "@suss/resolution";
 
 import { numberLiteralValue, stringLiteralValue } from "./ast.js";
+import { CONSTRUCTOR } from "./facts/languageWords.js";
 import { anchorCallsOf, writtenValueOf } from "./facts/resolve.js";
 import { argOf } from "./paths/effects.js";
 import { nodeOfResolutionKey, stringValueOf } from "./values/evaluator.js";
@@ -44,6 +45,7 @@ export function rubyFactSource(db: Database): FactSource {
     importedFrom: (key, module) => fromConstant(textOf(key), module),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     memberName: (stated) => classMemberOf(stated) ?? stated,
+    constructedClass: (callee) => constructedClass(nodeAt(callee)),
     textOf,
     literalOf: (key) => literalOf(nodeAt(key)),
     nameOf: (key, unsettled) => {
@@ -73,6 +75,26 @@ function calleeText(node: RbNode): string {
   }
   const receiver = call.childForFieldName("receiver");
   return receiver === null ? node.text : `${receiver.text}.${node.text}`;
+}
+
+/** The class `Klass.new` makes, by its own name: `Connection` for `PG::Connection.new`. */
+function constructedClass(method: RbNode | null): string | null {
+  const call = method?.parent;
+  if (
+    method === null ||
+    method === undefined ||
+    method.text !== CONSTRUCTOR ||
+    call?.type !== "call" ||
+    call.childForFieldName("method") !== method
+  ) {
+    return null;
+  }
+  const receiver = call.childForFieldName("receiver");
+  const named =
+    receiver?.type === "scope_resolution"
+      ? receiver.childForFieldName("name")
+      : receiver;
+  return named?.type === "constant" ? named.text : null;
 }
 
 /** Whether a constant path is the library's own constant or one inside it. */

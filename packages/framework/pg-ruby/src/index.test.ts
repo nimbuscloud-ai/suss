@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { rubyPackUnderTest, storageOf } from "@suss/pack-harness";
 
-import { pgRawSql, pgRubyFramework, withPg } from "./index.js";
+import { pgRubyFramework, withPg } from "./index.js";
 
 import type { RubyPack } from "@suss/adapter-ruby";
 import type { Effect } from "@suss/behavioral-ir";
@@ -52,18 +52,54 @@ function accesses(effects: Effect[], operation: string) {
   });
 }
 
-describe("what the pack declares", () => {
-  it("reads both constants the gem hands a connection out from", () => {
-    expect(pgRawSql().map((pattern) => pattern.constantName)).toEqual([
-      "PG",
-      "PG::Connection",
-    ]);
+/** The tables a method reads, run over the lines given. */
+async function tablesRead(...lines: string[]): Promise<(string | null)[]> {
+  const effects = await harness.effectsAcross(
+    {
+      "repo.rb": ["class Repo", "  def run", ...lines, "  end", "end"].join(
+        "\n",
+      ),
+    },
+    "repo.rb",
+  );
+  return effects.map((effect) => storageOf(effect).semantics.container);
+}
+
+describe("which connections the pack reads", () => {
+  it("reads a connection from PG.connect and from each builder on PG::Connection", async () => {
+    expect(
+      await tablesRead(
+        '    a = PG.connect("x")',
+        '    a.exec("SELECT id FROM accounts")',
+        '    b = PG::Connection.new("x")',
+        '    b.exec("SELECT id FROM plans")',
+        '    c = PG::Connection.open("x")',
+        '    c.exec("SELECT id FROM teams")',
+        '    d = ::PG::Connection.connect("x")',
+        '    d.exec("SELECT id FROM users")',
+      ),
+    ).toEqual(["accounts", "plans", "teams", "users"]);
   });
 
-  it("takes the statement second for prepare and first for the rest", () => {
-    const [pattern] = pgRawSql();
-    expect(pattern?.statements?.prepare).toEqual({ at: 1 });
-    expect(pattern?.statements?.exec).toEqual({ at: 0 });
+  it("leaves alone a receiver another library or another PG class made", async () => {
+    expect(
+      await tablesRead(
+        '    a = Sequel.connect("x")',
+        '    a.exec("SELECT id FROM accounts")',
+        "    b = PG::TextEncoder::Array.new",
+        '    b.exec("SELECT id FROM plans")',
+      ),
+    ).toEqual([]);
+  });
+
+  it("takes the statement second for prepare and first for the rest", async () => {
+    expect(
+      await tablesRead(
+        '    conn = PG.connect("x")',
+        '    conn.prepare("by_id", "SELECT id FROM accounts WHERE id = $1")',
+        '    conn.exec("SELECT id FROM plans")',
+      ),
+    ).toEqual(["accounts", "plans"]);
   });
 
   it("adds itself to a pack without disturbing its discovery", () => {
@@ -71,7 +107,7 @@ describe("what the pack declares", () => {
     const composed = withPg(rails);
     expect(composed.name).toBe("rails");
     expect(composed.discovery).toBe(rails.discovery);
-    expect(composed.rawSql).toHaveLength(2);
+    expect(composed.accessRecognizers?.length).toBeGreaterThan(0);
   });
 });
 
