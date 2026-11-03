@@ -117,6 +117,7 @@ export {
 } from "./version.js";
 export { fallbackOf, isDefaultedAt } from "./walk/defaulted.js";
 export {
+  callsInUnitBody,
   type DescentBarriers,
   NO_BARRIERS,
   startsItsOwnScope,

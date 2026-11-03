@@ -1,6 +1,6 @@
 // An HTTP service whose handlers hand work to the runtime. A callback
-// written in place at the top of a handler becomes a unit of its own;
-// one written inside another arrow stays part of the handler.
+// written in place in a handler becomes a unit of its own, even inside
+// another callback. One inside a nested function belongs to that function.
 
 import express, { type Request, type Response } from "express";
 
@@ -34,6 +34,28 @@ app.get("/health", async (_req, res) => {
     }, 5);
   });
   res.json({ ok: true, region: process.env.AWS_REGION ?? "local" });
+});
+
+app.put("/uploads", (req, res) => {
+  req.on("end", function onEnd() {
+    setImmediate(() => {
+      console.log("upload received");
+      setTimeout(() => {
+        console.log("upload indexed");
+      }, 50);
+    });
+  });
+  res.sendStatus(202);
+});
+
+app.patch("/retries", (_req, res) => {
+  function retryLater(): void {
+    setTimeout(() => {
+      console.log("retrying");
+    }, 500);
+  }
+  retryLater();
+  res.sendStatus(202);
 });
 
 function heartbeat(_req: Request, res: Response): void {

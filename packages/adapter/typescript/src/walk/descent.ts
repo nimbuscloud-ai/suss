@@ -26,7 +26,7 @@
 // the sub-unit, not the parent. Those function nodes are passed in as
 // `barriers`.
 
-import { Node, SyntaxKind, type ts } from "ts-morph";
+import { type CallExpression, Node, SyntaxKind, type ts } from "ts-morph";
 
 import { forEachDescendantWhere } from "./rawDescent.js";
 import { climbSyntax, peelSyntax } from "./unwrap.js";
@@ -169,6 +169,30 @@ export function withDescentStops(
   ...kinds: SyntaxKind[]
 ): ReadonlySet<SyntaxKind> {
   return new Set([...DESCENT_STOP_KINDS, ...kinds]);
+}
+
+const CALLS_AND_STOPS = withDescentStops(SyntaxKind.CallExpression);
+
+/**
+ * The calls a unit's body runs, in the order they start in the source.
+ * These are the calls invocation recognizers are handed, so a pack that
+ * claims a callback off a recognized call finds every call it recognized.
+ */
+export function callsInUnitBody(
+  func: Node,
+  barriers: DescentBarriers = NO_BARRIERS,
+): CallExpression[] {
+  const calls: CallExpression[] = [];
+  forEachInUnitBodyOfKinds(func, CALLS_AND_STOPS, (node) => {
+    if (isDescentStop(node, func, barriers)) {
+      return true;
+    }
+    if (Node.isCallExpression(node)) {
+      calls.push(node);
+    }
+    return false;
+  });
+  return calls;
 }
 
 /**

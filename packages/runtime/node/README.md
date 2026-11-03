@@ -24,7 +24,8 @@ reads. It covers:
   module-location globals `__dirname`, `__filename` and
   `import.meta.url`.
 - **Sub-units** for the callbacks passed to a scheduling call, so what
-  runs later is described as its own unit.
+  runs later is described as its own unit. A call made inside another
+  callback, such as a `.then` or a React effect, gets one too.
 
 The pack does not discover any units of its own. Everything above fires
 on units another pack already found, so run it alongside a pack that

@@ -38,6 +38,7 @@ import {
 import { lineRangeOf, startLineOf } from "../lines.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
+  callsInUnitBody,
   type DescentBarriers,
   forEachInUnitBodyOfKinds,
   forEachInUnitBodyWhere,
@@ -457,8 +458,6 @@ export function extractInvocationEffectsAtModuleScope(
   );
 }
 
-const CALLS_AND_STOPS = withDescentStops(SyntaxKind.CallExpression);
-
 const ACCESSES_CONSTRUCTIONS_AND_STOPS = withDescentStops(
   SyntaxKind.PropertyAccessExpression,
   SyntaxKind.CallExpression,
@@ -567,16 +566,7 @@ export function runInvocationRecognizers(
   const sites: RecognizedEffectLocation[][] = [];
   const sourceFile = func.getSourceFile();
 
-  const calls: CallExpression[] = [];
-  forEachInUnitBodyOfKinds(func, CALLS_AND_STOPS, (node) => {
-    if (isDescentStop(node, func, barriers)) {
-      return true;
-    }
-    if (Node.isCallExpression(node)) {
-      calls.push(node);
-    }
-    return false;
-  });
+  const calls = callsInUnitBody(func, barriers);
   const walk = walkArguments(calls, resolution);
 
   for (const node of calls) {
