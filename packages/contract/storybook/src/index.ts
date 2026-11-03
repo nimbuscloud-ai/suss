@@ -28,6 +28,7 @@ import {
   exportedDeclarationsOf,
   findNearestTsconfig,
   objectLiteralOf,
+  peelValue,
   projectPlaceOf,
   propertiesOf,
   propertyFunctionOf,
@@ -35,6 +36,7 @@ import {
   propertyOf,
   propertyValueOf,
   ResolutionStore,
+  readName,
   specifierImportedAs,
   stringValueOf,
   symbolBehind,
@@ -185,10 +187,29 @@ function argReadersOf(
   // Read by name, since `render(args) { ... }` is a method with no value.
   const names = new Set(
     propertiesOf(storyOrMeta, resolution).map((property) =>
-      propertyNameOf(property),
+      keyOf(property, resolution),
     ),
   );
   return ARG_READERS.filter((name) => names.has(name));
+}
+
+/**
+ * The key an entry of a story's object is under: the name it is written
+ * with, or what a computed key comes to when the file settles it, as
+ * `[key]` does with `const key = "label"`.
+ */
+function keyOf(property: Node, resolution: ResolutionStore): string | null {
+  const name = propertyNameOf(property);
+  if (name !== null || !N.isPropertyAssignment(property)) {
+    return name;
+  }
+  const key = property.getNameNode();
+  return N.isComputedPropertyName(key)
+    ? readName(key.getExpression(), {
+        resolve: (value) => resolution.resolveWrittenValue(value),
+        unsettled: "nothing",
+      })
+    : null;
 }
 
 /**
@@ -292,7 +313,7 @@ function extractMeta(
     if (meta === null) {
       continue;
     }
-    const component = propertyOf(meta, "component", resolution);
+    const component = unwrapped(propertyOf(meta, "component", resolution));
     if (component !== null) {
       return {
         componentName: component.getText(),
@@ -434,8 +455,8 @@ function extractStories(
 /**
  * The `args` of a story or of the meta. An arg that evaluates to a string
  * gives that string, so a constant or a template gives the same value as
- * a quoted literal. Anything else, such as a number or JSX, keeps its
- * source text.
+ * a quoted literal. Anything else, such as a number, JSX or a method,
+ * keeps its source text.
  */
 function argsOf(
   storyOrMeta: ObjectLiteralExpression,
@@ -448,14 +469,30 @@ function argsOf(
     return args;
   }
   for (const property of propertiesOf(object, resolution)) {
-    const name = propertyNameOf(property);
-    const value = propertyValueOf(property);
+    const name = keyOf(property, resolution);
+    const value = argValueOf(property);
     if (name === null || value === null) {
       continue;
     }
     args[name] = stringValueOf(value, resolution) ?? value.getText();
   }
   return args;
+}
+
+/** What an arg is set to. A method, `onPick() {}`, is its own value. */
+function argValueOf(property: Node): Node | null {
+  return N.isMethodDeclaration(property)
+    ? property
+    : unwrapped(propertyValueOf(property));
+}
+
+/**
+ * A value with the wrappers taken off that say something about its type
+ * and nothing about the value, such as `as`, `satisfies` and parentheses.
+ * `Thing as never` is the component `Thing`.
+ */
+function unwrapped(value: Node | null): Node | null {
+  return value === null ? null : peelValue(value);
 }
 
 // ---------------------------------------------------------------------------
