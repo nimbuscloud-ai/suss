@@ -23,6 +23,7 @@ import type { PatternPack } from "@suss/extractor";
 import type { CallOps } from "@suss/recognize";
 import type { FunctionRoot } from "./conditions.js";
 import type { DiscoveredUnit } from "./discovery/index.js";
+import type { TsSubUnitContext } from "./subUnitContext.js";
 
 function restMethodOf(
   target:
@@ -6764,6 +6765,75 @@ describe("walker descent", () => {
       );
       expect(subCallees).toContain("audit.record");
     });
+  });
+
+  it("reads a sub-unit written inside another sub-unit only on its own summary", async () => {
+    const nestedDeferPack: PatternPack = {
+      ...expressResPack,
+      name: "nested-defer-pack",
+      subUnits: (parent, ctx) => {
+        const c = ctx as TsSubUnitContext;
+        const parentFunc = parent.func as FunctionRoot;
+        return c
+          .findCallExpressionsByName(parentFunc, "defer")
+          .flatMap((call, index) => {
+            const fn = c.getCallArgumentFunction(call, 0);
+            return fn === null
+              ? []
+              : [
+                  {
+                    func: fn,
+                    kind: "handler" as const,
+                    name: `${parent.name}.defer#${index}`,
+                  },
+                ];
+          });
+      },
+    };
+    const project = createTestProject();
+    project.createSourceFile(
+      "handler.ts",
+      `
+        declare function defer(cb: () => void): void;
+        declare const audit: { record(msg: string): void };
+        export function handleUser(req: any, res: any) {
+          defer(() => {
+            audit.record("outer");
+            defer(() => {
+              audit.record(req.params.id);
+            });
+          });
+          res.json({ ok: true });
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [nestedDeferPack],
+      includeReachable: false,
+    });
+    const summaries = await adapter.extractAll();
+
+    const recordedBy = (name: string) =>
+      summaries
+        .find((s) => s.identity.name === name)
+        ?.transitions.flatMap((t) =>
+          t.effects.flatMap((e) =>
+            e.type === "invocation" && e.callee === "audit.record"
+              ? [e.args[0]]
+              : [],
+          ),
+        );
+    expect(recordedBy("handleUser.defer#0")).toEqual([
+      { kind: "string", value: "outer" },
+    ]);
+    expect(recordedBy("handleUser.defer#1")).toHaveLength(1);
+    const readsOf = (name: string) =>
+      summaries
+        .find((s) => s.identity.name === name)
+        ?.inputReads?.map((read) => read.input);
+    expect(readsOf("handleUser.defer#0") ?? []).not.toContain("req");
+    expect(readsOf("handleUser.defer#1")).toContain("req");
   });
 });
 

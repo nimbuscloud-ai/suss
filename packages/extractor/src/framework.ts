@@ -1337,8 +1337,8 @@ export interface PatternPack {
   /**
    * Per-call recognizers that emit typed `Effect`s beside the generic
    * `invocation` effect. The adapter calls each one on every call in the
-   * function body, whichever pack discovered the function, and skips
-   * nested functions, which are units of their own. Calls the invocation
+   * function body, whichever pack discovered the function, and in its
+   * callbacks, but not in nested declarations or sub-units. Calls the invocation
    * walk skips, such as `const x = await fn(...)` initializers, are included.
    *
    * Returned effects are added to the enclosing default transition, and

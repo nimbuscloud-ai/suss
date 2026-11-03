@@ -701,6 +701,8 @@ interface DiscoveredSubUnitParent {
 
 Returned units go through the same pipeline top-level units do, and each becomes its own `BehavioralSummary`. Put per-unit `terminals` and `inputMapping` on the `DiscoveredSubUnit` when a sub-unit is written differently from the parent pack's defaults.
 
+The parent's summary stops at every function a pack returned, and so does each sub-unit's. A timer callback written inside a click handler, with one pack returning the handler and another the callback, is read on the callback's summary and not on the handler's as well.
+
 ## Custom discovery
 
 ```typescript
