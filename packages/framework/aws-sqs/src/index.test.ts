@@ -47,6 +47,11 @@ export declare class CommandDispatcher {
 /** A native package that exports its send as a plain function. */
 const LEDGER_TYPES = `
 export declare function publishEntry(queue: string, body: unknown): Promise<void>;
+export declare function closeLedger(): Promise<void>;
+export declare class Ledger {
+  append(queue: string, body: unknown): Promise<void>;
+  static append(queue: string, body: unknown): Promise<void>;
+}
 `;
 
 const LIBRARY = {
@@ -86,6 +91,15 @@ const messageSendEffectsOf = (effects: Effect[]) =>
 
 const messageReceiveEffectsOf = (effects: Effect[]) =>
   interactionsOf(effects, "message-receive");
+
+function channelOf(
+  effect: Extract<Effect, { type: "interaction" }>,
+): string | null {
+  const semantics = effect.binding.semantics;
+  return semantics.name === "message-bus"
+    ? semantics.channel
+    : raise("not message-bus");
+}
 
 describe("sqs recognizer, through a project-local barrel", () => {
   it("recognizes a send whose import goes through a re-export barrel", () => {
@@ -755,6 +769,81 @@ describe("sqs configured producer", () => {
       { name: "message-bus", messageBus: "aws_sqs", channel: "order.placed" },
     ]);
   });
+
+  it("reads a send on a dispatcher held in a field", () => {
+    const source = `
+      import type { CommandDispatcher } from "@acme/async";
+      export class Sender {
+        constructor(private readonly dispatcher: CommandDispatcher) {}
+        async send() {
+          await this.dispatcher.dispatch("push.send", { userId: "u" }, {});
+        }
+      }
+    `;
+
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, DISPATCHER_OPTIONS),
+    );
+    expect(sends.map((send) => [channelOf(send), send.callee])).toEqual([
+      ["push.send", "this.dispatcher.dispatch"],
+    ]);
+  });
+
+  it("reads a dispatcher imported through a sub-path of its module", () => {
+    const sends = messageSendEffectsOf(
+      packUnderTest(sqsFramework(DISPATCHER_OPTIONS), {
+        library: LIBRARY,
+      }).effectsAcross(
+        {
+          "/node_modules/@acme/async/commands.d.ts": `export { CommandDispatcher } from "./index.js";`,
+          "/repo.ts": `
+            import { CommandDispatcher } from "@acme/async/commands";
+            export async function place(dispatcher: CommandDispatcher) {
+              await dispatcher.dispatch("order.placed", {}, {});
+            }
+          `,
+        },
+        "/repo.ts",
+      ),
+    );
+
+    expect(sends.map(channelOf)).toEqual(["order.placed"]);
+  });
+
+  it("reads a dispatcher the project declares, by the path the stub gives from the project root", () => {
+    const sends = messageSendEffectsOf(
+      packUnderTest(
+        sqsFramework({
+          producers: [
+            {
+              module: "./messaging/dispatcher",
+              receiver: "CommandDispatcher",
+              method: "dispatch",
+              subjectArg: 0,
+            },
+          ],
+        }),
+        { library: LIBRARY },
+      ).effectsAcross(
+        {
+          "/messaging/dispatcher.ts": `
+            export class CommandDispatcher {
+              async dispatch(subject: string, data: unknown) {}
+            }
+          `,
+          "/orders/send.ts": `
+            import { CommandDispatcher } from "../messaging/dispatcher";
+            export async function send(dispatcher: CommandDispatcher) {
+              await dispatcher.dispatch("order.placed", {});
+            }
+          `,
+        },
+        "/orders/send.ts",
+      ),
+    );
+
+    expect(sends.map(channelOf)).toEqual(["order.placed"]);
+  });
 });
 
 describe("sqs producer stated as an export", () => {
@@ -797,6 +886,87 @@ describe("sqs producer stated as an export", () => {
       kind: "object",
       fields: { amount: { kind: "string", value: "9" } },
     });
+  });
+
+  it("reads a call through an alias of the export", () => {
+    const source = `
+      import { publishEntry as publish } from "@acme/ledger-native";
+      export async function record() {
+        await publish("ledger-queue", {});
+      }
+    `;
+
+    const sends = messageSendEffectsOf(recognizeAll(source, LEDGER_OPTIONS));
+    expect(sends.map((send) => [channelOf(send), send.callee])).toEqual([
+      ["ledger-queue", "publish"],
+    ]);
+  });
+
+  it("reads nothing for another export of the package, or a local function of the same name", () => {
+    const source = `
+      import { closeLedger } from "@acme/ledger-native";
+      function publishEntry(queue: string, body: unknown) {}
+      export async function record() {
+        await closeLedger();
+        publishEntry("ledger-queue", {});
+      }
+    `;
+
+    expect(messageSendEffectsOf(recognizeAll(source, LEDGER_OPTIONS))).toEqual(
+      [],
+    );
+  });
+
+  it("reads the call when the package is not installed", () => {
+    const source = `
+      import { publishEntry } from "@acme/unpublished";
+      export async function record() {
+        await publishEntry("ledger-queue", {});
+      }
+    `;
+
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, {
+        producers: [
+          {
+            module: "@acme/unpublished",
+            export: "publishEntry",
+            subject: { at: 0 },
+          },
+        ],
+      }),
+    );
+    expect(sends.map(channelOf)).toEqual(["ledger-queue"]);
+  });
+
+  it("reads a method on an instance the class made, or on the class, for an export written Class.method", () => {
+    const source = `
+      import { Ledger } from "@acme/ledger-native";
+      const ledger = new Ledger();
+      export async function record(given: Ledger) {
+        await ledger.append("ledger-queue", {});
+        await Ledger.append("ledger-static", {});
+        await given.append("ledger-given", {});
+      }
+    `;
+
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, {
+        producers: [
+          {
+            module: "@acme/ledger-native",
+            export: "Ledger.append",
+            subject: { at: 0 },
+          },
+        ],
+      }),
+    );
+    // Nothing ties a parameter to the class's constructor, so the call
+    // on it is not attributed to the export.
+    expect(sends.map((send) => [channelOf(send), send.callee])).toEqual([
+      ["ledger-queue", "ledger.append"],
+      ["ledger-static", "Ledger.append"],
+    ]);
   });
 
   it("reads the files that import the export's module", () => {
