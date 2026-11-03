@@ -23,21 +23,18 @@ export interface SummaryIdParts {
 }
 
 /**
- * Extend only the ids that more than one summary ended up with, and
- * leave the rest alone. An id without a collision stays short. The
- * boundary tells same-named summaries apart first. What it cannot, the
- * order in the file settles: the first keeps its id and the later ones
- * take `@2`, `@3`, so an id stays the same when the code around it
- * moves. The adapter runs this after assigning ids, and the parse
- * boundary runs it over a backfilled v1 artifact, whose per-summary
- * backfill can give two summaries one id.
+ * Extend only the ids that more than one summary ended up with, so an id
+ * without a collision stays short. The boundary tells same-named
+ * summaries apart first, and the order in the file settles the rest: the
+ * first keeps its id and the later ones take `@2`, `@3`, so an id stays
+ * the same when the code around it moves. A summary named by a label,
+ * such as an Express handler named `get`, always has its boundary in its
+ * id, because otherwise a second route in the file would rename the first.
+ * The adapters run this after assigning ids, and the parse boundary runs
+ * it over a backfilled v1 artifact.
  */
 export function disambiguateSummaryIds(summaries: BehavioralSummary[]): void {
-  settleWith(summaries, (summary) =>
-    summary.identity.boundaryBinding === null
-      ? null
-      : `#${boundaryKey(summary.identity.boundaryBinding)}`,
-  );
+  extendWithBoundary(summaries);
   numberInFileOrder(summaries);
 }
 
@@ -75,10 +72,7 @@ function startOf(summary: BehavioralSummary): number {
   return summary.location.span?.start ?? summary.location.range.start;
 }
 
-function settleWith(
-  summaries: BehavioralSummary[],
-  discriminator: (summary: BehavioralSummary) => string | null,
-): void {
+function extendWithBoundary(summaries: BehavioralSummary[]): void {
   const claimed = new Map<string, number>();
   for (const summary of summaries) {
     const id = summary.identity.id ?? "";
@@ -86,12 +80,15 @@ function settleWith(
   }
 
   for (const summary of summaries) {
-    if ((claimed.get(summary.identity.id ?? "") ?? 0) <= 1) {
+    const binding = summary.identity.boundaryBinding;
+    if (binding === null) {
       continue;
     }
-    const extra = discriminator(summary);
-    if (extra !== null) {
-      summary.identity.id = `${summary.identity.id}${extra}`;
+    const key = boundaryKey(binding);
+    const shared = (claimed.get(summary.identity.id ?? "") ?? 0) > 1;
+    const labelled = summary.identity.nameKind === "label" && key !== null;
+    if (shared || labelled) {
+      summary.identity.id = `${summary.identity.id}#${key}`;
     }
   }
 }
