@@ -333,6 +333,13 @@ export interface CallOps {
    */
   namedCallee?(): boolean;
   /**
+   * The name the callee was imported under from one of these modules, as
+   * the module exports it: `GetCommand` for `new Get(...)` after
+   * `import { GetCommand as Get }`. Null when the callee was not imported
+   * from them, or was imported under two names.
+   */
+  calleeImportedAs?(modules: readonly string[]): string | null;
+  /**
    * The properties the function argument in this position reads off
    * its first parameter, one per distinct first segment: `(s) =>
    * s.bears.count` reads `bears`, and a parameter used whole reads

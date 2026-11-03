@@ -681,3 +681,61 @@ describe("the ops over a typed or an imported receiver", () => {
     expect(opsAt("viaModule", dispatches()).namedCallee?.()).toBe(false);
   });
 });
+
+/**
+ * The facts for, in source order, with `L` imported as ledger's `Ledger`:
+ *
+ *   const book = new L();
+ *   book.append("entry");
+ */
+function aliased(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("call", "made", "L");
+  add("writtenValue", "made");
+  add("call", "append", "book.append");
+  add("readsProperty", "book.append", "book", "append");
+  const imports: Record<string, readonly string[]> = {
+    L: ["Ledger"],
+    ns: ["*"],
+  };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => (key === "book" ? "made" : null),
+    anchorCalls: () => [],
+    importedFrom: (key, module) => key === "L" && module === "ledger",
+    importedAs: (key, module) =>
+      module === "ledger" ? (imports[key] ?? []) : [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+}
+
+describe("the ops over a name imported under another name", () => {
+  it("matches `named` against the export the constructor was imported as", () => {
+    const ledger = (named: string) =>
+      constructedFrom({ from: ["ledger"], named: [named] });
+
+    expect(opsAt("append", aliased()).receiverIsFrom(ledger("Ledger"))).toBe(
+      true,
+    );
+    expect(opsAt("append", aliased()).receiverIsFrom(ledger("Other"))).toBe(
+      false,
+    );
+    expect(opsAt("made", aliased()).isFrom(ledger("Ledger"))).toBe(true);
+  });
+
+  it("gives the export a callee was imported as, and nothing for a callee no import made", () => {
+    expect(opsAt("made", aliased()).calleeImportedAs?.(["ledger"])).toBe(
+      "Ledger",
+    );
+    expect(opsAt("made", aliased()).calleeImportedAs?.(["other"])).toBeNull();
+    expect(
+      opsAt("append", aliased()).calleeImportedAs?.(["ledger"]),
+    ).toBeNull();
+  });
+});

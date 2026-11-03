@@ -9,8 +9,7 @@
  * recognized under, which is the npm package callers install.
  */
 
-import { compile } from "./compile.js";
-import { modulesOf } from "./ops.js";
+import { compile, modulesOfChain } from "./compile.js";
 
 import type {
   DeclaredMatch,
@@ -31,7 +30,6 @@ import type {
   StatedRule,
   StorageMethod,
 } from "./chain.js";
-import type { ReceiverOrigin } from "./ops.js";
 
 /**
  * One thing a pack matches, as an entry point returns it. `storageCalls`
@@ -191,41 +189,7 @@ function protocolOf(chains: readonly Chain<MethodMeaning>[]): string {
 
 /** The modules a file has to reach before any of these chains can match. */
 function gateOf(chains: readonly Chain<MethodMeaning>[]): string[] {
-  const modules = new Set<string>();
-  for (const chain of chains) {
-    for (const origin of originsIn(chain)) {
-      for (const module of modulesOf(origin)) {
-        modules.add(module);
-      }
-    }
-  }
-  return [...modules];
-}
-
-/**
- * Every origin a chain states: where its match starts, and, for a chain
- * about a command, the module that command was imported from. A file
- * that imports none of these modules cannot match the chain.
- */
-function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
-  const found: ReceiverOrigin[] = [];
-  for (const link of chain.links) {
-    if (link.asks === "start" && link.at.starts === "receiver") {
-      found.push(link.at.origin);
-    }
-    if (link.asks === "interpolates" && link.from !== undefined) {
-      found.push(link.from);
-    }
-    if (link.asks !== "subject") {
-      continue;
-    }
-    for (const step of link.of) {
-      if (step.to === "argument" && step.origin !== undefined) {
-        found.push(step.origin);
-      }
-    }
-  }
-  return found;
+  return [...new Set(chains.flatMap((chain) => modulesOfChain(chain)))];
 }
 
 /** A question a pack settled with a function, and whether it reads the tree. */

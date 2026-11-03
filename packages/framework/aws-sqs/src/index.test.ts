@@ -227,6 +227,18 @@ describe("sqs recognizer: happy path", () => {
     const sends = messageSendEffectsOf(recognizeAll(source));
     expect(sends).toHaveLength(1);
   });
+
+  it("recognizes a command and a client imported under other names", () => {
+    const source = `
+      import { SQSClient as Queue, SendMessageCommand as Send } from "@aws-sdk/client-sqs";
+      const client = new Queue({});
+      async function enqueue() {
+        await client.send(new Send({ QueueUrl: "orders", MessageBody: "{}" }));
+      }
+    `;
+    const sends = messageSendEffectsOf(recognizeAll(source));
+    expect(sends.map(channelOf)).toEqual(["orders"]);
+  });
 });
 
 describe("a send whose queue the code does not name", () => {

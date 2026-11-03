@@ -68,14 +68,14 @@ export function factSourceFor(
       at(key, [], (node) =>
         store
           .anchorCallsOf(node, (candidate) =>
-            anchorAccepts(candidate, origin, originatesFrom),
+            anchorAccepts(candidate, origin, originatesFrom, store),
           )
           .map(nodeId),
       ),
     importedFrom: (key, module) =>
       at(key, false, (node) => isImportedFrom(node, module, originatesFrom)),
     importedAs: (key, module) =>
-      at(key, [], (node) => store.importedNamesOf(node, [module])),
+      at(key, [], (node) => store.importedAsOf(node, [module])),
     shapeOf: (key) => at(key, null, shapeOf),
     textOf: (key) => at(key, "", (node) => node.getText()),
     literalOf: (key) => at(key, null, literalOf),

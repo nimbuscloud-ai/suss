@@ -160,6 +160,24 @@ describe("a call on an injected repository", () => {
     });
   });
 
+  it("reads a repository Nest's decorator injected under another name", () => {
+    const effects = effectsIn(`
+      import { InjectRepository as InjectNest } from "@nestjs/typeorm";
+      import { Repository } from "typeorm";
+      import { Order } from "./order";
+      export class OrdersService {
+        constructor(@InjectNest(Order) private readonly orders: Repository<Order>) {}
+        list() { return this.orders.find(); }
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    expect(storageOf(effects[0] as Effect)).toMatchObject({
+      semantics: { container: "orders" },
+      interaction: { kind: "read" },
+    });
+  });
+
   it("follows a field the constructor assigns from the parameter", () => {
     const effects = effectsIn(`
       import { InjectRepository } from "@nestjs/typeorm";

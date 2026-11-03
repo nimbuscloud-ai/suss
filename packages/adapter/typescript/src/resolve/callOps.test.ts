@@ -2,7 +2,7 @@ import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { profileEvaluation } from "@suss/datalog";
-import { imported, typed } from "@suss/recognize";
+import { constructedFrom, imported, typed } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
@@ -1137,6 +1137,10 @@ describe("a receiver typed as a library's type, and a value the file imported", 
       tape("d");
       reel("e");
     }
+    export function build() {
+      const made = new Tape();
+      made.eject();
+    }
   `;
 
   /** The ops for each call in the source, by callee, read off the nodes and off the facts. */
@@ -1201,6 +1205,33 @@ describe("a receiver typed as a library's type, and a value the file imported", 
         true,
       );
       expect(ops.get("deck.play")?.isFrom(tapeExport)).toBe(false);
+    },
+  );
+
+  it.each(["nodes", "facts"] as const)(
+    "reads a name imported under another name as the export it is, over the %s",
+    (reading) => {
+      const ops = opsByCallee()[reading];
+
+      expect(
+        ops
+          .get("made.eject")
+          ?.receiverIsFrom(
+            constructedFrom({ from: ["tapedeck"], named: ["Cassette"] }),
+          ),
+      ).toBe(true);
+      expect(
+        ops
+          .get("made.eject")
+          ?.receiverIsFrom(
+            constructedFrom({ from: ["tapedeck"], named: ["Deck"] }),
+          ),
+      ).toBe(false);
+      expect(ops.get("reel")?.calleeImportedAs?.(["tapedeck"])).toBe("tape");
+      expect(ops.get("reel")?.calleeImportedAs?.(["elsewhere"])).toBeNull();
+      expect(
+        ops.get("go")?.calleeImportedAs?.(["tapedeck"]) ?? null,
+      ).toBeNull();
     },
   );
 });
