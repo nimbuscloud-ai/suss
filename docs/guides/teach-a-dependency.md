@@ -19,7 +19,7 @@ statements:
     spec: { subject: { at: 0 }, payload: { at: 1 } }
 ```
 
-With that file in place, suss records every call to `publishEntry(queue, body)` in the project as a send to the queue in its first argument, and `suss ask "what writes bus:aws_sqs ledger-queue"` lists the callers. A call counts whether the code imports `publishEntry` by name or calls it as `ledger.publishEntry` through `import * as ledger`. When the queue is not a literal string in the source, suss doesn't record a send for that call, because a guessed queue would pair the call with the wrong consumer.
+With that file in place, suss records every call to `publishEntry(queue, body)` in the project as a send to the queue in its first argument, and `suss ask "what writes bus:aws_sqs ledger-queue"` lists the callers. A call counts whether the code imports `publishEntry` by name or calls it as `ledger.publishEntry` through `import * as ledger`. A queue kept in a constant is read as the string it settles to. When nothing in the source settles the queue, suss records the send with no queue, because a guessed queue would pair the call with the wrong consumer.
 
 You need a stub for a package that extraction cannot see inside. A napi-rs crate compiles to a binary before npm ever sees it, and a private wrapper ships only its build output. Extraction follows a call as far as the package's exports and stops there, so the queue the wrapper publishes to never shows up in a summary.
 

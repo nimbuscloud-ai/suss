@@ -118,8 +118,8 @@ describe("a dependency stub, through extract", () => {
       await summariesOf(path.join(fixture, "tsconfig.json")),
     );
 
-    // The second call's queue is read from config at run time, so no
-    // send is recorded for it.
+    // The second call's queue is an env var whose fallback is the same
+    // queue, so both calls send there.
     expect(sends["RecordEntry.handler"]).toEqual([
       "ledger-queue via publishEntry",
     ]);

@@ -20,7 +20,7 @@ import { attributedCall } from "./discovery/packageImport.js";
 import { ResolutionStore } from "./facts/store.js";
 import { receiverTypesOf } from "./values/receiverType.js";
 
-import type { configuredCallOption, EffectArg } from "@suss/extractor";
+import type { CallOps, configuredCallOption, EffectArg } from "@suss/extractor";
 import type { z } from "zod";
 
 /**
@@ -41,8 +41,11 @@ interface ArgumentPositions {
 }
 
 export interface ConfiguredCallRead {
-  /** The subject the call sends to, always a literal string. */
-  subject: string;
+  /**
+   * The subject the call sends to, or null when nothing in the source
+   * settles it.
+   */
+  subject: string | null;
   /** The body argument's extracted shape, or null when none applies. */
   body: EffectArg | null;
   /** Source text of the callee, for the effect's `callee` field. */
@@ -52,7 +55,8 @@ export interface ConfiguredCallRead {
 /** The parts of a recognizer context this helper needs. */
 export interface ConfiguredCallContext {
   sourceFile: SourceFile;
-  extractArgs(): EffectArg[];
+  /** What the call's arguments settle to, read the way a declared pack reads them. */
+  ops: CallOps;
   /**
    * The run's store, which says which export a call reaches. A context
    * built without one gets a store of its own for the export form.
@@ -61,12 +65,9 @@ export interface ConfiguredCallContext {
 }
 
 /**
- * Read `call` as the configured send, or return null.
- *
- * A subject that is not a literal string (a value built at runtime, a
- * template with substitutions, a computed key) returns null and the pack
- * emits nothing. Guessing a channel we cannot read would pair a producer
- * with the wrong consumer, which is worse than missing the producer.
+ * Read `call` as the configured send, or return null. The subject is
+ * read the way an SDK send reads its channel, so one nothing settles
+ * records the send with no channel instead of a guessed one.
  */
 export function readConfiguredCall(
   call: CallExpression,
@@ -78,16 +79,17 @@ export function readConfiguredCall(
     return null;
   }
 
-  const args = ctx.extractArgs();
-  const subject = readStringArg(args[positions.subject]);
-  if (subject === null) {
-    return null;
-  }
-
+  const subject = ctx.ops.valueAt(positions.subject)?.name("nothing") ?? null;
   const body =
-    positions.body === undefined ? null : (args[positions.body] ?? null);
+    positions.body === undefined
+      ? null
+      : (ctx.ops.valueAt(positions.body)?.asArg() ?? null);
 
-  return { subject, body, callee: call.getExpression().getText() };
+  return {
+    subject: subject === "" ? null : subject,
+    body,
+    callee: call.getExpression().getText(),
+  };
 }
 
 /** Where the subject and body are when `call` is the one `spec` describes, or null. */
@@ -159,18 +161,6 @@ function callsTheExport(
     ctx.resolution ?? new ResolutionStore(),
   );
   return reached !== null && reached.exportPath.join(".") === spec.export;
-}
-
-/** The value of a string-literal argument, or null for anything else. */
-function readStringArg(arg: EffectArg | undefined): string | null {
-  if (arg === null || arg === undefined || typeof arg !== "object") {
-    return null;
-  }
-  const candidate = arg as { kind?: string; value?: unknown };
-  if (candidate.kind !== "string" || typeof candidate.value !== "string") {
-    return null;
-  }
-  return candidate.value;
 }
 
 /**

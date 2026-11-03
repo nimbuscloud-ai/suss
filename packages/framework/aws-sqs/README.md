@@ -46,7 +46,7 @@ statements:
       bodyArg: 1
 ```
 
-With that stub, `dispatcher.dispatch("order.placed", order, { queueUrl })` is read as a send on channel `order.placed`, the same subject the consumer expects, so the two pair. When the subject is not a literal string in the source, the pack does not record the send, because a guessed channel would pair a producer with the wrong consumer.
+With that stub, `dispatcher.dispatch("order.placed", order, { queueUrl })` is read as a send on channel `order.placed`, the same subject the consumer expects, so the two pair. A subject kept in a constant is read the same way, and `process.env.ORDER_SUBJECT ?? "order.placed"` is read as `order.placed`, the value it falls back to. When nothing in the source settles the subject, as when it arrives as a parameter, the pack records the send with no channel, because a guessed channel would pair a producer with the wrong consumer.
 
 The stub's `package` is the module that declares the receiver's type, and the pack also reads files that import that module. In the `spec`:
 
