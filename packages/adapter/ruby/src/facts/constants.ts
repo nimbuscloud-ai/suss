@@ -1,8 +1,13 @@
 /**
  * Binds each Ruby constant reference to the definition behind it. Ruby
- * has no imports, so there is no `imports` fact to follow, and a
- * reference is bound directly to its definition.
+ * has no imports, so a reference is bound directly to its definition. A
+ * constant whose root no file in the run defines, such as
+ * `Aws::SQS::Client`, comes from a library, and is stated as imported
+ * from `GLOBAL_MODULE` under its path, the way TypeScript states a global
+ * only library declarations declare.
  */
+
+import { GLOBAL_MODULE } from "@suss/resolution";
 
 import { children, field, NESTING_TYPES } from "../ast.js";
 import { associationsDeclaredIn } from "./associations.js";
@@ -166,6 +171,23 @@ export function collectFileConstants(
 }
 
 /**
+ * Whether a file in the run defines the constant a reference starts
+ * from, `Aws` for `Aws::SQS::Client`, anywhere Ruby would look for it.
+ */
+function definesRoot(
+  byName: ReadonlyMap<string, readonly ConstantDefinition[]>,
+  reference: ConstantReference,
+): boolean {
+  const [root = reference.written] = reference.written.split("::");
+  for (let depth = reference.nesting.length; depth >= 0; depth--) {
+    if (byName.has(qualify(reference.nesting.slice(0, depth), root))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Binds every constant read anywhere in the run to its definition,
  * looking outwards from the nesting it was read inside, the way Ruby
  * does.
@@ -220,7 +242,15 @@ export function emitConstantBindings(
         declared.target.key,
       ]);
     }
+    // An association's target is a name inflected from a symbol, which
+    // the source never writes as a constant.
+    const inflected = new Set(
+      file.associations.map((declared) => declared.target.key),
+    );
     for (const reference of file.references) {
+      if (!inflected.has(reference.key) && !definesRoot(byName, reference)) {
+        db.add("imports", [reference.key, GLOBAL_MODULE, reference.written]);
+      }
       for (let depth = reference.nesting.length; depth >= 0; depth--) {
         const candidate = qualify(
           reference.nesting.slice(0, depth),
