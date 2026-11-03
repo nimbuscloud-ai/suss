@@ -247,6 +247,28 @@ describe("args on the meta", () => {
     expect(story?.args).toEqual({ label: "Own" });
   });
 
+  it("reads a meta spread from a base a function returning its argument made, a render function a factory made, and one written as a function expression", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipMade.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const storyOf = (name: string) =>
+      readStorybookMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      );
+
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "Chip.Plain",
+      "Chip.Sized",
+      "Chip.Named",
+    ]);
+    expect(storyOf("Chip.Plain")?.componentImport).toBe("../Chip");
+    expect(storyOf("Chip.Plain")?.args).toEqual({ label: "Made" });
+    expect(storyOf("Chip.Sized")?.argReaders).toEqual(["render"]);
+    expect(storyOf("Chip.Sized")?.renderProps).toEqual(["size"]);
+    expect(storyOf("Chip.Named")?.renderProps).toEqual(["size"]);
+  });
+
   it("records the decorators and render functions that receive the args first", () => {
     const summaries = generateSummariesFromStories(
       [path.join(importsDir, "src/Chip/__stories__/ChipWrapped.stories.tsx")],
