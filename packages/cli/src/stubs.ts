@@ -4,11 +4,11 @@
  * composes a framework decorator.
  *
  * The CLI turns each statement into an entry in the pack option that
- * already reads the same fact, before the pack factories run. Packs and
- * adapters never see a stub. Because the merged options go into the same
- * digest as pack config, editing a stub invalidates the extraction cache
- * the same way editing config does. Stubs may be YAML or JSON, with one
- * schema for both.
+ * already reads the same fact, before the pack factories run, and checks
+ * each entry against the pack's option schema. Packs and adapters never
+ * see a stub. Because the merged options go into the same digest as pack
+ * config, editing a stub invalidates the extraction cache the same way
+ * editing config does. Stubs may be YAML or JSON, with one schema for both.
  */
 
 import fs from "node:fs";
@@ -56,10 +56,24 @@ const StubFileSchema = z.object({
 });
 
 export type StubStatement = z.infer<typeof StatementSchema>;
-export type StubFile = z.infer<typeof StubFileSchema>;
+export type StubFile = z.infer<typeof StubFileSchema> & {
+  /** The file the stub was read from. A stub built in memory has none. */
+  file?: string;
+};
 
-/** Pack name to option key to items appended under it. */
-export type StubOverlay = Map<string, Map<string, unknown[]>>;
+/** One entry a stub statement adds to a pack option, and where it came from. */
+export interface StubItem {
+  value: unknown;
+  /** The stub's file, or its package when it came from no file. */
+  stub: string;
+  /** Which statement of the stub, counting from 0. */
+  statement: number;
+  /** The ways the pack takes a statement like this one, for a refusal to show. */
+  forms: readonly string[];
+}
+
+/** Pack name to option key to the items appended under it. */
+export type StubOverlay = Map<string, Map<string, StubItem[]>>;
 
 const STUB_DIR = path.join("suss", "stubs");
 const STUB_EXTENSIONS = new Set([".yaml", ".yml", ".json"]);
@@ -89,7 +103,7 @@ export function loadStubs(root: string): StubFile[] {
         `${filePath} is not a stub suss can read: ${first.path.join(".")} ${first.message}`,
       );
     }
-    files.push(parsed.data);
+    files.push({ ...parsed.data, file: filePath });
 
     const drift = driftNote(root, parsed.data);
     if (drift !== null) {
@@ -135,15 +149,23 @@ function installedVersionOf(root: string, packageName: string): string | null {
   }
 }
 
+/** The statement an item comes from, so a refusal can point at it. */
+interface StatementSite {
+  stub: string;
+  statement: number;
+}
+
 function append(
   overlay: StubOverlay,
   pack: string,
   option: string,
-  item: unknown,
+  value: unknown,
+  site: StatementSite,
+  forms: readonly string[] = [],
 ): void {
-  const byOption = overlay.get(pack) ?? new Map<string, unknown[]>();
+  const byOption = overlay.get(pack) ?? new Map<string, StubItem[]>();
   const items = byOption.get(option) ?? [];
-  items.push(item);
+  items.push({ value, ...site, forms });
   byOption.set(option, items);
   overlay.set(pack, byOption);
 }
@@ -158,10 +180,32 @@ const DECORATOR_CONSUMERS: Record<string, string[]> = {
   "@nestjs/graphql Resolver": ["nestjs-graphql"],
 };
 
-const CALL_CONSUMERS: Record<string, { pack: string; option: string }> = {
-  "aws.sqs": { pack: "aws-sqs", option: "producers" },
-  "aws.events": { pack: "aws-eventbridge", option: "producers" },
-  axios: { pack: "axios", option: "factories" },
+/** The two ways a message-bus pack takes a send, as a stub writes them. */
+const SEND_FORMS = [
+  "export: <function>, spec: { subject: { at: 0 }, payload: { at: 1 } }",
+  "spec: { receiver: <type>, method: <method>, subjectArg: 0, bodyArg: 1 }",
+];
+
+/**
+ * The pack and option each `system` goes to. `forms` repeats what the
+ * pack's option schema accepts, in the stub's own words, because the
+ * schema's field names are not the ones the stub's author wrote.
+ */
+const CALL_CONSUMERS: Record<
+  string,
+  { pack: string; option: string; forms: readonly string[] }
+> = {
+  "aws.sqs": { pack: "aws-sqs", option: "producers", forms: SEND_FORMS },
+  "aws.events": {
+    pack: "aws-eventbridge",
+    option: "producers",
+    forms: SEND_FORMS,
+  },
+  axios: {
+    pack: "axios",
+    option: "factories",
+    forms: ["export: <factory>, spec: {}"],
+  },
 };
 
 const GRAPHQL_RUBY_ROOTS = new Set(GRAPHQL_RUBY_ROOT_CLASS_NAMES);
@@ -193,9 +237,13 @@ const RE_EXPORT_CONSUMERS: Record<string, string> = {
 export function stubOverlayOf(stubs: StubFile[]): StubOverlay {
   const overlay: StubOverlay = new Map();
   for (const stub of stubs) {
-    for (const statement of stub.statements) {
-      routeStatement(overlay, stub, statement);
-    }
+    stub.statements.forEach((statement, index) => {
+      const site = {
+        stub: stub.file ?? `the stub for ${stub.package}`,
+        statement: index,
+      };
+      routeStatement(overlay, stub, statement, site);
+    });
   }
   return overlay;
 }
@@ -204,18 +252,19 @@ function routeStatement(
   overlay: StubOverlay,
   stub: StubFile,
   statement: StubStatement,
+  site: StatementSite,
 ): void {
   if (statement.kind === "composes-decorator") {
     const key = `${statement.composes.module} ${statement.composes.name}`;
     for (const pack of DECORATOR_CONSUMERS[key] ?? []) {
-      append(overlay, pack, "classDecorators", statement.export);
+      append(overlay, pack, "classDecorators", statement.export, site);
     }
     return;
   }
 
   if (statement.kind === "extends-base") {
     for (const pack of rubyPacksExtending(statement.extends)) {
-      append(overlay, pack, "baseClassNames", statement.class);
+      append(overlay, pack, "baseClassNames", statement.class, site);
     }
     return;
   }
@@ -223,18 +272,26 @@ function routeStatement(
   if (statement.kind === "re-exports") {
     const pack = RE_EXPORT_CONSUMERS[statement.of];
     if (pack !== undefined) {
-      append(overlay, pack, "wrapperModules", stub.package);
+      append(overlay, pack, "wrapperModules", stub.package, site);
     }
     return;
   }
 
   const consumer = CALL_CONSUMERS[statement.system];
   if (consumer !== undefined) {
-    append(overlay, consumer.pack, consumer.option, {
+    const value = {
       module: stub.package,
       ...(statement.export !== undefined ? { export: statement.export } : {}),
       ...statement.spec,
-    });
+    };
+    append(
+      overlay,
+      consumer.pack,
+      consumer.option,
+      value,
+      site,
+      consumer.forms,
+    );
   }
 }
 
@@ -322,8 +379,142 @@ export function withStubOptions(
       ? { ...(options as Record<string, unknown>) }
       : {};
   for (const [option, items] of byOption) {
+    const values = items.map((item) => item.value);
     const existing = base[option];
-    base[option] = Array.isArray(existing) ? [...existing, ...items] : items;
+    base[option] = Array.isArray(existing) ? [...existing, ...values] : values;
   }
   return base;
+}
+
+/**
+ * Refuses a stub statement the pack's own option schema does not read.
+ * A pack factory takes its options as given, so without this a statement
+ * the pack cannot read matches nothing and nobody hears about it. A
+ * project config is checked before the stubs are added, and this checks
+ * what the stubs add.
+ */
+export function assertStubsReadable(
+  packName: string,
+  declared: z.ZodObject<z.ZodRawShape> | undefined,
+  overlay: StubOverlay | undefined,
+): void {
+  const byOption = overlay?.get(packName);
+  if (declared === undefined || byOption === undefined) {
+    return;
+  }
+
+  const refusals: string[] = [];
+  for (const [option, items] of byOption) {
+    for (const item of items) {
+      const problems = itemProblems(packName, declared, option, item);
+      if (problems.length > 0) {
+        refusals.push(stubItemRefusal(packName, item, problems));
+      }
+    }
+  }
+
+  if (refusals.length > 0) {
+    throw new UsageError(refusals.join("\n\n"));
+  }
+}
+
+function itemProblems(
+  packName: string,
+  declared: z.ZodObject<z.ZodRawShape>,
+  option: string,
+  item: StubItem,
+): string[] {
+  if (!(option in declared.shape)) {
+    return [
+      `statements.${item.statement}: the ${packName} pack does not take ${option}.`,
+    ];
+  }
+
+  const parsed = declared
+    .pick({ [option]: true })
+    .safeParse({ [option]: [item.value] });
+  if (parsed.success) {
+    return [];
+  }
+
+  // Each issue's path starts at the option and the one entry in it.
+  return parsed.error.issues.flatMap((issue) =>
+    issueLines(packName, item, issue, issue.path.slice(2)),
+  );
+}
+
+/**
+ * One line per problem, at the place in the stub file it came from. For
+ * a value two forms could take, the lines are those of the form the
+ * value came closest to, which is the one with the fewest problems.
+ */
+function issueLines(
+  packName: string,
+  item: StubItem,
+  issue: z.core.$ZodIssue,
+  at: readonly PropertyKey[],
+): string[] {
+  if (issue.code === "invalid_union" && issue.errors.length > 0) {
+    const byForm = issue.errors.map((issues) =>
+      issues.flatMap((inner) =>
+        issueLines(packName, item, inner, [...at, ...inner.path]),
+      ),
+    );
+    return byForm.reduce((closest, form) =>
+      form.length < closest.length ? form : closest,
+    );
+  }
+
+  if (issue.code === "unrecognized_keys") {
+    return issue.keys.map(
+      (key) =>
+        `${stubPathOf(item, [...at, key])} is not a field the ${packName} pack reads.`,
+    );
+  }
+
+  return [`${stubPathOf(item, at)}: ${issue.message}`];
+}
+
+/**
+ * Where a key of a `performs-call` entry is written in the stub. The CLI
+ * builds the entry from the stub's package, the statement's export, and
+ * the statement's spec, in that order.
+ */
+function stubPathOf(item: StubItem, at: readonly PropertyKey[]): string {
+  const statement = `statements.${item.statement}`;
+  const [key, ...rest] = at.map(String);
+  if (key === undefined) {
+    return statement;
+  }
+
+  if (key === "module") {
+    return "package";
+  }
+
+  if (key === "export") {
+    return `${statement}.export`;
+  }
+
+  return [`${statement}.spec`, key, ...rest].join(".");
+}
+
+function stubItemRefusal(
+  packName: string,
+  item: StubItem,
+  problems: readonly string[],
+): string {
+  const lines = [
+    `${item.stub} has a statement the ${packName} pack cannot read:`,
+    ...problems.map((problem) => `  ${problem}`),
+  ];
+  if (item.forms.length === 0) {
+    return lines.join("\n");
+  }
+
+  const how = item.forms.length === 1 ? "this way" : "one of these ways";
+  return [
+    ...lines,
+    `The ${packName} pack reads a performs-call statement written ${how}:`,
+    ...item.forms.map((form) => `  ${form}`),
+  ].join("\n");
 }
