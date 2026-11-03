@@ -1,9 +1,6 @@
-import { defineConfig } from "vitest/config";
+import { toolConfig } from "../../vitest.shared.js";
 
-export default defineConfig({
-  test: {
-    include: ["src/**/*.test.ts"],
-    // The sweep runs four thousand fixpoints in one case.
-    testTimeout: 300_000,
-  },
+export default toolConfig({
+  // The sweep runs four thousand fixpoints in one case.
+  testTimeout: 300_000,
 });
