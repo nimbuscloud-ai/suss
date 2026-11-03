@@ -11,6 +11,7 @@ import { answersFor } from "@suss/resolution";
 
 import {
   allChildren,
+  calledName,
   children,
   enclosingFunction,
   field,
@@ -69,14 +70,6 @@ function receiverCall(call: PyNode): PyNode | null {
   return object !== null && object.type === "call" ? object : null;
 }
 
-function methodName(call: PyNode): string {
-  const callee = field(call, "function");
-  if (callee === null || callee.type !== "attribute") {
-    return callee?.text ?? "";
-  }
-  return field(callee, "attribute")?.text ?? "";
-}
-
 /** What a chain is called on, `AccessPoints` in `AccessPoints.query()`. */
 function subjectOf(call: PyNode): string {
   const callee = field(call, "function");
@@ -124,7 +117,7 @@ function chainsIn(calls: readonly PyNode[]): Chain[] {
       root: call,
       last,
       subject: subjectOf(call),
-      operation: methodName(last),
+      operation: calledName(last),
       between: calls.filter(
         (other) =>
           other !== call &&
@@ -312,7 +305,7 @@ function fieldsOf(chain: Chain, valueMethods: readonly string[]): string[] {
     }
   }
   for (const call of laterCalls(chain)) {
-    if (valueMethods.includes(methodNameOf(call))) {
+    if (valueMethods.includes(calledName(call))) {
       named.push(...keywordNames(call));
     }
   }
@@ -322,13 +315,6 @@ function fieldsOf(chain: Chain, valueMethods: readonly string[]): string[] {
 /** The calls after the root, in source order. */
 function laterCalls(chain: Chain): PyNode[] {
   return [...chain.between, chain.last].filter((call) => call !== chain.root);
-}
-
-function methodNameOf(call: PyNode): string {
-  const callee = field(call, "function");
-  return callee?.type === "attribute"
-    ? (field(callee, "attribute")?.text ?? "")
-    : (callee?.text ?? "");
 }
 
 function keywordNames(call: PyNode): string[] {
@@ -360,10 +346,10 @@ function slotsOf(chain: Chain, valueMethods: readonly string[]): SlotValue[] {
   const later = laterCalls(chain);
   const written = [
     chain.root,
-    ...later.filter((call) => valueMethods.includes(methodNameOf(call))),
+    ...later.filter((call) => valueMethods.includes(calledName(call))),
   ].flatMap(keywordValues);
   const picked = later
-    .filter((call) => !valueMethods.includes(methodNameOf(call)))
+    .filter((call) => !valueMethods.includes(calledName(call)))
     .flatMap(pickedBy);
   return [
     ...written.map((one) => ({ slot: "field" as const, ...one })),
@@ -388,7 +374,7 @@ function pickedBy(call: PyNode): Array<{ name: string; value: PyNode }> {
 function columnComparisons(
   node: PyNode,
 ): Array<{ name: string; value: PyNode }> {
-  if (node.type === "call" && methodNameOf(node) === "and_") {
+  if (node.type === "call" && calledName(node) === "and_") {
     const args = field(node, "arguments");
     return (args === null ? [] : children(args)).flatMap(columnComparisons);
   }
@@ -439,7 +425,7 @@ function selectorOf(
   model: string | null,
 ): string[] {
   const picking = laterCalls(chain).filter(
-    (call) => !valueMethods.includes(methodNameOf(call)),
+    (call) => !valueMethods.includes(calledName(call)),
   );
   return [
     ...new Set([
@@ -464,7 +450,7 @@ function columnsComparedBy(call: PyNode, model: string): string[] {
 
 /** The columns of `model` one condition compares, with `and_`, `or_` and `not_` taken apart. */
 function columnsCompared(node: PyNode, model: string): string[] {
-  if (node.type === "call" && COMBINED_TESTS.includes(methodNameOf(node))) {
+  if (node.type === "call" && COMBINED_TESTS.includes(calledName(node))) {
     return columnsComparedBy(node, model);
   }
   if (node.type !== "comparison_operator") {
@@ -494,7 +480,7 @@ function modelOf(chain: Chain, options: StorageOptions): string | null {
     return fromRoot;
   }
   for (const call of laterCalls(chain)) {
-    if (TABLE_METHODS.includes(methodNameOf(call))) {
+    if (TABLE_METHODS.includes(calledName(call))) {
       const named = modelArgument(call, chain.root, options);
       if (named !== null) {
         return named;
@@ -761,7 +747,7 @@ export function storageCallees(
   couldMatch: ReadonlySet<string>,
 ): string[] {
   return chainsIn(calls)
-    .filter((chain) => couldMatch.has(methodName(chain.root)))
+    .filter((chain) => couldMatch.has(calledName(chain.root)))
     .map((chain) => field(chain.root, "function"))
     .filter((callee): callee is PyNode => callee !== null)
     .map((callee) => readKey(filePath, callee, enclosingFunction(callee)));
@@ -814,8 +800,8 @@ function matchedChains(
   );
   const chains = chainsIn(calls).filter(
     (chain) =>
-      options.couldMatch.has(methodName(chain.root)) ||
-      named.has(methodName(chain.root)) ||
+      options.couldMatch.has(calledName(chain.root)) ||
+      named.has(calledName(chain.root)) ||
       typedReceiverPattern(options, chain) !== undefined,
   );
   if (chains.length === 0) {
@@ -837,7 +823,7 @@ function matchedChains(
       matched.push({
         chain,
         pattern: imported,
-        operation: methodName(chain.root),
+        operation: calledName(chain.root),
       });
       continue;
     }
@@ -846,7 +832,7 @@ function matchedChains(
       // `db.execute(stmt).all()` records nothing for the call on `db`,
       // whatever it does with the result.
       const silent = (typed.recordsNothing ?? []).includes(
-        methodName(chain.root),
+        calledName(chain.root),
       );
       matched.push({
         chain,

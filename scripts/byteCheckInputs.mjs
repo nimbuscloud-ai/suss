@@ -426,6 +426,11 @@ export const FIXTURE_INPUTS = [
     ],
     { prepare: prismaGenerate("fixtures/prisma/schema.prisma") },
   ),
+  fixture("python-bigquery", [
+    ...lang("python"),
+    ...dir("fixtures/python-bigquery"),
+    ...packs("bigquery-python"),
+  ]),
   fixture("python-fastapi", [
     ...dir("fixtures/python-fastapi"),
     ...packs("fastapi"),

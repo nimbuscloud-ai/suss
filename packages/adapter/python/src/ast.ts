@@ -37,6 +37,14 @@ export function fields(node: PyNode, name: string): PyNode[] {
   return node.childrenForFieldName(name);
 }
 
+/** The name a call invokes: the method in `client.query(...)`, the function in `text(...)`. */
+export function calledName(call: PyNode): string {
+  const callee = field(call, "function");
+  return callee?.type === "attribute"
+    ? (field(callee, "attribute")?.text ?? "")
+    : (callee?.text ?? "");
+}
+
 export function isType(node: PyNode, ...types: string[]): boolean {
   return types.includes(node.type);
 }
