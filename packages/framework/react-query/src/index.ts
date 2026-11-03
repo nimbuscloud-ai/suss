@@ -55,7 +55,8 @@ function hookOf(call: CallExpression): { local: string; hook: string } | null {
 /**
  * The function the hook runs, from the `queryFn` or `mutationFn` property
  * of an options object, or from the positional argument the v3 API takes
- * (`useQuery(key, fn)`, `useMutation(fn)`).
+ * (`useQuery(key, fn)`, `useMutation(fn)`). A property written as a
+ * method, `queryFn() { ... }`, is that function.
  */
 function callbackExpressionOf(call: CallExpression, hook: string): Node | null {
   const property = HOOK_CALLBACK_PROPERTY[hook];
@@ -67,6 +68,9 @@ function callbackExpressionOf(call: CallExpression, hook: string): Node | null {
       }
       if (prop !== undefined && Node.isShorthandPropertyAssignment(prop)) {
         return prop.getNameNode();
+      }
+      if (prop !== undefined && Node.isMethodDeclaration(prop)) {
+        return prop;
       }
       continue;
     }
@@ -90,14 +94,20 @@ type CallbackRef =
   | { type: "identifier"; name: string }
   | { type: "opaque"; reason: string };
 
+/** Whether the hook's function is written at the call, which makes it a sub-unit of its own. */
+function isWrittenInPlace(expression: Node): boolean {
+  return (
+    Node.isArrowFunction(expression) ||
+    Node.isFunctionExpression(expression) ||
+    Node.isMethodDeclaration(expression)
+  );
+}
+
 function callbackRefOf(expression: Node | null): CallbackRef {
   if (expression === null) {
     return { type: "opaque", reason: "missing-query-function" };
   }
-  if (
-    Node.isArrowFunction(expression) ||
-    Node.isFunctionExpression(expression)
-  ) {
+  if (isWrittenInPlace(expression)) {
     return { type: "literal" };
   }
   if (Node.isIdentifier(expression)) {
@@ -149,13 +159,7 @@ function reactQuerySubUnits(
       continue;
     }
     const expression = callbackExpressionOf(call, found.hook);
-    if (
-      expression === null ||
-      !(
-        Node.isArrowFunction(expression) ||
-        Node.isFunctionExpression(expression)
-      )
-    ) {
+    if (expression === null || !isWrittenInPlace(expression)) {
       continue;
     }
 

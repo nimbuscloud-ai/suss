@@ -14,9 +14,10 @@ interaction on the calling unit with the function the hook runs.
 const orders = useQuery({ queryKey: ["orders"], queryFn: fetchOrders });
 ```
 
-- An inline function (`queryFn: async () => { ... }`) becomes a
-  `scheduled-callback` sub-unit of the component, so the client packs
-  (`fetch`, `axios`) read the HTTP call inside it.
+- An inline function (`queryFn: async () => { ... }`, or a method
+  written `queryFn() { ... }`) becomes a `scheduled-callback` sub-unit
+  of the component, so the client packs (`fetch`, `axios`) read the
+  HTTP call inside it.
 - A named function (`queryFn: fetchOrders`) is recorded by identifier,
   and the walk follows it to that function's own summary.
 - The v3 positional forms (`useQuery(key, fn)`, `useMutation(fn)`) are
