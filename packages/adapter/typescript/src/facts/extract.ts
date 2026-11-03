@@ -1530,8 +1530,7 @@ function emitReferenceFacts(
 
     if (isFunctionRoot(declaration)) {
       fact(db, "binds", referenceId, declarationId);
-      fact(db, "func", declarationId);
-      emitFunctionFacts(db, table, declaration);
+      emitFunctionDeclaration(db, table, declaration);
     }
   }
 }
@@ -1822,10 +1821,7 @@ function emitClassFacts(
   emitConstructorFacts(db, table, declaration, id);
 
   for (const method of declaration.getMethods()) {
-    const methodId = nodeId(method);
-    table.byId.set(methodId, method);
-    fact(db, "func", methodId);
-    emitFunctionFacts(db, table, method);
+    const methodId = emitFunctionDeclaration(db, table, method);
     fact(
       db,
       "holdsProperty",
@@ -2036,6 +2032,22 @@ function emitParameterDecorators(
       }
     }
   }
+}
+
+/**
+ * A function written as a declaration rather than as a value: its key,
+ * that it is a function, and the facts of its body. Returns the key.
+ */
+export function emitFunctionDeclaration(
+  db: Database,
+  table: NodeTable,
+  declaration: Node,
+): string {
+  const id = nodeId(declaration);
+  table.byId.set(id, declaration);
+  fact(db, "func", id);
+  emitFunctionFacts(db, table, declaration);
+  return id;
 }
 
 /**
@@ -2594,10 +2606,7 @@ function emitExportedValue(
 ): void {
   const declaration = declarationCarryingTheBody(spelling);
   if (isFunctionRoot(declaration)) {
-    const id = nodeId(declaration);
-    table.byId.set(id, declaration);
-    fact(db, "func", id);
-    emitFunctionFacts(db, table, declaration);
+    const id = emitFunctionDeclaration(db, table, declaration);
     fact(db, "exportsAs", filePath, name, id);
     return;
   }
