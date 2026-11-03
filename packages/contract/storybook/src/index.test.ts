@@ -235,6 +235,18 @@ describe("args on the meta", () => {
     expect(argsOf("Chip.Medium")).toEqual({ label: "Shared", size: "md" });
   });
 
+  it("takes the args the meta writes after a spread over the ones the spread brings in", () => {
+    const [summary] = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipShared.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const story =
+      summary === undefined ? undefined : readStorybookMetadata(summary);
+
+    expect(story?.component).toBe("Chip");
+    expect(story?.args).toEqual({ label: "Own" });
+  });
+
   it("records the decorators and render functions that receive the args first", () => {
     const summaries = generateSummariesFromStories(
       [path.join(importsDir, "src/Chip/__stories__/ChipWrapped.stories.tsx")],

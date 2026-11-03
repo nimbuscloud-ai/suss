@@ -11,6 +11,7 @@ import {
   objectLiteralOf,
   propertiesOf,
   propertyNameOf,
+  propertyOf,
   propertyValueOf,
   stringPropertyOf,
   writtenNodeOf,
@@ -192,7 +193,7 @@ function subContractOf(
   if (parent === null) {
     return null;
   }
-  const sub = declaredUnder(parent, read.getName(), resolution);
+  const sub = propertyOf(parent, read.getName(), resolution);
   return sub === null ? null : contractObjectReached(sub, resolution, seen);
 }
 
@@ -213,23 +214,6 @@ function unwrapContractInit(
   }
   const routes = node.getArguments()[0];
   return routes === undefined ? null : objectLiteralOf(routes, resolution);
-}
-
-/**
- * What a contract object declares under `name`: an endpoint on a routes
- * object, or a sub-contract on a composed one.
- */
-function declaredUnder(
-  object: ObjectLiteralExpression,
-  name: string,
-  resolution: ResolutionStore | undefined,
-): Node | null {
-  for (const property of propertiesOf(object, resolution)) {
-    if (propertyNameOf(property) === name) {
-      return propertyValueOf(property);
-    }
-  }
-  return null;
 }
 
 /**
@@ -366,7 +350,7 @@ export function readContract(
     return null;
   }
 
-  const endpoint = declaredUnder(routes, routerInfo.handlerName, resolution);
+  const endpoint = propertyOf(routes, routerInfo.handlerName, resolution);
   if (endpoint === null) {
     return null;
   }
@@ -448,7 +432,7 @@ export function readContractForClientCall(
     return null;
   }
 
-  const endpoint = declaredUnder(routes, methodName, resolution);
+  const endpoint = propertyOf(routes, methodName, resolution);
   if (endpoint === null) {
     return null;
   }

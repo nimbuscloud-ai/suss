@@ -12,6 +12,7 @@
 
 import { Node } from "ts-morph";
 
+import { lastValueWins } from "@suss/extractor";
 import {
   constantOf,
   force,
@@ -146,39 +147,60 @@ export function objectLiteralOf(
 }
 
 /**
- * The properties of an object literal, with a spread replaced by the
- * properties of whatever it spreads.
+ * The properties an object literal has once it is built, with a spread
+ * replaced by the properties of whatever it spreads.
  *
- * A spread is a name in property position, so it is the same question
- * `objectLiteralOf` settles. A spread of something the rules cannot
- * reach an object from contributes nothing, the same as a property whose
- * value nothing resolves. An object that spreads its way back to itself
- * is walked once.
+ * A name written twice, `{ ...base, label }` where `base` sets `label`
+ * too, keeps the place it was first written at and takes the property
+ * written last, as JavaScript does. A spread is a name in property
+ * position, so it is the same question `objectLiteralOf` settles. A
+ * spread of something the rules cannot reach an object from contributes
+ * nothing, the same as a property whose value nothing resolves. An
+ * object that spreads its way back into itself adds nothing the second
+ * time.
  */
 export function propertiesOf(
   object: ObjectLiteralExpression,
   resolution: ResolutionStore | undefined,
 ): ObjectLiteralElementLike[] {
-  return propertiesReached(object, resolution, new Set());
+  return lastValueWins(
+    propertiesReached(object, resolution, new Set()).map((property) => ({
+      key: propertyNameOf(property),
+      property,
+    })),
+  ).map(({ property }) => property);
 }
 
 function propertiesReached(
   object: ObjectLiteralExpression,
   resolution: ResolutionStore | undefined,
-  seen: Set<ObjectLiteralExpression>,
+  within: ReadonlySet<ObjectLiteralExpression>,
 ): ObjectLiteralElementLike[] {
-  if (seen.has(object)) {
+  if (within.has(object)) {
     return [];
   }
-  seen.add(object);
+  const inside = new Set(within).add(object);
 
   return object.getProperties().flatMap((property) => {
     if (!Node.isSpreadAssignment(property)) {
       return [property];
     }
     const spread = objectLiteralOf(property.getExpression(), resolution);
-    return spread === null ? [] : propertiesReached(spread, resolution, seen);
+    return spread === null ? [] : propertiesReached(spread, resolution, inside);
   });
+}
+
+/** The property an object has under one name, as `propertiesOf` reads it, or null. */
+export function propertyNamed(
+  object: ObjectLiteralExpression,
+  name: string,
+  resolution: ResolutionStore | undefined,
+): ObjectLiteralElementLike | null {
+  return (
+    propertiesOf(object, resolution).find(
+      (property) => propertyNameOf(property) === name,
+    ) ?? null
+  );
 }
 
 /**
@@ -191,12 +213,8 @@ export function propertyOf(
   name: string,
   resolution: ResolutionStore | undefined,
 ): Node | null {
-  for (const property of propertiesOf(object, resolution)) {
-    if (propertyNameOf(property) === name) {
-      return propertyValueOf(property);
-    }
-  }
-  return null;
+  const property = propertyNamed(object, name, resolution);
+  return property === null ? null : propertyValueOf(property);
 }
 
 /**
