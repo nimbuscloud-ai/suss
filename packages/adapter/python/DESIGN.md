@@ -257,20 +257,11 @@ Some libraries run a statement the project wrote as SQL instead of building one.
 rawSql: [{ module: "sqlalchemy", functions: ["text"], storageSystem: "postgresql" }]
 ```
 
-A cloud warehouse gives the project a client object instead, and the statement goes to a method on it. `sqlClients` declares the class, the module it comes from, and where each method takes its input:
+A cloud warehouse gives the project a client object instead, and the statement goes to a method on it. A pack declares that with `@suss/recognize` (the section after this one), and the client's origin is `declaredBy` the client's module, which this adapter settles from the class of the receiver:
 
 ```ts
-sqlClients: [
-  {
-    module: "google.cloud.bigquery",
-    clientTypes: ["Client"],
-    statements: [{ method: "query", argument: 0, keyword: "query" }],
-    tables: [{ method: "get_table", argument: 0, keyword: "table", kind: "read" }],
-    handsBack: [{ method: "get_client", module: "...", name: "Client" }],
-    storageSystem: "gcp.bigquery",
-    dialect: "bigquery",
-  },
-]
+sqlStatements({ system: "gcp.bigquery", dialect: "bigquery", client: declaredBy("google.cloud.bigquery") })
+  .methods({ query: { statement: { at: 0, keyword: "query" } } })
 ```
 
 `receiverTypes.ts` works out the class of the value a method is called on, and the ORM chains use the same code. It takes the annotation written beside the name. Where there is none, it asks the rules which call assigned the name. So a client built in one module and called in another still matches, and so does one that a project factory returns. The class may be written as a plain name the file imported, `Client`, or as an attribute on an imported module, `bigquery.Client`, and both resolve to the same module and name.
@@ -283,9 +274,9 @@ An annotated attribute on a plain class is shared like `TABLE`, since nothing ge
 
 Reading a property runs its getter, so the adapter records what the getter returns under the property's name, one `holdsProperty` row per `return`, and a read finds that value rather than the getter function. The setter and the deleter are not recorded under the name at all. A def is a getter when it is written under `@property` or `@functools.cached_property`, or when the class body writes a `@name.setter` or `@name.deleter` for its name, which covers a library's own kind of property without the adapter knowing the library.
 
-The adapter reads a `statements` argument through the value evaluator, so an f-string, a `+`, and a constant another module defines all read the same as a statement written out at the call. A piece the evaluator cannot settle becomes a parameter, which the statement would have had in that place anyway. `path` lists the keys to follow when the statement is inside a dictionary: `["query", "query"]` for a method taking `configuration={"query": {"query": sql}}`. `tables` covers a method that takes a table name instead of SQL, and the adapter reads that argument as a string and nothing more.
+A statement is read through the value evaluator, so an f-string, a `+`, and a constant another module defines all read the same as a statement written out at the call. A piece the evaluator cannot settle becomes a parameter, which the statement would have had in that place anyway. A pick's `path` lists the keys to follow when the statement is inside a dictionary: `["query", "query"]` for a method taking `configuration={"query": {"query": sql}}`. A method that takes a table name instead of SQL is a `storageCalls` chain whose container is `qualified`.
 
-`handsBack` is the one hop a pack can declare between two of its library's classes. Nothing in the project states what one of the library's methods returns, so the adapter does not infer it. A chain like `hook.get_client().query(sql)` matches because the hook's pattern declares that `get_client` returns the warehouse client.
+Nothing in the project states what one of the library's methods returns, so the adapter does not infer it. A chain like `hook.get_client().query(sql)` matches because the pack's origin says so: `returnedBy("get_client", declaredBy(HOOK_MODULE))`.
 
 For a table written as `project.dataset.table` or `dataset.table`, the adapter puts the last part in `container` and the part before it in `scope`. A part the statement left as a parameter contributes nothing. So a name whose group part is unsettled keeps `scope` at `default`, and a statement whose table is unsettled does not produce an effect. Neither do `BEGIN`, `COMMIT`, and the other statements that do not touch a table.
 
@@ -293,7 +284,7 @@ For a table written as `project.dataset.table` or `dataset.table`, the adapter p
 
 A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`, compiles to hooks that read only the ops on their context. A `PythonPack` takes those hooks as `invocationRecognizers` and `accessRecognizers`, the same two lists a TypeScript pack has. TypeScript runs the second list over tagged templates as well, and Python has none, so both lists run over every call in a body. They run inside `bodyStorage`, beside the storage patterns, so their effects are kept and placed the same way.
 
-Each hook gets the ops from `@suss/recognize/ops` over this run's facts. `pythonFactSource` hands those ops what only Python can read: a literal off its node, a name through the value evaluator, an import's origin through `originsOf`, and what a name was written as through `writtenValueOf`. A bare name is keyed by its scope and has no node of its own, so a name is read through what it was written as. Python cannot tell which library declared a method, so a `declaredBy` origin is checked through the construction behind the receiver, as `constructedFrom` is.
+Each hook gets the ops from `@suss/recognize/ops` over this run's facts. `pythonFactSource` hands those ops what only Python can read: a literal off its node, a name through the value evaluator, an import's origin through `originsOf`, and what a name was written as through `writtenValueOf`. A bare name is keyed by its scope and has no node of its own, so a name is read through what it was written as. Python declares no method types, so a `declaredBy` origin is checked against the class of the receiver, which `receiverTypes.ts` takes from its annotation or the call that built it.
 
 ## What a model query gives back
 

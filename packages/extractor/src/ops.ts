@@ -6,7 +6,9 @@
  *
  * They are in this package rather than beside the builders in
  * `@suss/recognize`, so an adapter imports the types without that
- * package's runtime code. Only the TypeScript adapter implements them.
+ * package's runtime code. The TypeScript adapter implements them over
+ * its syntax tree, and every adapter through the ops over the facts in
+ * `@suss/recognize/ops`.
  *
  * Nothing here mentions a syntax tree. A pack that needs the tree goes
  * through `@suss/recognize/ast`, a separate import so that reaching for
@@ -18,7 +20,7 @@
  * DESIGN.md lists the origins not built yet (#542) and the places a match
  * can start that are not receivers.
  */
-export type ReceiverOrigin = DeclaredBy | ConstructedFrom;
+export type ReceiverOrigin = DeclaredBy | ConstructedFrom | AnyOf | ReturnedBy;
 
 /**
  * A receiver whose method one of these modules declared.
@@ -50,6 +52,45 @@ export interface ConstructedFrom {
    * performs. Unset matches whatever the module exports.
    */
   readonly named?: readonly string[];
+}
+
+/** A receiver any one of these origins accepts. */
+export interface AnyOf {
+  readonly origin: "anyOf";
+  readonly of: readonly ReceiverOrigin[];
+}
+
+/**
+ * A receiver a library method returned, when it was called on a receiver
+ * from `on`. The program never says what a library method gives back, so
+ * the pack does: an Airflow hook's `get_client()` returns the BigQuery
+ * client.
+ */
+export interface ReturnedBy {
+  readonly origin: "returnedBy";
+  readonly method: string;
+  readonly on: ReceiverOrigin;
+}
+
+/** One function per kind of origin, each handed that kind and `A`. */
+export type ByOrigin<T, A extends readonly unknown[] = []> = {
+  readonly [K in ReceiverOrigin["origin"]]: (
+    origin: Extract<ReceiverOrigin, { origin: K }>,
+    ...rest: A
+  ) => T;
+};
+
+/** The entry of a `ByOrigin` table for this origin, applied to it. */
+export function byOrigin<T, A extends readonly unknown[] = []>(
+  table: ByOrigin<T, A>,
+  origin: ReceiverOrigin,
+  ...rest: A
+): T {
+  const read = table[origin.origin] as (
+    origin: ReceiverOrigin,
+    ...rest: A
+  ) => T;
+  return read(origin, ...rest);
 }
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -253,6 +294,12 @@ export interface CallOps {
    */
   valueAt(index: number): ValueOps | null;
   /**
+   * The value the call passes under this keyword, `query=` in Python or
+   * `query:` in Ruby, or null when it passes none. Unset in a language
+   * whose calls take no keywords.
+   */
+  keywordAt?(name: string): ValueOps | null;
+  /**
    * The one call behind the receiver the origin accepts, however many
    * name, construction, or query hops separate them, such as Mongoose's
    * `model(...)` behind a document. Null when nothing
@@ -331,6 +378,13 @@ export interface FactSource {
    * out. Unset takes every name as it is stated.
    */
   memberName?(stated: string): string | null;
+  /**
+   * The class a callee makes one of, for a language that makes one by
+   * calling a method on the class: `Connection` for the `new` in
+   * `PG::Connection.new`. Null for any other callee, and unset where
+   * calling the class itself makes one.
+   */
+  constructedClass?(callee: string): string | null;
   /** The source text at the key. */
   textOf(key: string): string;
   /** The string, number or boolean written at the key, or null when it is not one. */

@@ -66,6 +66,7 @@ export {
   walkDefinitions,
 } from "./scope.js";
 export {
+  pooledStorage,
   type RbStorageOptions,
   storageClaims,
   storageEffects,

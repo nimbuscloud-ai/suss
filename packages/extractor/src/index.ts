@@ -1307,6 +1307,7 @@ export {
 } from "./extractionReport.js";
 export { makeIgnoredDirectory } from "./ignoredDirectory.js";
 export { KeptParses } from "./keptParses.js";
+export { byOrigin } from "./ops.js";
 export {
   describeMissingPath,
   evaluatePackHealth,
@@ -1341,7 +1342,9 @@ export type {
   PackTally,
 } from "./extractionReport.js";
 export type {
+  AnyOf,
   AstCapableOps,
+  ByOrigin,
   CallOps,
   ClassOps,
   ConstructedFrom,
@@ -1350,6 +1353,7 @@ export type {
   FactSource,
   OpsCarrier,
   ReceiverOrigin,
+  ReturnedBy,
   StatedSlot,
   UnsettledName,
   ValueEntry,

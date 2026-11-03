@@ -1,11 +1,9 @@
 /**
  * Which calls in a body pass the database a statement written as SQL.
  *
- * A pack declares how its library takes one. SQLAlchemy exports a
- * function, `text`, and a cloud warehouse gives the project a client
- * object whose methods take the statement. A call matching either becomes
- * the same storage-access effect a query through an ORM would produce,
- * one per table.
+ * A pack declares the function its library takes one through, as
+ * SQLAlchemy exports `text`. A call to it becomes the same storage-access
+ * effect a query through an ORM would produce, one per table.
  *
  * The statement goes through the shared value evaluator, and any piece it
  * cannot settle becomes a parameter. DESIGN.md, under "A statement the
@@ -13,8 +11,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
-import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
-import { force } from "@suss/values";
+import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
 import {
   calledName,
@@ -24,19 +21,13 @@ import {
   stringLiteralValue,
 } from "./ast.js";
 import { calleeText } from "./paths/effects.js";
-import { receiverTypeOrigins } from "./receiverTypes.js";
-import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
+import { evaluatedValue } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { SqlAccess, SqlPlaceholder } from "@suss/sql";
 import type { Value } from "@suss/values";
-import type { SubjectOrigin } from "./facts/resolve.js";
-import type {
-  RawSqlPattern,
-  SqlCallArgument,
-  SqlClientPattern,
-} from "./pack.js";
+import type { RawSqlPattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { SlottedEffects, SlotValue, StorageLookup } from "./storage.js";
 
@@ -44,8 +35,6 @@ export interface RawSqlOptions {
   readonly facts: Database;
   readonly filePath: string;
   readonly patterns: readonly RawSqlPattern[];
-  /** The client objects the packs declare, empty when no pack declares one. */
-  readonly clients?: readonly SqlClientPattern[];
 }
 
 /** What the raw-SQL reader is asked with, out of what discovery already looked up for the file. */
@@ -54,7 +43,6 @@ export function rawSqlOptionsOf(lookup: StorageLookup): RawSqlOptions {
     facts: lookup.facts,
     filePath: lookup.factsPath,
     patterns: lookup.rawSql ?? [],
-    clients: lookup.sqlClients ?? [],
   };
 }
 
@@ -65,8 +53,8 @@ interface RawSqlMatch {
   readonly recognition: string;
   readonly storageSystem: string;
   readonly accesses: readonly SqlAccess[];
-  /** The values bound to the statement's placeholders, or null for a client call, whose binds are not read. */
-  readonly binds: Binds | null;
+  /** The values bound to the statement's placeholders. */
+  readonly binds: Binds;
 }
 
 /** The statements a body hands the database, as storage effects, with the value each placeholder's column is given. */
@@ -104,10 +92,7 @@ const SLOT_OF: Record<SqlPlaceholder["clause"], SlotValue["slot"]> = {
 };
 
 /** Each column the statement gives a placeholder, with the value bound to it. */
-function boundSlots(access: SqlAccess, binds: Binds | null): SlotValue[] {
-  if (binds === null) {
-    return [];
-  }
+function boundSlots(access: SqlAccess, binds: Binds): SlotValue[] {
   return (access.placeholders ?? []).flatMap((one) => {
     const value =
       typeof one.placeholder === "number"
@@ -218,13 +203,12 @@ function matchesIn(
   calls: readonly PyNode[],
   options: RawSqlOptions,
 ): RawSqlMatch[] {
-  if (options.patterns.length === 0 && (options.clients ?? []).length === 0) {
+  if (options.patterns.length === 0) {
     return [];
   }
   const matched: RawSqlMatch[] = [];
   for (const call of calls) {
-    const one =
-      importedFunctionMatch(call, options) ?? clientMatch(call, options);
+    const one = importedFunctionMatch(call, options);
     if (one !== null) {
       matched.push(one);
     }
@@ -286,7 +270,7 @@ function importedFunctionMatch(
   const args = field(call, "arguments");
   const first = children(args)[0] ?? null;
   const statement =
-    first === null ? null : writtenStatement(first, undefined, options.facts);
+    first === null ? null : writtenStatement(first, options.facts);
   if (statement === null) {
     return null;
   }
@@ -302,188 +286,20 @@ function importedFunctionMatch(
   };
 }
 
-/** A call on one of the library's own client objects, matched on the class the receiver is. */
-function clientMatch(call: PyNode, options: RawSqlOptions): RawSqlMatch | null {
-  const callee = field(call, "function");
-  if (callee === null || callee.type !== "attribute") {
-    return null;
-  }
-  const method = field(callee, "attribute")?.text ?? "";
-  const receiver = field(callee, "object");
-  if (receiver === null) {
-    return null;
-  }
-  for (const pattern of options.clients ?? []) {
-    const accesses = accessesOf(call, method, pattern, options);
-    if (accesses === null || !isClientOf(receiver, pattern, options)) {
-      continue;
-    }
-    return {
-      call,
-      recognition: `python-${pattern.module}`,
-      storageSystem: pattern.storageSystem,
-      accesses,
-      binds: null,
-    };
-  }
-  return null;
-}
-
-/**
- * The tables one call on a client touches, or null when the pattern
- * declares no method of that name. A declared method whose argument the
- * evaluator cannot settle returns an empty list, so the call still counts
- * as recognized.
- */
-function accessesOf(
-  call: PyNode,
-  method: string,
-  pattern: SqlClientPattern,
-  options: RawSqlOptions,
-): SqlAccess[] | null {
-  const dialect = pattern.dialect ?? pattern.storageSystem;
-  for (const takes of pattern.statements ?? []) {
-    if (takes.method !== method) {
-      continue;
-    }
-    const written = argumentNode(call, takes);
-    const statement =
-      written === null ? null : statementAt(written, takes.path, options.facts);
-    return statement === null ? [] : readSqlAccess(statement, { dialect });
-  }
-  for (const takes of pattern.tables ?? []) {
-    if (takes.method !== method) {
-      continue;
-    }
-    const written = argumentNode(call, takes);
-    const name =
-      written === null ? null : stringValueOf(written, options.facts);
-    // Split the same way as a table written in a statement, so both give
-    // the same dataset and table.
-    const split = name === null ? null : splitQualifiedTable(name);
-    return split === null
-      ? []
-      : [{ ...split, kind: takes.kind, fields: [], selector: [] }];
-  }
-  return null;
-}
-
-/** Whether the value a call is read off is one of the pattern's client classes. */
-function isClientOf(
-  receiver: PyNode,
-  pattern: SqlClientPattern,
-  options: RawSqlOptions,
-): boolean {
-  return receiverOrigins(receiver, options).some(
-    (origin) =>
-      origin.module === pattern.module &&
-      pattern.clientTypes.includes(origin.name),
-  );
-}
-
-/** Where the class of the value a call is read off came from. */
-function receiverOrigins(
-  receiver: PyNode,
-  options: RawSqlOptions,
-): readonly SubjectOrigin[] {
-  if (receiver.type === "identifier") {
-    return receiverTypeOrigins(receiver, options);
-  }
-  return receiver.type === "call" ? handedBack(receiver, options) : [];
-}
-
-/**
- * The class a declared handoff says a call returns, so a chain off one
- * client can reach another client's methods. Nothing in the project says
- * what a library method returns, so the pack declares it and nothing here
- * infers it.
- */
-function handedBack(call: PyNode, options: RawSqlOptions): SubjectOrigin[] {
-  const callee = field(call, "function");
-  if (callee === null || callee.type !== "attribute") {
-    return [];
-  }
-  const method = field(callee, "attribute")?.text ?? "";
-  const inner = field(callee, "object");
-  if (inner === null) {
-    return [];
-  }
-  const found: SubjectOrigin[] = [];
-  for (const pattern of options.clients ?? []) {
-    const handoff = (pattern.handsBack ?? []).find(
-      (one) => one.method === method,
-    );
-    if (handoff !== undefined && isClientOf(inner, pattern, options)) {
-      found.push({ module: handoff.module, name: handoff.name });
-    }
-  }
-  return found;
-}
-
-/** The argument node `at` points to, by keyword first and then by position. */
-function argumentNode(call: PyNode, at: SqlCallArgument): PyNode | null {
-  const args = field(call, "arguments");
-  const written = args === null ? [] : children(args);
-  const named = written.find(
-    (one) =>
-      one.type === "keyword_argument" &&
-      at.keyword !== undefined &&
-      field(one, "name")?.text === at.keyword,
-  );
-  const value = named === undefined ? null : field(named, "value");
-  if (value !== null) {
-    return value;
-  }
-  if (at.argument === undefined) {
-    return null;
-  }
-  return (
-    written.filter((one) => one.type !== "keyword_argument")[at.argument] ??
-    null
-  );
-}
-
-/** The SQL a call states, with everything the evaluator could not settle left as a parameter. */
-function statementAt(
-  node: PyNode,
-  path: readonly string[] | undefined,
-  facts: Database,
-): string | null {
-  return writtenStatement(node, path, facts)?.sql ?? null;
-}
-
 /**
  * The statement, and whether it was settled whole. Each piece nothing
  * settled is written as a numbered placeholder, the same way a bind is.
  */
 function writtenStatement(
   node: PyNode,
-  path: readonly string[] | undefined,
   facts: Database,
 ): { sql: string; whole: boolean } | null {
-  const reached = valueAt(evaluatedValue(node, facts), path ?? []);
-  const parts = reached === null ? null : literalParts(reached);
+  const parts = literalParts(evaluatedValue(node, facts));
   if (parts === null) {
     return null;
   }
   const sql = sqlFromParts(parts);
   return sql.trim() === "" ? null : { sql, whole: parts.length === 1 };
-}
-
-/** The value a path of keys reaches inside a dictionary, or null when nothing wrote one of them. */
-function valueAt(value: Value, path: readonly string[]): Value | null {
-  let reached = value;
-  for (const key of path) {
-    if (reached.kind !== "record") {
-      return null;
-    }
-    const item = reached.fields.get(key);
-    if (item === undefined) {
-      return null;
-    }
-    reached = force(item.value);
-  }
-  return reached;
 }
 
 /**

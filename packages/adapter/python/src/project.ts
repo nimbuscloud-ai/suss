@@ -529,7 +529,6 @@ async function runPython(
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
-  const sqlClients = options.packs.flatMap((pack) => pack.sqlClients ?? []);
   const declaredHooks = options.packs.flatMap((pack) => [
     ...(pack.invocationRecognizers ?? []),
     ...(pack.accessRecognizers ?? []),
@@ -574,10 +573,8 @@ async function runPython(
     readsEnvThroughNames ||
     storagePatterns.length > 0 ||
     modelQueries.length > 0 ||
-    // A statement written as SQL is read through the evaluator, and so is
-    // the client object the statement is passed to.
+    // A statement written as SQL is read through the evaluator.
     rawSqlPatterns.length > 0 ||
-    sqlClients.length > 0 ||
     // A declared pack's hooks read the value facts through the ops.
     declaredHooks.length > 0 ||
     // A task's receiver is resolved through the rules, and so is its decorator.
@@ -645,7 +642,6 @@ async function runPython(
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
     storagePatterns.length > 0 ||
     rawSqlPatterns.length > 0 ||
-    sqlClients.length > 0 ||
     declaredHooks.length > 0
       ? {
           facts: db,
@@ -654,7 +650,6 @@ async function runPython(
           patterns: storagePatterns,
           couldMatch,
           rawSql: rawSqlPatterns,
-          sqlClients,
           declared: declaredHooks,
         }
       : undefined;

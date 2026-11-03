@@ -111,6 +111,7 @@ import {
   watchReachContext,
 } from "./reuse.js";
 import { walkDefinitions } from "./scope.js";
+import { pooledStorage } from "./storage.js";
 import {
   emitGroupFacts,
   exampleReads,
@@ -716,25 +717,9 @@ async function runRuby(
   const watchedNames =
     ledger === null ? dynamicNames : watchDynamicNames(dynamicNames, db);
 
-  const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const loaderPatterns = options.packs.flatMap((pack) => pack.loaders ?? []);
-  const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
-  const declaredHooks = options.packs.flatMap((pack) => [
-    ...(pack.invocationRecognizers ?? []),
-    ...(pack.accessRecognizers ?? []),
-  ]);
-  const storage =
-    storagePatterns.length > 0 ||
-    rawSqlPatterns.length > 0 ||
-    declaredHooks.length > 0
-      ? {
-          facts: db,
-          patterns: storagePatterns,
-          loaders: loaderPatterns,
-          rawSql: rawSqlPatterns,
-          declared: declaredHooks,
-        }
-      : undefined;
+  const pooled = pooledStorage(options.packs);
+  const storage = pooled === null ? undefined : { facts: db, ...pooled };
   const jobDeclarations = jobDeclarationsIn(options.packs);
   const jobs =
     jobDeclarations.length > 0

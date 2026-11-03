@@ -3,7 +3,13 @@
 export { compile } from "./compile.js";
 export { examplesMissing, runExamples } from "./example.js";
 export { messageSends } from "./messageSends.js";
-export { constructedFrom, declaredBy, opsIn } from "./ops.js";
+export {
+  anyOf,
+  constructedFrom,
+  declaredBy,
+  opsIn,
+  returnedBy,
+} from "./ops.js";
 export { declarationsIn, pack } from "./pack.js";
 export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
@@ -73,12 +79,14 @@ export type {
 export type { RanExample, RunOverCode } from "./example.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
 export type {
+  AnyOf,
   CallOps,
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
   OpsCarrier,
   ReceiverOrigin,
+  ReturnedBy,
   UnsettledName,
   ValueEntry,
   ValueOps,

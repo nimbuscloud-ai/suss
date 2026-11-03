@@ -2,7 +2,7 @@
  * What a Python body says when it hands the database a statement it
  * wrote as SQL. A library exports a function that takes one, as
  * SQLAlchemy's `text` does, or it hands the project a client object
- * whose methods take one.
+ * whose methods take one, which a pack declares with `@suss/recognize`.
  */
 
 import fs from "node:fs";
@@ -12,64 +12,77 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import {
+  anyOf,
+  declaredBy,
+  pack,
+  returnedBy,
+  sqlStatements,
+  storageCalls,
+} from "@suss/recognize";
 
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { bodyCalls } from "./paths/effects.js";
 import { findPythonFiles } from "./project.js";
-import { rawSqlCallIds, rawSqlEffects } from "./rawSql.js";
+import { rawSqlEffects } from "./rawSql.js";
 import { bindModule } from "./scope.js";
+import { bodyStorage, declaredCallIds } from "./storage.js";
 import { bindEvaluator } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { RawSqlPattern, SqlClientPattern } from "./pack.js";
+import type { RawSqlPattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ModuleBinding } from "./scope.js";
+import type { StorageLookup } from "./storage.js";
 
 const SQLALCHEMY: RawSqlPattern[] = [
   { module: "sqlalchemy", functions: ["text"], storageSystem: "postgresql" },
 ];
 
+const HOOK = declaredBy("airflow.providers.google.cloud.hooks.bigquery");
+
+const CLIENT = anyOf(
+  declaredBy("google.cloud.bigquery"),
+  returnedBy("get_client", HOOK),
+);
+
 /** The warehouse client and the workflow hook that reaches one, as a pack declares them. */
-const WAREHOUSE: SqlClientPattern[] = [
-  {
-    module: "google.cloud.bigquery",
-    clientTypes: ["Client"],
-    statements: [
-      { method: "query", argument: 0, keyword: "query" },
-      { method: "query_and_wait", argument: 0, keyword: "query" },
-    ],
-    tables: [
-      { method: "get_table", argument: 0, keyword: "table", kind: "read" },
-      { method: "delete_table", argument: 0, keyword: "table", kind: "write" },
-    ],
-    storageSystem: "gcp.bigquery",
-    dialect: "bigquery",
-  },
-  {
-    module: "airflow.providers.google.cloud.hooks.bigquery",
-    clientTypes: ["BigQueryHook"],
-    statements: [
-      { method: "get_records", argument: 0, keyword: "sql" },
-      // A method the pattern says takes its statement by keyword alone.
-      { method: "get_pandas_df", keyword: "sql" },
-      {
-        method: "insert_job",
-        argument: 0,
-        keyword: "configuration",
-        path: ["query", "query"],
+const WAREHOUSE = pack(
+  "warehouse",
+  [
+    sqlStatements({
+      system: "gcp.bigquery",
+      dialect: "bigquery",
+      client: CLIENT,
+    }).methods({
+      query: { statement: { at: 0, keyword: "query" } },
+      query_and_wait: { statement: { at: 0, keyword: "query" } },
+    }),
+    storageCalls({ system: "gcp.bigquery", client: CLIENT })
+      .methods({ get_table: { kind: "read" }, delete_table: { kind: "write" } })
+      .container({ at: 0, keyword: "table" }, { qualified: true }),
+    sqlStatements({
+      system: "gcp.bigquery",
+      dialect: "bigquery",
+      client: HOOK,
+    }).methods({
+      get_records: { statement: { at: 0, keyword: "sql" } },
+      insert_job: {
+        statement: {
+          at: 0,
+          keyword: "configuration",
+          path: ["query", "query"],
+        },
       },
-    ],
-    handsBack: [
-      { method: "get_client", module: "google.cloud.bigquery", name: "Client" },
-    ],
-    storageSystem: "gcp.bigquery",
-    dialect: "bigquery",
-  },
-];
+    }),
+  ],
+  { languages: ["python"], recognizedAs: "python-warehouse" },
+);
 
 interface Read {
+  readonly handler: PyNode;
   readonly calls: readonly PyNode[];
   readonly facts: Database;
   readonly filePath: string;
@@ -108,7 +121,13 @@ async function readProject(sources: Record<string, string>): Promise<Read> {
 
   // `bodyCalls` reads one function's own body, so the walk starts at
   // the definition rather than at the module.
-  return { calls: bodyCalls(handler as PyNode), facts: db, filePath };
+  const definition = handler as PyNode;
+  return {
+    handler: definition,
+    calls: bodyCalls(definition),
+    facts: db,
+    filePath,
+  };
 }
 
 async function effectsFor(source: string): Promise<Effect[]> {
@@ -120,16 +139,27 @@ async function effectsFor(source: string): Promise<Effect[]> {
   }).effects.map((one) => one.effect);
 }
 
+/** What the body's storage pass reads of the warehouse pack's calls, with the pack's hooks the only thing it runs. */
+function warehouseLookup(read: Read): StorageLookup {
+  return {
+    facts: read.facts,
+    factsPath: read.filePath,
+    patterns: [],
+    couldMatch: new Set(),
+    declared: [
+      ...(WAREHOUSE.invocationRecognizers ?? []),
+      ...(WAREHOUSE.accessRecognizers ?? []),
+    ],
+  };
+}
+
 async function warehouseEffects(
   sources: Record<string, string>,
 ): Promise<Effect[]> {
   const read = await readProject(sources);
-  return rawSqlEffects(read.calls, {
-    facts: read.facts,
-    filePath: read.filePath,
-    patterns: [],
-    clients: WAREHOUSE,
-  }).effects.map((one) => one.effect);
+  return bodyStorage(read.handler, warehouseLookup(read)).effects.map(
+    (one) => one.effect,
+  );
 }
 
 function storageOf(effect: Effect) {
@@ -496,30 +526,35 @@ describe("a statement handed to a client object", () => {
     ).toEqual([]);
   });
 
-  it("reads a statement only where the method is declared to take it", async () => {
-    const positional = await warehouseEffects({
-      "handler.py": [
-        "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
-        "",
-        "def load():",
-        "    hook = BigQueryHook()",
-        '    return hook.get_pandas_df("SELECT id FROM `analytics.core.dim_account`")',
-      ].join("\n"),
-    });
-    expect(positional).toEqual([]);
+  it("reads a statement under the keyword a method takes it at and at its position", async () => {
+    const containers = async (call: string) =>
+      (
+        await warehouseEffects({
+          "handler.py": [
+            "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
+            "",
+            "def load():",
+            "    hook = BigQueryHook()",
+            `    return ${call}`,
+          ].join("\n"),
+        })
+      ).map((effect) => storageOf(effect).semantics.container);
 
-    const byKeyword = await warehouseEffects({
-      "handler.py": [
-        "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
-        "",
-        "def load():",
-        "    hook = BigQueryHook()",
-        '    return hook.get_pandas_df(sql="SELECT id FROM `analytics.core.dim_account`")',
-      ].join("\n"),
-    });
-    expect(storageOf(byKeyword[0] as Effect).semantics.container).toBe(
-      "dim_account",
-    );
+    expect(
+      await containers(
+        'hook.get_records("SELECT id FROM `analytics.core.dim_account`")',
+      ),
+    ).toEqual(["dim_account"]);
+    expect(
+      await containers(
+        'hook.get_records(sql="SELECT id FROM `analytics.core.dim_account`")',
+      ),
+    ).toEqual(["dim_account"]);
+    expect(
+      await containers(
+        'hook.get_records(query="SELECT id FROM `analytics.core.dim_account`")',
+      ),
+    ).toEqual([]);
   });
 
   it("reads a client one of the library's own methods hands back", async () => {
@@ -582,24 +617,18 @@ describe("a statement handed to a client object", () => {
     ).toEqual([]);
   });
 
-  it("counts a claimed call the reach walk must not report as lost", async () => {
+  it("counts a call the pack read, so the reach walk does not report it as lost", async () => {
     const read = await readProject({
       "handler.py": [
         "from google.cloud.bigquery import Client",
         "",
-        "def load(statement):",
+        "def load():",
         "    client = Client()",
-        "    return client.query(statement)",
+        '    client.query("SELECT id FROM `analytics.core.dim_account`")',
+        "    return client.close()",
       ].join("\n"),
     });
 
-    expect(
-      rawSqlCallIds(read.calls, {
-        facts: read.facts,
-        filePath: read.filePath,
-        patterns: [],
-        clients: WAREHOUSE,
-      }).size,
-    ).toBe(1);
+    expect(declaredCallIds(read.calls, warehouseLookup(read))).toHaveLength(1);
   });
 });

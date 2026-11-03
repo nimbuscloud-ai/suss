@@ -10,6 +10,7 @@
  */
 
 import { compile } from "./compile.js";
+import { modulesOf } from "./ops.js";
 
 import type {
   DeclaredMatch,
@@ -193,7 +194,7 @@ function gateOf(chains: readonly Chain<MethodMeaning>[]): string[] {
   const modules = new Set<string>();
   for (const chain of chains) {
     for (const origin of originsIn(chain)) {
-      for (const module of origin.importedFrom) {
+      for (const module of modulesOf(origin)) {
         modules.add(module);
       }
     }
