@@ -38,7 +38,7 @@ The root walk reads the calls React provides for booting an app: `createRoot` an
 React runs these callbacks separately from the render body, with different inputs, outputs and triggers, so each one becomes its own `BehavioralSummary` under the component's identity.
 
 - One `handler` unit per JSX prop whose name is `on` followed by an uppercase letter, and whose value resolves to a function written in the project. A reference passed through from props, like `onClick={props.onDelete}`, is skipped, because that handler belongs to another component. A named local function becomes `Component.fnName`. An inline arrow becomes `Component.tag.propName`, with a `#N` suffix when the same element and prop have more than one.
-- One `handler` unit per `useEffect(fn, deps?)` call in the component body, named `Component.effect#N`, with `metadata.react.kind` set to `"effect"` and the source text of the deps array recorded. Missing deps come through as `null` (runs again on every render), and `[]` means it runs on mount only. A `useEffect` whose callback is an identifier is skipped, since there is no body to read.
+- One `handler` unit per `useEffect(fn, deps?)` call in the component body, named `Component.effect#N`, with `metadata.react.kind` set to `"effect"` and the source text of the deps array recorded. Missing deps come through as `null` (runs again on every render), and `[]` means it runs on mount only. `React.useEffect(...)` off a default or namespace import of `react`, and an aliased import such as `useEffect as useMount`, count the same. A `useEffect` whose callback is an identifier is skipped, since there is no body to read.
 
 ## Not covered yet
 

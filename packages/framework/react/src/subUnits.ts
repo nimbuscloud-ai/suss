@@ -163,7 +163,11 @@ function synthesizeUseEffects(
   const out: DiscoveredSubUnit[] = [];
   let index = 0;
 
-  for (const call of ctx.findCallExpressionsByName(parentFunc, "useEffect")) {
+  for (const call of ctx.findCallExpressionsByName(
+    parentFunc,
+    "useEffect",
+    "react",
+  )) {
     const body = ctx.getCallArgumentFunction(call, 0);
     if (body === null) {
       // An identifier or a value that is not a function has no body here
