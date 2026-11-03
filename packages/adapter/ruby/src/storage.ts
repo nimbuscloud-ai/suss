@@ -56,6 +56,7 @@ import type {
   RbLoaderPattern,
   RbRawSqlPattern,
   RbStoragePattern,
+  RubyPack,
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
@@ -91,6 +92,29 @@ export interface RbStorageOptions {
   readonly statesSlots?: (effect: Effect, slots: readonly SlotValue[]) => void;
   /** The hooks packs declared with `@suss/recognize`, run over every call in a method. */
   readonly declared?: readonly InvocationRecognizer[];
+}
+
+/**
+ * What every pack in a run says about the database, pooled, or null when
+ * no pack says anything and the storage pass can be skipped.
+ */
+export function pooledStorage(
+  packs: readonly RubyPack[],
+): Omit<RbStorageOptions, "facts"> | null {
+  const pooled = {
+    patterns: packs.flatMap((pack) => pack.storage ?? []),
+    loaders: packs.flatMap((pack) => pack.loaders ?? []),
+    rawSql: packs.flatMap((pack) => pack.rawSql ?? []),
+    declared: packs.flatMap((pack) => [
+      ...(pack.invocationRecognizers ?? []),
+      ...(pack.accessRecognizers ?? []),
+    ]),
+  };
+  return pooled.patterns.length > 0 ||
+    pooled.rawSql.length > 0 ||
+    pooled.declared.length > 0
+    ? pooled
+    : null;
 }
 
 function isConstant(node: RbNode): boolean {
@@ -772,9 +796,8 @@ function recognizeMethodStorage(
   options: RbStorageOptions,
 ): SlottedEffects {
   const slots: EffectSlot[] = [];
-  const calls = callsUnder(method);
   const effects = storageEffects(
-    calls,
+    callsUnder(method),
     file,
     {
       ...options,
@@ -784,10 +807,7 @@ function recognizeMethodStorage(
     },
     method,
   );
-  return {
-    effects: [...effects, ...declaredEffects(calls, file, options)],
-    slots,
-  };
+  return { effects, slots };
 }
 
 /**
@@ -831,15 +851,29 @@ function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
 
 /**
  * The database work a body does, one effect per chain, so
- * `Order.where(id: 1).first` counts once. `file` is the absolute path the
- * calls were read from, which the constant bindings are keyed on.
- * `enclosing` is the method the calls are in, or null outside one.
+ * `Order.where(id: 1).first` counts once, and then what the declared
+ * hooks make of each call. `file` is the absolute path the calls were
+ * read from, which the constant bindings are keyed on. `enclosing` is the
+ * method the calls are in, or null outside one.
  */
 export function storageEffects(
   calls: readonly RbNode[],
   file: string,
   options: RbStorageOptions,
   enclosing: RbNode | null = null,
+): EffectAt[] {
+  return [
+    ...patternEffects(calls, file, options, enclosing),
+    ...declaredEffects(calls, file, options),
+  ];
+}
+
+/** The work the storage patterns and raw SQL patterns read off a body. */
+function patternEffects(
+  calls: readonly RbNode[],
+  file: string,
+  options: RbStorageOptions,
+  enclosing: RbNode | null,
 ): EffectAt[] {
   if (!saysAnything(options)) {
     return [];

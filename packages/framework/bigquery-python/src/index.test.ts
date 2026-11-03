@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
-import { bigqueryClients, bigqueryFramework, withBigquery } from "./index.js";
+import { bigqueryFramework, bigqueryPacks, withBigquery } from "./index.js";
 
 import type { PythonPack } from "@suss/adapter-python";
 
@@ -25,42 +25,17 @@ const fastapiLike: PythonPack = {
 };
 
 describe("what the BigQuery pack declares", () => {
-  it("says both libraries reach the same store, under the name the other packs use", () => {
-    expect(
-      bigqueryClients().map((pattern) => [
-        pattern.module,
-        pattern.storageSystem,
-        pattern.dialect,
-      ]),
-    ).toEqual([
-      ["google.cloud.bigquery", "gcp.bigquery", "bigquery"],
-      [
-        "airflow.providers.google.cloud.hooks.bigquery",
-        "gcp.bigquery",
-        "bigquery",
-      ],
+  it("records each library's calls under that library", () => {
+    expect(bigqueryPacks().map((one) => one.name)).toEqual([
+      "bigquery-python-client",
+      "bigquery-python-hook",
     ]);
-  });
-
-  it("says the hook hands back the client library's own client", () => {
-    const hook = bigqueryClients()[1];
-    expect(hook?.handsBack).toEqual([
-      { method: "get_client", module: "google.cloud.bigquery", name: "Client" },
-    ]);
-  });
-
-  it("takes the statement where the loaders take the table, which is second", () => {
-    const client = bigqueryClients()[0];
-    const loader = client?.tables?.find(
-      (one) => one.method === "load_table_from_json",
-    );
-    expect(loader).toMatchObject({ argument: 1, keyword: "destination" });
   });
 
   it("composes onto a route pack rather than replacing it", () => {
     const composed = withBigquery(fastapiLike);
     expect(composed.discovery).toEqual(fastapiLike.discovery);
-    expect(composed.sqlClients).toHaveLength(2);
+    expect(composed.accessRecognizers?.length).toBeGreaterThan(0);
   });
 
   it("stands on its own with nothing to discover", () => {
@@ -204,6 +179,56 @@ describe("a Python service reading BigQuery", () => {
       container: "dim_stale",
     });
     expect(access?.interaction).toMatchObject({ kind: "write" });
+  });
+
+  it("reads the table a loader takes second, after the rows", async () => {
+    write("app/__init__.py", "");
+    write(
+      "app/routes.py",
+      [
+        "from fastapi import FastAPI",
+        "from google.cloud.bigquery import Client",
+        "",
+        "app = FastAPI()",
+        "",
+        '@app.post("/events")',
+        "def load_events(client: Client, rows: list):",
+        '    return client.load_table_from_json(rows, "analytics-prod.core.events")',
+        "",
+      ].join("\n"),
+    );
+
+    const [access] = await storageIn("load_events");
+    expect(access?.semantics).toMatchObject({
+      scope: "core",
+      container: "events",
+    });
+    expect(access?.interaction).toMatchObject({ kind: "write" });
+  });
+
+  it("reads the client the hook hands back", async () => {
+    write("app/__init__.py", "");
+    write(
+      "app/routes.py",
+      [
+        "from fastapi import FastAPI",
+        "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
+        "",
+        "app = FastAPI()",
+        "",
+        '@app.get("/stale")',
+        "def stale_accounts():",
+        "    hook = BigQueryHook()",
+        '    return hook.get_client().query("SELECT id FROM `analytics-prod.core.dim_account`")',
+        "",
+      ].join("\n"),
+    );
+
+    const [access] = await storageIn("stale_accounts");
+    expect(access?.semantics).toMatchObject({
+      scope: "core",
+      container: "dim_account",
+    });
   });
 
   it("says nothing about a statement whose table a caller supplies", async () => {

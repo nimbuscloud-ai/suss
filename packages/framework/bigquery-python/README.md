@@ -4,7 +4,7 @@ This pack records which BigQuery tables a Python service reads and writes.
 
 ## What this package is
 
-A pattern pack for the Python adapter. It records the same `storage-access` effects the SQLAlchemy pack does. So a table a job reads or writes is the same kind of boundary whether the store is Postgres or a warehouse.
+A pack for the Python adapter, declared with `@suss/recognize`. It records the same `storage-access` effects the SQLAlchemy pack does. So a table a job reads or writes is the same kind of boundary whether the store is Postgres or a warehouse.
 
 ```ts
 import { bigqueryFramework } from "@suss/framework-bigquery-python";

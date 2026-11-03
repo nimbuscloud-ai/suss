@@ -134,6 +134,12 @@ export type ContainerLink = ContainerArgument | ContainerRule;
 export interface ContainerArgument {
   readonly asks: "container";
   readonly argument: ArgumentPick;
+  /**
+   * Whether the argument writes the table the way a statement does,
+   * `"analytics.events"`, so the part before the table is the scope. A
+   * name that does not settle leaves the call without an access.
+   */
+  readonly qualified?: boolean;
 }
 
 /**
@@ -255,6 +261,18 @@ export interface OneArgument {
   /** The steps to the call the argument belongs to. */
   readonly of?: readonly CallStep[];
   readonly at: number;
+  /**
+   * The keyword the argument can be passed under instead, `query=` in
+   * Python or `query:` in Ruby. A call that passes it there is read
+   * there, and any other call at `at`.
+   */
+  readonly keyword?: string;
+  /**
+   * Keys to read down through, each inside the last, before `property`:
+   * `["query", "query"]` reads the statement in
+   * `insert_job(configuration={"query": {"query": sql}})`.
+   */
+  readonly path?: readonly string[];
   /**
    * Properties of the object the argument states, tried in order, for
    * when the thing the call reached is a property of the argument.

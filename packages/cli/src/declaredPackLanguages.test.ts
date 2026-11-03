@@ -20,8 +20,10 @@ import {
   ResolutionStore,
 } from "@suss/adapter-typescript";
 import {
+  anyOf,
   constructedFrom,
   pack,
+  returnedBy,
   sqlStatements,
   storageCalls,
 } from "@suss/recognize";
@@ -46,8 +48,26 @@ const QUERIES = sqlStatements({
   .methods({ query: { statement: { at: 0 } } })
   .example('db.query("SELECT id, email FROM users")');
 
+// A table dropped through what an admin client's `tables()` returns. The
+// table is under `name` in the spec, which Python and Ruby pass under the
+// `table` keyword and TypeScript first.
+const TABLE_DROPS = storageCalls({
+  system: "warehouse",
+  client: anyOf(
+    constructedFrom("whdb", "Whdb"),
+    returnedBy("tables", constructedFrom("kvcache", "Kvcache")),
+  ),
+})
+  .methods({ drop: { kind: "write" } })
+  .container({ at: 0, keyword: "table", path: ["name"] }, { qualified: true })
+  .example('admin.tables().drop({ name: "core.events" })');
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-tables", [TABLE_DROPS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-cache", [CACHE_CALLS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -61,42 +81,52 @@ const INVOCATION = PACKS.flatMap((one) => one.invocationRecognizers ?? []);
 const ACCESS = PACKS.flatMap((one) => one.accessRecognizers ?? []);
 
 const TYPESCRIPT = `
-  import { Cache } from "kvcache";
+  import { Admin, Cache } from "kvcache";
   import { Pool } from "sqldb";
 
   const cache = new Cache();
   const db = new Pool();
+  const admin = new Admin();
 
   export function load() {
     cache.get("user_online:42");
     db.query("SELECT id, email FROM users");
+    admin.tables().drop({ name: "core.events" });
   }
 `;
 
-const PYTHON = `from kvcache import Cache
+const PYTHON = `from kvcache import Admin, Cache
 from sqldb import Pool
 
 cache = Cache()
 db = Pool()
+admin = Admin()
 
 
 def load():
     cache.get("user_online:42")
     db.query("SELECT id, email FROM users")
+    admin.tables().drop(table={"name": "core.events"})
 `;
 
 const RUBY = `module Store
   def self.load
     cache = Kvcache::Cache.new
     db = Sqldb::Pool.new
+    admin = Kvcache::Admin.new
     cache.get("user_online:42")
     db.query("SELECT id, email FROM users")
+    admin.tables().drop(table: { name: "core.events" })
   end
 end
 `;
 
 const LIBRARIES: Record<string, string> = {
-  kvcache: "export declare class Cache { get(key: string): unknown; }",
+  kvcache: `
+    export declare class Cache { get(key: string): unknown; }
+    export declare class Tables { drop(spec: unknown): unknown; }
+    export declare class Admin { tables(): Tables; }
+  `,
   sqldb: "export declare class Pool { query(statement: string): unknown; }",
 };
 
@@ -215,7 +245,17 @@ describe("a pack declared once", () => {
   it("records the same storage and SQL effects in TypeScript, Python and Ruby", async () => {
     const fromTypeScript = typescriptEffects().map(placeless);
 
-    expect(fromTypeScript).toHaveLength(2);
+    expect(fromTypeScript).toHaveLength(3);
+    expect(fromTypeScript).toContainEqual(
+      expect.objectContaining({
+        binding: expect.objectContaining({
+          semantics: expect.objectContaining({
+            scope: "core",
+            container: "events",
+          }),
+        }),
+      }),
+    );
     expect((await pythonEffects()).map(placeless)).toEqual(fromTypeScript);
     expect((await rubyEffects()).map(placeless)).toEqual(fromTypeScript);
   });

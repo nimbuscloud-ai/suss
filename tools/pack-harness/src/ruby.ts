@@ -19,6 +19,7 @@ import {
   findRubyFiles,
   methodDefinitionsIn,
   parseRuby,
+  pooledStorage,
   storageEffects,
 } from "@suss/adapter-ruby";
 import { Database } from "@suss/datalog";
@@ -38,7 +39,7 @@ export interface RubyPackHarness {
 }
 
 export function rubyPackUnderTest(...packs: RubyPack[]): RubyPackHarness {
-  const options = storageOptionsOf(packs);
+  const options = pooledStorage(packs) ?? { patterns: [] };
 
   const effectsAcross = async (
     files: Record<string, string>,
@@ -85,15 +86,6 @@ export function rubyPackUnderTest(...packs: RubyPack[]): RubyPackHarness {
       );
       return effectsAcross(files, path.join(directory, entry));
     },
-  };
-}
-
-/** What every pack in the run says about the database, pooled the way a run pools it. */
-function storageOptionsOf(packs: readonly RubyPack[]) {
-  return {
-    patterns: packs.flatMap((pack) => pack.storage ?? []),
-    loaders: packs.flatMap((pack) => pack.loaders ?? []),
-    rawSql: packs.flatMap((pack) => pack.rawSql ?? []),
   };
 }
 

@@ -67,7 +67,12 @@ import {
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { askFileSources, slotProvenance } from "./provenance.js";
 import { rawSqlCallIds, rawSqlOptionsOf } from "./rawSql.js";
-import { bodyStorage, type StorageLookup, storageCallIds } from "./storage.js";
+import {
+  bodyStorage,
+  declaredCallIds,
+  type StorageLookup,
+  storageCallIds,
+} from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
 import {
   askWrittenValues,
@@ -1729,6 +1734,7 @@ export function recognizedCallIds(
       filePath: storageLookup.factsPath,
     }),
     ...rawSqlCallIds(calls, rawSqlOptionsOf(storageLookup)),
+    ...declaredCallIds(calls, storageLookup),
     ...enqueues,
   ]);
 }

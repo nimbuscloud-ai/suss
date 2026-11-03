@@ -2,76 +2,87 @@
  * Records which Postgres tables a Ruby body reads and writes through the
  * pg gem.
  *
- * Ruby has no type annotations, so the adapter types a receiver by
- * following it back to the gem call that opened the connection. The
- * README covers which calls that reaches and which it leaves out.
+ * Ruby has no type annotations, so a receiver counts when it follows back
+ * to the gem call that opened the connection. The README covers which
+ * calls that reaches and which it leaves out.
  */
 
-import type { RbRawSqlPattern, RubyPack } from "@suss/adapter-ruby";
+import { constructedFrom, pack, sqlStatements } from "@suss/recognize";
+
+import type { RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { PatternPack, SqlMethod } from "@suss/recognize";
 
 // Provider summaries spell the store this way, and a call pairs with them
 // only when the spelling matches.
 const STORAGE_SYSTEM = "postgresql";
 
-// The `prepare` calls take a statement name first, so their statement is
-// the second argument.
-const STATEMENTS: NonNullable<RbRawSqlPattern["statements"]> = {
-  exec: { at: 0 },
-  exec_params: { at: 0 },
-  async_exec: { at: 0 },
-  async_exec_params: { at: 0 },
-  sync_exec: { at: 0 },
-  sync_exec_params: { at: 0 },
-  query: { at: 0 },
-  send_query: { at: 0 },
-  send_query_params: { at: 0 },
-  prepare: { at: 1 },
-  async_prepare: { at: 1 },
-  sync_prepare: { at: 1 },
-};
+const STATEMENT_FIRST: SqlMethod = { statement: { at: 0 } };
 
-/**
- * The pg gem's raw SQL patterns. `PG.connect` and the three builders on
- * `PG::Connection` open the same kind of connection, so a receiver built
- * by any of them counts.
- */
-export function pgRawSql(): RbRawSqlPattern[] {
-  const calls = {
-    statements: STATEMENTS,
-    storageSystem: STORAGE_SYSTEM,
-    dialect: STORAGE_SYSTEM,
-  };
-  return [
-    { constantName: "PG", clientBuilders: ["connect"], ...calls },
-    {
-      constantName: "PG::Connection",
-      clientBuilders: ["new", "connect", "open"],
-      ...calls,
-    },
-  ];
+// The `prepare` calls take a statement name first.
+const STATEMENT_SECOND: SqlMethod = { statement: { at: 1 } };
+
+// `PG.connect`, and `new`, `connect` and `open` on `PG::Connection`, open
+// the same kind of connection.
+const CONNECTION = constructedFrom({
+  from: ["PG"],
+  named: ["connect", "open", "Connection"],
+});
+
+const QUERIES = sqlStatements({
+  system: STORAGE_SYSTEM,
+  dialect: STORAGE_SYSTEM,
+  client: CONNECTION,
+}).methods({
+  exec: STATEMENT_FIRST,
+  exec_params: STATEMENT_FIRST,
+  async_exec: STATEMENT_FIRST,
+  async_exec_params: STATEMENT_FIRST,
+  sync_exec: STATEMENT_FIRST,
+  sync_exec_params: STATEMENT_FIRST,
+  query: STATEMENT_FIRST,
+  send_query: STATEMENT_FIRST,
+  send_query_params: STATEMENT_FIRST,
+  prepare: STATEMENT_SECOND,
+  async_prepare: STATEMENT_SECOND,
+  sync_prepare: STATEMENT_SECOND,
+});
+
+/** The pg gem's queries, declared once for any adapter that runs them. */
+export function pgQueries(): PatternPack {
+  return pack("pg-ruby", [QUERIES], {
+    languages: ["ruby"],
+    recognizedAs: "ruby-raw-sql",
+  });
 }
 
 /**
- * Adds the pg gem's patterns to another Ruby pack, such as the Rails
+ * Adds the pg gem's queries to another Ruby pack, such as the Rails
  * pack. A project that queries Postgres directly usually runs a web
- * framework too, and the result keeps that pack's discovery and any raw
- * SQL patterns it already had.
+ * framework too, and the result keeps that pack's discovery and the
+ * hooks it already had.
  */
 export function withPg(pack: RubyPack): RubyPack {
+  const queries = pgQueries();
   return {
     ...pack,
-    rawSql: [...(pack.rawSql ?? []), ...pgRawSql()],
+    invocationRecognizers: [
+      ...(pack.invocationRecognizers ?? []),
+      ...(queries.invocationRecognizers ?? []),
+    ],
+    accessRecognizers: [
+      ...(pack.accessRecognizers ?? []),
+      ...(queries.accessRecognizers ?? []),
+    ],
   };
 }
 
 export function pgRubyFramework(): RubyPack {
-  return {
+  return withPg({
     name: "pg-ruby",
     protocol: STORAGE_SYSTEM,
     discovery: [],
-    rawSql: pgRawSql(),
-  };
+  });
 }
 
 export const declares: PackDeclaration = {

@@ -13,11 +13,17 @@
  * DESIGN.md, under "The ops over the facts", has the fact behind each member.
  */
 
+import { byOrigin } from "@suss/extractor";
+
 import type {
+  ByOrigin,
   CallOps,
+  ConstructedFrom,
+  DeclaredBy,
   EffectArg,
   FactSource,
   ReceiverOrigin,
+  ReturnedBy,
   UnsettledName,
   ValueEntry,
   ValueOps,
@@ -117,12 +123,31 @@ class FactCall implements CallOps {
     return argument === undefined ? null : factValueOps(argument, this.source);
   }
 
+  keywordAt(name: string): ValueOps | null {
+    const passed = only(
+      this.source.db
+        .lookup("callKeywordArg", 0, this.key)
+        .filter((row) => String(row[1]) === name),
+      2,
+    );
+    if (passed === null) {
+      return null;
+    }
+    this.source.read(passed);
+    return factValueOps(passed, this.source);
+  }
+
   receiverIsFrom(origin: ReceiverOrigin): boolean {
-    return RECEIVER_ORIGIN[origin.origin](origin, this);
+    return byOrigin(receiverOrigin(this), origin);
   }
 
   isFrom(origin: ReceiverOrigin): boolean {
-    return CALL_ORIGIN[origin.origin](origin, this);
+    return byOrigin(callOrigin(this), origin);
+  }
+
+  /** Whether this call is `method` called on a receiver from `on`. */
+  returns(origin: ReturnedBy): boolean {
+    return this.method() === origin.method && this.receiverIsFrom(origin.on);
   }
 
   anchorCall(origin: ReceiverOrigin): CallOps | null {
@@ -147,7 +172,7 @@ class FactCall implements CallOps {
    * instead, which is where TypeScript's own check ends up when a method
    * has no declaration to read.
    */
-  declaredBy(origin: ReceiverOrigin): boolean {
+  declaredBy(origin: DeclaredBy | ConstructedFrom): boolean {
     if (this.member === null) {
       return false;
     }
@@ -159,7 +184,7 @@ class FactCall implements CallOps {
   }
 
   /** Whether the receiver was made from one of the origin's modules, as written or through a project function. */
-  receiverConstructed(origin: ReceiverOrigin): boolean {
+  receiverConstructed(origin: DeclaredBy | ConstructedFrom): boolean {
     if (this.source.callsProjectMethod?.(this.key) === true) {
       return false;
     }
@@ -172,7 +197,7 @@ class FactCall implements CallOps {
   }
 
   /** Whether the callee as the source wrote it came from one of the origin's modules. */
-  calleeConstructed(origin: ReceiverOrigin): boolean {
+  calleeConstructed(origin: ConstructedFrom): boolean {
     return (
       namedAs(origin, constructorName(this.calleeKey, this.source)) &&
       origin.importedFrom.some((module) =>
@@ -197,7 +222,10 @@ class FactCall implements CallOps {
   }
 
   /** Whether `made`, a construction or a callee, came from one of the origin's modules. */
-  private madeFrom(origin: ReceiverOrigin, made: string): boolean {
+  private madeFrom(
+    origin: DeclaredBy | ConstructedFrom,
+    made: string,
+  ): boolean {
     const callee = calleeOf(made, this.source);
     const written = callee ?? made;
     if (!namedAs(origin, constructorName(written, this.source))) {
@@ -225,22 +253,31 @@ class FactCall implements CallOps {
 }
 
 /** How each kind of origin checks a call's receiver. */
-const RECEIVER_ORIGIN: Record<
-  ReceiverOrigin["origin"],
-  (origin: ReceiverOrigin, call: FactCall) => boolean
-> = {
-  declaredBy: (origin, call) => call.declaredBy(origin),
-  constructed: (origin, call) => call.receiverConstructed(origin),
-};
+function receiverOrigin(call: FactCall): ByOrigin<boolean> {
+  return {
+    declaredBy: (origin) => call.declaredBy(origin),
+    constructed: (origin) => call.receiverConstructed(origin),
+    anyOf: (origin) => origin.of.some((one) => call.receiverIsFrom(one)),
+    returnedBy: (origin) => {
+      const made = call.receiver();
+      return (
+        made !== null &&
+        made.method() === origin.method &&
+        made.receiverIsFrom(origin.on)
+      );
+    },
+  };
+}
 
 /** How each kind of origin checks the call itself. */
-const CALL_ORIGIN: Record<
-  ReceiverOrigin["origin"],
-  (origin: ReceiverOrigin, call: FactCall) => boolean
-> = {
-  declaredBy: (origin, call) => call.declaredBy(origin),
-  constructed: (origin, call) => call.calleeConstructed(origin),
-};
+function callOrigin(call: FactCall): ByOrigin<boolean> {
+  return {
+    declaredBy: (origin) => call.declaredBy(origin),
+    constructed: (origin) => call.calleeConstructed(origin),
+    anyOf: (origin) => origin.of.some((one) => call.isFrom(one)),
+    returnedBy: (origin) => call.returns(origin),
+  };
+}
 
 class FactValue implements ValueOps {
   private settledKey: string | null = null;
@@ -512,9 +549,17 @@ function rootOf(key: string, source: FactSource): string {
   return at;
 }
 
-/** The rightmost name an expression is written with: the member for a read, else the text. */
+/**
+ * The rightmost name an expression is written with: the member for a
+ * read, else the text. A class called through the language's constructor
+ * method, `PG::Connection.new`, is named after the class.
+ */
 function constructorName(key: string, source: FactSource): string {
-  return memberRead(key, source)?.name ?? source.textOf(key);
+  return (
+    source.constructedClass?.(key) ??
+    memberRead(key, source)?.name ??
+    source.textOf(key)
+  );
 }
 
 /** Whether the export a value was made from is one the origin asks for. Unset takes any. */

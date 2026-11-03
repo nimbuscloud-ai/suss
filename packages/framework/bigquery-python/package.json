@@ -47,7 +47,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.38.2"
+    "@suss/adapter-python": "0.38.2",
+    "@suss/recognize": "0.38.2"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",

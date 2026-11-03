@@ -159,6 +159,36 @@ describe("pinning down the receiver", () => {
     expect(ops.receiverIsFrom(declaredBy)).toBe(true);
   });
 
+  it("matches a receiver a library method returned, on a receiver from the origin, or any one of several origins", () => {
+    const ops = opsForOuterCall(`
+      import Deck from "tapedeck";
+      const deck = new Deck();
+      export function play() {
+        return deck.side("b").play("a");
+      }
+    `);
+    const side: ReceiverOrigin = {
+      origin: "returnedBy",
+      method: "side",
+      on: constructed,
+    };
+
+    expect(ops.receiverIsFrom(side)).toBe(true);
+    expect(ops.receiverIsFrom({ ...side, method: "rewind" })).toBe(false);
+    expect(
+      ops.receiverIsFrom({
+        ...side,
+        on: { origin: "constructed", importedFrom: ["elsewhere"] },
+      }),
+    ).toBe(false);
+    expect(
+      ops.receiverIsFrom({
+        origin: "anyOf",
+        of: [{ origin: "constructed", importedFrom: ["elsewhere"] }, side],
+      }),
+    ).toBe(true);
+  });
+
   it("leaves the same method on somebody else's object alone", () => {
     const ops = opsForLastCall(`
       declare const deck: { play(track: string): void };

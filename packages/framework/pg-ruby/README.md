@@ -4,7 +4,7 @@ This pack records which Postgres tables a Ruby service reads and writes through 
 
 ## What this package is
 
-A pattern pack for the Ruby adapter. It records the same `storage-access` effects an ActiveRecord call does. So a table a service reads or writes is the same kind of boundary whether the query went through an ORM or was written out as SQL.
+A pack for the Ruby adapter, declared with `@suss/recognize`. It records the same `storage-access` effects an ActiveRecord call does. So a table a service reads or writes is the same kind of boundary whether the query went through an ORM or was written out as SQL.
 
 ```ts
 import { pgRubyFramework, withPg } from "@suss/framework-pg-ruby";

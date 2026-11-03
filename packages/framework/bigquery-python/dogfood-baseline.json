@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-bigquery-python",
   "exports": 4,
-  "internal": 0,
-  "consumers": 2,
+  "internal": 1,
+  "consumers": 5,
   "unfollowedCalls": 0
 }

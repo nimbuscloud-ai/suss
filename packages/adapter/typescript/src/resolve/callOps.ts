@@ -6,12 +6,13 @@
  * interface `@suss/extractor` declares is what lets a pack stop being a
  * walk over ts-morph and start being data.
  *
- * Two of the receiver origins are implemented. The migration plan for
- * #542 lists four more, and each one adds an entry to `ORIGIN` beside
- * the union member it matches.
+ * Each receiver origin has an entry in `ORIGIN` and in `CALL_ORIGIN`.
+ * The migration plan for #542 lists the origins not built yet.
  */
 
 import { Node } from "ts-morph";
+
+import { byOrigin } from "@suss/extractor";
 
 import { rootIdentifier } from "../configuredCall.js";
 import {
@@ -34,9 +35,12 @@ import { readName } from "./readName.js";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   AstCapableOps,
+  ByOrigin,
   CallOps,
   ClassOps,
+  ConstructedFrom,
   ReceiverOrigin,
+  ReturnedBy,
   StatedSlot,
   UnsettledName,
   ValueEntry,
@@ -79,10 +83,7 @@ interface Receiver {
 }
 
 /** One check per way a pack can pin down a receiver. */
-const ORIGIN: Record<
-  ReceiverOrigin["origin"],
-  (origin: ReceiverOrigin, receiver: Receiver) => boolean
-> = {
+const ORIGIN: ByOrigin<boolean, [Receiver]> = {
   declaredBy: (origin, receiver) =>
     receiver.callee !== null &&
     origin.importedFrom.some((module) =>
@@ -106,7 +107,39 @@ const ORIGIN: Record<
     const through = madeExpression(receiver, "throughProjectCalls");
     return through !== asWritten && madeFromModule(origin, through, receiver);
   },
+  anyOf: (origin, receiver) =>
+    origin.of.some((one) => byOrigin(ORIGIN, one, receiver)),
+  returnedBy: (origin, receiver) => {
+    if (receiver.callee === null) {
+      return false;
+    }
+    // A receiver written as the call itself, `hook.client().query()`,
+    // has no written value of its own to resolve to.
+    const made = new Set([
+      peelValue(receiver.callee.getExpression()),
+      madeExpression(receiver, "asWritten"),
+      madeExpression(receiver, "throughProjectCalls"),
+    ]);
+    return [...made].some((one) => returnedFrom(origin, one, receiver));
+  },
 };
+
+/** Whether `made` is a call of the origin's method on a receiver from its `on`. */
+function returnedFrom(
+  origin: ReturnedBy,
+  made: Node,
+  receiver: Receiver,
+): boolean {
+  if (!Node.isCallExpression(made)) {
+    return false;
+  }
+  const callee = made.getExpression();
+  return (
+    Node.isPropertyAccessExpression(callee) &&
+    callee.getName() === origin.method &&
+    byOrigin(ORIGIN, origin.on, { ...receiver, callee, expression: callee })
+  );
+}
 
 /**
  * How a receiver's construction is read. `throughProjectCalls` takes a
@@ -117,7 +150,7 @@ type MadeReading = "asWritten" | "throughProjectCalls";
 
 /** Whether a construction came from one of the origin's modules. */
 function madeFromModule(
-  origin: ReceiverOrigin,
+  origin: ConstructedFrom,
   made: Node,
   receiver: Receiver,
 ): boolean {
@@ -141,8 +174,8 @@ function madeFromModule(
  * `new eb.PutEventsCommand(...)`, and the root identifier is the
  * namespace, which no pack ever asked for by name.
  */
-function madeFromNamed(origin: ReceiverOrigin, made: Node): boolean {
-  if (origin.origin !== "constructed" || origin.named === undefined) {
+function madeFromNamed(origin: ConstructedFrom, made: Node): boolean {
+  if (origin.named === undefined) {
     return true;
   }
   return origin.named.includes(constructorName(made));
@@ -168,10 +201,7 @@ function constructorName(made: Node): string {
  * layer, and asked of the call it reads the callee the source wrote,
  * which is what makes it cheap enough to guard a step with.
  */
-const CALL_ORIGIN: Record<
-  ReceiverOrigin["origin"],
-  (origin: ReceiverOrigin, receiver: Receiver) => boolean
-> = {
+const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
   declaredBy: ORIGIN.declaredBy,
   constructed: (origin, receiver) =>
     madeFromNamed(origin, receiver.expression) &&
@@ -182,6 +212,12 @@ const CALL_ORIGIN: Record<
         receiver.originatesFrom,
       ),
     ),
+  anyOf: (origin, receiver) =>
+    origin.of.some((one) => byOrigin(CALL_ORIGIN, one, receiver)),
+  returnedBy: (origin, receiver) =>
+    receiver.callee !== null &&
+    receiver.callee.getName() === origin.method &&
+    byOrigin(ORIGIN, origin.on, receiver),
 };
 
 /**
@@ -408,7 +444,7 @@ export function callOpsFor(
   return {
     method: () => (callee === null ? null : callee.getName()),
     receiverIsFrom: (origin) =>
-      ORIGIN[origin.origin](origin, {
+      byOrigin(ORIGIN, origin, {
         callee,
         expression,
         resolve,
@@ -416,7 +452,7 @@ export function callOpsFor(
         ...(originatesFrom === undefined ? {} : { originatesFrom }),
       }),
     isFrom: (origin) =>
-      CALL_ORIGIN[origin.origin](origin, {
+      byOrigin(CALL_ORIGIN, origin, {
         callee,
         expression,
         resolve,
@@ -492,7 +528,7 @@ function decoratorOn(
     .filter(
       (written): written is CallExpression =>
         Node.isCallExpression(written) &&
-        CALL_ORIGIN[origin.origin](origin, {
+        byOrigin(CALL_ORIGIN, origin, {
           callee: null,
           expression: written.getExpression(),
           resolve: reading.resolve ?? (() => null),
@@ -515,6 +551,10 @@ export function anchorAccepts(
   originatesFrom: OriginatesFrom | undefined,
 ): boolean {
   if (!Node.isCallExpression(candidate) && !Node.isNewExpression(candidate)) {
+    return false;
+  }
+  // Only a construction is anchored, so an origin built from others has nothing to compare.
+  if (origin.origin === "anyOf" || origin.origin === "returnedBy") {
     return false;
   }
   if (

@@ -39,11 +39,7 @@ import { constructionSitesOf, evaluationScope } from "./values/evaluator.js";
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { InvocationRecognizer } from "@suss/extractor";
-import type {
-  RawSqlPattern,
-  SqlClientPattern,
-  StoragePattern,
-} from "./pack.js";
+import type { RawSqlPattern, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 import type { BoundPythonFile } from "./routers.js";
@@ -731,8 +727,6 @@ export interface StorageLookup {
   readonly couldMatch: ReadonlySet<string>;
   /** What a pack says about statements a project writes as SQL itself. */
   readonly rawSql?: readonly RawSqlPattern[];
-  /** What a pack says about the client objects its library hands a project. */
-  readonly sqlClients?: readonly SqlClientPattern[];
   /** The hooks packs declared with `@suss/recognize`, run over every call in a body. */
   readonly declared?: readonly InvocationRecognizer[];
 }
@@ -974,6 +968,27 @@ function declaredEffects(
   calls: readonly PyNode[],
   lookup: StorageLookup,
 ): EffectAt[] {
+  return declaredReads(calls, lookup).flatMap(({ call, effects }) =>
+    effects.map((effect) => ({
+      effect: { ...effect, location: rangeOf(call) },
+      at: call,
+    })),
+  );
+}
+
+/** The calls a declared hook read, by node id, so the reach walk does not report them as lost. */
+export function declaredCallIds(
+  calls: readonly PyNode[],
+  lookup: StorageLookup,
+): number[] {
+  return declaredReads(calls, lookup).map(({ call }) => call.id);
+}
+
+/** Each call some declared hook read, with every effect the hooks made of it. */
+function declaredReads(
+  calls: readonly PyNode[],
+  lookup: StorageLookup,
+): { call: PyNode; effects: Effect[] }[] {
   const hooks = lookup.declared ?? [];
   if (hooks.length === 0) {
     return [];
@@ -981,14 +996,13 @@ function declaredEffects(
   const source = pythonFactSource(lookup.facts);
   return calls.flatMap((call) => {
     const ops = factCallOps(nodeId(lookup.factsPath, call), source);
-    if (ops === null) {
-      return [];
-    }
-    return hooks.flatMap((hook) =>
-      (hook(call, { ops }) ?? []).map((effect) => ({
-        effect: { ...effect, location: rangeOf(call) },
-        at: call,
-      })),
-    );
+    const read =
+      ops === null
+        ? []
+        : hooks.flatMap((hook) => {
+            const made = hook(call, { ops });
+            return made === null ? [] : [made];
+          });
+    return read.length === 0 ? [] : [{ call, effects: read.flat() }];
   });
 }
