@@ -170,7 +170,24 @@ describe("the module a story's component comes from", () => {
     const story = readStorybookMetadata(summaries[0] as BehavioralSummary);
     expect(story?.componentModule).toBeUndefined();
     expect(story?.componentImport).toBeUndefined();
-    expect(story?.args).toEqual({ size: "sm" });
+    expect(story?.args).toEqual({ size: "sm", onPick: "onPick() {}" });
+  });
+
+  it("reads a component and args written inside a type assertion or parentheses, under a key the file computes", () => {
+    const [summary] = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipWritten.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const story =
+      summary === undefined ? undefined : readStorybookMetadata(summary);
+    expect(summary?.identity.name).toBe("Chip.Written");
+    expect(story?.componentModule).toEqual({
+      workspace: "ui-kit",
+      file: "src/Chip/Chip.tsx",
+      name: "Chip",
+    });
+    expect(story?.componentImport).toBe("@ui/Chip/Chip");
+    expect(story?.args).toEqual({ size: "md", label: "Written", count: "2" });
   });
 
   it("names an anonymous default export by the story's spelling", () => {
