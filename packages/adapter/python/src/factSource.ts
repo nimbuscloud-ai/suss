@@ -7,10 +7,12 @@
  */
 
 import { referenceName } from "@suss/behavioral-ir";
+import { fileOfKey } from "@suss/resolution";
 
-import { numberLiteralValue, stringLiteralValue } from "./ast.js";
+import { field, numberLiteralValue, stringLiteralValue } from "./ast.js";
 import { anchorCallsOf, originsOf, writtenValueOf } from "./facts/resolve.js";
 import { argOf } from "./paths/effects.js";
+import { receiverTypeOrigins } from "./receiverTypes.js";
 import { nodeOfResolutionKey, stringValueOf } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
@@ -51,7 +53,29 @@ export function pythonFactSource(db: Database): FactSource {
         ? { kind: "identifier", name: nameIn(key) }
         : argOf(node, db);
     },
+    declares: (call, module) => {
+      const receiver = receiverNamed(nodeAt(call));
+      return (
+        receiver !== null &&
+        receiverTypeOrigins(receiver, {
+          facts: db,
+          filePath: fileOfKey(call),
+        }).some((origin) => origin.module === module)
+      );
+    },
   };
+}
+
+/**
+ * The name a method call is made on, `client` in `client.query(...)`.
+ * Python declares no method types, so the class behind that name, from
+ * its annotation or the call that built it, is what declares the method.
+ */
+function receiverNamed(call: PyNode | null): PyNode | null {
+  const callee = call === null ? null : field(call, "function");
+  const receiver =
+    callee?.type === "attribute" ? field(callee, "object") : null;
+  return receiver?.type === "identifier" ? receiver : null;
 }
 
 /** Whether an import came from the module a pack asks for, or from inside it. */
