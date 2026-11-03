@@ -36,7 +36,8 @@ closure roots.
 
 The pack only matches hooks imported from `@tanstack/react-query` or
 `react-query`, so a project's own function named `useQuery` is never
-mistaken for the library's.
+mistaken for the library's. An alias counts, and so does a hook a
+project file re-exports and the component imports from there.
 
 ## What v0 leaves out
 

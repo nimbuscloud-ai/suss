@@ -1,5 +1,4 @@
-// A project barrel that re-exports the hooks. The pack reads imports by
-// the module written at the import, so it does not see calls made
-// through this file.
+// A project barrel that re-exports the hooks. A component that imports
+// them from here calls the library's hooks all the same.
 
 export { useMutation, useQuery } from "@tanstack/react-query";

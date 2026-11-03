@@ -8,9 +8,14 @@
 
 import { Node } from "ts-morph";
 
-import { callsInUnitBody, importedNamesOf } from "@suss/adapter-typescript";
+import { callsInUnitBody, importBindsName } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
+import type {
+  ResolutionStore,
+  TsInvocationRecognizerContext,
+  TsSubUnitContext,
+} from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   DiscoveredSubUnit,
@@ -19,7 +24,7 @@ import type {
   PatternPack,
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { CallExpression, SourceFile } from "ts-morph";
+import type { CallExpression } from "ts-morph";
 
 const QUERY_MODULES = ["@tanstack/react-query", "react-query"];
 
@@ -31,25 +36,33 @@ const HOOK_CALLBACK_PROPERTY: Record<string, string> = {
   useMutation: "mutationFn",
 };
 
-/** Maps each local name, aliases included, to the library hook it imports. */
-function importedHooksOf(sourceFile: SourceFile): Map<string, string> {
-  const hooks = new Map<string, string>();
-  for (const [local, canonical] of importedNamesOf(sourceFile, QUERY_MODULES)) {
-    if (canonical in HOOK_CALLBACK_PROPERTY) {
-      hooks.set(local, canonical);
-    }
-  }
-  return hooks;
-}
-
-function hookOf(call: CallExpression): { local: string; hook: string } | null {
+/**
+ * The library hook a call goes to, with the name the file calls it by.
+ * The store follows the import, so an alias and a hook a project file
+ * re-exports both count, and a local function that shares a hook's name
+ * does not. Only a name an import binds is asked about, since each
+ * question costs a derivation and most calls go somewhere else.
+ */
+function hookOf(
+  call: CallExpression,
+  resolution: ResolutionStore | undefined,
+): { local: string; hook: string } | null {
   const callee = call.getExpression();
-  if (!Node.isIdentifier(callee)) {
+  if (resolution === undefined || !Node.isIdentifier(callee)) {
     return null;
   }
   const local = callee.getText();
-  const hook = importedHooksOf(call.getSourceFile()).get(local);
-  return hook === undefined ? null : { local, hook };
+  if (!importBindsName(call.getSourceFile(), local)) {
+    return null;
+  }
+  const hooks = new Set(
+    resolution
+      .importOriginsOf(callee, QUERY_MODULES)
+      .flatMap(({ path }) => (path.length === 1 ? path : []))
+      .filter((name) => Object.hasOwn(HOOK_CALLBACK_PROPERTY, name)),
+  );
+  const [hook] = hooks;
+  return hooks.size === 1 && hook !== undefined ? { local, hook } : null;
 }
 
 /**
@@ -116,12 +129,12 @@ function callbackRefOf(expression: Node | null): CallbackRef {
   return { type: "opaque", reason: "non-literal-query-function" };
 }
 
-const queryHookRecognizer: InvocationRecognizer = (call, _ctx) => {
+const queryHookRecognizer: InvocationRecognizer = (call, ctx) => {
   const c = call as CallExpression;
   if (!Node.isCallExpression(c)) {
     return null;
   }
-  const found = hookOf(c);
+  const found = hookOf(c, (ctx as TsInvocationRecognizerContext).resolution);
   if (found === null) {
     return null;
   }
@@ -146,15 +159,16 @@ const queryHookRecognizer: InvocationRecognizer = (call, _ctx) => {
 /** One sub-unit per hook call whose function is written inline. */
 function reactQuerySubUnits(
   parent: DiscoveredSubUnitParent,
-  _ctx: unknown,
+  ctx: unknown,
 ): DiscoveredSubUnit[] {
   const out: DiscoveredSubUnit[] = [];
   const counters = new Map<string, number>();
+  const { resolution } = ctx as TsSubUnitContext;
 
   // The calls the hook recognizer sees, so every hook call it records has
   // the sub-unit behind it.
   for (const call of callsInUnitBody(parent.func as Node)) {
-    const found = hookOf(call);
+    const found = hookOf(call, resolution);
     if (found === null) {
       continue;
     }
