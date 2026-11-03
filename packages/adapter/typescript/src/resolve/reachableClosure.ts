@@ -69,6 +69,7 @@ import { propertyNameOf } from "../walk/propertyName.js";
 import { climbSyntax } from "../walk/unwrap.js";
 import {
   fromScanRecord,
+  type ParameterCall,
   type RecordedScan,
   recordValidFrom,
   type ScanFindings,
@@ -679,6 +680,8 @@ interface ScanContext {
   sourceDeclarationsBehind?: (declaration: Node) => Node[];
   reachedFrom?: SourceFile;
   scanning?: FunctionRoot;
+  /** The functions discovered as units, by file path. */
+  units?: ReadonlyMap<string, readonly Node[]>;
   /** The subclass the scanned method runs on, when it is not the class the method is written in. */
   receiverClass?: TsSubclass;
   /** Set once the scan asks which class a declared shape was given. */
@@ -733,6 +736,41 @@ function resolveJsxReference(
  */
 type ScanRoot = FunctionRoot | SourceFile;
 
+/**
+ * Whether a node in `root`'s body is written inside another unit nested
+ * there, such as a timer callback in a handler. Most bodies have none,
+ * and for those the check returns false without walking up the tree.
+ */
+function nestedUnitTest(
+  root: ScanRoot,
+  units: ReadonlyMap<string, readonly Node[]> | undefined,
+): (node: Node) => boolean {
+  const file = root.getSourceFile();
+  const nested = new Set(
+    (units?.get(file.getFilePath()) ?? []).filter(
+      (unit) =>
+        unit !== root &&
+        unit.getPos() >= root.getPos() &&
+        unit.getEnd() <= root.getEnd(),
+    ),
+  );
+  if (nested.size === 0) {
+    return () => false;
+  }
+  return (node) => {
+    for (
+      let at = node.getParent();
+      at !== undefined && at !== root;
+      at = at.getParent()
+    ) {
+      if (nested.has(at)) {
+        return true;
+      }
+    }
+    return false;
+  };
+}
+
 /** A call or JSX reference a scan found, in the order the body writes them. */
 interface FoundCall {
   node: Node;
@@ -773,10 +811,12 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
   }> = [];
   const stops: UnfollowedCall[] = [];
   const placements = new TargetPlacements();
-  const parameterCalls: Array<{ callee: string; parameterIndex: number }> = [];
+  const parameterCalls = new Map<
+    string,
+    { parameterIndex: number; inNestedUnit: boolean }
+  >();
   const passedPositions = new Set<string>();
   const seen = new Set<string>();
-  const parameterCallsSeen = new Set<string>();
 
   const recordStop = (stop: UnfollowedCall): void => {
     const stopKey = `${stop.reason}:${stop.callee}`;
@@ -793,14 +833,16 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     seen.add(key);
     calls.push({ key, ...candidate });
   };
-  const record = (outcome: CallOutcome): void => {
+  const record = (outcome: CallOutcome, notesStop = true): void => {
     if (outcome.kind === "stopped") {
-      recordStop(outcome.stop);
+      if (notesStop) {
+        recordStop(outcome.stop);
+      }
       return;
     }
     if (outcome.kind === "possible") {
       outcome.candidates.forEach(recordFollowed);
-      if (outcome.stop !== undefined) {
+      if (notesStop && outcome.stop !== undefined) {
         recordStop(outcome.stop);
       }
       return;
@@ -882,30 +924,37 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     found.map((one) => ({ ...one, outcome: settle(one.outcome) })),
     inFunc,
   );
+  const inNestedUnit = nestedUnitTest(root, scan.units);
   for (const one of settled) {
     const outcome = one.outcome;
     const calleeText = one.calleeText;
+    // A unit written inside this body, such as a timer callback, notes
+    // what it could not follow on its own summary. What it calls is
+    // still reached from here.
+    const ownCall = !inNestedUnit(one.node);
     if (calleeText === undefined) {
-      record(outcome);
+      record(outcome, ownCall);
       continue;
     }
     // One record per callee, however many times the body calls it: a
     // loop calling the same unresolved method twenty times is one
     // thing a reader cannot see, not twenty.
-    record(outcome);
+    record(outcome, ownCall);
     placeCallee(placements, calleeText, one.node, outcome);
     recordPassedArgs(one.node, calleeText, outcome);
 
+    // A call through this function's own parameter is still marked on its
+    // effect when a nested unit makes it, so a caller passing a function
+    // joins to it. Only the note stays with the nested unit.
     if (
       outcome.kind === "stopped" &&
       outcome.stop.reason === "callerSupplied" &&
-      outcome.parameterIndex !== undefined &&
-      !parameterCallsSeen.has(calleeText)
+      outcome.parameterIndex !== undefined
     ) {
-      parameterCallsSeen.add(calleeText);
-      parameterCalls.push({
-        callee: calleeText,
-        parameterIndex: outcome.parameterIndex,
+      const earlier = parameterCalls.get(calleeText);
+      parameterCalls.set(calleeText, {
+        parameterIndex: earlier?.parameterIndex ?? outcome.parameterIndex,
+        inNestedUnit: (earlier?.inNestedUnit ?? true) && !ownCall,
       });
     }
   }
@@ -916,7 +965,13 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     targets: placements.targets,
     argTargets: placements.argTargets,
     possibleTargets: placements.possibleTargets,
-    parameterCalls,
+    parameterCalls: [...parameterCalls].map(
+      ([callee, { parameterIndex, inNestedUnit }]) => ({
+        callee,
+        parameterIndex,
+        ...(inNestedUnit ? { inNestedUnit: true as const } : {}),
+      }),
+    ),
     passedPositions,
   };
 }
@@ -1133,10 +1188,7 @@ export function expandReachableClosure(
     string,
     ReadonlyMap<string, readonly CallTarget[]>
   >();
-  const parameterCallsByKey = new Map<
-    string,
-    ReadonlyArray<{ callee: string; parameterIndex: number }>
-  >();
+  const parameterCallsByKey = new Map<string, ReadonlyArray<ParameterCall>>();
   // Every (callee function, position) some body passes a named project
   // function or a closure it writes into. A variable does not count, so a
   // parameter call missing here is a gap even when a caller supplies one.
@@ -1148,6 +1200,7 @@ export function expandReachableClosure(
   const reachedFrom = new Map<string, string>();
   const receiverByKey = new Map<string, TsSubclass>();
   const callsByKey = new Map<string, readonly string[]>();
+  const units = new Map<string, Node[]>();
   const finding: FindingContext = {
     project,
     lookup,
@@ -1158,11 +1211,14 @@ export function expandReachableClosure(
     moduleByKey,
     reachedFrom,
     receiverByKey,
+    units,
   };
 
   for (const seed of seeds) {
     const func = lookup.functionAt(seed.location);
     if (func !== null) {
+      const filePath = func.getSourceFile().getFilePath();
+      units.set(filePath, [...(units.get(filePath) ?? []), func]);
       const key = nodeKey(func);
       seedKeys.add(key);
       nameByKey.set(key, seed.identity.name);
@@ -1396,6 +1452,8 @@ interface FindingContext {
   reachedFrom: ReadonlyMap<string, string>;
   /** The subclass each variant's method runs on, by the variant's key. */
   receiverByKey: ReadonlyMap<string, TsSubclass>;
+  /** The functions discovered as units, by file path. */
+  units: ReadonlyMap<string, readonly Node[]>;
 }
 
 /**
@@ -1447,6 +1505,7 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
       : { sourceDeclarationsBehind }),
     ...(reachedFrom === undefined ? {} : { reachedFrom }),
     ...(receiverClass === undefined ? {} : { receiverClass }),
+    units: ctx.units,
   };
   const scanned = scanOrReport(key, ctx.facts, root, scan);
   if (scanned === null) {
@@ -1639,10 +1698,7 @@ function recordArgTargets(
  * that passes a function into that position joins to this call by it.
  */
 function recordCalleeParameters(
-  parameterCallsByKey: ReadonlyMap<
-    string,
-    ReadonlyArray<{ callee: string; parameterIndex: number }>
-  >,
+  parameterCallsByKey: ReadonlyMap<string, ReadonlyArray<ParameterCall>>,
   summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
 ): void {
   for (const [key, parameterCalls] of parameterCallsByKey) {
@@ -1677,10 +1733,7 @@ function recordCalleeParameters(
  * stop, which nothing records.
  */
 function recordParameterGaps(
-  parameterCallsByKey: ReadonlyMap<
-    string,
-    ReadonlyArray<{ callee: string; parameterIndex: number }>
-  >,
+  parameterCallsByKey: ReadonlyMap<string, ReadonlyArray<ParameterCall>>,
   summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
   passedPositions: ReadonlySet<string>,
   options: ExtractorOptions | undefined,
@@ -1690,7 +1743,8 @@ function recordParameterGaps(
   }
   for (const [key, parameterCalls] of parameterCallsByKey) {
     const unbound = parameterCalls.filter(
-      ({ parameterIndex }) =>
+      ({ parameterIndex, inNestedUnit }) =>
+        inNestedUnit !== true &&
         !passedPositions.has(`${plainKeyOf(key)}#${parameterIndex}`),
     );
     if (unbound.length === 0) {
