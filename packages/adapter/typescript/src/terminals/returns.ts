@@ -473,7 +473,9 @@ export function tryMatchReturnStatement(
     const shape = extractShape(body);
     const terminalBody: RawTerminal["body"] =
       shape !== null ? { typeText: null, shape } : null;
-    return buildReturnTerminal(body, pattern, terminalBody);
+    // On the arrow, as a return statement's terminal is on the statement,
+    // so a call the arrow returns is still an effect of its own.
+    return { ...buildReturnTerminal(body, pattern, terminalBody), node };
   }
 
   return null;
@@ -561,8 +563,7 @@ function buildReturnTerminal(
     },
   };
   // The caller passes either the return statement or the body of a
-  // concise arrow, so the node this terminal is on is also the return it
-  // came from.
+  // concise arrow, which is the return the terminal came from.
   return { node: locationNode, source: locationNode, terminal };
 }
 
