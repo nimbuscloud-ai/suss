@@ -11,6 +11,7 @@ import { profileEvaluation } from "@suss/datalog";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { createDependencySink, withDependencySink } from "../depTracking.js";
+import { nodeId } from "./extract.js";
 import { ResolutionStore } from "./store.js";
 
 function projectOf(files: Record<string, string>): Project {
@@ -3190,5 +3191,57 @@ describe("a JavaScript file in a project that does not allow JavaScript", () => 
     expect(() =>
       store.resolveCallable(exportValue(project, "/app.ts", "start")),
     ).not.toThrow();
+  });
+});
+
+describe("the facts the store states for a node asked about", () => {
+  const SOURCE = `
+    declare function track(name: string): void;
+
+    function Row({ id }: { id: string }) {
+      track(id);
+      return <li>{id}</li>;
+    }
+
+    class Panel {
+      open() {
+        track("open");
+      }
+    }
+
+    export function List({ ids }: { ids: string[] }) {
+      return <ul>{ids.map((id) => <Row id={id} />)}</ul>;
+    }
+  `;
+
+  /** The calls the facts say `node`'s own body makes, as source text. */
+  function callsStatedFor(node: Node): string[] {
+    const store = new ResolutionStore();
+    const access = store.factAccess();
+    access.state(node);
+    const key = nodeId(node);
+    expect(access.db.lookup("func", 0, key)).toHaveLength(1);
+    return access.db
+      .lookup("makesCall", 0, key)
+      .map((row) => access.nodeOf(String(row[1]))?.getText() ?? "");
+  }
+
+  it("states a function declaration that only a JSX tag refers to", () => {
+    const file = projectOf({ "/list.tsx": SOURCE }).getSourceFileOrThrow(
+      "/list.tsx",
+    );
+
+    expect(callsStatedFor(file.getFunctionOrThrow("Row"))).toEqual([
+      "track(id)",
+    ]);
+  });
+
+  it("states a method of a class nothing exports or refers to", () => {
+    const file = projectOf({ "/list.tsx": SOURCE }).getSourceFileOrThrow(
+      "/list.tsx",
+    );
+    const open = file.getClassOrThrow("Panel").getMethodOrThrow("open");
+
+    expect(callsStatedFor(open)).toEqual(['track("open")']);
   });
 });
