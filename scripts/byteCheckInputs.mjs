@@ -748,9 +748,27 @@ export const FIELD_INPUTS = [
 ];
 
 /**
+ * The story directories `suss init` lists in the apps that write
+ * Storybook stories. Extraction never runs the storybook reader, so a
+ * `contract` run over each is the only field input that reaches it.
+ */
+const STORY_DIRECTORIES = [
+  ["formbricks", "packages/survey-ui/src/components"],
+  ["ghost", "apps/shade/src"],
+  ["ghost", "apps/signup-form/src"],
+  ["n8n", "packages/frontend/@n8n/design-system/src"],
+  ["n8n", "packages/frontend/editor-ui/src/features/shared/toolsConnection"],
+  ["superset", "superset-frontend/src"],
+  ["twenty", "packages/twenty-front/src"],
+  ["twenty", "packages/twenty-front-component-renderer/src/__stories__"],
+  ["twenty", "packages/twenty-ui/src"],
+];
+
+/**
  * Apps that each exercise one library no standard input reaches in the
  * field, which --extra adds to a run. The packs are the ones `suss init`
- * suggests for each.
+ * suggests for each. `--extra all --only storybook` reads the stories
+ * alone.
  */
 export const EXTRA_INPUTS = [
   {
@@ -795,4 +813,11 @@ export const EXTRA_INPUTS = [
       ...packs("aws-dynamodb"),
     ],
   },
+  ...STORY_DIRECTORIES.map(([repo, directory]) => ({
+    name: `storybook ${repo} ${directory}`,
+    group: "extra",
+    repo,
+    command: "contract",
+    args: ["--from", "storybook", directory],
+  })),
 ];
