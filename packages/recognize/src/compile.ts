@@ -1082,8 +1082,8 @@ function sqlAccess(matched: Matched): Effect[] | null {
         class: "storage-access",
         kind: access.kind,
         fields: access.fields,
-        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
         operation: method,
+        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
       },
     };
     const slots = (access.placeholders ?? []).flatMap((one) => {
