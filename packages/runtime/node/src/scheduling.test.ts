@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createTsSubUnitContext } from "@suss/adapter-typescript";
+import {
+  createTsSubUnitContext,
+  createTypeScriptAdapter,
+} from "@suss/adapter-typescript";
 import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
@@ -10,8 +13,9 @@ import {
   schedulingRecognizer,
 } from "./index.js";
 
-import type { Effect } from "@suss/behavioral-ir";
-import type { SourceFile } from "ts-morph";
+import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { PatternPack } from "@suss/extractor";
+import type { Node, SourceFile } from "ts-morph";
 
 function makeFile(source: string): SourceFile {
   const project = createTestProject();
@@ -208,20 +212,80 @@ describe("scheduling subUnits", () => {
     expect(sub).toHaveLength(0);
   });
 
-  it("skips scheduling calls inside nested functions", () => {
+  it("leaves a timer inside a nested function declaration to that declaration", () => {
     const file = makeFile(`
       function parent() {
         setImmediate(() => {});
         function nested() {
-          setImmediate(() => {});  // belongs to nested, not parent
+          setImmediate(() => {});
         }
+        return () => {
+          function later() {
+            setImmediate(() => {});
+          }
+          return later;
+        };
       }
     `);
     const sub = nodeSchedulingSubUnits(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
       subUnitContext,
     );
-    expect(sub).toHaveLength(1);
+    expect(sub.map((s) => s.name)).toEqual(["parent.setImmediate#0"]);
+  });
+
+  it("claims a timer set inside a `.then` callback", () => {
+    const file = makeFile(`
+      declare function work(): void;
+      function parent(load: Promise<void>) {
+        return load.then(() => setTimeout(() => work(), 10));
+      }
+    `);
+    const sub = nodeSchedulingSubUnits(
+      { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
+      subUnitContext,
+    );
+    expect(sub.map((s) => [s.name, (s.func as Node).getText()])).toEqual([
+      ["parent.setTimeout#0", "() => work()"],
+    ]);
+  });
+
+  it("claims a timer set inside a function expression handed to a library", () => {
+    const file = makeFile(`
+      declare const emitter: { on(event: string, cb: () => void): void };
+      function parent() {
+        emitter.on("ready", function onReady() {
+          setImmediate(() => {});
+        });
+      }
+    `);
+    const sub = nodeSchedulingSubUnits(
+      { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
+      subUnitContext,
+    );
+    expect(sub.map((s) => s.name)).toEqual(["parent.setImmediate#0"]);
+  });
+
+  it("numbers timers by where they start, a timer set inside another included", () => {
+    const file = makeFile(`
+      function parent(load: Promise<void>) {
+        setTimeout(() => {
+          setTimeout(() => {}, 5);
+        }, 10);
+        load.then(() => setTimeout(function last() {}));
+      }
+    `);
+    const sub = nodeSchedulingSubUnits(
+      { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
+      subUnitContext,
+    );
+    expect(sub.map((s) => s.name)).toEqual([
+      "parent.setTimeout#0",
+      "parent.setTimeout#1",
+      "parent.setTimeout#2",
+    ]);
+    expect((sub[1]?.func as Node).getText()).toBe("() => {}");
+    expect((sub[2]?.func as Node).getText()).toBe("function last() {}");
   });
 
   it("recognizes process.nextTick literal callbacks", () => {
@@ -236,6 +300,63 @@ describe("scheduling subUnits", () => {
     );
     expect(sub).toHaveLength(1);
     expect(sub[0]?.name).toBe("parent.process.nextTick#0");
+  });
+});
+
+describe("scheduling sub-units in an extraction", () => {
+  const handlerPack: PatternPack = {
+    name: "handlers",
+    protocol: "in-process",
+    languages: ["typescript"],
+    discovery: [
+      { kind: "handler", match: { type: "namedExport", names: ["handle"] } },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+
+  function calleesOf(summary: BehavioralSummary | undefined): string[] {
+    return (summary?.transitions ?? []).flatMap((t) =>
+      t.effects.flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+    );
+  }
+
+  it("gives a timer set inside a `.then` callback its own unit, and the handler stops at it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/handler.ts",
+      `
+        declare function load(): Promise<void>;
+        declare function work(): void;
+        export function handle() {
+          return load().then(() => {
+            setTimeout(() => {
+              work();
+            }, 10);
+          });
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [handlerPack, nodeRuntimePack()],
+      includeReachable: false,
+    });
+    const summaries = await adapter.extractAll();
+
+    const handler = summaries.find((s) => s.identity.name === "handle");
+    const timer = summaries.find(
+      (s) => s.identity.name === "handle.setTimeout#0",
+    );
+    expect(timer?.kind).toBe("scheduled-callback");
+    const scheduled = (handler?.transitions ?? []).flatMap((t) =>
+      scheduleEffectsOf(t.effects),
+    );
+    expect(scheduled.map((e) => e.interaction.via)).toEqual(["setTimeout"]);
+    expect(calleesOf(handler)).not.toContain("work");
+    expect(calleesOf(timer)).toContain("work");
   });
 });
 

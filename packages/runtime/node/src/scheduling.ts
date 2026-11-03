@@ -15,6 +15,7 @@ import {
   type PropertyAccessExpression,
 } from "ts-morph";
 
+import { callsInUnitBody } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -166,41 +167,30 @@ const SCHEDULED_CALLBACK_INPUT: InputMappingPattern = {
  * the parent whose first argument is an inline function, the way the
  * React pack treats a `useEffect` body. A callback passed by name gets
  * no sub-unit, and the schedule effect records its name instead.
+ *
+ * The calls are the ones the recognizer sees, so a timer set inside a
+ * `.then` callback gets its sub-unit too. The walk also goes into each
+ * callback it claims, so a timer set inside another timer gets one, and
+ * the adapter stops the outer callback's summary at it.
  */
 export function nodeSchedulingSubUnits(
   parent: DiscoveredSubUnitParent,
   _ctx: unknown,
 ): DiscoveredSubUnit[] {
-  const parentFunc = parent.func as Node;
   const out: DiscoveredSubUnit[] = [];
   const counters = new Map<ScheduleVia, number>();
 
-  parentFunc.forEachDescendant((node, traversal) => {
-    // A scheduling call inside a nested function belongs to that
-    // function's own summary.
-    if (
-      node !== parentFunc &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
-      traversal.skip();
-      return;
-    }
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const primitive = recognizePrimitive(node);
+  for (const call of callsInUnitBody(parent.func as Node)) {
+    const primitive = recognizePrimitive(call);
     if (primitive === null) {
-      return;
+      continue;
     }
-    const arg = node.getArguments()[0];
+    const arg = call.getArguments()[0];
     if (
       arg === undefined ||
       !(Node.isArrowFunction(arg) || Node.isFunctionExpression(arg))
     ) {
-      return;
+      continue;
     }
 
     const idx = counters.get(primitive.via) ?? 0;
@@ -219,7 +209,7 @@ export function nodeSchedulingSubUnits(
         },
       },
     });
-  });
+  }
 
   return out;
 }

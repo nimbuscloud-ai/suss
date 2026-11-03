@@ -1,5 +1,6 @@
-// Work handed to the runtime to run later. A callback written in place
-// at the top of a function becomes a unit of its own.
+// Work handed to the runtime to run later, from functions no pack
+// discovers. Each one reads its callbacks as its own code, since only a
+// discovered unit, such as a handler in server.ts, splits them off.
 
 function flush(): void {
   console.log("flushed");
@@ -34,8 +35,7 @@ export function soon(): void {
   process.nextTick(flush);
 }
 
-// A timer inside an arrow: the parent gets the schedule effect and no
-// unit is made for the callback.
+// A timer set inside a `.then` callback.
 export function afterLoad(load: Promise<void>): Promise<void> {
   return load.then(() => {
     setTimeout(() => {
