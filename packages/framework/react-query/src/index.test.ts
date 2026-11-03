@@ -119,6 +119,34 @@ describe("the react-query pack", () => {
     });
   });
 
+  it("makes a queryFn written as a method a sub-unit too", async () => {
+    const summaries = await extract(
+      `
+      import { useQuery } from "@tanstack/react-query";
+
+      export function Totals() {
+        const q = useQuery({
+          queryKey: ["totals"],
+          queryFn() {
+            return fetch("/api/totals");
+          },
+        });
+        return <p>{String(q)}</p>;
+      }
+    `,
+      [reactFramework(), reactQueryFramework()],
+    );
+
+    expect(schedules(summaries)).toContainEqual({
+      unit: "Totals",
+      via: "useQuery",
+      callbackRef: { type: "literal" },
+    });
+    expect(
+      summaries.find((one) => one.identity.name === "Totals.useQuery#0")?.kind,
+    ).toBe("scheduled-callback");
+  });
+
   it("reads the v3 positional mutation function", async () => {
     const summaries = await extract(`
       import { useMutation } from "@tanstack/react-query";
