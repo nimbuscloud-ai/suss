@@ -247,8 +247,8 @@ function effectFor(match: RawSqlMatch, access: SqlAccess): Effect {
       class: "storage-access",
       kind: access.kind,
       fields: access.fields,
-      ...(access.selector.length > 0 ? { selector: access.selector } : {}),
       operation: calledName(match.call),
+      ...(access.selector.length > 0 ? { selector: access.selector } : {}),
     },
     location: rangeOf(match.call),
   };

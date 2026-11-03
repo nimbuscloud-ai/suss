@@ -1123,6 +1123,14 @@ const interpolating = (parts: string[], holes: (CallOps | null)[]) =>
   );
 
 describe("a chain over statements written as SQL", () => {
+  it("writes the operation before the selector, as every other storage access does", () => {
+    const [effect] = asking("SELECT id FROM users WHERE id = 1") ?? [];
+
+    expect(
+      effect?.type === "interaction" ? Object.keys(effect.interaction) : [],
+    ).toEqual(["class", "kind", "fields", "operation", "selector"]);
+  });
+
   it("emits one access per table the statement touches", () => {
     const effects = asking(
       "SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id = 1",
