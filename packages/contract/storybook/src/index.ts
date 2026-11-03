@@ -16,35 +16,24 @@ import {
   type Identifier,
   Node as N,
   type Node,
-  type ObjectLiteralExpression,
   type ParameterDeclaration,
   Project,
-  type SourceFile,
   SyntaxKind,
 } from "ts-morph";
 
 import {
   declarationsBehind,
-  exportedDeclarationsOf,
+  exportedValuesOf,
   findNearestTsconfig,
-  objectLiteralOf,
-  peelValue,
   projectPlaceOf,
-  propertiesOf,
-  propertyFunctionOf,
-  propertyNamed,
-  propertyNameOf,
-  propertyOf,
-  propertyValueOf,
   ResolutionStore,
-  readName,
-  specifierImportedAs,
-  stringValueOf,
   symbolBehind,
+  toFunctionRoot,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
 
+import type { ExportedValue } from "@suss/adapter-typescript";
 import type {
   BehavioralSummary,
   BoundaryBinding,
@@ -52,6 +41,8 @@ import type {
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
+import type { ValueOps } from "@suss/recognize";
+import type { AstCapableValueOps } from "@suss/recognize/ast";
 
 export interface StorybookStubOptions {
   /**
@@ -92,13 +83,14 @@ export function generateSummariesFromStories(
         storyFile,
         options.projectRoot ?? defaultProjectRoot(storyFile),
       );
-      const meta = extractMeta(sf, resolution, componentModules);
+      const exported = exportedValuesOf(sf, resolution);
+      const meta = extractMeta(exported, componentModules);
       if (meta === null) {
         continue;
       }
       byFile.set(
         sf.getFilePath(),
-        extractStories(sf, resolution, meta).map((story) =>
+        extractStories(exported, meta).map((story) =>
           buildSummary(story, meta, relPath),
         ),
       );
@@ -181,36 +173,11 @@ interface MetaInfo {
 const ARG_READERS = ["decorators", "render"] as const;
 type ArgReader = (typeof ARG_READERS)[number];
 
-function argReadersOf(
-  storyOrMeta: ObjectLiteralExpression,
-  resolution: ResolutionStore,
-): ArgReader[] {
-  // Read by name, since `render(args) { ... }` is a method with no value.
-  const names = new Set(
-    propertiesOf(storyOrMeta, resolution).map((property) =>
-      keyOf(property, resolution),
-    ),
+function argReadersOf(storyOrMeta: ValueOps): ArgReader[] {
+  const keys = new Set(
+    storyOrMeta.entries("nothing").map((entry) => entry.key),
   );
-  return ARG_READERS.filter((name) => names.has(name));
-}
-
-/**
- * The key an entry of a story's object is under: the name it is written
- * with, or what a computed key comes to when the file settles it, as
- * `[key]` does with `const key = "label"`.
- */
-function keyOf(property: Node, resolution: ResolutionStore): string | null {
-  const name = propertyNameOf(property);
-  if (name !== null || !N.isPropertyAssignment(property)) {
-    return name;
-  }
-  const key = property.getNameNode();
-  return N.isComputedPropertyName(key)
-    ? readName(key.getExpression(), {
-        resolve: (value) => resolution.resolveWrittenValue(value),
-        unsettled: "nothing",
-      })
-    : null;
+  return ARG_READERS.filter((name) => keys.has(name));
 }
 
 /**
@@ -221,13 +188,11 @@ function keyOf(property: Node, resolution: ResolutionStore): string | null {
  * args into it.
  */
 function renderPropsOf(
-  storyOrMeta: ObjectLiteralExpression,
+  storyOrMeta: ValueOps,
   componentName: string,
-  resolution: ResolutionStore,
 ): string[] | null {
-  const property = propertyNamed(storyOrMeta, "render", resolution);
-  const render =
-    property === null ? null : propertyFunctionOf(property, resolution);
+  const found = storyOrMeta.property("render")?.function?.() ?? null;
+  const render = found === null ? null : toFunctionRoot(nodeBehind(found));
   if (render === null) {
     return null;
   }
@@ -303,28 +268,26 @@ interface ComponentModule {
 }
 
 function extractMeta(
-  sf: SourceFile,
-  resolution: ResolutionStore,
+  exported: Map<string, ExportedValue[]>,
   componentModules: boolean,
 ): MetaInfo | null {
-  for (const exported of resolution.exportsOf(sf).get("default") ?? []) {
-    const meta = objectBehind(exported, resolution);
-    if (meta === null) {
+  for (const { value } of exported.get("default") ?? []) {
+    const meta = value.object?.() ?? null;
+    const component = meta?.property("component") ?? null;
+    if (meta === null || component === null) {
       continue;
     }
-    const component = unwrapped(propertyOf(meta, "component", resolution));
-    if (component !== null) {
-      return {
-        componentName: component.getText(),
-        componentModule: componentModules
-          ? declaredModuleOf(component)
-          : undefined,
-        componentImport: importSpecifierOf(component),
-        args: argsOf(meta, resolution),
-        argReaders: argReadersOf(meta, resolution),
-        renderProps: renderPropsOf(meta, component.getText(), resolution),
-      };
-    }
+    const componentName = textOf(component);
+    return {
+      componentName,
+      componentModule: componentModules
+        ? declaredModuleOf(nodeBehind(component))
+        : undefined,
+      componentImport: component.importedFrom?.() ?? undefined,
+      args: argsOf(meta),
+      argReaders: argReadersOf(meta),
+      renderProps: renderPropsOf(meta, componentName),
+    };
   }
 
   return null;
@@ -378,26 +341,18 @@ function declaredNameOf(declaration: Node): string | undefined {
   return undefined;
 }
 
-/** The module the story file imports the component from, as written. */
-function importSpecifierOf(component: Node): string | undefined {
-  if (!N.isIdentifier(component)) {
-    return undefined;
-  }
-  return (
-    specifierImportedAs(component.getSourceFile(), component.getText()) ??
-    undefined
-  );
+/**
+ * The node a value was read at, for the two reads the value ops cannot
+ * make yet: the component's declaration, which takes the type checker,
+ * and the JSX a render function returns, which the facts do not state.
+ */
+function nodeBehind(value: ValueOps): Node {
+  return (value as AstCapableValueOps).ast() as Node;
 }
 
-/** The object literal a declaration or expression resolves to, or null. */
-function objectBehind(
-  value: Node,
-  resolution: ResolutionStore,
-): ObjectLiteralExpression | null {
-  const resolved = resolution.resolveObject(value);
-  return resolved !== null && N.isObjectLiteralExpression(resolved)
-    ? resolved
-    : null;
+/** The value as the story file writes it. */
+function textOf(value: ValueOps): string {
+  return value.source?.() ?? nodeBehind(value).getText();
 }
 
 // ---------------------------------------------------------------------------
@@ -413,37 +368,36 @@ interface StoryInfo {
 }
 
 function extractStories(
-  sf: SourceFile,
-  resolution: ResolutionStore,
+  exported: Map<string, ExportedValue[]>,
   meta: MetaInfo,
 ): StoryInfo[] {
   const results: StoryInfo[] = [];
 
   // Any named export that resolves to an object literal counts as a story.
   // The `Story` type annotation is never checked.
-  for (const [name, decls] of exportedDeclarationsOf(sf, resolution)) {
+  for (const [name, values] of exported) {
     if (name === "default") {
       continue;
     }
-    for (const decl of decls) {
-      const story = objectBehind(decl, resolution);
+    for (const { value, line } of values) {
+      const story = value.object?.() ?? null;
       if (story === null) {
         continue;
       }
 
       // A story's own arg, or its own render function, replaces the meta's.
-      const ownReaders = argReadersOf(story, resolution);
+      const ownReaders = argReadersOf(story);
       results.push({
         name,
-        args: { ...meta.args, ...argsOf(story, resolution) },
+        args: { ...meta.args, ...argsOf(story) },
         argReaders: ARG_READERS.filter(
           (reader) =>
             meta.argReaders.includes(reader) || ownReaders.includes(reader),
         ),
         renderProps: ownReaders.includes("render")
-          ? renderPropsOf(story, meta.componentName, resolution)
+          ? renderPropsOf(story, meta.componentName)
           : meta.renderProps,
-        line: decl.getStartLineNumber(),
+        line,
       });
     }
   }
@@ -457,41 +411,17 @@ function extractStories(
  * a quoted literal. Anything else, such as a number, JSX or a method,
  * keeps its source text.
  */
-function argsOf(
-  storyOrMeta: ObjectLiteralExpression,
-  resolution: ResolutionStore,
-): Record<string, string> {
+function argsOf(storyOrMeta: ValueOps): Record<string, string> {
   const args: Record<string, string> = {};
-  const written = propertyOf(storyOrMeta, "args", resolution);
-  const object = written === null ? null : objectLiteralOf(written, resolution);
-  if (object === null) {
-    return args;
-  }
-  for (const property of propertiesOf(object, resolution)) {
-    const name = keyOf(property, resolution);
-    const value = argValueOf(property);
-    if (name === null || value === null) {
+  const object = storyOrMeta.property("args")?.object?.() ?? null;
+  for (const { key, value } of object?.entries("nothing") ?? []) {
+    if (key === null) {
       continue;
     }
-    args[name] = stringValueOf(value, resolution) ?? value.getText();
+    const settled = value.evaluated?.() ?? null;
+    args[key] = typeof settled === "string" ? settled : textOf(value);
   }
   return args;
-}
-
-/** What an arg is set to. A method, `onPick() {}`, is its own value. */
-function argValueOf(property: Node): Node | null {
-  return N.isMethodDeclaration(property)
-    ? property
-    : unwrapped(propertyValueOf(property));
-}
-
-/**
- * A value with the wrappers taken off that say something about its type
- * and nothing about the value, such as `as`, `satisfies` and parentheses.
- * `Thing as never` is the component `Thing`.
- */
-function unwrapped(value: Node | null): Node | null {
-  return value === null ? null : peelValue(value);
 }
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ export {
   discoverUnits,
   type FileCache,
 } from "./discovery.js";
+export { rubyFactSource } from "./factSource.js";
 export {
   collectFileConstants,
   emitConstantBindings,

@@ -13,6 +13,9 @@
     },
     {
       "path": "../../behavioral-ir/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../recognize/tsconfig.typecheck.json"
     }
   ]
 }

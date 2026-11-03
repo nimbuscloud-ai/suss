@@ -116,6 +116,7 @@ export {
 export { explainResolvedKey, proofRules } from "./session.js";
 export {
   answersFor,
+  givenBackFunction,
   resolvedFunctions,
   settledFunction,
   writtenAnswersFor,

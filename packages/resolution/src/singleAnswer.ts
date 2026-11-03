@@ -99,6 +99,24 @@ export function settledFunction(db: Database, key: string): string | null {
   return functions.length === 1 ? (functions[0] as string) : null;
 }
 
+/**
+ * The one function a value gives back when it is a call into a factory,
+ * or a name written as one. A factory that returns a wrapper's call gives
+ * back the wrapper's own closure and the function it unwraps, and the
+ * one it unwraps is the answer.
+ */
+export function givenBackFunction(db: Database, key: string): string | null {
+  return (
+    onlyFunction(db, answersFor(db, "wantedGivesBackUnwrapped", key)) ??
+    onlyFunction(db, answersFor(db, "wantedGivesBack", key))
+  );
+}
+
+function onlyFunction(db: Database, answers: readonly string[]): string | null {
+  const functions = answers.filter((answer) => db.has("func", [answer]));
+  return functions.length === 1 ? (functions[0] as string) : null;
+}
+
 function answerColumn(db: Database, relation: string, key: string): string[] {
   return db.lookup(relation, 0, key).map((row) => String(row[1]));
 }

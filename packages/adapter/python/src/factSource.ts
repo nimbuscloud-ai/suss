@@ -7,13 +7,23 @@
  */
 
 import { referenceName } from "@suss/behavioral-ir";
-import { fileOfKey } from "@suss/resolution";
+import { answersFor, fileOfKey, givenBackFunction } from "@suss/resolution";
+import { scalarOf } from "@suss/values";
 
 import { field, numberLiteralValue, stringLiteralValue } from "./ast.js";
-import { anchorCallsOf, originsOf, writtenValueOf } from "./facts/resolve.js";
+import {
+  anchorCallsOf,
+  originsOf,
+  resolveCalls,
+  writtenValueOf,
+} from "./facts/resolve.js";
 import { argOf } from "./paths/effects.js";
 import { receiverTypeOrigins } from "./receiverTypes.js";
-import { nodeOfResolutionKey, stringValueOf } from "./values/evaluator.js";
+import {
+  evaluatedValue,
+  nodeOfResolutionKey,
+  stringValueOf,
+} from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
 import type { EffectArg, FactSource } from "@suss/extractor";
@@ -58,6 +68,19 @@ export function pythonFactSource(db: Database): FactSource {
         ? { kind: "identifier", name: nameIn(key) }
         : argOf(node, db);
     },
+    evaluatedOf: (key) => {
+      const node = valueNode(key);
+      return node === null ? null : scalarOf(evaluatedValue(node, db));
+    },
+    comesTo: (key) => {
+      resolveCalls(db, [key]);
+      return answersFor(db, "wantedComesTo", key);
+    },
+    givesBack: (key) => {
+      resolveCalls(db, [key]);
+      return givenBackFunction(db, key);
+    },
+    importSpecifierOf: (key) => moduleImportedAs(db, key),
     declares: (call, module) =>
       receiverClassesOf(call, db).some((origin) => origin.module === module),
     typedAs: (call, origin) =>
@@ -102,6 +125,24 @@ function importedNameIn(origin: SubjectOrigin, module: string): string[] {
     return ["*"];
   }
   return inModule(origin.module, module) ? [origin.name] : [];
+}
+
+/**
+ * The module a name was imported from, as the import statement spells
+ * it, `.things` for `from .things import Thing`. A resolved import has a
+ * second `imports` row under the file it resolved to, and no file imports
+ * a module spelled as a path, so the row kept is the one whose module a
+ * file states it imports.
+ */
+function moduleImportedAs(db: Database, key: string): string | null {
+  const modules = new Set(
+    db
+      .lookup("imports", 0, key)
+      .map((row) => String(row[1]))
+      .filter((module) => db.lookup("importsModule", 1, module).length > 0),
+  );
+  const [one] = modules;
+  return modules.size === 1 && one !== undefined ? one : null;
 }
 
 /** Whether a module is the one asked for or one inside it. */
