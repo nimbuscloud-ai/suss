@@ -13,13 +13,27 @@
  */
 
 import { referenceName } from "@suss/behavioral-ir";
-import { classMemberOf, GLOBAL_MODULE } from "@suss/resolution";
+import {
+  answersFor,
+  classMemberOf,
+  GLOBAL_MODULE,
+  givenBackFunction,
+} from "@suss/resolution";
+import { scalarOf } from "@suss/values";
 
 import { numberLiteralValue, stringLiteralValue } from "./ast.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
-import { anchorCallsOf, writtenValueOf } from "./facts/resolve.js";
+import {
+  anchorCallsOf,
+  resolveValues,
+  writtenValueOf,
+} from "./facts/resolve.js";
 import { argOf } from "./paths/effects.js";
-import { nodeOfResolutionKey, stringValueOf } from "./values/evaluator.js";
+import {
+  evaluatedValue,
+  nodeOfResolutionKey,
+  stringValueOf,
+} from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
 import type { EffectArg, FactSource } from "@suss/extractor";
@@ -72,6 +86,21 @@ export function rubyFactSource(db: Database): FactSource {
         ? { kind: "identifier", name: nameIn(key) }
         : argOf(node, db);
     },
+    evaluatedOf: (key) => {
+      const node = valueNode(key);
+      return node === null ? null : scalarOf(evaluatedValue(node, db));
+    },
+    comesTo: (key) => {
+      resolveValues(db, [key]);
+      return answersFor(db, "wantedComesTo", key);
+    },
+    givesBack: (key) => {
+      resolveValues(db, [key]);
+      return givenBackFunction(db, key);
+    },
+    // A Ruby file requires another file and imports no names, so no
+    // value has a specifier.
+    importSpecifierOf: () => null,
   };
 }
 

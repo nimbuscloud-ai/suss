@@ -4,6 +4,7 @@ import { Database } from "@suss/datalog";
 
 import {
   answersFor,
+  givenBackFunction,
   resolvedFunctions,
   settledFunction,
   withoutOverridden,
@@ -160,5 +161,35 @@ describe("the functions calling a value runs", () => {
     db.add("wantedReadsOverridden", ["x", "Sub", "baseSave"]);
     db.add("wantedReadsMemberOn", ["x", "Sub", "baseSave"]);
     expect(resolvedFunctions(db, "x")).toEqual(["subSave"]);
+  });
+});
+
+describe("the function a factory gives back", () => {
+  it("is the one the wrapper it returns unwraps, before the wrapper's own closure", () => {
+    const db = new Database();
+    db.add("func", ["closure"]);
+    db.add("func", ["handler"]);
+    db.add("wantedGivesBack", ["make()", "closure"]);
+    db.add("wantedGivesBack", ["make()", "handler"]);
+    db.add("wantedGivesBackUnwrapped", ["make()", "handler"]);
+    expect(givenBackFunction(db, "make()")).toBe("handler");
+  });
+
+  it("is the one function given back, an object given back beside it set aside", () => {
+    const db = new Database();
+    db.add("func", ["handler"]);
+    db.add("wantedGivesBack", ["make()", "handler"]);
+    db.add("wantedGivesBack", ["make()", "options"]);
+    expect(givenBackFunction(db, "make()")).toBe("handler");
+  });
+
+  it("is nothing for two functions or none", () => {
+    const db = new Database();
+    db.add("func", ["a"]);
+    db.add("func", ["b"]);
+    db.add("wantedGivesBack", ["either()", "a"]);
+    db.add("wantedGivesBack", ["either()", "b"]);
+    expect(givenBackFunction(db, "either()")).toBeNull();
+    expect(givenBackFunction(db, "nothing()")).toBeNull();
   });
 });

@@ -8,19 +8,50 @@
 
 import { Node } from "ts-morph";
 
-import { factCallOps } from "@suss/recognize/ops";
+import { factCallOps, factValueOps } from "@suss/recognize/ops";
 
 import { type CallReading, callOpsFor } from "./callOps.js";
 import { factSourceFor, statedFactKey } from "./factSource.js";
 
-import type { AstCapableOps, CallOps } from "@suss/extractor";
+import type { AstCapableOps, CallOps, ValueOps } from "@suss/extractor";
 import type {
   CallExpression,
   NewExpression,
+  SourceFile,
   TaggedTemplateExpression,
 } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 
 type Called = CallExpression | NewExpression | TaggedTemplateExpression;
+
+/** One value a file exports, and the line its declaration starts on. */
+export interface ExportedValue {
+  readonly value: ValueOps;
+  readonly line: number;
+}
+
+/**
+ * The values a file exports, by the name each is exported under, as the
+ * ops over the facts read them. A reader of a module's exports asks them
+ * the questions a pack asks of a value a call states.
+ */
+export function exportedValuesOf(
+  sourceFile: SourceFile,
+  store: ResolutionStore,
+): Map<string, ExportedValue[]> {
+  const source = factSourceFor(store);
+  const exported = new Map<string, ExportedValue[]>();
+  for (const [name, nodes] of store.exportsOf(sourceFile)) {
+    exported.set(
+      name,
+      nodes.map((node) => ({
+        value: factValueOps(statedFactKey(node, store), source),
+        line: node.getStartLineNumber(),
+      })),
+    );
+  }
+  return exported;
+}
 
 /** The ops for one call, as a context hands them to a pack. */
 export function opsOverFacts(call: Called, reading: CallReading): CallOps {

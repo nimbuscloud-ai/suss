@@ -1345,6 +1345,7 @@ export type {
 export type {
   AnyOf,
   AstCapableOps,
+  AstCapableValueOps,
   ByOrigin,
   CallOps,
   ClassOps,
