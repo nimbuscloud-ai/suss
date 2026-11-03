@@ -171,6 +171,15 @@ describe("a call that takes a statement", () => {
     });
   });
 
+  it("spells the call the way the other languages do, without the statement it was given", async () => {
+    const [effect] = await effectsFor(
+      connected('conn.run("SELECT id FROM accounts")'),
+    );
+
+    expect(effect?.type === "interaction" && effect.callee).toBe("conn.run");
+    expect(storageIn(effect).interaction.operation).toBe("run");
+  });
+
   it("reads a write as a write, with the columns it sets", async () => {
     const effects = await effectsFor(
       connected('conn.run("UPDATE accounts SET tier = $2 WHERE id = $1")'),

@@ -1,0 +1,4 @@
+# A nightly job that talks to BigQuery through the client library and
+# through the Airflow provider's hook.
+google-cloud-bigquery>=3.0
+apache-airflow-providers-google>=10.0

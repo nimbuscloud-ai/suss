@@ -16,7 +16,14 @@ import { storageBinding } from "@suss/ir-core";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { force } from "@suss/values";
 
-import { children, field, rangeOf, stringLiteralValue } from "./ast.js";
+import {
+  calledName,
+  children,
+  field,
+  rangeOf,
+  stringLiteralValue,
+} from "./ast.js";
+import { calleeText } from "./paths/effects.js";
 import { receiverTypeOrigins } from "./receiverTypes.js";
 import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
@@ -227,7 +234,6 @@ function matchesIn(
 
 /** One effect for a table the reader settled. */
 function effectFor(match: RawSqlMatch, access: SqlAccess): Effect {
-  const operation = field(match.call, "function")?.text ?? "";
   return {
     type: "interaction",
     binding: storageBinding({
@@ -236,13 +242,13 @@ function effectFor(match: RawSqlMatch, access: SqlAccess): Effect {
       scope: access.qualifier[access.qualifier.length - 1] ?? NO_GROUP,
       container: access.table,
     }),
-    callee: operation,
+    callee: calleeText(match.call),
     interaction: {
       class: "storage-access",
       kind: access.kind,
       fields: access.fields,
       ...(access.selector.length > 0 ? { selector: access.selector } : {}),
-      operation,
+      operation: calledName(match.call),
     },
     location: rangeOf(match.call),
   };
