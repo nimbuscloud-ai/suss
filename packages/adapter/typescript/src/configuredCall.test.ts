@@ -186,6 +186,19 @@ describe("readConfiguredCall", () => {
     ).toEqual([["order.cancelled", "order.shipped"]]);
   });
 
+  it("reads a body sent as JSON.stringify as the object that went in", () => {
+    const sf = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      export async function send(dispatcher: CommandDispatcher) {
+        await dispatcher.dispatch("order.serialized", JSON.stringify({ id: "1" }), {});
+      }
+    `);
+
+    expect(readAll(sf).map((one) => one.body)).toEqual([
+      { kind: "object", fields: { id: { kind: "string", value: "1" } } },
+    ]);
+  });
+
   it("carries no body when the spec names no body argument", () => {
     const sf = makeProject(`
       import { CommandDispatcher } from "@acme/async";

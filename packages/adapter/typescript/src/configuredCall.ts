@@ -15,6 +15,8 @@
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
+import { unwrapJsonStringify } from "@suss/extractor";
+
 import { matchingImportDeclarations } from "./discovery/importScan.js";
 import { attributedCall } from "./discovery/packageImport.js";
 import { ResolutionStore } from "./facts/store.js";
@@ -84,10 +86,12 @@ export function readConfiguredCall(
     return null;
   }
 
+  // A consumer reads the fields back after `JSON.parse`, so a body sent
+  // as `JSON.stringify({...})` is compared as the object that went in.
   const body =
     positions.body === undefined
       ? null
-      : (ctx.ops.valueAt(positions.body)?.asArg() ?? null);
+      : unwrapJsonStringify(ctx.ops.valueAt(positions.body)?.asArg() ?? null);
 
   return {
     subjects: subjectsOf(ctx.ops.valueAt(positions.subject)),
