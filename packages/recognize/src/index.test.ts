@@ -368,6 +368,30 @@ describe("an argument passed under a keyword, or inside an object", () => {
     ]);
   });
 
+  it("tries a keyword argument's properties in order", () => {
+    const spec = store().container({
+      at: 0,
+      keyword: "spec",
+      property: ["table", "view"],
+    });
+    const containerUnder = (stated: unknown) =>
+      containerOf(
+        run(
+          spec,
+          callOps({
+            method: "get",
+            from: ["tapedeck"],
+            keywords: { spec: stated },
+          }),
+        )?.[0],
+      );
+
+    expect([
+      containerUnder({ view: "reels" }),
+      containerUnder({ other: "reels" }),
+    ]).toEqual(["reels", null]);
+  });
+
   it("reads down the path of keys a pick gives", () => {
     const nested = store().container({ at: 0, path: ["job", "table"] });
     const found = run(

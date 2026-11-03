@@ -443,6 +443,11 @@ describe("the ops over a keyword, a client a method returned and a class made by
       ),
     ).toBe(true);
     expect(query.receiverIsFrom(anyOf(constructedFrom("other")))).toBe(false);
+    expect(
+      opsAt("gc", clients()).isFrom(
+        anyOf(constructedFrom("other"), returnedBy("get_client", hook)),
+      ),
+    ).toBe(true);
   });
 
   it("names a construction written through the class's constructor method after the class", () => {
