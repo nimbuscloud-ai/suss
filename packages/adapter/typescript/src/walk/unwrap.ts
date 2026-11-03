@@ -12,10 +12,12 @@
 // resolved type there and peeling would hand back `Promise<T>` instead
 // of `T`. A pass asking "what value flows here" wants to see through it.
 
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 
 import type {
   AsExpression,
+  AwaitExpression,
+  Expression,
   NonNullExpression,
   ParenthesizedExpression,
   SatisfiesExpression,
@@ -38,14 +40,25 @@ type TypeLevelWrapper =
   | SatisfiesExpression
   | TypeAssertion;
 
+const TYPE_LEVEL_WRAPPER_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.AsExpression,
+  SyntaxKind.TypeAssertionExpression,
+  SyntaxKind.ParenthesizedExpression,
+  SyntaxKind.NonNullExpression,
+  SyntaxKind.SatisfiesExpression,
+]);
+
+/**
+ * The kinds of every wrapper `peelValue` sees through, for a walk that
+ * picks the nodes it visits by kind.
+ */
+export const VALUE_WRAPPER_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  ...TYPE_LEVEL_WRAPPER_KINDS,
+  SyntaxKind.AwaitExpression,
+]);
+
 function isTypeLevelWrapper(node: Node): node is TypeLevelWrapper {
-  return (
-    Node.isAsExpression(node) ||
-    Node.isTypeAssertion(node) ||
-    Node.isParenthesizedExpression(node) ||
-    Node.isNonNullExpression(node) ||
-    Node.isSatisfiesExpression(node)
-  );
+  return TYPE_LEVEL_WRAPPER_KINDS.has(node.getKind());
 }
 
 /**
@@ -104,8 +117,11 @@ export function peelParens(node: Node): Node {
  * The expression inside every value-preserving wrapper, `await`
  * included, for a pass asking "what value flows here". A pass reading
  * types off the checker wants `peelSyntax` instead, so the await stays
- * where TypeScript reports the resolved type.
+ * where TypeScript reports the resolved type. Every wrapper wraps an
+ * expression, so peeling an expression gives one back.
  */
+export function peelValue(node: Expression): Expression;
+export function peelValue(node: Node): Node;
 export function peelValue(node: Node): Node {
   let current = node;
   for (let i = 0; i < MAX_LAYERS; i++) {
@@ -123,10 +139,39 @@ export function peelValue(node: Node): Node {
 }
 
 /**
+ * The outermost node wrapping this one through the wrappers `peelValue`
+ * sees through, `await` included, or the node itself when nothing wraps
+ * it. It is to `peelValue` what `climbSyntax` is to `peelSyntax`.
+ */
+export function climbValue(node: Expression): Expression;
+export function climbValue(node: Node): Node;
+export function climbValue(node: Node): Node {
+  let current = node;
+  for (let i = 0; i < MAX_LAYERS; i++) {
+    const parent = current.getParent();
+    if (
+      parent === undefined ||
+      !isValueWrapper(parent) ||
+      parent.getExpression() !== current
+    ) {
+      break;
+    }
+    current = parent;
+  }
+  return current;
+}
+
+function isValueWrapper(
+  node: Node,
+): node is TypeLevelWrapper | AwaitExpression {
+  return VALUE_WRAPPER_KINDS.has(node.getKind());
+}
+
+/**
  * Whether this node passes its inner value through unchanged: the
  * wrapper kinds the peelers see through, for a walk that climbs
  * parents instead of peeling down.
  */
 export function passesValueThrough(node: Node): boolean {
-  return isTypeLevelWrapper(node) || Node.isAwaitExpression(node);
+  return isValueWrapper(node);
 }

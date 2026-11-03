@@ -806,6 +806,26 @@ describe("a query rooted at a wrapped value", () => {
     ).toContain("cast handler");
   });
 
+  it("resolves a handler argument written with a non-null or angle-bracket assertion", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        type H = () => Promise<string>;
+        const local: H | undefined = async () => "asserted handler";
+        const other = async () => "bracketed handler";
+        app.get("/x", local!);
+        app.post("/y", <H>other);
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, argumentOf(project, "/mod.ts", "app.get", 1)),
+    ).toContain("asserted handler");
+    expect(
+      resolvedBody(store, argumentOf(project, "/mod.ts", "app.post", 1)),
+    ).toContain("bracketed handler");
+  });
+
   it("resolves a route object argument written with `as const`", () => {
     const project = projectOf({
       "/contract.ts": `export const route = { method: "get", path: "/x" };`,

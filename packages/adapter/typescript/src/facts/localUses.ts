@@ -14,6 +14,7 @@ import { Node, SyntaxKind } from "ts-morph";
 import { UNPLACED_STORE_NAME } from "@suss/resolution";
 
 import { isFunctionRoot } from "../discovery/shared.js";
+import { climbValue } from "../walk/unwrap.js";
 import { isWrittenAgain } from "./assignments.js";
 import { emitValue, factKeyOf, nodeId, referencedSymbol } from "./extract.js";
 
@@ -94,32 +95,10 @@ export function emitLocalUses(
       node.getText() === declaration.getName() &&
       referencedSymbol(node) === symbol
     ) {
-      keys.push(emitUse(db, table, operandOf(node)));
+      keys.push(emitUse(db, table, climbValue(node)));
     }
   });
   return keys;
-}
-
-/** The outermost expression with the same value, through parentheses, `await`, `as`, `satisfies` and `!`. */
-function operandOf(node: Node): Expression {
-  let current = node as Expression;
-  for (;;) {
-    const parent = current.getParent();
-    if (
-      parent !== undefined &&
-      (Node.isParenthesizedExpression(parent) ||
-        Node.isAwaitExpression(parent) ||
-        Node.isAsExpression(parent) ||
-        Node.isSatisfiesExpression(parent) ||
-        Node.isNonNullExpression(parent) ||
-        Node.isTypeAssertion(parent)) &&
-      parent.getExpression() === current
-    ) {
-      current = parent;
-      continue;
-    }
-    return current;
-  }
 }
 
 /** The facts about one read, and the key they are stated under. */
@@ -258,14 +237,14 @@ function emitPartRead(
     emitValue(db, table, parent);
     return;
   }
-  const part = operandOf(parent);
+  const part = climbValue(parent);
   const around = part.getParent();
   if (
     around !== undefined &&
     (Node.isCallExpression(around) || Node.isNewExpression(around)) &&
     around.getExpression() === part
   ) {
-    emitUse(db, table, operandOf(around));
+    emitUse(db, table, climbValue(around));
     return;
   }
   emitUse(db, table, part);
