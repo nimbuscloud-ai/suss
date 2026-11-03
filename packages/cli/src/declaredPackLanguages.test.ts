@@ -115,8 +115,29 @@ const BARE_PUBLISHES = messageSends({
   .calls({})
   .example('publish("ledger", { id: 3 })');
 
+// A client and a function imported under another name. `named` is read
+// against the export, and the bare call's operation is the export it
+// calls. Ruby imports nothing, so it writes the class by its own name.
+const PEEKS = storageCalls({
+  system: "redis",
+  client: constructedFrom({ from: ["kvcache", "Kvcache"], named: ["Cache"] }),
+})
+  .methods({ peek: { kind: "read", selector: { at: 0 } } })
+  .example('store.peek("user_online:42")');
+
+const LOOKUPS = storageCalls({
+  system: "redis",
+  client: imported({ from: ["kvcache"], named: ["lookup"] }),
+})
+  .calls({ kind: "read", selector: { at: 0 } })
+  .example('lookup("user_online:42")');
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-aliases", [PEEKS, LOOKUPS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-records", [RECORD_PUTS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -142,7 +163,7 @@ const INVOCATION = PACKS.flatMap((one) => one.invocationRecognizers ?? []);
 const ACCESS = PACKS.flatMap((one) => one.accessRecognizers ?? []);
 
 const TYPESCRIPT = `
-  import { Admin, Cache, Records } from "kvcache";
+  import { Admin, Cache, Cache as Store, lookup as find, Records } from "kvcache";
   import * as Ledger from "ledger";
   import { publish } from "ledger";
   import { Dispatcher } from "relay";
@@ -169,9 +190,19 @@ const TYPESCRIPT = `
   export function record() {
     publish("ledger", "recorded");
   }
+
+  export function remember() {
+    const store = new Store();
+    store.peek("user_online:42");
+  }
+
+  export function recall() {
+    find("user_online:42");
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
+from kvcache import Cache as Store, lookup as find
 import ledger as Ledger
 from ledger import publish
 from relay import Dispatcher
@@ -198,6 +229,15 @@ def deliver(to: Dispatcher):
 
 def record():
     publish("ledger", "recorded")
+
+
+def remember():
+    store = Store()
+    store.peek("user_online:42")
+
+
+def recall():
+    find("user_online:42")
 `;
 
 const RUBY = `module Store
@@ -218,12 +258,18 @@ const RUBY = `module Store
     to.dispatch("orders", "placed")
     Ledger.publish("ledger", "entered")
   end
+
+  def self.remember
+    store = Kvcache::Cache.new
+    store.peek("user_online:42")
+  end
 end
 `;
 
 const LIBRARIES: Record<string, string> = {
   kvcache: `
-    export declare class Cache { get(key: string): unknown; }
+    export declare class Cache { get(key: string): unknown; peek(key: string): unknown; }
+    export declare function lookup(key: string): unknown;
     export declare class Tables { drop(spec: unknown): unknown; }
     export declare class Admin { tables(): Tables; }
     export declare class Records { put(record: unknown): unknown; }
@@ -405,6 +451,37 @@ describe("a pack declared once", () => {
 
     expect(fromTypeScript).toEqual([sendOf("ledger", "publish", "recorded")]);
     expect((await pythonEffects("record")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+  });
+
+  it("reads a client made from an alias of the export the origin names, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("remember").map(placeless);
+
+    expect(fromTypeScript).toEqual([
+      expect.objectContaining({
+        callee: "store.peek",
+        interaction: expect.objectContaining({ operation: "peek" }),
+      }),
+    ]);
+    expect((await pythonEffects("remember")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("remember")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+  });
+
+  it("names a bare call of an aliased import after the export it calls, in TypeScript and Python", async () => {
+    const fromTypeScript = typescriptEffects("recall").map(placeless);
+
+    expect(fromTypeScript).toEqual([
+      expect.objectContaining({
+        callee: "find",
+        interaction: expect.objectContaining({ operation: "lookup" }),
+      }),
+    ]);
+    expect((await pythonEffects("recall")).map(placeless)).toEqual(
       fromTypeScript,
     );
   });

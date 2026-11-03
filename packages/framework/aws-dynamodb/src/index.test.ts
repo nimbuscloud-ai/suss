@@ -16,6 +16,26 @@ const effectsIn = (source: string, options: DynamoPackOptions = {}): Effect[] =>
 const IMPORTS = `import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";`;
 
 describe("a DynamoDB command", () => {
+  it("reads a command imported under another name as the command it is", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, GetCommand as Get } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function getOrder(id: string) {
+        return client.send(new Get({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+        }));
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "read",
+      operation: "GetCommand",
+      selector: ["orderId"],
+    });
+  });
+
   it("reads a table a call names outright", () => {
     const effects = effectsIn(`
       ${IMPORTS}

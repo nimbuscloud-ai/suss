@@ -55,10 +55,13 @@ A pack uses `declaredBy` when the source never writes out which client
 it is using. In `const redis = await this.getClient()` nothing mentions
 ioredis, but the declaration behind `redis.get` comes from ioredis.
 `constructed` looks at where the receiver itself was made, so it still
-works where the method has no type. In Ruby, `X.new` is made from the
-class `X`, so `named` lists `Connection` for `PG::Connection.new`, and
-any other method called on a constant is a factory named after the
-method, as `connect` is in `PG.connect`.
+works where the method has no type. Its `named` lists exports, and a
+constructor imported under another name is read as the export it is, so
+`new BullQueue()` after `import { Queue as BullQueue }` matches `named:
+["Queue"]`. In Ruby, `X.new` is made from the class `X`, so `named`
+lists `Connection` for `PG::Connection.new`, and any other method
+called on a constant is a factory named after the method, as `connect`
+is in `PG.connect`.
 
 Nothing in a program says what a library method returns, so the pack
 does. `returnedBy("get_client", declaredBy(HOOK))` takes the receiver
@@ -86,7 +89,11 @@ no method, by adding `.calls(meaning)` next to its methods table. A
 store hook is the usual case. `useAppStore((s) => s.bears)` calls no
 method, so the table has no method name to list. The call matches when
 its callee is a bound name whose written value came from the chain's
-origin. With `imported` the callee is the import itself, so
+origin. A call with no receiver, bare or a construction such as `new
+GetCommand(...)`, is read as the export its callee was imported as when
+the table does not list the name it is written with, so `useOrders`
+imported as `useQuery` records `useQuery` as its operation. With
+`imported` the callee is the import itself, so
 `publishEntry(queue, body)` matches when the file imported
 `publishEntry`. Such a call usually reads its fields inside a selector lambda,
 and `fields: { selectorParam: 0 }` reads them off the lambda's
@@ -183,8 +190,10 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
 | `isFrom`, `receiverIsFrom` with `typed` | the adapter's `typedAs`, or the construction a receiver was written as where the adapter has none |
-| `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `imports(x, m, n)` in Python and Ruby, the store's `importedNamesOf` in TypeScript |
+| `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `comesFrom(x, m, n)` over `imports`, `exportsAs` and `reExports`, so an alias and a project barrel read as the export. A value that only calls into an import does not count |
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
+| `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module |
+| `named` on `constructed` | the name the constructor is written with, or the export the adapter's `importedAs` says it was imported as |
 | `anchorCall` | the adapter's `anchorCalls`, with the single-answer policy |
 
 `classAt`, `parameterReadsAt`, `statesSlots` and the two batching

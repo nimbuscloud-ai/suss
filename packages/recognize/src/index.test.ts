@@ -50,6 +50,8 @@ function callOps(over: {
   writtenAs?: CallOps;
   /** Whether the callee is a bound name. */
   namedCallee?: boolean;
+  /** The export the callee was imported as. */
+  importedAs?: string;
   /** What a selector lambda reads, by argument position. */
   selectorReads?: Record<number, readonly string[]>;
 }): CallOps {
@@ -72,6 +74,7 @@ function callOps(over: {
     argument: (index) => over.built?.[index] ?? null,
     callee: () => over.writtenAs ?? null,
     namedCallee: () => over.namedCallee ?? false,
+    calleeImportedAs: () => over.importedAs ?? null,
     parameterReadsAt: (index: number) => over.selectorReads?.[index] ?? null,
     propertyAt: (index, property) =>
       over.properties?.[index]?.[property] ??
@@ -2204,12 +2207,63 @@ describe("a bare call of the tracked client", () => {
     expect(effects).toBeNull();
   });
 
+  it("names the call after the export its callee was imported as", () => {
+    const effects = run(
+      hookStore(),
+      callOps({
+        callee: "useTape",
+        namedCallee: true,
+        writtenAs: written,
+        importedAs: "useDeck",
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      callee: "useTape",
+      interaction: { operation: "useDeck" },
+    });
+  });
+
   it("still matches the methods table on the same chain", () => {
     const effects = run(
       hookStore(),
       callOps({ method: "get", from: ["tapedeck"], args: ["side_a:1"] }),
     );
     expect(effects).toHaveLength(1);
+  });
+});
+
+describe("a call with no receiver, imported under another name", () => {
+  it("is read as the export, which the methods table lists", () => {
+    const effects = run(
+      store(),
+      callOps({
+        callee: "fetchOne",
+        importedAs: "get",
+        from: ["tapedeck"],
+        args: ["side_a:1"],
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      callee: "fetchOne",
+      interaction: { kind: "read", operation: "get", selector: ["side_a:1"] },
+    });
+  });
+
+  it("matches nothing when the export is not listed either, or the call is not from the client", () => {
+    expect(
+      run(
+        store(),
+        callOps({ callee: "fetchOne", importedAs: "drop", from: ["tapedeck"] }),
+      ),
+    ).toBeNull();
+    expect(
+      run(store(), callOps({ callee: "fetchOne", importedAs: "get" })),
+    ).toBeNull();
+    expect(
+      run(store(), callOps({ callee: "fetchOne", from: ["tapedeck"] })),
+    ).toBeNull();
   });
 });
 
