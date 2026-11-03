@@ -8,7 +8,7 @@
 
 import { Node } from "ts-morph";
 
-import { importedNamesOf } from "@suss/adapter-typescript";
+import { callsInUnitBody, importedNamesOf } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -138,26 +138,17 @@ function reactQuerySubUnits(
   parent: DiscoveredSubUnitParent,
   _ctx: unknown,
 ): DiscoveredSubUnit[] {
-  const parentFunc = parent.func as Node;
   const out: DiscoveredSubUnit[] = [];
   const counters = new Map<string, number>();
 
-  parentFunc.forEachDescendant((node, traversal) => {
-    if (
-      node !== parentFunc &&
-      (Node.isFunctionDeclaration(node) || Node.isMethodDeclaration(node))
-    ) {
-      traversal.skip();
-      return;
-    }
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const found = hookOf(node);
+  // The calls the hook recognizer sees, so every hook call it records has
+  // the sub-unit behind it.
+  for (const call of callsInUnitBody(parent.func as Node)) {
+    const found = hookOf(call);
     if (found === null) {
-      return;
+      continue;
     }
-    const expression = callbackExpressionOf(node, found.hook);
+    const expression = callbackExpressionOf(call, found.hook);
     if (
       expression === null ||
       !(
@@ -165,7 +156,7 @@ function reactQuerySubUnits(
         Node.isFunctionExpression(expression)
       )
     ) {
-      return;
+      continue;
     }
 
     const idx = counters.get(found.local) ?? 0;
@@ -176,7 +167,7 @@ function reactQuerySubUnits(
       name: `${parent.name}.${found.local}#${idx}`,
       inputMapping: { type: "positionalParams", params: [] },
     });
-  });
+  }
 
   return out;
 }
