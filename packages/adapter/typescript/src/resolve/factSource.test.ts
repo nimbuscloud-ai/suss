@@ -25,7 +25,9 @@ const SOURCE = `
 
   const deck = new Deck();
   const key = "volume";
-  const options = { name: "intro", [key]: 3, tags: ["a", "b"] };
+  const draft = { name: "draft", loop: "always" };
+  const options = { ...draft, name: "intro", [key]: 3, tags: ["a", "b"] };
+  var ring = { ...ring, name: "ring" };
 
   function makeDeck() {
     return new Deck();
@@ -34,6 +36,7 @@ const SOURCE = `
   export async function play(id: string) {
     await deck.play("intro", options, true, 0);
     await makeDeck().run(sql\`SELECT * FROM tracks WHERE id = \${id}\`);
+    await deck.play("ring", ring);
   }
 `;
 
@@ -94,6 +97,8 @@ function answers(ops: CallOps | null) {
       ?.items()
       .map((item) => item.text()),
     name: ops?.propertyAt(1, "name", "nothing"),
+    loop: ops?.propertyAt(1, "loop", "nothing"),
+    missing: value?.property("missing"),
     constructed: ops?.receiverIsFrom(constructedFrom("tapedeck")),
     declared: ops?.receiverIsFrom(declaredBy("tapedeck")),
     anchor: ops?.anchorCall?.(constructedFrom("tapedeck"))?.calleeText(),
@@ -126,14 +131,28 @@ describe("the fact source", () => {
       track: "intro",
       loud: true,
       times: false,
-      entries: ["name", "volume", "tags"],
+      entries: ["name", "loop", "volume", "tags"],
       tags: ["a", "b"],
+      name: "intro",
+      loop: "always",
       constructed: true,
       declared: true,
     });
     expect(answers(ran?.fromFacts ?? null)).toMatchObject({
       method: "run",
       statement: ["SELECT * FROM tracks WHERE id = ", ""],
+    });
+  });
+
+  it("reads an object that spreads itself once", () => {
+    const [, , ringed] = bothOps().filter(
+      ({ fromNodes }) => fromNodes.method() !== null,
+    );
+
+    expect(answers(ringed?.fromFacts ?? null)).toMatchObject({
+      entries: ["name"],
+      name: "ring",
+      missing: null,
     });
   });
 

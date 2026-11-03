@@ -1307,7 +1307,7 @@ export {
 } from "./extractionReport.js";
 export { makeIgnoredDirectory } from "./ignoredDirectory.js";
 export { KeptParses } from "./keptParses.js";
-export { byOrigin } from "./ops.js";
+export { byOrigin, lastValueWins } from "./ops.js";
 export {
   describeMissingPath,
   evaluatePackHealth,
