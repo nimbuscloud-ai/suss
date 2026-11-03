@@ -44,10 +44,16 @@ export declare class CommandDispatcher {
 }
 `;
 
+/** A native package that exports its send as a plain function. */
+const LEDGER_TYPES = `
+export declare function publishEntry(queue: string, body: unknown): Promise<void>;
+`;
+
 const LIBRARY = {
   "@aws-sdk/client-sqs": SQS_TYPES,
   "aws-lambda": LAMBDA_TYPES,
   "@acme/async": ASYNC_TYPES,
+  "@acme/ledger-native": LEDGER_TYPES,
 };
 
 /** The dispatcher config the configured-producer tests run with. */
@@ -698,5 +704,54 @@ describe("sqs configured producer", () => {
     expect(sends.map((send) => send.binding.semantics)).toEqual([
       { name: "message-bus", messageBus: "aws_sqs", channel: "order.placed" },
     ]);
+  });
+});
+
+describe("sqs producer stated as an export", () => {
+  const LEDGER_OPTIONS = {
+    producers: [
+      {
+        module: "@acme/ledger-native",
+        export: "publishEntry",
+        subject: { at: 0 },
+        payload: { at: 1 },
+      },
+    ],
+  };
+
+  it("reads each call of the export, bare or through a namespace import", () => {
+    const source = `
+      import { publishEntry } from "@acme/ledger-native";
+      import * as ledger from "@acme/ledger-native";
+      export async function record() {
+        await publishEntry("ledger-queue", { amount: "9" });
+        await ledger.publishEntry("ledger-audit", { amount: "9" });
+      }
+    `;
+
+    const sends = messageSendEffectsOf(recognizeAll(source, LEDGER_OPTIONS));
+    expect(sends.map((send) => [send.binding.semantics, send.callee])).toEqual([
+      [
+        { name: "message-bus", messageBus: "aws_sqs", channel: "ledger-queue" },
+        "publishEntry",
+      ],
+      [
+        { name: "message-bus", messageBus: "aws_sqs", channel: "ledger-audit" },
+        "ledger.publishEntry",
+      ],
+    ]);
+    if (sends[0].interaction.class !== "message-send") {
+      throw new Error("wrong interaction class");
+    }
+    expect(sends[0].interaction.body).toEqual({
+      kind: "object",
+      fields: { amount: { kind: "string", value: "9" } },
+    });
+  });
+
+  it("reads the files that import the export's module", () => {
+    expect(sqsFramework(LEDGER_OPTIONS).requiresImport).toContain(
+      "@acme/ledger-native",
+    );
   });
 });
