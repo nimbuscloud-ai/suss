@@ -636,7 +636,7 @@ describe("sqs configured producer", () => {
     });
   });
 
-  it("reads nothing when the subject is computed", () => {
+  it("records the send with no channel when the subject is a parameter", () => {
     const source = `
       import { CommandDispatcher } from "@acme/async";
       export async function place(dispatcher: CommandDispatcher, kind: string) {
@@ -644,9 +644,37 @@ describe("sqs configured producer", () => {
       }
     `;
 
-    expect(
-      messageSendEffectsOf(recognizeAll(source, DISPATCHER_OPTIONS)),
-    ).toEqual([]);
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, DISPATCHER_OPTIONS),
+    );
+    expect(sends.map((send) => send.binding.semantics)).toEqual([
+      { name: "message-bus", messageBus: "aws_sqs", channel: null },
+    ]);
+  });
+
+  it("reads a subject a constant settles, and a body a local holds", () => {
+    const source = `
+      import { CommandDispatcher } from "@acme/async";
+      const config = { queue: process.env.ORDERS_QUEUE ?? "orders" };
+      export async function place(dispatcher: CommandDispatcher) {
+        const body = { orderId: "o-1" };
+        await dispatcher.dispatch(config.queue, body, {});
+      }
+    `;
+
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, DISPATCHER_OPTIONS),
+    );
+    expect(sends.map((send) => send.binding.semantics)).toEqual([
+      { name: "message-bus", messageBus: "aws_sqs", channel: "orders" },
+    ]);
+    if (sends[0].interaction.class !== "message-send") {
+      throw new Error("wrong interaction class");
+    }
+    expect(sends[0].interaction.body).toEqual({
+      kind: "object",
+      fields: { orderId: { kind: "string", value: "o-1" } },
+    });
   });
 
   it("carries no body for a batch method the config gives no body argument", () => {
