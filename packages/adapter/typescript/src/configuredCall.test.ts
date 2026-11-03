@@ -1,13 +1,16 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
 import { readConfiguredCall } from "./configuredCall.js";
 import { ResolutionStore } from "./facts/store.js";
+import { invocationContextFor } from "./resolve/invocationEffects.js";
 
-import type { EffectArg } from "@suss/extractor";
-import type { ConfiguredCallSpec } from "./configuredCall.js";
+import type {
+  ConfiguredCallRead,
+  ConfiguredCallSpec,
+} from "./configuredCall.js";
 
 const DISPATCH: ConfiguredCallSpec = {
   module: "@acme/async",
@@ -57,23 +60,15 @@ function readAll(
   sourceFile: SourceFile,
   spec: ConfiguredCallSpec = DISPATCH,
   resolution?: ResolutionStore,
-): Array<{ subject: string; body: EffectArg | null; callee: string }> {
-  const out: Array<{
-    subject: string;
-    body: EffectArg | null;
-    callee: string;
-  }> = [];
+): ConfiguredCallRead[] {
+  const out: ConfiguredCallRead[] = [];
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
     }
     const read = readConfiguredCall(
       node,
-      {
-        sourceFile,
-        extractArgs: () => extractArgsForTest(node),
-        ...(resolution === undefined ? {} : { resolution }),
-      },
+      invocationContextFor(node, resolution),
       spec,
     );
     if (read !== null) {
@@ -81,38 +76,6 @@ function readAll(
     }
   });
   return out;
-}
-
-/** What this helper reads: strings, objects, and everything else opaque. */
-function extractArgsForTest(call: CallExpression): EffectArg[] {
-  return call.getArguments().map((arg) => extractArgForTest(arg));
-}
-
-function extractArgForTest(node: Node): EffectArg {
-  if (Node.isAsExpression(node)) {
-    return extractArgForTest(node.getExpression());
-  }
-  if (Node.isStringLiteral(node)) {
-    return { kind: "string", value: node.getLiteralValue() };
-  }
-  if (Node.isObjectLiteralExpression(node)) {
-    const fields: Record<string, EffectArg> = {};
-    for (const prop of node.getProperties()) {
-      if (!Node.isPropertyAssignment(prop)) {
-        continue;
-      }
-      const initializer = prop.getInitializer();
-      if (initializer === undefined) {
-        continue;
-      }
-      fields[prop.getName()] = extractArgForTest(initializer);
-    }
-    return { kind: "object", fields };
-  }
-  if (Node.isIdentifier(node)) {
-    return { kind: "identifier", name: node.getText() };
-  }
-  return null;
 }
 
 describe("readConfiguredCall", () => {
@@ -131,7 +94,7 @@ describe("readConfiguredCall", () => {
           kind: "object",
           fields: {
             id: { kind: "string", value: "1" },
-            total: null,
+            total: { kind: "number", value: 2 },
           },
         },
         callee: "dispatcher.dispatch",
@@ -164,7 +127,7 @@ describe("readConfiguredCall", () => {
     expect(readAll(sf).map((r) => r.subject)).toEqual(["order.placed"]);
   });
 
-  it("reads nothing when the subject is computed", () => {
+  it("reads the send with no subject when the subject is a parameter", () => {
     const sf = makeProject(`
       import { CommandDispatcher } from "@acme/async";
       export async function send(dispatcher: CommandDispatcher, kind: string) {
@@ -172,7 +135,41 @@ describe("readConfiguredCall", () => {
       }
     `);
 
-    expect(readAll(sf)).toEqual([]);
+    expect(readAll(sf, DISPATCH, new ResolutionStore())).toEqual([
+      {
+        subject: null,
+        body: {
+          kind: "object",
+          fields: { id: { kind: "string", value: "1" } },
+        },
+        callee: "dispatcher.dispatch",
+      },
+    ]);
+  });
+
+  it("reads a subject and a body the source settles through a constant", () => {
+    const sf = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      const AUDIT = "order.audited";
+      const config = { queue: process.env.ORDERS_QUEUE ?? "orders" };
+      export async function send(dispatcher: CommandDispatcher) {
+        const body = { id: "1" };
+        await dispatcher.dispatch(AUDIT, body, {});
+        await dispatcher.dispatch(config.queue, body, {});
+      }
+    `);
+
+    const read = readAll(sf, DISPATCH, new ResolutionStore());
+    expect(read.map((one) => [one.subject, one.body])).toEqual([
+      [
+        "order.audited",
+        { kind: "object", fields: { id: { kind: "string", value: "1" } } },
+      ],
+      [
+        "orders",
+        { kind: "object", fields: { id: { kind: "string", value: "1" } } },
+      ],
+    ]);
   });
 
   it("carries no body when the spec names no body argument", () => {
@@ -256,7 +253,7 @@ describe("readConfiguredCall", () => {
     expect(readAll(sf)).toEqual([]);
   });
 
-  it("reads nothing when the subject argument is missing", () => {
+  it("reads the send with no subject when the call passes no arguments", () => {
     const sf = makeProject(`
       import { CommandDispatcher } from "@acme/async";
       export async function send(dispatcher: CommandDispatcher) {
@@ -264,7 +261,9 @@ describe("readConfiguredCall", () => {
       }
     `);
 
-    expect(readAll(sf)).toEqual([]);
+    expect(readAll(sf)).toEqual([
+      { subject: null, body: null, callee: "(dispatcher as any).dispatch" },
+    ]);
   });
 
   it("matches a sub-path import of the configured module", () => {
@@ -349,7 +348,7 @@ export declare class Ledger {
 function readExports(
   { sourceFile, store }: { sourceFile: SourceFile; store: ResolutionStore },
   spec: ConfiguredCallSpec = PUBLISH_ENTRY,
-): Array<{ subject: string; body: EffectArg | null; callee: string }> {
+): ConfiguredCallRead[] {
   return readAll(sourceFile, spec, store);
 }
 
@@ -438,7 +437,7 @@ describe("readConfiguredCall on an export", () => {
     expect(readExports(project)).toEqual([]);
   });
 
-  it("reads nothing when the subject is not a literal", () => {
+  it("reads the call with no subject when nothing settles the subject", () => {
     const project = ledgerProject(`
       import { publishEntry } from "@acme/ledger-native";
       export async function record(queue: string, entry: object) {
@@ -446,7 +445,13 @@ describe("readConfiguredCall on an export", () => {
       }
     `);
 
-    expect(readExports(project)).toEqual([]);
+    expect(readExports(project)).toEqual([
+      {
+        subject: null,
+        body: { kind: "identifier", name: "entry" },
+        callee: "publishEntry",
+      },
+    ]);
   });
 
   it("asks a store of its own when the context brings none", () => {

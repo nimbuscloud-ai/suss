@@ -25,6 +25,7 @@ export class PutEventsCommand {
   "@acme/async": `
 export declare class EventPublisher {
   emit(subject: string, data: unknown, opts: unknown): Promise<void>;
+  flush(subject: string): Promise<void>;
 }
 `,
   // A package that publishes from a plain function.
@@ -565,11 +566,23 @@ describe("eventbridge configured producer", () => {
     });
   });
 
-  it("reads nothing when the subject is computed", () => {
+  it("records the send with no channel when the subject is a parameter", () => {
     const source = `
       import { EventPublisher } from "@acme/async";
       export async function announce(publisher: EventPublisher, kind: string) {
         await publisher.emit(kind, { userId: "u-1" }, { partitionKey: "u-1" });
+      }
+    `;
+
+    const sends = messageSendEffectsOf(recognizeAll(source, PUBLISHER_OPTIONS));
+    expect(sends.map(channelOf)).toEqual([null]);
+  });
+
+  it("reads nothing off a call the stub does not describe", () => {
+    const source = `
+      import { EventPublisher } from "@acme/async";
+      export async function announce(publisher: EventPublisher) {
+        await publisher.flush("user.deleted");
       }
     `;
 
