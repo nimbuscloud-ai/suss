@@ -17,6 +17,7 @@ import { chainStart } from "./chain.js";
 
 import type { MessageBusSemantics } from "@suss/behavioral-ir";
 import type {
+  ArgumentBody,
   Chain,
   ChannelPart,
   Link,
@@ -37,8 +38,8 @@ export interface MessageSendsSpec {
   channel: readonly ChannelPart[];
   /** What joins the parts. Defaults to "#", as used between a bus and a subject. */
   channelSeparator?: string;
-  /** The property a message states its body on, or the whole message. */
-  body?: string | WholeMessage;
+  /** The property a message states its body on, the whole message, or an argument of the call. */
+  body?: string | WholeMessage | ArgumentBody;
   /**
    * Where the literal value recorded as the routing key is: a property
    * of the message, or an argument of the call. A reader can filter on
@@ -62,6 +63,11 @@ export interface MessageSends {
     table: Readonly<Record<string, MessageSendMethod>>,
     options?: { ignoringCase?: boolean },
   ): MessageSends;
+  /**
+   * What a bare call of the client itself does, for a library that sends
+   * through a function it exports: `publishEntry(queue, body)`.
+   */
+  calls(meaning: MessageSendMethod): MessageSends;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): MessageSends;
   /** The links and the ending, as data. */
@@ -102,6 +108,7 @@ function chainFrom(declared: Chain<MessageSendMethod>): MessageSends {
         table,
         ignoringCase: options?.ignoringCase ?? false,
       }),
+    calls: (meaning) => adding({ asks: "calls", meaning }),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
 }

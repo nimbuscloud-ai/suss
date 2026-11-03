@@ -14,7 +14,7 @@ export {
   TSCONFIG_NAMES,
 } from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches } from "./conditions.js";
-export { readConfiguredCall, rootIdentifier } from "./configuredCall.js";
+export { rootIdentifier } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { buildProjectHelperIndex } from "./discovery/helperIndex.js";
 export {
@@ -143,11 +143,6 @@ export type {
   RawBranchResult,
 } from "./assembly.js";
 export type { FunctionRoot } from "./conditions.js";
-export type {
-  ConfiguredCallContext,
-  ConfiguredCallRead,
-  ConfiguredCallSpec,
-} from "./configuredCall.js";
 export type { ContractReadResult } from "./contract.js";
 export type {
   EmptyStage,

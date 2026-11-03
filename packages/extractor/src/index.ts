@@ -105,6 +105,7 @@ export {
   wrapperDiscovery,
 } from "./packHelpers.js";
 export {
+  type ConfiguredCallSpec,
   configuredCallOption,
   scopeOption,
   storageSystemOption,
@@ -1351,10 +1352,12 @@ export type {
   DeclaredBy,
   FactRows,
   FactSource,
+  Imported,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
   StatedSlot,
+  Typed,
   UnsettledName,
   ValueEntry,
   ValueOps,

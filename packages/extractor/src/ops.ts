@@ -20,7 +20,13 @@
  * DESIGN.md lists the origins not built yet (#542) and the places a match
  * can start that are not receivers.
  */
-export type ReceiverOrigin = DeclaredBy | ConstructedFrom | AnyOf | ReturnedBy;
+export type ReceiverOrigin =
+  | DeclaredBy
+  | ConstructedFrom
+  | AnyOf
+  | ReturnedBy
+  | Typed
+  | Imported;
 
 /**
  * A receiver whose method one of these modules declared.
@@ -70,6 +76,37 @@ export interface ReturnedBy {
   readonly origin: "returnedBy";
   readonly method: string;
   readonly on: ReceiverOrigin;
+}
+
+/**
+ * A receiver the program declares as one of a module's types, such as a
+ * parameter annotated `CommandDispatcher`. A project hands its own
+ * dispatcher around this way, so where the value was made is often
+ * nowhere in sight. In a language that declares no types, the receiver
+ * is one made from one of those types.
+ */
+export interface Typed {
+  readonly origin: "typed";
+  /** The modules the type comes from. */
+  readonly importedFrom: readonly string[];
+  /** The type names, as those modules export them. */
+  readonly named: readonly string[];
+}
+
+/**
+ * A value the file brought in from one of these modules: a function it
+ * calls bare, a namespace it calls a method on, or a class it calls a
+ * static method on.
+ */
+export interface Imported {
+  readonly origin: "imported";
+  readonly importedFrom: readonly string[];
+  /**
+   * The names it was imported under, as the module exports them. `*` is
+   * the module itself, as `import * as ledger` brings it in. Unset takes
+   * any name.
+   */
+  readonly named?: readonly string[];
 }
 
 /** One function per kind of origin, each handed that kind and `A`. */
@@ -396,6 +433,12 @@ export interface FactSource {
   anchorCalls(key: string, origin: ReceiverOrigin): readonly string[];
   /** Whether the value at this key was imported from the module. */
   importedFrom(key: string, module: string): boolean;
+  /**
+   * The names the value at this key was imported under from the module,
+   * as the module exports them: `*` for the module itself. Empty when it
+   * came from somewhere else.
+   */
+  importedAs(key: string, module: string): readonly string[];
   /** Whether a written-out value is an object, a list, or neither. */
   shapeOf(key: string): "object" | "list" | null;
   /**
@@ -429,6 +472,12 @@ export interface FactSource {
   returnedBy?(call: string): string | null;
   /** Whether a library declared the method the call reaches for, when the adapter can tell. */
   declares?(call: string, module: string): boolean;
+  /**
+   * Whether the call's receiver is declared as one of the origin's types.
+   * Unset in a language that declares none, where the ops check what made
+   * the receiver instead.
+   */
+  typedAs?(call: string, origin: Typed): boolean;
   /**
    * The ops for a call with the adapter's own members added, such as the
    * class an argument refers to. Every call the fact ops reach goes

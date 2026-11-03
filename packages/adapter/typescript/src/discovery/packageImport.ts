@@ -132,29 +132,6 @@ export function attributedCalls(
 }
 
 /**
- * What `attributedCalls` says about one call, for a reader that meets
- * calls one at a time. A stub statement drafted from the batch then
- * matches the same calls when a pack reads them back.
- */
-export function attributedCall(
-  call: CallExpression,
-  packages: readonly string[],
-  resolution: ResolutionStore,
-): CallAttribution | null {
-  if (!reachesAnyPackage(call.getSourceFile(), packages, resolution)) {
-    return null;
-  }
-
-  const candidates = calleeCandidates(call, packages);
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  const origins = resolution.importOriginsOfMany(candidates, [...packages]);
-  return attributionOf(call.getExpression(), origins);
-}
-
-/**
  * A file that cannot reach the package has no call to attribute, and
  * asking the store per call pays the demand walk for every miss.
  */

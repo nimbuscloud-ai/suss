@@ -14,9 +14,11 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  Imported,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
+  Typed,
   UnsettledName,
   ValueEntry,
   ValueOps,
@@ -30,9 +32,11 @@ import type {
   CallOps,
   ConstructedFrom,
   DeclaredBy,
+  Imported,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
+  Typed,
 } from "@suss/extractor";
 
 /**
@@ -79,11 +83,36 @@ export function returnedBy(method: string, on: ReceiverOrigin): ReturnedBy {
   return { origin: "returnedBy", method, on };
 }
 
+/** A receiver the program declares as one of these modules' named types. */
+export function typed(spec: {
+  from: readonly string[];
+  named: readonly string[];
+}): Typed {
+  return { origin: "typed", importedFrom: spec.from, named: spec.named };
+}
+
+/**
+ * A value the file imported from one of these modules, under one of the
+ * names in `named` when it is given. `*` is the module itself.
+ */
+export function imported(spec: {
+  from: readonly string[];
+  named?: readonly string[];
+}): Imported {
+  return {
+    origin: "imported",
+    importedFrom: spec.from,
+    ...(spec.named === undefined ? {} : { named: spec.named }),
+  };
+}
+
 const MODULES: ByOrigin<readonly string[]> = {
   declaredBy: (origin) => origin.importedFrom,
   constructed: (origin) => origin.importedFrom,
   anyOf: (origin) => origin.of.flatMap((one) => modulesOf(one)),
   returnedBy: (origin) => modulesOf(origin.on),
+  typed: (origin) => origin.importedFrom,
+  imported: (origin) => origin.importedFrom,
 };
 
 /** Every module an origin mentions, which a file has to import before it can match. */

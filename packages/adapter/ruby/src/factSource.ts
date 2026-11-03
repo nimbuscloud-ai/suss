@@ -46,6 +46,11 @@ export function rubyFactSource(db: Database): FactSource {
       libraryPathsOf(db, key).some(
         (path) => pathInModule(path, module) !== null,
       ),
+    importedAs: (key, module) =>
+      libraryPathsOf(db, key).flatMap((path) => {
+        const inside = pathInModule(path, module);
+        return inside === null ? [] : [inside];
+      }),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     memberName: (stated) => classMemberOf(stated) ?? stated,
     constructedClass: (callee) => constructedClass(nodeAt(callee)),

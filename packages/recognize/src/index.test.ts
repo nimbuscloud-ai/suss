@@ -7,9 +7,11 @@ import {
   anyOf,
   constructedFrom,
   declaredBy,
+  imported,
   modulesOf,
   opsIn,
   returnedBy,
+  typed,
 } from "./ops.js";
 import { pack } from "./pack.js";
 import { sqlStatements } from "./sqlStatements.js";
@@ -2258,6 +2260,121 @@ const unitsOf = (effects: Effect[] | null) =>
       ? effect.binding.semantics.instanceName
       : null,
   );
+
+describe("a send whose arguments are the message", () => {
+  const OVER_THE_CALL = {
+    wire: "aws_sqs",
+    messages: { each: "theCall" },
+    channel: [{ argument: { at: 0 } }],
+    body: { argument: { at: 1 } },
+    unsettledName: "nothing",
+  } as const;
+
+  const dispatches = () =>
+    messageSends({
+      ...OVER_THE_CALL,
+      client: typed({ from: ["relay"], named: ["Dispatcher"] }),
+    })
+      .methods({ dispatch: {} })
+      .example('to.dispatch("orders", "{}")');
+
+  it("reads the channel and the body off the call's own arguments", () => {
+    const effects = runSend(
+      dispatches(),
+      callOps({
+        method: "dispatch",
+        from: ["relay"],
+        callee: "to.dispatch",
+        values: { 0: "orders", 1: "{}" },
+      }),
+    );
+
+    expect(channelsOf(effects)).toEqual(["orders"]);
+    expect(effects?.[0]).toMatchObject({
+      callee: "to.dispatch",
+      interaction: {
+        class: "message-send",
+        body: { kind: "string", value: "{}" },
+      },
+    });
+  });
+
+  it("records the send with no channel and no body when the call passes neither", () => {
+    const effects = runSend(
+      dispatches(),
+      callOps({ method: "dispatch", from: ["relay"] }),
+    );
+
+    expect(channelsOf(effects)).toEqual([null]);
+    expect(
+      effects?.[0]?.type === "interaction" ? effects[0].interaction : null,
+    ).toEqual({ class: "message-send" });
+  });
+
+  it("matches nothing for a method that states no input anywhere else", () => {
+    const noInput = messageSends({
+      wire: "aws_sqs",
+      client: declaredBy("tapedeck"),
+      messages: { each: "theInput" },
+      channel: [{ property: ["QueueUrl"] }],
+    }).methods({ send: {} });
+
+    expect(
+      runSend(
+        noInput,
+        callOps({
+          method: "send",
+          from: ["tapedeck"],
+          values: { 0: { QueueUrl: "orders" } },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("matches a bare call of a function the file imported, by the callee itself", () => {
+    const publishes = messageSends({
+      ...OVER_THE_CALL,
+      client: imported({ from: ["ledger"], named: ["publish"] }),
+    })
+      .calls({})
+      .example('publish("ledger", "{}")');
+    const bare = (from: string[]) =>
+      callOps({
+        callee: "publish",
+        namedCallee: true,
+        from,
+        values: { 0: "ledger" },
+      });
+
+    expect(channelsOf(runSend(publishes, bare(["ledger"])))).toEqual([
+      "ledger",
+    ]);
+    expect(runSend(publishes, bare(["elsewhere"]))).toBeNull();
+  });
+
+  it.each([
+    ["declared by", declaredBy("tapedeck")],
+    ["returned by", returnedBy("make", constructedFrom("tapedeck"))],
+    ["typed as", typed({ from: ["tapedeck"], named: ["Deck"] })],
+    ["any of", anyOf(imported({ from: ["ledger"] }), declaredBy("tapedeck"))],
+  ])(
+    "matches a bare call by the call its callee was written as, for a client %s a module",
+    (_, client) => {
+      const writtenCalls = messageSends({ ...OVER_THE_CALL, client }).calls({});
+      const effects = runSend(
+        writtenCalls,
+        callOps({
+          callee: "send",
+          namedCallee: true,
+          writtenAs: callOps({ from: ["tapedeck"] }),
+          values: { 0: "orders" },
+        }),
+      );
+
+      expect(channelsOf(effects)).toEqual(["orders"]);
+    },
+  );
+});
 
 describe("a chain that invokes one unit", () => {
   it("reads the unit and the payload off the call's input", () => {
