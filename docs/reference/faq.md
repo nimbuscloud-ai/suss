@@ -172,11 +172,11 @@ The contract can be implicit, such as a function signature, or written down, suc
 ```
 Compared 2 boundaries:
   GET /orders/{id}
-    proj::src/api.ts::get <-> proj::src/client.ts::loadOrder
+    proj::src/api.ts::get#GET /orders/{id} <-> proj::src/client.ts::loadOrder
     openapi:openapi.yaml::GET /orders/{id} <-> proj::src/client.ts::loadOrder
-    proj::src/api.ts::get <-> openapi:openapi.yaml::GET /orders/{id}
+    proj::src/api.ts::get#GET /orders/{id} <-> openapi:openapi.yaml::GET /orders/{id}
   POST /orders
-    proj::src/api.ts::post <-> openapi:openapi.yaml::POST /orders
+    proj::src/api.ts::post#POST /orders <-> openapi:openapi.yaml::POST /orders
 ```
 
 ## What boundaries are modelled?

@@ -60,7 +60,7 @@ suss check --dir summaries/ --all
 ```
 Compared 1 boundary:
   GET /users/{id}
-    users-api::src/routes.ts::get <-> users-api::src/userCard.ts::getUser
+    users-api::src/routes.ts::get#GET /users/{id} <-> users-api::src/userCard.ts::getUser
 
 ────────────────────────────────────────────────────────────
 [WARNING] unhandledProviderCase

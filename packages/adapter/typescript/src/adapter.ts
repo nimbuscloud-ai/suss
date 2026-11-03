@@ -3849,10 +3849,14 @@ function buildSubUnitSummary(
     inputMapping: subUnit.inputMapping ?? DEFAULT_SUB_UNIT_INPUT_MAPPING,
   };
 
+  // A name built on a label, such as `get.setTimeout#0`, is one too.
   const unit: DiscoveredUnit = {
     func,
     kind: subUnit.kind,
     name: subUnit.name,
+    ...(parent.identity.nameKind === "label"
+      ? { nameKind: "label" as const }
+      : {}),
   };
 
   // A sub-unit of the same parent written inside this one, such as a
