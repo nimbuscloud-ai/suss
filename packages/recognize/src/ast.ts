@@ -16,6 +16,12 @@ import type { AstCapableOps, CallOps } from "@suss/extractor";
 import type { LinkFunction } from "./chain.js";
 
 /**
+ * A value whose adapter hands out its node. A reader casts a value to
+ * this to reach the node, the way `astLink` casts a call.
+ */
+export type { AstCapableValueOps } from "@suss/extractor";
+
+/**
  * A link that reads the call's own node. `read` gets the node first,
  * then the arguments the link would have received anyway.
  */

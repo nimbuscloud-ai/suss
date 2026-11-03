@@ -327,26 +327,26 @@ class FactValue implements ValueOps {
 
   constructor(
     private readonly key: string,
-    private readonly source: FactSource,
+    private readonly facts: FactSource,
   ) {
-    source.read(key);
+    facts.read(key);
   }
 
   text(): string | null {
-    const literal = this.source.literalOf(this.written());
+    const literal = this.facts.literalOf(this.written());
     return typeof literal === "string" ? literal : null;
   }
 
   name(unsettled: UnsettledName): string | null {
-    return this.source.nameOf(this.written(), unsettled);
+    return this.facts.nameOf(this.written(), unsettled);
   }
 
   names(cap: number): readonly string[] | null {
-    return this.source.namesOf?.(this.key, cap) ?? null;
+    return this.facts.namesOf?.(this.key, cap) ?? null;
   }
 
   flag(): boolean | null {
-    const literal = this.source.literalOf(this.written());
+    const literal = this.facts.literalOf(this.written());
     if (typeof literal === "boolean") {
       return literal;
     }
@@ -355,36 +355,36 @@ class FactValue implements ValueOps {
 
   entries(unsettled: UnsettledName): readonly ValueEntry[] {
     return lastValueWins(
-      spreadEntries(this.written(), unsettled, this.source),
-    ).map(({ key, held }) => ({ key, value: factValueOps(held, this.source) }));
+      spreadEntries(this.written(), unsettled, this.facts),
+    ).map(({ key, held }) => ({ key, value: factValueOps(held, this.facts) }));
   }
 
   items(): readonly ValueOps[] {
     const list = this.written();
-    if (this.source.shapeOf(list) !== "list") {
+    if (this.facts.shapeOf(list) !== "list") {
       return [];
     }
-    return entriesInOrder(list, this.source).map((held) =>
-      factValueOps(held, this.source),
+    return entriesInOrder(list, this.facts).map((held) =>
+      factValueOps(held, this.facts),
     );
   }
 
   property(name: string): ValueOps | null {
-    const held = propertyOf(this.written(), name, this.source);
-    return held === null ? null : factValueOps(held, this.source);
+    const held = propertyOf(this.written(), name, this.facts);
+    return held === null ? null : factValueOps(held, this.facts);
   }
 
   asArg(): EffectArg | null {
-    return this.source.argOf(this.written());
+    return this.facts.argOf(this.written());
   }
 
   parts(): readonly string[] | null {
     const written = this.written();
-    const literal = this.source.literalOf(written);
+    const literal = this.facts.literalOf(written);
     if (typeof literal === "string") {
       return [literal];
     }
-    const pieces = templatePieces(written, this.source);
+    const pieces = templatePieces(written, this.facts);
     if (pieces.length === 0) {
       return null;
     }
@@ -401,24 +401,88 @@ class FactValue implements ValueOps {
 
   holes(): readonly (CallOps | null)[] {
     return this.holeKeys().map((hole) =>
-      factCallOps(settled(hole, this.source, "names"), this.source),
+      factCallOps(settled(hole, this.facts, "names"), this.facts),
     );
   }
 
   interpolated(): readonly ValueOps[] {
-    return this.holeKeys().map((hole) => factValueOps(hole, this.source));
+    return this.holeKeys().map((hole) => factValueOps(hole, this.facts));
+  }
+
+  evaluated(): string | number | boolean | null {
+    return this.facts.evaluatedOf?.(this.key) ?? null;
+  }
+
+  object(): ValueOps | null {
+    const object = objectBehind(this.key, this.facts);
+    return object === null ? null : factValueOps(object, this.facts);
+  }
+
+  function(): ValueOps | null {
+    const found = functionBehind(this.key, this.facts);
+    return found === null ? null : factValueOps(found, this.facts);
+  }
+
+  source(): string {
+    return this.facts.textOf(this.key);
+  }
+
+  importedFrom(): string | null {
+    return this.facts.importSpecifierOf?.(this.key) ?? null;
   }
 
   private holeKeys(): string[] {
-    return templatePieces(this.written(), this.source).flatMap((piece) =>
+    return templatePieces(this.written(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],
     );
   }
 
   private written(): string {
-    this.settledKey ??= settled(this.key, this.source, "names");
+    this.settledKey ??= settled(this.key, this.facts, "names");
     return this.settledKey;
   }
+}
+
+/**
+ * The object a value comes to, or null. An object written out here is
+ * itself, and nothing is asked. Otherwise it is the one object among
+ * what the value comes to, with any function there left out, as the
+ * TypeScript store's `resolveObject` leaves one out.
+ */
+function objectBehind(key: string, source: FactSource): string | null {
+  if (source.shapeOf(key) === "object") {
+    return key;
+  }
+  const object = onlyKey(
+    (source.comesTo?.(key) ?? []).filter((to) => !isFunction(to, source)),
+  );
+  return object !== null && source.shapeOf(object) === "object" ? object : null;
+}
+
+/**
+ * The function a value is, or null: one written out here, the one
+ * function among what the value comes to, or else the one a factory
+ * call gives back.
+ */
+function functionBehind(key: string, source: FactSource): string | null {
+  if (isFunction(key, source)) {
+    return key;
+  }
+  const comesTo = onlyKey(
+    (source.comesTo?.(key) ?? []).filter((to) => isFunction(to, source)),
+  );
+  return comesTo ?? source.givesBack?.(key) ?? null;
+}
+
+function isFunction(key: string, source: FactSource): boolean {
+  return source.db.lookup("func", 0, key).length > 0;
+}
+
+/** The one key in a list, or null for none or several. */
+function onlyKey(keys: readonly string[]): string | null {
+  const distinct = new Set(keys);
+  const [one] = distinct;
+  return distinct.size === 1 && one !== undefined ? one : null;
 }
 
 /** One piece of a template, in source order: text, or the key of a hole. */
@@ -587,10 +651,19 @@ function propertyOf(
   return null;
 }
 
-/** The object a spread unpacks, settled the way any value is: a name is what the source wrote it as. */
+/**
+ * The object a spread unpacks: what a name was written as, or failing
+ * that the object the spread comes to. The second reaches an object
+ * passed through a call that returns its argument, `...meta(base)`,
+ * which the first stops at.
+ */
 function spreadObject(spread: string, source: FactSource): string {
   source.read(spread);
-  return settled(spread, source, "names");
+  const written = settled(spread, source, "names");
+  if (source.shapeOf(written) === "object") {
+    return written;
+  }
+  return objectBehind(spread, source) ?? written;
 }
 
 /**

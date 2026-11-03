@@ -5,9 +5,13 @@
  * facts say what the nodes do.
  */
 
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 
-import { stringValuesOf, writtenNodeOf } from "../discovery/resolveValue.js";
+import {
+  scalarValueOf,
+  stringValuesOf,
+  writtenNodeOf,
+} from "../discovery/resolveValue.js";
 import { nodeId } from "../facts/extract.js";
 import { typedAsExported } from "../values/receiverType.js";
 import { peelValue } from "../walk/unwrap.js";
@@ -26,7 +30,12 @@ import {
 } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
-import type { CallOps, FactSource } from "@suss/extractor";
+import type {
+  AstCapableValueOps,
+  CallOps,
+  FactSource,
+  ValueOps,
+} from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 
 /** What a caller can put in place of the store's own reads. */
@@ -61,7 +70,8 @@ export function factSourceFor(
     ...(extend === undefined
       ? {}
       : { extend: (key, ops) => at(key, ops, (node) => extend(node, ops)) }),
-    extendValue: (key, ops) => at(key, ops, (node) => noteValueNode(ops, node)),
+    extendValue: (key, ops) =>
+      at(key, ops, (node) => noteValueNode(withNode(ops, node), node)),
     read: (key) => at(key, undefined, access.state),
     writtenAs: (key) => at(key, null, (node) => keyOf(resolve(node))),
     anchorCalls: (key, origin) =>
@@ -89,6 +99,21 @@ export function factSourceFor(
     namesOf: (key, cap) =>
       at(key, null, (node) => stringValuesOf(node, store, cap)),
     argOf: (key) => at(key, null, effectArgOf),
+    evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
+    comesTo: (key) =>
+      at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),
+    givesBack: (key) =>
+      at(key, null, (node) => keyOf(store.resolveReturnedCallable(node))),
+    importSpecifierOf: (key) =>
+      at(key, null, (node) =>
+        Node.isIdentifier(node)
+          ? specifierBound(
+              access.db
+                .lookup("binds", 0, key)
+                .map((row) => nodeOf(String(row[1]))),
+            )
+          : null,
+      ),
     callsProjectMethod: (call) =>
       at(
         call,
@@ -129,6 +154,31 @@ export function factSourceFor(
 export function statedFactKey(call: Node, store: ResolutionStore): string {
   store.factAccess().state(call);
   return nodeId(call);
+}
+
+/** The value's ops with the node they were read at, for a reader that still walks the tree. */
+function withNode(ops: ValueOps, node: Node): AstCapableValueOps {
+  return Object.assign(ops, { ast: () => node });
+}
+
+/**
+ * The module specifier of the import statement a name is bound to, as
+ * written. The `imports` facts key a module by the file it resolved to,
+ * so the specifier is read off the statement itself.
+ */
+function specifierBound(declarations: readonly (Node | null)[]): string | null {
+  const specifiers = new Set(
+    declarations.flatMap((declaration) => {
+      const statement = declaration?.getFirstAncestorByKind(
+        SyntaxKind.ImportDeclaration,
+      );
+      return statement === undefined
+        ? []
+        : [statement.getModuleSpecifierValue()];
+    }),
+  );
+  const [one] = specifiers;
+  return specifiers.size === 1 && one !== undefined ? one : null;
 }
 
 /** The expression a computed key is written with, for the value of that entry, or null. */

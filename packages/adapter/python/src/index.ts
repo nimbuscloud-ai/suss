@@ -14,6 +14,7 @@
 export { annotationToShape, shapeFromName } from "./annotations.js";
 export { classifyDecorator } from "./decorators.js";
 export { discoverUnits } from "./discovery.js";
+export { pythonFactSource } from "./factSource.js";
 export {
   containedValues,
   objectReturnedBy,

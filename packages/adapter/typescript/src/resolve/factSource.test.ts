@@ -1,4 +1,4 @@
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { constructedFrom, declaredBy } from "@suss/recognize";
@@ -9,7 +9,7 @@ import { ResolutionStore } from "../facts/store.js";
 import { callOpsFor } from "./callOps.js";
 import { factSourceFor, statedFactKey } from "./factSource.js";
 
-import type { CallOps } from "@suss/extractor";
+import type { AstCapableValueOps, CallOps, ValueOps } from "@suss/extractor";
 import type { CallExpression } from "ts-morph";
 
 const LIBRARY = `
@@ -168,5 +168,102 @@ describe("the fact source", () => {
 
     expect(anchors[0]).toEqual(["Deck", "Deck"]);
     expect(anchors).toEqual(anchorsOf(true));
+  });
+});
+
+const VALUES = `
+  import { Chip as Tag } from "./chip";
+  import * as kit from "./chip";
+
+  const kind = "primary";
+  function keep<T>(value: T): T {
+    return value;
+  }
+  function makeRender() {
+    return () => null;
+  }
+  const options = keep({
+    label: \`\${kind} x\`,
+    count: 2,
+    tag: Tag,
+    kit,
+    local: kind,
+    member: kit.Chip,
+    render: makeRender(),
+    inline: () => 1,
+  });
+
+  register(options);
+`;
+
+/** The object `register` is handed, as the value ops over the facts read it. */
+function registered(): ValueOps | null {
+  const project = createTestProject();
+  project.createSourceFile("/chip.ts", "export function Chip() {}");
+  const file = project.createSourceFile("/use.ts", VALUES);
+  const call = file
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .find((found) => found.getExpression().getText() === "register");
+  if (call === undefined) {
+    throw new Error("no call to register");
+  }
+  const store = new ResolutionStore();
+  const ops = factCallOps(statedFactKey(call, store), factSourceFor(store));
+  return ops?.valueAt(0)?.object?.() ?? null;
+}
+
+describe("the fact source's value members", () => {
+  it("follows a name through a call that returns its argument to the object", () => {
+    expect(
+      registered()
+        ?.entries("nothing")
+        .map((entry) => entry.key),
+    ).toEqual([
+      "label",
+      "count",
+      "tag",
+      "kit",
+      "local",
+      "member",
+      "render",
+      "inline",
+    ]);
+  });
+
+  it("settles a template and a number the evaluator folds", () => {
+    const options = registered();
+
+    expect(options?.property("label")?.evaluated?.()).toBe("primary x");
+    expect(options?.property("count")?.evaluated?.()).toBe(2);
+    expect(options?.property("tag")?.evaluated?.()).toBeNull();
+  });
+
+  it("gives the specifier of the import statement a name is bound to, and nothing for any other value", () => {
+    const options = registered();
+    const importOf = (name: string) =>
+      options?.property(name)?.importedFrom?.() ?? null;
+
+    expect(importOf("tag")).toBe("./chip");
+    expect(importOf("kit")).toBe("./chip");
+    expect(importOf("local")).toBeNull();
+    expect(importOf("member")).toBeNull();
+    expect(importOf("label")).toBeNull();
+  });
+
+  it("finds a function written in place, and the one a factory call gives back", () => {
+    const options = registered();
+    const functionOf = (name: string) =>
+      options?.property(name)?.function?.()?.source?.() ?? null;
+
+    expect(functionOf("inline")).toBe("() => 1");
+    expect(functionOf("render")).toBe("() => null");
+    expect(functionOf("label")).toBeNull();
+  });
+
+  it("hands out the node a value was read at, as it was written", () => {
+    const tag = registered()?.property("tag") as AstCapableValueOps | undefined;
+
+    expect(tag?.source?.()).toBe("Tag");
+    expect(Node.isIdentifier(tag?.ast() as Node)).toBe(true);
   });
 });

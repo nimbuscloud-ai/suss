@@ -461,6 +461,18 @@ export class ResolutionStore {
   }
 
   /**
+   * Every function and object a value comes to, the answers
+   * `resolveObject` picks its one object from. The value ops pick their
+   * own, so each language applies the same choice.
+   */
+  resolveComesTo(value: Node): Node[] {
+    const target = factKeyOf(value);
+    return this.remembered(`comesTo|${nodeId(target)}`, () =>
+      this.askAbout(target, "wanted", () => this.lookupComesTo(target)),
+    );
+  }
+
+  /**
    * A question asked again, when no fact its derivation looked up has
    * arrived since, reads the same files and derives the same answer, so
    * the store gives back the one it found before. The files that answer
@@ -1959,21 +1971,26 @@ export class ResolutionStore {
   }
 
   private lookupObject(value: Node): Node | null {
-    this.derive();
-
-    const candidates = new Set<Node>();
-    for (const target of this.answersFor("wantedComesTo", nodeId(value))) {
-      const node = this.table.byId.get(target);
-      if (node === undefined || isFunctionRoot(node)) {
-        continue;
-      }
-      candidates.add(node);
-    }
-
+    const candidates = new Set(
+      this.lookupComesTo(value).filter((node) => !isFunctionRoot(node)),
+    );
     if (candidates.size !== 1) {
       return null;
     }
     return [...candidates][0] as Node;
+  }
+
+  private lookupComesTo(value: Node): Node[] {
+    this.derive();
+
+    const found = new Set<Node>();
+    for (const target of this.answersFor("wantedComesTo", nodeId(value))) {
+      const node = this.table.byId.get(target);
+      if (node !== undefined) {
+        found.add(node);
+      }
+    }
+    return [...found];
   }
 
   /**

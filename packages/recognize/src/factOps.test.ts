@@ -739,3 +739,126 @@ describe("the ops over a name imported under another name", () => {
     ).toBeNull();
   });
 });
+
+/**
+ * The facts for, in source order, where `keep` returns its argument and
+ * `factory` returns a function it writes:
+ *
+ *   const made = keep({ label: TITLE });
+ *   const either = cond ? made : () => null;
+ *   const both = cond ? made : other;
+ *   const row = { ...made, own: 1 };
+ *   const items = [made];
+ *   factory();
+ */
+function members(
+  reads: "every member" | "no member" = "every member",
+): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("objectValue", "obj");
+  add("holdsProperty", "obj", "label", "TITLE");
+  add("writtenEntryAt", "obj", "0", "TITLE", "value");
+  add("objectValue", "other");
+  add("func", "arrow");
+  add("objectValue", "row");
+  add("writtenEntryAt", "row", "0", "made", "spread");
+  add("holdsProperty", "row", "own", "one");
+  add("writtenEntryAt", "row", "1", "one", "value");
+  add("objectValue", "items");
+  add("call", "factoryCall", "factory");
+  add("func", "inner");
+
+  const comesTo: Record<string, readonly string[]> = {
+    made: ["obj"],
+    either: ["obj", "arrow"],
+    both: ["obj", "other"],
+  };
+  const shape: Record<string, "object" | "list"> = {
+    obj: "object",
+    other: "object",
+    row: "object",
+    items: "list",
+  };
+  const base: FactSource = {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: (key) => shape[key] ?? null,
+    textOf: (key) => `text of ${key}`,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+  if (reads === "no member") {
+    return base;
+  }
+  return {
+    ...base,
+    evaluatedOf: (key) => (key === "TITLE" ? "Orders" : null),
+    comesTo: (key) => comesTo[key] ?? [],
+    givesBack: (key) => (key === "factoryCall" ? "inner" : null),
+    importSpecifierOf: (key) => (key === "TITLE" ? "./titles" : null),
+  };
+}
+
+/** The source text of the object a value comes to, or null for none. */
+const objectText = (key: string, from = members()) =>
+  factValueOps(key, from).object?.()?.source?.() ?? null;
+
+/** The source text of the function a value is, or null for none. */
+const functionText = (key: string, from = members()) =>
+  factValueOps(key, from).function?.()?.source?.() ?? null;
+
+describe("the value members over the facts", () => {
+  it("gives the one object a value comes to, leaving out a function it may also come to", () => {
+    expect(objectText("made")).toBe("text of obj");
+    expect(objectText("either")).toBe("text of obj");
+    expect(objectText("obj")).toBe("text of obj");
+  });
+
+  it("gives no object for a value that comes to two, to a list, or to nothing", () => {
+    expect(objectText("both")).toBeNull();
+    expect(objectText("items")).toBeNull();
+    expect(objectText("factoryCall")).toBeNull();
+    expect(objectText("made", members("no member"))).toBeNull();
+  });
+
+  it("gives the function a value is, comes to, or a factory call gives back", () => {
+    expect(functionText("arrow")).toBe("text of arrow");
+    expect(functionText("either")).toBe("text of arrow");
+    expect(functionText("factoryCall")).toBe("text of inner");
+    expect(functionText("made")).toBeNull();
+  });
+
+  it("reads what the evaluator settles a value to and where a name was imported from, as the adapter says", () => {
+    const label = factValueOps("made", members()).object?.()?.property("label");
+
+    expect(label?.evaluated?.()).toBe("Orders");
+    expect(label?.importedFrom?.()).toBe("./titles");
+    expect(label?.source?.()).toBe("text of TITLE");
+    expect(factValueOps("one", members()).evaluated?.()).toBeNull();
+    expect(factValueOps("one", members()).importedFrom?.()).toBeNull();
+  });
+
+  it("gives nothing for a member the adapter does not read", () => {
+    const bare = members("no member");
+
+    expect(factValueOps("TITLE", bare).evaluated?.()).toBeNull();
+    expect(functionText("factoryCall", bare)).toBeNull();
+    expect(factValueOps("TITLE", bare).importedFrom?.()).toBeNull();
+  });
+
+  it("unpacks a spread of an object a name only comes to through a call that returns its argument", () => {
+    const row = factValueOps("row", members());
+
+    expect(row.entries("nothing").map((entry) => entry.key)).toEqual([
+      "label",
+      "own",
+    ]);
+    expect(row.property("label")?.evaluated?.()).toBe("Orders");
+  });
+});

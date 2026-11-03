@@ -70,7 +70,7 @@ const summaries = generateSummariesFromStories(
 
 ## Where it fits in suss
 
-The package depends on `@suss/behavioral-ir` for the IR types it produces and on `@suss/adapter-typescript` for export resolution, with `ts-morph` as a peer dependency. It is the only contract reader that parses TypeScript, because CSF is TypeScript. It still reads a declared artifact, and does not infer behavior from a component's implementation.
+The package depends on `@suss/behavioral-ir` for the IR types it produces, on `@suss/adapter-typescript` for each export as the value ops over its facts, and on `@suss/recognize` for the types of those ops, with `ts-morph` as a peer dependency. The component's declaration and a render function's JSX are still read off the syntax tree, through the node each value hands out. It is the only contract reader that parses TypeScript, because CSF is TypeScript. It still reads a declared artifact, and does not infer behavior from a component's implementation.
 
 ## More
 

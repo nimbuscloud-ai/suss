@@ -220,6 +220,33 @@ export interface ValueOps {
    * reader then has only the calls.
    */
   interpolated?(): readonly ValueOps[];
+  /**
+   * The one string, number or boolean this value comes to, with the
+   * names and templates in it folded. Null when it comes to anything
+   * else, or to more than one. `text` and `flag` read only what the
+   * source wrote here, so a reader that wants a constant kept in another
+   * file asks this.
+   */
+  evaluated?(): string | number | boolean | null;
+  /**
+   * The object this value comes to, through names and through a call
+   * that returns its argument, or null for anything else. A call into a
+   * factory comes to nothing here.
+   */
+  object?(): ValueOps | null;
+  /**
+   * The function this value is: one written here, one a name comes to,
+   * or the one a call into a factory gives back. Null for anything else.
+   */
+  function?(): ValueOps | null;
+  /** The value as the source wrote it, before any name in it is followed. */
+  source?(): string;
+  /**
+   * The module this value was imported from, spelled as the import
+   * statement spells it, when the value is a name the file imports.
+   * Null for anything else.
+   */
+  importedFrom?(): string | null;
 }
 
 /** One entry of an object a call states. */
@@ -473,6 +500,21 @@ export interface FactSource {
   namesOf?(key: string, cap: number): readonly string[] | null;
   /** The value as an effect argument. */
   argOf(key: string): EffectArg | null;
+  /** The one string, number or boolean the evaluator settles the value at the key to, or null. */
+  evaluatedOf?(key: string): string | number | boolean | null;
+  /**
+   * Every function and object the value at the key comes to, through
+   * names and through a call that returns its argument. The ops pick the
+   * one they want from these, so an adapter keeps every answer.
+   */
+  comesTo?(key: string): readonly string[];
+  /**
+   * The one function the value at the key gives back when it is a call
+   * into a factory, or a name written as one.
+   */
+  givesBack?(key: string): string | null;
+  /** The module specifier as written, when the value at the key is a name the file imports. */
+  importSpecifierOf?(key: string): string | null;
   /** Whether the call goes to a method the project wrote, which no library made. */
   callsProjectMethod?(call: string): boolean;
   /** What a call into one of the project's own functions returns, as written. */
@@ -491,7 +533,11 @@ export interface FactSource {
    * through this, a receiver or an argument as much as the call in hand.
    */
   extend?(call: string, ops: CallOps): CallOps;
-  /** The ops for a value, after the adapter has noted which of its own nodes they read, so a slot a pack states can be traced back. */
+  /**
+   * The ops for a value with the adapter's own members added, after it
+   * has noted which of its own nodes they read, so a slot a pack states
+   * can be traced back.
+   */
   extendValue?(value: string, ops: ValueOps): ValueOps;
 }
 
@@ -511,5 +557,16 @@ export interface OpsCarrier {
  */
 export interface AstCapableOps extends CallOps {
   /** The adapter's own node for the call in hand. */
+  ast(): unknown;
+}
+
+/**
+ * The value ops an adapter implements when it can hand out the node a
+ * value was read at, for a reader the value ops cannot serve yet. Kept
+ * off `ValueOps` for the same reason `AstCapableOps` is kept off
+ * `CallOps`.
+ */
+export interface AstCapableValueOps extends ValueOps {
+  /** The adapter's own node for the value in hand. */
   ast(): unknown;
 }
