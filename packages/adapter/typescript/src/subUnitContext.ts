@@ -22,6 +22,7 @@ import {
   SyntaxKind,
 } from "ts-morph";
 
+import { importedReferenceSpellings } from "./discovery/resolveImport.js";
 import { resolveDecl } from "./resolve/functionBehind.js";
 import {
   callsInUnitBody,
@@ -51,13 +52,15 @@ export interface TsSubUnitContext {
   findJsxAttributes(parent: FunctionRoot): TsJsxAttributeLocation[];
 
   /**
-   * Yield every call expression matching `name` (bare identifier
-   * callee only: e.g. `useEffect(...)`, not `React.useEffect(...)`),
-   * from the calls the parent's body walk reaches.
+   * Yield every call written `name(...)`, from the calls the parent's
+   * body walk reaches. Given the module that exports `name`, also every
+   * other way the file can write that export: an alias of a named import,
+   * or `React.useEffect` off a default or namespace import.
    */
   findCallExpressionsByName(
     parent: FunctionRoot,
     name: string,
+    module?: string,
   ): CallExpression[];
 
   /**
@@ -173,11 +176,17 @@ function findJsxAttributes(parent: FunctionRoot): TsJsxAttributeLocation[] {
 function findCallExpressionsByName(
   parent: FunctionRoot,
   name: string,
+  module?: string,
 ): CallExpression[] {
-  return callsInUnitBody(parent).filter((call) => {
-    const callee = call.getExpression();
-    return Node.isIdentifier(callee) && callee.getText() === name;
-  });
+  const spellings = new Set([
+    name,
+    ...(module === undefined
+      ? []
+      : importedReferenceSpellings(parent.getSourceFile(), module, name)),
+  ]);
+  return callsInUnitBody(parent).filter((call) =>
+    spellings.has(call.getExpression().getText()),
+  );
 }
 
 function resolveAttributeValueFunction(
