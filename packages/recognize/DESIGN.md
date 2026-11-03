@@ -44,8 +44,9 @@ The starts that begin at a receiver form their own union,
 | `constructed` | a client made from one of these modules' exports | yes |
 | `anyOf` | a receiver any one of several origins accepts | yes |
 | `returnedBy` | what a library method returned, called on a receiver from another origin: `hook.get_client()` | yes |
+| `typed` | a receiver the program declares as one of a module's named types: `to: CommandDispatcher` | yes |
+| `imported` | a value the file imports under one of these names, or the module itself as `*` | yes |
 | `factoryMade` | `app = express()` | no |
-| `imported` | a function the file imports | no |
 | `anchored` | a chain read from its anchor call | no |
 | `inherits` | a Ruby or Python receiver matched by ancestry | no |
 | `global` | `process.env`, bare `fetch` | no |
@@ -64,12 +65,30 @@ does. `returnedBy("get_client", declaredBy(HOOK))` takes the receiver
 of `hook.get_client().query(sql)`, and `anyOf` lets a chain take that
 client and one the program made itself.
 
+A project's own dispatcher is usually handed around as a parameter, so
+nothing in sight made it. `typed({ from, named })` takes a receiver the
+program declares as one of those types, as one of those modules exports
+it. TypeScript asks the checker, Python reads the annotation or the
+call that built the value, and Ruby, which declares no types, takes a
+receiver made from one of the classes, as `constructed` would.
+
+`imported({ from, named })` takes a value the file brought in: a
+function it calls bare, or a module or a class it calls a method on.
+`named` lists the names as the module exports them, so an alias
+matches, and `*` is the module itself, as `import * as ledger` or
+Python's `import ledger` brings it in. Ruby has no imports, so its
+facts state a constant whose root no file in the run defines as
+imported from `GLOBAL_MODULE` under its path, and `Ledger.publish` is
+then a method on the `*` of `Ledger`.
+
 A chain can also match a call made directly on the tracked value, with
 no method, by adding `.calls(meaning)` next to its methods table. A
 store hook is the usual case. `useAppStore((s) => s.bears)` calls no
 method, so the table has no method name to list. The call matches when
 its callee is a bound name whose written value came from the chain's
-origin. Such a call usually reads its fields inside a selector lambda,
+origin. With `imported` the callee is the import itself, so
+`publishEntry(queue, body)` matches when the file imported
+`publishEntry`. Such a call usually reads its fields inside a selector lambda,
 and `fields: { selectorParam: 0 }` reads them off the lambda's
 parameter, one field per distinct first segment.
 
@@ -163,10 +182,13 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `text()`, `flag()`, `name()`, `names()`, `asArg()` | the adapter's own reading of the value, `literalOf`, `nameOf`, `namesOf` and `argOf` |
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
+| `isFrom`, `receiverIsFrom` with `typed` | the adapter's `typedAs`, or the construction a receiver was written as where the adapter has none |
+| `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `imports(x, m, n)` in Python and Ruby, the store's `importedNamesOf` in TypeScript |
+| `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
 | `anchorCall` | the adapter's `anchorCalls`, with the single-answer policy |
 
-`classAt`, `namedCallee`, `parameterReadsAt`, `statesSlots` and the two
-batching hints are left out. Each comes in with the pack that reads it.
+`classAt`, `parameterReadsAt`, `statesSlots` and the two batching
+hints are left out. Each comes in with the pack that reads it.
 Until then an adapter adds them through `FactSource.extend`, which every
 call the ops reach goes through, and TypeScript takes them from
 `callOpsFor` at the same node.
@@ -581,6 +603,29 @@ A receiver a project function made, such as a queue built inside
 construction that function returns. The TypeScript adapter works out
 both the origin check and the `{ to: "receiver" }` step with the same
 store question, so the call the chain checks is the call it then reads.
+
+## A send whose arguments are the message
+
+A project's own dispatcher takes the subject and the body as separate
+arguments, `dispatcher.dispatch("order.placed", order)`, so there is no
+one value to read the message off. `{ each: "theCall" }` says the call
+is the message, a method entry needs no `input`, and the channel and
+the body are each an argument pick:
+
+```ts
+messageSends({
+  wire: "aws_sqs",
+  client: typed({ from: ["@acme/async"], named: ["CommandDispatcher"] }),
+  messages: { each: "theCall" },
+  channel: [{ argument: { at: 0 } }],
+  body: { argument: { at: 1 } },
+  unsettledName: "nothing",
+}).methods({ dispatch: {} });
+```
+
+`configuredSends(spec, wire)` builds these from a dependency stub's
+statement. A subject nothing settles records the send with no channel,
+the way the SDK sends read theirs.
 
 ## The example every declaration states
 

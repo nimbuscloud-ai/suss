@@ -15,6 +15,8 @@ const DESCRIBE: ByOrigin<string, [string]> = {
     origin.of.map((one) => byOrigin(DESCRIBE, one, prefix)).join(" | "),
   returnedBy: (origin, prefix) =>
     `${byOrigin(DESCRIBE, origin.on, prefix)}.${origin.method}()`,
+  typed: (origin, prefix) => `${prefix}: ${origin.named.join()}`,
+  imported: (origin, prefix) => `${prefix}import ${origin.importedFrom.join()}`,
 };
 
 describe("dispatching on the kind of origin", () => {

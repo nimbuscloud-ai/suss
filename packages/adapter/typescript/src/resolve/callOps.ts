@@ -21,6 +21,7 @@ import {
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
 import { parameterReads } from "../parameterReads.js";
+import { typedAsExported } from "../values/receiverType.js";
 import { peelValue } from "../walk/unwrap.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
@@ -39,6 +40,7 @@ import type {
   CallOps,
   ClassOps,
   ConstructedFrom,
+  Imported,
   ReceiverOrigin,
   ReturnedBy,
   StatedSlot,
@@ -122,7 +124,43 @@ const ORIGIN: ByOrigin<boolean, [Receiver]> = {
     ]);
     return [...made].some((one) => returnedFrom(origin, one, receiver));
   },
+  typed: (origin, receiver) =>
+    receiver.callee !== null &&
+    typedAsExported(
+      receiver.callee.getExpression(),
+      origin,
+      receiver.resolution,
+    ),
+  imported: (origin, receiver) =>
+    receiver.callee !== null &&
+    importedAsAsked(
+      origin,
+      receiver.callee.getExpression(),
+      receiver.resolution,
+    ),
 };
+
+/**
+ * Whether the store says `value` was imported from one of the origin's
+ * modules under a name it asks for. A name imported through an alias or
+ * a project barrel is read as the export it is.
+ */
+export function importedAsAsked(
+  origin: Imported,
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  if (resolution === undefined) {
+    return false;
+  }
+  return origin.importedFrom.some((module) =>
+    resolution
+      .importedNamesOf(value, [module])
+      .some(
+        (name) => origin.named === undefined || origin.named.includes(name),
+      ),
+  );
+}
 
 /** Whether `made` is a call of the origin's method on a receiver from its `on`. */
 function returnedFrom(
@@ -218,6 +256,9 @@ const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
     receiver.callee !== null &&
     receiver.callee.getName() === origin.method &&
     byOrigin(ORIGIN, origin.on, receiver),
+  typed: ORIGIN.typed,
+  imported: (origin, receiver) =>
+    importedAsAsked(origin, receiver.expression, receiver.resolution),
 };
 
 /**
@@ -456,6 +497,7 @@ export function callOpsFor(
         callee,
         expression,
         resolve,
+        resolution: reading.resolution,
         ...(originatesFrom === undefined ? {} : { originatesFrom }),
       }),
     argumentCount: () => argumentsOf().length,
@@ -553,8 +595,8 @@ export function anchorAccepts(
   if (!Node.isCallExpression(candidate) && !Node.isNewExpression(candidate)) {
     return false;
   }
-  // Only a construction is anchored, so an origin built from others has nothing to compare.
-  if (origin.origin === "anyOf" || origin.origin === "returnedBy") {
+  // Only a construction is anchored, so any other origin has nothing to compare.
+  if (origin.origin !== "constructed" && origin.origin !== "declaredBy") {
     return false;
   }
   if (

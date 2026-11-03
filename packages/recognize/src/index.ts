@@ -1,14 +1,17 @@
 // @suss/recognize: write a pack as data, and let any adapter run it.
 
 export { compile } from "./compile.js";
+export { configuredSends } from "./configuredSends.js";
 export { examplesMissing, runExamples } from "./example.js";
 export { messageSends } from "./messageSends.js";
 export {
   anyOf,
   constructedFrom,
   declaredBy,
+  imported,
   opsIn,
   returnedBy,
+  typed,
 } from "./ops.js";
 export { declarationsIn, pack } from "./pack.js";
 export { sqlStatements } from "./sqlStatements.js";
@@ -30,6 +33,7 @@ export type {
 export type {
   AccessKind,
   AccessPathLink,
+  ArgumentBody,
   ArgumentPart,
   ArgumentPick,
   ArgumentsFrom,
@@ -70,12 +74,14 @@ export type {
   StorageEnding,
   StorageMethod,
   SubjectLink,
+  TheCall,
   ToArgument,
   ToReceiver,
   UnitInvokeEnding,
   UnitInvokeMethod,
   WholeMessage,
 } from "./chain.js";
+export type { ConfiguredCallSpec } from "./configuredSends.js";
 export type { RanExample, RunOverCode } from "./example.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
 export type {
@@ -84,9 +90,11 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  Imported,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
+  Typed,
   UnsettledName,
   ValueEntry,
   ValueOps,

@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { type FactSource, factCallOps, factValueOps } from "./factOps.js";
-import { anyOf, constructedFrom, declaredBy, returnedBy } from "./ops.js";
+import {
+  anyOf,
+  constructedFrom,
+  declaredBy,
+  imported,
+  returnedBy,
+  typed,
+} from "./ops.js";
 
 /**
  * The facts for, in source order:
@@ -67,6 +74,8 @@ function source(over: Partial<FactSource> = {}): FactSource {
     importedFrom: (key, module) =>
       (key === "Redis" && module === "ioredis") ||
       (key === "PutCommand" && module === "@aws-sdk/lib-dynamodb"),
+    importedAs: (key, module) =>
+      key === "Redis" && module === "ioredis" ? ["Redis"] : [],
     shapeOf: (key) => shape[key] ?? null,
     textOf: (key) => text[key] ?? key,
     literalOf: (key) => literal[key] ?? null,
@@ -502,6 +511,7 @@ function clients(): FactSource {
     importedFrom: (key, module) =>
       (key === "Hook" && module === "airflow") ||
       (key === "PG::Connection" && module === "PG"),
+    importedAs: () => [],
     shapeOf: () => null,
     constructedClass: (callee) =>
       callee === "PG::Connection.new" ? "Connection" : null,
@@ -562,5 +572,111 @@ describe("the ops over a keyword, a client a method returned and a class made by
     expect(
       exec.receiverIsFrom(constructedFrom({ from: ["PG"], named: ["new"] })),
     ).toBe(false);
+  });
+});
+
+/**
+ * The facts for, in source order:
+ *
+ *   to.dispatch("orders", body);    // `to` a parameter
+ *   ledger.publish("ledger", body); // `ledger` the module, imported whole
+ *   publish("ledger", body);        // `publish` imported by name
+ */
+function dispatches(over: Partial<FactSource> = {}): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("call", "dispatch", "to.dispatch");
+  add("readsProperty", "to.dispatch", "to", "dispatch");
+  add("call", "viaModule", "ledger.publish");
+  add("readsProperty", "ledger.publish", "ledger", "publish");
+  add("call", "bare", "publish");
+  const imports: Record<string, readonly string[]> = {
+    ledger: ["*"],
+    publish: ["publish"],
+  };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: (key, module) =>
+      module === "ledger" ? (imports[key] ?? []) : [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+    ...over,
+  };
+}
+
+describe("the ops over a typed or an imported receiver", () => {
+  const relay = typed({ from: ["relay"], named: ["Dispatcher"] });
+
+  it("asks the adapter whether a receiver is declared as one of the types", () => {
+    const asked: string[] = [];
+    const declaring = dispatches({
+      typedAs: (call, origin) => {
+        asked.push(call);
+        return origin.named.includes("Dispatcher");
+      },
+    });
+
+    expect(opsAt("dispatch", declaring).receiverIsFrom(relay)).toBe(true);
+    expect(
+      opsAt("dispatch", declaring).receiverIsFrom(
+        typed({ from: ["relay"], named: ["Other"] }),
+      ),
+    ).toBe(false);
+    expect(opsAt("bare", declaring).isFrom(relay)).toBe(false);
+    expect(asked).toEqual(["dispatch", "dispatch"]);
+  });
+
+  it("checks what made the receiver where the language declares no types", () => {
+    expect(
+      opsAt("set").receiverIsFrom(
+        typed({ from: ["ioredis"], named: ["Redis"] }),
+      ),
+    ).toBe(true);
+    expect(
+      opsAt("set").receiverIsFrom(
+        typed({ from: ["ioredis"], named: ["Cluster"] }),
+      ),
+    ).toBe(false);
+  });
+
+  it("takes a receiver or a callee the file imported under a name the origin asks for", () => {
+    const ops = dispatches();
+
+    expect(
+      opsAt("viaModule", ops).receiverIsFrom(
+        imported({ from: ["ledger"], named: ["*"] }),
+      ),
+    ).toBe(true);
+    expect(
+      opsAt("viaModule", ops).receiverIsFrom(
+        imported({ from: ["ledger"], named: ["publish"] }),
+      ),
+    ).toBe(false);
+    expect(
+      opsAt("bare", ops).isFrom(
+        imported({ from: ["ledger"], named: ["publish"] }),
+      ),
+    ).toBe(true);
+    expect(opsAt("bare", ops).isFrom(imported({ from: ["ledger"] }))).toBe(
+      true,
+    );
+    expect(
+      opsAt("bare", ops).receiverIsFrom(imported({ from: ["ledger"] })),
+    ).toBe(false);
+    expect(opsAt("dispatch", ops).isFrom(imported({ from: ["ledger"] }))).toBe(
+      false,
+    );
+  });
+
+  it("says a call to a name has a named callee, and a method call does not", () => {
+    expect(opsAt("bare", dispatches()).namedCallee?.()).toBe(true);
+    expect(opsAt("viaModule", dispatches()).namedCallee?.()).toBe(false);
   });
 });

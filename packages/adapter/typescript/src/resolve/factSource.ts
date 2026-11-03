@@ -9,6 +9,7 @@ import { Node } from "ts-morph";
 
 import { stringValuesOf, writtenNodeOf } from "../discovery/resolveValue.js";
 import { nodeId } from "../facts/extract.js";
+import { typedAsExported } from "../values/receiverType.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
   anchorAccepts,
@@ -73,6 +74,8 @@ export function factSourceFor(
       ),
     importedFrom: (key, module) =>
       at(key, false, (node) => isImportedFrom(node, module, originatesFrom)),
+    importedAs: (key, module) =>
+      at(key, [], (node) => store.importedNamesOf(node, [module])),
     shapeOf: (key) => at(key, null, shapeOf),
     textOf: (key) => at(key, "", (node) => node.getText()),
     literalOf: (key) => at(key, null, literalOf),
@@ -106,6 +109,17 @@ export function factSourceFor(
         return (
           callee !== null &&
           methodDeclaredIn(callee, module, resolve, originatesFrom)
+        );
+      }),
+    typedAs: (call, origin) =>
+      at(call, false, (node) => {
+        const callee = Node.isCallExpression(node)
+          ? node.getExpression()
+          : null;
+        return (
+          callee !== null &&
+          Node.isPropertyAccessExpression(callee) &&
+          typedAsExported(callee.getExpression(), origin, store)
         );
       }),
   };

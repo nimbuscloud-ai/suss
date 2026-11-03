@@ -411,16 +411,21 @@ export interface SqlMethod {
 
 /** What one send method does, as the message-send ending reads it. */
 export interface MessageSendMethod {
-  /** Where the call states the message, or the collection of them. */
-  readonly input: OneArgument;
+  /**
+   * Where the call states the message, or the collection of them. Left
+   * out when the message is the call's own arguments, `{ each: "theCall" }`,
+   * and a method that leaves it out for any other location matches nothing.
+   */
+  readonly input?: OneArgument;
 }
 
 /**
  * What one invoke method does. An invoke states its whole request as
- * one object the same way a send does, so both say where that object
- * is and nothing else.
+ * one object, so it says where that object is and nothing else.
  */
-export type UnitInvokeMethod = MessageSendMethod;
+export interface UnitInvokeMethod {
+  readonly input: OneArgument;
+}
 
 /** What one method table can say a method does. */
 export type MethodMeaning = StorageMethod | SqlMethod | MessageSendMethod;
@@ -480,7 +485,7 @@ export interface SqlEnding {
  * `SendMessageCommand` and `SendMessageBatchCommand`, and their inputs
  * differ.
  */
-export type MessageLocation = OneMessage | ManyIn | ManyAsTheInput;
+export type MessageLocation = OneMessage | ManyIn | ManyAsTheInput | TheCall;
 
 /** The call's input is the message. */
 export interface OneMessage {
@@ -497,6 +502,16 @@ export interface ManyIn {
 /** The call's input is the list of messages, as in BullMQ's `addBulk([...])`. */
 export interface ManyAsTheInput {
   readonly each: "inTheInput";
+}
+
+/**
+ * The call sends one message spread over its own arguments, as a
+ * project's `dispatch(subject, body)` does. There is no one value to
+ * read the message off, so its channel and its body are each an
+ * argument.
+ */
+export interface TheCall {
+  readonly each: "theCall";
 }
 
 /**
@@ -558,11 +573,12 @@ export interface MessageSendEnding {
   /** What joins the parts, when there is more than one. */
   readonly channelSeparator?: string;
   /**
-   * The property the message states its body on, or the whole message,
-   * when the pack can say. `queue.add(name, data)` hands the body over
-   * as its own argument, so the message is the body.
+   * The property the message states its body on, the whole message, or
+   * an argument of the call, when the pack can say. `queue.add(name,
+   * data)` hands the body over as its own argument, so the message is the
+   * body.
    */
-  readonly body?: string | WholeMessage;
+  readonly body?: string | WholeMessage | ArgumentBody;
   /**
    * Where the literal value recorded as the routing key is: a property
    * of the message, or an argument of the call. It stays out of the
@@ -582,6 +598,11 @@ export interface MessageSendEnding {
 /** The message itself, as the body a send records. */
 export interface WholeMessage {
   readonly whole: "message";
+}
+
+/** An argument of the call, as the body a send records. */
+export interface ArgumentBody {
+  readonly argument: OneArgument;
 }
 
 /**

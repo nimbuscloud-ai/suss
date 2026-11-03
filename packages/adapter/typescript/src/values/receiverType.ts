@@ -15,10 +15,13 @@
 
 import { Node } from "ts-morph";
 
+import { matchingImportDeclarations } from "../discovery/importScan.js";
 import { compareText } from "../shapes/typeText.js";
 import { peelSyntax } from "../walk/unwrap.js";
 
-import type { Symbol as TsSymbol, Type } from "ts-morph";
+import type { Typed } from "@suss/extractor";
+import type { ImportDeclaration, Symbol as TsSymbol, Type } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 
 /** One named type a receiver is, and the files that declare it. */
 export interface ReceiverType {
@@ -30,6 +33,57 @@ export interface ReceiverType {
    * `class Db extends Client`, and a pack asks where the base came from.
    */
   extendsWritten: readonly Node[];
+}
+
+/**
+ * Whether the node is one of the origin's named types, as one of its
+ * modules exports that type. The export is read through the file's own
+ * import of the module, so a sub-path, a re-export from another package
+ * and a module the project declares all count. A type the checker could
+ * not resolve has no declaring file, and then the file importing that
+ * name from the module is what says.
+ */
+export function typedAsExported(
+  node: Node,
+  origin: Typed,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  const types = receiverTypesOf(node).filter((type) =>
+    origin.named.includes(type.name),
+  );
+  if (types.length === 0) {
+    return false;
+  }
+  const file = node.getSourceFile();
+  return origin.importedFrom.some((module) =>
+    matchingImportDeclarations(file, module, resolution, true).some(
+      (declaration) => types.some((type) => exportsType(declaration, type)),
+    ),
+  );
+}
+
+/** Whether the module an import declaration reaches exports this type under its name. */
+function exportsType(
+  declaration: ImportDeclaration,
+  type: ReceiverType,
+): boolean {
+  const target = declaration.getModuleSpecifierSourceFile();
+  if (target === undefined) {
+    return type.declaredIn.length === 0 && importsName(declaration, type.name);
+  }
+  return (target.getExportedDeclarations().get(type.name) ?? []).some(
+    (exported) =>
+      type.declaredIn.includes(exported.getSourceFile().getFilePath()),
+  );
+}
+
+/** Whether an import declaration brings in `name`: by name, as its default, or with the whole module. */
+function importsName(declaration: ImportDeclaration, name: string): boolean {
+  return (
+    declaration.getNamespaceImport() !== undefined ||
+    declaration.getDefaultImport()?.getText() === name ||
+    declaration.getNamedImports().some((one) => one.getName() === name)
+  );
 }
 
 /** Every named type the node's type is, nearest first. */

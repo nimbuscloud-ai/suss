@@ -22,8 +22,10 @@ import type {
   DeclaredBy,
   EffectArg,
   FactSource,
+  Imported,
   ReceiverOrigin,
   ReturnedBy,
+  Typed,
   UnsettledName,
   ValueEntry,
   ValueOps,
@@ -196,6 +198,43 @@ class FactCall implements CallOps {
     return through !== asWritten && this.madeFrom(origin, through);
   }
 
+  /**
+   * Whether the receiver is declared as one of the origin's types. A
+   * language that declares none settles it by what made the receiver.
+   */
+  receiverTyped(origin: Typed): boolean {
+    if (this.member === null) {
+      return false;
+    }
+    const typedAs = this.source.typedAs;
+    if (typedAs === undefined) {
+      return this.receiverConstructed({
+        origin: "constructed",
+        importedFrom: origin.importedFrom,
+        named: origin.named,
+      });
+    }
+    return typedAs(this.key, origin);
+  }
+
+  /** Whether the receiver is a value the file imported as the origin says. */
+  receiverImported(origin: Imported): boolean {
+    return (
+      this.member !== null &&
+      importedAsAsked(origin, this.member.object, this.source)
+    );
+  }
+
+  /** Whether the callee is a value the file imported as the origin says. */
+  calleeImported(origin: Imported): boolean {
+    return importedAsAsked(origin, this.calleeKey, this.source);
+  }
+
+  /** Whether the call goes to a name rather than to an expression written in place. */
+  namedCallee(): boolean {
+    return isName(this.calleeKey, this.source);
+  }
+
   /** Whether the callee as the source wrote it came from one of the origin's modules. */
   calleeConstructed(origin: ConstructedFrom): boolean {
     return (
@@ -266,6 +305,8 @@ function receiverOrigin(call: FactCall): ByOrigin<boolean> {
         made.receiverIsFrom(origin.on)
       );
     },
+    typed: (origin) => call.receiverTyped(origin),
+    imported: (origin) => call.receiverImported(origin),
   };
 }
 
@@ -276,6 +317,8 @@ function callOrigin(call: FactCall): ByOrigin<boolean> {
     constructed: (origin) => call.calleeConstructed(origin),
     anyOf: (origin) => origin.of.some((one) => call.isFrom(one)),
     returnedBy: (origin) => call.returns(origin),
+    typed: (origin) => call.receiverTyped(origin),
+    imported: (origin) => call.calleeImported(origin),
   };
 }
 
@@ -662,6 +705,21 @@ function constructorName(key: string, source: FactSource): string {
     source.constructedClass?.(key) ??
     memberRead(key, source)?.name ??
     source.textOf(key)
+  );
+}
+
+/** Whether the value at `key` was imported from one of the origin's modules under a name it asks for. */
+function importedAsAsked(
+  origin: Imported,
+  key: string,
+  source: FactSource,
+): boolean {
+  return origin.importedFrom.some((module) =>
+    source
+      .importedAs(key, module)
+      .some(
+        (name) => origin.named === undefined || origin.named.includes(name),
+      ),
   );
 }
 

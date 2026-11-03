@@ -17,6 +17,7 @@ import { nodeOfResolutionKey, stringValueOf } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
 import type { EffectArg, FactSource } from "@suss/extractor";
+import type { SubjectOrigin } from "./facts/resolve.js";
 import type { PyNode } from "./parser.js";
 
 /** The fact source for one run's database. */
@@ -33,7 +34,11 @@ export function pythonFactSource(db: Database): FactSource {
     writtenAs: (key) => writtenValueOf(db, key),
     anchorCalls: (key) => anchorCallsOf(db, key),
     importedFrom: (key, module) =>
-      originsOf(db, key).some((origin) => fromModule(origin, module)),
+      originsOf(db, key).some(
+        (origin) => importedNameIn(origin, module).length > 0,
+      ),
+    importedAs: (key, module) =>
+      originsOf(db, key).flatMap((origin) => importedNameIn(origin, module)),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     textOf: (key) => nodeAt(key)?.text ?? nameIn(key),
     literalOf: (key) => literalOf(nodeAt(key)),
@@ -53,17 +58,26 @@ export function pythonFactSource(db: Database): FactSource {
         ? { kind: "identifier", name: nameIn(key) }
         : argOf(node, db);
     },
-    declares: (call, module) => {
-      const receiver = receiverNamed(nodeAt(call));
-      return (
-        receiver !== null &&
-        receiverTypeOrigins(receiver, {
-          facts: db,
-          filePath: fileOfKey(call),
-        }).some((origin) => origin.module === module)
-      );
-    },
+    declares: (call, module) =>
+      receiverClassesOf(call, db).some((origin) => origin.module === module),
+    typedAs: (call, origin) =>
+      receiverClassesOf(call, db).some(
+        (found) =>
+          origin.named.includes(found.name) &&
+          origin.importedFrom.some((module) => inModule(found.module, module)),
+      ),
   };
+}
+
+/** Where the class of the call's receiver came from, as its annotation or the call that built it says. */
+function receiverClassesOf(
+  call: string,
+  db: Database,
+): readonly SubjectOrigin[] {
+  const receiver = receiverNamed(nodeOfResolutionKey(call, db));
+  return receiver === null
+    ? []
+    : receiverTypeOrigins(receiver, { facts: db, filePath: fileOfKey(call) });
 }
 
 /**
@@ -78,16 +92,21 @@ function receiverNamed(call: PyNode | null): PyNode | null {
   return receiver?.type === "identifier" ? receiver : null;
 }
 
-/** Whether an import came from the module a pack asks for, or from inside it. */
-function fromModule(
-  origin: { module: string; name: string },
-  module: string,
-): boolean {
-  return (
-    origin.module === module ||
-    origin.module.startsWith(`${module}.`) ||
-    `${origin.module}.${origin.name}` === module
-  );
+/**
+ * The name an import brought in from the module or a module inside it,
+ * as the module exports it: `*` for `import ledger` or `from acme import
+ * ledger` when the pack asks for `acme.ledger` itself.
+ */
+function importedNameIn(origin: SubjectOrigin, module: string): string[] {
+  if (`${origin.module}.${origin.name}` === module) {
+    return ["*"];
+  }
+  return inModule(origin.module, module) ? [origin.name] : [];
+}
+
+/** Whether a module is the one asked for or one inside it. */
+function inModule(found: string, module: string): boolean {
+  return found === module || found.startsWith(`${module}.`);
 }
 
 const SHAPES: Record<string, "object" | "list"> = {

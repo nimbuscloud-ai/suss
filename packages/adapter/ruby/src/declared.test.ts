@@ -7,9 +7,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   constructedFrom,
   declaredBy,
+  imported,
   pack,
   sqlStatements,
   storageCalls,
+  typed,
 } from "@suss/recognize";
 
 import { extractRubyProject } from "./project.js";
@@ -149,6 +151,24 @@ describe("a pack declared with @suss/recognize, run over Ruby", () => {
     expect(get?.valueAt(0)?.text()).toBeNull();
     expect(get?.isFrom(constructedFrom("Clients"))).toBe(true);
     expect(get?.isFrom(constructedFrom("Client"))).toBe(false);
+    expect(
+      get?.receiverIsFrom(imported({ from: ["Clients"], named: ["Http"] })),
+    ).toBe(true);
+    expect(
+      get?.receiverIsFrom(imported({ from: ["Clients::Http"], named: ["*"] })),
+    ).toBe(true);
+    expect(get?.receiverIsFrom(imported({ from: ["Http"] }))).toBe(false);
+    expect(get?.namedCallee?.()).toBe(false);
+    expect(
+      byCallee
+        .get("cache.get")
+        ?.receiverIsFrom(typed({ from: ["Kvcache"], named: ["Cache"] })),
+    ).toBe(true);
+    expect(
+      byCallee
+        .get("cache.get")
+        ?.receiverIsFrom(imported({ from: ["Kvcache"] })),
+    ).toBe(false);
     expect(
       byCallee.get("cache.get")?.receiverIsFrom(declaredBy("Kvcache")),
     ).toBe(true);
