@@ -506,20 +506,13 @@ function decoratorOn(
 }
 
 /**
- * The one call behind `subject` the origin accepts. The chain rules
- * hand back every call they pass; this filters them against the
- * origin and keeps the single-answer policy: two distinct matches say
- * nothing, since picking one would depend on fact order.
- */
-/**
  * Whether a call the anchor rules reached is the construction the origin
- * asks for. Only the store's import origins count here, where a
- * receiver's own check also asks the checker.
+ * asks for, checked the way a receiver's construction is checked.
  */
 export function anchorAccepts(
   candidate: Node,
   origin: ReceiverOrigin,
-  originatesFrom: OriginatesFrom,
+  originatesFrom: OriginatesFrom | undefined,
 ): boolean {
   if (!Node.isCallExpression(candidate) && !Node.isNewExpression(candidate)) {
     return false;
@@ -533,20 +526,24 @@ export function anchorAccepts(
   }
   const callee = calleeOf(candidate);
   const root = rootIdentifier(callee) ?? callee;
-  return origin.importedFrom.some((module) => originatesFrom(root, module));
+  return origin.importedFrom.some((module) =>
+    isImportedFrom(root, module, originatesFrom),
+  );
 }
 
+/**
+ * The one call behind `subject` the origin accepts. The chain rules
+ * hand back every call they pass; this filters them against the
+ * origin and keeps the single-answer policy: two distinct matches say
+ * nothing, since picking one would depend on fact order.
+ */
 function anchorCallBehind(
   subject: Node,
   origin: ReceiverOrigin,
   reading: CallReading,
 ): CallOps | null {
   const { originatesFrom, anchorCallsOf } = reading;
-  if (
-    anchorCallsOf === undefined ||
-    originatesFrom === undefined ||
-    origin.origin !== "constructed"
-  ) {
+  if (anchorCallsOf === undefined || origin.origin !== "constructed") {
     return null;
   }
 
