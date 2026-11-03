@@ -57,6 +57,7 @@ import { inTestFile } from "../testCode.js";
 import { emitContainerWrites } from "./containerWrites.js";
 import {
   createNodeTable,
+  emitFunctionDeclaration,
   emitValue,
   environmentObjectsIn,
   extractFileFacts,
@@ -1933,10 +1934,15 @@ export class ResolutionStore {
 
   /**
    * File extraction only reaches values hanging off exports, and a query
-   * can be rooted anywhere, so the queried value gets its own facts.
+   * can be rooted anywhere, so the queried value gets its own facts. So
+   * does a function or method written as a declaration, which a file
+   * reaches only through an export or a name that refers to it, and not
+   * through a JSX tag or a framework that discovers it some other way.
    */
   private seedValue(value: Node): void {
-    if (!Node.isExpression(value)) {
+    const declared =
+      Node.isFunctionDeclaration(value) || Node.isMethodDeclaration(value);
+    if (!declared && !Node.isExpression(value)) {
       return;
     }
     const id = nodeId(value);
@@ -1945,6 +1951,10 @@ export class ResolutionStore {
     }
     this.seededValues.add(id);
     this.stale = true;
+    if (declared) {
+      emitFunctionDeclaration(this.db, this.table, value);
+      return;
+    }
     emitValue(this.db, this.table, value);
   }
 
