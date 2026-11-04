@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import { factValueOps } from "@suss/recognize/ops";
+
 import { pythonFactSource } from "./factSource.js";
 import { parsePython } from "./parser.js";
 import { factsForFile } from "./project.js";
 import { bindModule } from "./scope.js";
+
+import type { AstCapableValueOps } from "@suss/extractor";
+import type { PyNode } from "./parser.js";
 
 const FILE = "use.py";
 
@@ -108,5 +113,27 @@ describe("the Python fact source", () => {
     expect(source.importSpecifierOf?.(held("comp"))).toBe(".things");
     expect(source.importSpecifierOf?.(held("kit"))).toBe("kit");
     expect(source.importSpecifierOf?.(held("local"))).toBeNull();
+  });
+
+  it("says how the source wrote a value, and hands over a lambda's own node", async () => {
+    const { db, source, options, held } = await sourceFor();
+    const returned = new Map(
+      db
+        .facts("returnsValue")
+        .map((row) => String(row[1]))
+        .map((key) => [source.textOf(key), key]),
+    );
+    const lambda = returned.get("lambda: None") ?? "";
+
+    expect(source.formOf?.(lambda)).toBe("function");
+    expect(source.formOf?.(returned.get("None") ?? "")).toBe("other");
+    expect(source.formOf?.(options ?? "")).toBe("object");
+    expect(source.formOf?.(held("comp"))).toBe("name");
+    expect(source.formOf?.(held("count"))).toBe("other");
+    const ops = factValueOps(lambda, source) as Partial<AstCapableValueOps>;
+    expect((ops.ast?.() as PyNode | undefined)?.type).toBe("lambda");
+    expect(
+      (factValueOps(held("comp"), source) as Partial<AstCapableValueOps>).ast,
+    ).toBeUndefined();
   });
 });
