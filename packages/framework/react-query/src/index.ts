@@ -6,225 +6,55 @@
  * hooks and what is left out.
  */
 
-import { Node } from "ts-morph";
+import { callbacks, constructedFrom, pack } from "@suss/recognize";
 
-import {
-  callsInUnitBody,
-  importBindsName,
-  objectLiteralOf,
-  writesUndefined,
-} from "@suss/adapter-typescript";
-import { functionCallBinding } from "@suss/behavioral-ir";
-
-import type {
-  ResolutionStore,
-  TsInvocationRecognizerContext,
-  TsSubUnitContext,
-} from "@suss/adapter-typescript";
-import type { Effect } from "@suss/behavioral-ir";
-import type {
-  DiscoveredSubUnit,
-  DiscoveredSubUnitParent,
-  InvocationRecognizer,
-  PatternPack,
-} from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { CallExpression } from "ts-morph";
+import type { CallbackPick, PatternPack } from "@suss/recognize";
 
-const QUERY_MODULES = ["@tanstack/react-query", "react-query"];
-
-const HOOK_CALLBACK_PROPERTY: Record<string, string> = {
-  useQuery: "queryFn",
-  useSuspenseQuery: "queryFn",
-  useInfiniteQuery: "queryFn",
-  useSuspenseInfiniteQuery: "queryFn",
-  useMutation: "mutationFn",
-};
+const QUERY = constructedFrom("@tanstack/react-query", "react-query");
 
 /**
- * The library hook a call goes to, with the name the file calls it by.
- * The store follows the import, so an alias and a hook a project file
- * re-exports both count, and a local function that shares a hook's name
- * does not. Only a name an import binds is asked about, since each
- * question costs a derivation and most calls go somewhere else.
+ * Where a hook states its function, tried argument by argument: the
+ * options object's own `property`, or, from `from` on, a function or a
+ * name written as the argument. In the v3 positional form the query key
+ * comes first, and `useMutation` takes its function first. Three
+ * arguments is the most any v3 signature takes.
  */
-function hookOf(
-  call: CallExpression,
-  resolution: ResolutionStore | undefined,
-): { local: string; hook: string } | null {
-  const callee = call.getExpression();
-  if (resolution === undefined || !Node.isIdentifier(callee)) {
-    return null;
-  }
-  const local = callee.getText();
-  if (!importBindsName(call.getSourceFile(), local)) {
-    return null;
-  }
-  const hooks = new Set(
-    resolution
-      .importOriginsOf(callee, QUERY_MODULES)
-      .flatMap(({ path }) => (path.length === 1 ? path : []))
-      .filter((name) => Object.hasOwn(HOOK_CALLBACK_PROPERTY, name)),
-  );
-  const [hook] = hooks;
-  return hooks.size === 1 && hook !== undefined ? { local, hook } : null;
+function functionAt(property: string, from: number): CallbackPick[] {
+  return [0, 1, 2].flatMap((at): CallbackPick[] => [
+    ...(at >= from ? [{ written: "callback" as const, at }] : []),
+    { written: "here", at, property: [property] },
+  ]);
 }
 
-/**
- * The function the hook runs, from the `queryFn` or `mutationFn` property
- * of an options object, or from the positional argument the v3 API takes
- * (`useQuery(key, fn)`, `useMutation(fn)`). A property written as a
- * method, `queryFn() { ... }`, is that function.
- */
-function callbackExpressionOf(
-  call: CallExpression,
-  hook: string,
-  resolution: ResolutionStore | undefined,
-): Node | null {
-  const property = HOOK_CALLBACK_PROPERTY[hook];
-  for (const arg of call.getArguments()) {
-    if (Node.isObjectLiteralExpression(arg)) {
-      const prop = arg.getProperty(property);
-      if (prop !== undefined && Node.isPropertyAssignment(prop)) {
-        return prop.getInitializer() ?? null;
-      }
-      if (prop !== undefined && Node.isShorthandPropertyAssignment(prop)) {
-        return prop.getNameNode();
-      }
-      if (prop !== undefined && Node.isMethodDeclaration(prop)) {
-        return prop;
-      }
-      continue;
-    }
-    // `useQuery(key, undefined, { queryFn })` passes no function in that
-    // place, and the options after it still say which one runs.
-    if (writesUndefined(arg)) {
-      continue;
-    }
-    // A name for an options object, `useMutation(saveOptions)`, is the
-    // options and not the function they give. The pack reads options
-    // only where the call writes them out, so it passes over the name.
-    if (Node.isIdentifier(arg) && objectLiteralOf(arg, resolution) !== null) {
-      continue;
-    }
-    if (
-      Node.isArrowFunction(arg) ||
-      Node.isFunctionExpression(arg) ||
-      Node.isIdentifier(arg)
-    ) {
-      // In the v3 positional form the first argument is the key, except
-      // for `useMutation`, which takes the function first.
-      if (call.getArguments().indexOf(arg) > 0 || hook === "useMutation") {
-        return arg;
-      }
-    }
-  }
-  return null;
-}
+const QUERY_FUNCTION = { callback: functionAt("queryFn", 1) };
 
-type CallbackRef =
-  | { type: "literal" }
-  | { type: "identifier"; name: string }
-  | { type: "opaque"; reason: string };
-
-/** Whether the hook's function is written at the call, which makes it a sub-unit of its own. */
-function isWrittenInPlace(expression: Node): boolean {
-  return (
-    Node.isArrowFunction(expression) ||
-    Node.isFunctionExpression(expression) ||
-    Node.isMethodDeclaration(expression)
-  );
-}
-
-function callbackRefOf(expression: Node | null): CallbackRef {
-  if (expression === null) {
-    return { type: "opaque", reason: "missing-query-function" };
-  }
-  if (isWrittenInPlace(expression)) {
-    return { type: "literal" };
-  }
-  if (Node.isIdentifier(expression)) {
-    return { type: "identifier", name: expression.getText() };
-  }
-  return { type: "opaque", reason: "non-literal-query-function" };
-}
-
-const queryHookRecognizer: InvocationRecognizer = (call, ctx) => {
-  const c = call as CallExpression;
-  if (!Node.isCallExpression(c)) {
-    return null;
-  }
-  const { resolution } = ctx as TsInvocationRecognizerContext;
-  const found = hookOf(c, resolution);
-  if (found === null) {
-    return null;
-  }
-
-  const effect: Effect = {
-    type: "interaction",
-    binding: functionCallBinding({
-      transport: "in-process",
-      recognition: "react-query",
-    }),
-    callee: found.local,
-    interaction: {
-      class: "schedule",
-      via: found.local,
-      callbackRef: callbackRefOf(
-        callbackExpressionOf(c, found.hook, resolution),
-      ),
-      hasDelay: false,
+const HOOKS = callbacks({ client: QUERY })
+  .methods({
+    useQuery: QUERY_FUNCTION,
+    useSuspenseQuery: QUERY_FUNCTION,
+    useInfiniteQuery: QUERY_FUNCTION,
+    useSuspenseInfiniteQuery: QUERY_FUNCTION,
+    useMutation: { callback: functionAt("mutationFn", 0) },
+  })
+  .schedules({
+    via: "asWritten",
+    unread: {
+      missing: "missing-query-function",
+      other: "non-literal-query-function",
     },
-  };
-  return [effect];
-};
-
-/** One sub-unit per hook call whose function is written inline. */
-function reactQuerySubUnits(
-  parent: DiscoveredSubUnitParent,
-  ctx: unknown,
-): DiscoveredSubUnit[] {
-  const out: DiscoveredSubUnit[] = [];
-  const counters = new Map<string, number>();
-  const { resolution } = ctx as TsSubUnitContext;
-
-  // The calls the hook recognizer sees, so every hook call it records has
-  // the sub-unit behind it.
-  for (const call of callsInUnitBody(parent.func as Node)) {
-    const found = hookOf(call, resolution);
-    if (found === null) {
-      continue;
-    }
-    const expression = callbackExpressionOf(call, found.hook, resolution);
-    if (expression === null || !isWrittenInPlace(expression)) {
-      continue;
-    }
-
-    const idx = counters.get(found.local) ?? 0;
-    counters.set(found.local, idx + 1);
-    out.push({
-      func: expression,
-      kind: "scheduled-callback",
-      name: `${parent.name}.${found.local}#${idx}`,
-      inputMapping: { type: "positionalParams", params: [] },
-    });
-  }
-
-  return out;
-}
+  })
+  .unitWhenInPlace({
+    kind: "scheduled-callback",
+    name: ["parent", "callee", "countPerCallee"],
+  })
+  .example('useQuery({ queryKey: ["orders"], queryFn: fetchOrders })');
 
 export function reactQueryFramework(): PatternPack {
-  return {
-    name: "react-query",
+  return pack("react-query", [HOOKS], {
     languages: ["typescript"],
-    protocol: "in-process",
-    discovery: [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-    requiresImport: QUERY_MODULES,
-    invocationRecognizers: [queryHookRecognizer],
-    subUnits: reactQuerySubUnits,
-  };
+    recognizedAs: "react-query",
+  });
 }
 
 export const declares: PackDeclaration = {
