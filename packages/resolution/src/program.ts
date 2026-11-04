@@ -55,6 +55,7 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedSource",
   "wantedInputRead",
   "wantedMembers",
+  "wantedCallsRun",
 ];
 
 /**

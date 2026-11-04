@@ -489,6 +489,93 @@ describe("ruby value facts", () => {
     expect(db.size("containsFn")).toBe(1);
   });
 
+  describe("a block written with a call", () => {
+    const SOURCE = [
+      "def load",
+      "  jobs.later { notify(user) }",
+      "  items.each do |item|",
+      "    save(item)",
+      "    item.tags.map { |tag| tag.touch }",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const EACH_BLOCK =
+      "do |item|\n    save(item)\n    item.tags.map { |tag| tag.touch }\n  end";
+    const METHOD = keyOf(SOURCE, SOURCE.trimEnd());
+    const LATER = keyOf(SOURCE, "{ notify(user) }");
+    const EACH = keyOf(SOURCE, EACH_BLOCK);
+    const MAP = keyOf(SOURCE, "{ |tag| tag.touch }");
+
+    it("is a function that runs inline in the method it is written in", async () => {
+      const db = await factsFor(SOURCE);
+      const blocks = [LATER, EACH, MAP];
+      expect(rows(db, "func").map((row) => row[0])).toEqual([
+        METHOD,
+        ...blocks,
+      ]);
+      expect(rows(db, "inlineFn").map((row) => row[0])).toEqual(blocks);
+      expect(rows(db, "containsFn")).toEqual(
+        blocks.map((block) => [METHOD, block]),
+      );
+    });
+
+    it("says which call it is written with", async () => {
+      const db = await factsFor(SOURCE);
+      expect(rows(db, "callBlock")).toEqual([
+        [keyOf(SOURCE, "jobs.later { notify(user) }"), LATER],
+        [keyOf(SOURCE, `items.each ${EACH_BLOCK}`), EACH],
+        [keyOf(SOURCE, "item.tags.map { |tag| tag.touch }"), MAP],
+      ]);
+    });
+
+    it("makes the calls written in it, the blocks inside it included, and leaves them on the method too", async () => {
+      const db = await factsFor(SOURCE);
+      const madeBy = (fn: string): string[] =>
+        rows(db, "makesCall")
+          .filter((row) => row[0] === fn)
+          .map((row) => textAt(SOURCE, row[1] ?? ""));
+      expect(madeBy(LATER)).toEqual(["notify(user)"]);
+      expect(madeBy(EACH)).toEqual([
+        "save(item)",
+        "item.tags.map { |tag| tag.touch }",
+        "item.tags",
+        "tag.touch",
+      ]);
+      expect(madeBy(MAP)).toEqual(["tag.touch"]);
+      expect(madeBy(METHOD)).toEqual(
+        expect.arrayContaining(["notify(user)", "save(item)", "tag.touch"]),
+      );
+    });
+
+    it("is a function outside every method, with nothing containing it", async () => {
+      const source = "task :sync do\n  Sync.run\nend\n";
+      const db = await factsFor(source);
+      const block = keyOf(source, "do\n  Sync.run\nend");
+      expect(rows(db, "func").map((row) => row[0])).toEqual([block]);
+      expect(rows(db, "makesCall")).toEqual([
+        [block, keyOf(source, "Sync.run")],
+      ]);
+      expect(db.size("containsFn")).toBe(0);
+    });
+  });
+
+  it("says a lambda written as an argument runs inline, and one assigned to a name does not", async () => {
+    const source = [
+      "def load",
+      "  handler = ->(x) { x }",
+      "  jobs.later(-> { notify })",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "inlineFn")).toEqual([[keyOf(source, "-> { notify }")]]);
+    expect(rows(db, "containsFn").map((row) => row[1])).toEqual([
+      keyOf(source, "->(x) { x }"),
+      keyOf(source, "-> { notify }"),
+    ]);
+  });
+
   it("binds nothing when an assignment writes to something other than a name", async () => {
     const db = await factsFor("config[key] = value\n");
     expect(db.size("binds")).toBe(0);

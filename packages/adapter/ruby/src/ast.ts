@@ -161,6 +161,15 @@ export const METHOD_TYPES = new Set(["method", "singleton_method"]);
 /** `->(x) { ... }`, a function that can be assigned to a name and called later. */
 export const LAMBDA_TYPE = "lambda";
 
+/**
+ * A lambda handed to a call as an argument is part of the body that
+ * writes it, as a block is, so its calls are that body's calls. One
+ * assigned to a name keeps a body of its own.
+ */
+export function isLambdaArgument(node: RbNode): boolean {
+  return node.type === LAMBDA_TYPE && node.parent?.type === "argument_list";
+}
+
 /** `raise` is an ordinary method call in Ruby, and not a keyword. */
 const RAISING_METHODS = new Set(["raise", "fail"]);
 

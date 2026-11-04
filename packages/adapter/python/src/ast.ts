@@ -60,6 +60,15 @@ export function isFunction(node: PyNode): boolean {
 }
 
 /**
+ * Whether a function written inside another runs as part of it when the
+ * outer one's summary is read. A lambda does, and a nested `def` gets a
+ * summary of its own.
+ */
+export function runsInline(node: PyNode): boolean {
+  return node.type === "lambda";
+}
+
+/**
  * The bodies the module-load walk does not enter, including a class body,
  * which Python does run at load. Keep this beside `isFunction`: it is
  * those types plus a class.
