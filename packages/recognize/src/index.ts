@@ -1,5 +1,6 @@
 // @suss/recognize: write a pack as data, and let any adapter run it.
 
+export { callbacks } from "./callbacks.js";
 export { compile } from "./compile.js";
 export { configuredSends } from "./configuredSends.js";
 export { examplesMissing, runExamples } from "./example.js";
@@ -30,6 +31,7 @@ export type {
   ProjectHelper,
   ProjectHelpers,
 } from "@suss/extractor";
+export type { Callbacks, CallbacksSpec } from "./callbacks.js";
 export type {
   AccessKind,
   AccessPathLink,
@@ -37,6 +39,11 @@ export type {
   ArgumentPart,
   ArgumentPick,
   ArgumentsFrom,
+  CallbackArgument,
+  CallbackBlock,
+  CallbackMethod,
+  CallbackPick,
+  CallbackProperty,
   CallStep,
   CallsLink,
   Chain,
@@ -64,6 +71,8 @@ export type {
   OneArgument,
   OneMessage,
   PropertyPart,
+  ScheduleEnding,
+  ScheduleUnread,
   ScopeLink,
   SelectorParamPick,
   SqlEnding,
@@ -74,11 +83,13 @@ export type {
   StorageEnding,
   StorageMethod,
   SubjectLink,
+  SubUnitNamePart,
   TheCall,
   ToArgument,
   ToReceiver,
   UnitInvokeEnding,
   UnitInvokeMethod,
+  UnitWhenInPlaceLink,
   WholeMessage,
 } from "./chain.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";

@@ -476,6 +476,35 @@ describe("factValueOps over a spread", () => {
     expect(ring.property("own")?.flag()).toBe(true);
     expect(ring.property("missing")).toBeNull();
   });
+
+  it("reads an object written here by its own keys, a spread and a name left out", () => {
+    const row = factValueOps("row", spreads());
+
+    expect(row.ownProperty?.("table")?.text()).toBe("orders");
+    expect(row.ownProperty?.("id")).toBeNull();
+    expect(factValueOps("rowName", spreads()).ownProperty?.("table")).toBe(
+      null,
+    );
+  });
+
+  it("reads every value as other where the adapter says nothing of its form", () => {
+    expect(factValueOps("row", spreads()).form?.()).toBe("other");
+    expect(
+      factValueOps("row", { ...spreads(), formOf: () => "object" }).form?.(),
+    ).toBe("object");
+  });
+});
+
+describe("the block a call is written with", () => {
+  it("is the function the call states as its block, and null for a call without one", () => {
+    const facts = spreads();
+    const db = facts.db as Database;
+    db.add("call", ["each", "items.each"]);
+    db.add("callBlock", ["each", "block"]);
+
+    expect(factCallOps("each", facts)?.block?.()?.source?.()).toBe("block");
+    expect(factCallOps("put", facts)?.block?.()).toBeNull();
+  });
 });
 
 /**

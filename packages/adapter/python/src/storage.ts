@@ -943,7 +943,14 @@ function recognizeBodyStorage(
   definitionNode: PyNode,
   lookup: StorageLookup,
 ): SlottedEffects {
-  const calls = bodyCalls(definitionNode);
+  return callStorage(bodyCalls(definitionNode, lookup.facts), lookup);
+}
+
+/** The same work for a list of calls, such as the ones a lambda makes. */
+export function callStorage(
+  calls: readonly PyNode[],
+  lookup: StorageLookup,
+): SlottedEffects {
   const slots: EffectSlot[] = [];
   const effects = storageEffects(calls, {
     ...lookup,

@@ -31,6 +31,7 @@ import {
   declaredName,
   reachesBase,
 } from "./baseClass.js";
+import { claimedIn } from "./claims.js";
 import { rubyFactSource } from "./factSource.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
@@ -797,7 +798,7 @@ function recognizeMethodStorage(
 ): SlottedEffects {
   const slots: EffectSlot[] = [];
   const effects = storageEffects(
-    callsUnder(method),
+    callsUnder(method, claimedIn(method, options.facts)),
     file,
     {
       ...options,
@@ -839,14 +840,41 @@ function declaredEffects(
   });
 }
 
-function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
+/** Every call under the node. A block a pack claims as a unit of its own is left out. */
+function callsUnder(
+  node: RbNode,
+  claimed: ReadonlySet<number> | undefined,
+  found: RbNode[] = [],
+): RbNode[] {
   for (const child of children(node)) {
+    if (claimed?.has(child.id) === true) {
+      continue;
+    }
     if (child.type === "call") {
       found.push(child);
     }
-    callsUnder(child, found);
+    callsUnder(child, claimed, found);
   }
   return found;
+}
+
+/**
+ * The database work a block a pack claims does, and what the declared
+ * hooks make of its calls, with the claims inside it left out. `method`
+ * is the method the block is written in.
+ */
+export function claimedBlockStorage(
+  block: RbNode,
+  method: RbNode,
+  file: string,
+  options: RbStorageOptions,
+): EffectAt[] {
+  return storageEffects(
+    callsUnder(block, claimedIn(method, options.facts)),
+    file,
+    options,
+    method,
+  );
 }
 
 /**

@@ -28,6 +28,7 @@ import type {
   Typed,
   UnsettledName,
   ValueEntry,
+  ValueForm,
   ValueOps,
 } from "@suss/extractor";
 
@@ -137,6 +138,11 @@ class FactCall implements CallOps {
     }
     this.source.read(passed);
     return factValueOps(passed, this.source);
+  }
+
+  block(): ValueOps | null {
+    const block = only(this.source.db.lookup("callBlock", 0, this.key), 1);
+    return block === null ? null : factValueOps(block, this.source);
   }
 
   receiverIsFrom(origin: ReceiverOrigin): boolean {
@@ -425,6 +431,21 @@ class FactValue implements ValueOps {
 
   source(): string {
     return this.facts.textOf(this.key);
+  }
+
+  form(): ValueForm {
+    return this.facts.formOf?.(this.key) ?? "other";
+  }
+
+  ownProperty(name: string): ValueOps | null {
+    if (this.facts.shapeOf(this.key) !== "object") {
+      return null;
+    }
+    const own = writtenEntries(this.key, "unread", this.facts).filter(
+      (entry): entry is HeldEntry => !("spread" in entry) && entry.key === name,
+    );
+    const last = own[own.length - 1];
+    return last === undefined ? null : factValueOps(last.held, this.facts);
   }
 
   importedFrom(): string | null {

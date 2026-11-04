@@ -14,6 +14,7 @@ import {
 } from "../discovery/resolveValue.js";
 import { nodeId } from "../facts/extract.js";
 import { typedAsExported } from "../values/receiverType.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
   anchorAccepts,
@@ -34,6 +35,7 @@ import type {
   AstCapableValueOps,
   CallOps,
   FactSource,
+  ValueForm,
   ValueOps,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -88,6 +90,7 @@ export function factSourceFor(
       at(key, [], (node) => store.importedAsOf(node, [module])),
     shapeOf: (key) => at(key, null, shapeOf),
     textOf: (key) => at(key, "", (node) => node.getText()),
+    formOf: (key) => at(key, "other", formOf),
     literalOf: (key) => at(key, null, literalOf),
     nameOf: (key, unsettled) =>
       at(key, null, (node) => readName(node, { resolve, unsettled })),
@@ -194,6 +197,21 @@ function computedKeyOfEntry(held: Node): Node | null {
   return name !== undefined && Node.isComputedPropertyName(name)
     ? name.getExpression()
     : null;
+}
+
+/** A method written into an object literal is a function written in place, as an arrow is. */
+function formOf(node: Node): ValueForm {
+  if (
+    Node.isArrowFunction(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isMethodDeclaration(node)
+  ) {
+    return "function";
+  }
+  if (Node.isObjectLiteralExpression(node)) {
+    return "object";
+  }
+  return Node.isIdentifier(node) && !writesUndefined(node) ? "name" : "other";
 }
 
 function shapeOf(node: Node): "object" | "list" | null {

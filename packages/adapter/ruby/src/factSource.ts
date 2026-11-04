@@ -36,7 +36,7 @@ import {
 } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
-import type { EffectArg, FactSource } from "@suss/extractor";
+import type { EffectArg, FactSource, ValueForm } from "@suss/extractor";
 import type { RbNode } from "./parser.js";
 
 /** The fact source for one run's database. */
@@ -69,6 +69,7 @@ export function rubyFactSource(db: Database): FactSource {
     memberName: (stated) => classMemberOf(stated) ?? stated,
     constructedClass: (callee) => constructedClass(nodeAt(callee)),
     textOf,
+    formOf: (key) => formOf(nodeAt(key)),
     literalOf: (key) => literalOf(nodeAt(key)),
     nameOf: (key, unsettled) => {
       const node = valueNode(key);
@@ -101,7 +102,24 @@ export function rubyFactSource(db: Database): FactSource {
     // A Ruby file requires another file and imports no names, so no
     // value has a specifier.
     importSpecifierOf: () => null,
+    // The node is found only when a pack asks for it, since the declared
+    // hooks make the ops for every value they read.
+    extendValue: (key, ops) => Object.assign(ops, { ast: () => nodeAt(key) }),
   };
+}
+
+const FORMS: Record<string, ValueForm> = {
+  block: "function",
+  do_block: "function",
+  lambda: "function",
+  identifier: "name",
+  simple_symbol: "name",
+  hash: "object",
+};
+
+/** How the source wrote a value. A local or a parameter is keyed as a name, with no node. */
+function formOf(node: RbNode | null): ValueForm {
+  return node === null ? "name" : (FORMS[node.type] ?? "other");
 }
 
 /** A method's name with the receiver it is sent to, `cache.get`, which is how Ruby writes a callee. */

@@ -5,7 +5,8 @@
  * precondition, and the IR reads an effect with preconditions as one
  * that does not always run. The walk goes into lambdas, whose calls count
  * as the enclosing unit's, and stops at a nested `def`, whose calls go on
- * its own summary.
+ * its own summary. It also stops at a lambda a pack claims as a unit of
+ * its own.
  */
 
 import { sharedGatingConditions, statementSites } from "@suss/extractor";
@@ -19,6 +20,7 @@ import {
   runsAtModuleLoad,
   runsInline,
 } from "../ast.js";
+import { claimedLambdas } from "../lambdaClaims.js";
 import { guardInputs } from "../provenance.js";
 import { askWrittenValues, evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
@@ -31,6 +33,7 @@ import type {
   EffectArg,
   EffectSite,
   PlacedEffect,
+  RawCondition,
   RawEffect,
   StatementSites,
 } from "@suss/extractor";
@@ -60,16 +63,40 @@ function literalArgOf(
   return null;
 }
 
-/** Every call written in this function's own body, in source order. */
-export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
+/**
+ * Every call written in this function's own body, in source order. A
+ * lambda a pack claims as a unit of its own is left out, since its calls
+ * go on that unit's summary. Only a reader that passes the facts asks.
+ */
+export function bodyCalls(node: PyNode, facts?: Database): PyNode[] {
+  return callsUnder(node, claimedLambdas(node, facts), []);
+}
+
+/** The calls written in one expression, itself included. A lambda in `barriers` is left out. */
+export function expressionCalls(
+  expression: PyNode,
+  barriers: ReadonlySet<number>,
+): PyNode[] {
+  return callsUnder(
+    expression,
+    barriers,
+    expression.type === "call" ? [expression] : [],
+  );
+}
+
+function callsUnder(
+  node: PyNode,
+  barriers: ReadonlySet<number>,
+  found: PyNode[],
+): PyNode[] {
   for (const child of children(node)) {
-    if (child === null || isOwnSummary(child)) {
+    if (child === null || isOwnSummary(child) || barriers.has(child.id)) {
       continue;
     }
     if (child.type === "call") {
       found.push(child);
     }
-    bodyCalls(child, found);
+    callsUnder(child, barriers, found);
   }
   return found;
 }
@@ -172,7 +199,24 @@ export function invocationSites(
   if (body === null) {
     return [];
   }
-  return invocationEffectsIn(body, bodyCalls(body), facts);
+  return invocationEffectsIn(body, bodyCalls(body, facts), facts);
+}
+
+/**
+ * The calls one expression makes, such as a lambda's body, as invocation
+ * effects. None of them gets a precondition, since the conditions come
+ * from the statements around a call and an expression has none.
+ */
+export function expressionInvocationEffects(
+  calls: readonly PyNode[],
+  facts: Database | undefined,
+): InvocationEffect[] {
+  const ordered = endOrdered(calls);
+  askWrittenValues(
+    ordered.flatMap((call) => effectValueNodes(call, undefined)),
+    facts,
+  );
+  return ordered.map((call) => invocationOf(call, facts, []));
 }
 
 /**
@@ -295,9 +339,7 @@ function invocationEffectsIn(
   written: readonly PyNode[],
   facts: Database | undefined,
 ): InvocationSite[] {
-  // A call finishes after everything written inside it, so ordering by end
-  // puts a call in argument position before the call it feeds.
-  const calls = [...written].sort((a, b) => a.endIndex - b.endIndex);
+  const calls = endOrdered(written);
   if (calls.length === 0) {
     return [];
   }
@@ -320,15 +362,32 @@ function invocationEffectsIn(
     );
     return {
       call,
-      effect: {
-        type: "invocation",
-        callee: calleeText(call),
-        args: argsOf(call, facts),
-        async: false,
-        ...(conditions.length > 0 ? { preconditions: conditions } : {}),
-        location: rangeOf(call),
-      },
+      effect: invocationOf(call, facts, conditions),
       site: sites.siteOf(call, conditions),
     };
   });
+}
+
+/**
+ * The calls in the order they finish. A call finishes after everything
+ * written inside it, so a call in argument position comes before the
+ * call it feeds.
+ */
+function endOrdered(calls: readonly PyNode[]): PyNode[] {
+  return [...calls].sort((a, b) => a.endIndex - b.endIndex);
+}
+
+function invocationOf(
+  call: PyNode,
+  facts: Database | undefined,
+  conditions: RawCondition[],
+): InvocationEffect {
+  return {
+    type: "invocation",
+    callee: calleeText(call),
+    args: argsOf(call, facts),
+    async: false,
+    ...(conditions.length > 0 ? { preconditions: conditions } : {}),
+    location: rangeOf(call),
+  };
 }

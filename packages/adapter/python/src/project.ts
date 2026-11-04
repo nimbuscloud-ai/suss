@@ -101,6 +101,7 @@ import {
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 import { pythonSourceRoots } from "./sourceRoots.js";
+import { claimsLambdas, subUnitClaims } from "./subUnits.js";
 import { pythonTestIndex } from "./testCases.js";
 import { bindEvaluator, forgetEvaluations } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
@@ -455,8 +456,13 @@ export async function extractPythonProject(
   }
 
   const cache: RunCache = { timer, cacheDir, layer, input };
+  // A file's records do not store the summaries of the lambdas a pack
+  // claims, so a run with such a pack reads every file again rather than
+  // replay a parent without them.
   const records =
-    plan === null ? null : recordsToReplay<PythonFileRecord>(plan.roots);
+    plan === null || claimsLambdas(options.packs)
+      ? null
+      : recordsToReplay<PythonFileRecord>(plan.roots);
   let summaries: BehavioralSummary[] | null = null;
   let facts: Database | null = null;
   if (plan !== null && records !== null) {
@@ -577,6 +583,7 @@ async function runPython(
     rawSqlPatterns.length > 0 ||
     // A declared pack's hooks read the value facts through the ops.
     declaredHooks.length > 0 ||
+    claimsLambdas(options.packs) ||
     // A task's receiver is resolved through the rules, and so is its decorator.
     jobQueueEntries(options.packs).length > 0 ||
     options.packs.some((pack) => (pack.tests ?? []).length > 0);
@@ -611,6 +618,7 @@ async function runPython(
   });
 
   reportUnresolvedProjectModules(options.packs, roots, db);
+  const subUnits = subUnitClaims(db, options.packs);
 
   // A matching chain starts at a method declared in a file that imports the
   // library. A project that renames the method on the way is missed, since
@@ -921,6 +929,14 @@ async function runPython(
       ...(tests === null ? {} : { tests }),
     }),
   );
+  // Where the functions the body at `key` calls are declared. The walk read
+  // the lambdas written in that body too, so a claimed one is placed this way.
+  const placeCallees = (summary: BehavioralSummary, key: string): void => {
+    placeCalls(summary, reached.targetsByKey.get(key));
+    placeArgTargets(summary, reached.argTargetsByKey.get(key));
+    placePossibleCalls(summary, reached.possibleTargetsByKey.get(key));
+    placeReceivers(summary, reached.receiversByKey.get(key));
+  };
   const placeWhatItReached = (
     summary: BehavioralSummary,
     key: string,
@@ -930,11 +946,8 @@ async function runPython(
         ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
       );
     }
-    placeCalls(summary, reached.targetsByKey.get(key));
-    placeArgTargets(summary, reached.argTargetsByKey.get(key));
-    placePossibleCalls(summary, reached.possibleTargetsByKey.get(key));
+    placeCallees(summary, key);
     placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
-    placeReceivers(summary, reached.receiversByKey.get(key));
   };
   for (const [key, owners] of summariesBySeed) {
     for (const summary of owners) {
@@ -1000,6 +1013,22 @@ async function runPython(
   }
 
   summaries.push(...reached.summaries);
+  if (subUnits !== null) {
+    const boundByDisplayPath = new Map(
+      bound.map((one) => [one.displayPath, one]),
+    );
+    const claimed = timer.time("summarize", () =>
+      subUnits.summariesFor(summaries, {
+        boundFileOf: (displayPath) => boundByDisplayPath.get(displayPath),
+        storageFor,
+        gapHandling,
+      }),
+    );
+    for (const { summary, parentKey } of claimed) {
+      placeCallees(summary, parentKey);
+      summaries.push(summary);
+    }
+  }
   summaries.push(...libraryEnvReadMarkers(bound, options.packs));
 
   // An under-question given up on its budget depends on how much the run

@@ -78,6 +78,11 @@ export function nodeOfResolutionKey(
   return roots === undefined ? null : nodeOfKey(roots, key);
 }
 
+/** The path the facts key this node's file on, or undefined for a file the run did not bind. */
+export function boundFileOf(node: RbNode): string | undefined {
+  return filesByTree.get(node.tree);
+}
+
 /**
  * The key the rules join a read of this expression on. Null for a node
  * in a file the run did not bind.

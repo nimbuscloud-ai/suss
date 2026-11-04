@@ -28,6 +28,7 @@ import {
   rangeOf,
   readCallArgs,
 } from "./ast.js";
+import { claimedIn } from "./claims.js";
 import { isBareMethodCall, localNamesIn } from "./paths/bareCalls.js";
 import { lowerRubyBody } from "./paths/lowering.js";
 import {
@@ -515,7 +516,13 @@ export function returnPathBranches(
   ];
   // The lowering already knows a raise leaves the method, so only an
   // exit call is passed as one that ends it.
-  const lowered = lowerRubyBody(body, terminals, exitCalls);
+  const lowered = lowerRubyBody(
+    body,
+    terminals,
+    exitCalls,
+    undefined,
+    claimedIn(method, facts),
+  );
   const enumerated = enumerateOrDegrade(
     {
       statements: lowered.statements,
@@ -637,6 +644,7 @@ export function responseBranches(
     [...returns, ...raises],
     responses,
     pattern.formatSwitch,
+    claimedIn(method, options.facts),
   );
 
   // A `return` written on its own responds with whatever Rails renders

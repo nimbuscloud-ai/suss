@@ -32,12 +32,14 @@ import {
   allocationSitesOf,
   answersFor,
   askResolutionUnder,
+  CALLS_RUN_QUESTION,
   DISPATCH_QUESTION,
   type ExplainStats,
   fallbackWrittenAs,
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
+  readCallsRun,
   readDispatchOutcomes,
   readUses,
   resolutionProgram,
@@ -128,6 +130,7 @@ type Question =
   | "wantedStreamObject"
   | "wantedExitSink"
   | typeof DISPATCH_QUESTION
+  | typeof CALLS_RUN_QUESTION
   | "wantedSubject"
   | "wantedUses"
   | "wantedSource";
@@ -303,6 +306,8 @@ export class ResolutionStore {
   private readonly constructionSites = new Map<string, string[]>();
   /** What each local's reads do with it, by its declaration. A local's function is walked whole, so an answer stays true. */
   private readonly localUses = new Map<string, ValueUses>();
+  /** See `callsRunBy`. */
+  private readonly callsRunByKey = new Map<string, Node[]>();
   /** See `remembered`. */
   private readonly answers = new Map<
     string,
@@ -835,6 +840,24 @@ export class ResolutionStore {
       }
       return found;
     });
+  }
+
+  /**
+   * The calls a function's body runs, inline functions included, in source
+   * order. The facts behind it are all in its own file, so it is asked once.
+   */
+  callsRunBy(func: Node): Node[] {
+    const key = nodeId(func);
+    const known = this.callsRunByKey.get(key);
+    if (known !== undefined) {
+      return known;
+    }
+    const calls = this.askAbout(func, CALLS_RUN_QUESTION, () => {
+      this.derive();
+      return this.nodesFor(readCallsRun(this.db, key));
+    });
+    this.callsRunByKey.set(key, calls);
+    return calls;
   }
 
   private nodesFor(keys: readonly string[]): Node[] {
@@ -1600,6 +1623,11 @@ export class ResolutionStore {
    * modules export them, through an alias or a project barrel. A value
    * that only calls into one of them is left out.
    */
+  /** Whether the value reaches an import of the module, as a recognizer's origin check asks. */
+  originatesFrom(value: Node, module: string): boolean {
+    return this.importOriginsOf(value, [module]).length > 0;
+  }
+
   importedAsOf(value: Node, modules: string[]): string[] {
     return this.namesReached(value, modules, "imported");
   }
