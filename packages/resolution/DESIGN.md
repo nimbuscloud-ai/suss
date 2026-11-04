@@ -200,6 +200,12 @@ returnsNamed(f, n)          f's return annotation is written n, read
                             reads it. The storage reader matches it
                             against a pack's query types (Python)
 containsFn(f, g)            g is declared inside f
+inlineFn(g)                 g runs as part of the function it is written
+                            in, as the adapter's summary of that function
+                            reads it: an arrow or a function expression
+                            in TypeScript, a lambda in Python, and a block
+                            or a lambda written as a call's argument in
+                            Ruby. Only runsCall reads it
 initializes(cls, f)         f runs when one of cls is made
 getterOf(cls, n, f)         reading n on one of cls runs the getter f,
                             as a property does. holdsProperty gives
@@ -237,6 +243,9 @@ callsChosenEntry(r)         the call r runs the member its own entry read
 bodyCalls(f, c)             f's body calls the callee c, keyed the way
                             call keys that call's callee
 makesCall(f, r)             the call r is written in f's own body
+callBlock(r, b)             the call r is written with the block b, which
+                            is a function of its own. No rule reads it
+                            yet (Ruby)
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
 entersValue(x)              a with statement enters x, which calls its
@@ -1655,6 +1664,50 @@ adapter that needs the deeper answer asks `wantedSubject` a second time
 with the call as the subject, and uses that answer. The TypeScript store
 does this in `resolveWrittenValue` and in `subjectConstructionOf`
 whenever a name resolves to a call.
+
+## The calls a body runs
+
+A pack that claims a callback as a unit of its own, such as the
+function a `useQuery` call runs, looks for the calls among the calls
+its parent's body runs. Each adapter's summary walk decides which
+nested functions it reads as part of a body, and `runsCall` gives the
+same list from the facts:
+
+```
+runsCall(f, r) <- makesCall(f, r)
+runsCall(f, r) <- containsFn(f, g), inlineFn(g), runsCall(g, r)
+```
+
+`makesCall` stops at every nested function, and `inlineFn` says which
+of them the summary walk descends into. TypeScript descends into an
+arrow or a function expression and stops at a declaration, a method
+and a constructor. Python descends into a lambda and stops at a nested
+`def`. Ruby descends into a block and into a `->` lambda written as an
+argument, and stops at a `def`, any other lambda and a class.
+`callInBody` closes over every `containsFn`, a nested declaration
+included, which is more than any summary reads.
+
+A caller asks `wantedCallsRun(f)`, and `callsRun` returns each
+function's calls in source order: by where a call starts, and a call
+before the calls inside it, which is the order a walk down the tree
+reaches them. Every adapter keys a node by its file and span, so the
+order is read off the key.
+
+Ruby states its blocks as functions here. A block's calls are also in
+its method's `makesCall`, so nothing that reads a method's calls
+changes. A block's own `makesCall` lists the calls written as calls in
+it, through the blocks inside it. A bare name that Ruby runs as a
+method, `notify` with no arguments, is in the method's `makesCall`
+only. Stating it on the block as well would change what a proc in a
+dispatch table calls, which `wantedDispatchThrough` reads, and that
+change needs its own look. `callBlock(r, b)` says which block a call
+is written with.
+
+Two things are left out. A call in a parameter default is in no
+function's `makesCall`, though a TypeScript or Ruby default runs on
+each call. A `->` lambda written as an argument inside a Ruby block is
+contained in the method around both, so the block's own `runsCall`
+does not reach its calls.
 
 ## Explaining an answer
 

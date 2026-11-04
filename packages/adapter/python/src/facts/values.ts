@@ -43,6 +43,7 @@ import {
   LATER_BODY_TYPES,
   parameterIdentifier,
   parameterNameAndType,
+  runsInline,
   stringContentValue,
   stringLiteralValue,
   stripDecorators,
@@ -2009,12 +2010,7 @@ function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
     if (FUNCTION_TYPES.has(type)) {
       emitFunctionFacts(emitter, child);
       if (emitter.enclosing !== null) {
-        add(
-          emitter,
-          "containsFn",
-          emitter.enclosing.funcKey,
-          nodeId(emitter.filePath, child),
-        );
+        emitContainedFunction(emitter, emitter.enclosing.funcKey, child);
       }
       continue;
     }
@@ -2023,6 +2019,22 @@ function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
       continue;
     }
     emitNestedDefinitions(emitter, child);
+  }
+}
+
+/**
+ * A function written in another one's body. A lambda's calls count as
+ * the outer body's in its summary, so it says it runs inline.
+ */
+function emitContainedFunction(
+  emitter: Emitter,
+  outerKey: string,
+  fn: PyNode,
+): void {
+  const fnKey = nodeId(emitter.filePath, fn);
+  add(emitter, "containsFn", outerKey, fnKey);
+  if (runsInline(fn)) {
+    add(emitter, "inlineFn", fnKey);
   }
 }
 

@@ -32,6 +32,7 @@ import {
   definesClassMethod,
   field,
   INCLUDE_CALL,
+  isLambdaArgument,
   LAMBDA_TYPE,
   METHOD_TYPES,
   methodsDefinedAt,
@@ -488,9 +489,8 @@ function emitCall(emitter: Emitter, site: CallSite): void {
 
 /**
  * `proc { |payload| ... }`, `lambda { ... }` and `Proc.new { ... }` hand
- * back their block, so the call is that block as a function, and the
- * calls written in it are the calls it makes. A hash of procs then
- * contains functions the way a hash of `->` lambdas does.
+ * back their block, so the call is that block as a function. A hash of
+ * procs then contains functions the way a hash of `->` lambdas does.
  */
 function emitBlockAsProc(emitter: Emitter, site: CallSite): void {
   const { method, receiver, node } = site;
@@ -503,26 +503,7 @@ function emitBlockAsProc(emitter: Emitter, site: CallSite): void {
   if (!wraps || block === null) {
     return;
   }
-  const blockKey = nodeId(emitter.filePath, block);
-  add(emitter, "func", blockKey);
-  add(emitter, "binds", site.key, blockKey);
-  for (const call of callsWrittenIn(block)) {
-    add(emitter, "makesCall", blockKey, nodeId(emitter.filePath, call));
-  }
-}
-
-/** The calls written in a block's own statements, short of a nested definition. */
-function callsWrittenIn(node: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of children(node)) {
-    if (OWN_BODY_TYPES.has(child.type)) {
-      continue;
-    }
-    if (child.type === "call") {
-      found.push(child);
-    }
-    callsWrittenIn(child, found);
-  }
-  return found;
+  add(emitter, "binds", site.key, nodeId(emitter.filePath, block));
 }
 
 /**
@@ -1033,13 +1014,25 @@ function emitDynamicDefinition(
 type ExpressionVisit = (child: RbNode, type: string, parent: RbNode) => void;
 
 /**
+ * The keys of the blocks a walk is inside, innermost last. A block's
+ * calls are its method's calls too, so the walk states them for every
+ * block it is in as it reaches each one.
+ */
+interface OpenBlocks {
+  readonly filePath: string;
+  readonly keys: string[];
+}
+
+/**
  * Visits every expression under a node once, stopping at nested
  * definitions and adding each to `nested` when the caller passes a list.
+ * Given `blocks`, it keeps the blocks around the node being visited.
  */
 function walkExpressions(
   node: RbNode,
   visit: ExpressionVisit,
   nested: RbNode[] | null = null,
+  blocks: OpenBlocks | null = null,
 ): void {
   for (const child of children(node)) {
     const type = child.type;
@@ -1048,7 +1041,61 @@ function walkExpressions(
       continue;
     }
     visit(child, type, node);
-    walkExpressions(child, visit, nested);
+    const opens = blocks !== null && isHandedBlock(type, node);
+    if (opens) {
+      blocks.keys.push(nodeId(blocks.filePath, child));
+    }
+    walkExpressions(child, visit, nested, blocks);
+    if (opens) {
+      blocks.keys.pop();
+    }
+  }
+}
+
+/** A block written with a call, which the call runs. */
+function isHandedBlock(type: string, parent: RbNode): boolean {
+  return BLOCK_TYPES.has(type) && parent.type === "call";
+}
+
+/**
+ * A block is a function the call it is written with runs, and the
+ * summary walk reads its statements as part of the body around it.
+ */
+function emitBlockFunction(
+  emitter: Emitter,
+  block: RbNode,
+  call: RbNode,
+): void {
+  const blockKey = nodeId(emitter.filePath, block);
+  add(emitter, "func", blockKey);
+  add(emitter, "inlineFn", blockKey);
+  add(emitter, "callBlock", nodeId(emitter.filePath, call), blockKey);
+  if (emitter.enclosing !== null) {
+    add(
+      emitter,
+      "containsFn",
+      nodeId(emitter.filePath, emitter.enclosing),
+      blockKey,
+    );
+  }
+}
+
+/**
+ * A call written in a block is the block's own call, and the call of
+ * every block around it. DESIGN.md says why a bare name Ruby runs as a
+ * method is left out.
+ */
+function emitBlockCalls(
+  emitter: Emitter,
+  blocks: OpenBlocks,
+  type: string,
+  site: CallSite | null,
+): void {
+  if (type !== "call" || site === null) {
+    return;
+  }
+  for (const blockKey of blocks.keys) {
+    add(emitter, "makesCall", blockKey, site.key);
   }
 }
 
@@ -1195,10 +1242,17 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // The walk below starts at the children, so a statement that is itself
   // a `define_method` call is checked here.
   emitDynamicDefinition(emitter, node, node.type);
-  walkExpressions(node, (child, type, parent) => {
-    const site = callSiteAt(emitter, child, type, parent);
-    emitExpressionFact(emitter, child, type, parent, site);
-  });
+  const blocks: OpenBlocks = { filePath: emitter.filePath, keys: [] };
+  walkExpressions(
+    node,
+    (child, type, parent) => {
+      const site = callSiteAt(emitter, child, type, parent);
+      emitExpressionFact(emitter, child, type, parent, site);
+      emitBlockCalls(emitter, blocks, type, site);
+    },
+    null,
+    blocks,
+  );
 }
 
 /** The facts one expression gives, with the call at it read once by the caller. */
@@ -1253,6 +1307,9 @@ function emitExpressionFact(
   if (BLOCK_TYPES.has(type)) {
     emitBlockValue(emitter, child);
     emitLoopVariables(emitter, child, parent);
+  }
+  if (isHandedBlock(type, parent)) {
+    emitBlockFunction(emitter, child, parent);
   }
   const pieces = TEMPLATE_PIECES[type]?.(emitter, child) ?? [];
   if (pieces.length > 0) {
@@ -1980,18 +2037,27 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const bodyFacts = new RowBuffer();
   const expressionFacts = new RowBuffer();
   const collecting: Emitter = { ...inside, heldRows: expressionFacts };
+  const blocks: OpenBlocks = { filePath: emitter.filePath, keys: [] };
   walkExpressions(
     body,
     (child, type, parent) => {
       const site = callSiteAt(inside, child, type, parent);
       emitBodyFact(bodyFacts, inside, funcKey, child, type, site);
       emitExpressionFact(collecting, child, type, parent, site);
+      emitBlockCalls(collecting, blocks, type, site);
     },
     nested,
+    blocks,
   );
 
   for (const definition of nested) {
-    add(emitter, "containsFn", funcKey, nodeId(emitter.filePath, definition));
+    const definitionKey = nodeId(emitter.filePath, definition);
+    add(emitter, "containsFn", funcKey, definitionKey);
+    // The summary walk reads such a lambda's statements as part of this
+    // body, the way it reads a block's.
+    if (isLambdaArgument(definition)) {
+      add(emitter, "inlineFn", definitionKey);
+    }
   }
   bodyFacts.flushInto(emitter.db);
   const implicit = implicitReturn(body);
