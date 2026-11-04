@@ -232,10 +232,13 @@ describe("a mapped list and a project call, read by both kinds of ops", () => {
     }
   });
 
-  it("reads a project call as the value it returns", () => {
+  it("reads a mapped list as the one value its callback returns, and a project call as the value it returns", () => {
     const read = played().map(({ fromFacts }) => shapesRead(fromFacts));
     const byTrack = new Map(read.map((one) => [one.track, one]));
 
+    expect(byTrack.get("inline")?.items).toEqual([["inline"]]);
+    expect(byTrack.get("named")?.items).toEqual([["name"]]);
+    expect(byTrack.get("kept")?.items).toEqual([["viaName"]]);
     expect(byTrack.get("made")).toMatchObject({
       entries: ["made", "kind"],
       kind: "row",

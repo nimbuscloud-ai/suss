@@ -631,6 +631,24 @@ describe("factValueOps over a mapped list and a project call", () => {
   const keysOf = (value: ValueOps | undefined) =>
     value?.entries("nothing").map((entry) => entry.key);
 
+  it("reads a list built by map as one item, what its callback returns", () => {
+    const [item, ...more] = factValueOps("byName", mapped()).items();
+
+    expect(more).toEqual([]);
+    expect(keysOf(item)).toEqual(["name"]);
+  });
+
+  it("reads a comprehension's one item as the element it writes in place", () => {
+    const [item] = factValueOps("comprehension", mapped()).items();
+
+    expect(keysOf(item)).toEqual(["name"]);
+  });
+
+  it("reads no item for a callback with two returns, or one that comes to no function", () => {
+    expect(factValueOps("byPick", mapped()).items()).toEqual([]);
+    expect(factValueOps("byString", mapped()).items()).toEqual([]);
+  });
+
   it("reads an object off what a project call returns, in place or spread", () => {
     const made = factValueOps("makeInPlace", mapped());
 

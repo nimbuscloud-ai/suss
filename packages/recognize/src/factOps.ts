@@ -366,14 +366,20 @@ class FactValue implements ValueOps {
     ).map(({ key, held }) => ({ key, value: factValueOps(held, this.facts) }));
   }
 
+  /**
+   * A list written out gives its items. A list built by mapping gives
+   * one item, the value every element is built as, since each element
+   * has that one shape.
+   */
   items(): readonly ValueOps[] {
     const list = this.shaped();
-    if (this.facts.shapeOf(list) !== "list") {
-      return [];
+    if (this.facts.shapeOf(list) === "list") {
+      return entriesInOrder(list, this.facts).map((held) =>
+        factValueOps(held, this.facts),
+      );
     }
-    return entriesInOrder(list, this.facts).map((held) =>
-      factValueOps(held, this.facts),
-    );
+    const element = builtElement(list, this.facts);
+    return element === null ? [] : [factValueOps(element, this.facts)];
   }
 
   property(name: string): ValueOps | null {
@@ -490,6 +496,30 @@ function followedCall(key: string, source: FactSource): string {
   const returned = source.writtenAs(key) ?? key;
   source.read(returned);
   return returned;
+}
+
+/**
+ * What every element of a mapped collection is built as, or null. A
+ * call builds each element from what the function it hands over
+ * returns, and a comprehension writes the element in place. A callback
+ * with two returns, or one that comes to no function, builds nothing
+ * the ops can read.
+ */
+function builtElement(collection: string, source: FactSource): string | null {
+  const each = only(source.db.lookup("eachElement", 0, collection), 1);
+  if (each === null) {
+    return null;
+  }
+  source.read(each);
+  if (!isCall(collection, source)) {
+    return each;
+  }
+  const callback = functionBehind(each, source);
+  if (callback === null) {
+    return null;
+  }
+  source.read(callback);
+  return only(source.db.lookup("returnsValue", 0, callback), 1);
 }
 
 /**
