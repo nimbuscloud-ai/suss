@@ -397,6 +397,16 @@ A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`
 
 `rubyFactSource` hands the ops from `@suss/recognize/ops` what only Ruby can read. A call's callee is keyed on the method's name, so its text is the receiver and the name as written, `cache.get`. A class's own method is stated under a spelling of its own, which the ops read back as the plain name. Ruby has no imports, so a value comes from a library when the constant it was made from is the library's constant or one inside it: `Aws::SQS::Client.new` comes from `Aws`. A pack that serves Ruby lists that constant beside the module name the other languages import.
 
+## A block a declared pack claims as a unit of its own
+
+A pack declared with `callbacks(...).unitWhenInPlace(...)` claims the function a call hands over when the source writes it in place, such as the block in `jobs.later { notify }` or the lambda in `jobs.later(-> { notify })`. The block gets a summary of its own, named after the method it is written in, `Store.enqueue.jobs.later#0`. What the block does comes off the method's summary. A name or a symbol, `jobs.later(handler)`, is recorded on the schedule effect and claims nothing.
+
+Ruby reads a method's body during discovery, before anything knows the method has a block a pack claims. So a run whose packs claim sub-units keeps one registry, keyed by the run's facts. The first reader to ask about a method runs every pack's `subUnits` hook over it, with the calls `runsCall` lists for the method on the hook's context. After that, every reader of the body leaves the claimed blocks out: the calls the summary lists, the calls the storage patterns and the declared hooks read, and the lowering, where a call with a claimed block becomes one statement. A block claimed inside another claimed block belongs to the method too, since the method's calls list both.
+
+Any method whose summary is read from its body can claim, whether discovery found it or the walk reached it. The walk starts from each claimed block, as it starts from a discovered unit, and resolves the calls in it the way the method resolved them before the claim. A method only the block calls is still reached. Once every summary is assembled, the hooks run over the method again with each of its summaries' names, and each claim gets a summary. It takes the method's binding, or a reachable function call's when the method is a consumer, and it has no inputs. It has one branch, which ends in a return and lists the calls in the block and what the storage patterns and the declared hooks make of them.
+
+A read of the environment, a job enqueued, and a write to a stream are still read off the whole method, so one written in a claimed block stays on the method. Only a method claims, so a block in a test example or at the top of a file is never claimed. A method reached on a subclass is summarized again for that class, and only its summary on its own class gets the sub-units.
+
 ## What a read picked and what a write set
 
 `selector` lists what the chain picks rows by. It has the keywords of every read along the chain, whether written bare or inside braces, plus the primary key when a method in `byPrimaryKey` gets a positional argument. On a write, `fields` lists what the write was given as data. On a read, it lists only the columns the call asked for by name:
@@ -562,6 +572,8 @@ Ruby binds a constant to its definition in `emitConstantBindings`, by name, once
 The value evaluator remembers what it computed for the rest of the run, and a remembered value asks no questions. A recording run starts each piece of work with nothing remembered, so every question a piece of work depends on is charged to it.
 
 A run where an under-question was given up on its budget writes no records, since such an answer depends on how much the run asked before it.
+
+A run whose packs claim sub-units writes no records either. Which blocks a method claims is decided while its body is read, and the records do not keep it, so such a run is served from the cache only when no file changed, and read again in full after an edit.
 
 A file added or removed since the stored run is handled the way the resolution DESIGN.md describes under "What a piece of work depended on". Two lookups depend on which files exist without going through a fact, so the adapter records them. A constant looked for under the naming convention, such as a controller's base class, is looked for on disk again in a later run, so a base class whose file was added since is found. Which files of the run declare a class by its full name is looked up again the same way.
 
