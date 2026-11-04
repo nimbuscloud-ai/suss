@@ -73,6 +73,7 @@ import {
   ELEMENT_CALLBACK_METHODS,
   MAP_ENTRY_READ,
   MAP_ENTRY_WRITE,
+  MAPPING_METHOD,
 } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
@@ -1580,22 +1581,41 @@ function emitCallFacts(
   }
 
   const args = call.getArguments();
+  const argumentKeys: string[] = [];
   for (let position = 0; position < args.length; position++) {
     const argument = args[position] as Node;
     if (!Node.isExpression(argument)) {
       continue;
     }
-    fact(
-      db,
-      "callArg",
-      callId,
-      String(position),
-      emitValue(db, table, argument),
-    );
+    const argumentKey = emitValue(db, table, argument);
+    argumentKeys[position] = argumentKey;
+    fact(db, "callArg", callId, String(position), argumentKey);
   }
   emitConversion(db, table, callId, callee, global, args);
   emitMapAccess(db, table, callId, callee, args);
   emitElementParameters(db, table, callee, args);
+  emitMappedElement(db, callId, callee, argumentKeys[0]);
+}
+
+/**
+ * `items.map(toRow)` builds a list whose every element is what `toRow`
+ * returns for one element of `items`, whether the callback is written
+ * into the call or named. `forEach` builds nothing, so it is left out.
+ */
+function emitMappedElement(
+  db: Database,
+  callId: string,
+  callee: Expression,
+  callback: string | undefined,
+): void {
+  if (
+    callback === undefined ||
+    !Node.isPropertyAccessExpression(callee) ||
+    callee.getName() !== MAPPING_METHOD
+  ) {
+    return;
+  }
+  fact(db, "eachElement", callId, callback);
 }
 
 /**

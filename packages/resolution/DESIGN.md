@@ -170,6 +170,14 @@ elementOf(x, over)          the parameter or block variable x is given one
                             a Ruby map or each block that takes one.
                             Ruby's define_method reader reads it, and no
                             rule does
+eachElement(c, x)           every element of the collection c is built
+                            from x. When c is a call, x is the function
+                            it hands over and each element is what that
+                            returns: xs.map(f), Python's map(f, xs), or a
+                            Ruby map or collect block or &f. Otherwise x
+                            is the expression each element is written as,
+                            the body of a list, set or generator
+                            comprehension. Nothing reads it yet
 elementPartOf(x, over, k)   x is given the part under k of each element
                             of over, where the code takes the element
                             apart: ([name, kind]) or ({ id }) in a

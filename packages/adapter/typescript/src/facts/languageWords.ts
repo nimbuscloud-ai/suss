@@ -46,3 +46,6 @@ export const ELEMENT_CALLBACK_METHODS: ReadonlySet<string> = new Set([
   "map",
   "forEach",
 ]);
+
+/** The array method that builds a new list from what its callback returns for each element. */
+export const MAPPING_METHOD = "map";

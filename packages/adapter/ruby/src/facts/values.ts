@@ -56,6 +56,7 @@ import {
   CONVERTING_METHODS,
   INITIALIZE_METHOD,
   INVOKE_METHOD,
+  MAPPING_METHODS,
   METHOD_REFERENCE,
   PROC_CLASS,
   RECEIVER_RETURNS,
@@ -485,6 +486,36 @@ function emitCall(emitter: Emitter, site: CallSite): void {
   emitSentChoice(emitter, site);
   emitMethodReference(emitter, site);
   emitBlockAsProc(emitter, site);
+  emitMappedElement(emitter, site);
+}
+
+/**
+ * `rows.map { |row| ... }` builds an array whose every element is what
+ * the block returns for one element of `rows`. A block handed over as
+ * `&to_row` builds it the same way.
+ */
+function emitMappedElement(emitter: Emitter, site: CallSite): void {
+  const { method, receiver, node } = site;
+  if (
+    method === null ||
+    receiver === null ||
+    !MAPPING_METHODS.has(method.text)
+  ) {
+    return;
+  }
+  const block = field(node, "block");
+  if (block !== null) {
+    add(emitter, "eachElement", site.key, nodeId(emitter.filePath, block));
+    return;
+  }
+  const args = field(node, "arguments");
+  const handing = children(args).find(
+    (argument) => argument.type === "block_argument",
+  );
+  const [handed] = handing === undefined ? [] : children(handing);
+  if (handing !== undefined && handed !== undefined) {
+    add(emitter, "eachElement", site.key, valueKey(emitter, handed, handing));
+  }
 }
 
 /**

@@ -650,6 +650,25 @@ describe("where each piece of a value written out goes", () => {
     expect(rows(db, table, "positionOf")).toEqual([["at", "user"]]);
   });
 
+  it("builds every element of a mapped list from the callback map is handed, written in place or named", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const users: { name: string }[];",
+        "declare function describe(user: unknown): string;",
+        "export const names = users.map((user) => user.name);",
+        "export const described = users.map(describe);",
+        "export const each = users.forEach((user) => user.name);",
+        "export const none = users.map();",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "eachElement")).toEqual([
+      ["users.map((user) => user.name)", "(user) => user.name"],
+      ["users.map(describe)", "describe"],
+    ]);
+  });
+
   it("gives each name a callback's parameter takes the element apart into its part, by position or by property", () => {
     const { db, table } = factsFor({
       "/mod.ts": [
