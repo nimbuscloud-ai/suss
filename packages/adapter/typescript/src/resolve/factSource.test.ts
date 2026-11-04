@@ -45,7 +45,7 @@ const SOURCE = `
  * function the run reaches as a library gets no import check from the
  * store, so `storeImports: false` builds the ops the way it gets them.
  */
-function bothOps({ storeImports = true } = {}): {
+function bothOps({ storeImports = true, source = SOURCE } = {}): {
   fromNodes: CallOps;
   fromFacts: CallOps | null;
 }[] {
@@ -55,7 +55,7 @@ function bothOps({ storeImports = true } = {}): {
     JSON.stringify({ name: "tapedeck", types: "index.d.ts" }),
   );
   project.createSourceFile("/node_modules/tapedeck/index.d.ts", LIBRARY);
-  const file = project.createSourceFile("/repo.ts", SOURCE);
+  const file = project.createSourceFile("/repo.ts", source);
   const store = new ResolutionStore();
   const originatesFrom = storeImports
     ? (value: Node, module: string): boolean =>
@@ -168,6 +168,83 @@ describe("the fact source", () => {
 
     expect(anchors[0]).toEqual(["Deck", "Deck"]);
     expect(anchors).toEqual(anchorsOf(true));
+  });
+});
+
+const SHAPES = `
+  import Deck from "tapedeck";
+
+  const deck = new Deck();
+  const users = ["a", "b"];
+  const toRow = (user: string) => ({ name: user });
+  function makeRow() {
+    return { made: 1, kind: "row" };
+  }
+  function pick(flag: boolean) {
+    if (flag) {
+      return { a: 1 };
+    }
+    return { b: 2 };
+  }
+  const kept = users.map((user) => {
+    const row = { viaName: user };
+    return row;
+  });
+
+  export async function play(flag: boolean) {
+    await deck.play("inline", users.map((user) => ({ inline: user })));
+    await deck.play("named", users.map(toRow));
+    await deck.play("kept", kept);
+    await deck.play("made", makeRow());
+    await deck.play("spread", { ...makeRow(), extra: 2 });
+    await deck.play("twice", pick(flag));
+    await deck.play("each", users.forEach((user) => ({ no: user })));
+    await deck.play("built", new Deck());
+  }
+`;
+
+/** What a pack reading a payload's shape gets off the second argument of each `play`. */
+function shapesRead(ops: CallOps | null) {
+  const value = ops?.valueAt(1);
+  return {
+    track: ops?.nameAt(0, "nothing"),
+    items: value
+      ?.items()
+      .map((item) => item.entries("nothing").map((entry) => entry.key)),
+    entries: value?.entries("nothing").map((entry) => entry.key),
+    kind: ops?.propertyAt(1, "kind", "nothing"),
+    text: value?.text(),
+  };
+}
+
+describe("a mapped list and a project call, read by both kinds of ops", () => {
+  const played = () =>
+    bothOps({ source: SHAPES }).filter(
+      ({ fromNodes }) => fromNodes.method() === "play",
+    );
+
+  it("reads the same shapes off the facts as off the nodes", () => {
+    const calls = played();
+
+    expect(calls).toHaveLength(8);
+    for (const { fromNodes, fromFacts } of calls) {
+      expect(shapesRead(fromFacts)).toEqual(shapesRead(fromNodes));
+    }
+  });
+
+  it("reads a project call as the value it returns", () => {
+    const read = played().map(({ fromFacts }) => shapesRead(fromFacts));
+    const byTrack = new Map(read.map((one) => [one.track, one]));
+
+    expect(byTrack.get("made")).toMatchObject({
+      entries: ["made", "kind"],
+      kind: "row",
+      text: null,
+    });
+    expect(byTrack.get("spread")?.entries).toEqual(["made", "kind", "extra"]);
+    expect(byTrack.get("twice")).toMatchObject({ entries: [], kind: null });
+    expect(byTrack.get("each")?.items).toEqual([]);
+    expect(byTrack.get("built")).toMatchObject({ entries: [], items: [] });
   });
 });
 

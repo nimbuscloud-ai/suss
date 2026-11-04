@@ -704,17 +704,25 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     settledValue ??= settled(value, resolve) ?? value;
     return settledValue;
   };
+  // An object or a list is read off what a project call returns, as the
+  // fact ops read one. A text or a name keeps the call, which `readName`
+  // settles with the call's arguments in place.
+  let shapedValue: Node | undefined;
+  const shaped = (): Node => {
+    shapedValue ??= followedCall(written(), resolve);
+    return shapedValue;
+  };
 
   const ops: ValueOps = {
     text: () => literalText(written()),
     name: (unsettled) => readName(written(), { resolve, unsettled }),
     names: (cap) => stringValuesOf(value, reading.resolution, cap),
     flag: () => literalFlag(written()),
-    entries: (unsettled) => entriesOf(written(), unsettled, reading),
-    items: () => itemsOf(written(), reading),
+    entries: (unsettled) => entriesOf(shaped(), unsettled, reading),
+    items: () => itemsOf(shaped(), reading),
     asArg: () => effectArgOf(written()),
     property: (name) => {
-      const inside = initializerOf(written(), name, resolve);
+      const inside = initializerOf(shaped(), name, resolve);
       return inside === null ? null : valueOpsFor(inside, reading);
     },
     parts: () => literalParts(written()),
@@ -813,7 +821,12 @@ function spreadEntries(
       const spread = settled(written.getExpression(), resolve);
       return spread === null
         ? []
-        : spreadEntries(spread, unsettled, resolve, inside);
+        : spreadEntries(
+            followedCall(spread, resolve),
+            unsettled,
+            resolve,
+            inside,
+          );
     }
     if (Node.isShorthandPropertyAssignment(written)) {
       const name = written.getNameNode();
@@ -1011,6 +1024,18 @@ function settled(
 }
 
 /**
+ * A value, or the one value a call into a project function returns. A
+ * library call and a construction have none, and stay as written, as
+ * the fact ops' `followedCall` leaves them.
+ */
+function followedCall(value: Node, resolve: Resolve): Node {
+  if (!Node.isCallExpression(value) && !Node.isNewExpression(value)) {
+    return value;
+  }
+  return unwrapped(resolve(value)) ?? value;
+}
+
+/**
  * Which values `settled` asks the store about. A receiver kept on a
  * field, `this.orders`, is the call the field was written as, the same
  * as one kept in a local, so a receiver follows fields as well.
@@ -1060,10 +1085,11 @@ function objectAt(
   argument: Node | undefined,
   resolve: Resolve,
 ): ObjectLiteralExpression | null {
-  const written = settled(argument, resolve);
-  if (written === null) {
+  const stated = settled(argument, resolve);
+  if (stated === null) {
     return null;
   }
+  const written = followedCall(stated, resolve);
   if (isCalled(written)) {
     return objectAt(argumentsIn(written)[0], resolve);
   }
@@ -1093,7 +1119,12 @@ function initializerOf(
       const found =
         spread === null
           ? null
-          : initializerOf(spread, property, resolve, inside);
+          : initializerOf(
+              followedCall(spread, resolve),
+              property,
+              resolve,
+              inside,
+            );
       if (found !== null) {
         return found;
       }
