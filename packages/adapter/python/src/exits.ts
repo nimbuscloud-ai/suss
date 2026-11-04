@@ -218,7 +218,7 @@ function returnBranch(statement: PyNode): {
   return { terminal: returnTerminal(shape, location), location };
 }
 
-function returnTerminal(
+export function returnTerminal(
   shape: ReturnType<typeof returnedBodyShape>,
   location: RawTerminal["location"],
 ): RawTerminal {
