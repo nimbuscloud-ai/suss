@@ -18,12 +18,14 @@ import {
   type ArrayLiteralExpression,
   type CallExpression,
   type JsxExpression,
+  type NewExpression,
   Node,
   SyntaxKind,
 } from "ts-morph";
 
 import { importedReferenceSpellings } from "./discovery/resolveImport.js";
 import { resolveDecl } from "./resolve/functionBehind.js";
+import { opsOverFacts } from "./resolve/opsOverFacts.js";
 import {
   callsInUnitBody,
   isDescentStop,
@@ -31,6 +33,11 @@ import {
 } from "./walk/descent.js";
 import { forEachDescendantOfKinds } from "./walk/rawDescent.js";
 
+import type {
+  CallOps,
+  DiscoveredSubUnitParent,
+  SubUnitOpsCarrier,
+} from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
 
@@ -43,7 +50,7 @@ import type { ResolutionStore } from "./facts/store.js";
  * The walks descend the way the parent's body walk does, so a sub-unit
  * inside a nested declaration belongs to that declaration's summary.
  */
-export interface TsSubUnitContext {
+export interface TsSubUnitContext extends SubUnitOpsCarrier {
   /**
    * Yield every JSX attribute on every JSX element / self-closing
    * element in the parent's body, excluding any inside nested
@@ -133,8 +140,29 @@ export function createTsSubUnitContext(
     getCallArgumentFunction,
     getCallArgument,
     readArrayLiteralText,
-    ...(resolution === undefined ? {} : { resolution }),
+    ...(resolution === undefined
+      ? {}
+      : { resolution, calls: (parent) => callsRunAsOps(parent, resolution) }),
   };
+}
+
+/**
+ * The calls the parent's body runs, as the ops a declared pack's
+ * recognizer gets for each, so its hook matches a call the same way.
+ */
+function callsRunAsOps(
+  parent: DiscoveredSubUnitParent,
+  store: ResolutionStore,
+): CallOps[] {
+  const originatesFrom = (value: Node, module: string): boolean =>
+    store.originatesFrom(value, module);
+  return store
+    .callsRunBy(parent.func as FunctionRoot)
+    .filter(
+      (call): call is CallExpression | NewExpression =>
+        Node.isCallExpression(call) || Node.isNewExpression(call),
+    )
+    .map((call) => opsOverFacts(call, { resolution: store, originatesFrom }));
 }
 
 const JSX_ELEMENTS_AND_STOPS = withDescentStops(
