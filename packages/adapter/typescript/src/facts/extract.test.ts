@@ -669,6 +669,24 @@ describe("where each piece of a value written out goes", () => {
     ]);
   });
 
+  it("states the expression that computes a key at the position of its entry", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const table: string, rows: unknown[];",
+        "export const batch = { first: rows, [table]: rows, [`${table}_x`]: 1, [Symbol.iterator]() {} };",
+        "",
+      ].join("\n"),
+    });
+
+    const object =
+      "{ first: rows, [table]: rows, [`${table}_x`]: 1, [Symbol.iterator]() {} }";
+    expect(rows(db, table, "computedKeyAt")).toEqual([
+      [object, "1", "table"],
+      [object, "2", "`${table}_x`"],
+      [object, "3", "Symbol.iterator"],
+    ]);
+  });
+
   it("gives each name a callback's parameter takes the element apart into its part, by position or by property", () => {
     const { db, table } = factsFor({
       "/mod.ts": [

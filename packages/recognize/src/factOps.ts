@@ -560,7 +560,8 @@ type ComputedKeys = UnsettledName | "unread";
  * computes, read the way `computedKeys` says. Python and Ruby key a name
  * by its scope, so in `{"a": x, "b": x}` both entries have the same value
  * key, and each place where it is written takes the next of its keys in
- * turn.
+ * turn. A computed key is stated by the entry's position, so it never
+ * takes one of those turns.
  */
 function writtenEntries(
   object: string,
@@ -575,6 +576,7 @@ function writtenEntries(
   const computed = new Set(
     source.db.lookup("holdsUnderKey", 0, object).map((row) => String(row[1])),
   );
+  const keyedAt = computedKeysByPosition(object, source);
   const turns = new Map<string, number>();
   return [...source.db.lookup("writtenEntryAt", 0, object)]
     .sort((a, b) => Number(a[1]) - Number(b[1]))
@@ -583,27 +585,53 @@ function writtenEntries(
       if (row[3] === "spread") {
         return [{ spread: held }];
       }
+      const computedKey = keyedAt.get(String(row[1]));
+      if (computedKey !== undefined) {
+        return [
+          { key: computedKeyName(computedKey, computedKeys, source), held },
+        ];
+      }
       const turn = turns.get(held) ?? 0;
       turns.set(held, turn + 1);
       const name = names.get(held)?.[turn];
       if (name !== undefined) {
         return [{ key: name, held }];
       }
-      return computed.has(held)
-        ? [{ key: computedKeyOf(held, computedKeys, source), held }]
-        : [];
+      return computed.has(held) ? [{ key: null, held }] : [];
     });
 }
 
-function computedKeyOf(
-  held: string,
+/**
+ * The expression that computes the key of each entry the source wrote
+ * one for, by the entry's position. An entry stated with two has no one
+ * key, and is read as unsettled.
+ */
+function computedKeysByPosition(
+  object: string,
+  source: FactSource,
+): Map<string, string | null> {
+  const keys = new Map<string, Set<string>>();
+  for (const row of source.db.lookup("computedKeyAt", 0, object)) {
+    const position = String(row[1]);
+    keys.set(position, (keys.get(position) ?? new Set()).add(String(row[2])));
+  }
+  return new Map(
+    [...keys].map(([position, written]) => {
+      const [one] = written;
+      return [position, written.size === 1 && one !== undefined ? one : null];
+    }),
+  );
+}
+
+function computedKeyName(
+  key: string | null,
   computedKeys: ComputedKeys,
   source: FactSource,
 ): string | null {
-  if (computedKeys === "unread") {
+  if (key === null || computedKeys === "unread") {
     return null;
   }
-  return source.computedKeyOf?.(held, computedKeys) ?? null;
+  return source.nameOf(key, computedKeys);
 }
 
 /**
