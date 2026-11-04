@@ -831,14 +831,17 @@ function noteRead(read: ReadValues, name: string, value: ValueOps): void {
   }
 }
 
-/** The same value, noting every entry and property a rule reads off it. */
+/**
+ * The same value, noting every entry and property a rule reads off it.
+ * An optional member the value has is passed through, and one it lacks
+ * stays missing, so a rule sees the same ops it would see unwatched.
+ */
 function recording(value: ValueOps, read: ReadValues): ValueOps {
+  const watchedValue = (inside: ValueOps | null): ValueOps | null =>
+    inside === null ? null : recording(inside, read);
   return {
     text: () => value.text(),
     name: (unsettled) => value.name(unsettled),
-    ...(value.names === undefined
-      ? {}
-      : { names: (cap: number) => value.names?.(cap) ?? null }),
     flag: () => value.flag(),
     entries: (unsettled) =>
       value.entries(unsettled).map((entry) => {
@@ -859,10 +862,55 @@ function recording(value: ValueOps, read: ReadValues): ValueOps {
     asArg: () => value.asArg(),
     parts: () => value.parts(),
     holes: () => value.holes(),
-    ...(value.interpolated === undefined
-      ? {}
-      : { interpolated: () => value.interpolated?.() ?? [] }),
+    ...optionalMember(
+      value,
+      "names",
+      (cap: number) => value.names?.(cap) ?? null,
+    ),
+    ...optionalMember(
+      value,
+      "interpolated",
+      () => value.interpolated?.() ?? [],
+    ),
+    ...optionalMember(value, "evaluated", () => value.evaluated?.() ?? null),
+    ...optionalMember(value, "object", () =>
+      watchedValue(value.object?.() ?? null),
+    ),
+    ...optionalMember(value, "function", () =>
+      watchedValue(value.function?.() ?? null),
+    ),
+    ...optionalMember(value, "source", () => value.source?.() ?? ""),
+    ...optionalMember(value, "form", () => value.form?.() ?? "other"),
+    ...optionalMember(value, "ownProperty", (name: string) => {
+      const inside = value.ownProperty?.(name) ?? null;
+      if (inside === null) {
+        return null;
+      }
+      noteRead(read, name, inside);
+      return recording(inside, read);
+    }),
+    ...optionalMember(
+      value,
+      "importedFrom",
+      () => value.importedFrom?.() ?? null,
+    ),
   };
+}
+
+/** The optional members of `ValueOps`, which an adapter may leave out. */
+type OptionalValueMember = {
+  [K in keyof ValueOps]-?: undefined extends ValueOps[K] ? K : never;
+}[keyof ValueOps];
+
+/** `{ [member]: reads }` when the value has that member, and nothing when it does not. */
+function optionalMember<K extends OptionalValueMember>(
+  value: ValueOps,
+  member: K,
+  reads: NonNullable<ValueOps[K]>,
+): Partial<Pick<ValueOps, K>> {
+  return value[member] === undefined
+    ? {}
+    : ({ [member]: reads } as Partial<Pick<ValueOps, K>>);
 }
 
 /** A rule's inputs, noting what the rule reads when somebody listens. */

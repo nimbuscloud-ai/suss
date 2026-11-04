@@ -1122,6 +1122,71 @@ describe("the value a call states for each column", () => {
     expect(asked).toHaveLength(2);
     expect(asked[0]).toEqual(asked[1]);
   });
+
+  it("passes a rule the optional members the value has, and notes a read through them", () => {
+    const asked: unknown[][] = [];
+    const reaching = storageCalls({
+      system: "cassette",
+      client: declaredBy("tapedeck"),
+    }).methods({
+      label: {
+        kind: "read",
+        selector: {
+          of: { at: 0 },
+          by: ({ input }) => {
+            asked.push([
+              input.evaluated?.(),
+              input.object?.()?.property("side")?.text(),
+              input.function?.()?.text(),
+              input.source?.(),
+              input.form?.(),
+              input.ownProperty?.("owner")?.text(),
+              input.importedFrom?.(),
+            ]);
+            return ["side", "owner"];
+          },
+        },
+      },
+    });
+    const side = valueOps("a");
+    const owner = valueOps("b");
+    const record = valueOps({ side: "a" });
+    const full: ValueOps = {
+      ...valueOps({ side: "a", owner: "b" }),
+      evaluated: () => 7,
+      object: () => ({ ...record, property: () => side }),
+      function: () => valueOps("handler"),
+      source: () => "tape",
+      form: () => "name",
+      ownProperty: (name) => (name === "owner" ? owner : null),
+      importedFrom: () => "./tapes",
+    };
+    const ops = callOps({ method: "label", from: ["tapedeck"] });
+    const handing = (value: ValueOps): CallOps => ({
+      ...ops,
+      valueAt: () => value,
+    });
+
+    expect(slotsStated(reaching, handing(full), run as never)).toEqual([
+      "selector side=a",
+      "selector owner=b",
+    ]);
+    const bare = valueOps("plain");
+    slotsStated(reaching, handing(bare), run as never);
+
+    expect(asked).toEqual([
+      [7, "a", "handler", "tape", "name", "b", "./tapes"],
+      [
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ],
+    ]);
+  });
 });
 
 describe("an operation the call says rather than the name it goes to", () => {
