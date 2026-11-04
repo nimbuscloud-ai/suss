@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 7367,
-      "covered": 7207,
+      "total": 7374,
+      "covered": 7218,
       "skipped": 0,
-      "pct": 97.82
+      "pct": 97.88
     },
     "statements": {
-      "total": 7512,
-      "covered": 7349,
+      "total": 7519,
+      "covered": 7360,
       "skipped": 0,
-      "pct": 97.83
+      "pct": 97.88
     },
     "functions": {
-      "total": 1812,
-      "covered": 1791,
+      "total": 1816,
+      "covered": 1797,
       "skipped": 0,
-      "pct": 98.84
+      "pct": 98.95
     },
     "branches": {
-      "total": 6174,
-      "covered": 5594,
+      "total": 6176,
+      "covered": 5597,
       "skipped": 0,
-      "pct": 90.6
+      "pct": 90.62
     },
     "branchesTrue": {
       "total": 0,
@@ -423,28 +423,28 @@
   },
   "src/factSource.ts": {
     "lines": {
-      "total": 52,
-      "covered": 50,
+      "total": 59,
+      "covered": 59,
       "skipped": 0,
-      "pct": 96.15
+      "pct": 100
     },
     "functions": {
-      "total": 26,
-      "covered": 25,
+      "total": 30,
+      "covered": 30,
       "skipped": 0,
-      "pct": 96.15
+      "pct": 100
     },
     "statements": {
-      "total": 52,
-      "covered": 50,
+      "total": 59,
+      "covered": 59,
       "skipped": 0,
-      "pct": 96.15
+      "pct": 100
     },
     "branches": {
-      "total": 53,
-      "covered": 44,
+      "total": 55,
+      "covered": 47,
       "skipped": 0,
-      "pct": 83.01
+      "pct": 85.45
     }
   },
   "src/facts.ts": {
@@ -1516,21 +1516,21 @@
   "src/facts/resolve.ts": {
     "lines": {
       "total": 23,
-      "covered": 19,
+      "covered": 21,
       "skipped": 0,
-      "pct": 82.6
+      "pct": 91.3
     },
     "functions": {
       "total": 14,
-      "covered": 11,
+      "covered": 12,
       "skipped": 0,
-      "pct": 78.57
+      "pct": 85.71
     },
     "statements": {
       "total": 25,
-      "covered": 20,
+      "covered": 22,
       "skipped": 0,
-      "pct": 80
+      "pct": 88
     },
     "branches": {
       "total": 5,
