@@ -42,6 +42,9 @@ project file re-exports and the component imports from there.
 ## What v0 leaves out
 
 - `useQueries` and the `queryOptions` helper.
+- Options kept in a variable and handed to the hook by name,
+  `useMutation(saveOptions)`. The pack reads options only where the call
+  writes them out, so the call is recorded with no function.
 - Query keys. suss does not record the key yet, so two components that
   share a cache entry are not paired by key.
 - RTK Query and SWR. They are different libraries and get their own

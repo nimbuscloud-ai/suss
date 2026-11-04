@@ -2,6 +2,6 @@
   "name": "@suss/framework-react-query",
   "exports": 4,
   "internal": 3,
-  "consumers": 11,
+  "consumers": 12,
   "unfollowedCalls": 0
 }

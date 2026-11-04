@@ -11,6 +11,7 @@ import { Node } from "ts-morph";
 import {
   callsInUnitBody,
   importBindsName,
+  objectLiteralOf,
   writesUndefined,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
@@ -75,7 +76,11 @@ function hookOf(
  * (`useQuery(key, fn)`, `useMutation(fn)`). A property written as a
  * method, `queryFn() { ... }`, is that function.
  */
-function callbackExpressionOf(call: CallExpression, hook: string): Node | null {
+function callbackExpressionOf(
+  call: CallExpression,
+  hook: string,
+  resolution: ResolutionStore | undefined,
+): Node | null {
   const property = HOOK_CALLBACK_PROPERTY[hook];
   for (const arg of call.getArguments()) {
     if (Node.isObjectLiteralExpression(arg)) {
@@ -94,6 +99,12 @@ function callbackExpressionOf(call: CallExpression, hook: string): Node | null {
     // `useQuery(key, undefined, { queryFn })` passes no function in that
     // place, and the options after it still say which one runs.
     if (writesUndefined(arg)) {
+      continue;
+    }
+    // A name for an options object, `useMutation(saveOptions)`, is the
+    // options and not the function they give. The pack reads options
+    // only where the call writes them out, so it passes over the name.
+    if (Node.isIdentifier(arg) && objectLiteralOf(arg, resolution) !== null) {
       continue;
     }
     if (
@@ -143,7 +154,8 @@ const queryHookRecognizer: InvocationRecognizer = (call, ctx) => {
   if (!Node.isCallExpression(c)) {
     return null;
   }
-  const found = hookOf(c, (ctx as TsInvocationRecognizerContext).resolution);
+  const { resolution } = ctx as TsInvocationRecognizerContext;
+  const found = hookOf(c, resolution);
   if (found === null) {
     return null;
   }
@@ -158,7 +170,9 @@ const queryHookRecognizer: InvocationRecognizer = (call, ctx) => {
     interaction: {
       class: "schedule",
       via: found.local,
-      callbackRef: callbackRefOf(callbackExpressionOf(c, found.hook)),
+      callbackRef: callbackRefOf(
+        callbackExpressionOf(c, found.hook, resolution),
+      ),
       hasDelay: false,
     },
   };
@@ -181,7 +195,7 @@ function reactQuerySubUnits(
     if (found === null) {
       continue;
     }
-    const expression = callbackExpressionOf(call, found.hook);
+    const expression = callbackExpressionOf(call, found.hook, resolution);
     if (expression === null || !isWrittenInPlace(expression)) {
       continue;
     }

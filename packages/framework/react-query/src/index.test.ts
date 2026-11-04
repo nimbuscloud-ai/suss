@@ -292,6 +292,37 @@ describe("the react-query pack", () => {
     ).toBe("scheduled-callback");
   });
 
+  it("passes over a name for an options object", async () => {
+    const summaries = await extract(`
+      import { useMutation } from "@tanstack/react-query";
+
+      async function postOrder() {
+        return null;
+      }
+
+      const saveOptions = { mutationFn: postOrder };
+
+      export function NewOrder() {
+        const save = useMutation(saveOptions);
+        const direct = useMutation(postOrder);
+        return <button>{String(save)}{String(direct)}</button>;
+      }
+    `);
+
+    expect(schedules(summaries)).toEqual([
+      {
+        unit: "NewOrder",
+        via: "useMutation",
+        callbackRef: { type: "opaque", reason: "missing-query-function" },
+      },
+      {
+        unit: "NewOrder",
+        via: "useMutation",
+        callbackRef: { type: "identifier", name: "postOrder" },
+      },
+    ]);
+  });
+
   it("ignores a local function that happens to share the hook's name", async () => {
     const summaries = await extract(`
       function useQuery(options: unknown) {
