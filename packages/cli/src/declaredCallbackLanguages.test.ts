@@ -3,8 +3,9 @@
  * TypeScript, Python and Ruby. Each adapter hands the compiled hooks the
  * ops over its own facts and lists the parent's calls from the same
  * rule, so the three languages give the same schedule effect, claim the
- * same callback as a unit of its own, and put the call inside it on that
- * unit's summary rather than on the parent's.
+ * same callback as a unit of its own, and put the call and the read of
+ * the environment inside it on that unit's summary rather than on the
+ * parent's.
  */
 
 import fs from "node:fs";
@@ -17,6 +18,7 @@ import { extractPythonProject } from "@suss/adapter-python";
 import { extractRubyProject } from "@suss/adapter-ruby";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { callbacks, constructedFrom, pack } from "@suss/recognize";
+import { nodeRuntimePack } from "@suss/runtime-node";
 import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
@@ -65,23 +67,25 @@ const TYPESCRIPT = `
   const jobs = new Jobs();
 
   export function enqueue() {
-    jobs.later(() => notify());
+    jobs.later(() => notify(process.env.API_URL));
   }
 `;
 
-const PYTHON = `from jobs import Jobs
+const PYTHON = `import os
+
+from jobs import Jobs
 
 jobs = Jobs()
 
 
 def enqueue():
-    jobs.later(lambda: notify())
+    jobs.later(lambda: notify(os.environ["API_URL"]))
 `;
 
 const RUBY = `module Store
   def self.enqueue
     jobs = Jobs::Queue.new
-    jobs.later { notify }
+    jobs.later { notify(ENV["API_URL"]) }
   end
 end
 `;
@@ -97,9 +101,10 @@ async function typescriptSummaries(): Promise<BehavioralSummary[]> {
     "export declare class Jobs { later(run: () => void): void; }",
   );
   project.createSourceFile("/jobs.ts", TYPESCRIPT);
+  // TypeScript reads `process.env` through the Node runtime pack.
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [EXPORTS, DECLARED],
+    frameworks: [EXPORTS, DECLARED, nodeRuntimePack()],
   });
   return await adapter.extractAll();
 }
@@ -162,6 +167,9 @@ interface Claimed {
   /** Whether `notify` is called on the parent's summary and on the claim's. */
   notifyOnParent: boolean;
   notifyOnClaim: boolean;
+  /** The environment variables the parent's summary and the claim's read. */
+  envOnParent: (string | null)[];
+  envOnClaim: (string | null)[];
 }
 
 function effectsOf(summary: BehavioralSummary | undefined): Effect[] {
@@ -173,6 +181,14 @@ function effectsOf(summary: BehavioralSummary | undefined): Effect[] {
 function calls(summary: BehavioralSummary | undefined, callee: string) {
   return effectsOf(summary).some(
     (effect) => effect.type === "invocation" && effect.callee === callee,
+  );
+}
+
+function envRead(summary: BehavioralSummary | undefined): (string | null)[] {
+  return effectsOf(summary).flatMap((effect) =>
+    effect.type === "interaction" && effect.interaction.class === "config-read"
+      ? [effect.interaction.name]
+      : [],
   );
 }
 
@@ -199,11 +215,13 @@ function claimedIn(summaries: readonly BehavioralSummary[]): Claimed {
     claimKind: claim?.kind ?? null,
     notifyOnParent: calls(parent, "notify"),
     notifyOnClaim: calls(claim, "notify"),
+    envOnParent: envRead(parent),
+    envOnClaim: envRead(claim),
   };
 }
 
 describe("a callbacks declaration", () => {
-  it("records the schedule, claims the callback and puts its call on the claim, in TypeScript, Python and Ruby", async () => {
+  it("records the schedule, claims the callback and puts its call and its read of the environment on the claim, in TypeScript, Python and Ruby", async () => {
     const fromTypeScript = claimedIn(await typescriptSummaries());
 
     expect(fromTypeScript).toEqual({
@@ -228,6 +246,8 @@ describe("a callbacks declaration", () => {
       claimKind: "scheduled-callback",
       notifyOnParent: false,
       notifyOnClaim: true,
+      envOnParent: [],
+      envOnClaim: ["API_URL"],
     });
     expect(claimedIn(await pythonSummaries())).toEqual(fromTypeScript);
     expect(claimedIn(await rubySummaries())).toEqual(fromTypeScript);
