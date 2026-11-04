@@ -131,6 +131,7 @@ export function byOrigin<T, A extends readonly unknown[] = []>(
 }
 
 import type { Effect } from "@suss/behavioral-ir";
+import type { DiscoveredSubUnitParent } from "./framework.js";
 import type { EffectArg } from "./index.js";
 
 /**
@@ -242,12 +243,28 @@ export interface ValueOps {
   /** The value as the source wrote it, before any name in it is followed. */
   source?(): string;
   /**
+   * How the source wrote this value at this spot, without following
+   * anything: a function written in place, a name, an object written
+   * out, or anything else. A word the language keeps for no value, such
+   * as `undefined`, is other.
+   */
+  form?(): ValueForm;
+  /**
+   * What the object written out here states under one of its own keys,
+   * or null. A spread is not read. A name for an object gives null, since
+   * only an object written at this spot is read.
+   */
+  ownProperty?(name: string): ValueOps | null;
+  /**
    * The module this value was imported from, spelled as the import
    * statement spells it, when the value is a name the file imports.
    * Null for anything else.
    */
   importedFrom?(): string | null;
 }
+
+/** How the source wrote a value where it is read. */
+export type ValueForm = "function" | "name" | "object" | "other";
 
 /** One entry of an object a call states. */
 export interface ValueEntry {
@@ -397,6 +414,11 @@ export interface CallOps {
    */
   keywordAt?(name: string): ValueOps | null;
   /**
+   * The block the call is written with, as a function, or null when it
+   * has none. Unset in a language whose calls take no blocks.
+   */
+  block?(): ValueOps | null;
+  /**
    * The one call behind the receiver the origin accepts, however many
    * name, construction, or query hops separate them, such as Mongoose's
    * `model(...)` behind a document. Null when nothing
@@ -490,6 +512,8 @@ export interface FactSource {
   constructedClass?(callee: string): string | null;
   /** The source text at the key. */
   textOf(key: string): string;
+  /** How the source wrote the value at the key, as `ValueOps.form` says. Unset reads every value as other. */
+  formOf?(key: string): ValueForm;
   /** The string, number or boolean written at the key, or null when it is not one. */
   literalOf(key: string): string | number | boolean | null;
   /** The name the value gives, read the adapter's way. */
@@ -548,6 +572,20 @@ export interface FactSource {
  */
 export interface OpsCarrier {
   ops?: CallOps;
+}
+
+/**
+ * What an adapter puts in the context a `subUnits` hook gets, so a
+ * declared pack can claim a callback without walking the parent's tree.
+ */
+export interface SubUnitOpsCarrier {
+  /**
+   * The calls the parent's body runs, the ones written in functions it
+   * runs inline included, in the order the source writes them. A call
+   * inside a function some pack claims is still listed, so a callback
+   * written inside another one belongs to the same parent.
+   */
+  calls?(parent: DiscoveredSubUnitParent): readonly CallOps[];
 }
 
 /**

@@ -49,7 +49,8 @@ import {
   resultUsedAsValue,
   spanOf,
 } from "../ast.js";
-import { bodyOfMethod } from "../discovery.js";
+import { claimedNodesOf, claimingMethodOf } from "../claims.js";
+import { bodyOfMethod, claimsFactsOf } from "../discovery.js";
 import { exitingBranches } from "../exits.js";
 import { INVOKE_METHOD, SENDING_METHODS } from "../facts/languageWords.js";
 import { nodeId } from "../facts/values.js";
@@ -158,6 +159,8 @@ export interface Seed {
 export interface ReachedUnits {
   /** One `library` summary per reached method, in the order they were reached. */
   readonly summaries: BehavioralSummary[];
+  /** The same summaries, by the reached method's key. */
+  readonly summariesByKey: ReadonlyMap<string, readonly BehavioralSummary[]>;
   /** Where each callee in a scanned body resolved to, by callee text, keyed by the scanned method's key. */
   readonly targetsByKey: ReadonlyMap<string, ReadonlyMap<string, DeclaredAt>>;
   /** The calls each scanned body could not follow, by the scanned method's key. */
@@ -291,6 +294,15 @@ export async function reachedFunctions(
       } else {
         scan = scanOnce(entry.source, key, options, batched.get(key), charges);
         scans.set(key, storedScan(scan));
+        // A block a pack claims gets a summary of its own, so the walk
+        // starts from it as it does from a discovered unit.
+        for (const seed of claimedSeeds(entry.source, claimsFactsOf(options))) {
+          if (!functionByKey.has(seed.key)) {
+            seedKeys.add(seed.key);
+            functionByKey.set(seed.key, seed.target);
+            db.add("entry", [seed.key]);
+          }
+        }
       }
       if (scan.stops.length > 0) {
         stopsByKey.set(key, scan.stops);
@@ -420,6 +432,7 @@ export async function reachedFunctions(
 
   return {
     summaries,
+    summariesByKey,
     targetsByKey,
     stopsByKey,
     argTargetsByKey,
@@ -433,6 +446,23 @@ export async function reachedFunctions(
     charges,
     beforeGaps,
   };
+}
+
+/** The blocks and lambdas a pack claims in this body, each with the key the walk keeps it under. */
+function claimedSeeds(
+  source: ReachedFunction,
+  facts: Database | undefined,
+): { key: string; target: ReachedFunction }[] {
+  return claimedNodesOf(source.node, facts).map((node) => ({
+    key: nodeId(source.file, node),
+    target: {
+      file: source.file,
+      node,
+      name: "<anon>",
+      exportPath: [],
+      enclosingQualifiedName: source.enclosingQualifiedName,
+    },
+  }));
 }
 
 /**
@@ -790,7 +820,7 @@ interface BodyCalls {
  * is already a property read.
  */
 function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
-  const site = siteOf(source);
+  const site = siteOf(source, claimsFactsOf(options));
   const run = options.examples?.runOf(source.node, source.file) ?? null;
   const siteFor = (call: RbNode): CallSite => {
     const file = run?.fileOf(call) ?? source.file;
@@ -827,7 +857,7 @@ function callsWrittenIn(
       (call) => !run.isRunnerCall(call),
     );
   }
-  const read = readableBodyOf(node);
+  const read = readableBodyOf(node, claimsFactsOf(options));
   return read === null ? [] : bodyCalls(read, options.inheritedMethods);
 }
 
@@ -835,20 +865,30 @@ function callsWrittenIn(
  * The statements this source runs. For a program node they are the file's
  * load-time statements, and for a method or a block, its body.
  */
-function readableBodyOf(node: RbNode): ReadableBody | null {
-  return node.type === PROGRAM_TYPE ? moduleScopeBody(node) : methodBody(node);
+function readableBodyOf(
+  node: RbNode,
+  facts: Database | undefined,
+): ReadableBody | null {
+  return node.type === PROGRAM_TYPE
+    ? moduleScopeBody(node)
+    : methodBody(node, facts);
 }
 
 /**
  * Where this source's calls are written. At module scope, names are keyed
  * on the file instead of a method, matching how the value facts key them.
  * A block's names belong to the method it is written in, or to the file.
+ * A claimed block is read as its method read it before the claim.
  */
-function siteOf(source: ReachedFunction): CallSite {
+function siteOf(
+  source: ReachedFunction,
+  facts: Database | undefined,
+): CallSite {
+  const claimer = claimingMethodOf(source.node, facts);
   return {
     file: source.file,
-    method: localsOwnerOf(source.node),
-    owner: nodeId(source.file, source.node),
+    method: claimer ?? localsOwnerOf(source.node),
+    owner: nodeId(source.file, claimer ?? source.node),
     enclosingQualifiedName: source.enclosingQualifiedName,
     receiverClass: source.receiverClass,
   };
@@ -907,7 +947,7 @@ function scanBody(
   read: BodyReads,
 ): Scan {
   const displayPathOf = options.displayPathOf;
-  if (readableBodyOf(source.node) === null) {
+  if (readableBodyOf(source.node, claimsFactsOf(options)) === null) {
     return EMPTY_SCAN;
   }
 

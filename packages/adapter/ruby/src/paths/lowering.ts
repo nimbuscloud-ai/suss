@@ -74,12 +74,22 @@ function exitOf(
   return KEYWORD_EXITS[node.type] ?? null;
 }
 
-/** A raise anywhere in the node wins over a return anywhere, as the engine expects. */
-function exitKindOf(node: RbNode): ExitKind {
+const NOTHING_CLAIMED: ReadonlySet<number> = new Set<number>();
+
+/**
+ * A raise anywhere in the node wins over a return anywhere, as the engine
+ * expects. A `claimed` block runs as a unit of its own, so what it does
+ * does not leave this body.
+ */
+function exitKindOf(node: RbNode, claimed: ReadonlySet<number>): ExitKind {
   let sawReturn = false;
   const raises = (current: RbNode): boolean => {
     for (const child of children(current)) {
-      if (child === null || CAPTURES_RETURN.has(child.type)) {
+      if (
+        child === null ||
+        CAPTURES_RETURN.has(child.type) ||
+        claimed.has(child.id)
+      ) {
         continue;
       }
       if (isRaise(child)) {
@@ -195,7 +205,18 @@ class Lowerer {
     private readonly terminals: ReadonlyMap<number, RbNode>,
     private readonly responseCalls: NodeSet,
     private readonly formatSwitch: RbFormatSwitch | undefined,
+    private readonly claimed: ReadonlySet<number>,
   ) {}
+
+  private exitKindOf(node: RbNode): ExitKind {
+    return exitKindOf(node, this.claimed);
+  }
+
+  /** The block written with this call, unless a pack claims it as a unit of its own. */
+  private blockRunBy(call: RbNode): RbNode | null {
+    const block = attachedBlockOf(call);
+    return block === null || this.claimed.has(block.id) ? null : block;
+  }
 
   private attachTerminals(
     statement: StructuredStatement<RbNode>,
@@ -234,7 +255,11 @@ class Lowerer {
       return found;
     }
     for (const child of children(node)) {
-      if (child !== null && !OWN_BODY_TYPES.has(child.type)) {
+      if (
+        child !== null &&
+        !OWN_BODY_TYPES.has(child.type) &&
+        !this.claimed.has(child.id)
+      ) {
         this.responsesIn(child, found);
       }
     }
@@ -259,7 +284,7 @@ class Lowerer {
       condition: handleOf(field(node, "condition")),
       thenBody: this.lowerBlock(field(node, "consequence")),
       elseBody: this.lowerAlternative(field(node, "alternative")),
-      exitKind: exitKindOf(node),
+      exitKind: this.exitKindOf(node),
     };
     this.attach(nested, [field(node, "condition")]);
     return [nested];
@@ -279,7 +304,7 @@ class Lowerer {
       condition: handleOf(field(node, "condition")),
       thenBody: inverted ? (alternative ?? []) : consequence,
       elseBody: inverted ? consequence : alternative,
-      exitKind: exitKindOf(node),
+      exitKind: this.exitKindOf(node),
     };
   }
 
@@ -293,7 +318,7 @@ class Lowerer {
       condition: handleOf(field(node, "condition")),
       thenBody: inverted ? [] : gated,
       elseBody: inverted ? gated : null,
-      exitKind: exitKindOf(node),
+      exitKind: this.exitKindOf(node),
     };
   }
 
@@ -318,7 +343,7 @@ class Lowerer {
           ? rescues.flatMap((clause) => this.lowerBlock(field(clause, "body")))
           : null,
       finallyBody: ensureClause === null ? null : this.lowerBlock(ensureClause),
-      exitKind: exitKindOf(node),
+      exitKind: this.exitKindOf(node),
     };
   }
 
@@ -340,7 +365,7 @@ class Lowerer {
         });
       }
     }
-    return { kind: "switch", groups, exitKind: exitKindOf(node) };
+    return { kind: "switch", groups, exitKind: this.exitKindOf(node) };
   }
 
   /**
@@ -392,7 +417,7 @@ class Lowerer {
     return {
       kind: "switch",
       groups: [...named, fallback],
-      exitKind: exitKindOf(node),
+      exitKind: this.exitKindOf(node),
     };
   }
 
@@ -400,7 +425,7 @@ class Lowerer {
     const exit = exitOf(node);
     if (exit !== null) {
       const statement = this.attach(
-        { kind: "exit", exit, exitKind: exitKindOf(node) },
+        { kind: "exit", exit, exitKind: this.exitKindOf(node) },
         [node],
       );
       return this.attachTerminals(statement, this.responsesIn(node));
@@ -423,7 +448,7 @@ class Lowerer {
           kind: "loop",
           condition: handleOf(header),
           body: this.lowerBlock(field(node, "body")),
-          exitKind: exitKindOf(node),
+          exitKind: this.exitKindOf(node),
           lines: rangeOf(node),
         },
         [header],
@@ -433,7 +458,7 @@ class Lowerer {
     // `items.each do |i| ... end` runs its block once per item, and a
     // return inside it returns from the method. The engine treats a loop
     // the same way.
-    const attachedBlock = attachedBlockOf(node);
+    const attachedBlock = this.blockRunBy(node);
     const formatSwitch =
       attachedBlock === null
         ? null
@@ -448,7 +473,7 @@ class Lowerer {
           kind: "loop",
           condition: callHeaderOf(node, attachedBlock),
           body: this.lowerBlock(field(attachedBlock, "body") ?? attachedBlock),
-          exitKind: exitKindOf(node),
+          exitKind: this.exitKindOf(node),
           lines: rangeOf(node),
         },
         [node],
@@ -473,7 +498,9 @@ class Lowerer {
       );
     }
 
-    return this.attach({ kind: "opaque", exitKind: exitKindOf(node) }, [node]);
+    return this.attach({ kind: "opaque", exitKind: this.exitKindOf(node) }, [
+      node,
+    ]);
   }
 }
 
@@ -484,18 +511,21 @@ class Lowerer {
  *
  * `responseCalls` is for a caller reading what an action responds with.
  * Each one is a terminal, and the statement it is in leaves the method
- * instead of falling through to the next statement.
+ * instead of falling through to the next statement. A `claimed` block
+ * is a unit of its own, so it is not read as part of this body.
  */
 export function lowerRubyBody(
   body: RbNode | null,
   terminals: readonly RbNode[],
   responseCalls: readonly RbNode[] = [],
   formatSwitch?: RbFormatSwitch,
+  claimed: ReadonlySet<number> = NOTHING_CLAIMED,
 ): RubyLowering {
   const lowerer = new Lowerer(
     new Map(terminals.map((terminal) => [terminal.id, terminal])),
     new NodeSet(responseCalls),
     formatSwitch,
+    claimed,
   );
   return {
     statements: lowerer.lowerBlock(body),

@@ -17,13 +17,15 @@ where the match starts -> which method -> read the arguments -> yield
                                                                 a sub-unit
 ```
 
-Four endings are built, and all four are recognition endings that
+Five endings are built, and all five are recognition endings that
 yield effects: `storageAccess` asks the call what it reached,
-`sqlAccess` reads the statement the call was given, and `messageSend`
-and `unitInvoke` read the object the call sends. Discovery, terminals
-and sub-units still come from the pack's discovery patterns. Each would
-become a new member of `Ending`, with its own entry in the `YIELD`
-table in `compile.ts`.
+`sqlAccess` reads the statement the call was given, `messageSend`
+and `unitInvoke` read the object the call sends, and `schedule` reads
+the callback the call hands over. A schedule chain can also say what a
+callback written in place becomes, which is how a pack claims a
+sub-unit as data. Discovery and terminals still come from the pack's
+discovery patterns. Each would become a new member of `Ending`, with
+its own entry in the `YIELD` table in `compile.ts`.
 
 ### Where a match starts
 
@@ -161,6 +163,8 @@ walk it:
 | `property(name)` | what one named property states, as a value of its own |
 | `parts()` | the pieces of text the source wrote, with the holes left out |
 | `holes()` | what the source interpolated between those pieces, each as the call it was written as |
+| `form()` | how the source wrote the value at this spot: `function`, `name`, `object` or `other`, without following anything |
+| `ownProperty(name)` | what an object written at this spot states under one of its own keys, with spreads left out |
 
 A computed key such as `{ [this.tableName]: [...] }` is read like any
 other name. When the source settles its value, the entry's key comes
@@ -190,6 +194,9 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `parts()`, `holes()`, `interpolated()` | `partAt` and `holeAt` |
 | `text()`, `flag()`, `name()`, `names()`, `asArg()` | the adapter's own reading of the value, `literalOf`, `nameOf`, `namesOf` and `argOf` |
 | `evaluated()`, `source()`, `importedFrom()` | the adapter's evaluator through `evaluatedOf`, the text at the key through `textOf`, and the module specifier an import statement spells through `importSpecifierOf`. Ruby imports no names, so it gives no specifier |
+| `form()` | the adapter's `formOf`, and `other` where it has none |
+| `ownProperty(name)` | `holdsProperty` and `writtenEntryAt` on the value's own key, its spreads left out, when `shapeOf` says it is an object |
+| `block()` | `callBlock(r, b)`, which only Ruby states |
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
 | `isFrom`, `receiverIsFrom` with `typed` | the adapter's `typedAs`, or the construction a receiver was written as where the adapter has none |
@@ -638,6 +645,51 @@ messageSends({
 `configuredSends(spec, wire)` builds these from a dependency stub's
 statement. A subject nothing settles records the send with no channel,
 the way the SDK sends read theirs.
+
+## A callback a call hands over
+
+A query hook takes the function it runs either as an argument or as a
+property of its options. The pack lists where to look, in order:
+
+```ts
+callbacks({ client: constructedFrom("@tanstack/react-query", "react-query") })
+  .methods({
+    useQuery: {
+      callback: [
+        { written: "here", at: 0, property: ["queryFn"] },
+        { written: "callback", at: 1 },
+        { written: "here", at: 1, property: ["queryFn"] },
+      ],
+    },
+  })
+  .schedules({ via: "asWritten", unread: { missing: "missing-query-function", other: "non-literal-query-function" } })
+  .unitWhenInPlace({ kind: "scheduled-callback", name: ["parent", "callee", "countPerCallee"] });
+```
+
+The first pick that finds a value settles which function the call
+runs. `written: "callback"` takes the argument when the source writes a
+function there or a name, and passes over anything else: a name for an
+object is the call's options, and `undefined` says the call passes no
+function in that place. `written: "here"` reads an object the call
+writes out, by its own keys, so an object passed by name and a property
+only a spread brings in are not read. `written: "block"` reads the block
+a Ruby call is written with. A pick can take a `keyword`, as an
+argument pick does, for Python and Ruby.
+
+The effect records the callee as `via`, and `callbackRef` says what was
+found: `literal` for a function written in place, the name for a name,
+and the pack's `unread` reasons for anything else or for nothing.
+
+`.unitWhenInPlace` compiles to the pack's `subUnits` hook. The adapter
+runs it for a unit and hands it `calls(parent)`, the calls the parent's
+body runs in source order, the ones in functions it runs inline
+included. The hook matches each call the way the recognizer does and
+claims the callback when its `form()` is `function`, handing back the
+adapter's own node through `ast()`. The name is built from the parts in
+order: the parent's name, `.` and the callee, `#` and how many claims
+under that callee came before it in the parent. A callback written
+inside another claimed one still belongs to the parent, because the
+calls are not cut at a claim.
 
 ## The example every declaration states
 

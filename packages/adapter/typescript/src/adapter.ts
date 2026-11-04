@@ -1521,8 +1521,7 @@ function extractFromSourceFile(
         resolution,
         resolution === undefined
           ? undefined
-          : (value, module) =>
-              resolution.importOriginsOf(value, [module]).length > 0,
+          : (value, module) => resolution.originatesFrom(value, module),
         resolution === undefined
           ? undefined
           : (value, matches) => resolution.anchorCallsOf(value, matches),
@@ -1817,8 +1816,7 @@ function moduleScopeSummary(
       resolution,
       resolution === undefined
         ? undefined
-        : (value, module) =>
-            resolution.importOriginsOf(value, [module]).length > 0,
+        : (value, module) => resolution.originatesFrom(value, module),
       resolution === undefined
         ? undefined
         : (value, matches) => resolution.anchorCallsOf(value, matches),

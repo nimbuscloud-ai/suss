@@ -74,7 +74,7 @@ import { jobEnqueueEffects, jobHandlersOf, type RbJobOptions } from "./jobs.js";
 import {
   EVERY_ARGLESS_CALL,
   effectSitesIn,
-  invocationSites,
+  invocationSitesIn,
   methodBody,
 } from "./paths/effects.js";
 import {
@@ -209,6 +209,16 @@ export interface BodyReadOptions {
   readonly bodyBlocks?: BodyBlocks | undefined;
   /** The methods each class defines under a name computed at run time, by class key. */
   readonly dynamicNames?: DynamicNames | undefined;
+  /**
+   * The run's facts, for which blocks a pack claims as units of their own.
+   * The reach walk reads a body without `facts` and sets this instead.
+   */
+  readonly claimsIn?: Database | undefined;
+}
+
+/** The facts a body reader finds the run's claimed blocks through. */
+export function claimsFactsOf(read: BodyReadOptions): Database | undefined {
+  return read.facts ?? read.claimsIn;
 }
 
 export interface DiscoveryOptions extends BodyReadOptions {
@@ -1218,16 +1228,20 @@ export function bodyOfMethod(
   file: string,
   bodyRead: BodyReadOptions = {},
 ): BodyReport {
-  // Every call with no arguments goes on the list, and the reach walk
-  // removes the ones that turn out to be property reads.
-  const effects = invocationSites(
-    method,
-    bodyRead.inheritedMethods,
-    EVERY_ARGLESS_CALL,
-    bodyRead.facts,
-  );
   const storage = bodyRead.storage;
   const facts = bodyRead.facts;
+  const read = methodBody(method, claimsFactsOf(bodyRead));
+  // Every call with no arguments goes on the list, and the reach walk
+  // removes the ones that turn out to be property reads.
+  const effects =
+    read === null
+      ? []
+      : invocationSitesIn(
+          read,
+          bodyRead.inheritedMethods,
+          EVERY_ARGLESS_CALL,
+          facts,
+        );
   const database =
     storage === undefined
       ? { effects: [], slots: [] }
@@ -1242,7 +1256,7 @@ export function bodyOfMethod(
     ...streamWriteEffects(method),
   ];
   const siteOf = effectSitesIn(
-    methodBody(method),
+    read,
     found.map((one) => one.at),
   );
   const extra = found.map(({ effect, at }) => ({ effect, site: siteOf(at) }));

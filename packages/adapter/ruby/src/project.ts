@@ -63,6 +63,7 @@ import {
 } from "@suss/resolution";
 
 import { rangeOf } from "./ast.js";
+import { claimsSubUnits } from "./claims.js";
 import { readDynamicNames } from "./defineMethod.js";
 import {
   buildRubyExtractionReport,
@@ -112,6 +113,7 @@ import {
 } from "./reuse.js";
 import { walkDefinitions } from "./scope.js";
 import { pooledStorage } from "./storage.js";
+import { startSubUnits, subUnitSummaries } from "./subUnits.js";
 import {
   emitGroupFacts,
   exampleReads,
@@ -613,8 +615,11 @@ export async function extractRubyProject(
   }
 
   const cache: RunCache = { timer, cacheDir, layer, input };
+  // A run that claims sub-units stores no records, so it is never replayed in part.
   const records =
-    plan === null ? null : recordsToReplay<RubyFileRecord>(plan.roots);
+    plan === null || claimsSubUnits(options.packs)
+      ? null
+      : recordsToReplay<RubyFileRecord>(plan.roots);
   if (plan !== null && records !== null) {
     try {
       return await runRuby(options, walked, cache, { plan, records });
@@ -665,9 +670,10 @@ async function runRuby(
   const gapHandling = options.gapHandling ?? "permissive";
   const tallies = createPackTallies(options.packs);
   // With a cache, every question and every read of another file is charged
-  // to the file's discovery or the method's scan that made it.
+  // to the file's discovery or the method's scan that made it. A run whose
+  // packs claim sub-units keeps only its whole result.
   const ledger =
-    cacheDir === null
+    cacheDir === null || claimsSubUnits(options.packs)
       ? null
       : new DependencyLedger(
           walked.files,
@@ -716,6 +722,7 @@ async function runRuby(
   });
   const watchedNames =
     ledger === null ? dynamicNames : watchDynamicNames(dynamicNames, db);
+  const subUnits = startSubUnits(db, options.packs);
 
   const loaderPatterns = options.packs.flatMap((pack) => pack.loaders ?? []);
   const pooled = pooledStorage(options.packs);
@@ -992,6 +999,7 @@ async function runRuby(
       ),
       ...(reuse === null ? {} : { replay: new WalkReplay(reuse, rootsByFile) }),
       ...(ledger === null ? {} : { ledger }),
+      ...(subUnits === null ? {} : { claimsIn: db }),
     }),
   );
   const assembledHere = new Set<BehavioralSummary>();
@@ -1038,6 +1046,26 @@ async function runRuby(
     }
     if (seedKey !== null) {
       addForSeed(summariesBySeed, seedKey, summary);
+    }
+  }
+  // The walk started from each claimed block, so a sub-unit's calls are
+  // placed below the way a discovered unit's are.
+  if (subUnits !== null) {
+    const built = timer.time("summarize", () =>
+      subUnitSummaries([...summariesBySeed, ...reached.summariesByKey], {
+        registry: subUnits,
+        facts: db,
+        displayPathOf,
+        storage,
+        inheritedMethods,
+        gapHandling,
+        propertyReadsByKey: reached.propertyReadsByKey,
+      }),
+    );
+    for (const { key, summary } of built) {
+      summaries.push(summary);
+      assembledHere.add(summary);
+      addForSeed(summariesBySeed, key, summary);
     }
   }
 

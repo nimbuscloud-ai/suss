@@ -11,6 +11,7 @@ import {
   askResolution,
   askResolutionUnder,
   askSources,
+  callsRun,
   declaredTypesOf,
   readUses,
   resolutionProgram,
@@ -178,6 +179,11 @@ export function settleWrittenValues(
 export interface SubjectOrigin {
   module: string;
   name: string;
+}
+
+/** The calls a function's body runs, a lambda's included, by call key in source order. */
+export function callsRunBy(db: Database, functionKey: string): string[] {
+  return callsRun(db, [functionKey], programFor(db)).get(functionKey) ?? [];
 }
 
 /** Every call the anchor rules reach behind a value. The resolution DESIGN.md says why the caller picks among them. */

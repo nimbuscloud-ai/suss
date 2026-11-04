@@ -1358,9 +1358,11 @@ export type {
   ReceiverOrigin,
   ReturnedBy,
   StatedSlot,
+  SubUnitOpsCarrier,
   Typed,
   UnsettledName,
   ValueEntry,
+  ValueForm,
   ValueOps,
 } from "./ops.js";
 export type {

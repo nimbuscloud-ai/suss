@@ -15,6 +15,7 @@ import {
   OWN_BODY_TYPES,
   rangeOf,
 } from "../ast.js";
+import { claimedBodyOf, claimedIn } from "../claims.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
@@ -192,7 +193,10 @@ function collectCalls(
   found: RbNode[],
 ): RbNode[] {
   for (const child of children(node)) {
-    if (read.stops.has(child.type) && !isLambdaArgument(child)) {
+    if (
+      (read.stops.has(child.type) && !isLambdaArgument(child)) ||
+      read.claimed?.has(child.id) === true
+    ) {
       continue;
     }
     if (isCall(child, read.locals, inherited)) {
@@ -208,18 +212,33 @@ export interface ReadableBody {
   readonly body: RbNode;
   readonly locals: ReadonlySet<string>;
   readonly stops: ReadonlySet<string>;
+  /** The blocks and lambdas a pack claims as units of their own, by node id. Their statements are read on their own summaries. */
+  readonly claimed?: ReadonlySet<number>;
 }
 
-/** A method's own body to read, or null when the method has none. */
-export function methodBody(definitionNode: RbNode): ReadableBody | null {
+/**
+ * A method's own body to read, or null when the method has none. Given
+ * the run's facts, the blocks a pack claims are left out of it, and a
+ * claimed block's own body is read with its method's locals.
+ */
+export function methodBody(
+  definitionNode: RbNode,
+  facts?: Database,
+): ReadableBody | null {
+  const ownBody = claimedBodyOf(definitionNode, facts);
+  if (ownBody !== null) {
+    return ownBody;
+  }
   const body = field(definitionNode, "body");
   if (body === null) {
     return null;
   }
+  const claimed = claimedIn(definitionNode, facts);
   return {
     body,
     locals: localNamesIn(definitionNode),
     stops: OWN_BODY_TYPES,
+    ...(claimed === undefined ? {} : { claimed }),
   };
 }
 
@@ -355,11 +374,11 @@ export function invocationSites(
   keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
   facts?: Database | undefined,
 ): InvocationSite[] {
-  const read = methodBody(definitionNode);
+  const read = methodBody(definitionNode, facts);
   if (read === null) {
     return [];
   }
-  return effectsOfBody(read, inherited, keepsArglessCall, facts);
+  return invocationSitesIn(read, inherited, keepsArglessCall, facts);
 }
 
 /** The same, for the statements a file runs as it loads. */
@@ -369,7 +388,7 @@ export function moduleScopeInvocationEffects(
   keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
   facts?: Database | undefined,
 ): InvocationEffect[] {
-  return effectsOfBody(
+  return invocationSitesIn(
     moduleScopeBody(root),
     inherited,
     keepsArglessCall,
@@ -377,18 +396,19 @@ export function moduleScopeInvocationEffects(
   ).map((site) => site.effect);
 }
 
-function effectsOfBody(
+/** The same, for a body already read, such as a block a pack claims as a unit of its own. */
+export function invocationSitesIn(
   read: ReadableBody,
-  inherited: InheritedMethods,
-  keepsArglessCall: (call: RbNode) => boolean,
-  facts: Database | undefined,
+  inherited: InheritedMethods = NO_INHERITED_METHODS,
+  keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
+  facts?: Database | undefined,
 ): InvocationSite[] {
   const calls = callsReported(bodyCalls(read, inherited), keepsArglessCall);
   if (calls.length === 0) {
     return [];
   }
 
-  const sites = sitesIn(read.body, calls);
+  const sites = sitesIn(read, calls);
   return calls.map((call) => {
     const conditions = sharedGatingConditions(sites.pathsTo(call));
     return {
@@ -408,12 +428,14 @@ function effectsOfBody(
 
 /** The paths to the statement each of these nodes is written in, and where each one is. */
 function sitesIn(
-  body: RbNode,
+  read: ReadableBody,
   nodes: readonly RbNode[],
 ): StatementSites<RbNode, RbNode> {
+  const { body } = read;
   return statementSites(nodes, {
     statementOf: (node) => enclosingStatement(node, body),
-    lower: (statements) => lowerRubyBody(body, statements),
+    lower: (statements) =>
+      lowerRubyBody(body, statements, [], undefined, read.claimed),
     firstLine: (node) => rangeOf(node).start,
   });
 }
@@ -429,5 +451,5 @@ export function effectSitesIn(
   if (read === null || nodes.length === 0) {
     return (node) => ({ line: rangeOf(node).start });
   }
-  return sitesIn(read.body, nodes).plainSiteOf;
+  return sitesIn(read, nodes).plainSiteOf;
 }

@@ -19,6 +19,7 @@ import type {
   DeclaredEntryPoint,
   InvocationRecognizer,
   LibraryEnvVars,
+  PatternPack,
   RedirectOption,
 } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
@@ -80,6 +81,12 @@ export interface PythonPack {
    * every call too.
    */
   accessRecognizers?: readonly InvocationRecognizer[];
+  /**
+   * The hook a pack declared with `@suss/recognize` has for a callback a
+   * call writes in place. It is run over each function whose body the
+   * run reads, and each lambda it claims gets a summary of its own.
+   */
+  subUnits?: PatternPack["subUnits"];
   /** Functions the library exports that hand back the argument at `argument`, such as a decorator that returns the function it was given. */
   transparentWrappers?: UnwrapsByName[];
   /**

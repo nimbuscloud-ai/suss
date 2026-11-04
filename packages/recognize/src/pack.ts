@@ -9,7 +9,7 @@
  * recognized under, which is the npm package callers install.
  */
 
-import { compile, modulesOfChain } from "./compile.js";
+import { compile, compileSubUnits, modulesOfChain } from "./compile.js";
 
 import type {
   DeclaredMatch,
@@ -95,6 +95,7 @@ const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
   sqlAccess: "access",
   messageSend: "invocation",
   unitInvoke: "invocation",
+  schedule: "invocation",
 };
 
 /** The chains a pack dispatches on one of the two walks. */
@@ -116,6 +117,7 @@ export function pack(
 ): PatternPack {
   const chains = matches.map((match) => match.declared);
   const access = walkedBy(chains, "access", spec.recognizedAs);
+  const subUnits = compileSubUnits(chains);
 
   return {
     name,
@@ -133,6 +135,7 @@ export function pack(
       ...(spec.recognizers ?? []),
     ],
     ...(access.length === 0 ? {} : { accessRecognizers: access }),
+    ...(subUnits === null ? {} : { subUnits }),
     ...(spec.projectHelpers === undefined
       ? {}
       : { projectHelpers: spec.projectHelpers }),
@@ -152,28 +155,44 @@ export function declarationsIn(matches: readonly Match[]): PackDeclarations {
 
 /** The wire one chain reaches over, whichever ending it has. */
 function wireOf(ending: Ending): string {
-  if (ending.yields === "messageSend") {
-    return ending.wire;
-  }
-  if (ending.yields === "unitInvoke") {
-    return ending.platform;
-  }
-  return ending.transport ?? ending.system;
+  return byEnding(WIRE, ending);
 }
+
+/** One function per kind of ending, each handed that kind. */
+type ByEnding<T> = {
+  readonly [K in Ending["yields"]]: (
+    ending: Extract<Ending, { yields: K }>,
+  ) => T;
+};
+
+function byEnding<T>(table: ByEnding<T>, ending: Ending): T {
+  return (table[ending.yields] as (ending: Ending) => T)(ending);
+}
+
+/** A callback runs in the same process as the call that hands it over. */
+const WIRE: ByEnding<string> = {
+  storageAccess: (ending) => ending.transport ?? ending.system,
+  sqlAccess: (ending) => ending.transport ?? ending.system,
+  messageSend: (ending) => ending.wire,
+  unitInvoke: (ending) => ending.platform,
+  schedule: () => "in-process",
+};
 
 /**
  * The name a declaration gets in the pack health report. A storage
  * chain goes by its store, because one wire can reach several stores.
  */
 function declaredName(ending: Ending): string {
-  if (ending.yields === "messageSend") {
-    return ending.wire;
-  }
-  if (ending.yields === "unitInvoke") {
-    return ending.platform;
-  }
-  return ending.system;
+  return byEnding(DECLARED_NAME, ending);
 }
+
+const DECLARED_NAME: ByEnding<string> = {
+  storageAccess: (ending) => ending.system,
+  sqlAccess: (ending) => ending.system,
+  messageSend: (ending) => ending.wire,
+  unitInvoke: (ending) => ending.platform,
+  schedule: (ending) => ending.yields,
+};
 
 /** The wire every chain in a pack reaches over. */
 function protocolOf(chains: readonly Chain<MethodMeaning>[]): string {

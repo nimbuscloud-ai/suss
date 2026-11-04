@@ -12,7 +12,11 @@ import type {
   RequestSpellingMetadata,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { DeclaredEntryPoint, InvocationRecognizer } from "@suss/extractor";
+import type {
+  DeclaredEntryPoint,
+  InvocationRecognizer,
+  PatternPack,
+} from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
@@ -107,6 +111,12 @@ export interface RubyPack {
    * every call too.
    */
   accessRecognizers?: readonly InvocationRecognizer[];
+  /**
+   * The same pack's hook for a block or a lambda a call hands over, which
+   * it can claim as a unit of its own. The hook is handed the method the
+   * block is written in, and the calls the method runs on its context.
+   */
+  subUnits?: PatternPack["subUnits"];
   /**
    * The methods an action calls with no receiver to read the request,
    * such as Rails' `params` and `request`. An action is handed no

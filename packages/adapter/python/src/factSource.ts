@@ -26,7 +26,7 @@ import {
 } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
-import type { EffectArg, FactSource } from "@suss/extractor";
+import type { EffectArg, FactSource, ValueForm } from "@suss/extractor";
 import type { SubjectOrigin } from "./facts/resolve.js";
 import type { PyNode } from "./parser.js";
 
@@ -51,6 +51,11 @@ export function pythonFactSource(db: Database): FactSource {
       originsOf(db, key).flatMap((origin) => importedNameIn(origin, module)),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     textOf: (key) => nodeAt(key)?.text ?? nameIn(key),
+    formOf: (key) => formOf(nodeAt(key)),
+    extendValue: (key, ops) => {
+      const node = nodeAt(key);
+      return node === null ? ops : Object.assign(ops, { ast: () => node });
+    },
     literalOf: (key) => literalOf(nodeAt(key)),
     nameOf: (key, unsettled) => {
       const node = valueNode(key);
@@ -159,6 +164,16 @@ const SHAPES: Record<string, "object" | "list"> = {
 
 function shapeOf(node: PyNode | null): "object" | "list" | null {
   return node === null ? null : (SHAPES[node.type] ?? null);
+}
+
+const FORMS: Record<string, ValueForm> = {
+  lambda: "function",
+  dictionary: "object",
+};
+
+/** A key with no node of its own is a name, since only a name is keyed by its scope. */
+function formOf(node: PyNode | null): ValueForm {
+  return node === null ? "name" : (FORMS[node.type] ?? "other");
 }
 
 /** A string, number or boolean the source writes out at this node, read as written. */
