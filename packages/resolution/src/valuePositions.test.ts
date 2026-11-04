@@ -11,9 +11,11 @@ import {
 /** The relations that say where each piece of a written value goes, which only readers outside the rules use so far. */
 const VALUE_POSITION_RELATIONS = [
   "writtenEntryAt",
+  "computedKeyAt",
   "partAt",
   "holeAt",
   "elementOf",
+  "eachElement",
   "elementPartOf",
   "positionOf",
 ];
