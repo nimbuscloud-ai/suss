@@ -1303,6 +1303,7 @@ export {
   createPackTallies,
   emptyTally,
   recordPackFailure,
+  runPackHook,
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
@@ -1340,6 +1341,7 @@ export type {
   ExtractionReport,
   PackFailure,
   PackFunnel,
+  PackHookSite,
   PackTally,
 } from "./extractionReport.js";
 export type {

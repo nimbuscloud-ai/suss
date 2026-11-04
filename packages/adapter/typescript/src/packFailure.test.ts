@@ -83,6 +83,63 @@ describe("a pack whose hook throws", () => {
     }
   });
 
+  it("costs only its sub-units when the hook that claims them throws", async () => {
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const project = createTestProject();
+      project.createSourceFile(
+        "src/a.ts",
+        "export function handler() { later(() => notify()); }\n",
+      );
+      const handlers: PatternPack = {
+        name: "handlers",
+        protocol: "http",
+        languages: ["typescript"],
+        discovery: [
+          {
+            kind: "handler",
+            match: { type: "namedExport", names: ["handler"] },
+            requiresImport: [],
+          },
+        ],
+        terminals: [],
+        inputMapping: { type: "positionalParams", params: [] },
+      };
+      const claims: PatternPack = {
+        name: "claims",
+        protocol: "in-process",
+        languages: ["typescript"],
+        discovery: [],
+        // A recognizer makes the pack apply to every file.
+        invocationRecognizers: [() => null],
+        subUnits: () => {
+          throw new Error("cannot claim what I was handed");
+        },
+        terminals: [],
+        inputMapping: { type: "positionalParams", params: [] },
+      };
+      let report: ExtractionReport | null = null;
+      const summaries = await createTypeScriptAdapter({
+        project,
+        frameworks: [handlers, claims],
+        onExtractionReport: (r) => {
+          report = r;
+        },
+      }).extractAll();
+
+      expect(summaries.map((summary) => summary.identity.name)).toEqual([
+        "handler",
+      ]);
+      const failures = (report as ExtractionReport | null)?.packs.find(
+        (funnel) => funnel.pack === "claims",
+      )?.failures;
+      expect(failures?.map((failure) => failure.hook)).toContain("subUnits");
+      expect(failures?.[0]?.message).toBe("cannot claim what I was handed");
+    } finally {
+      noise.mockRestore();
+    }
+  });
+
   it("shows up in pack health for whoever ran the extract", async () => {
     const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     try {
