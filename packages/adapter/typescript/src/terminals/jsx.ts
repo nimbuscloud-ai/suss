@@ -6,6 +6,7 @@ import { Node } from "ts-morph";
 
 import { endLineOf, startLineOf } from "../lines.js";
 import { functionTargetOf } from "../resolve/functionBehind.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type { RenderNode } from "@suss/behavioral-ir";
@@ -297,7 +298,7 @@ function renderAlternative(node: Node): AlternativeResult {
   if (Node.isFalseLiteral(node)) {
     return { kind: "noRender" };
   }
-  if (Node.isIdentifier(node) && node.getText() === "undefined") {
+  if (writesUndefined(node)) {
     return { kind: "noRender" };
   }
   if (

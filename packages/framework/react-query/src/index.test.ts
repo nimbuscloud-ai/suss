@@ -268,6 +268,30 @@ describe("the react-query pack", () => {
     ).toBeDefined();
   });
 
+  it("reads the options after a positional function written as undefined", async () => {
+    const summaries = await extract(
+      `
+      import { useQuery } from "@tanstack/react-query";
+
+      export function OrderList() {
+        const q = useQuery(["orders"], undefined, {
+          queryFn: async () => [],
+        });
+        return <ul>{String(q)}</ul>;
+      }
+    `,
+      [reactFramework(), reactQueryFramework()],
+    );
+
+    expect(schedules(summaries)).toEqual([
+      { unit: "OrderList", via: "useQuery", callbackRef: { type: "literal" } },
+    ]);
+    expect(
+      summaries.find((one) => one.identity.name === "OrderList.useQuery#0")
+        ?.kind,
+    ).toBe("scheduled-callback");
+  });
+
   it("ignores a local function that happens to share the hook's name", async () => {
     const summaries = await extract(`
       function useQuery(options: unknown) {

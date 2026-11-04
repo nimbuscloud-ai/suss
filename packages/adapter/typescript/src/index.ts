@@ -128,6 +128,7 @@ export {
   NO_BARRIERS,
   startsItsOwnScope,
 } from "./walk/descent.js";
+export { writesUndefined } from "./walk/undefinedValue.js";
 export { climbSyntax, peelSyntax, peelValue } from "./walk/unwrap.js";
 
 export type {

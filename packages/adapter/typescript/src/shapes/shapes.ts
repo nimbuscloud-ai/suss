@@ -34,6 +34,7 @@ import {
 } from "ts-morph";
 
 import { resolveNodeFromAst } from "../resolve/astResolve.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelSyntax } from "../walk/unwrap.js";
 import { shapeFromNodeType } from "./typeShapes.js";
 
@@ -168,8 +169,7 @@ function extractShapeInner(node: Node): TypeShape | null {
     return { type: "null" };
   }
 
-  // `undefined` is parsed as an identifier, not a keyword.
-  if (Node.isIdentifier(unwrapped) && unwrapped.getText() === "undefined") {
+  if (writesUndefined(unwrapped)) {
     return { type: "undefined" };
   }
 

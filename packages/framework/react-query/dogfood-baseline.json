@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-react-query",
   "exports": 4,
-  "internal": 4,
-  "consumers": 9,
+  "internal": 3,
+  "consumers": 11,
   "unfollowedCalls": 0
 }
