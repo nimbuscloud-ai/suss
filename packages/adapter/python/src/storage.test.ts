@@ -133,7 +133,7 @@ async function effectsFor(handler: string, base = BASE, inFunction?: string) {
     base,
     inFunction,
   );
-  return storageEffects(bodyCalls(scanned), {
+  return storageEffects(bodyCalls(scanned, db), {
     facts: db,
     filePath: handlerPath,
     patterns: SQLALCHEMY,
@@ -254,7 +254,7 @@ describe("the database work a Python body does", () => {
     const db = new Database();
     const tree = await parsePython("found = Orders.query().first()\n");
     expect(
-      storageEffects(bodyCalls(tree.rootNode), {
+      storageEffects(bodyCalls(tree.rootNode, db), {
         facts: db,
         filePath: "f.py",
         patterns: [],

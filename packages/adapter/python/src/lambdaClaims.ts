@@ -13,9 +13,18 @@ import { enclosingFunction, isFunction } from "./ast.js";
 import type { Database } from "@suss/datalog";
 import type { PyNode } from "./parser.js";
 
-/** What a reader asks: the node ids of the lambdas claimed in one function. */
+/** A lambda a pack claims, with the name its unit gets. */
+export interface NamedClaim {
+  readonly lambda: PyNode;
+  readonly name: string;
+}
+
+/** What a reader asks. */
 export interface LambdaClaims {
+  /** The node ids of the lambdas claimed in one function. */
   claimedIn(fn: PyNode): ReadonlySet<number>;
+  /** The lambdas claimed in one function, each named after `name`, the function's own. */
+  claimsNamedAfter(fn: PyNode, name: string): NamedClaim[];
 }
 
 const claimsByRun = new WeakMap<Database, LambdaClaims>();
@@ -38,4 +47,14 @@ export function claimedLambdas(
   }
   const fn = isFunction(node) ? node : enclosingFunction(node);
   return fn === null ? NONE : claims.claimedIn(fn);
+}
+
+/** The lambdas claimed in `fn`, each with the name its unit gets when `fn` is called `name`. */
+export function claimsNamedAfter(
+  fn: PyNode,
+  name: string,
+  facts: Database | undefined,
+): NamedClaim[] {
+  const claims = facts === undefined ? undefined : claimsByRun.get(facts);
+  return claims === undefined ? [] : claims.claimsNamedAfter(fn, name);
 }

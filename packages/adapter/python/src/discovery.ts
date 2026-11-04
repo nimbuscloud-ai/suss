@@ -118,6 +118,7 @@ import type {
   InvocationEffect,
   TerminalBranch,
 } from "./paths/bodyBranches.js";
+import type { EffectAt } from "./paths/effects.js";
 import type { RoutePrefixResolution, RouterIndex } from "./routers.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 import type { PythonWrapperIndex } from "./wrappers.js";
@@ -1680,12 +1681,7 @@ export function recognizedBodyEffects(
     storageLookup === undefined
       ? { effects: [], slots: [] }
       : bodyStorage(definitionNode, storageLookup);
-  const found = [
-    ...envReadEffects(definitionNode, module, facts),
-    ...storage.effects,
-    ...streamWriteEffects(definitionNode, module),
-    ...enqueueEffects(definitionNode, facts),
-  ];
+  const found = besidesCallsWith(definitionNode, module, storage, facts);
   const siteOf = effectSitesIn(
     field(definitionNode, "body"),
     found.map((one) => one.at),
@@ -1700,6 +1696,38 @@ export function recognizedBodyEffects(
             unit: definitionNode,
           }),
   };
+}
+
+/**
+ * Each effect a function's body makes besides calling, beside the node it
+ * was read at: a def's, or a lambda's, such as one a pack claims as a
+ * unit of its own.
+ */
+export function effectsBesidesCalls(
+  definitionNode: PyNode,
+  module: ModuleBinding,
+  storageLookup: StorageLookup | undefined,
+  facts: Database | undefined,
+): EffectAt[] {
+  const storage =
+    storageLookup === undefined
+      ? { effects: [] }
+      : bodyStorage(definitionNode, storageLookup);
+  return besidesCallsWith(definitionNode, module, storage, facts);
+}
+
+function besidesCallsWith(
+  definitionNode: PyNode,
+  module: ModuleBinding,
+  storage: { effects: readonly EffectAt[] },
+  facts: Database | undefined,
+): EffectAt[] {
+  return [
+    ...envReadEffects(definitionNode, module, facts),
+    ...storage.effects,
+    ...streamWriteEffects(definitionNode, module),
+    ...enqueueEffects(definitionNode, facts),
+  ];
 }
 
 /** A branch with the body's own effects that run before its terminal, and where their values came from. */

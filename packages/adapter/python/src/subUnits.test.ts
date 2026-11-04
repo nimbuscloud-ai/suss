@@ -22,7 +22,11 @@ vi.mock("./version.js", async (importOriginal) => {
 import { extractPythonProject } from "./project.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
-import type { CacheDiagnostic, DiscoveredSubUnit } from "@suss/extractor";
+import type {
+  CacheDiagnostic,
+  DiscoveredSubUnit,
+  ExtractionReport,
+} from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 
 const LATER = callbacks({ client: constructedFrom("jobs", "Jobs") })
@@ -98,6 +102,7 @@ async function extracted(
     packs?: PythonPack[];
     cacheDir?: string | null;
     onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
+    onExtractionReport?: (report: ExtractionReport) => void;
   } = {},
 ): Promise<BehavioralSummary[]> {
   const { dir, files } = project;
@@ -114,6 +119,9 @@ async function extracted(
     ...(options.onCacheDiagnostic === undefined
       ? {}
       : { onCacheDiagnostic: options.onCacheDiagnostic }),
+    ...(options.onExtractionReport === undefined
+      ? {}
+      : { onExtractionReport: options.onExtractionReport }),
   });
   return summaries;
 }
@@ -154,6 +162,59 @@ function schedulesOf(summary: BehavioralSummary): Effect[] {
       effect.type === "interaction" && effect.interaction.class === "schedule",
   );
 }
+
+/** Each interaction a summary records, as its class and what it was called on. */
+function interactionsOf(summary: BehavioralSummary): string[] {
+  return effectsOf(summary).flatMap((effect) =>
+    effect.type === "interaction"
+      ? [`${effect.interaction.class} ${effect.callee ?? ""}`]
+      : [],
+  );
+}
+
+/**
+ * The declared callback beside a job queue and an HTTP client, written
+ * inline the way a pack writes them.
+ */
+const BESIDE_JOBS_AND_REQUESTS: PythonPack = {
+  ...LATER_PACK,
+  jobQueues: [
+    {
+      messageBus: "celery",
+      module: "celery",
+      taskDecorators: ["shared_task"],
+      nameKeyword: "name",
+      queueKeyword: "queue",
+      defaultName: "modulePath",
+      enqueueMethods: [{ method: "delay", arguments: { type: "spread" } }],
+      apps: ["Celery"],
+    },
+  ],
+  clients: [
+    {
+      type: "clientCall",
+      importModule: ["httpclient"],
+      verbAttributeNames: { get: "GET" },
+      url: { position: 0, keyword: "url" },
+    },
+  ],
+};
+
+/** A callback that reads the environment, prints, enqueues a task and makes a request. */
+const BUSY_CALLBACK = [
+  "import os",
+  "import httpclient",
+  "from celery import shared_task",
+  ...HEADER,
+  "@shared_task",
+  "def send():",
+  "    return 1",
+  "",
+  "",
+  "def enqueue():",
+  '    jobs.later(lambda: (os.environ["API_URL"], print("sent"), send.delay(), httpclient.get("/orders")))',
+  "",
+].join("\n");
 
 describe("a lambda a declared pack claims", () => {
   it("records the schedule on the parent and gives the lambda a summary of its own", async () => {
@@ -328,6 +389,95 @@ describe("a lambda a declared pack claims", () => {
     expect(claimed[0]?.metadata).toEqual(
       expect.objectContaining({ tagged: true }),
     );
+  });
+});
+
+describe("what a claimed lambda does besides calling", () => {
+  it("goes on the claim and not on its parent", async () => {
+    const summaries = await summariesOf(BUSY_CALLBACK, [
+      BESIDE_JOBS_AND_REQUESTS,
+    ]);
+    const parent = summaries.find(
+      (one) => one.identity.name === "enqueue" && one.kind === "library",
+    );
+    const claims = summaries.filter((one) => one.kind === "scheduled-callback");
+
+    expect(interactionsOf(parent ?? named(summaries, "enqueue"))).toEqual([
+      "schedule jobs.later",
+    ]);
+    expect(claims.map((one) => one.identity.name)).toEqual([
+      "enqueue.jobs.later#0",
+    ]);
+    expect(interactionsOf(claims[0] ?? parent ?? summaries[0]!)).toEqual([
+      'config-read os.environ["API_URL"]',
+      "stream-write print",
+      "message-send send.delay",
+    ]);
+  });
+
+  it("makes the lambda the client of a request it makes, under the claim's name", async () => {
+    const summaries = await summariesOf(BUSY_CALLBACK, [
+      BESIDE_JOBS_AND_REQUESTS,
+    ]);
+    const clients = summaries.filter((one) => one.kind === "client");
+
+    expect(
+      clients.map((one) => [
+        one.identity.name,
+        one.identity.boundaryBinding?.semantics,
+        one.location.range.start,
+      ]),
+    ).toEqual([
+      [
+        "enqueue.jobs.later#0",
+        expect.objectContaining({
+          name: "rest",
+          method: "GET",
+          path: "/orders",
+        }),
+        named(summaries, "enqueue.jobs.later#0").location.range.start,
+      ],
+    ]);
+    expect(calleesOf(clients[0] ?? summaries[0]!)).toContain("httpclient.get");
+  });
+});
+
+describe("a pack whose subUnits hook throws", () => {
+  it("claims nothing, goes on the pack's tally, and the run goes on", async () => {
+    const breaks: PythonPack = {
+      name: "breaks",
+      protocol: "in-process",
+      discovery: [],
+      subUnits: () => {
+        throw new Error("cannot claim what I was handed");
+      },
+    };
+    const project = projectOf(IN_PLACE);
+    const reports: ExtractionReport[] = [];
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    let summaries: BehavioralSummary[];
+    try {
+      summaries = await extracted(project, {
+        packs: [breaks],
+        onExtractionReport: (report) => reports.push(report),
+      });
+    } finally {
+      noise.mockRestore();
+    }
+
+    expect(calleesOf(named(summaries, "enqueue"))).toEqual([
+      "notify",
+      "jobs.later",
+    ]);
+    expect(
+      reports[0]?.packs.find((funnel) => funnel.pack === "breaks")?.failures,
+    ).toEqual([
+      {
+        hook: "subUnits",
+        file: project.files[0],
+        message: "cannot claim what I was handed",
+      },
+    ]);
   });
 });
 
