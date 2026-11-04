@@ -13,7 +13,11 @@
  * function is code, and the pack health report lists those links.
  */
 
-import type { DeployableUnit, MessageBusSemantics } from "@suss/behavioral-ir";
+import type {
+  CodeUnitKind,
+  DeployableUnit,
+  MessageBusSemantics,
+} from "@suss/behavioral-ir";
 import type {
   CallOps,
   ReceiverOrigin,
@@ -217,6 +221,29 @@ export interface InterpolatesLink {
   readonly from?: ReceiverOrigin;
 }
 
+/**
+ * What a call's callback becomes when the call writes it in place: a
+ * unit of its own, with the parent's binding, so what the callback does
+ * goes on its own summary and not on the parent's. The adapter runs the
+ * pack's `subUnits` hook this compiles to on every unit it discovers.
+ */
+export interface UnitWhenInPlaceLink {
+  readonly asks: "unitWhenInPlace";
+  /** The kind of unit the callback becomes. */
+  readonly kind: CodeUnitKind;
+  /** The parts its name is built from, in order. */
+  readonly name: readonly SubUnitNamePart[];
+}
+
+/**
+ * One part of a claimed callback's name: the parent's name, the callee
+ * as the source writes it, and a count of the claims under that callee
+ * in the parent, in source order. `["parent", "callee",
+ * "countPerCallee"]` names the second `useQuery` callback in `OrderList`
+ * `OrderList.useQuery#1`.
+ */
+export type SubUnitNamePart = "parent" | "callee" | "countPerCallee";
+
 /** One question in a chain, and the answer the pack gave for it. */
 export type Link<TMeaning> =
   | StartLink
@@ -228,7 +255,8 @@ export type Link<TMeaning> =
   | ScopeLink
   | ContainersLink
   | InputLink
-  | InterpolatesLink;
+  | InterpolatesLink
+  | UnitWhenInPlaceLink;
 
 /**
  * The meaning of a bare call of the tracked client itself. A store hook
@@ -427,15 +455,85 @@ export interface UnitInvokeMethod {
   readonly input: OneArgument;
 }
 
+/**
+ * Where a call states the function it hands over. A method lists its
+ * picks in the order to try them, and the first one that finds a value
+ * settles which function the call runs.
+ */
+export type CallbackPick = CallbackArgument | CallbackProperty | CallbackBlock;
+
+/**
+ * The argument at `at`, when the source writes a function there or a
+ * name for one. Anything else there is not the callback: a name for an
+ * object is the call's options, and `undefined` says the call passes no
+ * function in that place.
+ */
+export interface CallbackArgument {
+  readonly written: "callback";
+  readonly at: number;
+  /** The keyword the argument can be passed under instead, in Python or Ruby. */
+  readonly keyword?: string;
+}
+
+/**
+ * A property of the object the call writes out at `at`, read by the
+ * object's own keys. An object passed by name, or a property that only
+ * a spread brings in, is not read.
+ */
+export interface CallbackProperty {
+  readonly written: "here";
+  readonly at: number;
+  /** The keyword the argument can be passed under instead, in Python or Ruby. */
+  readonly keyword?: string;
+  /** The properties to try, in order. */
+  readonly property: readonly string[];
+}
+
+/** The block a Ruby call is written with. */
+export interface CallbackBlock {
+  readonly written: "block";
+}
+
+/** What one method that takes a callback does: where it states the callback. */
+export interface CallbackMethod {
+  readonly callback: CallbackPick | readonly CallbackPick[];
+}
+
 /** What one method table can say a method does. */
-export type MethodMeaning = StorageMethod | SqlMethod | MessageSendMethod;
+export type MethodMeaning =
+  | StorageMethod
+  | SqlMethod
+  | MessageSendMethod
+  | CallbackMethod;
 
 /** What a chain produces when every link matches. */
 export type Ending =
   | StorageEnding
   | SqlEnding
   | MessageSendEnding
-  | UnitInvokeEnding;
+  | UnitInvokeEnding
+  | ScheduleEnding;
+
+/**
+ * A callback the call hands to a library that runs it later. Nothing
+ * pairs against it. The effect says which function runs, so a reader
+ * can follow it there.
+ */
+export interface ScheduleEnding {
+  readonly yields: "schedule";
+  /** Where the effect's `via` comes from: the callee as the source writes it. */
+  readonly via: "asWritten";
+  /** What the effect says when the run cannot tell which function runs. */
+  readonly unread: ScheduleUnread;
+}
+
+/** The reasons an effect gives when the run cannot tell which function the call runs. */
+export interface ScheduleUnread {
+  /** No pick found a value. */
+  readonly missing: string;
+  /** A pick found a value that is neither a function written in place nor a name. */
+  readonly other: string;
+}
 
 /** A storage access: one call, one thing it read or wrote. */
 export interface StorageEnding {

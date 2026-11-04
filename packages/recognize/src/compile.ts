@@ -14,6 +14,7 @@
  */
 
 import {
+  functionCallBinding,
   messageBusBinding,
   resourceNameIn,
   storageBinding,
@@ -26,16 +27,25 @@ import { modulesOf, opsIn } from "./ops.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
+  AstCapableValueOps,
   ByOrigin,
+  DiscoveredSubUnit,
   EffectArg,
   InvocationRecognizer,
+  PatternPack,
   StatedSlot,
+  SubUnitOpsCarrier,
+  ValueForm,
 } from "@suss/extractor";
 import type { SqlPlaceholder } from "@suss/sql";
 import type {
   AccessKind,
   AccessPathLink,
   ArgumentPick,
+  CallbackArgument,
+  CallbackMethod,
+  CallbackPick,
+  CallbackProperty,
   CallStep,
   Chain,
   ChannelPart,
@@ -54,6 +64,8 @@ import type {
   MethodMeaning,
   MethodsLink,
   OneArgument,
+  ScheduleEnding,
+  ScheduleUnread,
   ScopeLink,
   SqlEnding,
   SqlMethod,
@@ -62,10 +74,12 @@ import type {
   StorageEnding,
   StorageMethod,
   SubjectLink,
+  SubUnitNamePart,
   ToArgument,
   ToReceiver,
   UnitInvokeEnding,
   UnitInvokeMethod,
+  UnitWhenInPlaceLink,
 } from "./chain.js";
 import type {
   CallOps,
@@ -442,7 +456,211 @@ const YIELD: Record<Ending["yields"], (matched: Matched) => Effect[] | null> = {
   sqlAccess: sqlAccess,
   messageSend: messageSend,
   unitInvoke: unitInvoke,
+  schedule: schedule,
 };
+
+/**
+ * One effect for the callback a call hands over, saying which function
+ * runs: one written in place, one the source names, or a reason the run
+ * cannot tell.
+ */
+function schedule(matched: Matched): Effect[] {
+  const { ops, subject, chain, recognition } = matched;
+  const ending = chain.ending as ScheduleEnding;
+  const callee = ops.calleeText();
+  const found = callbackIn(
+    subject,
+    (matched.meaning as CallbackMethod).callback,
+  );
+  return [
+    {
+      type: "interaction",
+      binding: functionCallBinding({ transport: "in-process", recognition }),
+      callee,
+      interaction: {
+        class: "schedule",
+        via: callee,
+        callbackRef:
+          found === null
+            ? { type: "opaque", reason: ending.unread.missing }
+            : CALLBACK_REF[formOf(found)](found, ending.unread),
+        hasDelay: false,
+      },
+    },
+  ];
+}
+
+type CallbackRef = Extract<
+  Extract<Effect, { type: "interaction" }>["interaction"],
+  { class: "schedule" }
+>["callbackRef"];
+
+/** What the effect says about the callback, by how the source wrote it. */
+const CALLBACK_REF: Record<
+  ValueForm,
+  (found: ValueOps, unread: ScheduleUnread) => CallbackRef
+> = {
+  function: () => ({ type: "literal" }),
+  name: (found) => ({ type: "identifier", name: found.source?.() ?? "" }),
+  object: (_found, unread) => ({ type: "opaque", reason: unread.other }),
+  other: (_found, unread) => ({ type: "opaque", reason: unread.other }),
+};
+
+function formOf(value: ValueOps): ValueForm {
+  return value.form?.() ?? "other";
+}
+
+/** The first value one of the picks finds, in the order the method lists them. */
+function callbackIn(
+  subject: CallOps,
+  says: CallbackMethod["callback"],
+): ValueOps | null {
+  const picks: readonly CallbackPick[] = Array.isArray(says)
+    ? says
+    : [says as CallbackPick];
+  for (const pick of picks) {
+    const found = CALLBACK_PICKED[pick.written](subject, pick);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/** How each kind of pick reads the call. */
+const CALLBACK_PICKED: Record<
+  CallbackPick["written"],
+  (subject: CallOps, pick: CallbackPick) => ValueOps | null
+> = {
+  callback: (subject, pick) =>
+    callbackWrittenAt(subject, pick as CallbackArgument),
+  here: (subject, pick) => propertyWrittenAt(subject, pick as CallbackProperty),
+  block: (subject) => subject.block?.() ?? null,
+};
+
+/**
+ * The argument, when it is a function written in place or a name for
+ * something other than an object. A name for an object is the call's
+ * options rather than its callback.
+ */
+function callbackWrittenAt(
+  subject: CallOps,
+  pick: CallbackArgument,
+): ValueOps | null {
+  const value = pickedIn(subject, pick, pick.at);
+  if (value === null) {
+    return null;
+  }
+  const form = formOf(value);
+  if (form === "function") {
+    return value;
+  }
+  return form === "name" && (value.object?.() ?? null) === null ? value : null;
+}
+
+/** One of the properties the object written out at the pick states, the first the pick lists. */
+function propertyWrittenAt(
+  subject: CallOps,
+  pick: CallbackProperty,
+): ValueOps | null {
+  const value = pickedIn(subject, pick, pick.at);
+  if (value === null || formOf(value) !== "object") {
+    return null;
+  }
+  for (const property of pick.property) {
+    const held = value.ownProperty?.(property) ?? null;
+    if (held !== null) {
+      return held;
+    }
+  }
+  return null;
+}
+
+/**
+ * The `subUnits` hook for the chains that say what a callback written in
+ * place becomes. It reads the calls the adapter says the parent runs,
+ * matches each the way the recognizer does, and claims the callback
+ * when the source writes it in place. Null when no chain says.
+ */
+export function compileSubUnits(
+  chains: readonly Chain<MethodMeaning>[],
+): NonNullable<PatternPack["subUnits"]> | null {
+  const claiming = chains.flatMap((chain) => {
+    const link: UnitWhenInPlaceLink | null = linkIn(chain, "unitWhenInPlace");
+    const methods = methodsIn(chain);
+    return link === null || methods === null
+      ? []
+      : [{ chain, link, methods, modules: modulesOfChain(chain) }];
+  });
+  if (claiming.length === 0) {
+    return null;
+  }
+  return (parent, ctx) => {
+    const calls = (ctx as SubUnitOpsCarrier | null)?.calls?.(parent) ?? [];
+    const counts = new Map<string, number>();
+    const claims: DiscoveredSubUnit[] = [];
+    for (const call of calls) {
+      const claim = claiming
+        .map((one) => ({ one, func: claimedIn(one, call) }))
+        .find(({ func }) => func !== null);
+      if (claim === undefined) {
+        continue;
+      }
+      const callee = call.calleeText();
+      const count = counts.get(callee) ?? 0;
+      counts.set(callee, count + 1);
+      claims.push({
+        func: claim.func,
+        kind: claim.one.link.kind,
+        name: claim.one.link.name
+          .map((part) =>
+            NAME_PART[part]({ parent: parent.name, callee, count }),
+          )
+          .join(""),
+        inputMapping: { type: "positionalParams", params: [] },
+      });
+    }
+    return claims;
+  };
+}
+
+/** What a claimed callback's name is built from. */
+interface ClaimNaming {
+  readonly parent: string;
+  readonly callee: string;
+  readonly count: number;
+}
+
+const NAME_PART: Record<SubUnitNamePart, (naming: ClaimNaming) => string> = {
+  parent: (naming) => naming.parent,
+  callee: (naming) => `.${naming.callee}`,
+  countPerCallee: (naming) => `#${naming.count}`,
+};
+
+/** The adapter's own node for the callback a call writes in place, when this chain matches the call. */
+function claimedIn(
+  claiming: {
+    chain: Chain<MethodMeaning>;
+    methods: MethodsLink<MethodMeaning>;
+    modules: readonly string[];
+  },
+  call: CallOps,
+): unknown {
+  const matched = methodMatched(
+    claiming.chain,
+    claiming.methods,
+    call,
+    claiming.modules,
+  );
+  const found =
+    matched === null
+      ? null
+      : callbackIn(call, (matched.meaning as CallbackMethod).callback);
+  if (found === null || formOf(found) !== "function") {
+    return null;
+  }
+  return (found as Partial<AstCapableValueOps>).ast?.() ?? null;
+}
 
 /** One container a call reached, and what the call says about it. */
 interface Reached {
