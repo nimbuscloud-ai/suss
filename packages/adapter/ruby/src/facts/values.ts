@@ -331,7 +331,11 @@ function valueKey(
   return readKey(emitter.filePath, written, emitter.enclosing, parent);
 }
 
-/** A pair's key as text when it is written as a symbol or a string, or null otherwise. */
+/**
+ * A pair's key as text when it is written as a symbol or a string, or
+ * null otherwise. A string that interpolates a value is computed, so it
+ * has no text of its own.
+ */
 function pairKeyText(key: RbNode): string | null {
   if (key.type === "hash_key_symbol") {
     return key.text;
@@ -339,10 +343,14 @@ function pairKeyText(key: RbNode): string | null {
   if (key.type === "simple_symbol") {
     return key.text.slice(1);
   }
-  if (key.type === "string") {
+  if (key.type === "string" && !isInterpolated(key)) {
     return key.text.slice(1, -1);
   }
   return null;
+}
+
+function isInterpolated(string: RbNode): boolean {
+  return children(string).some((part) => part.type === "interpolation");
 }
 
 /**

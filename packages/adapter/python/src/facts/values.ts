@@ -525,7 +525,7 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
       continue;
     }
     entries.push(writtenEntry(emitter, value));
-    if (key.type !== "string") {
+    if (key.type !== "string" || isInterpolated(key)) {
       add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value));
       continue;
     }
@@ -538,6 +538,11 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
     );
   }
   addEntryRows(rowsOf(emitter), objectKey, entries);
+}
+
+/** Whether a string is an f-string that puts a value in, whose text is computed. */
+function isInterpolated(string: PyNode): boolean {
+  return children(string).some((part) => part.type === "interpolation");
 }
 
 /** `*items` in a list and `**options` in a dictionary unpack a collection into the one written around them. */
