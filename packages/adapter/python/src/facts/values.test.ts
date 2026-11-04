@@ -398,6 +398,17 @@ describe("python value facts", () => {
     expect(rows(db, "holdsUnderKey").map((row) => row[1])).toEqual(["#value"]);
   });
 
+  it("states the expression that computes a key at the position of its entry", async () => {
+    const source = 'row = {**base, key: x, "e": x, f"{key}_x": 1}\n';
+    const db = await factsFor(source);
+    const [object] = rows(db, "objectValue")[0] ?? [];
+    const template = source.indexOf('f"{key}_x"');
+    expect(rows(db, "computedKeyAt")).toEqual([
+      [object, "1", "#key"],
+      [object, "3", `:${template}-${template + 'f"{key}_x"'.length}`],
+    ]);
+  });
+
   it("gives a comprehension's variable one element of what it runs over", async () => {
     const source =
       "def names(users):\n    return [user.name for user in users]\n";

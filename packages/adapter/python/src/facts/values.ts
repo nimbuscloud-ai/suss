@@ -506,7 +506,11 @@ function emitSequence(emitter: Emitter, sequence: PyNode): void {
   addEntryRows(rowsOf(emitter), objectKey, entries);
 }
 
-/** A dictionary is an object whose string keys contain values. */
+/**
+ * A dictionary is an object whose string keys contain values. A key
+ * written as anything else is computed, and `computedKeyAt` says which
+ * expression computes it.
+ */
 function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
   const objectKey = nodeId(emitter.filePath, dictionary);
   add(emitter, "objectValue", objectKey);
@@ -524,9 +528,17 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
     if (key === null || value === null) {
       continue;
     }
+    const position = String(entries.length);
     entries.push(writtenEntry(emitter, value));
     if (key.type !== "string" || isInterpolated(key)) {
       add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value));
+      add(
+        emitter,
+        "computedKeyAt",
+        objectKey,
+        position,
+        valueKey(emitter, key),
+      );
       continue;
     }
     add(
