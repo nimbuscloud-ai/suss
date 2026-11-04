@@ -822,6 +822,32 @@ export const EXTRA_INPUTS = [
       ...packs("react-query", "react", "axios", "fetch", "node"),
     ],
   },
+  // The packs `suss init` picks, since only the NestJS packs make the
+  // services that call TypeORM into units. CONTRIBUTING.md says why the
+  // clone needs its dependencies installed.
+  {
+    name: "twenty-server",
+    group: "extra",
+    repo: "twenty",
+    args: [
+      ...dir("packages/twenty-server"),
+      ...packs(
+        "nestjs-rest",
+        "nestjs-graphql",
+        "bullmq",
+        "express",
+        "react",
+        "aws-lambda",
+        "axios",
+        "fetch",
+        "aws-s3",
+        withConfig("typeorm", POSTGRES),
+        "redis",
+        "pg",
+        "node",
+      ),
+    ],
+  },
   ...STORY_DIRECTORIES.map(([repo, directory]) => ({
     name: `storybook ${repo} ${directory}`,
     group: "extra",
