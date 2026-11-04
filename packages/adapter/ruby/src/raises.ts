@@ -5,7 +5,14 @@
  * path engine already walks, so it is left out.
  */
 
-import { children, field, OWN_BODY_TYPES, readCallArgs } from "./ast.js";
+import {
+  children,
+  field,
+  OWN_BODY_TYPES,
+  readCallArgs,
+  statementsOf,
+} from "./ast.js";
+import { isClaimed } from "./claims.js";
 import { MESSAGE_ONLY_EXCEPTION } from "./exceptionClasses.js";
 import { isRaise } from "./paths/lowering.js";
 import { constantRefCandidates } from "./scope.js";
@@ -21,16 +28,27 @@ const RESCUING_BODIES = new Set(["begin", "body_statement"]);
 /** The parts of a rescuing body that run after a raise is caught, where a raise is not caught again. */
 const AFTER_CATCH = new Set(["rescue", "else", "ensure"]);
 
-/** Every raise in the method's body that no rescue in the method catches, in source order. */
-export function escapingRaises(method: RbNode): RbNode[] {
-  const body = field(method, "body");
+/**
+ * Every raise in the body of a method, or of a block or lambda a pack
+ * claims, that no rescue in it catches, in source order. The blocks and
+ * lambdas in `claimed` raise when they run, so theirs are left out.
+ */
+export function escapingRaises(
+  method: RbNode,
+  claimed?: ReadonlySet<number>,
+): RbNode[] {
+  const body = statementsOf(method);
   if (body === null) {
     return [];
   }
   const found: RbNode[] = [];
   const visit = (node: RbNode): void => {
     for (const child of children(node)) {
-      if (child === null || OWN_BODY_TYPES.has(child.type)) {
+      if (
+        child === null ||
+        OWN_BODY_TYPES.has(child.type) ||
+        isClaimed(child, claimed)
+      ) {
         continue;
       }
       if (isRaise(child) && !caughtLocally(child, method)) {

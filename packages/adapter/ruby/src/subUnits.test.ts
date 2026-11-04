@@ -28,7 +28,7 @@ import { extractRubyProject } from "./project.js";
 import { rubySubUnitContext, startSubUnits } from "./subUnits.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
-import type { CacheDiagnostic } from "@suss/extractor";
+import type { CacheDiagnostic, ExtractionReport } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
@@ -371,12 +371,184 @@ describe("a block a declared pack's call is written with, in Ruby", () => {
   });
 });
 
+/** The declared callback beside a job queue and an HTTP client, written inline the way a pack writes them. */
+function besideJobsAndRequests(): RubyPack[] {
+  return [
+    activeJobTestPack(),
+    {
+      ...laterPack(true),
+      clients: [
+        {
+          constantName: "Http",
+          verbMethodNames: { get: "GET" },
+          url: { position: 0 },
+        },
+      ],
+    },
+  ];
+}
+
+const BUSY = `class SendJob < ApplicationJob
+  def perform
+  end
+end
+
+module Store
+  def self.busy
+    jobs = Jobs::Queue.new
+    jobs.later do
+      url = ENV["API_URL"]
+      puts url
+      SendJob.perform_later
+      Http.get("https://h.example/orders")
+      raise ArgumentError, "boom"
+    end
+  end
+
+  def self.guarded(stale)
+    jobs = Jobs::Queue.new
+    jobs.later do
+      raise "stale" if stale
+      notify
+    end
+  end
+end
+`;
+
+/** Each interaction a summary records, as its class and what it was called on. */
+function interactions(summary: BehavioralSummary | undefined): string[] {
+  return effectsOf(summary).flatMap((effect) =>
+    effect.type === "interaction"
+      ? [`${effect.interaction.class} ${effect.callee ?? ""}`]
+      : [],
+  );
+}
+
+describe("what a claimed block does besides calling", () => {
+  let summaries: BehavioralSummary[] = [];
+
+  beforeAll(async () => {
+    const dir = fs.mkdtempSync(path.join(root, "busy-"));
+    fs.mkdirSync(path.join(dir, "lib/store"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "lib/store.rb"), BUSY);
+    summaries = await summariesIn(dir, besideJobsAndRequests(), {
+      files: ["lib/store.rb"],
+    });
+  });
+
+  it("goes on the claim and not on the method", () => {
+    expect(interactions(named(summaries, "Store.busy"))).toEqual([
+      "schedule jobs.later",
+    ]);
+    expect(interactions(named(summaries, "Store.busy.jobs.later#0"))).toEqual([
+      'config-read ENV["API_URL"]',
+      "message-send SendJob.perform_later",
+      "stream-write puts",
+    ]);
+  });
+
+  it("ends the claim in a throw where the block raises", () => {
+    const claimed = named(summaries, "Store.busy.jobs.later#0");
+
+    expect(claimed?.transitions.map((one) => one.output)).toEqual([
+      expect.objectContaining({
+        type: "throw",
+        exceptionType: "ArgumentError",
+        message: "boom",
+      }),
+    ]);
+    expect(named(summaries, "Store.busy")?.transitions).toEqual([
+      expect.objectContaining({
+        output: expect.objectContaining({ type: "return" }),
+      }),
+    ]);
+  });
+
+  it("reads a raise under a condition as one path of the claim's", () => {
+    const claimed = named(summaries, "Store.guarded.jobs.later#0");
+
+    expect(
+      claimed?.transitions.map((one) => [
+        one.output.type,
+        one.conditions.length,
+        invoked({ ...claimed, transitions: [one] }),
+      ]),
+    ).toEqual([
+      ["throw", 1, []],
+      ["return", 1, ["notify"]],
+    ]);
+  });
+
+  it("makes the block the client of a request it makes, under the claim's name", () => {
+    const clients = summaries.filter((summary) => summary.kind === "client");
+
+    expect(
+      clients.map((client) => [
+        client.identity.name,
+        client.identity.boundaryBinding?.semantics,
+        client.location.range,
+      ]),
+    ).toEqual([
+      [
+        "busy.jobs.later#0",
+        expect.objectContaining({
+          name: "rest",
+          method: "GET",
+          path: "/orders",
+        }),
+        named(summaries, "Store.busy.jobs.later#0")?.location.range,
+      ],
+    ]);
+  });
+});
+
+describe("a pack whose subUnits hook throws", () => {
+  it("claims nothing, goes on the pack's tally, and the run goes on", async () => {
+    const breaks: RubyPack = {
+      name: "breaks",
+      protocol: "in-process",
+      discovery: [],
+      subUnits: () => {
+        throw new Error("cannot claim what I was handed");
+      },
+    };
+    const reports: ExtractionReport[] = [];
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    let summaries: BehavioralSummary[];
+    try {
+      ({ summaries } = await extractRubyProject({
+        files: [path.join(root, "lib/store.rb")],
+        packs: [breaks],
+        modules: [{ name: "store", root: path.join(root, "lib/store") }],
+        workspaceRoot: root,
+        cacheDir: null,
+        onExtractionReport: (report) => reports.push(report),
+      }));
+    } finally {
+      noise.mockRestore();
+    }
+    const failures =
+      reports[0]?.packs.find((funnel) => funnel.pack === "breaks")?.failures ??
+      [];
+
+    expect(invoked(named(summaries, "Store.enqueue"))).toEqual(["notify"]);
+    expect(failures.length).toBeGreaterThan(0);
+    expect(
+      new Set(failures.map((one) => `${one.hook} ${one.file} ${one.message}`)),
+    ).toEqual(
+      new Set([
+        `subUnits ${path.join(root, "lib/store.rb")} cannot claim what I was handed`,
+      ]),
+    );
+  });
+});
+
 describe("the sub-unit registry", () => {
   it("claims nothing in a file the run did not bind, or outside a method", async () => {
     const root = (await parseRuby(STORE)).rootNode as RbNode;
     const method = root.descendantsOfType("singleton_method")[0] as RbNode;
     const db = new Database();
-    const registry = startSubUnits(db, [laterPack(true)]);
+    const registry = startSubUnits(db, [laterPack(true)], new Map());
 
     expect(registry?.claimsOf(method)).toBeNull();
     expect(claimedIn(method, db)).toBeUndefined();
@@ -392,6 +564,8 @@ describe("the sub-unit registry", () => {
   });
 
   it("is not started when no pack claims sub-units", () => {
-    expect(startSubUnits(new Database(), [laterPack(false)])).toBeNull();
+    expect(
+      startSubUnits(new Database(), [laterPack(false)], new Map()),
+    ).toBeNull();
   });
 });

@@ -170,6 +170,14 @@ export function isLambdaArgument(node: RbNode): boolean {
   return node.type === LAMBDA_TYPE && node.parent?.type === "argument_list";
 }
 
+/** The statements a method, a block or a lambda runs. A lambda writes them in a block of its own. */
+export function statementsOf(node: RbNode): RbNode | null {
+  const body = field(node, "body");
+  return node.type === LAMBDA_TYPE && body !== null
+    ? field(body, "body")
+    : body;
+}
+
 /** `raise` is an ordinary method call in Ruby, and not a keyword. */
 const RAISING_METHODS = new Set(["raise", "fail"]);
 

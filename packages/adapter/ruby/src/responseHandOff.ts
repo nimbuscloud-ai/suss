@@ -15,6 +15,7 @@
 import { helperPathsOnVariables, splitAtHandOffs } from "@suss/extractor";
 
 import { field, rangeOf, readCallArgs, stringLiteralValue } from "./ast.js";
+import { claimedIn } from "./claims.js";
 import { parametersOf, paramNameOf } from "./facts/locals.js";
 import { escapingRaises, raisedClassRef } from "./raises.js";
 import { calledDefinition, writtenNodeOf } from "./values/evaluator.js";
@@ -25,9 +26,9 @@ import type { RbNode } from "./parser.js";
 import type { InvocationSite } from "./paths/effects.js";
 import type { EndingCall } from "./responseStatus.js";
 
-/** Every raise that leaves the method, each ending it with a throw that claims no status. */
+/** Every raise that leaves the method, or a block a pack claims, each ending it with a throw that claims no status. */
 export function raiseEndings(method: RbNode, facts?: Database): EndingCall[] {
-  return escapingRaises(method).map((call) => ({
+  return escapingRaises(method, claimedIn(method, facts)).map((call) => ({
     call,
     terminal: raiseTerminal(call, facts),
   }));

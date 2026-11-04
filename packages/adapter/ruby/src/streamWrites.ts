@@ -25,6 +25,7 @@ import {
   stringLiteralValue,
   symbolValue,
 } from "./ast.js";
+import { isClaimed } from "./claims.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
@@ -53,14 +54,20 @@ const STREAM_METHODS = new Set(["puts", "print", "write", "<<"]);
 /** A method or a block prints when it runs, so its body waits for its own unit. */
 const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
 
-/** The write effects for every print under `root`, in source order. */
-export function streamWriteEffects(root: RbNode): EffectAt[] {
+/** The write effects for every print under `root`, in source order. The blocks and lambdas in `claimed` are left out. */
+export function streamWriteEffects(
+  root: RbNode,
+  claimed?: ReadonlySet<number>,
+): EffectAt[] {
   return numberRepeatedCallSites(
-    writesUnder(root).map((write) => [write]),
+    writesUnder(root, claimed).map((write) => [write]),
   ).flat();
 }
 
-function writesUnder(root: RbNode): EffectAt[] {
+function writesUnder(
+  root: RbNode,
+  claimed: ReadonlySet<number> | undefined,
+): EffectAt[] {
   const found: EffectAt[] = [];
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
@@ -69,7 +76,10 @@ function writesUnder(root: RbNode): EffectAt[] {
         found.push({ effect: write, at: node });
       }
     },
-    into: (node) => (DEFERRED_BODY_TYPES.has(node.type) ? SKIP_CHILDREN : null),
+    into: (node) =>
+      DEFERRED_BODY_TYPES.has(node.type) || isClaimed(node, claimed)
+        ? SKIP_CHILDREN
+        : null,
   });
   return found;
 }
