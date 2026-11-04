@@ -18,6 +18,7 @@ import { Node, SyntaxKind, ts } from "ts-morph";
 
 import { findEnclosingFunction, isFunctionRoot } from "../discovery/shared.js";
 import { symbolBehind } from "../resolve/functionBehind.js";
+import { writesUndefined } from "./undefinedValue.js";
 import { climbSyntax, peelSyntax } from "./unwrap.js";
 
 import type {
@@ -542,8 +543,7 @@ function comparedValue(
       : null;
   }
   const missing =
-    (Node.isIdentifier(other) && other.getText() === "undefined") ||
-    (loose && Node.isNullLiteral(other));
+    writesUndefined(other) || (loose && Node.isNullLiteral(other));
   return missing ? operand : null;
 }
 

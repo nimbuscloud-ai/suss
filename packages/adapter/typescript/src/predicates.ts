@@ -6,6 +6,7 @@ import { replacePredicateRefs } from "@suss/behavioral-ir";
 
 import { resolveCallableBody } from "./resolve/astResolve.js";
 import { resolveSubject } from "./subjects.js";
+import { writesUndefined } from "./walk/undefinedValue.js";
 import { peelParens } from "./walk/unwrap.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
@@ -41,7 +42,7 @@ function isNullOrUndefined(expr: Expression): boolean {
   if (Node.isNullLiteral(expr)) {
     return true;
   }
-  if (Node.isIdentifier(expr) && expr.getText() === "undefined") {
+  if (writesUndefined(expr)) {
     return true;
   }
   return false;

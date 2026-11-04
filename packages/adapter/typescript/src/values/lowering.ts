@@ -14,6 +14,7 @@
 import { Node, SyntaxKind } from "ts-morph";
 
 import { hasBody } from "../resolve/unfollowedCall.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelValue } from "../walk/unwrap.js";
 import { declaredValueOf } from "./declaredType.js";
 
@@ -180,10 +181,11 @@ function expressionOf(
   if (Node.isNullLiteral(node)) {
     return { kind: "literal", value: null };
   }
+  if (writesUndefined(node)) {
+    return { kind: "literal", value: undefined };
+  }
   if (Node.isIdentifier(node)) {
-    return node.getText() === "undefined"
-      ? { kind: "literal", value: undefined }
-      : { kind: "name", text: node.getText() };
+    return { kind: "name", text: node.getText() };
   }
   // A name, so a member read off it goes to the facts when the engine
   // has no object to index, which is where a field the constructor set
