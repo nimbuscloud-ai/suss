@@ -6,8 +6,9 @@ import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
-import { addPackWords, askResolution } from "@suss/resolution";
+import { addPackWords, askResolution, callsRun } from "@suss/resolution";
 
+import { callsInUnitBody } from "../walk/descent.js";
 import {
   createNodeTable,
   environmentObjectsIn,
@@ -15,6 +16,7 @@ import {
   importedModuleKeys,
 } from "./extract.js";
 
+import type { Node } from "ts-morph";
 import type { NodeTable } from "./extract.js";
 
 function factsFor(
@@ -725,5 +727,52 @@ describe("finding the environment objects in a file", () => {
 
   it("finds nothing when no pack says which object is the environment", () => {
     expect(objectsIn("export const x = process.env[name];", [])).toEqual([]);
+  });
+});
+
+describe("the calls a body runs", () => {
+  const LOAD = [
+    "export const load = () => {",
+    "  fetch();",
+    "  items.map((x) => save(x));",
+    "  items.forEach(function (x) { touch(x); });",
+    "  function helper() { log(); }",
+    "};",
+    "",
+  ].join("\n");
+  const LOAD_ARROW = LOAD.slice(
+    LOAD.indexOf("() =>"),
+    LOAD.lastIndexOf("}") + 1,
+  );
+
+  it("says an arrow and a function expression run inline, and a nested declaration does not", () => {
+    const { db, table } = factsFor({ "/load.ts": LOAD });
+    expect(rows(db, table, "inlineFn").map((row) => row[0])).toEqual([
+      "(x) => save(x)",
+      "function (x) { touch(x); }",
+    ]);
+    expect(
+      rows(db, table, "containsFn")
+        .filter((row) => row[0]?.startsWith("() =>"))
+        .map((row) => row[1]),
+    ).toEqual([
+      "(x) => save(x)",
+      "function (x) { touch(x); }",
+      "function helper() { log(); }",
+    ]);
+  });
+
+  it("lists the calls the summary walk reaches, in the order it reaches them", () => {
+    const { db, table } = factsFor({ "/load.ts": LOAD });
+    const load = keyOfText(table, LOAD_ARROW);
+    const fromFacts = (callsRun(db, [load]).get(load) ?? []).map((key) =>
+      table.byId.get(key)?.getText(),
+    );
+    const walked = callsInUnitBody(table.byId.get(load) as Node).map((call) =>
+      call.getText(),
+    );
+    expect(fromFacts).toEqual(walked);
+    expect(fromFacts).toContain("save(x)");
+    expect(fromFacts).not.toContain("log()");
   });
 });

@@ -48,6 +48,7 @@ import {
   isFunctionRoot,
 } from "../discovery/shared.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { runsInline } from "../walk/descent.js";
 import { propertyNameOf } from "../walk/propertyName.js";
 import {
   forEachDescendantOfKinds,
@@ -2189,7 +2190,7 @@ function recordBodyNode(
   if (isFunctionRoot(node) && descendantIsReturned(node)) {
     fact(db, "returnsValue", fnId, emitValue(db, table, node as Expression));
     returns.stated = true;
-    fact(db, "containsFn", fnId, nodeId(node));
+    emitContainedFunction(db, fnId, node);
     return true;
   }
 
@@ -2234,7 +2235,7 @@ function recordBodyCalls(
 ): boolean {
   if (isFunctionRoot(node)) {
     emitValue(db, table, node as Expression);
-    fact(db, "containsFn", fnId, nodeId(node));
+    emitContainedFunction(db, fnId, node);
     return true;
   }
 
@@ -2264,6 +2265,17 @@ function recordBodyCalls(
     fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
   }
   return false;
+}
+
+/**
+ * A function written in another one's body. The summary walk descends
+ * into one that runs inline, so its calls count as the outer body's.
+ */
+function emitContainedFunction(db: Database, fnId: string, fn: Node): void {
+  fact(db, "containsFn", fnId, nodeId(fn));
+  if (runsInline(fn)) {
+    fact(db, "inlineFn", nodeId(fn));
+  }
 }
 
 /** `process.exitCode = code`: the value that becomes the process's exit code. */

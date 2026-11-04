@@ -813,6 +813,15 @@ export const EXTRA_INPUTS = [
       ...packs("aws-dynamodb"),
     ],
   },
+  {
+    name: "react-query",
+    group: "extra",
+    repo: "full-stack-fastapi-template",
+    args: [
+      ...dir("frontend"),
+      ...packs("react-query", "react", "axios", "fetch", "node"),
+    ],
+  },
   ...STORY_DIRECTORIES.map(([repo, directory]) => ({
     name: `storybook ${repo} ${directory}`,
     group: "extra",

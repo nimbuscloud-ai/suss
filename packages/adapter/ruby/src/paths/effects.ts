@@ -10,7 +10,7 @@ import { constantOf, literalOf } from "@suss/values";
 import {
   children,
   field,
-  LAMBDA_TYPE,
+  isLambdaArgument,
   MODULE_SCOPE_STOPS,
   OWN_BODY_TYPES,
   rangeOf,
@@ -201,15 +201,6 @@ function collectCalls(
     collectCalls(child, read, inherited, found);
   }
   return found;
-}
-
-/**
- * A lambda handed to a call as an argument is part of the body that
- * writes it, as a block is, so its calls are that body's calls. One
- * assigned to a name keeps a body of its own.
- */
-function isLambdaArgument(node: RbNode): boolean {
-  return node.type === LAMBDA_TYPE && node.parent?.type === "argument_list";
 }
 
 /** The statements a reader walks, the names that are locals in them, and the child types whose statements belong to something else. */

@@ -178,6 +178,25 @@ describe("python value facts", () => {
     expect(returned).toContain("#shallow");
     expect(db.size("containsFn")).toBe(1);
   });
+
+  it("says a lambda runs inline in the function around it, and a nested def does not", async () => {
+    const source = [
+      "def load():",
+      "    def helper():",
+      "        log()",
+      "    jobs.later(lambda: notify())",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const inline = rows(db, "inlineFn").map((row) =>
+      textAt(source, row[0] ?? ""),
+    );
+    expect(inline).toEqual(["lambda: notify()"]);
+    expect(
+      rows(db, "containsFn").map((row) => textAt(source, row[1] ?? "")),
+    ).toEqual(["def helper():\n        log()", "lambda: notify()"]);
+  });
+
   it("records the callee each call in a function's body names", async () => {
     const db = await factsFor("def handler():\n    log(event)\n");
     expect(rows(db, "bodyCalls").map((row) => row[1])).toEqual(["#log"]);

@@ -11,7 +11,14 @@
 import { sharedGatingConditions, statementSites } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { children, field, rangeOf, runsAtModuleLoad } from "../ast.js";
+import {
+  children,
+  field,
+  isFunction,
+  rangeOf,
+  runsAtModuleLoad,
+  runsInline,
+} from "../ast.js";
 import { guardInputs } from "../provenance.js";
 import { askWrittenValues, evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
@@ -28,9 +35,6 @@ import type {
   StatementSites,
 } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
-
-/** A lambda is left out on purpose, because its calls count as the enclosing unit's. */
-const NESTED_DEFINITION_TYPES = new Set(["function_definition"]);
 
 /** The literal an argument evaluates to, or null when it does not settle on one. */
 function literalArgOf(
@@ -59,7 +63,7 @@ function literalArgOf(
 /** Every call written in this function's own body, in source order. */
 export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
   for (const child of children(node)) {
-    if (child === null || NESTED_DEFINITION_TYPES.has(child.type)) {
+    if (child === null || isOwnSummary(child)) {
       continue;
     }
     if (child.type === "call") {
@@ -195,11 +199,16 @@ function askedNodesUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
     found.push(node);
   }
   for (const child of children(node)) {
-    if (child !== null && !NESTED_DEFINITION_TYPES.has(child.type)) {
+    if (child !== null && !isOwnSummary(child)) {
       askedNodesUnder(child, found);
     }
   }
   return found;
+}
+
+/** A nested `def`, whose body goes on its own summary and not on the one around it. */
+function isOwnSummary(node: PyNode): boolean {
+  return isFunction(node) && !runsInline(node);
 }
 
 /**

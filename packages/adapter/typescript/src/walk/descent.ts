@@ -67,10 +67,18 @@ export function isDescentStop(
   ) {
     return true;
   }
-  if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
+  if (runsInline(node)) {
     return barriers.has(node);
   }
   return false;
+}
+
+/**
+ * Whether a function written inside a unit's body runs as part of that
+ * body when no pack claims it: an arrow or a function expression.
+ */
+export function runsInline(node: Node): boolean {
+  return Node.isArrowFunction(node) || Node.isFunctionExpression(node);
 }
 
 /**
