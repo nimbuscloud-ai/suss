@@ -158,4 +158,101 @@ describe("a pack whose hook throws", () => {
       noise.mockRestore();
     }
   });
+
+  it("costs only the calls its recognizer threw on, and goes on its tally", async () => {
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const project = createTestProject();
+      project.createSourceFile(
+        "src/a.ts",
+        "export function handler() {\n  audit();\n}\n",
+      );
+      const handlers: PatternPack = {
+        name: "handlers",
+        protocol: "http",
+        languages: ["typescript"],
+        discovery: [
+          {
+            kind: "handler",
+            match: { type: "namedExport", names: ["handler"] },
+            requiresImport: [],
+          },
+        ],
+        terminals: [
+          {
+            kind: "return",
+            match: { type: "functionFallthrough" },
+            extraction: {},
+          },
+        ],
+        inputMapping: { type: "positionalParams", params: [] },
+      };
+      const audits: PatternPack = {
+        ...handlers,
+        name: "audits",
+        discovery: [],
+        invocationRecognizers: [
+          () => [
+            {
+              type: "interaction",
+              binding: {
+                transport: "sqs",
+                semantics: {
+                  name: "message-bus",
+                  messageBus: "aws_sqs",
+                  channel: "audits",
+                },
+                recognition: "audits",
+              },
+              callee: "audit",
+              interaction: { class: "message-send" },
+            },
+          ],
+        ],
+      };
+      const breaks: PatternPack = {
+        ...handlers,
+        name: "breaks",
+        discovery: [],
+        invocationRecognizers: [
+          () => {
+            throw new Error("cannot read what I was handed");
+          },
+        ],
+      };
+      let report: ExtractionReport | null = null;
+      const summaries = await createTypeScriptAdapter({
+        project,
+        frameworks: [handlers, breaks, audits],
+        onExtractionReport: (r) => {
+          report = r;
+        },
+      }).extractAll();
+
+      const handler = summaries.find((one) => one.identity.name === "handler");
+      expect(
+        handler?.transitions.flatMap((transition) =>
+          transition.effects.flatMap((effect) =>
+            effect.type === "interaction" ? [effect.callee] : [],
+          ),
+        ),
+      ).toEqual(["audit"]);
+      const funnels = (report as ExtractionReport | null)?.packs ?? [];
+      expect(
+        funnels.find((funnel) => funnel.pack === "breaks")?.failures,
+      ).toEqual([
+        {
+          hook: "invocationRecognizers",
+          file: "/src/a.ts",
+          line: 2,
+          message: "cannot read what I was handed",
+        },
+      ]);
+      expect(
+        funnels.find((funnel) => funnel.pack === "audits")?.failures,
+      ).toEqual([]);
+    } finally {
+      noise.mockRestore();
+    }
+  });
 });

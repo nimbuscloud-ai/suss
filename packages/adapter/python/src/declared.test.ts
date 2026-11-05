@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   constructedFrom,
@@ -15,7 +15,7 @@ import {
 import { extractPythonProject } from "./project.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
-import type { CallOps } from "@suss/extractor";
+import type { CallOps, ExtractionReport } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 
 const SOURCE = `from kvcache import Cache
@@ -97,6 +97,7 @@ afterAll(() => {
 
 async function summariesWith(
   packs: PythonPack[],
+  onExtractionReport?: (report: ExtractionReport) => void,
 ): Promise<BehavioralSummary[]> {
   const { summaries } = await extractPythonProject({
     files: [path.join(root, "store/__init__.py")],
@@ -105,6 +106,7 @@ async function summariesWith(
     modules: [{ name: "store", root: path.join(root, "store") }],
     workspaceRoot: root,
     cacheDir: null,
+    ...(onExtractionReport === undefined ? {} : { onExtractionReport }),
   });
   return summaries;
 }
@@ -199,5 +201,48 @@ describe("a pack declared with @suss/recognize, run over Python", () => {
     expect(query?.valueAt(0)?.interpolated?.()[0]?.name("nothing")).toBe(
       "orders",
     );
+  });
+});
+
+describe("a declared pack whose recognizer throws", () => {
+  it("goes on the pack's tally, and the other packs' effects are still there", async () => {
+    const breaks: PythonPack = {
+      name: "breaks",
+      protocol: "in-process",
+      discovery: [],
+      invocationRecognizers: [
+        () => {
+          throw new Error("cannot read what I was handed");
+        },
+      ],
+    };
+    const reports: ExtractionReport[] = [];
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    let summaries: BehavioralSummary[];
+    try {
+      summaries = await summariesWith([breaks, packOf()], (report) =>
+        reports.push(report),
+      );
+    } finally {
+      noise.mockRestore();
+    }
+
+    expect(declaredEffects(summaries).map((effect) => effect.callee)).toEqual([
+      "cache.get",
+      "db.query",
+      "db.query",
+    ]);
+    const failures =
+      reports[0]?.packs.find((funnel) => funnel.pack === "breaks")?.failures ??
+      [];
+    expect(failures).toContainEqual({
+      hook: "invocationRecognizers",
+      file: path.join(root, "store/__init__.py"),
+      line: 11,
+      message: "cannot read what I was handed",
+    });
+    expect(
+      reports[0]?.packs.find((funnel) => funnel.pack === "declared")?.failures,
+    ).toEqual([]);
   });
 });

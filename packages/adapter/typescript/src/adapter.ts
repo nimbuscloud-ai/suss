@@ -63,8 +63,10 @@ import {
   type LanguageAdapter,
   libraryEnvReadMarker,
   mergeReadShapes,
+  type PackRecognizer,
   type PartialPlan,
   type PatternPack,
+  packRecognizers,
   type RawBranch,
   type RawCodeStructure,
   type RawDependencyCall,
@@ -87,7 +89,7 @@ import {
   countUnmatchedReturns,
   extractRawBranches,
 } from "./assembly.js";
-import { noteRecognizerTally } from "./bodyWalks.js";
+import { noteRecognizerPack } from "./bodyWalks.js";
 import { pinAutomaticTypes } from "./bootstrap/automaticTypes.js";
 import {
   admitListedFiles,
@@ -1241,53 +1243,41 @@ function resolveContractField(
 
 // Aggregation flattens every pack's recognizers into one list, so this
 // is the last point at which a recognizer's owning pack is known.
-function reportingTo<TCtx>(
-  recognize: (node: unknown, ctx: TCtx) => Effect[] | null,
-  tally: PackTally,
-): (node: unknown, ctx: TCtx) => Effect[] | null {
-  const reporting = (node: unknown, ctx: TCtx): Effect[] | null => {
+function reportingTo(owner: PackRecognizer): InvocationRecognizer {
+  const { recognize, tally } = owner;
+  const reporting = (node: unknown, ctx: unknown): Effect[] | null => {
     const effects = recognize(node, ctx);
-    if (effects !== null) {
+    if (effects !== null && tally !== undefined) {
       tally.effectsRecognized += effects.length;
     }
     return effects;
   };
-  noteRecognizerTally(reporting, tally);
+  noteRecognizerPack(reporting, owner);
   return reporting;
+}
+
+function recognizersFrom(
+  frameworks: PatternPack[],
+  tallies: Map<string, PackTally> | undefined,
+  hook: PackRecognizer["hook"],
+): InvocationRecognizer[] {
+  return packRecognizers(frameworks, tallies)
+    .filter((owner) => owner.hook === hook)
+    .map(reportingTo);
 }
 
 function collectInvocationRecognizers(
   frameworks: PatternPack[],
   tallies?: Map<string, PackTally>,
 ): InvocationRecognizer[] {
-  const out: InvocationRecognizer[] = [];
-  for (const pack of frameworks) {
-    if (pack.invocationRecognizers === undefined) {
-      continue;
-    }
-    const tally = tallies?.get(pack.name);
-    for (const recognize of pack.invocationRecognizers) {
-      out.push(tally === undefined ? recognize : reportingTo(recognize, tally));
-    }
-  }
-  return out;
+  return recognizersFrom(frameworks, tallies, "invocationRecognizers");
 }
 
 function collectAccessRecognizers(
   frameworks: PatternPack[],
   tallies?: Map<string, PackTally>,
 ): AccessRecognizer[] {
-  const out: AccessRecognizer[] = [];
-  for (const pack of frameworks) {
-    if (pack.accessRecognizers === undefined) {
-      continue;
-    }
-    const tally = tallies?.get(pack.name);
-    for (const recognize of pack.accessRecognizers) {
-      out.push(tally === undefined ? recognize : reportingTo(recognize, tally));
-    }
-  }
-  return out;
+  return recognizersFrom(frameworks, tallies, "accessRecognizers");
 }
 
 // Nested functions the body walkers stop at, so a sub-unit's behavior

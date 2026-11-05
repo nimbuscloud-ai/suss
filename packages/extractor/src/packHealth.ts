@@ -16,6 +16,8 @@
 
 import path from "node:path";
 
+import { failurePlace } from "./extractionReport.js";
+
 import type {
   ExtractionReport,
   PackFailure,
@@ -235,7 +237,7 @@ function threwWhileReading(
       const alsoIn = rest > 0 ? ` (+${rest} more)` : "";
       return {
         label: funnel.pack,
-        detail: `${first.hook} on ${first.file}${alsoIn}: ${first.message}`,
+        detail: `${first.hook} on ${failurePlace(first)}${alsoIn}: ${first.message}`,
       };
     });
 }
