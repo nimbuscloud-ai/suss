@@ -43,7 +43,7 @@ import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 import { keptVariants, plainKeyOf, variantKey } from "@suss/resolution";
 
-import { extractCodeStructure } from "../adapter.js";
+import { extractCodeStructure, storeLookupsOf } from "../adapter.js";
 import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import {
   createSourceFileLookup,
@@ -990,6 +990,7 @@ function extractReachableSummary(
     kind: "library",
     name: candidate.name,
   };
+  const lookups = storeLookupsOf(recognizers.resolution);
   const raw = extractCodeStructure(
     unit,
     reachablePack,
@@ -997,9 +998,9 @@ function extractReachableSummary(
     recognizers.access,
     undefined,
     recognizers.resolution,
-    undefined,
-    undefined,
-    undefined,
+    lookups.originatesFrom,
+    lookups.anchorCallsOf,
+    lookups.resolveCallee,
     recognizers.everyUnit,
   );
   raw.boundaryBinding = functionCallBinding({
