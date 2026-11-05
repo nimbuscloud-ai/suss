@@ -164,6 +164,8 @@ interface Claimed {
   /** The name the claim is given after the parent's own. */
   claim: string | null;
   claimKind: string | null;
+  /** Internal code in every language, so the claim pairs with nothing its parent serves. */
+  claimBinding: unknown;
   /** Whether `notify` is called on the parent's summary and on the claim's. */
   notifyOnParent: boolean;
   notifyOnClaim: boolean;
@@ -213,6 +215,7 @@ function claimedIn(summaries: readonly BehavioralSummary[]): Claimed {
     claim:
       claim === undefined ? null : claim.identity.name.slice(parentName.length),
     claimKind: claim?.kind ?? null,
+    claimBinding: claim?.identity.boundaryBinding ?? null,
     notifyOnParent: calls(parent, "notify"),
     notifyOnClaim: calls(claim, "notify"),
     envOnParent: envRead(parent),
@@ -244,6 +247,11 @@ describe("a callbacks declaration", () => {
       ],
       claim: ".jobs.later#0",
       claimKind: "scheduled-callback",
+      claimBinding: {
+        transport: "in-process",
+        semantics: { name: "function-call" },
+        recognition: "reachable",
+      },
       notifyOnParent: false,
       notifyOnClaim: true,
       envOnParent: [],

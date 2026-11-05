@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { callbacks, constructedFrom, pack } from "@suss/recognize";
 
+import { fastapiTestPack } from "./__fixtures__/fastapiPattern.js";
+
 // A run from source declines to cache, and the cached run here has to
 // write an entry to disk and read it back.
 vi.mock("./version.js", async (importOriginal) => {
@@ -54,6 +56,13 @@ const LATER_PACK: PythonPack = {
 };
 
 const HEADER = ["from jobs import Jobs", "", "jobs = Jobs()", "", ""];
+
+/** What a claim is when it is internal code of the function it is written in. */
+const REACHABLE = {
+  transport: "in-process",
+  semantics: { name: "function-call" },
+  recognition: "reachable",
+};
 
 function sourceOf(...lines: string[]): string {
   return [...HEADER, ...lines, ""].join("\n");
@@ -242,14 +251,48 @@ describe("a lambda a declared pack claims", () => {
     expect(calleesOf(parent)).toEqual(["jobs.later"]);
   });
 
-  it("takes the binding of a parent that serves", async () => {
+  it("is internal code under an export, not a caller of it", async () => {
     const summaries = await summariesOf(IN_PLACE);
-    const parent = named(summaries, "enqueue");
-    const claimed = named(summaries, "enqueue.jobs.later#0");
 
-    expect(claimed.identity.boundaryBinding).toEqual(
-      parent.identity.boundaryBinding,
+    expect(
+      named(summaries, "enqueue").identity.boundaryBinding?.semantics,
+    ).toEqual({
+      name: "function-call",
+      module: "store",
+      exportName: "enqueue",
+    });
+    expect(
+      named(summaries, "enqueue.jobs.later#0").identity.boundaryBinding,
+    ).toEqual(REACHABLE);
+  });
+
+  it("is internal code under a route, not a client of it", async () => {
+    const summaries = await summariesOf(
+      [
+        "from fastapi import FastAPI",
+        ...HEADER,
+        "app = FastAPI()",
+        "",
+        "",
+        '@app.get("/later")',
+        "def later():",
+        "    jobs.later(lambda: notify())",
+        "    return {}",
+        "",
+      ].join("\n"),
+      [fastapiTestPack(), LATER_PACK],
     );
+    const route = summaries.find((summary) => summary.kind === "handler");
+
+    expect(route?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "rest",
+      method: "GET",
+      path: "/later",
+    });
+    expect(
+      named(summaries, `${route?.identity.name}.jobs.later#0`).identity
+        .boundaryBinding,
+    ).toEqual(REACHABLE);
   });
 
   it("is internal code under a parent that calls out", async () => {
@@ -288,12 +331,7 @@ describe("a lambda a declared pack claims", () => {
     expect(named(summaries, "fetch_orders").kind).toBe("client");
     expect(
       named(summaries, "fetch_orders.jobs.later#0").identity.boundaryBinding,
-    ).toEqual(
-      expect.objectContaining({
-        semantics: { name: "function-call" },
-        recognition: "reachable",
-      }),
-    );
+    ).toEqual(REACHABLE);
   });
 
   it("records a function passed by name and makes no summary for it", async () => {

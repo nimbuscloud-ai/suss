@@ -21,6 +21,7 @@ import { Database } from "@suss/datalog";
 import { callbacks, constructedFrom, pack } from "@suss/recognize";
 
 import { activeJobTestPack } from "./__fixtures__/jobPatterns.js";
+import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
 import { field } from "./ast.js";
 import { claimedIn } from "./claims.js";
 import { parseRuby } from "./parser.js";
@@ -126,6 +127,22 @@ const REPORT_JOB = `class ReportJob < ApplicationJob
 end
 `;
 
+const ORDERS_CONTROLLER = `class OrdersController < ApplicationController
+  def later
+    jobs = Jobs::Queue.new
+    jobs.later { notify }
+    head :ok
+  end
+end
+`;
+
+/** What a claim is when it is internal code of the method it is written in. */
+const REACHABLE = {
+  transport: "in-process",
+  semantics: { name: "function-call" },
+  recognition: "reachable",
+};
+
 const FILES = ["lib/store.rb", "lib/store/later.rb"];
 
 let root: string;
@@ -144,9 +161,14 @@ afterAll(() => {
 function writeProject(dir: string): void {
   fs.mkdirSync(path.join(dir, "lib/store"), { recursive: true });
   fs.mkdirSync(path.join(dir, "app/jobs"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "app/controllers"), { recursive: true });
   fs.writeFileSync(path.join(dir, "lib/store.rb"), STORE);
   fs.writeFileSync(path.join(dir, "lib/store/later.rb"), LATER_CLASS);
   fs.writeFileSync(path.join(dir, "app/jobs/report_job.rb"), REPORT_JOB);
+  fs.writeFileSync(
+    path.join(dir, "app/controllers/orders_controller.rb"),
+    ORDERS_CONTROLLER,
+  );
 }
 
 interface RunOptions {
@@ -223,9 +245,7 @@ describe("a block a declared pack's call is written with, in Ruby", () => {
       }),
     ]);
     expect(claimed?.kind).toBe("scheduled-callback");
-    expect(claimed?.identity.boundaryBinding).toEqual(
-      parent?.identity.boundaryBinding,
-    );
+    expect(claimed?.identity.boundaryBinding).toEqual(REACHABLE);
     expect(claimed?.location.range).toEqual({ start: 4, end: 4 });
     expect(invoked(claimed)).toEqual(["notify"]);
     expect(invoked(parent)).not.toContain("notify");
@@ -304,12 +324,35 @@ describe("a block a declared pack's call is written with, in Ruby", () => {
     const parent = summaries.find((summary) => summary.kind === "consumer");
     const claimed = named(summaries, `${parent?.identity.name}.jobs.later#0`);
 
-    expect(claimed?.identity.boundaryBinding).toEqual({
-      transport: "in-process",
-      semantics: { name: "function-call" },
-      recognition: "reachable",
-    });
+    expect(claimed?.identity.boundaryBinding).toEqual(REACHABLE);
     expect(invoked(claimed)).toEqual(["notify"]);
+  });
+
+  it("gives a block in a controller action the binding of internal code, not the action's route", async () => {
+    const summaries = await summariesIn(
+      root,
+      [
+        railsTestPack({
+          root: path.join(root, "app/controllers"),
+          routesFor: (_controller, action) => [
+            { method: "GET", path: `/orders/${action}` },
+          ],
+        }),
+        laterPack(true),
+      ],
+      { files: ["app/controllers/orders_controller.rb"] },
+    );
+    const action = summaries.find((summary) => summary.kind === "handler");
+
+    expect(action?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "rest",
+      method: "GET",
+      path: "/orders/later",
+    });
+    expect(
+      named(summaries, `${action?.identity.name}.jobs.later#0`)?.identity
+        .boundaryBinding,
+    ).toEqual(REACHABLE);
   });
 
   it("keeps one sub-unit when two packs claim the same block, with or without recognizers", async () => {

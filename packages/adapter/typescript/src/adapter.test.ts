@@ -6208,6 +6208,66 @@ describe("subUnits plumbing", () => {
     });
   });
 
+  it("does not make a timer callback inside a route handler a client of the route", async () => {
+    const routePack: PatternPack = {
+      name: "express",
+      protocol: "http",
+      languages: ["typescript"],
+      discovery: httpRouteDiscovery({
+        importModule: "express",
+        importNames: ["express"],
+        methods: [".get"],
+      }),
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+      subUnits: (parent) =>
+        (parent.func as Node)
+          .getDescendants()
+          .filter((node: Node) => Node.isArrowFunction(node))
+          .map((callback: Node, index: number) => ({
+            func: callback,
+            kind: "scheduled-callback",
+            name: `${parent.name}.setTimeout#${index}`,
+          })),
+    };
+    const project = makeProject();
+    project.createSourceFile(
+      "/later.ts",
+      `
+        import express from "express";
+        const app = express();
+        app.get("/later", (req: any, res: any) => {
+          setTimeout(() => {
+            console.log("later");
+          }, 10);
+          return res.json({ ok: true });
+        });
+      `,
+    );
+    const summaries = await createTypeScriptAdapter({
+      project,
+      frameworks: [routePack],
+    }).extractAll();
+    const handler = summaries.find((s) => s.kind === "handler");
+
+    expect(handler?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/later",
+    });
+    expect(
+      summaries.find(
+        (s) => s.identity.name === `${handler?.identity.name}.setTimeout#0`,
+      )?.identity.boundaryBinding,
+    ).toEqual({
+      transport: "in-process",
+      semantics: { name: "function-call" },
+      recognition: "reachable",
+    });
+  });
+
   it("packs without subUnits produce no sub-units", async () => {
     const { subUnits: _omit, ...rest } = testPack;
     const noSubUnitsPack: PatternPack = rest;
