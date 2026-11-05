@@ -15,6 +15,8 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { runPackHook } from "@suss/extractor";
+
 import { nodeId } from "../facts/extract.js";
 import { parameterNames, readHelperSinks } from "./helperReading.js";
 import { registrationSubjectsOf, subjectNodeFor } from "./registrationCall.js";
@@ -22,7 +24,8 @@ import { functionValueOf } from "./resolveValue.js";
 
 import type {
   DiscoveryPattern,
-  InvocationRecognizer,
+  PackRecognizer,
+  PackTally,
   PatternPack,
   ProjectHelper,
 } from "@suss/extractor";
@@ -33,11 +36,13 @@ export interface ProjectHelperIndex {
   /** Discovery patterns `packName` contributed after reading the project. */
   patternsFor(packName: string): readonly DiscoveryPattern[];
   /**
-   * Recognizers the packs contributed. They match calls to functions
-   * this project declares, so they run wherever a call can appear
-   * rather than only where the pack's own import gate reaches.
+   * Recognizers the packs contributed, each with the pack whose
+   * `projectHelpers` made it, so a throw goes on that pack's tally. They
+   * match calls to functions this project declares, so they run wherever
+   * a call can appear rather than only where the pack's own import gate
+   * reaches.
    */
-  contributedRecognizers(): readonly InvocationRecognizer[];
+  contributedRecognizers(): readonly PackRecognizer[];
   /**
    * The helper files that shaped what `file` extracts to, so the
    * per-file cache invalidates `file` when one of them is edited.
@@ -66,11 +71,20 @@ interface Reading {
   declarationId: string;
 }
 
+/** The run a helper index is built for. */
+export interface HelperRun {
+  /** Each pack's tally, where a throw from its `projectHelpers` goes. */
+  readonly tallies?: ReadonlyMap<string, PackTally> | undefined;
+  /** The file a throw from `declare` reports. It reads helpers from the whole project, so this is the run's root. */
+  readonly root: string;
+}
+
 export function buildProjectHelperIndex(
   sourceFiles: ReadonlyArray<SourceFile>,
   packs: ReadonlyArray<PatternPack>,
   packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>,
   resolution: ResolutionStore,
+  run: HelperRun,
 ): ProjectHelperIndex {
   const asking = packs.filter((pack) => pack.projectHelpers !== undefined);
   if (asking.length === 0) {
@@ -78,16 +92,17 @@ export function buildProjectHelperIndex(
   }
 
   const patterns = new Map<string, DiscoveryPattern[]>();
-  const recognizers: InvocationRecognizer[] = [];
+  const recognizers: PackRecognizer[] = [];
   const helperNames = new Set<string>();
   const helperFiles = new Set<string>();
   const expanded = new Map<string, Set<string>>();
 
   for (const pack of asking) {
-    const search = pack.projectHelpers?.find;
-    if (search === undefined) {
+    const helpers = pack.projectHelpers;
+    if (helpers === undefined) {
       continue;
     }
+    const search = helpers.find;
     const readings =
       search.by === "subject"
         ? readSubjectHelpers(pack, packsByFile, resolution)
@@ -96,12 +111,13 @@ export function buildProjectHelperIndex(
       continue;
     }
 
-    const declared = pack.projectHelpers?.declare(
-      readings.map((reading) => reading.helper),
+    const tally = run.tallies?.get(pack.name);
+    const declared = runPackHook(
+      tally,
+      { pack: pack.name, hook: "projectHelpers.declare", file: run.root },
+      () => helpers.declare(readings.map((reading) => reading.helper)),
+      {},
     );
-    if (declared === undefined) {
-      continue;
-    }
     for (const reading of readings) {
       helperNames.add(reading.helper.name);
       helperFiles.add(reading.helper.file);
@@ -113,7 +129,16 @@ export function buildProjectHelperIndex(
       ]);
       noteExpanded(expanded, readings, declared.discovery);
     }
-    recognizers.push(...(declared.invocationRecognizers ?? []));
+    recognizers.push(
+      ...(declared.invocationRecognizers ?? []).map(
+        (recognize): PackRecognizer => ({
+          pack: pack.name,
+          hook: "projectHelpers.invocationRecognizers",
+          tally,
+          recognize,
+        }),
+      ),
+    );
   }
 
   if (patterns.size === 0 && recognizers.length === 0) {

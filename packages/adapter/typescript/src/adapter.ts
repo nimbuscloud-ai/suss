@@ -1293,8 +1293,12 @@ function recognizersFrom(
 function collectInvocationRecognizers(
   frameworks: PatternPack[],
   tallies?: Map<string, PackTally>,
+  projectHelpers?: ProjectHelperIndex,
 ): InvocationRecognizer[] {
-  return recognizersFrom(frameworks, tallies, "invocationRecognizers");
+  return [
+    ...recognizersFrom(frameworks, tallies, "invocationRecognizers"),
+    ...(projectHelpers?.contributedRecognizers() ?? []).map(reportingTo),
+  ];
 }
 
 function collectAccessRecognizers(
@@ -1400,10 +1404,11 @@ function extractFromSourceFile(
   // Recognizers come from every pack, not the discovering one: a Prisma
   // call inside an Express handler is still a Prisma call. A contributed
   // one matches a call to a function this project itself declares.
-  const allInvocationRecognizers = [
-    ...collectInvocationRecognizers(frameworks, tallies),
-    ...(projectHelpers?.contributedRecognizers() ?? []),
-  ];
+  const allInvocationRecognizers = collectInvocationRecognizers(
+    frameworks,
+    tallies,
+    projectHelpers,
+  );
   const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
   const everyUnit = everyUnitDeclarationsOf(frameworks);
   const lookups = storeLookupsOf(resolution);
@@ -2980,6 +2985,13 @@ export function createTypeScriptAdapter(
           config.frameworks,
           packsByFile,
           resolution,
+          {
+            tallies,
+            root: runRootOf({
+              projectRoot: runRoot,
+              files: sourceFiles.map((sf) => sf.getFilePath()),
+            }),
+          },
         ),
       );
 
@@ -3151,10 +3163,11 @@ export function createTypeScriptAdapter(
                 projectFileSet,
                 closureFacts,
                 {
-                  invocation: [
-                    ...collectInvocationRecognizers(config.frameworks, tallies),
-                    ...projectHelpers.contributedRecognizers(),
-                  ],
+                  invocation: collectInvocationRecognizers(
+                    config.frameworks,
+                    tallies,
+                    projectHelpers,
+                  ),
                   access: collectAccessRecognizers(config.frameworks, tallies),
                   everyUnit: everyUnitDeclarationsOf(config.frameworks),
                   resolution,
@@ -3719,10 +3732,11 @@ function synthesizeSubUnits(
   }
   // A claimed callback is read with what its parent is read with, since
   // the parent's walk stops at the callback and nothing else reads it.
-  const allInvocationRecognizers = [
-    ...collectInvocationRecognizers(frameworks, tallies),
-    ...projectHelpers.contributedRecognizers(),
-  ];
+  const allInvocationRecognizers = collectInvocationRecognizers(
+    frameworks,
+    tallies,
+    projectHelpers,
+  );
   const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
   const everyUnit = everyUnitDeclarationsOf(frameworks);
 

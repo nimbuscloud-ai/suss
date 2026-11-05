@@ -767,6 +767,8 @@ Three parameter positions say how the framework invokes it. `continuationParam` 
 
 `projectHelpers` covers functions the project itself wrote around the library. suss reads them once across the whole project before it walks any file, and whatever the pack makes of them is used alongside its own patterns for the rest of the run. `routeHelperIndex` is the shipped one. Express, Fastify and Hono ask for the project's route helpers to be read, so suss works out what each helper registers from the code itself.
 
+A recognizer `declare` returns counts as the pack's own. Pack health counts its effects for the pack, and a throw from it goes on the pack's tally under `projectHelpers.invocationRecognizers`. When `declare` itself throws, the pack contributes nothing from the helpers, and pack health lists the failure under `projectHelpers.declare`.
+
 ### `transparentWrappers`
 
 ```typescript
