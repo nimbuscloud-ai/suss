@@ -257,8 +257,15 @@ export function runPackHook<T>(
  */
 export interface PackRecognizer {
   readonly pack: string;
-  /** The pack field the recognizer came from. A failure reports it as the hook that threw. */
-  readonly hook: "invocationRecognizers" | "accessRecognizers";
+  /**
+   * The pack field the recognizer came from. A failure reports it as the
+   * hook that threw. A recognizer the pack made from the project's own
+   * helpers came from `projectHelpers`.
+   */
+  readonly hook:
+    | "invocationRecognizers"
+    | "accessRecognizers"
+    | "projectHelpers.invocationRecognizers";
   readonly tally: PackTally | undefined;
   readonly recognize: InvocationRecognizer;
 }
