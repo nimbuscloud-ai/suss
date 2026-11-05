@@ -31,7 +31,7 @@ import {
   declaredName,
   reachesBase,
 } from "./baseClass.js";
-import { claimedIn } from "./claims.js";
+import { callsUnder, claimedIn } from "./claims.js";
 import { rubyFactSource } from "./factSource.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
@@ -838,24 +838,6 @@ function declaredEffects(
       })),
     );
   });
-}
-
-/** Every call under the node. A block a pack claims as a unit of its own is left out. */
-function callsUnder(
-  node: RbNode,
-  claimed: ReadonlySet<number> | undefined,
-  found: RbNode[] = [],
-): RbNode[] {
-  for (const child of children(node)) {
-    if (claimed?.has(child.id) === true) {
-      continue;
-    }
-    if (child.type === "call") {
-      found.push(child);
-    }
-    callsUnder(child, claimed, found);
-  }
-  return found;
 }
 
 /**

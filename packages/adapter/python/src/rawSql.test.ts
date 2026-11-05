@@ -124,7 +124,7 @@ async function readProject(sources: Record<string, string>): Promise<Read> {
   const definition = handler as PyNode;
   return {
     handler: definition,
-    calls: bodyCalls(definition),
+    calls: bodyCalls(definition, db),
     facts: db,
     filePath,
   };

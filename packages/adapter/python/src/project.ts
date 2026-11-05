@@ -618,7 +618,7 @@ async function runPython(
   });
 
   reportUnresolvedProjectModules(options.packs, roots, db);
-  const subUnits = subUnitClaims(db, options.packs);
+  const subUnits = subUnitClaims(db, options.packs, tallies);
 
   // A matching chain starts at a method declared in a file that imports the
   // library. A project that renames the method on the way is missed, since

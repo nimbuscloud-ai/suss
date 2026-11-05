@@ -213,6 +213,32 @@ export function recordPackFailure(
   return `[suss] pack "${failure.pack}" threw from ${failure.hook} while reading ${failure.file}: ${message}\n`;
 }
 
+/** Where a pack's hook ran: the pack, the hook by the name a pack author uses, and the file it was reading. */
+export interface PackHookSite {
+  pack: string;
+  hook: string;
+  file: string;
+}
+
+/**
+ * Runs one of a pack's hooks. When it throws, the failure goes on the
+ * pack's tally and to stderr, and the caller gets `fallback`, so one
+ * broken pack costs what that hook would have found and the run goes on.
+ */
+export function runPackHook<T>(
+  tally: PackTally | undefined,
+  site: PackHookSite,
+  hook: () => T,
+  fallback: T,
+): T {
+  try {
+    return hook();
+  } catch (error) {
+    process.stderr.write(recordPackFailure(tally, { ...site, error }));
+    return fallback;
+  }
+}
+
 export function createPackTallies(
   packs: ReadonlyArray<{ name: string }>,
 ): Map<string, PackTally> {

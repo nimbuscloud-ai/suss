@@ -66,21 +66,33 @@ function literalArgOf(
 /**
  * Every call written in this function's own body, in source order. A
  * lambda a pack claims as a unit of its own is left out, since its calls
- * go on that unit's summary. Only a reader that passes the facts asks.
+ * go on that unit's summary. The run's claims are found through its
+ * facts, so a reader without facts has none to leave out.
  */
-export function bodyCalls(node: PyNode, facts?: Database): PyNode[] {
+export function bodyCalls(node: PyNode, facts: Database | undefined): PyNode[] {
   return callsUnder(node, claimedLambdas(node, facts), []);
 }
 
-/** The calls written in one expression, itself included. A lambda in `barriers` is left out. */
-export function expressionCalls(
-  expression: PyNode,
-  barriers: ReadonlySet<number>,
+/**
+ * The calls a function's own body makes: a def's statements, or the
+ * expression a lambda gives back, that expression included. A claimed
+ * lambda is left out, as in `bodyCalls`.
+ */
+export function ownBodyCalls(
+  definition: PyNode,
+  facts: Database | undefined,
 ): PyNode[] {
+  const body = field(definition, "body");
+  // The grammar writes a body on every def and every lambda.
+  /* v8 ignore start */
+  if (body === null) {
+    return [];
+  }
+  /* v8 ignore stop */
   return callsUnder(
-    expression,
-    barriers,
-    expression.type === "call" ? [expression] : [],
+    body,
+    claimedLambdas(definition, facts),
+    body.type === "call" ? [body] : [],
   );
 }
 

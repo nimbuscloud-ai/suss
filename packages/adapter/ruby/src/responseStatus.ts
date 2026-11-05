@@ -27,8 +27,9 @@ import {
   OWN_BODY_TYPES,
   rangeOf,
   readCallArgs,
+  statementsOf,
 } from "./ast.js";
-import { claimedIn } from "./claims.js";
+import { claimedIn, claimingMethodOf } from "./claims.js";
 import { isBareMethodCall, localNamesIn } from "./paths/bareCalls.js";
 import { lowerRubyBody } from "./paths/lowering.js";
 import {
@@ -488,10 +489,10 @@ function loopAroundOf(placed: {
 }
 
 /**
- * One branch per path a method returns on, with the conditions that
- * reach it and no status reading. A client of another service ends
- * every path by returning what it got, so the tests along each path
- * show which statuses it handles.
+ * One branch per path a method, or a block a pack claims, returns on,
+ * with the conditions that reach it and no status reading. A client of
+ * another service ends every path by returning what it got, so the tests
+ * along each path show which statuses it handles.
  */
 export function returnPathBranches(
   method: RbNode,
@@ -503,7 +504,7 @@ export function returnPathBranches(
   endingOfReturn: ReturnEnding = (_statement, location) =>
     returnTerminal(location),
 ): RawBranch[] | null {
-  const body = field(method, "body");
+  const body = statementsOf(method);
   if (body === null) {
     return null;
   }
@@ -532,8 +533,9 @@ export function returnPathBranches(
     terminals,
   );
 
+  // A claimed block reads the locals of the method it is written in.
   const inputs = conditionInputs(
-    method,
+    claimingMethodOf(method, facts) ?? method,
     [...enumerated.byTerminal.values(), enumerated.fallthrough].flat(),
     facts,
   );
@@ -636,15 +638,17 @@ export function responseBranches(
     locals: localNamesIn(method),
     helper: options.respondingHelper,
   };
+  const claimed = claimedIn(method, options.facts);
   const responses = collectResponseCalls(body, responders, []);
   const returns = collectReturns(body, []);
-  const raises = options.raises === undefined ? [] : escapingRaises(method);
+  const raises =
+    options.raises === undefined ? [] : escapingRaises(method, claimed);
   const lowered = lowerRubyBody(
     body,
     [...returns, ...raises],
     responses,
     pattern.formatSwitch,
-    claimedIn(method, options.facts),
+    claimed,
   );
 
   // A `return` written on its own responds with whatever Rails renders

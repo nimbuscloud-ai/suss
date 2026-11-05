@@ -13,19 +13,17 @@
  */
 
 import { BOUNDARY_ROLE, functionCallBinding } from "@suss/behavioral-ir";
-import { assembleSummary } from "@suss/extractor";
+import { assembleSummary, runPackHook } from "@suss/extractor";
 import { factCallOps } from "@suss/recognize/ops";
+import { fileOfKey } from "@suss/resolution";
 
-import { field, rangeOf, spanOf } from "./ast.js";
+import { enclosingFunction, field, rangeOf, spanOf } from "./ast.js";
+import { effectsBesidesCalls } from "./discovery.js";
 import { returnTerminal } from "./exits.js";
 import { pythonFactSource } from "./factSource.js";
 import { callsRunBy } from "./facts/resolve.js";
 import { registerLambdaClaims } from "./lambdaClaims.js";
-import {
-  expressionCalls,
-  expressionInvocationEffects,
-} from "./paths/effects.js";
-import { callStorage } from "./storage.js";
+import { expressionInvocationEffects, ownBodyCalls } from "./paths/effects.js";
 import { resolutionKeyOf } from "./values/evaluator.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
@@ -36,16 +34,21 @@ import type {
   DiscoveredSubUnitParent,
   ExtractorOptions,
   FactSource,
+  PackTally,
   RawCodeStructure,
   SubUnitOpsCarrier,
 } from "@suss/extractor";
-import type { LambdaClaims } from "./lambdaClaims.js";
+import type { LambdaClaims, NamedClaim } from "./lambdaClaims.js";
 import type { PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { BoundPythonFile } from "./routers.js";
 import type { StorageLookup } from "./storage.js";
 
-type SubUnitHook = NonNullable<PythonPack["subUnits"]>;
+/** A pack's `subUnits` hook, beside the pack's name. */
+interface ClaimingPack {
+  readonly name: string;
+  readonly subUnits: NonNullable<PythonPack["subUnits"]>;
+}
 
 /** The lambdas the hooks claimed in one function, by node id. */
 interface Claimed {
@@ -74,24 +77,34 @@ export function claimsLambdas(packs: readonly PythonPack[]): boolean {
 
 /**
  * The claims for one run, registered for the readers over `db`. Null when
- * no pack has a `subUnits` hook, and then nothing is registered.
+ * no pack has a `subUnits` hook, and then nothing is registered. A hook
+ * that throws goes on its pack's tally.
  */
 export function subUnitClaims(
   db: Database,
   packs: readonly PythonPack[],
+  tallies: ReadonlyMap<string, PackTally>,
 ): SubUnitClaims | null {
-  const hooks = packs.flatMap((pack) =>
-    pack.subUnits === undefined ? [] : [pack.subUnits],
+  const claiming = packs.flatMap((pack) =>
+    pack.subUnits === undefined
+      ? []
+      : [{ name: pack.name, subUnits: pack.subUnits }],
   );
-  if (hooks.length === 0) {
+  if (claiming.length === 0) {
     return null;
   }
-  const claims = new SubUnitClaims(db, hooks);
+  const claims = new SubUnitClaims(db, claiming, tallies);
   registerLambdaClaims(db, claims);
   return claims;
 }
 
 const NONE: ReadonlySet<number> = new Set();
+
+/**
+ * The kind a function is handed to the hooks as while its body is read,
+ * before any summary of it says what it is.
+ */
+const KIND_WHILE_READING = "library";
 
 export class SubUnitClaims implements LambdaClaims {
   private readonly claimed = new Map<string, Claimed>();
@@ -99,7 +112,8 @@ export class SubUnitClaims implements LambdaClaims {
 
   constructor(
     private readonly db: Database,
-    private readonly hooks: readonly SubUnitHook[],
+    private readonly packs: readonly ClaimingPack[],
+    private readonly tallies: ReadonlyMap<string, PackTally>,
   ) {
     const source = pythonFactSource(db);
     this.context = {
@@ -107,7 +121,31 @@ export class SubUnitClaims implements LambdaClaims {
     };
   }
 
+  /**
+   * The lambdas claimed in this function. A lambda that the function
+   * around it claims has that function's claims, so a reader of the
+   * lambda's own body leaves out the claims inside it and never runs the
+   * hooks with the lambda as a parent.
+   */
   claimedIn(fn: PyNode): ReadonlySet<number> {
+    const around = fn.type === "lambda" ? enclosingFunction(fn) : null;
+    const outer = around === null ? NONE : this.claimedIn(around);
+    return outer.has(fn.id) ? outer : this.ownClaims(fn);
+  }
+
+  claimsNamedAfter(fn: PyNode, name: string): NamedClaim[] {
+    const key = resolutionKeyOf(fn, this.db);
+    const lambdas = this.ownClaims(fn);
+    if (key === null || lambdas.size === 0) {
+      return [];
+    }
+    return this.subUnitsOf({ func: fn, name, kind: KIND_WHILE_READING }, key)
+      .filter((one) => lambdas.has((one.func as PyNode).id))
+      .map((one) => ({ lambda: one.func as PyNode, name: one.name }));
+  }
+
+  /** What the hooks claim in this function's own body, run once per function. */
+  private ownClaims(fn: PyNode): ReadonlySet<number> {
     const key = resolutionKeyOf(fn, this.db);
     if (key === null) {
       return NONE;
@@ -119,11 +157,14 @@ export class SubUnitClaims implements LambdaClaims {
     // The parent's name goes only into a claim's name, and those are made
     // again from the parent's summary once it has one.
     const lambdas = new Set(
-      this.subUnitsOf({
-        func: fn,
-        name: field(fn, "name")?.text ?? "",
-        kind: "library",
-      }).map((one) => (one.func as PyNode).id),
+      this.subUnitsOf(
+        {
+          func: fn,
+          name: field(fn, "name")?.text ?? "",
+          kind: KIND_WHILE_READING,
+        },
+        key,
+      ).map((one) => (one.func as PyNode).id),
     );
     this.claimed.set(key, { fn, lambdas });
     return lambdas;
@@ -153,14 +194,17 @@ export class SubUnitClaims implements LambdaClaims {
       if (claimed === undefined || claimed.lambdas.size === 0) {
         return [];
       }
-      const subUnits = this.subUnitsOf({
-        func: claimed.fn,
-        name: parent.identity.name,
-        kind: parent.kind,
-      });
+      const subUnits = this.subUnitsOf(
+        {
+          func: claimed.fn,
+          name: parent.identity.name,
+          kind: parent.kind,
+        },
+        parentKey,
+      );
       return subUnits.map((subUnit) => ({
         summary: subUnitSummary(subUnit, parent, {
-          barriers: claimed.lambdas,
+          file,
           storage: reading.storageFor(file),
           facts: this.db,
           gapHandling: reading.gapHandling,
@@ -170,11 +214,25 @@ export class SubUnitClaims implements LambdaClaims {
     });
   }
 
-  /** Every hook's claims, the first claim of a lambda kept when two hooks claim it. */
-  private subUnitsOf(parent: DiscoveredSubUnitParent): DiscoveredSubUnit[] {
+  /**
+   * Every hook's claims, the first claim of a lambda kept when two hooks
+   * claim it. `parentKey` says which file a hook that throws was reading.
+   */
+  private subUnitsOf(
+    parent: DiscoveredSubUnitParent,
+    parentKey: string,
+  ): DiscoveredSubUnit[] {
     const seen = new Set<number>();
-    return this.hooks
-      .flatMap((hook) => hook(parent, this.context))
+    const file = fileOfKey(parentKey);
+    return this.packs
+      .flatMap((pack) =>
+        runPackHook(
+          this.tallies.get(pack.name),
+          { pack: pack.name, hook: "subUnits", file },
+          () => pack.subUnits(parent, this.context),
+          [],
+        ),
+      )
       .filter((one) => {
         const id = (one.func as PyNode).id;
         if (seen.has(id)) {
@@ -200,7 +258,7 @@ export class SubUnitClaims implements LambdaClaims {
 
 /** What one claim's summary is built from besides the claim and its parent. */
 interface ClaimReading {
-  readonly barriers: ReadonlySet<number>;
+  readonly file: BoundPythonFile;
   readonly storage: StorageLookup | undefined;
   readonly facts: Database;
   readonly gapHandling: ExtractorOptions["gapHandling"];
@@ -212,12 +270,15 @@ function subUnitSummary(
   reading: ClaimReading,
 ): BehavioralSummary {
   const lambda = subUnit.func as PyNode;
-  const body = field(lambda, "body");
-  const calls = body === null ? [] : expressionCalls(body, reading.barriers);
-  const recognized =
-    reading.storage === undefined
-      ? []
-      : callStorage(calls, reading.storage).effects.map(({ effect }) => effect);
+  const calls = ownBodyCalls(lambda, reading.facts);
+  // A lambda is one expression, so none of its effects runs under a
+  // condition and every one of them goes on its one branch.
+  const besidesCalls = effectsBesidesCalls(
+    lambda,
+    reading.file.module,
+    reading.storage,
+    reading.facts,
+  ).map(({ effect }) => effect);
   const range = rangeOf(lambda);
   const raw: RawCodeStructure = {
     identity: {
@@ -237,7 +298,7 @@ function subUnitSummary(
         conditions: [],
         terminal: returnTerminal(null, range),
         effects: expressionInvocationEffects(calls, reading.facts),
-        ...(recognized.length === 0 ? {} : { extraEffects: recognized }),
+        ...(besidesCalls.length === 0 ? {} : { extraEffects: besidesCalls }),
         location: range,
         isDefault: true,
       },

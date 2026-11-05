@@ -26,6 +26,7 @@ import {
   readCallArgs,
   stringLiteralValue,
 } from "./ast.js";
+import { isClaimed } from "./claims.js";
 import { fallbackOperandOf, isDefaultedAt } from "./defaulted.js";
 import { envSpellingAt, isEnv } from "./envSpellings.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
@@ -111,7 +112,11 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
  * With the run's facts, a call to a project helper that reads the
  * environment through one of its parameters reports the read here too.
  */
-export function envReadEffects(root: RbNode, facts?: EnvFacts): EffectAt[] {
+export function envReadEffects(
+  root: RbNode,
+  facts?: EnvFacts,
+  claimed?: ReadonlySet<number>,
+): EffectAt[] {
   const helpers = helperFactsOf(facts);
   const defaults = facts !== undefined && hasDefaultReads(facts.db);
   const blankToNil = blankToNilIn(facts?.db);
@@ -133,7 +138,9 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): EffectAt[] {
       }
     },
     into: (node) =>
-      DEFERRED_BODY_TYPES.has(node.type) || isOwnParameter(node, root)
+      DEFERRED_BODY_TYPES.has(node.type) ||
+      isOwnParameter(node, root) ||
+      isClaimed(node, claimed)
         ? SKIP_CHILDREN
         : null,
   });

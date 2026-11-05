@@ -72,6 +72,7 @@ import {
   type ResponsePropertyMapping,
   type RootRecord,
   runDigest,
+  runPackHook,
   type SettledModule,
   splitAtHandOffs,
   stampModuleImports,
@@ -127,7 +128,6 @@ import {
   createPackTallies,
   type ExtractionReport,
   type PackTally,
-  recordPackFailure,
 } from "./diagnostics.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
 import { clientChosenAt } from "./discovery/graphqlCallClient.js";
@@ -1312,25 +1312,29 @@ function computeSubUnitBarriers(
   };
   const barriers = new Set<Node>();
   for (const pack of packs) {
-    if (pack.subUnits === undefined) {
-      continue;
-    }
-    try {
-      for (const su of pack.subUnits(parentHandle, ctx)) {
-        barriers.add(su.func as Node);
-      }
-    } catch (err) {
-      process.stderr.write(
-        recordPackFailure(tallies?.get(pack.name), {
-          pack: pack.name,
-          hook: "subUnits",
-          file,
-          error: err,
-        }),
-      );
+    for (const su of subUnitsOrReport(pack, parentHandle, ctx, {
+      tally: tallies?.get(pack.name),
+      file,
+    })) {
+      barriers.add(su.func as Node);
     }
   }
   return barriers.size === 0 ? NO_BARRIERS : barriers;
+}
+
+/** What a pack's `subUnits` hook claims in one parent. A hook that throws claims nothing, and the failure goes on the pack's tally. */
+function subUnitsOrReport(
+  pack: PatternPack,
+  parent: DiscoveredSubUnitParent,
+  ctx: TsSubUnitContext,
+  at: { tally: PackTally | undefined; file: string },
+): DiscoveredSubUnit[] {
+  return runPackHook(
+    at.tally,
+    { pack: pack.name, hook: "subUnits", file: at.file },
+    () => pack.subUnits?.(parent, ctx) ?? [],
+    [],
+  );
 }
 
 interface ClaimedUnit {
@@ -1352,25 +1356,19 @@ function discoverUnitsOrReport(
   mountPrefixes?: MountPrefixIndex,
   projectHelpers?: ProjectHelperIndex,
 ): DiscoveredUnit[] {
-  try {
-    return discoverUnits(
-      sourceFile,
-      patterns,
-      resolution,
-      mountPrefixes,
-      projectHelpers,
-    );
-  } catch (err) {
-    process.stderr.write(
-      recordPackFailure(tally, {
-        pack: pack.name,
-        hook: "discovery",
-        file: sourceFile.getFilePath(),
-        error: err,
-      }),
-    );
-    return [];
-  }
+  return runPackHook(
+    tally,
+    { pack: pack.name, hook: "discovery", file: sourceFile.getFilePath() },
+    () =>
+      discoverUnits(
+        sourceFile,
+        patterns,
+        resolution,
+        mountPrefixes,
+        projectHelpers,
+      ),
+    [],
+  );
 }
 
 function extractFromSourceFile(
@@ -1432,48 +1430,47 @@ function extractFromSourceFile(
     );
 
     // A pack no DiscoveryMatch variant fits does its own walking.
-    if (pack.discoverUnits !== undefined) {
-      const tsCtx = createTsDiscoveryContext(resolution);
-      try {
-        const customUnits = pack.discoverUnits(sourceFile, tsCtx);
-        for (const cu of customUnits) {
-          units.push({
-            func: cu.func as FunctionRoot,
-            kind: cu.kind,
-            name: cu.name,
-            ...(cu.terminals !== undefined ? { terminals: cu.terminals } : {}),
-            ...(cu.inputMapping !== undefined
-              ? { inputMapping: cu.inputMapping }
-              : {}),
-            ...(cu.routeInfo !== undefined ? { routeInfo: cu.routeInfo } : {}),
-            ...(cu.resolverInfo !== undefined
-              ? { resolverInfo: cu.resolverInfo }
-              : {}),
-            ...(cu.channelInfo !== undefined
-              ? { channelInfo: cu.channelInfo }
-              : {}),
-            ...(cu.invocationInfo !== undefined
-              ? { invocationInfo: cu.invocationInfo }
-              : {}),
-            ...(cu.deployableUnit !== undefined
-              ? { deployableUnit: cu.deployableUnit }
-              : {}),
-            ...(cu.functionCallInfo !== undefined
-              ? { functionCallInfo: cu.functionCallInfo }
-              : {}),
-            ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
-          });
-        }
-      } catch (err) {
-        process.stderr.write(
-          recordPackFailure(tally, {
-            pack: pack.name,
-            hook: "discoverUnits",
-            file: sourceFile.getFilePath(),
-            error: err,
-          }),
-        );
-      }
+    const customUnits = runPackHook(
+      tally,
+      {
+        pack: pack.name,
+        hook: "discoverUnits",
+        file: sourceFile.getFilePath(),
+      },
+      () =>
+        pack.discoverUnits?.(
+          sourceFile,
+          createTsDiscoveryContext(resolution),
+        ) ?? [],
+      [],
+    );
+    for (const cu of customUnits) {
+      units.push({
+        func: cu.func as FunctionRoot,
+        kind: cu.kind,
+        name: cu.name,
+        ...(cu.terminals !== undefined ? { terminals: cu.terminals } : {}),
+        ...(cu.inputMapping !== undefined
+          ? { inputMapping: cu.inputMapping }
+          : {}),
+        ...(cu.routeInfo !== undefined ? { routeInfo: cu.routeInfo } : {}),
+        ...(cu.resolverInfo !== undefined
+          ? { resolverInfo: cu.resolverInfo }
+          : {}),
+        ...(cu.channelInfo !== undefined
+          ? { channelInfo: cu.channelInfo }
+          : {}),
+        ...(cu.invocationInfo !== undefined
+          ? { invocationInfo: cu.invocationInfo }
+          : {}),
+        ...(cu.deployableUnit !== undefined
+          ? { deployableUnit: cu.deployableUnit }
+          : {}),
+        ...(cu.functionCallInfo !== undefined
+          ? { functionCallInfo: cu.functionCallInfo }
+          : {}),
+        ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
+      });
     }
 
     for (const unit of units) {
@@ -3764,7 +3761,10 @@ function synthesizeSubUnits(
     const claimedFuncs = new Set<Node>();
     const subUnits: DiscoveredSubUnit[] = [];
     for (const pack of hooked) {
-      for (const subUnit of pack.subUnits?.(parentHandle, subUnitCtx) ?? []) {
+      for (const subUnit of subUnitsOrReport(pack, parentHandle, subUnitCtx, {
+        tally: tallies?.get(pack.name),
+        file: parent.location.file,
+      })) {
         const func = subUnit.func as Node;
         if (claimedFuncs.has(func)) {
           continue;

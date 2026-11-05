@@ -28,8 +28,14 @@ import {
   spanOf,
   stringLiteralValue,
 } from "./ast.js";
+import { claimsNamedAfter } from "./lambdaClaims.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
-import { bodyCalls, invocationSites } from "./paths/effects.js";
+import {
+  bodyCalls,
+  expressionInvocationEffects,
+  invocationSites,
+  ownBodyCalls,
+} from "./paths/effects.js";
 import { predicateOf } from "./paths/predicates.js";
 import { raisesIn } from "./paths/raisedResponses.js";
 import {
@@ -81,6 +87,8 @@ export interface ClientCallOptions {
 /**
  * One unit per request call a function in this file makes. A function
  * that makes two calls is a client of both boundaries, so it gets two.
+ * A request in a lambda a pack claims is made by that lambda, so the
+ * lambda is the client, under the name its own unit has.
  */
 export function clientCallUnits(
   root: PyNode,
@@ -89,21 +97,28 @@ export function clientCallUnits(
   pattern: PyClientCall,
   options: ClientCallOptions,
 ): RawCodeStructure[] {
-  const units: RawCodeStructure[] = [];
-  for (const definition of functionDefinitions(root)) {
+  const requestsBy = (caller: PyNode, name: string, calls: PyNode[]) =>
+    calls.flatMap((call) =>
+      requestCalls(call, pattern, module, options).map((request) =>
+        clientUnit(caller, name, request, pattern, pack, options),
+      ),
+    );
+  return functionDefinitions(root).flatMap((definition) => {
     const name = field(definition, "name")?.text;
     if (name === undefined) {
-      continue;
+      return [];
     }
-    for (const call of bodyCalls(definition)) {
-      for (const request of requestCalls(call, pattern, module, options)) {
-        units.push(
-          clientUnit(definition, name, request, pattern, pack, options),
-        );
-      }
-    }
-  }
-  return units;
+    return [
+      ...requestsBy(definition, name, bodyCalls(definition, options.facts)),
+      ...claimsNamedAfter(definition, name, options.facts).flatMap((claim) =>
+        requestsBy(
+          claim.lambda,
+          claim.name,
+          ownBodyCalls(claim.lambda, options.facts),
+        ),
+      ),
+    ];
+  });
 }
 
 /**
@@ -120,7 +135,9 @@ export function clientCallReceivers(
 ): PyNode[] {
   const found: PyNode[] = [];
   for (const definition of functionDefinitions(root)) {
-    for (const call of bodyCalls(definition)) {
+    // Without facts the walk keeps a claimed lambda's requests, which its
+    // own client unit asks about, and runs no pack's hook this early.
+    for (const call of bodyCalls(definition, undefined)) {
       const callee = field(call, "function");
       if (callee === null || originOf(callee, module) !== null) {
         continue;
@@ -380,6 +397,19 @@ function callerBranches(
   reading: CallerReading,
 ): RawBranch[] {
   const range = rangeOf(definition);
+  // A lambda is one expression, so it takes one path and has no
+  // statement to test a status in.
+  if (definition.type === "lambda") {
+    return [
+      handsBack(
+        range,
+        expressionInvocationEffects(
+          ownBodyCalls(definition, reading.facts),
+          reading.facts,
+        ),
+      ),
+    ];
+  }
   const body = field(definition, "body");
   const sites = invocationSites(definition, reading.facts);
   const effects = sites.map((site) => site.effect);

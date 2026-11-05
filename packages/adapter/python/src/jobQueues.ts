@@ -25,7 +25,7 @@ import {
 } from "./decorators.js";
 import { callArguments } from "./facts/values.js";
 import { dottedModuleOf } from "./moduleResolver.js";
-import { argOf, bodyCalls, calleeText } from "./paths/effects.js";
+import { argOf, calleeText, ownBodyCalls } from "./paths/effects.js";
 import { libraryUnit } from "./reach/closure.js";
 import { reachedFunctionOf } from "./reach/resolveCallee.js";
 import {
@@ -269,22 +269,15 @@ export function enqueuesAmong(
   });
 }
 
-/** The sends a function's own body makes. */
+/** The sends a function's own body makes, a def's or a lambda's. */
 export function enqueueEffects(
   definition: PyNode,
   facts: Database | undefined,
 ): EffectAt[] {
-  const body = field(definition, "body");
-  // The grammar writes a body on every def.
-  /* v8 ignore start */
-  if (body === null) {
-    return [];
-  }
-  /* v8 ignore stop */
   return numberRepeatedCallSites(
-    enqueuesAmong(bodyCalls(body), facts).map(({ call, effect }) => [
-      { effect, at: call },
-    ]),
+    enqueuesAmong(ownBodyCalls(definition, facts), facts).map(
+      ({ call, effect }) => [{ effect, at: call }],
+    ),
   ).flat();
 }
 

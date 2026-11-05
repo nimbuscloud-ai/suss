@@ -23,6 +23,7 @@ import {
 import { hostOf, pathOf } from "@suss/values";
 
 import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
+import { callsUnder, claimedIn, claimsNamedAfter } from "./claims.js";
 import { invocationSites } from "./paths/effects.js";
 import { predicateOf } from "./paths/predicates.js";
 import {
@@ -64,7 +65,9 @@ export interface ClientCallOptions {
 
 /**
  * One unit per request call a method in this file makes. A method that
- * makes two calls is a client of both boundaries, so it gets two.
+ * makes two calls is a client of both boundaries, so it gets two. A
+ * request in a block a pack claims is made by that block, so the block
+ * is the client, under the name its own unit has.
  */
 export function clientCallUnits(
   root: RbNode,
@@ -72,28 +75,25 @@ export function clientCallUnits(
   pattern: RbClientCall,
   options: ClientCallOptions,
 ): RawCodeStructure[] {
-  const units: RawCodeStructure[] = [];
-  for (const method of methodDefinitions(root)) {
+  const requestsBy = (caller: RbNode, name: string, calls: RbNode[]) =>
+    calls.flatMap((call) =>
+      requestCalls(call, pattern, options).map((request) =>
+        clientUnit(caller, name, { ...request, call }, pattern, pack, options),
+      ),
+    );
+  return methodDefinitions(root).flatMap((method) => {
     const name = field(method, "name")?.text;
     if (name === undefined) {
-      continue;
+      return [];
     }
-    for (const call of callsUnder(method)) {
-      for (const request of requestCalls(call, pattern, options)) {
-        units.push(
-          clientUnit(
-            method,
-            name,
-            { ...request, call },
-            pattern,
-            pack,
-            options,
-          ),
-        );
-      }
-    }
-  }
-  return units;
+    const claimed = claimedIn(method, options.facts);
+    return [
+      ...requestsBy(method, name, callsUnder(method, claimed)),
+      ...claimsNamedAfter(method, name, options.facts).flatMap((claim) =>
+        requestsBy(claim.node, claim.name, callsUnder(claim.node, claimed)),
+      ),
+    ];
+  });
 }
 
 /**
@@ -115,7 +115,8 @@ export function askClientCallReads(
   }
   const calls: RbNode[] = [];
   for (const method of methodDefinitions(root)) {
-    calls.push(...callsUnder(method));
+    // A request in a claimed block is read for the block's own unit.
+    calls.push(...callsUnder(method, undefined));
   }
   if (patterns.some((pattern) => (pattern.receiverBuilders ?? []).length > 0)) {
     askWrittenValues(receiversOf(calls), facts);
@@ -182,17 +183,6 @@ function methodDefinitions(node: RbNode, found: RbNode[] = []): RbNode[] {
       found.push(child);
     }
     methodDefinitions(child, found);
-  }
-  return found;
-}
-
-/** Every call written under a node. */
-function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of children(node)) {
-    if (child.type === "call") {
-      found.push(child);
-    }
-    callsUnder(child, found);
   }
   return found;
 }

@@ -722,7 +722,7 @@ async function runRuby(
   });
   const watchedNames =
     ledger === null ? dynamicNames : watchDynamicNames(dynamicNames, db);
-  const subUnits = startSubUnits(db, options.packs);
+  const subUnits = startSubUnits(db, options.packs, tallies);
 
   const loaderPatterns = options.packs.flatMap((pack) => pack.loaders ?? []);
   const pooled = pooledStorage(options.packs);
@@ -1057,6 +1057,7 @@ async function runRuby(
         facts: db,
         displayPathOf,
         storage,
+        jobs,
         inheritedMethods,
         gapHandling,
         propertyReadsByKey: reached.propertyReadsByKey,
