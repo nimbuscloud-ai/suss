@@ -670,7 +670,7 @@ The contract:
 - **They fire across packs.** The Prisma pack's recognizer fires on Prisma calls inside an Express handler. Pack authors do not need to coordinate.
 - **Returning effects adds them** to the enclosing default-branch transition, and the generic `invocation` effect is kept either way. Returning `null` or `[]` is the no-match path.
 - **Deduping is the recognizer's job.** The dispatcher does not dedupe across calls. A recognizer that wants to fire once per identifier tracks that itself.
-- **A recognizer that throws is caught**, logged to stderr with the file and line, and skipped for that one call. The run continues.
+- **A recognizer that throws is caught**, logged to stderr with the file and line, and skipped for that one call. The run continues, and pack health lists the failure under the pack, so its counts are not read as those of a pack that found nothing. TypeScript, Python and Ruby all do this.
 
 Returning `null` means only "not my call". A field the pack could not read is a different thing: record the crossing and write null for the field. The binding builders throw on an empty string, so there is no way to fake one.
 

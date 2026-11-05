@@ -5,6 +5,7 @@
  * why the match goes by return type.
  */
 
+import { runPackRecognizer } from "@suss/extractor";
 import { storageBinding } from "@suss/ir-core";
 import { factCallOps } from "@suss/recognize/ops";
 import { answersFor } from "@suss/resolution";
@@ -38,7 +39,7 @@ import { constructionSitesOf, evaluationScope } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { InvocationRecognizer } from "@suss/extractor";
+import type { PackRecognizer } from "@suss/extractor";
 import type { RawSqlPattern, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
@@ -728,7 +729,7 @@ export interface StorageLookup {
   /** What a pack says about statements a project writes as SQL itself. */
   readonly rawSql?: readonly RawSqlPattern[];
   /** The hooks packs declared with `@suss/recognize`, run over every call in a body. */
-  readonly declared?: readonly InvocationRecognizer[];
+  readonly declared?: readonly PackRecognizer[];
 }
 
 /**
@@ -1003,11 +1004,12 @@ function declaredReads(
   const source = pythonFactSource(lookup.facts);
   return calls.flatMap((call) => {
     const ops = factCallOps(nodeId(lookup.factsPath, call), source);
+    const at = { file: lookup.factsPath, line: rangeOf(call).start };
     const read =
       ops === null
         ? []
         : hooks.flatMap((hook) => {
-            const made = hook(call, { ops });
+            const made = runPackRecognizer(hook, at, call, { ops });
             return made === null ? [] : [made];
           });
     return read.length === 0 ? [] : [{ call, effects: read.flat() }];

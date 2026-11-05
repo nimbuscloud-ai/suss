@@ -39,6 +39,7 @@ import {
   moduleInitStructure,
   noopTimer,
   ownersWhereWritten,
+  packRecognizers,
   runDigest,
   stampModuleImports,
   stampModules,
@@ -535,10 +536,7 @@ async function runPython(
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
-  const declaredHooks = options.packs.flatMap((pack) => [
-    ...(pack.invocationRecognizers ?? []),
-    ...(pack.accessRecognizers ?? []),
-  ]);
+  const declaredHooks = packRecognizers(options.packs, tallies);
   const modelQueries = options.packs.flatMap((pack) => pack.models ?? []);
   // A module's public exports are discovered like a pack's routes.
   const declaredModules = settlePythonModules(options.modules);

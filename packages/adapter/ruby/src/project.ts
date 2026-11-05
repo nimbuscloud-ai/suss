@@ -725,7 +725,7 @@ async function runRuby(
   const subUnits = startSubUnits(db, options.packs, tallies);
 
   const loaderPatterns = options.packs.flatMap((pack) => pack.loaders ?? []);
-  const pooled = pooledStorage(options.packs);
+  const pooled = pooledStorage(options.packs, tallies);
   const storage = pooled === null ? undefined : { facts: db, ...pooled };
   const jobDeclarations = jobDeclarationsIn(options.packs);
   const jobs =

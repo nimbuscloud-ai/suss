@@ -15,8 +15,8 @@
 
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { PackDeclarations } from "./framework.js";
+import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { InvocationRecognizer, PackDeclarations } from "./framework.js";
 
 /** One pack's path through the funnel. */
 export interface PackFunnel {
@@ -165,7 +165,16 @@ export interface PackFailure {
   hook: string;
   /** The file the pack was reading. */
   file: string;
+  /** The line of the node a hook run once per node was handed. */
+  line?: number;
   message: string;
+}
+
+/** The file a failure happened in, with its line when it has one. */
+export function failurePlace(failure: { file: string; line?: number }): string {
+  return failure.line === undefined
+    ? failure.file
+    : `${failure.file}:${failure.line}`;
 }
 
 /** Per-pack running counts, filled as the extract proceeds. */
@@ -199,7 +208,7 @@ export const emptyTally = (): PackTally => ({
  */
 export function recordPackFailure(
   tally: PackTally | undefined,
-  failure: { pack: string; hook: string; file: string; error: unknown },
+  failure: PackHookSite & { error: unknown },
 ): string {
   const message =
     failure.error instanceof Error
@@ -208,9 +217,10 @@ export function recordPackFailure(
   tally?.failures.push({
     hook: failure.hook,
     file: failure.file,
+    ...(failure.line === undefined ? {} : { line: failure.line }),
     message,
   });
-  return `[suss] pack "${failure.pack}" threw from ${failure.hook} while reading ${failure.file}: ${message}\n`;
+  return `[suss] pack "${failure.pack}" threw from ${failure.hook} while reading ${failurePlace(failure)}: ${message}\n`;
 }
 
 /** Where a pack's hook ran: the pack, the hook by the name a pack author uses, and the file it was reading. */
@@ -218,6 +228,8 @@ export interface PackHookSite {
   pack: string;
   hook: string;
   file: string;
+  /** The line of the node, for a hook run once per node. */
+  line?: number;
 }
 
 /**
@@ -237,6 +249,65 @@ export function runPackHook<T>(
     process.stderr.write(recordPackFailure(tally, { ...site, error }));
     return fallback;
   }
+}
+
+/**
+ * A recognizer a pack declared, kept with the pack it came from so a
+ * throw is charged to that pack.
+ */
+export interface PackRecognizer {
+  readonly pack: string;
+  /** The pack field the recognizer came from. A failure reports it as the hook that threw. */
+  readonly hook: "invocationRecognizers" | "accessRecognizers";
+  readonly tally: PackTally | undefined;
+  readonly recognize: InvocationRecognizer;
+}
+
+/** Every recognizer the packs declare, in pack order, each with its pack. */
+export function packRecognizers(
+  packs: ReadonlyArray<{
+    name: string;
+    invocationRecognizers?: readonly InvocationRecognizer[];
+    accessRecognizers?: readonly InvocationRecognizer[];
+  }>,
+  tallies: ReadonlyMap<string, PackTally> | undefined,
+): PackRecognizer[] {
+  return packs.flatMap((pack) => {
+    const tally = tallies?.get(pack.name);
+    const listed = (
+      hook: PackRecognizer["hook"],
+      recognizers: readonly InvocationRecognizer[] | undefined,
+    ): PackRecognizer[] =>
+      (recognizers ?? []).map((recognize) => ({
+        pack: pack.name,
+        hook,
+        tally,
+        recognize,
+      }));
+    return [
+      ...listed("invocationRecognizers", pack.invocationRecognizers),
+      ...listed("accessRecognizers", pack.accessRecognizers),
+    ];
+  });
+}
+
+/**
+ * Runs one recognizer over one node. A recognizer that throws makes
+ * nothing of that node, and the failure goes on its pack's tally, so the
+ * run goes on and the pack's counts say they are short.
+ */
+export function runPackRecognizer(
+  recognizer: PackRecognizer,
+  at: { file: string; line: number },
+  node: unknown,
+  ctx: unknown,
+): Effect[] | null {
+  return runPackHook(
+    recognizer.tally,
+    { pack: recognizer.pack, hook: recognizer.hook, ...at },
+    () => recognizer.recognize(node, ctx),
+    null,
+  );
 }
 
 export function createPackTallies(
