@@ -21,7 +21,7 @@ import {
 } from "./shapes/definitions.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
-import type { PackTally, RawCondition } from "@suss/extractor";
+import type { PackRecognizer, PackTally, RawCondition } from "@suss/extractor";
 import type { Node } from "ts-morph";
 import type { ResolutionStore } from "./facts/store.js";
 import type {
@@ -57,16 +57,23 @@ interface KeptWalk {
 }
 
 const keptByBody = new WeakMap<Node, KeptWalk[]>();
-const talliesByRecognizer = new WeakMap<object, PackTally>();
+const packsByRecognizer = new WeakMap<object, PackRecognizer>();
 const ids = new WeakMap<object, number>();
 let nextId = 1;
 
-/** Say which pack's tally a recognizer counts its effects into. */
-export function noteRecognizerTally(
+/** Say which pack a recognizer came from, whose tally counts its effects. */
+export function noteRecognizerPack(
   recognizer: object,
-  tally: PackTally,
+  pack: PackRecognizer,
 ): void {
-  talliesByRecognizer.set(recognizer, tally);
+  packsByRecognizer.set(recognizer, pack);
+}
+
+/** The pack a recognizer came from, when the run said. */
+export function packOfRecognizer(
+  recognizer: object,
+): PackRecognizer | undefined {
+  return packsByRecognizer.get(recognizer);
 }
 
 /**
@@ -159,7 +166,7 @@ function talliesOf(inputs: BodyWalkInputs): Set<PackTally> {
     ...inputs.invocationRecognizers,
     ...inputs.accessRecognizers,
   ]) {
-    const tally = talliesByRecognizer.get(recognizer);
+    const tally = packsByRecognizer.get(recognizer)?.tally;
     if (tally !== undefined) {
       tallies.add(tally);
     }

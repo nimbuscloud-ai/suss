@@ -28,8 +28,10 @@ import {
 import {
   numberRepeatedCallSites,
   rawConditionToPredicate,
+  recordPackFailure,
 } from "@suss/extractor";
 
+import { packOfRecognizer } from "../bodyWalks.js";
 import {
   collectAncestorConditionInfosBelow,
   conditionInfoToRawCondition,
@@ -542,6 +544,35 @@ function isAwaited(call: CallExpression | NewExpression): boolean {
 }
 
 /**
+ * A recognizer that throws makes nothing of this node and the walk goes
+ * on. The throw is printed with the place, and when the run knows the
+ * recognizer's pack it goes on that pack's tally too, so pack health
+ * does not mistake the pack for one that found nothing.
+ */
+function reportRecognizerThrow(
+  recognizer: object,
+  kind: string,
+  at: { file: string; line: number; error: unknown },
+): void {
+  const owner = packOfRecognizer(recognizer);
+  if (owner !== undefined) {
+    process.stderr.write(
+      recordPackFailure(owner.tally, {
+        pack: owner.pack,
+        hook: owner.hook,
+        ...at,
+      }),
+    );
+    return;
+  }
+  const message =
+    at.error instanceof Error ? at.error.message : String(at.error);
+  process.stderr.write(
+    `[suss] ${kind} threw at ${at.file}:${at.line}: ${message}\n`,
+  );
+}
+
+/**
  * Walk the function body for `InvocationRecognizer` dispatch only.
  * Visits every `CallExpression` in the body under the same descent
  * rule as `extractInvocationEffects`, so a recognizer fires inside a
@@ -588,16 +619,11 @@ export function runInvocationRecognizers(
       try {
         emitted = recognizer(node, ctx);
       } catch (err) {
-        // A recognizer throwing shouldn't take down the whole
-        // extraction, but it also shouldn't disappear silently ,
-        // the user has no way to know their pack is buggy. Log to
-        // stderr with file + line so authors can find the call site
-        // that broke the recognizer, and continue.
-        const filePath = sourceFile.getFilePath();
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `[suss] invocationRecognizer threw at ${filePath}:${line}: ${message}\n`,
-        );
+        reportRecognizerThrow(recognizer, "invocationRecognizer", {
+          file: sourceFile.getFilePath(),
+          line,
+          error: err,
+        });
         emitted = null;
       }
       if (emitted === null || emitted.length === 0) {
@@ -765,11 +791,11 @@ function dispatchAccessRecognizers(
       try {
         emitted = recognizer(node, ctx);
       } catch (err) {
-        const filePath = sourceFile.getFilePath();
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `[suss] accessRecognizer threw at ${filePath}:${line}: ${message}\n`,
-        );
+        reportRecognizerThrow(recognizer, "accessRecognizer", {
+          file: sourceFile.getFilePath(),
+          line,
+          error: err,
+        });
         emitted = null;
       }
       if (emitted === null || emitted.length === 0) {
