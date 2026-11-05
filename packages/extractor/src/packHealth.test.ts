@@ -226,6 +226,22 @@ describe("the remaining checks", () => {
     expect(found[0]?.detail).toBe("discoverUnits on a.ts (+1 more): boom");
   });
 
+  it("gives the line of a failure a recognizer had on one call", () => {
+    const found = firedBy("no pack throws while it reads", [
+      funnel({
+        failures: [
+          {
+            hook: "invocationRecognizers",
+            file: "a.py",
+            line: 4,
+            message: "boom",
+          },
+        ],
+      }),
+    ]);
+    expect(found[0]?.detail).toBe("invocationRecognizers on a.py:4: boom");
+  });
+
   it("stays quiet about a pack whose hooks never threw", () => {
     expect(firedBy("no pack throws while it reads", [funnel()])).toEqual([]);
   });

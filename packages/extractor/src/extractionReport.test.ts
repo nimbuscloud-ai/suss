@@ -6,8 +6,10 @@ import {
   buildUngatedExtractionReport,
   createPackTallies,
   emptyTally,
+  packRecognizers,
   recordPackFailure,
   runPackHook,
+  runPackRecognizer,
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
@@ -141,6 +143,89 @@ describe("runPackHook", () => {
       ]);
       expect(printed).toHaveBeenCalledWith(
         '[suss] pack "jobs" threw from subUnits while reading x.py: boom\n',
+      );
+    } finally {
+      printed.mockRestore();
+    }
+  });
+});
+
+describe("a pack's recognizers", () => {
+  const found = (callee: string) => [
+    {
+      type: "invocation" as const,
+      callee,
+      args: [],
+      async: false,
+    },
+  ];
+  const packs = [
+    {
+      name: "cache",
+      invocationRecognizers: [() => found("cache.get")],
+      accessRecognizers: [() => found("cache.read")],
+    },
+    { name: "sql", invocationRecognizers: [() => found("db.query")] },
+  ];
+
+  it("are listed in pack order, each with its pack, the list it came from and its tally", () => {
+    const tallies = createPackTallies(packs);
+    const listed = packRecognizers(packs, tallies);
+
+    expect(
+      listed.map((one) => [
+        one.pack,
+        one.hook,
+        one.tally === tallies.get(one.pack),
+      ]),
+    ).toEqual([
+      ["cache", "invocationRecognizers", true],
+      ["cache", "accessRecognizers", true],
+      ["sql", "invocationRecognizers", true],
+    ]);
+  });
+
+  it("give back what the recognizer made of a node", () => {
+    const [first] = packRecognizers(packs, undefined);
+    expect(
+      first === undefined
+        ? null
+        : runPackRecognizer(first, { file: "x.rb", line: 3 }, {}, {}),
+    ).toEqual(found("cache.get"));
+  });
+
+  it("charge a throw to the recognizer's pack, with the line of the node", () => {
+    const tallies = createPackTallies([{ name: "breaks" }]);
+    const [breaks] = packRecognizers(
+      [
+        {
+          name: "breaks",
+          invocationRecognizers: [
+            () => {
+              throw new Error("boom");
+            },
+          ],
+        },
+      ],
+      tallies,
+    );
+    const printed = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      expect(
+        breaks === undefined
+          ? undefined
+          : runPackRecognizer(breaks, { file: "x.rb", line: 3 }, {}, {}),
+      ).toBeNull();
+      expect(tallies.get("breaks")?.failures).toEqual([
+        {
+          hook: "invocationRecognizers",
+          file: "x.rb",
+          line: 3,
+          message: "boom",
+        },
+      ]);
+      expect(printed).toHaveBeenCalledWith(
+        '[suss] pack "breaks" threw from invocationRecognizers while reading x.rb:3: boom\n',
       );
     } finally {
       printed.mockRestore();

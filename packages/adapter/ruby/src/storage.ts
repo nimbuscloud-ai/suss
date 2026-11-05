@@ -12,6 +12,7 @@
  * calls and raw SQL calls are reported through here as well.
  */
 
+import { packRecognizers, runPackRecognizer } from "@suss/extractor";
 import { storageBinding } from "@suss/ir-core";
 import { factCallOps } from "@suss/recognize/ops";
 import { askResolution, classMemberName } from "@suss/resolution";
@@ -51,7 +52,7 @@ import {
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { InvocationRecognizer } from "@suss/extractor";
+import type { PackRecognizer, PackTally } from "@suss/extractor";
 import type {
   RbArgumentPlace,
   RbLoaderPattern,
@@ -92,24 +93,23 @@ export interface RbStorageOptions {
   /** Told the value each effect's columns are given, when somebody listens. */
   readonly statesSlots?: (effect: Effect, slots: readonly SlotValue[]) => void;
   /** The hooks packs declared with `@suss/recognize`, run over every call in a method. */
-  readonly declared?: readonly InvocationRecognizer[];
+  readonly declared?: readonly PackRecognizer[];
 }
 
 /**
  * What every pack in a run says about the database, pooled, or null when
- * no pack says anything and the storage pass can be skipped.
+ * no pack says anything and the storage pass can be skipped. A declared
+ * hook that throws goes on its pack's entry in `tallies`.
  */
 export function pooledStorage(
   packs: readonly RubyPack[],
+  tallies?: ReadonlyMap<string, PackTally>,
 ): Omit<RbStorageOptions, "facts"> | null {
   const pooled = {
     patterns: packs.flatMap((pack) => pack.storage ?? []),
     loaders: packs.flatMap((pack) => pack.loaders ?? []),
     rawSql: packs.flatMap((pack) => pack.rawSql ?? []),
-    declared: packs.flatMap((pack) => [
-      ...(pack.invocationRecognizers ?? []),
-      ...(pack.accessRecognizers ?? []),
-    ]),
+    declared: packRecognizers(packs, tallies),
   };
   return pooled.patterns.length > 0 ||
     pooled.rawSql.length > 0 ||
@@ -831,8 +831,9 @@ function declaredEffects(
     if (ops === null) {
       return [];
     }
+    const at = { file, line: rangeOf(call).start };
     return hooks.flatMap((hook) =>
-      (hook(call, { ops }) ?? []).map((effect) => ({
+      (runPackRecognizer(hook, at, call, { ops }) ?? []).map((effect) => ({
         effect: { ...effect, location: rangeOf(call) },
         at: call,
       })),
