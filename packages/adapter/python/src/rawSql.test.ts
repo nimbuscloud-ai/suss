@@ -12,6 +12,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { packRecognizers } from "@suss/extractor";
 import {
   anyOf,
   declaredBy,
@@ -146,10 +147,7 @@ function warehouseLookup(read: Read): StorageLookup {
     factsPath: read.filePath,
     patterns: [],
     couldMatch: new Set(),
-    declared: [
-      ...(WAREHOUSE.invocationRecognizers ?? []),
-      ...(WAREHOUSE.accessRecognizers ?? []),
-    ],
+    declared: packRecognizers([WAREHOUSE], undefined),
   };
 }
 

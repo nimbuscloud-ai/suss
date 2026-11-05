@@ -393,7 +393,7 @@ A library with its own bind placeholder produces statements no SQL dialect parse
 
 ## A pack declared with `@suss/recognize`
 
-A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`, compiles to hooks that read only the ops on their context. A `RubyPack` takes those hooks as `invocationRecognizers` and `accessRecognizers`, as a TypeScript pack does, and both lists run over every call in a method, inside `methodStorage` beside the storage patterns.
+A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`, compiles to hooks that read only the ops on their context. A `RubyPack` takes those hooks as `invocationRecognizers` and `accessRecognizers`, as a TypeScript pack does, and both lists run over every call in a method, inside `methodStorage` beside the storage patterns. A hook that throws on a call makes nothing of that call, and the failure goes on its pack's tally with the file and line, as a TypeScript recognizer's does. The run goes on.
 
 `rubyFactSource` hands the ops from `@suss/recognize/ops` what only Ruby can read. A call's callee is keyed on the method's name, so its text is the receiver and the name as written, `cache.get`. A class's own method is stated under a spelling of its own, which the ops read back as the plain name. Ruby has no imports, so a value comes from a library when the constant it was made from is the library's constant or one inside it: `Aws::SQS::Client.new` comes from `Aws`. A pack that serves Ruby lists that constant beside the module name the other languages import.
 
