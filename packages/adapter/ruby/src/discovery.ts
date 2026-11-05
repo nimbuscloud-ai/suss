@@ -16,7 +16,7 @@ import {
   messageBusBinding,
   restBinding,
 } from "@suss/behavioral-ir";
-import { absentReading, unreadableReading } from "@suss/extractor";
+import { absentReading, runPackHook, unreadableReading } from "@suss/extractor";
 import { nodeOfKey, spanOfKey } from "@suss/resolution";
 
 import {
@@ -119,6 +119,7 @@ import type {
 import type { Database } from "@suss/datalog";
 import type {
   BodyContent,
+  PackTally,
   PlacedEffect,
   RawBranch,
   RawCodeStructure,
@@ -235,6 +236,8 @@ export interface DiscoveryOptions extends BodyReadOptions {
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
   /** The shared groups the run's test files define, when a pack reads tests. */
   sharedGroups?: SharedGroupIndex | undefined;
+  /** Where a pack hook that throws during discovery has the failure recorded. */
+  tallies?: ReadonlyMap<string, PackTally> | undefined;
 }
 
 /** The method behind a discovered unit, and where it is, so the reach walk can start there as it does at any `def`. */
@@ -700,6 +703,7 @@ async function controllerActionUnits(
   const filters = chain.flatMap((link) => ("read" in link ? [link.read] : []));
   const units: RawCodeStructure[] = [];
   const actions = controllerActions(
+    pack,
     pattern,
     info,
     ownBlocks,
@@ -822,10 +826,40 @@ async function controllerActionUnits(
   };
 
   for (const [actionName, method, block] of actions) {
-    const routes = pattern.routesFor(info.qualifiedName, actionName);
+    const routes = routesOf(
+      pack,
+      pattern,
+      info.qualifiedName,
+      actionName,
+      options,
+    );
     await emitAction(actionName, method, block, routes);
   }
   return units;
+}
+
+/**
+ * The routes the pattern gives one action of a controller in this file.
+ * When `routesFor` throws the action gets none, so it is still a unit
+ * with no route, and the failure goes on the pack's tally.
+ */
+function routesOf(
+  pack: RubyPack,
+  pattern: ControllerActions,
+  controller: string,
+  actionName: string,
+  options: DiscoveryOptions,
+): readonly ControllerRoute[] {
+  return runPackHook(
+    options.tallies?.get(pack.name),
+    {
+      pack: pack.name,
+      hook: "routesFor",
+      file: options.absoluteFile ?? options.filePath,
+    },
+    () => pattern.routesFor(controller, actionName),
+    [],
+  );
 }
 
 /** The exception classes each handler is registered for. */
@@ -870,6 +904,7 @@ async function raisedClasses(
  * subclass with a route to `show` and no `show` of its own runs the base's.
  */
 function controllerActions(
+  pack: RubyPack,
   pattern: ControllerActions,
   info: ClassInfo,
   ownBlocks: readonly ReachedBody[],
@@ -891,7 +926,10 @@ function controllerActions(
         continue;
       }
       seen.add(actionName);
-      if (pattern.routesFor(info.qualifiedName, actionName).length > 0) {
+      if (
+        routesOf(pack, pattern, info.qualifiedName, actionName, options)
+          .length > 0
+      ) {
         actions.push(action);
       }
     }

@@ -801,6 +801,8 @@ Code a library's generator writes belongs here too. The Prisma pack lists the sc
 
 A pack does not need to list a library it reads through `node_modules`. The TypeScript adapter adds the installed `package.json` of every library a pack's `requiresImport` gives, so installing another version of it misses the cache.
 
+When `discoveryInputs` throws, the run goes on and caches without that pack's files in the key, and pack health lists the failure under the pack. Until the hook stops throwing, an edit to one of those files does not make the next run read the project again.
+
 ### `responseSemantics` and `failureDelivery`
 
 ```typescript

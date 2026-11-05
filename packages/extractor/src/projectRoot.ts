@@ -31,3 +31,19 @@ export function commonDirectoryOf(
   const joined = shared.join(path.sep);
   return joined.length > 1 ? joined : undefined;
 }
+
+/**
+ * The directory a run reads: the root it was given, or else the deepest
+ * directory every walked file shares. A pack hook that lists files for
+ * the whole run reports this as the place it threw, since it was not
+ * reading any one file.
+ */
+export function runRootOf(run: {
+  projectRoot?: string | undefined;
+  workspaceRoot?: string | undefined;
+  files: ReadonlyArray<string>;
+}): string {
+  return (
+    run.projectRoot ?? run.workspaceRoot ?? commonDirectoryOf(run.files) ?? "."
+  );
+}

@@ -7,9 +7,11 @@
  * `handler = Mangum(app)`, has no body to read and gets no unit.
  */
 
+import { runPackHook } from "@suss/extractor";
+
 import { libraryUnit } from "./reach/closure.js";
 
-import type { RawCodeStructure } from "@suss/extractor";
+import type { PackTally, RawCodeStructure } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 import type { ReachOptions } from "./reach/closure.js";
 import type { BoundPythonFile } from "./routers.js";
@@ -17,11 +19,20 @@ import type { BoundPythonFile } from "./routers.js";
 export function declaredEntryUnits(
   file: BoundPythonFile,
   packs: readonly PythonPack[],
-  options: Pick<ReachOptions, "storageFor" | "facts" | "tests">,
+  options: Pick<ReachOptions, "storageFor" | "facts" | "tests"> & {
+    /** A pack whose `entryPoints` throws gets no units in this file, and the failure goes on its tally. */
+    readonly tallies: ReadonlyMap<string, PackTally>;
+  },
 ): RawCodeStructure[] {
   const units: RawCodeStructure[] = [];
   for (const pack of packs) {
-    for (const entry of pack.entryPoints?.(file.file) ?? []) {
+    const entries = runPackHook(
+      options.tallies.get(pack.name),
+      { pack: pack.name, hook: "entryPoints", file: file.file },
+      () => pack.entryPoints?.(file.file) ?? [],
+      [],
+    );
+    for (const entry of entries) {
       const binding = file.module.moduleScope.bindings.get(entry.name);
       if (binding?.kind !== "functionDef") {
         continue;
