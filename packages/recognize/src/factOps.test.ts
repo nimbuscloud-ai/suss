@@ -369,6 +369,22 @@ describe("factValueOps, further", () => {
     expect(shared.property("e")?.source?.()).toBe("x");
   });
 
+  it("leaves unsettled a computed key no expression is stated for, and leaves out a value under no key", () => {
+    // `{ [k]: x, y }` where the adapter states no key for either entry.
+    const facts = moreSource();
+    const db = facts.db as Database;
+    db.add("objectValue", ["bare"]);
+    db.add("holdsUnderKey", ["bare", "x"]);
+    db.add("writtenEntryAt", ["bare", "0", "x", "value"]);
+    db.add("writtenEntryAt", ["bare", "1", "y", "value"]);
+    const bare = factValueOps("bare", {
+      ...facts,
+      shapeOf: (key) => (key === "bare" ? "object" : facts.shapeOf(key)),
+    });
+
+    expect(bare.entries("reference").map((entry) => entry.key)).toEqual([null]);
+  });
+
   it("reads a string as one piece, and asks the adapter for its name and its strings", () => {
     const text = factValueOps("str", moreSource());
 

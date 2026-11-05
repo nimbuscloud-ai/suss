@@ -1141,6 +1141,7 @@ describe("the value a call states for each column", () => {
               input.source?.(),
               input.form?.(),
               input.ownProperty?.("owner")?.text(),
+              input.ownProperty?.("missing"),
               input.importedFrom?.(),
             ]);
             return ["side", "owner"];
@@ -1175,16 +1176,8 @@ describe("the value a call states for each column", () => {
     slotsStated(reaching, handing(bare), run as never);
 
     expect(asked).toEqual([
-      [7, "a", "handler", "tape", "name", "b", "./tapes"],
-      [
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-      ],
+      [7, "a", "handler", "tape", "name", "b", null, "./tapes"],
+      Array(8).fill(undefined),
     ]);
   });
 });
