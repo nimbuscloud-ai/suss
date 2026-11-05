@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { restBinding } from "@suss/behavioral-ir";
 
@@ -7,6 +7,7 @@ import {
   createPackTallies,
   emptyTally,
   recordPackFailure,
+  runPackHook,
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
@@ -108,6 +109,42 @@ describe("recordPackFailure", () => {
         error: new Error("boom"),
       }),
     ).not.toThrow();
+  });
+});
+
+describe("runPackHook", () => {
+  const site = { pack: "jobs", hook: "subUnits", file: "x.py" };
+
+  it("gives back what the hook returns", () => {
+    const tally = emptyTally();
+    expect(runPackHook(tally, site, () => ["claimed"], [])).toEqual([
+      "claimed",
+    ]);
+    expect(tally.failures).toEqual([]);
+  });
+
+  it("records a hook that throws, prints it, and gives back the fallback", () => {
+    const tally = emptyTally();
+    const printed = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const found = runPackHook(
+        tally,
+        site,
+        (): string[] => {
+          throw new Error("boom");
+        },
+        [],
+      );
+      expect(found).toEqual([]);
+      expect(tally.failures).toEqual([
+        { hook: "subUnits", file: "x.py", message: "boom" },
+      ]);
+      expect(printed).toHaveBeenCalledWith(
+        '[suss] pack "jobs" threw from subUnits while reading x.py: boom\n',
+      );
+    } finally {
+      printed.mockRestore();
+    }
   });
 });
 

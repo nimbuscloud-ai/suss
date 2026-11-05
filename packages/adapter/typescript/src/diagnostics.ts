@@ -16,7 +16,6 @@ import { ts } from "ts-morph";
 import {
   createPackTallies,
   emptyTally,
-  recordPackFailure,
   summaryCountsByPack,
 } from "@suss/extractor";
 
@@ -40,7 +39,7 @@ export type {
   PackFunnel,
   PackTally,
 };
-export { createPackTallies, recordPackFailure };
+export { createPackTallies };
 
 /** Bundler-style defaults for a project that never wrote a tsconfig. */
 const DEFAULT_RESOLUTION: ts.CompilerOptions = {

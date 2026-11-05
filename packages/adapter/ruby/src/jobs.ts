@@ -36,6 +36,7 @@ import {
   mixesIn,
   reachesBase,
 } from "./baseClass.js";
+import { callsUnder } from "./claims.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { argOf } from "./paths/effects.js";
 import { compoundName } from "./scope.js";
@@ -441,20 +442,24 @@ function calleeOf(call: RbNode): string {
 }
 
 /**
- * The jobs a method's body enqueues, one effect per call, settled or
- * not. `file` is the absolute path the method was read from.
+ * The jobs a body enqueues, one effect per call, settled or not. `root`
+ * is a method, or a block a pack claims in `method`, whose names the
+ * block reads. `file` is the absolute path the method was read from. The
+ * blocks and lambdas in `claimed` are left out.
  */
 export function jobEnqueueEffects(
-  method: RbNode,
+  root: RbNode,
   file: string,
   options: RbJobOptions | undefined,
+  claimed?: ReadonlySet<number>,
+  method: RbNode = root,
 ): EffectAt[] {
   if (options === undefined || options.declarations.length === 0) {
     return [];
   }
   const read: EnqueueRead = { file, facts: options.facts, enclosing: method };
   const found: EffectAt[] = [];
-  for (const call of callsUnder(method)) {
+  for (const call of callsUnder(root, claimed)) {
     const enqueue = enqueueAt(call, options, read);
     if (enqueue !== null) {
       found.push({
@@ -494,14 +499,4 @@ export function jobClaims(
     current = parent;
   }
   return false;
-}
-
-function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of children(node)) {
-    if (child.type === "call") {
-      found.push(child);
-    }
-    callsUnder(child, found);
-  }
-  return found;
 }

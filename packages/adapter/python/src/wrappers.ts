@@ -474,7 +474,7 @@ export class PythonWrapperIndex {
     const handsOn =
       closure === null || continuation === ""
         ? []
-        : callsThrough(closure, continuation);
+        : callsThrough(closure, continuation, this.options.facts);
     if (
       closure === null ||
       handsOn.length === 0 ||
@@ -1015,7 +1015,11 @@ function wrapperUnit(
     target,
     declared.pattern,
     {
-      continuations: continuationStatements(target.node, declared.form),
+      continuations: continuationStatements(
+        target.node,
+        declared.form,
+        options.facts,
+      ),
       continuationName: null,
       form: declared.form,
       nameKind: "binding",
@@ -1038,7 +1042,11 @@ function closureUnit(
     target,
     closure.pattern,
     {
-      continuations: callsThrough(target.node, closure.continuation),
+      continuations: callsThrough(
+        target.node,
+        closure.continuation,
+        options.facts,
+      ),
       continuationName: closure.continuation,
       form: null,
       nameKind: "label",
@@ -1180,7 +1188,11 @@ function returnHandsOn(statement: PyNode, form: PyWrapperForm): boolean {
  * call_next(request)` in Starlette middleware. Each one leaves the wrapper
  * for what it wraps, so whatever follows it in the body is not read.
  */
-function continuationStatements(node: PyNode, form: PyWrapperForm): PyNode[] {
+function continuationStatements(
+  node: PyNode,
+  form: PyWrapperForm,
+  facts: Database | undefined,
+): PyNode[] {
   if (
     form.type !== "decoratedWrapper" ||
     form.continuationParam === undefined
@@ -1194,17 +1206,21 @@ function continuationStatements(node: PyNode, form: PyWrapperForm): PyNode[] {
       ? null
       : (field(param, "name")?.text ??
         (param.type === "identifier" ? param.text : null));
-  return continuation === null ? [] : callsThrough(node, continuation);
+  return continuation === null ? [] : callsThrough(node, continuation, facts);
 }
 
 /** The statements in a function's body that call the name `callee`. */
-function callsThrough(node: PyNode, callee: string): PyNode[] {
+function callsThrough(
+  node: PyNode,
+  callee: string,
+  facts: Database | undefined,
+): PyNode[] {
   const body = field(node, "body");
   if (body === null) {
     return [];
   }
   const found: PyNode[] = [];
-  for (const call of bodyCalls(body)) {
+  for (const call of bodyCalls(body, facts)) {
     const called = field(call, "function");
     const statement =
       called?.type === "identifier" && called.text === callee

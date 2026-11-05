@@ -44,6 +44,7 @@ import {
   declaredName,
   enclosingClassKey,
 } from "./baseClass.js";
+import { claimedIn } from "./claims.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
 import { envReadEffects } from "./envReads.js";
@@ -154,7 +155,7 @@ import type {
   RubyPack,
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
-import type { InheritedMethods } from "./paths/effects.js";
+import type { EffectAt, InheritedMethods } from "./paths/effects.js";
 import type { HandlerClasses, RaisesRead } from "./raisedStatuses.js";
 import type { HookDefinition } from "./resolverHooks.js";
 import type { RespondingHelper } from "./responseStatus.js";
@@ -855,7 +856,7 @@ async function raisedClasses(
   facts: Database | undefined,
 ): Promise<NodeMap<ExceptionClass | null>> {
   const classes = new NodeMap<ExceptionClass | null>();
-  for (const call of escapingRaises(method)) {
+  for (const call of escapingRaises(method, claimedIn(method, facts))) {
     const ref = raisedClassRef(call, nesting, facts);
     classes.set(call, ref === null ? null : await exceptions.read(ref));
   }
@@ -1222,6 +1223,43 @@ export interface BodyReport {
   reachSeed?: ReachSeed;
 }
 
+/**
+ * A body to read for what it does: a method, or a block or lambda a pack
+ * claims in `method`, whose locals the block reads. `file` is the absolute
+ * path the method was read from. The blocks and lambdas in `claimed` are
+ * units of their own, so a walk over the body leaves them out.
+ */
+export interface BodyToRead {
+  readonly root: RbNode;
+  readonly method: RbNode;
+  readonly file: string;
+  readonly claimed: ReadonlySet<number> | undefined;
+}
+
+/**
+ * What a body does besides calling, each effect beside the node it was
+ * read at: the environment it reads, its `database` work, the jobs it
+ * enqueues, and what it prints.
+ */
+export function effectsBesidesCalls(
+  body: BodyToRead,
+  database: readonly EffectAt[],
+  bodyRead: Pick<BodyReadOptions, "facts" | "jobs">,
+): EffectAt[] {
+  const { root, method, file, claimed } = body;
+  const facts = bodyRead.facts;
+  return [
+    ...envReadEffects(
+      root,
+      facts === undefined ? undefined : { db: facts, file },
+      claimed,
+    ),
+    ...database,
+    ...jobEnqueueEffects(root, file, bodyRead.jobs, claimed, method),
+    ...streamWriteEffects(root, claimed),
+  ];
+}
+
 /** `file` is the absolute path the method was read from, which the storage recognizer keys constant bindings on. */
 export function bodyOfMethod(
   method: RbNode,
@@ -1246,15 +1284,11 @@ export function bodyOfMethod(
     storage === undefined
       ? { effects: [], slots: [] }
       : methodStorage(method, file, storage);
-  const found = [
-    ...envReadEffects(
-      method,
-      facts === undefined ? undefined : { db: facts, file },
-    ),
-    ...database.effects,
-    ...jobEnqueueEffects(method, file, bodyRead.jobs),
-    ...streamWriteEffects(method),
-  ];
+  const found = effectsBesidesCalls(
+    { root: method, method, file, claimed: read?.claimed },
+    database.effects,
+    bodyRead,
+  );
   const siteOf = effectSitesIn(
     read,
     found.map((one) => one.at),

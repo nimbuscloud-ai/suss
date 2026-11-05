@@ -5,9 +5,10 @@
  * The hook reads the calls the parent method runs, its blocks and the
  * lambdas written as arguments included, from the `runsCall` facts, as
  * the ops a declared recognizer gets for each call. A claimed block's
- * summary is read from its statements: the calls it makes, what the
- * storage patterns and the declared hooks make of them, and one return.
- * The claims inside it are left out, since each has a summary of its own.
+ * summary is read from its statements the way a method's body is: the
+ * calls it makes and everything else it does, and one branch per path
+ * it returns or raises on. The claims inside it are left out, since each
+ * has a summary of its own.
  */
 
 import { BOUNDARY_ROLE, functionCallBinding } from "@suss/behavioral-ir";
@@ -17,6 +18,7 @@ import { callsRun } from "@suss/resolution";
 
 import { rangeOf, spanOf } from "./ast.js";
 import { claimedBodyOf, claimingPacksIn, registerSubUnits } from "./claims.js";
+import { effectsBesidesCalls } from "./discovery.js";
 import { rubyFactSource } from "./factSource.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
@@ -26,7 +28,12 @@ import {
   invocationSitesIn,
 } from "./paths/effects.js";
 import { dropPropertyReads } from "./reach/closure.js";
-import { returnTerminal, withEffectsThatRun } from "./responseStatus.js";
+import { raiseEndings } from "./responseHandOff.js";
+import {
+  returnPathBranches,
+  returnTerminal,
+  withEffectsThatRun,
+} from "./responseStatus.js";
 import { claimedBlockStorage } from "./storage.js";
 import { boundFileOf } from "./values/evaluator.js";
 
@@ -36,10 +43,13 @@ import type {
   CallOps,
   DiscoveredSubUnit,
   ExtractorOptions,
+  PackTally,
+  RawBranch,
   RawCodeStructure,
   SubUnitOpsCarrier,
 } from "@suss/extractor";
 import type { MethodClaims, SubUnitRegistry } from "./claims.js";
+import type { RbJobOptions } from "./jobs.js";
 import type { RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { InheritedMethods } from "./paths/effects.js";
@@ -47,16 +57,18 @@ import type { RbStorageOptions } from "./storage.js";
 
 /**
  * Starts the run's sub-unit registry over `db` when some pack claims
- * sub-units, or returns null without doing anything else.
+ * sub-units, or returns null without doing anything else. A hook that
+ * throws goes on its pack's tally in `tallies`.
  */
 export function startSubUnits(
   db: Database,
   packs: readonly RubyPack[],
+  tallies: ReadonlyMap<string, PackTally>,
 ): SubUnitRegistry | null {
   const claiming = claimingPacksIn(packs);
   return claiming.length === 0
     ? null
-    : registerSubUnits(db, claiming, rubySubUnitContext(db));
+    : registerSubUnits(db, claiming, rubySubUnitContext(db), tallies);
 }
 
 /**
@@ -97,6 +109,7 @@ export interface SubUnitReading {
   readonly facts: Database;
   readonly displayPathOf: (file: string) => string;
   readonly storage?: RbStorageOptions | undefined;
+  readonly jobs?: RbJobOptions | undefined;
   readonly inheritedMethods: InheritedMethods;
   readonly gapHandling: ExtractorOptions["gapHandling"];
   /** The no-argument calls the reach walk found to be property reads, by the key it scanned a body under. */
@@ -133,11 +146,14 @@ function claimsOf(
   reading: SubUnitReading,
 ): SubUnitSummary[] {
   return reading.registry
-    .subUnitsOf({
-      func: claims.method,
-      name: parent.identity.name,
-      kind: parent.kind,
-    })
+    .subUnitsOf(
+      {
+        func: claims.method,
+        name: parent.identity.name,
+        kind: parent.kind,
+      },
+      claims.file,
+    )
     .filter((subUnit) => claims.ids.has((subUnit.func as RbNode).id))
     .map((subUnit) => {
       const key = nodeId(claims.file, subUnit.func as RbNode);
@@ -171,30 +187,34 @@ function subUnitStructure(
           EVERY_ARGLESS_CALL,
           reading.facts,
         );
-  const found =
+  const found = effectsBesidesCalls(
+    {
+      root: node,
+      method: claims.method,
+      file: claims.file,
+      claimed: claims.ids,
+    },
     reading.storage === undefined
       ? []
-      : claimedBlockStorage(node, claims.method, claims.file, reading.storage);
+      : claimedBlockStorage(node, claims.method, claims.file, reading.storage),
+    reading,
+  );
   const siteOf = effectSitesIn(
     read,
     found.map((one) => one.at),
   );
-  const branch = withEffectsThatRun(
-    {
-      conditions: [],
-      terminal: returnTerminal(range),
-      effects: [],
-      location: range,
-      isDefault: true,
-    },
-    {
-      effects,
-      extraEffects: found.map(({ effect, at }) => ({
-        effect,
-        site: siteOf(at),
-      })),
-    },
-  );
+  const extraEffects = found.map(({ effect, at }) => ({
+    effect,
+    site: siteOf(at),
+  }));
+  const paths = returnPathBranches(
+    node,
+    effects,
+    [],
+    reading.facts,
+    undefined,
+    raiseEndings(node, reading.facts),
+  ) ?? [onlyReturn(range)];
   return {
     identity: {
       name: subUnit.name,
@@ -207,10 +227,23 @@ function subUnitStructure(
     },
     boundaryBinding: subUnitBinding(parent),
     parameters: [],
-    branches: [branch],
+    branches: paths.map((branch) =>
+      withEffectsThatRun(branch, { effects, extraEffects }),
+    ),
     bodyContent: read === null ? "empty" : "statements",
     dependencyCalls: [],
     declaredContract: null,
+  };
+}
+
+/** The one branch of a block with no statements, which returns. */
+function onlyReturn(range: RawBranch["location"]): RawBranch {
+  return {
+    conditions: [],
+    terminal: returnTerminal(range),
+    effects: [],
+    location: range,
+    isDefault: true,
   };
 }
 

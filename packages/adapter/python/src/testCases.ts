@@ -601,7 +601,7 @@ export class PythonTestIndex {
         owner: fn.node,
         call,
       })),
-      ...callsIn(fn.node).map((call) => ({
+      ...callsIn(fn.node, this.context.facts).map((call) => ({
         file: fn.file,
         owner: fn.node,
         call,
@@ -900,9 +900,9 @@ function positionalArguments(call: PyNode): PyNode[] {
 }
 
 /** The calls written in a function's own body, nested functions left out. */
-function callsIn(definition: PyNode): PyNode[] {
+function callsIn(definition: PyNode, facts: Database): PyNode[] {
   const body = field(definition, "body");
-  return body === null ? [] : bodyCalls(body);
+  return body === null ? [] : bodyCalls(body, facts);
 }
 
 /** The call as a finding quotes it, on one line. */

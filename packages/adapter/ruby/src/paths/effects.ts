@@ -15,7 +15,7 @@ import {
   OWN_BODY_TYPES,
   rangeOf,
 } from "../ast.js";
-import { claimedBodyOf, claimedIn } from "../claims.js";
+import { claimedBodyOf, claimedIn, isClaimed } from "../claims.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
@@ -195,7 +195,7 @@ function collectCalls(
   for (const child of children(node)) {
     if (
       (read.stops.has(child.type) && !isLambdaArgument(child)) ||
-      read.claimed?.has(child.id) === true
+      isClaimed(child, read.claimed)
     ) {
       continue;
     }

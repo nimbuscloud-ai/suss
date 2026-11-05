@@ -12,11 +12,15 @@
  * method too. A run with no pack that claims sub-units has no registry.
  */
 
+import { runPackHook } from "@suss/extractor";
+
 import {
+  children,
   enclosingDefinition,
   field,
   METHOD_TYPES,
   OWN_BODY_TYPES,
+  statementsOf,
 } from "./ast.js";
 import { nodeId } from "./facts/values.js";
 import { localNamesIn } from "./paths/bareCalls.js";
@@ -26,6 +30,7 @@ import type { Database } from "@suss/datalog";
 import type {
   DiscoveredSubUnit,
   DiscoveredSubUnitParent,
+  PackTally,
   SubUnitOpsCarrier,
 } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
@@ -58,6 +63,9 @@ const CLAIMABLE_TYPES = new Set(["block", "do_block", "lambda"]);
 
 const NOTHING_CLAIMED: ReadonlySet<number> = new Set<number>();
 
+/** The kind a method is handed to the hooks as while its body is read, before any summary of it says what it is. */
+const KIND_WHILE_READING = "library";
+
 export class SubUnitRegistry {
   private readonly byMethod = new Map<string, MethodClaims>();
   private readonly byClaim = new Map<string, MethodClaims>();
@@ -65,16 +73,29 @@ export class SubUnitRegistry {
   constructor(
     private readonly packs: readonly ClaimingPack[],
     private readonly context: SubUnitOpsCarrier,
+    private readonly tallies: ReadonlyMap<string, PackTally>,
   ) {}
 
   /**
-   * The sub-units the packs build for this parent. When two packs claim
-   * the same node, the first pack in the run's list keeps it.
+   * The sub-units the packs build for this parent, a method in `file`.
+   * When two packs claim the same node, the first pack in the run's list
+   * keeps it. A hook that throws claims nothing, and the failure goes on
+   * its pack's tally.
    */
-  subUnitsOf(parent: DiscoveredSubUnitParent): DiscoveredSubUnit[] {
+  subUnitsOf(
+    parent: DiscoveredSubUnitParent,
+    file: string,
+  ): DiscoveredSubUnit[] {
     const seen = new Set<number>();
     return this.packs
-      .flatMap((pack) => pack.subUnits(parent, this.context))
+      .flatMap((pack) =>
+        runPackHook(
+          this.tallies.get(pack.name),
+          { pack: pack.name, hook: "subUnits", file },
+          () => pack.subUnits(parent, this.context),
+          [],
+        ),
+      )
       .filter((one) => {
         const id = (one.func as RbNode).id;
         if (seen.has(id)) {
@@ -107,11 +128,14 @@ export class SubUnitRegistry {
       locals: new Set<string>(),
     };
     this.byMethod.set(key, none);
-    const nodes = this.subUnitsOf({
-      func: method,
-      name: field(method, "name")?.text ?? "",
-      kind: "library",
-    }).map((one) => one.func as RbNode);
+    const nodes = this.subUnitsOf(
+      {
+        func: method,
+        name: field(method, "name")?.text ?? "",
+        kind: KIND_WHILE_READING,
+      },
+      file,
+    ).map((one) => one.func as RbNode);
     if (nodes.length === 0) {
       return none;
     }
@@ -156,6 +180,26 @@ export class SubUnitRegistry {
       ? undefined
       : claims;
   }
+
+  /** The blocks and lambdas this method claims, each named after `name`, the method's own. */
+  claimsNamedAfter(method: RbNode, name: string): NamedClaim[] {
+    const claims = this.claimsOf(method);
+    if (claims === null || claims.nodes.length === 0) {
+      return [];
+    }
+    return this.subUnitsOf(
+      { func: method, name, kind: KIND_WHILE_READING },
+      claims.file,
+    )
+      .filter((one) => claims.ids.has((one.func as RbNode).id))
+      .map((one) => ({ node: one.func as RbNode, name: one.name }));
+  }
+}
+
+/** A block or lambda a pack claims, with the name its unit gets. */
+export interface NamedClaim {
+  readonly node: RbNode;
+  readonly name: string;
 }
 
 /** The method a node is, or the one it is written in, through any lambdas around it. */
@@ -169,13 +213,14 @@ function owningMethod(node: RbNode): RbNode | null {
 
 const registries = new WeakMap<Database, SubUnitRegistry>();
 
-/** Starts the run's registry over `db`, for the packs that claim sub-units. */
+/** Starts the run's registry over `db`, for the packs that claim sub-units. A hook that throws goes on its pack's tally in `tallies`. */
 export function registerSubUnits(
   db: Database,
   claiming: readonly ClaimingPack[],
   context: SubUnitOpsCarrier,
+  tallies: ReadonlyMap<string, PackTally>,
 ): SubUnitRegistry {
-  const registry = new SubUnitRegistry(claiming, context);
+  const registry = new SubUnitRegistry(claiming, context, tallies);
   registries.set(db, registry);
   return registry;
 }
@@ -209,6 +254,45 @@ export function claimedIn(
 ): ReadonlySet<number> | undefined {
   const ids = registryOf(facts)?.claimsAround(node)?.ids;
   return ids === undefined || ids.size === 0 ? undefined : ids;
+}
+
+/**
+ * Whether a reader of a body stops at this node, because a pack claims it
+ * as a unit of its own and what it does goes on that unit's summary.
+ * Every walk over a method's body asks this with the ids `claimedIn` gave.
+ */
+export function isClaimed(
+  node: RbNode,
+  claimed: ReadonlySet<number> | undefined,
+): boolean {
+  return claimed?.has(node.id) === true;
+}
+
+/** Every call under the node. The blocks and lambdas in `claimed` are left out. */
+export function callsUnder(
+  node: RbNode,
+  claimed: ReadonlySet<number> | undefined,
+  found: RbNode[] = [],
+): RbNode[] {
+  for (const child of children(node)) {
+    if (isClaimed(child, claimed)) {
+      continue;
+    }
+    if (child.type === "call") {
+      found.push(child);
+    }
+    callsUnder(child, claimed, found);
+  }
+  return found;
+}
+
+/** The blocks and lambdas `method` claims, each with the name its unit gets when the method is called `name`. */
+export function claimsNamedAfter(
+  method: RbNode,
+  name: string,
+  facts: Database | undefined,
+): NamedClaim[] {
+  return registryOf(facts)?.claimsNamedAfter(method, name) ?? [];
 }
 
 /**
@@ -251,10 +335,4 @@ export function claimedNodesOf(
     return [];
   }
   return registry.claimsOf(method)?.nodes ?? [];
-}
-
-/** The statement list a block runs. A lambda writes its statements in a block of its own. */
-function statementsOf(node: RbNode): RbNode | null {
-  const body = field(node, "body");
-  return node.type === "lambda" && body !== null ? field(body, "body") : body;
 }
