@@ -691,6 +691,29 @@ function announcedBoundaryStructure(unit: DiscoveredUnit): RawCodeStructure {
   };
 }
 
+/**
+ * What a body read asks the run's store besides the store itself:
+ * whether a value came from a module, which calls stand behind a value,
+ * and which function a call runs. Without them a recognizer's origin
+ * check falls back to what the checker sees at the call.
+ */
+interface StoreLookups {
+  originatesFrom?: OriginatesFrom;
+  anchorCallsOf?: AnchorCallsOf;
+  resolveCallee?: ResolveCallee;
+}
+
+function storeLookupsOf(resolution: ResolutionStore | undefined): StoreLookups {
+  if (resolution === undefined) {
+    return {};
+  }
+  return {
+    originatesFrom: (value, module) => resolution.originatesFrom(value, module),
+    anchorCallsOf: (value, matches) => resolution.anchorCallsOf(value, matches),
+    resolveCallee: (value) => resolution.resolveCallable(value),
+  };
+}
+
 export function extractCodeStructure(
   unit: DiscoveredUnit,
   pack: PatternPack,
@@ -1392,6 +1415,7 @@ function extractFromSourceFile(
   ];
   const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
   const everyUnit = everyUnitDeclarationsOf(frameworks);
+  const lookups = storeLookupsOf(resolution);
   const gatedIn: PackTally[] = [];
   let unitsWalkedHere = 0;
   const subUnitCtx = createTsSubUnitContext(resolution);
@@ -1516,15 +1540,9 @@ function extractFromSourceFile(
         allAccessRecognizers,
         barriers,
         resolution,
-        resolution === undefined
-          ? undefined
-          : (value, module) => resolution.originatesFrom(value, module),
-        resolution === undefined
-          ? undefined
-          : (value, matches) => resolution.anchorCallsOf(value, matches),
-        resolution === undefined
-          ? undefined
-          : (value) => resolution.resolveCallable(value),
+        lookups.originatesFrom,
+        lookups.anchorCallsOf,
+        lookups.resolveCallee,
         everyUnit,
       );
 
@@ -1807,16 +1825,13 @@ function moduleScopeSummary(
   options: ExtractorOptions | undefined,
 ): BehavioralSummary | null {
   try {
+    const lookups = storeLookupsOf(resolution);
     const effects = runAccessRecognizersAtModuleScope(
       sourceFile,
       accessRecognizers,
       resolution,
-      resolution === undefined
-        ? undefined
-        : (value, module) => resolution.originatesFrom(value, module),
-      resolution === undefined
-        ? undefined
-        : (value, matches) => resolution.anchorCallsOf(value, matches),
+      lookups.originatesFrom,
+      lookups.anchorCallsOf,
     ).map((recognized) => recognized.effect);
     return moduleInitSummary(sourceFile, effects, options);
   } catch (error) {
@@ -3105,6 +3120,7 @@ export function createTypeScriptAdapter(
           config.frameworks,
           packsByFile,
           resolution,
+          projectHelpers,
           config.extractorOptions,
           tallies,
           (created, parent) => {
@@ -3698,6 +3714,7 @@ function synthesizeSubUnits(
   frameworks: PatternPack[],
   packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>,
   resolution: ResolutionStore | undefined,
+  projectHelpers: ProjectHelperIndex,
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
   onCreated?: (created: BehavioralSummary, parent: BehavioralSummary) => void,
@@ -3712,10 +3729,12 @@ function synthesizeSubUnits(
   for (const [sf, packs] of packsByFile) {
     packsByPath.set(sf.getFilePath(), packs);
   }
-  const allInvocationRecognizers = collectInvocationRecognizers(
-    frameworks,
-    tallies,
-  );
+  // A claimed callback is read with what its parent is read with, since
+  // the parent's walk stops at the callback and nothing else reads it.
+  const allInvocationRecognizers = [
+    ...collectInvocationRecognizers(frameworks, tallies),
+    ...projectHelpers.contributedRecognizers(),
+  ];
   const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
   const everyUnit = everyUnitDeclarationsOf(frameworks);
 
@@ -3782,6 +3801,7 @@ function synthesizeSubUnits(
         { invocation: allInvocationRecognizers, access: allAccessRecognizers },
         claimedFuncs,
         everyUnit,
+        resolution,
         options,
       );
       if (summary !== null) {
@@ -3833,6 +3853,7 @@ function buildSubUnitSummary(
   },
   claimed: DescentBarriers,
   everyUnit: EveryUnitDeclarations,
+  resolution: ResolutionStore | undefined,
   options?: ExtractorOptions,
 ): BehavioralSummary | null {
   const func = subUnit.func as FunctionRoot;
@@ -3861,16 +3882,17 @@ function buildSubUnitSummary(
 
   // A sub-unit of the same parent written inside this one, such as a
   // timer set in a click handler, is read on its own summary.
+  const lookups = storeLookupsOf(resolution);
   const raw = extractCodeStructure(
     unit,
     scaffoldPack,
     recognizers.invocation,
     recognizers.access,
     claimed,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    resolution,
+    lookups.originatesFrom,
+    lookups.anchorCallsOf,
+    lookups.resolveCallee,
     everyUnit,
   );
 
