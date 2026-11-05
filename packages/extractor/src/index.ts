@@ -134,7 +134,7 @@ export {
   type StatementSites,
   statementSites,
 } from "./paths/statementSites.js";
-export { commonDirectoryOf } from "./projectRoot.js";
+export { commonDirectoryOf, runRootOf } from "./projectRoot.js";
 export {
   absentReading,
   ambiguousReading,

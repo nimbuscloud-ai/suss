@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { installedLibraryInputs } from "./installedLibraries.js";
+import { installedLibraryManifests } from "./installedLibraries.js";
 
 const roots: string[] = [];
 
@@ -37,10 +37,10 @@ describe("the installed libraries a run's packs read", () => {
   it("are the manifests in the nearest node_modules up from the project", () => {
     const root = project(["pg", "express"]);
 
-    const inputs = installedLibraryInputs(
+    const inputs = installedLibraryManifests(
       [pack(["pg"], ["express"])],
       path.join(root, "apps", "api"),
-    ).discoveryInputs();
+    );
 
     expect(inputs).toEqual([
       path.join(root, "node_modules", "express", "package.json"),
@@ -51,10 +51,7 @@ describe("the installed libraries a run's packs read", () => {
   it("are every package under a scope a pack gives on its own", () => {
     const root = project(["@ts-rest/core", "@ts-rest/express"]);
 
-    const inputs = installedLibraryInputs(
-      [pack(["@ts-rest"])],
-      root,
-    ).discoveryInputs();
+    const inputs = installedLibraryManifests([pack(["@ts-rest"])], root);
 
     expect(inputs).toEqual([
       path.join(root, "node_modules", "@ts-rest", "core", "package.json"),
@@ -65,14 +62,10 @@ describe("the installed libraries a run's packs read", () => {
   it("leave out a library that is not installed", () => {
     const root = project([]);
 
-    expect(
-      installedLibraryInputs([pack(["mongoose"])], root).discoveryInputs(),
-    ).toEqual([]);
+    expect(installedLibraryManifests([pack(["mongoose"])], root)).toEqual([]);
   });
 
   it("are none when the run has no folder to look from", () => {
-    expect(
-      installedLibraryInputs([pack(["pg"])], undefined).discoveryInputs(),
-    ).toEqual([]);
+    expect(installedLibraryManifests([pack(["pg"])], undefined)).toEqual([]);
   });
 });

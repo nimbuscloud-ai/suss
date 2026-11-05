@@ -75,6 +75,7 @@ import {
   type RootRecord,
   runDigest,
   runPackHook,
+  runRootOf,
   type SettledModule,
   splitAtHandOffs,
   stampModuleImports,
@@ -172,7 +173,7 @@ import {
 import { ResolutionStore } from "./facts/store.js";
 import { flagReads } from "./flagReads.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
-import { installedLibraryInputs } from "./installedLibraries.js";
+import { installedLibraryManifests } from "./installedLibraries.js";
 import { endLineOf, lineRangeOf, startLineOf } from "./lines.js";
 import {
   forgetUnreadableExportFiles,
@@ -2831,20 +2832,17 @@ export function createTypeScriptAdapter(
               cacheFiles =
                 tsconfigFileList ??
                 project.getSourceFiles().map((sf) => sf.getFilePath());
-              return runDigest(
-                packsDigest,
-                [
-                  ...config.frameworks,
-                  installedLibraryInputs(
-                    config.frameworks,
-                    config.tsConfigFilePath === undefined
-                      ? runRoot
-                      : path.dirname(config.tsConfigFilePath),
-                  ),
-                ],
-                cacheFiles,
-                keyPaths,
-              );
+              return runDigest(packsDigest, config.frameworks, cacheFiles, {
+                asStored: keyPaths,
+                tallies,
+                root: runRootOf({ projectRoot: runRoot, files: cacheFiles }),
+                adapterInputs: installedLibraryManifests(
+                  config.frameworks,
+                  config.tsConfigFilePath === undefined
+                    ? runRoot
+                    : path.dirname(config.tsConfigFilePath),
+                ),
+              });
             });
 
       const cacheInput: CacheInput = {
