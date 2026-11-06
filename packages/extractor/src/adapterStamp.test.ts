@@ -12,6 +12,7 @@ import {
   projectFileStamp,
   runDigest,
 } from "./adapterStamp.js";
+import { createPackTallies } from "./extractionReport.js";
 
 function tempModuleUrl(): { dir: string; moduleUrl: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-adapter-stamp-"));
@@ -239,9 +240,16 @@ describe("extractionConfigStamp", () => {
 });
 
 describe("runDigest", () => {
+  const RUN = { root: "/repo" };
+
   it("folds in none when no pack declares discoveryInputs", () => {
     expect(
-      runDigest("adapter@1.0.0+source|express@1.0.0", [{}], ["a.ts"]),
+      runDigest(
+        "adapter@1.0.0+source|express@1.0.0",
+        [{ name: "express" }],
+        ["a.ts"],
+        RUN,
+      ),
     ).toBe("adapter@1.0.0+source|express@1.0.0|reads:none");
   });
 
@@ -251,10 +259,10 @@ describe("runDigest", () => {
       "template.yaml",
     );
     fs.writeFileSync(file, "Resources: {}");
-    const pack = { discoveryInputs: () => [file] };
-    const before = runDigest("adapter@1.0.0+source", [pack], ["a.ts"]);
+    const pack = { name: "lambda", discoveryInputs: () => [file] };
+    const before = runDigest("adapter@1.0.0+source", [pack], ["a.ts"], RUN);
     fs.writeFileSync(file, "Resources: { Worker: {} }");
-    expect(runDigest("adapter@1.0.0+source", [pack], ["a.ts"])).not.toBe(
+    expect(runDigest("adapter@1.0.0+source", [pack], ["a.ts"], RUN)).not.toBe(
       before,
     );
   });
@@ -262,15 +270,70 @@ describe("runDigest", () => {
   it("asks every pack for its discovery inputs given the same files", () => {
     const seen: (readonly string[])[] = [];
     const pack = {
+      name: "lambda",
       discoveryInputs: (files: readonly string[]) => {
         seen.push(files);
         return [];
       },
     };
-    runDigest("adapter@1.0.0+source", [pack, pack], ["a.ts", "b.ts"]);
+    runDigest("adapter@1.0.0+source", [pack, pack], ["a.ts", "b.ts"], RUN);
     expect(seen).toEqual([
       ["a.ts", "b.ts"],
       ["a.ts", "b.ts"],
     ]);
+  });
+
+  it("folds in the files the adapter reads beside the packs' own", () => {
+    const file = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-run-digest-")),
+      "package.json",
+    );
+    fs.writeFileSync(file, '{ "version": "1.0.0" }');
+    const digest = () =>
+      runDigest("adapter@1.0.0+source", [{ name: "pg" }], ["a.ts"], {
+        ...RUN,
+        adapterInputs: [file],
+      });
+    const before = digest();
+    fs.writeFileSync(file, '{ "version": "2.0.0" }');
+    expect(digest()).not.toBe(before);
+  });
+
+  it("keeps the other packs' inputs when one pack's hook throws, and puts the throw on its tally", () => {
+    const file = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-run-digest-")),
+      "template.yaml",
+    );
+    fs.writeFileSync(file, "Resources: {}");
+    const reads = { name: "reads", discoveryInputs: () => [file] };
+    const breaks = {
+      name: "breaks",
+      discoveryInputs: (): string[] => {
+        throw new Error("cannot list what I read");
+      },
+    };
+    const tallies = createPackTallies([reads, breaks]);
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    let digest: string;
+    try {
+      digest = runDigest("adapter@1.0.0+source", [breaks, reads], ["a.ts"], {
+        ...RUN,
+        tallies,
+      });
+    } finally {
+      noise.mockRestore();
+    }
+
+    expect(digest).toBe(
+      runDigest("adapter@1.0.0+source", [reads], ["a.ts"], RUN),
+    );
+    expect(tallies.get("breaks")?.failures).toEqual([
+      {
+        hook: "discoveryInputs",
+        file: "/repo",
+        message: "cannot list what I read",
+      },
+    ]);
+    expect(tallies.get("reads")?.failures).toEqual([]);
   });
 });

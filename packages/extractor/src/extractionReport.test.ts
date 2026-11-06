@@ -72,6 +72,28 @@ describe("createPackTallies", () => {
     expect([...tallies.keys()]).toEqual(["a", "b"]);
     expect(tallies.get("a")).not.toBe(tallies.get("b"));
   });
+
+  it("starts each try from the failures recorded before it, without sharing them", () => {
+    const packs = [{ name: "a" }, { name: "b" }];
+    const earlier = createPackTallies(packs);
+    earlier
+      .get("a")
+      ?.failures.push({ hook: "discoveryInputs", file: "/repo", message: "x" });
+
+    const first = createPackTallies(packs, earlier);
+    first.get("a")?.failures.push({
+      hook: "entryPoints",
+      file: "/repo/a.py",
+      message: "y",
+    });
+    const second = createPackTallies(packs, earlier);
+
+    expect(second.get("a")?.failures).toEqual([
+      { hook: "discoveryInputs", file: "/repo", message: "x" },
+    ]);
+    expect(second.get("b")?.failures).toEqual([]);
+    expect(earlier.get("a")?.failures).toHaveLength(1);
+  });
 });
 
 describe("recordPackFailure", () => {

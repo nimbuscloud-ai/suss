@@ -6,11 +6,13 @@
  * writes with its class as `Billing::Handler.process`.
  */
 
+import { runPackHook } from "@suss/extractor";
+
 import { instanceMethodsByName, singletonMethodsByName } from "./ast.js";
 import { libraryUnit } from "./reach/closure.js";
 import { walkDefinitions } from "./scope.js";
 
-import type { RawCodeStructure } from "@suss/extractor";
+import type { PackTally, RawCodeStructure } from "@suss/extractor";
 import type { BodyReadOptions, ReachSeed } from "./discovery.js";
 import type { RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -20,6 +22,8 @@ export interface EntryPointOptions extends BodyReadOptions {
   readonly displayPathOf: (file: string) => string;
   /** Called for each unit, so the reach walk starts from its method. */
   readonly onReachSeed: (raw: RawCodeStructure, seed: ReachSeed) => void;
+  /** A pack whose `entryPoints` throws gets no units in this file, and the failure goes on its tally. */
+  readonly tallies: ReadonlyMap<string, PackTally>;
 }
 
 /** The method a manifest's name refers to, and the path the unit is exported under. */
@@ -36,7 +40,13 @@ export function declaredEntryUnits(
 ): RawCodeStructure[] {
   const units: RawCodeStructure[] = [];
   for (const pack of options.packs) {
-    for (const entry of pack.entryPoints?.(file) ?? []) {
+    const entries = runPackHook(
+      options.tallies.get(pack.name),
+      { pack: pack.name, hook: "entryPoints", file },
+      () => pack.entryPoints?.(file) ?? [],
+      [],
+    );
+    for (const entry of entries) {
       const method = entryMethod(root, entry.name, options);
       if (method === null) {
         continue;
