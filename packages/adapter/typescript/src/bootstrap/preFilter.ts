@@ -25,7 +25,7 @@ import {
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 import { statementsOfKind } from "../walk/rawDescent.js";
 
-import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import type { DiscoveryPattern, PackTally, PatternPack } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 
 /**
@@ -41,6 +41,7 @@ export function computePackApplicability(
   sourceFiles: ReadonlyArray<SourceFile>,
   packs: ReadonlyArray<PatternPack>,
   resolution?: ResolutionStore,
+  tallies?: ReadonlyMap<string, PackTally>,
 ): Map<SourceFile, PatternPack[]> {
   // Pre-classify each pack as either ungated (matches every file)
   // or gated (needs an import match). Lets the per-file inner loop
@@ -61,7 +62,7 @@ export function computePackApplicability(
       pack,
       gates: collectPackGates(pack),
       named: collectPackNameGates(pack),
-      generated: generatedModulesOf([pack]),
+      generated: generatedModulesOf([pack], tallies),
     });
   }
 
