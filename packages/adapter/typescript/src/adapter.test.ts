@@ -6208,30 +6208,32 @@ describe("subUnits plumbing", () => {
     });
   });
 
+  /** Express routes, with every arrow inside a handler claimed as a timer. */
+  const timerRoutePack: PatternPack = {
+    name: "express",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: httpRouteDiscovery({
+      importModule: "express",
+      importNames: ["express"],
+      methods: [".get"],
+    }),
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+    subUnits: (parent) =>
+      (parent.func as Node)
+        .getDescendants()
+        .filter((node: Node) => Node.isArrowFunction(node))
+        .map((callback: Node, index: number) => ({
+          func: callback,
+          kind: "scheduled-callback",
+          name: `${parent.name}.setTimeout#${index}`,
+        })),
+  };
+
   it("does not make a timer callback inside a route handler a client of the route", async () => {
-    const routePack: PatternPack = {
-      name: "express",
-      protocol: "http",
-      languages: ["typescript"],
-      discovery: httpRouteDiscovery({
-        importModule: "express",
-        importNames: ["express"],
-        methods: [".get"],
-      }),
-      terminals: [
-        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
-      ],
-      inputMapping: { type: "positionalParams", params: [] },
-      subUnits: (parent) =>
-        (parent.func as Node)
-          .getDescendants()
-          .filter((node: Node) => Node.isArrowFunction(node))
-          .map((callback: Node, index: number) => ({
-            func: callback,
-            kind: "scheduled-callback",
-            name: `${parent.name}.setTimeout#${index}`,
-          })),
-    };
     const project = makeProject();
     project.createSourceFile(
       "/later.ts",
@@ -6248,7 +6250,7 @@ describe("subUnits plumbing", () => {
     );
     const summaries = await createTypeScriptAdapter({
       project,
-      frameworks: [routePack],
+      frameworks: [timerRoutePack],
     }).extractAll();
     const handler = summaries.find((s) => s.kind === "handler");
 
@@ -6266,6 +6268,39 @@ describe("subUnits plumbing", () => {
       semantics: { name: "function-call" },
       recognition: "reachable",
     });
+  });
+
+  it("keeps each handler's route in the id of the timer it claims, with two routes in one file", async () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/later.ts",
+      `
+        import express from "express";
+        const app = express();
+        app.get("/first", (req: any, res: any) => {
+          setTimeout(() => {
+            console.log("first");
+          }, 10);
+          return res.json({ ok: true });
+        });
+        app.get("/second", (req: any, res: any) => {
+          setTimeout(() => {
+            console.log("second");
+          }, 10);
+          return res.json({ ok: true });
+        });
+      `,
+    );
+    const summaries = await createTypeScriptAdapter({
+      project,
+      frameworks: [timerRoutePack],
+    }).extractAll();
+
+    expect(
+      summaries
+        .filter((s) => s.kind === "scheduled-callback")
+        .map((s) => s.identity.id?.split("::").at(-1)),
+    ).toEqual(["get.setTimeout#0#GET /first", "get.setTimeout#0#GET /second"]);
   });
 
   it("packs without subUnits produce no sub-units", async () => {

@@ -80,6 +80,7 @@ describe("the id of a summary named by a label", () => {
   /** An Express handler, which discovery names after its method. */
   function route(path: string, line: number): BehavioralSummary {
     const summary = summaryAt("svc::src/a.ts::get", line);
+    summary.identity.name = "get";
     summary.identity.nameKind = "label";
     summary.identity.boundaryBinding = {
       transport: "http",
@@ -110,6 +111,88 @@ describe("the id of a summary named by a label", () => {
       "svc::src/a.ts::get#GET /a@2",
       "svc::src/a.ts::get#GET /a",
     ]);
+  });
+
+  /** A timer claimed inside the handler at `line`, which is internal code with no key. */
+  function timerIn(line: number): BehavioralSummary {
+    const summary = summaryAt("svc::src/a.ts::get.setTimeout#0", line + 1);
+    summary.identity.name = "get.setTimeout#0";
+    summary.identity.nameKind = "label";
+    summary.location.range = { start: line + 1, end: line + 2 };
+    summary.location.span = { start: line * 10 + 5, end: line * 10 + 20 };
+    summary.identity.boundaryBinding = {
+      transport: "in-process",
+      semantics: { name: "function-call" },
+      recognition: "reachable",
+    };
+    return summary;
+  }
+
+  it("gives a claim in each of two routes its own handler's route", () => {
+    const summaries = [
+      route("/a", 5),
+      timerIn(5),
+      route("/b", 20),
+      timerIn(20),
+    ];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([
+      "svc::src/a.ts::get#GET /a",
+      "svc::src/a.ts::get.setTimeout#0#GET /a",
+      "svc::src/a.ts::get#GET /b",
+      "svc::src/a.ts::get.setTimeout#0#GET /b",
+    ]);
+  });
+
+  it("keeps a claim's id when a route is added above its handler", () => {
+    const alone = [route("/b", 20), timerIn(20)];
+    const withAnother = [
+      route("/a", 5),
+      timerIn(5),
+      route("/b", 20),
+      timerIn(20),
+    ];
+    disambiguateSummaryIds(alone);
+    disambiguateSummaryIds(withAnother);
+    expect(withAnother[3]?.identity.id).toBe(alone[1]?.identity.id);
+  });
+
+  it("finds the handler by line when the summaries have no character span", () => {
+    const summaries = [route("/a", 5), timerIn(5)];
+    for (const summary of summaries) {
+      delete summary.location.span;
+    }
+    disambiguateSummaryIds(summaries);
+    expect(summaries[1]?.identity.id).toBe(
+      "svc::src/a.ts::get.setTimeout#0#GET /a",
+    );
+  });
+
+  it("takes the boundary of the innermost labelled summary the claim is named after", () => {
+    const outer = route("/a", 5);
+    outer.location.span = { start: 0, end: 500 };
+    const inner = route("/a/inner", 6);
+    inner.identity.name = "get.inner";
+    inner.identity.id = "svc::src/a.ts::get.inner";
+    inner.location.span = { start: 60, end: 200 };
+    const timer = timerIn(6);
+    timer.identity.name = "get.inner.setTimeout#0";
+    timer.identity.id = "svc::src/a.ts::get.inner.setTimeout#0";
+    timer.location.span = { start: 70, end: 90 };
+    const summaries = [outer, inner, timer];
+    disambiguateSummaryIds(summaries);
+    expect(timer.identity.id).toBe(
+      "svc::src/a.ts::get.inner.setTimeout#0#GET /a/inner",
+    );
+  });
+
+  it("leaves a keyless label alone when no labelled summary around it has its name in front", () => {
+    const timer = timerIn(5);
+    timer.identity.name = "post.setTimeout#0";
+    timer.identity.id = "svc::src/a.ts::post.setTimeout#0";
+    const summaries = [route("/a", 5), timer];
+    disambiguateSummaryIds(summaries);
+    expect(timer.identity.id).toBe("svc::src/a.ts::post.setTimeout#0");
   });
 });
 
