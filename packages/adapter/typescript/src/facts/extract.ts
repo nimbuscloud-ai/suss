@@ -73,6 +73,7 @@ import {
   ELEMENT_CALLBACK_METHODS,
   MAP_ENTRY_READ,
   MAP_ENTRY_WRITE,
+  MAPPING_METHOD,
 } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
@@ -612,37 +613,43 @@ function templateEnds(key: Node): { start: string; end: string } | null {
 function emitObjectEntry(
   db: Database,
   table: NodeTable,
-  objectId: string,
-  property: Node,
+  entry: ObjectEntry,
 ): WrittenEntry | null {
-  if (Node.isSpreadAssignment(property)) {
-    return spreadEntry(table, property);
+  if (Node.isSpreadAssignment(entry.property)) {
+    return spreadEntry(table, entry.property);
   }
-  const held = emitObjectProperty(db, table, objectId, property);
+  const held = emitObjectProperty(db, table, entry);
   return held === null ? null : { key: held, form: VALUE_ENTRY };
+}
+
+/** One property of an object written out, and the position its entry takes among the object's entries. */
+interface ObjectEntry {
+  readonly objectId: string;
+  readonly property: Node;
+  readonly position: number;
 }
 
 /** The key of what a named or computed property puts in the object, after its facts are stated. */
 function emitObjectProperty(
   db: Database,
   table: NodeTable,
-  objectId: string,
-  property: Node,
+  entry: ObjectEntry,
 ): string | null {
+  const { property } = entry;
   if (Node.isPropertyAssignment(property)) {
     const initializer = property.getInitializer();
     if (initializer === undefined) {
       return null;
     }
     const held = emitValue(db, table, initializer);
-    emitHeld(db, objectId, property, held);
+    emitHeld(db, table, entry, held);
     return held;
   }
 
   if (Node.isShorthandPropertyAssignment(property)) {
     // `{ handler }` is whatever the name refers to.
     const held = emitValue(db, table, property.getNameNode());
-    emitHeld(db, objectId, property, held);
+    emitHeld(db, table, entry, held);
     return held;
   }
 
@@ -651,7 +658,7 @@ function emitObjectProperty(
     table.byId.set(methodId, property);
     fact(db, "func", methodId);
     emitFunctionFacts(db, table, property);
-    emitHeld(db, objectId, property, methodId);
+    emitHeld(db, table, entry, methodId);
     return methodId;
   }
   return null;
@@ -698,20 +705,35 @@ function keyLeftUnstated(table: NodeTable, value: Expression): string {
 /**
  * An object literal's property, under the name it is written with. A
  * computed key, `[kind]: handler`, is under a name only the program
- * knows, which is what `holdsUnderKey` says.
+ * knows, which is what `holdsUnderKey` says, and `computedKeyAt` says
+ * which expression computes it.
  */
 function emitHeld(
   db: Database,
-  objectId: string,
-  property: Node,
+  table: NodeTable,
+  entry: ObjectEntry,
   held: string,
 ): void {
-  const name = propertyNameOf(property);
-  if (name === null) {
-    fact(db, "holdsUnderKey", objectId, held);
+  const { objectId, property, position } = entry;
+  const written = propertyNameOf(property);
+  if (written !== null) {
+    fact(db, "holdsProperty", objectId, written, held);
     return;
   }
-  fact(db, "holdsProperty", objectId, name, held);
+  fact(db, "holdsUnderKey", objectId, held);
+  const name =
+    Node.isPropertyAssignment(property) || Node.isMethodDeclaration(property)
+      ? property.getNameNode()
+      : null;
+  if (name !== null && Node.isComputedPropertyName(name)) {
+    // Kept as written rather than through `keyLeftUnstated`, which peels
+    // a cast off: `nameOf` reads a key the way `readName` reads the
+    // expression the source wrote.
+    const key = name.getExpression();
+    const keyId = nodeId(key);
+    table.byId.set(keyId, key);
+    fact(db, "computedKeyAt", objectId, String(position), keyId);
+  }
 }
 
 /**
@@ -988,7 +1010,11 @@ export function emitValue(
     fact(db, "objectValue", id);
     const entries: WrittenEntry[] = [];
     for (const property of expression.getProperties()) {
-      const entry = emitObjectEntry(db, table, id, property);
+      const entry = emitObjectEntry(db, table, {
+        objectId: id,
+        property,
+        position: entries.length,
+      });
       if (entry !== null) {
         entries.push(entry);
       }
@@ -1580,22 +1606,41 @@ function emitCallFacts(
   }
 
   const args = call.getArguments();
+  const argumentKeys: string[] = [];
   for (let position = 0; position < args.length; position++) {
     const argument = args[position] as Node;
     if (!Node.isExpression(argument)) {
       continue;
     }
-    fact(
-      db,
-      "callArg",
-      callId,
-      String(position),
-      emitValue(db, table, argument),
-    );
+    const argumentKey = emitValue(db, table, argument);
+    argumentKeys[position] = argumentKey;
+    fact(db, "callArg", callId, String(position), argumentKey);
   }
   emitConversion(db, table, callId, callee, global, args);
   emitMapAccess(db, table, callId, callee, args);
   emitElementParameters(db, table, callee, args);
+  emitMappedElement(db, callId, callee, argumentKeys[0]);
+}
+
+/**
+ * `items.map(toRow)` builds a list whose every element is what `toRow`
+ * returns for one element of `items`, whether the callback is written
+ * into the call or named. `forEach` builds nothing, so it is left out.
+ */
+function emitMappedElement(
+  db: Database,
+  callId: string,
+  callee: Expression,
+  callback: string | undefined,
+): void {
+  if (
+    callback === undefined ||
+    !Node.isPropertyAccessExpression(callee) ||
+    callee.getName() !== MAPPING_METHOD
+  ) {
+    return;
+  }
+  fact(db, "eachElement", callId, callback);
 }
 
 /**

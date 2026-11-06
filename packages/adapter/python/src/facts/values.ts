@@ -53,6 +53,7 @@ import {
   ATTRIBUTE_GETTER,
   CLASS_METHOD_DECORATOR,
   CONVERTING_BUILTINS,
+  MAPPING_BUILTIN,
   POSITION_COUNTER,
   STATIC_METHOD_DECORATOR,
 } from "./languageWords.js";
@@ -371,6 +372,31 @@ function emitCall(emitter: Emitter, call: PyNode): void {
     );
   }
   emitConversion(emitter, call, callKey);
+  emitMappedElement(emitter, call, callKey);
+}
+
+/**
+ * `map(to_row, rows)` builds each element by calling `to_row` on one
+ * element of `rows`, so every element is what `to_row` returns. Only the
+ * builtin does, so a file that binds its own `map` gets no row.
+ */
+function emitMappedElement(
+  emitter: Emitter,
+  call: PyNode,
+  callKey: string,
+): void {
+  const callee = field(call, "function");
+  const [mapped, over] = callArguments(call);
+  if (
+    callee?.type !== "identifier" ||
+    callee.text !== MAPPING_BUILTIN ||
+    mapped?.kind !== "positional" ||
+    over?.kind !== "positional" ||
+    !isBuiltin(emitter, MAPPING_BUILTIN)
+  ) {
+    return;
+  }
+  add(emitter, "eachElement", callKey, valueKey(emitter, mapped.node));
 }
 
 /** `converts` for a call of a builtin conversion the file does not rebind. */
@@ -499,7 +525,7 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
       continue;
     }
     entries.push(writtenEntry(emitter, value));
-    if (key.type !== "string") {
+    if (key.type !== "string" || isInterpolated(key)) {
       add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value));
       continue;
     }
@@ -512,6 +538,11 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
     );
   }
   addEntryRows(rowsOf(emitter), objectKey, entries);
+}
+
+/** Whether a string is an f-string that puts a value in, whose text is computed. */
+function isInterpolated(string: PyNode): boolean {
+  return children(string).some((part) => part.type === "interpolation");
 }
 
 /** `*items` in a list and `**options` in a dictionary unpack a collection into the one written around them. */
@@ -918,23 +949,28 @@ function emitEnteredValue(emitter: Emitter, item: PyNode): void {
 /**
  * A comprehension's result contains its element under keys the loop
  * computes. For a dictionary comprehension the element is a pair, and the
- * result contains the pair's value.
+ * result contains the pair's value. Every other comprehension builds a
+ * collection of elements, each one built as the body is.
  */
 function emitComprehensionElement(
   emitter: Emitter,
   comprehension: PyNode,
+  type: string,
 ): void {
   const body = field(comprehension, "body");
   const element = body?.type === "pair" ? field(body, "value") : body;
   if (element != null) {
-    add(
-      emitter,
-      "holdsUnderKey",
-      nodeId(emitter.filePath, comprehension),
-      valueKey(emitter, element),
-    );
+    const comprehensionKey = nodeId(emitter.filePath, comprehension);
+    const elementKey = valueKey(emitter, element);
+    add(emitter, "holdsUnderKey", comprehensionKey, elementKey);
+    if (type !== DICTIONARY_COMPREHENSION) {
+      add(emitter, "eachElement", comprehensionKey, elementKey);
+    }
   }
 }
+
+/** The comprehension that builds a dictionary, whose entries are under keys rather than in order. */
+const DICTIONARY_COMPREHENSION = "dictionary_comprehension";
 
 /** `for at, item in ...` and `for (at, item) in ...`, which take each element apart into two names. */
 const PAIR_TARGET_TYPES = new Set(["pattern_list", "tuple_pattern"]);
@@ -1147,7 +1183,7 @@ function emitExpressionFact(
     emitEnteredValue(emitter, child);
   }
   if (COMPREHENSION_TYPES.has(type)) {
-    emitComprehensionElement(emitter, child);
+    emitComprehensionElement(emitter, child, type);
   }
   if (type === "for_in_clause") {
     emitElementVariables(emitter, child);

@@ -94,11 +94,6 @@ export function factSourceFor(
     literalOf: (key) => at(key, null, literalOf),
     nameOf: (key, unsettled) =>
       at(key, null, (node) => readName(node, { resolve, unsettled })),
-    computedKeyOf: (held, unsettled) =>
-      at(held, null, (node) => {
-        const key = computedKeyOfEntry(node);
-        return key === null ? null : readName(key, { resolve, unsettled });
-      }),
     namesOf: (key, cap) =>
       at(key, null, (node) => stringValuesOf(node, store, cap)),
     argOf: (key) => at(key, null, effectArgOf),
@@ -182,21 +177,6 @@ function specifierBound(declarations: readonly (Node | null)[]): string | null {
   );
   const [one] = specifiers;
   return specifiers.size === 1 && one !== undefined ? one : null;
-}
-
-/** The expression a computed key is written with, for the value of that entry, or null. */
-function computedKeyOfEntry(held: Node): Node | null {
-  let at = held.getParent();
-  while (at !== undefined && !Node.isPropertyAssignment(at)) {
-    if (Node.isObjectLiteralExpression(at)) {
-      return null;
-    }
-    at = at.getParent();
-  }
-  const name = at?.getNameNode();
-  return name !== undefined && Node.isComputedPropertyName(name)
-    ? name.getExpression()
-    : null;
 }
 
 /** A method written into an object literal is a function written in place, as an arrow is. */

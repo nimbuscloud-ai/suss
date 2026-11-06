@@ -516,10 +516,8 @@ export interface FactSource {
   formOf?(key: string): ValueForm;
   /** The string, number or boolean written at the key, or null when it is not one. */
   literalOf(key: string): string | number | boolean | null;
-  /** The name the value gives, read the adapter's way. */
+  /** The name the value gives, read the adapter's way. A key the source computes, `{ [table]: ... }`, is read through this too. */
   nameOf(key: string, unsettled: UnsettledName): string | null;
-  /** The name the key of an object entry gives when the source computes it, `{ [table]: ... }`, read the way `nameOf` reads. */
-  computedKeyOf?(held: string, unsettled: UnsettledName): string | null;
   /** Every string the value can be, when the adapter limits it to a few. */
   namesOf?(key: string, cap: number): readonly string[] | null;
   /** The value as an effect argument. */
