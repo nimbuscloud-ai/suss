@@ -909,6 +909,16 @@ describe("ruby value facts", () => {
     expect(db.size("holdsUnderKey")).toBe(1);
   });
 
+  it("states the expression that computes a key at the position of its entry", async () => {
+    const source = 'ROW = { **BASE, KEY => x, e: x, "#{KEY}_x" => 1 }\n';
+    const db = await factsFor(source);
+    const object = keyOf(source, '{ **BASE, KEY => x, e: x, "#{KEY}_x" => 1 }');
+    expect(rows(db, "computedKeyAt")).toEqual([
+      [object, "1", "#KEY"],
+      [object, "3", keyOf(source, '"#{KEY}_x"')],
+    ]);
+  });
+
   it("says nothing about the variables of a loop block that takes no variable", async () => {
     const db = await factsFor(
       [

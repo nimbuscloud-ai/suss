@@ -90,9 +90,11 @@ writtenEntryAt(c, k, x, form)  the list or object c is written out with
 computedKeyAt(o, k, x)      the entry at position k of the object o, as
                             writtenEntryAt counts them, is under the key
                             the expression x computes, as in
-                            { [table]: rows }. The ops in
-                            @suss/recognize/ops read it, and no rule does
-                            (TypeScript)
+                            { [table]: rows }, {table: rows} in Python or
+                            { TABLE => rows } in Ruby. An f-string or a
+                            Ruby string with #{} in it is computed too.
+                            The ops in @suss/recognize/ops read it, and
+                            no rule does
 partAt(t, k, s)             the template string t writes the text s at
                             position k, counting its parts and its holes
                             together in source order: a template literal,

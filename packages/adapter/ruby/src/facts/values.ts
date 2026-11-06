@@ -879,7 +879,8 @@ function writtenEntry(
 
 /**
  * Records a hash's values under their keys, when a key is written as a
- * symbol or string, and under a computed key otherwise.
+ * symbol or string, and under a computed key otherwise, with
+ * `computedKeyAt` saying which expression computes it.
  */
 function emitHash(emitter: Emitter, hash: RbNode): void {
   const objectKey = nodeId(emitter.filePath, hash);
@@ -898,10 +899,18 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
     if (key === null || value === null) {
       continue;
     }
+    const position = String(entries.length);
     entries.push(writtenEntry(emitter, value, pair));
     const keyText = pairKeyText(key);
     if (keyText === null) {
       add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value, pair));
+      add(
+        emitter,
+        "computedKeyAt",
+        objectKey,
+        position,
+        valueKey(emitter, key, pair),
+      );
       continue;
     }
     add(
