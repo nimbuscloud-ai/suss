@@ -216,6 +216,50 @@ The pack harness runs every recognizer that reads the ops a second time
 over `callOpsFor`, and fails the test on any difference that
 `tools/pack-harness/src/knownDifferences.ts` does not list with a reason.
 
+### The value policy
+
+A pack that reads a payload asks the same few questions of every value:
+which object it is, which list, and what each key is called. The ops
+answer them the same way in TypeScript, Python and Ruby.
+
+```ts
+records.put(rows.map(toRow));           // one item, what toRow returns
+records.put(toRow(meter));              // the object toRow returns
+records.put({ ...defaults(), d: 4 });   // defaults()'s entries, then d
+records.put({ [key]: 1, ...config.base }); // the key's value, then base's entries
+```
+
+- A name is followed to the one value it was written as. A name written
+  twice, or a parameter, has no one value, and reads as nothing.
+- A call into a project function is read as the one value the function
+  returns, when the pack reads an object or a list off it. A library
+  call, a construction and a function with two returns stay as written,
+  so a command is still read off the object it was made with. A text or
+  a name keeps the call, since the adapter settles one there with the
+  call's arguments in place, and reading the returned expression alone
+  would lose them.
+- An object's spread is read in its place, in source order, and a key
+  written twice keeps its first place and takes the later value. A
+  list's spread is left out of `items()`.
+- A list built by mapping is one item, the value every element is built
+  as: what the callback returns, when it has one return, or the element
+  a comprehension writes. `forEach` and `each` build nothing, and
+  Python's `list(map(f, xs))` reads nothing, since `list` is a library
+  call the ops do not look through.
+- A computed key is read through the expression that computes it, which
+  the adapter states by the entry's position. Python and Ruby key a
+  name by its scope, so in `{key: x, "e": x}` both values are the same
+  key, and only the position tells the two entries apart.
+- A name read through an entry with its key written out,
+  `config["base"]` in Python or `CONFIG[:base]` in Ruby, does not settle
+  yet, so a spread of one adds nothing. TypeScript's `config.base`
+  settles through the property read.
+- Nothing limits how deep a value is read. The facts are a finite set of
+  rows, and an object that spreads itself is read once.
+
+`packages/cli/src/valuePolicyLanguages.test.ts` writes each of these
+cases in all three languages, with the paths a pack has to find in each.
+
 ## Reaching a call next to this one
 
 In two of the three storage call patterns, what a pack needs is on a
