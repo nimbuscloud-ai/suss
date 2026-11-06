@@ -255,4 +255,55 @@ describe("a pack whose hook throws", () => {
       noise.mockRestore();
     }
   });
+
+  it("finishes the run when the hook naming its generator's directories throws, and goes on its tally", async () => {
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const project = createTestProject();
+      project.createSourceFile(
+        "src/a.ts",
+        'import { db } from "./generated/db";\nexport function handler() {\n  return db;\n}\n',
+      );
+      const generator: PatternPack = {
+        name: "generator",
+        protocol: "http",
+        languages: ["typescript"],
+        discovery: [
+          {
+            kind: "handler",
+            match: { type: "namedExport", names: ["handler"] },
+            requiresImport: ["orm-client"],
+          },
+        ],
+        generatedModuleDirs: () => {
+          throw new Error("cannot read the generator's configuration");
+        },
+        terminals: [],
+        inputMapping: { type: "positionalParams", params: [] },
+      };
+      let report: ExtractionReport | null = null;
+      const summaries = await createTypeScriptAdapter({
+        project,
+        frameworks: [generator],
+        onExtractionReport: (r) => {
+          report = r;
+        },
+      }).extractAll();
+
+      expect(summaries).toEqual([]);
+      expect(
+        (report as ExtractionReport | null)?.packs.find(
+          (funnel) => funnel.pack === "generator",
+        )?.failures,
+      ).toEqual([
+        {
+          hook: "generatedModuleDirs",
+          file: "/src",
+          message: "cannot read the generator's configuration",
+        },
+      ]);
+    } finally {
+      noise.mockRestore();
+    }
+  });
 });

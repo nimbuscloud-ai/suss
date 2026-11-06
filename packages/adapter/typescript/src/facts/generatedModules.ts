@@ -12,7 +12,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { PatternPack } from "@suss/extractor";
+import { runPackHook } from "@suss/extractor";
+
+import type { PackTally, PatternPack } from "@suss/extractor";
 
 type DirFinder = NonNullable<PatternPack["generatedModuleDirs"]>;
 
@@ -100,9 +102,14 @@ export class GeneratedModules {
   }
 }
 
-/** What the given packs say about the modules their generators write. */
+/**
+ * What the given packs say about the modules their generators write. A
+ * pack's `generatedModuleDirs` that throws gives no directory for the
+ * file it was asked about, and the failure goes on the pack's tally.
+ */
 export function generatedModulesOf(
   packs: ReadonlyArray<GeneratingPack>,
+  tallies?: ReadonlyMap<string, PackTally>,
 ): GeneratedModules {
   const markers = new Set<string>();
   const finders: Array<{ pack: string; find: DirFinder }> = [];
@@ -110,8 +117,18 @@ export function generatedModulesOf(
     for (const marker of pack.generatedModuleMarkers ?? []) {
       markers.add(marker);
     }
-    if (pack.generatedModuleDirs !== undefined) {
-      finders.push({ pack: pack.name, find: pack.generatedModuleDirs });
+    const find = pack.generatedModuleDirs;
+    if (find !== undefined) {
+      finders.push({
+        pack: pack.name,
+        find: (fromDir) =>
+          runPackHook(
+            tallies?.get(pack.name),
+            { pack: pack.name, hook: "generatedModuleDirs", file: fromDir },
+            () => find(fromDir),
+            [],
+          ),
+      });
     }
   }
   return new GeneratedModules([...markers], finders);
