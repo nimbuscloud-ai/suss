@@ -18,6 +18,12 @@ export const CONVERTING_METHODS: ReadonlySet<string> = new Set([
   "to_sym",
 ]);
 
+/**
+ * `Enumerable`'s methods that build a new array from what the block
+ * returns for each element. `collect` is the same method as `map`.
+ */
+export const MAPPING_METHODS: ReadonlySet<string> = new Set(["map", "collect"]);
+
 /** Kernel's functions that convert their first argument to another type. */
 export const CONVERTING_FUNCTIONS: ReadonlySet<string> = new Set([
   "Integer",

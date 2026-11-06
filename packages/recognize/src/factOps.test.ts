@@ -188,6 +188,7 @@ function moreSource(over: Partial<FactSource> = {}): FactSource {
   add("writtenValue", "newSqs");
   add("objectValue", "bag");
   add("holdsUnderKey", "bag", "yes");
+  add("computedKeyAt", "bag", "0", "table");
   add("holdsProperty", "bag", "plain", "q");
   add("writtenEntryAt", "bag", "0", "yes", "value");
   add("writtenEntryAt", "bag", "1", "q", "value");
@@ -199,8 +200,12 @@ function moreSource(over: Partial<FactSource> = {}): FactSource {
     textOf: (key) => key,
     literalOf: (key) =>
       ({ yes: true, q: "q", str: "text" })[key as "yes" | "q" | "str"] ?? null,
-    nameOf: (key, unsettled) => (unsettled === "reference" ? `{${key}}` : null),
-    computedKeyOf: (held) => (held === "yes" ? "orders" : null),
+    nameOf: (key, unsettled) => {
+      if (key === "table") {
+        return "orders";
+      }
+      return unsettled === "reference" ? `{${key}}` : null;
+    },
     namesOf: (key) => (key === "str" ? ["text"] : null),
     shapeOf: (key) => (key === "bag" ? "object" : base.shapeOf(key)),
     importedFrom: (key, module) =>
@@ -335,6 +340,49 @@ describe("factValueOps, further", () => {
     expect(bag?.property("plain")?.text()).toBe("q");
     expect(bag?.text()).toBeNull();
     expect(bag?.parts()).toBeNull();
+  });
+
+  it("tells a computed key from a written one by position when both entries hold the same name", () => {
+    // `{ key: x, "e": x, other: x }`, with `x` keyed by its scope.
+    const facts = moreSource();
+    const db = facts.db as Database;
+    db.add("objectValue", ["shared"]);
+    db.add("holdsUnderKey", ["shared", "x"]);
+    db.add("computedKeyAt", ["shared", "0", "table"]);
+    db.add("holdsProperty", ["shared", "e", "x"]);
+    db.add("holdsUnderKey", ["shared", "x"]);
+    db.add("computedKeyAt", ["shared", "2", "table"]);
+    db.add("computedKeyAt", ["shared", "2", "other"]);
+    for (const position of ["0", "1", "2"]) {
+      db.add("writtenEntryAt", ["shared", position, "x", "value"]);
+    }
+    const shared = factValueOps("shared", {
+      ...facts,
+      shapeOf: (key) => (key === "shared" ? "object" : facts.shapeOf(key)),
+    });
+
+    expect(shared.entries("nothing").map((entry) => entry.key)).toEqual([
+      "orders",
+      "e",
+      null,
+    ]);
+    expect(shared.property("e")?.source?.()).toBe("x");
+  });
+
+  it("leaves unsettled a computed key no expression is stated for, and leaves out a value under no key", () => {
+    // `{ [k]: x, y }` where the adapter states no key for either entry.
+    const facts = moreSource();
+    const db = facts.db as Database;
+    db.add("objectValue", ["bare"]);
+    db.add("holdsUnderKey", ["bare", "x"]);
+    db.add("writtenEntryAt", ["bare", "0", "x", "value"]);
+    db.add("writtenEntryAt", ["bare", "1", "y", "value"]);
+    const bare = factValueOps("bare", {
+      ...facts,
+      shapeOf: (key) => (key === "bare" ? "object" : facts.shapeOf(key)),
+    });
+
+    expect(bare.entries("reference").map((entry) => entry.key)).toEqual([null]);
   });
 
   it("reads a string as one piece, and asks the adapter for its name and its strings", () => {

@@ -18,6 +18,9 @@ export const ATTRIBUTE_GETTER = "getattr";
 /** The builtin that pairs each element of a collection with its position, counting from 0. */
 export const POSITION_COUNTER = "enumerate";
 
+/** The builtin that builds each element of a new collection by calling a function on one element of another. */
+export const MAPPING_BUILTIN = "map";
+
 /** The decorator that passes a method the class it was called on in place of an instance. */
 export const CLASS_METHOD_DECORATOR = "classmethod";
 

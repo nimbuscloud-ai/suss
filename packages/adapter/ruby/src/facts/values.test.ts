@@ -878,6 +878,37 @@ describe("ruby value facts", () => {
     expect(db.size("positionOf")).toBe(0);
   });
 
+  it("builds every element of a map or collect from the block it is written with or handed", async () => {
+    const block = "{ |row| { name: row } }";
+    const handed = "method(:to_row)";
+    const source = [
+      `ROWS.map ${block}`,
+      `ROWS.collect(&${handed})`,
+      "ROWS.each { |row| row }",
+      "map { |row| row }",
+      "ROWS.map",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "eachElement").map(([built, from]) => [
+        textAt(source, built ?? ""),
+        textAt(source, from ?? ""),
+      ]),
+    ).toEqual([
+      [`ROWS.map ${block}`, block],
+      [`ROWS.collect(&${handed})`, handed],
+    ]);
+  });
+
+  it("puts a value under an interpolated key as computed, rather than under the string's text", async () => {
+    const db = await factsFor(
+      'row = { "#{key}_x" => value, "plain" => other }\n',
+    );
+    expect(rows(db, "holdsProperty").map((row) => row[1])).toEqual(["plain"]);
+    expect(db.size("holdsUnderKey")).toBe(1);
+  });
+
   it("says nothing about the variables of a loop block that takes no variable", async () => {
     const db = await factsFor(
       [

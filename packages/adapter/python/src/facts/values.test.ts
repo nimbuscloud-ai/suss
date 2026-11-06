@@ -359,6 +359,45 @@ describe("python value facts", () => {
     ]);
   });
 
+  it("builds every element of a comprehension from its body, and of map from the function it calls", async () => {
+    const source = [
+      "names = [first for _ in xs]",
+      "unique = {second for _ in xs}",
+      "lazy = (third for _ in xs)",
+      "by = {k: fourth for k in xs}",
+      "rows = map(to_row, xs)",
+      "alone = map(to_row)",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "eachElement").map(([built, from]) => [
+        textAt(source, built ?? ""),
+        from,
+      ]),
+    ).toEqual([
+      ["[first for _ in xs]", "#first"],
+      ["{second for _ in xs}", "#second"],
+      ["(third for _ in xs)", "#third"],
+      ["map(to_row, xs)", "#to_row"],
+    ]);
+  });
+
+  it("states nothing a mapped element is built from where the file binds its own map", async () => {
+    const db = await factsFor(
+      "from rows import map\nbuilt = map(to_row, xs)\n",
+    );
+    expect(db.size("eachElement")).toBe(0);
+  });
+
+  it("puts a value under an f-string key as computed, rather than under the f-string's text", async () => {
+    const db = await factsFor('row = {f"{key}_x": value, "plain": other}\n');
+    expect(rows(db, "holdsProperty").map((row) => [row[1], row[2]])).toEqual([
+      ["plain", "#other"],
+    ]);
+    expect(rows(db, "holdsUnderKey").map((row) => row[1])).toEqual(["#value"]);
+  });
+
   it("gives a comprehension's variable one element of what it runs over", async () => {
     const source =
       "def names(users):\n    return [user.name for user in users]\n";
