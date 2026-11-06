@@ -13,6 +13,7 @@ import { createTestProject } from "@suss/test-project";
 import { createTypeScriptAdapter } from "./adapter.js";
 
 import type { ExtractionReport, PatternPack } from "@suss/extractor";
+import type { TypeScriptAdapter } from "./adapter.js";
 
 const SOURCE = "export const handler = () => ({ status: 200 });\n";
 
@@ -42,7 +43,11 @@ function packThatFindsNothing(): PatternPack {
   };
 }
 
-async function reportFor(pack: PatternPack): Promise<ExtractionReport> {
+async function reportFor(
+  pack: PatternPack,
+  read: (adapter: TypeScriptAdapter) => Promise<unknown> = (adapter) =>
+    adapter.extractAll(),
+): Promise<ExtractionReport> {
   const project = createTestProject();
   project.createSourceFile("src/a.ts", SOURCE);
 
@@ -54,7 +59,7 @@ async function reportFor(pack: PatternPack): Promise<ExtractionReport> {
       report = r;
     },
   });
-  await adapter.extractAll();
+  await read(adapter);
 
   if (report === null) {
     throw new Error("the adapter reported nothing");
@@ -79,6 +84,20 @@ describe("a pack whose hook throws", () => {
         "cannot read what I was handed",
       );
       expect(quiet.packs[0]?.failures).toEqual([]);
+    } finally {
+      noise.mockRestore();
+    }
+  });
+
+  it("goes on its tally in a run over named files, as in a full run", async () => {
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const report = await reportFor(packThatThrows(), (adapter) =>
+        adapter.extractFromFiles(["/src/a.ts"]),
+      );
+
+      expect(report.filesWalked).toBe(1);
+      expect(report.packs[0]?.failures[0]?.hook).toBe("discoverUnits");
     } finally {
       noise.mockRestore();
     }

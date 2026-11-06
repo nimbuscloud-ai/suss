@@ -1048,12 +1048,6 @@ interface LanguageRun {
    * summary whatever the code does.
    */
   recognizersOnly: boolean;
-  /**
-   * True when the run read only the files passed with --files instead of
-   * walking the project. Such a run builds no extraction funnel, so a
-   * missing funnel does not mean the result came from the cache.
-   */
-  explicitFiles: boolean;
   /** Packs the run asked for and left out, because an option they need was not given. */
   packsNeedingConfig: PackConfigNeed[];
   /** Paths in the packs' config files where nothing exists. */
@@ -1183,21 +1177,17 @@ async function runTypeScript(
   }
 
   const namedFiles = options.files ?? [];
-  const explicitFiles = namedFiles.length > 0;
-  const summaries = explicitFiles
-    ? await adapter.extractFromFiles(namedFiles.map((f) => path.resolve(f)))
-    : await adapter.extractAll();
+  const summaries =
+    namedFiles.length > 0
+      ? await adapter.extractFromFiles(namedFiles.map((f) => path.resolve(f)))
+      : await adapter.extractAll();
   const { timing: timingReport, cache: cacheDiagnostic } = reports;
   const extractionReport: ExtractionReport | null = reports.extraction;
 
-  // extractFromFiles builds no extraction report and so no walked count.
-  // The length of the given list is the number of files read.
   return {
     summaries,
     root: runRoot,
-    filesRead: explicitFiles
-      ? namedFiles.length
-      : (extractionReport?.filesWalked ?? 0),
+    filesRead: extractionReport?.filesWalked ?? 0,
     timingReport,
     cacheDiagnostic,
     extractionReport,
@@ -1206,7 +1196,6 @@ async function runTypeScript(
       packs.every(
         (p) => p.discovery.length === 0 && p.discoverUnits === undefined,
       ),
-    explicitFiles,
     packsNeedingConfig: packConfig.needs,
     packPathsMissing: packConfig.missingPaths,
   };
@@ -1407,9 +1396,6 @@ function languageRun(
     cacheDiagnostic,
     extractionReport,
     recognizersOnly,
-    // Python and Ruby build a report even with --files, so downstream
-    // code has no reason to tell the two kinds of run apart.
-    explicitFiles: false,
     packsNeedingConfig: packConfig.needs,
     packPathsMissing: packConfig.missingPaths,
   };
@@ -1545,9 +1531,7 @@ export async function extract(
 
   if (extractionReport === null && options.explain === true) {
     process.stderr.write(
-      run.explicitFiles
-        ? "--files reads exactly the files it was given, so there is no funnel breakdown to show. Drop --files to walk the project and see where each pack stood.\n"
-        : "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n",
+      "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n",
     );
   }
 
