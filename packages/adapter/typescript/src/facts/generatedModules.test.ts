@@ -2,7 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+import { createPackTallies } from "@suss/extractor";
 
 import { GeneratedModules, generatedModulesOf } from "./generatedModules.js";
 
@@ -83,5 +85,33 @@ describe("generatedModulesOf", () => {
     expect(generated.reachedFrom(consumer, ["./generated/orm"])).toBe(true);
     expect(generated.reachedFrom(consumer, ["./generated/ormish"])).toBe(false);
     expect(asked).toEqual([path.join(root, "src")]);
+  });
+
+  it("counts nothing as generated where the pack's hook throws, and puts the throw on its tally", () => {
+    const tallies = createPackTallies([{ name: "orm" }]);
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const generated = generatedModulesOf(
+        [
+          {
+            name: "orm",
+            generatedModuleDirs: () => {
+              throw new Error("no configuration");
+            },
+          },
+        ],
+        tallies,
+      );
+      expect(generated.reachedFrom(consumer, ["./generated/orm"])).toBe(false);
+    } finally {
+      noise.mockRestore();
+    }
+    expect(tallies.get("orm")?.failures).toEqual([
+      {
+        hook: "generatedModuleDirs",
+        file: path.join(root, "src"),
+        message: "no configuration",
+      },
+    ]);
   });
 });
