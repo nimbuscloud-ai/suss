@@ -10,7 +10,7 @@
  * The migration plan for #542 lists the origins not built yet.
  */
 
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 
 import { byOrigin, lastValueWins } from "@suss/extractor";
 
@@ -20,6 +20,8 @@ import {
   stringValuesOf,
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
+import { isFunctionRoot } from "../discovery/shared.js";
+import { MAPPING_METHOD } from "../facts/languageWords.js";
 import { parameterReads } from "../parameterReads.js";
 import { typedAsExported } from "../values/receiverType.js";
 import { peelValue } from "../walk/unwrap.js";
@@ -58,6 +60,7 @@ import type {
   PropertyAssignment,
   TaggedTemplateExpression,
 } from "ts-morph";
+import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
 /**
@@ -704,17 +707,25 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     settledValue ??= settled(value, resolve) ?? value;
     return settledValue;
   };
+  // An object or a list is read off what a project call returns, as the
+  // fact ops read one. A text or a name keeps the call, which `readName`
+  // settles with the call's arguments in place.
+  let shapedValue: Node | undefined;
+  const shaped = (): Node => {
+    shapedValue ??= followedCall(written(), resolve);
+    return shapedValue;
+  };
 
   const ops: ValueOps = {
     text: () => literalText(written()),
     name: (unsettled) => readName(written(), { resolve, unsettled }),
     names: (cap) => stringValuesOf(value, reading.resolution, cap),
     flag: () => literalFlag(written()),
-    entries: (unsettled) => entriesOf(written(), unsettled, reading),
-    items: () => itemsOf(written(), reading),
+    entries: (unsettled) => entriesOf(shaped(), unsettled, reading),
+    items: () => itemsOf(shaped(), reading),
     asArg: () => effectArgOf(written()),
     property: (name) => {
-      const inside = initializerOf(written(), name, resolve);
+      const inside = initializerOf(shaped(), name, resolve);
       return inside === null ? null : valueOpsFor(inside, reading);
     },
     parts: () => literalParts(written()),
@@ -813,7 +824,12 @@ function spreadEntries(
       const spread = settled(written.getExpression(), resolve);
       return spread === null
         ? []
-        : spreadEntries(spread, unsettled, resolve, inside);
+        : spreadEntries(
+            followedCall(spread, resolve),
+            unsettled,
+            resolve,
+            inside,
+          );
     }
     if (Node.isShorthandPropertyAssignment(written)) {
       const name = written.getNameNode();
@@ -848,12 +864,75 @@ function entryKey(
   return unquoted(written.getName());
 }
 
-/** What a list states, item by item. */
+/**
+ * What a list states, item by item. A list built with `map` states one
+ * item, the value its callback returns for every element.
+ */
 function itemsOf(value: Node, reading: ValueReading): ValueOps[] {
-  if (!Node.isArrayLiteralExpression(value)) {
-    return [];
+  if (Node.isArrayLiteralExpression(value)) {
+    return value.getElements().map((element) => valueOpsFor(element, reading));
   }
-  return value.getElements().map((element) => valueOpsFor(element, reading));
+  const element = mappedElement(value, reading);
+  return element === null ? [] : [valueOpsFor(element, reading)];
+}
+
+/**
+ * The one value the callback of `items.map(callback)` returns, written
+ * in place or named. Null for any other value, and for a callback with
+ * no return or more than one.
+ */
+function mappedElement(value: Node, reading: ValueReading): Node | null {
+  if (!Node.isCallExpression(value)) {
+    return null;
+  }
+  const callee = value.getExpression();
+  const [callback] = value.getArguments();
+  if (
+    callback === undefined ||
+    !Node.isPropertyAccessExpression(callee) ||
+    callee.getName() !== MAPPING_METHOD
+  ) {
+    return null;
+  }
+  const built = functionAt(callback, reading.resolution);
+  return built === null ? null : returnedOnce(built);
+}
+
+/** The function a value is written as, or the one function it comes to. */
+function functionAt(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): FunctionRoot | null {
+  const peeled = peelValue(value);
+  if (isFunctionRoot(peeled)) {
+    return peeled;
+  }
+  const found = (resolution?.resolveComesTo(peeled) ?? []).filter(
+    isFunctionRoot,
+  );
+  const [one] = found;
+  return found.length === 1 && one !== undefined ? one : null;
+}
+
+/**
+ * The one value a function returns: an arrow's expression body, or the
+ * value of its one `return`, counting every `return` in its body but not
+ * those of a function inside it.
+ */
+function returnedOnce(fn: FunctionRoot): Node | null {
+  const body = fn.getBody();
+  if (body === undefined) {
+    return null;
+  }
+  if (!Node.isBlock(body)) {
+    return peelValue(body);
+  }
+  const returned = body
+    .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+    .filter((statement) => statement.getFirstAncestor(isFunctionRoot) === fn)
+    .flatMap((statement) => statement.getExpression() ?? []);
+  const [one] = returned;
+  return returned.length === 1 && one !== undefined ? peelValue(one) : null;
 }
 
 /** The text of a string the source writes out, or null for anything else. */
@@ -1011,6 +1090,18 @@ function settled(
 }
 
 /**
+ * A value, or the one value a call into a project function returns. A
+ * library call and a construction have none, and stay as written, as
+ * the fact ops' `followedCall` leaves them.
+ */
+function followedCall(value: Node, resolve: Resolve): Node {
+  if (!Node.isCallExpression(value) && !Node.isNewExpression(value)) {
+    return value;
+  }
+  return unwrapped(resolve(value)) ?? value;
+}
+
+/**
  * Which values `settled` asks the store about. A receiver kept on a
  * field, `this.orders`, is the call the field was written as, the same
  * as one kept in a local, so a receiver follows fields as well.
@@ -1060,10 +1151,11 @@ function objectAt(
   argument: Node | undefined,
   resolve: Resolve,
 ): ObjectLiteralExpression | null {
-  const written = settled(argument, resolve);
-  if (written === null) {
+  const stated = settled(argument, resolve);
+  if (stated === null) {
     return null;
   }
+  const written = followedCall(stated, resolve);
   if (isCalled(written)) {
     return objectAt(argumentsIn(written)[0], resolve);
   }
@@ -1093,7 +1185,12 @@ function initializerOf(
       const found =
         spread === null
           ? null
-          : initializerOf(spread, property, resolve, inside);
+          : initializerOf(
+              followedCall(spread, resolve),
+              property,
+              resolve,
+              inside,
+            );
       if (found !== null) {
         return found;
       }

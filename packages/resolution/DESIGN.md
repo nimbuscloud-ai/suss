@@ -183,7 +183,8 @@ eachElement(c, x)           every element of the collection c is built
                             Ruby map or collect block or &f. Otherwise x
                             is the expression each element is written as,
                             the body of a list, set or generator
-                            comprehension. Nothing reads it yet
+                            comprehension. The ops in @suss/recognize/ops
+                            read it, and no rule does
 elementPartOf(x, over, k)   x is given the part under k of each element
                             of over, where the code takes the element
                             apart: ([name, kind]) or ({ id }) in a
