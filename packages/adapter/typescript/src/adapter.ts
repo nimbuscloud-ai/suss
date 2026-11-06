@@ -26,7 +26,6 @@ import {
 } from "ts-morph";
 
 import {
-  BOUNDARY_ROLE,
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
@@ -48,6 +47,7 @@ import {
   type CacheDiagnostic,
   type CacheInput,
   type CacheLayer,
+  claimBinding,
   commonDirectoryOf,
   composeWrappers,
   createCacheLayer,
@@ -3804,24 +3804,6 @@ function synthesizeSubUnits(
   return [...summaries, ...synthesized];
 }
 
-/**
- * A sub-unit runs as part of a unit that serves or runs, so it takes
- * that binding whole. A caller's binding is the call it makes, and that
- * call is in the caller's own body, never in a callback inside it, so a
- * callback there is internal code the same as a function the closure
- * walk reaches.
- */
-function subUnitBinding(parent: BehavioralSummary): BoundaryBinding | null {
-  const binding = parent.identity.boundaryBinding;
-  if (binding === null || BOUNDARY_ROLE[parent.kind] === "provider") {
-    return binding;
-  }
-  return functionCallBinding({
-    transport: "in-process",
-    recognition: "reachable",
-  });
-}
-
 const DEFAULT_SUB_UNIT_TERMINALS: TerminalPattern[] = [
   { kind: "return", match: { type: "returnStatement" }, extraction: {} },
   { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
@@ -3886,7 +3868,7 @@ function buildSubUnitSummary(
     everyUnit,
   );
 
-  raw.boundaryBinding = subUnitBinding(parent);
+  raw.boundaryBinding = claimBinding(parent, subUnit.kind);
   const parentReads = enclosingParameterReads(
     func,
     parentFunc,

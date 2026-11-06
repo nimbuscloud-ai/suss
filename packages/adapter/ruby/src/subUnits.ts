@@ -11,8 +11,7 @@
  * has a summary of its own.
  */
 
-import { BOUNDARY_ROLE, functionCallBinding } from "@suss/behavioral-ir";
-import { assembleSummary } from "@suss/extractor";
+import { assembleSummary, claimBinding } from "@suss/extractor";
 import { factCallOps } from "@suss/recognize/ops";
 import { callsRun } from "@suss/resolution";
 
@@ -37,7 +36,7 @@ import {
 import { claimedBlockStorage } from "./storage.js";
 import { boundFileOf } from "./values/evaluator.js";
 
-import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   CallOps,
@@ -225,7 +224,7 @@ function subUnitStructure(
       exportName: null,
       exportPath: null,
     },
-    boundaryBinding: subUnitBinding(parent),
+    boundaryBinding: claimBinding(parent, subUnit.kind),
     parameters: [],
     branches: paths.map((branch) =>
       withEffectsThatRun(branch, { effects, extraEffects }),
@@ -245,21 +244,4 @@ function onlyReturn(range: RawBranch["location"]): RawBranch {
     location: range,
     isDefault: true,
   };
-}
-
-/**
- * A sub-unit runs as part of a unit that serves or runs, so it takes
- * that binding whole. A caller's binding is the call it makes, and that
- * call is in the caller's own body, never in a block inside it, so a
- * block there is internal code, the same as a method the walk reaches.
- */
-function subUnitBinding(parent: BehavioralSummary): BoundaryBinding | null {
-  const binding = parent.identity.boundaryBinding;
-  if (binding === null || BOUNDARY_ROLE[parent.kind] === "provider") {
-    return binding;
-  }
-  return functionCallBinding({
-    transport: "in-process",
-    recognition: "reachable",
-  });
 }
