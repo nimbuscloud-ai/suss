@@ -330,6 +330,7 @@ function callOrigin(call: FactCall): ByOrigin<boolean> {
 
 class FactValue implements ValueOps {
   private settledKey: string | null = null;
+  private shapedKey: string | null = null;
 
   constructor(
     private readonly key: string,
@@ -361,22 +362,28 @@ class FactValue implements ValueOps {
 
   entries(unsettled: UnsettledName): readonly ValueEntry[] {
     return lastValueWins(
-      spreadEntries(this.written(), unsettled, this.facts),
+      spreadEntries(this.shaped(), unsettled, this.facts),
     ).map(({ key, held }) => ({ key, value: factValueOps(held, this.facts) }));
   }
 
+  /**
+   * A list written out gives its items. A list built by mapping gives
+   * one item, the value every element is built as, since each element
+   * has that one shape.
+   */
   items(): readonly ValueOps[] {
-    const list = this.written();
-    if (this.facts.shapeOf(list) !== "list") {
-      return [];
+    const list = this.shaped();
+    if (this.facts.shapeOf(list) === "list") {
+      return entriesInOrder(list, this.facts).map((held) =>
+        factValueOps(held, this.facts),
+      );
     }
-    return entriesInOrder(list, this.facts).map((held) =>
-      factValueOps(held, this.facts),
-    );
+    const element = builtElement(list, this.facts);
+    return element === null ? [] : [factValueOps(element, this.facts)];
   }
 
   property(name: string): ValueOps | null {
-    const held = propertyOf(this.written(), name, this.facts);
+    const held = propertyOf(this.shaped(), name, this.facts);
     return held === null ? null : factValueOps(held, this.facts);
   }
 
@@ -462,6 +469,57 @@ class FactValue implements ValueOps {
     this.settledKey ??= settled(this.key, this.facts, "names");
     return this.settledKey;
   }
+
+  /**
+   * What an object or list is read off: the value as written, or the one
+   * value a call into a project function returns. A text or a name is
+   * read off `written()` instead, since the adapter settles a call there
+   * with the call's arguments in place, which reading what the function
+   * returns would lose.
+   */
+  private shaped(): string {
+    this.shapedKey ??= followedCall(this.written(), this.facts);
+    return this.shapedKey;
+  }
+}
+
+/**
+ * A value, or the one value a call into a project function returns. A
+ * library call, a construction and a function with two returns have no
+ * one value, and stay as written, so a command is still read off the
+ * object it was constructed with.
+ */
+function followedCall(key: string, source: FactSource): string {
+  if (!isCall(key, source)) {
+    return key;
+  }
+  const returned = source.writtenAs(key) ?? key;
+  source.read(returned);
+  return returned;
+}
+
+/**
+ * What every element of a mapped collection is built as, or null. A
+ * call builds each element from what the function it hands over
+ * returns, and a comprehension writes the element in place. A callback
+ * with two returns, or one that comes to no function, builds nothing
+ * the ops can read.
+ */
+function builtElement(collection: string, source: FactSource): string | null {
+  const each = only(source.db.lookup("eachElement", 0, collection), 1);
+  if (each === null) {
+    return null;
+  }
+  source.read(each);
+  if (!isCall(collection, source)) {
+    return each;
+  }
+  const callback = functionBehind(each, source);
+  if (callback === null) {
+    return null;
+  }
+  source.read(callback);
+  return only(source.db.lookup("returnsValue", 0, callback), 1);
 }
 
 /**
@@ -701,14 +759,14 @@ function propertyOf(
 }
 
 /**
- * The object a spread unpacks: what a name was written as, or failing
- * that the object the spread comes to. The second reaches an object
- * passed through a call that returns its argument, `...meta(base)`,
- * which the first stops at.
+ * The object a spread unpacks: what a name was written as, or what a
+ * project call returns, or failing those the object the spread comes
+ * to. The last reaches an object passed through a call that returns its
+ * argument, `...meta(base)`, which the first two stop at.
  */
 function spreadObject(spread: string, source: FactSource): string {
   source.read(spread);
-  const written = settled(spread, source, "names");
+  const written = followedCall(settled(spread, source, "names"), source);
   if (source.shapeOf(written) === "object") {
     return written;
   }
@@ -716,8 +774,9 @@ function spreadObject(spread: string, source: FactSource): string {
 }
 
 /**
- * The object an argument states. A command puts its inputs in the object
- * it was constructed with, so a construction is read as the object in it.
+ * The object an argument states. A project call is read as the object it
+ * returns. A command puts its inputs in the object it was constructed
+ * with, so a construction is read as the object in it.
  */
 function objectAt(
   argument: string | undefined,
@@ -726,7 +785,7 @@ function objectAt(
   if (argument === undefined) {
     return null;
   }
-  const written = settled(argument, source, "names");
+  const written = followedCall(settled(argument, source, "names"), source);
   if (isCall(written, source)) {
     const first = only(
       source.db.lookup("callArg", 0, written).filter((row) => row[1] === "0"),

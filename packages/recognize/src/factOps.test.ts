@@ -12,6 +12,8 @@ import {
   typed,
 } from "./ops.js";
 
+import type { ValueOps } from "@suss/extractor";
+
 /**
  * The facts for, in source order:
  *
@@ -540,6 +542,129 @@ describe("factValueOps over a spread", () => {
     expect(
       factValueOps("row", { ...spreads(), formOf: () => "object" }).form?.(),
     ).toBe("object");
+  });
+});
+
+/**
+ * The facts for, with makeRow a project function returning `{ made: 1 }`:
+ *
+ *   toRow = (u) => ({ name: u })
+ *   pick = (u) => { if (u) return { a: u }; return { b: u } }
+ *   users.map(toRow); users.map(pick); users.map(String)
+ *   [{ name: u } for u in users]
+ *   { ...makeRow(), d: 4 }
+ *   save(makeRow())
+ *   send(new PutCommand({ TableName: "orders" }))
+ */
+function mapped(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("func", "toRow");
+  add("returnsValue", "toRow", "rowObject");
+  add("objectValue", "rowObject");
+  add("holdsProperty", "rowObject", "name", "u");
+  add("writtenEntryAt", "rowObject", "0", "u", "value");
+  add("func", "pick");
+  add("returnsValue", "pick", "aObject");
+  add("returnsValue", "pick", "bObject");
+  for (const [call, callback] of [
+    ["byName", "toRowName"],
+    ["byPick", "pickName"],
+    ["byString", "String"],
+  ] as const) {
+    add("call", call, "users.map");
+    add("callArg", call, "0", callback);
+    add("eachElement", call, callback);
+  }
+  add("eachElement", "comprehension", "rowObject");
+  add("objectValue", "spreading");
+  add("writtenEntryAt", "spreading", "0", "makeInSpread", "spread");
+  add("holdsProperty", "spreading", "d", "four");
+  add("writtenEntryAt", "spreading", "1", "four", "value");
+  for (const call of ["makeInSpread", "makeInPlace"]) {
+    add("call", call, "makeRow");
+    add("writtenValue", call);
+  }
+  add("objectValue", "madeObject");
+  add("holdsProperty", "madeObject", "made", "one");
+  add("writtenEntryAt", "madeObject", "0", "one", "value");
+  add("call", "save", "save");
+  add("callArg", "save", "0", "makeInPlace");
+  add("call", "send", "send");
+  add("callArg", "send", "0", "put");
+  add("call", "put", "PutCommand");
+  add("callArg", "put", "0", "input");
+  add("objectValue", "input");
+  add("holdsProperty", "input", "TableName", "orders");
+  add("writtenEntryAt", "input", "0", "orders", "value");
+
+  const shapes: Record<string, "object"> = {
+    rowObject: "object",
+    spreading: "object",
+    madeObject: "object",
+    input: "object",
+  };
+  const comesTo: Record<string, string[]> = {
+    toRowName: ["toRow"],
+    pickName: ["pick"],
+  };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) =>
+      key === "makeInSpread" || key === "makeInPlace" ? "madeObject" : null,
+    comesTo: (key) => comesTo[key] ?? [],
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: (key) => shapes[key] ?? null,
+    textOf: (key) => key,
+    literalOf: (key) => (key === "orders" ? "orders" : null),
+    nameOf: (key) => names[key] ?? null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+}
+
+const names: Record<string, string> = { orders: "orders", one: "first" };
+
+describe("factValueOps over a mapped list and a project call", () => {
+  const keysOf = (value: ValueOps | undefined) =>
+    value?.entries("nothing").map((entry) => entry.key);
+
+  it("reads a list built by map as one item, what its callback returns", () => {
+    const [item, ...more] = factValueOps("byName", mapped()).items();
+
+    expect(more).toEqual([]);
+    expect(keysOf(item)).toEqual(["name"]);
+  });
+
+  it("reads a comprehension's one item as the element it writes in place", () => {
+    const [item] = factValueOps("comprehension", mapped()).items();
+
+    expect(keysOf(item)).toEqual(["name"]);
+  });
+
+  it("reads no item for a callback with two returns, or one that comes to no function", () => {
+    expect(factValueOps("byPick", mapped()).items()).toEqual([]);
+    expect(factValueOps("byString", mapped()).items()).toEqual([]);
+  });
+
+  it("reads an object off what a project call returns, in place or spread", () => {
+    const made = factValueOps("makeInPlace", mapped());
+
+    expect(keysOf(made)).toEqual(["made"]);
+    expect(made.property("made")?.source?.()).toBe("one");
+    expect(keysOf(factValueOps("spreading", mapped()))).toEqual(["made", "d"]);
+    expect(
+      factCallOps("save", mapped())?.propertyAt(0, "made", "nothing"),
+    ).toBe("first");
+  });
+
+  it("keeps a construction as written, so a command is read off the object it was made with", () => {
+    const send = factCallOps("send", mapped());
+
+    expect(send?.propertyAt(0, "TableName", "nothing")).toBe("orders");
+    expect(factValueOps("put", mapped()).entries("nothing")).toEqual([]);
   });
 });
 
