@@ -222,14 +222,15 @@ function contributedBy(
     const file = project.getSourceFile(filePath);
     return file === undefined ? [] : [file];
   });
-  return [
-    ...buildProjectHelperIndex(
-      files,
-      [pack],
-      new Map(files.map((file) => [file, [pack]])),
-      store,
-    ).contributedRecognizers(),
-  ];
+  return buildProjectHelperIndex(
+    files,
+    [pack],
+    new Map(files.map((file) => [file, [pack]])),
+    store,
+    { root: sourceFile.getFilePath() },
+  )
+    .contributedRecognizers()
+    .map((contributed) => contributed.recognize);
 }
 
 /** What one set of recognizers makes of one node, each answer checked against the fact ops when a gate is given. */

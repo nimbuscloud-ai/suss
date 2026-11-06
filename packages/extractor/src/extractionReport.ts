@@ -257,8 +257,15 @@ export function runPackHook<T>(
  */
 export interface PackRecognizer {
   readonly pack: string;
-  /** The pack field the recognizer came from. A failure reports it as the hook that threw. */
-  readonly hook: "invocationRecognizers" | "accessRecognizers";
+  /**
+   * The pack field the recognizer came from. A failure reports it as the
+   * hook that threw. A recognizer the pack made from the project's own
+   * helpers came from `projectHelpers`.
+   */
+  readonly hook:
+    | "invocationRecognizers"
+    | "accessRecognizers"
+    | "projectHelpers.invocationRecognizers";
   readonly tally: PackTally | undefined;
   readonly recognize: InvocationRecognizer;
 }
@@ -310,12 +317,21 @@ export function runPackRecognizer(
   );
 }
 
+/**
+ * A tally for each pack. `earlier` has the failures of hooks that ran
+ * before these tallies existed, such as the ones that build the cache
+ * key. A run that is tried twice starts each try from them, so each of
+ * those failures is counted once.
+ */
 export function createPackTallies(
   packs: ReadonlyArray<{ name: string }>,
+  earlier?: ReadonlyMap<string, PackTally>,
 ): Map<string, PackTally> {
   const tallies = new Map<string, PackTally>();
   for (const pack of packs) {
-    tallies.set(pack.name, emptyTally());
+    const tally = emptyTally();
+    tally.failures.push(...(earlier?.get(pack.name)?.failures ?? []));
+    tallies.set(pack.name, tally);
   }
   return tallies;
 }

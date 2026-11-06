@@ -18,19 +18,20 @@ import type { PatternPack } from "@suss/extractor";
 
 type GatingPack = Pick<PatternPack, "requiresImport" | "discovery">;
 
-/** A pack-shaped declaration of those manifests, for the cache's run digest. */
-export function installedLibraryInputs(
+/**
+ * Those manifests, for the cache's run digest. The adapter reads them
+ * for every pack, so a throw here is the adapter's own and is not put on
+ * any pack's tally.
+ */
+export function installedLibraryManifests(
   packs: ReadonlyArray<GatingPack>,
   fromDir: string | undefined,
-): { discoveryInputs: () => string[] } {
-  return {
-    discoveryInputs: () =>
-      fromDir === undefined
-        ? []
-        : [...new Set(packs.flatMap(librariesOf))]
-            .sort()
-            .flatMap((name) => manifestsOf(name, fromDir)),
-  };
+): string[] {
+  return fromDir === undefined
+    ? []
+    : [...new Set(packs.flatMap(librariesOf))]
+        .sort()
+        .flatMap((name) => manifestsOf(name, fromDir));
 }
 
 function librariesOf(pack: GatingPack): string[] {

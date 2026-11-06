@@ -41,6 +41,7 @@ import {
   ownersWhereWritten,
   packRecognizers,
   runDigest,
+  runRootOf,
   stampModuleImports,
   stampModules,
   storedPathsOfRun,
@@ -117,6 +118,7 @@ import type {
   DeclaredModule,
   ExtractionReport,
   ExtractorOptions,
+  PackTally,
   PartialPlan,
   RawCodeStructure,
   Timer,
@@ -402,17 +404,20 @@ export async function extractPythonProject(
     importRoots: roots,
     modules: settlePythonModules(options.modules),
   })}`;
+  // A hook that builds the key runs before any try at the run has
+  // tallies of its own, so its failure is kept here and each try starts
+  // from it.
+  const beforeLookup = createPackTallies(options.packs);
   const input: CacheInput = {
     files: cacheDir === null ? [] : options.files,
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : runDigest(
-            packsDigest,
-            options.packs,
-            options.files,
-            storedPathsOfRun(options.files[0]).paths.keyText,
-          ),
+        : runDigest(packsDigest, options.packs, options.files, {
+            asStored: storedPathsOfRun(options.files[0]).paths.keyText,
+            tallies: beforeLookup,
+            root: runRootOf(options),
+          }),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     layer.lookup(input),
@@ -468,10 +473,13 @@ export async function extractPythonProject(
   let facts: Database | null = null;
   if (plan !== null && records !== null) {
     try {
-      ({ summaries, facts } = await runPython(options, roots, cache, {
-        plan,
-        records,
-      }));
+      ({ summaries, facts } = await runPython(
+        options,
+        roots,
+        cache,
+        { plan, records },
+        beforeLookup,
+      ));
     } catch (error) {
       if (!(error instanceof ReplayFailed)) {
         throw error;
@@ -480,7 +488,13 @@ export async function extractPythonProject(
   }
   if (summaries === null || facts === null) {
     options.onCacheDiagnostic?.(lookup.diagnostic);
-    ({ summaries, facts } = await runPython(options, roots, cache, null));
+    ({ summaries, facts } = await runPython(
+      options,
+      roots,
+      cache,
+      null,
+      beforeLookup,
+    ));
   }
   return { summaries, facts, roots, unreadManifests };
 }
@@ -490,12 +504,13 @@ async function runPython(
   roots: string[],
   cache: RunCache,
   previous: Previous | null,
+  beforeLookup: ReadonlyMap<string, PackTally>,
 ): Promise<{ summaries: BehavioralSummary[]; facts: Database }> {
   const { timer, cacheDir } = cache;
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
   const gapHandling = options.gapHandling ?? "permissive";
-  const tallies = createPackTallies(options.packs);
+  const tallies = createPackTallies(options.packs, beforeLookup);
   // With a cache, every question and every read of another file is charged
   // to the file's discovery or the function's scan that made it.
   const ledger =
@@ -759,6 +774,7 @@ async function runPython(
       ...declaredEntryUnits(boundFile, options.packs, {
         facts: db,
         storageFor,
+        tallies,
       }),
       ...jobConsumerUnits(boundFile, { facts: db, storageFor }),
       ...(tests === null

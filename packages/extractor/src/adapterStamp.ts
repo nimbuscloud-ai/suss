@@ -22,6 +22,7 @@ import {
   processCodeHasher,
 } from "./codeHash.js";
 import { modulesStamp, type SettledModule } from "./declaredModules.js";
+import { type PackTally, runPackHook } from "./extractionReport.js";
 
 /**
  * Whether this process can see the adapter's own code. `bundle` includes
@@ -239,6 +240,22 @@ function optionalText(value: boolean | undefined): string | undefined {
   return value === undefined ? undefined : String(value);
 }
 
+/** What `runDigest` needs besides the packs and the files the run walks. */
+export interface RunDigestOptions {
+  /** How a path is written into the key. */
+  asStored?: ((text: string) => string) | undefined;
+  /** Where a pack whose `discoveryInputs` throws has the failure recorded. */
+  tallies?: ReadonlyMap<string, PackTally> | undefined;
+  /** The file that failure reports. The hook lists files for the whole run, so this is the run's root. */
+  root: string;
+  /**
+   * Files the adapter itself reads for the run, which go into the key
+   * beside the packs' own. A throw while listing them is the adapter's,
+   * so the adapter lists them before calling.
+   */
+  adapterInputs?: readonly string[] | undefined;
+}
+
 /**
  * The digest a run looks its cache entry up under. A pack may read
  * project files that are not among the ones a run walks, a SAM template
@@ -246,15 +263,30 @@ function optionalText(value: boolean | undefined): string | undefined {
  * the key next to the pack's own config. Which files they are depends
  * on the files this run walks, so the digest is computed per run rather
  * than once per adapter.
+ *
+ * A pack whose `discoveryInputs` throws puts no file in the key, so the
+ * run goes on and caches. Until the hook stops throwing, an edit to a
+ * file it would have listed does not miss the cache.
  */
 export function runDigest(
   packsDigest: string,
   packs: ReadonlyArray<{
-    discoveryInputs?: (files: readonly string[]) => string[];
+    name: string;
+    discoveryInputs?: ((files: readonly string[]) => string[]) | undefined;
   }>,
   files: readonly string[],
-  asStored?: (text: string) => string,
+  options: RunDigestOptions,
 ): string {
-  const inputs = packs.flatMap((pack) => pack.discoveryInputs?.(files) ?? []);
-  return `${packsDigest}|reads:${projectFileStamp(inputs, asStored)}`;
+  const inputs = [
+    ...packs.flatMap((pack) =>
+      runPackHook(
+        options.tallies?.get(pack.name),
+        { pack: pack.name, hook: "discoveryInputs", file: options.root },
+        () => pack.discoveryInputs?.(files) ?? [],
+        [],
+      ),
+    ),
+    ...(options.adapterInputs ?? []),
+  ];
+  return `${packsDigest}|reads:${projectFileStamp(inputs, options.asStored)}`;
 }
