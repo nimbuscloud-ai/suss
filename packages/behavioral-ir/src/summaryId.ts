@@ -78,19 +78,104 @@ function extendWithBoundary(summaries: BehavioralSummary[]): void {
     const id = summary.identity.id ?? "";
     claimed.set(id, (claimed.get(id) ?? 0) + 1);
   }
+  const fromParent = labelParentBoundaries(summaries);
 
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
     if (binding === null) {
       continue;
     }
-    const key = boundaryKey(binding);
+    const key = boundaryKey(binding) ?? fromParent.get(summary) ?? null;
     const shared = (claimed.get(summary.identity.id ?? "") ?? 0) > 1;
     const labelled = summary.identity.nameKind === "label" && key !== null;
     if (shared || labelled) {
       summary.identity.id = `${summary.identity.id}#${key}`;
     }
   }
+}
+
+/**
+ * The boundary each label-named summary with no key of its own is named
+ * under: the key of the label-named summary it is written in and named
+ * after. A timer `get.setTimeout#0` in the handler `get` for `GET /a` is
+ * internal code with no key, and without its handler's route two such
+ * timers under two `GET` routes in one file would be told apart only by
+ * their order.
+ */
+function labelParentBoundaries(
+  summaries: readonly BehavioralSummary[],
+): Map<BehavioralSummary, string> {
+  const keyedByFile = new Map<string, KeyedLabel[]>();
+  const keyless: BehavioralSummary[] = [];
+  for (const summary of summaries) {
+    if (summary.identity.nameKind !== "label") {
+      continue;
+    }
+    const binding = summary.identity.boundaryBinding;
+    const key = binding === null ? null : boundaryKey(binding);
+    if (key === null) {
+      keyless.push(summary);
+      continue;
+    }
+    const inFile = keyedByFile.get(summary.location.file);
+    if (inFile === undefined) {
+      keyedByFile.set(summary.location.file, [{ summary, key }]);
+      continue;
+    }
+    inFile.push({ summary, key });
+  }
+
+  const found = new Map<BehavioralSummary, string>();
+  for (const summary of keyless) {
+    const parent = innermostParent(
+      summary,
+      keyedByFile.get(summary.location.file) ?? [],
+    );
+    if (parent !== null) {
+      found.set(summary, parent.key);
+    }
+  }
+  return found;
+}
+
+interface KeyedLabel {
+  summary: BehavioralSummary;
+  key: string;
+}
+
+/** The innermost labelled summary this one is written in and named after. */
+function innermostParent(
+  summary: BehavioralSummary,
+  candidates: readonly KeyedLabel[],
+): KeyedLabel | null {
+  let found: KeyedLabel | null = null;
+  for (const candidate of candidates) {
+    if (
+      !summary.identity.name.startsWith(
+        `${candidate.summary.identity.name}.`,
+      ) ||
+      !encloses(candidate.summary, summary)
+    ) {
+      continue;
+    }
+    if (found === null || encloses(found.summary, candidate.summary)) {
+      found = candidate;
+    }
+  }
+  return found;
+}
+
+/** Whether `inner` is written inside `outer`, by character when both have a span. */
+function encloses(outer: BehavioralSummary, inner: BehavioralSummary): boolean {
+  const outerSpan = outer.location.span;
+  const innerSpan = inner.location.span;
+  if (outerSpan !== undefined && innerSpan !== undefined) {
+    return outerSpan.start <= innerSpan.start && innerSpan.end <= outerSpan.end;
+  }
+  return (
+    outer.location.range.start <= inner.location.range.start &&
+    inner.location.range.end <= outer.location.range.end
+  );
 }
 
 /**
