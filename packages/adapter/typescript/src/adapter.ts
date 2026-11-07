@@ -2928,6 +2928,7 @@ export function createTypeScriptAdapter(
             config.frameworks,
             tsconfig,
             config.walkedDirectory,
+            tallies,
           ),
         );
         candidatePaths = lazy.candidatePaths;
@@ -2951,7 +2952,12 @@ export function createTypeScriptAdapter(
 
       const resolution = ResolutionStore.forPacks(config.frameworks);
       const packsByFile = timer.time("preFilter", () =>
-        computePackApplicability(sourceFiles, config.frameworks, resolution),
+        computePackApplicability(
+          sourceFiles,
+          config.frameworks,
+          resolution,
+          tallies,
+        ),
       );
 
       // An app built in one file and registered on in another is joined
