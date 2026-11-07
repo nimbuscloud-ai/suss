@@ -602,6 +602,30 @@ describe("prisma recognizer: happy path", () => {
     ).toEqual(["write", "write"]);
   });
 
+  it("writes `operation` before `selector` and `relationPath`, the order every storage access uses", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function retag(id: number) {
+        return await db.article.update({
+          where: { id },
+          data: { tagList: { connectOrCreate: [{ create: { name: "ts" } }] } },
+          include: { author: true },
+        });
+      }
+    `);
+    expect(
+      storageEffectsOf(recognizeAll(file)).map((access) =>
+        Object.keys(access.interaction),
+      ),
+    ).toEqual([
+      ["class", "kind", "fields", "operation", "selector"],
+      ["class", "kind", "fields", "operation", "relationPath"],
+      ["class", "kind", "fields", "operation", "relationPath"],
+      ["class", "kind", "fields", "operation", "relationPath", "relationKey"],
+    ]);
+  });
+
   it("writes the columns a callback written at the call builds for each row", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
