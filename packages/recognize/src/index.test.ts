@@ -20,7 +20,12 @@ import { unitInvokes } from "./unitInvokes.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { StatedSlot } from "@suss/extractor";
-import type { MessageSendMethod, SqlMethod, StorageMethod } from "./chain.js";
+import type {
+  InputRule,
+  MessageSendMethod,
+  SqlMethod,
+  StorageMethod,
+} from "./chain.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
 /** The container one storage effect reached, or null for anything else. */
@@ -1208,6 +1213,143 @@ describe("the value a call states for each column", () => {
       ],
       Array(11).fill(undefined),
     ]);
+  });
+});
+
+describe("the slots a chain declares", () => {
+  const keysUnder =
+    (...keys: string[]): InputRule =>
+    ({ input }) =>
+      keys.flatMap((key) => {
+        const under = input.property(key);
+        return under === null ? [] : keysIn(under);
+      });
+  // Both methods report `owner` from `select`, which states it as a
+  // flag, so what the rule read there is no value for the column.
+  const recorded = storageCalls({
+    system: "cassette",
+    client: declaredBy("tapedeck"),
+  }).methods({
+    put: {
+      kind: "write",
+      selector: { of: { at: 0 }, by: keysUnder("where") },
+      fields: { of: { at: 0 }, by: keysUnder("data", "select") },
+    },
+    peek: {
+      kind: "read",
+      selector: { of: { at: 0 }, by: keysUnder("where") },
+      fields: { of: { at: 0 }, by: keysUnder("data", "select") },
+    },
+  });
+  const declared = recorded.slots({
+    selector: [["where"]],
+    field: [["data"]],
+    fieldsOn: ["write"],
+  });
+  const stating = (method: string): CallOps =>
+    callOps({
+      method,
+      from: ["tapedeck"],
+      values: {
+        0: {
+          where: { side: "a" },
+          data: { title: "t" },
+          select: { owner: "o" },
+        },
+      },
+    });
+
+  it("gives each column the value under a path it lists, and nothing a rule read elsewhere", () => {
+    expect(slotsStated(recorded, stating("put"), run as never)).toEqual([
+      "selector side=a",
+      "field title=t",
+      "field owner=o",
+    ]);
+    expect(slotsStated(declared, stating("put"), run as never)).toEqual([
+      "selector side=a",
+      "field title=t",
+    ]);
+  });
+
+  it("states field slots only on the kinds of access it lists", () => {
+    expect(slotsStated(declared, stating("peek"), run as never)).toEqual([
+      "selector side=a",
+    ]);
+  });
+
+  it("states none for a chain that says its calls state none", () => {
+    expect(
+      slotsStated(recorded.slots("none"), stating("put"), run as never),
+    ).toEqual([]);
+  });
+
+  it("states nothing for a path the call doesn't write", () => {
+    expect(
+      slotsStated(
+        recorded.slots({ selector: [["filter"]] }),
+        stating("put"),
+        run as never,
+      ),
+    ).toEqual([]);
+  });
+
+  it("asks nothing of the paths it lists when nobody listens", () => {
+    const asked: string[] = [];
+    const listed = storageCalls({
+      system: "cassette",
+      client: declaredBy("tapedeck"),
+    })
+      .methods({ put: { kind: "write", fields: ["title"] } })
+      .slots({ field: [["data"]] });
+    const watched = valueOps({ data: { title: "t" } });
+    const ops = callOps({ method: "put", from: ["tapedeck"] });
+    const handing: CallOps = {
+      ...ops,
+      valueAt: () => ({
+        ...watched,
+        property: (name) => {
+          asked.push(name);
+          return watched.property(name);
+        },
+      }),
+    };
+
+    expect(run(listed, handing)?.[0]).toMatchObject({
+      interaction: { fields: ["title"] },
+    });
+    expect(asked).toEqual([]);
+    expect(slotsStated(listed, handing, run as never)).toEqual([
+      "field title=t",
+    ]);
+    expect(asked).toEqual(["data"]);
+  });
+
+  it("finds a value for a column the method lists outright, down a path of several keys", () => {
+    const listed = storageCalls({
+      system: "cassette",
+      client: declaredBy("tapedeck"),
+    }).methods({ put: { kind: "write", fields: ["title"] } });
+    const ops = callOps({
+      method: "put",
+      from: ["tapedeck"],
+      values: { 0: { data: { row: { title: "t" } } } },
+    });
+
+    expect(slotsStated(listed, ops, run as never)).toEqual([]);
+    expect(
+      slotsStated(
+        listed.slots({ field: [["data", "row"]] }),
+        ops,
+        run as never,
+      ),
+    ).toEqual(["field title=t"]);
+  });
+
+  it("counts as one more link written as data", () => {
+    expect(packOf(declared).declarations?.declarations[0]).toMatchObject({
+      dataLinks: 3,
+      functionLinks: ["selector", "fields"],
+    });
   });
 });
 
