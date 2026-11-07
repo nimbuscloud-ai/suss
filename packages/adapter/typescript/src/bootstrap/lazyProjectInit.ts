@@ -30,7 +30,7 @@ import {
   packIsUngated,
 } from "./preFilter.js";
 
-import type { PatternPack } from "@suss/extractor";
+import type { PackTally, PatternPack } from "@suss/extractor";
 
 export type { Project } from "ts-morph";
 
@@ -57,12 +57,14 @@ export async function createLazyProject(
   packs: ReadonlyArray<PatternPack>,
   parsed: TsconfigRead = readTsconfig(tsConfigFilePath),
   walkedDirectory?: string,
+  tallies?: ReadonlyMap<string, PackTally>,
 ): Promise<LazyProjectInit> {
   const allFiles = parsed.fileNames;
   const candidates = await selectCandidateFiles(
     allFiles,
     packs,
     parsed.options,
+    tallies,
   );
 
   return {
@@ -511,6 +513,7 @@ async function selectCandidateFiles(
   allFiles: ReadonlyArray<string>,
   packs: ReadonlyArray<PatternPack>,
   options: ts.CompilerOptions,
+  tallies: ReadonlyMap<string, PackTally> | undefined,
 ): Promise<string[]> {
   // One pack matching every file leaves nothing to pre-filter.
   const ungatedExists = packs.some(packIsUngated);
@@ -520,7 +523,7 @@ async function selectCandidateFiles(
   const gates = unionOver(packs, collectPackGates);
   const marks = unionOver(packs, collectPackMarks);
   const named = unionOver(packs, collectPackNameGates);
-  const generated = generatedModulesOf(packs);
+  const generated = generatedModulesOf(packs, tallies);
   if (
     gates.length === 0 &&
     marks.length === 0 &&
