@@ -706,7 +706,9 @@ interface StoreLookups {
   resolveCallee?: ResolveCallee;
 }
 
-function storeLookupsOf(resolution: ResolutionStore | undefined): StoreLookups {
+export function storeLookupsOf(
+  resolution: ResolutionStore | undefined,
+): StoreLookups {
   if (resolution === undefined) {
     return {};
   }
@@ -1308,6 +1310,34 @@ function collectAccessRecognizers(
   return recognizersFrom(frameworks, tallies, "accessRecognizers");
 }
 
+/**
+ * What a body is read with, whichever walk reads it. Recognizers come
+ * from every pack given, not the discovering one: a Prisma call inside
+ * an Express handler is still a Prisma call. A contributed one matches a
+ * call to a function this project itself declares.
+ */
+interface BodyRecognizers {
+  invocation: InvocationRecognizer[];
+  access: AccessRecognizer[];
+  everyUnit: EveryUnitDeclarations;
+}
+
+function bodyRecognizersOf(
+  frameworks: PatternPack[],
+  tallies: Map<string, PackTally> | undefined,
+  projectHelpers: ProjectHelperIndex | undefined,
+): BodyRecognizers {
+  return {
+    invocation: collectInvocationRecognizers(
+      frameworks,
+      tallies,
+      projectHelpers,
+    ),
+    access: collectAccessRecognizers(frameworks, tallies),
+    everyUnit: everyUnitDeclarationsOf(frameworks),
+  };
+}
+
 // Nested functions the body walkers stop at, so a sub-unit's behavior
 // goes on its own summary and not the parent's as well. Every
 // applicable pack's hook contributes, the way recognizers already come
@@ -1401,16 +1431,7 @@ function extractFromSourceFile(
   projectHelpers?: ProjectHelperIndex,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  // Recognizers come from every pack, not the discovering one: a Prisma
-  // call inside an Express handler is still a Prisma call. A contributed
-  // one matches a call to a function this project itself declares.
-  const allInvocationRecognizers = collectInvocationRecognizers(
-    frameworks,
-    tallies,
-    projectHelpers,
-  );
-  const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
-  const everyUnit = everyUnitDeclarationsOf(frameworks);
+  const recognizers = bodyRecognizersOf(frameworks, tallies, projectHelpers);
   const lookups = storeLookupsOf(resolution);
   const gatedIn: PackTally[] = [];
   let unitsWalkedHere = 0;
@@ -1532,14 +1553,14 @@ function extractFromSourceFile(
       const raw = extractCodeStructure(
         unit,
         pack,
-        allInvocationRecognizers,
-        allAccessRecognizers,
+        recognizers.invocation,
+        recognizers.access,
         barriers,
         resolution,
         lookups.originatesFrom,
         lookups.anchorCallsOf,
         lookups.resolveCallee,
-        everyUnit,
+        recognizers.everyUnit,
       );
 
       // Set before the branches below, since both of them overwrite it
@@ -1799,7 +1820,7 @@ function extractFromSourceFile(
   // whichever pack got there first.
   const moduleScope = moduleScopeSummary(
     sourceFile,
-    allAccessRecognizers,
+    recognizers.access,
     resolution,
     options,
   );
@@ -2060,6 +2081,16 @@ interface WrapperInfo {
   summary: BehavioralSummary;
   func: FunctionRoot;
   sink: WrapperSink;
+  /** The pack that read the wrapper as a client. */
+  pack: PatternPack;
+}
+
+/** What the run reads a wrapper's callers with, the same as any unit's body. */
+interface CallerReading {
+  packsByFile: ReadonlyMap<SourceFile, PatternPack[]>;
+  tallies: Map<string, PackTally>;
+  projectHelpers: ProjectHelperIndex;
+  resolution: ResolutionStore;
 }
 
 /** The library call inside a wrapper, and how its pack reads a request off it. */
@@ -2083,12 +2114,10 @@ function expandWrapperCallers(
   summaries: BehavioralSummary[],
   project: Project,
   frameworks: PatternPack[],
+  reading: CallerReading,
   options?: ExtractorOptions,
-  resolution?: ResolutionStore,
 ): BehavioralSummary[] {
-  if (resolution === undefined) {
-    return summaries;
-  }
+  const { resolution } = reading;
   const wrappers: WrapperInfo[] = [];
   // Building the lookup walks the project's directory tree, so it waits
   // for the first summary that needs it.
@@ -2112,18 +2141,71 @@ function expandWrapperCallers(
     ) {
       continue;
     }
-    wrappers.push({ summary: s, func, sink });
+    wrappers.push({ summary: s, func, sink, pack });
   }
 
   if (wrappers.length === 0) {
     return summaries;
   }
 
+  const subUnitCtx = createTsSubUnitContext(resolution);
   const derived: BehavioralSummary[] = [];
   for (const wrapper of wrappers) {
-    derived.push(...synthesizeCallerSummaries(wrapper, resolution, options));
+    derived.push(
+      ...synthesizeCallerSummaries(
+        wrapper,
+        resolution,
+        (unit, pack) =>
+          readCallerBody(unit, pack, wrapper.pack, reading, subUnitCtx),
+        options,
+      ),
+    );
   }
   return [...summaries, ...derived];
+}
+
+/**
+ * A caller's body, read the way the parent walk reads a unit in the
+ * caller's file: with the recognizers of the packs that apply there,
+ * stopping at the callbacks those packs claim, and asking the run's
+ * store. A file no pack applies to keeps the pack that read the wrapper,
+ * as the sub-unit pass does for the same caller.
+ */
+function readCallerBody(
+  unit: DiscoveredUnit,
+  pack: PatternPack,
+  wrapperPack: PatternPack,
+  reading: CallerReading,
+  subUnitCtx: TsSubUnitContext,
+): RawCodeStructure {
+  const file = unit.func?.getSourceFile();
+  const packs = (file === undefined
+    ? undefined
+    : reading.packsByFile.get(file)) ?? [wrapperPack];
+  const recognizers = bodyRecognizersOf(
+    packs,
+    reading.tallies,
+    reading.projectHelpers,
+  );
+  const lookups = storeLookupsOf(reading.resolution);
+  return extractCodeStructure(
+    unit,
+    pack,
+    recognizers.invocation,
+    recognizers.access,
+    computeSubUnitBarriers(
+      unit,
+      packs,
+      subUnitCtx,
+      reading.tallies,
+      file?.getFilePath() ?? "",
+    ),
+    reading.resolution,
+    lookups.originatesFrom,
+    lookups.anchorCallsOf,
+    lookups.resolveCallee,
+    recognizers.everyUnit,
+  );
 }
 
 /** The pack a client summary was recognized by, or null when it is not one. */
@@ -2292,9 +2374,13 @@ function statedPath(path: string | undefined): string | undefined {
   return written === path || /[^/]/.test(written) ? path : undefined;
 }
 
+/** Reads a caller's body as a unit with the given terminals. */
+type ReadBody = (unit: DiscoveredUnit, pack: PatternPack) => RawCodeStructure;
+
 function synthesizeCallerSummaries(
   wrapper: WrapperInfo,
   resolution: ResolutionStore,
+  readBody: ReadBody,
   options?: ExtractorOptions,
 ): BehavioralSummary[] {
   const seen = new Set<string>();
@@ -2311,7 +2397,9 @@ function synthesizeCallerSummaries(
       continue;
     }
     seen.add(dedupKey);
-    out.push(buildCallerSummary(wrapper, caller, call, reading, options));
+    out.push(
+      buildCallerSummary(wrapper, caller, call, reading, readBody, options),
+    );
   }
 
   return out;
@@ -2340,6 +2428,7 @@ function buildCallerSummary(
   callerFunc: FunctionRoot,
   callExpr: CallExpression,
   reading: SinkReading,
+  readBody: ReadBody,
   options?: ExtractorOptions,
 ): BehavioralSummary {
   const wrapperBinding = wrapper.summary.identity.boundaryBinding;
@@ -2371,7 +2460,7 @@ function buildCallerSummary(
     },
   };
 
-  const raw = extractCodeStructure(unit, syntheticPack);
+  const raw = readBody(unit, syntheticPack);
   const wrapperPaths = wrapperStatusPaths(wrapper.summary);
   if (wrapperPaths !== null) {
     const site = {
@@ -2769,9 +2858,7 @@ export function createTypeScriptAdapter(
               undefined,
               undefined,
               {
-                invocation: collectInvocationRecognizers(config.frameworks),
-                access: collectAccessRecognizers(config.frameworks),
-                everyUnit: everyUnitDeclarationsOf(config.frameworks),
+                ...bodyRecognizersOf(config.frameworks, undefined, undefined),
                 resolution,
                 resolveCallableSources: (value, alsoFrom) =>
                   resolution.resolveCallableSources(value, alsoFrom),
@@ -3111,8 +3198,8 @@ export function createTypeScriptAdapter(
           wrapperInput,
           project,
           config.frameworks,
+          { packsByFile, tallies, projectHelpers, resolution },
           config.extractorOptions,
-          resolution,
         ),
       );
       const pipeline =
@@ -3169,13 +3256,11 @@ export function createTypeScriptAdapter(
                 projectFileSet,
                 closureFacts,
                 {
-                  invocation: collectInvocationRecognizers(
+                  ...bodyRecognizersOf(
                     config.frameworks,
                     tallies,
                     projectHelpers,
                   ),
-                  access: collectAccessRecognizers(config.frameworks, tallies),
-                  everyUnit: everyUnitDeclarationsOf(config.frameworks),
                   resolution,
                   resolveCallableSources: (value, alsoFrom) =>
                     resolution.resolveCallableSources(value, alsoFrom),
@@ -3738,13 +3823,7 @@ function synthesizeSubUnits(
   }
   // A claimed callback is read with what its parent is read with, since
   // the parent's walk stops at the callback and nothing else reads it.
-  const allInvocationRecognizers = collectInvocationRecognizers(
-    frameworks,
-    tallies,
-    projectHelpers,
-  );
-  const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
-  const everyUnit = everyUnitDeclarationsOf(frameworks);
+  const recognizers = bodyRecognizersOf(frameworks, tallies, projectHelpers);
 
   const synthesized: BehavioralSummary[] = [];
   const subUnitCtx = createTsSubUnitContext(resolution);
@@ -3806,9 +3885,8 @@ function synthesizeSubUnits(
         subUnit,
         parent,
         parentFunc,
-        { invocation: allInvocationRecognizers, access: allAccessRecognizers },
+        recognizers,
         claimedFuncs,
-        everyUnit,
         resolution,
         options,
       );
@@ -3837,12 +3915,8 @@ function buildSubUnitSummary(
   subUnit: DiscoveredSubUnit,
   parent: BehavioralSummary,
   parentFunc: FunctionRoot,
-  recognizers: {
-    invocation: InvocationRecognizer[];
-    access: AccessRecognizer[];
-  },
+  recognizers: BodyRecognizers,
   claimed: DescentBarriers,
-  everyUnit: EveryUnitDeclarations,
   resolution: ResolutionStore | undefined,
   options?: ExtractorOptions,
 ): BehavioralSummary | null {
@@ -3883,7 +3957,7 @@ function buildSubUnitSummary(
     lookups.originatesFrom,
     lookups.anchorCallsOf,
     lookups.resolveCallee,
-    everyUnit,
+    recognizers.everyUnit,
   );
 
   raw.boundaryBinding = claimBinding(parent, subUnit.kind);
