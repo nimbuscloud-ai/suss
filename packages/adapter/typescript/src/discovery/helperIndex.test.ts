@@ -14,6 +14,8 @@ import type {
 } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
+const RUN = { root: "/" };
+
 function projectWith(files: Record<string, string>): {
   project: Project;
   sourceFiles: SourceFile[];
@@ -101,6 +103,7 @@ function helpersRead(files: Record<string, string>): ProjectHelper[] {
     [pack],
     applicable,
     new ResolutionStore(),
+    RUN,
   );
   return seen;
 }
@@ -150,6 +153,7 @@ describe("standing down where the call sites expand", () => {
         [pack],
         applicable,
         new ResolutionStore(),
+        RUN,
       ),
       sourceFiles,
     };
@@ -253,6 +257,7 @@ describe("finding a helper from the call site", () => {
       [],
       new Map(),
       new ResolutionStore(),
+      RUN,
     );
 
     expect(index.patternsFor("express")).toEqual([]);
@@ -288,6 +293,7 @@ describe("finding a helper by what its body writes", () => {
       [pack],
       new Map(),
       new ResolutionStore(),
+      RUN,
     );
     return seen;
   }

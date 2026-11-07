@@ -129,9 +129,17 @@ function inputReadingTemplate(checkout: string): CacheInput {
     ...input,
     adapterPacksDigest: runDigest(
       input.adapterPacksDigest,
-      [{ discoveryInputs: () => [path.join(checkout, "template.yaml")] }],
+      [
+        {
+          name: "templates",
+          discoveryInputs: () => [path.join(checkout, "template.yaml")],
+        },
+      ],
       input.files,
-      storedPathsOfRun(input.configPath).paths.keyText,
+      {
+        asStored: storedPathsOfRun(input.configPath).paths.keyText,
+        root: checkout,
+      },
     ),
   };
 }

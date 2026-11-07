@@ -767,6 +767,8 @@ Three parameter positions say how the framework invokes it. `continuationParam` 
 
 `projectHelpers` covers functions the project itself wrote around the library. suss reads them once across the whole project before it walks any file, and whatever the pack makes of them is used alongside its own patterns for the rest of the run. `routeHelperIndex` is the shipped one. Express, Fastify and Hono ask for the project's route helpers to be read, so suss works out what each helper registers from the code itself.
 
+A recognizer `declare` returns counts as the pack's own. Pack health counts its effects for the pack, and a throw from it goes on the pack's tally under `projectHelpers.invocationRecognizers`. When `declare` itself throws, the pack contributes nothing from the helpers, and pack health lists the failure under `projectHelpers.declare`.
+
 ### `transparentWrappers`
 
 ```typescript
@@ -800,6 +802,8 @@ Files the pack reads that are not walked source files. Their content feeds the s
 Code a library's generator writes belongs here too. The Prisma pack lists the schema and the type files of the client `prisma generate` writes, whether the generator puts it in the project or in `node_modules/.prisma/client`, so a run after `prisma generate` does not hand back summaries read against the old client.
 
 A pack does not need to list a library it reads through `node_modules`. The TypeScript adapter adds the installed `package.json` of every library a pack's `requiresImport` gives, so installing another version of it misses the cache.
+
+When `discoveryInputs` throws, the run goes on and caches without that pack's files in the key, and pack health lists the failure under the pack. Until the hook stops throwing, an edit to one of those files does not make the next run read the project again.
 
 ### `responseSemantics` and `failureDelivery`
 

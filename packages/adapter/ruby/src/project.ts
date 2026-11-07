@@ -41,6 +41,8 @@ import {
   noopTimer,
   ownersWhereWritten,
   runDigest,
+  runPackHook,
+  runRootOf,
   stampModuleImports,
   stampModules,
   storedPathsOfRun,
@@ -143,6 +145,7 @@ import type {
   DeclaredModule,
   ExtractionReport,
   ExtractorOptions,
+  PackTally,
   PartialPlan,
   RawCodeStructure,
   RawEffect,
@@ -518,11 +521,21 @@ interface WalkedFiles {
  * files the run walks. A boot template's tags run when the app loads, so
  * the walk reads it the way it reads a file under `config/initializers`.
  */
-function walkedFilesOf(options: ExtractRubyOptions): WalkedFiles {
+function walkedFilesOf(
+  options: ExtractRubyOptions,
+  tallies: ReadonlyMap<string, PackTally>,
+): WalkedFiles {
   const given = new Set(options.files);
-  const templates = [
-    ...new Set(options.packs.flatMap((pack) => pack.bootTemplates?.() ?? [])),
-  ]
+  const root = runRootOf(options);
+  const listed = options.packs.flatMap((pack) =>
+    runPackHook(
+      tallies.get(pack.name),
+      { pack: pack.name, hook: "bootTemplates", file: root },
+      () => pack.bootTemplates?.() ?? [],
+      [],
+    ),
+  );
+  const templates = [...new Set(listed)]
     .filter((file) => !given.has(file))
     .sort();
   return {
@@ -546,7 +559,11 @@ function rubySourceOf(
 export async function extractRubyProject(
   options: ExtractRubyOptions,
 ): Promise<ExtractRubyResult> {
-  const walked = walkedFilesOf(options);
+  // The hooks that pick the walked files and build the key run before any
+  // try at the run has tallies of its own, so their failures are kept here
+  // and each try starts from them.
+  const beforeLookup = createPackTallies(options.packs);
+  const walked = walkedFilesOf(options, beforeLookup);
   const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
 
   const cacheDir = adapterStamp.declineWhenRunFromSource(
@@ -575,12 +592,11 @@ export async function extractRubyProject(
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : runDigest(
-            packsDigest,
-            options.packs,
-            walked.files,
-            storedPathsOfRun(walked.files[0]).paths.keyText,
-          ),
+        : runDigest(packsDigest, options.packs, walked.files, {
+            asStored: storedPathsOfRun(walked.files[0]).paths.keyText,
+            tallies: beforeLookup,
+            root: runRootOf(options),
+          }),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     layer.lookup(input),
@@ -622,7 +638,13 @@ export async function extractRubyProject(
       : recordsToReplay<RubyFileRecord>(plan.roots);
   if (plan !== null && records !== null) {
     try {
-      return await runRuby(options, walked, cache, { plan, records });
+      return await runRuby(
+        options,
+        walked,
+        cache,
+        { plan, records },
+        beforeLookup,
+      );
     } catch (error) {
       if (!(error instanceof ReplayFailed)) {
         throw error;
@@ -630,7 +652,7 @@ export async function extractRubyProject(
     }
   }
   options.onCacheDiagnostic?.(lookup.diagnostic);
-  return runRuby(options, walked, cache, null);
+  return runRuby(options, walked, cache, null, beforeLookup);
 }
 
 /** A stored seed with its node found again in this run's trees. */
@@ -663,12 +685,13 @@ async function runRuby(
   walked: WalkedFiles,
   cache: RunCache,
   previous: Previous | null,
+  beforeLookup: ReadonlyMap<string, PackTally>,
 ): Promise<ExtractRubyResult> {
   const { timer, cacheDir } = cache;
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
   const gapHandling = options.gapHandling ?? "permissive";
-  const tallies = createPackTallies(options.packs);
+  const tallies = createPackTallies(options.packs, beforeLookup);
   // With a cache, every question and every read of another file is charged
   // to the file's discovery or the method's scan that made it. A run whose
   // packs claim sub-units keeps only its whole result.
@@ -845,6 +868,7 @@ async function runRuby(
         facts: db,
         onReachSeed,
         sharedGroups: facts.sharedGroups,
+        tallies,
       })),
       ...moduleExportUnits(root, file, {
         modules: declaredModules,
@@ -867,6 +891,7 @@ async function runRuby(
         displayPathOf,
         facts: db,
         onReachSeed,
+        tallies,
       }),
     ];
     const rawUnits = await timer.timeAsync("discover", () =>
@@ -965,7 +990,12 @@ async function runRuby(
       if (pattern.type !== "controllerActions") {
         continue;
       }
-      const gaps = pattern.routingGaps?.() ?? [];
+      const gaps = runPackHook(
+        tallies.get(pack.name),
+        { pack: pack.name, hook: "routingGaps", file: pattern.routesFile },
+        () => pattern.routingGaps?.() ?? [],
+        [],
+      );
       if (gaps.length === 0) {
         continue;
       }

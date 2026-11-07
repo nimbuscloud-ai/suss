@@ -4,6 +4,7 @@
  * the two means the numbers are wrong.
  */
 
+import { Node } from "ts-morph";
 import { describe, expect, it, vi } from "vitest";
 
 import { evaluatePackHealth, formatPackHealth } from "@suss/extractor";
@@ -254,5 +255,150 @@ describe("a pack whose hook throws", () => {
     } finally {
       noise.mockRestore();
     }
+  });
+});
+
+describe("what a pack makes of the project's helpers", () => {
+  const HANDLERS: PatternPack = {
+    name: "handlers",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "handler",
+        match: { type: "namedExport", names: ["handler"] },
+        requiresImport: [],
+      },
+    ],
+    terminals: [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+
+  /** A pack that reads any function in a file mentioning `Service_1.`. */
+  function helpersPack(
+    declare: NonNullable<PatternPack["projectHelpers"]>["declare"],
+  ): PatternPack {
+    return {
+      ...HANDLERS,
+      name: "helpers",
+      discovery: [],
+      terminals: [],
+      projectHelpers: {
+        find: { by: "text", contains: ["Service_1."] },
+        declare,
+      },
+    };
+  }
+
+  async function runWith(pack: PatternPack) {
+    const project = createTestProject();
+    project.createSourceFile(
+      "src/wire.ts",
+      'export function send(target: string) {\n  return "Service_1." + target;\n}\n',
+    );
+    project.createSourceFile(
+      "src/a.ts",
+      'import { send } from "./wire";\nexport function handler() {\n  send("orders");\n}\n',
+    );
+    let report: ExtractionReport | null = null;
+    const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const summaries = await createTypeScriptAdapter({
+        project,
+        frameworks: [HANDLERS, pack],
+        onExtractionReport: (r) => {
+          report = r;
+        },
+      }).extractAll();
+      const funnel = (report as ExtractionReport | null)?.packs.find(
+        (one) => one.pack === "helpers",
+      );
+      return {
+        summaries,
+        failures: funnel?.failures ?? [],
+        effects: funnel?.effectsRecognized ?? 0,
+      };
+    } finally {
+      noise.mockRestore();
+    }
+  }
+
+  it("counts a contributed recognizer's effects for the pack that contributed it", async () => {
+    const { effects } = await runWith(
+      helpersPack(() => ({
+        invocationRecognizers: [
+          (node) =>
+            Node.isNode(node) &&
+            Node.isCallExpression(node) &&
+            node.getExpression().getText() === "send"
+              ? [
+                  {
+                    type: "interaction",
+                    binding: {
+                      transport: "sqs",
+                      semantics: {
+                        name: "message-bus",
+                        messageBus: "aws_sqs",
+                        channel: "orders",
+                      },
+                      recognition: "helpers",
+                    },
+                    callee: "send",
+                    interaction: { class: "message-send" },
+                  },
+                ]
+              : null,
+        ],
+      })),
+    );
+
+    expect(effects).toBeGreaterThan(0);
+  });
+
+  it("puts a contributed recognizer's throw on the pack that contributed it", async () => {
+    const { summaries, failures } = await runWith(
+      helpersPack(() => ({
+        invocationRecognizers: [
+          () => {
+            throw new Error("cannot read the helper call");
+          },
+        ],
+      })),
+    );
+
+    expect(summaries.map((summary) => summary.identity.name)).toContain(
+      "handler",
+    );
+    expect(failures).toContainEqual({
+      hook: "projectHelpers.invocationRecognizers",
+      file: "/src/a.ts",
+      line: 3,
+      message: "cannot read the helper call",
+    });
+  });
+
+  it("contributes nothing when declare throws, and the rest of the run goes on", async () => {
+    const { summaries, failures } = await runWith(
+      helpersPack(() => {
+        throw new Error("cannot make sense of the helpers");
+      }),
+    );
+
+    expect(summaries.map((summary) => summary.identity.name)).toContain(
+      "handler",
+    );
+    expect(failures).toEqual([
+      {
+        hook: "projectHelpers.declare",
+        file: "/src",
+        message: "cannot make sense of the helpers",
+      },
+    ]);
   });
 });
