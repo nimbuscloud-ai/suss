@@ -171,16 +171,19 @@ describe("prisma integration", () => {
     expect(write?.interaction.fields).toEqual(["name"]);
   });
 
-  it("picks the row a connectOrCreate joins by the column its where filters on", async () => {
-    const code = await extractCode();
-    const write = relationWrite(code, "tags");
-    expect(write?.interaction.selector).toEqual(["name"]);
-  });
+  it.each(["tags", "labels"])(
+    "picks the row the %s connectOrCreate joins by the column its where filters on",
+    async (relation) => {
+      const code = await extractCode();
+      const write = relationWrite(code, relation);
+      expect(write?.interaction.selector).toEqual(["name"]);
+    },
+  );
 
-  it("writes unknown columns when the map callback arrives by name", async () => {
+  it("writes the column a map callback passed by name sets", async () => {
     const code = await extractCode();
     const write = relationWrite(code, "labels");
-    expect(write?.interaction.fields).toEqual(["*"]);
+    expect(write?.interaction.fields).toEqual(["name"]);
   });
 
   it("routes a many-to-many connectOrCreate's join write to the implicit join table", async () => {
@@ -223,18 +226,21 @@ describe("prisma integration", () => {
     expect(writeOnly("_LabelToPost")).toEqual(["A", "B"]);
   });
 
-  it("leaves Tag.id to the database rather than claiming code writes it", async () => {
-    const findings = await runPipeline();
-    const f = findings.find(
-      (f) =>
-        f.kind === "boundaryFieldUnused" &&
-        f.description.includes('Tag declares "id"'),
-    );
-    expect(f).toBeDefined();
-    // `aspect: "read"` is the write-only finding, which is what a
-    // wildcard write produced before the callback could be read (#537).
-    expect(f?.aspect).toBeUndefined();
-  });
+  it.each(["Tag", "Label"])(
+    "leaves %s.id to the database rather than claiming code writes it",
+    async (model) => {
+      const findings = await runPipeline();
+      const f = findings.find(
+        (f) =>
+          f.kind === "boundaryFieldUnused" &&
+          f.description.includes(`${model} declares "id"`),
+      );
+      expect(f).toBeDefined();
+      // `aspect: "read"` is the write-only finding, which is what a
+      // wildcard write produced before the callback could be read (#537).
+      expect(f?.aspect).toBeUndefined();
+    },
+  );
 
   it("does not flag declared-and-used columns (User.id, User.email, User.name)", async () => {
     const findings = await runPipeline();

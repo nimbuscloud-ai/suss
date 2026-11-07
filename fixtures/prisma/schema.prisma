@@ -32,8 +32,8 @@ model Tag {
   posts Post[]
 }
 
-// The same write behind a callback passed by name. Its columns stay
-// unknown, so every one of them counts as written.
+// The same write behind a callback passed by name, which is read the
+// same way, so `id` is left to the database here too.
 model Label {
   id    Int    @id @default(autoincrement())
   name  String @unique

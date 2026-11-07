@@ -124,6 +124,24 @@ function recognizeAll(
   return effects;
 }
 
+/** Each slot the recognizer states in a file, with the operation of its effect. */
+function slotsSaid(sourceFile: SourceFile): unknown[] {
+  const said: unknown[] = [];
+  recognizeAll(sourceFile, (effect, slots) => {
+    const operation =
+      effect.type === "interaction" &&
+      effect.interaction.class === "storage-access"
+        ? effect.interaction.operation
+        : null;
+    for (const one of slots) {
+      said.push([operation, one.slot, one.name, one.value.asArg()]);
+    }
+  });
+  return said;
+}
+
+const named = (name: string) => ({ kind: "identifier", name });
+
 /** What the pack's access recognizers, the raw SQL ones, find in a file. */
 function accessEffectsIn(sourceFile: SourceFile): Effect[] {
   const pack = prismaFramework();
@@ -661,19 +679,7 @@ describe("prisma recognizer: happy path", () => {
         await db.user.findUnique({ where: { email } });
       }
     `);
-    const said: unknown[] = [];
-    recognizeAll(file, (effect, slots) => {
-      const operation =
-        effect.type === "interaction" &&
-        effect.interaction.class === "storage-access"
-          ? effect.interaction.operation
-          : null;
-      for (const one of slots) {
-        said.push([operation, one.slot, one.name, one.value.asArg()]);
-      }
-    });
-    const named = (name: string) => ({ kind: "identifier", name });
-    expect(said).toEqual([
+    expect(slotsSaid(file)).toEqual([
       ["update", "selector", "id", named("id")],
       ["update", "field", "name", named("name")],
       ["update", "field", "extra", { kind: "number", value: 1 }],
@@ -769,6 +775,132 @@ describe("prisma recognizer: happy path", () => {
       [["tier", "banned"], undefined, ["*"]],
       [undefined, ["profile"], ["verified"]],
     ]);
+  });
+
+  it("states the value a name's object was written with, and none for a column a read selects", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function rename(id: number, name: string) {
+        const where = { id };
+        await db.user.update({ where, data: { name } });
+        await db.user.findUnique({ where, select: { email: true } });
+      }
+    `);
+    expect(slotsSaid(file)).toEqual([
+      ["update", "selector", "id", named("id")],
+      ["update", "field", "name", named("name")],
+      ["findUnique", "selector", "id", named("id")],
+    ]);
+  });
+
+  it("follows a name to the options and to each object written under them", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function listUsers(email: string) {
+        const where = { email, deletedAt: null };
+        const args = { where, select: { id: true, name: true } };
+        return await db.user.findMany(args);
+      }
+    `);
+    const access =
+      storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
+    expect(access.interaction).toMatchObject({
+      fields: ["id", "name"],
+      selector: ["email", "deletedAt"],
+    });
+  });
+
+  it("reads a spread in the place the source writes it", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      const live = { deletedAt: null };
+      const stamped = { updatedAt: "now" };
+      async function rename(id: number, name: string) {
+        return await db.user.update({
+          where: { ...live, id },
+          data: { ...stamped, name },
+        });
+      }
+    `);
+    const access =
+      storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
+    expect(access.interaction).toMatchObject({
+      fields: ["updatedAt", "name"],
+      selector: ["deletedAt", "id"],
+    });
+  });
+
+  it("reads the object a project function returns", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      function liveUser(id: number) {
+        return { id, deletedAt: null };
+      }
+      async function getUser(id: number) {
+        return await db.user.findFirst({ where: liveUser(id) });
+      }
+    `);
+    const access =
+      storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
+    expect(access.interaction.selector).toEqual(["id", "deletedAt"]);
+  });
+
+  it("writes the columns a callback passed by name builds for each row", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      const toTag = (name: string) => ({ name });
+      async function createArticle(title: string, tags: string[]) {
+        return await db.article.create({
+          data: { title, tagList: { create: tags.map(toTag) } },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[1]?.interaction).toMatchObject({
+      fields: ["name"],
+      relationPath: ["tagList"],
+      operation: "create",
+    });
+  });
+
+  it("reads a relation however deep the select nests it", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function deep(id: number) {
+        return await db.user.findUnique({
+          where: { id },
+          select: {
+            a: { select: { b: { select: { c: { select: {
+              d: { select: { e: { select: { id: true } } } },
+            } } } } } },
+          },
+        });
+      }
+    `);
+    const deepest = storageEffectsOf(recognizeAll(file)).at(-1);
+    expect(deepest?.interaction).toMatchObject({
+      fields: ["id"],
+      relationPath: ["a", "b", "c", "d", "e"],
+    });
+  });
+
+  it("reads an empty select as a read of no column", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function exists(id: number) {
+        return await db.user.findUnique({ where: { id }, select: {} });
+      }
+    `);
+    const access =
+      storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
+    expect(access.interaction.fields).toEqual([]);
   });
 
   it("keeps a write whose payload nobody could read as the whole row", () => {
