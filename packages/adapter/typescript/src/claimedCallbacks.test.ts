@@ -91,19 +91,25 @@ function calleesOf(effects: Effect[]): (string | undefined)[] {
   );
 }
 
+const SENDS = messageSends({
+  wire: "bullmq",
+  client: constructedFrom({ from: ["mq"], named: ["Queue"] }),
+  messages: { each: "theInput" },
+  channel: [{ argument: { of: [{ to: "receiver" }], at: 0 } }],
+  body: { whole: "message" },
+  routingKey: { at: 0 },
+  unsettledName: "nothing",
+})
+  .methods({ add: { input: { at: 1 } } })
+  .example('queue.add("welcome", { userId })');
+
+const QUEUES = pack("mq", [SENDS], {
+  languages: ["typescript"],
+  recognizedAs: "@suss/mq-test",
+});
+
 describe("a recognizer inside a claimed callback", () => {
   it("finds a client built at module scope, the way it does in the parent", async () => {
-    const sends = messageSends({
-      wire: "bullmq",
-      client: constructedFrom({ from: ["mq"], named: ["Queue"] }),
-      messages: { each: "theInput" },
-      channel: [{ argument: { of: [{ to: "receiver" }], at: 0 } }],
-      body: { whole: "message" },
-      routingKey: { at: 0 },
-      unsettledName: "nothing",
-    })
-      .methods({ add: { input: { at: 1 } } })
-      .example('queue.add("welcome", { userId })');
     const project = projectWith(`
       import { Jobs } from "jobs";
       import { Queue } from "mq";
@@ -120,14 +126,7 @@ describe("a recognizer inside a claimed callback", () => {
     `);
     const summaries = await createTypeScriptAdapter({
       project,
-      frameworks: [
-        EXPORTS,
-        CLAIMS,
-        pack("mq", [sends], {
-          languages: ["typescript"],
-          recognizedAs: "@suss/mq-test",
-        }),
-      ],
+      frameworks: [EXPORTS, CLAIMS, QUEUES],
       includeReachable: false,
     }).extractAll();
 
@@ -204,5 +203,36 @@ describe("a recognizer inside a claimed callback", () => {
         interactionsOn(summaries, "enqueue.jobs.later#0", "message-send"),
       ),
     ).toEqual(["send"]);
+  });
+});
+
+describe("a claimed callback in a file the caller names", () => {
+  it("gets the summary a full run gives it", async () => {
+    const source = `
+      import { Jobs } from "jobs";
+      import { Queue } from "mq";
+
+      const jobs = new Jobs();
+      const queue = new Queue("mail");
+
+      export function enqueue() {
+        jobs.later(() => {
+          queue.add("later", {});
+        });
+      }
+    `;
+    const adapter = () =>
+      createTypeScriptAdapter({
+        project: projectWith(source),
+        frameworks: [EXPORTS, CLAIMS, QUEUES],
+      });
+
+    const full = await adapter().extractAll();
+    const named = await adapter().extractFromFiles(["/jobs.ts"]);
+
+    expect(
+      calleesOf(interactionsOn(named, "enqueue.jobs.later#0", "message-send")),
+    ).toEqual(["queue.add"]);
+    expect(named).toEqual(full);
   });
 });

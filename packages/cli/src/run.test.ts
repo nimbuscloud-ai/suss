@@ -680,6 +680,66 @@ describe("runCli extract", () => {
     ]);
   });
 
+  it("gives a named file the summaries a full run gives it", async () => {
+    // The route's walk stops at the callback setTimeout runs, so only
+    // the summary made for that callback records the variable it reads.
+    const srcDir = path.join(tmpDir, "src");
+    fs.mkdirSync(srcDir, { recursive: true });
+    const app = path.join(srcDir, "app.ts");
+    fs.writeFileSync(
+      app,
+      [
+        `import express from "express";`,
+        "const app = express();",
+        `app.get("/later", (req, res) => {`,
+        "  setTimeout(() => {",
+        "    console.log(process.env.LATER_URL);",
+        "  }, 10);",
+        "  res.json({ ok: true });",
+        "});",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { module: "commonjs", esModuleInterop: true },
+        include: ["src"],
+      }),
+    );
+    const extractInto = async (name: string, ...files: string[]) => {
+      const outFile = path.join(tmpDir, name);
+      const { exit } = await capture(() =>
+        runCli([
+          "extract",
+          "-p",
+          path.join(tmpDir, "tsconfig.json"),
+          "-f",
+          "express",
+          "-f",
+          "node",
+          "-o",
+          outFile,
+          "--no-cache",
+          ...files,
+        ]),
+      );
+      expect(exit).toBe(0);
+      return fs.readFileSync(outFile, "utf8");
+    };
+
+    const full = await extractInto("full.json");
+    const named = await extractInto("named.json", "--files", app);
+
+    const kinds = (
+      JSON.parse(named) as Array<{ kind: string; identity: { name: string } }>
+    ).map((s) => `${s.kind} ${s.identity.name}`);
+    expect(kinds).toEqual([
+      "handler get",
+      "scheduled-callback get.setTimeout#0",
+    ]);
+    expect(named).toBe(full);
+  });
+
   it("stops on a misspelled pack option instead of extracting nothing", async () => {
     const config = path.join(tmpDir, "suss.aws-dynamodb.json");
     fs.writeFileSync(

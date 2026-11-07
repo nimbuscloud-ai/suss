@@ -2748,6 +2748,65 @@ export function createTypeScriptAdapter(
   ): BehavioralSummary[] =>
     composeWrappers(summaries, config.extractorOptions ?? {});
 
+  const readingOf = (
+    sourceFiles: SourceFile[],
+    tallies: Map<string, PackTally>,
+    timer: Timer,
+    cached: Pick<FileReading, "caching" | "plan">,
+  ): FileReading => ({
+    project,
+    frameworks: config.frameworks,
+    options: config.extractorOptions,
+    includeReachable: config.includeReachable !== false,
+    sourceFiles,
+    projectFileSet,
+    runRoot,
+    tallies,
+    timer,
+    ...cached,
+  });
+
+  // Composed after the cache write, since a route's wrappers depend on the
+  // whole run and a stored route stays reusable. Named last, so a call can
+  // point at anything the run produced.
+  const finishRun = (
+    read: FilesRead,
+    reading: FileReading,
+    filesInProject: number | null,
+  ): BehavioralSummary[] => {
+    const { timer, sourceFiles } = reading;
+    const composed = timer.time("composeWrappers", () =>
+      withWrappersComposed(read.summaries),
+    );
+
+    if (config.onTiming !== undefined) {
+      config.onTiming(timer.report());
+    }
+
+    const walkedRoot = commonDirectoryOf(
+      sourceFiles.map((f) => f.getFilePath()),
+    );
+    if (config.onExtractionReport !== undefined) {
+      config.onExtractionReport(
+        buildExtractionReport({
+          packs: config.frameworks,
+          tallies: reading.tallies,
+          filesInProject,
+          filesWalked: read.walkList.length,
+          summaries: composed,
+          tsConfigFilePath: config.tsConfigFilePath,
+          projectRoot: walkedRoot,
+          filesWithUnreadableExports: unreadableExportFiles(),
+          reassignedNamesUnstated: reassignedNamesUnstated(),
+          contributedPatterns: (packName) =>
+            read.projectHelpers.patternsFor(packName),
+        }),
+      );
+    }
+
+    return named(composed, config.workspace, runRoot ?? walkedRoot, modules);
+  };
+
   const loadWalkedFiles = async (holder: HoldsProject): Promise<void> => {
     const tsConfigFilePath =
       config.tsConfigFilePath ??
@@ -2811,9 +2870,8 @@ export function createTypeScriptAdapter(
     },
 
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
-      const summaries: BehavioralSummary[] = [];
-      const resolution = ResolutionStore.forPacks(config.frameworks);
-      const claimedUnits = new Map<string, ClaimedUnit>();
+      const timer = createTimer();
+      const tallies = startRun(config.frameworks);
 
       const sourceFiles: SourceFile[] = [];
       for (const fp of filePaths) {
@@ -2828,66 +2886,20 @@ export function createTypeScriptAdapter(
           }
         }
         sourceFiles.push(sourceFile);
-        summaries.push(
-          ...extractFromSourceFile(
-            sourceFile,
-            config.frameworks,
-            claimedUnits,
-            config.extractorOptions,
-            undefined,
-            resolution,
-          ),
-        );
       }
 
-      // A recognizer-only pack's effects need a function to live on,
-      // the same as a full run: fold each named file's exports into
-      // the reachable closure as roots.
-      const packsByFile = computePackApplicability(
-        sourceFiles,
-        config.frameworks,
-        resolution,
-      );
-      const withClosure =
-        config.includeReachable === false
-          ? summaries
-          : expandReachableClosure(
-              summaries,
-              project,
-              config.extractorOptions,
-              undefined,
-              undefined,
-              {
-                ...bodyRecognizersOf(config.frameworks, undefined, undefined),
-                resolution,
-                resolveCallableSources: (value, alsoFrom) =>
-                  resolution.resolveCallableSources(value, alsoFrom),
-                sourceDeclarationsBehind: (declaration) =>
-                  sourceDeclarationsBehind(declaration, resolution),
-              },
-              [],
-              recognizerOnlyRoots(packsByFile),
-            );
-
-      stampExitCodeFrom(withClosure, project, resolution);
-
-      // A route's own middleware is read from the same file, so it
-      // composes here as it does in a full run.
-      return named(
-        withWrappersComposed(withClosure),
-        config.workspace,
-        runRoot,
-        modules,
-      );
+      // Read the way a full run reads a file it cannot serve from the
+      // cache, so a file gives the same summaries whichever run asked.
+      const reading = readingOf(sourceFiles, tallies, timer, {
+        caching: false,
+        plan: null,
+      });
+      return finishRun(readWalkedFiles(reading), reading, null);
     },
 
     async extractAll(): Promise<BehavioralSummary[]> {
       const timer = createTimer();
-      const tallies = createPackTallies(config.frameworks);
-      // Clear the record first: what this run could not read is what
-      // this run reports.
-      forgetUnreadableExportFiles();
-      forgetReassignedNamesUnstated();
+      const tallies = startRun(config.frameworks);
 
       // Read before bootstrap so the cache check below can run against
       // it, and a hit costs no parsing.
@@ -3015,14 +3027,11 @@ export function createTypeScriptAdapter(
             config.frameworks,
             tsconfig,
             config.walkedDirectory,
-            tallies,
           ),
         );
         candidatePaths = lazy.candidatePaths;
         projectFileSet = lazy.projectFileSet;
       }
-
-      const summaries: BehavioralSummary[] = [];
 
       // A file with the same text, in a project with the same files,
       // imports what it did last time, so the load walk skips resolving it.
@@ -3037,299 +3046,11 @@ export function createTypeScriptAdapter(
       timer.time("warmExportChains", () => warmExportChains(deep.deepRoots));
       programLoaded = true;
 
-      const resolution = ResolutionStore.forPacks(config.frameworks);
-      const packsByFile = timer.time("preFilter", () =>
-        computePackApplicability(
-          sourceFiles,
-          config.frameworks,
-          resolution,
-          tallies,
-        ),
-      );
-
-      // An app built in one file and registered on in another is joined
-      // by facts in the file that passed it, which no query reaches.
-      timer.time("registeringFiles", () =>
-        readRegisteringFiles(packsByFile, resolution),
-      );
-
-      // Where a question about a parameter looks for the calls that
-      // filled it.
-      resolution.notePossibleCallers(packsByFile.keys());
-
-      // A route on a mounted router needs the mount's prefix folded into
-      // its path before the walk below builds its binding.
-      const mountPrefixes = timer.time("mountPrefix", () =>
-        buildMountPrefixIndex(packsByFile, resolution),
-      );
-
-      // A route's own body is not all of its wire behaviour, so the
-      // middleware and error handlers registered on the same app get
-      // summarized too, and the route points at them.
-      const wrappers = timer.time("wrapperIndex", () =>
-        buildWrapperIndex(packsByFile, resolution, mountPrefixes),
-      );
-
-      // A helper the project wrote in front of a library is read once
-      // here, so the pack's own matchers run at the call site instead.
-      const projectHelpers = timer.time("helperIndex", () =>
-        buildProjectHelperIndex(
-          sourceFiles,
-          config.frameworks,
-          packsByFile,
-          resolution,
-          {
-            tallies,
-            root: runRootOf({
-              projectRoot: runRoot,
-              files: sourceFiles.map((sf) => sf.getFilePath()),
-            }),
-          },
-        ),
-      );
-
-      const caching = cacheDir !== null;
-
-      // Which stored files survive: their own hash and their recorded
-      // dependencies unchanged, every consumed mount prefix resolving
-      // the same against this run's index, and the same packs applying.
-      const validRoots = new Set<string>();
-      if (plan !== null) {
-        const packNamesByPath = new Map<string, string>();
-        for (const [sf, packs] of packsByFile) {
-          packNamesByPath.set(
-            sf.getFilePath(),
-            packs
-              .map((p) => p.name)
-              .sort()
-              .join(","),
-          );
-        }
-        for (const rootPath of plan.validRoots) {
-          const record = plan.roots.get(rootPath);
-          if (record === undefined) {
-            continue;
-          }
-          if (!mountAssumptionsAgree(record, mountPrefixes)) {
-            continue;
-          }
-          const stored = [...record.packs].sort().join(",");
-          if ((packNamesByPath.get(rootPath) ?? "") !== stored) {
-            continue;
-          }
-          validRoots.add(rootPath);
-        }
-      }
-      const reused =
-        plan !== null && validRoots.size > 0 ? plan.reuse(validRoots) : null;
-
-      const claimedUnits = new Map<string, ClaimedUnit>();
-      if (reused !== null && plan !== null) {
-        // Replay the claims the reused walks made, so a re-walked file
-        // skips the units a reused file's walk already owns.
-        for (const rootPath of validRoots) {
-          for (const claim of plan.roots.get(rootPath)?.claims ?? []) {
-            claimedUnits.set(claim.key, { pack: claim.pack, file: rootPath });
-          }
-        }
-      }
-
-      const walkList =
-        reused === null
-          ? sourceFiles
-          : sourceFiles.filter((sf) => !validRoots.has(sf.getFilePath()));
-
-      const sinkByRoot = new Map<string, DependencySink>();
-      const ownersBySummary = new Map<BehavioralSummary, Set<string>>();
-      timer.time("extract per-file", () => {
-        for (const sourceFile of walkList) {
-          const rootPath = sourceFile.getFilePath();
-          const sink = createDependencySink();
-          if (caching) {
-            // Recorded even for a gated-out file: an empty record still
-            // says the walk read nothing beyond the file itself.
-            sinkByRoot.set(rootPath, sink);
-          }
-          const applicablePacks = packsByFile.get(sourceFile);
-          if (applicablePacks === undefined) {
-            continue;
-          }
-          // A module graph too deep for the checker takes the stack down
-          // with it. Reporting the one file costs less than the run.
-          try {
-            const walked = withDependencySink(sink, () => {
-              for (const helperFile of projectHelpers.helperFilesFor(
-                sourceFile,
-              )) {
-                recordFileDependency(helperFile);
-              }
-              return extractFromSourceFile(
-                sourceFile,
-                applicablePacks,
-                claimedUnits,
-                config.extractorOptions,
-                tallies,
-                resolution,
-                mountPrefixes,
-                wrappers,
-                projectHelpers,
-              );
-            });
-            for (const summary of walked) {
-              ownersBySummary.set(summary, new Set([rootPath]));
-            }
-            summaries.push(...walked);
-          } catch (error) {
-            if (!(error instanceof RangeError)) {
-              throw error;
-            }
-            noteUnreadableExports(sourceFile);
-          }
-        }
+      const reading = readingOf(sourceFiles, tallies, timer, {
+        caching: cacheDir !== null,
+        plan,
       });
-
-      // Reused wrapper summaries still seed caller expansion: derived
-      // callers are recomputed every run rather than cached, so a new
-      // caller in an edited file is found either way.
-      const wrapperInput =
-        reused === null ? summaries : [...summaries, ...reused.summaries];
-      const withWrappers = timer.time("expandWrapperCallers", () =>
-        expandWrapperCallers(
-          wrapperInput,
-          project,
-          config.frameworks,
-          { packsByFile, tallies, projectHelpers, resolution },
-          config.extractorOptions,
-        ),
-      );
-      const pipeline =
-        reused === null
-          ? withWrappers
-          : [...summaries, ...withWrappers.slice(wrapperInput.length)];
-      const withSubUnits = timer.time("synthesizeSubUnits", () =>
-        synthesizeSubUnits(
-          pipeline,
-          project,
-          config.frameworks,
-          packsByFile,
-          resolution,
-          projectHelpers,
-          config.extractorOptions,
-          tallies,
-          (created, parent) => {
-            const parentOwners = ownersBySummary.get(parent);
-            if (parentOwners !== undefined) {
-              ownersBySummary.set(created, new Set(parentOwners));
-            }
-          },
-        ),
-      );
-      // A recognizer-only pack's exports are roots owned by their file, the
-      // way a seed is, so a partial run takes them only from re-walked files.
-      const extraRoots =
-        config.includeReachable === false
-          ? []
-          : recognizerOnlyRoots(
-              reused === null ? packsByFile : packsOf(packsByFile, walkList),
-            );
-      // Closure needs `projectFileSet` to lazy-add a callee's file as it
-      // walks in: symbol resolution alone loads it into the program but
-      // leaves it off `getSourceFiles`, which the rethrow lookup uses.
-      const closureFacts: ClosureFacts = {
-        db: new Database(),
-        unitKeyBySummary: new Map(),
-        ...(caching
-          ? {
-              filesByKey: new Map<string, Set<string>>(),
-              scans: new Map<string, RecordedScan>(),
-            }
-          : {}),
-        ...(plan === null ? {} : { previousScans: plan.validUnits }),
-      };
-      const withClosure =
-        config.includeReachable !== false
-          ? timer.time("expandReachableClosure", () =>
-              expandReachableClosure(
-                withSubUnits,
-                project,
-                config.extractorOptions,
-                projectFileSet,
-                closureFacts,
-                {
-                  ...bodyRecognizersOf(
-                    config.frameworks,
-                    tallies,
-                    projectHelpers,
-                  ),
-                  resolution,
-                  resolveCallableSources: (value, alsoFrom) =>
-                    resolution.resolveCallableSources(value, alsoFrom),
-                  sourceDeclarationsBehind: (declaration) =>
-                    sourceDeclarationsBehind(declaration, resolution),
-                },
-                // Reached units the cache already serves emit nothing,
-                // the way a cold run's seeds do not.
-                reused?.summaries ?? [],
-                extraRoots,
-              ),
-            )
-          : withSubUnits;
-
-      // Attribute each reached library summary to the walked files
-      // whose seeds reach it, before merge decides what survives.
-      const closureOwnership =
-        caching && config.includeReachable !== false
-          ? timer.time("cache.attributeClosure", () =>
-              attributeReachedSummaries(
-                withSubUnits,
-                withClosure.slice(withSubUnits.length),
-                closureFacts,
-                ownersBySummary,
-                extraRoots,
-              ),
-            )
-          : null;
-
-      // The passes below read across the whole summary set, so reused
-      // summaries join before them. What they recompute on a reused
-      // summary is the same function of the same unchanged subtree.
-      const merged = timer.time("cache.merge", () =>
-        mergeWithReused(reused, withClosure, ownersBySummary),
-      );
-
-      // Runs after the closure, so that every callee's throw terminals
-      // exist to read a rethrow's possible sources from.
-      const enriched = timer.time("enrichRethrows", () =>
-        enrichRethrows(merged.summaries, project, closureFacts),
-      );
-
-      // Absolute paths here; the CLI makes them relative beside `location.file`.
-      // A leaf file stays unstamped, as it always has for TypeScript.
-      timer.time("stampModuleImports", () =>
-        stampModuleImports(enriched, (file) => {
-          const imports = internalImportsOf(project, file);
-          return imports.length === 0 ? undefined : imports;
-        }),
-      );
-      timer.time("emitLibraryEnvReadMarkers", () =>
-        emitLibraryEnvReadMarkers(enriched, project, config.frameworks),
-      );
-      timer.time("liftSchemasOntoDocuments", () =>
-        liftSchemasOntoDocuments(enriched),
-      );
-      timer.time("stampGraphqlClientRefs", () =>
-        stampGraphqlClientRefs(
-          enriched,
-          sourceFiles,
-          config.frameworks,
-          resolution,
-        ),
-      );
-      // Before the cache write, over reused summaries too: a hit serves
-      // what this run marks, and only a run with every file unchanged hits.
-      timer.time("stampExitCodeFrom", () =>
-        stampExitCodeFrom(enriched, project, resolution),
-      );
+      const read = readWalkedFiles(reading);
 
       if (config.onCacheDiagnostic !== undefined && plan !== null) {
         config.onCacheDiagnostic({
@@ -3337,10 +3058,10 @@ export function createTypeScriptAdapter(
           partial: {
             filesChanged: plan.changed.size,
             filesRemoved: plan.removed.size,
-            rootsReused: validRoots.size,
-            rootsReextracted: walkList.length,
+            rootsReused: read.validRoots.size,
+            rootsReextracted: read.walkList.length,
             rootsDeclined: plan.rootsDeclined,
-            summariesReused: merged.reusedOwners.size,
+            summariesReused: read.reusedOwners.size,
           },
         });
       }
@@ -3349,71 +3070,381 @@ export function createTypeScriptAdapter(
         // An empty result is never cached. Serving one would skip the
         // stages that fill the funnel, so a misconfigured project would
         // get "0 summaries" with no explanation ever after.
-        if (!caching || enriched.length === 0) {
+        if (!reading.caching || read.summaries.length === 0) {
           return;
         }
         try {
           const attribution = buildCacheAttribution({
             project,
             plan,
-            validRoots,
-            sinkByRoot,
-            ownersBySummary,
-            closureOwnership,
-            unitKeyBySummary: closureFacts.unitKeyBySummary,
-            filesByKey: closureFacts.filesByKey,
-            scans: closureFacts.scans ?? new Map(),
-            packsByFile,
+            validRoots: read.validRoots,
+            sinkByRoot: read.sinkByRoot,
+            ownersBySummary: read.ownersBySummary,
+            closureOwnership: read.closureOwnership,
+            unitKeyBySummary: read.closureFacts.unitKeyBySummary,
+            filesByKey: read.closureFacts.filesByKey,
+            scans: read.closureFacts.scans ?? new Map(),
+            packsByFile: read.packsByFile,
             // The passes' own additions (markers, schema documents) included.
-            summaries: enriched,
-            reusedOwners: merged.reusedOwners,
+            summaries: read.summaries,
+            reusedOwners: read.reusedOwners,
           });
-          await cache.write(cacheInput, enriched, attribution);
+          await cache.write(cacheInput, read.summaries, attribution);
         } catch {
           // A failed cache write must not fail the extract.
         }
       });
 
-      // After the cache write, because what a route's wrappers do is a
-      // function of the whole run and a stored summary of the route
-      // alone stays reusable.
-      const composed = timer.time("composeWrappers", () =>
-        withWrappersComposed(enriched),
-      );
-
-      if (config.onTiming !== undefined) {
-        config.onTiming(timer.report());
-      }
-
-      if (config.onExtractionReport !== undefined) {
-        config.onExtractionReport(
-          buildExtractionReport({
-            packs: config.frameworks,
-            tallies,
-            filesInProject: tsconfigFileList?.length ?? null,
-            filesWalked: walkList.length,
-            summaries: composed,
-            tsConfigFilePath: config.tsConfigFilePath,
-            projectRoot: commonDirectoryOf(
-              sourceFiles.map((f) => f.getFilePath()),
-            ),
-            filesWithUnreadableExports: unreadableExportFiles(),
-            reassignedNamesUnstated: reassignedNamesUnstated(),
-            contributedPatterns: (packName) =>
-              projectHelpers.patternsFor(packName),
-          }),
-        );
-      }
-
-      // Naming runs last, so a call can point at anything the run
-      // produced.
-      return named(
-        composed,
-        config.workspace,
-        runRoot ?? commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
-        modules,
-      );
+      return finishRun(read, reading, tsconfigFileList?.length ?? null);
     },
+  };
+}
+
+/**
+ * Each pack's tally for a new run, with the records of unreadable
+ * exports and unstated reassigned names cleared, so what this run could
+ * not read is what this run reports.
+ */
+function startRun(frameworks: PatternPack[]): Map<string, PackTally> {
+  forgetUnreadableExportFiles();
+  forgetReassignedNamesUnstated();
+  return createPackTallies(frameworks);
+}
+
+/** What a run reads its walked files with, once they are loaded. */
+interface FileReading {
+  project: Project;
+  frameworks: PatternPack[];
+  options: ExtractorOptions | undefined;
+  includeReachable: boolean;
+  /** The files walked for units, which every index is built from. */
+  sourceFiles: SourceFile[];
+  /** What the closure walk may add to the project, which keeps `node_modules` out. */
+  projectFileSet: ReadonlySet<string> | undefined;
+  runRoot: string | undefined;
+  tallies: Map<string, PackTally>;
+  timer: Timer;
+  /** Whether the run keeps what the cache write needs. */
+  caching: boolean;
+  /** What an earlier run left that this one can reuse, or null to walk every file. */
+  plan: PartialPlan<TsCacheMeta, ScanRecord> | null;
+}
+
+/** The summaries a read produced, with what the cache write and the extraction report take from it. */
+interface FilesRead {
+  summaries: BehavioralSummary[];
+  walkList: SourceFile[];
+  packsByFile: Map<SourceFile, PatternPack[]>;
+  projectHelpers: ProjectHelperIndex;
+  validRoots: Set<string>;
+  sinkByRoot: Map<string, DependencySink>;
+  ownersBySummary: Map<BehavioralSummary, Set<string>>;
+  closureOwnership: ClosureOwnership | null;
+  closureFacts: ClosureFacts;
+  reusedOwners: Map<BehavioralSummary, string[]>;
+}
+
+/**
+ * Reads the files a run walks into summaries: the indexes the walk looks
+ * things up in, discovery with the project's own helpers, the callers of
+ * request wrappers, the callbacks a pack claims, the functions the units
+ * reach, and the passes over the whole set. A full run and a run over
+ * named files both read through here, so a file gives the same summaries
+ * whichever one asked. Only a full run brings a cache plan. Without one,
+ * every file is walked and nothing is reused.
+ */
+function readWalkedFiles(reading: FileReading): FilesRead {
+  const {
+    project,
+    frameworks,
+    options,
+    includeReachable,
+    sourceFiles,
+    tallies,
+    timer,
+    caching,
+    plan,
+  } = reading;
+  const resolution = ResolutionStore.forPacks(frameworks);
+  const packsByFile = timer.time("preFilter", () =>
+    computePackApplicability(sourceFiles, frameworks, resolution, tallies),
+  );
+
+  // An app built in one file and registered on in another is joined
+  // by facts in the file that passed it, which no query reaches.
+  timer.time("registeringFiles", () =>
+    readRegisteringFiles(packsByFile, resolution),
+  );
+
+  // Where a question about a parameter looks for the calls that
+  // filled it.
+  resolution.notePossibleCallers(packsByFile.keys());
+
+  // A route on a mounted router needs the mount's prefix folded into
+  // its path before the walk below builds its binding.
+  const mountPrefixes = timer.time("mountPrefix", () =>
+    buildMountPrefixIndex(packsByFile, resolution),
+  );
+
+  // A route's own body is not all of its wire behaviour, so the
+  // middleware and error handlers registered on the same app get
+  // summarized too, and the route points at them.
+  const wrappers = timer.time("wrapperIndex", () =>
+    buildWrapperIndex(packsByFile, resolution, mountPrefixes),
+  );
+
+  // A helper the project wrote in front of a library is read once
+  // here, so the pack's own matchers run at the call site instead.
+  const projectHelpers = timer.time("helperIndex", () =>
+    buildProjectHelperIndex(sourceFiles, frameworks, packsByFile, resolution, {
+      tallies,
+      root: runRootOf({
+        projectRoot: reading.runRoot,
+        files: sourceFiles.map((sf) => sf.getFilePath()),
+      }),
+    }),
+  );
+
+  // Which stored files survive: their own hash and their recorded
+  // dependencies unchanged, every consumed mount prefix resolving
+  // the same against this run's index, and the same packs applying.
+  const validRoots = new Set<string>();
+  if (plan !== null) {
+    const packNamesByPath = new Map<string, string>();
+    for (const [sf, packs] of packsByFile) {
+      packNamesByPath.set(
+        sf.getFilePath(),
+        packs
+          .map((p) => p.name)
+          .sort()
+          .join(","),
+      );
+    }
+    for (const rootPath of plan.validRoots) {
+      const record = plan.roots.get(rootPath);
+      if (record === undefined) {
+        continue;
+      }
+      if (!mountAssumptionsAgree(record, mountPrefixes)) {
+        continue;
+      }
+      const stored = [...record.packs].sort().join(",");
+      if ((packNamesByPath.get(rootPath) ?? "") !== stored) {
+        continue;
+      }
+      validRoots.add(rootPath);
+    }
+  }
+  const reused =
+    plan !== null && validRoots.size > 0 ? plan.reuse(validRoots) : null;
+
+  const claimedUnits = new Map<string, ClaimedUnit>();
+  if (reused !== null && plan !== null) {
+    // Replay the claims the reused walks made, so a re-walked file
+    // skips the units a reused file's walk already owns.
+    for (const rootPath of validRoots) {
+      for (const claim of plan.roots.get(rootPath)?.claims ?? []) {
+        claimedUnits.set(claim.key, { pack: claim.pack, file: rootPath });
+      }
+    }
+  }
+
+  const walkList =
+    reused === null
+      ? sourceFiles
+      : sourceFiles.filter((sf) => !validRoots.has(sf.getFilePath()));
+
+  const summaries: BehavioralSummary[] = [];
+  const sinkByRoot = new Map<string, DependencySink>();
+  const ownersBySummary = new Map<BehavioralSummary, Set<string>>();
+  timer.time("extract per-file", () => {
+    for (const sourceFile of walkList) {
+      const rootPath = sourceFile.getFilePath();
+      const sink = createDependencySink();
+      if (caching) {
+        // Recorded even for a gated-out file: an empty record still
+        // says the walk read nothing beyond the file itself.
+        sinkByRoot.set(rootPath, sink);
+      }
+      const applicablePacks = packsByFile.get(sourceFile);
+      if (applicablePacks === undefined) {
+        continue;
+      }
+      // A module graph too deep for the checker takes the stack down
+      // with it. Reporting the one file costs less than the run.
+      try {
+        const walked = withDependencySink(sink, () => {
+          for (const helperFile of projectHelpers.helperFilesFor(sourceFile)) {
+            recordFileDependency(helperFile);
+          }
+          return extractFromSourceFile(
+            sourceFile,
+            applicablePacks,
+            claimedUnits,
+            options,
+            tallies,
+            resolution,
+            mountPrefixes,
+            wrappers,
+            projectHelpers,
+          );
+        });
+        for (const summary of walked) {
+          ownersBySummary.set(summary, new Set([rootPath]));
+        }
+        summaries.push(...walked);
+      } catch (error) {
+        if (!(error instanceof RangeError)) {
+          throw error;
+        }
+        noteUnreadableExports(sourceFile);
+      }
+    }
+  });
+
+  // Reused wrapper summaries still seed caller expansion: derived
+  // callers are recomputed every run rather than cached, so a new
+  // caller in an edited file is found either way.
+  const wrapperInput =
+    reused === null ? summaries : [...summaries, ...reused.summaries];
+  const withWrappers = timer.time("expandWrapperCallers", () =>
+    expandWrapperCallers(
+      wrapperInput,
+      project,
+      frameworks,
+      { packsByFile, tallies, projectHelpers, resolution },
+      options,
+    ),
+  );
+  const pipeline =
+    reused === null
+      ? withWrappers
+      : [...summaries, ...withWrappers.slice(wrapperInput.length)];
+  const withSubUnits = timer.time("synthesizeSubUnits", () =>
+    synthesizeSubUnits(
+      pipeline,
+      project,
+      frameworks,
+      packsByFile,
+      resolution,
+      projectHelpers,
+      options,
+      tallies,
+      (created, parent) => {
+        const parentOwners = ownersBySummary.get(parent);
+        if (parentOwners !== undefined) {
+          ownersBySummary.set(created, new Set(parentOwners));
+        }
+      },
+    ),
+  );
+  // A recognizer-only pack's exports are roots owned by their file, the
+  // way a seed is, so a partial run takes them only from re-walked files.
+  const extraRoots = includeReachable
+    ? recognizerOnlyRoots(
+        reused === null ? packsByFile : packsOf(packsByFile, walkList),
+      )
+    : [];
+  // Closure needs `projectFileSet` to lazy-add a callee's file as it
+  // walks in: symbol resolution alone loads it into the program but
+  // leaves it off `getSourceFiles`, which the rethrow lookup uses.
+  const closureFacts: ClosureFacts = {
+    db: new Database(),
+    unitKeyBySummary: new Map(),
+    ...(caching
+      ? {
+          filesByKey: new Map<string, Set<string>>(),
+          scans: new Map<string, RecordedScan>(),
+        }
+      : {}),
+    ...(plan === null ? {} : { previousScans: plan.validUnits }),
+  };
+  const withClosure = includeReachable
+    ? timer.time("expandReachableClosure", () =>
+        expandReachableClosure(
+          withSubUnits,
+          project,
+          options,
+          reading.projectFileSet,
+          closureFacts,
+          {
+            ...bodyRecognizersOf(frameworks, tallies, projectHelpers),
+            resolution,
+            resolveCallableSources: (value, alsoFrom) =>
+              resolution.resolveCallableSources(value, alsoFrom),
+            sourceDeclarationsBehind: (declaration) =>
+              sourceDeclarationsBehind(declaration, resolution),
+          },
+          // Reached units the cache already serves emit nothing,
+          // the way a cold run's seeds do not.
+          reused?.summaries ?? [],
+          extraRoots,
+        ),
+      )
+    : withSubUnits;
+
+  // Attribute each reached library summary to the walked files
+  // whose seeds reach it, before merge decides what survives.
+  const closureOwnership =
+    caching && includeReachable
+      ? timer.time("cache.attributeClosure", () =>
+          attributeReachedSummaries(
+            withSubUnits,
+            withClosure.slice(withSubUnits.length),
+            closureFacts,
+            ownersBySummary,
+            extraRoots,
+          ),
+        )
+      : null;
+
+  // The passes below read across the whole summary set, so reused
+  // summaries join before them. What they recompute on a reused
+  // summary is the same function of the same unchanged subtree.
+  const merged = timer.time("cache.merge", () =>
+    mergeWithReused(reused, withClosure, ownersBySummary),
+  );
+
+  // Runs after the closure, so that every callee's throw terminals
+  // exist to read a rethrow's possible sources from.
+  const enriched = timer.time("enrichRethrows", () =>
+    enrichRethrows(merged.summaries, project, closureFacts),
+  );
+
+  // Absolute paths here; the CLI makes them relative beside `location.file`.
+  // A leaf file stays unstamped, as it always has for TypeScript.
+  timer.time("stampModuleImports", () =>
+    stampModuleImports(enriched, (file) => {
+      const imports = internalImportsOf(project, file);
+      return imports.length === 0 ? undefined : imports;
+    }),
+  );
+  timer.time("emitLibraryEnvReadMarkers", () =>
+    emitLibraryEnvReadMarkers(enriched, project, frameworks),
+  );
+  timer.time("liftSchemasOntoDocuments", () =>
+    liftSchemasOntoDocuments(enriched),
+  );
+  timer.time("stampGraphqlClientRefs", () =>
+    stampGraphqlClientRefs(enriched, sourceFiles, frameworks, resolution),
+  );
+  // Before the cache write, over reused summaries too: a hit serves
+  // what this run marks, and only a run with every file unchanged hits.
+  timer.time("stampExitCodeFrom", () =>
+    stampExitCodeFrom(enriched, project, resolution),
+  );
+
+  return {
+    summaries: enriched,
+    walkList,
+    packsByFile,
+    projectHelpers,
+    validRoots,
+    sinkByRoot,
+    ownersBySummary,
+    closureOwnership,
+    closureFacts,
+    reusedOwners: merged.reusedOwners,
   };
 }
 
