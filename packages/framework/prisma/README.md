@@ -27,6 +27,8 @@ Each method counts as a read or a write:
 
 The fields come from the call's first argument. A read takes the `select` keys, plus the `include` keys when a `select` lists which fields to return. A query with no `select` reads the whole record and comes back as `["*"]`. A write takes the union of the `data`, `create` and `update` keys, since an upsert can pass two of them. The keys of `where` become the selector.
 
+`AND`, `OR` and `NOT` take one `where` or a list of them on the same rows, so the columns inside them are read as the `where`'s own, and the operators stay out of the selector.
+
 ### Relations
 
 A call shows which relation it goes through, but never which model is at the other end. So each relation comes out as its own effect, with the `relationPath` it was written under, and the checker resolves that path against the model's contract to find the table.
