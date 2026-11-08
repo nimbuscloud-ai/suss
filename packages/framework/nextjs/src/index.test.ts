@@ -114,6 +114,54 @@ describe("nextjsFramework: extraction", () => {
   });
 });
 
+describe("a route handler that returns through a helper", () => {
+  it("answers with the responses the helper builds, and keeps its own calls", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app/api/cron/utils.ts",
+      `
+        export function logAndRespond(
+          body: string,
+          { status = 200 }: { status?: number } = {},
+        ) {
+          console.info(body);
+          return new Response(body, { status });
+        }
+      `,
+    );
+    project.createSourceFile(
+      "/app/api/cron/sync/route.ts",
+      `
+        import { logAndRespond } from "../utils";
+
+        export async function POST(req: Request) {
+          const job = await fetch("https://queue.example.com/next");
+          if (!job.ok) {
+            return logAndRespond("Queue unavailable.", { status: 503 });
+          }
+          return logAndRespond("Synced.");
+        }
+      `,
+    );
+    const summaries = await createTypeScriptAdapter({
+      project,
+      frameworks: [nextjsFramework()],
+    }).extractAll();
+
+    const post = summaries.find(
+      (s) => routeOf(s) === "POST /api/cron/sync",
+    ) as BehavioralSummary;
+    expect(statusesOf(post)).toEqual([200, 503]);
+    for (const transition of post.transitions) {
+      expect(
+        transition.effects.map((effect) =>
+          effect.type === "invocation" ? effect.callee : effect.type,
+        ),
+      ).toEqual(["fetch", "logAndRespond"]);
+    }
+  });
+});
+
 describe("server actions", () => {
   async function extract(
     files: Record<string, string>,

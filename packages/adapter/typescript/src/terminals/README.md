@@ -26,6 +26,35 @@ It runs once per discovered unit, after discovery and before assembly. It receiv
 - **A terminal built from a call is not also an effect.** Every call in the body becomes an invocation effect. Assembly drops the calls that are a terminal node or a link in its receiver chain, such as `res.status(404)` inside `res.status(404).json(body)`. The comparison is by node, so a call on the same line as a terminal, or written as its argument, keeps its effect.
 - **Method-chain matching unwinds from the outside in.** `parameterMethodCall` matches `res.status(200).json(body)` by walking the call chain from the outermost call inward, and checks that the chain root is the parameter at the right position. Walking the other way would miss nested chains.
 
+## A return through a project helper
+
+A handler often builds its response in a function of its own:
+
+```ts
+return logAndRespond("Queue unavailable.", { status: 503 });
+```
+
+with the helper in another file:
+
+```ts
+export function logAndRespond(body, { status = 200 } = {}) {
+  console.info(body);
+  return new Response(body, { status });
+}
+```
+
+Nothing at the return matches the pack's `new Response(...)`, so on its own the handler gets no transitions, and the calls it makes land on no branch. `returnedHelper.ts:tryMatchReturnedHelper` reads the helper with the caller's own response patterns. Each of the helper's parameters is replaced by what this call passed, a destructured parameter included, and a parameter the call left out takes its default. Every response the helper builds becomes a response of the caller, placed at the caller's return. The terminal goes on the return statement and not on the call, so the call to the helper is still an effect and the helper's own summary is still reached through it. A status the helper cannot settle is recorded as `dynamic` with the helper's source text.
+
+Which of the caller's patterns apply inside the helper:
+
+- A pattern on a call by name, such as `NextResponse.json` or `Response`, applies as it is.
+- A pattern on a method of the response object a handler was given, such as Express's `res.status(n).json(body)` or Hono's `c.json(body)`, applies at the helper's parameter that the caller passed that object to. A call that does not pass it gets nothing from the helper.
+- A pattern that matches a returned object reads helpers itself, through `helperResolution.ts`, so it is not applied again here.
+- A pattern that takes any returned value as the response, as Fastify's and the Workers pack's do, is left out. It would take every value the helper returns. When the helper builds no response, that pattern still applies to the caller's return as before.
+- A throw is left out. A helper that throws makes the call throw wherever it is written.
+
+A helper that returns another helper's call is followed again, up to four deep, and a helper is never read while it is already being read. A call to a parameter of the function is not followed. The function behind it is whatever the caller passed, such as the handler a wrapper calls, which composition splices in. A branch of the helper that cannot run with the arguments this call passed is left out, by the same test the returned-object reader uses.
+
 ## Sibling modules
 
 - `shapes/shapes.ts` provides `extractShape`, which `extract.ts` calls on every return body and throw argument.

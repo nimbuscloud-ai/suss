@@ -84,6 +84,13 @@ function substituted(value: Expression, ctx: ExtractionContext): Expression {
   return ctx.substitutions.get(value.getText()) ?? value;
 }
 
+function withoutSubstitutions(ctx: ExtractionContext): ExtractionContext {
+  return {
+    extraction: ctx.extraction,
+    ...(ctx.resolution === undefined ? {} : { resolution: ctx.resolution }),
+  };
+}
+
 /**
  * The shape of an expression, reading a helper's parameters as the
  * arguments this caller passed. `{ error: payload }` inside a helper is
@@ -174,11 +181,14 @@ function statusFromProperty(
   if (prop === undefined) {
     return null;
   }
-  // `{ status }` refers to a variable with the status in it. The value
-  // cannot be read here, and reporting the pack default instead would
-  // put a number on the summary that the handler never sends.
+  // `{ status }` refers to a variable with the status in it. Reporting
+  // the pack default instead would put a number on the summary that the
+  // handler never sends, so it stays dynamic unless a caller passed it.
   if (Node.isShorthandPropertyAssignment(prop)) {
-    return { type: "dynamic", sourceText: prop.getName() };
+    const passed = ctx.substitutions?.get(prop.getName());
+    return passed === undefined
+      ? { type: "dynamic", sourceText: prop.getName() }
+      : statusOf(passed, ctx);
   }
   if (!Node.isPropertyAssignment(prop)) {
     return null;
@@ -187,7 +197,7 @@ function statusFromProperty(
   if (value === undefined) {
     return null;
   }
-  return statusOf(value, ctx);
+  return statusOf(substituted(value, ctx), ctx);
 }
 
 function extractStatusCodeFromRule(
@@ -242,11 +252,17 @@ function extractStatusCodeFromRule(
     // argument, so a call whose arguments this context does not have
     // gives nothing to read.
     const args = ctx.throwCallArgs ?? ctx.calls?.[0]?.getArguments();
-    const arg = args?.[sc.position];
-    if (arg === undefined || !Node.isObjectLiteralExpression(arg)) {
+    const arg = args?.[sc.position] as Expression | undefined;
+    const init = arg === undefined ? undefined : substituted(arg, ctx);
+    if (init === undefined || !Node.isObjectLiteralExpression(init)) {
       return null;
     }
-    return statusFromProperty(arg, sc.name, ctx);
+    // The caller wrote this init object, so its variables are the caller's.
+    return statusFromProperty(
+      init,
+      sc.name,
+      init === arg ? ctx : withoutSubstitutions(ctx),
+    );
   }
 
   if (sc.from === "property") {
@@ -303,7 +319,7 @@ function extractStatusCodeFromRule(
       return null;
     }
 
-    return statusOf(rawArg, ctx);
+    return statusOf(substituted(rawArg, ctx), ctx);
   }
 
   if (ctx.throwCallArgs !== undefined) {
@@ -316,7 +332,7 @@ function extractStatusCodeFromRule(
       return null;
     }
 
-    return statusOf(rawArg, ctx);
+    return statusOf(substituted(rawArg, ctx), ctx);
   }
 
   return null;
@@ -397,7 +413,7 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
       return null;
     }
 
-    return { typeText: arg.getText(), shape: extractShape(arg) };
+    return argumentBody(arg, ctx);
   }
 
   if (ctx.throwCallArgs !== undefined) {
@@ -410,8 +426,24 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
       return null;
     }
 
-    return { typeText: arg.getText(), shape: extractShape(arg) };
+    return argumentBody(arg, ctx);
   }
 
   return null;
+}
+
+/**
+ * The body written as an argument. Inside a helper, a parameter passed
+ * there is the caller's value, and the caller's value is read as the
+ * caller wrote it.
+ */
+function argumentBody(
+  arg: Expression,
+  ctx: ExtractionContext,
+): RawTerminal["body"] {
+  const written = substituted(arg, ctx);
+  return {
+    typeText: written.getText(),
+    shape: written === arg ? shapeOf(arg, ctx) : extractShape(written),
+  };
 }
