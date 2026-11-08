@@ -442,7 +442,16 @@ describe("prisma recognizer: happy path", () => {
     const moves = storageEffectsOf(recognizeAll(file)).filter(
       (access) => access.interaction.relationPath !== undefined,
     );
+    // A connect and a disconnect also read the row they join by its `id`.
     expect(moves.map((access) => access.interaction)).toEqual([
+      {
+        class: "storage-access",
+        kind: "read",
+        fields: [],
+        selector: ["id"],
+        relationPath: ["favoritedBy"],
+        operation: "connect",
+      },
       {
         class: "storage-access",
         kind: "write",
@@ -450,6 +459,14 @@ describe("prisma recognizer: happy path", () => {
         relationPath: ["favoritedBy"],
         relationKey: true,
         operation: "connect",
+      },
+      {
+        class: "storage-access",
+        kind: "read",
+        fields: [],
+        selector: ["id"],
+        relationPath: ["favoritedBy"],
+        operation: "disconnect",
       },
       {
         class: "storage-access",
@@ -486,6 +503,13 @@ describe("prisma recognizer: happy path", () => {
       }
     `);
     const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "write",
+      fields: ["name"],
+      selector: ["name"],
+      relationPath: ["tagList"],
+      operation: "connectOrCreate",
+    });
     expect(accesses[2]?.interaction).toMatchObject({
       kind: "write",
       fields: [],
@@ -493,6 +517,67 @@ describe("prisma recognizer: happy path", () => {
       relationKey: true,
       operation: "connectOrCreate",
     });
+    expect(accesses[2]?.interaction.selector).toBeUndefined();
+  });
+
+  it("picks a nested update's and upsert's rows by their where, and a delete's by its payload", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function edit(id: number, commentId: number) {
+        await db.article.update({
+          where: { id },
+          data: {
+            comments: {
+              update: { where: { id: commentId }, data: { body: "b" } },
+              updateMany: { where: { draft: true }, data: { draft: false } },
+              upsert: {
+                where: { id: commentId },
+                create: { body: "c" },
+                update: { body: "u" },
+              },
+              delete: [{ id: commentId }, { slug: "s" }],
+              deleteMany: {},
+            },
+            author: { update: { bio: "b" } },
+          },
+        });
+      }
+    `);
+    const nested = storageEffectsOf(recognizeAll(file))
+      .filter((access) => access.interaction.relationPath !== undefined)
+      .map((access) => [
+        access.interaction.operation,
+        access.interaction.relationPath?.join("."),
+        access.interaction.selector,
+      ]);
+    expect(nested).toEqual([
+      ["update", "comments", ["id"]],
+      ["updateMany", "comments", ["draft"]],
+      ["upsert", "comments", ["id"]],
+      ["delete", "comments", ["id", "slug"]],
+      ["deleteMany", "comments", undefined],
+      // A single relation's update passes the row itself, with no where.
+      ["update", "author", undefined],
+    ]);
+  });
+
+  it("looks nothing up for a set that joins no rows or a disconnect of a single relation", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function clear(id: number) {
+        await db.article.update({
+          where: { id },
+          data: { tagList: { set: [] }, author: { disconnect: true } },
+        });
+      }
+    `);
+    expect(
+      storageEffectsOf(recognizeAll(file))
+        .filter((access) => access.interaction.relationPath !== undefined)
+        .map((access) => access.interaction.kind),
+    ).toEqual(["write", "write"]);
   });
 
   it("writes the columns a callback written at the call builds for each row", () => {

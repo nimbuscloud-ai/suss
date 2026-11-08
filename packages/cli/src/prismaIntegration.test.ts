@@ -171,6 +171,12 @@ describe("prisma integration", () => {
     expect(write?.interaction.fields).toEqual(["name"]);
   });
 
+  it("picks the row a connectOrCreate joins by the column its where filters on", async () => {
+    const code = await extractCode();
+    const write = relationWrite(code, "tags");
+    expect(write?.interaction.selector).toEqual(["name"]);
+  });
+
   it("writes unknown columns when the map callback arrives by name", async () => {
     const code = await extractCode();
     const write = relationWrite(code, "labels");
@@ -298,6 +304,7 @@ interface RelationWrite {
   interaction: {
     kind: string;
     fields: string[];
+    selector?: string[];
     relationPath?: string[];
     relationKey?: true;
   };
