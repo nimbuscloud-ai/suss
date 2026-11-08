@@ -25,6 +25,7 @@ import { byOrigin, callSiteKey } from "@suss/extractor";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
 import { modulesOf, opsIn } from "./ops.js";
+import { type SlotColumns, slotsDeclared } from "./slots.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
@@ -68,6 +69,7 @@ import type {
   ScheduleEnding,
   ScheduleUnread,
   ScopeLink,
+  SlotsLink,
   SqlEnding,
   SqlMethod,
   StatedInputs,
@@ -881,9 +883,11 @@ function accessEffect(matched: Matched, access: Access): Effect | null {
   const ending = chain.ending as StorageEnding;
   const { input, kind, reached, unsettled } = access;
   const stated = { input, entry: reached.entry, kind };
-  const listening = ops.statesSlots !== undefined;
-  const selectorRead: ReadValues | null = listening ? new Map() : null;
-  const fieldsRead: ReadValues | null = listening ? new Map() : null;
+  const declared: SlotsLink | null = linkIn(chain, "slots");
+  // A chain that declares its slots has no use for what its rules read.
+  const recordsReads = ops.statesSlots !== undefined && declared === null;
+  const selectorRead: ReadValues | null = recordsReads ? new Map() : null;
+  const fieldsRead: ReadValues | null = recordsReads ? new Map() : null;
   const selector = namesFor(
     meaning.selector,
     subject,
@@ -924,14 +928,34 @@ function accessEffect(matched: Matched, access: Access): Effect | null {
       ...(selector.length > 0 ? { selector } : {}),
     },
   };
-  const slots = [
-    ...slotsRead("selector", selector, selectorRead),
-    ...slotsRead("field", fields, fieldsRead),
-  ];
+  const slots =
+    declared === null
+      ? [
+          ...slotsRead("selector", selector, selectorRead),
+          ...slotsRead("field", fields, fieldsRead),
+        ]
+      : slotsHeard(ops, declared, input ?? subject.valueAt(0), {
+          selector,
+          fields,
+          kind,
+        });
   if (slots.length > 0) {
     ops.statesSlots?.(effect, slots);
   }
   return effect;
+}
+
+/** The slots a chain declares, read off the call only when somebody listens. */
+function slotsHeard(
+  ops: CallOps,
+  declared: SlotsLink,
+  input: ValueOps | null,
+  columns: SlotColumns,
+): StatedSlot[] {
+  if (ops.statesSlots === undefined) {
+    return [];
+  }
+  return slotsDeclared(input, declared.says, columns);
 }
 
 /**

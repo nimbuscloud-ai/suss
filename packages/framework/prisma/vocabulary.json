@@ -51,6 +51,8 @@
   "array_contains": "@prisma/client: Json column filter operator",
   "array_starts_with": "@prisma/client: Json column filter operator",
   "array_ends_with": "@prisma/client: Json column filter operator",
+  "select": "@prisma/client: argument key listing the columns a read returns, and the relations it reads with their own query",
+  "include": "@prisma/client: argument key listing the relations a read returns beside the whole row",
   "schema": "prisma: prisma.config.ts key and package.json prisma key giving the schema's path",
   "generator": "prisma: schema block declaring a client generator",
   "output": "prisma: generator block key giving the directory the client is written to",

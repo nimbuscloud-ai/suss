@@ -14,6 +14,7 @@ import type {
   ArgumentPick,
   CallStep,
   Chain,
+  DeclaredSlots,
   Link,
   LinkFunction,
   OneArgument,
@@ -96,6 +97,12 @@ export interface StorageCalls {
    * over the inputs is handed the object.
    */
   input(says: OneArgument): StorageCalls;
+  /**
+   * Where a call states the value for each column, as paths under its
+   * input, or `"none"` when its calls state none. Without this the
+   * slots are the values the pack's rules read under each column's name.
+   */
+  slots(says: DeclaredSlots | "none"): StorageCalls;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): StorageCalls;
   /** The links and the ending, as data. */
@@ -153,6 +160,7 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
         each: options?.each ?? "entry",
       }),
     input: (says) => adding({ asks: "input", at: says }),
+    slots: (says) => adding({ asks: "slots", says }),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
 }

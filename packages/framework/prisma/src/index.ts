@@ -33,6 +33,7 @@ import {
   compile,
   declarationsIn,
   declaredBy,
+  slotsDeclared,
   sqlStatements,
 } from "@suss/recognize";
 
@@ -48,14 +49,17 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { PrismaStorageSystem } from "@suss/contract-prisma";
 import type {
   CallOps,
-  EffectArg,
   InvocationRecognizer,
   PatternPack,
-  StatedSlot,
   ValueOps,
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { SqlMethod, SqlStatements } from "@suss/recognize";
+import type {
+  DeclaredSlots,
+  SlotColumns,
+  SqlMethod,
+  SqlStatements,
+} from "@suss/recognize";
 
 const PRISMA_READ_METHODS = new Set([
   "findUnique",
@@ -68,6 +72,18 @@ const PRISMA_READ_METHODS = new Set([
 
 // An upsert passes both `create` and `update`, so a write reads all three.
 const WRITE_PAYLOAD_KEYS = ["data", "create", "update"];
+
+/**
+ * A call picks rows by the values under `where` and writes the ones
+ * under a payload key. A read's `select` lists columns as `true`, which
+ * says nothing about where a value came from, so a read states only
+ * its selector's.
+ */
+const PRISMA_SLOTS: DeclaredSlots = {
+  selector: [["where"]],
+  field: WRITE_PAYLOAD_KEYS.map((key) => [key]),
+  fieldsOn: ["write"],
+};
 
 const PRISMA_WRITE_METHODS = new Set([
   "create",
@@ -137,10 +153,8 @@ function recognizePrismaCall(
 ): Effect[] | null {
   const callNode = call as CallExpression;
   const recognizerCtx = ctx as {
-    sourceFile: SourceFile;
-    extractArgs: () => EffectArg[];
     resolution?: ResolutionStore;
-    ops?: CallOps;
+    ops: CallOps;
   };
 
   // The callee has to be `<receiver>.<delegate>.<method>`.
@@ -174,10 +188,10 @@ function recognizePrismaCall(
   }
 
   const kind: "read" | "write" = isRead ? "read" : "write";
-  const argsShape = recognizerCtx.extractArgs();
-  const optionsArg = readObjectArg(argsShape[0]);
-  const fields = extractFields(optionsArg, kind);
-  const selector = extractSelector(optionsArg);
+  const given = recognizerCtx.ops.valueAt(0);
+  const options = objectOf(given);
+  const fields = extractFields(options, kind);
+  const selector = extractSelector(options);
   const binding = storageBinding({
     recognition: "@suss/framework-prisma",
     storageSystem,
@@ -197,14 +211,15 @@ function recognizePrismaCall(
       operation: method,
     },
   };
-  statePayloadSlots(recognizerCtx.ops, access, {
-    fields: kind === "write" ? fields : [],
+  statePayloadSlots(recognizerCtx.ops, given, access, {
     selector: selector ?? [],
+    fields,
+    kind,
   });
 
   return [
     access,
-    ...nestedReads(optionsArg).map(
+    ...nestedReads(options).map(
       (nested): Effect => ({
         type: "interaction",
         binding,
@@ -221,7 +236,7 @@ function recognizePrismaCall(
         },
       }),
     ),
-    ...nestedWrites(optionsArg).map(
+    ...nestedWrites(options).map(
       (nested): Effect => ({
         type: "interaction",
         binding,
@@ -250,36 +265,18 @@ function recognizePrismaCall(
  * summary can say where those values came from.
  */
 function statePayloadSlots(
-  ops: CallOps | undefined,
+  ops: CallOps,
+  given: ValueOps | null,
   effect: Effect,
-  columns: { fields: readonly string[]; selector: readonly string[] },
+  columns: SlotColumns,
 ): void {
-  const options = ops?.statesSlots === undefined ? null : ops.valueAt(0);
-  if (ops === undefined || options === null) {
+  if (ops.statesSlots === undefined) {
     return;
   }
-  const slots: StatedSlot[] = [
-    ...slotsUnder(options, ["where"], "selector", columns.selector),
-    ...slotsUnder(options, WRITE_PAYLOAD_KEYS, "field", columns.fields),
-  ];
+  const slots = slotsDeclared(given, PRISMA_SLOTS, columns);
   if (slots.length > 0) {
-    ops.statesSlots?.(effect, slots);
+    ops.statesSlots(effect, slots);
   }
-}
-
-function slotsUnder(
-  options: ValueOps,
-  keys: readonly string[],
-  slot: StatedSlot["slot"],
-  columns: readonly string[],
-): StatedSlot[] {
-  return keys.flatMap((key) =>
-    (options.property(key)?.entries("nothing") ?? []).flatMap((entry) =>
-      entry.key !== null && columns.includes(entry.key)
-        ? [{ slot, name: entry.key, value: entry.value }]
-        : [],
-    ),
-  );
 }
 
 interface NestedRead {
@@ -294,13 +291,13 @@ interface NestedRead {
  * is recorded with the relation path it was written under, at any depth.
  * The checker resolves that path against the model's contract.
  */
-function nestedReads(optionsArg: ObjectArg | null): NestedRead[] {
-  if (optionsArg === null) {
+function nestedReads(options: ValueOps | null): NestedRead[] {
+  if (options === null) {
     return [];
   }
   const found: NestedRead[] = [];
-  collectRelations(optionsArg, [], found);
-  const where = readObjectArg(optionsArg.fields.where);
+  collectRelations(options, [], found);
+  const where = objectOf(options.property("where"));
   if (where !== null) {
     columnsPickedBy(where, [], found);
   }
@@ -313,26 +310,26 @@ function nestedReads(optionsArg: ObjectArg | null): NestedRead[] {
  * objects are relations.
  */
 function collectRelations(
-  shape: ObjectArg,
+  shape: ValueOps,
   path: string[],
   found: NestedRead[],
 ): void {
-  const select = readObjectArg(shape.fields.select);
+  const select = objectOf(shape.property("select"));
   if (select !== null) {
-    for (const [name, value] of Object.entries(select.fields)) {
-      const nested = readObjectArg(value);
+    for (const [name, value] of entriesOf(select)) {
+      const nested = objectOf(value);
       if (nested === null) {
         continue;
       }
       recordRelation(name, nested, path, found);
     }
   }
-  const include = readObjectArg(shape.fields.include);
+  const include = objectOf(shape.property("include"));
   if (include === null) {
     return;
   }
-  for (const [name, value] of Object.entries(include.fields)) {
-    const nested = readObjectArg(value);
+  for (const [name, value] of entriesOf(include)) {
+    const nested = objectOf(value);
     if (nested === null) {
       // `include: { comments: true }` returns whole records.
       found.push({ relationPath: [...path, name], fields: ["*"] });
@@ -344,12 +341,12 @@ function collectRelations(
 
 function recordRelation(
   name: string,
-  nested: ObjectArg,
+  nested: ValueOps,
   path: string[],
   found: NestedRead[],
 ): void {
   const relationPath = [...path, name];
-  const where = readObjectArg(nested.fields.where);
+  const where = objectOf(nested.property("where"));
   const filtered: NestedRead[] = [];
   const selector =
     where === null ? [] : columnsPickedBy(where, relationPath, filtered);
@@ -388,10 +385,10 @@ interface WrittenRows {
    */
   fields: string[];
   /** Walked again for relations of their own. */
-  rows: ObjectArg[];
+  rows: ValueOps[];
 }
 
-type ReadWrittenRows = (payload: EffectArg | undefined) => WrittenRows;
+type ReadWrittenRows = (payload: ValueOps | null) => WrittenRows;
 
 /** For `create: { name: tag }` or a list of those, the payload is the row. */
 const rowIsPayload: ReadWrittenRows = (payload) => {
@@ -407,11 +404,11 @@ const rowIsPayload: ReadWrittenRows = (payload) => {
 function rowsUnder(...keys: string[]): ReadWrittenRows {
   return (payload) => {
     const outer = objectsIn(payload);
-    const rows: ObjectArg[] = [];
+    const rows: ValueOps[] = [];
     let written = outer.written && outer.rows.length > 0;
     for (const entry of outer.rows) {
       for (const key of keys) {
-        const inner = objectsIn(entry.fields[key]);
+        const inner = objectsIn(entry.property(key));
         rows.push(...inner.rows);
         written = written && inner.written;
       }
@@ -426,7 +423,7 @@ function rowsUnder(...keys: string[]): ReadWrittenRows {
  */
 const updateRow: ReadWrittenRows = (payload) => {
   const outer = objectsIn(payload);
-  const statesData = outer.rows.some((row) => "data" in row.fields);
+  const statesData = outer.rows.some((row) => row.property("data") !== null);
   return statesData ? rowsUnder("data")(payload) : rowIsPayload(payload);
 };
 
@@ -434,12 +431,14 @@ const updateRow: ReadWrittenRows = (payload) => {
 const wholeRow: ReadWrittenRows = () => ({ fields: ["*"], rows: [] });
 
 /** The columns a nested operation picks the related rows by. */
-type ReadPicked = (payload: EffectArg | undefined) => string[];
+type ReadPicked = (payload: ValueOps | null) => string[];
 
 /** For `connectOrCreate: { where, create }` or a list of those. */
 const pickedUnderWhere: ReadPicked = (payload) =>
   keysOfRows(
-    objectsIn(payload).rows.flatMap((row) => objectsIn(row.fields.where).rows),
+    objectsIn(payload).rows.flatMap(
+      (row) => objectsIn(row.property("where")).rows,
+    ),
   );
 
 /** For `connect: { id }` or a list of those, the payload is the `where`. */
@@ -449,7 +448,7 @@ const pickedByPayload: ReadPicked = (payload) =>
 /** Only the `{ where, data }` form of a nested update picks its rows. */
 const pickedByUpdate: ReadPicked = (payload) => {
   const statesData = objectsIn(payload).rows.some(
-    (row) => "data" in row.fields,
+    (row) => row.property("data") !== null,
   );
   return statesData ? pickedUnderWhere(payload) : [];
 };
@@ -498,13 +497,13 @@ const NESTED_OPERATIONS = new Map<string, NestedOperation>([
  * any depth, and the checker resolves the path the same way it does for
  * a nested read.
  */
-function nestedWrites(optionsArg: ObjectArg | null): NestedWrite[] {
-  if (optionsArg === null) {
+function nestedWrites(options: ValueOps | null): NestedWrite[] {
+  if (options === null) {
     return [];
   }
   const found: NestedWrite[] = [];
   for (const key of WRITE_PAYLOAD_KEYS) {
-    for (const row of objectsIn(optionsArg.fields[key]).rows) {
+    for (const row of objectsIn(options.property(key)).rows) {
       collectNestedWrites(row, [], found);
     }
   }
@@ -517,17 +516,17 @@ function nestedWrites(optionsArg: ObjectArg | null): NestedWrite[] {
  * checker drops any path the contract does not declare as a relation.
  */
 function collectNestedWrites(
-  row: ObjectArg,
+  row: ValueOps,
   path: string[],
   found: NestedWrite[],
 ): void {
-  for (const [field, value] of Object.entries(row.fields)) {
-    const nested = readObjectArg(value);
+  for (const [field, value] of entriesOf(row)) {
+    const nested = objectOf(value);
     if (nested === null) {
       continue;
     }
     const relationPath = [...path, field];
-    for (const [operation, payload] of Object.entries(nested.fields)) {
+    for (const [operation, payload] of entriesOf(nested)) {
       const does = NESTED_OPERATIONS.get(operation);
       if (does === undefined) {
         continue;
@@ -566,54 +565,66 @@ function collectNestedWrites(
 }
 
 /**
- * `written` is false when the payload, or any item in its list, is not an
- * object literal.
+ * The rows a payload writes: the payload itself, or each item of its
+ * list. `written` is false when the payload, or any item of its list, is
+ * not an object.
  */
-function objectsIn(arg: EffectArg | undefined): {
-  rows: ObjectArg[];
+function objectsIn(value: ValueOps | null): {
+  rows: ValueOps[];
   written: boolean;
 } {
-  const object = readObjectArg(arg);
+  const object = objectOf(value);
   if (object !== null) {
     return { rows: [object], written: true };
   }
-  if (
-    arg === null ||
-    arg === undefined ||
-    typeof arg !== "object" ||
-    arg.kind !== "array"
-  ) {
-    return { rows: [], written: false };
-  }
-  const rows: ObjectArg[] = [];
-  let written = true;
-  for (const item of arg.items) {
-    const row = readObjectArg(item);
-    if (row === null) {
-      written = false;
-      continue;
-    }
-    rows.push(row);
-  }
-  return { rows, written };
+  const items = value?.items() ?? [];
+  const rows = items.flatMap((item) => objectOf(item) ?? []);
+  return { rows, written: items.length > 0 && rows.length === items.length };
 }
 
 /** Every key the rows state, in the order each was first written. */
-function keysOfRows(rows: ObjectArg[]): string[] {
-  return [...new Set(rows.flatMap((row) => Object.keys(row.fields)))];
+function keysOfRows(rows: ValueOps[]): string[] {
+  return [...new Set(rows.flatMap(keysOf))];
 }
 
-function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
+function fieldsOfRows(read: { rows: ValueOps[]; written: boolean }): string[] {
   if (!read.written) {
     return ["*"];
   }
-  const out = new Set<string>();
-  for (const row of read.rows) {
-    for (const key of Object.keys(row.fields)) {
-      out.add(key);
-    }
+  const out = keysOfRows(read.rows);
+  return out.length === 0 ? ["*"] : out;
+}
+
+/**
+ * The object a value is, or null. `object()` follows a name, and a call
+ * that hands back its argument, to the object written there. It gives
+ * nothing for a project function that builds an object and returns it,
+ * which `entries()` does read, so a value with entries is an object as
+ * well. The ops over ts-morph nodes have no `object()`, and for them
+ * that is the only test.
+ */
+function objectOf(value: ValueOps | null): ValueOps | null {
+  if (value === null) {
+    return null;
   }
-  return out.size === 0 ? ["*"] : [...out];
+  const object = value.object?.() ?? null;
+  if (object !== null) {
+    return object;
+  }
+  return value.entries("nothing").length > 0 ? value : null;
+}
+
+/** The entries of an object whose key the source settles, in source order. */
+function entriesOf(object: ValueOps): [string, ValueOps][] {
+  return object
+    .entries("nothing")
+    .flatMap((entry): [string, ValueOps][] =>
+      entry.key === null ? [] : [[entry.key, entry.value]],
+    );
+}
+
+function keysOf(object: ValueOps): string[] {
+  return entriesOf(object).map(([key]) => key);
 }
 
 /**
@@ -819,57 +830,35 @@ function capitalizeFirst(name: string): string | null {
   return name[0].toUpperCase() + name.slice(1);
 }
 
-interface ObjectArg {
-  kind: "object";
-  fields: Record<string, EffectArg>;
-}
-
-function readObjectArg(arg: EffectArg | undefined): ObjectArg | null {
-  if (arg === null || arg === undefined) {
-    return null;
-  }
-  if (typeof arg !== "object") {
-    return null;
-  }
-  if ((arg as { kind?: string }).kind !== "object") {
-    return null;
-  }
-  return arg as ObjectArg;
-}
-
 function extractFields(
-  optionsArg: ObjectArg | null,
+  options: ValueOps | null,
   kind: "read" | "write",
 ): string[] {
-  if (optionsArg === null) {
+  if (options === null) {
     return ["*"];
   }
   if (kind === "read") {
-    const select = readObjectArg(optionsArg.fields.select);
-    const include = readObjectArg(optionsArg.fields.include);
+    const select = objectOf(options.property("select"));
     if (select === null) {
       // With no `select`, Prisma returns every column of the record, and
       // an `include` only adds relations beside it.
       return ["*"];
     }
-    const out = new Set<string>();
-    for (const k of Object.keys(select.fields)) {
-      out.add(k);
-    }
-    if (include !== null) {
-      for (const k of Object.keys(include.fields)) {
-        out.add(k);
-      }
-    }
-    return [...out];
+    const include = objectOf(options.property("include"));
+    return [
+      ...new Set([
+        ...keysOf(select),
+        ...(include === null ? [] : keysOf(include)),
+      ]),
+    ];
   }
-  const stated = new Map<string, EffectArg>();
-  for (const propName of WRITE_PAYLOAD_KEYS) {
-    const prop = readObjectArg(optionsArg.fields[propName]);
-    if (prop === null) {
+  const stated = new Map<string, ValueOps>();
+  for (const key of WRITE_PAYLOAD_KEYS) {
+    const payload = objectOf(options.property(key));
+    if (payload === null) {
       continue;
     }
-    for (const [name, value] of Object.entries(prop.fields)) {
+    for (const [name, value] of entriesOf(payload)) {
       stated.set(name, value);
     }
   }
@@ -888,23 +877,17 @@ function extractFields(
   return columns;
 }
 
-function statesNestedOperations(value: EffectArg): boolean {
-  const nested = readObjectArg(value);
+function statesNestedOperations(value: ValueOps): boolean {
+  const nested = objectOf(value);
   if (nested === null) {
     return false;
   }
-  return Object.keys(nested.fields).some((key) => NESTED_OPERATIONS.has(key));
+  return keysOf(nested).some((key) => NESTED_OPERATIONS.has(key));
 }
 
-function extractSelector(optionsArg: ObjectArg | null): string[] | null {
-  if (optionsArg === null) {
-    return null;
-  }
-  const where = readObjectArg(optionsArg.fields.where);
-  if (where === null) {
-    return null;
-  }
-  const keys = columnsPickedBy(where, [], []);
+function extractSelector(options: ValueOps | null): string[] | null {
+  const where = objectOf(options?.property("where") ?? null);
+  const keys = where === null ? [] : columnsPickedBy(where, [], []);
   return keys.length > 0 ? keys : null;
 }
 
@@ -947,12 +930,12 @@ const LOGICAL_OPERATORS = new Set(["AND", "OR", "NOT"]);
  * related rows by the columns it filters, and goes into `found` instead.
  */
 function columnsPickedBy(
-  where: ObjectArg,
+  where: ValueOps,
   path: string[],
   found: NestedRead[],
 ): string[] {
   const columns: string[] = [];
-  for (const [key, value] of Object.entries(where.fields)) {
+  for (const [key, value] of entriesOf(where)) {
     if (LOGICAL_OPERATORS.has(key)) {
       // `AND`, `OR` and `NOT` take one `where` or a list of them, on the
       // same rows, so their columns are this `where`'s own.
@@ -985,23 +968,22 @@ function columnsPickedBy(
  * a column. Only the schema tells a relation from a column, so an object
  * of anything but column operators is read as a relation's `where`.
  */
-function relationFiltersIn(value: EffectArg): ObjectArg[] | null {
-  const filter = readObjectArg(value);
+function relationFiltersIn(value: ValueOps): ValueOps[] | null {
+  const filter = objectOf(value);
   if (filter === null) {
     return null;
   }
-  const keys = Object.keys(filter.fields);
+  const entries = entriesOf(filter);
+  const keys = entries.map(([key]) => key);
   if (keys.length === 0 || keys.every((k) => COLUMN_FILTERS.has(k))) {
     return null;
   }
   if (!keys.some((k) => RELATION_FILTERS.has(k))) {
     return [filter];
   }
-  return keys.flatMap((k) => {
-    const inner = RELATION_FILTERS.has(k)
-      ? readObjectArg(filter.fields[k])
-      : null;
-    return inner === null ? [] : [inner];
+  return entries.flatMap(([k, inner]) => {
+    const where = RELATION_FILTERS.has(k) ? objectOf(inner) : null;
+    return where === null ? [] : [where];
   });
 }
 
@@ -1068,7 +1050,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "6",
+    version: "7",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],

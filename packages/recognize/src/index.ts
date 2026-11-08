@@ -16,6 +16,7 @@ export {
   typed,
 } from "./ops.js";
 export { declarationsIn, pack } from "./pack.js";
+export { slotsDeclared } from "./slots.js";
 export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
 export { streamWrites } from "./streamWrites.js";
@@ -54,6 +55,7 @@ export type {
   ContainerLink,
   ContainerRule,
   ContainersLink,
+  DeclaredSlots,
   Ending,
   FromReceiver,
   InputLink,
@@ -77,6 +79,7 @@ export type {
   ScheduleUnread,
   ScopeLink,
   SelectorParamPick,
+  SlotsLink,
   SqlEnding,
   SqlMethod,
   StartLink,
@@ -116,6 +119,7 @@ export type {
   ValueOps,
 } from "./ops.js";
 export type { Match, PackSpec } from "./pack.js";
+export type { SlotColumns } from "./slots.js";
 export type { SqlStatements, SqlStatementsSpec } from "./sqlStatements.js";
 export type { StorageCalls, StorageCallsSpec } from "./storage.js";
 export type { StreamWrites, StreamWritesSpec } from "./streamWrites.js";

@@ -31,6 +31,10 @@ The fields come from the call's first argument. A read takes the `select` keys, 
 
 A relation filter in a `where`, such as `profile: { verified: true }` or `posts: { some: { published: true } }`, reads the related rows by the columns it filters. It is recorded as a read with the relation's path and those columns as its fields, and the relation's name stays out of the selector. Only the schema tells a relation from a column, so a value that is an object of anything other than Prisma's column operators (`equals`, `in`, `gte`, `contains` and the rest) counts as a relation's `where`. An `include` or nested `select` that passes its own `where` picks the related rows by that `where`'s columns, and a relation filter inside it is read the same way, one level further down. `AND`, `OR` and `NOT` take one `where` or a list of them on the same rows, so the columns and relation filters inside them are read as the `where`'s own.
 
+The pack reads that argument through the value ops on its context, which follow the value policy in `@suss/recognize`'s DESIGN.md. Options kept in a local or an import, a spread, the object a project function returns, and a list mapped through a callback written at the call or passed by name all read as the objects they come to, at any depth. A parameter reads as nothing, so a payload passed in whole writes `["*"]`.
+
+For each column it picks rows by, the pack tells the adapter which value the call wrote under `where`, and for each column a write sets, the value under `data`, `create` or `update`. The summary records where each value came from. The pack declares those paths the way a compiled storage chain does with `.slots()`, and reads them with the same `slotsDeclared`. A read states only its selector's values, since `select` lists its columns as `true`.
+
 ### Relations
 
 A call shows which relation it goes through, but never which model is at the other end. So each relation comes out as its own effect, with the `relationPath` it was written under, and the checker resolves that path against the model's contract to find the table.
@@ -61,7 +65,7 @@ Both options make the effects this pack records pair with the schema reader. Pas
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor` for the `PatternPack` type, `@suss/behavioral-ir` for `storageBinding`, and `@suss/recognize` to compile the raw-statement declaration. `ts-morph` is a peer dependency, because the client recognizer walks the AST directly.
+The pack depends on `@suss/extractor` for the `PatternPack` type, `@suss/behavioral-ir` for `storageBinding`, and `@suss/recognize` to compile the raw-statement declaration and to read the slots it declares. `ts-morph` is a peer dependency, because the client recognizer still walks the AST to check the receiver.
 
 The provider side is `@suss/contract-prisma`, which reads `schema.prisma` and publishes a summary per model.
 
