@@ -26,6 +26,7 @@ import {
   symbolValue,
 } from "./ast.js";
 import { isClaimed } from "./claims.js";
+import { encodedIn } from "./encoded.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
@@ -151,22 +152,10 @@ function payloadOf(args: readonly RbNode[]): {
     : { payload: writtenShapeOf(serialized), serialized: "json" };
 }
 
-const JSON_WRITERS = new Set(["generate", "pretty_generate", "dump"]);
-
 /** The value a call serializes as JSON, or null for any other expression. */
 function jsonSerialized(node: RbNode): RbNode | null {
-  if (node.type !== "call") {
-    return null;
-  }
-  const receiver = field(node, "receiver");
-  const method = field(node, "method")?.text ?? "";
-  if (method === "to_json") {
-    return receiver;
-  }
-  if (receiver?.text !== "JSON" || !JSON_WRITERS.has(method)) {
-    return null;
-  }
-  return readCallArgs(field(node, "arguments")).positional[0] ?? null;
+  const encoded = encodedIn(node);
+  return encoded?.codec === "json" ? encoded.value : null;
 }
 
 const SCALARS: Readonly<Record<string, TypeShape>> = {

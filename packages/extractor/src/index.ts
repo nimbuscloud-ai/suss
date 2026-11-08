@@ -1357,6 +1357,7 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  Encoded,
   FactRows,
   FactSource,
   Imported,

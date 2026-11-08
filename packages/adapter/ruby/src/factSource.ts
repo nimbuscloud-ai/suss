@@ -22,6 +22,7 @@ import {
 import { scalarOf } from "@suss/values";
 
 import { numberLiteralValue, stringLiteralValue } from "./ast.js";
+import { encodedIn } from "./encoded.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
@@ -37,6 +38,7 @@ import {
 
 import type { Database } from "@suss/datalog";
 import type { EffectArg, FactSource, ValueForm } from "@suss/extractor";
+import type { EncodedNode } from "./encoded.js";
 import type { RbNode } from "./parser.js";
 
 /** The fact source for one run's database. */
@@ -87,6 +89,14 @@ export function rubyFactSource(db: Database): FactSource {
         ? { kind: "identifier", name: nameIn(key) }
         : argOf(node, db);
     },
+    encodedOf: (key) => {
+      const call = nodeAt(key);
+      const found = call === null ? null : encodedIn(call);
+      const value = found === null ? null : keyOfEncoded(db, key, found.at);
+      return found === null || value === null
+        ? null
+        : { codec: found.codec, value };
+    },
     evaluatedOf: (key) => {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));
@@ -106,6 +116,26 @@ export function rubyFactSource(db: Database): FactSource {
     // hooks make the ops for every value they read.
     extendValue: (key, ops) => Object.assign(ops, { ast: () => nodeAt(key) }),
   };
+}
+
+/** The key the facts give the value an encoder call encodes: its receiver, or one of its arguments. */
+function keyOfEncoded(
+  db: Database,
+  call: string,
+  at: EncodedNode["at"],
+): string | null {
+  if (at === "receiver") {
+    const [callee] = db.lookup("call", 0, call);
+    const [read] =
+      callee === undefined
+        ? []
+        : db.lookup("readsProperty", 0, String(callee[1]));
+    return read === undefined ? null : String(read[1]);
+  }
+  const argument = db
+    .lookup("callArg", 0, call)
+    .find((row) => String(row[1]) === String(at));
+  return argument === undefined ? null : String(argument[2]);
 }
 
 const FORMS: Record<string, ValueForm> = {

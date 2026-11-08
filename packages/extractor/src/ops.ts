@@ -261,6 +261,23 @@ export interface ValueOps {
    * Null for anything else.
    */
   importedFrom?(): string | null;
+  /**
+   * The value this one is an encoding of, and the encoding:
+   * `JSON.stringify(x)` is `x` under `json`. Null when the source does
+   * not write this value as a call of one of the language's encoders.
+   * A producer serializes a message before it sends it, and a consumer
+   * reads the fields back after decoding, so the value worth comparing
+   * across a boundary is the one that went in.
+   */
+  encoded?(): Encoded | null;
+}
+
+/** What an encoder was handed, and how it encoded it. */
+export interface Encoded {
+  /** The encoding, such as `json`. */
+  readonly codec: string;
+  /** The value that went in. */
+  readonly value: ValueOps;
 }
 
 /** How the source wrote a value where it is read. */
@@ -522,6 +539,12 @@ export interface FactSource {
   namesOf?(key: string, cap: number): readonly string[] | null;
   /** The value as an effect argument. */
   argOf(key: string): EffectArg | null;
+  /**
+   * The key of the value the call at `key` encodes, and the encoding,
+   * when the call is one of the language's encoders. Each adapter keeps
+   * its encoders in one table beside its other language words.
+   */
+  encodedOf?(key: string): { codec: string; value: string } | null;
   /** The one string, number or boolean the evaluator settles the value at the key to, or null. */
   evaluatedOf?(key: string): string | number | boolean | null;
   /**

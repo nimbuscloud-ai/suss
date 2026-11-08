@@ -26,3 +26,27 @@ export const CLASS_METHOD_DECORATOR = "classmethod";
 
 /** The decorator that passes a method no receiver at all. */
 export const STATIC_METHOD_DECORATOR = "staticmethod";
+
+/** A standard library function, called as `module.name(...)`, that encodes one of its arguments. */
+export interface ModuleEncoder {
+  readonly module: string;
+  readonly name: string;
+  /** Which positional argument is the value encoded. */
+  readonly argument: number;
+  readonly codec: string;
+}
+
+/** The standard library's encoders. `json.dumps(x)` encodes `x` as JSON. */
+export const ENCODERS: readonly ModuleEncoder[] = [
+  { module: "json", name: "dumps", argument: 0, codec: "json" },
+];
+
+/** The encoder `module.name(...)` calls, given whether the object is that module. */
+export function encoderCalled(
+  name: string,
+  isModule: (module: string) => boolean,
+): ModuleEncoder | null {
+  return (
+    ENCODERS.find((one) => one.name === name && isModule(one.module)) ?? null
+  );
+}

@@ -13,6 +13,7 @@ import {
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
 import { nodeId } from "../facts/extract.js";
+import { encodedIn } from "../values/encoded.js";
 import { typedAsExported } from "../values/receiverType.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelValue } from "../walk/unwrap.js";
@@ -97,6 +98,13 @@ export function factSourceFor(
     namesOf: (key, cap) =>
       at(key, null, (node) => stringValuesOf(node, store, cap)),
     argOf: (key) => at(key, null, effectArgOf),
+    encodedOf: (key) =>
+      at(key, null, (node) => {
+        const found = encodedIn(node);
+        return found === null
+          ? null
+          : { codec: found.codec, value: nodeId(peelValue(found.value)) };
+      }),
     evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
     comesTo: (key) =>
       at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),

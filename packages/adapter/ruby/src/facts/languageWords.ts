@@ -133,3 +133,33 @@ export const INITIALIZE_METHOD = "initialize";
 
 /** The method that returns the class an instance is one of. */
 export const CLASS_OF_INSTANCE = "class";
+
+/** Methods of a constant that encode one of their arguments, `JSON.generate(x)`. */
+export interface ConstantEncoder {
+  readonly constant: string;
+  readonly methods: readonly string[];
+  /** Which positional argument is the value encoded. */
+  readonly argument: number;
+  readonly codec: string;
+}
+
+/** A method that encodes the value it is called on, `x.to_json`. */
+export interface ReceiverEncoder {
+  readonly method: string;
+  readonly of: "receiver";
+  readonly codec: string;
+}
+
+/**
+ * The standard library's encoders. The `json` library adds `to_json` to
+ * every object, so the value encoded can be the receiver.
+ */
+export const ENCODERS: readonly (ConstantEncoder | ReceiverEncoder)[] = [
+  {
+    constant: "JSON",
+    methods: ["generate", "pretty_generate", "dump"],
+    argument: 0,
+    codec: "json",
+  },
+  { method: "to_json", of: "receiver", codec: "json" },
+];
