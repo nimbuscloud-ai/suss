@@ -1,126 +1,69 @@
 /**
- * Writes to the process's own output streams. Each one becomes a
- * `stream-write` interaction on an `io` binding that says which stream.
+ * Writes to the process's own output streams, declared as chains. Each
+ * one becomes a `stream-write` interaction on an `io` binding that says
+ * which stream.
  *
- * `console.log` and its siblings are recognized by how they are spelled,
- * since nothing imports or declares `console`. The target follows Node's
- * own split: `log`, `info`, `debug`, `table` and `dir` go to stdout, and
- * `warn`, `error` and `trace` to stderr. A stream handed in through a
- * parameter is looked up in an answer the store works out once per run.
- * The README has the rest.
+ * `console` and `process.stdout` are recognized by how they are spelled,
+ * since nothing imports or declares them, and a stream handed in through
+ * a parameter is one the rules followed there. A parameter declared as a
+ * `Console` or a stream writes to no stream in particular, since the
+ * source does not say which one it was made with. There are two chains
+ * because a `Console` parameter is read for the console methods and a
+ * stream parameter for `write`, never the other way round. The README
+ * has the rest.
  */
 
-import { type CallExpression, Node } from "ts-morph";
-
-import { writtenPayloadOf } from "@suss/adapter-typescript";
-import { ioBinding } from "@suss/behavioral-ir";
-import { callSiteKey } from "@suss/extractor";
-
-import type {
-  ResolutionStore,
-  TsInvocationRecognizerContext,
-} from "@suss/adapter-typescript";
-import type { Effect } from "@suss/behavioral-ir";
-import type { InvocationRecognizer } from "@suss/extractor";
+import { anyOf, compile, global, streamWrites, typed } from "@suss/recognize";
+import { GLOBAL_MODULE } from "@suss/resolution";
 
 const RECOGNITION = "@suss/runtime-node";
 
+/** The streams `process` has, as a program spells them, and the stream each is. */
+const PROCESS_STREAM_NAMES = {
+  "process.stdout": "stdout",
+  "process.stderr": "stderr",
+};
+
 /** The streams `process` has, as a program spells them. */
-export const PROCESS_STREAMS = ["process.stdout", "process.stderr"];
+export const PROCESS_STREAMS = Object.keys(PROCESS_STREAM_NAMES);
 
-const CONSOLE_STREAMS: Readonly<Record<string, string>> = {
-  log: "stdout",
-  info: "stdout",
-  debug: "stdout",
-  table: "stdout",
-  dir: "stdout",
-  warn: "stderr",
-  error: "stderr",
-  trace: "stderr",
-};
+const STREAM_WRITES = streamWrites({
+  streams: PROCESS_STREAM_NAMES,
+  client: anyOf(
+    global(...PROCESS_STREAMS),
+    typed({
+      from: [GLOBAL_MODULE],
+      named: ["NodeJS.WriteStream", "NodeJS.WritableStream"],
+    }),
+  ),
+})
+  .methods({ write: { to: "receiver" } })
+  .example('process.stdout.write("done\\n")');
 
-/** Annotations that make a parameter something the program prints through. */
-const CONSOLE_TYPES = ["Console"];
-const STREAM_TYPES = ["NodeJS.WriteStream", "NodeJS.WritableStream"];
+/** Node's own split: these go to stdout, and the last three to stderr. */
+const CONSOLE_WRITES = streamWrites({
+  streams: {},
+  client: anyOf(
+    global("console"),
+    typed({ from: [GLOBAL_MODULE], named: ["Console"] }),
+  ),
+})
+  .methods({
+    log: { to: "stdout" },
+    info: { to: "stdout" },
+    debug: { to: "stdout" },
+    table: { to: "stdout" },
+    dir: { to: "stdout" },
+    warn: { to: "stderr" },
+    error: { to: "stderr" },
+    trace: { to: "stderr" },
+  })
+  .example('console.error("failed")');
 
-export const streamWriteRecognizer: InvocationRecognizer = (call, ctx) => {
-  const written = call as CallExpression;
-  if (!Node.isCallExpression(written)) {
-    return null;
-  }
-  const callee = written.getExpression();
-  if (!Node.isPropertyAccessExpression(callee)) {
-    return null;
-  }
-  const resolution = (ctx as TsInvocationRecognizerContext | undefined)
-    ?.resolution;
-  const target = targetOf(callee.getExpression(), callee.getName(), resolution);
-  if (target === undefined) {
-    return null;
-  }
-  const payload = writtenPayloadOf(written.getArguments());
-  const effect: Extract<Effect, { type: "interaction" }> = {
-    type: "interaction",
-    binding: ioBinding({ recognition: RECOGNITION, target }),
-    callee: callee.getText(),
-    interaction: {
-      class: "stream-write",
-      payload: payload.shape,
-      serialized: payload.serialized,
-    },
-  };
-  return [{ ...effect, groupId: callSiteKey(effect) }];
-};
+/** The stream writes this pack declares. */
+export const STREAM_WRITE_MATCHES = [CONSOLE_WRITES, STREAM_WRITES];
 
-/**
- * The stream a method call writes to: a name such as `stdout`, null for a
- * stream the source does not settle, or undefined when the call is not a
- * write at all. A parameter annotated as a stream that no caller in the
- * run fills comes back null.
- */
-function targetOf(
-  receiver: Node,
-  method: string,
-  resolution: ResolutionStore | undefined,
-): string | null | undefined {
-  // Own keys only, so `x.toString()` never reads Object's method as a stream.
-  const consoleStream = Object.hasOwn(CONSOLE_STREAMS, method)
-    ? CONSOLE_STREAMS[method]
-    : undefined;
-  if (consoleStream !== undefined) {
-    if (Node.isIdentifier(receiver) && receiver.getText() === "console") {
-      return consoleStream;
-    }
-    return viaParameter(receiver, CONSOLE_TYPES, resolution);
-  }
-
-  if (method !== "write") {
-    return undefined;
-  }
-  if (Node.isPropertyAccessExpression(receiver)) {
-    const spelled = receiver.getText();
-    return PROCESS_STREAMS.includes(spelled) ? streamName(spelled) : undefined;
-  }
-  const path = viaParameter(receiver, STREAM_TYPES, resolution);
-  return path === null || path === undefined ? path : streamName(path);
-}
-
-/**
- * Only a bare name can be a parameter the store followed a stream into,
- * so any other receiver is left alone without asking.
- */
-function viaParameter(
-  receiver: Node,
-  annotations: readonly string[],
-  resolution: ResolutionStore | undefined,
-): string | null | undefined {
-  if (resolution === undefined || !Node.isIdentifier(receiver)) {
-    return undefined;
-  }
-  return resolution.streamPathOf(receiver, annotations);
-}
-
-/** `process.stdout` writes to `stdout`. */
-function streamName(path: string): string {
-  return path.slice(path.lastIndexOf(".") + 1);
-}
+/** The declared stream writes, as the hooks the adapter calls on every call. */
+export const streamWriteRecognizers = STREAM_WRITE_MATCHES.map((match) =>
+  compile(match.declared, RECOGNITION),
+);

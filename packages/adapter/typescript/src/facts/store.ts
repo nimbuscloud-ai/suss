@@ -1124,27 +1124,6 @@ export class ResolutionStore {
     );
   }
 
-  /**
-   * Which output stream a receiver is: the path it spells, the one path
-   * that reaches it, null for a stream the source does not settle, or
-   * undefined when nothing says it is a stream. A parameter annotated as
-   * one of `streamTypes` is a stream even when no stream reaches it.
-   */
-  streamPathOf(
-    receiver: Node,
-    streamTypes: readonly string[],
-  ): string | null | undefined {
-    const spelled = spelledStreamPath(this.table, factKeyOf(receiver));
-    if (spelled !== null) {
-      return spelled;
-    }
-    const reaching = this.streamsReaching(receiver);
-    if (reaching.size > 0) {
-      return reaching.size === 1 ? [...reaching][0] : null;
-    }
-    return this.parameterAnnotatedAs(receiver, streamTypes) ? null : undefined;
-  }
-
   private streamAnswers(
     project: Project,
   ): ReadonlyMap<string, ReadonlySet<string>> {

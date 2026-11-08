@@ -316,8 +316,16 @@ once per run, the same walk the environment object gets. The write in
 `say` looks its receiver up in that answer and goes to stderr. When two
 callers pass different streams, the write goes to a stream the source
 does not settle, and its target is null. A parameter annotated
-`Console`, `NodeJS.WriteStream` or `NodeJS.WritableStream` that nothing
-in the run calls is a write with a null target too.
+`Console`, `NodeJS.WriteStream` or `NodeJS.WritableStream` that no
+stream reaches is a write with a null target too, since an instance can
+be made with any streams.
+
+The writes are declared with `streamWrites` from `@suss/recognize`, as
+two chains: the console methods on `console` or a `Console`, and
+`write` on `process.stdout`, `process.stderr` or a stream. A `Console`
+is never read for `write`, and a stream never for `log`. A local that
+shadows `console` is still read as the console, since the match is on
+the spelling.
 
 Loggers such as pino, winston and NestJS's `Logger` are left to a pack
 of their own.

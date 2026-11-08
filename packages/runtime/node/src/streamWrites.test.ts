@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import nodeRuntimePack from "./index.js";
-import { streamWriteRecognizer } from "./streamWrites.js";
+import { streamWriteRecognizers } from "./streamWrites.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 
@@ -16,7 +17,7 @@ function writesIn(source: string): StreamWrite[] {
   const file = createTestProject().createSourceFile("cli.ts", source);
   return effectsOverFile(
     file,
-    packWithOnly(nodeRuntimePack(), { invocation: [streamWriteRecognizer] }),
+    packWithOnly(nodeRuntimePack(), { invocation: streamWriteRecognizers }),
   ) as StreamWrite[];
 }
 
@@ -136,6 +137,47 @@ describe("writes to the process's streams", () => {
       }
     `);
     expect(writes).toEqual([]);
+  });
+
+  it("takes a Console parameter as a write to an unknown stream, since its streams are its own", () => {
+    const writes = writesIn(`
+      export function report(out: Console, id: string) {
+        out.log("order", id);
+        out.error("failed");
+      }
+    `);
+    expect(targetsOf(writes)).toEqual([null, null]);
+  });
+
+  it("reads a console method called through optional chaining", () => {
+    const writes = writesIn(`
+      export function report() {
+        console?.log("order received");
+      }
+    `);
+    expect(targetsOf(writes)).toEqual(["stdout"]);
+  });
+
+  it("reads no console method on a name only a write stream reached", () => {
+    const writes = writesIn(`
+      function say(out, line: string) {
+        out.log(line);
+      }
+      export function run() {
+        say(process.stdout, "ok");
+      }
+    `);
+    expect(writes).toEqual([]);
+  });
+
+  it("matches the line each declaration says it matches", () => {
+    const ran = runExamples(nodeRuntimePack(), (code) =>
+      writesIn(`export function example() { ${code}; }`),
+    );
+    expect(ran.map((one) => targetsOf(one.effects as StreamWrite[]))).toEqual([
+      ["stderr"],
+      ["stdout"],
+    ]);
   });
 
   it("reads a method every object has as no write, even on console", () => {
