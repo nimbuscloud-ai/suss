@@ -30,16 +30,23 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { recordFileDependency } from "../depTracking.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
-import { createProgramMemo } from "../programMemo.js";
-import { peelParens } from "../walk/unwrap.js";
+import { createProgramMemo, type ProgramMemo } from "../programMemo.js";
+import { peelParens, peelSyntax } from "../walk/unwrap.js";
 
 import type {
+  ArrowFunction,
   CallExpression,
   Expression,
+  FunctionDeclaration,
+  FunctionExpression,
   Identifier,
+  MethodDeclaration,
+  ObjectBindingPattern,
   ObjectLiteralExpression,
   ParameterDeclaration,
+  PropertyAccessExpression,
   Node as TsNode,
 } from "ts-morph";
 
@@ -80,7 +87,7 @@ export function resolveHelperReturn(
     return { kind: "notLocal" };
   }
 
-  const helper = memoizedLocalHelper(callee, resolveCallee);
+  const helper = localHelperFor(callee, resolveCallee);
   if (helper.kind !== "local") {
     return helper.kind === "external"
       ? { kind: "notLocal" }
@@ -111,8 +118,8 @@ export function resolveHelperReturn(
  * branch: dropping one wrongly loses behaviour, while keeping one
  * needlessly costs an extra transition.
  */
-function branchCanRun(
-  returnValue: ObjectLiteralExpression,
+export function branchCanRun(
+  returnValue: TsNode,
   substitutions: ReadonlyMap<string, Expression>,
 ): boolean {
   for (const guard of guardsAbove(returnValue)) {
@@ -136,7 +143,7 @@ function branchCanRun(
  *   return ...                             // needs the guard false
  */
 function guardsAbove(
-  returnValue: ObjectLiteralExpression,
+  returnValue: TsNode,
 ): Array<{ condition: TsNode; whenTrue: boolean }> {
   const guards: Array<{ condition: TsNode; whenTrue: boolean }> = [];
   let child: TsNode = returnValue;
@@ -155,7 +162,8 @@ function guardsAbove(
     if (
       Node.isFunctionDeclaration(current) ||
       Node.isArrowFunction(current) ||
-      Node.isFunctionExpression(current)
+      Node.isFunctionExpression(current) ||
+      Node.isMethodDeclaration(current)
     ) {
       break;
     }
@@ -254,48 +262,105 @@ type LocalHelper =
   | { kind: "external" }
   | { kind: "unreadable" };
 
-/**
- * The callee's declaration, when it is a function in this project that
- * returns one object. Anything resolving into node_modules or an ambient
- * declaration comes back "external", and there the pack's own
- * description is the right one to use.
- *
- * Covers `function json(...)` and `const json = (...) => ...`, both of
- * which show up as a project's response helper.
- */
-const helperBySymbol = createProgramMemo<object, LocalHelper>();
+/** A function whose body a helper call can be read through. */
+export type HelperFunction =
+  | FunctionDeclaration
+  | ArrowFunction
+  | FunctionExpression
+  | MethodDeclaration;
+
+type ProjectFunction =
+  | { kind: "local"; fn: HelperFunction }
+  | { kind: "external" };
+
+const EXTERNAL = { kind: "external" } as const;
 
 /**
  * One resolution per callee symbol per program. Ten handlers returning
  * `json(...)` used to re-resolve `json` and re-read its body ten
  * times; the symbol is the identity every one of those shares.
  */
-function memoizedLocalHelper(
+const functionBySymbol = createProgramMemo<object, ProjectFunction>();
+const helperBySymbol = createProgramMemo<object, LocalHelper>();
+
+/**
+ * The function a call runs, when its body is in this project. A call
+ * into node_modules, a declaration with no body, or a name nothing
+ * declares gives null, and there the pack's own description is the one
+ * to use. A method called on a value is resolved for each call, since
+ * which class the value is decides which body runs.
+ */
+export function projectFunctionCalled(
+  call: CallExpression,
+  resolveCallee?: ResolveCallee,
+): HelperFunction | null {
+  const callee = call.getExpression();
+  if (!Node.isIdentifier(callee) && !Node.isPropertyAccessExpression(callee)) {
+    return null;
+  }
+  const found = bySymbol(functionBySymbol, callee, () =>
+    resolveProjectFunction(callee, resolveCallee),
+  );
+  if (found.kind !== "local") {
+    return null;
+  }
+  recordFileDependency(found.fn.getSourceFile().getFilePath());
+  return found.fn;
+}
+
+/**
+ * The callee's declaration, when it is a function in this project that
+ * returns an object. Covers `function json(...)` and
+ * `const json = (...) => ...`, both of which show up as a project's
+ * response helper.
+ */
+function localHelperFor(
   callee: Identifier,
   resolveCallee: ResolveCallee | undefined,
 ): LocalHelper {
-  const symbol = callee.getSymbol();
+  const found = bySymbol(functionBySymbol, callee, () =>
+    resolveProjectFunction(callee, resolveCallee),
+  );
+  if (found.kind !== "local") {
+    return EXTERNAL;
+  }
+  recordFileDependency(found.fn.getSourceFile().getFilePath());
+  return bySymbol(helperBySymbol, callee, () => {
+    const returnValues = returnedObjects(found.fn);
+    return returnValues.length === 0
+      ? { kind: "unreadable" }
+      : { kind: "local", params: found.fn.getParameters(), returnValues };
+  });
+}
+
+/** `read()` once per symbol per program when the callee is a plain name, and every time otherwise. */
+function bySymbol<T>(
+  memo: ProgramMemo<object, T>,
+  callee: TsNode,
+  read: () => T,
+): T {
+  const symbol = Node.isIdentifier(callee) ? callee.getSymbol() : undefined;
   if (symbol === undefined) {
-    return resolveLocalHelper(callee, resolveCallee);
+    return read();
   }
   const project = callee.getProject();
-  const cached = helperBySymbol.get(project, symbol);
+  const cached = memo.get(project, symbol);
   if (cached !== undefined) {
     return cached;
   }
-  const helper = resolveLocalHelper(callee, resolveCallee);
-  helperBySymbol.set(project, symbol, helper);
-  return helper;
+  const value = read();
+  memo.set(project, symbol, value);
+  return value;
 }
 
-function resolveLocalHelper(
-  callee: Identifier,
+function resolveProjectFunction(
+  callee: Identifier | PropertyAccessExpression,
   resolveCallee: ResolveCallee | undefined,
-): LocalHelper {
+): ProjectFunction {
   for (const declaration of declarationsFor(callee, resolveCallee)) {
     const file = declaration.getSourceFile();
     if (file.isFromExternalLibrary()) {
-      return { kind: "external" };
+      return EXTERNAL;
     }
 
     // A .d.ts describes a helper without saying what it does. When the
@@ -304,19 +369,11 @@ function resolveLocalHelper(
     if (file.isDeclarationFile()) {
       const implementation = implementationBeside(
         declaration,
-        callee.getText(),
+        nameCalled(callee),
       );
-      if (implementation === null) {
-        return { kind: "external" };
-      }
-      const returnValues = returnedObjects(implementation);
-      return returnValues.length === 0
-        ? { kind: "unreadable" }
-        : {
-            kind: "local",
-            params: implementation.getParameters(),
-            returnValues,
-          };
+      return implementation === null
+        ? EXTERNAL
+        : { kind: "local", fn: implementation };
     }
 
     const fn = asFunctionLike(declaration);
@@ -326,18 +383,18 @@ function resolveLocalHelper(
     // `declare function json(...)` has no body to read. It refers to
     // something defined elsewhere, so treat it like a library call.
     if (fn.getBody() === undefined) {
-      return { kind: "external" };
+      return EXTERNAL;
     }
-    const returnValues = returnedObjects(fn);
-    if (returnValues.length === 0) {
-      return { kind: "unreadable" };
-    }
-    return { kind: "local", params: fn.getParameters(), returnValues };
+    return { kind: "local", fn };
   }
   // Nothing resolved. Without the project's dependencies installed a
   // library import lands here too, so treat it as external and leave the
   // pack's description in charge.
-  return { kind: "external" };
+  return EXTERNAL;
+}
+
+function nameCalled(callee: Identifier | PropertyAccessExpression): string {
+  return Node.isIdentifier(callee) ? callee.getText() : callee.getName();
 }
 
 /**
@@ -348,7 +405,7 @@ function resolveLocalHelper(
 function implementationBeside(
   declaration: TsNode,
   name: string,
-): FunctionLike | null {
+): HelperFunction | null {
   const declarationPath = declaration.getSourceFile().getFilePath();
   const base = declarationPath.replace(/\.d\.[cm]?ts$/, "");
   const project = declaration.getProject();
@@ -378,7 +435,7 @@ function implementationBeside(
  * follows a project barrel too; without one, the checker's aliasing.
  */
 function declarationsFor(
-  callee: Identifier,
+  callee: Identifier | PropertyAccessExpression,
   resolveCallee: ResolveCallee | undefined,
 ): TsNode[] {
   if (resolveCallee !== undefined) {
@@ -386,7 +443,8 @@ function declarationsFor(
     return target === null ? [] : [target];
   }
 
-  const symbol = callee.getSymbol();
+  const named = Node.isIdentifier(callee) ? callee : callee.getNameNode();
+  const symbol = named.getSymbol();
   if (symbol === undefined) {
     return [];
   }
@@ -394,16 +452,12 @@ function declarationsFor(
   return (aliased ?? symbol).getDeclarations();
 }
 
-interface FunctionLike {
-  getParameters(): ParameterDeclaration[];
-  getBody(): TsNode | undefined;
-}
-
-function asFunctionLike(declaration: TsNode): FunctionLike | null {
+function asFunctionLike(declaration: TsNode): HelperFunction | null {
   if (
     Node.isFunctionDeclaration(declaration) ||
     Node.isArrowFunction(declaration) ||
-    Node.isFunctionExpression(declaration)
+    Node.isFunctionExpression(declaration) ||
+    Node.isMethodDeclaration(declaration)
   ) {
     return declaration;
   }
@@ -421,7 +475,7 @@ function asFunctionLike(declaration: TsNode): FunctionLike | null {
 }
 
 /** Every object literal a helper returns, in source order. */
-function returnedObjects(fn: FunctionLike): ObjectLiteralExpression[] {
+function returnedObjects(fn: HelperFunction): ObjectLiteralExpression[] {
   const body = fn.getBody();
   if (body === undefined) {
     return [];
@@ -483,17 +537,100 @@ function enclosingFunctionOf(node: TsNode): TsNode | undefined {
  * that call actually produces: `redirect(url, cookie)` against
  * `(location, cookie?, status = 302)` redirects with 302, and reporting
  * nothing there would lose a status the code plainly states.
+ *
+ * A parameter written as `{ status = 200 }` binds each name it takes
+ * out of the object the caller wrote, or its default when the object
+ * leaves the name out. When the caller is a helper too, `outer` maps
+ * its own parameters to the values its caller passed, so a value passed
+ * down through two helpers is still the first caller's.
  */
-function bindArguments(
+export function bindArguments(
   callArgs: ReadonlyArray<Expression>,
   params: ReadonlyArray<ParameterDeclaration>,
+  outer?: ReadonlyMap<string, Expression>,
 ): Map<string, Expression> {
   const bound = new Map<string, Expression>();
   for (const [index, param] of params.entries()) {
-    const supplied = callArgs[index] ?? param.getInitializer();
+    if (param.isRestParameter()) {
+      break;
+    }
+    const passed = callArgs[index];
+    const supplied =
+      passed === undefined
+        ? param.getInitializer()
+        : inCallerTerms(passed, outer);
+    const name = param.getNameNode();
+    if (Node.isObjectBindingPattern(name)) {
+      bindProperties(name, supplied, bound, outer);
+      continue;
+    }
     if (supplied !== undefined) {
       bound.set(param.getName(), supplied);
     }
   }
   return bound;
+}
+
+/**
+ * Only an object literal written at the call says which properties it
+ * has. A spread can put any property there, so an object with one binds
+ * nothing.
+ */
+function bindProperties(
+  pattern: ObjectBindingPattern,
+  supplied: Expression | undefined,
+  bound: Map<string, Expression>,
+  outer: ReadonlyMap<string, Expression> | undefined,
+): void {
+  const object = supplied === undefined ? null : peelSyntax(supplied);
+  if (
+    object === null ||
+    !Node.isObjectLiteralExpression(object) ||
+    object.getProperties().some((one) => Node.isSpreadAssignment(one))
+  ) {
+    return;
+  }
+  for (const element of pattern.getElements()) {
+    const local = element.getNameNode();
+    if (
+      !Node.isIdentifier(local) ||
+      element.getDotDotDotToken() !== undefined
+    ) {
+      continue;
+    }
+    const key = element.getPropertyNameNode()?.getText() ?? local.getText();
+    const written = valueWrittenFor(object, key);
+    const value =
+      written === undefined
+        ? element.getInitializer()
+        : inCallerTerms(written, outer);
+    if (value !== undefined) {
+      bound.set(local.getText(), value);
+    }
+  }
+}
+
+function valueWrittenFor(
+  object: ObjectLiteralExpression,
+  key: string,
+): Expression | undefined {
+  const property = object.getProperty(key);
+  if (property !== undefined && Node.isPropertyAssignment(property)) {
+    return property.getInitializer();
+  }
+  if (property !== undefined && Node.isShorthandPropertyAssignment(property)) {
+    return property.getNameNode();
+  }
+  return undefined;
+}
+
+/** A parameter of the caller is replaced by the value passed for it. */
+function inCallerTerms(
+  value: Expression,
+  outer: ReadonlyMap<string, Expression> | undefined,
+): Expression {
+  if (outer === undefined || !Node.isIdentifier(value)) {
+    return value;
+  }
+  return outer.get(value.getText()) ?? value;
 }
