@@ -245,6 +245,18 @@ describe("a storage chain", () => {
     ).toBeNull();
   });
 
+  it("never reads a method every object inherits as one the table lists", () => {
+    for (const method of ["toString", "constructor", "hasOwnProperty"]) {
+      expect(run(store(), callOps({ method, from: ["tapedeck"] }))).toBeNull();
+      expect(
+        run(
+          store({ ignoringCase: true }),
+          callOps({ method, from: ["tapedeck"] }),
+        ),
+      ).toBeNull();
+    }
+  });
+
   it("leaves the same method on somebody else's client alone", () => {
     expect(
       run(store(), callOps({ method: "get", from: ["other"], args: ["k"] })),

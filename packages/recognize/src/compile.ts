@@ -321,15 +321,17 @@ function operationOf(ops: CallOps): string {
   return ops.method() ?? ops.calleeText();
 }
 
-/** What the method table says this operation does, or null. */
+/**
+ * What the method table says this operation does, or null. Only the
+ * table's own keys count, so `client.toString()` never finds the method
+ * every object inherits.
+ */
 function listed(
   link: MethodsLink<MethodMeaning>,
   method: string,
 ): MethodMeaning | null {
-  if (!link.ignoringCase) {
-    return link.table[method] ?? null;
-  }
-  return link.table[method.toLowerCase()] ?? null;
+  const key = link.ignoringCase ? method.toLowerCase() : method;
+  return Object.hasOwn(link.table, key) ? (link.table[key] ?? null) : null;
 }
 
 /**
