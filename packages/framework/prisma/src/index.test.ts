@@ -677,14 +677,77 @@ describe("prisma recognizer: happy path", () => {
     ]);
   });
 
-  it("reads AND, OR and NOT as the columns they combine", () => {
+  it("reads a relation filter as a read of the related rows, and leaves it out of the selector", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function list(tier: string, since: Date) {
+        return await db.user.findMany({
+          where: {
+            tier,
+            createdAt: { gte: since },
+            status: { not: { in: ["banned"] } },
+            profile: { verified: true },
+            posts: { some: { published: true, author: { name: "a" } } },
+            team: { is: { active: true } },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[0]?.interaction.selector).toEqual([
+      "tier",
+      "createdAt",
+      "status",
+    ]);
+    expect(
+      accesses
+        .slice(1)
+        .map((a) => [a.interaction.relationPath, a.interaction.fields]),
+    ).toEqual([
+      [["profile"], ["verified"]],
+      [["posts"], ["published"]],
+      [["posts", "author"], ["name"]],
+      [["team"], ["active"]],
+    ]);
+  });
+
+  it("picks an include's rows by its where, and reads a relation filter in it", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function owners(id: string) {
+        return await db.project.findUnique({
+          where: { id },
+          include: {
+            users: {
+              where: { role: "owner", notificationPreference: { linkUsageSummary: true } },
+            },
+          },
+        });
+      }
+    `);
+    const nested = storageEffectsOf(recognizeAll(file))
+      .slice(1)
+      .map((a) => [
+        a.interaction.relationPath,
+        a.interaction.fields,
+        a.interaction.selector,
+      ]);
+    expect(nested).toEqual([
+      [["users"], ["*"], ["role"]],
+      [["users", "notificationPreference"], ["linkUsageSummary"], undefined],
+    ]);
+  });
+
+  it("reads AND, OR and NOT as the columns and relation filters they combine", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
       const db = new PrismaClient();
       async function list() {
         return await db.user.findMany({
           where: {
-            OR: [{ tier: "pro" }, { plan: "team" }],
+            OR: [{ tier: "pro" }, { profile: { verified: true } }],
             NOT: { banned: true },
             AND: [{ tier: "pro" }],
           },
@@ -692,8 +755,15 @@ describe("prisma recognizer: happy path", () => {
       }
     `);
     const accesses = storageEffectsOf(recognizeAll(file));
-    expect(accesses.map((a) => a.interaction.selector)).toEqual([
-      ["tier", "plan", "banned"],
+    expect(
+      accesses.map((a) => [
+        a.interaction.selector,
+        a.interaction.relationPath,
+        a.interaction.fields,
+      ]),
+    ).toEqual([
+      [["tier", "banned"], undefined, ["*"]],
+      [undefined, ["profile"], ["verified"]],
     ]);
   });
 
