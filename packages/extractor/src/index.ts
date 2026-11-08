@@ -102,7 +102,6 @@ export {
   type RegistrationHelper,
   registrationHelperDiscovery,
   routeHelperIndex,
-  unwrapJsonStringify,
   wrapperDiscovery,
 } from "./packHelpers.js";
 export {

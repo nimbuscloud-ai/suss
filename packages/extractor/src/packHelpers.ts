@@ -5,7 +5,6 @@
  */
 
 import type { DiscoveryPattern } from "./framework.js";
-import type { EffectArg } from "./index.js";
 import type {
   HelperSink,
   HelperValue,
@@ -303,26 +302,4 @@ function handlerSlot(value: HelperValue): string | null {
   return value.property === undefined
     ? `{${value.position}}`
     : `{${value.position}}.${value.property}`;
-}
-
-/**
- * The payload behind a `JSON.stringify(...)` call, or the argument
- * unchanged when it is anything else. A producer serializes its message
- * before sending it, so the value compared across the boundary is the
- * object that went into the string.
- */
-export function unwrapJsonStringify(body: EffectArg | null): EffectArg | null {
-  if (body === null || typeof body !== "object") {
-    return body;
-  }
-  const candidate = body as {
-    kind?: string;
-    callee?: string;
-    args?: EffectArg[];
-  };
-  if (candidate.kind !== "call" || candidate.callee !== "JSON.stringify") {
-    return body;
-  }
-  const inner = candidate.args?.[0];
-  return inner ?? body;
 }
