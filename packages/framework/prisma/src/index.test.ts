@@ -801,6 +801,36 @@ describe("prisma recognizer: happy path", () => {
     ]);
   });
 
+  it("reads a compound unique key with no schema as the columns its name spells", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function find(domain: string, key: string, userId: string, projectId: string) {
+        await db.link.findUnique({ where: { domain_key: { domain, key } } });
+        await db.projectUser.update({
+          where: { userId_projectId: { projectId, userId } },
+          data: { role: "owner" },
+        });
+        return await db.link.findMany({
+          where: { owner_profile: { verified: true } },
+        });
+      }
+    `);
+    expect(
+      storageEffectsOf(recognizeAll(file)).map((a) => [
+        a.interaction.selector,
+        a.interaction.relationPath,
+        a.interaction.fields,
+      ]),
+    ).toEqual([
+      [["domain", "key"], undefined, ["*"]],
+      [["projectId", "userId"], undefined, ["role"]],
+      // A relation whose name spells nothing under it stays a relation filter.
+      [undefined, undefined, ["*"]],
+      [undefined, ["owner_profile"], ["verified"]],
+    ]);
+  });
+
   it("reads AND, OR and NOT in a nested operation's where, and a relation filter there as a read", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
@@ -1492,6 +1522,92 @@ describe("the storage system a project's schema declares", () => {
 
   it("finds the schema folder a prisma generate script passes with --schema", () => {
     expect(systemsIn("scripted")).toEqual(["mysql", "mysql"]);
+  });
+});
+
+describe("the compound unique keys a project's schema declares", () => {
+  let root: string;
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prisma-compound-"));
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.mkdirSync(path.join(root, "prisma"), { recursive: true });
+    fs.mkdirSync(path.join(root, "node_modules/@prisma/client"), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(root, "package.json"), "{}");
+    fs.writeFileSync(
+      path.join(root, "node_modules/@prisma/client/index.d.ts"),
+      `export declare class PrismaClient {
+         readonly link: any;
+         readonly project: any;
+       }`,
+    );
+    fs.writeFileSync(
+      path.join(root, "prisma/schema.prisma"),
+      `datasource db {
+         provider = "postgresql"
+         url      = env("DATABASE_URL")
+       }
+       model Link {
+         id         String  @id
+         domain     String
+         key        String
+         projectId  String
+         externalId String
+         project    Project @relation(fields: [projectId], references: [id])
+
+         @@unique([domain, key])
+         @@unique([projectId, externalId], name: "byExternal")
+       }
+       model Project {
+         id    String        @id
+         links Link[]
+         users ProjectUser[]
+       }
+       model ProjectUser {
+         userId    String
+         projectId String
+         project   Project @relation(fields: [projectId], references: [id])
+
+         @@id([userId, projectId])
+       }`,
+    );
+    fs.writeFileSync(
+      path.join(root, "src/api.ts"),
+      `import { PrismaClient } from "@prisma/client";
+       const db = new PrismaClient();
+       export async function run(lookup: { domain: string; key: string }, projectId: string, externalId: string, userId: string) {
+         await db.link.findUnique({ where: { domain_key: lookup } });
+         await db.link.findUnique({ where: { byExternal: { projectId, externalId } } });
+         await db.project.update({
+           where: { id: projectId },
+           data: { users: { connect: { userId_projectId: { userId, projectId } } } },
+         });
+       }`,
+    );
+  });
+
+  it("reads a key by the fields the schema gives it, under a name of its own or through a relation", () => {
+    const fixture = createFixtureProject(root, "src/*.ts");
+    const sourceFile = fixture.getSourceFileOrThrow(
+      path.join(root, "src/api.ts"),
+    );
+    expect(
+      storageEffectsOf(recognizeAll(sourceFile)).map((a) => [
+        a.interaction.operation,
+        a.interaction.selector,
+        a.interaction.relationPath,
+      ]),
+    ).toEqual([
+      // The schema says which fields a key combines when the value under
+      // it cannot be read.
+      ["findUnique", ["domain", "key"], undefined],
+      ["findUnique", ["projectId", "externalId"], undefined],
+      ["update", ["id"], undefined],
+      ["connect", ["userId", "projectId"], ["users"]],
+      ["connect", undefined, ["users"]],
+    ]);
   });
 });
 

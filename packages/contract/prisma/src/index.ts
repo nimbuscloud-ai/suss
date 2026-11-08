@@ -537,8 +537,15 @@ function prismaFilesIn(dir: string, below: boolean): string[] {
 
 function schemaListOf(file: string): unknown[] | null {
   try {
-    return (getSchema(fs.readFileSync(file, "utf8")) as { list: unknown[] })
-      .list;
+    return schemaListIn(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function schemaListIn(text: string): unknown[] | null {
+  try {
+    return (getSchema(text) as { list: unknown[] }).list;
   } catch {
     return null;
   }
@@ -1017,6 +1024,83 @@ function arrayNames(value: unknown): string[] | null {
     }
   }
   return out;
+}
+
+/**
+ * What the client's arguments can name on a model besides its columns:
+ * the compound unique keys a unique `where` takes, and the relation fields
+ * a nested argument goes through.
+ */
+export interface PrismaClientModel {
+  /**
+   * Each compound key by the name the client gives it, with the fields it
+   * combines. `@@unique([a, b])` and `@@id([a, b])` are named `a_b` unless
+   * the attribute passes a `name`.
+   */
+  readonly compoundKeys: ReadonlyMap<string, readonly string[]>;
+  /** The model each relation field leads to. */
+  readonly relations: ReadonlyMap<string, string>;
+}
+
+/**
+ * The models and views of a schema by name, from the text of each of its
+ * files. A file that does not parse is left out.
+ */
+export function prismaClientModels(
+  texts: readonly string[],
+): Map<string, PrismaClientModel> {
+  const blocks = texts
+    .flatMap((text) => schemaListIn(text) ?? [])
+    .filter(
+      (node): node is PrismaModel =>
+        ((node as { type: string }).type === "model" ||
+          (node as { type: string }).type === "view") &&
+        typeof (node as { name?: unknown }).name === "string",
+    );
+  const modelNames = new Set(blocks.map((block) => block.name));
+  return new Map(
+    blocks.map((block) => [
+      block.name,
+      {
+        compoundKeys: compoundKeysOf(block),
+        relations: relationTargetsOf(block, modelNames),
+      },
+    ]),
+  );
+}
+
+/** A unique of one field is named by that field, the way `@unique` is. */
+function compoundKeysOf(model: PrismaModel): Map<string, string[]> {
+  const keys = new Map<string, string[]>();
+  for (const property of model.properties) {
+    const attr = property as PrismaAttribute;
+    if (
+      attr.type !== "attribute" ||
+      (attr.name !== "unique" && attr.name !== "id")
+    ) {
+      continue;
+    }
+    const fields = blockFieldsOf(attr);
+    if (fields === null || fields.length < 2) {
+      continue;
+    }
+    keys.set(stringArgOf(attr) ?? fields.join("_"), fields);
+  }
+  return keys;
+}
+
+function relationTargetsOf(
+  model: PrismaModel,
+  modelNames: Set<string>,
+): Map<string, string> {
+  const targets = new Map<string, string>();
+  for (const property of model.properties) {
+    const field = property as PrismaField;
+    if (field.type === "field" && modelNames.has(field.fieldType)) {
+      targets.set(field.name, field.fieldType);
+    }
+  }
+  return targets;
 }
 
 export type PrismaStorageSystem = "postgresql" | "mysql" | "sqlite";

@@ -25,6 +25,7 @@
   "every": "@prisma/client: list relation filter, every related row matches a where",
   "is": "@prisma/client: single relation filter, the related row matches a where",
   "isNot": "@prisma/client: single relation filter, the related row does not match a where",
+  "_": "@prisma/client: the separator in a compound unique key's name, as in domain_key for @@unique([domain, key])",
   "AND": "@prisma/client: where operator, every listed filter matches",
   "OR": "@prisma/client: where operator, some listed filter matches",
   "NOT": "@prisma/client: where operator, the listed filters do not match",

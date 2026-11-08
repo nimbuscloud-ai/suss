@@ -26,6 +26,7 @@
   "library": "suss: marker for a value a library states",
   "exhaustive": "suss: a storage contract that declares every field",
   "_count": "Prisma client: the relation counts a query can ask for",
+  "_": "Prisma client: the separator in a compound unique key's name, as in domain_key for @@unique([domain, key])",
   "PrismaCount": "suss: the type this pack gives the _count field",
   "keyValue": "suss: the parser's node type for a named attribute argument",
   "function": "suss: the parser's node type for a function call in an attribute argument",
