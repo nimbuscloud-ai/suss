@@ -1455,6 +1455,83 @@ describe("a run with no store", () => {
   });
 });
 
+describe("the client a transaction hands its callback, with the client not installed", () => {
+  /** The callee of every Prisma call the recognizer reads in `/jobs.ts`. */
+  function calleesIn(source: string): (string | undefined)[] {
+    const file = createTestProject().createSourceFile("/jobs.ts", source);
+    return storageEffectsOf(recognizeAll(file)).map((effect) => effect.callee);
+  }
+
+  const CLIENT = `
+    import { PrismaClient } from "@prisma/client";
+    const db = new PrismaClient();
+  `;
+
+  it("reads the client an arrow written at the call is handed", () => {
+    expect(
+      calleesIn(`${CLIENT}
+        export async function pause(id: string) {
+          await db.$transaction(async (tx) => {
+            await tx.campaign.update({ where: { id }, data: { status: "paused" } });
+          });
+        }
+      `),
+    ).toEqual(["tx.campaign.update"]);
+  });
+
+  it("reads the client a function expression is handed", () => {
+    expect(
+      calleesIn(`${CLIENT}
+        export async function pause(id: string) {
+          await db.$transaction(async function (tx) {
+            return tx.campaign.findUnique({ where: { id } });
+          });
+        }
+      `),
+    ).toEqual(["tx.campaign.findUnique"]);
+  });
+
+  it("reads the client a callback passed by name is handed", () => {
+    expect(
+      calleesIn(`${CLIENT}
+        async function pauseAll(tx) {
+          await tx.campaign.updateMany({ data: { status: "paused" } });
+        }
+        const resumeAll = async (tx) => tx.campaign.updateMany({ data: { status: "active" } });
+        export async function cycle() {
+          await db.$transaction(pauseAll);
+          await db.$transaction(resumeAll);
+        }
+      `),
+    ).toEqual(["tx.campaign.updateMany", "tx.campaign.updateMany"]);
+  });
+
+  it("reads each call an array of calls passes on its own receiver", () => {
+    expect(
+      calleesIn(`${CLIENT}
+        export async function swap(id: string) {
+          await db.$transaction([
+            db.campaign.delete({ where: { id } }),
+            db.campaign.create({ data: { name: "next" } }),
+          ]);
+        }
+      `),
+    ).toEqual(["db.campaign.delete", "db.campaign.create"]);
+  });
+
+  it("leaves a callback alone when the transaction is not on a client, or the name is not its first parameter", () => {
+    expect(
+      calleesIn(`${CLIENT}
+        const other = { $transaction: async (run) => run({}) };
+        export async function go(id: string) {
+          await other.$transaction(async (tx) => tx.campaign.findMany({}));
+          await db.$transaction(async (tx, extra) => extra.campaign.findMany({}));
+        }
+      `),
+    ).toEqual([]);
+  });
+});
+
 describe("a client class the project extends, with the client not installed", () => {
   /** The containers the Prisma calls in `/users.ts` reach, with `/db.ts` as the client class. */
   function containersReached(db: string): Array<string | null> {
