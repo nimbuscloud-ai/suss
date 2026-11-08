@@ -173,6 +173,133 @@ function linksOnRun(
   );
 }
 
+/** The positions at which each call `run` makes passes a project function, with the summary there. */
+function passedOnRun(
+  summaries: BehavioralSummary[],
+): Array<[string, Record<string, string>]> {
+  const run = summaries.find((one) => one.identity.name === "run");
+  return (run?.transitions ?? []).flatMap((transition) =>
+    transition.effects.flatMap((effect) =>
+      effect.type === "invocation" && effect.argsSummary !== undefined
+        ? [
+            [effect.callee, effect.argsSummary] as [
+              string,
+              Record<string, string>,
+            ],
+          ]
+        : [],
+    ),
+  );
+}
+
+describe("a function run through the language's own call, apply and bind", () => {
+  const AUDIT = `
+    export function record(event: string) { return event; }
+    export function audit(this: unknown, event: string) { record(event); }
+  `;
+
+  it("follows fn.call to the function and links the call to it", async () => {
+    const summaries = await extract({
+      "/audit.ts": AUDIT,
+      "/entry.ts": `
+        import { audit } from "./audit";
+        export function run() {
+          return audit.call(null, "open");
+        }
+      `,
+    });
+
+    expect(reached(summaries, "audit")).toBe(true);
+    expect(reached(summaries, "record")).toBe(true);
+    expect(linksOnRun(summaries)).toEqual([["audit.call", "/audit.ts::audit"]]);
+  });
+
+  it("follows fn.apply to the function", async () => {
+    const summaries = await extract({
+      "/audit.ts": AUDIT,
+      "/entry.ts": `
+        import { audit } from "./audit";
+        export function run() {
+          audit.apply(null, ["open"]);
+        }
+      `,
+    });
+
+    expect(reached(summaries, "audit")).toBe(true);
+    expect(reached(summaries, "record")).toBe(true);
+  });
+
+  it("follows a method run on this through call", async () => {
+    const summaries = await extract({
+      "/entry.ts": `
+        export function record(event: string) { return event; }
+        class Session {
+          close(reason: string) { record(reason); }
+          end() { this.close.call(this, "done"); }
+        }
+        export function run() {
+          new Session().end();
+        }
+      `,
+    });
+
+    expect(reached(summaries, "close")).toBe(true);
+    expect(reached(summaries, "record")).toBe(true);
+  });
+
+  it("reaches the function fn.bind hands back, wherever the bound function goes", async () => {
+    const summaries = await extract({
+      "/audit.ts": AUDIT,
+      "/entry.ts": `
+        import { audit } from "./audit";
+        export function run() {
+          setTimeout(audit.bind(null, "open"), 10);
+        }
+      `,
+    });
+
+    expect(reached(summaries, "audit")).toBe(true);
+    expect(reached(summaries, "record")).toBe(true);
+  });
+
+  it("puts a function passed through call at the parameter it lands in", async () => {
+    const summaries = await extract({
+      "/entry.ts": `
+        export function onDone() { return "done"; }
+        export function schedule(this: unknown, callback: () => string) {
+          return callback();
+        }
+        export function run() {
+          return schedule.call(null, onDone);
+        }
+      `,
+    });
+
+    expect(passedOnRun(summaries)).toEqual([
+      ["schedule.call", { "0": "/entry.ts::onDone" }],
+    ]);
+  });
+
+  it("runs a call method a project class declares, not the function it is on", async () => {
+    const summaries = await extract({
+      "/entry.ts": `
+        export function charge(amount: number) { return amount; }
+        class CreateInvoice {
+          static call(amount: number) { return charge(amount); }
+        }
+        export function run() {
+          return CreateInvoice.call(1);
+        }
+      `,
+    });
+
+    expect(linksOnRun(summaries)).toEqual([
+      ["CreateInvoice.call", "/entry.ts::call"],
+    ]);
+    expect(reached(summaries, "charge")).toBe(true);
+  });
+});
+
 describe("a call nothing declares", () => {
   it("links no method called on an untyped value to a function of the same name in the file", async () => {
     const summaries = await extract({
