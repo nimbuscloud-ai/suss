@@ -777,6 +777,18 @@ export const EXTRA_INPUTS = [
     repo: "saas-starter",
     args: packs("nextjs", "react", "fetch", "drizzle", "node"),
   },
+  // The packs the first run uses. The clone has no dependencies
+  // installed, so every Prisma call matches by where its client was made,
+  // and the same calls match on every machine.
+  {
+    name: "prisma",
+    group: "extra",
+    repo: "dub",
+    args: [
+      ...dir("apps/web"),
+      ...packs("nextjs", "react", "fetch", "prisma", "node"),
+    ],
+  },
   {
     name: "mongoose",
     group: "extra",
