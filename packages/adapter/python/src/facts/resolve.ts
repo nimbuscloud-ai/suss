@@ -114,6 +114,18 @@ export function resolveEnvObjects(
 }
 
 /**
+ * Asks which values each output stream passed on reaches, from every
+ * spot that passes one, so a write through a parameter looks its
+ * receiver up in `wantedStreamValue`.
+ */
+export function resolveStreamObjects(
+  db: Database,
+  objectKeys: readonly string[],
+): void {
+  askResolution(db, objectKeys, "wantedStreamObject", programFor(db));
+}
+
+/**
  * The single expression a value was written as, when its receiver is the
  * instance built at `site`. A field that two constructions fill differently
  * has one value under each site and none without one.

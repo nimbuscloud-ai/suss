@@ -1359,6 +1359,7 @@ export type {
   Encoded,
   FactRows,
   FactSource,
+  Global,
   Imported,
   OpsCarrier,
   ReceiverOrigin,

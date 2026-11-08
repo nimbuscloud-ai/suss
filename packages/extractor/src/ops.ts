@@ -26,7 +26,20 @@ export type ReceiverOrigin =
   | AnyOf
   | ReturnedBy
   | Typed
-  | Imported;
+  | Imported
+  | Global;
+
+/**
+ * A receiver, or the callee of a call with no receiver, spelled as one of
+ * these paths: `console`, `process.stdout`, `sys.stdout`, `$stdout`,
+ * `print`. The runtime provides it and nothing declares it, so how the
+ * source spells it is all there is to match. Each adapter says what
+ * spelled means in its language.
+ */
+export interface Global {
+  readonly origin: "global";
+  readonly paths: readonly string[];
+}
 
 /**
  * A receiver whose method one of these modules declared.
@@ -130,7 +143,7 @@ export function byOrigin<T, A extends readonly unknown[] = []>(
   return read(origin, ...rest);
 }
 
-import type { Effect } from "@suss/behavioral-ir";
+import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { DiscoveredSubUnitParent } from "./framework.js";
 import type { EffectArg } from "./index.js";
 
@@ -270,6 +283,12 @@ export interface ValueOps {
    * across a boundary is the one that went in.
    */
   encoded?(): Encoded | null;
+  /**
+   * The shape the source writes this value in at this spot, without
+   * following a name: a record for an object written out, a reference
+   * for a name. Null when the adapter cannot say.
+   */
+  shape?(): TypeShape | null;
 }
 
 /** What an encoder was handed, and how it encoded it. */
@@ -338,6 +357,13 @@ export interface CallOps {
   method(): string | null;
   /** Whether the receiver came from where the origin says. */
   receiverIsFrom(origin: ReceiverOrigin): boolean;
+  /**
+   * The one path among `paths` the receiver is: spelled as it, or a value
+   * the rules followed that global into, such as a parameter a caller
+   * passed `process.stdout` to. Null when two of them reach it, and
+   * undefined when none does.
+   */
+  receiverGlobal?(paths: readonly string[]): string | null | undefined;
   /**
    * Whether the callee itself came from where the origin says. A pack
    * that steps to an argument such as `new GetCommand(...)` asks this
@@ -545,6 +571,22 @@ export interface FactSource {
    * its encoders in one table beside its other language words.
    */
   encodedOf?(key: string): { codec: string; value: string } | null;
+  /** The shape the value at the key is written in there, as `ValueOps.shape` says. */
+  typeShapeOf?(key: string): TypeShape | null;
+  /** Whether the value at the key is spelled as this global path, the language's way. */
+  spellsGlobal?(key: string, path: string): boolean;
+  /**
+   * Whether the call at the key goes to this global with no receiver, as
+   * `print(x)` or `puts x` does. Python keys a bare name by its scope,
+   * so the call is what can say whether the name is the builtin.
+   */
+  callsGlobal?(call: string, path: string): boolean;
+  /**
+   * The global paths whose value the rules followed into the value at the
+   * key, through names and the parameters callers passed it to. Only the
+   * output streams are followed so far.
+   */
+  globalsReaching?(key: string): readonly string[];
   /** The one string, number or boolean the evaluator settles the value at the key to, or null. */
   evaluatedOf?(key: string): string | number | boolean | null;
   /**

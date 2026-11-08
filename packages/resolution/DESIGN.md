@@ -1279,8 +1279,9 @@ nobody and is left out. `runtimeObject` is either of the two seeds, so
 `wantedStreamValue` hands back every expression a stream reaches. The
 store asks it once per run and keeps the answer, so a recognizer at
 `out.write(...)` looks the receiver up in that answer instead of asking
-a question per call. Python's and Ruby's stream readers spell the
-stream at the call, so nothing reads their rows yet.
+a question per call. Python and Ruby ask the same question the first
+time a declared stream write looks a receiver up. Their own stream
+readers still spell the stream at the call.
 
 ## Which returns become the exit code
 

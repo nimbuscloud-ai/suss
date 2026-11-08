@@ -15,17 +15,18 @@
 
 import {
   functionCallBinding,
+  ioBinding,
   messageBusBinding,
   resourceNameIn,
   storageBinding,
   unitInvocationBinding,
 } from "@suss/behavioral-ir";
-import { byOrigin } from "@suss/extractor";
+import { byOrigin, callSiteKey } from "@suss/extractor";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
 import { modulesOf, opsIn } from "./ops.js";
 
-import type { Effect } from "@suss/behavioral-ir";
+import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
   AstCapableValueOps,
   ByOrigin,
@@ -73,6 +74,8 @@ import type {
   StatedRule,
   StorageEnding,
   StorageMethod,
+  StreamWriteEnding,
+  StreamWriteMethod,
   SubjectLink,
   SubUnitNamePart,
   ToArgument,
@@ -83,6 +86,7 @@ import type {
 } from "./chain.js";
 import type {
   CallOps,
+  Global,
   ReceiverOrigin,
   UnsettledName,
   ValueOps,
@@ -107,6 +111,8 @@ interface Matched {
   meaning: MethodMeaning;
   chain: Chain<MethodMeaning>;
   recognition: string;
+  /** Whether the call matched as a call of the client itself, with no receiver. */
+  bare: boolean;
 }
 
 /** A chain, as the hook the adapter dispatches to on every call. */
@@ -131,6 +137,7 @@ export function compile(
         meaning: bare.meaning,
         chain,
         recognition,
+        bare: true,
       });
     }
 
@@ -153,6 +160,7 @@ export function compile(
         meaning: matched.meaning,
         chain,
         recognition,
+        bare: false,
       });
     }
     return null;
@@ -268,8 +276,11 @@ function bareCall(
   ops: CallOps,
   modules: readonly string[],
 ): { method: string; meaning: MethodMeaning } | null {
-  const link = linkIn(chain, "calls");
   const start = linkIn(chain, "start");
+  if (start?.at.origin.origin === "global") {
+    return globalCalled(chain, ops, start.at.origin);
+  }
+  const link = linkIn(chain, "calls");
   if (link === null || start === null || start.at.starts !== "receiver") {
     return null;
   }
@@ -286,9 +297,30 @@ function bareCall(
 }
 
 /**
+ * A call with no receiver to the global a chain starts from, `print(x)`
+ * or `puts x`, read as a method on that global: the callee is looked up
+ * in the methods table, whatever the adapter says the method is. Ruby
+ * says `puts` is a method on `self`.
+ */
+function globalCalled(
+  chain: Chain<MethodMeaning>,
+  ops: CallOps,
+  origin: Global,
+): { method: string; meaning: MethodMeaning } | null {
+  const methods = methodsIn(chain);
+  const callee = ops.calleeText();
+  const meaning = methods === null ? null : listed(methods, callee);
+  if (meaning === null || !ops.isFrom(origin)) {
+    return null;
+  }
+  return { method: callee, meaning };
+}
+
+/**
  * Where a bare call's callee came from. An imported function is the
- * name itself, and anything else is the call the name was written as,
- * such as the `create(...)` behind a store hook.
+ * name itself, a global is spelled as itself, and anything else is the
+ * call the name was written as, such as the `create(...)` behind a
+ * store hook.
  */
 const BARE_CALL_FROM: ByOrigin<boolean, [CallOps]> = {
   imported: (origin, ops) => ops.isFrom(origin),
@@ -298,6 +330,7 @@ const BARE_CALL_FROM: ByOrigin<boolean, [CallOps]> = {
   typed: (origin, ops) => writtenFrom(origin, ops),
   anyOf: (origin, ops) =>
     origin.of.some((one) => byOrigin(BARE_CALL_FROM, one, ops)),
+  global: (origin, ops) => ops.isFrom(origin),
 };
 
 /** Whether the call the callee was written as came from the origin. */
@@ -459,7 +492,107 @@ const YIELD: Record<Ending["yields"], (matched: Matched) => Effect[] | null> = {
   messageSend: messageSend,
   unitInvoke: unitInvoke,
   schedule: schedule,
+  streamWrite: streamWrite,
 };
+
+/** The `to` of a method that writes to the stream it is called on. */
+const RECEIVER_STREAM = "receiver";
+
+/**
+ * One write to a stream the process owns. Its id is the callee and a
+ * hash of what it writes, so a second site writing something else in
+ * the same unit gets its own.
+ */
+function streamWrite(matched: Matched): Effect[] {
+  const { ops, subject, recognition } = matched;
+  const effect: Extract<Effect, { type: "interaction" }> = {
+    type: "interaction",
+    binding: ioBinding({ recognition, target: streamTarget(matched) }),
+    callee: ops.calleeText(),
+    interaction: { class: "stream-write", ...writtenPayload(subject) },
+  };
+  return [{ ...effect, groupId: callSiteKey(effect) }];
+}
+
+/**
+ * The stream a write goes to, or null when the source does not settle
+ * one. A method's own `to` is where the global itself sends that method,
+ * so a receiver matched only by its type, some instance the source does
+ * not say more about, writes to no stream in particular. So does a
+ * receiver two of the globals reach.
+ */
+function streamTarget(matched: Matched): string | null {
+  const { subject, chain } = matched;
+  const { to } = matched.meaning as StreamWriteMethod;
+  if (matched.bare) {
+    return to === RECEIVER_STREAM ? null : to;
+  }
+  const start = linkIn(chain, "start");
+  const paths = start === null ? [] : byOrigin(GLOBAL_PATHS, start.at.origin);
+  const path = subject.receiverGlobal?.(paths) ?? null;
+  if (path === null) {
+    return null;
+  }
+  const { streams } = chain.ending as StreamWriteEnding;
+  return to === RECEIVER_STREAM ? (streams[path] ?? null) : to;
+}
+
+/** The global paths an origin accepts a receiver spelled as. */
+const GLOBAL_PATHS: ByOrigin<readonly string[]> = {
+  global: (origin) => origin.paths,
+  anyOf: (origin) => origin.of.flatMap((one) => byOrigin(GLOBAL_PATHS, one)),
+  declaredBy: () => [],
+  constructed: () => [],
+  returnedBy: () => [],
+  typed: () => [],
+  imported: () => [],
+};
+
+/**
+ * What a write writes, as the shape the source writes it in. One value
+ * written through an encoder is recorded as what went in, and so is one
+ * a template puts nothing but whitespace around, the way a command ends
+ * its JSON report with a newline. Several values are written one after
+ * another, so their shapes are keyed by position.
+ */
+function writtenPayload(subject: CallOps): {
+  payload: TypeShape | null;
+  serialized: "json" | "text";
+} {
+  const count = subject.argumentCount();
+  if (count !== 1) {
+    const properties: Record<string, TypeShape> = {};
+    for (let at = 0; at < count; at += 1) {
+      properties[String(at)] = subject.valueAt(at)?.shape?.() ?? {
+        type: "unknown",
+      };
+    }
+    return { payload: { type: "record", properties }, serialized: "text" };
+  }
+  const only = subject.valueAt(0);
+  for (const written of [heldInWhitespace(only), only]) {
+    const encoded = written?.encoded?.() ?? null;
+    if (encoded?.codec === "json") {
+      return { payload: encoded.value.shape?.() ?? null, serialized: "json" };
+    }
+  }
+  return { payload: only?.shape?.() ?? null, serialized: "text" };
+}
+
+/** The one value a template puts nothing but whitespace around, or null. */
+function heldInWhitespace(value: ValueOps | null): ValueOps | null {
+  const parts = value?.parts() ?? null;
+  const [hole] = value?.interpolated?.() ?? [];
+  if (
+    parts === null ||
+    parts.length !== 2 ||
+    hole === undefined ||
+    parts.some((part) => part.trim() !== "")
+  ) {
+    return null;
+  }
+  return hole;
+}
 
 /**
  * One effect for the callback a call hands over, saying which function
@@ -896,6 +1029,7 @@ function recording(value: ValueOps, read: ReadValues): ValueOps {
       "importedFrom",
       () => value.importedFrom?.() ?? null,
     ),
+    ...optionalMember(value, "shape", () => value.shape?.() ?? null),
     ...optionalMember(value, "encoded", () => {
       const found = value.encoded?.() ?? null;
       return found === null

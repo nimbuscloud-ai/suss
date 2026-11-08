@@ -97,6 +97,7 @@ function withNodeMembers(
   const added: AstCapableOps = {
     method: () => ops.method(),
     receiverIsFrom: (origin) => ops.receiverIsFrom(origin),
+    receiverGlobal: (paths) => ops.receiverGlobal?.(paths),
     isFrom: (origin) => ops.isFrom(origin),
     argumentCount: () => ops.argumentCount(),
     nameAt: (index, unsettled) => ops.nameAt(index, unsettled),

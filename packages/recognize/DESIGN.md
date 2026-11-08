@@ -17,11 +17,12 @@ where the match starts -> which method -> read the arguments -> yield
                                                                 a sub-unit
 ```
 
-Five endings are built, and all five are recognition endings that
+Six endings are built, and all six are recognition endings that
 yield effects: `storageAccess` asks the call what it reached,
 `sqlAccess` reads the statement the call was given, `messageSend`
-and `unitInvoke` read the object the call sends, and `schedule` reads
-the callback the call hands over. A schedule chain can also say what a
+and `unitInvoke` read the object the call sends, `schedule` reads
+the callback the call hands over, and `streamWrite` reads what the
+call writes to a stream. A schedule chain can also say what a
 callback written in place becomes, which is how a pack claims a
 sub-unit as data. Discovery and terminals still come from the pack's
 discovery patterns. Each would become a new member of `Ending`, with
@@ -51,7 +52,7 @@ The starts that begin at a receiver form their own union,
 | `factoryMade` | `app = express()` | no |
 | `anchored` | a chain read from its anchor call | no |
 | `inherits` | a Ruby or Python receiver matched by ancestry | no |
-| `global` | `process.env`, bare `fetch` | no |
+| `global` | a receiver, or a call with no receiver, spelled as one of these paths: `console`, `process.stdout`, `print` | yes |
 
 A pack uses `declaredBy` when the source never writes out which client
 it is using. In `const redis = await this.getClient()` nothing mentions
@@ -85,6 +86,20 @@ Python's `import ledger` brings it in. Ruby has no imports, so its
 facts state a constant whose root no file in the run defines as
 imported from `GLOBAL_MODULE` under its path, and `Ledger.publish` is
 then a method on the `*` of `Ledger`.
+
+`global(...paths)` takes what the runtime provides and nothing declares,
+so how the source spells it is all there is to match. Each adapter says
+what spelled means. TypeScript reads the dotted path as written, so a
+local that shadows `console` still matches; checking for one is a
+change of its own. Python asks that `sys` is the module the file
+imported and that nothing in scope rebinds `print`. Ruby reads a `$`
+variable by its name, and a constant such as `STDOUT` by the path no
+file in the run defines. A receiver also matches when the rules
+followed one of the paths into it, so `out.write(x)` in a helper a
+caller passed `process.stdout` matches, and `receiverGlobal(paths)`
+says which path that was. A chain that starts at a global also matches
+a call of the global with no receiver, `print(x)` or `puts x`, looking
+its callee up in the methods table.
 
 A chain can also match a call made directly on the tracked value, with
 no method, by adding `.calls(meaning)` next to its methods table. A
@@ -166,6 +181,7 @@ walk it:
 | `form()` | how the source wrote the value at this spot: `function`, `name`, `object` or `other`, without following anything |
 | `ownProperty(name)` | what an object written at this spot states under one of its own keys, with spreads left out |
 | `encoded()` | the value a call of one of the language's encoders was handed, and the encoding: `x` under `json` for `JSON.stringify(x)`, `json.dumps(x)`, `JSON.generate(x)` or `x.to_json`. Null for any other value |
+| `shape()` | the shape the source writes the value in at this spot, without following a name |
 
 A message send records its body, and a unit invoke its payload, as the
 value that went into the encoder when there is one, since the consumer
@@ -207,6 +223,9 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `form()` | the adapter's `formOf`, and `other` where it has none |
 | `ownProperty(name)` | `holdsProperty` and `writtenEntryAt` on the value's own key, its spreads left out, when `shapeOf` says it is an object |
 | `encoded()` | the adapter's `encodedOf`, asked of the value a name was written as, the way `asArg()` is, so an encoding kept in a name is still read. Python and Ruby find the encoded value through `call`, `readsProperty` and `callArg` |
+| `shape()` | the adapter's `typeShapeOf` on the value's own key, with no name followed |
+| `receiverIsFrom`, `receiverGlobal` with `global` | the adapter's `spellsGlobal` on the receiver, or else `globalsReaching`: the paths `wantedStreamValue` says reach the receiver, from every `streamObject` |
+| `isFrom` with `global` | the adapter's `callsGlobal` on the call, for a call with no receiver |
 | `block()` | `callBlock(r, b)`, which only Ruby states |
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
@@ -745,6 +764,39 @@ order: the parent's name, `.` and the callee, `#` and how many claims
 under that callee came before it in the parent. A callback written
 inside another claimed one still belongs to the parent, because the
 calls are not cut at a claim.
+
+## A write to one of the process's streams
+
+`streamWrites` records a write to stdout or stderr. Nothing pairs
+against it, since whoever reads a stream is a person or a shell. The
+client is usually a `global`, and each method says which stream it
+writes to, or `receiver` for the stream it is called on:
+
+```ts
+streamWrites({
+  streams: { "process.stdout": "stdout", "process.stderr": "stderr" },
+  client: anyOf(
+    global("process.stdout", "process.stderr"),
+    typed({ from: [GLOBAL_MODULE], named: ["NodeJS.WriteStream"] }),
+  ),
+}).methods({ write: { to: "receiver" } });
+```
+
+`streams` gives the stream for each path `receiverGlobal` can return.
+A receiver matched only by its type, or one two paths reach, writes to
+no stream in particular, and so does a method with a stream of its own
+when its receiver matched only by type: a `Console` parameter could be
+an instance made with any streams. `typed` from `GLOBAL_MODULE` reads
+the parameter's annotation as the source writes it, since no file
+imports a type the runtime declares.
+
+The payload is read through the ops. One value written through an
+encoder is recorded as what went in, with `serialized: "json"`, and so
+is one a template puts nothing but whitespace around, the way a command
+ends its JSON report with a newline. Any other single value is recorded
+as `text` with its own `shape()`, and several values become a record
+keyed by position. The effect's `groupId` is `callSiteKey` of the
+effect.
 
 ## The example every declaration states
 

@@ -12,16 +12,19 @@ import {
   stringValuesOf,
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
-import { nodeId } from "../facts/extract.js";
+import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { encodedIn } from "../values/encoded.js";
 import { typedAsExported } from "../values/receiverType.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
   anchorAccepts,
+  bareCalleeName,
   literalFlag,
   literalText,
   noteValueNode,
+  streamsReachingName,
+  writtenShapeOf,
 } from "./callOps.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
@@ -105,6 +108,19 @@ export function factSourceFor(
           ? null
           : { codec: found.codec, value: nodeId(peelValue(found.value)) };
       }),
+    typeShapeOf: (key) => at(key, null, writtenShapeOf),
+    spellsGlobal: (key, path) =>
+      at(key, false, (node) => dottedPathOf(node) === path),
+    callsGlobal: (call, path) =>
+      at(
+        call,
+        false,
+        (node) =>
+          Node.isCallExpression(node) &&
+          bareCalleeName(node.getExpression()) === path,
+      ),
+    globalsReaching: (key) =>
+      at(key, [], (node) => streamsReachingName(node, store)),
     evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
     comesTo: (key) =>
       at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),

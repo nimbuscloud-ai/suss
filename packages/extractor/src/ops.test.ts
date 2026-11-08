@@ -17,6 +17,7 @@ const DESCRIBE: ByOrigin<string, [string]> = {
     `${byOrigin(DESCRIBE, origin.on, prefix)}.${origin.method}()`,
   typed: (origin, prefix) => `${prefix}: ${origin.named.join()}`,
   imported: (origin, prefix) => `${prefix}import ${origin.importedFrom.join()}`,
+  global: (origin, prefix) => `${prefix}${origin.paths.join()}`,
 };
 
 describe("dispatching on the kind of origin", () => {

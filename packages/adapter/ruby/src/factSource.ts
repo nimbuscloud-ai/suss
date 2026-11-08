@@ -26,6 +26,7 @@ import { encodedIn } from "./encoded.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
+  resolveStreamObjects,
   resolveValues,
   writtenValueOf,
 } from "./facts/resolve.js";
@@ -35,6 +36,7 @@ import {
   nodeOfResolutionKey,
   stringValueOf,
 } from "./values/evaluator.js";
+import { writtenShapeOf } from "./writtenShape.js";
 
 import type { Database } from "@suss/datalog";
 import type { EffectArg, FactSource, ValueForm } from "@suss/extractor";
@@ -96,6 +98,30 @@ export function rubyFactSource(db: Database): FactSource {
       return found === null || value === null
         ? null
         : { codec: found.codec, value };
+    },
+    typeShapeOf: (key) => {
+      const node = nodeAt(key);
+      return node === null ? { type: "unknown" } : writtenShapeOf(node);
+    },
+    spellsGlobal: (key, path) => globalPathOf(db, key, nodeAt(key)) === path,
+    callsGlobal: (call, path) => {
+      const node = nodeAt(call);
+      return (
+        node?.type === "call" &&
+        node.childForFieldName("receiver") === null &&
+        node.childForFieldName("method")?.text === path
+      );
+    },
+    globalsReaching: (key) => {
+      resolveStreamObjects(
+        db,
+        db.facts("streamObject").map((row) => String(row[0])),
+      );
+      return db.lookup("wantedStreamValue", 0, key).flatMap((row) => {
+        const object = String(row[1]);
+        const path = globalPathOf(db, object, nodeAt(object));
+        return path === null ? [] : [path];
+      });
     },
     evaluatedOf: (key) => {
       const node = valueNode(key);
@@ -180,6 +206,22 @@ function constructedClass(method: RbNode | null): string | null {
       ? receiver.childForFieldName("name")
       : receiver;
   return named?.type === "constant" ? named.text : null;
+}
+
+/**
+ * The global a value is spelled as: a `$` variable by its name, or a
+ * constant no file in the run defines, such as `STDOUT`, by its path.
+ */
+function globalPathOf(
+  db: Database,
+  key: string,
+  node: RbNode | null,
+): string | null {
+  if (node?.type === "global_variable") {
+    return node.text;
+  }
+  const [only, ...more] = libraryPathsOf(db, key);
+  return only === undefined || more.length > 0 ? null : only;
 }
 
 /** The constant paths a library defines that the value at this key reads. */
