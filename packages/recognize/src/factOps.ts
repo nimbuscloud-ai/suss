@@ -15,6 +15,7 @@
 
 import { byOrigin, lastValueWins } from "@suss/extractor";
 
+import type { TypeShape } from "@suss/behavioral-ir";
 import type {
   ByOrigin,
   CallOps,
@@ -23,6 +24,7 @@ import type {
   EffectArg,
   Encoded,
   FactSource,
+  Global,
   Imported,
   ReceiverOrigin,
   ReturnedBy,
@@ -148,6 +150,41 @@ class FactCall implements CallOps {
 
   receiverIsFrom(origin: ReceiverOrigin): boolean {
     return byOrigin(receiverOrigin(this), origin);
+  }
+
+  /**
+   * Spelled as one of the paths, or else the one path among those the
+   * rules followed into the receiver. A receiver can be spelled as only
+   * one path, so a spelling settles it without asking the rules.
+   */
+  receiverGlobal(paths: readonly string[]): string | null | undefined {
+    if (this.member === null) {
+      return undefined;
+    }
+    const { object } = this.member;
+    const spelled = paths.find(
+      (path) => this.source.spellsGlobal?.(object, path) === true,
+    );
+    if (spelled !== undefined) {
+      return spelled;
+    }
+    const reaching = new Set(
+      (this.source.globalsReaching?.(object) ?? []).filter((path) =>
+        paths.includes(path),
+      ),
+    );
+    if (reaching.size === 0) {
+      return undefined;
+    }
+    const [one] = reaching;
+    return reaching.size === 1 && one !== undefined ? one : null;
+  }
+
+  /** Whether the call goes to one of the paths with no receiver, `print(x)`. */
+  callsGlobal(origin: Global): boolean {
+    return origin.paths.some(
+      (path) => this.source.callsGlobal?.(this.key, path) === true,
+    );
   }
 
   isFrom(origin: ReceiverOrigin): boolean {
@@ -314,6 +351,7 @@ function receiverOrigin(call: FactCall): ByOrigin<boolean> {
     },
     typed: (origin) => call.receiverTyped(origin),
     imported: (origin) => call.receiverImported(origin),
+    global: (origin) => call.receiverGlobal(origin.paths) !== undefined,
   };
 }
 
@@ -326,6 +364,7 @@ function callOrigin(call: FactCall): ByOrigin<boolean> {
     returnedBy: (origin) => call.returns(origin),
     typed: (origin) => call.receiverTyped(origin),
     imported: (origin) => call.calleeImported(origin),
+    global: (origin) => call.callsGlobal(origin),
   };
 }
 
@@ -458,6 +497,11 @@ class FactValue implements ValueOps {
 
   importedFrom(): string | null {
     return this.facts.importSpecifierOf?.(this.key) ?? null;
+  }
+
+  /** Asked of the value as written here, since a shape follows no name. */
+  shape(): TypeShape | null {
+    return this.facts.typeShapeOf?.(this.key) ?? null;
   }
 
   /** Asked of the settled value, as `asArg` is, so an encoding kept in a name is still read. */

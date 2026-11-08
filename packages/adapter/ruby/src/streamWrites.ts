@@ -16,17 +16,10 @@ import {
   walkDescendants,
 } from "@suss/extractor";
 
-import {
-  children,
-  field,
-  hashKeySymbolName,
-  rangeOf,
-  readCallArgs,
-  stringLiteralValue,
-  symbolValue,
-} from "./ast.js";
+import { children, field, rangeOf, readCallArgs } from "./ast.js";
 import { isClaimed } from "./claims.js";
 import { encodedIn } from "./encoded.js";
+import { writtenShapeOf } from "./writtenShape.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
@@ -166,58 +159,4 @@ function payloadOf(args: readonly RbNode[]): {
 function jsonSerialized(node: RbNode): RbNode | null {
   const encoded = encodedIn(node);
   return encoded?.codec === "json" ? encoded.value : null;
-}
-
-const SCALARS: Readonly<Record<string, TypeShape>> = {
-  integer: { type: "integer" },
-  float: { type: "number" },
-  true: { type: "boolean" },
-  false: { type: "boolean" },
-  nil: { type: "null" },
-};
-
-/** What a written-out value says about its own shape; anything computed is unknown. */
-function writtenShapeOf(node: RbNode): TypeShape {
-  const scalar = SCALARS[node.type];
-  if (scalar !== undefined) {
-    return scalar;
-  }
-  if (node.type === "string") {
-    const literal = stringLiteralValue(node);
-    return literal === null
-      ? { type: "text" }
-      : { type: "literal", value: literal };
-  }
-  if (node.type === "hash") {
-    return hashShape(node);
-  }
-  if (node.type === "array") {
-    const first = children(node).find((child) => child !== null);
-    return {
-      type: "array",
-      items: first ? writtenShapeOf(first) : { type: "unknown" },
-    };
-  }
-  return { type: "unknown" };
-}
-
-/** A hash written with symbol or string keys is a record of them. */
-function hashShape(node: RbNode): TypeShape {
-  const properties: Record<string, TypeShape> = {};
-  for (const pair of children(node)) {
-    if (pair?.type !== "pair") {
-      continue;
-    }
-    const key = field(pair, "key");
-    const value = field(pair, "value");
-    const name = key === null ? null : keyName(key);
-    if (name !== null && value !== null) {
-      properties[name] = writtenShapeOf(value);
-    }
-  }
-  return { type: "record", properties };
-}
-
-function keyName(key: RbNode): string | null {
-  return hashKeySymbolName(key) ?? symbolValue(key) ?? stringLiteralValue(key);
 }

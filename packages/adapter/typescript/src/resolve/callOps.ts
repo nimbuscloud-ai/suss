@@ -21,11 +21,13 @@ import {
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
 import { isFunctionRoot } from "../discovery/shared.js";
+import { dottedPathOf } from "../facts/extract.js";
 import { MAPPING_METHOD } from "../facts/languageWords.js";
 import { parameterReads } from "../parameterReads.js";
+import { extractShape } from "../shapes/shapes.js";
 import { encodedIn } from "../values/encoded.js";
 import { typedAsExported } from "../values/receiverType.js";
-import { peelValue } from "../walk/unwrap.js";
+import { climbValue, peelValue } from "../walk/unwrap.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
   type AnchorCallsOf,
@@ -36,7 +38,7 @@ import {
 } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
-import type { Effect } from "@suss/behavioral-ir";
+import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
   AstCapableOps,
   ByOrigin,
@@ -142,7 +144,61 @@ const ORIGIN: ByOrigin<boolean, [Receiver]> = {
       receiver.callee.getExpression(),
       receiver.resolution,
     ),
+  global: (origin, receiver) =>
+    receiver.callee !== null &&
+    receiverGlobalOf(
+      receiver.callee.getExpression(),
+      origin.paths,
+      receiver.resolution,
+    ) !== undefined,
 };
+
+/**
+ * The one path among `paths` a receiver is: spelled as it, or else the
+ * one the store followed into it. Null when two reach it, and undefined
+ * when none does.
+ */
+function receiverGlobalOf(
+  receiver: Node,
+  paths: readonly string[],
+  resolution: ResolutionStore | undefined,
+): string | null | undefined {
+  const spelled = dottedPathOf(peelValue(receiver));
+  if (spelled !== null && paths.includes(spelled)) {
+    return spelled;
+  }
+  const reaching = streamsReachingName(receiver, resolution).filter((path) =>
+    paths.includes(path),
+  );
+  if (reaching.length === 0) {
+    return undefined;
+  }
+  return reaching.length === 1 ? (reaching[0] ?? null) : null;
+}
+
+/**
+ * The shape a value is written in where it is read. The fact key of a
+ * value is past any cast or `await` around it, and the shape is read off
+ * the whole expression, as the checker types it.
+ */
+export function writtenShapeOf(value: Node): TypeShape | null {
+  return extractShape(climbValue(value));
+}
+
+/**
+ * The output streams the store followed into a value. Only a bare name
+ * can be a parameter a stream was passed to, so any other value is not
+ * looked up.
+ */
+export function streamsReachingName(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): string[] {
+  const name = peelValue(value);
+  return resolution === undefined || !Node.isIdentifier(name)
+    ? []
+    : [...resolution.streamsReaching(name)];
+}
 
 /**
  * Whether the store says `value` was imported from one of the origin's
@@ -307,7 +363,15 @@ const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
   typed: ORIGIN.typed,
   imported: (origin, receiver) =>
     importedAsAsked(origin, receiver.expression, receiver.resolution),
+  global: (origin, receiver) =>
+    origin.paths.includes(bareCalleeName(receiver.expression) ?? ""),
 };
+
+/** The name a call with no receiver goes to, `setTimeout` in `setTimeout(f)`, or null. */
+export function bareCalleeName(callee: Node): string | null {
+  const name = peelValue(callee);
+  return Node.isIdentifier(name) ? name.getText() : null;
+}
 
 /**
  * What made the receiver, as the name the source called it. A client
@@ -548,6 +612,10 @@ export function callOpsFor(
         resolution: reading.resolution,
         ...(originatesFrom === undefined ? {} : { originatesFrom }),
       }),
+    receiverGlobal: (paths) =>
+      callee === null
+        ? undefined
+        : receiverGlobalOf(callee.getExpression(), paths, reading.resolution),
     argumentCount: () => argumentsOf().length,
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
@@ -738,6 +806,7 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
         ? null
         : { codec: found.codec, value: valueOpsFor(found.value, reading) };
     },
+    shape: () => writtenShapeOf(value),
   };
   nodesOfValues.set(ops, value);
   return ops;

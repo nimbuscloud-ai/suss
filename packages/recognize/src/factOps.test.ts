@@ -7,6 +7,7 @@ import {
   anyOf,
   constructedFrom,
   declaredBy,
+  global,
   imported,
   returnedBy,
   typed,
@@ -296,6 +297,65 @@ describe("factCallOps, over an adapter that spells a class's own method its own 
         }),
       ).method(),
     ).toBe("create");
+  });
+});
+
+/**
+ * The facts for `console.log(x)`, `out.write(x)` in a helper the given
+ * streams reach, and `print(x)`, over an adapter that spells `console`
+ * and calls `print` with no receiver.
+ */
+function globals(reaching: readonly string[]): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("call", "log", "console.log");
+  add("readsProperty", "console.log", "console", "log");
+  add("callArg", "log", "0", "x");
+  add("call", "write", "out.write");
+  add("readsProperty", "out.write", "out", "write");
+  add("call", "print", "print");
+  return {
+    ...source(),
+    db,
+    textOf: (key) => key,
+    spellsGlobal: (key, path) => key === "console" && path === "console",
+    callsGlobal: (call, path) => call === "print" && path === "print",
+    globalsReaching: (key) => (key === "out" ? reaching : []),
+    typeShapeOf: (key) => (key === "x" ? { type: "text" } : null),
+  };
+}
+
+describe("factCallOps, at the runtime's own globals", () => {
+  const STREAMS = ["process.stdout", "process.stderr"];
+
+  it("takes a receiver spelled as a path as that path", () => {
+    const log = opsAt("log", globals([]));
+
+    expect(log.receiverGlobal?.(["console"])).toBe("console");
+    expect(log.receiverIsFrom(global("console"))).toBe(true);
+    expect(log.receiverGlobal?.(STREAMS)).toBeUndefined();
+    expect(log.valueAt(0)?.shape?.()).toEqual({ type: "text" });
+  });
+
+  it("takes the one path the rules followed into a receiver, and none when two did", () => {
+    expect(
+      opsAt("write", globals(["process.stdout"])).receiverGlobal?.(STREAMS),
+    ).toBe("process.stdout");
+    expect(
+      opsAt("write", globals(STREAMS)).receiverGlobal?.(STREAMS),
+    ).toBeNull();
+    expect(
+      opsAt("write", globals(["process.stdout"])).receiverGlobal?.(["console"]),
+    ).toBeUndefined();
+  });
+
+  it("reads a call of the global with no receiver through the adapter", () => {
+    const print = opsAt("print", globals([]));
+
+    expect(print.isFrom(global("print"))).toBe(true);
+    expect(print.isFrom(global("puts"))).toBe(false);
+    expect(print.receiverGlobal?.(["print"])).toBeUndefined();
+    expect(opsAt("set").valueAt(0)?.shape?.()).toBeNull();
   });
 });
 

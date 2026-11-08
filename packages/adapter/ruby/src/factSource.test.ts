@@ -77,6 +77,59 @@ describe("the Ruby fact source", () => {
     expect(source.importSpecifierOf?.(held("comp"))).toBeNull();
   });
 
+  it("reads the standard streams and puts the way the language spells them", async () => {
+    const tree = await parseRuby(
+      [
+        "def say(out, line)",
+        "  out.write(line)",
+        "end",
+        "",
+        "def run",
+        "  $stdout.write({ a: 1 })",
+        '  STDERR.write("b")',
+        '  say($stdout, "c")',
+        '  puts "d"',
+        '  log.puts "e"',
+        "end",
+      ].join("\n"),
+    );
+    const db = factsForFile({ file: FILE, root: tree.rootNode, packs: [] });
+    const source = rubyFactSource(db);
+    const writtenTo = new Map(
+      db
+        .facts("readsProperty")
+        .filter((row) => String(row[2]).endsWith("write"))
+        .map((row) => [source.textOf(String(row[1])), String(row[1])]),
+    );
+    const spelled = (name: string, path: string) =>
+      source.spellsGlobal?.(writtenTo.get(name) ?? "", path);
+    const puts = db
+      .facts("call")
+      .filter((row) => source.textOf(String(row[1])).endsWith("puts"))
+      .map((row) => String(row[0]));
+
+    expect(spelled("$stdout", "$stdout")).toBe(true);
+    expect(spelled("STDERR", "STDERR")).toBe(true);
+    expect(spelled("out", "$stdout")).toBe(false);
+    expect(source.globalsReaching?.(writtenTo.get("out") ?? "")).toEqual([
+      "$stdout",
+    ]);
+    expect(
+      puts.map((call) => source.callsGlobal?.(call, "puts")).sort(),
+    ).toEqual([false, true]);
+    const [hash] = db
+      .facts("callArg")
+      .filter((row) => source.textOf(String(row[2])) === "{ a: 1 }")
+      .map((row) => String(row[2]));
+    expect(source.typeShapeOf?.(hash ?? "")).toEqual({
+      type: "record",
+      properties: { a: { type: "integer" } },
+    });
+    expect(source.typeShapeOf?.(writtenTo.get("out") ?? "")).toEqual({
+      type: "unknown",
+    });
+  });
+
   it("gives what JSON's writers and to_json were handed", async () => {
     const tree = await parseRuby(
       [

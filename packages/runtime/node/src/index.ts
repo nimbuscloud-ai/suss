@@ -12,6 +12,8 @@
 
 import { z } from "zod";
 
+import { declarationsIn } from "@suss/recognize";
+
 import { ENVIRONMENT_OBJECTS, envVarRecognizer } from "./envVars.js";
 import {
   fileLocationRecognizer,
@@ -19,7 +21,11 @@ import {
 } from "./moduleSurface.js";
 import { processSurfaceRecognizer } from "./processSurface.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
-import { PROCESS_STREAMS, streamWriteRecognizer } from "./streamWrites.js";
+import {
+  PROCESS_STREAMS,
+  STREAM_WRITE_MATCHES,
+  streamWriteRecognizers,
+} from "./streamWrites.js";
 
 import type {
   ArgumentParser,
@@ -46,12 +52,12 @@ export {
   nodeSchedulingSubUnits,
   schedulingRecognizer,
 } from "./scheduling.js";
-export { streamWriteRecognizer } from "./streamWrites.js";
+export { streamWriteRecognizers } from "./streamWrites.js";
 
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.5.0";
+const PACK_VERSION = "0.6.0";
 
 /**
  * The options in a `-f node=config.json` file. The CLI checks the file
@@ -122,9 +128,10 @@ export function nodeRuntimePack(
     exitCodeWrites: ["process.exitCode"],
     argumentParsers: PARSE_ARGS,
     inputMapping: { type: "positionalParams", params: [] },
-    invocationRecognizers: [schedulingRecognizer, streamWriteRecognizer],
+    invocationRecognizers: [schedulingRecognizer, ...streamWriteRecognizers],
     environmentObjects: [...ENVIRONMENT_OBJECTS],
     streamObjects: PROCESS_STREAMS,
+    declarations: declarationsIn(STREAM_WRITE_MATCHES),
     accessRecognizers: [
       // envRecognizer handles `process.env.X` and processRecognizer skips
       // it, so each `process.*` read produces one effect.

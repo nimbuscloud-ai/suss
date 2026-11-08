@@ -369,7 +369,8 @@ describe("nodeRuntimePack — pack shape", () => {
     expect(pack.discovery).toEqual([]);
     expect(pack.terminals.map((terminal) => terminal.kind)).toEqual(["exit"]);
     expect(pack.terminals.every((terminal) => terminal.inEveryUnit)).toBe(true);
-    expect(pack.invocationRecognizers).toHaveLength(2);
+    // Scheduling, then the console writes and the stream writes.
+    expect(pack.invocationRecognizers).toHaveLength(3);
     expect(pack.subUnits).toBe(nodeSchedulingSubUnits);
   });
 });

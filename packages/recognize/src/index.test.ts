@@ -245,6 +245,18 @@ describe("a storage chain", () => {
     ).toBeNull();
   });
 
+  it("never reads a method every object inherits as one the table lists", () => {
+    for (const method of ["toString", "constructor", "hasOwnProperty"]) {
+      expect(run(store(), callOps({ method, from: ["tapedeck"] }))).toBeNull();
+      expect(
+        run(
+          store({ ignoringCase: true }),
+          callOps({ method, from: ["tapedeck"] }),
+        ),
+      ).toBeNull();
+    }
+  });
+
   it("leaves the same method on somebody else's client alone", () => {
     expect(
       run(store(), callOps({ method: "get", from: ["other"], args: ["k"] })),
@@ -1145,6 +1157,7 @@ describe("the value a call states for each column", () => {
               input.importedFrom?.(),
               input.encoded?.()?.codec,
               input.encoded?.()?.value.text(),
+              input.shape?.(),
             ]);
             return ["side", "owner"];
           },
@@ -1164,6 +1177,7 @@ describe("the value a call states for each column", () => {
       ownProperty: (name) => (name === "owner" ? owner : null),
       importedFrom: () => "./tapes",
       encoded: () => ({ codec: "json", value: valueOps("inner") }),
+      shape: () => ({ type: "text" }),
     };
     const ops = callOps({ method: "label", from: ["tapedeck"] });
     const handing = (value: ValueOps): CallOps => ({
@@ -1190,8 +1204,9 @@ describe("the value a call states for each column", () => {
         "./tapes",
         "json",
         "inner",
+        { type: "text" },
       ],
-      Array(10).fill(undefined),
+      Array(11).fill(undefined),
     ]);
   });
 });
