@@ -27,7 +27,7 @@ Each method counts as a read or a write:
 
 The fields come from the call's first argument. A read takes the `select` keys, plus the `include` keys when a `select` lists which fields to return. A query with no `select` reads the whole record and comes back as `["*"]`. A write takes the union of the `data`, `create` and `update` keys, since an upsert can pass two of them. The keys of `where` become the selector.
 
-`AND`, `OR` and `NOT` take one `where` or a list of them on the same rows, so the columns inside them are read as the `where`'s own, and the operators stay out of the selector.
+A relation filter in a `where`, such as `profile: { verified: true }` or `posts: { some: { published: true } }`, reads the related rows by the columns it filters. It is recorded as a read with the relation's path and those columns as its fields, and the relation's name stays out of the selector. Only the schema tells a relation from a column, so a value that is an object of anything other than Prisma's column operators (`equals`, `in`, `gte`, `contains` and the rest) counts as a relation's `where`. An `include` or nested `select` that passes its own `where` picks the related rows by that `where`'s columns, and a relation filter inside it is read the same way, one level further down. `AND`, `OR` and `NOT` take one `where` or a list of them on the same rows, so the columns and relation filters inside them are read as the `where`'s own.
 
 ### Relations
 
