@@ -780,8 +780,27 @@ function extractSelector(optionsArg: ObjectArg | null): string[] | null {
   if (where === null) {
     return null;
   }
-  const keys = Object.keys(where.fields);
+  const keys = columnsPickedBy(where);
   return keys.length > 0 ? keys : null;
+}
+
+const LOGICAL_OPERATORS = new Set(["AND", "OR", "NOT"]);
+
+/** The columns a `where` picks rows by. */
+function columnsPickedBy(where: ObjectArg): string[] {
+  const columns: string[] = [];
+  for (const [key, value] of Object.entries(where.fields)) {
+    if (LOGICAL_OPERATORS.has(key)) {
+      // `AND`, `OR` and `NOT` take one `where` or a list of them, on the
+      // same rows, so their columns are this `where`'s own.
+      for (const combined of objectsIn(value).rows) {
+        columns.push(...columnsPickedBy(combined));
+      }
+      continue;
+    }
+    columns.push(key);
+  }
+  return [...new Set(columns)];
 }
 
 // A tagged template is a call whose one argument is the template, so the
@@ -847,7 +866,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "2",
+    version: "3",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],

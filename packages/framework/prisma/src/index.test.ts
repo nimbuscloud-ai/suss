@@ -677,6 +677,26 @@ describe("prisma recognizer: happy path", () => {
     ]);
   });
 
+  it("reads AND, OR and NOT as the columns they combine", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function list() {
+        return await db.user.findMany({
+          where: {
+            OR: [{ tier: "pro" }, { plan: "team" }],
+            NOT: { banned: true },
+            AND: [{ tier: "pro" }],
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses.map((a) => a.interaction.selector)).toEqual([
+      ["tier", "plan", "banned"],
+    ]);
+  });
+
   it("keeps a write whose payload nobody could read as the whole row", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
