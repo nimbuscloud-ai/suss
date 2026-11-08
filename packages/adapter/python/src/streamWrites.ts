@@ -104,7 +104,7 @@ function streamWriteAt(call: PyNode, scope: Scope): Effect | null {
 }
 
 /** `sys.stdout`, or `stdout` after `from sys import stdout`, as the stream's name. */
-function standardStream(node: PyNode, scope: Scope): string | null {
+export function standardStream(node: PyNode, scope: Scope): string | null {
   const name =
     node.type === "attribute" ? field(node, "attribute")?.text : node.text;
   return name !== undefined &&

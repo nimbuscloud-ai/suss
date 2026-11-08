@@ -118,8 +118,9 @@ converts(r, a, n)           the call r converts a to another type with
                             or x.to_i. Only the source walk reads it
 environmentObject(w)        w is written as the process environment
 streamObject(w)             w is written as one of the process's output
-                            streams, such as process.stdout
-                            (TypeScript)
+                            streams and passed on, such as process.stdout,
+                            sys.stdout or $stdout. A stream a method is
+                            called on is passed nowhere and left out
 ```
 
 Names:
@@ -1269,13 +1270,17 @@ An output stream is followed the same way. A helper that takes the
 stream it writes to, `function say(out, line) { out.write(line) }`,
 writes to whatever its callers pass. The adapter records
 `streamObject(w)` where the source spells `process.stdout` or
-`process.stderr`, and `runtimeObject` is either of the two seeds, so
+`process.stderr`, `sys.stdout` or `sys.stderr` in Python, and
+`$stdout`, `STDOUT`, `$stderr` or `STDERR` in Ruby. A spelling that is
+only the receiver of a call, `sys.stdout.write(x)`, hands the stream to
+nobody and is left out. `runtimeObject` is either of the two seeds, so
 `runtimeValue` follows both kinds of object with the same three rules.
 `wantedStreamObject` seeds the question from every stream spelling, and
 `wantedStreamValue` hands back every expression a stream reaches. The
 store asks it once per run and keeps the answer, so a recognizer at
 `out.write(...)` looks the receiver up in that answer instead of asking
-a question per call.
+a question per call. Python's and Ruby's stream readers spell the
+stream at the call, so nothing reads their rows yet.
 
 ## Which returns become the exit code
 

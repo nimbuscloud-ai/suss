@@ -1079,3 +1079,26 @@ describe("a project whose environment reads go through a helper", () => {
     ]);
   });
 });
+
+describe("an output stream passed to a helper", () => {
+  it("is stated where it is passed on, and reads no variable", async () => {
+    const { root, module, db } = await withFacts(
+      [
+        "import sys",
+        "from sys import stderr",
+        "",
+        "def read(source, key):",
+        "    return source[key]",
+        "",
+        'A = read(sys.stdout, "A")',
+        'B = read(stderr, "B")',
+        'sys.stderr.write("done")',
+      ].join("\n"),
+    );
+
+    // The stream `write` is called on is passed nowhere.
+    expect(db.facts("streamObject")).toHaveLength(2);
+    expect(db.facts("environmentObject")).toEqual([]);
+    expect(readsOf(envReadEffects(root, module, db))).toEqual([]);
+  });
+});

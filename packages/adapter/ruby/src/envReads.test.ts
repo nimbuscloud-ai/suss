@@ -978,6 +978,20 @@ describe("a name handed to a project helper", () => {
     expect(db.facts("readsKeyed")).toEqual([]);
   });
 
+  it("states each output stream passed on, and reads no variable through one", async () => {
+    const files = {
+      "settings.rb":
+        "module Settings\n  def self.read(source, key)\n    source[key]\n  end\nend\n",
+      "use.rb":
+        'A = Settings.read($stdout, "A")\nB = Settings.read(STDERR, "B")\n$stderr.puts "done"\n',
+    };
+    const { db } = await projectFacts(files);
+    // The stream `puts` is called on is passed nowhere.
+    expect(db.facts("streamObject")).toHaveLength(2);
+    expect(db.facts("environmentObject")).toEqual([]);
+    expect(await projectReads(files)).toEqual([]);
+  });
+
   it("states the container and the name expression for a read through a parameter", async () => {
     const { db } = await projectFacts({ "settings.rb": SETTINGS });
     const funcKey = [

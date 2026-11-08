@@ -52,6 +52,16 @@ const STREAM_RECEIVERS: ReadonlyMap<string, string> = new Map([
 
 const STREAM_METHODS = new Set(["puts", "print", "write", "<<"]);
 
+/** The stream a global or a top-level constant spells, such as `$stdout`, or null. */
+export function streamSpelledBy(node: RbNode): string | null {
+  if (node.type !== "global_variable" && node.type !== "constant") {
+    return null;
+  }
+  return node.parent?.type === "scope_resolution"
+    ? null
+    : (STREAM_RECEIVERS.get(node.text) ?? null);
+}
+
 /** A method or a block prints when it runs, so its body waits for its own unit. */
 const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
 
