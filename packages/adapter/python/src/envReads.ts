@@ -33,6 +33,7 @@ import {
   resolveEnvObjects,
 } from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
+import { standardStream } from "./streamWrites.js";
 import {
   evaluatedValue,
   resolutionKeyOf,
@@ -205,6 +206,8 @@ export interface EnvFileFacts {
   sites: EnvNameSite[];
   /** Keys of the expressions that spell the environment and hand it on. */
   objects: string[];
+  /** Keys of the expressions that spell `sys.stdout` or `sys.stderr` and hand it on. */
+  streams: string[];
 }
 
 /**
@@ -219,11 +222,14 @@ export function envFactsIn(
   root: PyNode,
   module: ModuleBinding,
 ): EnvFileFacts {
-  const found: EnvFileFacts = { sites: [], objects: [] };
+  const found: EnvFileFacts = { sites: [], objects: [], streams: [] };
   walkDescendants<PyNode, Scope>(root, module.moduleScope, children, {
     at: (node, scope) => {
       if (isEnviron(node, scope) && handsOnward(node)) {
         found.objects.push(keyOf(filePath, node));
+      }
+      if (spellsStream(node, scope) && !writtenThrough(node)) {
+        found.streams.push(keyOf(filePath, node));
       }
       const spelling = envReadSpellingAt(node, scope);
       if (spelling === null || stringLiteralValue(spelling.name) !== null) {
@@ -290,6 +296,22 @@ function handsOnward(node: PyNode): boolean {
   return true;
 }
 
+/** `sys.stdout` as the source spells it. The `stdout` inside that spelling is only its name. */
+function spellsStream(node: PyNode, scope: Scope): boolean {
+  const parent = node.parent;
+  const attributeName =
+    parent?.type === "attribute" && field(parent, "attribute")?.id === node.id;
+  return !attributeName && standardStream(node, scope) !== null;
+}
+
+/** `sys.stdout.write(x)` writes to the stream it spells, and hands the stream to nobody. */
+function writtenThrough(node: PyNode): boolean {
+  const parent = node.parent;
+  return (
+    parent?.type === "attribute" && field(parent, "object")?.id === node.id
+  );
+}
+
 /** Whether the source spells the variable at this read rather than working it out. */
 const writesTheKey = (key: PyNode | null): boolean =>
   key !== null && stringLiteralValue(key) !== null;
@@ -324,6 +346,9 @@ export function bindEnvFacts(
 ): void {
   const sites = found.flatMap((one) => one.sites);
   const objects = found.flatMap((one) => one.objects);
+  for (const stream of found.flatMap((one) => one.streams)) {
+    db.add("streamObject", [stream]);
+  }
   if (sites.length === 0 && objects.length === 0) {
     return;
   }

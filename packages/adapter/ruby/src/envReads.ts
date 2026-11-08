@@ -37,6 +37,7 @@ import {
   resolveValues,
 } from "./facts/resolve.js";
 import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
+import { streamSpelledBy } from "./streamWrites.js";
 import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -302,6 +303,11 @@ export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
           readKey(file, node, enclosingDefinition(node)),
         ]);
       }
+      if (streamSpelledBy(node) !== null && !writtenThrough(node)) {
+        db.add("streamObject", [
+          readKey(file, node, enclosingDefinition(node)),
+        ]);
+      }
       const spelling = envSpellingAt(node);
       if (
         spelling !== null &&
@@ -469,6 +475,12 @@ function constructorsOf(db: Database, cls: string, depth: number): string[] {
       constructorsOf(db, ancestor, depth + 1),
     ),
   );
+}
+
+/** `$stdout.puts x` writes to the stream it spells, and hands the stream to nobody. */
+function writtenThrough(node: RbNode): boolean {
+  const parent = node.parent;
+  return parent?.type === "call" && field(parent, "receiver")?.id === node.id;
 }
 
 /**
