@@ -1157,6 +1157,7 @@ describe("the value a call states for each column", () => {
               input.importedFrom?.(),
               input.encoded?.()?.codec,
               input.encoded?.()?.value.text(),
+              input.shape?.(),
             ]);
             return ["side", "owner"];
           },
@@ -1176,6 +1177,7 @@ describe("the value a call states for each column", () => {
       ownProperty: (name) => (name === "owner" ? owner : null),
       importedFrom: () => "./tapes",
       encoded: () => ({ codec: "json", value: valueOps("inner") }),
+      shape: () => ({ type: "text" }),
     };
     const ops = callOps({ method: "label", from: ["tapedeck"] });
     const handing = (value: ValueOps): CallOps => ({
@@ -1202,8 +1204,9 @@ describe("the value a call states for each column", () => {
         "./tapes",
         "json",
         "inner",
+        { type: "text" },
       ],
-      Array(10).fill(undefined),
+      Array(11).fill(undefined),
     ]);
   });
 });

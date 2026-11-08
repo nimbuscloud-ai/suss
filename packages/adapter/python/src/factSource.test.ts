@@ -137,6 +137,72 @@ describe("the Python fact source", () => {
     ).toBeUndefined();
   });
 
+  it("reads the standard streams and print the way the language spells them", async () => {
+    const tree = await parsePython(
+      [
+        "import sys",
+        "from sys import stderr",
+        "",
+        "def say(out, line):",
+        "    out.write(line)",
+        "",
+        "def run(sys_like):",
+        '    sys.stdout.write({"a": 1})',
+        '    stderr.write("b")',
+        '    say(sys.stdout, "c")',
+        '    print("d")',
+        "",
+        "def quiet(log):",
+        "    print = log",
+        '    print("e")',
+      ].join("\n"),
+    );
+    const root = tree.rootNode;
+    const db = factsForFile({
+      file: FILE,
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    const writtenTo = new Map(
+      db
+        .facts("readsProperty")
+        .filter((row) => row[2] === "write")
+        .map((row) => [source.textOf(String(row[1])), String(row[1])]),
+    );
+    const spelled = (name: string, path: string) =>
+      source.spellsGlobal?.(writtenTo.get(name) ?? "", path);
+    const prints = db
+      .facts("call")
+      .filter((row) => source.textOf(String(row[1])) === "print")
+      .map((row) => String(row[0]))
+      .sort((a, b) => a.localeCompare(b));
+
+    expect(spelled("sys.stdout", "sys.stdout")).toBe(true);
+    expect(spelled("stderr", "sys.stderr")).toBe(true);
+    expect(spelled("stderr", "sys.stdout")).toBe(false);
+    expect(spelled("out", "sys.stdout")).toBe(false);
+    expect(source.globalsReaching?.(writtenTo.get("out") ?? "")).toEqual([
+      "sys.stdout",
+    ]);
+    expect(prints.map((call) => source.callsGlobal?.(call, "print"))).toEqual([
+      true,
+      false,
+    ]);
+    const [dictionary] = db
+      .facts("callArg")
+      .filter((row) => source.textOf(String(row[2])) === '{"a": 1}')
+      .map((row) => String(row[2]));
+    expect(source.typeShapeOf?.(dictionary ?? "")).toMatchObject({
+      type: "record",
+    });
+    expect(source.typeShapeOf?.(writtenTo.get("out") ?? "")).toEqual({
+      type: "ref",
+      name: "out",
+    });
+  });
+
   it("gives what json.dumps was handed, when json is the module the file imported", async () => {
     const tree = await parsePython(
       [

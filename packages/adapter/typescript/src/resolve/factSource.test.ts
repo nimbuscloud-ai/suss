@@ -1,15 +1,21 @@
 import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { constructedFrom, declaredBy } from "@suss/recognize";
+import { constructedFrom, declaredBy, global, typed } from "@suss/recognize";
 import { factCallOps } from "@suss/recognize/ops";
+import { GLOBAL_MODULE } from "@suss/resolution";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
 import { callOpsFor } from "./callOps.js";
 import { factSourceFor, statedFactKey } from "./factSource.js";
 
-import type { AstCapableValueOps, CallOps, ValueOps } from "@suss/extractor";
+import type {
+  AstCapableValueOps,
+  CallOps,
+  PatternPack,
+  ValueOps,
+} from "@suss/extractor";
 import type { CallExpression } from "ts-morph";
 
 const LIBRARY = `
@@ -216,6 +222,87 @@ function shapesRead(ops: CallOps | null) {
     text: value?.text(),
   };
 }
+
+describe("the runtime's globals, read by both kinds of ops", () => {
+  const STREAMS = ["process.stdout", "process.stderr"];
+  const WRITES = `
+    function say(out, line: string) {
+      out.write(line);
+    }
+    function report(sink: Console, stream: NodeJS.WriteStream) {
+      sink.log("x");
+      stream.write("y");
+    }
+    export function run() {
+      console.log({ a: 1 });
+      process.stdout.write("b" as string);
+      say(process.stderr, "c");
+      setTimeout(() => null);
+    }
+  `;
+
+  /** What the stream-write ending asks of one call. */
+  function asked(ops: CallOps | null) {
+    return {
+      callee: ops?.calleeText(),
+      global: ops?.receiverGlobal?.(["console", ...STREAMS]),
+      bare: ops?.isFrom(global("setTimeout")),
+      console: ops?.receiverIsFrom(
+        typed({ from: [GLOBAL_MODULE], named: ["Console"] }),
+      ),
+      shape: ops?.valueAt(0)?.shape?.()?.type,
+    };
+  }
+
+  function bothAsked() {
+    const project = createTestProject();
+    const file = project.createSourceFile("/cli.ts", WRITES);
+    const streams: PatternPack = {
+      name: "streams",
+      languages: ["typescript"],
+      protocol: "in-process",
+      discovery: [],
+      terminals: [],
+      inputMapping: { type: "positionalParams", params: [] },
+      streamObjects: STREAMS,
+    };
+    const store = ResolutionStore.forPacks([streams]);
+    return file.getDescendantsOfKind(SyntaxKind.CallExpression).map((call) => ({
+      fromNodes: asked(callOpsFor(call, { resolution: store })),
+      fromFacts: asked(
+        factCallOps(statedFactKey(call, store), factSourceFor(store)),
+      ),
+    }));
+  }
+
+  it("answers the same from the facts as from the nodes", () => {
+    for (const { fromNodes, fromFacts } of bothAsked()) {
+      expect(fromFacts).toEqual(fromNodes);
+    }
+  });
+
+  it("takes a spelled global, a stream passed in, an annotated Console and a bare call", () => {
+    const byCallee = new Map(
+      bothAsked().map(({ fromFacts }) => [fromFacts.callee, fromFacts]),
+    );
+
+    expect(byCallee.get("console.log")).toMatchObject({
+      global: "console",
+      shape: "record",
+    });
+    expect(byCallee.get("process.stdout.write")).toMatchObject({
+      global: "process.stdout",
+    });
+    expect(byCallee.get("out.write")?.global).toBe("process.stderr");
+    expect(byCallee.get("sink.log")).toMatchObject({
+      global: undefined,
+      console: true,
+    });
+    expect(byCallee.get("stream.write")?.console).toBe(false);
+    expect(byCallee.get("setTimeout")?.bare).toBe(true);
+    expect(byCallee.get("console.log")?.bare).toBe(false);
+  });
+});
 
 describe("a mapped list and a project call, read by both kinds of ops", () => {
   const played = () =>
