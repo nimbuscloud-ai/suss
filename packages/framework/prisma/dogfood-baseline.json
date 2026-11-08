@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-prisma",
   "exports": 6,
-  "internal": 50,
-  "consumers": 20,
+  "internal": 54,
+  "consumers": 22,
   "unfollowedCalls": 5
 }
