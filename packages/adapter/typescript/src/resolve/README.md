@@ -36,6 +36,14 @@ The effects come out in the order the calls finish. A call in argument position 
 
 The walk descends into arrows and function expressions the unit itself runs, such as `.then` callbacks, `forEach` bodies and Promise executors. It stops at named nested declarations and at sub-unit boundaries a pack declares, following the same rule every body walker takes from `walk/descent.ts`. A decorator's calls run when the class is defined, before the method ever runs, so the walk skips decorators too.
 
+## A function run through call, apply or bind
+
+`fn.call(self, a)` and `fn.apply(self, [a])` run `fn`. `functionBehind.ts:calleeRunBy` gives the closure and `functionCalledAt` the function such a call runs, so the closure follows `fn`, links the call to `fn`'s summary, and records a stop at `fn` exactly where `fn(a)` would record one. The stop keeps the callee as the call writes it, `fn.call`, so it matches the invocation effect. An argument written after the receiver is handed to `fn`'s parameter one place earlier, which is where the closure records a function passed there. `apply` hands its arguments over in an array, so nothing is recorded for its positions.
+
+`fn.bind(self)` hands back a function that runs `fn`, and the program sends that function wherever it likes, often straight into an event handler or a timer. The closure reaches `fn` from there, the way it reaches a function passed as an argument. Binding runs nothing, so a `fn` the closure cannot settle leaves no stop, and the call to `bind` is not linked to `fn`.
+
+Only the methods the TypeScript library declares on a function count. A class the project writes can declare a `call` of its own, as a service object does, and `CreateInvoice.call(params)` runs that method. A call whose method the checker cannot see, such as one on an untyped value, is left as it is.
+
 ## Module scope is a closure root
 
 A job that a container or a scheduled task runs has no handler. Its entry file opens a pool, calls a couple of its own functions, and exits, all in top-level statements. Pack discovery finds nothing to look for there. Without a root of its own, every query that job runs would end up in no summary at all.

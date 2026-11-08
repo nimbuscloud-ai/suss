@@ -24,6 +24,7 @@
 //     summaries to avoid double-coverage.
 
 import {
+  type CallExpression,
   type NewExpression,
   Node,
   type Project,
@@ -77,10 +78,13 @@ import {
 } from "./closureRecords.js";
 import {
   baseConstructorCalledAt,
+  calleeRunBy,
   classAmong,
   constructionCallee,
   constructorCalledAt,
+  firstArgumentHanded,
   functionAmong,
+  functionMethodCall,
   functionTargetOf,
   type ReachableCandidate,
   resolveDecl,
@@ -253,6 +257,10 @@ function candidateKey(candidate: ReachableCandidate): string {
     : variantKey(key, subclassPlace(candidate.receiverClass));
 }
 
+/**
+ * What a call comes to. `fn.call(self, a)` runs `fn`, so `fn` is resolved,
+ * and a stop keeps the callee the way the call writes it.
+ */
 function resolveCallee(
   call: Node,
   calleeName: string,
@@ -261,7 +269,25 @@ function resolveCallee(
   if (!Node.isCallExpression(call)) {
     return null;
   }
-  const callee = call.getExpression();
+  const callee = calleeRunBy(call);
+  const runName =
+    callee === call.getExpression()
+      ? calleeName
+      : normalizeCalleeText(callee.getText());
+  return resolveCalleeExpression(callee, { calleeName, runName }, scan);
+}
+
+/** The callee as the call writes it, which a stop records, and the text of the function it runs, which a followed summary takes when it has no name of its own. */
+interface CalleeNames {
+  calleeName: string;
+  runName: string;
+}
+
+function resolveCalleeExpression(
+  callee: Node,
+  { calleeName, runName }: CalleeNames,
+  scan: ScanContext,
+): CallOutcome | null {
   if (Node.isSuperExpression(callee)) {
     const base = baseConstructorCalledAt(callee);
     return base === null ? null : { kind: "followed", candidate: base };
@@ -272,7 +298,7 @@ function resolveCallee(
   // call. An imported name's own declaration says only that something
   // was imported.
   const declarations = declarationsBehind(symbol);
-  const direct = functionAmong(declarations, calleeName);
+  const direct = functionAmong(declarations, runName);
   const onReceiver = candidateOnReceiver(callee, direct, {
     scanning: scan.scanning,
     runsOn: scan.receiverClass,
@@ -299,7 +325,7 @@ function resolveCallee(
     }
     const sources = resolveSources(callee, scan.reachedFrom);
     const only = sources.length === 1 ? sources[0] : undefined;
-    const resolved = only === undefined ? null : resolveDecl(only, calleeName);
+    const resolved = only === undefined ? null : resolveDecl(only, runName);
     if (resolved !== null) {
       return { kind: "followed", candidate: resolved };
     }
@@ -307,7 +333,7 @@ function resolveCallee(
       return {
         kind: "stopped",
         stop: { callee: calleeName, reason: "multipleSources" },
-        declaration: declarationToReport(declarations, calleeName, scan),
+        declaration: declarationToReport(declarations, runName, scan),
       };
     }
   }
@@ -693,6 +719,34 @@ function passedPositionKey(target: CallTarget, position: number): string {
   return `${offsetKeyFor(target.file, target.span)}#${position}`;
 }
 
+/** The parameter an argument written at `written` lands in, or null when it lands in none. */
+function parameterAt(written: number, from: number | null): number | null {
+  return from === null || written < from ? null : written - from;
+}
+
+/**
+ * `fn.bind(self)` hands back a function that runs `fn`, and the program
+ * sends it wherever it likes, so `fn` is reached the way a function
+ * passed as an argument is. Binding runs nothing, so a `fn` that comes
+ * to no project function leaves no stop.
+ */
+function boundFunctionReached(
+  call: CallExpression,
+  scan: ScanContext,
+): CallOutcome | null {
+  const method = functionMethodCall(call);
+  if (method === null || method.runs) {
+    return null;
+  }
+  const name = normalizeCalleeText(method.fn.getText());
+  const outcome = resolveCalleeExpression(
+    method.fn,
+    { calleeName: name, runName: name },
+    scan,
+  );
+  return outcome === null || outcome.kind === "stopped" ? null : outcome;
+}
+
 /**
  * A JSX reference is a render-time call: `<UserCard/>` runs `UserCard`
  * the way `userCard()` would, so the closure follows it. Host tags are
@@ -862,12 +916,14 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
       return;
     }
     const calleeTarget = declaredAtOf(calleeOutcome);
-    call.getArguments().forEach((arg, position) => {
+    const from = firstArgumentHanded(call);
+    call.getArguments().forEach((arg, written) => {
+      const position = parameterAt(written, from);
       // A closure written at the call is part of this body, which already
       // has its calls, so the callee calling it through that parameter is
       // no gap.
       if (Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)) {
-        if (calleeTarget !== null) {
+        if (calleeTarget !== null && position !== null) {
           passedPositions.add(passedPositionKey(calleeTarget, position));
         }
         return;
@@ -880,6 +936,9 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
         return;
       }
       record({ kind: "followed", candidate: resolved });
+      if (position === null) {
+        return;
+      }
       placements.placeArg(calleeText, position, targetOf(resolved.func));
       if (calleeTarget !== null) {
         passedPositions.add(passedPositionKey(calleeTarget, position));
@@ -912,6 +971,10 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanFindings {
     const outcome = resolveCallee(node, calleeText, inFunc);
     if (outcome !== null) {
       found.push({ node, calleeText, outcome });
+    }
+    const bound = boundFunctionReached(node, inFunc);
+    if (bound !== null) {
+      found.push({ node, outcome: bound });
     }
     return false;
   });

@@ -64,7 +64,7 @@ export function functionCalledAt(
   if (Node.isNewExpression(call)) {
     return constructorCalledAt(call);
   }
-  const callee = call.getExpression();
+  const callee = calleeRunBy(call);
   if (Node.isSuperExpression(callee)) {
     return baseConstructorCalledAt(callee);
   }
@@ -72,6 +72,97 @@ export function functionCalledAt(
     declarationsBehind(callee.getSymbol()),
     normalizeCalleeText(callee.getText()),
   );
+}
+
+/** The methods the language gives every function. */
+export type FunctionMethod = "call" | "apply" | "bind";
+
+interface FunctionMethodUse {
+  /** Whether calling the method runs the function, which `bind` does not. */
+  runs: boolean;
+  /** Which argument the function is handed first, or null when they go in an array. */
+  argumentsFrom: number | null;
+}
+
+/**
+ * `fn.call(self, a)` and `fn.apply(self, [a])` run `fn`, and
+ * `fn.bind(self)` hands back a function that runs it.
+ */
+const FUNCTION_METHODS: Record<FunctionMethod, FunctionMethodUse> = {
+  call: { runs: true, argumentsFrom: 1 },
+  apply: { runs: true, argumentsFrom: null },
+  bind: { runs: false, argumentsFrom: 1 },
+};
+
+const FUNCTION_METHOD_NAMES: ReadonlySet<string> = new Set(
+  Object.keys(FUNCTION_METHODS),
+);
+
+/** The interfaces the TypeScript library declares those methods on. */
+const FUNCTION_INTERFACES: ReadonlySet<string> = new Set([
+  "Function",
+  "CallableFunction",
+  "NewableFunction",
+]);
+
+/** A call to one of the language's own function methods, and the function it is called on. */
+export interface FunctionMethodCall extends FunctionMethodUse {
+  fn: Node;
+  method: FunctionMethod;
+}
+
+/**
+ * The function method a call makes, or null for any other call. A class
+ * the project writes can declare a `call` of its own, as a service
+ * object does, and a call to that runs the class's method. So the method
+ * has to be the one the TypeScript library declares on a function, and
+ * a call whose method the checker cannot see is left as it is.
+ */
+export function functionMethodCall(
+  call: CallExpression,
+): FunctionMethodCall | null {
+  const callee = call.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(callee) ||
+    !FUNCTION_METHOD_NAMES.has(callee.getName())
+  ) {
+    return null;
+  }
+  const declarations =
+    callee.getNameNode().getSymbol()?.getDeclarations() ?? [];
+  if (declarations.length === 0 || !declarations.every(declaredOnFunction)) {
+    return null;
+  }
+  const method = callee.getName() as FunctionMethod;
+  return { fn: callee.getExpression(), method, ...FUNCTION_METHODS[method] };
+}
+
+function declaredOnFunction(declaration: Node): boolean {
+  const owner = declaration.getParent();
+  return (
+    declaration.getSourceFile().isDeclarationFile() &&
+    owner !== undefined &&
+    Node.isInterfaceDeclaration(owner) &&
+    FUNCTION_INTERFACES.has(owner.getName())
+  );
+}
+
+/** The expression whose function a call runs: the callee, or the function `call` and `apply` are called on. */
+export function calleeRunBy(call: CallExpression): Node {
+  const method = functionMethodCall(call);
+  return method?.runs === true ? method.fn : call.getExpression();
+}
+
+/**
+ * Which of a call's arguments the function it runs takes first: 0, 1
+ * past the receiver `fn.call(self, a)` is given, or null when
+ * `fn.apply(self, args)` hands them over in an array.
+ */
+export function firstArgumentHanded(
+  call: CallExpression | NewExpression,
+): number | null {
+  const method = Node.isCallExpression(call) ? functionMethodCall(call) : null;
+  return method === null || !method.runs ? 0 : method.argumentsFrom;
 }
 
 /** How a `new` is spelled as a callee: `new Client` for `new Client(args)`. */
@@ -125,10 +216,11 @@ export function baseConstructorCalledAt(
  */
 export function defaultsRunBy(call: CallExpression | NewExpression): Node[] {
   const callee = functionCalledAt(call);
-  if (callee === null) {
+  const from = firstArgumentHanded(call);
+  if (callee === null || from === null) {
     return [];
   }
-  const passed = call.getArguments().length;
+  const passed = Math.max(0, call.getArguments().length - from);
   return callee.func.getParameters().flatMap((parameter, at) => {
     const initializer = parameter.getInitializer();
     return at < passed ||
