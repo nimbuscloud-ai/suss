@@ -3,8 +3,17 @@ import { describe, expect, it } from "vitest";
 import { byOrigin } from "@suss/extractor";
 
 import { compile } from "./compile.js";
-import { anyOf, global, typed } from "./ops.js";
+import {
+  anyOf,
+  constructedFrom,
+  declaredBy,
+  global,
+  imported,
+  returnedBy,
+  typed,
+} from "./ops.js";
 import { pack } from "./pack.js";
+import { storageCalls } from "./storage.js";
 import { streamWrites } from "./streamWrites.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
@@ -79,6 +88,7 @@ function writeCall(over: {
     argumentCount: () => args.length,
     nameAt: () => null,
     calleeText: () => over.callee,
+    namedCallee: () => over.method === null,
     receiver: () => null,
     argument: () => null,
     callee: () => null,
@@ -222,6 +232,42 @@ describe("a stream-write chain", () => {
         serialized: "text",
       },
     ]);
+  });
+
+  it("reads the path of the global among any other origins the client lists", () => {
+    const everyOrigin = streamWrites({
+      streams: { "process.stdout": "stdout" },
+      client: anyOf(
+        declaredBy("tape"),
+        constructedFrom("tape"),
+        returnedBy("deck", declaredBy("tape")),
+        imported({ from: ["tape"] }),
+        global("process.stdout"),
+      ),
+    }).methods({ write: { to: "receiver" } });
+    const call = writeCall({
+      method: "write",
+      callee: "process.stdout.write",
+      receiverGlobal: "process.stdout",
+    });
+    expect(targetsOf(writes(everyOrigin, call))).toEqual(["stdout"]);
+  });
+
+  it("matches a bare call of a global through a calls link, when the client lists one", () => {
+    const tracked = storageCalls({
+      system: "tally",
+      client: anyOf(global("track"), declaredBy("tally")),
+    }).calls({ kind: "write" });
+    const call = writeCall({
+      method: null,
+      callee: "track",
+      bareGlobal: "track",
+    });
+    const [effect] = writes(tracked, call) ?? [];
+    expect(effect).toMatchObject({
+      callee: "track",
+      interaction: { class: "storage-access", operation: "track" },
+    });
   });
 
   it("never reads a method every object inherits as one the table lists", () => {
