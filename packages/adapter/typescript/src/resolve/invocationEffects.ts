@@ -148,6 +148,12 @@ class SlotsStated {
 }
 
 /**
+ * What a context passes on to the ops. A pack's test hands its own
+ * listener here and hears the slots its recognizer states.
+ */
+type SlotsListener = Pick<SlotsStated, "listen">;
+
+/**
  * Context handed to TypeScript-adapter access recognizers: sister
  * to TsInvocationRecognizerContext but for property-access nodes.
  * No `extractArgs` since property accesses don't take arguments.
@@ -250,7 +256,7 @@ export function invocationContextFor(
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   walk?: WalkArguments,
-  stated?: SlotsStated,
+  stated?: SlotsListener,
 ): TsInvocationRecognizerContext {
   const resolveWrittenValue = writtenValueResolver(resolution);
   // Built on the first read rather than up front: most calls reach no
@@ -718,7 +724,7 @@ export function accessContextFor(
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   walk?: WalkArguments,
-  stated?: SlotsStated,
+  stated?: SlotsListener,
 ): TsAccessRecognizerContext {
   const resolveWrittenValue = writtenValueResolver(resolution);
   const given = {

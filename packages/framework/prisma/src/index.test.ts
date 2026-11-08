@@ -2,11 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
+import {
+  type CallExpression,
+  Node,
+  type SourceFile,
+  SyntaxKind,
+} from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
-  callOpsFor,
+  accessContextFor,
   invocationContextFor,
   ResolutionStore,
 } from "@suss/adapter-typescript";
@@ -16,7 +21,7 @@ import { createFixtureProject, createTestProject } from "@suss/test-project";
 import { prismaFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { EffectArg, StatedSlot } from "@suss/extractor";
+import type { PatternPack, StatedSlot } from "@suss/extractor";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -70,26 +75,48 @@ function makeProject(userSource: string): SourceFile {
   return project.createSourceFile("user.ts", userSource);
 }
 
+type SlotsHeard = (effect: Effect, slots: readonly StatedSlot[]) => void;
+
+/** The questions extraction lets a context ask of the run's store. */
+function storeReads(store: ResolutionStore) {
+  return {
+    originatesFrom: (value: Node, module: string): boolean =>
+      store.importOriginsOf(value, [module]).length > 0,
+    anchors: (value: Node, matches: (call: Node) => boolean) =>
+      store.anchorCallsOf(value, matches),
+  };
+}
+
+/** The context extraction hands the recognizer for one call. */
+function contextFor(
+  call: CallExpression,
+  store: ResolutionStore,
+  statesSlots?: SlotsHeard,
+) {
+  const { originatesFrom, anchors } = storeReads(store);
+  return invocationContextFor(
+    call,
+    store,
+    originatesFrom,
+    anchors,
+    undefined,
+    statesSlots === undefined ? undefined : { listen: statesSlots },
+  );
+}
+
 function recognizeAll(
   sourceFile: SourceFile,
-  statesSlots?: (effect: Effect, slots: readonly StatedSlot[]) => void,
+  statesSlots?: SlotsHeard,
+  pack: PatternPack = prismaFramework(),
 ): Effect[] {
-  const pack = prismaFramework();
   const recognizer = pack.invocationRecognizers?.[0] ?? raise("no recognizer");
+  const store = ResolutionStore.forPacks([pack]);
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const ctx = {
-      call: node as CallExpression,
-      sourceFile,
-      extractArgs: (): EffectArg[] => extractArgsForTest(node),
-      ...(statesSlots === undefined
-        ? {}
-        : { ops: callOpsFor(node, { statesSlots }) }),
-    };
-    const emitted = recognizer(node, ctx);
+    const emitted = recognizer(node, contextFor(node, store, statesSlots));
     if (emitted !== null) {
       effects.push(...emitted);
     }
@@ -99,7 +126,10 @@ function recognizeAll(
 
 /** What the pack's access recognizers, the raw SQL ones, find in a file. */
 function accessEffectsIn(sourceFile: SourceFile): Effect[] {
-  const recognizers = prismaFramework().accessRecognizers ?? [];
+  const pack = prismaFramework();
+  const recognizers = pack.accessRecognizers ?? [];
+  const store = ResolutionStore.forPacks([pack]);
+  const { originatesFrom, anchors } = storeReads(store);
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
     if (
@@ -108,79 +138,21 @@ function accessEffectsIn(sourceFile: SourceFile): Effect[] {
     ) {
       return;
     }
+    const ctx = accessContextFor(
+      node,
+      sourceFile,
+      store,
+      originatesFrom,
+      anchors,
+    );
     for (const recognizer of recognizers) {
-      const emitted = recognizer(node, {
-        access: node,
-        sourceFile,
-        resolveWrittenValue: () => null,
-        ops: callOpsFor(node),
-      });
+      const emitted = recognizer(node, ctx);
       if (emitted !== null) {
         effects.push(...emitted);
       }
     }
   });
   return effects;
-}
-
-/**
- * A small EffectArg builder, mirroring the adapter's extractArg closely enough
- * for what the recognizer needs: object literals, property access, identifiers,
- * booleans, and strings.
- */
-function extractArgsForTest(call: CallExpression): EffectArg[] {
-  return call.getArguments().map((arg) => extractArgForTest(arg));
-}
-
-function extractArgForTest(node: Node): EffectArg {
-  if (Node.isStringLiteral(node)) {
-    return { kind: "string", value: node.getLiteralValue() };
-  }
-  if (Node.isNumericLiteral(node)) {
-    return { kind: "number", value: node.getLiteralValue() };
-  }
-  if (Node.isTrueLiteral(node)) {
-    return { kind: "boolean", value: true };
-  }
-  if (Node.isFalseLiteral(node)) {
-    return { kind: "boolean", value: false };
-  }
-  if (Node.isObjectLiteralExpression(node)) {
-    const fields: Record<string, EffectArg> = {};
-    for (const prop of node.getProperties()) {
-      if (Node.isShorthandPropertyAssignment(prop)) {
-        const name = prop.getName();
-        fields[name] = { kind: "identifier", name };
-        continue;
-      }
-      if (!Node.isPropertyAssignment(prop)) {
-        continue;
-      }
-      const initializer = prop.getInitializer();
-      if (initializer === undefined) {
-        continue;
-      }
-      fields[prop.getName()] = extractArgForTest(initializer);
-    }
-    return { kind: "object", fields };
-  }
-  if (Node.isArrayLiteralExpression(node)) {
-    return {
-      kind: "array",
-      items: node.getElements().map((el) => extractArgForTest(el)),
-    };
-  }
-  if (Node.isIdentifier(node) || Node.isPropertyAccessExpression(node)) {
-    return { kind: "identifier", name: node.getText() };
-  }
-  if (Node.isCallExpression(node)) {
-    return {
-      kind: "call",
-      callee: node.getExpression().getText(),
-      args: node.getArguments().map((a) => extractArgForTest(a)),
-    };
-  }
-  return null;
 }
 
 function storageEffectsOf(effects: Effect[]): Array<
@@ -523,7 +495,7 @@ describe("prisma recognizer: happy path", () => {
     });
   });
 
-  it("writes the whole row when the nested payload is built elsewhere", () => {
+  it("writes the columns a callback written at the call builds for each row", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
       const db = new PrismaClient();
@@ -544,8 +516,27 @@ describe("prisma recognizer: happy path", () => {
     const accesses = storageEffectsOf(recognizeAll(file));
     expect(accesses[1]?.interaction).toMatchObject({
       kind: "write",
+      fields: ["name"],
+      relationPath: ["tagList"],
+    });
+  });
+
+  it("writes the whole row when the nested payload arrives as a parameter", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function createArticle(title: string, rows: unknown[]) {
+        return await db.article.create({
+          data: { title, tagList: { create: rows } },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "write",
       fields: ["*"],
       relationPath: ["tagList"],
+      operation: "create",
     });
   });
 
@@ -836,22 +827,9 @@ describe("prisma recognizer: happy path", () => {
       }
     `);
     const pack = prismaFramework({ scope: "tenants", storageSystem: "mysql" });
-    const recognizer =
-      pack.invocationRecognizers?.[0] ?? raise("no recognizer");
-    const effects: Effect[] = [];
-    file.forEachDescendant((node) => {
-      if (Node.isCallExpression(node)) {
-        const emitted = recognizer(node, {
-          call: node,
-          sourceFile: file,
-          extractArgs: () => extractArgsForTest(node),
-        });
-        if (emitted !== null) {
-          effects.push(...emitted);
-        }
-      }
-    });
-    const access = storageEffectsOf(effects)[0] ?? raise("no access");
+    const access =
+      storageEffectsOf(recognizeAll(file, undefined, pack))[0] ??
+      raise("no access");
     expect(access.binding.semantics).toMatchObject({
       storageSystem: "mysql",
       scope: "tenants",
@@ -916,6 +894,35 @@ describe("prisma pack metadata", () => {
 
   it("says which file its generator leaves beside a client it wrote", () => {
     expect(prismaFramework().generatedModuleMarkers).toEqual(["schema.prisma"]);
+  });
+});
+
+describe("the ops a call is read with", () => {
+  it("are the ops over the store's facts, which follow a name to its object", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function getUser(id: number) {
+        const where = { id };
+        return await db.user.findUnique({ where });
+      }
+    `);
+    const call =
+      file
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .find(
+          (node) => node.getExpression().getText() === "db.user.findUnique",
+        ) ?? raise("no call");
+    const store = ResolutionStore.forPacks([prismaFramework()]);
+    const where = contextFor(call, store).ops.valueAt(0)?.property("where");
+
+    expect(where?.object).toBeTypeOf("function");
+    expect(
+      where
+        ?.object?.()
+        ?.entries("nothing")
+        .map((entry) => entry.key),
+    ).toEqual(["id"]);
   });
 });
 
@@ -1209,6 +1216,33 @@ describe("prisma raw SQL", () => {
       fields: ["id", "email"],
       operation: "$queryRawUnsafe",
     });
+  });
+});
+
+describe("a run with no store", () => {
+  it("reads a client by its type, and leaves alone one only the store could trace", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      class FakeClient {
+        user = { findMany: async (_args: unknown) => ({}) };
+      }
+      const db = new PrismaClient();
+      const fake = new FakeClient();
+      declare const untyped: any;
+      async function go() {
+        await db.user.findMany({});
+        await fake.user.findMany({});
+        await untyped.user.findMany({});
+      }
+    `);
+    const recognizer =
+      prismaFramework().invocationRecognizers?.[0] ?? raise("no recognizer");
+    const callees = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .flatMap((call) => recognizer(call, invocationContextFor(call)) ?? [])
+      .map((effect) => (effect.type === "interaction" ? effect.callee : null));
+
+    expect(callees).toEqual(["db.user.findMany"]);
   });
 });
 
