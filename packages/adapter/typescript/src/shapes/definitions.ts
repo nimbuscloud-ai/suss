@@ -1,164 +1,220 @@
-// The types a summary refers to but does not spell out.
-//
-// A shape that gives a type's name rather than expanding it leaves a reader
-// with a name and nowhere to look. The same type expanded at every
-// mention is the other way to be unhelpful, and it is how one summary
-// came to be a megabyte: 700 record nodes across 51 distinct shapes,
-// the worst of them written out 143 times.
-//
-// So a named type is written once and named everywhere else. The table
-// it is written into belongs to the unit being read, and the converter
-// that meets the type is several calls below whoever knows which unit
-// that is. Rather than thread a table through every shape call, the
-// reader of one unit sets the table for as long as it takes to read it.
-// The lifetime is one synchronous extraction, and a nested one puts the
-// outer table back when it finishes.
+/**
+ * The types a summary refers to but does not spell out.
+ *
+ * A named type is written once into the table of the unit being read and
+ * named everywhere else. The converter that meets a type is several calls
+ * below whoever knows which unit that is, so the reader of one unit sets
+ * the table for as long as it takes to read it, and a nested read puts
+ * the outer table back when it finishes.
+ *
+ * A definition refers to further types, and the table keeps only those a
+ * reader can reach: one met `MAX_SHAPE_DEPTH` levels or more below the
+ * top of every shape mentioning it is never substituted, so it is left
+ * out. The shapes README says why.
+ */
+
+import { MAX_SHAPE_DEPTH, withChildShapes } from "@suss/behavioral-ir";
 
 import { compareText } from "./typeText.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 
-export interface DefinitionTable {
-  /** Whether this type is already written down, or being written now. */
-  has(key: string): boolean;
-  /**
-   * Reserve a key before expanding it. A type that refers to itself
-   * meets its own key part way through, and finding it taken is what
-   * stops the expansion going round again.
-   */
-  reserve(key: string): void;
-  define(key: string, shape: TypeShape): void;
-  /**
-   * Expand a reserved key once the expansion under way is done. One
-   * named type mentions another, and expanding each inside the last ran
-   * out of stack on a long enough chain of them.
-   */
-  defer(key: string, expand: () => TypeShape): void;
-  /** Expand every deferred key, unless an outer call is already doing it. */
-  settle(): void;
-  /** Every definition worth carrying, or null when there are none. */
-  collected(): Record<string, TypeShape> | null;
-  /** The shape written under a key, null while it is only reserved. */
-  shapeOf(key: string): TypeShape | null | undefined;
+/** A named type met in a shape, `depth` levels below the top of the shape it was met in. */
+export interface DefinitionMention {
+  key: string;
+  depth: number;
+  source: DefinitionSource;
 }
 
-let current: DefinitionTable | null = null;
+/** Where a mention goes: into a unit's table, or into the expansion that met it. */
+export interface DefinitionSink {
+  mention(found: DefinitionMention): void;
+}
 
-/** The table this unit's shapes are being written into, if any. */
-export const definitionsInProgress = (): DefinitionTable | null => current;
+/**
+ * How to expand one named type, run at most once. Each table that needs
+ * the type takes its own copy, since a repeated body walk hands the same
+ * source to a second unit's table.
+ */
+export interface DefinitionSource {
+  take(): { shape: TypeShape; mentions: readonly DefinitionMention[] };
+}
+
+let current: DefinitionSink | null = null;
+
+/** Where this unit's named types are being written, if anywhere. */
+export const definitionsInProgress = (): DefinitionSink | null => current;
+
+/**
+ * A source for the type `expand` reads. The named types the expansion
+ * meets are kept with it rather than written anywhere, so a table can
+ * decide for itself which of them it needs.
+ */
+export function definitionSource(expand: () => TypeShape): DefinitionSource {
+  let expanded: { value: TypeShape; held: DefinitionMention[] } | null = null;
+  return {
+    take: () => {
+      expanded ??= withMentionsHeld(expand);
+      // Passes after assembly may edit a summary's shapes in place.
+      return {
+        shape: structuredClone(expanded.value),
+        mentions: expanded.held,
+      };
+    },
+  };
+}
+
+interface Entry {
+  /** The first mention's, so the shape does not depend on later ones. */
+  source: DefinitionSource;
+  /** The fewest levels below the top of a shape any mention reached it at. */
+  depth: number;
+  /** Null until a reader can reach the type. */
+  taken: ReturnType<DefinitionSource["take"]> | null;
+}
+
+export interface DefinitionTable extends DefinitionSink {
+  /** Every definition a reader can reach, or null when there are none. */
+  collected(): Record<string, TypeShape> | null;
+}
 
 export function createDefinitionTable(): DefinitionTable {
-  const shapes = new Map<string, TypeShape | null>();
-  const deferred: Array<{ key: string; expand: () => TypeShape }> = [];
-  let settling = false;
+  const entries = new Map<string, Entry>();
+  // Expanded after the expansion under way, not inside it: one named
+  // type mentions another, and expanding each inside the last ran out of
+  // stack on a long enough chain of them.
+  const pending: Entry[] = [];
+
+  const reach = ({ key, depth, source }: DefinitionMention): void => {
+    const known = entries.get(key);
+    if (known !== undefined && depth >= known.depth) {
+      return;
+    }
+    const entry = known ?? { source, depth, taken: null };
+    entry.depth = depth;
+    entries.set(key, entry);
+    if (depth < MAX_SHAPE_DEPTH) {
+      pending.push(entry);
+    }
+  };
+
+  // A type met again closer to the top brings the types it refers to
+  // closer too, so a key already written down is reached from again.
+  const settle = (): void => {
+    for (let at = 0; at < pending.length; at++) {
+      const entry = pending[at];
+      entry.taken ??= entry.source.take();
+      for (const inner of entry.taken.mentions) {
+        reach({ ...inner, depth: entry.depth + inner.depth });
+      }
+    }
+    pending.length = 0;
+  };
+
   return {
-    has: (key) => shapes.has(key),
-    reserve: (key) => {
-      shapes.set(key, null);
-    },
-    define: (key, shape) => {
-      shapes.set(key, shape);
-    },
-    defer: (key, expand) => {
-      deferred.push({ key, expand });
-    },
-    settle: () => {
-      if (settling) {
-        return;
-      }
-      settling = true;
-      try {
-        for (let next = deferred.shift(); next; next = deferred.shift()) {
-          shapes.set(next.key, next.expand());
-        }
-      } finally {
-        settling = false;
-      }
+    // An expansion writes what it mentions into its own source, so nothing
+    // calls in here while `settle` runs.
+    mention: (found) => {
+      reach(found);
+      settle();
     },
     // Sorted because the walk meets types in the checker's union order,
     // which changes between runs.
     collected: () => {
-      const out: Record<string, TypeShape> = {};
-      let any = false;
-      const keys = [...shapes.keys()].sort(compareText);
-      for (const key of keys) {
-        const shape = shapes.get(key) ?? null;
-        if (shape !== null) {
-          out[key] = shape;
-          any = true;
+      const kept = new Map<string, TypeShape>();
+      for (const key of [...entries.keys()].sort(compareText)) {
+        const taken = entries.get(key)?.taken ?? null;
+        if (taken !== null) {
+          kept.set(key, taken.shape);
         }
       }
-      return any ? out : null;
+      if (kept.size === 0) {
+        return null;
+      }
+      const out: Record<string, TypeShape> = {};
+      for (const [key, shape] of kept) {
+        out[key] = withKeysLeftOutDropped(shape, kept);
+      }
+      return out;
     },
-    shapeOf: (key) => shapes.get(key),
   };
 }
 
 /**
- * Run `read` and give back every definition it looked up or wrote, so
- * a read that is not repeated can write the same ones into another
- * unit's table. Null when one of them was still being expanded, since
- * then there is no finished shape to hand on.
+ * The shape with the key taken off every ref to a type the table left
+ * out, so the ref reads the way one the depth cap wrote does: a project
+ * type named and not spelled out.
+ */
+function withKeysLeftOutDropped(
+  shape: TypeShape,
+  kept: ReadonlyMap<string, TypeShape>,
+): TypeShape {
+  if (shape.type === "ref") {
+    const { def, ...named } = shape;
+    return def === undefined || kept.has(def) ? shape : named;
+  }
+  return withChildShapes(shape, (inner) => withKeysLeftOutDropped(inner, kept));
+}
+
+/**
+ * Run `read` and give back every named type it mentioned, so a read that
+ * is not repeated can mention the same ones in another unit's table.
  */
 export function withDefinitionsNoted<T>(read: () => T): {
   value: T;
-  noted: Array<[string, TypeShape]> | null;
+  noted: DefinitionMention[];
 } {
-  const table = current;
-  if (table === null) {
-    return { value: read(), noted: [] };
+  const sink = current;
+  const noted: DefinitionMention[] = [];
+  if (sink === null) {
+    return { value: read(), noted };
   }
-  const keys = new Set<string>();
   current = {
-    has: (key) => {
-      keys.add(key);
-      return table.has(key);
+    mention: (found) => {
+      noted.push(found);
+      sink.mention(found);
     },
-    reserve: (key) => {
-      keys.add(key);
-      table.reserve(key);
-    },
-    define: (key, shape) => {
-      keys.add(key);
-      table.define(key, shape);
-    },
-    defer: (key, expand) => {
-      keys.add(key);
-      table.defer(key, expand);
-    },
-    settle: () => table.settle(),
-    collected: () => table.collected(),
-    shapeOf: (key) => table.shapeOf(key),
   };
-  let value: T;
   try {
-    value = read();
+    return { value: read(), noted };
   } finally {
-    current = table;
+    current = sink;
   }
-  const noted: Array<[string, TypeShape]> = [];
-  for (const key of keys) {
-    const shape = table.shapeOf(key);
-    if (shape === null || shape === undefined) {
-      return { value, noted: null };
-    }
-    noted.push([key, shape]);
-  }
-  return { value, noted };
 }
 
-/** Write definitions `withDefinitionsNoted` gave back into this unit's table. */
+/**
+ * Run `read` and give back the named types it mentioned without passing
+ * them on, for a read whose shape may be thrown away. Nothing is held,
+ * and named types are expanded where they are met, when no unit is
+ * collecting definitions.
+ */
+export function withMentionsHeld<T>(read: () => T): {
+  value: T;
+  held: DefinitionMention[];
+} {
+  const sink = current;
+  const held: DefinitionMention[] = [];
+  if (sink === null) {
+    return { value: read(), held };
+  }
+  current = { mention: (found) => held.push(found) };
+  try {
+    return { value: read(), held };
+  } finally {
+    current = sink;
+  }
+}
+
+/** Mention in this unit's table what `withDefinitionsNoted` or `withMentionsHeld` gave back. */
 export function writeNotedDefinitions(
-  noted: ReadonlyArray<readonly [string, TypeShape]>,
+  noted: readonly DefinitionMention[],
 ): void {
-  const table = current;
-  if (table === null) {
+  const sink = current;
+  if (sink === null) {
     return;
   }
-  for (const [key, shape] of noted) {
-    if (!table.has(key)) {
-      table.define(key, structuredClone(shape));
-    }
+  for (const found of noted) {
+    sink.mention(found);
   }
 }
 

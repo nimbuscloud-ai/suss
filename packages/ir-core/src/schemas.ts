@@ -233,12 +233,14 @@ export const TypeShapeSchema: z.ZodType<TypeShape> = z.lazy(() =>
 );
 
 /**
- * How deep the walk goes while definitions are substituted back in.
+ * How many levels of a shape are spelled out: when an extractor reads a
+ * type into a shape, and when definitions are substituted back in.
  *
- * The extractor's shape walk stops at the same depth, so a shape read
- * back out of a table looks like one that was never in a table.
+ * Both use this one number, so a shape read back out of a table looks
+ * like one that was never in a table, and an extractor can leave out a
+ * definition that no substitution would reach.
  */
-const MAX_DEFINITION_DEPTH = 6;
+export const MAX_SHAPE_DEPTH = 6;
 
 /**
  * A shape with the definitions it refers to substituted back into it.
@@ -259,7 +261,7 @@ export function withDefinitionsInlined(
   depth = 0,
   inProgress: ReadonlySet<string> = new Set(),
 ): TypeShape {
-  if (definitions === undefined || depth >= MAX_DEFINITION_DEPTH) {
+  if (definitions === undefined || depth >= MAX_SHAPE_DEPTH) {
     return shape;
   }
   const deeper = (inner: TypeShape): TypeShape =>
