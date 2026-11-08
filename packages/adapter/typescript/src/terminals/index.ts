@@ -17,6 +17,7 @@ import { forEachDescendantOfKinds } from "../walk/rawDescent.js";
 import { tryMatchParameterCall } from "./continuation.js";
 import { declaredStatusCode } from "./extract.js";
 import { tryMatchJsxReturn } from "./jsx.js";
+import { tryMatchReturnedHelper } from "./returnedHelper.js";
 import {
   tryMatchFunctionCall,
   tryMatchParameterMethodCall,
@@ -31,6 +32,11 @@ import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 import type { OriginatesFrom } from "../resolve/invocationEffects.js";
 import type { ResolveCallee } from "./helperResolution.js";
+import type {
+  HelperCall,
+  HelperLookups,
+  ReadHelper,
+} from "./returnedHelper.js";
 import type { FoundTerminal } from "./shared.js";
 
 export type { FoundTerminal } from "./shared.js";
@@ -82,8 +88,26 @@ export function findTerminals(
   resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   resolveCallee?: ResolveCallee,
+  within?: HelperCall,
 ): FoundTerminal[] {
   const results: FoundTerminal[] = [];
+  const substitutions = within?.substitutions;
+  const lookups: HelperLookups = {
+    resolution,
+    originatesFrom,
+    resolveCallee,
+    ...(within === undefined ? {} : { within }),
+  };
+  const readHelper: ReadHelper = (helper, helperPatterns, call) =>
+    findTerminals(
+      helper,
+      helperPatterns,
+      NO_BARRIERS,
+      resolution,
+      originatesFrom,
+      resolveCallee,
+      call,
+    );
 
   forEachDescendantOfKinds(func, TERMINAL_KINDS, (node) => {
     if (isDescentStop(node, func, barriers)) {
@@ -91,6 +115,16 @@ export function findTerminals(
     }
 
     const nested = crossesNestedFunctionScope(node, func);
+
+    // Ahead of the patterns, since a pack's catch-all return would take
+    // the helper's call as the response without reading what it builds.
+    const throughHelper = nested
+      ? []
+      : tryMatchReturnedHelper(node, func, patterns, lookups, readHelper);
+    if (throughHelper.length > 0) {
+      results.push(...throughHelper);
+      return false;
+    }
 
     for (const pattern of patterns) {
       if (nested && !NESTED_ESCAPING_MATCH_TYPES.has(pattern.match.type)) {
@@ -124,6 +158,7 @@ export function findTerminals(
           pattern,
           pattern.match,
           resolution,
+          substitutions,
         );
         if (matches.length > 0) {
           results.push(...matches);
@@ -154,6 +189,7 @@ export function findTerminals(
           pattern.match,
           resolution,
           originatesFrom,
+          substitutions,
         );
       } else if (pattern.match.type === "parameterCall") {
         found = tryMatchParameterCall(node, func, pattern, pattern.match);

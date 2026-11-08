@@ -199,6 +199,27 @@ describe("expressFramework: response chains", () => {
       { type: "literal", value: 201 },
     ]);
   });
+
+  it("reads the response a helper writes to the res it was handed", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const app = express();
+      function sendError(res: any, status: number, message: string) {
+        return res.status(status).json({ error: message });
+      }
+      app.get("/items/:id", (req: any, res: any) => {
+        if (!req.params.id) {
+          return sendError(res, 404, "No such item.");
+        }
+        res.json({ id: req.params.id });
+      });
+    `);
+    const route = summaries.find((s) => s.kind === "handler");
+    expect(statusesOf(route)).toEqual([
+      { type: "literal", value: 404 },
+      { type: "literal", value: 200 },
+    ]);
+  });
 });
 
 describe("expressFramework: registration options", () => {

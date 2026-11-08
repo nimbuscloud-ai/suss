@@ -305,6 +305,7 @@ export function tryMatchParameterMethodCall(
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "parameterMethodCall" }>,
   resolution?: ResolutionStore,
+  substitutions?: ReadonlyMap<string, Expression>,
 ): FoundTerminal[] {
   if (!Node.isCallExpression(node)) {
     return [];
@@ -326,6 +327,7 @@ export function tryMatchParameterMethodCall(
     extraction: pattern.extraction,
     calls,
     ...(resolution !== undefined ? { resolution } : {}),
+    ...(substitutions !== undefined ? { substitutions } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);
@@ -646,6 +648,7 @@ export function tryMatchFunctionCall(
   match: Extract<TerminalPattern["match"], { type: "functionCall" }>,
   resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
+  substitutions?: ReadonlyMap<string, Expression>,
 ): FoundTerminal | null {
   // `new Response(body, init)` builds a response the same way
   // `Response.json(body, init)` does, so a pack that declares `Response`
@@ -688,6 +691,7 @@ export function tryMatchFunctionCall(
     extraction: pattern.extraction,
     throwCallArgs: callArgs,
     ...(resolution !== undefined ? { resolution } : {}),
+    ...(substitutions !== undefined ? { substitutions } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);
