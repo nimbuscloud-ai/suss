@@ -332,6 +332,24 @@ describe("factCallOps, where nothing settles", () => {
   });
 });
 
+describe("factValueOps, of a value an encoder was handed", () => {
+  it("asks the adapter what the value a name was written as encodes", () => {
+    const encoding = source({
+      writtenAs: (key) => (key === "line" ? "put" : null),
+      encodedOf: (key) =>
+        key === "put" ? { codec: "json", value: "input" } : null,
+    });
+    const encoded = factValueOps("line", encoding).encoded?.();
+
+    expect(encoded?.codec).toBe("json");
+    expect(encoded?.value.property("TableName")?.name("nothing")).toBe(
+      "orders",
+    );
+    expect(factValueOps("opts", encoding).encoded?.()).toBeNull();
+    expect(factValueOps("put", source()).encoded?.()).toBeNull();
+  });
+});
+
 describe("factValueOps, further", () => {
   it("reads a computed key through the adapter, and a flag the source wrote", () => {
     const bag = opsAt("sqsSend", moreSource()).valueAt(1);

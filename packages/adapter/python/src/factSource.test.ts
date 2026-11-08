@@ -136,4 +136,46 @@ describe("the Python fact source", () => {
       (factValueOps(held("comp"), source) as Partial<AstCapableValueOps>).ast,
     ).toBeUndefined();
   });
+
+  it("gives what json.dumps was handed, when json is the module the file imported", async () => {
+    const tree = await parsePython(
+      [
+        "import json",
+        "from mylib import codec",
+        "",
+        'json.dumps({"a": 1})',
+        'codec.dumps({"b": 2})',
+        "json.dumps()",
+        'json.loads("{}")',
+      ].join("\n"),
+    );
+    const root = tree.rootNode;
+    const db = factsForFile({
+      file: FILE,
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    const encodings = db
+      .facts("call")
+      .map((row) => String(row[0]))
+      .sort((a, b) => source.textOf(a).localeCompare(source.textOf(b)))
+      .map((call) => {
+        const found = source.encodedOf?.(call) ?? null;
+        return [
+          source.textOf(call),
+          found === null
+            ? null
+            : `${found.codec} ${source.textOf(found.value)}`,
+        ];
+      });
+
+    expect(encodings).toEqual([
+      ['codec.dumps({"b": 2})', null],
+      ["json.dumps()", null],
+      ['json.dumps({"a": 1})', 'json {"a": 1}'],
+      ['json.loads("{}")', null],
+    ]);
+  });
 });
