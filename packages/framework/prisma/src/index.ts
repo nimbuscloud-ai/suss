@@ -220,8 +220,11 @@ function recognizePrismaCall(
         callee,
         interaction: {
           class: "storage-access",
-          kind: "write",
+          kind: nested.lookup === true ? "read" : "write",
           fields: nested.fields,
+          ...(nested.selector === undefined
+            ? {}
+            : { selector: nested.selector }),
           relationPath: nested.relationPath,
           ...(nested.relationKey === true ? { relationKey: true } : {}),
           // The outer method acts on the model in the binding. The model
@@ -340,6 +343,13 @@ interface NestedWrite {
   relationPath: string[];
   fields: string[];
   operation: string;
+  /** The columns the operation picks the related rows by. */
+  selector?: string[];
+  /**
+   * Set when the operation only looks the related rows up by its
+   * selector, to join them, and writes nothing across the relation.
+   */
+  lookup?: true;
   /**
    * Set when the columns written are the foreign key of the last
    * relation in the path. The call does not show that key, so the
@@ -400,8 +410,30 @@ const updateRow: ReadWrittenRows = (payload) => {
 /** A deleted row fills no column and changes all of them. */
 const wholeRow: ReadWrittenRows = () => ({ fields: ["*"], rows: [] });
 
+/** The columns a nested operation picks the related rows by. */
+type ReadPicked = (payload: EffectArg | undefined) => string[];
+
+/** For `connectOrCreate: { where, create }` or a list of those. */
+const pickedUnderWhere: ReadPicked = (payload) =>
+  keysOfRows(
+    objectsIn(payload).rows.flatMap((row) => objectsIn(row.fields.where).rows),
+  );
+
+/** For `connect: { id }` or a list of those, the payload is the `where`. */
+const pickedByPayload: ReadPicked = (payload) =>
+  keysOfRows(objectsIn(payload).rows);
+
+/** Only the `{ where, data }` form of a nested update picks its rows. */
+const pickedByUpdate: ReadPicked = (payload) => {
+  const statesData = objectsIn(payload).rows.some(
+    (row) => "data" in row.fields,
+  );
+  return statesData ? pickedUnderWhere(payload) : [];
+};
+
 interface NestedOperation {
   rows?: ReadWrittenRows;
+  picks?: ReadPicked;
   /**
    * Changing which row is joined sets the foreign key, on whichever side
    * declares it.
@@ -417,15 +449,18 @@ interface NestedOperation {
 const NESTED_OPERATIONS = new Map<string, NestedOperation>([
   ["create", { rows: rowIsPayload }],
   ["createMany", { rows: rowsUnder("data") }],
-  ["connectOrCreate", { rows: rowsUnder("create"), movesJoin: true }],
-  ["update", { rows: updateRow }],
-  ["updateMany", { rows: rowsUnder("data") }],
-  ["upsert", { rows: rowsUnder("create", "update") }],
-  ["delete", { rows: wholeRow }],
-  ["deleteMany", { rows: wholeRow }],
-  ["connect", { movesJoin: true }],
-  ["disconnect", { movesJoin: true }],
-  ["set", { movesJoin: true }],
+  [
+    "connectOrCreate",
+    { rows: rowsUnder("create"), picks: pickedUnderWhere, movesJoin: true },
+  ],
+  ["update", { rows: updateRow, picks: pickedByUpdate }],
+  ["updateMany", { rows: rowsUnder("data"), picks: pickedUnderWhere }],
+  ["upsert", { rows: rowsUnder("create", "update"), picks: pickedUnderWhere }],
+  ["delete", { rows: wholeRow, picks: pickedByPayload }],
+  ["deleteMany", { rows: wholeRow, picks: pickedByPayload }],
+  ["connect", { picks: pickedByPayload, movesJoin: true }],
+  ["disconnect", { picks: pickedByPayload, movesJoin: true }],
+  ["set", { picks: pickedByPayload, movesJoin: true }],
 ]);
 
 /**
@@ -467,12 +502,31 @@ function collectNestedWrites(
       if (does === undefined) {
         continue;
       }
+      const selector = does.picks?.(payload) ?? [];
+      const picked = selector.length > 0 ? { selector } : {};
       if (does.rows !== undefined) {
         const written = does.rows(payload);
-        found.push({ relationPath, fields: written.fields, operation });
+        found.push({
+          relationPath,
+          fields: written.fields,
+          operation,
+          ...picked,
+        });
         for (const deeper of written.rows) {
           collectNestedWrites(deeper, relationPath, found);
         }
+      }
+      // A join reads the rows it joins to find them, and the key it then
+      // writes belongs to whichever side declares it, so the rows' own
+      // columns go on an effect of their own.
+      if (does.rows === undefined && selector.length > 0) {
+        found.push({
+          relationPath,
+          fields: [],
+          operation,
+          ...picked,
+          lookup: true,
+        });
       }
       if (does.movesJoin === true) {
         found.push({ relationPath, fields: [], operation, relationKey: true });
@@ -512,6 +566,11 @@ function objectsIn(arg: EffectArg | undefined): {
     rows.push(row);
   }
   return { rows, written };
+}
+
+/** Every key the rows state, in the order each was first written. */
+function keysOfRows(rows: ObjectArg[]): string[] {
+  return [...new Set(rows.flatMap((row) => Object.keys(row.fields)))];
 }
 
 function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
@@ -788,6 +847,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
+    version: "2",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
