@@ -46,7 +46,11 @@ export {
   stringValueOf,
   writtenNodeOf,
 } from "./discovery/resolveValue.js";
-export { findEnclosingFunction, toFunctionRoot } from "./discovery/shared.js";
+export {
+  findEnclosingFunction,
+  parameterNamedBy,
+  toFunctionRoot,
+} from "./discovery/shared.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
 export { dottedPathOf } from "./facts/extract.js";
 // The store behind the recognizer context's `resolveWrittenValue`.

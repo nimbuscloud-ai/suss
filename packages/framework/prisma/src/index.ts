@@ -17,11 +17,16 @@ import {
   type CallExpression,
   Node as N,
   type Node,
+  type PropertyAccessExpression,
   type SourceFile,
 } from "ts-morph";
 import { z } from "zod";
 
-import { receiverTypesOf, writtenNodeOf } from "@suss/adapter-typescript";
+import {
+  parameterNamedBy,
+  receiverTypesOf,
+  writtenNodeOf,
+} from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
@@ -630,8 +635,102 @@ function isPrismaClientReceiver(
   ) {
     return true;
   }
-  return node.getType().isAny() && madeFromImportedClient(node, resolution);
+  return (
+    node.getType().isAny() &&
+    (madeFromImportedClient(node, resolution) ||
+      isTransactionClient(node, resolution))
+  );
 }
+
+/**
+ * Whether the value is the client `prisma.$transaction(async (tx) => ...)`
+ * hands its callback, which is a client wherever the call's receiver is.
+ */
+function isTransactionClient(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  const callback = callbackGiven(node);
+  return (
+    callback !== null &&
+    transactionsRunning(callback, resolution).some((call) =>
+      isPrismaClientReceiver(
+        (call.getExpression() as PropertyAccessExpression).getExpression(),
+        resolution,
+      ),
+    )
+  );
+}
+
+/** The function whose first parameter this name is, or null. */
+function callbackGiven(node: Node): Node | null {
+  const parameter = parameterNamedBy(node);
+  if (parameter === null) {
+    return null;
+  }
+  const func = parameter.getParent();
+  if (
+    !N.isArrowFunction(func) &&
+    !N.isFunctionExpression(func) &&
+    !N.isFunctionDeclaration(func)
+  ) {
+    return null;
+  }
+  return func.getParameters()[0] === parameter ? func : null;
+}
+
+/**
+ * The `$transaction` calls that run this function: the one it is written
+ * in, or each one the store finds its name passed to.
+ */
+function transactionsRunning(
+  func: Node,
+  resolution: ResolutionStore | undefined,
+): CallExpression[] {
+  const inPlace = transactionTaking(func);
+  if (inPlace !== null) {
+    return [inPlace];
+  }
+  const declaration = declarationNaming(func);
+  if (resolution === undefined || declaration === null) {
+    return [];
+  }
+  return resolution.referencesTo(declaration).flatMap((reference) => {
+    const call = transactionTaking(reference);
+    return call === null ? [] : [call];
+  });
+}
+
+/** The `<receiver>.$transaction(...)` call that takes this node first, or null. */
+function transactionTaking(node: Node): CallExpression | null {
+  const call = node.getParent();
+  if (
+    call === undefined ||
+    !N.isCallExpression(call) ||
+    call.getArguments()[0] !== node
+  ) {
+    return null;
+  }
+  const callee = call.getExpression();
+  return N.isPropertyAccessExpression(callee) &&
+    callee.getName() === TRANSACTION_METHOD
+    ? call
+    : null;
+}
+
+/** What a name for this function is declared as: the function itself, or the variable it is assigned to. */
+function declarationNaming(func: Node): Node | null {
+  if (N.isFunctionDeclaration(func)) {
+    return func;
+  }
+  // A function is a variable declaration's child only as its initializer.
+  const holder = func.getParent();
+  return holder !== undefined && N.isVariableDeclaration(holder)
+    ? holder
+    : null;
+}
+
+const TRANSACTION_METHOD = "$transaction";
 
 /**
  * Whether the value is a `PrismaClient` made from `@prisma/client`, or
@@ -969,7 +1068,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "5",
+    version: "6",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
