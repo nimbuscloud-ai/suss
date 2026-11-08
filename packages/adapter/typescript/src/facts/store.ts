@@ -1261,7 +1261,9 @@ export class ResolutionStore {
     if (typeNames.length === 0 || !Node.isIdentifier(reference)) {
       return false;
     }
-    this.extractFile(reference.getSourceFile());
+    // A name's binds are stated with its own facts, which nothing may
+    // have asked for yet.
+    this.factAccess().state(reference);
     return this.db.lookup("binds", 0, nodeId(reference)).some((row) => {
       const declared = this.table.byId.get(String(row[1]));
       if (declared === undefined || !Node.isParameterDeclaration(declared)) {
