@@ -16,12 +16,17 @@ import {
   anchorCallsOf,
   originsOf,
   resolveCalls,
+  resolveStreamObjects,
   writtenValueOf,
 } from "./facts/resolve.js";
 import { argOf } from "./paths/effects.js";
+import { shapeOfReturned } from "./paths/returnedShape.js";
 import { receiverTypeOrigins } from "./receiverTypes.js";
+import { scopeAt } from "./scope.js";
+import { isBuiltin } from "./stdlibNames.js";
 import {
   evaluatedValue,
+  moduleOf,
   nodeOfResolutionKey,
   stringValueOf,
 } from "./values/evaluator.js";
@@ -75,6 +80,22 @@ export function pythonFactSource(db: Database): FactSource {
         : argOf(node, db);
     },
     encodedOf: (key) => encodedBy(db, key),
+    typeShapeOf: (key) => {
+      const node = nodeAt(key);
+      return node === null
+        ? { type: "ref", name: nameIn(key) }
+        : shapeOfReturned(node);
+    },
+    spellsGlobal: (key, path) => importPathOf(db, key) === path,
+    callsGlobal: (call, path) => {
+      const node = nodeAt(call);
+      const callee = node?.type === "call" ? field(node, "function") : null;
+      return (
+        callee !== null &&
+        isBuiltin(callee, scopeAt(callee, moduleOf(callee)), path)
+      );
+    },
+    globalsReaching: (key) => streamsReaching(db, key),
     evaluatedOf: (key) => {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));
@@ -120,6 +141,45 @@ function receiverNamed(call: PyNode | null): PyNode | null {
   const receiver =
     callee?.type === "attribute" ? field(callee, "object") : null;
   return receiver?.type === "identifier" ? receiver : null;
+}
+
+/**
+ * The dotted path a value is spelled as through the file's imports:
+ * `sys.stdout` for `sys.stdout` after `import sys`, and for `stdout`
+ * after `from sys import stdout`. Null for a value no import spells, such
+ * as a parameter that happens to be called `sys`.
+ */
+function importPathOf(db: Database, key: string): string | null {
+  const imported = new Set(
+    db
+      .lookup("imports", 0, key)
+      .filter((row) => db.lookup("importsModule", 1, String(row[1])).length > 0)
+      .map((row) =>
+        row[2] === "*" ? String(row[1]) : `${String(row[1])}.${String(row[2])}`,
+      ),
+  );
+  const [one] = imported;
+  if (imported.size > 0) {
+    return imported.size === 1 && one !== undefined ? one : null;
+  }
+  const [read, ...more] = db.lookup("readsProperty", 0, key);
+  if (read === undefined || more.length > 0) {
+    return null;
+  }
+  const object = importPathOf(db, String(read[1]));
+  return object === null ? null : `${object}.${String(read[2])}`;
+}
+
+/** The output streams the rules followed into a value, each as the path that spells it. */
+function streamsReaching(db: Database, key: string): string[] {
+  resolveStreamObjects(
+    db,
+    db.facts("streamObject").map((row) => String(row[0])),
+  );
+  return db.lookup("wantedStreamValue", 0, key).flatMap((row) => {
+    const path = importPathOf(db, String(row[1]));
+    return path === null ? [] : [path];
+  });
 }
 
 /**

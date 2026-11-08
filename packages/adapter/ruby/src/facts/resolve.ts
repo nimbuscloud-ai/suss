@@ -129,6 +129,18 @@ export function resolveEnvObjects(
 }
 
 /**
+ * Asks which values each output stream passed on reaches, from every
+ * spot that passes one, so a write through a parameter looks its
+ * receiver up in `wantedStreamValue`.
+ */
+export function resolveStreamObjects(
+  db: Database,
+  objects: readonly string[],
+): void {
+  askResolution(db, objects, "wantedStreamObject", RUBY_PROGRAM);
+}
+
+/**
  * The single expression a value was written as. When the value is a call
  * to a project function, the answer is what that function returns.
  */

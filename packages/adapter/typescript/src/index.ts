@@ -107,10 +107,6 @@ export {
   workspaceNameFor,
   workspaceRootFor,
 } from "./summaryIdentity.js";
-export {
-  type WrittenPayload,
-  writtenPayloadOf,
-} from "./terminals/extract.js";
 export { findTerminals } from "./terminals/index.js";
 export {
   type ReceiverType,

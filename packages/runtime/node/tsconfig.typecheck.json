@@ -22,6 +22,12 @@
     },
     {
       "path": "../../extractor/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../recognize/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../resolution/tsconfig.typecheck.json"
     }
   ]
 }

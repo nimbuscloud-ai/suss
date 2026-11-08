@@ -14,6 +14,7 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  Global,
   Imported,
   OpsCarrier,
   ReceiverOrigin,
@@ -32,6 +33,7 @@ import type {
   CallOps,
   ConstructedFrom,
   DeclaredBy,
+  Global,
   Imported,
   OpsCarrier,
   ReceiverOrigin,
@@ -106,6 +108,16 @@ export function imported(spec: {
   };
 }
 
+/**
+ * A receiver, or a call with no receiver, spelled as one of these paths:
+ * `global("console")`, `global("print")`. A program spells the runtime's
+ * own objects without importing them, so a chain that starts here gates
+ * on no module.
+ */
+export function global(...paths: readonly string[]): Global {
+  return { origin: "global", paths };
+}
+
 const MODULES: ByOrigin<readonly string[]> = {
   declaredBy: (origin) => origin.importedFrom,
   constructed: (origin) => origin.importedFrom,
@@ -113,6 +125,7 @@ const MODULES: ByOrigin<readonly string[]> = {
   returnedBy: (origin) => modulesOf(origin.on),
   typed: (origin) => origin.importedFrom,
   imported: (origin) => origin.importedFrom,
+  global: () => [],
 };
 
 /** Every module an origin mentions, which a file has to import before it can match. */

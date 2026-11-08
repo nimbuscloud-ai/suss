@@ -111,6 +111,7 @@ const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
   messageSend: "invocation",
   unitInvoke: "invocation",
   schedule: "invocation",
+  streamWrite: "invocation",
 };
 
 /** The chains a pack dispatches on one of the two walks. */
@@ -201,13 +202,17 @@ function byEnding<T>(table: ByEnding<T>, ending: Ending): T {
   return (table[ending.yields] as (ending: Ending) => T)(ending);
 }
 
-/** A callback runs in the same process as the call that hands it over. */
+/**
+ * A callback runs in the same process as the call that hands it over,
+ * and a process writes its own streams.
+ */
 const WIRE: ByEnding<string> = {
   storageAccess: (ending) => ending.transport ?? ending.system,
   sqlAccess: (ending) => ending.transport ?? ending.system,
   messageSend: (ending) => ending.wire,
   unitInvoke: (ending) => ending.platform,
   schedule: () => "in-process",
+  streamWrite: () => "in-process",
 };
 
 /**
@@ -224,6 +229,7 @@ const DECLARED_NAME: ByEnding<string> = {
   messageSend: (ending) => ending.wire,
   unitInvoke: (ending) => ending.platform,
   schedule: (ending) => ending.yields,
+  streamWrite: (ending) => ending.yields,
 };
 
 /** The wire every chain in a pack reaches over. */

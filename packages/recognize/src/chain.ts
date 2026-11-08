@@ -499,12 +499,22 @@ export interface CallbackMethod {
   readonly callback: CallbackPick | readonly CallbackPick[];
 }
 
+/**
+ * Which stream one write method sends to: a stream the method always
+ * writes to, as `console.error` writes to stderr, or `receiver` for the
+ * stream the call is made on, as `process.stdout.write` is.
+ */
+export interface StreamWriteMethod {
+  readonly to: string;
+}
+
 /** What one method table can say a method does. */
 export type MethodMeaning =
   | StorageMethod
   | SqlMethod
   | MessageSendMethod
-  | CallbackMethod;
+  | CallbackMethod
+  | StreamWriteMethod;
 
 /** What a chain produces when every link matches. */
 export type Ending =
@@ -512,7 +522,22 @@ export type Ending =
   | SqlEnding
   | MessageSendEnding
   | UnitInvokeEnding
-  | ScheduleEnding;
+  | ScheduleEnding
+  | StreamWriteEnding;
+
+/**
+ * A write to one of the process's own output streams. Nothing pairs
+ * against it, since whoever reads a stream is a person or a shell.
+ */
+export interface StreamWriteEnding {
+  readonly yields: "streamWrite";
+  /**
+   * Each global path a receiver can be, and the stream it is: `{
+   * "process.stdout": "stdout" }`. A method whose `to` is `receiver`
+   * writes to the stream its receiver's path gives here.
+   */
+  readonly streams: Readonly<Record<string, string>>;
+}
 
 /**
  * A callback the call hands to a library that runs it later. Nothing

@@ -227,6 +227,8 @@ interface WrittenAnswer {
 /** What every parameter gets in a project with no environment read to follow. */
 const NO_NAMERS: EnvironmentNamers = { sitesNaming: () => [] };
 
+const NO_STREAMS: ReadonlySet<string> = new Set();
+
 /** What the store works out once about where the environment goes. */
 interface EnvironmentAnswers {
   namers: EnvironmentNamers;
@@ -1108,31 +1110,18 @@ export class ResolutionStore {
   }
 
   /**
-   * Which output stream a receiver is, for a writer standing at
-   * `out.write(...)`: the path a pack declared, such as
-   * `process.stdout`. Null when it is a stream and the source does not
-   * settle which one, and undefined when nothing says it is a stream.
+   * The output streams the rules followed into a value, for a writer
+   * standing at `out.write(...)`: each one as the path a pack declared,
+   * such as `process.stdout`. Empty when no stream reaches it.
    *
-   * A receiver the source does not spell as a stream is looked up in
-   * one answer worked out for the whole run, so a question is never
-   * asked per call. A parameter nothing in the run passes a stream to
-   * is still a stream when it is annotated as one of `streamTypes`.
+   * The value is looked up in one answer worked out for the whole run,
+   * so a question is never asked per call.
    */
-  streamPathOf(
-    receiver: Node,
-    streamTypes: readonly string[],
-  ): string | null | undefined {
-    const spelled = spelledStreamPath(this.table, factKeyOf(receiver));
-    if (spelled !== null) {
-      return spelled;
-    }
-    const reaching = this.streamAnswers(receiver.getProject()).get(
-      nodeId(factKeyOf(receiver)),
+  streamsReaching(value: Node): ReadonlySet<string> {
+    return (
+      this.streamAnswers(value.getProject()).get(nodeId(factKeyOf(value))) ??
+      NO_STREAMS
     );
-    if (reaching !== undefined) {
-      return reaching.size === 1 ? [...reaching][0] : null;
-    }
-    return this.annotatedAsOneOf(receiver, streamTypes) ? null : undefined;
   }
 
   private streamAnswers(
@@ -1264,15 +1253,17 @@ export class ResolutionStore {
     return sinks;
   }
 
-  /** Whether the parameter a name refers to is annotated as one of these types. */
-  private annotatedAsOneOf(
-    reference: Node,
-    typeNames: readonly string[],
-  ): boolean {
+  /**
+   * Whether the parameter a name refers to is annotated as one of these
+   * types, written as the source writes them, such as `NodeJS.WriteStream`.
+   */
+  parameterAnnotatedAs(reference: Node, typeNames: readonly string[]): boolean {
     if (typeNames.length === 0 || !Node.isIdentifier(reference)) {
       return false;
     }
-    this.extractFile(reference.getSourceFile());
+    // A name's binds are stated with its own facts, which nothing may
+    // have asked for yet.
+    this.factAccess().state(reference);
     return this.db.lookup("binds", 0, nodeId(reference)).some((row) => {
       const declared = this.table.byId.get(String(row[1]));
       if (declared === undefined || !Node.isParameterDeclaration(declared)) {

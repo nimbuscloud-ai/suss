@@ -15,6 +15,8 @@
 
 import { Node } from "ts-morph";
 
+import { GLOBAL_MODULE } from "@suss/resolution";
+
 import { matchingImportDeclarations } from "../discovery/importScan.js";
 import { compareText } from "../shapes/typeText.js";
 import { peelSyntax } from "../walk/unwrap.js";
@@ -48,6 +50,9 @@ export function typedAsExported(
   origin: Typed,
   resolution: ResolutionStore | undefined,
 ): boolean {
+  if (typedAsGlobal(node, origin, resolution)) {
+    return true;
+  }
   const types = receiverTypesOf(node).filter((type) =>
     origin.named.includes(type.name),
   );
@@ -59,6 +64,23 @@ export function typedAsExported(
     matchingImportDeclarations(file, module, resolution, true).some(
       (declaration) => types.some((type) => exportsType(declaration, type)),
     ),
+  );
+}
+
+/**
+ * Whether the node is a parameter annotated as one of the origin's types,
+ * for a type the runtime declares, such as `NodeJS.WriteStream`. No file
+ * imports one, so the annotation as written is what says.
+ */
+function typedAsGlobal(
+  node: Node,
+  origin: Typed,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return (
+    resolution !== undefined &&
+    origin.importedFrom.includes(GLOBAL_MODULE) &&
+    resolution.parameterAnnotatedAs(node, origin.named)
   );
 }
 
