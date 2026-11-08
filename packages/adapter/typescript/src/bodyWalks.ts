@@ -8,7 +8,7 @@
  * calls, and what each recognizer makes of them. A repeat gets copies
  * of the first walk's results, since passes after assembly edit effects
  * in place, and replays what the walk left behind: the named types it
- * defined, the files it read, and the effects each pack's recognizers
+ * mentioned, the files it read, and the effects each pack's recognizers
  * counted. A walk that read new facts into the store is not kept, since
  * its first questions saw fewer facts than a repeat would.
  */
@@ -20,7 +20,6 @@ import {
   writeNotedDefinitions,
 } from "./shapes/definitions.js";
 
-import type { TypeShape } from "@suss/behavioral-ir";
 import type { PackRecognizer, PackTally, RawCondition } from "@suss/extractor";
 import type { Node } from "ts-morph";
 import type { ResolutionStore } from "./facts/store.js";
@@ -28,6 +27,7 @@ import type {
   InvocationEffectLocation,
   RecognizedEffectLocation,
 } from "./resolve/invocationEffects.js";
+import type { DefinitionMention } from "./shapes/definitions.js";
 import type { FoundTerminal } from "./terminals/shared.js";
 
 export interface BodyWalk {
@@ -51,7 +51,7 @@ interface KeptWalk {
   key: string;
   facts: number;
   walk: BodyWalk;
-  definitions: Array<[string, TypeShape]>;
+  definitions: DefinitionMention[];
   files: string[];
   effectsByTally: Map<PackTally, number>;
 }
@@ -100,7 +100,7 @@ export function walkBodyOnce(
   const read = withFilesNoted(() => withDefinitionsNoted(walk));
   const { value, noted } = read.value;
   const factsAfter = inputs.resolution?.sourceFactCount() ?? -1;
-  if (noted === null || factsAfter !== facts) {
+  if (factsAfter !== facts) {
     return value;
   }
   const effectsByTally = new Map<PackTally, number>();
@@ -111,7 +111,7 @@ export function walkBodyOnce(
     key,
     facts,
     walk: copyWalk(value),
-    definitions: noted.map(([name, shape]) => [name, structuredClone(shape)]),
+    definitions: noted,
     files: read.files,
     effectsByTally,
   };

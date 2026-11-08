@@ -43,6 +43,7 @@ export {
   ConfidenceSourceSchema,
   CorroborationSchema,
   DeployableUnitSchema,
+  MAX_SHAPE_DEPTH,
   SourceLocationSchema,
   TypeShapeSchema,
   typeDefinitionKey,

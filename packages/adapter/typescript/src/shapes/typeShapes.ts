@@ -26,7 +26,14 @@ import { createHash } from "node:crypto";
 
 import { Node, TypeFormatFlags } from "ts-morph";
 
-import { definitionsInProgress } from "./definitions.js";
+import { MAX_SHAPE_DEPTH } from "@suss/behavioral-ir";
+
+import {
+  definitionSource,
+  definitionsInProgress,
+  withMentionsHeld,
+  writeNotedDefinitions,
+} from "./definitions.js";
 import {
   compareMembers,
   compareText,
@@ -40,9 +47,10 @@ import type { SourceFile, Symbol as TsSymbol, Type } from "ts-morph";
 /**
  * Maximum recursion depth when expanding object properties. Beyond this we
  * collapse to an unnamed `ref`: the alternative is stack overflow on deep
- * nominal types (React's `HTMLElement`, etc.).
+ * nominal types (React's `HTMLElement`, etc.). Definitions are substituted
+ * back in to the same depth.
  */
-const MAX_DEPTH = 6;
+const MAX_DEPTH = MAX_SHAPE_DEPTH;
 
 /**
  * Named types that we intentionally do NOT expand: their structural shape
@@ -69,8 +77,21 @@ const OPAQUE_NAMED_TYPES = new Set([
 
 interface ConvertContext {
   enclosing: Node;
+  /** How many levels the walk has gone down, which is what the depth cap counts. */
   depth: number;
+  /**
+   * How many levels down the result will be in the shape the walk
+   * returns. An intersection's parts merge into one shape at the
+   * intersection's own level, so this is `depth` less one for each
+   * intersection on the way.
+   */
+  level: number;
   seen: Set<string>;
+}
+
+/** A walk starting at the top, with nothing read yet. */
+function atTop(enclosing: Node): ConvertContext {
+  return { enclosing, depth: 0, level: 0, seen: new Set() };
 }
 
 /**
@@ -82,12 +103,7 @@ export function shapeFromNodeType(node: Node): TypeShape | null {
   if (overloadIsAGuess(node)) {
     return { type: "unknown" };
   }
-  const type = node.getType();
-  return typeToShape(type, {
-    enclosing: node,
-    depth: 0,
-    seen: new Set(),
-  });
+  return typeToShape(node.getType(), atTop(node));
 }
 
 /**
@@ -129,7 +145,7 @@ function overloadIsAGuess(node: Node): boolean {
  * as `shapeFromNodeType` otherwise.
  */
 export function shapeFromType(type: Type, enclosing: Node): TypeShape | null {
-  return typeToShape(type, { enclosing, depth: 0, seen: new Set() });
+  return typeToShape(type, atTop(enclosing));
 }
 
 function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
@@ -342,12 +358,30 @@ function intersectionToShape(
   type: Type,
   ctx: ConvertContext,
 ): TypeShape | null {
-  const parts = type.getIntersectionTypes();
+  // A part that is kept lands at the intersection's own level. The named
+  // types the parts mention count only if the parts are kept.
+  const partCtx: ConvertContext = { ...ctx, depth: ctx.depth + 1 };
+  const { value: parts, held } = withMentionsHeld(() =>
+    type.getIntersectionTypes().map((part) => typeToShape(part, partCtx)),
+  );
+  const kept = keptParts(parts);
+  if (kept === null) {
+    return { type: "ref", name: printedTypeName(type, ctx) };
+  }
+  writeNotedDefinitions(held);
+  return kept;
+}
+
+/**
+ * The one shape an intersection's parts make: their records merged when
+ * every part is a record, or the only part when one part is not. Null
+ * otherwise, since intersections between non-records have no TypeShape
+ * equivalent.
+ */
+function keptParts(parts: ReadonlyArray<TypeShape | null>): TypeShape | null {
   const records: Array<Extract<TypeShape, { type: "record" }>> = [];
   const nonRecords: TypeShape[] = [];
-
-  for (const part of parts) {
-    const shape = typeToShape(part, descend(ctx));
+  for (const shape of parts) {
     if (!shape) {
       continue;
     }
@@ -358,7 +392,6 @@ function intersectionToShape(
     }
   }
 
-  // If every operand produced a record, merge their properties.
   if (records.length === parts.length && records.length > 0) {
     const merged: Record<string, TypeShape> = {};
     for (const r of records) {
@@ -367,14 +400,10 @@ function intersectionToShape(
     return { type: "record", properties: merged };
   }
 
-  // Otherwise surface the intersection as the widest single operand or a
-  // named ref: intersections between non-records don't have a clean TypeShape
-  // equivalent.
   if (nonRecords.length === 1 && records.length === 0) {
     return nonRecords[0];
   }
-
-  return { type: "ref", name: printedTypeName(type, ctx) };
+  return null;
 }
 
 function objectToShape(type: Type, ctx: ConvertContext): TypeShape {
@@ -392,11 +421,7 @@ function objectToShape(type: Type, ctx: ConvertContext): TypeShape {
 
   const nextSeen = new Set(ctx.seen);
   nextSeen.add(key);
-  const childCtx: ConvertContext = {
-    enclosing: ctx.enclosing,
-    depth: ctx.depth + 1,
-    seen: nextSeen,
-  };
+  const childCtx: ConvertContext = { ...descend(ctx), seen: nextSeen };
 
   const symbols = type.getProperties();
 
@@ -612,23 +637,14 @@ function namedOnce(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   const key = definitionKeyFor(type, named.name, ctx.enclosing);
-  const filed: TypeShape = { ...named, def: key };
-  if (!table.has(key)) {
-    // Reserved before expanding, so a type that refers to itself meets
-    // its own key and stops rather than going round again.
-    table.reserve(key);
+  table.mention({
+    key,
+    depth: ctx.level,
     // Expanded as though nothing had been read yet, so the definition
     // does not depend on which mention the walk reached first.
-    table.defer(key, () =>
-      objectToShape(type, {
-        enclosing: ctx.enclosing,
-        depth: 0,
-        seen: new Set(),
-      }),
-    );
-  }
-  table.settle();
-  return filed;
+    source: definitionSource(() => objectToShape(type, atTop(ctx.enclosing))),
+  });
+  return { ...named, def: key };
 }
 
 /**
@@ -741,7 +757,7 @@ function collapseVariants(shapes: TypeShape[]): TypeShape {
 }
 
 function descend(ctx: ConvertContext): ConvertContext {
-  return { ...ctx, depth: ctx.depth + 1 };
+  return { ...ctx, depth: ctx.depth + 1, level: ctx.level + 1 };
 }
 
 function withSeen(ctx: ConvertContext, key: string): ConvertContext {
