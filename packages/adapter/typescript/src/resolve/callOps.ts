@@ -23,6 +23,7 @@ import {
 import { isFunctionRoot } from "../discovery/shared.js";
 import { MAPPING_METHOD } from "../facts/languageWords.js";
 import { parameterReads } from "../parameterReads.js";
+import { encodedIn } from "../values/encoded.js";
 import { typedAsExported } from "../values/receiverType.js";
 import { peelValue } from "../walk/unwrap.js";
 import { functionCalledAt } from "./functionBehind.js";
@@ -731,6 +732,12 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     parts: () => literalParts(written()),
     holes: () => templateHoles(written(), reading),
     interpolated: () => interpolatedValues(written(), reading),
+    encoded: () => {
+      const found = encodedIn(written());
+      return found === null
+        ? null
+        : { codec: found.codec, value: valueOpsFor(found.value, reading) };
+    },
   };
   nodesOfValues.set(ops, value);
   return ops;

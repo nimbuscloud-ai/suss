@@ -21,6 +21,7 @@ import type {
   ConstructedFrom,
   DeclaredBy,
   EffectArg,
+  Encoded,
   FactSource,
   Imported,
   ReceiverOrigin,
@@ -457,6 +458,14 @@ class FactValue implements ValueOps {
 
   importedFrom(): string | null {
     return this.facts.importSpecifierOf?.(this.key) ?? null;
+  }
+
+  /** Asked of the settled value, as `asArg` is, so an encoding kept in a name is still read. */
+  encoded(): Encoded | null {
+    const found = this.facts.encodedOf?.(this.written()) ?? null;
+    return found === null
+      ? null
+      : { codec: found.codec, value: factValueOps(found.value, this.facts) };
   }
 
   private holeKeys(): string[] {

@@ -165,6 +165,16 @@ walk it:
 | `holes()` | what the source interpolated between those pieces, each as the call it was written as |
 | `form()` | how the source wrote the value at this spot: `function`, `name`, `object` or `other`, without following anything |
 | `ownProperty(name)` | what an object written at this spot states under one of its own keys, with spreads left out |
+| `encoded()` | the value a call of one of the language's encoders was handed, and the encoding: `x` under `json` for `JSON.stringify(x)`, `json.dumps(x)`, `JSON.generate(x)` or `x.to_json`. Null for any other value |
+
+A message send records its body, and a unit invoke its payload, as the
+value that went into the encoder when there is one, since the consumer
+reads the fields back after decoding. Each adapter keeps its encoders
+in one table beside its other language words, and matches a call the
+way its other readers of a serialized value do: TypeScript by the
+callee's spelling, Python by an attribute of the module the file
+imported, and Ruby by the constant's text or the method on the
+receiver.
 
 A computed key such as `{ [this.tableName]: [...] }` is read like any
 other name. When the source settles its value, the entry's key comes
@@ -196,6 +206,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `evaluated()`, `source()`, `importedFrom()` | the adapter's evaluator through `evaluatedOf`, the text at the key through `textOf`, and the module specifier an import statement spells through `importSpecifierOf`. Ruby imports no names, so it gives no specifier |
 | `form()` | the adapter's `formOf`, and `other` where it has none |
 | `ownProperty(name)` | `holdsProperty` and `writtenEntryAt` on the value's own key, its spreads left out, when `shapeOf` says it is an object |
+| `encoded()` | the adapter's `encodedOf`, asked of the value a name was written as, the way `asArg()` is, so an encoding kept in a name is still read. Python and Ruby find the encoded value through `call`, `readsProperty` and `callArg` |
 | `block()` | `callBlock(r, b)`, which only Ruby states |
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |

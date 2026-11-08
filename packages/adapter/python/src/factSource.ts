@@ -11,6 +11,7 @@ import { answersFor, fileOfKey, givenBackFunction } from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
 import { field, numberLiteralValue, stringLiteralValue } from "./ast.js";
+import { encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
   originsOf,
@@ -73,6 +74,7 @@ export function pythonFactSource(db: Database): FactSource {
         ? { kind: "identifier", name: nameIn(key) }
         : argOf(node, db);
     },
+    encodedOf: (key) => encodedBy(db, key),
     evaluatedOf: (key) => {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));
@@ -118,6 +120,40 @@ function receiverNamed(call: PyNode | null): PyNode | null {
   const receiver =
     callee?.type === "attribute" ? field(callee, "object") : null;
   return receiver?.type === "identifier" ? receiver : null;
+}
+
+/**
+ * The argument a call of one of the standard library's encoders encodes,
+ * read off the call's facts: `json.dumps(report)` is `report` under
+ * `json` when `json` is the module the file imported.
+ */
+function encodedBy(
+  db: Database,
+  call: string,
+): { codec: string; value: string } | null {
+  for (const [, callee] of db.lookup("call", 0, call)) {
+    for (const [, object, name] of db.lookup(
+      "readsProperty",
+      0,
+      String(callee),
+    )) {
+      const encoder = encoderCalled(String(name), (module) =>
+        originsOf(db, String(object)).some((origin) =>
+          importedNameIn(origin, module).includes("*"),
+        ),
+      );
+      if (encoder === null) {
+        continue;
+      }
+      const value = db
+        .lookup("callArg", 0, call)
+        .find((row) => String(row[1]) === String(encoder.argument));
+      return value === undefined
+        ? null
+        : { codec: encoder.codec, value: String(value[2]) };
+    }
+  }
+  return null;
 }
 
 /**

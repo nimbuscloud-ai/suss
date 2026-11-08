@@ -49,3 +49,21 @@ export const ELEMENT_CALLBACK_METHODS: ReadonlySet<string> = new Set([
 
 /** The array method that builds a new list from what its callback returns for each element. */
 export const MAPPING_METHOD = "map";
+
+/** A global function that encodes one of its arguments. */
+export interface GlobalEncoder {
+  /** The callee, spelled as a dotted path. */
+  readonly callee: string;
+  /** Which argument is the value encoded. */
+  readonly argument: number;
+  readonly codec: string;
+}
+
+/**
+ * The language's own encoders. A call matches by how its callee is
+ * spelled, so a project that declares a `JSON` of its own still matches,
+ * the way every reader of a serialized payload has matched it.
+ */
+export const ENCODERS: readonly GlobalEncoder[] = [
+  { callee: "JSON.stringify", argument: 0, codec: "json" },
+];

@@ -173,6 +173,29 @@ describe("sqs recognizer: happy path", () => {
     });
   });
 
+  it("records the object a JSON body encodes, however the body is written", () => {
+    const source = `
+      import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+      const client = new SQSClient({});
+      async function enqueue(order: { id: string }) {
+        const message = { id: order.id };
+        const kept = JSON.stringify({ id: order.id });
+        await client.send(new SendMessageCommand({ QueueUrl: "q", MessageBody: JSON.stringify({ id: order.id }) }));
+        await client.send(new SendMessageCommand({ QueueUrl: "q", MessageBody: kept }));
+        await client.send(new SendMessageCommand({ QueueUrl: "q", MessageBody: JSON.stringify({ id: order.id }) as string }));
+        await client.send(new SendMessageCommand({ QueueUrl: "q", MessageBody: JSON.stringify(message) }));
+      }
+    `;
+    const bodies = messageSendEffectsOf(recognizeAll(source)).map(
+      (send) => (send.interaction as { body?: unknown }).body,
+    );
+    const object = {
+      kind: "object",
+      fields: { id: { kind: "identifier", name: "order.id" } },
+    };
+    expect(bodies).toEqual([object, object, object, object]);
+  });
+
   it("handles a literal QueueUrl (test/local dev pattern)", () => {
     const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
