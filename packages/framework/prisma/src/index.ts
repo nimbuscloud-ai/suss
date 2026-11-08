@@ -208,6 +208,9 @@ function recognizePrismaCall(
           class: "storage-access",
           kind: "read",
           fields: nested.fields,
+          ...(nested.selector === undefined
+            ? {}
+            : { selector: nested.selector }),
           relationPath: nested.relationPath,
           operation: method,
         },
@@ -277,6 +280,8 @@ function slotsUnder(
 interface NestedRead {
   relationPath: string[];
   fields: string[];
+  /** The columns the read picks the related rows by. */
+  selector?: string[];
 }
 
 /**
@@ -290,6 +295,10 @@ function nestedReads(optionsArg: ObjectArg | null): NestedRead[] {
   }
   const found: NestedRead[] = [];
   collectRelations(optionsArg, [], found);
+  const where = readObjectArg(optionsArg.fields.where);
+  if (where !== null) {
+    columnsPickedBy(where, [], found);
+  }
   return found;
 }
 
@@ -335,7 +344,16 @@ function recordRelation(
   found: NestedRead[],
 ): void {
   const relationPath = [...path, name];
-  found.push({ relationPath, fields: extractFields(nested, "read") });
+  const where = readObjectArg(nested.fields.where);
+  const filtered: NestedRead[] = [];
+  const selector =
+    where === null ? [] : columnsPickedBy(where, relationPath, filtered);
+  found.push({
+    relationPath,
+    fields: extractFields(nested, "read"),
+    ...(selector.length > 0 ? { selector } : {}),
+  });
+  found.push(...filtered);
   collectRelations(nested, relationPath, found);
 }
 
@@ -780,27 +798,105 @@ function extractSelector(optionsArg: ObjectArg | null): string[] | null {
   if (where === null) {
     return null;
   }
-  const keys = columnsPickedBy(where);
+  const keys = columnsPickedBy(where, [], []);
   return keys.length > 0 ? keys : null;
 }
 
+/** Prisma's operators on the rows of a relation, each taking a `where` on the related model. */
+const RELATION_FILTERS = new Set(["some", "every", "none", "is", "isNot"]);
+
+/** Prisma's operators on the value of one column. */
+const COLUMN_FILTERS = new Set([
+  "equals",
+  "in",
+  "notIn",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+  "contains",
+  "startsWith",
+  "endsWith",
+  "mode",
+  "not",
+  "search",
+  "has",
+  "hasEvery",
+  "hasSome",
+  "isEmpty",
+  "isSet",
+  "path",
+  "string_contains",
+  "string_starts_with",
+  "string_ends_with",
+  "array_contains",
+  "array_starts_with",
+  "array_ends_with",
+]);
+
 const LOGICAL_OPERATORS = new Set(["AND", "OR", "NOT"]);
 
-/** The columns a `where` picks rows by. */
-function columnsPickedBy(where: ObjectArg): string[] {
+/**
+ * The columns a `where` picks rows by. A relation filter in it reads the
+ * related rows by the columns it filters, and goes into `found` instead.
+ */
+function columnsPickedBy(
+  where: ObjectArg,
+  path: string[],
+  found: NestedRead[],
+): string[] {
   const columns: string[] = [];
   for (const [key, value] of Object.entries(where.fields)) {
     if (LOGICAL_OPERATORS.has(key)) {
       // `AND`, `OR` and `NOT` take one `where` or a list of them, on the
       // same rows, so their columns are this `where`'s own.
       for (const combined of objectsIn(value).rows) {
-        columns.push(...columnsPickedBy(combined));
+        columns.push(...columnsPickedBy(combined, path, found));
       }
       continue;
     }
-    columns.push(key);
+    const filters = relationFiltersIn(value);
+    if (filters === null) {
+      columns.push(key);
+      continue;
+    }
+    const relationPath = [...path, key];
+    const deeper: NestedRead[] = [];
+    const fields = [
+      ...new Set(
+        filters.flatMap((filter) =>
+          columnsPickedBy(filter, relationPath, deeper),
+        ),
+      ),
+    ];
+    found.push({ relationPath, fields }, ...deeper);
   }
   return [...new Set(columns)];
+}
+
+/**
+ * The `where`s a value puts on a relation's rows, or null when it filters
+ * a column. Only the schema tells a relation from a column, so an object
+ * of anything but column operators is read as a relation's `where`.
+ */
+function relationFiltersIn(value: EffectArg): ObjectArg[] | null {
+  const filter = readObjectArg(value);
+  if (filter === null) {
+    return null;
+  }
+  const keys = Object.keys(filter.fields);
+  if (keys.length === 0 || keys.every((k) => COLUMN_FILTERS.has(k))) {
+    return null;
+  }
+  if (!keys.some((k) => RELATION_FILTERS.has(k))) {
+    return [filter];
+  }
+  return keys.flatMap((k) => {
+    const inner = RELATION_FILTERS.has(k)
+      ? readObjectArg(filter.fields[k])
+      : null;
+    return inner === null ? [] : [inner];
+  });
 }
 
 // A tagged template is a call whose one argument is the template, so the
@@ -866,7 +962,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "3",
+    version: "4",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
