@@ -453,8 +453,8 @@ interface NestedOperation {
   rows?: ReadWrittenRows;
   picks?: ReadPicked;
   /**
-   * Changing which row is joined sets the foreign key, on whichever side
-   * declares it.
+   * Joining a row, or creating one under the relation, sets the foreign
+   * key, on whichever side declares it.
    */
   movesJoin?: true;
 }
@@ -465,15 +465,22 @@ interface NestedOperation {
  * column from the contract. A delete changes every column of its row.
  */
 const NESTED_OPERATIONS = new Map<string, NestedOperation>([
-  ["create", { rows: rowIsPayload }],
-  ["createMany", { rows: rowsUnder("data") }],
+  ["create", { rows: rowIsPayload, movesJoin: true }],
+  ["createMany", { rows: rowsUnder("data"), movesJoin: true }],
   [
     "connectOrCreate",
     { rows: rowsUnder("create"), picks: pickedUnderWhere, movesJoin: true },
   ],
   ["update", { rows: updateRow, picks: pickedByUpdate }],
   ["updateMany", { rows: rowsUnder("data"), picks: pickedUnderWhere }],
-  ["upsert", { rows: rowsUnder("create", "update"), picks: pickedUnderWhere }],
+  [
+    "upsert",
+    {
+      rows: rowsUnder("create", "update"),
+      picks: pickedUnderWhere,
+      movesJoin: true,
+    },
+  ],
   ["delete", { rows: wholeRow, picks: pickedByPayload }],
   ["deleteMany", { rows: wholeRow, picks: pickedByPayload }],
   ["connect", { picks: pickedByPayload, movesJoin: true }],
@@ -962,7 +969,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "4",
+    version: "5",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],

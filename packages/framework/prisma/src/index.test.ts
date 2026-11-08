@@ -545,7 +545,11 @@ describe("prisma recognizer: happy path", () => {
       }
     `);
     const nested = storageEffectsOf(recognizeAll(file))
-      .filter((access) => access.interaction.relationPath !== undefined)
+      .filter(
+        (access) =>
+          access.interaction.relationPath !== undefined &&
+          access.interaction.relationKey !== true,
+      )
       .map((access) => [
         access.interaction.operation,
         access.interaction.relationPath?.join("."),
@@ -800,7 +804,9 @@ describe("prisma recognizer: happy path", () => {
         });
       }
     `);
-    const accesses = storageEffectsOf(recognizeAll(file));
+    const accesses = storageEffectsOf(recognizeAll(file)).filter(
+      (a) => a.interaction.relationKey !== true,
+    );
     expect(accesses.map((a) => a.interaction.relationPath)).toEqual([
       undefined,
       ["profile"],
@@ -808,6 +814,34 @@ describe("prisma recognizer: happy path", () => {
     ]);
     expect(accesses[1]?.interaction.fields).toEqual(["bio", "avatar"]);
     expect(accesses[2]?.interaction.fields).toEqual(["url"]);
+  });
+
+  it("writes the key a nested create sets, as a connect does", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function createUser(email: string) {
+        return await db.user.create({
+          data: {
+            email,
+            posts: { createMany: { data: [{ title: "a" }] } },
+            profile: { create: { bio: "hi" } },
+            settings: { upsert: { create: { theme: "dark" }, update: {} } },
+          },
+        });
+      }
+    `);
+    const keys = storageEffectsOf(recognizeAll(file))
+      .filter((a) => a.interaction.relationKey === true)
+      .map((a) => [
+        a.interaction.relationPath?.join("."),
+        a.interaction.operation,
+      ]);
+    expect(keys).toEqual([
+      ["posts", "createMany"],
+      ["profile", "create"],
+      ["settings", "upsert"],
+    ]);
   });
 
   it("takes a nested update's fields from its data, and an upsert's from both", () => {
