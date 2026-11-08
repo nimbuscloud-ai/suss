@@ -801,6 +801,47 @@ describe("prisma recognizer: happy path", () => {
     ]);
   });
 
+  it("reads AND, OR and NOT in a nested operation's where, and a relation filter there as a read", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function tidy(id: number, commentId: number) {
+        await db.article.update({
+          where: { id },
+          data: {
+            comments: {
+              updateMany: {
+                where: { OR: [{ draft: true }, { archived: true }] },
+                data: { hidden: true },
+              },
+              deleteMany: { NOT: { pinned: true } },
+              update: {
+                where: { id: commentId, author: { banned: false } },
+                data: { body: "b" },
+              },
+            },
+          },
+        });
+      }
+    `);
+    expect(
+      storageEffectsOf(recognizeAll(file))
+        .filter((a) => a.interaction.relationPath !== undefined)
+        .map((a) => [
+          a.interaction.kind,
+          a.interaction.operation,
+          a.interaction.relationPath?.join("."),
+          a.interaction.fields,
+          a.interaction.selector,
+        ]),
+    ).toEqual([
+      ["write", "updateMany", "comments", ["hidden"], ["draft", "archived"]],
+      ["write", "deleteMany", "comments", ["*"], ["pinned"]],
+      ["write", "update", "comments", ["body"], ["id"]],
+      ["read", "update", "comments.author", ["banned"], undefined],
+    ]);
+  });
+
   it("states the value a name's object was written with, and none for a column a read selects", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";

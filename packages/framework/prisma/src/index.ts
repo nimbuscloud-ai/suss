@@ -366,8 +366,9 @@ interface NestedWrite {
   /** The columns the operation picks the related rows by. */
   selector?: string[];
   /**
-   * Set when the operation only looks the related rows up by its
-   * selector, to join them, and writes nothing across the relation.
+   * Set when the effect only reads the related rows: a lookup by the
+   * selector that writes nothing across the relation, or a relation
+   * filter in the operation's `where`.
    */
   lookup?: true;
   /**
@@ -430,32 +431,29 @@ const updateRow: ReadWrittenRows = (payload) => {
 /** A deleted row fills no column and changes all of them. */
 const wholeRow: ReadWrittenRows = () => ({ fields: ["*"], rows: [] });
 
-/** The columns a nested operation picks the related rows by. */
-type ReadPicked = (payload: ValueOps | null) => string[];
+/** The `where`s a nested operation picks the related rows by. */
+type ReadWheres = (payload: ValueOps | null) => ValueOps[];
 
 /** For `connectOrCreate: { where, create }` or a list of those. */
-const pickedUnderWhere: ReadPicked = (payload) =>
-  keysOfRows(
-    objectsIn(payload).rows.flatMap(
-      (row) => objectsIn(row.property("where")).rows,
-    ),
+const wheresUnderKey: ReadWheres = (payload) =>
+  objectsIn(payload).rows.flatMap(
+    (row) => objectsIn(row.property("where")).rows,
   );
 
 /** For `connect: { id }` or a list of those, the payload is the `where`. */
-const pickedByPayload: ReadPicked = (payload) =>
-  keysOfRows(objectsIn(payload).rows);
+const payloadIsWhere: ReadWheres = (payload) => objectsIn(payload).rows;
 
 /** Only the `{ where, data }` form of a nested update picks its rows. */
-const pickedByUpdate: ReadPicked = (payload) => {
+const wheresOfUpdate: ReadWheres = (payload) => {
   const statesData = objectsIn(payload).rows.some(
     (row) => row.property("data") !== null,
   );
-  return statesData ? pickedUnderWhere(payload) : [];
+  return statesData ? wheresUnderKey(payload) : [];
 };
 
 interface NestedOperation {
   rows?: ReadWrittenRows;
-  picks?: ReadPicked;
+  picks?: ReadWheres;
   /**
    * Joining a row, or creating one under the relation, sets the foreign
    * key, on whichever side declares it.
@@ -473,23 +471,23 @@ const NESTED_OPERATIONS = new Map<string, NestedOperation>([
   ["createMany", { rows: rowsUnder("data"), movesJoin: true }],
   [
     "connectOrCreate",
-    { rows: rowsUnder("create"), picks: pickedUnderWhere, movesJoin: true },
+    { rows: rowsUnder("create"), picks: wheresUnderKey, movesJoin: true },
   ],
-  ["update", { rows: updateRow, picks: pickedByUpdate }],
-  ["updateMany", { rows: rowsUnder("data"), picks: pickedUnderWhere }],
+  ["update", { rows: updateRow, picks: wheresOfUpdate }],
+  ["updateMany", { rows: rowsUnder("data"), picks: wheresUnderKey }],
   [
     "upsert",
     {
       rows: rowsUnder("create", "update"),
-      picks: pickedUnderWhere,
+      picks: wheresUnderKey,
       movesJoin: true,
     },
   ],
-  ["delete", { rows: wholeRow, picks: pickedByPayload }],
-  ["deleteMany", { rows: wholeRow, picks: pickedByPayload }],
-  ["connect", { picks: pickedByPayload, movesJoin: true }],
-  ["disconnect", { picks: pickedByPayload, movesJoin: true }],
-  ["set", { picks: pickedByPayload, movesJoin: true }],
+  ["delete", { rows: wholeRow, picks: payloadIsWhere }],
+  ["deleteMany", { rows: wholeRow, picks: payloadIsWhere }],
+  ["connect", { picks: payloadIsWhere, movesJoin: true }],
+  ["disconnect", { picks: payloadIsWhere, movesJoin: true }],
+  ["set", { picks: payloadIsWhere, movesJoin: true }],
 ]);
 
 /**
@@ -531,7 +529,14 @@ function collectNestedWrites(
       if (does === undefined) {
         continue;
       }
-      const selector = does.picks?.(payload) ?? [];
+      const filtered: NestedRead[] = [];
+      const selector = [
+        ...new Set(
+          (does.picks?.(payload) ?? []).flatMap((where) =>
+            columnsPickedBy(where, relationPath, filtered),
+          ),
+        ),
+      ];
       const picked = selector.length > 0 ? { selector } : {};
       if (does.rows !== undefined) {
         const written = does.rows(payload);
@@ -559,6 +564,14 @@ function collectNestedWrites(
       }
       if (does.movesJoin === true) {
         found.push({ relationPath, fields: [], operation, relationKey: true });
+      }
+      for (const read of filtered) {
+        found.push({
+          relationPath: read.relationPath,
+          fields: read.fields,
+          operation,
+          lookup: true,
+        });
       }
     }
   }
@@ -1050,7 +1063,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "8",
+    version: "9",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
