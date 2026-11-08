@@ -419,36 +419,46 @@ function withRelationAccessesPlaced(
       continue;
     }
     if (access.effect.interaction.relationKey === true) {
-      placed.push(...keyWrites(containers, access, reachedFor(access), path));
+      placed.push(...keyAccesses(containers, access, reachedFor(access), path));
       continue;
     }
-    for (const target of relationTargets(
+    const targets = relationTargets(
       containers,
       access,
       reachedFor(access),
       path,
-    )) {
+    );
+    for (const target of targets) {
       placed.push(movedTo(access, target));
+    }
+    if (targets.length > 0 && returnsRelatedRows(access)) {
+      placed.push(...keyAccesses(containers, access, reachedFor(access), path));
     }
   }
   return placed;
 }
 
 /**
- * A write that moves a join, placed as a write of the foreign key.
- * Every hop but the last arrives at the container that declares the
- * relation, and the last hop is the relation whose key changes there.
- * So this write stays on the near side of the relation, where a nested
- * `create` under that same relation crosses to the far side.
+ * Whether a read through a relation returns the rows across it. One that
+ * doesn't read a field only looks rows up by its selector, as a `connect` does.
  */
-function keyWrites(
+function returnsRelatedRows(access: StorageAccessRecord): boolean {
+  const { kind, fields } = access.effect.interaction;
+  return kind === "read" && fields.length > 0;
+}
+
+/**
+ * The key the path's last relation joins on, as an access of its columns:
+ * written by a write that moves a join, read by a read of the related rows.
+ */
+function keyAccesses(
   containers: DeclaredContainer[],
   access: StorageAccessRecord,
   reached: ReachedName[],
   path: string[],
 ): StorageAccessRecord[] {
   const relation = path[path.length - 1];
-  const written: StorageAccessRecord[] = [];
+  const keyed: StorageAccessRecord[] = [];
   const seen = new Set<string>();
   for (const name of reached) {
     for (const start of claimantsOf(containers, access, name.name).chosen) {
@@ -456,7 +466,7 @@ function keyWrites(
       if (owner === null) {
         continue;
       }
-      const resolved = keyWriteOn(containers, owner.container, relation);
+      const resolved = relationKeyOn(containers, owner.container, relation);
       if (resolved === null || resolved.columns.length === 0) {
         continue;
       }
@@ -469,35 +479,28 @@ function keyWrites(
         resolved.container === null
           ? placedOn(access, owner)
           : movedTo(access, resolved.container);
-      written.push(withFields(placed, resolved.columns));
+      keyed.push(overKey(placed, resolved.columns));
     }
   }
-  return written;
+  return keyed;
 }
 
-/** Where a key write lands, and the columns it fills there. */
-interface KeyWrite {
+/** Where a relation's key lives, and its columns there. */
+interface RelationKey {
   /** The container name to move the access to, or null to leave it where the relation's hops already placed it. */
   container: string | null;
   columns: string[];
 }
 
 /**
- * What a write through one field of a container changes. A relation
- * that declares a foreign key fills it here. An implicit many-to-many
- * fills both columns of its join table instead, since a `connect`,
- * `disconnect` or `set` there changes a row of that table rather than
- * a column of either model. A relation whose key lives on the far
- * side and declares no join table changes no column anywhere this
- * pass can see, so the write is dropped. A field the contract does
- * not call a relation is taken at its word as a column, so the
- * unknown-field check still reports one nobody declared.
+ * The key a relation through one field of a container joins on. The
+ * README beside this file says where each kind of relation keeps it.
  */
-function keyWriteOn(
+function relationKeyOn(
   containers: DeclaredContainer[],
   container: DeclaredContainer,
   field: string,
-): KeyWrite | null {
+): RelationKey | null {
   const declared = (container.contract.fields ?? []).find(
     (candidate) => candidate.name === field,
   );
@@ -508,24 +511,39 @@ function keyWriteOn(
     return { container: null, columns: declared.relationKey };
   }
   if (declared.joinContainer !== undefined) {
-    return joinTableWrite(containers, declared.joinContainer);
+    return joinTableKey(containers, declared.joinContainer);
   }
-  if (relationTargetOf(containers, container, field) !== undefined) {
-    return null;
+  const target = relationTargetOf(containers, container, field);
+  if (target !== undefined) {
+    return keyDeclaredBack(container, target);
   }
   return { container: null, columns: [field] };
 }
 
-/**
- * The write a `connect`, `disconnect` or `set` makes on the join table
- * behind an implicit many-to-many: every column the table declares,
- * since those columns are the row the operation adds, removes or
- * replaces. Null when nothing in the run declares that table.
- */
-function joinTableWrite(
+/** The key the far side declares on its one relation back to `owner`, or null for none or several. */
+function keyDeclaredBack(
+  owner: DeclaredContainer,
+  target: RelationHop,
+): RelationKey | null {
+  const back = (target.container.contract.fields ?? []).filter(
+    (candidate) =>
+      candidate.relationKey !== undefined &&
+      owner.names.includes(
+        relationTypeOf(target.container, candidate.name) ?? "",
+      ),
+  );
+  const [only] = back;
+  if (back.length !== 1 || only?.relationKey === undefined) {
+    return null;
+  }
+  return { container: target.name, columns: only.relationKey };
+}
+
+/** Every column of the join table behind an implicit many-to-many, or null when nothing declares the table. */
+function joinTableKey(
   containers: DeclaredContainer[],
   joinContainer: string,
-): KeyWrite | null {
+): RelationKey | null {
   const join = containers.find((candidate) =>
     candidate.names.includes(joinContainer),
   );
@@ -549,16 +567,17 @@ function placedOn(
   return movedTo(access, hop.name);
 }
 
-/** The same access, over the columns the contract worked out for it. */
-function withFields(
+/** The same access, over a key's columns, with no selector of another container's columns. */
+function overKey(
   access: StorageAccessRecord,
   fields: string[],
 ): StorageAccessRecord {
+  const { selector: _selector, ...interaction } = access.effect.interaction;
   return {
     ...access,
     effect: {
       ...access.effect,
-      interaction: { ...access.effect.interaction, fields },
+      interaction: { ...interaction, fields },
     },
   };
 }

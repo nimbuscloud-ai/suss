@@ -1932,6 +1932,154 @@ describe("a write that moves which row a relation joins", () => {
       ).toEqual([]);
     });
   });
+
+  it("writes the key across the relation when only the far side declares it", () => {
+    const descriptions = checkStorage([
+      article(),
+      comment(),
+      connects("Article", ["comments"]),
+    ])
+      .map((f) => f.description)
+      .join(" ");
+
+    expect(descriptions).toContain('Comment declares "articleId" and code');
+  });
+});
+
+describe("a read of the rows across a relation", () => {
+  function comment(): BehavioralSummary {
+    return makeProvider({
+      container: "Comment",
+      fields: [
+        { name: "id" },
+        { name: "body" },
+        { name: "articleId" },
+        {
+          name: "article",
+          type: "Article",
+          derived: true,
+          relationKey: ["articleId"],
+        },
+      ],
+    });
+  }
+
+  function article(): BehavioralSummary {
+    return makeProvider({
+      container: "Article",
+      fields: [
+        { name: "id" },
+        { name: "title" },
+        { name: "comments", type: "Comment[]", derived: true },
+        {
+          name: "tags",
+          type: "Tag[]",
+          derived: true,
+          joinContainer: "_ArticleToTag",
+        },
+      ],
+    });
+  }
+
+  function tag(): BehavioralSummary {
+    return makeProvider({
+      container: "Tag",
+      fields: [{ name: "id" }, { name: "name" }],
+    });
+  }
+
+  function articleToTag(): BehavioralSummary {
+    return makeProvider({
+      container: "_ArticleToTag",
+      fields: [
+        { name: "A", type: "Article" },
+        { name: "B", type: "Tag" },
+      ],
+    });
+  }
+
+  /** Every column of every model, written once, so an unread one reports as write-only. */
+  function writesEverything(): BehavioralSummary {
+    return makeAccessSummary({
+      name: "seed",
+      file: "src/seed.ts",
+      accesses: [
+        {
+          container: "Comment",
+          kind: "write",
+          fields: ["id", "body", "articleId"],
+        },
+        { container: "Article", kind: "write", fields: ["id", "title"] },
+        { container: "Tag", kind: "write", fields: ["id", "name"] },
+        { container: "_ArticleToTag", kind: "write", fields: ["A", "B"] },
+      ],
+    });
+  }
+
+  function readerThrough(
+    container: string,
+    relationPath: string[],
+    fields: string[],
+  ): BehavioralSummary {
+    return makeAccessSummary({
+      name: "list",
+      file: "src/list.ts",
+      accesses: [
+        { container, kind: "read", fields: ["*"] },
+        { container, kind: "read", fields, relationPath },
+      ],
+    });
+  }
+
+  function writeOnly(summaries: BehavioralSummary[]): string[] {
+    return checkStorage(summaries)
+      .filter((f) => f.kind === "boundaryFieldUnused" && f.aspect === "read")
+      .map((f) => f.description.split(" and code")[0] ?? "");
+  }
+
+  const models = () => [comment(), article(), tag(), articleToTag()];
+
+  it("reads the key the far side declares, for a list relation", () => {
+    const left = writeOnly([
+      ...models(),
+      writesEverything(),
+      readerThrough("Article", ["comments"], ["body"]),
+    ]);
+
+    expect(left).not.toContain('Comment declares "articleId"');
+    expect(left).toContain('Comment declares "id"');
+  });
+
+  it("reads the key the near side declares, for a single relation", () => {
+    const left = writeOnly([
+      ...models(),
+      writesEverything(),
+      readerThrough("Comment", ["article"], ["title"]),
+    ]);
+
+    expect(left).not.toContain('Comment declares "articleId"');
+  });
+
+  it("reads both columns of an implicit many-to-many's join table", () => {
+    const left = writeOnly([
+      ...models(),
+      writesEverything(),
+      readerThrough("Article", ["tags"], ["name"]),
+    ]);
+
+    expect(left).not.toContain('_ArticleToTag declares "A"');
+    expect(left).not.toContain('_ArticleToTag declares "B"');
+  });
+
+  it("leaves the key unread for a lookup that reads no column", () => {
+    const left = writeOnly([
+      ...models(),
+      writesEverything(),
+      readerThrough("Article", ["tags"], []),
+    ]);
+
+    expect(left).toContain('_ArticleToTag declares "A"');
+  });
 });
 
 describe("an access whose store the deployment sets a variable to", () => {
