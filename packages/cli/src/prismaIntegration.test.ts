@@ -207,17 +207,20 @@ describe("prisma integration", () => {
     expect(writeOnly("title")).toHaveLength(1);
   });
 
-  it("reports the join table's columns as write-only, since nothing here reads them", async () => {
+  it("counts the include of tags as a read of the join table it goes through", async () => {
     const findings = await runPipeline();
-    for (const column of ["A", "B"]) {
-      const f = findings.find(
-        (f) =>
-          f.kind === "boundaryFieldUnused" &&
-          f.aspect === "read" &&
-          f.description.includes(`_PostToTag declares "${column}"`),
+    const writeOnly = (table: string) =>
+      ["A", "B"].filter((column) =>
+        findings.some(
+          (f) =>
+            f.kind === "boundaryFieldUnused" &&
+            f.aspect === "read" &&
+            f.description.includes(`${table} declares "${column}"`),
+        ),
       );
-      expect(f).toBeDefined();
-    }
+    expect(writeOnly("_PostToTag")).toEqual([]);
+    // Nothing here reads a post's labels back.
+    expect(writeOnly("_LabelToPost")).toEqual(["A", "B"]);
   });
 
   it("leaves Tag.id to the database rather than claiming code writes it", async () => {
