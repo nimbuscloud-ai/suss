@@ -76,4 +76,32 @@ describe("the Ruby fact source", () => {
 
     expect(source.importSpecifierOf?.(held("comp"))).toBeNull();
   });
+
+  it("gives what JSON's writers and to_json were handed", async () => {
+    const tree = await parseRuby(
+      [
+        "JSON.generate({ a: 1 })",
+        "{ b: 2 }.to_json",
+        "JSON.generate",
+        "Other.generate({ c: 3 })",
+        "to_json",
+      ].join("\n"),
+    );
+    const db = factsForFile({ file: FILE, root: tree.rootNode, packs: [] });
+    const source = rubyFactSource(db);
+    const encodings = db
+      .facts("call")
+      .map((row) => String(row[0]))
+      .map((call) => {
+        const found = source.encodedOf?.(call) ?? null;
+        return found === null
+          ? null
+          : `${found.codec} ${source.textOf(found.value)}`;
+      });
+
+    expect(encodings.filter((one) => one !== null).sort()).toEqual([
+      "json { a: 1 }",
+      "json { b: 2 }",
+    ]);
+  });
 });

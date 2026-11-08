@@ -20,7 +20,7 @@ import {
   storageBinding,
   unitInvocationBinding,
 } from "@suss/behavioral-ir";
-import { byOrigin, unwrapJsonStringify } from "@suss/extractor";
+import { byOrigin } from "@suss/extractor";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
 import { modulesOf, opsIn } from "./ops.js";
@@ -894,6 +894,12 @@ function recording(value: ValueOps, read: ReadValues): ValueOps {
       "importedFrom",
       () => value.importedFrom?.() ?? null,
     ),
+    ...optionalMember(value, "encoded", () => {
+      const found = value.encoded?.() ?? null;
+      return found === null
+        ? null
+        : { codec: found.codec, value: recording(found.value, read) };
+    }),
   };
 }
 
@@ -1389,14 +1395,23 @@ function firstWritten(
 
 /**
  * The body a message states, in the form an effect records an argument,
- * so the field set a consumer reads pairs against it. A payload written
- * as `JSON.stringify({...})` is recorded as the object that went in,
- * since the consumer reads the fields back after `JSON.parse`.
+ * so the field set a consumer reads pairs against it.
  */
 function bodyOf(sending: Sending): { body?: EffectArg } {
-  const written = bodyWritten(sending);
-  const stated = unwrapJsonStringify(written?.asArg() ?? null);
+  const stated = decodedArg(bodyWritten(sending));
   return stated === null ? {} : { body: stated };
+}
+
+/**
+ * A value as an effect argument, read as what went into it when the
+ * source encodes it. A consumer reads the fields of `JSON.stringify({...})`
+ * back after `JSON.parse`, so the object is what pairs.
+ */
+function decodedArg(written: ValueOps | null): EffectArg | null {
+  if (written === null) {
+    return null;
+  }
+  return (written.encoded?.()?.value ?? written).asArg();
 }
 
 /** Where the body is: a property of the message, the message, or an argument of the call. */
@@ -1488,9 +1503,7 @@ function payloadOf(
   if (ending.payload === undefined) {
     return {};
   }
-  const stated = unwrapJsonStringify(
-    input.property(ending.payload)?.asArg() ?? null,
-  );
+  const stated = decodedArg(input.property(ending.payload));
   return stated === null ? {} : { payload: stated };
 }
 

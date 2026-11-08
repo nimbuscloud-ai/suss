@@ -14,6 +14,7 @@ import {
 import { constantOf } from "@suss/values";
 
 import { extractShape, extractShapeWithArguments } from "../shapes/shapes.js";
+import { encodedIn } from "../values/encoded.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { peelSyntax } from "../walk/unwrap.js";
 
@@ -29,31 +30,12 @@ export function unwrapAs(node: Expression): Expression {
 /**
  * Peel a `JSON.stringify(x)` call down to `x`. A Lambda handler
  * serializes its payload into the `body` string, so the shape worth
- * comparing across the boundary is the argument, not the string. Casts / parens around either the call or the
- * argument are unwrapped. Returns the node unchanged when it isn't a
- * `JSON.stringify(...)` call.
+ * comparing across the boundary is the argument, not the string.
+ * Returns the node unchanged when it is anything else.
  */
 export function unwrapJsonStringify(node: Expression): Expression {
-  const outer = unwrapAs(node);
-  if (!Node.isCallExpression(outer)) {
-    return node;
-  }
-  const callee = outer.getExpression();
-  if (
-    !Node.isPropertyAccessExpression(callee) ||
-    callee.getName() !== "stringify"
-  ) {
-    return node;
-  }
-  const receiver = callee.getExpression();
-  if (!Node.isIdentifier(receiver) || receiver.getText() !== "JSON") {
-    return node;
-  }
-  const args = outer.getArguments();
-  if (args.length === 0) {
-    return node;
-  }
-  return unwrapAs(args[0] as Expression);
+  const encoded = encodedIn(node);
+  return encoded?.codec === "json" ? (encoded.value as Expression) : node;
 }
 
 /** What a call writes out, and whether it was serialized as JSON first. */

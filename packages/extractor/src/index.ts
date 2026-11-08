@@ -102,7 +102,6 @@ export {
   type RegistrationHelper,
   registrationHelperDiscovery,
   routeHelperIndex,
-  unwrapJsonStringify,
   wrapperDiscovery,
 } from "./packHelpers.js";
 export {
@@ -1357,6 +1356,7 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  Encoded,
   FactRows,
   FactSource,
   Imported,

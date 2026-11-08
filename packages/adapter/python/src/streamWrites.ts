@@ -19,6 +19,7 @@ import {
 } from "@suss/extractor";
 
 import { children, field, rangeOf } from "./ast.js";
+import { encoderCalled } from "./facts/languageWords.js";
 import { callArguments } from "./facts/values.js";
 import { shapeOfReturned } from "./paths/returnedShape.js";
 import { isBuiltin, isStdlibMember, isStdlibModule } from "./stdlibNames.js";
@@ -170,16 +171,19 @@ function jsonDumped(node: PyNode, scope: Scope): PyNode | null {
   }
   const callee = field(node, "function");
   const object = callee === null ? null : field(callee, "object");
-  if (
-    callee?.type !== "attribute" ||
-    field(callee, "attribute")?.text !== "dumps" ||
-    object === null ||
-    !isStdlibModule(object, scope, "json")
-  ) {
+  const name = callee === null ? undefined : field(callee, "attribute")?.text;
+  if (callee?.type !== "attribute" || object === null || name === undefined) {
     return null;
   }
-  const first = callArguments(node).find(
-    (argument) => argument.kind === "positional" && argument.position === 0,
+  const encoder = encoderCalled(name, (module) =>
+    isStdlibModule(object, scope, module),
   );
-  return first?.node ?? null;
+  if (encoder?.codec !== "json") {
+    return null;
+  }
+  const value = callArguments(node).find(
+    (argument) =>
+      argument.kind === "positional" && argument.position === encoder.argument,
+  );
+  return value?.node ?? null;
 }

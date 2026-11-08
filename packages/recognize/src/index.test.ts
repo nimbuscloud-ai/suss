@@ -1143,6 +1143,8 @@ describe("the value a call states for each column", () => {
               input.ownProperty?.("owner")?.text(),
               input.ownProperty?.("missing"),
               input.importedFrom?.(),
+              input.encoded?.()?.codec,
+              input.encoded?.()?.value.text(),
             ]);
             return ["side", "owner"];
           },
@@ -1161,6 +1163,7 @@ describe("the value a call states for each column", () => {
       form: () => "name",
       ownProperty: (name) => (name === "owner" ? owner : null),
       importedFrom: () => "./tapes",
+      encoded: () => ({ codec: "json", value: valueOps("inner") }),
     };
     const ops = callOps({ method: "label", from: ["tapedeck"] });
     const handing = (value: ValueOps): CallOps => ({
@@ -1176,8 +1179,19 @@ describe("the value a call states for each column", () => {
     slotsStated(reaching, handing(bare), run as never);
 
     expect(asked).toEqual([
-      [7, "a", "handler", "tape", "name", "b", null, "./tapes"],
-      Array(8).fill(undefined),
+      [
+        7,
+        "a",
+        "handler",
+        "tape",
+        "name",
+        "b",
+        null,
+        "./tapes",
+        "json",
+        "inner",
+      ],
+      Array(10).fill(undefined),
     ]);
   });
 });

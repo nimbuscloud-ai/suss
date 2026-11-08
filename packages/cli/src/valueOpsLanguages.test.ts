@@ -1,8 +1,8 @@
 /**
  * The value ops over the facts, asked the same questions about the same
- * call written in TypeScript, Python and Ruby. Nothing in a declaration
- * reads these members yet, so this drives `factValueOps` directly over
- * each adapter's fact source, and the three have to agree.
+ * call written in TypeScript, Python and Ruby. Only TypeScript packs
+ * declare chains that read these members, so this drives `factValueOps`
+ * directly over each adapter's fact source, and the three have to agree.
  */
 
 import { SyntaxKind } from "ts-morph";
@@ -85,26 +85,32 @@ register({ label: "#{KIND} x", count: 2, render: -> { nil }, comp: Thing, named:
 register(keep(OPTIONS))
 `;
 
-/** The first argument of each `register` call, in source order. */
+/** The first argument of each call to one function, in source order. */
 type Registered = (ValueOps | null)[];
 
-function typescriptArguments(): Registered {
+function typescriptArguments(
+  written = TYPESCRIPT,
+  callee = "register",
+): Registered {
   const project = createTestProject();
   project.createSourceFile("/src/things.ts", "export function Thing() {}");
-  const file = project.createSourceFile("/src/use.ts", TYPESCRIPT);
+  const file = project.createSourceFile("/src/use.ts", written);
   const store = new ResolutionStore();
   const source = factSourceFor(store);
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .filter((call) => call.getExpression().getText() === "register")
+    .filter((call) => call.getExpression().getText() === callee)
     .map(
       (call) =>
         factCallOps(statedFactKey(call, store), source)?.valueAt(0) ?? null,
     );
 }
 
-async function pythonArguments(): Promise<Registered> {
-  const tree = await parsePython(PYTHON);
+async function pythonArguments(
+  written = PYTHON,
+  callee = "register",
+): Promise<Registered> {
+  const tree = await parsePython(written);
   const root = tree.rootNode;
   const db = pythonFacts({
     file: "use.py",
@@ -112,20 +118,27 @@ async function pythonArguments(): Promise<Registered> {
     module: bindModule(root),
     packs: [],
   });
-  return argumentsOf(db, pythonFactSource(db));
+  return argumentsOf(db, pythonFactSource(db), callee);
 }
 
-async function rubyArguments(): Promise<Registered> {
-  const tree = await parseRuby(RUBY);
+async function rubyArguments(
+  written = RUBY,
+  callee = "register",
+): Promise<Registered> {
+  const tree = await parseRuby(written);
   const db = rubyFacts({ file: "use.rb", root: tree.rootNode, packs: [] });
-  return argumentsOf(db, rubyFactSource(db));
+  return argumentsOf(db, rubyFactSource(db), callee);
 }
 
-/** The first argument of every call to `register` the facts state, by where the call starts. */
-function argumentsOf(db: Database, source: FactSource): Registered {
+/** The first argument of every call to `callee` the facts state, by where the call starts. */
+function argumentsOf(
+  db: Database,
+  source: FactSource,
+  callee: string,
+): Registered {
   return db
     .facts("call")
-    .filter((row) => source.textOf(String(row[1])) === "register")
+    .filter((row) => source.textOf(String(row[1])) === callee)
     .map((row) => String(row[0]))
     .sort((a, b) => startOf(a) - startOf(b))
     .map((call) => factCallOps(call, source)?.valueAt(0) ?? null);
@@ -150,6 +163,17 @@ function readingsOf(argument: ValueOps | null) {
     component: property("comp")?.source?.() ?? null,
     importedFrom: property("comp")?.importedFrom?.() ?? null,
   };
+}
+
+/** The encoding a value is written with, and the keys of what went in. */
+function encodingOf(argument: ValueOps | null) {
+  const encoded = argument?.encoded?.() ?? null;
+  return encoded === null
+    ? null
+    : {
+        codec: encoded.codec,
+        keys: encoded.value.entries("nothing").map((entry) => entry.key),
+      };
 }
 
 const SAME_IN_EVERY_LANGUAGE = {
@@ -178,6 +202,61 @@ describe("the value ops over each adapter's facts", () => {
       ...SAME_IN_EVERY_LANGUAGE,
       importedFrom: null,
     });
+  });
+
+  it("read what each language's encoder was handed, through a name too", async () => {
+    // The third send is a cast in TypeScript, `to_json` in Ruby, and a
+    // `dumps` of a module that is not the standard library's in Python.
+    const typescript = typescriptArguments(
+      `
+        const kept = JSON.stringify({ b: 2 });
+        send(JSON.stringify({ a: 1 }));
+        send(kept);
+        send(JSON.stringify({ c: 3 }) as string);
+        send(String({ d: 4 }));
+      `,
+      "send",
+    );
+    const python = await pythonArguments(
+      `import json
+from mylib import codec
+
+kept = json.dumps({"b": 2})
+send(json.dumps({"a": 1}))
+send(kept)
+send(codec.dumps({"c": 3}))
+send(json.loads("{}"))
+`,
+      "send",
+    );
+    const ruby = await rubyArguments(
+      `kept = JSON.pretty_generate({ b: 2 })
+send(JSON.generate({ a: 1 }))
+send(kept)
+send({ c: 3 }.to_json)
+send(Other.generate({ d: 4 }))
+`,
+      "send",
+    );
+
+    expect(typescript.map(encodingOf)).toEqual([
+      { codec: "json", keys: ["a"] },
+      { codec: "json", keys: ["b"] },
+      { codec: "json", keys: ["c"] },
+      null,
+    ]);
+    expect(python.map(encodingOf)).toEqual([
+      { codec: "json", keys: ["a"] },
+      { codec: "json", keys: ["b"] },
+      null,
+      null,
+    ]);
+    expect(ruby.map(encodingOf)).toEqual([
+      { codec: "json", keys: ["a"] },
+      { codec: "json", keys: ["b"] },
+      { codec: "json", keys: ["c"] },
+      null,
+    ]);
   });
 
   it("follow an object through a name and a function that returns its argument", async () => {
