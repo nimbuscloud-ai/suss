@@ -860,6 +860,26 @@ export const EXTRA_INPUTS = [
       ),
     ],
   },
+  // A NestJS server read without its dependencies, for its stream writes.
+  // CONTRIBUTING.md says why it doesn't record a TypeORM access.
+  {
+    name: "tooljet-server",
+    group: "extra",
+    repo: "tooljet",
+    args: [
+      ...dir("server"),
+      ...lang("typescript"),
+      ...packs(
+        "nestjs-rest",
+        "nestjs-microservices",
+        "fetch",
+        withConfig("typeorm", POSTGRES),
+        "redis",
+        "pg",
+        "node",
+      ),
+    ],
+  },
   ...STORY_DIRECTORIES.map(([repo, directory]) => ({
     name: `storybook ${repo} ${directory}`,
     group: "extra",

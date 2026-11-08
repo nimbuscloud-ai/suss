@@ -275,18 +275,16 @@ function rawStatements(options: TypeormRecognizerOptions) {
 export function typeormFramework(
   options: TypeormRecognizerOptions = {},
 ): PatternPack {
-  return {
-    ...pack("typeorm", [repositoryCalls(options), rawStatements(options)], {
-      languages: ["typescript", "javascript"],
-      recognizedAs: "@suss/framework-typeorm",
-      protocol: "in-process",
-    }),
+  return pack("typeorm", [repositoryCalls(options), rawStatements(options)], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: "@suss/framework-typeorm",
+    protocol: "in-process",
     parameterSuppliers: [
       INJECT_REPOSITORY,
       INJECT_DATA_SOURCE,
       INJECT_ENTITY_MANAGER,
     ].map((name) => ({ module: NEST_MODULE, name })),
-  };
+  });
 }
 
 export const declares: PackDeclaration = {

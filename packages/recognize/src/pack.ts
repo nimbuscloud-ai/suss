@@ -15,6 +15,7 @@ import type {
   DeclaredMatch,
   InvocationRecognizer,
   PackDeclarations,
+  ParameterSupplier,
   PatternPack,
   ProjectHelpers,
 } from "@suss/extractor";
@@ -80,6 +81,20 @@ export interface PackSpec {
    * joins the chains above for the rest of the run.
    */
   projectHelpers?: ProjectHelpers;
+  /**
+   * Parameter decorators whose call is the value a container passes in,
+   * so a chain can start from the decorator a parameter was written with.
+   */
+  parameterSuppliers?: ParameterSupplier[];
+  /** Files this library's generator writes beside the module it generates. */
+  generatedModuleMarkers?: string[];
+  /** The directories the generator writes to, as the project's configuration says. */
+  generatedModuleDirs?: (fromDir: string) => readonly string[];
+  /**
+   * Files under the project this pack reads that are not source files.
+   * The extraction cache keys on their content.
+   */
+  discoveryInputs?: (files: readonly string[]) => string[];
 }
 
 /**
@@ -122,7 +137,7 @@ export function pack(
   return {
     name,
     languages: spec.languages,
-    ...(spec.version === undefined ? {} : { version: spec.version }),
+    ...passedThrough(spec),
     protocol: spec.protocol ?? protocolOf(chains),
     discovery: [],
     terminals: [],
@@ -136,11 +151,28 @@ export function pack(
     ],
     ...(access.length === 0 ? {} : { accessRecognizers: access }),
     ...(subUnits === null ? {} : { subUnits }),
-    ...(spec.projectHelpers === undefined
-      ? {}
-      : { projectHelpers: spec.projectHelpers }),
     declarations: declarationsIn(matches),
   };
+}
+
+/** What a spec states that the pack takes as it is. */
+const PASSED_THROUGH = [
+  "version",
+  "projectHelpers",
+  "parameterSuppliers",
+  "generatedModuleMarkers",
+  "generatedModuleDirs",
+  "discoveryInputs",
+] as const;
+
+type PassedThrough = (typeof PASSED_THROUGH)[number];
+
+/** The fields of `PASSED_THROUGH` the spec states, and none it leaves out. */
+function passedThrough(spec: PackSpec): Pick<PatternPack, PassedThrough> {
+  const stated = PASSED_THROUGH.filter((field) => spec[field] !== undefined);
+  return Object.fromEntries(
+    stated.map((field) => [field, spec[field]]),
+  ) as Pick<PatternPack, PassedThrough>;
 }
 
 /**
