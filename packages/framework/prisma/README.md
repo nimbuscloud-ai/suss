@@ -16,6 +16,8 @@ The recognizer matches a three-part chain, `<receiver>.<modelDelegate>.<method>(
 
 Before `prisma generate` has run, the client's type is `any`, so the pack checks where the receiver was made instead. A `new PrismaClient()` imported from `@prisma/client` or from a generator's `output` counts, whether it is made in the file that uses it or in a module that file imports it from, directly or through a barrel. A project class that extends that `PrismaClient` counts too.
 
+Inside `prisma.$transaction(async (tx) => ...)`, Prisma hands the callback a client for the transaction as its first argument, so `tx.user.update(...)` counts wherever the `$transaction` call's own receiver does. The callback can be an arrow or a function expression written at the call, or a function passed by name when the store finds the name passed there. The array form, `prisma.$transaction([...])`, needs nothing of its own, since each call in the array is made on the client itself.
+
 A generator with its own `output` also gets past the import check, since the code then reaches the client by a relative path and nothing imports `@prisma/client`. The pack declares `generatedModuleMarkers: ["schema.prisma"]`, and the adapter treats a relative import into a directory that contains that file as an import of the package.
 
 The model comes from the delegate property. Prisma lowercases the first letter of a model when it builds the client (`prisma.user` for `model User`), so the recognizer reads the property and capitalizes the first letter again to get the PascalCase schema model. That matches the channel `@suss/contract-prisma` publishes.

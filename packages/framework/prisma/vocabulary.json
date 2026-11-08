@@ -1,6 +1,7 @@
 {
   "prisma": "pack name, Prisma Client",
   "PrismaClient": "@prisma/client: the client class a project may extend",
+  "$transaction": "@prisma/client: client method that runs a callback with a client for the transaction, or an array of calls",
   "findUnique": "@prisma/client: delegate read method",
   "findFirst": "@prisma/client: delegate read method",
   "findMany": "@prisma/client: delegate read method",
