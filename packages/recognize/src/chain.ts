@@ -205,6 +205,28 @@ export interface InputLink {
 }
 
 /**
+ * Where a call states the value for each column, as paths of keys
+ * under its input. Without this link the slots are what the pack's
+ * rules read under each column's name, so a rule that reads
+ * `select: { id: true }` gives `id` the value `true`. A pack whose
+ * payload says where the values are writes that down here instead.
+ */
+export interface DeclaredSlots {
+  /** Paths to the objects whose entries are the selector columns' values. */
+  readonly selector?: readonly (readonly string[])[];
+  /** Paths to the objects whose entries are the written columns' values. */
+  readonly field?: readonly (readonly string[])[];
+  /** Which kinds of access state field slots. Unset states them on every kind. */
+  readonly fieldsOn?: readonly ("read" | "write")[];
+}
+
+export interface SlotsLink {
+  readonly asks: "slots";
+  /** The paths, or `"none"` for a pack whose calls state no slots. */
+  readonly says: DeclaredSlots | "none";
+}
+
+/**
  * How to read the values interpolated into a statement.
  *
  * A query that interpolates a schema object for its table leaves the
@@ -255,6 +277,7 @@ export type Link<TMeaning> =
   | ScopeLink
   | ContainersLink
   | InputLink
+  | SlotsLink
   | InterpolatesLink
   | UnitWhenInPlaceLink;
 

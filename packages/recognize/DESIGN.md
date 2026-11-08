@@ -653,8 +653,35 @@ the compiled chain notes every entry and property the rule reads.
 Each column the rule reports is given the values it read under that
 name. `where: { tenantId: req.auth.tenantId }` gives `tenantId` the
 expression written there, and a column the rule reported from a fixed
-list gets nothing. A pack written as code states its slots itself,
-as the Prisma pack does for `where` and the write payloads.
+list gets nothing.
+
+What a rule reads is not always where the values are. Prisma's read
+lists its columns under `select` as flags, so a rule that reads
+`select: { id: true }` would give `id` the value `true` on every read.
+A chain like that declares its slots instead, as paths under its input:
+
+```ts
+storageCalls({ system: "postgresql", client })
+  .methods({ ... })
+  .slots({
+    selector: [["where"]],
+    field: [["data"], ["create"], ["update"]],
+    fieldsOn: ["write"],
+  });
+```
+
+Each entry of the object at a selector path is the value for the
+selector column with its key, and the same for a field path, in the
+order the source writes them. `fieldsOn` says which kinds of access
+state field slots; unset, every kind does. A chain whose calls state
+no slots says `.slots("none")`. A chain with the link never records
+what its rules read. `slotsDeclared` is the same reading, exported, so
+a pack still written as code, as the Prisma pack is, states the same
+slots from the same declaration.
+
+The TypeScript adapter writes the slots it hears as provenance. The
+Python and Ruby adapters run a declared hook without listening for its
+slots, so a chain's slots reach their summaries only once they do.
 
 ## A send whose channel is on the client
 

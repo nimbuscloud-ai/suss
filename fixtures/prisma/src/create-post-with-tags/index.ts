@@ -1,6 +1,6 @@
-// Two relation writes whose payloads an array callback builds. The
-// `tags` callback is written out at the call, so the recognizer reads
-// the column it sets; `labels` goes through a name it cannot follow.
+// Two relation writes whose payloads an array callback builds. `tags`
+// writes its callback out at the call and `labels` passes one by name,
+// and the recognizer reads the column each of them sets.
 
 import { PrismaClient } from "@prisma/client";
 
