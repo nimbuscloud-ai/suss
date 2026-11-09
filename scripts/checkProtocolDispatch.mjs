@@ -27,6 +27,8 @@ import path from "node:path";
 
 import ts from "typescript";
 
+import { isOutsideSource } from "./workspacePackages.mjs";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 
 const PROTOCOLS = [
@@ -130,11 +132,7 @@ function* sourceFiles(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const abs = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (
-        entry.name === "node_modules" ||
-        entry.name === "dist" ||
-        entry.name === "coverage"
-      ) {
+      if (isOutsideSource(entry.name) || entry.name === "coverage") {
         continue;
       }
       yield* sourceFiles(abs);

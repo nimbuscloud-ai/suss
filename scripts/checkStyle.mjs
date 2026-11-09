@@ -8,18 +8,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { isOutsideSource } from "./workspacePackages.mjs";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 
-const SKIP_DIRECTORIES = new Set([
-  "node_modules",
-  "dist",
-  ".turbo",
-  ".tsbuild",
-  ".git",
-  "coverage",
-  ".suss",
-  "fixtures",
-]);
+const SKIP_DIRECTORIES = new Set(["coverage", "fixtures"]);
 
 const RULES = [
   {
@@ -52,7 +45,7 @@ const RULES = [
 
 function* sourceFiles(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (SKIP_DIRECTORIES.has(entry.name)) {
+    if (isOutsideSource(entry.name) || SKIP_DIRECTORIES.has(entry.name)) {
       continue;
     }
     const full = path.join(dir, entry.name);

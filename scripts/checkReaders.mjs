@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { findManifests } from "./workspacePackages.mjs";
+import { findManifests, isOutsideSource } from "./workspacePackages.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -211,8 +211,7 @@ function sourceFilesUnder(dir, found) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (
-        entry.name === "node_modules" ||
-        entry.name === "dist" ||
+        isOutsideSource(entry.name) ||
         entry.name === "__fixtures__" ||
         entry.name === "fixtures"
       ) {
