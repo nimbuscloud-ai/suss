@@ -203,6 +203,44 @@ describe("a read chain", () => {
     });
   });
 
+  it("reads an entry off an indexed entry's value as one of its own, and a key worked out at run time as nothing more", () => {
+    const chain = runtimeReads({ object: global("process") }).entries({
+      argv: {
+        reads: "config",
+        named: "argv",
+        callee: "site",
+        indexed: "argv[{key}]",
+      },
+      cwd: META,
+    });
+    const offArgv = [
+      site({ entry: "2", source: "process.argv[2]", defaulted: true }),
+      site({ entry: null, source: "process.argv[i]" }),
+      site({ entry: "" }),
+      site({}),
+    ];
+    const effects = run(chain, {
+      read: site({
+        object: "process",
+        entry: "argv",
+        source: "process.argv",
+        readsOff: offArgv,
+      }),
+    });
+    const metadata = run(chain, {
+      read: site({ object: "process", entry: "cwd", readsOff: offArgv }),
+    });
+    expect([...effects, ...metadata]).toMatchObject([
+      { callee: "process.argv", interaction: { name: "argv" } },
+      {
+        callee: "process.argv[2]",
+        interaction: { name: "argv[2]", defaulted: true },
+      },
+      { interaction: { class: "metadata-read" } },
+    ]);
+    expect(effects).toHaveLength(2);
+  });
+
   it("spells a callee as the object alone", () => {
     const chain = runtimeReads({ object: global("__dirname") }).entries(
       {},

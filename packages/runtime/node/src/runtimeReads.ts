@@ -78,15 +78,20 @@ export function runtimeReadMatches(deployment: Deployment): {
     .throughHelpers()
     .example("import.meta.env.VITE_API_URL");
 
-  // `process.argv` is a config read like a variable's, named `argv`
-  // whatever is read off it, and the rest of what `process` says about
-  // itself is metadata.
+  // `process.argv` is a config read like a variable's, named `argv`, and
+  // an argument read off it at a position the source writes is one more,
+  // `argv[2]`. The rest of what `process` says about itself is metadata.
   const processReads = runtimeReads({
     object: global("process"),
     deployment,
   })
     .entries({
-      argv: { reads: "config", named: "argv", callee: "site" },
+      argv: {
+        reads: "config",
+        named: "argv",
+        callee: "site",
+        indexed: "argv[{key}]",
+      },
       cwd: META,
       platform: META,
       version: META,
