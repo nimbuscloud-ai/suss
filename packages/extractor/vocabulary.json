@@ -149,6 +149,7 @@
   "unreadOutcome": "suss: unresolved marker",
   "unresolvable": "suss: unresolved marker",
   "unresolved": "suss: unresolved marker",
+  "upperFirst": "suss: container naming, the member's name with its first letter capitalized",
   "utf8": "Node file encoding",
   "variable": "expression kind the extractor records"
 }

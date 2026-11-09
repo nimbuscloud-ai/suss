@@ -15,7 +15,10 @@ export type {
   ConstructedFrom,
   DeclaredBy,
   Global,
+  HandedBy,
   Imported,
+  Inheriting,
+  Inherits,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
@@ -34,7 +37,10 @@ import type {
   ConstructedFrom,
   DeclaredBy,
   Global,
+  HandedBy,
   Imported,
+  Inheriting,
+  Inherits,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
@@ -85,12 +91,37 @@ export function returnedBy(method: string, on: ReceiverOrigin): ReturnedBy {
   return { origin: "returnedBy", method, on };
 }
 
-/** A receiver the program declares as one of these modules' named types. */
+/**
+ * A receiver the program declares as one of these modules' named types,
+ * or as any type the modules declare when `named` is left out.
+ */
 export function typed(spec: {
   from: readonly string[];
-  named: readonly string[];
+  named?: readonly string[];
 }): Typed {
-  return { origin: "typed", importedFrom: spec.from, named: spec.named };
+  return {
+    origin: "typed",
+    importedFrom: spec.from,
+    ...(spec.named === undefined ? {} : { named: spec.named }),
+  };
+}
+
+/** A receiver that is one of a class whose ancestry reaches the base the spec lists. */
+export function inherits(spec: Inherits): Inheriting {
+  return { origin: "inherits", from: spec.from, named: spec.named };
+}
+
+/**
+ * A receiver `method`, called on a receiver from `on`, hands its
+ * callback as the parameter at `parameter`, as `$transaction` hands its
+ * callback a client.
+ */
+export function handedBy(
+  method: string,
+  on: ReceiverOrigin,
+  spec: { parameter: number },
+): HandedBy {
+  return { origin: "handedBy", method, on, parameter: spec.parameter };
 }
 
 /**
@@ -124,6 +155,8 @@ const MODULES: ByOrigin<readonly string[]> = {
   anyOf: (origin) => origin.of.flatMap((one) => modulesOf(one)),
   returnedBy: (origin) => modulesOf(origin.on),
   typed: (origin) => origin.importedFrom,
+  inherits: (origin) => origin.from,
+  handedBy: (origin) => modulesOf(origin.on),
   imported: (origin) => origin.importedFrom,
   global: () => [],
 };

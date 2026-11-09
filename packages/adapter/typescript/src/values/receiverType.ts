@@ -18,10 +18,11 @@ import { Node } from "ts-morph";
 import { GLOBAL_MODULE } from "@suss/resolution";
 
 import { matchingImportDeclarations } from "../discovery/importScan.js";
+import { declaredByPackage } from "../facts/generatedModules.js";
 import { compareText } from "../shapes/typeText.js";
 import { peelSyntax } from "../walk/unwrap.js";
 
-import type { Typed } from "@suss/extractor";
+import type { Inherits, Typed } from "@suss/extractor";
 import type { ImportDeclaration, Symbol as TsSymbol, Type } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -50,11 +51,15 @@ export function typedAsExported(
   origin: Typed,
   resolution: ResolutionStore | undefined,
 ): boolean {
-  if (typedAsGlobal(node, origin, resolution)) {
+  const named = origin.named;
+  if (named === undefined) {
+    return typedAsDeclaredBy(node, origin.importedFrom, resolution);
+  }
+  if (typedAsGlobal(node, named, origin.importedFrom, resolution)) {
     return true;
   }
   const types = receiverTypesOf(node).filter((type) =>
-    origin.named.includes(type.name),
+    named.includes(type.name),
   );
   if (types.length === 0) {
     return false;
@@ -74,13 +79,60 @@ export function typedAsExported(
  */
 function typedAsGlobal(
   node: Node,
-  origin: Typed,
+  named: readonly string[],
+  modules: readonly string[],
   resolution: ResolutionStore | undefined,
 ): boolean {
   return (
     resolution !== undefined &&
-    origin.importedFrom.includes(GLOBAL_MODULE) &&
-    resolution.parameterAnnotatedAs(node, origin.named)
+    modules.includes(GLOBAL_MODULE) &&
+    resolution.parameterAnnotatedAs(node, named)
+  );
+}
+
+/**
+ * Whether the node is of any type one of the modules declares, whatever
+ * the type is called: the file declaring it is in the module's folder
+ * under `node_modules`, or in a copy of the module its generator wrote.
+ * The calling file need not import the module, since a project hands
+ * its client round through a module of its own.
+ */
+function typedAsDeclaredBy(
+  node: Node,
+  modules: readonly string[],
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return receiverTypesOf(node).some((type) =>
+    type.declaredIn.some((file) =>
+      modules.some((module) =>
+        declaredByPackage(file, module, resolution?.generatedModules),
+      ),
+    ),
+  );
+}
+
+/**
+ * Whether the node is of a class whose ancestry reaches the spec's base,
+ * read through the checker: a class the node's type is, or one of its
+ * bases, written as extending a base the store says one of the spec's
+ * modules exports as a name the spec lists. When the library is not
+ * installed the checker cannot see past that written base, and the store
+ * says where it was imported from instead.
+ */
+export function typedAsInheriting(
+  node: Node,
+  spec: Inherits,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  if (resolution === undefined) {
+    return false;
+  }
+  return receiverTypesOf(node).some((type) =>
+    type.extendsWritten.some((base) =>
+      resolution
+        .importOriginsOf(base, [...spec.from])
+        .some((origin) => spec.named.includes(origin.path.join("."))),
+    ),
   );
 }
 

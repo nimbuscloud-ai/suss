@@ -47,11 +47,12 @@ The starts that begin at a receiver form their own union,
 | `constructed` | a client made from one of these modules' exports | yes |
 | `anyOf` | a receiver any one of several origins accepts | yes |
 | `returnedBy` | what a library method returned, called on a receiver from another origin: `hook.get_client()` | yes |
-| `typed` | a receiver the program declares as one of a module's named types: `to: CommandDispatcher` | yes |
+| `typed` | a receiver the program declares as one of a module's named types, `to: CommandDispatcher`, or as any type the module declares when no name is given | yes |
+| `inherits` | a receiver of a class whose ancestry reaches a library base: `class PrismaService extends PrismaClient` | yes |
+| `handedBy` | the parameter a library method hands the callback it was called with: `tx` in `db.$transaction(async (tx) => ...)` | yes |
 | `imported` | a value the file imports under one of these names, or the module itself as `*` | yes |
 | `factoryMade` | `app = express()` | no |
 | `anchored` | a chain read from its anchor call | no |
-| `inherits` | a Ruby or Python receiver matched by ancestry | no |
 | `global` | a receiver, or a call with no receiver, spelled as one of these paths: `console`, `process.stdout`, `print` | yes |
 
 A pack uses `declaredBy` when the source never writes out which client
@@ -76,7 +77,32 @@ nothing in sight made it. `typed({ from, named })` takes a receiver the
 program declares as one of those types, as one of those modules exports
 it. TypeScript asks the checker, Python reads the annotation or the
 call that built the value, and Ruby, which declares no types, takes a
-receiver made from one of the classes, as `constructed` would.
+receiver made from one of the classes, as `constructed` would. With
+`named` left out, any type the module declares counts: an ORM types its
+client, the client a transaction hands over and each delegate
+differently, and a project reaches them through a module of its own,
+so the calling file need not import the library. TypeScript reads the
+file that declares the type, which is under the package in
+`node_modules` or in a copy of the module its generator wrote.
+
+A NestJS service extends the client and the container hands it to
+whoever asks, so neither its type nor where it was made says which
+library it is. `inherits({ from, named })` takes a receiver of a class
+whose ancestry reaches one of `named` as one of `from` exports it,
+through any of the project's own classes between. TypeScript asks the
+checker for the receiver's classes and their written bases, and the
+store where each base was imported from, which works before the library
+is installed. Python and Ruby read the class the facts say the receiver
+is one of, or the class it was made from, and walk `extends` up to a
+base `importedAs` says the module exports. The discovery pattern for a
+subclass reads the same `Inherits` spec through the same walk.
+
+`handedBy(method, on, { parameter })` takes the client a library method
+hands its callback: `db.$transaction(async (tx) => tx.user.update(...))`
+gives the callback a client for the transaction as its first
+parameter. The callback is the call's first argument, a function
+written there or passed by a name bound to it, or a Ruby call's block,
+and the call has to go to `method` on a receiver `on` accepts.
 
 `imported({ from, named })` takes a value the file brought in: a
 function it calls bare, or a module or a class it calls a method on.
@@ -151,6 +177,8 @@ recognizer context under `ops`.
 | `nameAt(index, unsettled)` | the name that argument gives, with the hole policy applied |
 | `calleeText()` | the callee, as the source writes it |
 | `receiver()` | the call the receiver is, as ops of its own |
+| `member()` | the member read the call is made on, `db.user` in `db.user.findMany()`, as ops whose method is the member's name (optional) |
+| `file()` | the path of the file the call is in (optional) |
 | `argument(index)` | the call that argument is, as ops of its own |
 | `callee()` | the call the callee itself was written as |
 | `namedCallee()` | whether the call goes to a name the program bound (optional) |
@@ -230,6 +258,10 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
 | `isFrom`, `receiverIsFrom` with `typed` | the adapter's `typedAs`, or the construction a receiver was written as where the adapter has none |
+| `isFrom`, `receiverIsFrom` with `inherits` | the adapter's `typedInherits` where it reads declared types. Elsewhere the classes `instanceOf` says the receiver is one of, and the class each construction it was written as makes, each followed through `comesTo` and walked up `extends` to a base the adapter's `importedAs` says the module exports as a name the spec lists |
+| `isFrom`, `receiverIsFrom` with `handedBy` | the receiver, or the declaration it `binds` to, as a `paramOf(f, k, p)` at the asked position, or as the block variable the adapter's `parameterOf` places, since Ruby states no `paramOf` for a block. Then the call that passes `f` as `callArg(r, 0, f)`, directly or through a name `binds` to it, or that is written with it as `callBlock(r, f)`, asked whether its method is the one asked and its receiver is from `on` |
+| `member()` | the object of the callee's `readsProperty`, as ops over that member read when it is one itself, or as the call it is when that call passes no arguments |
+| `file()` | the file in the call's key, which every adapter writes first |
 | `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `comesFrom(x, m, n)` over `imports`, `exportsAs` and `reExports`, so an alias and a project barrel read as the export. A value that only calls into an import does not count |
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
 | `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module |
@@ -316,6 +348,7 @@ A pack chooses that call with `about`, and a pick chooses its call with
 | `{ to: "argument", at: 0 }` | the call the first argument is |
 | `{ to: "argument", at: { from: 0 } }` | every argument that is a call, first one that matches wins |
 | `{ to: "argument", at: { from: 0 }, origin }` | the same, keeping only the ones the origin pins down |
+| `{ to: "member" }` | the member read the call is made on, `db.user` in `db.user.findMany()`, or in Ruby the call with no arguments `db.users` is |
 
 ```ts
 storageCalls({ system: "s3", client: constructedFrom("@aws-sdk/client-s3") })
@@ -374,6 +407,56 @@ A container written the way a statement writes a table,
 true })`. The part before the table is the scope, and a name that does
 not settle leaves the call without an access, the same as a statement
 whose table does not settle.
+
+## A call on a model's delegate
+
+An ORM reads a model off the client and calls the method on that:
+
+```ts
+storageCalls({ system, client: RECEIVER, clientAt: [{ to: "member" }] })
+  .methods({ findMany: READ, create: WRITE })
+  .container({ of: [{ to: "member" }], naming: "upperFirst" })
+  .relations({ of: { at: 0 }, by: relatedAccesses });
+```
+
+The call's own receiver is `db.user`, which nothing made, so `clientAt`
+gives the steps from the call to the one whose receiver is the client.
+A call with no member before its method, `db.findMany()`, reaches no
+call there and does not match. The member step is a step of its own,
+so a chain that climbs receivers with `receiver()` never starts seeing
+member reads.
+
+The container is the name of the member those steps reach, spelled
+through a naming. `upperFirst` turns Prisma's delegate `user` back into
+the model `User`. The chain settles that container before it reads the
+call's inputs, so a rule gets it as `container` in what it is handed,
+along with the call itself as `call`. Prisma's selector rule reads the
+compound keys of that model from the schema of the project the call's
+`file()` belongs to. A container the selector decides is not known yet
+when the rules run, and a rule gets null for it.
+
+A call that reads or writes through the model's relations states each
+access in its options. `relations` points a rule at them, and each
+access it gives back becomes one more effect after the container's own,
+on the same binding and callee, with its `relationPath`. Its operation
+is the call's own unless the access says otherwise, as a nested
+`connectOrCreate` does, and a write of the relation's own key says
+`relationKey`, which only the contract can fill in. Slots are stated
+for the container's own effect only.
+
+A library whose projects each choose a database, as a Prisma schema's
+datasource does, states the store per project:
+
+```ts
+system: { byFile: (file) => schemaStorageSystem(path.dirname(file)), otherwise: "postgresql" }
+```
+
+Both the storage and the SQL endings take it, and the SQL ending's
+`dialect` takes it too. The chain asks `byFile` once per effect, with the
+path `file()` gives, and takes `otherwise` when that says nothing or the
+adapter gives no file. Pack health counts each one as a link written as
+a function, since it reads a file that is not source, and the pack goes
+by `otherwise` as its wire and its name in the report.
 
 ## A call that states one request object
 

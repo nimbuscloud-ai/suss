@@ -17,16 +17,23 @@ import type {
   DeclaredSlots,
   Link,
   LinkFunction,
+  Naming,
   OneArgument,
+  RelatedAccess,
+  StatedInputs,
   StorageEnding,
   StorageMethod,
+  StorageSystem,
 } from "./chain.js";
 import type { CallOps, ReceiverOrigin } from "./ops.js";
 
 /** What a pack says about the store its calls reach. */
 export interface StorageCallsSpec {
-  /** The store, in the words OpenTelemetry's semantic conventions use. */
-  system: string;
+  /**
+   * The store, in the words OpenTelemetry's semantic conventions use, or
+   * a rule that reads it from the project each call's file belongs to.
+   */
+  system: StorageSystem;
   /** The wire, when it differs from the store's own name. */
   transport?: string;
   /** Which of the store's namespaces the calls reach. Defaults to "default". */
@@ -38,10 +45,22 @@ export interface StorageCallsSpec {
    */
   client?: ReceiverOrigin;
   /**
+   * The steps from the call in hand to the one whose receiver is the
+   * client, when the client is further along than the call's own
+   * receiver: `[{ to: "member" }]` for `db.user.findMany()`.
+   */
+  clientAt?: readonly CallStep[];
+  /**
    * What a reader gives back for a name nothing settles. Defaults to
    * "reference", which says which value to go and ask about.
    */
   unsettledName?: "nothing" | "reference";
+}
+
+/** The container as the member the steps reach, spelled through a naming. */
+export interface MemberContainer {
+  of: readonly CallStep[];
+  naming?: Naming;
 }
 
 /** A storage chain, and the links that can still be added to it. */
@@ -64,16 +83,26 @@ export interface StorageCalls {
    */
   calls(meaning: StorageMethod): StorageCalls;
   /**
-   * Which container a call's selector belongs to, as an argument or as
-   * the pack's own rule. Without this the first name a call reached is
-   * the container.
+   * Which container a call's selector belongs to, as an argument, as the
+   * member the call is made on, or as the pack's own rule. Without this
+   * the first name a call reached is the container.
    */
   container(
     says:
       | ArgumentPick
+      | MemberContainer
       | LinkFunction<[readonly string[], CallOps], string | null>,
     options?: { qualified?: boolean },
   ): StorageCalls;
+  /**
+   * Where a call states the accesses it makes through the container's
+   * relations, and the rule that reads them. Each one becomes an effect
+   * of its own after the container's.
+   */
+  relations(says: {
+    of: OneArgument;
+    by: LinkFunction<[StatedInputs], readonly RelatedAccess[]>;
+  }): StorageCalls;
   /** Which way into the container the call took, when it states one. */
   accessPath(says: ArgumentPick): StorageCalls;
   /**
@@ -118,12 +147,36 @@ export function storageCalls(spec: StorageCallsSpec): StorageCalls {
     scope: spec.scope ?? "default",
     unsettledName: spec.unsettledName ?? "reference",
   };
-  const client = spec.client;
   return chainFrom({
-    links: chainStart(client),
+    links: chainStart(spec.client, spec.clientAt),
     ending,
     example: null,
   });
+}
+
+/** The container link a `container` call adds, by which form it was given. */
+function containerLink(
+  says:
+    | ArgumentPick
+    | MemberContainer
+    | LinkFunction<[readonly string[], CallOps], string | null>,
+  qualified: boolean,
+): Link<StorageMethod> {
+  if (typeof says === "function") {
+    return { asks: "container", from: says };
+  }
+  if (!("at" in says) && !("from" in says)) {
+    return {
+      asks: "container",
+      of: says.of,
+      ...(says.naming === undefined ? {} : { naming: says.naming }),
+    };
+  }
+  return {
+    asks: "container",
+    argument: says,
+    ...(qualified ? { qualified: true } : {}),
+  };
 }
 
 /** The same chain with one more link, or with its example set. */
@@ -142,15 +195,9 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
       }),
     calls: (meaning) => adding({ asks: "calls", meaning }),
     container: (says, options) =>
-      adding(
-        typeof says === "function"
-          ? { asks: "container", from: says }
-          : {
-              asks: "container",
-              argument: says,
-              ...(options?.qualified === true ? { qualified: true } : {}),
-            },
-      ),
+      adding(containerLink(says, options?.qualified === true)),
+    relations: (says) =>
+      adding({ asks: "relations", of: says.of, by: says.by }),
     accessPath: (says) => adding({ asks: "accessPath", argument: says }),
     scope: (says) => adding({ asks: "scope", argument: says }),
     containersIn: (says, options) =>

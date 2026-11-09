@@ -15,7 +15,10 @@ const DESCRIBE: ByOrigin<string, [string]> = {
     origin.of.map((one) => byOrigin(DESCRIBE, one, prefix)).join(" | "),
   returnedBy: (origin, prefix) =>
     `${byOrigin(DESCRIBE, origin.on, prefix)}.${origin.method}()`,
-  typed: (origin, prefix) => `${prefix}: ${origin.named.join()}`,
+  typed: (origin, prefix) => `${prefix}: ${origin.named?.join() ?? "*"}`,
+  inherits: (origin, prefix) => `${prefix}extends ${origin.named.join()}`,
+  handedBy: (origin, prefix) =>
+    `${byOrigin(DESCRIBE, origin.on, prefix)}.${origin.method}((${origin.parameter}) => ...)`,
   imported: (origin, prefix) => `${prefix}import ${origin.importedFrom.join()}`,
   global: (origin, prefix) => `${prefix}${origin.paths.join()}`,
 };

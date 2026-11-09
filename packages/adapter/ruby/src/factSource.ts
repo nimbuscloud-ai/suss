@@ -24,6 +24,7 @@ import { scalarOf } from "@suss/values";
 import { numberLiteralValue, stringLiteralValue } from "./ast.js";
 import { encodedIn } from "./encoded.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
+import { parametersOf, paramNameOf } from "./facts/locals.js";
 import {
   anchorCallsOf,
   resolveStreamObjects,
@@ -138,10 +139,36 @@ export function rubyFactSource(db: Database): FactSource {
     // A Ruby file requires another file and imports no names, so no
     // value has a specifier.
     importSpecifierOf: () => null,
+    parameterOf: (key) => blockVariableOf(db, key),
     // The node is found only when a pack asks for it, since the declared
     // hooks make the ops for every value they read.
     extendValue: (key, ops) => Object.assign(ops, { ast: () => nodeAt(key) }),
   };
+}
+
+/**
+ * The block a block variable belongs to, and its place among the block's
+ * parameters. A block variable is keyed `<block node>#<name>`, and the
+ * facts state no `paramOf` row for it.
+ */
+function blockVariableOf(
+  db: Database,
+  key: string,
+): { func: string; position: number } | null {
+  const split = key.lastIndexOf("#");
+  const block = split < 0 ? null : key.slice(0, split);
+  if (block === null || db.lookup("callBlock", 1, block).length === 0) {
+    return null;
+  }
+  const node = nodeOfResolutionKey(block, db);
+  const name = nameIn(key);
+  const position =
+    node === null
+      ? -1
+      : parametersOf(node).findIndex(
+          (param) => paramNameOf(param)?.text === name,
+        );
+  return position < 0 ? null : { func: block, position };
 }
 
 /** The key the facts give the value an encoder call encodes: its receiver, or one of its arguments. */

@@ -4,9 +4,8 @@
  * Every link is a guard, and the compiled hook checks the cheapest one
  * first. Looking a method up in a table costs nothing, while following
  * a receiver to the library that made it walks declarations. So the
- * hook ignores the order the pack declared its links in. A link that
- * changes what the receiver is, as a Prisma model property would, needs
- * declared order back, and that change goes here.
+ * hook ignores the order the pack declared its links in. A start that
+ * looks past the call's own receiver states the steps it takes there.
  *
  * A chain that states a subject asks its questions of a call next to
  * the one in hand, and the walk to that call is also here. DESIGN.md
@@ -52,6 +51,7 @@ import type {
   Chain,
   ChannelPart,
   ContainerLink,
+  ContainerMember,
   ContainersLink,
   Ending,
   InputLink,
@@ -65,7 +65,10 @@ import type {
   MessageSendMethod,
   MethodMeaning,
   MethodsLink,
+  Naming,
   OneArgument,
+  RelatedAccess,
+  RelationsLink,
   ScheduleEnding,
   ScheduleUnread,
   ScopeLink,
@@ -76,6 +79,7 @@ import type {
   StatedRule,
   StorageEnding,
   StorageMethod,
+  StorageSystem,
   StreamWriteEnding,
   StreamWriteMethod,
   SubjectLink,
@@ -249,6 +253,7 @@ function methodsWhoseReceiversAreAsked(
     start === null ||
     start.at.starts !== "receiver" ||
     start.at.origin.origin !== "constructed" ||
+    start.at.of !== undefined ||
     linkIn(chain, "subject") !== null ||
     table === null ||
     table.ignoringCase
@@ -330,6 +335,8 @@ const BARE_CALL_FROM: ByOrigin<boolean, [CallOps]> = {
   constructed: (origin, ops) => writtenFrom(origin, ops),
   returnedBy: (origin, ops) => writtenFrom(origin, ops),
   typed: (origin, ops) => writtenFrom(origin, ops),
+  inherits: (origin, ops) => writtenFrom(origin, ops),
+  handedBy: (origin, ops) => writtenFrom(origin, ops),
   anyOf: (origin, ops) =>
     origin.of.some((one) => byOrigin(BARE_CALL_FROM, one, ops)),
   global: (origin, ops) => ops.isFrom(origin),
@@ -408,6 +415,10 @@ const STEP: Record<
 > = {
   receiver: (step, ops) => receiversOf(ops, (step as ToReceiver).method),
   argument: (step, ops) => argumentsOf(ops, step as ToArgument),
+  member: (_step, ops) => {
+    const member = ops.member?.() ?? null;
+    return member === null ? [] : [member];
+  },
 };
 
 /** The calls a list of steps reaches from where it starts. */
@@ -477,7 +488,8 @@ const START: Record<
   MatchStart["starts"],
   (start: MatchStart, ops: CallOps) => boolean
 > = {
-  receiver: (start, ops) => ops.receiverIsFrom(start.origin),
+  receiver: (start, ops) =>
+    walk([ops], start.of ?? []).some((at) => at.receiverIsFrom(start.origin)),
 };
 
 /** Whether the call is where the chain says its match starts. */
@@ -547,6 +559,8 @@ const GLOBAL_PATHS: ByOrigin<readonly string[]> = {
   constructed: () => [],
   returnedBy: () => [],
   typed: () => [],
+  inherits: () => [],
+  handedBy: () => [],
   imported: () => [],
 };
 
@@ -828,11 +842,19 @@ function storageAccess(matched: Matched): Effect[] | null {
   if (kind === null || (link !== null && input === null)) {
     return null;
   }
-  const effects = reachedBy(chain, subject, unsettled).flatMap((reached) => {
-    const effect = accessEffect(matched, { input, kind, reached, unsettled });
-    return effect === null ? [] : [effect];
-  });
+  const effects = reachedBy(chain, subject, unsettled).flatMap((reached) =>
+    accessEffects(matched, { input, kind, reached, unsettled }),
+  );
   return effects.length > 0 ? effects : null;
+}
+
+/** The store a call reached: the one the ending states, or the one the call's project says. */
+function systemOf(system: StorageSystem, ops: CallOps): string {
+  if (typeof system === "string") {
+    return system;
+  }
+  const file = ops.file?.() ?? null;
+  return (file === null ? null : system.byFile(file)) ?? system.otherwise;
 }
 
 /** The namespace and the container one access reached. */
@@ -851,16 +873,17 @@ function addressOf(
   matched: Matched,
   access: Access,
   selector: readonly string[],
+  settled: string | null,
 ): Address | null {
   const { subject, chain } = matched;
   const { reached, unsettled } = access;
   const scope =
     scopeOf(chain, subject, unsettled) ?? (chain.ending as StorageEnding).scope;
-  if (reached.stated) {
-    return { scope, container: reached.container };
+  if (reached.stated || settled !== null) {
+    return { scope, container: settled };
   }
   const link: ContainerLink | null = linkIn(chain, "container");
-  if (link === null || "from" in link || link.qualified !== true) {
+  if (link === null || !("argument" in link) || link.qualified !== true) {
     return {
       scope,
       container: containerOf(chain, selector, subject, unsettled),
@@ -877,12 +900,105 @@ function addressOf(
   };
 }
 
-function accessEffect(matched: Matched, access: Access): Effect | null {
+/**
+ * The effect one access is, and one more for each access the call makes
+ * through a relation of its container, on the same binding.
+ */
+function accessEffects(matched: Matched, access: Access): Effect[] {
+  const settled = settledContainer(matched, access);
+  const stated: StatedValues = {
+    input: access.input,
+    entry: access.reached.entry,
+    kind: access.kind,
+    container: settled,
+    call: matched.subject,
+  };
+  const own = accessEffect(matched, access, stated);
+  if (own === null) {
+    return [];
+  }
+  const link: RelationsLink | null = linkIn(matched.chain, "relations");
+  if (link === null) {
+    return [own.effect];
+  }
+  const related = link.by({
+    ...stated,
+    input: statedValue(matched.subject, link.of) ?? NOTHING_STATED,
+    container: own.container,
+  });
+  return [own.effect, ...related.map((one) => relatedEffect(own.effect, one))];
+}
+
+/** What a rule is handed, before the chain has found the value it reads. */
+type StatedValues = Omit<StatedInputs, "input"> & { input: ValueOps | null };
+
+/**
+ * The container a link settles without reading the call's inputs: the
+ * entry of a call that reaches several, or the member the call is made
+ * on. Null otherwise, and the selector decides it once the rules have run.
+ */
+function settledContainer(matched: Matched, access: Access): string | null {
+  if (access.reached.stated) {
+    return access.reached.container;
+  }
+  const link: ContainerLink | null = linkIn(matched.chain, "container");
+  return link !== null && "of" in link
+    ? memberNamed(matched.subject, link)
+    : null;
+}
+
+/** The name of the member the link's steps reach, spelled as the link says. */
+function memberNamed(subject: CallOps, link: ContainerMember): string | null {
+  const name = walk([subject], link.of)[0]?.method() ?? null;
+  return name === null || name === ""
+    ? null
+    : SPELLED[link.naming ?? "asWritten"](name);
+}
+
+const SPELLED: Record<Naming, (name: string) => string> = {
+  asWritten: (name) => name,
+  upperFirst: (name) => name.slice(0, 1).toUpperCase() + name.slice(1),
+};
+
+type Interaction = Extract<Effect, { type: "interaction" }>;
+
+/** An effect that records one storage access. */
+type StorageAccessEffect = Interaction & {
+  interaction: Extract<Interaction["interaction"], { class: "storage-access" }>;
+};
+
+/** One access through a relation, recorded the way the container's own access is. */
+function relatedEffect(
+  own: StorageAccessEffect,
+  related: RelatedAccess,
+): Effect {
+  return {
+    type: "interaction",
+    binding: own.binding,
+    callee: own.callee,
+    interaction: {
+      class: "storage-access",
+      kind: related.kind,
+      fields: [...related.fields],
+      operation: related.operation ?? own.interaction.operation,
+      ...(related.selector !== undefined && related.selector.length > 0
+        ? { selector: [...related.selector] }
+        : {}),
+      relationPath: [...related.path],
+      ...(related.relationKey === true ? { relationKey: true } : {}),
+    },
+  };
+}
+
+function accessEffect(
+  matched: Matched,
+  access: Access,
+  stated: StatedValues,
+): { effect: StorageAccessEffect; container: string | null } | null {
   const { ops, subject, method, chain, recognition } = matched;
   const meaning = matched.meaning as StorageMethod;
   const ending = chain.ending as StorageEnding;
-  const { input, kind, reached, unsettled } = access;
-  const stated = { input, entry: reached.entry, kind };
+  const { input, kind, unsettled } = access;
   const declared: SlotsLink | null = linkIn(chain, "slots");
   // A chain that declares its slots has no use for what its rules read.
   const recordsReads = ops.statesSlots !== undefined && declared === null;
@@ -902,16 +1018,16 @@ function accessEffect(matched: Matched, access: Access): Effect | null {
     unsettled,
     fieldsRead,
   );
-  const address = addressOf(matched, access, selector);
+  const address = addressOf(matched, access, selector, stated.container);
   if (address === null) {
     return null;
   }
 
-  const effect: Effect = {
+  const effect: StorageAccessEffect = {
     type: "interaction",
     binding: storageBinding({
       recognition,
-      storageSystem: ending.system,
+      storageSystem: systemOf(ending.system, ops),
       ...(ending.transport === undefined
         ? {}
         : { transport: ending.transport }),
@@ -942,7 +1058,7 @@ function accessEffect(matched: Matched, access: Access): Effect | null {
   if (slots.length > 0) {
     ops.statesSlots?.(effect, slots);
   }
-  return effect;
+  return { effect, container: address.container };
 }
 
 /** The slots a chain declares, read off the call only when somebody listens. */
@@ -1156,6 +1272,9 @@ function containerOf(
   if ("from" in link) {
     return link.from(selector, subject);
   }
+  if ("of" in link) {
+    return memberNamed(subject, link);
+  }
   return namesAt(subject, link.argument, unsettled)[0] ?? null;
 }
 
@@ -1224,7 +1343,7 @@ const NOTHING_STATED: ValueOps = {
 function namesFor(
   says: StorageMethod["selector"],
   subject: CallOps,
-  stated: Omit<StatedInputs, "input"> & { input: ValueOps | null },
+  stated: StatedValues,
   unsettled: UnsettledName,
   read: ReadValues | null = null,
 ): string[] {
@@ -1688,7 +1807,7 @@ function sqlAccess(matched: Matched): Effect[] | null {
     settledHoles(stated.value),
   );
   const accesses = readSqlAccess(statement, {
-    dialect: ending.dialect,
+    dialect: systemOf(ending.dialect, ops),
     placeholders: ops.statesSlots !== undefined,
   });
   if (accesses.length === 0) {
@@ -1699,12 +1818,13 @@ function sqlAccess(matched: Matched): Effect[] | null {
     subject,
     (matched.meaning as SqlMethod).parameters,
   );
+  const system = systemOf(ending.system, ops);
   return accesses.map((access) => {
     const effect: Effect = {
       type: "interaction",
       binding: storageBinding({
         recognition,
-        storageSystem: ending.system,
+        storageSystem: system,
         ...(ending.transport === undefined
           ? {}
           : { transport: ending.transport }),

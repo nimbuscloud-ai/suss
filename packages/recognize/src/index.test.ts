@@ -7,7 +7,9 @@ import {
   anyOf,
   constructedFrom,
   declaredBy,
+  handedBy,
   imported,
+  inherits,
   modulesOf,
   opsIn,
   returnedBy,
@@ -21,9 +23,13 @@ import { unitInvokes } from "./unitInvokes.js";
 import type { Effect } from "@suss/behavioral-ir";
 import type { StatedSlot } from "@suss/extractor";
 import type {
+  CallStep,
   InputRule,
   MessageSendMethod,
+  ProjectSystem,
+  RelatedAccess,
   SqlMethod,
+  StatedInputs,
   StorageMethod,
 } from "./chain.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
@@ -59,6 +65,10 @@ function callOps(over: {
   importedAs?: string;
   /** What a selector lambda reads, by argument position. */
   selectorReads?: Record<number, readonly string[]>;
+  /** The file the call is written in. */
+  file?: string;
+  /** The member read the call is made on. */
+  member?: CallOps;
 }): CallOps {
   const args = over.args ?? [];
   const from = over.from ?? [];
@@ -81,6 +91,8 @@ function callOps(over: {
     namedCallee: () => over.namedCallee ?? false,
     calleeImportedAs: () => over.importedAs ?? null,
     parameterReadsAt: (index: number) => over.selectorReads?.[index] ?? null,
+    file: () => over.file ?? null,
+    member: () => over.member ?? null,
     propertyAt: (index, property) =>
       over.properties?.[index]?.[property] ??
       (index in values
@@ -319,6 +331,160 @@ describe("a storage chain", () => {
 
   it("matches nothing where the call reaches for no method at all", () => {
     expect(run(store(), callOps({ method: null }))).toBeNull();
+  });
+});
+
+describe("a call on a model's delegate", () => {
+  const byProject: ProjectSystem = {
+    byFile: (file) => (file.startsWith("/legacy/") ? "mysql" : null),
+    otherwise: "postgresql",
+  };
+  const DELEGATE: CallStep = { to: "member" };
+  // The selector says what the rule was handed, so the test can see it.
+  const handed: InputRule = ({ container, call }) => [
+    container ?? "no container",
+    call.file?.() ?? "no file",
+  ];
+  const included = ({ input }: StatedInputs): RelatedAccess[] =>
+    (input.property("include")?.entries("nothing") ?? []).flatMap((entry) =>
+      entry.key === null
+        ? []
+        : [{ path: [entry.key], kind: "read", fields: ["*"] }],
+    );
+  const models = (clientAt?: CallStep[]) =>
+    storageCalls({
+      system: byProject,
+      client: declaredBy("ormkit"),
+      ...(clientAt === undefined ? {} : { clientAt }),
+    })
+      .methods({
+        find: { kind: "read", selector: { of: { at: 0 }, by: handed } },
+      })
+      .container({ of: [DELEGATE], naming: "upperFirst" })
+      .relations({ of: { at: 0 }, by: included })
+      .example("db.user.find({})");
+  const onDelegate = (file: string) =>
+    callOps({
+      method: "find",
+      callee: "db.user.find",
+      member: callOps({ method: "user", from: ["ormkit"] }),
+      values: { 0: { include: { posts: true } } },
+      file,
+    });
+
+  const interactionsOf = (effects: Effect[] | null) =>
+    (effects ?? []).map((effect) =>
+      effect.type === "interaction" ? effect.interaction : null,
+    );
+
+  it("asks about the client one member read along, and names the model after the member", () => {
+    const effects = run(models([DELEGATE]), onDelegate("/legacy/users.ts"));
+
+    expect(effects).toMatchObject([
+      { binding: { semantics: { storageSystem: "mysql", container: "User" } } },
+      { binding: { semantics: { storageSystem: "mysql", container: "User" } } },
+    ]);
+    expect(interactionsOf(effects)).toEqual([
+      {
+        class: "storage-access",
+        kind: "read",
+        fields: [],
+        operation: "find",
+        selector: ["User", "/legacy/users.ts"],
+      },
+      {
+        class: "storage-access",
+        kind: "read",
+        fields: ["*"],
+        operation: "find",
+        relationPath: ["posts"],
+      },
+    ]);
+    expect(Object.keys(interactionsOf(effects)[1] ?? {})).toEqual([
+      "class",
+      "kind",
+      "fields",
+      "operation",
+      "relationPath",
+    ]);
+  });
+
+  it("binds a call whose project says nothing to the store the pack falls back to", () => {
+    expect(run(models([DELEGATE]), onDelegate("/app/users.ts"))).toMatchObject([
+      { binding: { semantics: { storageSystem: "postgresql" } } },
+      { binding: { semantics: { storageSystem: "postgresql" } } },
+    ]);
+  });
+
+  it("matches nothing when the chain asks about the receiver of the call in hand", () => {
+    expect(run(models(), onDelegate("/app/users.ts"))).toBeNull();
+  });
+
+  it("matches nothing when the call is not made on a member read", () => {
+    const bare = callOps({ method: "find", from: ["ormkit"], file: "/a.ts" });
+
+    expect(run(models([DELEGATE]), bare)).toBeNull();
+  });
+
+  it("keeps the member's name as written when the link gives no naming, and has no container when the call is made on no member", () => {
+    const asWritten = storageCalls({
+      system: "postgresql",
+      client: declaredBy("ormkit"),
+    })
+      .methods({ find: { kind: "read" } })
+      .container({ of: [DELEGATE] });
+    const onMember = callOps({
+      method: "find",
+      from: ["ormkit"],
+      member: callOps({ method: "user" }),
+    });
+
+    expect(run(asWritten, onMember)).toMatchObject([
+      { binding: { semantics: { container: "user" } } },
+    ]);
+    expect(
+      run(asWritten, callOps({ method: "find", from: ["ormkit"] })),
+    ).toMatchObject([{ binding: { semantics: { container: null } } }]);
+  });
+
+  it("gates on the modules a base and a handing call come from, and reads a bare call through either", () => {
+    const BASE = inherits({ from: ["ormkit"], named: ["Client"] });
+    const HANDED = handedBy("run", declaredBy("txkit"), { parameter: 0 });
+    const bare = (client: ReceiverOrigin) =>
+      storageCalls({ system: "postgresql", client }).calls({
+        kind: "read",
+        fields: ["*"],
+      });
+    const called = (from: string) =>
+      callOps({
+        callee: "useDb",
+        namedCallee: true,
+        writtenAs: callOps({ from: [from] }),
+      });
+
+    expect(packOf(bare(anyOf(BASE, HANDED))).requiresImport).toEqual([
+      "ormkit",
+      "txkit",
+    ]);
+    expect(run(bare(BASE), called("ormkit"))).toHaveLength(1);
+    expect(run(bare(HANDED), called("txkit"))).toHaveLength(1);
+    expect(run(bare(BASE), called("txkit"))).toBeNull();
+  });
+
+  it("goes by the store it falls back to, as the pack's wire and in the health report", () => {
+    const assembled = pack("ormkit", [models([DELEGATE])], {
+      languages: ["typescript"],
+      recognizedAs: "@suss/framework-ormkit",
+    });
+
+    expect(assembled.protocol).toBe("postgresql");
+    expect(assembled.declarations?.declarations).toMatchObject([
+      {
+        name: "postgresql",
+        dataLinks: 3,
+        functionLinks: ["relations", "selector", "system"],
+      },
+    ]);
   });
 });
 
@@ -1675,6 +1841,53 @@ describe("a chain over statements written as SQL", () => {
     expect(effects?.[0]).toMatchObject({
       binding: { semantics: { storageSystem: "postgresql" } },
     });
+  });
+
+  it("binds a call, and reads its statement, in the store its file's project uses", () => {
+    const asked: string[] = [];
+    const byProject: ProjectSystem = {
+      byFile: (file) => {
+        asked.push(file);
+        return file.startsWith("/legacy/") ? "mysql" : null;
+      },
+      otherwise: "postgresql",
+    };
+    const perProject = sqlStatements({
+      system: byProject,
+      dialect: byProject,
+      client: declaredBy("tapedeck"),
+    }).methods({ query: STATEMENT });
+    const systemsIn = (file: string, statement: string) =>
+      (
+        runQuery(
+          perProject,
+          callOps({
+            method: "query",
+            from: ["tapedeck"],
+            values: { 0: statement },
+            file,
+          }),
+        ) ?? []
+      ).map((effect) =>
+        effect.type === "interaction" &&
+        effect.binding.semantics.name === "storage"
+          ? effect.binding.semantics.storageSystem
+          : null,
+      );
+
+    expect(systemsIn("/legacy/tapes.ts", "SELECT id FROM tapes")).toEqual([
+      "mysql",
+    ]);
+    expect(systemsIn("/app/tapes.ts", "SELECT id FROM tapes")).toEqual([
+      "postgresql",
+    ]);
+    // One question for the store and one for the dialect, per call.
+    expect(asked).toEqual([
+      "/legacy/tapes.ts",
+      "/legacy/tapes.ts",
+      "/app/tapes.ts",
+      "/app/tapes.ts",
+    ]);
   });
 
   it("records the wire a pack states, where it differs from the store", () => {

@@ -103,6 +103,8 @@ function withNodeMembers(
     nameAt: (index, unsettled) => ops.nameAt(index, unsettled),
     calleeText: () => ops.calleeText(),
     receiver: () => ops.receiver(),
+    member: () => ops.member?.() ?? null,
+    file: () => ops.file?.() ?? null,
     argument: (index) => ops.argument(index),
     callee: () => ops.callee(),
     propertyAt: (index, property, unsettled) =>

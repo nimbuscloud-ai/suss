@@ -114,7 +114,7 @@ export function pythonFactSource(db: Database): FactSource {
     typedAs: (call, origin) =>
       receiverClassesOf(call, db).some(
         (found) =>
-          origin.named.includes(found.name) &&
+          (origin.named === undefined || origin.named.includes(found.name)) &&
           origin.importedFrom.some((module) => inModule(found.module, module)),
       ),
   };
@@ -132,12 +132,14 @@ function receiverClassesOf(
 }
 
 /**
- * The name a method call is made on, `client` in `client.query(...)`.
+ * The name a method call is made on, `client` in `client.query(...)`, or
+ * the one a member read is read off, `client` in `client.users`.
  * Python declares no method types, so the class behind that name, from
  * its annotation or the call that built it, is what declares the method.
  */
 function receiverNamed(call: PyNode | null): PyNode | null {
-  const callee = call === null ? null : field(call, "function");
+  const callee =
+    call === null || call.type === "attribute" ? call : field(call, "function");
   const receiver =
     callee?.type === "attribute" ? field(callee, "object") : null;
   return receiver?.type === "identifier" ? receiver : null;

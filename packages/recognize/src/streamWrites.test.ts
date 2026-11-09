@@ -8,7 +8,9 @@ import {
   constructedFrom,
   declaredBy,
   global,
+  handedBy,
   imported,
+  inherits,
   returnedBy,
   typed,
 } from "./ops.js";
@@ -71,6 +73,8 @@ function writeCall(over: {
     declaredBy: () => false,
     constructed: () => false,
     returnedBy: () => false,
+    inherits: () => false,
+    handedBy: () => false,
     imported: () => false,
   };
   return {
@@ -242,6 +246,8 @@ describe("a stream-write chain", () => {
         constructedFrom("tape"),
         returnedBy("deck", declaredBy("tape")),
         imported({ from: ["tape"] }),
+        inherits({ from: ["tape"], named: ["Deck"] }),
+        handedBy("record", declaredBy("tape"), { parameter: 0 }),
         global("process.stdout"),
       ),
     }).methods({ write: { to: "receiver" } });

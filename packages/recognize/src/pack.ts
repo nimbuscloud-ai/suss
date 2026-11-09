@@ -24,13 +24,16 @@ import type {
   ArgumentPick,
   CallsLink,
   Chain,
+  ContainerRule,
   Ending,
   InputRule,
   Link,
   MethodMeaning,
   MethodsLink,
+  RelationsLink,
   StatedRule,
   StorageMethod,
+  StorageSystem,
 } from "./chain.js";
 
 /**
@@ -205,8 +208,8 @@ function byEnding<T>(table: ByEnding<T>, ending: Ending): T {
  * and a process writes its own streams.
  */
 const WIRE: ByEnding<string> = {
-  storageAccess: (ending) => ending.transport ?? ending.system,
-  sqlAccess: (ending) => ending.transport ?? ending.system,
+  storageAccess: (ending) => ending.transport ?? systemNamed(ending.system),
+  sqlAccess: (ending) => ending.transport ?? systemNamed(ending.system),
   messageSend: (ending) => ending.wire,
   unitInvoke: (ending) => ending.platform,
   schedule: () => "in-process",
@@ -221,9 +224,18 @@ function declaredName(ending: Ending): string {
   return byEnding(DECLARED_NAME, ending);
 }
 
+/**
+ * The store a chain states, or the one it falls back to when the store
+ * is read per project, since no one store is the chain's until a call's
+ * file says.
+ */
+function systemNamed(system: StorageSystem): string {
+  return typeof system === "string" ? system : system.otherwise;
+}
+
 const DECLARED_NAME: ByEnding<string> = {
-  storageAccess: (ending) => ending.system,
-  sqlAccess: (ending) => ending.system,
+  storageAccess: (ending) => systemNamed(ending.system),
+  sqlAccess: (ending) => systemNamed(ending.system),
   messageSend: (ending) => ending.wire,
   unitInvoke: (ending) => ending.platform,
   schedule: (ending) => ending.yields,
@@ -259,9 +271,10 @@ function describe(chain: Chain<MethodMeaning>): DeclaredMatch {
   const written: WrittenAsCode[] = [
     ...links.map((link) => ({
       asks: link.asks,
-      reachesAst: link.from.reachesAst === true,
+      reachesAst: ruleOf(link).reachesAst === true,
     })),
     ...rulesIn(chain),
+    ...systemRulesIn(chain.ending),
   ];
   return {
     name: declaredName(chain.ending),
@@ -276,11 +289,40 @@ function describe(chain: Chain<MethodMeaning>): DeclaredMatch {
   };
 }
 
+/** A link a pack wrote as code: a container rule, or the rule that reads a call's relations. */
+type FunctionLink = ContainerRule | RelationsLink;
+
 /** Whether a pack wrote this link as code. */
-function isFunctionLink(
-  link: Link<MethodMeaning>,
-): link is Extract<Link<MethodMeaning>, { from: unknown }> {
-  return link.asks === "container" && "from" in link;
+function isFunctionLink(link: Link<MethodMeaning>): link is FunctionLink {
+  return (
+    (link.asks === "container" && "from" in link) || link.asks === "relations"
+  );
+}
+
+function ruleOf(link: FunctionLink): { reachesAst?: boolean } {
+  return "from" in link ? link.from : link.by;
+}
+
+/** The questions each ending can settle per project, and what it says for each. */
+const SYSTEMS_ASKED: ByEnding<readonly (readonly [string, StorageSystem])[]> = {
+  storageAccess: (ending) => [["system", ending.system]],
+  sqlAccess: (ending) => [
+    ["system", ending.system],
+    ["dialect", ending.dialect],
+  ],
+  messageSend: () => [],
+  unitInvoke: () => [],
+  schedule: () => [],
+  streamWrite: () => [],
+};
+
+/** The questions an ending settles with a rule over the call's file rather than as data. */
+function systemRulesIn(ending: Ending): WrittenAsCode[] {
+  return byEnding(SYSTEMS_ASKED, ending).flatMap(([asks, system]) =>
+    typeof system === "string"
+      ? []
+      : [{ asks, reachesAst: system.byFile.reachesAst === true }],
+  );
 }
 
 /** The questions a rule inside a method's meaning settles, one per entry. */
