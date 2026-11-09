@@ -67,7 +67,9 @@ import type {
 
 const PRISMA_READ_METHODS = new Set([
   "findUnique",
+  "findUniqueOrThrow",
   "findFirst",
+  "findFirstOrThrow",
   "findMany",
   "count",
   "aggregate",
@@ -1157,7 +1159,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "9",
+    version: "10",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],

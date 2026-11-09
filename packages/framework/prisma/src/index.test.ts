@@ -257,6 +257,35 @@ describe("prisma recognizer: happy path", () => {
     });
   });
 
+  it("reads findUniqueOrThrow and findFirstOrThrow the way it reads findUnique and findFirst", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function getUser(id: number, email: string) {
+        await db.user.findUniqueOrThrow({ where: { id }, select: { name: true } });
+        await db.user.findFirstOrThrow({ where: { email } });
+      }
+    `);
+    expect(
+      storageEffectsOf(recognizeAll(file)).map((one) => one.interaction),
+    ).toEqual([
+      {
+        class: "storage-access",
+        kind: "read",
+        fields: ["name"],
+        operation: "findUniqueOrThrow",
+        selector: ["id"],
+      },
+      {
+        class: "storage-access",
+        kind: "read",
+        fields: ["*"],
+        operation: "findFirstOrThrow",
+        selector: ["email"],
+      },
+    ]);
+  });
+
   it("records the whole record when a query includes a relation", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
