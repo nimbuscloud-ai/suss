@@ -118,8 +118,8 @@ function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
           class: "storage-access",
           kind: query.kind,
           fields: query.fields,
-          ...(query.selector !== null ? { selector: query.selector } : {}),
           operation: query.operation,
+          ...(query.selector !== null ? { selector: query.selector } : {}),
         },
       },
     ];

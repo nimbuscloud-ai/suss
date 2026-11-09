@@ -145,6 +145,24 @@ describe("drizzle recognizer — select chains", () => {
     expect(interaction.fields).toEqual(["*"]);
     expect(interaction.selector).toEqual(["email", "name"]);
   });
+
+  it("writes `operation` before `selector`, the order every storage access uses", () => {
+    const effects = effectsIn(`
+      import { drizzle, eq } from "drizzle-orm";
+      import { users } from "./schema.js";
+      const db = drizzle({});
+      export async function rename(id: number, name: string) {
+        return db.update(users).set({ name }).where(eq(users.id, id));
+      }
+    `);
+    expect(Object.keys(interactionOf(effects[0]))).toEqual([
+      "class",
+      "kind",
+      "fields",
+      "operation",
+      "selector",
+    ]);
+  });
 });
 
 describe("drizzle recognizer — mutations", () => {
