@@ -460,10 +460,16 @@ export function noteValueNode(value: ValueOps, node: Node): ValueOps {
   return value;
 }
 
-/** What the values inside a call, and the calls inside those, are read through. */
+/**
+ * What the values inside a call, and the calls inside those, are read
+ * through. A call one step away asks where its receiver was imported
+ * from the same way the call in hand does, so a client imported through
+ * a module's subpath counts at either.
+ */
 interface ValueReading {
   readonly resolve: Resolve;
   readonly resolution: ResolutionStore | undefined;
+  readonly originatesFrom?: OriginatesFrom | undefined;
 }
 
 /**
@@ -591,7 +597,11 @@ export function callOpsFor(
 ): AstCapableOps {
   const { originatesFrom, walk } = reading;
   const resolve = walk?.writtenValueOf ?? reading.resolve ?? (() => null);
-  const values: ValueReading = { resolve, resolution: reading.resolution };
+  const values: ValueReading = {
+    resolve,
+    resolution: reading.resolution,
+    originatesFrom,
+  };
   const expression = calleeOf(call);
   const callee = Node.isPropertyAccessExpression(expression)
     ? expression
@@ -720,6 +730,7 @@ function memberOpsFor(
       opsOverReceiver(read.getExpression(), {
         resolve,
         resolution: reading.resolution,
+        originatesFrom,
       }),
     member: () => {
       const object = read.getExpression();
