@@ -41,12 +41,16 @@ import {
   generatedClientDirs,
   generatedClientInputs,
   isInGeneratedClient,
+  schemaModels,
   schemaStorageSystem,
 } from "./generatedClient.js";
 
 import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
-import type { PrismaStorageSystem } from "@suss/contract-prisma";
+import type {
+  PrismaClientModel,
+  PrismaStorageSystem,
+} from "@suss/contract-prisma";
 import type {
   CallOps,
   InvocationRecognizer,
@@ -190,8 +194,13 @@ function recognizePrismaCall(
   const kind: "read" | "write" = isRead ? "read" : "write";
   const given = recognizerCtx.ops.valueAt(0);
   const options = objectOf(given);
+  const on: CallModels = {
+    models: schemaModels(path.dirname(callNode.getSourceFile().getFilePath())),
+    model: tableName,
+  };
+  const ownKeys = compoundKeysAt(on, []);
   const fields = extractFields(options, kind);
-  const selector = extractSelector(options);
+  const selector = extractSelector(options, ownKeys);
   const binding = storageBinding({
     recognition: "@suss/framework-prisma",
     storageSystem,
@@ -219,7 +228,7 @@ function recognizePrismaCall(
 
   return [
     access,
-    ...nestedReads(options).map(
+    ...nestedReads(options, ownKeys).map(
       (nested): Effect => ({
         type: "interaction",
         binding,
@@ -236,7 +245,7 @@ function recognizePrismaCall(
         },
       }),
     ),
-    ...nestedWrites(options).map(
+    ...nestedWrites(options, on).map(
       (nested): Effect => ({
         type: "interaction",
         binding,
@@ -291,7 +300,10 @@ interface NestedRead {
  * is recorded with the relation path it was written under, at any depth.
  * The checker resolves that path against the model's contract.
  */
-function nestedReads(options: ValueOps | null): NestedRead[] {
+function nestedReads(
+  options: ValueOps | null,
+  keys: CompoundKeys,
+): NestedRead[] {
   if (options === null) {
     return [];
   }
@@ -299,7 +311,7 @@ function nestedReads(options: ValueOps | null): NestedRead[] {
   collectRelations(options, [], found);
   const where = objectOf(options.property("where"));
   if (where !== null) {
-    columnsPickedBy(where, [], found);
+    columnsPickedBy(where, [], found, keys);
   }
   return found;
 }
@@ -366,8 +378,9 @@ interface NestedWrite {
   /** The columns the operation picks the related rows by. */
   selector?: string[];
   /**
-   * Set when the operation only looks the related rows up by its
-   * selector, to join them, and writes nothing across the relation.
+   * Set when the effect only reads the related rows: a lookup by the
+   * selector that writes nothing across the relation, or a relation
+   * filter in the operation's `where`.
    */
   lookup?: true;
   /**
@@ -430,32 +443,29 @@ const updateRow: ReadWrittenRows = (payload) => {
 /** A deleted row fills no column and changes all of them. */
 const wholeRow: ReadWrittenRows = () => ({ fields: ["*"], rows: [] });
 
-/** The columns a nested operation picks the related rows by. */
-type ReadPicked = (payload: ValueOps | null) => string[];
+/** The `where`s a nested operation picks the related rows by. */
+type ReadWheres = (payload: ValueOps | null) => ValueOps[];
 
 /** For `connectOrCreate: { where, create }` or a list of those. */
-const pickedUnderWhere: ReadPicked = (payload) =>
-  keysOfRows(
-    objectsIn(payload).rows.flatMap(
-      (row) => objectsIn(row.property("where")).rows,
-    ),
+const wheresUnderKey: ReadWheres = (payload) =>
+  objectsIn(payload).rows.flatMap(
+    (row) => objectsIn(row.property("where")).rows,
   );
 
 /** For `connect: { id }` or a list of those, the payload is the `where`. */
-const pickedByPayload: ReadPicked = (payload) =>
-  keysOfRows(objectsIn(payload).rows);
+const payloadIsWhere: ReadWheres = (payload) => objectsIn(payload).rows;
 
 /** Only the `{ where, data }` form of a nested update picks its rows. */
-const pickedByUpdate: ReadPicked = (payload) => {
+const wheresOfUpdate: ReadWheres = (payload) => {
   const statesData = objectsIn(payload).rows.some(
     (row) => row.property("data") !== null,
   );
-  return statesData ? pickedUnderWhere(payload) : [];
+  return statesData ? wheresUnderKey(payload) : [];
 };
 
 interface NestedOperation {
   rows?: ReadWrittenRows;
-  picks?: ReadPicked;
+  picks?: ReadWheres;
   /**
    * Joining a row, or creating one under the relation, sets the foreign
    * key, on whichever side declares it.
@@ -473,23 +483,23 @@ const NESTED_OPERATIONS = new Map<string, NestedOperation>([
   ["createMany", { rows: rowsUnder("data"), movesJoin: true }],
   [
     "connectOrCreate",
-    { rows: rowsUnder("create"), picks: pickedUnderWhere, movesJoin: true },
+    { rows: rowsUnder("create"), picks: wheresUnderKey, movesJoin: true },
   ],
-  ["update", { rows: updateRow, picks: pickedByUpdate }],
-  ["updateMany", { rows: rowsUnder("data"), picks: pickedUnderWhere }],
+  ["update", { rows: updateRow, picks: wheresOfUpdate }],
+  ["updateMany", { rows: rowsUnder("data"), picks: wheresUnderKey }],
   [
     "upsert",
     {
       rows: rowsUnder("create", "update"),
-      picks: pickedUnderWhere,
+      picks: wheresUnderKey,
       movesJoin: true,
     },
   ],
-  ["delete", { rows: wholeRow, picks: pickedByPayload }],
-  ["deleteMany", { rows: wholeRow, picks: pickedByPayload }],
-  ["connect", { picks: pickedByPayload, movesJoin: true }],
-  ["disconnect", { picks: pickedByPayload, movesJoin: true }],
-  ["set", { picks: pickedByPayload, movesJoin: true }],
+  ["delete", { rows: wholeRow, picks: payloadIsWhere }],
+  ["deleteMany", { rows: wholeRow, picks: payloadIsWhere }],
+  ["connect", { picks: payloadIsWhere, movesJoin: true }],
+  ["disconnect", { picks: payloadIsWhere, movesJoin: true }],
+  ["set", { picks: payloadIsWhere, movesJoin: true }],
 ]);
 
 /**
@@ -497,14 +507,14 @@ const NESTED_OPERATIONS = new Map<string, NestedOperation>([
  * any depth, and the checker resolves the path the same way it does for
  * a nested read.
  */
-function nestedWrites(options: ValueOps | null): NestedWrite[] {
+function nestedWrites(options: ValueOps | null, on: CallModels): NestedWrite[] {
   if (options === null) {
     return [];
   }
   const found: NestedWrite[] = [];
   for (const key of WRITE_PAYLOAD_KEYS) {
     for (const row of objectsIn(options.property(key)).rows) {
-      collectNestedWrites(row, [], found);
+      collectNestedWrites(row, [], found, on);
     }
   }
   return found;
@@ -519,6 +529,7 @@ function collectNestedWrites(
   row: ValueOps,
   path: string[],
   found: NestedWrite[],
+  on: CallModels,
 ): void {
   for (const [field, value] of entriesOf(row)) {
     const nested = objectOf(value);
@@ -531,7 +542,15 @@ function collectNestedWrites(
       if (does === undefined) {
         continue;
       }
-      const selector = does.picks?.(payload) ?? [];
+      const filtered: NestedRead[] = [];
+      const keys = compoundKeysAt(on, relationPath);
+      const selector = [
+        ...new Set(
+          (does.picks?.(payload) ?? []).flatMap((where) =>
+            columnsPickedBy(where, relationPath, filtered, keys),
+          ),
+        ),
+      ];
       const picked = selector.length > 0 ? { selector } : {};
       if (does.rows !== undefined) {
         const written = does.rows(payload);
@@ -542,7 +561,7 @@ function collectNestedWrites(
           ...picked,
         });
         for (const deeper of written.rows) {
-          collectNestedWrites(deeper, relationPath, found);
+          collectNestedWrites(deeper, relationPath, found, on);
         }
       }
       // A join reads the rows it joins to find them, and the key it then
@@ -559,6 +578,14 @@ function collectNestedWrites(
       }
       if (does.movesJoin === true) {
         found.push({ relationPath, fields: [], operation, relationKey: true });
+      }
+      for (const read of filtered) {
+        found.push({
+          relationPath: read.relationPath,
+          fields: read.fields,
+          operation,
+          lookup: true,
+        });
       }
     }
   }
@@ -885,10 +912,84 @@ function statesNestedOperations(value: ValueOps): boolean {
   return keysOf(nested).some((key) => NESTED_OPERATIONS.has(key));
 }
 
-function extractSelector(options: ValueOps | null): string[] | null {
+function extractSelector(
+  options: ValueOps | null,
+  keys: CompoundKeys,
+): string[] | null {
   const where = objectOf(options?.property("where") ?? null);
-  const keys = where === null ? [] : columnsPickedBy(where, [], []);
-  return keys.length > 0 ? keys : null;
+  const columns = where === null ? [] : columnsPickedBy(where, [], [], keys);
+  return columns.length > 0 ? columns : null;
+}
+
+/**
+ * The compound unique keys of one model, each with the columns it
+ * combines, as in `where: { domain_key: { domain, key } }`. Null when the
+ * schema does not declare the model.
+ */
+type CompoundKeys = ReadonlyMap<string, readonly string[]> | null;
+
+/** Only the first level of a unique `where` can name a compound key. */
+const NO_COMPOUND_KEYS: CompoundKeys = new Map();
+
+/** The models of the project's schema, and the one a call is made on. */
+interface CallModels {
+  models: ReadonlyMap<string, PrismaClientModel>;
+  model: string;
+}
+
+/** The compound keys of the model a relation path leads to from the call's model. */
+function compoundKeysAt(on: CallModels, path: readonly string[]): CompoundKeys {
+  return modelAt(on.models, on.model, path)?.compoundKeys ?? null;
+}
+
+/**
+ * The columns a key combines, or null when it is not a compound key. The
+ * schema decides when it declares the model. Otherwise a key is read as
+ * one when it spells the keys of the object under it joined by `_`,
+ * which is the name Prisma gives it unless the schema passes a `name`.
+ */
+function compoundKeyColumns(
+  keys: CompoundKeys,
+  key: string,
+  value: ValueOps,
+): string[] | null {
+  if (keys === null) {
+    return spelledCompoundKey(key, value);
+  }
+  const fields = keys.get(key);
+  return fields === undefined ? null : [...fields];
+}
+
+function modelAt(
+  models: ReadonlyMap<string, PrismaClientModel>,
+  model: string,
+  path: readonly string[],
+): PrismaClientModel | null {
+  return path.reduce<PrismaClientModel | null>((at, field) => {
+    const next = at?.relations.get(field);
+    return next === undefined ? null : (models.get(next) ?? null);
+  }, models.get(model) ?? null);
+}
+
+function spelledCompoundKey(key: string, value: ValueOps): string[] | null {
+  const inner = objectOf(value);
+  const columns = inner === null ? [] : keysOf(inner);
+  return columns.length > 1 && spellsColumns(key, columns) ? columns : null;
+}
+
+/** Whether the name is each of the columns once, in any order, joined by `_`. */
+function spellsColumns(name: string, columns: readonly string[]): boolean {
+  return columns.some((column, at) => {
+    if (!name.startsWith(column)) {
+      return false;
+    }
+    const rest = name.slice(column.length);
+    const others = columns.filter((_, other) => other !== at);
+    if (others.length === 0) {
+      return rest === "";
+    }
+    return rest.startsWith("_") && spellsColumns(rest.slice(1), others);
+  });
 }
 
 /** Prisma's operators on the rows of a relation, each taking a `where` on the related model. */
@@ -933,6 +1034,7 @@ function columnsPickedBy(
   where: ValueOps,
   path: string[],
   found: NestedRead[],
+  keys: CompoundKeys = NO_COMPOUND_KEYS,
 ): string[] {
   const columns: string[] = [];
   for (const [key, value] of entriesOf(where)) {
@@ -942,6 +1044,11 @@ function columnsPickedBy(
       for (const combined of objectsIn(value).rows) {
         columns.push(...columnsPickedBy(combined, path, found));
       }
+      continue;
+    }
+    const keyColumns = compoundKeyColumns(keys, key, value);
+    if (keyColumns !== null) {
+      columns.push(...keyColumns);
       continue;
     }
     const filters = relationFiltersIn(value);
@@ -1050,7 +1157,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "8",
+    version: "9",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],

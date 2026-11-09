@@ -1,6 +1,7 @@
 /**
- * Where a project's Prisma generators write the client, and which
- * database its datasource is, read from the project's own schema.
+ * Where a project's Prisma generators write the client, which database
+ * its datasource is, and what its models' compound keys and relations
+ * are, read from the project's own schema.
  *
  * Prisma 7's `prisma-client` generator writes no copy of the schema
  * beside the client, so the directory has nothing in it the pack could
@@ -19,9 +20,16 @@ import path from "node:path";
 import { getSchema } from "@mrleebo/prisma-ast";
 import { ts } from "ts-morph";
 
-import { prismaSchemaFiles, prismaStorageSystem } from "@suss/contract-prisma";
+import {
+  prismaClientModels,
+  prismaSchemaFiles,
+  prismaStorageSystem,
+} from "@suss/contract-prisma";
 
-import type { PrismaStorageSystem } from "@suss/contract-prisma";
+import type {
+  PrismaClientModel,
+  PrismaStorageSystem,
+} from "@suss/contract-prisma";
 
 const CONFIG_FILES = [
   "prisma.config.ts",
@@ -38,6 +46,7 @@ const DEFAULT_SCHEMAS = [path.join("prisma", "schema.prisma"), "schema.prisma"];
 interface ReadProject {
   dirs: readonly string[];
   storageSystem: PrismaStorageSystem | null;
+  models: ReadonlyMap<string, PrismaClientModel>;
   /** The files the answer was read from, with when each last changed. */
   readFrom: ReadonlyMap<string, number>;
 }
@@ -65,6 +74,18 @@ export function schemaStorageSystem(
   return readProjectAt(fromDir)?.storageSystem ?? null;
 }
 
+/**
+ * The models of that same project's schema by name, empty when the
+ * project has no schema to read.
+ */
+export function schemaModels(
+  fromDir: string,
+): ReadonlyMap<string, PrismaClientModel> {
+  return readProjectAt(fromDir)?.models ?? NO_MODELS;
+}
+
+const NO_MODELS: ReadonlyMap<string, PrismaClientModel> = new Map();
+
 function readProjectAt(fromDir: string): ReadProject | null {
   const root = projectRootOf(fromDir);
   if (root === null) {
@@ -86,6 +107,7 @@ function readProjectAt(fromDir: string): ReadProject | null {
       sources
         .map(({ text }) => prismaStorageSystem(text))
         .find((system) => system !== null) ?? null,
+    models: prismaClientModels(sources.map(({ text }) => text)),
     readFrom,
   };
   readProjects.set(root, project);
