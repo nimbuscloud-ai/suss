@@ -24,7 +24,7 @@ The model comes from the delegate property. Prisma lowercases the first letter o
 
 Each method counts as a read or a write:
 
-- read: `findUnique`, `findFirst`, `findMany`, `count`, `aggregate`, `groupBy`
+- read: `findUnique`, `findUniqueOrThrow`, `findFirst`, `findFirstOrThrow`, `findMany`, `count`, `aggregate`, `groupBy`
 - write: `create`, `update`, `delete`, `upsert`, `createMany`, `updateMany`, `deleteMany`
 
 The fields come from the call's first argument. A read takes the `select` keys, plus the `include` keys when a `select` lists which fields to return. A query with no `select` reads the whole record and comes back as `["*"]`. A write takes the union of the `data`, `create` and `update` keys, since an upsert can pass two of them. The keys of `where` become the selector.
@@ -62,8 +62,6 @@ Both options make the effects this pack records pair with the schema reader. Pas
 - `scope`: the scope label, which has to match the schema reader's scope. The default is `"default"`, to line up with `prismaSchemaToSummaries`.
 
 ## Not covered yet
-
-`findUniqueOrThrow` and `findFirstOrThrow` are not in the read set.
 
 The pack doesn't state a value for a column inside a compound key or under `AND`, `OR` or `NOT`. The declared paths stop at `where`, and the value is one level further down.
 
