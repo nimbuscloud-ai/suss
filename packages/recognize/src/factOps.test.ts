@@ -1394,7 +1394,10 @@ describe("the receiver a library method hands its callback, over the facts", () 
  *   const kept = eq(t.k, x);
  *   records.delete(t).where(kept);
  */
-function builder(over: Partial<FactSource> = {}): FactSource {
+function builder(
+  over: Partial<FactSource> = {},
+  more: readonly (readonly string[])[] = [],
+): FactSource {
   const db = new Database();
   const add = (relation: string, ...row: string[]) => db.add(relation, row);
   const read = (key: string, object: string, name: string) =>
@@ -1459,6 +1462,9 @@ function builder(over: Partial<FactSource> = {}): FactSource {
   read("records.delete", "records", "delete");
   call("whereKept", "delete.where", "keptName");
   read("delete.where", "delete", "where");
+  for (const [relation = "", ...row] of more) {
+    add(relation, ...row);
+  }
   return {
     db,
     read: () => undefined,
@@ -1505,6 +1511,31 @@ describe("the columns a condition reads, over the facts", () => {
       "g",
       "h",
       ".l",
+    ]);
+  });
+
+  it("reads a keyword argument and a block the way it reads a positional one", () => {
+    // Python passes `eq(t.id, two, t.l, key=t.m)`, and Ruby a block, `{ t.n }`.
+    const from = builder({}, [
+      ["callKeywordArg", "eq2", "key", "t.m"],
+      ["readsProperty", "t.m", "t", "m"],
+      ["callBlock", "eq2", "t.n"],
+      ["readsProperty", "t.n", "t", "n"],
+    ]);
+
+    expect(columns("update", "where", from)).toEqual([
+      "id",
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+      "g",
+      "h",
+      ".l",
+      "m",
+      "n",
     ]);
   });
 
