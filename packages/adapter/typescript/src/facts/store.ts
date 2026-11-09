@@ -60,6 +60,9 @@ import { inTestFile } from "../testCode.js";
 import { emitContainerWrites } from "./containerWrites.js";
 import {
   createNodeTable,
+  dottedPathOf,
+  emitAssignedValue,
+  emitBindingElementFacts,
   emitFunctionDeclaration,
   emitValue,
   environmentObjectsIn,
@@ -954,6 +957,25 @@ export class ResolutionStore {
     }
     const { receivers } = this.environmentAnswers(target.getProject());
     return first.parameters.some((parameter) => receivers.has(parameter));
+  }
+
+  /** The environment object an expression is spelled as, the way a pack declares it, or null. */
+  spelledEnvironmentPath(value: Node): string | null {
+    const path = dottedPathOf(value);
+    return path !== null && this.table.environmentObjects.includes(path)
+      ? path
+      : null;
+  }
+
+  /**
+   * The environment object a read off `object` reads: the one it is
+   * spelled as, or for an object the rules followed an environment into,
+   * the first one the packs declare. Node declares `process.env` first.
+   */
+  environmentReadOff(object: Node | null): string {
+    const spelled =
+      object === null ? null : this.spelledEnvironmentPath(object);
+    return spelled ?? this.table.environmentObjects[0] ?? "";
   }
 
   private hasAnswer(relation: string, target: Node): boolean {
@@ -1997,7 +2019,8 @@ export class ResolutionStore {
   private seedValue(value: Node): void {
     const declared =
       Node.isFunctionDeclaration(value) || Node.isMethodDeclaration(value);
-    if (!declared && !Node.isExpression(value)) {
+    const bound = Node.isBindingElement(value);
+    if (!declared && !bound && !Node.isExpression(value)) {
       return;
     }
     const id = nodeId(value);
@@ -2010,7 +2033,12 @@ export class ResolutionStore {
       emitFunctionDeclaration(this.db, this.table, value);
       return;
     }
+    if (bound) {
+      emitBindingElementFacts(this.db, this.table, value);
+      return;
+    }
     emitValue(this.db, this.table, value);
+    emitAssignedValue(this.db, this.table, value);
   }
 
   private lookupObject(value: Node): Node | null {

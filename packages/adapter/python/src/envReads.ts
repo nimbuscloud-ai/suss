@@ -33,9 +33,11 @@ import {
   resolveEnvObjects,
 } from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
+import { scopeAt } from "./scope.js";
 import { standardStream } from "./streamWrites.js";
 import {
   evaluatedValue,
+  moduleOf,
   resolutionKeyOf,
   stringValueOf,
 } from "./values/evaluator.js";
@@ -150,6 +152,42 @@ function configReadEffect(read: EnvRead, at: PyNode): Effect {
     },
     location: rangeOf(at),
   };
+}
+
+/**
+ * Whether a read copes with its value coming back empty, and the value
+ * it falls back to, decided the way this reader decides it for an
+ * environment read and by the plain rule for any other read.
+ */
+export function copingAt(node: PyNode): {
+  defaulted: boolean;
+  fallback: PyNode | null;
+} {
+  const syntax = envReadSyntaxAt(node, scopeAt(node, moduleOf(node)));
+  return syntax === null
+    ? { defaulted: isDefaultedAt(node), fallback: fallbackOperandOf(node) }
+    : { defaulted: syntax.defaulted, fallback: syntax.fallback };
+}
+
+/**
+ * The sites whose variable name the parameter at this key ends up as,
+ * from the run's one question about the environment.
+ */
+export function sitesNamingParameter(
+  db: Database,
+  parameter: string,
+): readonly string[] {
+  const index = sitesByDb.get(db);
+  if (index === undefined) {
+    return [];
+  }
+  const sites = sitesEachParameterNames(db, index).get(parameter);
+  noteLookup(
+    db,
+    `${NAMED_PARAMETER}${parameter}`,
+    describeSites(sites, index.byId),
+  );
+  return sites ?? [];
 }
 
 function envReadSyntaxAt(node: PyNode, scope: Scope): EnvReadSyntax | null {

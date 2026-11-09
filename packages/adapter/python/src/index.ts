@@ -14,6 +14,9 @@
 export { annotationToShape, shapeFromName } from "./annotations.js";
 export { classifyDecorator } from "./decorators.js";
 export { discoverUnits } from "./discovery.js";
+// What one file says about the environment, stated beside its other facts
+// for a caller that builds a file's facts on its own.
+export { bindEnvFacts, envFactsIn } from "./envReads.js";
 export { pythonFactSource } from "./factSource.js";
 export {
   containedValues,

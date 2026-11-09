@@ -41,6 +41,9 @@ export {
   discoverUnits,
   type FileCache,
 } from "./discovery.js";
+// What one file says about the environment, stated beside its other facts
+// for a caller that builds a file's facts on its own.
+export { emitEnvFacts } from "./envReads.js";
 export { rubyFactSource } from "./factSource.js";
 export {
   collectFileConstants,

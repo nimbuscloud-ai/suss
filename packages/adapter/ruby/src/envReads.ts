@@ -642,6 +642,36 @@ function envReadAt(
   };
 }
 
+/**
+ * Whether a read copes with its value coming back empty, and the value
+ * it falls back to, decided the way this reader decides it for an
+ * environment read and by the plain rule for any other read.
+ */
+export function copingAt(
+  node: RbNode,
+  db: Database,
+): { defaulted: boolean; fallback: RbNode | null } {
+  const blankToNil = blankToNilIn(db);
+  const site = envSiteAt(node, blankToNil);
+  return site === null
+    ? {
+        defaulted: isDefaultedAt(node, undefined, blankToNil),
+        fallback: fallbackOperandOf(node, blankToNil),
+      }
+    : { defaulted: site.defaulted, fallback: site.fallback };
+}
+
+/**
+ * The sites whose variable name the parameter at this key ends up as,
+ * from the run's one question about the environment.
+ */
+export function sitesNamingParameter(
+  db: Database,
+  parameter: string,
+): readonly string[] {
+  return sitesNamedBy(db, namedParameters(db), parameter) ?? [];
+}
+
 function envSiteAt(
   node: RbNode,
   blankToNil: ReadonlySet<string>,

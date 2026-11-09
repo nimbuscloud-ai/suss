@@ -981,6 +981,26 @@ describe("python value facts", () => {
     expect(rows(db, "holdsProperty")).toEqual([]);
   });
 
+  it("states the value a plain = assigns to an entry or an attribute, and to nothing else", async () => {
+    const source = [
+      "os.environ['W'] = '1'",
+      "job.retries = 3",
+      "count = 1",
+      "totals['a'] += 2",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "assigns").map(([site, value]) => [
+        textAt(source, site ?? ""),
+        textAt(source, value ?? ""),
+      ]),
+    ).toEqual([
+      ["os.environ['W']", "'1'"],
+      ["job.retries", "3"],
+    ]);
+  });
+
   it("says nothing about an annotation that assigns no value", async () => {
     const db = await factsFor("app: FastAPI\n");
     expect(rows(db, "binds")).toEqual([]);

@@ -1191,7 +1191,11 @@ function emitKeyedElement(
   parent: RbNode,
 ): void {
   const object = field(node, "object");
-  if (object === null || isWriteTarget(node, parent)) {
+  if (object === null) {
+    return;
+  }
+  if (isWriteTarget(node, parent)) {
+    emitAssignedValue(emitter, node, parent);
     return;
   }
   const index = children(node).find((child) => child.id !== object.id);
@@ -1591,6 +1595,26 @@ function modifierBranch(node: RbNode): RbNode[] {
 }
 
 const ASSIGNMENT_TYPES = new Set(["assignment", "operator_assignment"]);
+
+/**
+ * `ENV["W"] = v`: the value a plain `=` assigns to an entry. `||=` and
+ * the other operators read the entry too, so only `=` is recorded.
+ */
+function emitAssignedValue(
+  emitter: Emitter,
+  target: RbNode,
+  assignment: RbNode,
+): void {
+  const value = field(assignment, "right");
+  if (assignment.type === "assignment" && value !== null) {
+    add(
+      emitter,
+      "assigns",
+      nodeId(emitter.filePath, target),
+      valueKey(emitter, value, assignment),
+    );
+  }
+}
 
 /** Whether this node is the left side of an assignment written in `parent`. */
 function isWriteTarget(node: RbNode, parent: RbNode): boolean {

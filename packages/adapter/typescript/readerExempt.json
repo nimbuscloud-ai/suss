@@ -29,6 +29,8 @@
   "src/predicates.ts": "parseConditionExpression, tryExpandArrayIncludes",
   "src/resolve/astResolve.ts": "resolveElementAccess, shapeFromDeclaration, safeGetDefinitions, functionBodyOf",
   "src/resolve/callOps.ts": "entriesOf, itemsOf, literalText, literalFlag, initializerOf, unquoted",
+  "src/resolve/factSource.ts": "objectReadOff, readsUnvisitedOff and copesWithMissing, which read which node a destructured read is off and whether a binding element writes a default: the read sites themselves, not values",
+  "src/resolve/suppliedKeys.ts": "handsOnParameter and directEnvRead, which take the declaration behind a symbol the facility already resolved to ask whether it is a parameter, and isVariableSetToCall, which asks whether a declaration is written as a call before the store is asked what it returns",
   "src/resolve/invocationEffects.ts": "isImportedFrom, methodDeclaredIn, extractArg, inlineModuleBinding",
   "src/resolve/reachableClosure.ts": "resolveCallee, resolveJsxReference, recognizerOnlyRoots",
   "src/resolve/readName.ts": "isParameter, read, fromJoin, elementsOf, declarationOf, asCallable",

@@ -54,6 +54,7 @@ import {
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { climbSyntax, peelSyntax } from "../walk/unwrap.js";
 import { nodeOfValue, type WalkArguments, walkArguments } from "./callOps.js";
+import { ReadSites, readOpsAt } from "./factSource.js";
 import {
   constructionCallee,
   constructorCalledAt,
@@ -69,6 +70,7 @@ import type {
   InvocationRecognizer,
   RawCondition,
   RawEffect,
+  ReadOps,
   StatedSlot,
 } from "@suss/extractor";
 import type { GeneratedModules } from "../facts/generatedModules.js";
@@ -180,10 +182,15 @@ export interface TsAccessRecognizerContext {
   /**
    * What a declared pack asks about this node, when the node is a call
    * or a tagged template. This walk visits property accesses as well,
-   * and there is no call there to ask about, so a declared pack
-   * standing on one is handed nothing and matches nothing.
+   * and there is no call there to ask about, so a declared call chain
+   * matches nothing at one.
    */
   ops?: CallOps;
+  /**
+   * What a declared read chain asks about this node as a read site.
+   * Undefined when the run has no store, since the read ops are the facts'.
+   */
+  read?: ReadOps | undefined;
 }
 
 /**
@@ -727,6 +734,7 @@ export function accessContextFor(
   anchorCallsOf?: AnchorCallsOf,
   walk?: WalkArguments,
   stated?: SlotsListener,
+  sites?: ReadSites,
 ): TsAccessRecognizerContext {
   const resolveWrittenValue = writtenValueResolver(resolution);
   const given = {
@@ -735,12 +743,30 @@ export function accessContextFor(
     resolveWrittenValue,
     ...(resolution === undefined ? {} : { resolution }),
   };
+  let read: ReadOps | undefined;
+  const readHere = (): ReadOps | undefined => {
+    if (resolution !== undefined) {
+      read ??=
+        sites === undefined
+          ? readOpsAt(node, resolution, originatesFrom)
+          : sites.at(node);
+    }
+    return read;
+  };
   if (Node.isPropertyAccessExpression(node)) {
-    return given;
+    return {
+      ...given,
+      get read(): ReadOps | undefined {
+        return readHere();
+      },
+    };
   }
   let ops: CallOps | undefined;
   return {
     ...given,
+    get read(): ReadOps | undefined {
+      return readHere();
+    },
     get ops(): CallOps {
       ops ??= opsOverFacts(node, {
         resolve: resolveWrittenValue,
@@ -779,6 +805,10 @@ function dispatchAccessRecognizers(
     ),
     resolution,
   );
+  const sites =
+    resolution === undefined
+      ? undefined
+      : new ReadSites(resolution, originatesFrom);
 
   for (const { node, at } of visited) {
     const stated = resolution === undefined ? undefined : new SlotsStated();
@@ -790,6 +820,7 @@ function dispatchAccessRecognizers(
       anchorCallsOf,
       walk,
       stated,
+      sites,
     );
     const line = enclosingStatementLine(at);
     const preconditions = collectPreconditions(at, root);
