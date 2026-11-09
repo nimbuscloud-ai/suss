@@ -11,7 +11,8 @@
 //      }
 //    Each property a function is behind becomes a surfaced method,
 //    whether written there or named (`return { project }`). A spread
-//    contributes the properties of what it spreads.
+//    contributes the properties of what it spreads, and an object a
+//    property has surfaces its functions as `users.list`.
 //
 // 2. A factory that returns through a same-file helper:
 //      function createX(spec) { return build(spec); }
@@ -39,9 +40,11 @@ import { Node, SyntaxKind } from "ts-morph";
 import { functionTargetOf } from "../resolve/functionBehind.js";
 import { peelParens } from "../walk/unwrap.js";
 import {
+  objectLiteralOf,
   propertiesOf,
   propertyFunctionOf,
   propertyNameOf,
+  propertyValueOf,
 } from "./resolveValue.js";
 
 import type {
@@ -59,7 +62,8 @@ const MAX_BUILDER_HOPS = 2;
 
 export interface SurfacedMethod {
   func: FunctionRoot;
-  name: string;
+  /** The members a caller goes through to reach it, `["users", "list"]`. */
+  path: readonly string[];
 }
 
 export function surfaceMethods(
@@ -93,7 +97,7 @@ function surfaceClassMethods(cls: ClassDeclaration): SurfacedMethod[] {
       continue;
     }
     seen.add(name);
-    out.push({ func: method as FunctionRoot, name });
+    out.push({ func: method as FunctionRoot, path: [name] });
   }
   for (const method of cls.getStaticMethods()) {
     if (method.hasModifier(SyntaxKind.PrivateKeyword)) {
@@ -104,7 +108,7 @@ function surfaceClassMethods(cls: ClassDeclaration): SurfacedMethod[] {
       continue;
     }
     seen.add(name);
-    out.push({ func: method as FunctionRoot, name });
+    out.push({ func: method as FunctionRoot, path: [name] });
   }
   return out;
 }
@@ -222,26 +226,44 @@ function sameFileFunctionBehind(id: Identifier): FunctionRoot | null {
 }
 
 /**
- * Every property of the returned object that a function is behind. A
- * getter or setter has no name here, and neither does a spread, whose
- * own properties are walked in its place.
+ * Every property of the returned object that a function is behind, and
+ * every one inside an object a property has. A getter or setter has no
+ * name here, and neither does a spread, whose own properties are walked
+ * in its place. An object that comes back round to one it is inside adds
+ * nothing the second time.
  */
 function collectFromObjectLiteral(
   object: ObjectLiteralExpression,
   out: SurfacedMethod[],
   seen: Set<string>,
   resolution: ResolutionStore | undefined,
+  prefix: readonly string[] = [],
+  within: ReadonlySet<ObjectLiteralExpression> = new Set(),
 ): void {
+  if (within.has(object)) {
+    return;
+  }
+  const inside = new Set(within).add(object);
   for (const property of propertiesOf(object, resolution)) {
     const name = propertyNameOf(property);
-    if (name === null || seen.has(name)) {
+    if (name === null) {
+      continue;
+    }
+    const path = [...prefix, name];
+    const key = path.join(".");
+    if (seen.has(key)) {
       continue;
     }
     const func = propertyFunctionOf(property, resolution);
-    if (func === null) {
+    if (func !== null) {
+      seen.add(key);
+      out.push({ func, path });
       continue;
     }
-    seen.add(name);
-    out.push({ func, name });
+    const value = propertyValueOf(property);
+    const nested = value === null ? null : objectLiteralOf(value, resolution);
+    if (nested !== null) {
+      collectFromObjectLiteral(nested, out, seen, resolution, path, inside);
+    }
   }
 }

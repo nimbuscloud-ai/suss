@@ -201,7 +201,12 @@ function methodUnits(
   walk: ExportWalk & { readonly resolution: ResolutionStore },
 ): DiscoveredUnit[] {
   return surfaceMethods(owner, walk.resolution).map((m) =>
-    exportUnit(m.func, `${exportName}.${m.name}`, [...path, m.name], walk),
+    exportUnit(
+      m.func,
+      [exportName, ...m.path].join("."),
+      [...path, ...m.path],
+      walk,
+    ),
   );
 }
 
