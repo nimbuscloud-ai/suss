@@ -146,6 +146,25 @@ describe("drizzle recognizer — select chains", () => {
     expect(interaction.selector).toEqual(["email", "name"]);
   });
 
+  it("reads a select call kept in a name before `.from`", () => {
+    const effects = effectsIn(`
+      import { drizzle } from "drizzle-orm";
+      import { orders } from "./schema.js";
+      const db = drizzle({});
+      export async function staged() {
+        const query = db.select({ total: orders.total });
+        return query.from(orders);
+      }
+    `);
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBe("orders");
+    expect(interactionOf(effects[0])).toMatchObject({
+      kind: "read",
+      fields: ["total"],
+      operation: "select",
+    });
+  });
+
   it("writes `operation` before `selector`, the order every storage access uses", () => {
     const effects = effectsIn(`
       import { drizzle, eq } from "drizzle-orm";
