@@ -10,8 +10,6 @@
 // to ts-morph Node, so a resolved value comes back as a Node the rest
 // of the adapter can use.
 
-import { posix } from "node:path";
-
 import {
   type BindingElement,
   type Expression,
@@ -75,6 +73,7 @@ import {
   MAP_ENTRY_WRITE,
   MAPPING_METHOD,
 } from "./languageWords.js";
+import { specifierTargets } from "./specifierTargets.js";
 
 import type { Database } from "@suss/datalog";
 import type {
@@ -262,23 +261,24 @@ function emitImportFacts(
 }
 
 /**
- * Where a relative import that resolves to no file points, as an
- * absolute path. A generator's output directory is one of these until
- * the generator runs, and a pack asks about it by directory.
+ * Where an import that resolves to no file points, as absolute paths. A
+ * generator's output directory is one of these until the generator
+ * runs, and a pack asks about it by directory. A bare specifier points
+ * somewhere through the project's `baseUrl` and `paths`.
  */
 function unresolvedPathOf(
   moduleKey: string,
   specifier: string | undefined,
   importDecl: Node,
 ): string[] {
-  if (
-    specifier === undefined ||
-    moduleKey !== specifier ||
-    !specifier.startsWith(".")
-  ) {
+  if (specifier === undefined || moduleKey !== specifier) {
     return [];
   }
-  return [posix.join(importDecl.getSourceFile().getDirectoryPath(), specifier)];
+  return specifierTargets(
+    importDecl.getSourceFile().getFilePath(),
+    specifier,
+    importDecl.getProject().getCompilerOptions(),
+  );
 }
 
 /**

@@ -87,6 +87,39 @@ describe("generatedModulesOf", () => {
     expect(asked).toEqual([path.join(root, "src")]);
   });
 
+  it("counts an import through the project's baseUrl into a directory the configuration names", () => {
+    const generated = generatedModulesOf(
+      [
+        {
+          name: "orm",
+          generatedModuleDirs: () => [path.join(root, "src/generated/orm")],
+        },
+      ],
+      undefined,
+      { baseUrl: root, paths: { "@orm/*": ["src/generated/orm/*"] } },
+    );
+    expect(generated.reachedFrom(consumer, ["src/generated/orm/client"])).toBe(
+      true,
+    );
+    expect(generated.reachedFrom(consumer, ["@orm/client"])).toBe(true);
+    expect(generated.reachedFrom(consumer, ["src/handwritten"])).toBe(false);
+  });
+
+  it("leaves a package alone that baseUrl maps into a folder containing the marker", () => {
+    // The project's own schema folder contains the same marker a
+    // generated directory does, and `prisma/config` maps into it.
+    fs.mkdirSync(path.join(root, "prisma"), { recursive: true });
+    fs.writeFileSync(path.join(root, "prisma/schema.prisma"), "");
+    const generated = generatedModulesOf(
+      [{ name: "orm", generatedModuleMarkers: ["schema.prisma"] }],
+      undefined,
+      { baseUrl: root },
+    );
+    expect(generated.reachedFrom(consumer, ["prisma/config"])).toBe(false);
+    expect(generated.reachedFrom(consumer, ["prisma"])).toBe(false);
+    expect(generated.reachedFrom(consumer, ["../generated/client"])).toBe(true);
+  });
+
   it("counts nothing as generated where the pack's hook throws, and puts the throw on its tally", () => {
     const tallies = createPackTallies([{ name: "orm" }]);
     const noise = vi.spyOn(process.stderr, "write").mockReturnValue(true);

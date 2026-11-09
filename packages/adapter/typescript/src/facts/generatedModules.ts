@@ -14,7 +14,10 @@ import path from "node:path";
 
 import { runPackHook } from "@suss/extractor";
 
+import { specifierTargets } from "./specifierTargets.js";
+
 import type { PackTally, PatternPack } from "@suss/extractor";
+import type { ts } from "ts-morph";
 
 type DirFinder = NonNullable<PatternPack["generatedModuleDirs"]>;
 
@@ -34,6 +37,7 @@ export class GeneratedModules {
       pack: string;
       find: DirFinder;
     }> = [],
+    private readonly compilerOptions: ts.CompilerOptions = {},
   ) {}
 
   /** Whether any pack asked for a generated module to be looked for. */
@@ -51,8 +55,9 @@ export class GeneratedModules {
 
   /**
    * Whether any of this file's specifiers points into a directory the
-   * generator wrote. A specifier can name the directory itself or a
-   * file in it, so both are checked.
+   * generator wrote. A specifier can point at the directory itself or at
+   * a file in it, so both are checked. A bare specifier counts through
+   * the project's `baseUrl` and `paths`.
    */
   reachedFrom(fromFile: string, specifiers: ReadonlyArray<string>): boolean {
     if (!this.declared) {
@@ -60,19 +65,30 @@ export class GeneratedModules {
     }
     const fromDir = path.dirname(fromFile);
     for (const specifier of specifiers) {
-      if (!specifier.startsWith(".")) {
-        continue;
-      }
-      const target = path.resolve(fromDir, specifier);
+      // A package such as `prisma/config` also maps under `baseUrl`, into
+      // the project's own schema folder, which contains the marker too. So
+      // for a bare specifier only the project's configuration is evidence.
+      const markerCounts = specifier.startsWith(".");
+      const targets = specifierTargets(
+        fromFile,
+        specifier,
+        this.compilerOptions,
+      );
       if (
-        this.isGenerated(target) ||
-        this.isGenerated(path.dirname(target)) ||
-        this.isDeclaredOutput(fromDir, target)
+        targets.some(
+          (target) =>
+            (markerCounts && this.containsMarker(target)) ||
+            this.isDeclaredOutput(fromDir, target),
+        )
       ) {
         return true;
       }
     }
     return false;
+  }
+
+  private containsMarker(target: string): boolean {
+    return this.isGenerated(target) || this.isGenerated(path.dirname(target));
   }
 
   private isGenerated(dir: string): boolean {
@@ -105,11 +121,13 @@ export class GeneratedModules {
 /**
  * What the given packs say about the modules their generators write. A
  * pack's `generatedModuleDirs` that throws gives no directory for the
- * file it was asked about, and the failure goes on the pack's tally.
+ * file it was asked about, and the failure goes on the pack's tally. The
+ * compiler options say where a bare specifier points.
  */
 export function generatedModulesOf(
   packs: ReadonlyArray<GeneratingPack>,
   tallies?: ReadonlyMap<string, PackTally>,
+  compilerOptions: ts.CompilerOptions = {},
 ): GeneratedModules {
   const markers = new Set<string>();
   const finders: Array<{ pack: string; find: DirFinder }> = [];
@@ -131,5 +149,5 @@ export function generatedModulesOf(
       });
     }
   }
-  return new GeneratedModules([...markers], finders);
+  return new GeneratedModules([...markers], finders, compilerOptions);
 }

@@ -789,6 +789,27 @@ export const EXTRA_INPUTS = [
       ...packs("nextjs", "react", "fetch", "prisma", "node"),
     ],
   },
+  // The client is generated into the project and imported through
+  // baseUrl. Nothing runs the generator, so it matches by the schema's
+  // `output`, and services reach it through a class that extends it.
+  {
+    name: "prisma-nestjs",
+    group: "extra",
+    repo: "hoppscotch",
+    args: [
+      ...dir("packages/hoppscotch-backend"),
+      ...packs(
+        "apollo",
+        "nestjs-rest",
+        "nestjs-graphql",
+        "express",
+        "fetch",
+        "prisma",
+        "pg",
+        "node",
+      ),
+    ],
+  },
   {
     name: "mongoose",
     group: "extra",

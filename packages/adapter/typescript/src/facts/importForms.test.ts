@@ -1,4 +1,4 @@
-import { Node, SyntaxKind } from "ts-morph";
+import { Node, Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -165,5 +165,30 @@ describe("what importedNamesOf resolves per import form", () => {
         .map((one) => one.path),
     ).toEqual([["Client"]]);
     expect(store.importOriginsOf(receiver, ["/src/other"])).toEqual([]);
+  });
+
+  it("an import through the project's baseUrl of a file not written yet, asked about by its directory", () => {
+    const project = new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: { baseUrl: "/app" },
+    });
+    const file = project.createSourceFile(
+      "/app/src/consumer.ts",
+      'import { Client } from "src/generated/client";\nconst client = new Client();\nexport const run = () => client.read();\n',
+    );
+    const receiver = file
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .at(-1)
+      ?.getExpression();
+    if (receiver === undefined) {
+      throw new Error("fixture shape unexpected");
+    }
+    const store = new ResolutionStore();
+    expect(
+      store
+        .importOriginsOf(receiver, ["/app/src/generated"])
+        .map((one) => one.path),
+    ).toEqual([["Client"]]);
+    expect(store.importOriginsOf(receiver, ["/app/src/other"])).toEqual([]);
   });
 });
