@@ -1,10 +1,11 @@
 /**
- * Lambda handlers in Python and Ruby. Those adapters take packs as data,
- * so the pack hands each one the functions the template points at in a
- * file, and the adapter finds each function by the name the `Handler`
- * gives it: `handler`, or `Billing::Handler.process` for a Ruby class
- * method. Each handler then has a summary with its deployable unit, and
- * the call walk starts from it, as it does from a TypeScript handler.
+ * Lambda handlers in Python and Ruby. The pack hands each adapter the
+ * functions the template points at in a file, through the same manifest
+ * pattern the TypeScript pack declares, and the adapter finds each one by
+ * the path the `Handler` spells: `handler`, or `Billing::Handler.process`
+ * for a Ruby class method. Each handler then has a summary with its
+ * deployable unit, and the call walk starts from it, as it does from a
+ * TypeScript handler.
  *
  * Neither adapter reads a Lambda's response envelope yet, so a handler
  * gets no route binding. A field AppSync routes here binds the handler
@@ -13,35 +14,39 @@
  */
 
 import {
-  graphqlResolverBinding,
-  messageBusBinding,
-  unitInvocationBinding,
-} from "@suss/behavioral-ir";
-
-import {
   deployableUnit,
+  exportedAs,
+  handlerEntries,
   METADATA_NAMESPACE,
   messageBusWire,
   operationFields,
 } from "./discovery.js";
-import { type HandlerEntry, handlersForFile } from "./templateIndex.js";
 
-import type { BoundaryBinding } from "@suss/behavioral-ir";
-import type { DeclaredEntryPoint, DeclaredEntryUnit } from "@suss/extractor";
+import type { ManifestEntry, UnitSpec } from "@suss/extractor";
+import type { HandlerEntry } from "./templateIndex.js";
 
-/**
- * The handlers the nearest template points at in a file, for the pack
- * called `recognition`. Each binding records that name, so the run's
- * report counts the handlers as that pack's work.
- */
-export function lambdaEntryPoints(
-  recognition: string,
-): (filePath: string) => DeclaredEntryPoint[] {
-  return (filePath) =>
-    handlersForFile(filePath).map((entry) => ({
-      name: entry.exportName,
-      units: entryUnits(entry, recognition),
-    }));
+/** The handlers the nearest template points at in a Python file. */
+export function pythonHandlerEntries(filePath: string): ManifestEntry[] {
+  return handlerEntries(filePath, entryUnits, exportedAs);
+}
+
+/** The same for a Ruby file, where a class method is found through its class's constant path. */
+export function rubyHandlerEntries(filePath: string): ManifestEntry[] {
+  return handlerEntries(filePath, entryUnits, rubyHandlerPath);
+}
+
+/** `Billing::Handler.process` is a class method of `Billing::Handler`; a name with no dot is a method at the top of the file. */
+function rubyHandlerPath(
+  exportName: string,
+): Pick<ManifestEntry, "path" | "member"> {
+  const dot = exportName.lastIndexOf(".");
+  if (dot === -1) {
+    return { path: [exportName] };
+  }
+  return {
+    path: exportName.slice(0, dot).split("::"),
+    member: { name: exportName.slice(dot + 1), singleton: true },
+  };
 }
 
 /**
@@ -50,37 +55,27 @@ export function lambdaEntryPoints(
  * AppSync routes here binds the handler to that field, as in TypeScript.
  * A handler that something else also reaches keeps its own unit for it.
  */
-function entryUnits(
-  entry: HandlerEntry,
-  recognition: string,
-): DeclaredEntryUnit[] {
+function entryUnits(entry: HandlerEntry): UnitSpec[] {
   const operations = operationFields(entry);
-  const fields = operations.map((field) =>
-    resolverUnit(entry, field, recognition),
-  );
+  const fields = operations.map((field) => resolverUnit(entry, field));
   const reachedOtherwise =
     entry.httpRoutes.length > 0 ||
     entry.nonHttpEvents.length > 0 ||
     entry.graphqlFields.length > operations.length;
   return fields.length > 0 && !reachedOtherwise
     ? fields
-    : [...fields, handlerUnit(entry, recognition)];
+    : [...fields, handlerUnit(entry)];
 }
 
+/** Python and Ruby have always bound an AppSync field over `aws-https`, which the AppSync contract also writes. */
 function resolverUnit(
   entry: HandlerEntry,
   field: { typeName: string; fieldName: string },
-  recognition: string,
-): DeclaredEntryUnit {
+): UnitSpec {
   return {
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
-    binding: graphqlResolverBinding({
-      transport: "aws-https",
-      recognition,
-      typeName: field.typeName,
-      fieldName: field.fieldName,
-    }),
+    resolverInfo: { ...field, transport: "aws-https" },
     deployableUnit: deployableUnit(entry),
     metadata: {
       [METADATA_NAMESPACE]: {
@@ -91,18 +86,20 @@ function resolverUnit(
   };
 }
 
-function handlerUnit(
-  entry: HandlerEntry,
-  recognition: string,
-): DeclaredEntryUnit {
+function handlerUnit(entry: HandlerEntry): UnitSpec {
   const eventTypes = [
     ...entry.httpRoutes.map((route) => route.eventType),
     ...entry.nonHttpEvents.map((event) => event.eventType),
   ];
+  // A field AppSync routes here is an event too, and no bus delivers it.
+  const wire =
+    entry.graphqlFields.length > 0 ? null : messageBusWire(eventTypes);
   return {
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
-    binding: handlerBinding(entry, eventTypes, recognition),
+    ...(wire !== null
+      ? { channelInfo: { messageBus: wire, channel: null } }
+      : { invocationInfo: deployableUnit(entry) }),
     deployableUnit: deployableUnit(entry),
     metadata: {
       [METADATA_NAMESPACE]: {
@@ -115,18 +112,4 @@ function handlerUnit(
       },
     },
   };
-}
-
-function handlerBinding(
-  entry: HandlerEntry,
-  eventTypes: string[],
-  recognition: string,
-): BoundaryBinding {
-  // A field AppSync routes here is an event too, and no bus delivers it.
-  const wire =
-    entry.graphqlFields.length > 0 ? null : messageBusWire(eventTypes);
-  if (wire !== null) {
-    return messageBusBinding({ recognition, messageBus: wire, channel: null });
-  }
-  return unitInvocationBinding({ recognition, ...deployableUnit(entry) });
 }

@@ -24,13 +24,16 @@ vi.mock("./version.js", async (importOriginal) => {
   };
 });
 
-import { unitInvocationBinding } from "@suss/behavioral-ir";
-
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
 import { extractRubyProject } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { ExtractionReport, PackFailure } from "@suss/extractor";
+import type {
+  DeclaredDiscoveryPattern,
+  ExtractionReport,
+  ManifestEntry,
+  PackFailure,
+} from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
 
 let root: string;
@@ -81,30 +84,38 @@ const ENTRY_PACK: RubyPack = {
   name: "entries",
   protocol: "http",
   discovery: [],
-  entryPoints: (file) =>
-    file === handlerFile
-      ? [
-          {
-            name: "handler",
-            units: [
-              {
-                kind: "handler",
-                name: "Fn.handler",
-                binding: unitInvocationBinding({
-                  recognition: "entries",
-                  deploymentTarget: "lambda",
-                  instanceName: "Fn",
-                }),
-                deployableUnit: {
-                  deploymentTarget: "lambda",
-                  instanceName: "Fn",
+  declaredDiscovery: [
+    manifest((file) =>
+      file === handlerFile
+        ? [
+            {
+              path: ["handler"],
+              units: [
+                {
+                  kind: "handler",
+                  name: "Fn.handler",
+                  invocationInfo: {
+                    deploymentTarget: "lambda",
+                    instanceName: "Fn",
+                  },
+                  deployableUnit: {
+                    deploymentTarget: "lambda",
+                    instanceName: "Fn",
+                  },
                 },
-              },
-            ],
-          },
-        ]
-      : [],
+              ],
+            },
+          ]
+        : [],
+    ),
+  ],
 };
+
+function manifest(
+  entries: (file: string) => ManifestEntry[],
+): DeclaredDiscoveryPattern {
+  return { kind: "handler", match: { type: "manifest", entries } };
+}
 
 async function run(
   packs: RubyPack[],
@@ -138,21 +149,23 @@ const names = (summaries: readonly BehavioralSummary[]): string[] =>
   summaries.map((summary) => summary.identity.name);
 
 describe("a Ruby pack hook that throws", () => {
-  it("costs the units entryPoints would have given in each file, and the other pack's units stay", async () => {
+  it("costs the units a declared discovery pattern would have given in each file, and the other pack's units stay", async () => {
     const { summaries, report } = await run([
-      breaking({ entryPoints: thrower("cannot read the manifest") }),
+      breaking({
+        declaredDiscovery: [manifest(thrower("cannot read the manifest"))],
+      }),
       ENTRY_PACK,
     ]);
 
     expect(names(summaries)).toContain("Fn.handler");
     expect(failuresOf(report, "breaks")).toEqual([
       {
-        hook: "entryPoints",
+        hook: "discovery",
         file: handlerFile,
         message: "cannot read the manifest",
       },
       {
-        hook: "entryPoints",
+        hook: "discovery",
         file: controllerFile,
         message: "cannot read the manifest",
       },

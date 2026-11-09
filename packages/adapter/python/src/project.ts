@@ -70,7 +70,6 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { discoverUnits } from "./discovery.js";
-import { declaredEntryUnits } from "./entryPoints.js";
 import {
   bindEnvFacts,
   envFactsIn,
@@ -560,9 +559,7 @@ async function runPython(
     declaredModules.length > 0 ||
     options.packs.some(
       (pack) =>
-        pack.discovery.length > 0 ||
-        pack.entryPoints !== undefined ||
-        (pack.declaredDiscovery ?? []).length > 0,
+        pack.discovery.length > 0 || (pack.declaredDiscovery ?? []).length > 0,
     );
   // A client pattern with a receiver asks the rules what built it.
   const buildsReceivers = options.packs.some((pack) =>
@@ -774,11 +771,6 @@ async function runPython(
         filesByPath,
         facts: db,
         storageFor,
-      }),
-      ...declaredEntryUnits(boundFile, options.packs, {
-        facts: db,
-        storageFor,
-        tallies,
       }),
       ...declaredDiscoveryUnits(boundFile, options.packs, {
         facts: db,

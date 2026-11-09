@@ -74,7 +74,6 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { createFileCache, discoverUnits, routingGapUnit } from "./discovery.js";
-import { declaredEntryUnits } from "./entryPoints.js";
 import {
   emitBlankToNilFacts,
   emitEnvFacts,
@@ -881,18 +880,6 @@ async function runRuby(
         displayPathOf,
         facts: db,
         onReachSeed,
-      }),
-      ...declaredEntryUnits(root, file, {
-        packs: options.packs,
-        ...(storage === undefined ? {} : { storage }),
-        ...(jobs === undefined ? {} : { jobs }),
-        inheritedMethods,
-        bodyBlocks,
-        dynamicNames: watchedNames,
-        displayPathOf,
-        facts: db,
-        onReachSeed,
-        tallies,
       }),
       ...declaredDiscoveryUnits(root, file, {
         packs: options.packs,

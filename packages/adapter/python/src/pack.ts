@@ -17,7 +17,6 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   DeclaredDiscoveryPattern,
-  DeclaredEntryPoint,
   InvocationRecognizer,
   LibraryEnvVars,
   PatternPack,
@@ -47,12 +46,6 @@ export interface PythonPack {
   discovery: PythonDiscoveryPattern[];
   /** Patterns every adapter reads the same way, through the module ops over this adapter's facts. */
   declaredDiscovery?: DeclaredDiscoveryPattern[];
-  /**
-   * The functions a deploy manifest says the platform calls in a file,
-   * given the file's absolute path. The adapter builds the units on each
-   * function it finds by name, and the call walk starts there.
-   */
-  entryPoints?: (file: string) => DeclaredEntryPoint[];
   /** Environment variables the library reads from its own installed code, where no walk over the project goes. */
   libraryEnvVars?: LibraryEnvVars[];
   /**

@@ -15,22 +15,42 @@
 
 import { z } from "zod";
 
-import { compile, declarationsIn } from "@suss/recognize";
+import { compile, declarationsIn, describeDiscovery } from "@suss/recognize";
 
-import { awsLambdaDiscovery } from "./discovery.js";
-import { lambdaEntryPoints } from "./entryPoints.js";
+import { typescriptHandlerEntries } from "./discovery.js";
+import { pythonHandlerEntries, rubyHandlerEntries } from "./entryPoints.js";
 import { invokeDeclarations } from "./invokes.js";
 import { templatesForFiles } from "./templateIndex.js";
 import { HTTP_TERMINALS } from "./terminals.js";
 
 import type { PythonPack } from "@suss/adapter-python";
 import type { RubyPack } from "@suss/adapter-ruby";
-import type { PatternPack } from "@suss/extractor";
+import type {
+  DeclaredDiscoveryPattern,
+  ManifestEntry,
+  PatternPack,
+} from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
-export { awsLambdaDiscovery, METADATA_NAMESPACE } from "./discovery.js";
-export { lambdaEntryPoints } from "./entryPoints.js";
+export {
+  METADATA_NAMESPACE,
+  typescriptHandlerEntries,
+} from "./discovery.js";
+export { pythonHandlerEntries, rubyHandlerEntries } from "./entryPoints.js";
 export { clearTemplateCache } from "./templateIndex.js";
+
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
+
+/** The handlers the template points at in each file, found by the path the `Handler` spells. */
+function handlers(
+  entries: (filePath: string) => ManifestEntry[],
+): DeclaredDiscoveryPattern {
+  return { kind: "handler", match: { type: "manifest", entries } };
+}
 
 /**
  * The pack reads everything from the template or the code, so it takes
@@ -44,8 +64,10 @@ export function awsLambdaFramework(
   _options: AwsLambdaPackOptions = {},
 ): PatternPack {
   const invokes = invokeDeclarations();
+  const found = handlers(typescriptHandlerEntries);
   return {
     name: "aws-lambda",
+    version: VERSION,
     protocol: "http",
     // The adapter cannot read Sentry's wrapper inside the library, so the
     // pack declares that the handler is argument 0. A wrapper written in
@@ -55,10 +77,9 @@ export function awsLambdaFramework(
     ],
     languages: ["typescript", "javascript"],
 
-    // The routing is in the template, so the callback finds handlers
-    // there and the pattern list stays empty.
-    discovery: [],
-    discoverUnits: awsLambdaDiscovery(),
+    // The routing is in the template, so the one pattern asks it which
+    // handlers are in each file. It has no import gate; see below.
+    discovery: [{ ...found, requiresImport: [] }],
 
     // Discovery reads the templates, so they go into the cache key and an
     // edited template makes the next run read the project again.
@@ -67,8 +88,8 @@ export function awsLambdaFramework(
     // No import gate: a JavaScript handler imports nothing from
     // `aws-lambda`, so the template acts as the gate. See the README.
 
-    // A unit that is not HTTP gets a longer list from the discovery
-    // callback in place of this one.
+    // A unit that is not HTTP gets a longer list from its unit spec in
+    // place of this one.
     terminals: HTTP_TERMINALS,
 
     inputMapping: {
@@ -101,12 +122,17 @@ export function awsLambdaFramework(
       },
     ],
 
-    // A pack-level `requiresImport` would gate `discoverUnits` too. Each
-    // declaration already checks which SDK its command class came from.
+    // A pack-level `requiresImport` would gate the handler pattern too.
+    // Each declaration already checks which SDK its command class came from.
     invocationRecognizers: invokes.map((match) =>
       compile(match.declared, "@suss/framework-aws-lambda"),
     ),
-    declarations: declarationsIn(invokes),
+    declarations: {
+      declarations: [
+        ...declarationsIn(invokes).declarations,
+        describeDiscovery(found),
+      ],
+    },
   };
 }
 
@@ -123,13 +149,13 @@ export const declares: PackDeclaration = {
  * no import and declares no dependency.
  */
 export function awsLambdaPython(): PythonPack {
-  const name = "aws-lambda-python";
   return {
-    name,
+    name: "aws-lambda-python",
+    version: VERSION,
     protocol: "http",
     discovery: [],
+    declaredDiscovery: [handlers(pythonHandlerEntries)],
     discoveryInputs: templatesForFiles,
-    entryPoints: lambdaEntryPoints(name),
     // Powertools reads these from its own installed package.
     libraryEnvVars: [
       { module: "aws_lambda_powertools", prefixes: ["POWERTOOLS_"] },
@@ -147,13 +173,13 @@ export const declaresPython: PackDeclaration = {
 
 /** Ruby handlers, found the same way as Python ones. */
 export function awsLambdaRuby(): RubyPack {
-  const name = "aws-lambda-ruby";
   return {
-    name,
+    name: "aws-lambda-ruby",
+    version: VERSION,
     protocol: "http",
     discovery: [],
+    declaredDiscovery: [handlers(rubyHandlerEntries)],
     discoveryInputs: templatesForFiles,
-    entryPoints: lambdaEntryPoints(name),
   };
 }
 

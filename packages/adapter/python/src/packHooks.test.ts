@@ -24,12 +24,15 @@ vi.mock("./version.js", async (importOriginal) => {
   };
 });
 
-import { functionCallBinding } from "@suss/behavioral-ir";
-
 import { extractPythonProject } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { ExtractionReport, PackFailure } from "@suss/extractor";
+import type {
+  DeclaredDiscoveryPattern,
+  ExtractionReport,
+  ManifestEntry,
+  PackFailure,
+} from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 
 let root: string;
@@ -65,29 +68,34 @@ const ENTRY_PACK: PythonPack = {
   name: "entries",
   protocol: "http",
   discovery: [],
-  entryPoints: (file) =>
-    file === appFile
-      ? [
-          {
-            name: "handler",
-            units: [
-              {
-                kind: "handler",
-                name: "Orders.handler",
-                binding: functionCallBinding({
-                  transport: "in-process",
-                  recognition: "entries",
-                }),
-                deployableUnit: {
-                  deploymentTarget: "lambda",
-                  instanceName: "Orders",
+  declaredDiscovery: [
+    manifest((file) =>
+      file === appFile
+        ? [
+            {
+              path: ["handler"],
+              units: [
+                {
+                  kind: "handler",
+                  name: "Orders.handler",
+                  deployableUnit: {
+                    deploymentTarget: "lambda",
+                    instanceName: "Orders",
+                  },
                 },
-              },
-            ],
-          },
-        ]
-      : [],
+              ],
+            },
+          ]
+        : [],
+    ),
+  ],
 };
+
+function manifest(
+  entries: (file: string) => ManifestEntry[],
+): DeclaredDiscoveryPattern {
+  return { kind: "handler", match: { type: "manifest", entries } };
+}
 
 async function run(
   packs: PythonPack[],
@@ -122,21 +130,23 @@ const names = (summaries: readonly BehavioralSummary[]): string[] =>
   summaries.map((summary) => summary.identity.name);
 
 describe("a Python pack hook that throws", () => {
-  it("costs the units entryPoints would have given in each file, and the other pack's units stay", async () => {
+  it("costs the units a declared discovery pattern would have given in each file, and the other pack's units stay", async () => {
     const { summaries, report } = await run([
-      breaking({ entryPoints: thrower("cannot read the manifest") }),
+      breaking({
+        declaredDiscovery: [manifest(thrower("cannot read the manifest"))],
+      }),
       ENTRY_PACK,
     ]);
 
     expect(names(summaries)).toContain("Orders.handler");
     expect(failuresOf(report, "breaks")).toEqual([
       {
-        hook: "entryPoints",
+        hook: "discovery",
         file: appFile,
         message: "cannot read the manifest",
       },
       {
-        hook: "entryPoints",
+        hook: "discovery",
         file: helpersFile,
         message: "cannot read the manifest",
       },

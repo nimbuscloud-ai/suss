@@ -77,12 +77,25 @@ function statusCodesOf(summary: BehavioralSummary): number[] {
 // ---------------------------------------------------------------------------
 
 describe("awsLambdaFramework: pack shape", () => {
-  it("declares an HTTP pack with a template-driven discovery callback", () => {
+  it("declares an HTTP pack whose one discovery pattern reads the template", () => {
     const pack = awsLambdaFramework();
     expect(pack.name).toBe("aws-lambda");
+    expect(pack.version).toBe("1");
     expect(pack.protocol).toBe("http");
-    expect(pack.discovery).toEqual([]);
-    expect(pack.discoverUnits).toBeDefined();
+    expect(pack.discovery.map((pattern) => pattern.match.type)).toEqual([
+      "manifest",
+    ]);
+    expect(pack.discovery[0]?.requiresImport).toEqual([]);
+    expect(pack.discoverUnits).toBeUndefined();
+    expect(
+      pack.declarations?.declarations.find((one) => one.name === "manifest"),
+    ).toEqual({
+      name: "manifest",
+      dataLinks: 0,
+      functionLinks: ["entries"],
+      astLinks: [],
+      example: null,
+    });
     // No import gate on purpose. Only a TypeScript handler imports the
     // handler types, to annotate its export, so gating on that import
     // hid every JavaScript service. The template says which handlers, so
