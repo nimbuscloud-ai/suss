@@ -44,6 +44,23 @@ export interface Global {
 }
 
 /**
+ * An object the runtime provides and nothing declares, which a read chain
+ * reads entries off: a global the source spells, or a parameter the
+ * platform fills when it calls a unit.
+ */
+export type RuntimeObject = Global | HandedIn;
+
+/**
+ * A parameter the platform fills when it calls a discovered unit: the
+ * `env` a Worker's `fetch(request, env, ctx)` is handed. The pack that
+ * discovers the unit says which parameter, under this name.
+ */
+export interface HandedIn {
+  readonly origin: "handedIn";
+  readonly name: string;
+}
+
+/**
  * A receiver whose method one of these modules declared.
  *
  * This is the origin for a client the source never spells out. `const
@@ -614,6 +631,73 @@ export interface CallOps {
   statesSlots?(effect: Effect, slots: readonly StatedSlot[]): void;
 }
 
+/**
+ * One argument a call passes that becomes the key of a read. An argument
+ * that is the caller's own parameter is `forwarded`: the key comes from
+ * whoever calls the caller, and the read belongs to that call.
+ */
+export interface SuppliedKey {
+  readonly at: number;
+  /** What the call passes there, which settles to the key. */
+  readonly value: ValueOps;
+  readonly forwarded: boolean;
+  /** The read sites the key reaches, for whether each copes with a missing value and which object it reads. */
+  readonly sites: readonly ReadOps[];
+}
+
+/**
+ * One read site, `o.n`, `o["n"]`, `const { n } = o` or `o[k]`, as the
+ * questions a runtime-read chain asks about it. An adapter hands one out
+ * for each property read its walk visits, and for a call, since a read
+ * through a helper is reported at the call.
+ */
+export interface ReadOps {
+  /** Whether the object read off is the runtime object: spelled as one of its paths, or a value the rules followed one into. */
+  isOff(object: RuntimeObject): boolean;
+  /**
+   * The one path among `paths` the object is, as `receiverGlobal` gives
+   * it for a receiver: null when two reach it, undefined when none does.
+   */
+  objectPath(paths: readonly string[]): string | null | undefined;
+  /**
+   * The key the site reads as the source writes it, or null for a key
+   * the program works out at run time. Undefined when the site reads no
+   * entry at all, as a call does.
+   */
+  entry(): string | null | undefined;
+  /**
+   * The reads off this site's own value that the adapter's walk hands no
+   * site of its own: in TypeScript the element access and the binding
+   * elements under `process.env`. Empty where the walk visits every read.
+   */
+  readsOff(): readonly ReadOps[];
+  /** Whether the program copes with the read coming back empty, by the adapter's own rule. */
+  defaulted(): boolean;
+  /** The value the program uses when the read comes back empty, when the source writes one at the read. */
+  fallback(): ValueOps | null;
+  /** The value assigned to the site when it is the left side of an assignment, else null. */
+  assigned(): ValueOps | null;
+  /** The site as the source wrote it. */
+  source(): string;
+  /**
+   * At a call, the arguments whose value becomes the key of a read off
+   * the object, somewhere down the callee: `requireEnv("TABLE")` passes
+   * `TABLE` to the `name` that `process.env[name]` reads. Empty at any
+   * other site, and null when the adapter cannot say either way. It is
+   * asked here rather than of the call's ops so that no adapter has to
+   * state a call's facts to answer it.
+   */
+  keysSuppliedTo(object: RuntimeObject): readonly SuppliedKey[] | null;
+}
+
+/**
+ * The property an adapter puts a site's read ops on, in the context it
+ * hands an access recognizer.
+ */
+export interface ReadOpsCarrier {
+  read?: ReadOps;
+}
+
 /** A column an effect writes or picks rows by, and the value stated for it. */
 export interface StatedSlot {
   readonly slot: "field" | "selector";
@@ -772,6 +856,43 @@ export interface FactSource {
    * can be traced back.
    */
   extendValue?(value: string, ops: ValueOps): ValueOps;
+  /**
+   * The key of the object a read site reads off, by the adapter's own
+   * syntax, without stating the site's facts. An adapter that states facts
+   * on demand checks the object first, so a site that cannot be off any
+   * runtime object is never stated. Unset reads the object off the site's
+   * own read rows.
+   */
+  objectOf?(site: string): string | null;
+  /** The sites that read entries off the value at the key and that the adapter's walk does not visit, stated. */
+  readsOff?(key: string): readonly string[];
+  /** Whether the program copes with the read at the key coming back empty. */
+  defaultedAt?(key: string): boolean;
+  /** The key of the value the program falls back to when the read at the key comes back empty, or null. */
+  fallbackOf?(key: string): string | null;
+  /**
+   * The read sites off an environment object whose key comes from the
+   * parameter at this key, however many calls deep, or null when the
+   * adapter did not state the facts of the parameter's file.
+   */
+  sitesNaming?(parameter: string): readonly string[] | null;
+  /**
+   * The arguments of the call at the key that become a read's key, worked
+   * out the adapter's own way, by key. Unset works them out over the
+   * facts from `sitesNaming`.
+   */
+  keysSupplied?(
+    call: string,
+    object: RuntimeObject,
+  ): readonly KeySupplied[] | null;
+}
+
+/** One argument that becomes a read's key, as a fact source states it. */
+export interface KeySupplied {
+  readonly at: number;
+  readonly value: string;
+  readonly forwarded: boolean;
+  readonly sites: readonly string[];
 }
 
 /**

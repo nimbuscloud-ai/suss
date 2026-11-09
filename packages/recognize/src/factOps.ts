@@ -49,6 +49,8 @@ import type {
   ValueOps,
 } from "@suss/extractor";
 
+export { factReadOps } from "./factReadOps.js";
+
 export type { FactRows, FactSource } from "@suss/extractor";
 
 /** The ops for the call at `key`, or null when no call is stated there. */
@@ -917,7 +919,7 @@ function objectBehind(key: string, source: FactSource): string | null {
  * function among what the value comes to, or else the one a factory
  * call gives back.
  */
-function functionBehind(key: string, source: FactSource): string | null {
+export function functionBehind(key: string, source: FactSource): string | null {
   if (isFunction(key, source)) {
     return key;
   }
