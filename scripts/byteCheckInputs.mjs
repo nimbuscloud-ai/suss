@@ -458,12 +458,12 @@ export const FIXTURE_INPUTS = [
   fixture("queue-consumer-closure-python", [
     ...lang("python"),
     ...dir("fixtures/queue-consumer-closure-python"),
-    ...packs("requests"),
+    ...packs("requests", "aws-lambda-python"),
   ]),
   fixture("queue-consumer-closure-ruby", [
     ...lang("ruby"),
     ...dir("fixtures/queue-consumer-closure-ruby"),
-    ...packs("faraday"),
+    ...packs("faraday", "aws-lambda-ruby"),
   ]),
   fixture("queue-consumer-store", [
     ...dir("fixtures/queue-consumer-store"),

@@ -93,7 +93,7 @@ describe("repeat delivery over a queue worker on a shared CodeUri", () => {
     }
   });
 
-  it("starts a Python summary at each handler the template points at, the dotted module included", async () => {
+  it("starts a Python summary at each handler the template points at, the dotted module and a name bound to a def included", async () => {
     clearTemplateCache();
     const { summaries } = await extractPythonProject({
       files: findPythonFiles(pythonRoot),
@@ -105,6 +105,7 @@ describe("repeat delivery over a queue worker on a shared CodeUri", () => {
     expect(handlerStarts(summaries)).toEqual([
       "AccountsFunction src/handlers/accounts.py handler",
       "OrdersWorker src/handlers/orders.py handler",
+      "ReportsFunction src/handlers/reports.py handler",
     ]);
   });
 
