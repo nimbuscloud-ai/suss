@@ -14,7 +14,6 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   DeclaredDiscoveryPattern,
-  DeclaredEntryPoint,
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
@@ -90,12 +89,6 @@ export interface RubyPack {
   discovery: RubyDiscoveryPattern[];
   /** Patterns every adapter reads the same way, through the module ops over this adapter's facts. */
   declaredDiscovery?: DeclaredDiscoveryPattern[];
-  /**
-   * The methods a deploy manifest says the platform calls in a file,
-   * given the file's absolute path. The adapter builds the units on each
-   * method it finds by name, and the call walk starts there.
-   */
-  entryPoints?: (file: string) => DeclaredEntryPoint[];
   /** The calls the library offers a project for making a request. */
   clients?: RbClientCall[];
   /** The library's model calls that read or write the database. */

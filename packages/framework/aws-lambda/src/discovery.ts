@@ -1,8 +1,10 @@
 /**
- * The pack's `discoverUnits` callback. Lambda handlers are wired up in
- * the template's `Events` block, so for each source file the callback
- * finds the handlers the nearest template points at it and emits one
- * unit per HTTP route and per AppSync operation field.
+ * The handlers a template points at, as the entries of the pack's
+ * `manifest` discovery pattern. Lambda handlers are wired up in the
+ * template's `Events` block, so for each source file the pattern asks the
+ * nearest template which handlers are in it, and the adapter finds each
+ * function by the path the `Handler` spells. A TypeScript handler gets
+ * one unit per HTTP route and per AppSync operation field.
  *
  * A handler that an SQS, Schedule or SNS event reaches gets a
  * `recognized-not-http` accounting unit, so suss never drops a
@@ -14,13 +16,8 @@
 import { type HandlerEntry, handlersForFile } from "./templateIndex.js";
 import { NON_HTTP_TERMINALS } from "./terminals.js";
 
-import type {
-  FunctionRoot,
-  TsDiscoveryContext,
-} from "@suss/adapter-typescript";
 import type { DeployableUnit, MessageBusSemantics } from "@suss/behavioral-ir";
-import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
-import type { SourceFile } from "ts-morph";
+import type { ManifestEntry, UnitSpec } from "@suss/extractor";
 
 /** Metadata namespace stamped on every unit this pack discovers. */
 export const METADATA_NAMESPACE = "awsLambda";
@@ -29,11 +26,53 @@ export function deployableUnit(entry: HandlerEntry): DeployableUnit {
   return { deploymentTarget: "lambda", instanceName: entry.functionLogicalId };
 }
 
-function httpRouteUnits(
-  entry: HandlerEntry,
-  func: FunctionRoot,
-): DiscoveredCustomUnit[] {
-  const units: DiscoveredCustomUnit[] = [];
+/** Where a handler is in its file, as the manifest pattern looks it up. */
+type HandlerPath = (
+  exportName: string,
+) => Pick<ManifestEntry, "path" | "member">;
+
+/** A function at the top of the file, under the name the `Handler` gives it. */
+export const exportedAs: HandlerPath = (exportName) => ({ path: [exportName] });
+
+/** The handlers the nearest template points at in a file, each at the path its language spells and with the units it gets. */
+export function handlerEntries(
+  filePath: string,
+  units: (entry: HandlerEntry) => UnitSpec[],
+  at: HandlerPath,
+): ManifestEntry[] {
+  return handlersForFile(filePath).map((entry) => ({
+    ...at(entry.exportName),
+    units: units(entry),
+  }));
+}
+
+/** The handlers in a TypeScript or JavaScript file. A template that points at an export the file lacks, after a rename, finds nothing there. */
+export function typescriptHandlerEntries(filePath: string): ManifestEntry[] {
+  return handlerEntries(filePath, typescriptUnits, exportedAs);
+}
+
+/**
+ * A route and a GraphQL field are independent boundaries, and one
+ * handler can serve both. A queue feeding a handler that also serves a
+ * route or an operation still gets an accounting unit, so the queue
+ * stays visible. So does a handler that bound to nothing at all.
+ */
+function typescriptUnits(entry: HandlerEntry): UnitSpec[] {
+  const boundToNothing =
+    !hasBindableRoute(entry) && operationFields(entry).length === 0;
+  const accounted =
+    accountedEventTypes(entry).length > 0 || boundToNothing
+      ? [accountingUnit(entry)]
+      : [];
+  return [
+    ...httpRouteUnits(entry),
+    ...graphqlResolverUnits(entry),
+    ...accounted,
+  ];
+}
+
+function httpRouteUnits(entry: HandlerEntry): UnitSpec[] {
+  const units: UnitSpec[] = [];
   for (const route of entry.httpRoutes) {
     // One REST binding cannot stand for every verb, so the declared side
     // covers an ANY route. The accounting unit records its event type.
@@ -41,7 +80,6 @@ function httpRouteUnits(
       continue;
     }
     units.push({
-      func,
       kind: "handler",
       name: `${entry.functionLogicalId}.${entry.exportName}`,
       routeInfo: { method: route.method, path: route.path },
@@ -82,12 +120,8 @@ function typeFields(
   );
 }
 
-function graphqlResolverUnits(
-  entry: HandlerEntry,
-  func: FunctionRoot,
-): DiscoveredCustomUnit[] {
+function graphqlResolverUnits(entry: HandlerEntry): UnitSpec[] {
   return operationFields(entry).map((field) => ({
-    func,
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
     resolverInfo: { typeName: field.typeName, fieldName: field.fieldName },
@@ -111,16 +145,12 @@ function graphqlResolverUnits(
  * Nothing constrains what these handlers return, so the unit uses the
  * longer terminal list and reads any returned object.
  */
-function accountingUnit(
-  entry: HandlerEntry,
-  func: FunctionRoot,
-): DiscoveredCustomUnit {
+function accountingUnit(entry: HandlerEntry): UnitSpec {
   const eventTypes = accountedEventTypes(entry);
   const backs = typeFields(entry);
   const wire = messageBusWire(eventTypes);
   const unit = deployableUnit(entry);
   return {
-    func,
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
     terminals: NON_HTTP_TERMINALS,
@@ -183,49 +213,4 @@ function accountedEventTypes(entry: HandlerEntry): string[] {
 
 function hasBindableRoute(entry: HandlerEntry): boolean {
   return entry.httpRoutes.some((r) => r.method !== "ANY");
-}
-
-export function awsLambdaDiscovery(): NonNullable<
-  PatternPack["discoverUnits"]
-> {
-  return (sourceFile, ctx) => {
-    const sf = sourceFile as SourceFile;
-    const tsCtx = ctx as TsDiscoveryContext;
-    const filePath = tsCtx.getFilePath(sf);
-
-    const entries = handlersForFile(filePath);
-    if (entries.length === 0) {
-      return [];
-    }
-
-    const exported = new Map<string, FunctionRoot>();
-    for (const { name, func } of tsCtx.exportedFunctions(sf)) {
-      exported.set(name, func);
-    }
-
-    const units: DiscoveredCustomUnit[] = [];
-    for (const entry of entries) {
-      const func = exported.get(entry.exportName);
-      if (func === undefined) {
-        // The template points at an export this file lacks, after a rename
-        // or a build mismatch. The declared route still exists on the
-        // contract side.
-        continue;
-      }
-      // A route and a GraphQL field are independent boundaries, and one
-      // handler can serve both.
-      units.push(...httpRouteUnits(entry, func));
-      units.push(...graphqlResolverUnits(entry, func));
-      // A queue feeding a handler that also serves a route or an operation
-      // still gets an accounting unit, so the queue stays visible. So does
-      // a handler that bound to nothing at all.
-      const unaccountedEvents = accountedEventTypes(entry);
-      const boundToNothing =
-        !hasBindableRoute(entry) && operationFields(entry).length === 0;
-      if (unaccountedEvents.length > 0 || boundToNothing) {
-        units.push(accountingUnit(entry, func));
-      }
-    }
-    return units;
-  };
 }

@@ -4,12 +4,10 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { unitInvocationBinding } from "@suss/behavioral-ir";
-
 import { extractRubyProject } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { DeclaredEntryPoint } from "@suss/extractor";
+import type { ManifestEntry } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
 
 const FILE = "app.rb";
@@ -39,18 +37,23 @@ const SOURCE = [
   "",
 ].join("\n");
 
-function entry(name: string, withMetadata: boolean): DeclaredEntryPoint {
+/** The entry the Lambda pack builds for a `Handler`: a class method is a member of its class's constant path. */
+function entry(name: string, withMetadata: boolean): ManifestEntry {
+  const dot = name.lastIndexOf(".");
+  const at: Pick<ManifestEntry, "path" | "member"> =
+    dot === -1
+      ? { path: [name] }
+      : {
+          path: name.slice(0, dot).split("::"),
+          member: { name: name.slice(dot + 1), singleton: true },
+        };
   return {
-    name,
+    ...at,
     units: [
       {
         kind: "handler",
         name: `Fn.${name}`,
-        binding: unitInvocationBinding({
-          recognition: "entry-inline-test-pack",
-          deploymentTarget: "lambda",
-          instanceName: "Fn",
-        }),
+        invocationInfo: { deploymentTarget: "lambda", instanceName: "Fn" },
         deployableUnit: { deploymentTarget: "lambda", instanceName: "Fn" },
         ...(withMetadata ? { metadata: { entryTest: { name } } } : {}),
       },
@@ -63,16 +66,24 @@ const entryPack: RubyPack = {
   name: "entry-inline-test-pack",
   protocol: "http",
   discovery: [],
-  entryPoints: (file) =>
-    path.basename(file) === FILE
-      ? [
-          entry("handler", true),
-          entry("Billing::Handler.process", false),
-          entry("missing", false),
-          entry("Missing.run", false),
-          entry("Empty.run", false),
-        ]
-      : [],
+  declaredDiscovery: [
+    {
+      kind: "handler",
+      match: {
+        type: "manifest",
+        entries: (file) =>
+          path.basename(file) === FILE
+            ? [
+                entry("handler", true),
+                entry("Billing::Handler.process", false),
+                entry("missing", false),
+                entry("Missing.run", false),
+                entry("Empty.run", false),
+              ]
+            : [],
+      },
+    },
+  ],
 };
 
 let root: string;

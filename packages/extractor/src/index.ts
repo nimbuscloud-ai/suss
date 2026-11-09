@@ -154,10 +154,6 @@ export {
 } from "./valueSources.js";
 
 export type {
-  DeclaredEntryPoint,
-  DeclaredEntryUnit,
-} from "./entryPoints.js";
-export type {
   AccessRecognizer,
   ArgumentParser,
   BindingExtraction,

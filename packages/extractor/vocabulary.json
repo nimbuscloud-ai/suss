@@ -88,6 +88,7 @@
   "jsxReturn": "suss: TerminalMatch variant tag",
   "literal": "shape kind the extractor records",
   "low": "suss: confidence level",
+  "manifest": "suss: DiscoveryMatch variant tag",
   "map": "shape kind the extractor records",
   "medium": "suss: confidence level",
   "member": "suss: member expression kind in a value lowering, which Rails routing also happens to call its on: value",

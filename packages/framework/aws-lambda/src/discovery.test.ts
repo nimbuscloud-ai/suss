@@ -190,7 +190,7 @@ async function run(): Promise<BehavioralSummary[]> {
   return await adapter.extractAll();
 }
 
-describe("awsLambdaDiscovery — edge cases", () => {
+describe("TypeScript handlers,edge cases", () => {
   it("binds concrete-method routes and skips ANY on a mixed function", async () => {
     const summaries = await run();
     const ok = summaries.find(
@@ -258,7 +258,7 @@ describe("handlersForFile — no reachable template", () => {
   });
 });
 
-describe("awsLambdaDiscovery — AppSync resolvers", () => {
+describe("TypeScript handlers,AppSync resolvers", () => {
   it("binds a handler to the GraphQL field the template routes to it", async () => {
     const summaries = await run();
     const posts = summaries.find((s) => s.identity.name.startsWith("PostsFn."));
@@ -296,7 +296,7 @@ describe("awsLambdaDiscovery — AppSync resolvers", () => {
   });
 });
 
-describe("awsLambdaDiscovery — a handler on two boundaries", () => {
+describe("TypeScript handlers,a handler on two boundaries", () => {
   it("keeps both the route and the field when a handler serves both", async () => {
     const summaries = await run();
     const both = summaries.filter((s) => s.identity.name.startsWith("BothFn."));
@@ -321,7 +321,7 @@ describe("awsLambdaDiscovery — a handler on two boundaries", () => {
   });
 });
 
-describe("awsLambdaDiscovery — fields on a non-root type", () => {
+describe("TypeScript handlers,fields on a non-root type", () => {
   it("does not treat a type field as an operation a client can call", async () => {
     const summaries = await run();
     const queued = summaries.filter((s) =>
@@ -354,7 +354,7 @@ describe("awsLambdaDiscovery — fields on a non-root type", () => {
   });
 });
 
-describe("awsLambdaDiscovery — events on a bound handler", () => {
+describe("TypeScript handlers,events on a bound handler", () => {
   it("reports a queue that feeds a handler which also serves a route", async () => {
     const summaries = await run();
     const both = summaries.filter((s) =>
