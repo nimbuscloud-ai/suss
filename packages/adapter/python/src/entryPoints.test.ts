@@ -26,26 +26,28 @@ const entryPack: PythonPack = {
   discovery: [],
   entryPoints: (file) =>
     path.basename(file) === "app.py"
-      ? ["handler", "wrapped", "absent", "table_name"].map((name) => ({
-          name,
-          units: [
-            {
-              kind: "handler",
-              name: `Orders.${name}`,
-              binding: functionCallBinding({
-                transport: "in-process",
-                recognition: "entry-inline-test-pack",
-              }),
-              deployableUnit: {
-                deploymentTarget: "lambda",
-                instanceName: "Orders",
+      ? ["handler", "wrapped", "absent", "table_name", "aliased"].map(
+          (name) => ({
+            name,
+            units: [
+              {
+                kind: "handler",
+                name: `Orders.${name}`,
+                binding: functionCallBinding({
+                  transport: "in-process",
+                  recognition: "entry-inline-test-pack",
+                }),
+                deployableUnit: {
+                  deploymentTarget: "lambda",
+                  instanceName: "Orders",
+                },
+                ...(name === "handler"
+                  ? { metadata: { entryTest: { name } } }
+                  : {}),
               },
-              ...(name === "handler"
-                ? { metadata: { entryTest: { name } } }
-                : {}),
-            },
-          ],
-        }))
+            ],
+          }),
+        )
       : [],
   libraryEnvVars: [
     { module: "tracing_lib", prefixes: ["TRACE_"] },
@@ -67,6 +69,11 @@ beforeAll(async () => {
       "",
       "def handler(event, context):",
       "    return table_name()",
+      "",
+      "def record(event, context):",
+      '    return os.environ["AUDIT_TOPIC"]',
+      "",
+      "aliased = record",
       "",
     ].join("\n"),
   );
@@ -103,6 +110,14 @@ describe("a function a deploy manifest points at", () => {
       instanceName: "Orders",
     });
     expect(handler?.metadata?.entryTest).toEqual({ name: "handler" });
+  });
+
+  it("follows a name bound to a def to that def, which the platform calls through the name", () => {
+    const aliased = summaries.find((s) => s.identity.name === "Orders.aliased");
+
+    expect(aliased?.kind).toBe("handler");
+    expect(aliased?.identity.exportPath).toEqual(["aliased"]);
+    expect(aliased?.location.range.start).toBe(10);
   });
 
   it("starts the call walk, so the helper it calls gets a summary", () => {
