@@ -3,48 +3,38 @@
  * statements, and records each one as a storage access on the SQL table
  * it touches.
  *
- * The builder path reads ts-morph nodes directly. Each chain has one
- * anchor call, and the recognizer reads the rest of the chain by walking
- * up from it. The raw path is a `@suss/recognize` declaration. The README
- * lists the anchors, how the receiver and the table name are settled, and
- * what is left out.
+ * Every path is a `@suss/recognize` declaration. A builder chain is read
+ * at the call whose argument is the table: `.from(t)` for a select, the
+ * operation itself for an insert, an update or a delete, and the query
+ * method on the relational query API. The rest of the chain is read
+ * from the calls made on that one's result. The README lists how the
+ * receiver and the table name are settled, and what is left out.
  */
 
-import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
 
-import {
-  arrayLiteralOf,
-  objectLiteralOf,
-  propertiesOf,
-  propertyNameOf,
-  propertyOf,
-  receiverTypesOf,
-  stringValueOf,
-  writtenNodeOf,
-} from "@suss/adapter-typescript";
-import { storageBinding } from "@suss/behavioral-ir";
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
-  compile,
   constructedFrom,
-  declarationsIn,
   declaredBy,
+  pack,
   sqlStatements,
+  storageCalls,
+  typed,
 } from "@suss/recognize";
 
-import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
-import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { SqlStatements } from "@suss/recognize";
-
-const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
-
-const TABLE_FACTORIES = new Set(["pgTable", "mysqlTable", "sqliteTable"]);
-
-const DRIZZLE_PACKAGE = "drizzle-orm";
-
-const CHAIN_WALK_LIMIT = 12;
+import type {
+  ArgumentPick,
+  CallStep,
+  FieldsReadPick,
+  OneArgument,
+  SqlStatements,
+  StorageCalls,
+  StorageCallsSpec,
+  StorageMethod,
+} from "@suss/recognize";
 
 /**
  * The options a `-f drizzle=config.json` file may set. The CLI checks
@@ -65,16 +55,126 @@ export const optionsSchema = z
 
 export type DrizzleRecognizerOptions = z.infer<typeof optionsSchema>;
 
-interface RecognizedQuery {
-  kind: "read" | "write";
-  operation: string;
-  /** Null when the table name could not be settled. */
-  table: string | null;
-  /** Compared with each property read in `.where(...)` to find the selector. */
-  tableExprText: string | null;
-  fields: string[];
-  selector: string[] | null;
-  calleeText: string;
+/**
+ * A database by the type Drizzle declares for it, so `drizzle(pool)`
+ * from any driver, a wrapped `ctx.db` and a transaction's `tx` all count
+ * whatever they are called.
+ */
+const DRIZZLE = typed({ from: ["drizzle-orm"] });
+
+/** A table, as the factory call a schema declares it with. */
+const TABLE = constructedFrom({
+  from: ["drizzle-orm"],
+  named: ["pgTable", "mysqlTable", "sqliteTable"],
+});
+
+/**
+ * The factory call the table argument was written as. An argument that
+ * leads to no factory call gives no table, since its own spelling would
+ * pair with a schema table that shares it (#121).
+ */
+const TABLE_CALL: CallStep = { to: "argument", at: 0, origin: TABLE };
+
+/** The table's SQL name, the first argument of its factory call. */
+const TABLE_AT: ArgumentPick = { of: [TABLE_CALL], at: 0 };
+
+const WHERE: OneArgument = { of: [{ to: "chained", method: "where" }], at: 0 };
+
+/** The columns the `where` condition reads off the call's table argument. */
+const COLUMNS: FieldsReadPick = { fieldsRead: WHERE, off: { at: 0 } };
+
+/** What a call that lists no columns reads or writes. */
+const WHOLE_ROW = ["*"];
+
+/** What every builder chain says about the store. */
+function builder(
+  options: DrizzleRecognizerOptions,
+  more: Pick<StorageCallsSpec, "clientAt"> = {},
+): StorageCalls {
+  return storageCalls({
+    system: options.storageSystem ?? "postgresql",
+    scope: options.scope ?? "default",
+    client: DRIZZLE,
+    unsettledName: "nothing",
+    ...more,
+  });
+}
+
+/** `.from(t)` on the select call the chain is about. */
+const FROM: CallStep = { to: "chained", method: "from" };
+
+const SELECT: StorageMethod = {
+  kind: "read",
+  fields: { keysOf: { at: 0 }, otherwise: WHOLE_ROW },
+  selector: { fieldsRead: WHERE, off: { of: [FROM], at: 0 } },
+};
+
+/**
+ * Every select chain has one `.from(t)`, and it has the table, so a
+ * select is read there. The chain is about the select call it is made
+ * on, which says the operation and is made on the database.
+ */
+function selects(options: DrizzleRecognizerOptions): StorageCalls {
+  return builder(options)
+    .about({ to: "receiver" }, { calledAs: ["from"] })
+    .methods({ select: SELECT, selectDistinct: SELECT })
+    .container({ of: [FROM, TABLE_CALL], at: 0 })
+    .slots("none")
+    .example("db.select({ id: users.id }).from(users).where(eq(users.id, id))");
+}
+
+function mutations(options: DrizzleRecognizerOptions): StorageCalls {
+  return builder(options)
+    .methods({
+      insert: {
+        kind: "write",
+        fields: {
+          keysOf: { of: [{ to: "chained", method: "values" }], at: 0 },
+          otherwise: WHOLE_ROW,
+        },
+      },
+      update: {
+        kind: "write",
+        fields: {
+          keysOf: { of: [{ to: "chained", method: "set" }], at: 0 },
+          otherwise: WHOLE_ROW,
+        },
+        selector: COLUMNS,
+      },
+      delete: { kind: "write", fields: WHOLE_ROW, selector: COLUMNS },
+    })
+    .container(TABLE_AT)
+    .slots("none")
+    .example("db.update(users).set({ name }).where(eq(users.id, id))");
+}
+
+/** `columns` narrows the fields read and `with` adds relations, so both count. */
+const QUERY: StorageMethod = {
+  kind: "read",
+  fields: {
+    keysOf: { at: 0 },
+    under: ["columns", "with"],
+    otherwise: WHOLE_ROW,
+  },
+};
+
+/**
+ * In `db.query.users.findMany()` Drizzle types `users` as a key of the
+ * schema the database was made with, so the receiver is the schema
+ * export and the table is the factory call behind it. The key is the
+ * export's name, which need not be the SQL name, so it is never used in
+ * its place.
+ */
+function queries(options: DrizzleRecognizerOptions): StorageCalls {
+  return builder(options, {
+    clientAt: [{ to: "member" }, { to: "member", named: "query" }],
+  })
+    .methods({ findMany: QUERY, findFirst: QUERY })
+    .container({ of: [{ to: "receiver", origin: TABLE }], at: 0 })
+    .slots("none")
+    .example(
+      "db.query.users.findMany({ columns: { id: true }, with: { orders: true } })",
+    );
 }
 
 /**
@@ -82,12 +182,12 @@ interface RecognizedQuery {
  * take a statement, but a map's `get` in a Drizzle file would then be
  * read as a query.
  */
-function rawStatements(opts: DrizzleRecognizerOptions): SqlStatements {
-  const storageSystem = opts.storageSystem ?? "postgresql";
+function rawStatements(options: DrizzleRecognizerOptions): SqlStatements {
+  const storageSystem = options.storageSystem ?? "postgresql";
   return sqlStatements({
     system: storageSystem,
     dialect: storageSystem,
-    scope: opts.scope ?? "default",
+    scope: options.scope ?? "default",
     client: declaredBy("drizzle-orm"),
   })
     .methods({ execute: { statement: { at: 0 } } })
@@ -95,398 +195,28 @@ function rawStatements(opts: DrizzleRecognizerOptions): SqlStatements {
     .example("db.execute(sql`SELECT id, email FROM users`)");
 }
 
-function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
-  const storageSystem = opts.storageSystem ?? "postgresql";
-  const scope = opts.scope ?? "default";
-  return (call, ctx) => {
-    const { resolution } = ctx as { resolution?: ResolutionStore };
-    const query = recognizeAnchor(call as CallExpression, resolution);
-    if (query === null) {
-      return null;
-    }
-    return [
-      {
-        type: "interaction",
-        binding: storageBinding({
-          recognition: "@suss/framework-drizzle",
-          storageSystem,
-          scope,
-          container: query.table,
-        }),
-        callee: query.calleeText,
-        interaction: {
-          class: "storage-access",
-          kind: query.kind,
-          fields: query.fields,
-          operation: query.operation,
-          ...(query.selector !== null ? { selector: query.selector } : {}),
-        },
-      },
-    ];
-  };
-}
-
-function recognizeAnchor(
-  call: CallExpression,
-  resolution: ResolutionStore | undefined,
-): RecognizedQuery | null {
-  const callee = call.getExpression();
-  if (!N.isPropertyAccessExpression(callee)) {
-    return null;
-  }
-  const method = callee.getName();
-
-  if (method === "from") {
-    return recognizeSelect(call, callee.getExpression(), resolution);
-  }
-  if (method === "insert" || method === "update" || method === "delete") {
-    return recognizeMutation(call, callee.getExpression(), method, resolution);
-  }
-  if (QUERY_API_METHODS.has(method)) {
-    return recognizeQueryApi(call, callee.getExpression(), method, resolution);
-  }
-  return null;
-}
-
 /**
- * In `db.select({...}).from(users)` the anchor is `.from(t)`, since every
- * select chain has exactly one and it has the table. The select call can
- * be kept in a name first, `const query = db.select()`, so the receiver
- * is read as what it was written as.
- */
-function recognizeSelect(
-  fromCall: CallExpression,
-  receiver: Node,
-  resolution: ResolutionStore | undefined,
-): RecognizedQuery | null {
-  const select = writtenNodeOf(receiver, resolution);
-  if (select === null || !N.isCallExpression(select)) {
-    return null;
-  }
-  const selectCallee = select.getExpression();
-  if (!N.isPropertyAccessExpression(selectCallee)) {
-    return null;
-  }
-  const selectName = selectCallee.getName();
-  if (selectName !== "select" && selectName !== "selectDistinct") {
-    return null;
-  }
-  if (!isDrizzleReceiver(selectCallee.getExpression())) {
-    return null;
-  }
-
-  const tableArg = fromCall.getArguments()[0];
-  if (tableArg === undefined) {
-    return null;
-  }
-  const table = resolveTableName(tableArg, resolution);
-  const tableExprText = tableArg.getText();
-
-  // A bare `select()` returns the whole row.
-  const selectArg = select.getArguments()[0];
-  const projected =
-    selectArg === undefined ? [] : objectKeys(selectArg, resolution);
-  const fields = projected.length > 0 ? projected : ["*"];
-
-  const chain = collectChainCalls(fromCall);
-  const selector = selectorFromWhere(chain.get("where"), tableExprText);
-
-  return {
-    kind: "read",
-    operation: selectName,
-    table,
-    tableExprText,
-    fields: fields.length > 0 ? fields : ["*"],
-    selector,
-    calleeText: fromCall.getExpression().getText(),
-  };
-}
-
-/**
- * For `db.insert(t)`, `db.update(t)` and `db.delete(t)` the anchor is the
- * operation call, and `.values`, `.set` and `.where` come from the chain
- * above it.
- */
-function recognizeMutation(
-  call: CallExpression,
-  receiver: Node,
-  operation: "insert" | "update" | "delete",
-  resolution: ResolutionStore | undefined,
-): RecognizedQuery | null {
-  if (!isDrizzleReceiver(receiver)) {
-    return null;
-  }
-  const tableArg = call.getArguments()[0];
-  if (tableArg === undefined) {
-    return null;
-  }
-  const table = resolveTableName(tableArg, resolution);
-  const tableExprText = tableArg.getText();
-  const chain = collectChainCalls(call);
-
-  const fields =
-    operation === "insert"
-      ? valuesKeys(chain.get("values"), resolution)
-      : operation === "update"
-        ? setKeys(chain.get("set"), resolution)
-        : ["*"];
-  const selector = selectorFromWhere(chain.get("where"), tableExprText);
-
-  return {
-    kind: "write",
-    operation,
-    table,
-    tableExprText,
-    fields,
-    selector,
-    calleeText: call.getExpression().getText(),
-  };
-}
-
-/**
- * In `db.query.users.findMany({...})` Drizzle types `users` as a key of
- * the schema the database was made with, so the property resolves to
- * that schema export. Its table name then comes from the same
- * `pgTable(...)` call the builder path reads. The key is the export's
- * name, which need not be the SQL name, so it is never used in its place.
- */
-function recognizeQueryApi(
-  call: CallExpression,
-  receiver: Node,
-  operation: string,
-  resolution: ResolutionStore | undefined,
-): RecognizedQuery | null {
-  if (!N.isPropertyAccessExpression(receiver)) {
-    return null;
-  }
-  const queryAccess = receiver.getExpression();
-  if (
-    !N.isPropertyAccessExpression(queryAccess) ||
-    queryAccess.getName() !== "query"
-  ) {
-    return null;
-  }
-  if (!isDrizzleReceiver(queryAccess.getExpression())) {
-    return null;
-  }
-
-  const table = resolveTableName(receiver, resolution);
-
-  // `columns` narrows the fields read and `with` adds relations, so the
-  // keys of both count as fields. A call with neither reads the whole row.
-  const optionsArg = call.getArguments()[0];
-  const options =
-    optionsArg === undefined ? null : objectLiteralOf(optionsArg, resolution);
-  const fields: string[] = [];
-  for (const key of ["columns", "with"]) {
-    const written =
-      options === null ? null : propertyOf(options, key, resolution);
-    if (written !== null) {
-      fields.push(...objectKeys(written, resolution));
-    }
-  }
-
-  return {
-    kind: "read",
-    operation,
-    table,
-    tableExprText: null,
-    fields: fields.length > 0 ? fields : ["*"],
-    selector: null,
-    calleeText: call.getExpression().getText(),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Chain and receiver helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Maps each method name in the chain above the anchor to its first call.
- * The walk stops after `CHAIN_WALK_LIMIT` links.
- */
-function collectChainCalls(
-  anchor: CallExpression,
-): Map<string, CallExpression> {
-  const chain = new Map<string, CallExpression>();
-  let current: Node = anchor;
-  for (let i = 0; i < CHAIN_WALK_LIMIT; i++) {
-    const parent = current.getParent();
-    if (parent === undefined || !N.isPropertyAccessExpression(parent)) {
-      break;
-    }
-    const grandparent = parent.getParent();
-    if (grandparent === undefined || !N.isCallExpression(grandparent)) {
-      break;
-    }
-    const name = parent.getName();
-    if (!chain.has(name)) {
-      chain.set(name, grandparent);
-    }
-    current = grandparent;
-  }
-  return chain;
-}
-
-/**
- * Checks the receiver's type, so `drizzle(pool)`, a wrapped `ctx.db` and
- * a transaction's `tx` all count whatever they are called. The type has
- * to be declared in a file under a `drizzle-orm` directory.
- */
-function isDrizzleReceiver(node: Node): boolean {
-  return receiverTypesOf(node).some((type) => declaredByDrizzle(type));
-}
-
-function declaredByDrizzle(type: ReceiverType): boolean {
-  return type.declaredIn.some((filePath) =>
-    filePath.includes(`/${DRIZZLE_PACKAGE}/`),
-  );
-}
-
-/**
- * Returns null when the `pgTable(...)` call behind the expression cannot
- * be found. Falling back to the identifier's name would pair with a
- * schema table that happens to share it (#121).
- */
-function resolveTableName(
-  tableExpr: Node,
-  resolution: ResolutionStore | undefined,
-): string | null {
-  const written = writtenNodeOf(tableExpr, resolution);
-  if (
-    written === null ||
-    !N.isCallExpression(written) ||
-    !isTableFactory(written.getExpression(), resolution)
-  ) {
-    return null;
-  }
-  const first = written.getArguments()[0];
-  return first === undefined ? null : stringValueOf(first, resolution);
-}
-
-function isTableFactory(
-  callee: Node,
-  resolution: ResolutionStore | undefined,
-): boolean {
-  if (resolution === undefined) {
-    return false;
-  }
-  return resolution
-    .importedNamesOf(callee, [DRIZZLE_PACKAGE])
-    .some((name) => TABLE_FACTORIES.has(name));
-}
-
-// ---------------------------------------------------------------------------
-// Field / selector extraction
-// ---------------------------------------------------------------------------
-
-function objectKeys(
-  value: Node,
-  resolution: ResolutionStore | undefined,
-): string[] {
-  const object = objectLiteralOf(value, resolution);
-  if (object === null) {
-    return [];
-  }
-  const keys: string[] = [];
-  for (const property of propertiesOf(object, resolution)) {
-    const name = propertyNameOf(property);
-    if (name !== null) {
-      keys.push(name);
-    }
-  }
-  return keys;
-}
-
-function valuesKeys(
-  valuesCall: CallExpression | undefined,
-  resolution: ResolutionStore | undefined,
-): string[] {
-  const arg = valuesCall?.getArguments()[0];
-  if (arg === undefined) {
-    return ["*"];
-  }
-  const rows = arrayLiteralOf(arg, resolution);
-  if (rows !== null) {
-    const union = new Set<string>();
-    for (const element of rows.getElements()) {
-      for (const key of objectKeys(element, resolution)) {
-        union.add(key);
-      }
-    }
-    return union.size > 0 ? [...union] : ["*"];
-  }
-  const keys = objectKeys(arg, resolution);
-  return keys.length > 0 ? keys : ["*"];
-}
-
-function setKeys(
-  setCall: CallExpression | undefined,
-  resolution: ResolutionStore | undefined,
-): string[] {
-  const arg = setCall?.getArguments()[0];
-  if (arg === undefined) {
-    return ["*"];
-  }
-  const keys = objectKeys(arg, resolution);
-  return keys.length > 0 ? keys : ["*"];
-}
-
-/**
- * A Drizzle where clause is an operator expression such as
- * `eq(users.id, id)`, so the selector is every property read on the
- * table expression, here `id`.
- */
-function selectorFromWhere(
-  whereCall: CallExpression | undefined,
-  tableExprText: string | null,
-): string[] | null {
-  if (whereCall === undefined || tableExprText === null) {
-    return null;
-  }
-  const arg = whereCall.getArguments()[0];
-  if (arg === undefined) {
-    return null;
-  }
-  const columns = new Set<string>();
-  const visit = (node: Node): void => {
-    if (
-      N.isPropertyAccessExpression(node) &&
-      node.getExpression().getText() === tableExprText
-    ) {
-      columns.add(node.getName());
-    }
-    node.forEachChild(visit);
-  };
-  visit(arg);
-  return columns.size > 0 ? [...columns] : null;
-}
-
-/**
- * The pack is built by hand because the builder path is a recognizer
- * written as code, which `pack()` does not take. It discovers no units,
- * so its effects need a handler pack such as Express to attach to.
+ * The pack discovers no units, so its effects need a handler pack such
+ * as Express to attach to.
  */
 export function drizzleFramework(
   options: DrizzleRecognizerOptions = {},
 ): PatternPack {
-  const raw = rawStatements(options);
-  return {
-    name: "drizzle",
-    protocol: "in-process",
-    languages: ["typescript", "javascript"],
-    discovery: [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-    // A file with no `drizzle-orm` import, subpaths included, has no
-    // value whose type Drizzle declares.
-    requiresImport: ["drizzle-orm"],
-    invocationRecognizers: [makeRecognizer(options)],
-    // A statement can be written as a tagged template, which the
-    // invocation walk never reaches.
-    accessRecognizers: [compile(raw.declared, "@suss/framework-drizzle")],
-    declarations: declarationsIn([raw]),
-  };
+  return pack(
+    "drizzle",
+    [
+      selects(options),
+      mutations(options),
+      queries(options),
+      rawStatements(options),
+    ],
+    {
+      languages: ["typescript", "javascript"],
+      recognizedAs: "@suss/framework-drizzle",
+      version: "1",
+      protocol: "in-process",
+    },
+  );
 }
 
 export const declares: PackDeclaration = {

@@ -132,8 +132,61 @@ const LOOKUPS = storageCalls({
   .calls({ kind: "read", selector: { at: 0 } })
   .example('lookup("user_online:42")');
 
+// A query builder: the table is the factory call the first call takes,
+// the fields are the keys `.set` states, and the selector is the columns
+// `.where` compares on the table, however far out each call is.
+const QB = ["qb", "Qb"];
+
+const BUILDER_UPDATES = storageCalls({
+  system: "warehouse",
+  client: constructedFrom({ from: QB, named: ["Qb"] }),
+  unsettledName: "nothing",
+})
+  .methods({
+    update: {
+      kind: "write",
+      fields: {
+        keysOf: { of: [{ to: "chained", method: "set" }], at: 0 },
+        otherwise: ["*"],
+      },
+      selector: {
+        fieldsRead: { of: [{ to: "chained", method: "where" }], at: 0 },
+        off: { at: 0 },
+      },
+    },
+  })
+  .container({
+    of: [
+      {
+        to: "argument",
+        at: 0,
+        origin: constructedFrom({ from: QB, named: ["table"] }),
+      },
+    ],
+    at: 0,
+  })
+  .slots("none")
+  .example("records.update(t).set({ name }).where(eq(t.id, x))");
+
+// The keys a row states, through a spread, over a list of rows, and the
+// default for a call that states none.
+const BUILDER_PUTS = storageCalls({
+  system: "warehouse",
+  client: constructedFrom({ from: QB, named: ["Qb"] }),
+})
+  .methods({
+    put: { kind: "write", fields: { keysOf: { at: 0 }, otherwise: ["*"] } },
+    putAll: { kind: "write", fields: { keysOf: { at: 0 } } },
+  })
+  .slots("none")
+  .example("records.put({ a: 1, ...base })");
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-builder", [BUILDER_UPDATES, BUILDER_PUTS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-aliases", [PEEKS, LOOKUPS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -168,6 +221,7 @@ const TYPESCRIPT = `
   import { publish } from "ledger";
   import { Dispatcher } from "relay";
   import { Pool } from "sqldb";
+  import { eq, Qb, table } from "qb";
 
   const cache = new Cache();
   const db = new Pool();
@@ -199,6 +253,20 @@ const TYPESCRIPT = `
   export function recall() {
     find("user_online:42");
   }
+
+  export function rename(name: string, x: number) {
+    const builder = new Qb();
+    const t = table("users");
+    builder.update(t).set({ name }).where(eq(t.id, x));
+  }
+
+  export function keep() {
+    const builder = new Qb();
+    const base = { b: 2 };
+    builder.put({ a: 1, ...base });
+    builder.putAll([{ a: 1 }, { b: 2 }]);
+    builder.put();
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
@@ -207,6 +275,7 @@ import ledger as Ledger
 from ledger import publish
 from relay import Dispatcher
 from sqldb import Pool
+from qb import Qb, eq, table
 
 cache = Cache()
 db = Pool()
@@ -238,6 +307,26 @@ def remember():
 
 def recall():
     find("user_online:42")
+
+
+def rename(name, x):
+    builder = Qb()
+    t = table("users")
+    builder.update(t).set({"name": name}).where(eq(t.id, x))
+
+
+def rename_compared(name, x):
+    builder = Qb()
+    t = table("users")
+    builder.update(t).set({"name": name}).where(t.id == x)
+
+
+def keep():
+    builder = Qb()
+    base = {"b": 2}
+    builder.put({"a": 1, **base})
+    builder.putAll([{"a": 1}, {"b": 2}])
+    builder.put()
 `;
 
 const RUBY = `module Store
@@ -263,6 +352,26 @@ const RUBY = `module Store
     store = Kvcache::Cache.new
     store.peek("user_online:42")
   end
+
+  def self.rename(name, x)
+    builder = Qb.new
+    t = Qb.table("users")
+    builder.update(t).set({ name: name }).where(eq(t.id, x))
+  end
+
+  def self.rename_compared(name, x)
+    builder = Qb.new
+    t = Qb.table("users")
+    builder.update(t).set({ name: name }).where(t.id == x)
+  end
+
+  def self.keep
+    builder = Qb.new
+    base = { b: 2 }
+    builder.put({ a: 1, **base })
+    builder.putAll([{ a: 1 }, { b: 2 }])
+    builder.put()
+  end
 end
 `;
 
@@ -279,6 +388,17 @@ const LIBRARIES: Record<string, string> = {
   relay:
     "export declare class Dispatcher { dispatch(subject: string, body: unknown): void; }",
   sqldb: "export declare class Pool { query(statement: string): unknown; }",
+  qb: `
+    export declare class Where { where(condition: unknown): unknown; }
+    export declare class Update { set(values: unknown): Where; }
+    export declare class Qb {
+      update(table: unknown): Update;
+      put(row?: unknown): unknown;
+      putAll(rows: unknown[]): unknown;
+    }
+    export declare function table(name: string): unknown;
+    export declare function eq(a: unknown, b: unknown): unknown;
+  `,
 };
 
 /** What the pack's hooks make of every call inside the TypeScript function `unit`. */
@@ -485,7 +605,67 @@ describe("a pack declared once", () => {
       fromTypeScript,
     );
   });
+
+  it("reads the table off the first call of a chain, the fields off `.set` and the columns off `.where`, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("rename").map(placeless);
+
+    expect(fromTypeScript).toEqual([
+      expect.objectContaining({
+        callee: "builder.update",
+        binding: expect.objectContaining({
+          semantics: expect.objectContaining({ container: "users" }),
+        }),
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["name"],
+          operation: "update",
+          selector: ["id"],
+        },
+      }),
+    ]);
+    expect((await pythonEffects("rename")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("rename")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+  });
+
+  it("reads the columns a comparison reads the same way, in Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("rename").map(placeless);
+
+    expect((await pythonEffects("rename_compared")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("rename_compared")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+  });
+
+  it("reads the keys each row states, through a spread and over a list, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("keep").map(placeless);
+
+    expect(fromTypeScript.map(fieldsWritten)).toEqual([
+      ["a", "b"],
+      ["a", "b"],
+      ["*"],
+    ]);
+    expect((await pythonEffects("keep")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("keep")).map(placeless)).toEqual(fromTypeScript);
+  });
 });
+
+/** The fields a storage access records, or null for any other effect. */
+function fieldsWritten(effect: unknown): readonly string[] | null {
+  const written = effect as Effect;
+  return written.type === "interaction" &&
+    written.interaction.class === "storage-access"
+    ? written.interaction.fields
+    : null;
+}
 
 /** A send the declared sends record, without where it was written. */
 function sendOf(channel: string, callee: string, body: string): unknown {

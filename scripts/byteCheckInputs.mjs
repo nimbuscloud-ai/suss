@@ -239,6 +239,16 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/drizzle/tsconfig.json"),
     ...packs("express", "drizzle"),
   ]),
+  // The same again with the stub types moved out of the way, as a clone
+  // with no dependencies installed is read, so no receiver is typed.
+  fixture(
+    "drizzle without node_modules",
+    [
+      ...project("fixtures/drizzle/tsconfig.json"),
+      ...packs("express", "drizzle"),
+    ],
+    { hiding: ["fixtures/drizzle/node_modules"] },
+  ),
   fixture("dynamodb-signed-request", [
     ...dir("fixtures/dynamodb-signed-request"),
     ...packs("express", "aws-dynamodb"),

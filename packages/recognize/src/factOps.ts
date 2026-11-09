@@ -114,6 +114,22 @@ class FactCall implements CallOps {
   }
 
   /**
+   * The call whose callee reads a method off what this call returns, as
+   * `.set(v)` does off `db.update(t)`. It is one hop of the
+   * `chainedCall` rule, and a result stored in a name first has none.
+   */
+  chainedOn(): CallOps | null {
+    const { db } = this.source;
+    const outer = only(
+      db
+        .lookup("readsProperty", 1, this.key)
+        .flatMap((read) => db.lookup("call", 1, String(read[0]))),
+      0,
+    );
+    return outer === null ? null : factCallOps(outer, this.source);
+  }
+
+  /**
    * The member read the receiver is, as ops whose callee is that read. A
    * call with no arguments counts as one, since Ruby writes `db.users`
    * that way.
@@ -682,6 +698,23 @@ class FactValue implements ValueOps {
     return this.facts.typeShapeOf?.(this.key) ?? null;
   }
 
+  /**
+   * Read from the value as written here, so a condition kept in a name
+   * reads nothing. The object matches when it is written the way the
+   * other value is.
+   */
+  readsOff(object: ValueOps): readonly string[] {
+    const written = object.source?.() ?? null;
+    if (written === null) {
+      return [];
+    }
+    return propertiesReadOff(
+      this.key,
+      (key) => this.facts.textOf(key) === written,
+      this.facts,
+    );
+  }
+
   /** Asked of the settled value, as `asArg` is, so an encoding kept in a name is still read. */
   encoded(): Encoded | null {
     const found = this.facts.encodedOf?.(this.written()) ?? null;
@@ -747,6 +780,69 @@ class FactValue implements ValueOps {
     this.shapedKey ??= followedCall(this.written(), this.facts);
     return this.shapedKey;
   }
+}
+
+/**
+ * Every property the value at `key` reads off an object `matches`
+ * accepts, each once, in source order. The walk goes into what the value
+ * is written from and nowhere else, so a function written in it, or a
+ * helper that built it, adds nothing.
+ */
+function propertiesReadOff(
+  key: string,
+  matches: (object: string) => boolean,
+  source: FactSource,
+): string[] {
+  const names = new Set<string>();
+  const seen = new Set<string>();
+  const visit = (at: string): void => {
+    if (seen.has(at)) {
+      return;
+    }
+    seen.add(at);
+    source.read(at);
+    for (const row of source.db.lookup("readsProperty", 0, at)) {
+      const object = String(row[1]);
+      const name =
+        source.memberName === undefined
+          ? String(row[2])
+          : source.memberName(String(row[2]));
+      if (name !== null && matches(object)) {
+        names.add(name);
+      }
+      visit(object);
+    }
+    for (const inside of builtFrom(at, source)) {
+      visit(inside);
+    }
+  };
+  visit(key);
+  return [...names];
+}
+
+/**
+ * The values one value is built from, in source order: a call's callee
+ * and arguments, the two sides of a comparison, a template's holes, the
+ * branches of a conditional or a fallback, and an object's or a list's
+ * entries.
+ */
+function builtFrom(key: string, source: FactSource): string[] {
+  const rows = (relation: string) => source.db.lookup(relation, 0, key);
+  const inOrder = (relation: string, value: number) =>
+    [...rows(relation)]
+      .sort((a, b) => Number(a[1]) - Number(b[1]))
+      .map((row) => String(row[value]));
+  return [
+    ...rows("call").map((row) => String(row[1])),
+    ...inOrder("callArg", 2),
+    ...rows("callKeywordArg").map((row) => String(row[2])),
+    ...rows("callBlock").map((row) => String(row[1])),
+    ...rows("compares").flatMap((row) => [String(row[1]), String(row[2])]),
+    ...inOrder("holeAt", 2),
+    ...rows("conditionalBranch").map((row) => String(row[1])),
+    ...rows("fallbackBranch").map((row) => String(row[1])),
+    ...inOrder("writtenEntryAt", 2),
+  ];
 }
 
 /**

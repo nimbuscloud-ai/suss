@@ -336,6 +336,14 @@ export interface ValueOps {
   tag?(): ValueOps | null;
   /** The class this value settles to, as a discovery pattern asks about one. Null when it is not a class. */
   asClass?(): ClassValueOps | null;
+  /**
+   * The properties this value reads off `object`, through the calls,
+   * comparisons, entries and template holes it is written from, each
+   * once, in source order. `eq(users.id, id)` reads `id` off `users`,
+   * and so does `User.id == user_id`. A function written in the value,
+   * or a helper that builds it elsewhere, is not entered.
+   */
+  readsOff?(object: ValueOps): readonly string[];
 }
 
 /**
@@ -486,6 +494,13 @@ export interface CallOps {
    * it was written as.
    */
   receiver(): CallOps | null;
+  /**
+   * The call made on what this call returns, when the source writes one
+   * there: `.set(v)` for `db.update(t)` in `db.update(t).set(v)`. Null
+   * when the result is stored, returned or passed instead, and unset in
+   * an adapter that cannot say.
+   */
+  chainedOn?(): CallOps | null;
   /**
    * The receiver as the source wrote it, when it is a member read rather
    * than a call: `db.user` in `db.user.findMany()`. Its `method()` is the

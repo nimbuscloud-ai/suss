@@ -54,8 +54,10 @@ import type {
   ContainerMember,
   ContainersLink,
   Ending,
+  FieldsReadPick,
   InputLink,
   InterpolatesLink,
+  KeysOfPick,
   KindAsAsked,
   Link,
   ManyIn,
@@ -65,6 +67,7 @@ import type {
   MessageSendMethod,
   MethodMeaning,
   MethodsLink,
+  NamesStated,
   Naming,
   OneArgument,
   RelatedAccess,
@@ -85,6 +88,8 @@ import type {
   SubjectLink,
   SubUnitNamePart,
   ToArgument,
+  ToChained,
+  ToMember,
   ToReceiver,
   UnitInvokeEnding,
   UnitInvokeMethod,
@@ -99,9 +104,10 @@ import type {
 } from "./ops.js";
 
 /**
- * How many receivers a walk climbs before it gives up. A receiver chain
- * can loop back to where it started through a variable, and no pack
- * means a step eight hops away.
+ * How many calls a walk climbs before it gives up, up the receivers or
+ * out along the calls chained on a result. A receiver chain can loop
+ * back to where it started through a variable, and no pack means a step
+ * eight hops away.
  */
 const MAX_RECEIVER_HOPS = 8;
 
@@ -379,12 +385,19 @@ function listed(
 /**
  * The calls a chain could be about. Without a subject link that is the
  * call in hand, and with one it is each call the steps reach, tried in
- * turn until the rest of the chain matches.
+ * turn until the rest of the chain matches. A call in hand the link does
+ * not let through is turned down before the walk asks anything.
  */
 function subjectsOf(chain: Chain<MethodMeaning>, ops: CallOps): CallOps[] {
   const link: SubjectLink | null = linkIn(chain, "subject");
   if (link === null) {
     return [ops];
+  }
+  if (
+    link.calledAs !== undefined &&
+    !link.calledAs.includes(ops.method() ?? "")
+  ) {
+    return [];
   }
   announceArgumentReads(link.of, ops);
   return walk([ops], link.of);
@@ -413,12 +426,10 @@ const STEP: Record<
   CallStep["to"],
   (step: CallStep, ops: CallOps) => CallOps[]
 > = {
-  receiver: (step, ops) => receiversOf(ops, (step as ToReceiver).method),
+  receiver: (step, ops) => receiversOf(ops, step as ToReceiver),
   argument: (step, ops) => argumentsOf(ops, step as ToArgument),
-  member: (_step, ops) => {
-    const member = ops.member?.() ?? null;
-    return member === null ? [] : [member];
-  },
+  member: (step, ops) => membersOf(ops, step as ToMember),
+  chained: (step, ops) => chainedOf(ops, (step as ToChained).method),
 };
 
 /** The calls a list of steps reaches from where it starts. */
@@ -431,17 +442,60 @@ function walk(from: readonly CallOps[], steps: readonly CallStep[]): CallOps[] {
 }
 
 /**
- * The receiver, or the one up the chain that calls the named method.
- * Climbing stops at the bound, so a receiver that comes back round
- * through a variable ends the walk rather than hanging the run.
+ * The receiver, or the one up the chain that calls the named method,
+ * when it came from the step's origin. Climbing stops at the bound, so a
+ * receiver that comes back round through a variable ends the walk rather
+ * than hanging the run.
  */
-function receiversOf(ops: CallOps, method: string | undefined): CallOps[] {
-  let step = ops.receiver();
-  for (let hops = 0; step !== null && hops < MAX_RECEIVER_HOPS; hops += 1) {
-    if (method === undefined || step.method() === method) {
-      return [step];
+function receiversOf(ops: CallOps, step: ToReceiver): CallOps[] {
+  let from = ops;
+  let at = ops.receiver();
+  for (let hops = 0; at !== null && hops < MAX_RECEIVER_HOPS; hops += 1) {
+    if (step.method === undefined || at.method() === step.method) {
+      return cameFrom(at, step.origin) ? [chainedBack(at, from)] : [];
     }
-    step = step.receiver();
+    from = at;
+    at = at.receiver();
+  }
+  return [];
+}
+
+/**
+ * A receiver the walk reached, which knows the call it was reached from
+ * is made on what it returns. The ops see that only where the source
+ * chains the two calls in place, so without this a select kept in a
+ * name, `const query = db.select(); query.from(t)`, would lose its
+ * `.from` once a chain stepped back out to it.
+ */
+function chainedBack(receiver: CallOps, from: CallOps): CallOps {
+  const reached: CallOps = Object.create(receiver);
+  reached.chainedOn = () => receiver.chainedOn?.() ?? from;
+  return reached;
+}
+
+/** The member read the call is made on, when it is read under the step's name. */
+function membersOf(ops: CallOps, step: ToMember): CallOps[] {
+  const member = ops.member?.() ?? null;
+  if (member === null) {
+    return [];
+  }
+  return step.named === undefined || member.method() === step.named
+    ? [member]
+    : [];
+}
+
+/**
+ * The nearest call to `method` out along the calls chained on what this
+ * call returns. The walk is `receiversOf` pointed the other way, and
+ * stops at the same bound.
+ */
+function chainedOf(ops: CallOps, method: string): CallOps[] {
+  let at = ops.chainedOn?.() ?? null;
+  for (let hops = 0; at !== null && hops < MAX_RECEIVER_HOPS; hops += 1) {
+    if (at.method() === method) {
+      return [at];
+    }
+    at = at.chainedOn?.() ?? null;
   }
   return [];
 }
@@ -1171,6 +1225,11 @@ function recording(value: ValueOps, read: ReadValues): ValueOps {
       () => value.importedFrom?.() ?? null,
     ),
     ...optionalMember(value, "shape", () => value.shape?.() ?? null),
+    ...optionalMember(
+      value,
+      "readsOff",
+      (object: ValueOps) => value.readsOff?.(object) ?? [],
+    ),
     ...optionalMember(value, "encoded", () => {
       const found = value.encoded?.() ?? null;
       return found === null
@@ -1342,7 +1401,7 @@ const NOTHING_STATED: ValueOps = {
 
 /** What the call reached, by the argument it picks or by the pack's rule. */
 function namesFor(
-  says: StorageMethod["selector"],
+  says: NamesStated | undefined,
   subject: CallOps,
   stated: StatedValues,
   unsettled: UnsettledName,
@@ -1358,6 +1417,12 @@ function namesFor(
     const input = stated.input;
     return input === null ? [] : [...says(watched({ ...stated, input }, read))];
   }
+  if ("fieldsRead" in says) {
+    return fieldsReadOff(subject, says);
+  }
+  if ("keysOf" in says) {
+    return keysStated(subject, says, unsettled);
+  }
   if ("selectorParam" in says) {
     return [...(subject.parameterReadsAt?.(says.selectorParam) ?? [])];
   }
@@ -1367,6 +1432,59 @@ function namesFor(
   }
   const input = statedValue(subject, pointed.of) ?? NOTHING_STATED;
   return [...pointed.by(watched({ ...stated, input }, read))];
+}
+
+/** The properties the picked condition reads off the value `off` points at. */
+function fieldsReadOff(subject: CallOps, pick: FieldsReadPick): string[] {
+  const condition = statedValue(subject, pick.fieldsRead);
+  const object = statedValue(subject, pick.off);
+  if (condition === null || object === null) {
+    return [];
+  }
+  return [...(condition.readsOff?.(object) ?? [])];
+}
+
+/**
+ * The keys the picked object states, or every object in the picked
+ * list, each once in the order first written. A call that states none
+ * reads what the pick says it reads otherwise.
+ */
+function keysStated(
+  subject: CallOps,
+  pick: KeysOfPick,
+  unsettled: UnsettledName,
+): string[] {
+  const value = statedValue(subject, pick.keysOf);
+  const keys = new Set<string>();
+  for (const object of value === null ? [] : objectsIn(value, pick.under)) {
+    for (const entry of object.entries(unsettled)) {
+      if (entry.key !== null) {
+        keys.add(entry.key);
+      }
+    }
+  }
+  return keys.size > 0 ? [...keys] : [...(pick.otherwise ?? [])];
+}
+
+/**
+ * The objects a keys pick reads: the value, or what it states under each
+ * property `under` lists, with a list read as the objects in it.
+ */
+function objectsIn(
+  value: ValueOps,
+  under: readonly string[] | undefined,
+): ValueOps[] {
+  const read =
+    under === undefined
+      ? [value]
+      : under.flatMap((name) => {
+          const inside = value.property(name);
+          return inside === null ? [] : [inside];
+        });
+  return read.flatMap((one) => {
+    const items = one.items();
+    return items.length > 0 ? [...items] : [one];
+  });
 }
 
 /** The name each picked argument gives, dropping the ones nothing settles. */

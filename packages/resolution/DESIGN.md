@@ -113,7 +113,8 @@ holeAt(t, k, x)             the template t puts the value of x at position
 compares(x, a, b)           the comparison x compares a with b, whatever
                             the operator, as User.id == user_id in
                             SQLAlchemy or price > 100 in a Sequel block.
-                            a < b < c is two rows. No rule reads it yet
+                            a < b < c is two rows. The ops in
+                            @suss/recognize/ops read it, and no rule does
                             (Python, Ruby)
 converts(r, a, n)           the call r converts a to another type with
                             the language's own n, as Number(x), int(x)
@@ -1147,8 +1148,9 @@ One relation follows a chain of calls outward from the call it starts at:
 chainedCall(r, r2, m)       r2 calls the method m on what r returns, or
                             on what a call chained on r returns, as
                             db.update(t).set(v).where(c) reaches .set
-                            and .where from db.update(t). No rule reads
-                            it yet
+                            and .where from db.update(t). The ops in
+                            @suss/recognize/ops take its first rule one
+                            hop at a time, and no rule reads it
 ```
 
 A query builder takes its table from the first call and its columns

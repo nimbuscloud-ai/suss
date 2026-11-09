@@ -179,6 +179,7 @@ recognizer context under `ops`.
 | `nameAt(index, unsettled)` | the name that argument gives, with the hole policy applied |
 | `calleeText()` | the callee, as the source writes it |
 | `receiver()` | the call the receiver is, as ops of its own |
+| `chainedOn()` | the call made on what this call returns, `.set(v)` for `db.update(t)` in `db.update(t).set(v)`, or null when the result is stored, returned or passed instead (optional) |
 | `member()` | the member read the call is made on, `db.user` in `db.user.findMany()`, as ops whose method is the member's name (optional) |
 | `file()` | the path of the file the call is in (optional) |
 | `argument(index)` | the call that argument is, as ops of its own |
@@ -212,6 +213,7 @@ walk it:
 | `ownProperty(name)` | what an object written at this spot states under one of its own keys, with spreads left out |
 | `encoded()` | the value a call of one of the language's encoders was handed, and the encoding: `x` under `json` for `JSON.stringify(x)`, `json.dumps(x)`, `JSON.generate(x)` or `x.to_json`. Null for any other value |
 | `shape()` | the shape the source writes the value in at this spot, without following a name |
+| `readsOff(object)` | the properties the value reads off `object`, through the calls, comparisons, entries and template holes it is written from, each once in source order. A function written in the value, or a helper that built it, is not entered |
 
 A message send records its body, and a unit invoke its payload, as the
 value that went into the encoder when there is one, since the consumer
@@ -263,6 +265,8 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `isFrom`, `receiverIsFrom` with `inherits` | the adapter's `typedInherits` where it reads declared types. Elsewhere the classes `instanceOf` says the receiver is one of, and the class each construction it was written as makes, each followed through `comesTo` and walked up `extends` to a base the adapter's `importedAs` says the module exports as a name the spec lists |
 | `isFrom`, `receiverIsFrom` with `handedBy` | the receiver, or the declaration it `binds` to, as a `paramOf(f, k, p)` at the asked position, or as the block variable the adapter's `parameterOf` places, since Ruby states no `paramOf` for a block. Then the call that passes `f` as `callArg(r, 0, f)`, directly or through a name `binds` to it, or that is written with it as `callBlock(r, f)`, asked whether its method is the one asked and its receiver is from `on` |
 | `member()` | the object of the callee's `readsProperty`, as ops over that member read when it is one itself, or as the call it is when that call passes no arguments |
+| `chainedOn()` | the `readsProperty(c, r, m)` whose object is the call, then the `call(r2, c)` whose callee is that read: one hop of the `chainedCall` rule. A result kept in a name has none |
+| `readsOff(object)` | a closure from the value's own key, with no name followed: each `readsProperty(x, o, n)` gives `n` when `o` is written the way `object` is, through the adapter's `textOf`, and goes on into `o`; `call`, `callArg`, `callKeywordArg`, `callBlock`, `compares`, `holeAt`, `conditionalBranch`, `fallbackBranch` and `writtenEntryAt` go on into what they state. A function's body has no row the closure follows, so it is not entered |
 | `file()` | the file in the call's key, which every adapter writes first |
 | `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `comesFrom(x, m, n)` over `imports`, `exportsAs` and `reExports`, so an alias and a project barrel read as the export. A value that only calls into an import does not count |
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
@@ -379,7 +383,10 @@ A pack chooses that call with `about`, and a pick chooses its call with
 | `{ to: "argument", at: 0 }` | the call the first argument is |
 | `{ to: "argument", at: { from: 0 } }` | every argument that is a call, first one that matches wins |
 | `{ to: "argument", at: { from: 0 }, origin }` | the same, keeping only the ones the origin pins down |
+| `{ to: "receiver", origin }` | the call the receiver is, when the origin pins it down, and nothing otherwise |
 | `{ to: "member" }` | the member read the call is made on, `db.user` in `db.user.findMany()`, or in Ruby the call with no arguments `db.users` is |
+| `{ to: "member", named: "query" }` | the same, when the member is read under that name |
+| `{ to: "chained", method: "where" }` | the nearest call to `where` made out along what the call returns, `.where(c)` from `db.update(t)` in `db.update(t).set(v).where(c)` |
 
 ```ts
 storageCalls({ system: "s3", client: constructedFrom("@aws-sdk/client-s3") })
@@ -404,6 +411,15 @@ instead of counting a fixed number of hops, because
 bucket at different distances. The search stops after eight receivers.
 A receiver chain can loop back to itself through a variable, and a pack
 that asks for more than eight hops has made a mistake in the step.
+
+A `chained` step searches the other way, out along the calls made on
+what the call returns, through `chainedOn()`. The ops take one hop and
+the walk is here, as with `receiver()`, so both walks stop at the same
+bound. A call the walk reached as another call's receiver knows that
+other call is made on its result, even when the source kept the result
+in a name first: `const query = db.select(); query.from(t)` reaches
+`db.select()` through `query`, and a `chained` step from there comes
+back out to `query.from(t)`.
 
 A chain whose first step goes to the arguments reads them at every
 call the walk visits, since its hook runs on each call. Before the
@@ -577,6 +593,59 @@ plain list:
 findById: { kind: "read", selector: ["_id"], fields: projection(1) },
 deleteOne: { kind: "write", selector: filter(0), fields: ["*"] },
 ```
+
+## A query builder's chain
+
+A query builder states one access over several calls. The table is the
+first call's argument, the fields are on `.set` or `.values`, and the
+columns it picks rows by are compared in `.where`, however many calls
+out each one is:
+
+```ts
+db.update(users).set({ name }).where(eq(users.id, id)).returning();
+```
+
+A `chained` step reaches each of those calls, and two picks read them
+as data:
+
+```ts
+update: {
+  kind: "write",
+  fields: { keysOf: { of: [{ to: "chained", method: "set" }], at: 0 }, otherwise: ["*"] },
+  selector: { fieldsRead: { of: [{ to: "chained", method: "where" }], at: 0 }, off: { at: 0 } },
+},
+```
+
+`keysOf` gives the keys of the object the pick reaches, or of every
+object in a list, each once in the order first written, with a spread
+read in its place as the value policy says. `under` reads the objects
+under those properties instead, as a relational query's `columns` and
+`with` are read. `otherwise` is what a call that states no keys reads.
+
+`fieldsRead` gives the properties the condition reads off the value
+`off` points at, through `readsOff`. `eq(users.id, id)` reads `id` off
+`users`, and so does `User.id == user_id` in Python. A condition a
+helper built, or one kept in a name, reads nothing, and the access
+keeps its place with no selector. The object matches when it is written
+the way `off` is.
+
+Neither pick is a function, so pack health counts both as data, and
+neither records what it read as a slot.
+
+A select states its table on `.from`, which every select chain has
+once, and the operation is the call `.from` is made on. The chain is
+about that call, and is read only at `.from`:
+
+```ts
+storageCalls({ system, client: typed({ from: ["drizzle-orm"] }) })
+  .about({ to: "receiver" }, { calledAs: ["from"] })
+  .methods({ select: SELECT, selectDistinct: SELECT })
+  .container({ of: [{ to: "chained", method: "from" }, TABLE_CALL], at: 0 });
+```
+
+`calledAs` turns down any other call made on a select before the walk
+asks anything, so `db.select().toSQL()` is not read as a select with no
+table, and a call that is not `.from` costs one lookup.
 
 ## An operation passed as an argument
 

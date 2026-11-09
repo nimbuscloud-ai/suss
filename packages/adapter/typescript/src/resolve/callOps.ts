@@ -54,6 +54,7 @@ import type {
   ValueOps,
 } from "@suss/extractor";
 import type {
+  BinaryExpression,
   CallExpression,
   ClassDeclaration,
   ClassExpression,
@@ -635,6 +636,10 @@ export function callOpsFor(
     parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
       callee === null ? null : opsOverReceiver(callee.getExpression(), values),
+    chainedOn: () => {
+      const outer = chainedCallOn(call);
+      return outer === null ? null : callOpsFor(outer, values);
+    },
     member: () => {
       const read = callee?.getExpression() ?? null;
       return read !== null && Node.isPropertyAccessExpression(read)
@@ -664,6 +669,22 @@ export function callOpsFor(
       : { statesSlots: reading.statesSlots }),
     ast: () => call,
   };
+}
+
+/**
+ * The call whose callee reads a method off what `call` returns, `.set(v)`
+ * on `db.update(t)`, past the wrappers the facts see through.
+ */
+function chainedCallOn(call: Called): CallExpression | null {
+  const read = climbValue(call).getParent();
+  const outer = read?.getParent();
+  return read !== undefined &&
+    Node.isPropertyAccessExpression(read) &&
+    outer !== undefined &&
+    Node.isCallExpression(outer) &&
+    outer.getExpression() === read
+    ? outer
+    : null;
 }
 
 /**
@@ -871,9 +892,94 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
         : { codec: found.codec, value: valueOpsFor(found.value, reading) };
     },
     shape: () => writtenShapeOf(value),
+    readsOff: (object) => {
+      const written = nodeOfValue(object);
+      return written === null
+        ? []
+        : propertiesReadOff(value, written.getText());
+    },
   };
   nodesOfValues.set(ops, value);
   return ops;
+}
+
+/**
+ * Every property a value reads off an expression written as `object`,
+ * each once, in source order. The walk goes into the parts the facts
+ * state a condition is built from, so it leaves out a function written
+ * in the value and an operator other than `||` and `??`.
+ */
+function propertiesReadOff(value: Node, object: string): string[] {
+  const names = new Set<string>();
+  const visit = (node: Node): void => {
+    const at = peelValue(node);
+    if (Node.isPropertyAccessExpression(at)) {
+      if (at.getExpression().getText() === object) {
+        names.add(at.getName());
+      }
+      visit(at.getExpression());
+      return;
+    }
+    for (const inside of builtFrom(at)) {
+      visit(inside);
+    }
+  };
+  visit(value);
+  return [...names];
+}
+
+/** The expressions a value is built from, the ones the facts state for it. */
+function builtFrom(node: Node): Node[] {
+  if (Node.isCallExpression(node)) {
+    return [node.getExpression(), ...node.getArguments()];
+  }
+  if (Node.isTemplateExpression(node)) {
+    return node.getTemplateSpans().map((span) => span.getExpression());
+  }
+  if (Node.isTaggedTemplateExpression(node)) {
+    return builtFrom(node.getTemplate());
+  }
+  if (Node.isConditionalExpression(node)) {
+    return [node.getWhenTrue(), node.getWhenFalse()];
+  }
+  if (isFallback(node)) {
+    return [node.getLeft(), node.getRight()];
+  }
+  if (Node.isObjectLiteralExpression(node)) {
+    return node.getProperties().flatMap(entryWritten);
+  }
+  if (Node.isArrayLiteralExpression(node)) {
+    return node
+      .getElements()
+      .map((element) =>
+        Node.isSpreadElement(element) ? element.getExpression() : element,
+      );
+  }
+  return [];
+}
+
+/** Whether a value is `a || b` or `a ?? b`, whose value is one side or the other. */
+function isFallback(node: Node): node is BinaryExpression {
+  if (!Node.isBinaryExpression(node)) {
+    return false;
+  }
+  const operator = node.getOperatorToken().getKind();
+  return (
+    operator === SyntaxKind.BarBarToken ||
+    operator === SyntaxKind.QuestionQuestionToken
+  );
+}
+
+/** What one entry of an object written out is written as. */
+function entryWritten(entry: Node): Node[] {
+  if (Node.isPropertyAssignment(entry)) {
+    const initializer = entry.getInitializer();
+    return initializer === undefined ? [] : [initializer];
+  }
+  if (Node.isShorthandPropertyAssignment(entry)) {
+    return [entry.getNameNode()];
+  }
+  return Node.isSpreadAssignment(entry) ? [entry.getExpression()] : [];
 }
 
 /**
