@@ -2,7 +2,7 @@ import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { profileEvaluation } from "@suss/datalog";
-import { constructedFrom, imported, typed } from "@suss/recognize";
+import { constructedFrom, imported, inherits, typed } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
@@ -367,6 +367,165 @@ describe("a client the module's generator wrote into the project", () => {
       true,
     );
     expect(opsOver(typedDeck, []).receiverIsFrom(declaredBy)).toBe(false);
+  });
+
+  it("reads a receiver of any type the generated module declares as typed by the package", () => {
+    const typedDeck = `
+      import { Deck } from "./generated/deck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.play("a");
+      }
+    `;
+    const anyType = typed({ from: ["tapedeck"] });
+
+    expect(opsOver(typedDeck, [generator]).receiverIsFrom(anyType)).toBe(true);
+    expect(opsOver(typedDeck, []).receiverIsFrom(anyType)).toBe(false);
+  });
+});
+
+describe("the member a call is made on", () => {
+  const ORM = `
+    export declare class Users { find(where: unknown): unknown; }
+    export declare class Client { users: Users; }
+  `;
+
+  /** The last call in `/repo.ts`, over the facts of a store, or over its nodes with none. */
+  function lastCall(
+    source: string,
+    over: "facts" | "nodes",
+    installed = true,
+  ): CallOps {
+    const project = createTestProject();
+    if (installed) {
+      project.createSourceFile(
+        "/node_modules/ormkit/package.json",
+        JSON.stringify({ name: "ormkit", types: "index.d.ts" }),
+      );
+      project.createSourceFile("/node_modules/ormkit/index.d.ts", ORM);
+    }
+    const file = project.createSourceFile("/repo.ts", source);
+    const call = file.getDescendantsOfKind(SyntaxKind.CallExpression).at(-1);
+    if (call === undefined) {
+      throw new Error("the fixture contains no call");
+    }
+    if (over === "nodes") {
+      return callOpsFor(call);
+    }
+    const store = new ResolutionStore();
+    return opsOverFacts(call, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      originatesFrom: (value, module) => store.originatesFrom(value, module),
+      resolution: store,
+    });
+  }
+
+  const typedClient = `
+    import { Client } from "ormkit";
+    declare const db: Client;
+    export function list() {
+      return db.users.find({});
+    }
+  `;
+
+  const ANY_ORM_TYPE = typed({ from: ["ormkit"] });
+
+  const declaredByOrm: ReceiverOrigin = {
+    origin: "declaredBy",
+    importedFrom: ["ormkit"],
+  };
+
+  it.each(["facts", "nodes"] as const)(
+    "names the member and asks about the object it is read off, over the %s",
+    (over) => {
+      const ops = lastCall(typedClient, over);
+      const member = ops.member?.() ?? null;
+
+      expect(member?.method()).toBe("users");
+      expect(member?.calleeText()).toBe("db.users");
+      expect(member?.argumentCount()).toBe(0);
+      expect(member?.file?.()).toBe("/repo.ts");
+      expect(member?.receiverIsFrom(ANY_ORM_TYPE)).toBe(true);
+      expect(member?.receiverIsFrom(typed({ from: ["other"] }))).toBe(false);
+      expect(ops.receiverIsFrom(ANY_ORM_TYPE)).toBe(true);
+      expect(ops.file?.()).toBe("/repo.ts");
+    },
+  );
+
+  it("reads any type the module declares only where the module declares it", () => {
+    const ops = lastCall(
+      `
+        class Mine { users = { find: (_where: unknown) => ({}) }; }
+        const db = new Mine();
+        export function list() {
+          return db.users.find({});
+        }
+      `,
+      "facts",
+    );
+
+    expect(ops.member?.()?.receiverIsFrom(ANY_ORM_TYPE)).toBe(false);
+  });
+
+  it("gives no member for a call made on a name", () => {
+    expect(
+      lastCall(
+        `
+          import { Client } from "ormkit";
+          declare const users: Client["users"];
+          export const list = () => users.find({});
+        `,
+        "nodes",
+      ).member?.(),
+    ).toBeNull();
+  });
+
+  it("asks a member its own member, and what declared it", () => {
+    const ops = lastCall(
+      `
+        import { Client } from "ormkit";
+        declare const app: { db: Client };
+        export const list = () => app.db.users.find({});
+      `,
+      "nodes",
+    );
+    const users = ops.member?.() ?? null;
+
+    expect(users?.member?.()?.method()).toBe("db");
+    expect(users?.receiver()).toBeNull();
+    expect(users?.receiverIsFrom(declaredByOrm)).toBe(true);
+  });
+
+  const subclassed = `
+    import { Client } from "ormkit";
+    class Db extends Client {}
+    class Service {
+      constructor(private readonly db: Db) {}
+      list() { return this.db.users.find({}); }
+    }
+  `;
+
+  const BASE = inherits({ from: ["ormkit"], named: ["Client"] });
+
+  it.each([true, false])(
+    "reads a class the project extends from the client, installed: %s",
+    (installed) => {
+      const member = lastCall(subclassed, "facts", installed).member?.();
+
+      expect(member?.receiverIsFrom(BASE)).toBe(true);
+      expect(
+        member?.receiverIsFrom(
+          inherits({ from: ["ormkit"], named: ["Other"] }),
+        ),
+      ).toBe(false);
+      expect(member?.receiverIsFrom(declaredByOrm)).toBe(installed);
+    },
+  );
+
+  it("leaves the ancestry to the facts, which a run with no store does not have", () => {
+    expect(lastCall(subclassed, "nodes").member?.()?.receiverIsFrom(BASE)).toBe(
+      false,
+    );
   });
 });
 

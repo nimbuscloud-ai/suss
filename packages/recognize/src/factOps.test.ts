@@ -8,12 +8,14 @@ import {
   constructedFrom,
   declaredBy,
   global,
+  handedBy,
   imported,
+  inherits,
   returnedBy,
   typed,
 } from "./ops.js";
 
-import type { ValueOps } from "@suss/extractor";
+import type { ReceiverOrigin, ValueOps } from "@suss/extractor";
 
 /**
  * The facts for, in source order:
@@ -900,7 +902,7 @@ describe("the ops over a typed or an imported receiver", () => {
     const declaring = dispatches({
       typedAs: (call, origin) => {
         asked.push(call);
-        return origin.named.includes("Dispatcher");
+        return origin.named?.includes("Dispatcher") === true;
       },
     });
 
@@ -1140,5 +1142,221 @@ describe("the value members over the facts", () => {
       "own",
     ]);
     expect(row.property("label")?.evaluated?.()).toBe("Orders");
+  });
+});
+
+/**
+ * The facts for, in `/app/models.ts`:
+ *
+ *   const db = new Client();
+ *   db.user.find();
+ *   class Db extends Client {}
+ *   const sub = new Db();
+ *   sub.post.find();
+ *   db.run((tx) => tx.order.find());
+ *   db.run(handler);  // function handler(tx2) { tx2.item.find(); }
+ *   db.run { |tx3| tx3.line.find }  // a Ruby block, with no paramOf row
+ *   db.users.find  // Ruby's member read, a call with no arguments
+ */
+function models(
+  over: Partial<FactSource> = {},
+  more: readonly (readonly [string, ...string[]])[] = [],
+): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  for (const [relation, ...row] of more) {
+    add(relation, ...row);
+  }
+  const at = (name: string) => `/app/models.ts:${name}`;
+  const callOn = (call: string, object: string, member: string) => {
+    add("call", at(call), `${object}.${member}.find`);
+    add(
+      "readsProperty",
+      `${object}.${member}.find`,
+      `${object}.${member}`,
+      "find",
+    );
+    add("readsProperty", `${object}.${member}`, object, member);
+  };
+  add("call", "new", "Client");
+  add("writtenValue", "new");
+  callOn("user", "db", "user");
+  add("extends", "DbClass", "ClientBase");
+  add("call", "newDb", "Db");
+  add("writtenValue", "newDb");
+  callOn("post", "sub", "post");
+  add("call", "run", "db.run");
+  add("readsProperty", "db.run", "db", "run");
+  add("callArg", "run", "0", "arrow");
+  add("func", "arrow");
+  add("paramOf", "arrow", "0", "txParam");
+  add("binds", "tx", "txParam");
+  callOn("order", "tx", "order");
+  add("call", "runByName", "db.run");
+  add("callArg", "runByName", "0", "handlerRef");
+  add("binds", "handlerRef", "handler");
+  add("func", "handler");
+  add("paramOf", "handler", "0", "tx2Param");
+  add("binds", "tx2", "tx2Param");
+  callOn("item", "tx2", "item");
+  add("call", "runBlock", "db.run");
+  add("callBlock", "runBlock", "block");
+  add("func", "block");
+  callOn("line", "block#tx3", "line");
+  add("call", "users", "db.users");
+  add("readsProperty", "db.users", "db", "users");
+  add("call", at("rubyUsers"), "users.find");
+  add("readsProperty", "users.find", "users", "find");
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => ({ db: "new", sub: "newDb" })[key] ?? null,
+    anchorCalls: () => [],
+    importedFrom: (key, module) => key === "Client" && module === "kvcache",
+    importedAs: (key, module) =>
+      key === "ClientBase" && module === "kvcache" ? ["Client"] : [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+    comesTo: (key) => (key === "Db" ? ["DbClass"] : []),
+    parameterOf: (key) =>
+      key === "block#tx3" ? { func: "block", position: 0 } : null,
+    ...over,
+  };
+}
+
+const CLIENT = constructedFrom({ from: ["kvcache"], named: ["Client"] });
+
+/** Whether the client one member read along from the call is from the origin. */
+function memberFrom(call: string, origin: ReceiverOrigin, from = models()) {
+  return (
+    opsAt(`/app/models.ts:${call}`, from).member?.()?.receiverIsFrom(origin) ??
+    false
+  );
+}
+
+describe("the member a call is made on, over the facts", () => {
+  it("gives ops for the member read, named after the member and asking about its object", () => {
+    const find = opsAt("/app/models.ts:user", models());
+    const member = find.member?.() ?? null;
+
+    expect(member?.method()).toBe("user");
+    expect(member?.calleeText()).toBe("db.user");
+    expect(member?.argumentCount()).toBe(0);
+    expect(member?.receiverIsFrom(CLIENT)).toBe(true);
+    expect(find.receiverIsFrom(CLIENT)).toBe(false);
+  });
+
+  it("gives a call with no arguments as the member, the way Ruby writes one", () => {
+    const member =
+      opsAt("/app/models.ts:rubyUsers", models()).member?.() ?? null;
+
+    expect(member?.method()).toBe("users");
+    expect(member?.receiverIsFrom(CLIENT)).toBe(true);
+  });
+
+  it("gives nothing for a call made on a name", () => {
+    expect(opsAt("run", models()).member?.()).toBeNull();
+    expect(opsAt("new", models()).member?.()).toBeNull();
+  });
+
+  it("says which file the call is in, off its key", () => {
+    expect(opsAt("/app/models.ts:user", models()).file?.()).toBe(
+      "/app/models.ts",
+    );
+  });
+});
+
+describe("a receiver of a class that reaches a library base, over the facts", () => {
+  const BASE = inherits({ from: ["kvcache"], named: ["Client"] });
+
+  it("reads the class the receiver was made from, up to the base it extends", () => {
+    expect(memberFrom("post", BASE)).toBe(true);
+    expect(memberFrom("user", BASE)).toBe(false);
+    expect(
+      memberFrom("post", inherits({ from: ["kvcache"], named: ["Other"] })),
+    ).toBe(false);
+  });
+
+  it("reads the class the facts say the receiver is one of", () => {
+    const said = models({}, [["instanceOf", "tx", "DbClass"]]);
+
+    expect(memberFrom("order", BASE, said)).toBe(true);
+    expect(memberFrom("order", BASE)).toBe(false);
+  });
+
+  it("gives up on a project base that leads back to the class it started from", () => {
+    const looped = models({
+      importedAs: () => [],
+      comesTo: (key) =>
+        key === "Db" || key === "ClientBase" ? ["DbClass"] : [],
+    });
+
+    expect(memberFrom("post", BASE, looped)).toBe(false);
+  });
+
+  it("reads nothing for a call that is made on no member read", () => {
+    const made = opsAt("new", models());
+
+    expect(made.receiverIsFrom(BASE)).toBe(false);
+    expect(made.receiverIsFrom(handedBy("run", CLIENT, { parameter: 0 }))).toBe(
+      false,
+    );
+  });
+
+  it("asks the adapter instead, where it reads declared types", () => {
+    const asked: string[] = [];
+    const typedSource = models({
+      typedInherits: (call, spec) => {
+        asked.push(call);
+        return spec.named.includes("Client");
+      },
+    });
+
+    expect(memberFrom("user", BASE, typedSource)).toBe(true);
+    expect(asked).toEqual(["db.user"]);
+  });
+});
+
+describe("the receiver a library method hands its callback, over the facts", () => {
+  const HANDED = handedBy("run", CLIENT, { parameter: 0 });
+
+  it("reads a callback written at the call", () => {
+    expect(memberFrom("order", HANDED)).toBe(true);
+  });
+
+  it("reads a callback passed by the name bound to it", () => {
+    expect(memberFrom("item", HANDED)).toBe(true);
+  });
+
+  it("reads a Ruby block through the adapter's read of its variables", () => {
+    expect(memberFrom("line", HANDED)).toBe(true);
+  });
+
+  it("reads nothing for another method, another parameter, or a client from elsewhere", () => {
+    expect(
+      memberFrom("order", handedBy("transaction", CLIENT, { parameter: 0 })),
+    ).toBe(false);
+    expect(memberFrom("order", handedBy("run", CLIENT, { parameter: 1 }))).toBe(
+      false,
+    );
+    expect(
+      memberFrom(
+        "order",
+        handedBy("run", constructedFrom("other"), { parameter: 0 }),
+      ),
+    ).toBe(false);
+    expect(memberFrom("user", HANDED)).toBe(false);
+  });
+
+  it("asks the same of the call itself", () => {
+    const tx = opsAt("/app/models.ts:order", models()).member?.() ?? null;
+
+    expect(tx?.isFrom(HANDED)).toBe(true);
+    expect(tx?.isFrom(inherits({ from: ["kvcache"], named: ["Client"] }))).toBe(
+      false,
+    );
   });
 });

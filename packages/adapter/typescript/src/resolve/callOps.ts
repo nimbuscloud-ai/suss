@@ -138,6 +138,11 @@ const ORIGIN: ByOrigin<boolean, [Receiver]> = {
       origin,
       receiver.resolution,
     ),
+  // Only the ops over the facts read these. A run with no store gets
+  // these ops, and has no store to say where a base was imported from
+  // or which call handed a callback over.
+  inherits: () => false,
+  handedBy: () => false,
   imported: (origin, receiver) =>
     receiver.callee !== null &&
     importedAsAsked(
@@ -362,6 +367,8 @@ const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
     receiver.callee.getName() === origin.method &&
     byOrigin(ORIGIN, origin.on, receiver),
   typed: ORIGIN.typed,
+  inherits: ORIGIN.inherits,
+  handedBy: ORIGIN.handedBy,
   imported: (origin, receiver) =>
     importedAsAsked(origin, receiver.expression, receiver.resolution),
   global: (origin, receiver) =>
@@ -627,6 +634,13 @@ export function callOpsFor(
     parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
       callee === null ? null : opsOverReceiver(callee.getExpression(), values),
+    member: () => {
+      const read = callee?.getExpression() ?? null;
+      return read !== null && Node.isPropertyAccessExpression(read)
+        ? memberOpsFor(read, reading)
+        : null;
+    },
+    file: () => call.getSourceFile().getFilePath(),
     argument: (index) => opsOverCall(argumentsOf()[index], values),
     readingArguments: (first, last) => walk?.settle(first, last),
     readingReceivers: (methods) => walk?.settleReceivers(methods),
@@ -648,6 +662,54 @@ export function callOpsFor(
       ? {}
       : { statesSlots: reading.statesSlots }),
     ast: () => call,
+  };
+}
+
+/**
+ * The ops for the member read a call is made on, `db.user` in
+ * `db.user.findMany()`. The read passes no arguments, its method is the
+ * member's name, and its receiver questions are about `db`, asked the
+ * way a call's are.
+ */
+function memberOpsFor(
+  read: PropertyAccessExpression,
+  reading: CallReading,
+): CallOps {
+  const { originatesFrom } = reading;
+  const resolve =
+    reading.walk?.writtenValueOf ?? reading.resolve ?? (() => null);
+  const receiver: Receiver = {
+    callee: read,
+    expression: read,
+    resolve,
+    resolution: reading.resolution,
+    ...(originatesFrom === undefined ? {} : { originatesFrom }),
+  };
+  return {
+    method: () => read.getName(),
+    receiverIsFrom: (origin) => byOrigin(ORIGIN, origin, receiver),
+    isFrom: (origin) => byOrigin(CALL_ORIGIN, origin, receiver),
+    receiverGlobal: (paths) =>
+      receiverGlobalOf(read.getExpression(), paths, reading.resolution),
+    argumentCount: () => 0,
+    nameAt: () => null,
+    calleeText: () => read.getText(),
+    receiver: () =>
+      opsOverReceiver(read.getExpression(), {
+        resolve,
+        resolution: reading.resolution,
+      }),
+    member: () => {
+      const object = read.getExpression();
+      return Node.isPropertyAccessExpression(object)
+        ? memberOpsFor(object, reading)
+        : null;
+    },
+    file: () => read.getSourceFile().getFilePath(),
+    argument: () => null,
+    callee: () => null,
+    propertyAt: () => null,
+    valueAt: () => null,
   };
 }
 

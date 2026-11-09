@@ -14,7 +14,7 @@ import {
 } from "../discovery/resolveValue.js";
 import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { encodedIn } from "../values/encoded.js";
-import { typedAsExported } from "../values/receiverType.js";
+import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
@@ -149,10 +149,13 @@ export function factSourceFor(
       ),
     declares: (call, module) =>
       at(call, false, (node) => {
+        // A member read the ops reached through `member()` is its own callee.
         const callee =
           Node.isCallExpression(node) || Node.isNewExpression(node)
             ? node.getExpression()
-            : null;
+            : Node.isPropertyAccessExpression(node)
+              ? node
+              : null;
         return (
           callee !== null &&
           methodDeclaredIn(
@@ -166,16 +169,26 @@ export function factSourceFor(
       }),
     typedAs: (call, origin) =>
       at(call, false, (node) => {
-        const callee = Node.isCallExpression(node)
-          ? node.getExpression()
-          : null;
-        return (
-          callee !== null &&
-          Node.isPropertyAccessExpression(callee) &&
-          typedAsExported(callee.getExpression(), origin, store)
-        );
+        const object = receiverWritten(node);
+        return object !== null && typedAsExported(object, origin, store);
+      }),
+    typedInherits: (call, spec) =>
+      at(call, false, (node) => {
+        const object = receiverWritten(node);
+        return object !== null && typedAsInheriting(object, spec, store);
       }),
   };
+}
+
+/**
+ * The receiver as the source wrote it: `db` in `db.find()`, and in the
+ * member read `db.user` the ops reach `db.user.findMany()` through.
+ */
+function receiverWritten(node: Node): Node | null {
+  const callee = Node.isCallExpression(node) ? node.getExpression() : node;
+  return Node.isPropertyAccessExpression(callee)
+    ? callee.getExpression()
+    : null;
 }
 
 /** The key the facts give a call, with the call's own facts stated first. */

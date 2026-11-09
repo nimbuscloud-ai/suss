@@ -107,6 +107,21 @@ describe("the Python fact source", () => {
     expect(typed("Other")).toBe(false);
   });
 
+  it("takes any class of the module when the origin lists none, asked of the call or of the member read it is made on", async () => {
+    const { db, source } = await sourceFor();
+    const [[dispatch, read] = []] = db
+      .facts("call")
+      .filter((row) => source.textOf(String(row[0])).includes("dispatch"));
+    const anyOf = (module: string) => ({
+      origin: "typed" as const,
+      importedFrom: [module],
+    });
+
+    expect(source.typedAs?.(String(dispatch), anyOf("relay"))).toBe(true);
+    expect(source.typedAs?.(String(read), anyOf("relay"))).toBe(true);
+    expect(source.typedAs?.(String(read), anyOf("other"))).toBe(false);
+  });
+
   it("gives the module an import statement spells, and nothing for a name the file assigns", async () => {
     const { source, held } = await sourceFor();
 
