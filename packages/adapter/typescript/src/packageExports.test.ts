@@ -399,6 +399,35 @@ describe("discoverPackageExports", () => {
     ]);
   });
 
+  it("surfaces the functions of an object a factory's return has, one export path segment per member", async () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "src/index.ts",
+        content: `
+          export function createClient() {
+            return { users: { list() { return []; } }, version: "1" };
+          }
+        `,
+      },
+    ]);
+
+    const { units } = runDiscovery(path.join(root, "package.json"));
+    const surfaced = units
+      .map((u) => [u.name, u.packageExportInfo?.exportPath])
+      .sort();
+    expect(surfaced).toEqual([
+      ["createClient", ["createClient"]],
+      ["createClient.users.list", ["createClient", "users", "list"]],
+    ]);
+  });
+
   it("ignores nested function returns when surfacing", async () => {
     root = writeFixturePackage([
       {

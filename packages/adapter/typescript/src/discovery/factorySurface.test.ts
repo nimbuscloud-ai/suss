@@ -12,7 +12,7 @@ function surfacedNames(source: string, declName: string): string[] {
   const file = project.createSourceFile("/probe.ts", source);
   const decl = file.getFunctionOrThrow(declName);
   return surfaceMethods(decl as unknown as FunctionRoot, new ResolutionStore())
-    .map((m) => m.name)
+    .map((m) => m.path.join("."))
     .sort();
 }
 
@@ -21,7 +21,7 @@ function surfacedNamesFromClass(source: string, declName: string): string[] {
   const file = project.createSourceFile("/probe.ts", source);
   const decl = file.getClassOrThrow(declName);
   return surfaceMethods(decl)
-    .map((m) => m.name)
+    .map((m) => m.path.join("."))
     .sort();
 }
 
@@ -131,7 +131,7 @@ describe("surfaceMethods: shorthand over inner functions", () => {
       decl as unknown as FunctionRoot,
       new ResolutionStore(),
     );
-    expect(surfaced.map((m) => m.name)).toEqual(["helper"]);
+    expect(surfaced.map((m) => m.path)).toEqual([["helper"]]);
   });
 
   it("surfaces the methods a spread of another object contributes", () => {
@@ -145,6 +145,47 @@ describe("surfaceMethods: shorthand over inner functions", () => {
       "createX",
     );
     expect(names).toEqual(["ping", "pong"]);
+  });
+});
+
+describe("surfaceMethods: objects inside the returned object", () => {
+  it("surfaces the functions of an object written as a property's value", () => {
+    const names = surfacedNames(
+      `
+      function createX() {
+        return { generated: { of: "x", dirs: (file: string) => [file] } };
+      }
+    `,
+      "createX",
+    );
+    expect(names).toEqual(["generated.dirs"]);
+  });
+
+  it("surfaces the functions of an object a property refers to by name", () => {
+    const names = surfacedNames(
+      `
+      const users = { list() {}, count: 0 };
+      function createX() {
+        return { users, ping() {} };
+      }
+    `,
+      "createX",
+    );
+    expect(names).toEqual(["ping", "users.list"]);
+  });
+
+  it("stops at an object that comes back round to one it is inside", () => {
+    const names = surfacedNames(
+      `
+      const outer = { inner: middle };
+      const middle = { back: outer, go() {} };
+      function createX() {
+        return { outer };
+      }
+    `,
+      "createX",
+    );
+    expect(names).toEqual(["outer.inner.go"]);
   });
 });
 
