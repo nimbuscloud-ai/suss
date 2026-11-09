@@ -35,3 +35,14 @@ Resources:
           Properties:
             Method: POST
             Path: /accounts
+
+  ReportsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: src.handlers.reports.handler
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)
