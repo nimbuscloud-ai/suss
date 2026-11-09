@@ -34,7 +34,9 @@ placeholderValue(x)         x is a written value a later write is
                             expected to replace, such as None or nil.
                             answersFor reads it, and no rule does
                             (Python, Ruby)
-holdsProperty(o, n, x)      object o has x under the name n
+holdsProperty(o, n, x)      object o has x under the name n. A Ruby
+                            class or module has a class or module
+                            nested in it under the nested one's name
 declaresDefault(cls, n, x)  cls declares a default x for its field n,
                             which a constructor may replace (Python)
 readsProperty(x, o, n)      x is the expression o.n, or o[n] with the
@@ -333,6 +335,14 @@ imports(x, m, n)            x is the name n imported from module m. n
                             root no file in the run defines, under its
                             path, Aws::SQS::Client
 exportsAs(m, n, v)          the file m exports v under the name n
+marks(s, w)                 the scope s opens with the directive w,
+                            "use server": s is a file or a function. A
+                            discovery pattern reads it through the
+                            module ops, and no rule does (TypeScript)
+jsxElement(v, t)            v is a JSX element whose tag is written t,
+                            the component it renders. A discovery
+                            pattern reads it through the value ops, and
+                            no rule does (TypeScript)
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
 reExportsAll(m, m2)         m forwards everything m2 exports: export *
                             from in TypeScript, from m2 import * in

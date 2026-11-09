@@ -199,6 +199,13 @@ describe("a chain over calls that take a callback", () => {
     expect(callbackRefOf(callOps({ callee: "later", args: [nested] }))).toEqual(
       { type: "opaque", reason: "unread-job" },
     );
+    const element: Written = {
+      form: "object",
+      own: { run: { form: "element", source: "<Job />" } },
+    };
+    expect(
+      callbackRefOf(callOps({ callee: "later", args: [element] })),
+    ).toEqual({ type: "opaque", reason: "unread-job" });
   });
 
   it("reads the block a call is written with", () => {

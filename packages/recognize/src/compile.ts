@@ -654,6 +654,7 @@ const CALLBACK_REF: Record<
   function: () => ({ type: "literal" }),
   name: (found) => ({ type: "identifier", name: found.source?.() ?? "" }),
   object: (_found, unread) => ({ type: "opaque", reason: unread.other }),
+  element: (_found, unread) => ({ type: "opaque", reason: unread.other }),
   other: (_found, unread) => ({ type: "opaque", reason: unread.other }),
 };
 
