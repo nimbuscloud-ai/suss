@@ -3,6 +3,7 @@
 export { callbacks } from "./callbacks.js";
 export { compile } from "./compile.js";
 export { configuredSends } from "./configuredSends.js";
+export { discoverDeclared } from "./discovery.js";
 export { examplesMissing, runExamples } from "./example.js";
 export { messageSends } from "./messageSends.js";
 export {
@@ -17,7 +18,7 @@ export {
   returnedBy,
   typed,
 } from "./ops.js";
-export { declarationsIn, pack } from "./pack.js";
+export { declarationsIn, describeDiscovery, pack } from "./pack.js";
 export { slotsDeclared } from "./slots.js";
 export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
@@ -109,6 +110,7 @@ export type {
   WholeMessage,
 } from "./chain.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
+export type { DeclaredUnit } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
 export type {

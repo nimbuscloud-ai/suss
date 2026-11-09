@@ -12,6 +12,7 @@
 import { compile, compileSubUnits, modulesOfChain } from "./compile.js";
 
 import type {
+  DeclaredDiscoveryPattern,
   DeclaredMatch,
   GeneratedModuleSpec,
   InvocationRecognizer,
@@ -185,6 +186,27 @@ function passedThrough(spec: PackSpec): Pick<PatternPack, PassedThrough> {
  */
 export function declarationsIn(matches: readonly Match[]): PackDeclarations {
   return { declarations: matches.map((match) => describe(match.declared)) };
+}
+
+/**
+ * Describes a declared discovery pattern for the pack health report. A
+ * field the pack answered with a function, such as a manifest's
+ * `entries`, counts as a function link, and every other field as data.
+ */
+export function describeDiscovery(
+  pattern: DeclaredDiscoveryPattern,
+): DeclaredMatch {
+  const fields = Object.entries(pattern.match).filter(
+    ([field]) => field !== "type",
+  );
+  const functions = fields.filter(([, value]) => typeof value === "function");
+  return {
+    name: pattern.match.type,
+    dataLinks: fields.length - functions.length,
+    functionLinks: functions.map(([field]) => field),
+    astLinks: [],
+    example: null,
+  };
 }
 
 /** The wire one chain reaches over, whichever ending it has. */

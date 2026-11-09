@@ -66,6 +66,7 @@ import {
 
 import { rangeOf } from "./ast.js";
 import { claimsSubUnits } from "./claims.js";
+import { declaredDiscoveryUnits } from "./declaredDiscovery.js";
 import { readDynamicNames } from "./defineMethod.js";
 import {
   buildRubyExtractionReport,
@@ -882,6 +883,18 @@ async function runRuby(
         onReachSeed,
       }),
       ...declaredEntryUnits(root, file, {
+        packs: options.packs,
+        ...(storage === undefined ? {} : { storage }),
+        ...(jobs === undefined ? {} : { jobs }),
+        inheritedMethods,
+        bodyBlocks,
+        dynamicNames: watchedNames,
+        displayPathOf,
+        facts: db,
+        onReachSeed,
+        tallies,
+      }),
+      ...declaredDiscoveryUnits(root, file, {
         packs: options.packs,
         ...(storage === undefined ? {} : { storage }),
         ...(jobs === undefined ? {} : { jobs }),

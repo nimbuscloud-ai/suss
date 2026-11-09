@@ -21,6 +21,7 @@ import type {
   WrapperReference,
 } from "@suss/behavioral-ir";
 import type {
+  DiscoveredCustomUnit,
   DiscoveryPattern,
   InputMappingPattern,
   TerminalPattern,
@@ -97,6 +98,8 @@ export interface DiscoveredUnit {
     /** Null when the source never says which type the resolver attaches to. */
     typeName: string | null;
     fieldName: string;
+    /** The binding's transport, when the pack's units spell it apart from its protocol. */
+    transport?: string;
     schemaSdl?: string;
     /** The file whose server config declares the schema. */
     schemaDocument?: string;
@@ -253,6 +256,39 @@ export interface DiscoveredUnit {
    * returned and the store could not follow, one stop per call.
    */
   routeUnfollowed?: UnfollowedCall[];
+}
+
+/**
+ * A unit a pack found outside this adapter's own handlers, through its
+ * `discoverUnits` hook or a declared pattern, as this adapter's unit.
+ */
+export function discoveredUnitOf(found: DiscoveredCustomUnit): DiscoveredUnit {
+  return {
+    func: found.func as FunctionRoot,
+    kind: found.kind,
+    name: found.name,
+    ...(found.terminals !== undefined ? { terminals: found.terminals } : {}),
+    ...(found.inputMapping !== undefined
+      ? { inputMapping: found.inputMapping }
+      : {}),
+    ...(found.routeInfo !== undefined ? { routeInfo: found.routeInfo } : {}),
+    ...(found.resolverInfo !== undefined
+      ? { resolverInfo: found.resolverInfo }
+      : {}),
+    ...(found.channelInfo !== undefined
+      ? { channelInfo: found.channelInfo }
+      : {}),
+    ...(found.invocationInfo !== undefined
+      ? { invocationInfo: found.invocationInfo }
+      : {}),
+    ...(found.deployableUnit !== undefined
+      ? { deployableUnit: found.deployableUnit }
+      : {}),
+    ...(found.functionCallInfo !== undefined
+      ? { functionCallInfo: found.functionCallInfo }
+      : {}),
+    ...(found.metadata !== undefined ? { metadata: found.metadata } : {}),
+  };
 }
 
 /**

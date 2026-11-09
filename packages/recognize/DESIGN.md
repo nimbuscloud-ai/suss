@@ -267,6 +267,10 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module |
 | `named` on `constructed` | the name the constructor is written with, or the export the adapter's `importedAs` says it was imported as |
 | `anchorCall` | the adapter's `anchorCalls`, with the single-answer policy |
+| `member(name, singleton)` | `holdsProperty` on the value, or on what it `comesTo`, the last statement winning; a class's own member is spelled as `classMemberName` spells it |
+| `returns()`, `marked(word)` | `returnsValue(f, v)` and `marks(f, word)` on the function `function()` settles to |
+| `tag()` | `jsxElement(v, t)` on the value as written |
+| `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names; its `members(kind)` are the functions among its `holdsProperty` rows |
 
 `classAt`, `parameterReadsAt`, `statesSlots` and the two batching
 hints are left out. Each comes in with the pack that reads it.
@@ -277,6 +281,31 @@ call the ops reach goes through, and TypeScript takes them from
 The pack harness runs every recognizer that reads the ops a second time
 over `callOpsFor`, and fails the test on any difference that
 `tools/pack-harness/src/knownDifferences.ts` does not list with a reason.
+
+### A unit a pattern finds
+
+These discovery patterns are read here for every adapter, through
+`discoverDeclared` over the module ops: a function a deploy manifest
+says the platform calls (`manifest`), exports by name or by a pattern,
+with an object's members (`namedExport`), the methods of a class that
+reaches a library base (`subclassOf`), the functions a directive marks
+(`marked`), and a function a call hands over (`registeredFunction`).
+They are not chain endings, since a unit found by an export, a file or
+a manifest is not reached from a call. `factModuleOps` answers the
+module ops from these facts:
+
+| op | read from |
+|---|---|
+| `exports()` | `exportsAs(file, n, v)`, or the adapter's own export table where it follows a re-export, as TypeScript's does |
+| `export(path, member)` | the first name through `exports()`, then `member` for each name after it, then the member asked for. Ruby writes a nested constant in one piece too, `class Reports::Nightly`, so its module ops also try the leading names joined with `::`, and a class written both ways is two values, the first that has the member winning |
+| `marked(word)` | `marks(file, word)` |
+| `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it |
+| `calls()` | the calls the adapter lists outside every function body, each as the fact ops for it |
+
+Each reader ends at `function()` and hands the adapter back its own
+node. The TypeScript adapter runs a pattern like any other in its
+discovery dispatch, and Python and Ruby run the patterns a pack lists
+in `declaredDiscovery` beside their own route patterns.
 
 ### The value policy
 
