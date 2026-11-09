@@ -165,6 +165,8 @@ export type {
   ChannelSource,
   ContractPattern,
   DeclaredBinding,
+  DeclaredDiscoveryMatch,
+  DeclaredDiscoveryPattern,
   DeclaredMatch,
   DeclaredStatusDecorators,
   DiscoveredCustomUnit,
@@ -177,19 +179,27 @@ export type {
   GlobalPrefixCall,
   InputMappingPattern,
   InvocationRecognizer,
+  ManifestEntry,
+  ManifestMatch,
+  MarkedMatch,
+  MemberPick,
+  NamedExportMatch,
   PackDeclarations,
   ParameterSupplier,
   PatternPack,
   RedirectDelivery,
   RedirectOption,
+  RegisteredFunctionMatch,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,
   RouteVersioning,
+  SubclassOfMatch,
   TerminalExtraction,
   TerminalMatch,
   TerminalPattern,
   TestCaseMatch,
   TransparentWrapper,
+  UnitSpec,
   VersionPlacement,
   WrapperMethodRegistration,
   WrapperOptionRegistration,
@@ -1300,6 +1310,12 @@ export { storedPathsOfRun } from "./cachePaths.js";
 export { stampMayMissAWrite } from "./cacheStamps.js";
 export { createCodeHasher, processCodeHasher } from "./codeHash.js";
 export {
+  type BindingPack,
+  bindingOfDiscoveredUnit,
+  functionCallBindingOfDiscoveredUnit,
+  type StatedBoundary,
+} from "./discoveredUnitBinding.js";
+export {
   buildUngatedExtractionReport,
   createPackTallies,
   emptyTally,
@@ -1310,6 +1326,7 @@ export {
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
+export { declaredMatchOf } from "./framework.js";
 export { makeIgnoredDirectory } from "./ignoredDirectory.js";
 export { KeptParses } from "./keptParses.js";
 export { byOrigin, lastValueWins } from "./ops.js";
@@ -1355,6 +1372,7 @@ export type {
   ByOrigin,
   CallOps,
   ClassOps,
+  ClassValueOps,
   ConstructedFrom,
   DeclaredBy,
   Encoded,
@@ -1365,6 +1383,10 @@ export type {
   Imported,
   Inheriting,
   Inherits,
+  MarkedFunction,
+  ModuleMember,
+  ModuleMemberName,
+  ModuleOps,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,

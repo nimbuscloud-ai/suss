@@ -14,12 +14,13 @@
  */
 
 import { byOrigin, lastValueWins } from "@suss/extractor";
-import { fileOfKey } from "@suss/resolution";
+import { classMemberName, classMemberOf, fileOfKey } from "@suss/resolution";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
   ByOrigin,
   CallOps,
+  ClassValueOps,
   ConstructedFrom,
   DeclaredBy,
   EffectArg,
@@ -30,6 +31,10 @@ import type {
   Imported,
   Inheriting,
   Inherits,
+  MarkedFunction,
+  ModuleMember,
+  ModuleMemberName,
+  ModuleOps,
   ReceiverOrigin,
   ReturnedBy,
   Typed,
@@ -677,6 +682,41 @@ class FactValue implements ValueOps {
       : { codec: found.codec, value: factValueOps(found.value, this.facts) };
   }
 
+  member(name: string, singleton = false): ValueOps | null {
+    const held = heldMember(
+      this.key,
+      spelledMember(name, singleton),
+      this.facts,
+    );
+    return held === null ? null : factValueOps(held, this.facts);
+  }
+
+  returns(): readonly ValueOps[] {
+    const found = functionBehind(this.key, this.facts);
+    return found === null
+      ? []
+      : this.facts.db
+          .lookup("returnsValue", 0, found)
+          .map((row) => factValueOps(String(row[1]), this.facts));
+  }
+
+  marked(word: string): boolean {
+    const found = functionBehind(this.key, this.facts);
+    return found !== null && marks(found, word, this.facts);
+  }
+
+  tag(): ValueOps | null {
+    const [element] = this.facts.db.lookup("jsxElement", 0, this.written());
+    return element === undefined
+      ? null
+      : factValueOps(String(element[1]), this.facts);
+  }
+
+  asClass(): ClassValueOps | null {
+    const cls = classBehind(this.key, this.facts);
+    return cls === null ? null : new FactClass(cls, this.facts);
+  }
+
   private holeKeys(): string[] {
     return templatePieces(this.written(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],
@@ -775,6 +815,77 @@ function isFunction(key: string, source: FactSource): boolean {
   return source.db.lookup("func", 0, key).length > 0;
 }
 
+/** The key a member is stated under: a class's own member is spelled apart from an instance's. */
+function spelledMember(name: string, singleton: boolean): string {
+  return singleton ? classMemberName(name) : name;
+}
+
+/**
+ * What the value, or the one thing it comes to, states under the name.
+ * The last statement wins, as the last write to a property does.
+ */
+function heldMember(
+  key: string,
+  spelled: string,
+  source: FactSource,
+): string | null {
+  for (const holder of [key, ...(source.comesTo?.(key) ?? [])]) {
+    const held = source.db
+      .lookup("holdsProperty", 0, holder)
+      .filter((row) => row[1] === spelled);
+    const last = held[held.length - 1];
+    if (last !== undefined) {
+      return String(last[2]);
+    }
+  }
+  return null;
+}
+
+function marks(scope: string, word: string, source: FactSource): boolean {
+  return source.db.lookup("marks", 0, scope).some((row) => row[1] === word);
+}
+
+/**
+ * The class a value is, or comes to: something the facts state as an
+ * object that is neither written out as one nor a function. A Ruby
+ * module counts, and reaches a base only through what it includes.
+ */
+function classBehind(key: string, source: FactSource): string | null {
+  for (const candidate of [key, ...(source.comesTo?.(key) ?? [])]) {
+    if (
+      source.db.lookup("objectValue", 0, candidate).length > 0 &&
+      source.shapeOf(candidate) === null &&
+      !isFunction(candidate, source)
+    ) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+class FactClass implements ClassValueOps {
+  constructor(
+    private readonly key: string,
+    private readonly facts: FactSource,
+  ) {}
+
+  inherits(spec: Inherits): boolean {
+    return inheritsFrom(this.key, spec, this.facts);
+  }
+
+  members(kind: "instance" | "singleton"): readonly ModuleMember[] {
+    return this.facts.db.lookup("holdsProperty", 0, this.key).flatMap((row) => {
+      const stated = String(row[1]);
+      const own = classMemberOf(stated);
+      const name = kind === "singleton" ? own : own === null ? stated : null;
+      const held = String(row[2]);
+      return name === null || !isFunction(held, this.facts)
+        ? []
+        : [{ name, value: factValueOps(held, this.facts) }];
+    });
+  }
+}
+
 /**
  * Whether the class's ancestry reaches one of the bases the spec lists:
  * a base imported from one of its modules under one of its names, or a
@@ -811,6 +922,133 @@ function isListedBase(
   return spec.from.some((module) =>
     source.importedAs(base, module).some((name) => spec.named.includes(name)),
   );
+}
+
+/**
+ * What only the adapter can list about one file, since no fact is keyed
+ * by file for it. The rest of the module ops read the facts.
+ */
+export interface ModuleWritten {
+  /** States what the file says about itself, for an adapter that states facts on demand. */
+  state?(): void;
+  /** The file's exports, for an adapter whose export table follows a re-export, as TypeScript's does. Unset reads `exportsAs`. */
+  exports?(): readonly { readonly name: string; readonly key: string }[];
+  /** The calls the module body runs outside every function, in source order. */
+  calls(): readonly CallOps[];
+  /** Every function the file writes, with the variable or property it is assigned to. Unset where the language writes no directive. */
+  functions?(): readonly {
+    readonly key: string;
+    readonly assignedName: string | null;
+  }[];
+  /** How the language writes a nested name in one piece, `::` in Ruby, so `class Reports::Nightly` is found at the path `Reports`, `Nightly`. */
+  qualifier?: string;
+}
+
+/** The module ops for one file, over the facts and what the adapter lists about the file. */
+export function factModuleOps(
+  file: string,
+  source: FactSource,
+  written: ModuleWritten,
+): ModuleOps {
+  return new FactModule(file, source, written);
+}
+
+class FactModule implements ModuleOps {
+  private stated = false;
+  private exported: readonly ModuleMember[] | null = null;
+
+  constructor(
+    private readonly file: string,
+    private readonly facts: FactSource,
+    private readonly written: ModuleWritten,
+  ) {}
+
+  path(): string {
+    return this.file;
+  }
+
+  exports(): readonly ModuleMember[] {
+    this.exported ??= this.listExports();
+    return this.exported;
+  }
+
+  export(path: readonly string[], member?: ModuleMemberName): ValueOps | null {
+    for (const value of this.valuesAt(path)) {
+      const found =
+        member === undefined
+          ? value
+          : (value.member?.(member.name, member.singleton) ?? null);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Every value at the path: its first names as one export, the fewest
+   * first, then each name after them as a member. A class written twice
+   * in the file is two values, and the member can be in either.
+   */
+  private valuesAt(path: readonly string[]): ValueOps[] {
+    const { qualifier } = this.written;
+    const heads = qualifier === undefined ? 1 : path.length;
+    const values: ValueOps[] = [];
+    for (let take = 1; take <= heads; take++) {
+      const head = path.slice(0, take).join(qualifier ?? "");
+      for (const exported of this.exports()) {
+        let found: ValueOps | null =
+          exported.name === head ? exported.value : null;
+        for (const step of path.slice(take)) {
+          found = found?.member?.(step) ?? null;
+        }
+        if (found !== null) {
+          values.push(found);
+        }
+      }
+    }
+    return values;
+  }
+
+  calls(): readonly CallOps[] {
+    return this.written.calls();
+  }
+
+  marked(word: string): boolean {
+    this.state();
+    return marks(this.file, word, this.facts);
+  }
+
+  markedFunctions(word: string): readonly MarkedFunction[] {
+    return (this.written.functions?.() ?? []).flatMap(
+      ({ key, assignedName }) => {
+        this.facts.read(key);
+        return marks(key, word, this.facts)
+          ? [{ value: factValueOps(key, this.facts), assignedName }]
+          : [];
+      },
+    );
+  }
+
+  private listExports(): ModuleMember[] {
+    this.state();
+    const named =
+      this.written.exports?.() ??
+      this.facts.db
+        .lookup("exportsAs", 0, this.file)
+        .map((row) => ({ name: String(row[1]), key: String(row[2]) }));
+    return named.map(({ name, key }) => ({
+      name,
+      value: factValueOps(key, this.facts),
+    }));
+  }
+
+  private state(): void {
+    if (!this.stated) {
+      this.stated = true;
+      this.written.state?.();
+    }
+  }
 }
 
 /** The one key in a list, or null for none or several. */

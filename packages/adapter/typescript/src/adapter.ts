@@ -26,15 +26,11 @@ import {
 } from "ts-morph";
 
 import {
-  functionCallBinding,
   graphqlOperationBinding,
-  graphqlResolverBinding,
-  messageBusBinding,
   packageExportBinding,
   readGraphqlMetadata,
   readSourceDocumentMetadata,
   restBinding,
-  unitInvocationBinding,
   withGraphqlMetadata,
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
@@ -43,6 +39,7 @@ import {
   type AccessRecognizer,
   assembleSummary,
   type BindingExtraction,
+  bindingOfDiscoveredUnit,
   type CacheAttribution,
   type CacheDiagnostic,
   type CacheInput,
@@ -58,6 +55,7 @@ import {
   type ExtractorOptions,
   extractionCacheDirFor,
   extractionConfigStamp,
+  functionCallBindingOfDiscoveredUnit,
   type InputMappingPattern,
   type InvocationRecognizer,
   type LanguageAdapter,
@@ -141,6 +139,7 @@ import {
 } from "./discovery/helperIndex.js";
 import {
   type DiscoveredUnit,
+  discoveredUnitOf,
   discoverUnits,
   unitDedupKey,
 } from "./discovery/index.js";
@@ -1485,34 +1484,7 @@ function extractFromSourceFile(
         ) ?? [],
       [],
     );
-    for (const cu of customUnits) {
-      units.push({
-        func: cu.func as FunctionRoot,
-        kind: cu.kind,
-        name: cu.name,
-        ...(cu.terminals !== undefined ? { terminals: cu.terminals } : {}),
-        ...(cu.inputMapping !== undefined
-          ? { inputMapping: cu.inputMapping }
-          : {}),
-        ...(cu.routeInfo !== undefined ? { routeInfo: cu.routeInfo } : {}),
-        ...(cu.resolverInfo !== undefined
-          ? { resolverInfo: cu.resolverInfo }
-          : {}),
-        ...(cu.channelInfo !== undefined
-          ? { channelInfo: cu.channelInfo }
-          : {}),
-        ...(cu.invocationInfo !== undefined
-          ? { invocationInfo: cu.invocationInfo }
-          : {}),
-        ...(cu.deployableUnit !== undefined
-          ? { deployableUnit: cu.deployableUnit }
-          : {}),
-        ...(cu.functionCallInfo !== undefined
-          ? { functionCallInfo: cu.functionCallInfo }
-          : {}),
-        ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
-      });
-    }
+    units.push(...customUnits.map(discoveredUnitOf));
 
     for (const unit of units) {
       const claimKey = unitDedupKey(unit);
@@ -1580,12 +1552,7 @@ function extractFromSourceFile(
         unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind);
 
       if (unit.resolverInfo !== undefined) {
-        raw.boundaryBinding = graphqlResolverBinding({
-          transport: pack.protocol,
-          recognition: pack.name,
-          typeName: unit.resolverInfo.typeName,
-          fieldName: unit.resolverInfo.fieldName,
-        });
+        raw.boundaryBinding = bindingOfDiscoveredUnit(unit, pack);
         // Never guess a type for a resolver that declares none: the
         // guess would be a root field no schema has.
         if (unit.resolverInfo.typeName === null) {
@@ -1611,25 +1578,13 @@ function extractFromSourceFile(
           }
         }
       } else if (unit.routeInfo !== undefined) {
-        raw.boundaryBinding = restBinding({
-          transport: pack.protocol,
-          recognition: pack.name,
-          method: unit.routeInfo.method,
-          path: unit.routeInfo.path,
-        });
+        raw.boundaryBinding = bindingOfDiscoveredUnit(unit, pack);
         stampRequestSpelling(raw, pack);
-      } else if (unit.channelInfo !== undefined) {
-        raw.boundaryBinding = messageBusBinding({
-          recognition: pack.name,
-          messageBus: unit.channelInfo.messageBus,
-          channel: unit.channelInfo.channel,
-        });
-      } else if (unit.invocationInfo !== undefined) {
-        raw.boundaryBinding = unitInvocationBinding({
-          recognition: pack.name,
-          deploymentTarget: unit.invocationInfo.deploymentTarget,
-          instanceName: unit.invocationInfo.instanceName,
-        });
+      } else if (
+        unit.channelInfo !== undefined ||
+        unit.invocationInfo !== undefined
+      ) {
+        raw.boundaryBinding = bindingOfDiscoveredUnit(unit, pack);
       } else if (unit.operationInfo !== undefined) {
         raw.boundaryBinding = graphqlOperationBinding({
           transport: pack.protocol,
@@ -1768,16 +1723,7 @@ function extractFromSourceFile(
             exportPath: unit.packageExportInfo.exportPath,
           });
         } else {
-          raw.boundaryBinding = functionCallBinding({
-            transport: pack.protocol,
-            recognition: pack.name,
-            ...(unit.functionCallInfo !== undefined
-              ? {
-                  module: unit.functionCallInfo.module,
-                  exportName: unit.functionCallInfo.exportName,
-                }
-              : {}),
-          });
+          raw.boundaryBinding = functionCallBindingOfDiscoveredUnit(unit, pack);
         }
       }
 

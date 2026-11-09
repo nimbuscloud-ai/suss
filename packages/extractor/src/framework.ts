@@ -21,6 +21,7 @@ import type {
   RequestSpellingMetadata,
 } from "@suss/behavioral-ir";
 import type { LibraryEnvVars } from "./libraryEnvReads.js";
+import type { Inherits, ModuleMemberName, ReceiverOrigin } from "./ops.js";
 import type { ProjectHelpers } from "./projectHelpers.js";
 
 // =============================================================================
@@ -28,16 +29,17 @@ import type { ProjectHelpers } from "./projectHelpers.js";
 // =============================================================================
 
 export type DiscoveryMatch =
-  | {
-      type: "namedExport";
-      names: string[]; // e.g. ["loader", "action"] for React Router
-    }
+  | NamedExportMatch
   | {
       type: "registrationCall";
       importModule: string; // e.g. "@ts-rest/express"
       importName: string; // e.g. "initServer"
       registrationChain: string[]; // e.g. [".router"]
     }
+  | RegisteredFunctionMatch
+  | ManifestMatch
+  | SubclassOfMatch
+  | MarkedMatch
   | {
       type: "fileConvention";
       filePattern: string; // glob
@@ -469,6 +471,152 @@ export type DiscoveryMatch =
     }
   | CallbackArgumentMatch
   | TestCaseMatch;
+
+/**
+ * Exports of the file by name. With `names` alone, the TypeScript adapter
+ * reads the pattern itself, as it always has. Any other field makes it a
+ * declared pattern every adapter reads through the module ops.
+ */
+export interface NamedExportMatch {
+  type: "namedExport";
+  /** The export names to take, `["loader", "action"]` for React Router. */
+  names?: string[];
+  /** A regular expression the export name has to match, when `names` is not given: `^[A-Z]`. */
+  pattern?: string;
+  /** File globs whose exports are not units, such as story and test files. */
+  skipFiles?: string[];
+  /** Only a function one of whose returned values is written in this form: `element` for JSX. */
+  bodyEndsIn?: "element";
+  /** The members of the exported object that are units, each with the unit it is. */
+  members?: MemberPick;
+}
+
+/**
+ * A function a call hands to a library, when that call is the function's
+ * only mention: `createRoot(el).render(<App />)` or
+ * `addEventListener("fetch", handle)`. Every adapter reads it through the
+ * module ops, over the calls the module body runs outside every function.
+ */
+export interface RegisteredFunctionMatch {
+  type: "registeredFunction";
+  /** What makes the call: the callee itself when `method` is unset, else the receiver `method` is called on. */
+  start: ReceiverOrigin;
+  method?: string;
+  /** The argument that states the function. `through: "element"` follows a JSX element to the component its tag renders. */
+  handler: { at: number; through?: "element" };
+  /** The argument that states the unit's name as a literal, with the names it can state and the unit each one is. */
+  nameAt?: { at: number } & MemberPick;
+}
+
+/**
+ * The functions a deploy manifest beside the project says the platform
+ * calls in a file. The pack reads the manifest, since reading a file is
+ * the pack's business, and the adapter finds each function by the path
+ * of names the manifest spells.
+ */
+export interface ManifestMatch {
+  type: "manifest";
+  entries: (filePath: string) => ManifestEntry[];
+}
+
+export interface ManifestEntry {
+  /** The export, then each member inside it: `["handler"]`, or `["Reports", "Nightly"]` for a Ruby class in a module. */
+  path: readonly string[];
+  /** A method of the value at `path`, when the manifest gives one: `run`, singleton for a Ruby class method. */
+  member?: ModuleMemberName;
+  /** The units to build on the function. One function can be several deployed units. */
+  units: UnitSpec[];
+}
+
+/**
+ * A class the file exports whose ancestry reaches a library base. Its
+ * methods of one kind are the units, each named `Class.method`.
+ */
+export interface SubclassOfMatch {
+  type: "subclassOf";
+  inherits: Inherits;
+  /** Which members are units: instance methods or class methods, all of them, the listed names, or the names a pattern matches. */
+  members: {
+    kind: "instance" | "singleton";
+    names?: string[];
+    pattern?: string;
+  };
+}
+
+/**
+ * A directive at module scope makes every exported function a unit; at
+ * function scope it makes that function one, exported or not. Only
+ * TypeScript writes a directive, so the pattern finds nothing elsewhere.
+ */
+export interface MarkedMatch {
+  type: "marked";
+  /** The directive, `use server`. */
+  word: string;
+  scopes: readonly ("module" | "function")[];
+  /**
+   * How a marked function is named, the first rule that gives a name
+   * winning: the variable or property it is assigned to, or a count of
+   * the functions so named in the file, written `countedAs#0`.
+   */
+  name: readonly ("assignedName" | "countInFile")[];
+  countedAs: string;
+}
+
+/** The members a pattern takes from a value, by name, each with the unit it is. */
+export interface MemberPick {
+  named: Readonly<Record<string, UnitSpec>>;
+}
+
+/** A unit a declared pattern builds on a function it finds: everything but the function. */
+export type UnitSpec = Omit<DiscoveredCustomUnit, "func">;
+
+/**
+ * A pattern every adapter reads through the module ops, as a Python or
+ * Ruby pack lists it beside its own route patterns. A TypeScript pack
+ * lists the same match in `discovery`.
+ */
+export interface DeclaredDiscoveryPattern {
+  /** The unit kind for a unit the match builds without a spec of its own. */
+  kind: string;
+  match: DeclaredDiscoveryMatch;
+}
+
+/** The discovery members every adapter reads through the module ops. */
+export type DeclaredDiscoveryMatch =
+  | NamedExportMatch
+  | RegisteredFunctionMatch
+  | ManifestMatch
+  | SubclassOfMatch
+  | MarkedMatch;
+
+const DECLARED_TYPES: ReadonlySet<DiscoveryMatch["type"]> = new Set([
+  "registeredFunction",
+  "manifest",
+  "subclassOf",
+  "marked",
+]);
+
+/**
+ * The match, when every adapter reads it through the module ops, or
+ * null. A `namedExport` with only `names` stays with the TypeScript
+ * adapter's own handler.
+ */
+export function declaredMatchOf(
+  match: DiscoveryMatch,
+): DeclaredDiscoveryMatch | null {
+  if (match.type === "namedExport") {
+    const declared =
+      match.names === undefined ||
+      match.pattern !== undefined ||
+      match.skipFiles !== undefined ||
+      match.bodyEndsIn !== undefined ||
+      match.members !== undefined;
+    return declared ? match : null;
+  }
+  return DECLARED_TYPES.has(match.type)
+    ? (match as DeclaredDiscoveryMatch)
+    : null;
+}
 
 /**
  * A function handed to a call or construction of a library export, which
@@ -1634,7 +1782,12 @@ export interface DiscoveredCustomUnit {
    * `graphql-resolver` binding from `(typeName, fieldName)`, which
    * pairs with the operations a client sends.
    */
-  resolverInfo?: { typeName: string; fieldName: string };
+  resolverInfo?: {
+    typeName: string;
+    fieldName: string;
+    /** The binding's transport, when the units spell it apart from the pack's protocol. */
+    transport?: string;
+  };
   /**
    * Message-bus channel identity for consumer units a callback discovers
    * against a subject the code itself gives (a handler factory whose

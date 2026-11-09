@@ -63,6 +63,7 @@ import {
 } from "@suss/resolution";
 
 import { children, field, isFunction, rangeOf } from "./ast.js";
+import { declaredDiscoveryUnits } from "./declaredDiscovery.js";
 import {
   buildPythonExtractionReport,
   createPackTallies,
@@ -558,7 +559,10 @@ async function runPython(
   const discovers =
     declaredModules.length > 0 ||
     options.packs.some(
-      (pack) => pack.discovery.length > 0 || pack.entryPoints !== undefined,
+      (pack) =>
+        pack.discovery.length > 0 ||
+        pack.entryPoints !== undefined ||
+        (pack.declaredDiscovery ?? []).length > 0,
     );
   // A client pattern with a receiver asks the rules what built it.
   const buildsReceivers = options.packs.some((pack) =>
@@ -772,6 +776,11 @@ async function runPython(
         storageFor,
       }),
       ...declaredEntryUnits(boundFile, options.packs, {
+        facts: db,
+        storageFor,
+        tallies,
+      }),
+      ...declaredDiscoveryUnits(boundFile, options.packs, {
         facts: db,
         storageFor,
         tallies,
