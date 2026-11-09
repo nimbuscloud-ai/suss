@@ -613,7 +613,7 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("gives a nested module its own object, apart from its enclosing one", async () => {
+  it("gives a nested module its own object, held by its enclosing one under its name", async () => {
     const db = await factsFor(
       "module A\n  module B\n    def self.fetch\n    end\n  end\nend\n",
     );
@@ -622,6 +622,7 @@ describe("ruby value facts", () => {
     const [method] = rows(db, "func");
     expect(rows(db, "holdsProperty")).toEqual([
       [objects[1], ".fetch", method?.[0]],
+      [objects[0], "B", objects[1]],
     ]);
   });
 

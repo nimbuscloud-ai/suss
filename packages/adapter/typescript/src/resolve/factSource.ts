@@ -234,6 +234,13 @@ function formOf(node: Node): ValueForm {
   if (Node.isObjectLiteralExpression(node)) {
     return "object";
   }
+  if (
+    Node.isJsxElement(node) ||
+    Node.isJsxSelfClosingElement(node) ||
+    Node.isJsxFragment(node)
+  ) {
+    return "element";
+  }
   return Node.isIdentifier(node) && !writesUndefined(node) ? "name" : "other";
 }
 

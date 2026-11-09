@@ -65,6 +65,7 @@ import {
   writesToBinding,
   writesToField,
 } from "./assignments.js";
+import { directivesOf, jsxTagOf } from "./directives.js";
 import { type GeneratedModules, NO_GENERATOR } from "./generatedModules.js";
 import {
   CONVERTING_GLOBALS,
@@ -1108,6 +1109,15 @@ export function emitValue(
     );
   }
 
+  // The tag's own facts are stated when a reader asks for them, since no
+  // rule follows an element to the component it renders.
+  const tag = jsxTagOf(expression);
+  if (tag !== null) {
+    const tagId = nodeId(tag);
+    table.byId.set(tagId, tag);
+    fact(db, "jsxElement", id, tagId);
+  }
+
   // Everything left is written out here and refers to nothing further:
   // a template literal, a tag call's result, a ternary. A name for one
   // of these ends its chain here, and the caller decides whether what
@@ -2146,6 +2156,11 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
 
     const returns: ReturnState = { stated: false };
     const body = fn.getBody?.();
+    if (body !== undefined && Node.isBlock(body)) {
+      for (const word of directivesOf(body.getStatements())) {
+        fact(db, "marks", fnId, word);
+      }
+    }
     if (body !== undefined) {
       const writes = propertyWritesOf(fn, body);
       // An arrow written without braces returns its body, and the body
@@ -2507,6 +2522,9 @@ export function extractFileFacts(
 ): void {
   extractReExportFacts(db, sourceFile);
   const filePath = sourceFile.getFilePath();
+  for (const word of directivesOf(sourceFile.getStatements())) {
+    fact(db, "marks", filePath, word);
+  }
 
   for (const [name, spelling] of directExportsOf(sourceFile)) {
     emitExportedValue(db, table, filePath, name, spelling);
