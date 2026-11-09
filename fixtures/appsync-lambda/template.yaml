@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  One AppSync API that routes a field to a Lambda in each language suss
+  reads. The handler's summary and the AppSync contract's summary for the
+  same field should agree on the boundary.
+
+Resources:
+  NotesApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: notes
+      AuthenticationType: API_KEY
+
+  NotesSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      Definition: |
+        type Note {
+          id: ID!
+          title: String!
+        }
+
+        type Query {
+          note(id: ID!): Note
+          search(text: String!): [Note!]!
+        }
+
+        type Mutation {
+          addNote(title: String!): Note!
+        }
+
+  NoteSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      Name: NoteLambda
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt NoteFunction.Arn
+
+  SearchSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      Name: SearchLambda
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt SearchFunction.Arn
+
+  AddNoteSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      Name: AddNoteLambda
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt AddNoteFunction.Arn
+
+  NoteResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      TypeName: Query
+      FieldName: note
+      DataSourceName: !GetAtt NoteSource.Name
+
+  SearchResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      TypeName: Query
+      FieldName: search
+      DataSourceName: !GetAtt SearchSource.Name
+
+  AddNoteResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !GetAtt NotesApi.ApiId
+      TypeName: Mutation
+      FieldName: addNote
+      DataSourceName: !GetAtt AddNoteSource.Name
+
+  NoteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Runtime: nodejs20.x
+      Handler: src/notes.handler
+
+  SearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Runtime: python3.12
+      Handler: src/search.handler
+
+  AddNoteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Runtime: ruby3.3
+      Handler: src/add_note.handler
