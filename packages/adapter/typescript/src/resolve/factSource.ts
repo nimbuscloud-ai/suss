@@ -155,7 +155,13 @@ export function factSourceFor(
             : null;
         return (
           callee !== null &&
-          methodDeclaredIn(callee, module, resolve, originatesFrom)
+          methodDeclaredIn(
+            callee,
+            module,
+            resolve,
+            originatesFrom,
+            store.generatedModules,
+          )
         );
       }),
     typedAs: (call, origin) =>

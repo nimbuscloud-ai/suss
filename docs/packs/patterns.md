@@ -28,8 +28,11 @@ interface PatternPack {
   subUnits?: (parent, ctx) => DiscoveredSubUnit[];
   discoverUnits?: (sourceFile, ctx) => DiscoveredCustomUnit[];
   requiresImport?: string[];
-  generatedModuleMarkers?: string[];
-  generatedModuleDirs?: (fromDir: string) => readonly string[];
+  generatedModules?: {
+    of: string;
+    markers?: string[];
+    dirs?: (fromDir: string) => readonly string[];
+  };
   projectHelpers?: ProjectHelpers;
   transparentWrappers?: TransparentWrapper[];
   parameterSuppliers?: Array<{ module: string; name: string }>;
@@ -727,14 +730,19 @@ requiresImport?: string[]
 
 It is for recognizer-only packs that target one library: the SQS pack declares `["@aws-sdk/client-sqs"]` and the Prisma pack `["@prisma/client"]`. Without a gate the pack walks every file, which is correct and wasteful. A discovery pattern has its own `requiresImport` for the same purpose, and an empty array is the deliberate "every file" choice, which the fetch pack makes because `fetch` is a global.
 
-### `generatedModuleMarkers` and `generatedModuleDirs`
+### `generatedModules`
 
 ```typescript
-generatedModuleMarkers?: string[]
-generatedModuleDirs?: (fromDir: string) => readonly string[]
+generatedModules?: {
+  of: string
+  markers?: string[]
+  dirs?: (fromDir: string) => readonly string[]
+}
 ```
 
-A library with a code generator can write its module into a directory the project picks, and then the project imports it by relative path or through the tsconfig's `baseUrl` or `paths`, so `requiresImport` matches nothing. These two fields let such an import count as the gated package. `generatedModuleMarkers` lists files the generator writes beside the module, and a directory with one of them in it counts when a relative import points there. `generatedModuleDirs` is for a generator that leaves no marker, or has not run yet: given the directory of the importing file, it returns the output directories the project's own configuration gives for that file, so an import into one counts, by a relative or a bare specifier, even before the generator has run. A bare specifier counts only through these directories, since a package such as `prisma/config` can map under `baseUrl` into a folder that contains a marker. The Prisma pack declares both, with `schema.prisma` as the marker and the `output` of each `generator` block in the schema as the directories.
+A library with a code generator can write its module into a directory the project picks, and then the project imports it by relative path or through the tsconfig's `baseUrl` or `paths`, so `requiresImport` matches nothing. This field lets such an import count as an import of `of`, the package the generated module is a copy of. `markers` lists files the generator writes beside the module, and a directory with one of them in it counts when a relative import points there. `dirs` is for a generator that leaves no marker, or has not run yet: given the directory of the importing file, it returns the output directories the project's own configuration gives for that file, so an import into one counts, by a relative or a bare specifier, even before the generator has run. A bare specifier counts only through these directories, since a package such as `prisma/config` can map under `baseUrl` into a folder that contains a marker.
+
+The TypeScript adapter reads the directories past the gate too. An import into one is recorded under `of` in the facts, so a chain's `constructedFrom(of)` matches a client made from the generated module, and a method declared in one counts as declared by `of` for `declaredBy`. The Prisma pack declares `of: "@prisma/client"`, with `schema.prisma` as the marker and the `output` of each `generator` block in the schema as the directories. The Python and Ruby adapters do not read the field yet.
 
 ### `mount`
 

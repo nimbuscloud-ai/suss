@@ -295,8 +295,11 @@ describe("a pack whose hook throws", () => {
             requiresImport: ["orm-client"],
           },
         ],
-        generatedModuleDirs: () => {
-          throw new Error("cannot read the generator's configuration");
+        generatedModules: {
+          of: "orm-client",
+          dirs: () => {
+            throw new Error("cannot read the generator's configuration");
+          },
         },
         terminals: [],
         inputMapping: { type: "positionalParams", params: [] },
@@ -317,7 +320,7 @@ describe("a pack whose hook throws", () => {
         )?.failures,
       ).toEqual([
         {
-          hook: "generatedModuleDirs",
+          hook: "generatedModules.dirs",
           file: "/src",
           message: "cannot read the generator's configuration",
         },

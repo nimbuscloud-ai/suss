@@ -14,15 +14,33 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { Project, SyntaxKind } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import {
+  createTypeScriptAdapter,
+  methodDeclaredIn,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
 import honoFramework from "@suss/packs/hono";
 import prismaFramework from "@suss/packs/prisma";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const repoRoot = path.resolve(__dirname, "../../..");
+
+/** A project read with its own tsconfig, and a store that knows Prisma's generator. */
+function readWithPrisma(projectRoot: string): {
+  project: Project;
+  store: ResolutionStore;
+} {
+  return {
+    project: new Project({
+      tsConfigFilePath: path.join(projectRoot, "tsconfig.json"),
+    }),
+    store: ResolutionStore.forPacks([prismaFramework()]),
+  };
+}
 
 /** Both fixtures need a client that `PrismaClient: any` cannot stand in for. */
 function generate(schema: string): void {
@@ -107,6 +125,34 @@ describe("a client the generator wrote into the project", () => {
     const byFile = await storageReadsByFile("prisma-generated-client");
     expect(byFile.get("src/api.ts")).toEqual(["postgresql:User"]);
   });
+
+  it("reads the generated client as @prisma/client, where it is made and where its methods are declared", () => {
+    const fixtureRoot = path.join(repoRoot, "fixtures/prisma-generated-client");
+    const { project, store } = readWithPrisma(fixtureRoot);
+    const made = project
+      .getSourceFileOrThrow(path.join(fixtureRoot, "src/db.ts"))
+      .getFirstDescendantByKindOrThrow(SyntaxKind.NewExpression)
+      .getExpression();
+    const findUnique = project
+      .getSourceFileOrThrow(path.join(fixtureRoot, "src/api.ts"))
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .find((access) => access.getName() === "findUnique");
+    if (findUnique === undefined) {
+      throw new Error("the fixture's route no longer calls findUnique");
+    }
+
+    expect(store.originatesFrom(made, "@prisma/client")).toBe(true);
+    expect(
+      methodDeclaredIn(
+        findUnique,
+        "@prisma/client",
+        undefined,
+        undefined,
+        store.generatedModules,
+      ),
+    ).toBe(true);
+    expect(methodDeclaredIn(findUnique, "@prisma/client")).toBe(false);
+  });
 });
 
 describe("a client imported through the tsconfig's baseUrl, before the generator has run", () => {
@@ -160,5 +206,17 @@ describe("a client imported through the tsconfig's baseUrl, before the generator
   it("reads User through a class that extends the client", async () => {
     const byFile = await storageReadsUnder(root);
     expect(byFile.get("src/app.ts")).toEqual(["postgresql:User"]);
+  });
+
+  it("reads the class's base as @prisma/client's PrismaClient", () => {
+    const { project, store } = readWithPrisma(root);
+    const base = project
+      .getSourceFileOrThrow(path.join(root, "src/prisma.service.ts"))
+      .getFirstDescendantByKindOrThrow(SyntaxKind.ExpressionWithTypeArguments)
+      .getExpression();
+
+    expect(
+      store.importOriginsOf(base, ["@prisma/client"]).map((one) => one.path),
+    ).toEqual([["PrismaClient"]]);
   });
 });

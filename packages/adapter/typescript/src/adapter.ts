@@ -3165,7 +3165,7 @@ function readWalkedFiles(reading: FileReading): FilesRead {
     caching,
     plan,
   } = reading;
-  const resolution = ResolutionStore.forPacks(frameworks);
+  const resolution = ResolutionStore.forPacks(frameworks, tallies);
   const packsByFile = timer.time("preFilter", () =>
     computePackApplicability(sourceFiles, frameworks, resolution, tallies),
   );

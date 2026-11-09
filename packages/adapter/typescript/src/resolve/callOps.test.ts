@@ -14,6 +14,7 @@ import {
 } from "./callOps.js";
 import { opsOverFacts } from "./opsOverFacts.js";
 
+import type { PatternPack } from "@suss/extractor";
 import type { CallOps, ReceiverOrigin } from "@suss/recognize";
 import type {
   CallExpression,
@@ -299,6 +300,73 @@ describe("pinning down the receiver", () => {
     `);
 
     expect(ops.argument(0)?.isFrom(constructed)).toBe(false);
+  });
+});
+
+describe("a client the module's generator wrote into the project", () => {
+  const generator: PatternPack = {
+    name: "tapedeck",
+    protocol: "in-process",
+    languages: ["typescript"],
+    discovery: [],
+    terminals: [],
+    inputMapping: { type: "positionalParams", params: [] },
+    generatedModules: { of: "tapedeck", dirs: () => ["/generated"] },
+  };
+
+  /** The ops for the last call, over a store that knows the generator, or one that does not. */
+  function opsOver(source: string, packs: PatternPack[]): CallOps {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/generated/deck.d.ts",
+      "export declare class Deck { play(track: string): void; }\n",
+    );
+    const file = project.createSourceFile("/repo.ts", source);
+    const store = ResolutionStore.forPacks(packs);
+    const call = file.getDescendantsOfKind(SyntaxKind.CallExpression).at(-1);
+    if (call === undefined) {
+      throw new Error("the fixture contains no call");
+    }
+    return callOpsFor(call, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      originatesFrom: (value, module) => store.originatesFrom(value, module),
+      resolution: store,
+    });
+  }
+
+  const source = `
+    import { Deck } from "./generated/deck";
+    const deck = new Deck();
+    export function play() {
+      return deck.play("a");
+    }
+  `;
+
+  it("matches a client made from the generated module as made from the package", () => {
+    expect(
+      opsOver(source, [generator]).receiverIsFrom(constructedFrom("tapedeck")),
+    ).toBe(true);
+    expect(
+      opsOver(source, []).receiverIsFrom(constructedFrom("tapedeck")),
+    ).toBe(false);
+  });
+
+  it("matches a method the generated module declares as declared by the package", () => {
+    const declaredBy: ReceiverOrigin = {
+      origin: "declaredBy",
+      importedFrom: ["tapedeck"],
+    };
+    const typedDeck = `
+      import { Deck } from "./generated/deck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.play("a");
+      }
+    `;
+    expect(opsOver(typedDeck, [generator]).receiverIsFrom(declaredBy)).toBe(
+      true,
+    );
+    expect(opsOver(typedDeck, []).receiverIsFrom(declaredBy)).toBe(false);
   });
 });
 

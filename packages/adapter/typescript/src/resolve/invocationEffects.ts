@@ -37,6 +37,7 @@ import {
   conditionInfoToRawCondition,
   type FunctionRoot,
 } from "../conditions.js";
+import { declaredByPackage } from "../facts/generatedModules.js";
 import { lineRangeOf, startLineOf } from "../lines.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
@@ -70,6 +71,7 @@ import type {
   RawEffect,
   StatedSlot,
 } from "@suss/extractor";
+import type { GeneratedModules } from "../facts/generatedModules.js";
 import type { ResolutionStore } from "../facts/store.js";
 
 export interface InvocationEffectLocation {
@@ -353,10 +355,7 @@ export function isImportedFrom(
   return aliased
     .getDeclarations()
     .some((decl) =>
-      decl
-        .getSourceFile()
-        .getFilePath()
-        .includes(`/node_modules/${expectedModule}/`),
+      declaredByPackage(decl.getSourceFile().getFilePath(), expectedModule),
     );
 }
 
@@ -370,13 +369,15 @@ export function isImportedFrom(
  * types as `any`, so the method has no symbol. With `resolve` supplied,
  * what the receiver was written as still says which library: the value
  * comes down to a construction or a factory call of something imported
- * from it.
+ * from it. A method declared in a copy of the module that the module's
+ * generator wrote into the project counts as declared by the module.
  */
 export function methodDeclaredIn(
   callee: Node,
   expectedModule: string,
   resolve?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  generated?: GeneratedModules,
 ): boolean {
   if (!Node.isPropertyAccessExpression(callee)) {
     return false;
@@ -384,10 +385,11 @@ export function methodDeclaredIn(
   const declarations = callee.getNameNode().getSymbol()?.getDeclarations();
   if (
     declarations?.some((declaration) =>
-      declaration
-        .getSourceFile()
-        .getFilePath()
-        .includes(`/node_modules/${expectedModule}/`),
+      declaredByPackage(
+        declaration.getSourceFile().getFilePath(),
+        expectedModule,
+        generated,
+      ),
     )
   ) {
     return true;
