@@ -272,6 +272,7 @@ describe("TypeScript handlers,AppSync resolvers", () => {
       fieldName: "posts",
     });
     expect(posts?.identity.boundaryBinding?.recognition).toBe("aws-lambda");
+    expect(posts?.identity.boundaryBinding?.transport).toBe("aws-https");
   });
 
   it("reads the resolver's behavior, not only its identity", async () => {

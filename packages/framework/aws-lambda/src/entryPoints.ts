@@ -16,10 +16,10 @@
 import {
   deployableUnit,
   exportedAs,
+  graphqlResolverUnits,
   handlerEntries,
   METADATA_NAMESPACE,
   messageBusWire,
-  operationFields,
 } from "./discovery.js";
 
 import type { ManifestEntry, UnitSpec } from "@suss/extractor";
@@ -56,34 +56,14 @@ function rubyHandlerPath(
  * A handler that something else also reaches keeps its own unit for it.
  */
 function entryUnits(entry: HandlerEntry): UnitSpec[] {
-  const operations = operationFields(entry);
-  const fields = operations.map((field) => resolverUnit(entry, field));
+  const fields = graphqlResolverUnits(entry);
   const reachedOtherwise =
     entry.httpRoutes.length > 0 ||
     entry.nonHttpEvents.length > 0 ||
-    entry.graphqlFields.length > operations.length;
+    entry.graphqlFields.length > fields.length;
   return fields.length > 0 && !reachedOtherwise
     ? fields
     : [...fields, handlerUnit(entry)];
-}
-
-/** Python and Ruby have always bound an AppSync field over `aws-https`, which the AppSync contract also writes. */
-function resolverUnit(
-  entry: HandlerEntry,
-  field: { typeName: string; fieldName: string },
-): UnitSpec {
-  return {
-    kind: "handler",
-    name: `${entry.functionLogicalId}.${entry.exportName}`,
-    resolverInfo: { ...field, transport: "aws-https" },
-    deployableUnit: deployableUnit(entry),
-    metadata: {
-      [METADATA_NAMESPACE]: {
-        handler: entry.handler,
-        recognition: "appsync-resolver",
-      },
-    },
-  };
 }
 
 function handlerUnit(entry: HandlerEntry): UnitSpec {

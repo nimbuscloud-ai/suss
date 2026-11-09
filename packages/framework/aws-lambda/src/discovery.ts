@@ -104,7 +104,7 @@ function httpRouteUnits(entry: HandlerEntry): UnitSpec[] {
  */
 const OPERATION_ROOT_TYPES = ["Query", "Mutation", "Subscription"];
 
-export function operationFields(
+function operationFields(
   entry: HandlerEntry,
 ): Array<{ typeName: string; fieldName: string }> {
   return entry.graphqlFields.filter((f) =>
@@ -120,11 +120,20 @@ function typeFields(
   );
 }
 
-function graphqlResolverUnits(entry: HandlerEntry): UnitSpec[] {
+/**
+ * One unit per operation field AppSync routes to the handler, in every
+ * language. AppSync calls the Lambda over `aws-https`, the transport the
+ * AppSync contract writes for the same field.
+ */
+export function graphqlResolverUnits(entry: HandlerEntry): UnitSpec[] {
   return operationFields(entry).map((field) => ({
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
-    resolverInfo: { typeName: field.typeName, fieldName: field.fieldName },
+    resolverInfo: {
+      typeName: field.typeName,
+      fieldName: field.fieldName,
+      transport: "aws-https",
+    },
     deployableUnit: deployableUnit(entry),
     metadata: {
       [METADATA_NAMESPACE]: {
