@@ -53,6 +53,7 @@ export function computePackApplicability(
     named: string[];
     generated: GeneratedModules;
   }> = [];
+  const compilerOptions = sourceFiles[0]?.getProject().getCompilerOptions();
   for (const pack of packs) {
     if (packIsUngated(pack)) {
       ungatedPacks.push(pack);
@@ -62,7 +63,7 @@ export function computePackApplicability(
       pack,
       gates: collectPackGates(pack),
       named: collectPackNameGates(pack),
-      generated: generatedModulesOf([pack], tallies),
+      generated: generatedModulesOf([pack], tallies, compilerOptions),
     });
   }
 

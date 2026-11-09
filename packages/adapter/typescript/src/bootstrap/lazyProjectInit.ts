@@ -523,7 +523,7 @@ async function selectCandidateFiles(
   const gates = unionOver(packs, collectPackGates);
   const marks = unionOver(packs, collectPackMarks);
   const named = unionOver(packs, collectPackNameGates);
-  const generated = generatedModulesOf(packs, tallies);
+  const generated = generatedModulesOf(packs, tallies, options);
   if (
     gates.length === 0 &&
     marks.length === 0 &&
