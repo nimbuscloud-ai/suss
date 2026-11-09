@@ -10,6 +10,8 @@
  */
 
 import { execSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -30,10 +32,13 @@ function generate(schema: string): void {
   });
 }
 
-async function storageReadsByFile(
-  fixture: string,
+function storageReadsByFile(fixture: string): Promise<Map<string, string[]>> {
+  return storageReadsUnder(path.join(repoRoot, "fixtures", fixture));
+}
+
+async function storageReadsUnder(
+  fixtureRoot: string,
 ): Promise<Map<string, string[]>> {
-  const fixtureRoot = path.join(repoRoot, "fixtures", fixture);
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: path.join(fixtureRoot, "tsconfig.json"),
     frameworks: [honoFramework(), prismaFramework()],
@@ -101,5 +106,59 @@ describe("a client the generator wrote into the project", () => {
   it("reads User through a relative import no gate would match", async () => {
     const byFile = await storageReadsByFile("prisma-generated-client");
     expect(byFile.get("src/api.ts")).toEqual(["postgresql:User"]);
+  });
+});
+
+describe("a client imported through the tsconfig's baseUrl, before the generator has run", () => {
+  let root: string;
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prisma-base-url-"));
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ name: "base-url-app" }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: "./", moduleResolution: "node" },
+        include: ["src/**/*.ts"],
+      }),
+      "prisma/schema.prisma": [
+        "generator client {",
+        '  provider = "prisma-client"',
+        '  output   = "../src/generated/prisma"',
+        "}",
+        "",
+        "model User {",
+        "  id Int @id",
+        "}",
+        "",
+      ].join("\n"),
+      "src/prisma.service.ts": [
+        'import { PrismaClient } from "src/generated/prisma/client";',
+        "",
+        "export class PrismaService extends PrismaClient {}",
+        "",
+      ].join("\n"),
+      "src/app.ts": [
+        'import { Hono } from "hono";',
+        "",
+        'import { PrismaService } from "src/prisma.service";',
+        "",
+        "const prisma = new PrismaService();",
+        "const app = new Hono();",
+        "",
+        'app.get("/users", async (c) => c.json(await prisma.user.findMany()));',
+        "",
+        "export default app;",
+        "",
+      ].join("\n"),
+    };
+    for (const [file, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), text);
+    }
+  });
+
+  it("reads User through a class that extends the client", async () => {
+    const byFile = await storageReadsUnder(root);
+    expect(byFile.get("src/app.ts")).toEqual(["postgresql:User"]);
   });
 });

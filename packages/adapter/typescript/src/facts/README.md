@@ -96,6 +96,23 @@ a project's own tree. The check costs one `existsSync` per directory a
 relative import points at, memoised for the run, and it runs only for
 packs that declare a marker.
 
+Before anyone runs the generator, the directory does not exist and has
+no marker in it. A pack can also declare `generatedModuleDirs`, which
+reads the project's configuration for where the generator writes, and
+an import into one of those directories counts whether or not anything
+is there yet. The `imports` facts record where an import that resolves
+to no file points, as an absolute path, so the pack can ask the store
+about it by directory.
+
+A bare specifier points into the project through the tsconfig's
+`baseUrl` and `paths`, the way the compiler maps it. A NestJS app with
+`"baseUrl": "./"` writes `import { PrismaClient } from
+"src/generated/prisma/client"`, and that counts. For a bare specifier
+only the configured directories count, and the marker does not. A
+package such as `prisma/config` also maps under `baseUrl`, into the
+project's own `prisma/` folder, and that folder contains a
+`schema.prisma` too.
+
 The pack uses the same marker to decide whether a receiver's type came
 from Prisma. The type's declaration file is in the directory the
 generator wrote, so a `schema.prisma` in that directory makes the type
