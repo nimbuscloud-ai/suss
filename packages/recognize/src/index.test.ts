@@ -1403,28 +1403,29 @@ describe("a pack that reads more files than its chains match in", () => {
   // Only the TypeScript adapter reads these. No Python or Ruby library
   // decorates a parameter, and neither adapter gates on generated modules.
   it("hands the adapters the decorators, generated modules and inputs it states", () => {
-    const dirs = (fromDir: string) => [`${fromDir}/generated`];
+    const generatedModules = {
+      of: "tapedeck",
+      markers: ["tapedeck.schema"],
+      dirs: (fromDir: string) => [`${fromDir}/generated`],
+    };
     const inputs = () => ["/repo/tapedeck.yaml"];
     const stated = pack("tapedeck", [store()], {
       languages: ["typescript"],
       recognizedAs: "@suss/framework-tapedeck",
       parameterSuppliers: [{ module: "tapedeck", name: "InjectDeck" }],
-      generatedModuleMarkers: ["tapedeck.schema"],
-      generatedModuleDirs: dirs,
+      generatedModules,
       discoveryInputs: inputs,
     });
 
     expect(stated).toMatchObject({
       parameterSuppliers: [{ module: "tapedeck", name: "InjectDeck" }],
-      generatedModuleMarkers: ["tapedeck.schema"],
-      generatedModuleDirs: dirs,
+      generatedModules,
       discoveryInputs: inputs,
     });
     const bare = packOf(store());
     for (const field of [
       "parameterSuppliers",
-      "generatedModuleMarkers",
-      "generatedModuleDirs",
+      "generatedModules",
       "discoveryInputs",
     ]) {
       expect(bare).not.toHaveProperty(field);

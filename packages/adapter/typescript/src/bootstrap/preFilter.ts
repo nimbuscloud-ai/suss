@@ -53,7 +53,6 @@ export function computePackApplicability(
     named: string[];
     generated: GeneratedModules;
   }> = [];
-  const compilerOptions = sourceFiles[0]?.getProject().getCompilerOptions();
   for (const pack of packs) {
     if (packIsUngated(pack)) {
       ungatedPacks.push(pack);
@@ -63,9 +62,11 @@ export function computePackApplicability(
       pack,
       gates: collectPackGates(pack),
       named: collectPackNameGates(pack),
-      generated: generatedModulesOf([pack], tallies, compilerOptions),
+      generated: generatedModulesOf([pack], tallies),
     });
   }
+  const compilerOptions =
+    sourceFiles[0]?.getProject().getCompilerOptions() ?? {};
 
   const importsByFile = new Map<SourceFile, string[]>();
   if (gatedPacks.length > 0) {
@@ -92,7 +93,7 @@ export function computePackApplicability(
   ): boolean =>
     namesAnyPackage(importsOf(sf), gates) ||
     matchesTestFileName(sf.getFilePath(), named) ||
-    generated.reachedFrom(sf.getFilePath(), importsOf(sf));
+    generated.reachedFrom(sf.getFilePath(), importsOf(sf), compilerOptions);
 
   const reachingByPack = new Map<PatternPack, ReadonlySet<SourceFile>>();
   if (resolution !== undefined && gatedPacks.length > 0) {

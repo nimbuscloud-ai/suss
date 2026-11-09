@@ -206,7 +206,7 @@ describe("computePackApplicability with a generated module", () => {
     basePack({
       name: "prisma",
       requiresImport: ["@prisma/client"],
-      generatedModuleMarkers: ["schema.prisma"],
+      generatedModules: { of: "@prisma/client", markers: ["schema.prisma"] },
       invocationRecognizers: [noopInvocation],
     });
 

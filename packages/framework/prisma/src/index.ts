@@ -1169,10 +1169,13 @@ export function prismaFramework(
     // import `@prisma/client`, so those files are skipped.
     requiresImport: ["@prisma/client"],
     // A generator with its own `output` puts the client in the project,
-    // where the only way to reach it is a relative path. Prisma 7's
-    // `prisma-client` generator writes no schema beside it.
-    generatedModuleMarkers: [GENERATED_CLIENT_MARKER],
-    generatedModuleDirs: generatedClientDirs,
+    // where no specifier spells the package. Prisma 7's `prisma-client`
+    // generator writes no schema beside it.
+    generatedModules: {
+      of: CLIENT_MODULE,
+      markers: [GENERATED_CLIENT_MARKER],
+      dirs: generatedClientDirs,
+    },
     discoveryInputs: generatedClientInputs,
     invocationRecognizers: [makeRecognizer(options)],
     // A tagged template is not an invocation, so the raw chain runs on

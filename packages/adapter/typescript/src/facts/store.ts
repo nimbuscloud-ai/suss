@@ -74,6 +74,11 @@ import {
   streamObjectsIn,
 } from "./extract.js";
 import {
+  type GeneratedModules,
+  generatedModulesOf,
+  NO_GENERATOR,
+} from "./generatedModules.js";
+import {
   LANGUAGE_RECEIVER_RETURNS,
   LANGUAGE_WRAPPERS,
 } from "./languageWords.js";
@@ -86,6 +91,7 @@ import {
 
 import type { Atom, Proof } from "@suss/datalog";
 import type {
+  PackTally,
   ParameterSupplier,
   PatternPack,
   TransparentWrapper,
@@ -339,8 +345,9 @@ export class ResolutionStore {
     environmentObjects: readonly string[] = [],
     runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
     parameterSuppliers: readonly ParameterSupplier[] = [],
+    readonly generatedModules: GeneratedModules = NO_GENERATOR,
   ) {
-    this.table = createNodeTable(environmentObjects, runtime);
+    this.table = createNodeTable(environmentObjects, runtime, generatedModules);
     addPackWords(this.db, {
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
       returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
@@ -348,13 +355,17 @@ export class ResolutionStore {
     });
   }
 
-  /** A store with the wrappers and runtime objects these packs declare, as an extraction over them starts from. */
-  static forPacks(packs: readonly PatternPack[]): ResolutionStore {
+  /** A store with the wrappers, runtime objects and generated modules these packs declare, as an extraction over them starts from. */
+  static forPacks(
+    packs: readonly PatternPack[],
+    tallies?: ReadonlyMap<string, PackTally>,
+  ): ResolutionStore {
     return new ResolutionStore(
       packs.flatMap((pack) => pack.transparentWrappers ?? []),
       packs.flatMap((pack) => pack.environmentObjects ?? []),
       runtimeSpellingsOf(packs),
       packs.flatMap((pack) => pack.parameterSuppliers ?? []),
+      generatedModulesOf(packs, tallies),
     );
   }
 

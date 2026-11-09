@@ -65,6 +65,7 @@ import {
   writesToBinding,
   writesToField,
 } from "./assignments.js";
+import { type GeneratedModules, NO_GENERATOR } from "./generatedModules.js";
 import {
   CONVERTING_GLOBALS,
   CONVERTING_METHODS,
@@ -127,6 +128,8 @@ export interface NodeTable {
   exitCalls: readonly string[];
   /** Dotted paths a pack says the exit code is assigned to. */
   exitCodeWrites: readonly string[];
+  /** The modules the packs' generators write into the project. */
+  generated: GeneratedModules;
 }
 
 /** How the packs in a run spell the parts of the process nothing declares. */
@@ -145,6 +148,7 @@ export const NO_RUNTIME_SPELLINGS: RuntimeSpellings = {
 export function createNodeTable(
   environmentObjects: readonly string[] = [],
   runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
+  generated: GeneratedModules = NO_GENERATOR,
 ): NodeTable {
   return {
     byId: new Map(),
@@ -155,6 +159,7 @@ export function createNodeTable(
     seenImports: new Set(),
     environmentObjects,
     ...runtime,
+    generated,
   };
 }
 
@@ -254,10 +259,31 @@ function emitImportFacts(
     ...moduleKeysOf(moduleKey, specifier),
     ...packagesBehind(declaration),
     ...unresolvedPathOf(moduleKey, specifier, importDecl),
+    ...generatedPackagesOf(table.generated, specifier, importDecl),
   ]);
   for (const key of keys) {
     fact(db, "imports", declarationId, key, name);
   }
+}
+
+/**
+ * The packages whose generated module the import points into, so a pack
+ * asks about a generated client by the package's name, the same as for
+ * an installed one.
+ */
+function generatedPackagesOf(
+  generated: GeneratedModules,
+  specifier: string | undefined,
+  importDecl: Node,
+): string[] {
+  if (specifier === undefined || !generated.declared) {
+    return [];
+  }
+  return generated.packagesAt(
+    importDecl.getSourceFile().getFilePath(),
+    specifier,
+    importDecl.getProject().getCompilerOptions(),
+  );
 }
 
 /**

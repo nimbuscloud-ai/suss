@@ -1227,6 +1227,30 @@ export interface ArgumentParser {
   optionsKey: string;
 }
 
+/**
+ * A copy of a library's module that the library's code generator writes
+ * into the project, which counts as the library. A project can point the
+ * generator at a directory of its own, and then every consumer imports
+ * the module by relative path or through the tsconfig's `baseUrl`, so no
+ * specifier spells the package.
+ */
+export interface GeneratedModuleSpec {
+  /** The package the generated module is a copy of, e.g. `"@prisma/client"`. */
+  of: string;
+  /**
+   * Files the generator writes beside the module, e.g. `["schema.prisma"]`.
+   * A directory a relative import points into counts when it contains one.
+   */
+  markers?: string[];
+  /**
+   * The directories the generator writes to, as the project's own
+   * configuration says, for a generator that leaves no marker or has not
+   * run yet. Given the directory of an importing file, it returns the
+   * output directories the configuration governing that file gives.
+   */
+  dirs?: (fromDir: string) => readonly string[];
+}
+
 export interface PatternPack {
   name: string;
   /**
@@ -1360,25 +1384,13 @@ export interface PatternPack {
    */
   requiresImport?: string[];
   /**
-   * Files this library's code generator writes beside the module it
-   * generates, e.g. `["schema.prisma"]`. A project can point the
-   * generator at a directory of its own, and then every consumer
-   * imports the module by relative path and `requiresImport` matches
-   * nothing. A directory containing one of these files counts as the
-   * gated package, so those consumers reach the pack the way an
-   * ordinary import would.
+   * Where this library's code generator writes a copy of its module into
+   * the project. An import into one counts as an import of `of`, for the
+   * import gate and in the facts, and a declaration in one counts as
+   * declared by `of`, so `requiresImport` and a chain's origins match a
+   * generated module the way they match the installed package.
    */
-  generatedModuleMarkers?: string[];
-  /**
-   * The directories this library's code generator writes to, as the
-   * project's own configuration says, for a generator that leaves no
-   * marker file. Given the directory of a file that imports by relative
-   * path, it returns the output directories the configuration governing
-   * that file gives. An import into one counts as the gated package, the
-   * same as a directory with a marker in it, even before the generator
-   * has run.
-   */
-  generatedModuleDirs?: (fromDir: string) => readonly string[];
+  generatedModules?: GeneratedModuleSpec;
   /**
    * Functions the project itself wrote in front of this library, read
    * once across the whole project before any file is walked. What the

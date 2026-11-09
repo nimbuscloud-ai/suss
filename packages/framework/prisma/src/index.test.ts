@@ -1357,8 +1357,11 @@ describe("prisma pack metadata", () => {
     expect(pack.invocationRecognizers).toHaveLength(1);
   });
 
-  it("says which file its generator leaves beside a client it wrote", () => {
-    expect(prismaFramework().generatedModuleMarkers).toEqual(["schema.prisma"]);
+  it("says which package its generator writes and which file it leaves beside a client", () => {
+    expect(prismaFramework().generatedModules).toMatchObject({
+      of: "@prisma/client",
+      markers: ["schema.prisma"],
+    });
   });
 });
 
