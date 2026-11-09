@@ -18,9 +18,7 @@ import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 
 import { createPerFileCache } from "../perFileCache.js";
 import { statementsOfKind } from "../walk/rawDescent.js";
-import { GeneratedModules } from "./generatedModules.js";
-
-const NO_GENERATOR = new GeneratedModules([]);
+import { type GeneratedModules, NO_GENERATOR } from "./generatedModules.js";
 
 /**
  * `importsFile(f, g)` says f writes a specifier resolving to file g.
@@ -228,6 +226,7 @@ export class ModuleGraph {
     }
     const walked = new Set<string>();
     const stack = [root];
+    const options = root.getProject().getCompilerOptions();
     while (stack.length > 0) {
       const current = stack.pop() as SourceFile;
       const currentPath = current.getFilePath();
@@ -240,7 +239,7 @@ export class ModuleGraph {
       // an import of the package, whatever the specifier says.
       if (
         namesPackage(specifiers, name) ||
-        generated.reachedFrom(currentPath, specifiers)
+        generated.reachedFrom(currentPath, specifiers, options)
       ) {
         this.assert("importsPackage", [currentPath, name]);
         continue;

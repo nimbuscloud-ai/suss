@@ -5,9 +5,22 @@ import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "./store.js";
 
+import type { PatternPack } from "@suss/extractor";
 import type { CallExpression } from "ts-morph";
 
 const PACKAGE = "@probe/provider";
+
+/** A pack that discovers nothing, for what the store reads off a pack. */
+function packWithoutUnits(name: string): PatternPack {
+  return {
+    name,
+    protocol: "in-process",
+    languages: ["typescript"],
+    discovery: [],
+    terminals: [],
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+}
 
 function calleeNamesIn(consumer: string): string[] {
   const project = createTestProject();
@@ -165,6 +178,41 @@ describe("what importedNamesOf resolves per import form", () => {
         .map((one) => one.path),
     ).toEqual([["Client"]]);
     expect(store.importOriginsOf(receiver, ["/src/other"])).toEqual([]);
+  });
+
+  it("an import into a directory a pack's generator writes, asked about by the package it copies", () => {
+    const project = new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: { baseUrl: "/app" },
+    });
+    const file = project.createSourceFile(
+      "/app/src/consumer.ts",
+      'import { Client } from "./generated/client";\nimport { Other } from "src/generated/other";\nconst client = new Client();\nconst other = new Other();\nexport const run = () => [client.read(), other.read()];\n',
+    );
+    const [client, other] = file
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .map((access) => access.getExpression());
+    if (client === undefined || other === undefined) {
+      throw new Error("fixture shape unexpected");
+    }
+    const store = ResolutionStore.forPacks([
+      {
+        ...packWithoutUnits("orm"),
+        generatedModules: {
+          of: "orm-client",
+          dirs: () => ["/app/src/generated"],
+        },
+      },
+    ]);
+    expect(
+      store.importOriginsOf(client, ["orm-client"]).map((one) => one.path),
+    ).toEqual([["Client"]]);
+    expect(
+      store.importOriginsOf(other, ["orm-client"]).map((one) => one.path),
+    ).toEqual([["Other"]]);
+    expect(
+      new ResolutionStore().importOriginsOf(client, ["orm-client"]),
+    ).toEqual([]);
   });
 
   it("an import through the project's baseUrl of a file not written yet, asked about by its directory", () => {

@@ -173,6 +173,7 @@ export type {
   DiscoveryMatch,
   DiscoveryPattern,
   FailureDelivery,
+  GeneratedModuleSpec,
   GlobalPrefixCall,
   InputMappingPattern,
   InvocationRecognizer,

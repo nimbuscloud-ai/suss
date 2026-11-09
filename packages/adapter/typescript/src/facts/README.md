@@ -87,22 +87,22 @@ points it inside its own tree then writes `import { PrismaClient } from
 the gate rules every file out and the pack never runs.
 
 `generatedModules.ts` handles that case. A pack declares
-`generatedModuleMarkers`, the files its generator leaves beside the
-module it wrote. A relative import into a directory containing one of
-those files counts as an import of the package. Prisma declares
-`schema.prisma`, which its generator copies into the output directory
-both at the default location under `node_modules/.prisma/client` and in
-a project's own tree. The check costs one `existsSync` per directory a
-relative import points at, memoised for the run, and it runs only for
-packs that declare a marker.
+`generatedModules: { of, markers, dirs }`, where `of` is the package the
+generated module is a copy of. `markers` lists the files its generator
+leaves beside the module it wrote, and a relative import into a
+directory containing one of those files counts as an import of `of`.
+Prisma declares `schema.prisma`, which its generator copies into the
+output directory both at the default location under
+`node_modules/.prisma/client` and in a project's own tree. The check
+costs one `existsSync` per directory a relative import points at,
+memoised for the run, and it runs only for packs that declare a
+generated module.
 
 Before anyone runs the generator, the directory does not exist and has
-no marker in it. A pack can also declare `generatedModuleDirs`, which
-reads the project's configuration for where the generator writes, and
-an import into one of those directories counts whether or not anything
-is there yet. The `imports` facts record where an import that resolves
-to no file points, as an absolute path, so the pack can ask the store
-about it by directory.
+no marker in it. So `dirs` reads the project's configuration for where
+the generator writes, and an import into one of those directories
+counts whether or not anything is there yet. The `imports` facts record
+where an import that resolves to no file points, as an absolute path.
 
 A bare specifier points into the project through the tsconfig's
 `baseUrl` and `paths`, the way the compiler maps it. A NestJS app with
@@ -113,10 +113,15 @@ package such as `prisma/config` also maps under `baseUrl`, into the
 project's own `prisma/` folder, and that folder contains a
 `schema.prisma` too.
 
-The pack uses the same marker to decide whether a receiver's type came
-from Prisma. The type's declaration file is in the directory the
-generator wrote, so a `schema.prisma` in that directory makes the type
-Prisma's.
+The same directories count past the gate. An import into one gets an
+`imports` fact with `of` as its module, beside the keys any import gets,
+so a question about `@prisma/client` finds a client imported from
+`../generated/client` without the pack listing the directory. A file in
+one counts as declared by `of`, so `methodDeclaredIn` accepts a method
+the generated client declares the way it accepts one under
+`node_modules/@prisma/client`. The store keeps the run's generated
+modules for both, and `declaredByPackage` is the check on a declaration
+file.
 
 ## Cost
 

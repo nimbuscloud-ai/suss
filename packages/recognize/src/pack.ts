@@ -13,6 +13,7 @@ import { compile, compileSubUnits, modulesOfChain } from "./compile.js";
 
 import type {
   DeclaredMatch,
+  GeneratedModuleSpec,
   InvocationRecognizer,
   PackDeclarations,
   ParameterSupplier,
@@ -86,10 +87,8 @@ export interface PackSpec {
    * so a chain can start from the decorator a parameter was written with.
    */
   parameterSuppliers?: ParameterSupplier[];
-  /** Files this library's generator writes beside the module it generates. */
-  generatedModuleMarkers?: string[];
-  /** The directories the generator writes to, as the project's configuration says. */
-  generatedModuleDirs?: (fromDir: string) => readonly string[];
+  /** Where this library's generator writes a copy of its module into the project. */
+  generatedModules?: GeneratedModuleSpec;
   /**
    * Files under the project this pack reads that are not source files.
    * The extraction cache keys on their content.
@@ -161,8 +160,7 @@ const PASSED_THROUGH = [
   "version",
   "projectHelpers",
   "parameterSuppliers",
-  "generatedModuleMarkers",
-  "generatedModuleDirs",
+  "generatedModules",
   "discoveryInputs",
 ] as const;
 

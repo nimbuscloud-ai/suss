@@ -100,6 +100,7 @@ const ORIGIN: ByOrigin<boolean, [Receiver]> = {
         module,
         receiver.resolve,
         receiver.originatesFrom,
+        receiver.resolution?.generatedModules,
       ),
     ),
   constructed: (origin, receiver) => {

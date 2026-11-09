@@ -523,7 +523,7 @@ async function selectCandidateFiles(
   const gates = unionOver(packs, collectPackGates);
   const marks = unionOver(packs, collectPackMarks);
   const named = unionOver(packs, collectPackNameGates);
-  const generated = generatedModulesOf(packs, tallies, options);
+  const generated = generatedModulesOf(packs, tallies);
   if (
     gates.length === 0 &&
     marks.length === 0 &&
@@ -540,7 +540,7 @@ async function selectCandidateFiles(
       marked ||
       namesAnyPackage(importedModules, gates) ||
       matchesTestFileName(p, named) ||
-      generated.reachedFrom(p, importedModules)
+      generated.reachedFrom(p, importedModules, options)
     ) {
       matched.add(p);
     }
