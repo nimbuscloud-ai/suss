@@ -238,7 +238,7 @@ function calleeImportedAs(
   modules: readonly string[],
   resolution: ResolutionStore | undefined,
 ): string | null {
-  if (resolution === undefined) {
+  if (resolution === undefined || !resolution.boundByImport(callee)) {
     return null;
   }
   const names = new Set(
@@ -314,6 +314,7 @@ function madeFromNamed(
   return (
     resolution !== undefined &&
     Node.isIdentifier(expression) &&
+    resolution.boundByImport(expression) &&
     resolution
       .importedAsOf(expression, [module])
       .some((name) => named.includes(name))

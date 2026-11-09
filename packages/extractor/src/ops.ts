@@ -535,10 +535,9 @@ export interface CallOps {
    */
   namedCallee?(): boolean;
   /**
-   * The name the callee was imported under from one of these modules, as
-   * the module exports it: `GetCommand` for `new Get(...)` after
-   * `import { GetCommand as Get }`. Null when the callee was not imported
-   * from them, or was imported under two names.
+   * The one export of these modules an import binds the callee to, as
+   * `GetCommand` for `new Get(...)` after `import { GetCommand as Get }`.
+   * A parameter, or any other name no import binds, gives null.
    */
   calleeImportedAs?(modules: readonly string[]): string | null;
   /**
