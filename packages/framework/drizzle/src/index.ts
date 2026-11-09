@@ -150,17 +150,20 @@ function recognizeAnchor(
 
 /**
  * In `db.select({...}).from(users)` the anchor is `.from(t)`, since every
- * select chain has exactly one and it has the table.
+ * select chain has exactly one and it has the table. The select call can
+ * be kept in a name first, `const query = db.select()`, so the receiver
+ * is read as what it was written as.
  */
 function recognizeSelect(
   fromCall: CallExpression,
   receiver: Node,
   resolution: ResolutionStore | undefined,
 ): RecognizedQuery | null {
-  if (!N.isCallExpression(receiver)) {
+  const select = writtenNodeOf(receiver, resolution);
+  if (select === null || !N.isCallExpression(select)) {
     return null;
   }
-  const selectCallee = receiver.getExpression();
+  const selectCallee = select.getExpression();
   if (!N.isPropertyAccessExpression(selectCallee)) {
     return null;
   }
@@ -180,7 +183,7 @@ function recognizeSelect(
   const tableExprText = tableArg.getText();
 
   // A bare `select()` returns the whole row.
-  const selectArg = receiver.getArguments()[0];
+  const selectArg = select.getArguments()[0];
   const projected =
     selectArg === undefined ? [] : objectKeys(selectArg, resolution);
   const fields = projected.length > 0 ? projected : ["*"];
