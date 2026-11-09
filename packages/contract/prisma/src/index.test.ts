@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readStorageContractMetadata } from "@suss/behavioral-ir";
 
 import {
+  prismaClientModels,
   prismaSchemaFiles,
   prismaSchemaFileToSummaries,
   prismaSchemaToSummaries,
@@ -1040,5 +1041,58 @@ describe("prismaStorageSystem", () => {
     ).toBeNull();
     expect(prismaStorageSystem("model Account {\n  id Int @id\n}")).toBeNull();
     expect(prismaStorageSystem("datasource {")).toBeNull();
+  });
+});
+
+describe("prismaClientModels", () => {
+  const models = prismaClientModels([
+    `model Link {
+       id         String  @id
+       domain     String
+       key        String
+       projectId  String
+       externalId String
+       project    Project @relation(fields: [projectId], references: [id])
+       tags       Tag[]
+
+       @@unique([domain, key])
+       @@unique(fields: [projectId, externalId], name: "byExternal", map: "link_external")
+       @@unique([key])
+       @@index([projectId, domain])
+     }`,
+    // A relation to a model in another file of the schema, and one file
+    // that does not parse.
+    `model Tag {
+       linkId String
+       name   String
+       link   Link   @relation(fields: [linkId], references: [id])
+
+       @@id([linkId, name])
+     }
+     model Project {
+       id    String @id
+       links Link[]
+     }`,
+    "model {",
+  ]);
+
+  it("names each compound key the way the client does, and leaves out a unique of one field", () => {
+    expect([...(models.get("Link")?.compoundKeys ?? [])]).toEqual([
+      ["domain_key", ["domain", "key"]],
+      ["byExternal", ["projectId", "externalId"]],
+    ]);
+    expect([...(models.get("Tag")?.compoundKeys ?? [])]).toEqual([
+      ["linkId_name", ["linkId", "name"]],
+    ]);
+  });
+
+  it("says which model each relation field leads to, across files", () => {
+    expect([...(models.get("Link")?.relations ?? [])]).toEqual([
+      ["project", "Project"],
+      ["tags", "Tag"],
+    ]);
+    expect([...(models.get("Project")?.relations ?? [])]).toEqual([
+      ["links", "Link"],
+    ]);
   });
 });
