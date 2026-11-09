@@ -266,7 +266,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `isFrom`, `receiverIsFrom` with `handedBy` | the receiver, or the declaration it `binds` to, as a `paramOf(f, k, p)` at the asked position, or as the block variable the adapter's `parameterOf` places, since Ruby states no `paramOf` for a block. Then the call that passes `f` as `callArg(r, 0, f)`, directly or through a name `binds` to it, or that is written with it as `callBlock(r, f)`, asked whether its method is the one asked and its receiver is from `on` |
 | `member()` | the object of the callee's `readsProperty`, as ops over that member read when it is one itself, or as the call it is when that call passes no arguments |
 | `chainedOn()` | the `readsProperty(c, r, m)` whose object is the call, then the `call(r2, c)` whose callee is that read: one hop of the `chainedCall` rule. A result kept in a name has none |
-| `readsOff(object)` | a closure from the value's own key, with no name followed: each `readsProperty(x, o, n)` gives `n` when `o` is written the way `object` is, through the adapter's `textOf`, and goes on into `o`; `call`, `callArg`, `callKeywordArg`, `callBlock`, `compares`, `holeAt`, `conditionalBranch`, `fallbackBranch` and `writtenEntryAt` go on into what they state. A function's body has no row the closure follows, so it is not entered |
+| `readsOff(object)` | a closure from the value's own key, with no name followed: each `readsProperty(x, o, n)` gives `n` when `o` is a name the adapter's `writtenAs` settles to what `object` settles to, or when neither settles and the adapter's `textOf` spells both the same, and goes on into `o`; `call`, `callArg`, `callKeywordArg`, `callBlock`, `compares`, `holeAt`, `conditionalBranch`, `fallbackBranch` and `writtenEntryAt` go on into what they state. A function's body has no row the closure follows, so it is not entered |
 | `file()` | the file in the call's key, which every adapter writes first |
 | `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `comesFrom(x, m, n)` over `imports`, `exportsAs` and `reExports`, so an alias and a project barrel read as the export. A value that only calls into an import does not count |
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
@@ -626,8 +626,11 @@ under those properties instead, as a relational query's `columns` and
 `off` points at, through `readsOff`. `eq(users.id, id)` reads `id` off
 `users`, and so does `User.id == user_id` in Python. A condition a
 helper built, or one kept in a name, reads nothing, and the access
-keeps its place with no selector. The object matches when it is written
-the way `off` is.
+keeps its place with no selector. The object matches when it is a name
+that settles to what `off` settles to, so `const u = users;
+...where(eq(u.id, id))` reads `id` off `users`. Where neither settles,
+as with a parameter or `this.table`, the two match when they are
+spelled the same.
 
 Neither pick is a function, so pack health counts both as data, and
 neither records what it read as a slot.

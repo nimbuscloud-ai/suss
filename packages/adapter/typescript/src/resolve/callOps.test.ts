@@ -667,6 +667,43 @@ describe("the calls chained on a result, and the columns a condition reads", () 
       expect(columnsRead(callAt("db.delete(users)", over))).toEqual([]);
     },
   );
+
+  it.each(["facts", "nodes"] as const)(
+    "reads the columns off another name for the table, over the %s",
+    (over) => {
+      const project = createTestProject();
+      const file = project.createSourceFile(
+        "/repo.ts",
+        `
+          declare const db: any;
+          declare function table(name: string): any;
+          declare function eq(a: unknown, b: unknown): unknown;
+          const users = table("users");
+          export function byAlias(id: number) {
+            const u = users;
+            return db.update(users).where(eq(u.id, id));
+          }
+        `,
+      );
+      const call = file
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .find((one) => one.getText() === "db.update(users)");
+      if (call === undefined) {
+        throw new Error("the fixture contains no update");
+      }
+      const store = new ResolutionStore();
+      const reading = {
+        resolve: (value: TsNode) => store.resolveWrittenValue(value),
+        resolution: store,
+      };
+      const update =
+        over === "nodes"
+          ? callOpsFor(call, reading)
+          : opsOverFacts(call, reading);
+
+      expect(columnsRead(update)).toEqual(["id"]);
+    },
+  );
 });
 
 describe("the calls one call reaches", () => {

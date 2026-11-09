@@ -1562,6 +1562,43 @@ describe("the columns a condition reads, over the facts", () => {
     ]);
   });
 
+  /**
+   * The builder's facts, with two more columns in the condition: `z` off
+   * `alias`, and `q` off another name spelled `t` that is not the table.
+   */
+  function withAliases(settledTo: Record<string, string>): FactSource {
+    return builder(
+      {
+        writtenAs: (key) => settledTo[key] ?? null,
+        textOf: (key) => (key === "t#inner" ? "t" : key),
+      },
+      [
+        ["readsProperty", "alias.z", "alias", "z"],
+        ["callArg", "eq2", "4", "alias.z"],
+        ["readsProperty", "inner.q", "t#inner", "q"],
+        ["callArg", "eq2", "5", "inner.q"],
+      ],
+    );
+  }
+
+  const SPELLED_T = ["id", "a", "b", "c", "d", "e", "f", "g", "h", ".l"];
+
+  it("reads off a name that settles to what the table settles to, and not off one spelled the same that settles elsewhere", () => {
+    const from = withAliases({
+      t: "tableCall",
+      alias: "tableCall",
+      "t#inner": "otherCall",
+    });
+
+    expect(columns("update", "where", from)).toEqual([...SPELLED_T, "z"]);
+  });
+
+  it("reads off a spelling only where neither side settles", () => {
+    const from = withAliases({ "t#inner": "otherCall" });
+
+    expect(columns("update", "where", from)).toEqual(SPELLED_T);
+  });
+
   it("reads nothing off an object that cannot say how it was written", () => {
     const condition = opsAt("where", builder()).valueAt(0);
     const unspelled: ValueOps = {

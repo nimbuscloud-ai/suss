@@ -64,9 +64,14 @@ export function factCallOps(key: string, source: FactSource): CallOps | null {
 
 /** The ops for the value at `key`. */
 export function factValueOps(key: string, source: FactSource): ValueOps {
-  const ops = new FactValue(key, source);
-  return source.extendValue?.(key, ops) ?? ops;
+  const value = new FactValue(key, source);
+  const ops = source.extendValue?.(key, value) ?? value;
+  keysOfValues.set(ops, key);
+  return ops;
 }
+
+/** The key each value the ops handed out was read at, so one value can be compared with another. */
+const keysOfValues = new WeakMap<ValueOps, string>();
 
 class FactCall implements CallOps {
   private readonly calleeRead: { object: string; name: string } | null;
@@ -700,17 +705,24 @@ class FactValue implements ValueOps {
 
   /**
    * Read from the value as written here, so a condition kept in a name
-   * reads nothing. The object matches when it is written the way the
-   * other value is.
+   * reads nothing. The object matches when it is a name that settles to
+   * what the other value settles to, so `u` after `const u = users` is
+   * `users`. Where neither settles, a parameter for instance, it matches
+   * when it is written the same way.
    */
   readsOff(object: ValueOps): readonly string[] {
+    const other = keysOfValues.get(object) ?? null;
+    const target = other === null ? null : nameWrittenAs(other, this.facts);
     const written = object.source?.() ?? null;
-    if (written === null) {
-      return [];
-    }
     return propertiesReadOff(
       this.key,
-      (key) => this.facts.textOf(key) === written,
+      (key) => {
+        const settled = nameWrittenAs(key, this.facts);
+        if (settled !== null || target !== null) {
+          return settled === target;
+        }
+        return written !== null && this.facts.textOf(key) === written;
+      },
       this.facts,
     );
   }
@@ -1422,6 +1434,11 @@ function madeThroughProjectCall<K extends string | null>(
     return written;
   }
   return source.returnedBy?.(written) ?? written;
+}
+
+/** What a name was written as, or null for a key that is not a name or that nothing settles. */
+function nameWrittenAs(key: string, source: FactSource): string | null {
+  return isName(key, source) ? source.writtenAs(key) : null;
 }
 
 /** Whether the key is a name: stated as none of a call, a read, an object or a written value. */

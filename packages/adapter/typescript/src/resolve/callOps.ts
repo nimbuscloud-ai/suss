@@ -905,9 +905,13 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     shape: () => writtenShapeOf(value),
     readsOff: (object) => {
       const written = nodeOfValue(object);
-      return written === null
-        ? []
-        : propertiesReadOff(value, written.getText());
+      if (written === null) {
+        return [];
+      }
+      const target = nameSettled(written, resolve);
+      return propertiesReadOff(value, (read) =>
+        isSameValue(read, written, target, resolve),
+      );
     },
   };
   nodesOfValues.set(ops, value);
@@ -915,17 +919,44 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
 }
 
 /**
- * Every property a value reads off an expression written as `object`,
- * each once, in source order. The walk goes into the parts the facts
- * state a condition is built from, so it leaves out a function written
- * in the value and an operator other than `||` and `??`.
+ * Whether an object a condition reads off is the value `other` is, which
+ * settles to `target`: both are names that settle to the same thing, or
+ * neither settles and both are written the same way, as the ops over the
+ * facts decide it.
  */
-function propertiesReadOff(value: Node, object: string): string[] {
+function isSameValue(
+  object: Node,
+  other: Node,
+  target: Node | null,
+  resolve: Resolve,
+): boolean {
+  const found = nameSettled(object, resolve);
+  if (found !== null || target !== null) {
+    return found === target;
+  }
+  return object.getText() === other.getText();
+}
+
+/** What a name was written as, or null for a value that is not a name or that nothing settles. */
+function nameSettled(value: Node, resolve: Resolve): Node | null {
+  return Node.isIdentifier(peelValue(value)) ? settled(value, resolve) : null;
+}
+
+/**
+ * Every property a value reads off an object `matches` accepts, each
+ * once, in source order. The walk goes into the parts the facts state a
+ * condition is built from, so it leaves out a function written in the
+ * value and an operator other than `||` and `??`.
+ */
+function propertiesReadOff(
+  value: Node,
+  matches: (object: Node) => boolean,
+): string[] {
   const names = new Set<string>();
   const visit = (node: Node): void => {
     const at = peelValue(node);
     if (Node.isPropertyAccessExpression(at)) {
-      if (at.getExpression().getText() === object) {
+      if (matches(at.getExpression())) {
         names.add(at.getName());
       }
       visit(at.getExpression());
