@@ -1,5 +1,5 @@
 import { Node, SyntaxKind } from "ts-morph";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { profileEvaluation } from "@suss/datalog";
 import { constructedFrom, imported, inherits, typed } from "@suss/recognize";
@@ -1368,13 +1368,22 @@ describe("a receiver typed as a library's type, and a value the file imported", 
       const made = new Tape();
       made.eject();
     }
+    export function relay(play: typeof reel, Made: typeof Tape) {
+      play("f");
+      const again = new Made();
+      again.eject();
+    }
+    export function start() {
+      relay(reel, Tape);
+    }
   `;
 
   /** The ops for each call in the source, by callee, read off the nodes and off the facts. */
-  function opsByCallee(): Record<"nodes" | "facts", Map<string, CallOps>> {
+  function opsByCallee(
+    store = new ResolutionStore(),
+  ): Record<"nodes" | "facts", Map<string, CallOps>> {
     const project = withLibrary();
     const file = project.createSourceFile("/repo.ts", SOURCE);
-    const store = new ResolutionStore();
     const reading: CallReading = {
       resolve: (value) => store.resolveWrittenValue(value),
       resolution: store,
@@ -1459,6 +1468,25 @@ describe("a receiver typed as a library's type, and a value the file imported", 
       expect(
         ops.get("go")?.calleeImportedAs?.(["tapedeck"]) ?? null,
       ).toBeNull();
+    },
+  );
+
+  it.each(["nodes", "facts"] as const)(
+    "never asks what a parameter was imported as, whatever its callers pass, over the %s",
+    (reading) => {
+      const store = new ResolutionStore();
+      const asked = vi.spyOn(store, "importedAsOf");
+      const ops = opsByCallee(store)[reading];
+
+      expect(ops.get("play")?.calleeImportedAs?.(["tapedeck"])).toBeNull();
+      expect(
+        ops
+          .get("again.eject")
+          ?.receiverIsFrom(
+            constructedFrom({ from: ["tapedeck"], named: ["Cassette"] }),
+          ),
+      ).toBe(false);
+      expect(asked).not.toHaveBeenCalled();
     },
   );
 });

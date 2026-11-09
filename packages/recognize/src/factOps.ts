@@ -14,7 +14,12 @@
  */
 
 import { byOrigin, lastValueWins } from "@suss/extractor";
-import { classMemberName, classMemberOf, fileOfKey } from "@suss/resolution";
+import {
+  boundByImport,
+  classMemberName,
+  classMemberOf,
+  fileOfKey,
+} from "@suss/resolution";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
@@ -354,6 +359,9 @@ class FactCall implements CallOps {
   }
 
   calleeImportedAs(modules: readonly string[]): string | null {
+    if (!importBinds(this.calleeKey, this.source)) {
+      return null;
+    }
     const names = new Set(
       modules.flatMap((module) =>
         this.source
@@ -1432,8 +1440,19 @@ function namedAs(
   const asked = origin.named;
   return (
     asked.includes(constructorName(written, source)) ||
-    source.importedAs(written, module).some((name) => asked.includes(name))
+    (importBinds(written, source) &&
+      source.importedAs(written, module).some((name) => asked.includes(name)))
   );
+}
+
+/**
+ * Whether an import binds the name written at `key`. Only such a name
+ * can be an export under another name, and asking what a parameter was
+ * imported as would follow it through every caller.
+ */
+function importBinds(key: string, source: FactSource): boolean {
+  source.read(key);
+  return boundByImport(source.db, key);
 }
 
 /** The names an import of the whole module goes by, which say nothing about which export a callee is. */
