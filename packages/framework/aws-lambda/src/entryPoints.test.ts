@@ -4,12 +4,17 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { bindingOfDiscoveredUnit } from "@suss/extractor";
+
 import {
   awsLambdaPython,
   awsLambdaRuby,
   clearTemplateCache,
-  lambdaEntryPoints,
+  pythonHandlerEntries,
+  rubyHandlerEntries,
 } from "./index.js";
+
+import type { UnitSpec } from "@suss/extractor";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-lambda-entry-"));
 
@@ -140,14 +145,28 @@ afterAll(() => {
   clearTemplateCache();
 });
 
-const entryPoints = lambdaEntryPoints("aws-lambda-test");
+const entryPoints = pythonHandlerEntries;
+
+/** The binding the adapter builds for a unit spec, under the test's pack name. */
+function boundAs(unit: UnitSpec | undefined) {
+  return unit === undefined
+    ? null
+    : bindingOfDiscoveredUnit(unit, {
+        name: "aws-lambda-test",
+        protocol: "http",
+      });
+}
 
 describe("the Python and Ruby packs", () => {
-  it("hand each adapter the handlers in a file, recorded under the pack's own name", () => {
+  it("hand each adapter one manifest pattern over the handlers in a file", () => {
     const file = path.join(root, "sam/jobs/worker.py");
     for (const pack of [awsLambdaPython(), awsLambdaRuby()]) {
-      const [entry] = pack.entryPoints?.(file) ?? [];
-      expect(entry?.units[0]?.binding.recognition).toBe(pack.name);
+      const [pattern] = pack.declaredDiscovery ?? [];
+      const entries =
+        pattern?.match.type === "manifest" ? pattern.match.entries(file) : [];
+      expect(pattern?.kind).toBe("handler");
+      expect(entries[0]?.path).toEqual(["handler"]);
+      expect(pack.version).toBe("1");
       expect(pack.discoveryInputs?.([file])).toEqual([
         path.join(root, "sam/template.yaml"),
       ]);
@@ -158,15 +177,18 @@ describe("the Python and Ruby packs", () => {
   });
 });
 
-describe("lambdaEntryPoints", () => {
-  it("binds a handler AppSync routes a field to as that field's resolver", () => {
+describe("the Python and Ruby handler entries", () => {
+  it("binds a handler AppSync routes a field to as that field's resolver, over aws-https", () => {
     const [entry] = entryPoints(path.join(root, "graphql/notes.py"));
 
     expect(entry?.units).toHaveLength(1);
-    expect(entry?.units[0]?.binding.semantics).toEqual({
-      name: "graphql-resolver",
-      typeName: "Query",
-      fieldName: "note",
+    expect(boundAs(entry?.units[0])).toMatchObject({
+      transport: "aws-https",
+      semantics: {
+        name: "graphql-resolver",
+        typeName: "Query",
+        fieldName: "note",
+      },
     });
     expect(entry?.units[0]?.deployableUnit).toEqual({
       deploymentTarget: "lambda",
@@ -180,7 +202,7 @@ describe("lambdaEntryPoints", () => {
   it("keeps a unit for a queue that also reaches a handler serving a field", () => {
     const [entry] = entryPoints(path.join(root, "graphql-mixed/notes.py"));
 
-    expect(entry?.units.map((unit) => unit.binding.semantics.name)).toEqual([
+    expect(entry?.units.map((unit) => boundAs(unit)?.semantics.name)).toEqual([
       "graphql-resolver",
       "unit-invocation",
     ]);
@@ -189,28 +211,24 @@ describe("lambdaEntryPoints", () => {
   it("finds a Python handler whose module the template writes with dots", () => {
     const [entry] = entryPoints(path.join(root, "sam/jobs/worker.py"));
 
-    expect(entry?.name).toBe("handler");
+    expect(entry?.path).toEqual(["handler"]);
     expect(entry?.units).toEqual([
       expect.objectContaining({
         kind: "handler",
         name: "Worker.handler",
         deployableUnit: { deploymentTarget: "lambda", instanceName: "Worker" },
-        binding: expect.objectContaining({
-          semantics: expect.objectContaining({
-            name: "message-bus",
-            messageBus: "aws_sqs",
-          }),
-        }),
+        channelInfo: { messageBus: "aws_sqs", channel: null },
       }),
     ]);
   });
 
-  it("finds a Ruby class method and binds a route handler as the deployed function", () => {
-    const [entry] = entryPoints(path.join(root, "sam/app/billing.rb"));
+  it("finds a Ruby class method through its class's constant path, and binds a route handler as the deployed function", () => {
+    const [entry] = rubyHandlerEntries(path.join(root, "sam/app/billing.rb"));
 
-    expect(entry?.name).toBe("Billing::Handler.process");
-    expect(entry?.units[0]?.binding.recognition).toBe("aws-lambda-test");
-    expect(entry?.units[0]?.binding.semantics).toEqual({
+    expect(entry?.path).toEqual(["Billing", "Handler"]);
+    expect(entry?.member).toEqual({ name: "process", singleton: true });
+    expect(boundAs(entry?.units[0])?.recognition).toBe("aws-lambda-test");
+    expect(boundAs(entry?.units[0])?.semantics).toEqual({
       name: "unit-invocation",
       deploymentTarget: "lambda",
       instanceName: "Billing",
@@ -225,9 +243,11 @@ describe("lambdaEntryPoints", () => {
   });
 
   it("reads a Serverless Framework service file the way it reads a SAM template", () => {
-    const entries = entryPoints(path.join(root, "service/src/handlers/buy.rb"));
+    const entries = rubyHandlerEntries(
+      path.join(root, "service/src/handlers/buy.rb"),
+    );
 
-    expect(entries.map((entry) => entry.name)).toEqual(["run"]);
+    expect(entries.map((entry) => entry.path)).toEqual([["run"]]);
     expect(entries[0]?.units[0]?.deployableUnit).toEqual({
       deploymentTarget: "lambda",
       instanceName: "buy-ticket",

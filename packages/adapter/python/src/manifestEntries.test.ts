@@ -4,8 +4,6 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { functionCallBinding } from "@suss/behavioral-ir";
-
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -24,31 +22,35 @@ const entryPack: PythonPack = {
   name: "entry-inline-test-pack",
   protocol: "http",
   discovery: [],
-  entryPoints: (file) =>
-    path.basename(file) === "app.py"
-      ? ["handler", "wrapped", "absent", "table_name", "aliased"].map(
-          (name) => ({
-            name,
-            units: [
-              {
-                kind: "handler",
-                name: `Orders.${name}`,
-                binding: functionCallBinding({
-                  transport: "in-process",
-                  recognition: "entry-inline-test-pack",
+  declaredDiscovery: [
+    {
+      kind: "handler",
+      match: {
+        type: "manifest",
+        entries: (file) =>
+          path.basename(file) === "app.py"
+            ? ["handler", "wrapped", "absent", "table_name", "aliased"].map(
+                (name) => ({
+                  path: [name],
+                  units: [
+                    {
+                      kind: "handler",
+                      name: `Orders.${name}`,
+                      deployableUnit: {
+                        deploymentTarget: "lambda",
+                        instanceName: "Orders",
+                      },
+                      ...(name === "handler"
+                        ? { metadata: { entryTest: { name } } }
+                        : {}),
+                    },
+                  ],
                 }),
-                deployableUnit: {
-                  deploymentTarget: "lambda",
-                  instanceName: "Orders",
-                },
-                ...(name === "handler"
-                  ? { metadata: { entryTest: { name } } }
-                  : {}),
-              },
-            ],
-          }),
-        )
-      : [],
+              )
+            : [],
+      },
+    },
+  ],
   libraryEnvVars: [
     { module: "tracing_lib", prefixes: ["TRACE_"] },
     { module: "unused_lib", prefixes: ["UNUSED_"] },
