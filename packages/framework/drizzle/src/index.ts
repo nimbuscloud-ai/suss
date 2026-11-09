@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
+  anyOf,
   constructedFrom,
   declaredBy,
   pack,
@@ -58,9 +59,14 @@ export type DrizzleRecognizerOptions = z.infer<typeof optionsSchema>;
 /**
  * A database by the type Drizzle declares for it, so `drizzle(pool)`
  * from any driver, a wrapped `ctx.db` and a transaction's `tx` all count
- * whatever they are called.
+ * whatever they are called. A project read without its dependencies
+ * installed has no types, so a database made by `drizzle(...)` counts
+ * as well.
  */
-const DRIZZLE = typed({ from: ["drizzle-orm"] });
+const DRIZZLE = anyOf(
+  typed({ from: ["drizzle-orm"] }),
+  constructedFrom({ from: ["drizzle-orm"], named: ["drizzle"] }),
+);
 
 /** A table, as the factory call a schema declares it with. */
 const TABLE = constructedFrom({
@@ -213,7 +219,7 @@ export function drizzleFramework(
     {
       languages: ["typescript", "javascript"],
       recognizedAs: "@suss/framework-drizzle",
-      version: "1",
+      version: "2",
       protocol: "in-process",
     },
   );

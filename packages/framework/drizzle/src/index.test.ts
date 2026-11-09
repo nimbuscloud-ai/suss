@@ -463,6 +463,89 @@ describe("drizzle recognizer, however the database is typed", () => {
   });
 });
 
+describe("drizzle recognizer, with no drizzle-orm installed", () => {
+  // A clone read before anyone installs its dependencies: nothing is
+  // typed, so the database counts by the `drizzle(...)` call that made it.
+  const untyped = packUnderTest(drizzleFramework());
+
+  it("reads the builder calls on a database made by `drizzle(...)`", () => {
+    const effects = untyped.effectsAcross(
+      {
+        "/schema.ts": SCHEMA,
+        [ENTRY]: `
+          import { drizzle } from "drizzle-orm/postgres-js";
+          import { eq } from "drizzle-orm";
+          import { orders, users } from "./schema.js";
+          const db = drizzle({});
+          export async function work(id: number, name: string) {
+            await db.select({ id: users.id }).from(users).where(eq(users.id, id));
+            await db.update(users).set({ name }).where(eq(users.id, id));
+            await db.insert(orders).values({ total: 1 });
+          }
+        `,
+      },
+      ENTRY,
+    );
+
+    expect(
+      effects.map((effect) => ({
+        table: tableOf(effect),
+        interaction: interactionOf(effect),
+      })),
+    ).toEqual([
+      {
+        table: "users",
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["id"],
+          operation: "select",
+          selector: ["id"],
+        },
+      },
+      {
+        table: "users",
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["name"],
+          operation: "update",
+          selector: ["id"],
+        },
+      },
+      {
+        table: "orders",
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["total"],
+          operation: "insert",
+        },
+      },
+    ]);
+  });
+
+  it("leaves a database some other module's `drizzle` made alone", () => {
+    const effects = untyped.effectsAcross(
+      {
+        "/schema.ts": SCHEMA,
+        "/mine.ts": "export function drizzle(_: unknown) { return {} as any; }",
+        [ENTRY]: `
+          import { drizzle } from "./mine.js";
+          import { users } from "./schema.js";
+          const db = drizzle({});
+          export async function list() {
+            return db.select().from(users);
+          }
+        `,
+      },
+      ENTRY,
+    );
+
+    expect(effects).toEqual([]);
+  });
+});
+
 describe("drizzle raw SQL", () => {
   it("reads the tables a statement touches, and what it picks rows by", () => {
     const effects = effectsIn(`
@@ -652,7 +735,7 @@ describe("what the pack declares", () => {
 
     expect(pack.invocationRecognizers).toHaveLength(3);
     expect(pack.accessRecognizers).toHaveLength(1);
-    expect(pack.version).toBe("1");
+    expect(pack.version).toBe("2");
     expect(
       pack.declarations?.declarations.map((declared) => ({
         dataLinks: declared.dataLinks,
