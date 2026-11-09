@@ -2,9 +2,12 @@
 // layer. Each match-type handler lives in its own sibling file; this
 // file is the dispatch table and dedup pass that callers see.
 
+import { declaredMatchOf } from "@suss/extractor";
+
 import { ResolutionStore } from "../facts/store.js";
 import { discoverCallbackArguments } from "./callbackArgument.js";
 import { discoverClientCalls } from "./clientCall.js";
+import { discoverDeclaredIn } from "./declared.js";
 import { discoverDecoratedMethods } from "./decoratedMethod.js";
 import { discoverDecoratedRoutes } from "./decoratedRoute.js";
 import { discoverFileConventions } from "./fileConvention.js";
@@ -33,8 +36,9 @@ import type {
   MountPrefixIndex,
 } from "./registrationCall.js";
 
+export { moduleOpsFor } from "./declared.js";
 export { clearPackageExportsCache } from "./packageExports.js";
-export { toFunctionRoot, unitDedupKey } from "./shared.js";
+export { discoveredUnitOf, toFunctionRoot, unitDedupKey } from "./shared.js";
 
 export type { MountPrefixIndex } from "./registrationCall.js";
 export type { ClientCallSite, DiscoveredUnit } from "./shared.js";
@@ -52,6 +56,12 @@ function runPattern(
   routeWrapperPattern?: DiscoveryPattern,
   packMethods?: ReadonlySet<string>,
 ): DiscoveredUnit[] {
+  const declared = declaredMatchOf(pattern.match);
+  if (declared !== null) {
+    return resolution === undefined
+      ? []
+      : discoverDeclaredIn(sourceFile, declared, pattern.kind, resolution);
+  }
   if (pattern.match.type === "namedExport") {
     return discoverNamedExports(
       sourceFile,

@@ -321,6 +321,21 @@ export interface ValueOps {
    * for a name. Null when the adapter cannot say.
    */
   shape?(): TypeShape | null;
+  /**
+   * A member of this value by name: a method of a class, a class or
+   * module nested in a Ruby module, a property of an object. `singleton`
+   * asks for the class's own member, a Ruby class method or a TypeScript
+   * static.
+   */
+  member?(name: string, singleton?: boolean): ValueOps | null;
+  /** The values the function this value settles to returns. */
+  returns?(): readonly ValueOps[];
+  /** Whether the body of the function this value settles to opens with the directive. */
+  marked?(word: string): boolean;
+  /** The tag a JSX element renders, which a component's name is written as. Null for any other value. */
+  tag?(): ValueOps | null;
+  /** The class this value settles to, as a discovery pattern asks about one. Null when it is not a class. */
+  asClass?(): ClassValueOps | null;
 }
 
 /**
@@ -331,6 +346,53 @@ export interface ValueOps {
 export interface Inherits {
   readonly from: readonly string[];
   readonly named: readonly string[];
+}
+
+/** A class, as the facts answer the questions a discovery pattern asks it. */
+export interface ClassValueOps {
+  /** Whether the class's ancestry reaches the base, through any of the project's own classes between. */
+  inherits(spec: Inherits): boolean;
+  /** The methods the class writes itself, instance ones or the class's own, in source order. */
+  members(kind: "instance" | "singleton"): readonly ModuleMember[];
+}
+
+/** A member asked for by name, `singleton` for the class's own member rather than an instance's. */
+export interface ModuleMemberName {
+  readonly name: string;
+  readonly singleton: boolean;
+}
+
+/** One name a module or a class has, with the value behind it. */
+export interface ModuleMember {
+  readonly name: string;
+  readonly value: ValueOps;
+}
+
+/** One file, as the questions a discovery pattern asks about it. */
+export interface ModuleOps {
+  /** The file's absolute path, for a file glob. */
+  path(): string;
+  /** Every name the file exports, with the value behind it. */
+  exports(): readonly ModuleMember[];
+  /**
+   * The value at a path of names: the export, then a member of each value
+   * in turn, then `member` of that when it is given. Null when a step
+   * finds nothing. Where the path leads to two values, such as a class
+   * written twice, the first that has the member is the answer.
+   */
+  export(path: readonly string[], member?: ModuleMemberName): ValueOps | null;
+  /** The calls the module body runs outside every function, in source order. */
+  calls(): readonly CallOps[];
+  /** Whether the file opens with the directive. */
+  marked(word: string): boolean;
+  /** The functions the file writes whose body opens with the directive, in source order. */
+  markedFunctions(word: string): readonly MarkedFunction[];
+}
+
+/** A function whose body opens with a directive, with the variable or property it is assigned to. */
+export interface MarkedFunction {
+  readonly value: ValueOps;
+  readonly assignedName: string | null;
 }
 
 /** What an encoder was handed, and how it encoded it. */

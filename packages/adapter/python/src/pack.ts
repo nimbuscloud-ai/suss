@@ -16,6 +16,7 @@ import type {
   RequestSpellingMetadata,
 } from "@suss/behavioral-ir";
 import type {
+  DeclaredDiscoveryPattern,
   DeclaredEntryPoint,
   InvocationRecognizer,
   LibraryEnvVars,
@@ -44,6 +45,8 @@ export interface PythonPack {
   /** Wire protocol for the produced boundary bindings, e.g. "http". */
   protocol: string;
   discovery: PythonDiscoveryPattern[];
+  /** Patterns every adapter reads the same way, through the module ops over this adapter's facts. */
+  declaredDiscovery?: DeclaredDiscoveryPattern[];
   /**
    * The functions a deploy manifest says the platform calls in a file,
    * given the file's absolute path. The adapter builds the units on each

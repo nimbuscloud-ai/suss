@@ -121,7 +121,14 @@ registerCrud(app, "users", userHandlers);
 ### `namedExport`
 
 ```typescript
-{ type: "namedExport"; names: string[] }
+{
+  type: "namedExport";
+  names?: string[];
+  pattern?: string;          // "^[A-Z]"
+  skipFiles?: string[];      // ["**/*.stories.*"]
+  bodyEndsIn?: "element";
+  members?: { named: Record<string, UnitSpec> };
+}
 ```
 
 `namedExport` finds units by their exported name.
@@ -131,6 +138,56 @@ export async function loader({ params }) { ... }
 ```
 
 React Router uses it for `loader`, `action` and `default`, and the React pack uses it for `default`.
+
+With only `names`, the TypeScript adapter reads it with its own handler. Any other field makes it a declared pattern, which every adapter reads the same way through the module ops: `pattern` takes the exports whose name the regular expression matches, `skipFiles` leaves out files the globs match, and `bodyEndsIn: "element"` keeps only a function one of whose returned values is a JSX element. `members` takes the listed members of the exported object instead of the export itself, each as the unit its `UnitSpec` says, so `names: ["default"]` with `fetch` and `queue` listed finds a Cloudflare Worker's handlers.
+
+### `manifest`
+
+```typescript
+{ type: "manifest"; entries: (filePath: string) => ManifestEntry[] }
+```
+
+`manifest` finds the functions a deploy manifest beside the project says the platform calls in a file. The pack reads the manifest and returns one entry per function: the path of names to it, `["handler"]` or `["Reports", "Nightly"]` with `member: { name: "run", singleton: true }` for a Ruby class method, and the units to build on it. A name bound to a function is followed to the function. The AWS Lambda packs use it.
+
+### `subclassOf`
+
+```typescript
+{
+  type: "subclassOf";
+  inherits: { from: string[]; named: string[] };
+  members: { kind: "instance" | "singleton"; names?: string[]; pattern?: string };
+}
+```
+
+`subclassOf` takes the methods of an exported class whose ancestry reaches one of `named` as one of the modules in `from` exports it, through any of the project's own classes in between. Each unit is named `Class.method`. Ruby has no imports, so `from` lists the library's constant: `ViewComponent` for `ViewComponent::Preview`.
+
+### `marked`
+
+```typescript
+{
+  type: "marked";
+  word: string;                                   // "use server"
+  scopes: ("module" | "function")[];
+  name: ("assignedName" | "countInFile")[];
+  countedAs: string;                              // "serverAction"
+}
+```
+
+`marked` reads a directive prologue. At module scope it makes every exported function a unit, and at function scope it makes each function whose body opens with the directive one. A function is named by the first rule that gives a name: the variable or property it is assigned to, or `countedAs#0`, `countedAs#1` and so on in the file. Only TypeScript writes a directive.
+
+### `registeredFunction`
+
+```typescript
+{
+  type: "registeredFunction";
+  start: ReceiverOrigin;                        // imported({ from: ["react-dom/client"], ... })
+  method?: string;                              // "render"
+  handler: { at: number; through?: "element" };
+  nameAt?: { at: number; named: Record<string, UnitSpec> };
+}
+```
+
+`registeredFunction` finds a function a call in the module body hands to a library, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name as a literal from an argument, and keeps only the names it lists.
 
 ### `fileConvention`
 
