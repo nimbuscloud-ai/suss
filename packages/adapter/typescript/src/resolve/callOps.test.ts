@@ -529,6 +529,111 @@ describe("the member a call is made on", () => {
   });
 });
 
+describe("the calls chained on a result, and the columns a condition reads", () => {
+  const BUILDER = `
+    declare const db: any;
+    declare const users: any;
+    declare const other: any;
+    declare function eq(a: unknown, b: unknown): unknown;
+    declare function and(...conditions: unknown[]): unknown;
+    function onlyActive() {
+      return eq(users.active, true);
+    }
+    export function rename(id: number, flag: boolean) {
+      const kept = eq(users.kept, id);
+      db.delete(users).where(kept);
+      return db
+        .update(users)
+        .set({ name: "x" })
+        .where(
+          and(
+            eq(users.id, id),
+            users.a.gt(1),
+            \`\${users.b}\`,
+            flag ? users.c : users.d,
+            users.e ?? 0,
+            [users.f],
+            { k: users.g },
+            other.h,
+            onlyActive(),
+            (row: any) => users.i,
+            !users.j,
+            users.k + 1,
+            eq(users.id, 2),
+          ),
+        );
+    }
+  `;
+
+  /** The call written as `text` in the builder, over the facts or over its nodes. */
+  function callAt(text: string, over: "facts" | "nodes"): CallOps {
+    const project = createTestProject();
+    const file = project.createSourceFile("/repo.ts", BUILDER);
+    const call = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getText() === text);
+    if (call === undefined) {
+      throw new Error(`no call written as ${text}`);
+    }
+    if (over === "nodes") {
+      return callOpsFor(call);
+    }
+    const store = new ResolutionStore();
+    return opsOverFacts(call, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      resolution: store,
+    });
+  }
+
+  /** What the condition of the `where` chained on `first` reads off `first`'s table. */
+  function columnsRead(first: CallOps): readonly string[] | null {
+    const table = first.valueAt(0);
+    let where = first.chainedOn?.() ?? null;
+    while (where !== null && where.method() !== "where") {
+      where = where.chainedOn?.() ?? null;
+    }
+    const condition = where?.valueAt(0) ?? null;
+    return table === null || condition === null
+      ? null
+      : (condition.readsOff?.(table) ?? null);
+  }
+
+  it.each(["facts", "nodes"] as const)(
+    "gives the call made on each result in turn, over the %s",
+    (over) => {
+      const update = callAt("db\n        .update(users)", over);
+      const set = update.chainedOn?.() ?? null;
+
+      expect(set?.method()).toBe("set");
+      expect(set?.chainedOn?.()?.method()).toBe("where");
+      expect(set?.chainedOn?.()?.chainedOn?.()).toBeNull();
+    },
+  );
+
+  it.each(["facts", "nodes"] as const)(
+    "reads the columns through calls, a method on a column, holes, branches and entries, each once, over the %s",
+    (over) => {
+      expect(columnsRead(callAt("db\n        .update(users)", over))).toEqual([
+        "id",
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+      ]);
+    },
+  );
+
+  it.each(["facts", "nodes"] as const)(
+    "reads no column through a condition kept in a name, over the %s",
+    (over) => {
+      expect(columnsRead(callAt("db.delete(users)", over))).toEqual([]);
+    },
+  );
+});
+
 describe("the calls one call reaches", () => {
   it("gives the receiver as a call of its own", () => {
     const ops = opsForOuterCall(`

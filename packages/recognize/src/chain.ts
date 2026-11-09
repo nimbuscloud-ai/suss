@@ -88,7 +88,7 @@ export interface StartLink {
  * steps are data, so a pack that reads three calls states three steps
  * and never writes a function that walks the calls itself.
  */
-export type CallStep = ToReceiver | ToArgument | ToMember;
+export type CallStep = ToReceiver | ToArgument | ToMember | ToChained;
 
 /**
  * The call the receiver is. With a method, the walk keeps going up the
@@ -100,6 +100,8 @@ export type CallStep = ToReceiver | ToArgument | ToMember;
 export interface ToReceiver {
   readonly to: "receiver";
   readonly method?: string;
+  /** Where the call reached has to have come from, else the step reaches nothing. */
+  readonly origin?: ReceiverOrigin;
 }
 
 /** The call an argument is, when the argument is a call or a construction. */
@@ -125,6 +127,19 @@ export interface ToArgument {
  */
 export interface ToMember {
   readonly to: "member";
+  /** The name the member has to be read as, else the step reaches nothing. */
+  readonly named?: string;
+}
+
+/**
+ * The nearest call to `method` made on what this call returns, however
+ * many calls out: `.where` from `db.update(t)` in
+ * `db.update(t).set(v).where(c)`. A query builder takes its table from
+ * the first call and its columns from a call further out.
+ */
+export interface ToChained {
+  readonly to: "chained";
+  readonly method: string;
 }
 
 /**
@@ -138,6 +153,12 @@ export interface ToMember {
 export interface SubjectLink {
   readonly asks: "subject";
   readonly of: readonly CallStep[];
+  /**
+   * Which methods the call in hand may be, when only some of the calls
+   * made on the subject count. Drizzle's select is read at `.from`,
+   * since every select chain has one and the table is its argument.
+   */
+  readonly calledAs?: readonly string[];
 }
 
 /** Which methods count, and what each one does. */
@@ -471,6 +492,30 @@ export interface StatedRule {
   readonly by: InputRule;
 }
 
+/**
+ * The columns a condition compares: every property the picked value
+ * reads off the argument `off` points at, through the calls,
+ * comparisons and template holes the condition is built from.
+ * `eq(users.id, id)` reads `id` off `users`, and so does
+ * `User.id == user_id`.
+ */
+export interface FieldsReadPick {
+  readonly fieldsRead: OneArgument;
+  readonly off: OneArgument;
+}
+
+/**
+ * The keys of the object the pick reaches, or of every object in the
+ * list it reaches, each key in the order first written. `under` reads
+ * the objects under those properties of it instead, in that order.
+ * `otherwise` is what a call that states no keys reads.
+ */
+export interface KeysOfPick {
+  readonly keysOf: OneArgument;
+  readonly under?: readonly string[];
+  readonly otherwise?: readonly string[];
+}
+
 /** What one method of a storage client does. */
 export interface StorageMethod {
   readonly kind: AccessKind;
@@ -485,24 +530,24 @@ export interface StorageMethod {
    * wrote, or a fixed list for a method whose name already settles it.
    * `findById` picks by `_id` however the id is spelt.
    */
-  readonly selector?:
-    | readonly string[]
-    | ArgumentPick
-    | SelectorParamPick
-    | InputRule
-    | StatedRule;
+  readonly selector?: NamesStated;
   /**
    * Which fields the call touched, stated any of the ways a selector
    * is. A delete touches the whole document and states `["*"]`, since
    * nothing in its arguments says so.
    */
-  readonly fields?:
-    | readonly string[]
-    | ArgumentPick
-    | SelectorParamPick
-    | InputRule
-    | StatedRule;
+  readonly fields?: NamesStated;
 }
+
+/** Every way a storage method can say which names a call reached. */
+export type NamesStated =
+  | readonly string[]
+  | ArgumentPick
+  | SelectorParamPick
+  | FieldsReadPick
+  | KeysOfPick
+  | InputRule
+  | StatedRule;
 
 /**
  * What one method of a client that takes a statement written as SQL

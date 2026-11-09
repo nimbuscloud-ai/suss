@@ -69,6 +69,8 @@ function callOps(over: {
   file?: string;
   /** The member read the call is made on. */
   member?: CallOps;
+  /** The call made on what this one returns. */
+  chained?: CallOps;
 }): CallOps {
   const args = over.args ?? [];
   const from = over.from ?? [];
@@ -93,6 +95,7 @@ function callOps(over: {
     parameterReadsAt: (index: number) => over.selectorReads?.[index] ?? null,
     file: () => over.file ?? null,
     member: () => over.member ?? null,
+    chainedOn: () => over.chained ?? null,
     propertyAt: (index, property) =>
       over.properties?.[index]?.[property] ??
       (index in values
@@ -974,6 +977,248 @@ describe("a chain read back up its receivers", () => {
   });
 });
 
+describe("a chain read out along the calls chained on a result", () => {
+  // `records.update(users).set({ name }).returning().where(cond)`, where
+  // the condition reads `id` off `users`.
+  const condition: ValueOps = {
+    ...valueOps("cond"),
+    readsOff: (object) => (object.text() === "users" ? ["id"] : []),
+  };
+  const where = { ...callOps({ method: "where" }), valueAt: () => condition };
+  const returning = callOps({ method: "returning", chained: where });
+  const set = callOps({
+    method: "set",
+    values: { 0: { name: "x" } },
+    chained: returning,
+  });
+  const update = (chained: CallOps | undefined) =>
+    callOps({
+      method: "update",
+      from: ["qb"],
+      args: ["users"],
+      values: { 0: "users" },
+      ...(chained === undefined ? {} : { chained }),
+    });
+
+  const updates = storageCalls({
+    system: "warehouse",
+    client: declaredBy("qb"),
+    unsettledName: "nothing",
+  })
+    .methods({
+      update: {
+        kind: "write",
+        fields: {
+          keysOf: { of: [{ to: "chained", method: "set" }], at: 0 },
+          otherwise: ["*"],
+        },
+        selector: {
+          fieldsRead: { of: [{ to: "chained", method: "where" }], at: 0 },
+          off: { at: 0 },
+        },
+      },
+    })
+    .container({ at: 0 })
+    .example("records.update(users).set({ name }).where(eq(users.id, id))");
+
+  it("reads the fields off the nearest `.set` and the columns off the nearest `.where`, however far out", () => {
+    expect(run(updates, update(set))?.[0]).toMatchObject({
+      binding: { semantics: { container: "users" } },
+      interaction: { fields: ["name"], operation: "update", selector: ["id"] },
+    });
+  });
+
+  it("reads what the pick says otherwise, and no selector, for a call nothing is chained on", () => {
+    const effect = run(updates, update(undefined))?.[0];
+
+    expect(effect).toMatchObject({ interaction: { fields: ["*"] } });
+    expect(
+      effect?.type === "interaction" && effect.interaction,
+    ).not.toHaveProperty("selector");
+  });
+
+  it("gives up on a call chained back round onto itself", () => {
+    const loop = callOps({ method: "again" });
+    Object.assign(loop, { chainedOn: () => loop });
+
+    expect(run(updates, update(loop))?.[0]).toMatchObject({
+      interaction: { fields: ["*"] },
+    });
+  });
+
+  it("prices both picks as data", () => {
+    expect(packOf(updates).declarations?.declarations).toMatchObject([
+      { dataLinks: 3, functionLinks: [], astLinks: [] },
+    ]);
+  });
+});
+
+describe("the keys an object states", () => {
+  const writes = storageCalls({ system: "warehouse", client: declaredBy("qb") })
+    .methods({
+      putAll: { kind: "write", fields: { keysOf: { at: 0 } } },
+      find: {
+        kind: "read",
+        fields: {
+          keysOf: { at: 0 },
+          under: ["columns", "with"],
+          otherwise: ["*"],
+        },
+      },
+    })
+    .example("records.putAll([{ a: 1 }, { b: 2 }])");
+  const fieldsOf = (method: string, stated?: unknown) =>
+    run(
+      writes,
+      callOps({
+        method,
+        from: ["qb"],
+        ...(stated === undefined ? {} : { values: { 0: stated } }),
+      }),
+    )?.[0];
+
+  it("reads every object in a list, each key once in the order first written", () => {
+    expect(fieldsOf("putAll", [{ a: 1 }, { b: 2, a: 3 }])).toMatchObject({
+      interaction: { fields: ["a", "b"] },
+    });
+  });
+
+  it("reads the objects under the properties it lists, in that order, and nothing else", () => {
+    expect(
+      fieldsOf("find", {
+        where: { x: 1 },
+        with: { orders: true },
+        columns: { id: true },
+      }),
+    ).toMatchObject({ interaction: { fields: ["id", "orders"] } });
+  });
+
+  it("reads what the pick says otherwise for a call that states no keys", () => {
+    expect(fieldsOf("find", {})).toMatchObject({
+      interaction: { fields: ["*"] },
+    });
+    expect(fieldsOf("find")).toMatchObject({ interaction: { fields: ["*"] } });
+    expect(fieldsOf("putAll")).toMatchObject({ interaction: { fields: [] } });
+  });
+});
+
+describe("a chain about the receiver, read at one method only", () => {
+  // `q.select().from(users)`: the select call says the operation and is
+  // made on the client, and `.from` has the table.
+  const selects = storageCalls({
+    system: "warehouse",
+    client: declaredBy("qb"),
+    unsettledName: "nothing",
+  })
+    .about({ to: "receiver" }, { calledAs: ["from"] })
+    .methods({ select: { kind: "read", fields: ["*"] } })
+    .container({ of: [{ to: "chained", method: "from" }], at: 0 })
+    .example("q.select().from(users)");
+  const select = callOps({ method: "select", from: ["qb"] });
+  const onSelect = (method: string) =>
+    callOps({
+      method,
+      args: ["users"],
+      receiver: select,
+      callee: `q.select().${method}`,
+    });
+
+  it("reads the subject's operation, the call in hand's callee, and the table off `.from`", () => {
+    expect(run(selects, onSelect("from"))).toMatchObject([
+      {
+        callee: "q.select().from",
+        binding: { semantics: { container: "users" } },
+        interaction: { operation: "select" },
+      },
+    ]);
+  });
+
+  it("comes back out to the call in hand when the subject's result was kept in a name", () => {
+    // The fake select has nothing chained on it, as a select stored in a
+    // name has none in the facts, and the walk still finds `.from`.
+    expect(select.chainedOn?.()).toBeNull();
+    expect(run(selects, onSelect("from"))?.[0]).toMatchObject({
+      binding: { semantics: { container: "users" } },
+    });
+  });
+
+  it("turns down any other call made on the subject before it asks about the receiver", () => {
+    let asked = 0;
+    const toSql = {
+      ...onSelect("toSQL"),
+      receiver: () => {
+        asked += 1;
+        return select;
+      },
+    };
+
+    expect(run(selects, toSql)).toBeNull();
+    expect(asked).toBe(0);
+  });
+
+  it("keeps the options out of the steps it records", () => {
+    expect(selects.declared.links).toContainEqual({
+      asks: "subject",
+      of: [{ to: "receiver" }],
+      calledAs: ["from"],
+    });
+  });
+});
+
+describe("a step that requires where the call it reaches came from", () => {
+  const reads = storageCalls({ system: "warehouse", client: declaredBy("qb") })
+    .methods({ findMany: { kind: "read" } })
+    .container({
+      of: [{ to: "receiver", origin: constructedFrom("tables") }],
+      at: 0,
+    })
+    .example("table.findMany()");
+  const findOn = (from: string) =>
+    callOps({
+      method: "findMany",
+      from: ["qb"],
+      receiver: callOps({ method: "table", from: [from], args: ["orders"] }),
+    });
+
+  it("reaches the receiver when it came from the origin", () => {
+    expect(run(reads, findOn("tables"))?.[0]).toMatchObject({
+      binding: { semantics: { container: "orders" } },
+    });
+  });
+
+  it("reaches nothing when the receiver was made elsewhere", () => {
+    expect(run(reads, findOn("elsewhere"))?.[0]).toMatchObject({
+      binding: { semantics: { container: null } },
+    });
+  });
+});
+
+describe("a member step that requires the member's name", () => {
+  const queries = storageCalls({
+    system: "warehouse",
+    client: declaredBy("qb"),
+    clientAt: [{ to: "member" }, { to: "member", named: "query" }],
+  })
+    .methods({ findMany: { kind: "read" } })
+    .example("db.query.users.findMany()");
+  const findThrough = (middle: string) =>
+    callOps({
+      method: "findMany",
+      member: callOps({
+        method: "users",
+        member: callOps({ method: middle, from: ["qb"] }),
+      }),
+    });
+
+  it("asks about the client past a member read under that name", () => {
+    expect(run(queries, findThrough("query"))).toHaveLength(1);
+  });
+
+  it("matches nothing past a member read under another name", () => {
+    expect(run(queries, findThrough("tables"))).toBeNull();
+  });
+});
+
 describe("a method the caller says which way round it goes", () => {
   const signing = storageCalls({
     system: "cassette",
@@ -1329,6 +1574,7 @@ describe("the value a call states for each column", () => {
               input.encoded?.()?.codec,
               input.encoded?.()?.value.text(),
               input.shape?.(),
+              input.readsOff?.(valueOps("tape")),
             ]);
             return ["side", "owner"];
           },
@@ -1349,6 +1595,7 @@ describe("the value a call states for each column", () => {
       importedFrom: () => "./tapes",
       encoded: () => ({ codec: "json", value: valueOps("inner") }),
       shape: () => ({ type: "text" }),
+      readsOff: (object) => [`side of ${object.text()}`],
     };
     const ops = callOps({ method: "label", from: ["tapedeck"] });
     const handing = (value: ValueOps): CallOps => ({
@@ -1376,8 +1623,9 @@ describe("the value a call states for each column", () => {
         "json",
         "inner",
         { type: "text" },
+        ["side of tape"],
       ],
-      Array(11).fill(undefined),
+      Array(12).fill(undefined),
     ]);
   });
 });

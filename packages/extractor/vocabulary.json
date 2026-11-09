@@ -29,6 +29,7 @@
   "callback": "suss: CallbackPick tag, a function written as the argument or a name for one",
   "callbackArgument": "suss: DiscoveryMatch variant tag",
   "callee": "suss: sub-unit name part, the callee as the source writes it",
+  "chained": "suss: CallStep variant tag, a call made on what another call returns",
   "client": "suss: code-unit kind",
   "clientCall": "suss: DiscoveryMatch variant tag",
   "component": "suss: code-unit kind",

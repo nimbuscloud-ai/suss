@@ -24,6 +24,7 @@ import type {
   StorageEnding,
   StorageMethod,
   StorageSystem,
+  SubjectLink,
 } from "./chain.js";
 import type { CallOps, ReceiverOrigin } from "./ops.js";
 
@@ -63,14 +64,23 @@ export interface MemberContainer {
   naming?: Naming;
 }
 
+/** Which calls in hand a chain about another call reads. */
+export interface AboutOptions {
+  /** The methods the call in hand may be. Any other call is not read. */
+  calledAs: readonly string[];
+}
+
 /** A storage chain, and the links that can still be added to it. */
 export interface StorageCalls {
   /**
    * Which call the chain is about, when it is not the one in hand. The
    * steps run from the call in hand, and every other link is asked of
-   * what they reach.
+   * what they reach. Options after the steps say which calls in hand
+   * count.
    */
-  about(...of: readonly CallStep[]): StorageCalls;
+  about(
+    ...of: readonly CallStep[] | readonly [...CallStep[], AboutOptions]
+  ): StorageCalls;
   /** Which methods count, and what each one reads or writes. */
   methods(
     table: Readonly<Record<string, StorageMethod>>,
@@ -179,6 +189,21 @@ function containerLink(
   };
 }
 
+/** The subject link an `about` call adds, with the options after its steps when it states some. */
+function subjectLink(
+  of: readonly CallStep[] | readonly [...CallStep[], AboutOptions],
+): SubjectLink {
+  const last = of[of.length - 1];
+  if (last === undefined || "to" in last) {
+    return { asks: "subject", of: of as readonly CallStep[] };
+  }
+  return {
+    asks: "subject",
+    of: of.slice(0, -1) as readonly CallStep[],
+    calledAs: last.calledAs,
+  };
+}
+
 /** The same chain with one more link, or with its example set. */
 function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
   const adding = (link: Link<StorageMethod>): StorageCalls =>
@@ -186,7 +211,7 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
 
   return {
     declared,
-    about: (...of) => adding({ asks: "subject", of }),
+    about: (...of) => adding(subjectLink(of)),
     methods: (table, options) =>
       adding({
         asks: "methods",

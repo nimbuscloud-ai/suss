@@ -1383,3 +1383,168 @@ describe("the receiver a library method hands its callback, over the facts", () 
     );
   });
 });
+
+/**
+ * The facts for, in source order:
+ *
+ *   records.update(t).set(v).where(and(
+ *     eq(t.id, x), t.a.gt(1), `${t.b}`, flag ? t.c : t.d, t.e ?? 0,
+ *     [t.f], { k: t.g }, t.h == y, other.i, (r) => t.j, helper(), eq(t.id, 2),
+ *   ));
+ *   const kept = eq(t.k, x);
+ *   records.delete(t).where(kept);
+ */
+function builder(over: Partial<FactSource> = {}): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  const read = (key: string, object: string, name: string) =>
+    add("readsProperty", key, object, name);
+  const call = (key: string, callee: string, ...args: string[]) => {
+    add("call", key, callee);
+    args.forEach((arg, at) => add("callArg", key, String(at), arg));
+  };
+  call("update", "records.update", "t");
+  read("records.update", "records", "update");
+  call("set", "update.set", "v");
+  read("update.set", "update", "set");
+  call("where", "set.where", "cond");
+  read("set.where", "set", "where");
+  call(
+    "cond",
+    "and",
+    "eq1",
+    "gt",
+    "tpl",
+    "ternary",
+    "fallback",
+    "list",
+    "obj",
+    "cmp",
+    "other.i",
+    "arrow",
+    "helper()",
+    "eq2",
+  );
+  call("eq1", "eq", "t.id", "x");
+  read("t.id", "t", "id");
+  call("gt", "t.a.gt", "one");
+  read("t.a.gt", "t.a", "gt");
+  read("t.a", "t", "a");
+  add("holeAt", "tpl", "0", "t.b");
+  read("t.b", "t", "b");
+  add("conditionalBranch", "ternary", "t.c");
+  add("conditionalBranch", "ternary", "t.d");
+  read("t.c", "t", "c");
+  read("t.d", "t", "d");
+  add("fallbackBranch", "fallback", "t.e");
+  add("fallbackBranch", "fallback", "zero");
+  read("t.e", "t", "e");
+  add("writtenEntryAt", "list", "0", "t.f", "value");
+  read("t.f", "t", "f");
+  add("writtenEntryAt", "obj", "0", "t.g", "value");
+  read("t.g", "t", "g");
+  add("compares", "cmp", "t.h", "y");
+  read("t.h", "t", "h");
+  read("other.i", "other", "i");
+  add("func", "arrow");
+  add("returnsValue", "arrow", "t.j");
+  read("t.j", "t", "j");
+  call("helper()", "helper");
+  call("eq2", "eq", "t.id2", "two", "t.l");
+  read("t.id2", "t", "id");
+  read("t.l", "t", ".l");
+  call("kept", "eq", "t.k", "x");
+  read("t.k", "t", "k");
+  call("delete", "records.delete", "t");
+  read("records.delete", "records", "delete");
+  call("whereKept", "delete.where", "keptName");
+  read("delete.where", "delete", "where");
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => (key === "keptName" ? "kept" : null),
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+    ...over,
+  };
+}
+
+describe("the calls chained on a result, over the facts", () => {
+  it("gives the call whose callee reads a method off this one's result, one hop at a time", () => {
+    const set = opsAt("update", builder()).chainedOn?.() ?? null;
+
+    expect(set?.method()).toBe("set");
+    expect(set?.chainedOn?.()?.method()).toBe("where");
+    expect(set?.chainedOn?.()?.chainedOn?.()).toBeNull();
+  });
+});
+
+describe("the columns a condition reads, over the facts", () => {
+  /** What the `where` call's condition reads off the table the first call took. */
+  function columns(first: string, where: string, from = builder()) {
+    const table = opsAt(first, from).valueAt(0);
+    const condition = opsAt(where, from).valueAt(0);
+    return table === null ? null : (condition?.readsOff?.(table) ?? null);
+  }
+
+  it("reads them through calls, a method on a column, holes, branches, entries and comparisons, each once", () => {
+    expect(columns("update", "where")).toEqual([
+      "id",
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+      "g",
+      "h",
+      ".l",
+    ]);
+  });
+
+  it("goes into no function written in the condition, no helper and no name it was kept in", () => {
+    expect(columns("delete", "whereKept")).toEqual([]);
+  });
+
+  it("reads a class's own spelling back as the column, and leaves out one the adapter drops", () => {
+    const spelled = builder({
+      memberName: (stated) =>
+        stated === "h" ? null : stated.replace(/^\./, ""),
+    });
+
+    expect(columns("update", "where", spelled)).toEqual([
+      "id",
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+      "g",
+      "l",
+    ]);
+  });
+
+  it("reads nothing off an object that cannot say how it was written", () => {
+    const condition = opsAt("where", builder()).valueAt(0);
+    const unspelled: ValueOps = {
+      text: () => null,
+      name: () => null,
+      flag: () => null,
+      entries: () => [],
+      items: () => [],
+      property: () => null,
+      asArg: () => null,
+      parts: () => null,
+      holes: () => [],
+    };
+
+    expect(condition?.readsOff?.(unspelled)).toEqual([]);
+  });
+});
