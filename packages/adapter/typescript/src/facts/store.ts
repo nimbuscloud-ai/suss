@@ -1620,16 +1620,16 @@ export class ResolutionStore {
     return this.namesReached(value, modules, "importedOrCalled");
   }
 
-  /**
-   * The names from `modules` this value was imported under, as those
-   * modules export them, through an alias or a project barrel. A value
-   * that only calls into one of them is left out.
-   */
   /** Whether the value reaches an import of the module, as a recognizer's origin check asks. */
   originatesFrom(value: Node, module: string): boolean {
     return this.importOriginsOf(value, [module]).length > 0;
   }
 
+  /**
+   * The names from `modules` this value was imported under, as those
+   * modules export them, through an alias or a project barrel. A value
+   * that only calls into one of them is left out.
+   */
   importedAsOf(value: Node, modules: string[]): string[] {
     return this.namesReached(value, modules, "imported");
   }
