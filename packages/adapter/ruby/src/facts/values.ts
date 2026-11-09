@@ -2488,7 +2488,11 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     if (NESTING_TYPES.has(statement.type)) {
       // A nested class or module gets its own object, keyed on the node
       // that collectFileConstants binds a qualified name like A::B to.
-      emitClassFacts(emitter, statement);
+      const nested = emitClassFacts(emitter, statement);
+      const name = field(statement, "name");
+      if (name !== null) {
+        add(emitter, "holdsProperty", classKey, name.text, nested);
+      }
       continue;
     }
     if (!METHOD_TYPES.has(statement.type)) {

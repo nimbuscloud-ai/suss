@@ -290,8 +290,8 @@ export interface ValueOps {
   /**
    * How the source wrote this value at this spot, without following
    * anything: a function written in place, a name, an object written
-   * out, or anything else. A word the language keeps for no value, such
-   * as `undefined`, is other.
+   * out, a JSX element, or anything else. A word the language keeps for
+   * no value, such as `undefined`, is other.
    */
   form?(): ValueForm;
   /**
@@ -341,8 +341,8 @@ export interface Encoded {
   readonly value: ValueOps;
 }
 
-/** How the source wrote a value where it is read. */
-export type ValueForm = "function" | "name" | "object" | "other";
+/** How the source wrote a value where it is read. Only TypeScript writes an element. */
+export type ValueForm = "function" | "name" | "object" | "element" | "other";
 
 /** One entry of an object a call states. */
 export interface ValueEntry {

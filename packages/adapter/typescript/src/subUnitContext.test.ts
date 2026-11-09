@@ -96,6 +96,20 @@ describe("calls", () => {
     ).toBe("name");
   });
 
+  it("says an argument written as JSX is an element, a fragment included", () => {
+    const parent = componentFunction(`
+      function Boot() {
+        mount(<App />, <><App /></>);
+      }
+    `);
+    const mount = createTsSubUnitContext(new ResolutionStore())
+      .calls?.({ func: parent, name: "Boot", kind: "component" })
+      .find((call) => call.calleeText() === "mount");
+
+    expect(mount?.valueAt(0)?.form?.()).toBe("element");
+    expect(mount?.valueAt(1)?.form?.()).toBe("element");
+  });
+
   it("is left out without a store", () => {
     expect(createTsSubUnitContext().calls).toBeUndefined();
   });
