@@ -207,8 +207,8 @@ function recognizePrismaCall(
       class: "storage-access",
       kind,
       fields,
-      ...(selector !== null ? { selector } : {}),
       operation: method,
+      ...(selector !== null ? { selector } : {}),
     },
   };
   statePayloadSlots(recognizerCtx.ops, given, access, {
@@ -228,11 +228,11 @@ function recognizePrismaCall(
           class: "storage-access",
           kind: "read",
           fields: nested.fields,
+          operation: method,
           ...(nested.selector === undefined
             ? {}
             : { selector: nested.selector }),
           relationPath: nested.relationPath,
-          operation: method,
         },
       }),
     ),
@@ -245,14 +245,14 @@ function recognizePrismaCall(
           class: "storage-access",
           kind: nested.lookup === true ? "read" : "write",
           fields: nested.fields,
+          // The outer method acts on the model in the binding. The model
+          // across the relation gets the nested operation.
+          operation: nested.operation,
           ...(nested.selector === undefined
             ? {}
             : { selector: nested.selector }),
           relationPath: nested.relationPath,
           ...(nested.relationKey === true ? { relationKey: true } : {}),
-          // The outer method acts on the model in the binding. The model
-          // across the relation gets the nested operation.
-          operation: nested.operation,
         },
       }),
     ),
@@ -1050,7 +1050,7 @@ export function prismaFramework(
   );
   return {
     name: "prisma",
-    version: "7",
+    version: "8",
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
