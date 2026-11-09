@@ -19,13 +19,17 @@ import type {
   Link,
   SqlEnding,
   SqlMethod,
+  StorageSystem,
 } from "./chain.js";
 import type { ReceiverOrigin } from "./ops.js";
 
 /** What a pack says about the store its statements reach. */
 export interface SqlStatementsSpec {
-  /** The store, in the words OpenTelemetry's semantic conventions use. */
-  system: string;
+  /**
+   * The store, in the words OpenTelemetry's semantic conventions use, or
+   * a rule that reads it from the project each call's file belongs to.
+   */
+  system: StorageSystem;
   /** The wire, when it differs from the store's own name. */
   transport?: string;
   /** Which of the store's namespaces the calls reach. Defaults to "default". */
@@ -36,7 +40,7 @@ export interface SqlStatementsSpec {
    * anyway: a store whose statements are somebody else's SQL is common
    * enough that a default here would read the wrong tables quietly.
    */
-  dialect: string;
+  dialect: StorageSystem;
   /** How the pack pins down the client its calls are on. */
   client?: ReceiverOrigin;
 }

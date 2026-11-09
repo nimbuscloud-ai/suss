@@ -192,13 +192,6 @@ function clientTypeFiles(dir: string): string[] {
   });
 }
 
-/** Whether a file is in a directory a generator of its own project writes to. */
-export function isInGeneratedClient(filePath: string): boolean {
-  return generatedClientDirs(path.dirname(filePath)).some((dir) =>
-    filePath.startsWith(`${dir}${path.sep}`),
-  );
-}
-
 /** The files that decide where the schema is, whether or not each exists. */
 function projectFilesOf(root: string): string[] {
   return [

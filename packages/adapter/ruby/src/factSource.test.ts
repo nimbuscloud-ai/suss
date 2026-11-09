@@ -71,6 +71,33 @@ describe("the Ruby fact source", () => {
     ).toEqual([]);
   });
 
+  it("says which block a block variable belongs to, and where among its parameters", async () => {
+    const tree = await parseRuby(
+      [
+        "def run(db, name)",
+        "  db.transaction { |tx, attempt| tx.save(name) }",
+        "end",
+      ].join("\n"),
+    );
+    const db = factsForFile({ file: FILE, root: tree.rootNode, packs: [] });
+    const source = rubyFactSource(db);
+    const [[, block] = []] = db.facts("callBlock");
+    const [[method] = []] = db.facts("paramOf");
+
+    expect(source.parameterOf?.(`${String(block)}#tx`)).toEqual({
+      func: String(block),
+      position: 0,
+    });
+    expect(source.parameterOf?.(`${String(block)}#attempt`)).toEqual({
+      func: String(block),
+      position: 1,
+    });
+    expect(source.parameterOf?.(`${String(block)}#other`)).toBeNull();
+    // A method's own parameter has its paramOf row, and a file-level name is no parameter.
+    expect(source.parameterOf?.(`${String(method)}#name`)).toBeNull();
+    expect(source.parameterOf?.("plain")).toBeNull();
+  });
+
   it("gives no import specifier, since a Ruby file imports no names", async () => {
     const { source, held } = await sourceFor();
 

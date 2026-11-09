@@ -26,6 +26,8 @@ export type ReceiverOrigin =
   | AnyOf
   | ReturnedBy
   | Typed
+  | Inheriting
+  | HandedBy
   | Imported
   | Global;
 
@@ -102,8 +104,38 @@ export interface Typed {
   readonly origin: "typed";
   /** The modules the type comes from. */
   readonly importedFrom: readonly string[];
-  /** The type names, as those modules export them. */
-  readonly named: readonly string[];
+  /**
+   * The type names, as those modules export them. Unset takes any type
+   * the modules declare. A client library types its client, the client a
+   * transaction hands over and each of its delegates differently, and a
+   * project reaches all of them through a type of its own.
+   */
+  readonly named?: readonly string[];
+}
+
+/**
+ * A receiver that is one of a class whose ancestry reaches the base the
+ * spec lists, through any of the project's own classes between. A NestJS
+ * service is written `class PrismaService extends PrismaClient` and the
+ * container hands it to whoever asks, so neither its type nor where it
+ * was made says which library it is.
+ */
+export interface Inheriting extends Inherits {
+  readonly origin: "inherits";
+}
+
+/**
+ * A receiver that `method`, called on a receiver from `on`, hands the
+ * callback it was called with, as the callback's parameter at
+ * `parameter`. `db.$transaction(async (tx) => ...)` hands its callback a
+ * client for the transaction, and nothing in the program says what `tx`
+ * is. The callback is the call's first argument, or a Ruby call's block.
+ */
+export interface HandedBy {
+  readonly origin: "handedBy";
+  readonly method: string;
+  readonly on: ReceiverOrigin;
+  readonly parameter: number;
 }
 
 /**
@@ -291,6 +323,16 @@ export interface ValueOps {
   shape?(): TypeShape | null;
 }
 
+/**
+ * A library base a class's ancestry reaches: one of `named`, as one of
+ * the modules in `from` exports it. Ruby has no imports, so `from` lists
+ * the library's own constant: `ViewComponent` for `ViewComponent::Preview`.
+ */
+export interface Inherits {
+  readonly from: readonly string[];
+  readonly named: readonly string[];
+}
+
 /** What an encoder was handed, and how it encoded it. */
 export interface Encoded {
   /** The encoding, such as `json`. */
@@ -382,6 +424,17 @@ export interface CallOps {
    * it was written as.
    */
   receiver(): CallOps | null;
+  /**
+   * The receiver as the source wrote it, when it is a member read rather
+   * than a call: `db.user` in `db.user.findMany()`. Its `method()` is the
+   * member's name, `user`, and its receiver questions are about the
+   * object the member is read off, `db`. Ruby writes `db.users` as a call
+   * with no arguments, and then this is that call. Null when the
+   * receiver is neither, and unset in an adapter that cannot say.
+   */
+  member?(): CallOps | null;
+  /** The path of the file the call is written in, or null when the adapter cannot say. */
+  file?(): string | null;
   /**
    * The call the argument in this position is, or null when that
    * argument is neither a call nor a construction. `new
@@ -609,11 +662,28 @@ export interface FactSource {
   /** Whether a library declared the method the call reaches for, when the adapter can tell. */
   declares?(call: string, module: string): boolean;
   /**
-   * Whether the call's receiver is declared as one of the origin's types.
-   * Unset in a language that declares none, where the ops check what made
-   * the receiver instead.
+   * The function a parameter belongs to, and its position, for a
+   * parameter the facts state no `paramOf` row for. Ruby states none for
+   * a block's variable, since the rules would then read every block as a
+   * function a caller passes arguments to. Unset where every parameter
+   * has its row.
+   */
+  parameterOf?(
+    key: string,
+  ): { readonly func: string; readonly position: number } | null;
+  /**
+   * Whether the call's receiver is declared as one of the origin's types,
+   * or as any type its modules declare when it lists none. Unset in a
+   * language that declares none, where the ops check what made the
+   * receiver instead.
    */
   typedAs?(call: string, origin: Typed): boolean;
+  /**
+   * Whether the call's receiver is declared as one of a class whose
+   * ancestry reaches the spec's base. Unset in a language that declares
+   * no types, where the ops read the class the receiver was made from.
+   */
+  typedInherits?(call: string, spec: Inherits): boolean;
   /**
    * The ops for a call with the adapter's own members added, such as the
    * class an argument refers to. Every call the fact ops reach goes

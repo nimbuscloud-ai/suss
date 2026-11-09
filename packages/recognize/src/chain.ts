@@ -46,6 +46,12 @@ export type MatchStart = FromReceiver;
 export interface FromReceiver {
   readonly starts: "receiver";
   readonly origin: ReceiverOrigin;
+  /**
+   * The steps from the call in hand to the one whose receiver is the
+   * client, when that is not the call in hand. `db.user.findMany()` is
+   * on `db.user`, and the client is `db`, one member step along.
+   */
+  readonly of?: readonly CallStep[];
 }
 
 /**
@@ -55,10 +61,17 @@ export interface FromReceiver {
  */
 export function chainStart<TMeaning>(
   client: ReceiverOrigin | undefined,
+  of?: readonly CallStep[],
 ): Link<TMeaning>[] {
-  return client === undefined
-    ? []
-    : [{ asks: "start", at: { starts: "receiver", origin: client } }];
+  if (client === undefined) {
+    return [];
+  }
+  const at: FromReceiver = {
+    starts: "receiver",
+    origin: client,
+    ...(of === undefined ? {} : { of }),
+  };
+  return [{ asks: "start", at }];
 }
 
 /** Where the match begins. */
@@ -75,7 +88,7 @@ export interface StartLink {
  * steps are data, so a pack that reads three calls states three steps
  * and never writes a function that walks the calls itself.
  */
-export type CallStep = ToReceiver | ToArgument;
+export type CallStep = ToReceiver | ToArgument | ToMember;
 
 /**
  * The call the receiver is. With a method, the walk keeps going up the
@@ -101,6 +114,17 @@ export interface ToArgument {
    * that origin and skips any other argument.
    */
   readonly origin?: ReceiverOrigin;
+}
+
+/**
+ * The receiver as the source wrote it, when it is a member read rather
+ * than a call: `db.user` in `db.user.findMany()`. The ops it gives
+ * return the member's name, `user`, from `method()`, and ask an origin
+ * about the object it is read off, `db`. Ruby writes a bare `db.users`
+ * as a call with no arguments, and the step gives that call.
+ */
+export interface ToMember {
+  readonly to: "member";
 }
 
 /**
@@ -130,9 +154,23 @@ export interface MethodsLink<TMeaning> {
 
 /**
  * Which container a call's selector belongs to, as an argument the call
- * states or as the pack's own rule over what the call reached.
+ * states, as the member the call is made on, or as the pack's own rule
+ * over what the call reached.
  */
-export type ContainerLink = ContainerArgument | ContainerRule;
+export type ContainerLink = ContainerArgument | ContainerMember | ContainerRule;
+
+/**
+ * The member the steps reach, as a container. Prisma lowercases a model's
+ * first letter for its delegate, so `upperFirst` reads `db.user` as `User`.
+ */
+export interface ContainerMember {
+  readonly asks: "container";
+  readonly of: readonly CallStep[];
+  readonly naming?: Naming;
+}
+
+/** How a pack spells a name it read as the name the contract uses. */
+export type Naming = "asWritten" | "upperFirst";
 
 /** The container as one of the call's own arguments states it. */
 export interface ContainerArgument {
@@ -227,6 +265,31 @@ export interface SlotsLink {
 }
 
 /**
+ * Where a call states the accesses it makes through the container's
+ * relations, and the pack's rule that reads them. Each one becomes an
+ * effect of its own after the container's, on the same binding, and the
+ * checker places it on the model the relation path leads to.
+ */
+export interface RelationsLink {
+  readonly asks: "relations";
+  readonly of: OneArgument;
+  readonly by: LinkFunction<[StatedInputs], readonly RelatedAccess[]>;
+}
+
+/** One more access a call makes through a relation of the container. */
+export interface RelatedAccess {
+  /** The relations followed from the container, in order. */
+  readonly path: readonly string[];
+  readonly kind: "read" | "write";
+  readonly fields: readonly string[];
+  /** The operation across the relation, when it is not the call's own. */
+  readonly operation?: string;
+  readonly selector?: readonly string[];
+  /** The columns written are the relation's own key, which only the contract lists. */
+  readonly relationKey?: true;
+}
+
+/**
  * How to read the values interpolated into a statement.
  *
  * A query that interpolates a schema object for its table leaves the
@@ -278,6 +341,7 @@ export type Link<TMeaning> =
   | ContainersLink
   | InputLink
   | SlotsLink
+  | RelationsLink
   | InterpolatesLink
   | UnitWhenInPlaceLink;
 
@@ -374,6 +438,13 @@ export interface StatedInputs {
   readonly entry: ValueOps | null;
   /** What the call does to the store. */
   readonly kind: "read" | "write";
+  /**
+   * The container, when a link settles it before the inputs are read.
+   * Null when the selector decides it, so it is not known yet.
+   */
+  readonly container: string | null;
+  /** The call in hand, for a rule that reads something beside the source, such as the project's schema. */
+  readonly call: CallOps;
 }
 
 /**
@@ -583,11 +654,25 @@ export interface ScheduleUnread {
   readonly other: string;
 }
 
+/**
+ * The store as the pack states it, or as the project the call's file
+ * belongs to says, for a library whose projects each say which database
+ * they use.
+ */
+export type StorageSystem = string | ProjectSystem;
+
+export interface ProjectSystem {
+  /** The store for the file a call is in, or null when the project does not say. */
+  readonly byFile: LinkFunction<[string], string | null>;
+  /** The store for a call whose project does not say. */
+  readonly otherwise: string;
+}
+
 /** A storage access: one call, one thing it read or wrote. */
 export interface StorageEnding {
   readonly yields: "storageAccess";
   /** The store, in the words OpenTelemetry's semantic conventions use. */
-  readonly system: string;
+  readonly system: StorageSystem;
   /** The wire, when it differs from the store's own name. */
   readonly transport?: string;
   /** Which of the store's namespaces the call reached. */
@@ -607,7 +692,7 @@ export interface StorageEnding {
 export interface SqlEnding {
   readonly yields: "sqlAccess";
   /** The store, in the words OpenTelemetry's semantic conventions use. */
-  readonly system: string;
+  readonly system: StorageSystem;
   /** The wire, when it differs from the store's own name. */
   readonly transport?: string;
   /** Which of the store's namespaces the call reached. */
@@ -619,7 +704,7 @@ export interface SqlEnding {
    * reader that guessed Postgres for a MySQL project would report the
    * wrong tables rather than none.
    */
-  readonly dialect: string;
+  readonly dialect: StorageSystem;
 }
 
 /**

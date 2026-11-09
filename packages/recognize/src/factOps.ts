@@ -14,6 +14,7 @@
  */
 
 import { byOrigin, lastValueWins } from "@suss/extractor";
+import { fileOfKey } from "@suss/resolution";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
@@ -25,7 +26,10 @@ import type {
   Encoded,
   FactSource,
   Global,
+  HandedBy,
   Imported,
+  Inheriting,
+  Inherits,
   ReceiverOrigin,
   ReturnedBy,
   Typed,
@@ -55,7 +59,7 @@ export function factValueOps(key: string, source: FactSource): ValueOps {
 }
 
 class FactCall implements CallOps {
-  private readonly member: { object: string; name: string } | null;
+  private readonly calleeRead: { object: string; name: string } | null;
   private args: Map<number, string> | null = null;
 
   constructor(
@@ -64,11 +68,11 @@ class FactCall implements CallOps {
     private readonly source: FactSource,
   ) {
     source.read(calleeKey);
-    this.member = memberRead(calleeKey, source);
+    this.calleeRead = memberRead(calleeKey, source);
   }
 
   method(): string | null {
-    return this.member?.name ?? null;
+    return this.calleeRead?.name ?? null;
   }
 
   calleeText(): string {
@@ -89,14 +93,37 @@ class FactCall implements CallOps {
   }
 
   receiver(): CallOps | null {
-    if (this.member === null) {
+    if (this.calleeRead === null) {
       return null;
     }
     const made = madeThroughProjectCall(
-      settled(this.member.object, this.source, "namesAndFields"),
+      settled(this.calleeRead.object, this.source, "namesAndFields"),
       this.source,
     );
     return factCallOps(made, this.source);
+  }
+
+  /**
+   * The member read the receiver is, as ops whose callee is that read. A
+   * call with no arguments counts as one, since Ruby writes `db.users`
+   * that way.
+   */
+  member(): CallOps | null {
+    if (this.calleeRead === null) {
+      return null;
+    }
+    const { object } = this.calleeRead;
+    this.source.read(object);
+    if (memberRead(object, this.source) !== null) {
+      const read = new FactCall(object, object, this.source);
+      return this.source.extend?.(object, read) ?? read;
+    }
+    const called = factCallOps(object, this.source);
+    return called !== null && called.argumentCount() === 0 ? called : null;
+  }
+
+  file(): string {
+    return fileOfKey(this.key);
   }
 
   argument(index: number): CallOps | null {
@@ -158,10 +185,10 @@ class FactCall implements CallOps {
    * one path, so a spelling settles it without asking the rules.
    */
   receiverGlobal(paths: readonly string[]): string | null | undefined {
-    if (this.member === null) {
+    if (this.calleeRead === null) {
       return undefined;
     }
-    const { object } = this.member;
+    const { object } = this.calleeRead;
     const spelled = paths.find(
       (path) => this.source.spellsGlobal?.(object, path) === true,
     );
@@ -200,7 +227,7 @@ class FactCall implements CallOps {
     if (origin.origin !== "constructed") {
       return null;
     }
-    const subject = this.member?.object ?? this.calleeKey;
+    const subject = this.calleeRead?.object ?? this.calleeKey;
     const matching = new Set(
       this.source
         .anchorCalls(subject, origin)
@@ -219,7 +246,7 @@ class FactCall implements CallOps {
    * has no declaration to read.
    */
   declaredBy(origin: DeclaredBy | ConstructedFrom): boolean {
-    if (this.member === null) {
+    if (this.calleeRead === null) {
       return false;
     }
     const declares = this.source.declares;
@@ -247,7 +274,7 @@ class FactCall implements CallOps {
    * language that declares none settles it by what made the receiver.
    */
   receiverTyped(origin: Typed): boolean {
-    if (this.member === null) {
+    if (this.calleeRead === null) {
       return false;
     }
     const typedAs = this.source.typedAs;
@@ -255,17 +282,54 @@ class FactCall implements CallOps {
       return this.receiverConstructed({
         origin: "constructed",
         importedFrom: origin.importedFrom,
-        named: origin.named,
+        ...(origin.named === undefined ? {} : { named: origin.named }),
       });
     }
     return typedAs(this.key, origin);
   }
 
+  /**
+   * Whether the receiver is one of a class whose ancestry reaches the
+   * origin's base. A language that declares no types reads the class the
+   * facts say the receiver is one of, or the class that made it.
+   */
+  receiverInherits(origin: Inheriting): boolean {
+    if (this.calleeRead === null) {
+      return false;
+    }
+    const typedInherits = this.source.typedInherits;
+    if (typedInherits !== undefined) {
+      return typedInherits(this.key, origin);
+    }
+    return this.receiverClasses(this.calleeRead.object).some((cls) =>
+      inheritsFrom(cls, origin, this.source),
+    );
+  }
+
+  /** Whether the receiver is the parameter a call the origin accepts hands its callback. */
+  receiverHanded(origin: HandedBy): boolean {
+    if (this.calleeRead === null) {
+      return false;
+    }
+    return callsHanding(
+      this.calleeRead.object,
+      origin.parameter,
+      this.source,
+    ).some((key) => {
+      const handing = factCallOps(key, this.source);
+      return (
+        handing !== null &&
+        handing.method() === origin.method &&
+        handing.receiverIsFrom(origin.on)
+      );
+    });
+  }
+
   /** Whether the receiver is a value the file imported as the origin says. */
   receiverImported(origin: Imported): boolean {
     return (
-      this.member !== null &&
-      importedAsAsked(origin, this.member.object, this.source)
+      this.calleeRead !== null &&
+      importedAsAsked(origin, this.calleeRead.object, this.source)
     );
   }
 
@@ -297,10 +361,10 @@ class FactCall implements CallOps {
   }
 
   private madeExpression(reading: "asWritten" | "throughProjectCalls"): string {
-    if (this.member === null) {
+    if (this.calleeRead === null) {
       return this.calleeKey;
     }
-    const asWritten = this.source.writtenAs(this.member.object);
+    const asWritten = this.source.writtenAs(this.calleeRead.object);
     const written =
       reading === "asWritten"
         ? asWritten
@@ -309,6 +373,28 @@ class FactCall implements CallOps {
       return this.calleeKey;
     }
     return written;
+  }
+
+  /**
+   * The classes the receiver is one of: those the facts say it is, such
+   * as an annotated name's, and the class each construction it was
+   * written as makes, with what each name leads to.
+   */
+  private receiverClasses(receiver: string): string[] {
+    const said = this.source.db
+      .lookup("instanceOf", 0, receiver)
+      .map((row) => String(row[1]));
+    const made = [
+      this.madeExpression("asWritten"),
+      this.madeExpression("throughProjectCalls"),
+    ].flatMap((made) => {
+      const callee = calleeOf(made, this.source);
+      return callee === null ? [] : [classConstructed(callee, this.source)];
+    });
+    return [...new Set([...said, ...made])].flatMap((cls) => [
+      cls,
+      ...(this.source.comesTo?.(cls) ?? []),
+    ]);
   }
 
   /** Whether `made`, a construction or a callee, came from one of the origin's modules. */
@@ -335,6 +421,81 @@ class FactCall implements CallOps {
   }
 }
 
+/**
+ * The class a construction's callee makes one of: the callee itself, or
+ * the class a language that constructs through a method calls it on, as
+ * `Db` in Ruby's `Db.new`.
+ */
+function classConstructed(callee: string, source: FactSource): string {
+  const throughMethod = source.constructedClass?.(callee) ?? null;
+  const onClass = throughMethod === null ? null : memberRead(callee, source);
+  return onClass?.object ?? callee;
+}
+
+/**
+ * The calls that hand over the function whose parameter at `position`
+ * the value is, as their first argument or as a Ruby block. A function
+ * passed by name is found through the names bound to it.
+ */
+function callsHanding(
+  value: string,
+  position: number,
+  source: FactSource,
+): string[] {
+  const parameters = [
+    value,
+    ...source.db.lookup("binds", 0, value).map((row) => String(row[1])),
+  ];
+  const functions = parameters.flatMap((parameter) => [
+    ...source.db
+      .lookup("paramOf", 2, parameter)
+      .filter((row) => String(row[1]) === String(position))
+      .map((row) => String(row[0])),
+    ...unstatedOwner(parameter, position, source),
+  ]);
+  return [
+    ...new Set(
+      functions.flatMap((func) => [
+        ...callsTaking(func, source),
+        ...source.db.lookup("callBlock", 1, func).map((row) => String(row[0])),
+        ...namesBoundTo(func, source).flatMap((name) =>
+          callsTaking(name, source),
+        ),
+      ]),
+    ),
+  ];
+}
+
+/** The function a parameter with no `paramOf` row belongs to, when it is at this position. */
+function unstatedOwner(
+  parameter: string,
+  position: number,
+  source: FactSource,
+): string[] {
+  const owner = source.parameterOf?.(parameter) ?? null;
+  return owner !== null && owner.position === position ? [owner.func] : [];
+}
+
+/** The calls that pass the value at this key as their first argument. */
+function callsTaking(key: string, source: FactSource): string[] {
+  return source.db
+    .lookup("callArg", 2, key)
+    .filter((row) => String(row[1]) === "0")
+    .map((row) => String(row[0]));
+}
+
+/**
+ * The names bound to a function, and the names bound to those: a
+ * reference to a declared function, or to the variable an arrow is
+ * assigned to.
+ */
+function namesBoundTo(func: string, source: FactSource): string[] {
+  const bound = (key: string): string[] =>
+    source.db.lookup("binds", 1, key).map((row) => String(row[0]));
+  const direct = bound(func);
+  return [...direct, ...direct.flatMap(bound)];
+}
+
 /** How each kind of origin checks a call's receiver. */
 function receiverOrigin(call: FactCall): ByOrigin<boolean> {
   return {
@@ -350,6 +511,8 @@ function receiverOrigin(call: FactCall): ByOrigin<boolean> {
       );
     },
     typed: (origin) => call.receiverTyped(origin),
+    inherits: (origin) => call.receiverInherits(origin),
+    handedBy: (origin) => call.receiverHanded(origin),
     imported: (origin) => call.receiverImported(origin),
     global: (origin) => call.receiverGlobal(origin.paths) !== undefined,
   };
@@ -363,6 +526,8 @@ function callOrigin(call: FactCall): ByOrigin<boolean> {
     anyOf: (origin) => origin.of.some((one) => call.isFrom(one)),
     returnedBy: (origin) => call.returns(origin),
     typed: (origin) => call.receiverTyped(origin),
+    inherits: (origin) => call.receiverInherits(origin),
+    handedBy: (origin) => call.receiverHanded(origin),
     imported: (origin) => call.calleeImported(origin),
     global: (origin) => call.callsGlobal(origin),
   };
@@ -608,6 +773,44 @@ function functionBehind(key: string, source: FactSource): string | null {
 
 function isFunction(key: string, source: FactSource): boolean {
   return source.db.lookup("func", 0, key).length > 0;
+}
+
+/**
+ * Whether the class's ancestry reaches one of the bases the spec lists:
+ * a base imported from one of its modules under one of its names, or a
+ * project class that reaches one. The receiver origin that matches an
+ * instance of such a class reads the same walk.
+ */
+export function inheritsFrom(
+  cls: string,
+  spec: Inherits,
+  source: FactSource,
+): boolean {
+  const seen = new Set<string>();
+  const reaches = (key: string): boolean => {
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return source.db.lookup("extends", 0, key).some((row) => {
+      const base = String(row[1]);
+      return (
+        isListedBase(base, spec, source) ||
+        (source.comesTo?.(base) ?? []).some(reaches)
+      );
+    });
+  };
+  return reaches(cls);
+}
+
+function isListedBase(
+  base: string,
+  spec: Inherits,
+  source: FactSource,
+): boolean {
+  return spec.from.some((module) =>
+    source.importedAs(base, module).some((name) => spec.named.includes(name)),
+  );
 }
 
 /** The one key in a list, or null for none or several. */

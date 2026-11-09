@@ -3,78 +3,58 @@
  * access on the model it reaches, with one more effect for each relation
  * the call reads or writes through.
  *
- * The typed path reads ts-morph nodes for `<receiver>.<model>.<method>()`
- * and checks the receiver by its type, or by where it was made when the
- * client was never generated and the type is `any`. The `$queryRaw` family is a
- * `@suss/recognize` declaration. The README covers which methods count,
- * where the fields come from, and how a relation reaches the checker.
+ * Both kinds of call are `@suss/recognize` declarations: the typed
+ * client's `<client>.<model>.<method>()` and the `$queryRaw` family.
+ * What a call's options say (its fields, its selector, the relations it
+ * reads and writes through, a compound key) is read by the pack's own
+ * rules over the value ops. The README covers which methods count, where
+ * the fields come from, and how a relation reaches the checker.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 
-import {
-  type CallExpression,
-  Node as N,
-  type Node,
-  type PropertyAccessExpression,
-  type SourceFile,
-} from "ts-morph";
 import { z } from "zod";
 
-import {
-  parameterNamedBy,
-  receiverTypesOf,
-  writtenNodeOf,
-} from "@suss/adapter-typescript";
-import { storageBinding } from "@suss/behavioral-ir";
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
-  compile,
-  declarationsIn,
+  anyOf,
+  constructedFrom,
   declaredBy,
-  slotsDeclared,
+  handedBy,
+  inherits,
+  pack,
   sqlStatements,
+  storageCalls,
+  typed,
 } from "@suss/recognize";
 
 import {
   generatedClientDirs,
   generatedClientInputs,
-  isInGeneratedClient,
   schemaModels,
   schemaStorageSystem,
 } from "./generatedClient.js";
 
-import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
-import type { Effect } from "@suss/behavioral-ir";
 import type {
   PrismaClientModel,
   PrismaStorageSystem,
 } from "@suss/contract-prisma";
-import type {
-  CallOps,
-  InvocationRecognizer,
-  PatternPack,
-  ValueOps,
-} from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type {
+  CallOps,
+  CallStep,
   DeclaredSlots,
-  SlotColumns,
+  OneArgument,
+  PatternPack,
+  RelatedAccess,
   SqlMethod,
   SqlStatements,
+  StatedInputs,
+  StorageCalls,
+  StorageMethod,
+  StorageSystem,
+  ValueOps,
 } from "@suss/recognize";
-
-const PRISMA_READ_METHODS = new Set([
-  "findUnique",
-  "findUniqueOrThrow",
-  "findFirst",
-  "findFirstOrThrow",
-  "findMany",
-  "count",
-  "aggregate",
-  "groupBy",
-]);
 
 // An upsert passes both `create` and `update`, so a write reads all three.
 const WRITE_PAYLOAD_KEYS = ["data", "create", "update"];
@@ -90,16 +70,6 @@ const PRISMA_SLOTS: DeclaredSlots = {
   field: WRITE_PAYLOAD_KEYS.map((key) => [key]),
   fieldsOn: ["write"],
 };
-
-const PRISMA_WRITE_METHODS = new Set([
-  "create",
-  "update",
-  "delete",
-  "upsert",
-  "createMany",
-  "updateMany",
-  "deleteMany",
-]);
 
 /**
  * The options a `-f prisma=config.json` file may set. The CLI checks
@@ -123,171 +93,163 @@ export const optionsSchema = z
 
 export type PrismaRecognizerOptions = z.infer<typeof optionsSchema>;
 
-function makeRecognizer(opts: PrismaRecognizerOptions): InvocationRecognizer {
-  const scope = opts.scope ?? "default";
-  return (call, ctx) =>
-    recognizePrismaCall(
-      call,
-      ctx,
-      storageSystemFor(opts, (call as Node).getSourceFile()),
-      scope,
-    );
-}
+const DEFAULT_STORAGE_SYSTEM: PrismaStorageSystem = "postgresql";
 
 /**
  * An option wins. Otherwise the datasource of the schema in the calling
  * file's project decides, so two projects on different databases stay apart.
  */
-function storageSystemFor(
-  opts: PrismaRecognizerOptions,
-  file: SourceFile,
-): PrismaStorageSystem {
+function storageSystemOf(options: PrismaRecognizerOptions): StorageSystem {
   return (
-    opts.storageSystem ??
-    schemaStorageSystem(path.dirname(file.getFilePath())) ??
-    DEFAULT_STORAGE_SYSTEM
+    options.storageSystem ?? {
+      byFile: (file) => schemaStorageSystem(path.dirname(file)),
+      otherwise: DEFAULT_STORAGE_SYSTEM,
+    }
   );
 }
 
-const DEFAULT_STORAGE_SYSTEM: PrismaStorageSystem = "postgresql";
+const CLIENT_MODULE = "@prisma/client";
 
-function recognizePrismaCall(
-  call: unknown,
-  ctx: unknown,
-  storageSystem: "postgresql" | "mysql" | "sqlite",
-  scope: string,
-): Effect[] | null {
-  const callNode = call as CallExpression;
-  const recognizerCtx = ctx as {
-    resolution?: ResolutionStore;
-    ops: CallOps;
-  };
+/**
+ * `prisma generate` writes the client into `.prisma/client` unless the
+ * schema says otherwise, and `@prisma/client` re-exports it from there.
+ */
+const CLIENT_MODULES = [CLIENT_MODULE, ".prisma/client"];
 
-  // The callee has to be `<receiver>.<delegate>.<method>`.
-  const calleeExpr = callNode.getExpression();
-  if (!N.isPropertyAccessExpression(calleeExpr)) {
-    return null;
-  }
-  const delegateExpr = calleeExpr.getExpression();
-  if (!N.isPropertyAccessExpression(delegateExpr)) {
-    return null;
-  }
-  const method = calleeExpr.getName();
-  const isRead = PRISMA_READ_METHODS.has(method);
-  const isWrite = PRISMA_WRITE_METHODS.has(method);
-  if (!isRead && !isWrite) {
-    return null;
-  }
+const CLIENT_CLASS = "PrismaClient";
 
-  const receiverExpr = delegateExpr.getExpression();
-  if (!isPrismaClientReceiver(receiverExpr, recognizerCtx.resolution)) {
-    return null;
-  }
+/**
+ * A Prisma client, however the file reached it: a value of a type the
+ * client declares, one of a project class that extends `PrismaClient`,
+ * or one made from `PrismaClient`, which is how a client reads before
+ * `prisma generate` has run and its type is `any`.
+ */
+const CLIENT = anyOf(
+  typed({ from: CLIENT_MODULES }),
+  inherits({ from: CLIENT_MODULES, named: [CLIENT_CLASS] }),
+  constructedFrom({ from: CLIENT_MODULES, named: [CLIENT_CLASS] }),
+);
 
-  // Prisma lowercases the first letter of the model for the delegate
-  // (`db.user` for `model User`). Capitalizing it again gives the name
-  // the schema reader pairs on.
-  const delegateName = delegateExpr.getName();
-  const tableName = capitalizeFirst(delegateName);
-  if (tableName === null) {
-    return null;
-  }
+/**
+ * The client, or the one `prisma.$transaction(async (tx) => ...)` hands
+ * its callback, which is a client wherever the call's receiver is.
+ */
+const RECEIVER = anyOf(
+  CLIENT,
+  handedBy("$transaction", CLIENT, { parameter: 0 }),
+);
 
-  const kind: "read" | "write" = isRead ? "read" : "write";
-  const given = recognizerCtx.ops.valueAt(0);
-  const options = objectOf(given);
-  const on: CallModels = {
-    models: schemaModels(path.dirname(callNode.getSourceFile().getFilePath())),
-    model: tableName,
-  };
-  const ownKeys = compoundKeysAt(on, []);
-  const fields = extractFields(options, kind);
-  const selector = extractSelector(options, ownKeys);
-  const binding = storageBinding({
-    recognition: "@suss/framework-prisma",
-    storageSystem,
-    scope,
-    container: tableName,
-  });
-  const callee = callNode.getExpression().getText();
-  const access: Effect = {
-    type: "interaction",
-    binding,
-    callee,
-    interaction: {
-      class: "storage-access",
-      kind,
-      fields,
-      operation: method,
-      ...(selector !== null ? { selector } : {}),
-    },
-  };
-  statePayloadSlots(recognizerCtx.ops, given, access, {
-    selector: selector ?? [],
-    fields,
-    kind,
-  });
+/** `db.user` in `db.user.findMany()`, the delegate the client is one member read away from. */
+const DELEGATE: CallStep = { to: "member" };
 
-  return [
-    access,
-    ...nestedReads(options, ownKeys).map(
-      (nested): Effect => ({
-        type: "interaction",
-        binding,
-        callee,
-        interaction: {
-          class: "storage-access",
-          kind: "read",
-          fields: nested.fields,
-          operation: method,
-          ...(nested.selector === undefined
-            ? {}
-            : { selector: nested.selector }),
-          relationPath: nested.relationPath,
-        },
-      }),
-    ),
-    ...nestedWrites(options, on).map(
-      (nested): Effect => ({
-        type: "interaction",
-        binding,
-        callee,
-        interaction: {
-          class: "storage-access",
-          kind: nested.lookup === true ? "read" : "write",
-          fields: nested.fields,
-          // The outer method acts on the model in the binding. The model
-          // across the relation gets the nested operation.
-          operation: nested.operation,
-          ...(nested.selector === undefined
-            ? {}
-            : { selector: nested.selector }),
-          relationPath: nested.relationPath,
-          ...(nested.relationKey === true ? { relationKey: true } : {}),
-        },
-      }),
-    ),
-  ];
+const OPTIONS: OneArgument = { at: 0 };
+
+const READ: StorageMethod = {
+  kind: "read",
+  fields: { of: OPTIONS, by: fieldsRead },
+  selector: { of: OPTIONS, by: columnsPicked },
+};
+
+const WRITE: StorageMethod = { ...READ, kind: "write" };
+
+const METHODS: Readonly<Record<string, StorageMethod>> = {
+  findUnique: READ,
+  findUniqueOrThrow: READ,
+  findFirst: READ,
+  findFirstOrThrow: READ,
+  findMany: READ,
+  count: READ,
+  aggregate: READ,
+  groupBy: READ,
+  create: WRITE,
+  update: WRITE,
+  delete: WRITE,
+  upsert: WRITE,
+  createMany: WRITE,
+  updateMany: WRITE,
+  deleteMany: WRITE,
+};
+
+/**
+ * Every call on a model's delegate. Prisma lowercases the first letter
+ * of the model for the delegate (`db.user` for `model User`), and
+ * capitalizing it again gives the name the schema reader pairs on.
+ */
+function modelCalls(
+  options: PrismaRecognizerOptions,
+  system: StorageSystem,
+): StorageCalls {
+  return storageCalls({
+    system,
+    scope: options.scope ?? "default",
+    client: RECEIVER,
+    clientAt: [DELEGATE],
+  })
+    .methods(METHODS)
+    .container({ of: [DELEGATE], naming: "upperFirst" })
+    .relations({ of: OPTIONS, by: relatedAccesses })
+    .slots(PRISMA_SLOTS)
+    .example(
+      "prisma.user.findMany({ where: { id: 1 }, select: { email: true } })",
+    );
+}
+
+/** The columns a call reads or writes, as its options state them. */
+function fieldsRead({ input, kind }: StatedInputs): string[] {
+  return extractFields(objectOf(input), kind);
+}
+
+/** The columns a call picks its rows by, a compound key read as the columns it combines. */
+function columnsPicked({ input, container, call }: StatedInputs): string[] {
+  const keys = compoundKeysAt(modelsOf(container, call), []);
+  return extractSelector(objectOf(input), keys) ?? [];
 }
 
 /**
- * Tell the adapter which value the call states for each column it picks
- * by under `where` and each one it writes under a payload key, so the
- * summary can say where those values came from.
+ * Each read and each write a call makes through a relation, the reads
+ * first. The outer method acts on the model in the binding, and a write
+ * across the relation records its own nested operation.
  */
-function statePayloadSlots(
-  ops: CallOps,
-  given: ValueOps | null,
-  effect: Effect,
-  columns: SlotColumns,
-): void {
-  if (ops.statesSlots === undefined) {
-    return;
-  }
-  const slots = slotsDeclared(given, PRISMA_SLOTS, columns);
-  if (slots.length > 0) {
-    ops.statesSlots(effect, slots);
-  }
+function relatedAccesses({
+  input,
+  container,
+  call,
+}: StatedInputs): RelatedAccess[] {
+  const options = objectOf(input);
+  const on = modelsOf(container, call);
+  return [
+    ...nestedReads(options, compoundKeysAt(on, [])).map(readAcross),
+    ...nestedWrites(options, on).map(writeAcross),
+  ];
+}
+
+function readAcross(nested: NestedRead): RelatedAccess {
+  return {
+    path: nested.relationPath,
+    kind: "read",
+    fields: nested.fields,
+    ...(nested.selector === undefined ? {} : { selector: nested.selector }),
+  };
+}
+
+function writeAcross(nested: NestedWrite): RelatedAccess {
+  return {
+    path: nested.relationPath,
+    kind: nested.lookup === true ? "read" : "write",
+    fields: nested.fields,
+    operation: nested.operation,
+    ...(nested.selector === undefined ? {} : { selector: nested.selector }),
+    ...(nested.relationKey === true ? { relationKey: true } : {}),
+  };
+}
+
+/** The models of the schema in the call's own project, and the one the call is made on. */
+function modelsOf(container: string | null, call: CallOps): CallModels {
+  const file = call.file?.() ?? null;
+  return {
+    models: file === null ? new Map() : schemaModels(path.dirname(file)),
+    model: container ?? "",
+  };
 }
 
 interface NestedRead {
@@ -656,209 +618,6 @@ function keysOf(object: ValueOps): string[] {
   return entriesOf(object).map(([key]) => key);
 }
 
-/**
- * Checks the receiver's type, so `const db = new PrismaClient()`, a
- * wrapped `ctx.prisma` and a project's `class PrismaService extends
- * PrismaClient` all count. `isPrismaClientPath` lists the places the
- * type may be declared. When the type is `any`, as it is before
- * `prisma generate` has run, the store says where the receiver was made.
- */
-function isPrismaClientReceiver(
-  node: Node,
-  resolution: ResolutionStore | undefined,
-): boolean {
-  if (
-    receiverTypesOf(node).some(
-      (type) =>
-        declaredByPrisma(type) || extendsImportedClient(type, resolution),
-    )
-  ) {
-    return true;
-  }
-  return (
-    node.getType().isAny() &&
-    (madeFromImportedClient(node, resolution) ||
-      isTransactionClient(node, resolution))
-  );
-}
-
-/**
- * Whether the value is the client `prisma.$transaction(async (tx) => ...)`
- * hands its callback, which is a client wherever the call's receiver is.
- */
-function isTransactionClient(
-  node: Node,
-  resolution: ResolutionStore | undefined,
-): boolean {
-  const callback = callbackGiven(node);
-  return (
-    callback !== null &&
-    transactionsRunning(callback, resolution).some((call) =>
-      isPrismaClientReceiver(
-        (call.getExpression() as PropertyAccessExpression).getExpression(),
-        resolution,
-      ),
-    )
-  );
-}
-
-/** The function whose first parameter this name is, or null. */
-function callbackGiven(node: Node): Node | null {
-  const parameter = parameterNamedBy(node);
-  if (parameter === null) {
-    return null;
-  }
-  const func = parameter.getParent();
-  if (
-    !N.isArrowFunction(func) &&
-    !N.isFunctionExpression(func) &&
-    !N.isFunctionDeclaration(func)
-  ) {
-    return null;
-  }
-  return func.getParameters()[0] === parameter ? func : null;
-}
-
-/**
- * The `$transaction` calls that run this function: the one it is written
- * in, or each one the store finds its name passed to.
- */
-function transactionsRunning(
-  func: Node,
-  resolution: ResolutionStore | undefined,
-): CallExpression[] {
-  const inPlace = transactionTaking(func);
-  if (inPlace !== null) {
-    return [inPlace];
-  }
-  const declaration = declarationNaming(func);
-  if (resolution === undefined || declaration === null) {
-    return [];
-  }
-  return resolution.referencesTo(declaration).flatMap((reference) => {
-    const call = transactionTaking(reference);
-    return call === null ? [] : [call];
-  });
-}
-
-/** The `<receiver>.$transaction(...)` call that takes this node first, or null. */
-function transactionTaking(node: Node): CallExpression | null {
-  const call = node.getParent();
-  if (
-    call === undefined ||
-    !N.isCallExpression(call) ||
-    call.getArguments()[0] !== node
-  ) {
-    return null;
-  }
-  const callee = call.getExpression();
-  return N.isPropertyAccessExpression(callee) &&
-    callee.getName() === TRANSACTION_METHOD
-    ? call
-    : null;
-}
-
-/** What a name for this function is declared as: the function itself, or the variable it is assigned to. */
-function declarationNaming(func: Node): Node | null {
-  if (N.isFunctionDeclaration(func)) {
-    return func;
-  }
-  // A function is a variable declaration's child only as its initializer.
-  const holder = func.getParent();
-  return holder !== undefined && N.isVariableDeclaration(holder)
-    ? holder
-    : null;
-}
-
-const TRANSACTION_METHOD = "$transaction";
-
-/**
- * Whether the value is a `PrismaClient` made from `@prisma/client`, or
- * from a client the schema's generator writes into the project.
- */
-function madeFromImportedClient(
-  node: Node,
-  resolution: ResolutionStore | undefined,
-): boolean {
-  if (resolution === undefined) {
-    return false;
-  }
-  if (importedAsClient(node, resolution)) {
-    return true;
-  }
-  // The store traces an import only as far as the import declaration,
-  // so a client another file makes is asked about where it is written.
-  const written = writtenNodeOf(node, resolution);
-  return (
-    written !== null &&
-    written !== node &&
-    importedAsClient(written, resolution)
-  );
-}
-
-/** Whether the value comes down to the `PrismaClient` a client module exports. */
-function importedAsClient(value: Node, resolution: ResolutionStore): boolean {
-  return resolution
-    .importOriginsOf(value, clientModulesFor(value))
-    .some((origin) => origin.path.join(".") === CLIENT_CLASS);
-}
-
-/**
- * `@prisma/client`, and every directory a generator of the value's own
- * project writes the client to.
- */
-function clientModulesFor(value: Node): string[] {
-  return [
-    CLIENT_MODULE,
-    ...generatedClientDirs(path.dirname(value.getSourceFile().getFilePath())),
-  ];
-}
-
-function declaredByPrisma(type: ReceiverType): boolean {
-  return type.declaredIn.some((filePath) => isPrismaClientPath(filePath));
-}
-
-const CLIENT_MODULE = "@prisma/client";
-
-const CLIENT_CLASS = "PrismaClient";
-
-/**
- * Without the client installed the checker cannot see past a project's
- * `class Db extends PrismaClient`, so the store says where the base was
- * imported from instead.
- */
-function extendsImportedClient(
-  type: ReceiverType,
-  resolution: ResolutionStore | undefined,
-): boolean {
-  if (resolution === undefined) {
-    return false;
-  }
-  return type.extendsWritten.some((base) => importedAsClient(base, resolution));
-}
-
-// Prisma copies the schema next to the generated client, wherever the
-// generator wrote it.
-const GENERATED_CLIENT_MARKER = "schema.prisma";
-
-function isPrismaClientPath(filePath: string): boolean {
-  if (
-    filePath.includes("/@prisma/client/") ||
-    filePath.includes("/.prisma/client/")
-  ) {
-    return true;
-  }
-  const beside = path.join(path.dirname(filePath), GENERATED_CLIENT_MARKER);
-  return fs.existsSync(beside) || isInGeneratedClient(filePath);
-}
-
-function capitalizeFirst(name: string): string | null {
-  if (name.length === 0) {
-    return null;
-  }
-  return name[0].toUpperCase() + name.slice(1);
-}
-
 function extractFields(
   options: ValueOps | null,
   kind: "read" | "write",
@@ -1103,19 +862,20 @@ const STATEMENT: SqlMethod = { statement: { at: 0 } };
 /**
  * A raw call bypasses the typed client, so the statement text is the only
  * place its tables show up. The method has to be declared under
- * `.prisma/client` or `@prisma/client`.
+ * `.prisma/client` or `@prisma/client`. A raw statement binds to the same
+ * database as a typed call in its file.
  */
 function rawStatements(
   options: PrismaRecognizerOptions,
-  provider: PrismaStorageSystem,
+  system: StorageSystem,
 ): SqlStatements {
   // Prisma's provider sets both the store and the SQL dialect, so one
   // value covers both.
   return sqlStatements({
-    system: provider,
-    dialect: provider,
+    system,
+    dialect: system,
     scope: options.scope ?? "default",
-    client: declaredBy("@prisma/client", ".prisma/client"),
+    client: declaredBy(...CLIENT_MODULES),
   })
     .methods({
       $queryRaw: STATEMENT,
@@ -1126,25 +886,9 @@ function rawStatements(
     .example('prisma.$queryRawUnsafe("SELECT id, email FROM users")');
 }
 
-/**
- * A raw statement binds to the same database as a typed call in its file,
- * so the chain is compiled once for each system a project may use.
- */
-function rawRecognizer(options: PrismaRecognizerOptions): InvocationRecognizer {
-  const bySystem = new Map<PrismaStorageSystem, InvocationRecognizer>();
-  return (call, ctx) => {
-    const system = storageSystemFor(options, (call as Node).getSourceFile());
-    let recognizer = bySystem.get(system);
-    if (recognizer === undefined) {
-      recognizer = compile(
-        rawStatements(options, system).declared,
-        "@suss/framework-prisma",
-      );
-      bySystem.set(system, recognizer);
-    }
-    return recognizer(call, ctx);
-  };
-}
+// Prisma copies the schema next to the generated client, wherever the
+// generator wrote it.
+const GENERATED_CLIENT_MARKER = "schema.prisma";
 
 /**
  * The pack discovers no units. A Prisma call becomes an effect inside a
@@ -1153,36 +897,26 @@ function rawRecognizer(options: PrismaRecognizerOptions): InvocationRecognizer {
 export function prismaFramework(
   options: PrismaRecognizerOptions = {},
 ): PatternPack {
-  const raw = rawStatements(
-    options,
-    options.storageSystem ?? DEFAULT_STORAGE_SYSTEM,
-  );
-  return {
-    name: "prisma",
-    version: "10",
-    protocol: "in-process",
-    languages: ["typescript", "javascript"],
-    discovery: [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-    // The type check would reject every call in a file that does not
-    // import `@prisma/client`, so those files are skipped.
-    requiresImport: ["@prisma/client"],
-    // A generator with its own `output` puts the client in the project,
-    // where no specifier spells the package. Prisma 7's `prisma-client`
-    // generator writes no schema beside it.
-    generatedModules: {
-      of: CLIENT_MODULE,
-      markers: [GENERATED_CLIENT_MARKER],
-      dirs: generatedClientDirs,
+  const system = storageSystemOf(options);
+  return pack(
+    "prisma",
+    [modelCalls(options, system), rawStatements(options, system)],
+    {
+      languages: ["typescript", "javascript"],
+      recognizedAs: "@suss/framework-prisma",
+      version: "11",
+      protocol: "in-process",
+      // A generator with its own `output` puts the client in the project,
+      // where no specifier spells the package. Prisma 7's `prisma-client`
+      // generator writes no schema beside it.
+      generatedModules: {
+        of: CLIENT_MODULE,
+        markers: [GENERATED_CLIENT_MARKER],
+        dirs: generatedClientDirs,
+      },
+      discoveryInputs: generatedClientInputs,
     },
-    discoveryInputs: generatedClientInputs,
-    invocationRecognizers: [makeRecognizer(options)],
-    // A tagged template is not an invocation, so the raw chain runs on
-    // the access walk, which visits calls as well.
-    accessRecognizers: [rawRecognizer(options)],
-    declarations: declarationsIn([raw]),
-  };
+  );
 }
 
 export const declares: PackDeclaration = {

@@ -1739,37 +1739,75 @@ describe("prisma raw SQL", () => {
     ).toEqual(["users", "orders"]);
   });
 
-  it("prices the raw path: every link is data", () => {
+  it("prices both chains: the readers of a call's options and the store per project are code, and the rest is data", () => {
     expect(prismaFramework().declarations?.declarations).toEqual([
       {
         name: "postgresql",
+        dataLinks: 4,
+        functionLinks: ["relations", "selector", "fields", "system"],
+        astLinks: [],
+        example:
+          "prisma.user.findMany({ where: { id: 1 }, select: { email: true } })",
+      },
+      {
+        name: "postgresql",
         dataLinks: 2,
-        functionLinks: [],
+        functionLinks: ["system", "dialect"],
         astLinks: [],
         example: 'prisma.$queryRawUnsafe("SELECT id, email FROM users")',
       },
     ]);
   });
 
-  it("emits the effect its example says it does", () => {
-    const ran = runExamples(prismaFramework(), (code) =>
-      rawEffects(`
+  it("states one store, the option, when it is given, and so reads no rule for it", () => {
+    const stated = prismaFramework({ storageSystem: "mysql" });
+    expect(
+      stated.declarations?.declarations.map((one) => one.functionLinks),
+    ).toEqual([["relations", "selector", "fields"], []]);
+  });
+
+  it("emits the effects its examples say they do", () => {
+    const ran = runExamples(prismaFramework(), (code) => {
+      const file = makeProject(`
         import { PrismaClient } from "@prisma/client";
         const prisma = new PrismaClient();
         export async function example() {
           return ${code};
         }
-      `),
-    );
-
-    expect(ran).toHaveLength(1);
-    const { semantics, interaction } = storageOf(ran[0].effects[0]);
-    expect(semantics).toMatchObject({ container: "users" });
-    expect(interaction).toMatchObject({
-      kind: "read",
-      fields: ["id", "email"],
-      operation: "$queryRawUnsafe",
+      `);
+      return [...recognizeAll(file), ...accessEffectsIn(file)];
     });
+
+    expect(
+      ran.map(({ effects }) =>
+        effects.map((effect) => {
+          const { semantics, interaction } = storageOf(effect);
+          return { container: semantics.container, interaction };
+        }),
+      ),
+    ).toMatchObject([
+      [
+        {
+          container: "User",
+          interaction: {
+            kind: "read",
+            fields: ["email"],
+            selector: ["id"],
+            operation: "findMany",
+          },
+        },
+      ],
+      [
+        {
+          container: "users",
+          interaction: {
+            kind: "read",
+            fields: ["id", "email"],
+            operation: "$queryRawUnsafe",
+          },
+        },
+      ],
+    ]);
   });
 });
 

@@ -262,8 +262,10 @@ bodyCalls(f, c)             f's body calls the callee c, keyed the way
                             call keys that call's callee
 makesCall(f, r)             the call r is written in f's own body
 callBlock(r, b)             the call r is written with the block b, which
-                            is a function of its own. No rule reads it
-                            yet (Ruby)
+                            is a function of its own. The ops in
+                            @suss/recognize/ops read it to find the call
+                            that hands a block its variable, and no rule
+                            does (Ruby)
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
 entersValue(x)              a with statement enters x, which calls its

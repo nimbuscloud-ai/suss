@@ -10,7 +10,9 @@ export {
   constructedFrom,
   declaredBy,
   global,
+  handedBy,
   imported,
+  inherits,
   opsIn,
   returnedBy,
   typed,
@@ -53,6 +55,7 @@ export type {
   ChannelPart,
   ContainerArgument,
   ContainerLink,
+  ContainerMember,
   ContainerRule,
   ContainersLink,
   DeclaredSlots,
@@ -72,9 +75,13 @@ export type {
   MessageSendMethod,
   MethodMeaning,
   MethodsLink,
+  Naming,
   OneArgument,
   OneMessage,
+  ProjectSystem,
   PropertyPart,
+  RelatedAccess,
+  RelationsLink,
   ScheduleEnding,
   ScheduleUnread,
   ScopeLink,
@@ -87,12 +94,14 @@ export type {
   StatedRule,
   StorageEnding,
   StorageMethod,
+  StorageSystem,
   StreamWriteEnding,
   StreamWriteMethod,
   SubjectLink,
   SubUnitNamePart,
   TheCall,
   ToArgument,
+  ToMember,
   ToReceiver,
   UnitInvokeEnding,
   UnitInvokeMethod,
@@ -109,7 +118,10 @@ export type {
   ConstructedFrom,
   DeclaredBy,
   Global,
+  HandedBy,
   Imported,
+  Inheriting,
+  Inherits,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
@@ -121,6 +133,10 @@ export type {
 export type { Match, PackSpec } from "./pack.js";
 export type { SlotColumns } from "./slots.js";
 export type { SqlStatements, SqlStatementsSpec } from "./sqlStatements.js";
-export type { StorageCalls, StorageCallsSpec } from "./storage.js";
+export type {
+  MemberContainer,
+  StorageCalls,
+  StorageCallsSpec,
+} from "./storage.js";
 export type { StreamWrites, StreamWritesSpec } from "./streamWrites.js";
 export type { UnitInvokes, UnitInvokesSpec } from "./unitInvokes.js";
