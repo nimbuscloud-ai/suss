@@ -965,30 +965,42 @@ describe("the ops over a typed or an imported receiver", () => {
 });
 
 /**
- * The facts for, in source order, with `L` imported as ledger's `Ledger`:
+ * The facts for, in source order, with `L` imported as ledger's `Ledger`,
+ * and `Send` a parameter that a caller passes the same import to:
  *
  *   const book = new L();
  *   book.append("entry");
+ *   new Send();
+ *
+ * Every key the ops ask `importedAs` about goes into `asked`.
  */
-function aliased(): FactSource {
+function aliased(asked: string[] = []): FactSource {
   const db = new Database();
   const add = (relation: string, ...row: string[]) => db.add(relation, row);
   add("call", "made", "L");
   add("writtenValue", "made");
+  add("imports", "L", "ledger", "Ledger");
   add("call", "append", "book.append");
   add("readsProperty", "book.append", "book", "append");
+  add("call", "relayed", "Send");
+  add("binds", "Send", "relay#Send");
+  add("paramOf", "relay", "0", "relay#Send");
   const imports: Record<string, readonly string[]> = {
     L: ["Ledger"],
     ns: ["*"],
+    Send: ["Ledger"],
   };
   return {
     db,
     read: () => undefined,
     writtenAs: (key) => (key === "book" ? "made" : null),
     anchorCalls: () => [],
-    importedFrom: (key, module) => key === "L" && module === "ledger",
-    importedAs: (key, module) =>
-      module === "ledger" ? (imports[key] ?? []) : [],
+    importedFrom: (key, module) =>
+      (key === "L" || key === "Send") && module === "ledger",
+    importedAs: (key, module) => {
+      asked.push(key);
+      return module === "ledger" ? (imports[key] ?? []) : [];
+    },
     shapeOf: () => null,
     textOf: (key) => key,
     literalOf: () => null,
@@ -1019,6 +1031,17 @@ describe("the ops over a name imported under another name", () => {
     expect(
       opsAt("append", aliased()).calleeImportedAs?.(["ledger"]),
     ).toBeNull();
+  });
+
+  it("never asks what a parameter was imported as, whatever its callers pass", () => {
+    const asked: string[] = [];
+    const relayed = opsAt("relayed", aliased(asked));
+
+    expect(relayed.calleeImportedAs?.(["ledger"])).toBeNull();
+    expect(
+      relayed.isFrom(constructedFrom({ from: ["ledger"], named: ["Ledger"] })),
+    ).toBe(false);
+    expect(asked).toEqual([]);
   });
 });
 

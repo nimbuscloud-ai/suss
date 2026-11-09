@@ -135,7 +135,9 @@ its callee is a bound name whose written value came from the chain's
 origin. A call with no receiver, bare or a construction such as `new
 GetCommand(...)`, is read as the export its callee was imported as when
 the table does not list the name it is written with, so `useOrders`
-imported as `useQuery` records `useQuery` as its operation. With
+imported as `useQuery` records `useQuery` as its operation. Only a name
+an import binds is read this way. A callback parameter keeps the name it
+is written with, since what it was imported as depends on each caller. With
 `imported` the callee is the import itself, so
 `publishEntry(queue, body)` matches when the file imported
 `publishEntry`. Such a call usually reads its fields inside a selector lambda,
@@ -264,8 +266,8 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `file()` | the file in the call's key, which every adapter writes first |
 | `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `comesFrom(x, m, n)` over `imports`, `exportsAs` and `reExports`, so an alias and a project barrel read as the export. A value that only calls into an import does not count |
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
-| `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module |
-| `named` on `constructed` | the name the constructor is written with, or the export the adapter's `importedAs` says it was imported as |
+| `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module. It is asked only when `imports` is stated for the callee or for what it `binds` to, so a parameter is never followed through its callers |
+| `named` on `constructed` | the name the constructor is written with, or the export the adapter's `importedAs` says it was imported as, asked only when an import binds the constructor the way `calleeImportedAs` checks |
 | `anchorCall` | the adapter's `anchorCalls`, with the single-answer policy |
 | `member(name, singleton)` | `holdsProperty` on the value, or on what it `comesTo`, the last statement winning; a class's own member is spelled as `classMemberName` spells it |
 | `returns()`, `marked(word)` | `returnsValue(f, v)` and `marks(f, word)` on the function `function()` settles to |

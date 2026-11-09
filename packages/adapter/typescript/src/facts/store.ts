@@ -32,6 +32,7 @@ import {
   allocationSitesOf,
   answersFor,
   askResolutionUnder,
+  boundByImport,
   CALLS_RUN_QUESTION,
   DISPATCH_QUESTION,
   type ExplainStats,
@@ -1632,6 +1633,18 @@ export class ResolutionStore {
    */
   importedAsOf(value: Node, modules: string[]): string[] {
     return this.namesReached(value, modules, "imported");
+  }
+
+  /**
+   * Whether an import binds this name, read from the facts about it
+   * without asking a question. The fact ops read the same facts, so both
+   * kinds of ops skip the same names.
+   */
+  boundByImport(value: Node): boolean {
+    const target = factKeyOf(value);
+    this.extractFile(target.getSourceFile());
+    this.seedValue(target);
+    return boundByImport(this.db, nodeId(target));
   }
 
   private namesReached(
