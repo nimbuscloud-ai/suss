@@ -613,8 +613,34 @@ describe("node runtime pack — env-var wiring", () => {
     ]);
   });
 
+  it("reads a dotted read off a parameter the environment is its default or a caller's argument for", () => {
+    const sourceFile = makeProject(`
+      export function portFrom(env: NodeJS.ProcessEnv = process.env): string {
+        return env.PORT ?? "3000";
+      }
+      function hostFrom(source: NodeJS.ProcessEnv): string | undefined {
+        return source.HOST;
+      }
+      export const host = hostFrom(process.env);
+      export function other(settings: { PORT?: string }) {
+        return settings.PORT;
+      }
+    `);
+    const reads = configReadEffectsOf(recognizeWithStore(sourceFile));
+    expect(
+      reads.map((read) => [
+        read.callee,
+        read.interaction.defaulted,
+        read.interaction.default ?? null,
+      ]),
+    ).toEqual([
+      ["process.env.PORT", true, "3000"],
+      ["process.env.HOST", false, null],
+    ]);
+  });
+
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.8.0");
+    expect(nodeRuntimePack().version).toBe("0.9.0");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {

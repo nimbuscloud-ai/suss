@@ -2480,6 +2480,14 @@ export const RESOLUTION_QUESTIONS = [
     [v("o"), v("w")],
     [lit("wantedStreamObject", v("w")), lit("runtimeValue", v("w"), v("o"))],
   ),
+  // The same for the environment, from the same seed the environment
+  // question already has, so a read off a parameter the environment is
+  // handed or defaults to looks its object up.
+  rule(
+    "wantedEnvValue",
+    [v("o"), v("w")],
+    [lit("wantedEnvObject", v("w")), lit("runtimeValue", v("w"), v("o"))],
+  ),
   // The functions whose return becomes the exit code: a call the value
   // that ends up as the code is, or one it reaches. DESIGN.md has the seeds.
   rule("exitStart", [v("x"), v("x")], [lit("wantedExitSink", v("x"))]),
