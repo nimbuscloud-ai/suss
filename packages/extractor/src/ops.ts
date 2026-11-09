@@ -291,6 +291,16 @@ export interface ValueOps {
   shape?(): TypeShape | null;
 }
 
+/**
+ * A library base a class's ancestry reaches: one of `named`, as one of
+ * the modules in `from` exports it. Ruby has no imports, so `from` lists
+ * the library's own constant: `ViewComponent` for `ViewComponent::Preview`.
+ */
+export interface Inherits {
+  readonly from: readonly string[];
+  readonly named: readonly string[];
+}
+
 /** What an encoder was handed, and how it encoded it. */
 export interface Encoded {
   /** The encoding, such as `json`. */

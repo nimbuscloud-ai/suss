@@ -26,6 +26,7 @@ import type {
   FactSource,
   Global,
   Imported,
+  Inherits,
   ReceiverOrigin,
   ReturnedBy,
   Typed,
@@ -608,6 +609,44 @@ function functionBehind(key: string, source: FactSource): string | null {
 
 function isFunction(key: string, source: FactSource): boolean {
   return source.db.lookup("func", 0, key).length > 0;
+}
+
+/**
+ * Whether the class's ancestry reaches one of the bases the spec lists:
+ * a base imported from one of its modules under one of its names, or a
+ * project class that reaches one. The receiver origin that matches an
+ * instance of such a class reads the same walk.
+ */
+export function inheritsFrom(
+  cls: string,
+  spec: Inherits,
+  source: FactSource,
+): boolean {
+  const seen = new Set<string>();
+  const reaches = (key: string): boolean => {
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return source.db.lookup("extends", 0, key).some((row) => {
+      const base = String(row[1]);
+      return (
+        isListedBase(base, spec, source) ||
+        (source.comesTo?.(base) ?? []).some(reaches)
+      );
+    });
+  };
+  return reaches(cls);
+}
+
+function isListedBase(
+  base: string,
+  spec: Inherits,
+  source: FactSource,
+): boolean {
+  return spec.from.some((module) =>
+    source.importedAs(base, module).some((name) => spec.named.includes(name)),
+  );
 }
 
 /** The one key in a list, or null for none or several. */

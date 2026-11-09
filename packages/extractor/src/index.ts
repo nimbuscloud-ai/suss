@@ -1362,6 +1362,7 @@ export type {
   FactSource,
   Global,
   Imported,
+  Inherits,
   OpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
