@@ -18,6 +18,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isOutsideSource } from "./workspacePackages.mjs";
+
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -51,13 +53,7 @@ const OTHER_PROGRAMS = new Map([
   ],
 ]);
 
-const SKIPPED_DIRECTORIES = new Set([
-  "node_modules",
-  "dist",
-  "coverage",
-  "__fixtures__",
-  "fixtures",
-]);
+const SKIPPED_DIRECTORIES = new Set(["coverage", "__fixtures__", "fixtures"]);
 
 const RULE_READ = /\b(?:lit|notLit)\(\s*"([A-Za-z]+)"/g;
 const RULE_HEAD = /\brule\(\s*"([A-Za-z]+)"/g;
@@ -72,7 +68,10 @@ function sourceFilesUnder(dir, found) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIPPED_DIRECTORIES.has(entry.name)) {
+      if (
+        !isOutsideSource(entry.name) &&
+        !SKIPPED_DIRECTORIES.has(entry.name)
+      ) {
         sourceFilesUnder(full, found);
       }
 

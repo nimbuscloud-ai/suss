@@ -19,6 +19,8 @@ import path from "node:path";
 
 import ts from "typescript";
 
+import { isOutsideSource } from "./workspacePackages.mjs";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 
 const METADATA_FILE = path.join(ROOT, "packages/behavioral-ir/src/metadata.ts");
@@ -379,12 +381,7 @@ function readInventory() {
 // The source both sides live in
 // ---------------------------------------------------------------------------
 
-const SKIP_DIRECTORIES = new Set([
-  "node_modules",
-  "dist",
-  "fixtures",
-  "__fixtures__",
-]);
+const SKIP_DIRECTORIES = new Set(["fixtures", "__fixtures__"]);
 
 /** Shipped source under a directory: no tests, no fixtures, no build output. */
 function shippedSourceFiles(dir) {
@@ -393,7 +390,7 @@ function shippedSourceFiles(dir) {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (!SKIP_DIRECTORIES.has(entry.name)) {
+        if (!isOutsideSource(entry.name) && !SKIP_DIRECTORIES.has(entry.name)) {
           walk(full);
         }
         continue;

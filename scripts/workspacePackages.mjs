@@ -17,10 +17,21 @@ export const ROOT = path.resolve(import.meta.dirname, "..");
 export const PACKAGES_DIR = path.join(ROOT, "packages");
 
 /**
+ * A directory no check reads source or a manifest from: an install, build
+ * output, or any dot-directory such as `.suss`, `.turbo` or `.tsbuild`.
+ * Skipping them lets a built, installed or tested tree walk the same as a
+ * fresh clone. A test that copies a package into `.suss` and is killed
+ * before it cleans up would otherwise show up as a second copy of that
+ * package.
+ */
+export function isOutsideSource(name) {
+  return name === "node_modules" || name === "dist" || name.startsWith(".");
+}
+
+/**
  * Every package.json under packages/. The depth cap covers the two
  * layouts in use, `packages/<name>` and `packages/<group>/<name>`, with
- * room to spare; node_modules and dist are skipped so a built or
- * installed tree walks the same as a fresh clone.
+ * room to spare.
  */
 export function findManifests(dir = PACKAGES_DIR, depth = 0) {
   if (depth > 3) {
@@ -29,7 +40,7 @@ export function findManifests(dir = PACKAGES_DIR, depth = 0) {
 
   const found = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist") {
+    if (isOutsideSource(entry.name)) {
       continue;
     }
 
