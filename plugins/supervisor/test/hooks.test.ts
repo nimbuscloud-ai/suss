@@ -677,7 +677,7 @@ describe("with a change list", () => {
       name: "runs past its time",
       script: { intentMs: 10_000 },
       env: { SUSS_SUPERVISOR_COMPARE_MS: "500" },
-      says: "suss did not finish within 1s",
+      says: "suss did not finish within 500ms",
     },
     {
       name: "is a release without the command",
