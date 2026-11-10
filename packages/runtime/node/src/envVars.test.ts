@@ -548,6 +548,48 @@ describe("env-var recognizer — rejection cases", () => {
   });
 });
 
+describe("an assignment to the environment", () => {
+  it("records no read where the program sets a variable, dotted or bracketed", () => {
+    const file = makeProject(`
+      process.env.LOG_LEVEL = "fatal";
+      process.env["RELEASE"] = "1.0.0";
+      import.meta.env.VITE_MODE = "test";
+      process.env.NODE_PATH = process.env.NODE_PATH ?? "/usr/lib";
+    `);
+    expect(namedReadsIn(file)).toEqual([["NODE_PATH", true]]);
+  });
+
+  it("still reads a variable an operator reads before it sets it", () => {
+    const file = makeProject(`
+      process.env.SUFFIX += "-local";
+    `);
+    expect(namedReadsIn(file)).toEqual([["SUFFIX", false]]);
+  });
+
+  it("records no read at a call to a helper that only sets the variable it is given", () => {
+    const sourceFile = makeProject(`
+      function setEnv(name: string, value: string): void {
+        process.env[name] = value;
+      }
+      function ensureEnv(name: string): string {
+        if (!process.env[name]) {
+          process.env[name] = "on";
+        }
+        return process.env[name] ?? "";
+      }
+      export function configure(): string {
+        setEnv("SET_ONLY", "1");
+        return ensureEnv("READ_TOO");
+      }
+    `);
+    const effects = recognizeWithStore(sourceFile);
+    expect([
+      configReadEffectsOf(effects).map((read) => read.interaction.name),
+      namelessReadsOf(effects),
+    ]).toEqual([["READ_TOO"], ["process.env[name]", "process.env[name]"]]);
+  });
+});
+
 describe("node runtime pack — env-var wiring", () => {
   it("reads process.env.X once across every recognizer the pack has", () => {
     const pack = nodeRuntimePack();
@@ -572,7 +614,7 @@ describe("node runtime pack — env-var wiring", () => {
   });
 
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.7.0");
+    expect(nodeRuntimePack().version).toBe("0.7.1");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {

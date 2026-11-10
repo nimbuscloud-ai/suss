@@ -12,11 +12,22 @@ import { compile, global, runtimeReads } from "@suss/recognize";
 import { RECOGNITION } from "./configBinding.js";
 
 import type { AccessRecognizer } from "@suss/extractor";
-import type { Deployment, EntryMeaning, Match } from "@suss/recognize";
+import type {
+  Deployment,
+  EntryMeaning,
+  Match,
+  WriteMeaning,
+} from "@suss/recognize";
 
 const CONFIG: EntryMeaning = { reads: "config" };
 const META: EntryMeaning = { reads: "metadata" };
 const NOTHING: EntryMeaning = { reads: "nothing" };
+
+/**
+ * `process.env.X = v` sets the variable for the rest of the run, and
+ * reads nothing a deployment has to supply.
+ */
+const SETS_NOTHING: WriteMeaning = { changes: "nothing" };
 
 /**
  * A key Vite sets on `import.meta.env` from the build itself: the mode,
@@ -51,6 +62,7 @@ export function runtimeReadMatches(deployment: Deployment): {
     deployment,
   })
     .entries({}, CONFIG)
+    .writes({}, SETS_NOTHING)
     .throughHelpers()
     .example('process.env.TABLE_NAME ?? "accounts"');
 
@@ -62,6 +74,7 @@ export function runtimeReadMatches(deployment: Deployment): {
       { MODE: VITE, BASE_URL: VITE, PROD: VITE, DEV: VITE, SSR: VITE },
       CONFIG,
     )
+    .writes({}, SETS_NOTHING)
     .throughHelpers()
     .example("import.meta.env.VITE_API_URL");
 

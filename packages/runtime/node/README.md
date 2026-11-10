@@ -71,6 +71,13 @@ goes for a missing value that leads to a `throw`, whether in the branch
 it takes or after the test: `if (url) return url; throw new Error(...)`
 still requires the variable.
 
+An assignment sets the variable for the rest of the run, and a
+deployment doesn't have to supply it, so the pack doesn't record a read
+at `process.env.LOG_LEVEL = "fatal"`. It doesn't record one at a call to
+a helper that only sets the variable it is given, as
+`process.env[name] = value` does, either. A `??=`, `||=` or `+=` reads
+the variable before it sets it, so each of those is still a read.
+
 ## `import.meta.env`
 
 Vite and Bun give a program its environment as `import.meta.env`, and
