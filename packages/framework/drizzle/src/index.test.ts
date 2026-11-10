@@ -146,6 +146,20 @@ describe("drizzle recognizer — select chains", () => {
     expect(interaction.selector).toEqual(["email", "name"]);
   });
 
+  it("reads the columns a condition reads off another name for the table", () => {
+    const effects = effectsIn(`
+      import { drizzle, eq } from "drizzle-orm";
+      import { users } from "./schema.js";
+      const db = drizzle({});
+      export async function byAlias(id: number) {
+        const u = users;
+        return db.select().from(users).where(eq(u.id, id));
+      }
+    `);
+    expect(effects).toHaveLength(1);
+    expect(interactionOf(effects[0]).selector).toEqual(["id"]);
+  });
+
   it("reads a select call kept in a name before `.from`", () => {
     const effects = effectsIn(`
       import { drizzle } from "drizzle-orm";
