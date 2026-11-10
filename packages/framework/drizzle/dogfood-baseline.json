@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-drizzle",
   "exports": 2,
-  "internal": 12,
-  "consumers": 23,
+  "internal": 6,
+  "consumers": 7,
   "unfollowedCalls": 0
 }

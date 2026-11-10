@@ -61,10 +61,12 @@ export type {
   ContainersLink,
   DeclaredSlots,
   Ending,
+  FieldsReadPick,
   FromReceiver,
   InputLink,
   InputRule,
   InterpolatesLink,
+  KeysOfPick,
   KindAsAsked,
   Link,
   LinkFunction,
@@ -76,6 +78,7 @@ export type {
   MessageSendMethod,
   MethodMeaning,
   MethodsLink,
+  NamesStated,
   Naming,
   OneArgument,
   OneMessage,
@@ -102,6 +105,7 @@ export type {
   SubUnitNamePart,
   TheCall,
   ToArgument,
+  ToChained,
   ToMember,
   ToReceiver,
   UnitInvokeEnding,
@@ -136,6 +140,7 @@ export type { Match, PackSpec } from "./pack.js";
 export type { SlotColumns } from "./slots.js";
 export type { SqlStatements, SqlStatementsSpec } from "./sqlStatements.js";
 export type {
+  AboutOptions,
   MemberContainer,
   StorageCalls,
   StorageCallsSpec,

@@ -417,6 +417,46 @@ function compareOutputs(left, right) {
   return { offset, line, context: [around(a), around(b)] };
 }
 
+/** Where a path an input hides is kept while both builds extract it. */
+function hiddenAt(at) {
+  return `${at}.hidden-by-byte-check`;
+}
+
+/**
+ * Moves each path the input hides out of the way, and gives back a
+ * function that puts them back. A fixture read without its
+ * `node_modules` is read the way a clone with no dependencies installed
+ * is, where nothing is typed.
+ */
+function hide(input, base) {
+  const moved = [];
+  for (const relative of input.hiding ?? []) {
+    const at = path.join(base, relative);
+    if (fs.existsSync(at)) {
+      fs.renameSync(at, hiddenAt(at));
+      moved.push(at);
+    }
+  }
+  return () => {
+    for (const at of moved) {
+      fs.renameSync(hiddenAt(at), at);
+    }
+  };
+}
+
+/** Puts back every path an earlier run hid and was stopped before it could restore. */
+function restoreHidden(inputs) {
+  for (const input of inputs.filter((one) => one.hiding !== undefined)) {
+    const base = BASE_OF[input.group](input).dir;
+    for (const relative of base === undefined ? [] : input.hiding) {
+      const at = path.join(base, relative);
+      if (!fs.existsSync(at) && fs.existsSync(hiddenAt(at))) {
+        fs.renameSync(hiddenAt(at), at);
+      }
+    }
+  }
+}
+
 function prepare(input, base) {
   if (input.prepare === undefined) {
     return null;
@@ -504,8 +544,10 @@ if (inputs.length === 0) {
 if (values.list === true) {
   for (const input of inputs) {
     const command = input.command ?? "extract";
+    const hiding =
+      input.hiding === undefined ? "" : `, hiding ${input.hiding.join(", ")}`;
     process.stdout.write(
-      `${input.name}\n    ${input.group}: suss ${command} ${input.args.map(describeArg).join(" ")}\n`,
+      `${input.name}\n    ${input.group}: suss ${command} ${input.args.map(describeArg).join(" ")}${hiding}\n`,
     );
   }
   process.exit(0);
@@ -571,6 +613,8 @@ const BASE_OF = {
   extra: cloneOf,
 };
 
+restoreHidden(inputs);
+
 for (const build of builds) {
   fs.rmSync(path.join(values.out, build.label), {
     recursive: true,
@@ -629,12 +673,18 @@ for (const [index, input] of inputs.entries()) {
   // Alternating which build goes first keeps a warm file cache from
   // landing on one side every time.
   const order = index % 2 === 0 ? builds : [branch, main];
-  const byLabel = new Map(
-    order.map((build) => [
-      build.label,
-      runOnce(input, build, base.dir, args, nodeFlags),
-    ]),
-  );
+  const restore = hide(input, base.dir);
+  let byLabel;
+  try {
+    byLabel = new Map(
+      order.map((build) => [
+        build.label,
+        runOnce(input, build, base.dir, args, nodeFlags),
+      ]),
+    );
+  } finally {
+    restore();
+  }
   const runs = new Map(
     builds.map((build) => [build.label, byLabel.get(build.label)]),
   );

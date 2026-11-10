@@ -585,41 +585,85 @@ describe("drizzle raw SQL", () => {
     ).toEqual([]);
   });
 
-  it("runs the line the declaration says it matches", () => {
+  it("runs the line each declaration says it matches", () => {
     const ran = runExamples(drizzleFramework(), (code) =>
       effectsIn(`
-        import { drizzle, sql } from "drizzle-orm";
-        const db = drizzle({} as never);
-        export async function example() {
+        import { drizzle, eq, sql } from "drizzle-orm";
+        import * as schema from "./schema.js";
+        import { users } from "./schema.js";
+        const db = drizzle({} as never, { schema });
+        export async function example(id: number, name: string) {
           return ${code};
         }
       `),
     );
 
-    expect(ran).toHaveLength(1);
-    expect(tableOf(ran[0].effects[0])).toBe("users");
-    expect(interactionOf(ran[0].effects[0])).toMatchObject({
-      kind: "read",
-      fields: ["id", "email"],
-      operation: "execute",
-    });
+    expect(
+      ran.map(({ effects }) => ({
+        table: tableOf(effects[0]),
+        interaction: interactionOf(effects[0]),
+      })),
+    ).toEqual([
+      {
+        table: "users",
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["id"],
+          operation: "select",
+          selector: ["id"],
+        },
+      },
+      {
+        table: "users",
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["name"],
+          operation: "update",
+          selector: ["id"],
+        },
+      },
+      {
+        table: "users",
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["id", "orders"],
+          operation: "findMany",
+        },
+      },
+      {
+        table: "users",
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["id", "email"],
+          operation: "execute",
+        },
+      },
+    ]);
   });
 });
 
 describe("what the pack declares", () => {
-  it("puts the statement path on the access walk, as data with an example", () => {
+  it("declares every path as data with an example, the statements on the access walk", () => {
     const pack = drizzleFramework();
 
-    expect(pack.invocationRecognizers).toHaveLength(1);
+    expect(pack.invocationRecognizers).toHaveLength(3);
     expect(pack.accessRecognizers).toHaveLength(1);
-    expect(pack.declarations?.declarations).toEqual([
-      {
-        name: "postgresql",
-        dataLinks: 3,
-        functionLinks: [],
-        astLinks: [],
-        example: "db.execute(sql`SELECT id, email FROM users`)",
-      },
+    expect(pack.version).toBe("1");
+    expect(
+      pack.declarations?.declarations.map((declared) => ({
+        dataLinks: declared.dataLinks,
+        functionLinks: declared.functionLinks,
+        astLinks: declared.astLinks,
+      })),
+    ).toEqual([
+      { dataLinks: 5, functionLinks: [], astLinks: [] },
+      { dataLinks: 4, functionLinks: [], astLinks: [] },
+      { dataLinks: 4, functionLinks: [], astLinks: [] },
+      { dataLinks: 3, functionLinks: [], astLinks: [] },
     ]);
   });
 });
