@@ -89,13 +89,43 @@ uses.
 A `"use server"` directive turns a function into an endpoint that a
 client component calls as if it were local, while the runtime sends a
 POST. The pack makes each such function an `action` unit, so its
-summary shows what a button press runs on the server. A directive at
-the top of a file makes every exported function an action. A directive
-inside a function marks that function alone, exported or not.
+summary shows what a button press runs on the server.
+
+A directive at the top of a file makes every function the file exports
+an action, named by the name it is exported under. A default export is
+`default`, whatever its declaration is called, since that is how a
+client imports it. An export list and a re-export count the same way.
+An export a project helper builds is an action too:
+
+```ts
+"use server";
+
+export const checkout = withTeam(async (formData, team) => { ... });
+export const getHistory = cached(async (userId) => { ... }, ["history"]);
+```
+
+The summary of `checkout` reads the function handed to `withTeam`,
+since the closure `withTeam` returns calls it. `cached` returns a
+closure that calls a cached copy instead, so the summary of
+`getHistory` reads that closure.
+
+A directive inside a function marks that function alone, exported or
+not, nested in another function or a method of a class. An anonymous
+one, such as `<form action={async () => { "use server"; ... }}>`, is
+named `serverAction#0`, `serverAction#1` and so on, in the order the
+file writes them.
 
 ## What it does not cover yet
 
 - **Page components.** `@suss/framework-react` already reads those.
+- **An action a library builds**, such as next-safe-action's
+  `client.schema(s).action(async () => { ... })`. The library's
+  `action` method has no body in the project, so nothing says which
+  function the export runs.
+- **What a project helper does around an action.** The summary of
+  `checkout` above leaves out anything `withTeam` does before it calls
+  the function, such as a redirect when nobody is signed in. A route's
+  summary adds what its wrapper sends, and an action's does not yet.
 - **A route a library serves.** NextAuth's route file is
   `export { GET, POST } from "@/auth"`, where those names come from
   destructuring the library's own return value, or `export { handler as
