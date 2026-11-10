@@ -157,7 +157,13 @@ function numbersOf(version) {
   return match === null ? null : match.slice(1).map(Number);
 }
 
-/** @typedef {{ cwd: string, timeoutMs: number, notBefore?: number, onSpawn?: (child: import("node:child_process").ChildProcess) => void }} RunOptions */
+/**
+ * `limitMs` is the limit the caller set, which a timeout reports. The CLI
+ * runs with `timeoutMs`, what is left of it after the live server was
+ * asked first.
+ *
+ * @typedef {{ cwd: string, timeoutMs: number, limitMs?: number, notBefore?: number, onSpawn?: (child: import("node:child_process").ChildProcess) => void }} RunOptions
+ */
 
 /**
  * Runs suss and collects what it printed. The MCP server for this
@@ -186,6 +192,7 @@ export async function runSuss(suss, args, options) {
   return await runCli(suss, args, {
     ...options,
     timeoutMs: deadline - Date.now(),
+    limitMs: options.timeoutMs,
   });
 }
 
@@ -252,12 +259,25 @@ function runCli(suss, args, options) {
         stderr,
         ...(late
           ? {
-              failure: `suss did not finish within ${Math.round(options.timeoutMs / 1000)}s`,
+              failure: `suss did not finish within ${spokenLimit(options.limitMs ?? options.timeoutMs)}`,
             }
           : {}),
       });
     });
   });
+}
+
+/**
+ * A time limit as the developer would say it. A limit under a second
+ * stays in milliseconds, so it never reads as "0s".
+ *
+ * @param {number} ms
+ */
+function spokenLimit(ms) {
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+  return `${Math.round(ms / 1000)}s`;
 }
 
 /**
