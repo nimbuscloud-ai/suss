@@ -529,6 +529,41 @@ describe("the member a call is made on", () => {
   });
 });
 
+describe("a call the node ops step to", () => {
+  it("asks where a name was imported from the way the call in hand does", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/repo.ts",
+      `
+        import { connect } from "tapedeck/driver";
+        const deck = connect();
+        export function play() {
+          return deck.side("a").play("1");
+        }
+      `,
+    );
+    const call = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getText() === 'deck.side("a").play("1")');
+    if (call === undefined) {
+      throw new Error("the fixture contains no call to play");
+    }
+    const store = new ResolutionStore();
+    const ops = callOpsFor(call, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      originatesFrom: (value, module) => store.originatesFrom(value, module),
+      resolution: store,
+    });
+    const connected = constructedFrom({
+      from: ["tapedeck"],
+      named: ["connect"],
+    });
+
+    expect(ops.receiver()?.method()).toBe("side");
+    expect(ops.receiver()?.receiverIsFrom(connected)).toBe(true);
+  });
+});
+
 describe("the calls chained on a result, and the columns a condition reads", () => {
   const BUILDER = `
     declare const db: any;
