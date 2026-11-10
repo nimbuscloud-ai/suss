@@ -428,9 +428,15 @@ function sitesEachParameterNames(
   resolveEnvObjects(db, [...index.objects]);
   const found = new Map<string, string[]>();
   for (const row of db.facts("wantedParamNamesEnv")) {
+    const site = String(row[1]);
+    // `os.environ[name] = value` sets the variable, so a helper that only
+    // sets the one it is handed reads nothing.
+    if (db.lookup("assigns", 0, site).length > 0) {
+      continue;
+    }
     const parameter = String(row[0]);
     const named = found.get(parameter) ?? [];
-    named.push(String(row[1]));
+    named.push(site);
     found.set(parameter, named);
   }
   index.sitesByParameter = found;
