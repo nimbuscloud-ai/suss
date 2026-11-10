@@ -17,7 +17,7 @@ Drizzle writes a query as a method chain. Each supported form has one anchor cal
 | `db.query.users.findMany({...})` | `.findMany()` / `.findFirst()` |
 | ``db.execute(sql`SELECT ...`)`` | `db.execute(s)` |
 
-The pack checks the receiver by its type. The type's symbol has to be declared under `node_modules/drizzle-orm/`. That covers a `drizzle(...)` result from any driver entry point, a wrapped `ctx.db`, and the `tx` passed to a transaction callback, so the pack does not have to list the drivers. A select call kept in a variable before `.from`, `const query = db.select(); query.from(users)`, is read the same as one written in place.
+The pack checks the receiver by its type. The type's symbol has to be declared under `node_modules/drizzle-orm/`. That covers a `drizzle(...)` result from any driver entry point, a wrapped `ctx.db`, and the `tx` passed to a transaction callback, so the pack does not have to list the drivers. A project read before its dependencies are installed has no types, so a database the source makes with `drizzle(...)`, imported from `drizzle-orm` or one of its driver subpaths, counts as well. A select call kept in a variable before `.from`, `const query = db.select(); query.from(users)`, is read the same as one written in place.
 
 The table name comes from the schema declaration. The recognizer follows the table identifier back to its `pgTable("users", {...})` declaration (or `mysqlTable` / `sqliteTable`) and takes the first string argument, so the summary records the SQL table name. When the declaration cannot be resolved, the table comes out null and does not pair with anything.
 
