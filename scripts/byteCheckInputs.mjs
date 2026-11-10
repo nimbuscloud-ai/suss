@@ -108,6 +108,26 @@ export const FIXTURE_INPUTS = [
       `fixtures/appsync/${sub}/template.yaml`,
     ),
   ),
+  // One AppSync field per language, each routed to a Lambda.
+  contract(
+    "appsync-lambda",
+    "appsync",
+    "fixtures/appsync-lambda/template.yaml",
+  ),
+  fixture("appsync-lambda/typescript", [
+    ...project("fixtures/appsync-lambda/tsconfig.json"),
+    ...packs("aws-lambda"),
+  ]),
+  fixture("appsync-lambda/python", [
+    ...lang("python"),
+    ...dir("fixtures/appsync-lambda"),
+    ...packs("aws-lambda-python"),
+  ]),
+  fixture("appsync-lambda/ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/appsync-lambda"),
+    ...packs("aws-lambda-ruby"),
+  ]),
   fixture("aws-alb", [
     ...project("fixtures/aws-alb/tsconfig.json"),
     ...packs("express", "fetch"),
