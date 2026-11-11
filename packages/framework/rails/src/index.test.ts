@@ -415,6 +415,51 @@ describe("railsFramework", () => {
       expect(routeFor(source, "OrdersController", "destroy")).toBeNull();
     });
 
+    it("reads only: and except: in every spelling of a list Rails takes", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :orders, only: %i[index]\n" +
+        "  resources :invoices, only: %w[show]\n" +
+        '  resources :refunds, except: ["destroy", :update]\n' +
+        "end\n";
+      expect(routeFor(source, "OrdersController", "index")).toEqual({
+        method: "GET",
+        path: "/orders",
+      });
+      expect(routeFor(source, "OrdersController", "show")).toBeNull();
+      expect(routeFor(source, "InvoicesController", "show")).toEqual({
+        method: "GET",
+        path: "/invoices/:id",
+      });
+      expect(routeFor(source, "InvoicesController", "index")).toBeNull();
+      expect(routeFor(source, "RefundsController", "index")).toEqual({
+        method: "GET",
+        path: "/refunds",
+      });
+      expect(routeFor(source, "RefundsController", "destroy")).toBeNull();
+      expect(routeFor(source, "RefundsController", "update")).toBeNull();
+    });
+
+    it("reads a namespace, a resource and a concern written as a string, as Rails does", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  concern "pageable" do\n' +
+        '    get "page"\n' +
+        "  end\n" +
+        '  namespace "settings" do\n' +
+        '    resources "tokens", only: [:index], concerns: ["pageable"]\n' +
+        "  end\n" +
+        "end\n";
+      expect(routeFor(source, "Settings::TokensController", "index")).toEqual({
+        method: "GET",
+        path: "/settings/tokens",
+      });
+      expect(routeFor(source, "Settings::TokensController", "page")).toEqual({
+        method: "GET",
+        path: "/settings/tokens/:token_id/page",
+      });
+    });
+
     it("writes an optional scope as the set of paths it allows, which a client's plain path meets", () => {
       const source =
         "Rails.application.routes.draw do\n" +
@@ -513,6 +558,37 @@ describe("railsFramework", () => {
       });
     });
 
+    it("takes a bare verb's action from a one-word path, with each hyphen as an underscore", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :users, only: [] do\n" +
+        '    member { post "reset-bounce-score" }\n' +
+        "  end\n" +
+        "end\n";
+      expect(
+        routesFor(source, "UsersController", "reset_bounce_score"),
+      ).toEqual([{ method: "POST", path: "/users/:id/reset-bounce-score" }]);
+      expect(
+        routesFor(source, "UsersController", "reset-bounce-score"),
+      ).toEqual([]);
+    });
+
+    it("takes no action from a bare verb's path of more than one word", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :stories, only: [] do\n" +
+        '    get "/stories/:short_id", to: redirect("/s/%{short_id}")\n' +
+        '    get "details/:id(/:tab)", action: options.fetch(:action, :show)\n' +
+        "  end\n" +
+        "end\n";
+      expect(
+        routesFor(source, "StoriesController", "/stories/:short_id"),
+      ).toEqual([]);
+      expect(
+        routesFor(source, "StoriesController", "details/:id(/:tab)"),
+      ).toEqual([]);
+    });
+
     it("replays a block looped over a word list once per element", () => {
       const source =
         "Rails.application.routes.draw do\n" +
@@ -567,6 +643,24 @@ describe("railsFramework", () => {
       expect(routeFor(source, "MappedController", "show")).toBeNull();
       expect(routeFor(source, "UnboundController", "show")).toBeNull();
       expect(routeFor(source, "UnspelledController", "show")).toBeNull();
+    });
+
+    it("reads action: written in Ruby 3.1's shorthand as the loop variable of that name", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  %w[diff annotate].each do |action|\n" +
+        '    get "files/#{action}", controller: "repositories", action:\n' +
+        "  end\n" +
+        "end\n";
+      expect(routesFor(source, "RepositoriesController", "diff")).toEqual([
+        { method: "GET", path: "/files/diff" },
+      ]);
+      expect(routesFor(source, "RepositoriesController", "annotate")).toEqual([
+        { method: "GET", path: "/files/annotate" },
+      ]);
+      expect(routesFor(source, "RepositoriesController", "files/diff")).toEqual(
+        [],
+      );
     });
 
     it("leaves a loop over anything but a literal list unread", () => {
@@ -1460,6 +1554,26 @@ describe("railsFramework", () => {
       expect(p.routingGaps?.()).toEqual([
         expect.stringContaining("also declares direct"),
         "config/routes.rb wraps routes in devise_scope, which this pack does not know; it read the routes inside as though the wrapper changed nothing about their path or controller",
+      ]);
+    });
+
+    it("walks a gem's block whose only routing call is under a conditional", () => {
+      const pack = projectWith(
+        app(
+          "  authenticated :admin do\n" +
+            "    if Rails.env.production?\n" +
+            '      get "jobs", to: "jobs#index"\n' +
+            "    end\n" +
+            "  end",
+        ),
+      );
+      const p = pattern(pack);
+      expect(firstRoute(p, "JobsController", "index")).toEqual({
+        method: "GET",
+        path: "/jobs",
+      });
+      expect(p.routingGaps?.()).toEqual([
+        expect.stringContaining("wraps routes in authenticated"),
       ]);
     });
 
