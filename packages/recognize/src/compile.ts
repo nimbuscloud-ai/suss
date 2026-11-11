@@ -23,6 +23,7 @@ import {
 import { byOrigin, callSiteKey } from "@suss/extractor";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
+import { compileReads } from "./compileReads.js";
 import { modulesOf, opsIn } from "./ops.js";
 import { type SlotColumns, slotsDeclared } from "./slots.js";
 
@@ -132,6 +133,11 @@ export function compile(
   chain: Chain<MethodMeaning>,
   recognition: string,
 ): InvocationRecognizer {
+  // A read chain runs on a read site rather than a call.
+  const yields = chain.ending.yields;
+  if (yields === "runtimeRead") {
+    return compileReads(chain, recognition);
+  }
   const receiverMethods = methodsWhoseReceiversAreAsked(chain);
   const modules = modulesOfChain(chain);
   return (_call: unknown, ctx: unknown): Effect[] | null => {
@@ -142,7 +148,7 @@ export function compile(
 
     const bare = bareCall(chain, ops, modules);
     if (bare !== null) {
-      return YIELD[chain.ending.yields]({
+      return YIELD[yields]({
         ops,
         subject: ops,
         method: bare.method,
@@ -165,7 +171,7 @@ export function compile(
       if (matched === null) {
         continue;
       }
-      return YIELD[chain.ending.yields]({
+      return YIELD[yields]({
         ops,
         subject,
         method: matched.method,
@@ -553,8 +559,11 @@ function startsHere(chain: Chain<MethodMeaning>, subject: CallOps): boolean {
   );
 }
 
-/** One ending per thing a chain can produce. */
-const YIELD: Record<Ending["yields"], (matched: Matched) => Effect[] | null> = {
+/** One ending per thing a call chain can produce. */
+const YIELD: Record<
+  Exclude<Ending["yields"], "runtimeRead">,
+  (matched: Matched) => Effect[] | null
+> = {
   storageAccess: storageAccess,
   sqlAccess: sqlAccess,
   messageSend: messageSend,

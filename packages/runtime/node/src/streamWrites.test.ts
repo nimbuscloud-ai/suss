@@ -173,7 +173,7 @@ describe("writes to the process's streams", () => {
   it("matches the line each declaration says it matches", () => {
     const ran = runExamples(nodeRuntimePack(), (code) =>
       writesIn(`export function example() { ${code}; }`),
-    );
+    ).filter((one) => one.match === "streamWrite");
     expect(ran.map((one) => targetsOf(one.effects as StreamWrite[]))).toEqual([
       ["stderr"],
       ["stdout"],

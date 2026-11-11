@@ -18,11 +18,12 @@ reads. It covers:
   `setTimeout`, `setInterval`, `queueMicrotask` and `process.nextTick`,
   and for what a program prints through `console`, `process.stdout` and
   `process.stderr`.
-- **Access recognizers** for `process.env.X` and `import.meta.env.X`
-  reads, the keys of a schema parsed against either, the rest of the
-  process object (`argv`, `exit` and the process metadata), and the
+- **Read chains**, declared with `@suss/recognize`, for
+  `process.env.X` and `import.meta.env.X` reads, the rest of the
+  process object (`argv`, `exitCode` and the process metadata), and the
   module-location globals `__dirname`, `__filename` and
-  `import.meta.url`.
+  `import.meta.url`. A recognizer written as code reads the keys of a
+  schema parsed against the environment.
 - **Sub-units** for the callbacks passed to a scheduling call, so what
   runs later is described as its own unit. A call made inside another
   callback, such as a `.then` or a React effect, gets one too.
@@ -140,7 +141,7 @@ later reader that has brought in more of the project asks again.
 Extraction reaches what a file exports, so a file that exports nothing
 does not produce any facts, and the rules cannot answer anything about its
 parameters. The store reports that it does not know, instead of
-answering no, and the pack then looks for the read in the callee's own
+answering no, and the adapter then looks for the read in the callee's own
 body. That covers a helper a module keeps to itself, which is how a
 test file reads its settings (`const runs = envInt("FUZZ_RUNS", 60)`).
 A helper like that which passes its name on to another function is

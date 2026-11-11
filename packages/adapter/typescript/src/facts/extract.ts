@@ -1396,7 +1396,7 @@ function emitParameterPropertyRead(
  * Only an object pattern is written down. An array pattern binds by
  * position, and no recognizer asks about one yet.
  */
-function emitBindingElementFacts(
+export function emitBindingElementFacts(
   db: Database,
   table: NodeTable,
   element: BindingElement,
@@ -1414,22 +1414,16 @@ function emitBindingElementFacts(
   const container = Node.isObjectBindingPattern(pattern)
     ? containerOfBindingPattern(pattern)
     : undefined;
-  const property = element.getPropertyNameNode() ?? element.getNameNode();
+  const property = bindingPropertyName(element);
   // `const { runCli } = await import("./run.js")` is a named import
   // written at run time, so it is recorded as one.
   const imported =
     container === undefined ? null : dynamicImportKeysOf(container);
   for (const key of imported ?? []) {
-    fact(db, "imports", id, key, property.getText());
+    fact(db, "imports", id, key, property);
   }
   if (container !== undefined && imported === null) {
-    fact(
-      db,
-      "readsProperty",
-      id,
-      emitValue(db, table, container),
-      property.getText(),
-    );
+    fact(db, "readsProperty", id, emitValue(db, table, container), property);
   }
 
   const fallback = element.getInitializer();
@@ -1437,6 +1431,47 @@ function emitBindingElementFacts(
     fact(db, "binds", id, emitValue(db, table, fallback));
   }
   return id;
+}
+
+/**
+ * The property a binding element reads: `X` for `{ X }`, `{ X: x }` and
+ * `{ "X": x }` alike, since a quoted key is the same property.
+ */
+function bindingPropertyName(element: BindingElement): string {
+  const property = element.getPropertyNameNode() ?? element.getNameNode();
+  return Node.isStringLiteral(property)
+    ? property.getLiteralValue()
+    : property.getText();
+}
+
+/**
+ * `o.n = v` and `o[k] = v`: the value assigned to a site, as the source
+ * writes it on the right of the `=`. The value keeps any `await` or cast
+ * around it, since what a reader records is what the program wrote there,
+ * and its own facts are stated when something asks about it.
+ */
+export function emitAssignedValue(
+  db: Database,
+  table: NodeTable,
+  site: Node,
+): void {
+  const assignment = site.getParent();
+  if (
+    !(
+      Node.isPropertyAccessExpression(site) ||
+      Node.isElementAccessExpression(site)
+    ) ||
+    assignment === undefined ||
+    !Node.isBinaryExpression(assignment) ||
+    assignment.getLeft() !== site ||
+    assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken
+  ) {
+    return;
+  }
+  const value = assignment.getRight();
+  const valueId = nodeId(value);
+  table.byId.set(valueId, value);
+  fact(db, "assigns", nodeId(site), valueId);
 }
 
 /** The expression an object pattern takes its properties apart from. */

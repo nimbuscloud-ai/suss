@@ -1,6 +1,5 @@
 /**
- * The boundary binding for this pack's runtime-config reads, and the
- * effect for a value the runtime provides that no template declares.
+ * The boundary binding for this pack's runtime-config reads.
  *
  * The code does not show which deployment runs it, so a read leaves the
  * deployment off unless the run configured one. The pairing pass takes
@@ -10,7 +9,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
-import type { BoundaryBinding, Effect } from "@suss/behavioral-ir";
+import type { BoundaryBinding } from "@suss/behavioral-ir";
 
 /** What a run can say about the deployment its reads belong to. */
 export interface DeploymentOptions {
@@ -27,23 +26,10 @@ export interface DeploymentOptions {
   instanceName?: string;
 }
 
-const RECOGNITION = "@suss/runtime-node";
+/** The name this pack's effects are recognized under. */
+export const RECOGNITION = "@suss/runtime-node";
 
 /** The binding on a runtime-config read this pack found. */
 export function configBinding(where: DeploymentOptions): BoundaryBinding {
   return runtimeConfigBinding({ recognition: RECOGNITION, ...where });
-}
-
-/**
- * A read of a value the runtime provides, such as the working directory
- * or the module's location. The unit's summary records it as a
- * `metadata-read`, which runtime-config pairing skips.
- */
-export function opaqueRuntimeRead(callee: string): Effect {
-  return {
-    type: "interaction",
-    binding: configBinding({}),
-    callee,
-    interaction: { class: "metadata-read", name: callee },
-  };
 }

@@ -14,13 +14,13 @@ import { z } from "zod";
 
 import { declarationsIn } from "@suss/recognize";
 
-import { ENVIRONMENT_OBJECTS, envVarRecognizer } from "./envVars.js";
 import {
-  fileLocationRecognizer,
-  importMetaRecognizer,
-} from "./moduleSurface.js";
-import { processSurfaceRecognizer } from "./processSurface.js";
+  compiledReads,
+  ENVIRONMENT_OBJECTS,
+  runtimeReadMatches,
+} from "./runtimeReads.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
+import { schemaReadRecognizer } from "./schemaReads.js";
 import {
   PROCESS_STREAMS,
   STREAM_WRITE_MATCHES,
@@ -34,30 +34,18 @@ import type {
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
-export {
-  type EnvVarRecognizerOptions,
-  envVarRecognizer,
-  findProcessEnvReads,
-} from "./envVars.js";
-export {
-  fileLocationRecognizer,
-  findBareFileLocationGlobals,
-  importMetaRecognizer,
-} from "./moduleSurface.js";
-export {
-  type ProcessSurfaceOptions,
-  processSurfaceRecognizer,
-} from "./processSurface.js";
+export { runtimeReadMatches } from "./runtimeReads.js";
 export {
   nodeSchedulingSubUnits,
   schedulingRecognizer,
 } from "./scheduling.js";
+export { schemaReadRecognizer } from "./schemaReads.js";
 export { streamWriteRecognizers } from "./streamWrites.js";
 
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.6.0";
+const PACK_VERSION = "0.7.0";
 
 /**
  * The options in a `-f node=config.json` file. The CLI checks the file
@@ -108,7 +96,7 @@ const PARSE_ARGS: ArgumentParser[] = ["node:util", "util"].map((module) => ({
 export function nodeRuntimePack(
   options: NodeRuntimePackOptions = {},
 ): PatternPack {
-  const configOptions = {
+  const deployment = {
     ...(options.deploymentTarget !== undefined
       ? { deploymentTarget: options.deploymentTarget }
       : {}),
@@ -116,8 +104,7 @@ export function nodeRuntimePack(
       ? { instanceName: options.instanceName }
       : {}),
   };
-  const processRecognizer = processSurfaceRecognizer(configOptions);
-  const envRecognizer = envVarRecognizer(configOptions);
+  const reads = runtimeReadMatches(deployment);
   return {
     name: "node",
     version: PACK_VERSION,
@@ -131,14 +118,17 @@ export function nodeRuntimePack(
     invocationRecognizers: [schedulingRecognizer, ...streamWriteRecognizers],
     environmentObjects: [...ENVIRONMENT_OBJECTS],
     streamObjects: PROCESS_STREAMS,
-    declarations: declarationsIn(STREAM_WRITE_MATCHES),
+    declarations: declarationsIn([
+      ...STREAM_WRITE_MATCHES,
+      ...reads.environment,
+      ...reads.rest,
+    ]),
     accessRecognizers: [
-      // envRecognizer handles `process.env.X` and processRecognizer skips
-      // it, so each `process.*` read produces one effect.
-      envRecognizer,
-      processRecognizer,
-      importMetaRecognizer,
-      fileLocationRecognizer,
+      // A call whose own callee parses a schema has its keys recorded
+      // after the reads it makes through a helper.
+      ...compiledReads(reads.environment),
+      schemaReadRecognizer(deployment),
+      ...compiledReads(reads.rest),
     ],
     subUnits: nodeSchedulingSubUnits,
   };

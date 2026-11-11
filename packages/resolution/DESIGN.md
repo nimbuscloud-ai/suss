@@ -58,6 +58,12 @@ readsEntry(site, o, n)      site reads the entry of o under the key n,
                             params[:id]. The source walk reads it, and
                             so does a call that takes its function from
                             a table (Python, Ruby)
+assigns(site, v)            site is the left side of a plain =, an
+                            entry or a property, and v the value written
+                            on the right, as in process.exitCode = v.
+                            A runtime-read chain reads it to tell a write
+                            from a read, and no rule reads it.
+                            TypeScript states it when the site is stated
 choosesEntry(site, o)       site reads one entry of o, or one of its
                             members, by a key the program works out at
                             run time: o[k], a map's get(k), Python's

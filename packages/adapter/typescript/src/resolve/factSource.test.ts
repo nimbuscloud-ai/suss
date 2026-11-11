@@ -8,7 +8,7 @@ import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
 import { callOpsFor } from "./callOps.js";
-import { factSourceFor, statedFactKey } from "./factSource.js";
+import { factSourceFor, readOpsAt, statedFactKey } from "./factSource.js";
 
 import type {
   AstCapableValueOps,
@@ -16,7 +16,7 @@ import type {
   PatternPack,
   ValueOps,
 } from "@suss/extractor";
-import type { CallExpression } from "ts-morph";
+import type { CallExpression, Project } from "ts-morph";
 
 const LIBRARY = `
   export default class Deck {
@@ -432,5 +432,174 @@ describe("the fact source's value members", () => {
 
     expect(tag?.source?.()).toBe("Tag");
     expect(Node.isIdentifier(tag?.ast() as Node)).toBe(true);
+  });
+});
+
+const READS = `
+  declare const settings: Record<string, string>;
+  declare function run(): Promise<number>;
+  export async function finish(key: string) {
+    process.exitCode = await run();
+    process.exitCode += 1;
+    const { "A-B": quoted, [key]: computed, PLAIN = "p", ...rest } = settings;
+    return [quoted, computed, PLAIN, rest, settings.HOST ?? "localhost"];
+  }
+`;
+
+/** The read ops at the node written as `text`, the one a declaration takes apart when `destructured` says so. */
+function readAt(text: string, destructured = false) {
+  const project = createTestProject();
+  const file = project.createSourceFile("/reads.ts", READS);
+  const node = file
+    .getDescendants()
+    .find(
+      (one) => one.getText() === text && (!destructured || isDestructured(one)),
+    );
+  if (node === undefined) {
+    throw new Error(`no node ${text}`);
+  }
+  return readOpsAt(node, new ResolutionStore());
+}
+
+/** Whether the node is the value a variable declaration takes apart. */
+function isDestructured(node: Node): boolean {
+  const declaration = node.getParent();
+  return (
+    Node.isVariableDeclaration(declaration) &&
+    declaration.getInitializer() === node
+  );
+}
+
+describe("the fact source's read members", () => {
+  it("states the value a plain = assigns, as written, and none for +=", () => {
+    expect(readAt("process.exitCode").assigned()?.source?.()).toBe(
+      "await run()",
+    );
+    expect(
+      readAt("process.exitCode += 1")
+        .readsOff()
+        .map((site) => site.assigned()),
+    ).toEqual([]);
+  });
+
+  it("reads off a destructured value the entries a binding names, and leaves out a computed key and the rest", () => {
+    const reads = readAt("settings", true).readsOff();
+    expect(reads.map((site) => [site.entry(), site.defaulted()])).toEqual([
+      ["A-B", false],
+      ["PLAIN", true],
+    ]);
+    expect(reads[1]?.fallback()?.evaluated?.()).toBe("p");
+  });
+
+  it("says a read falls back to what follows ?? and which object it is off", () => {
+    const read = readAt("settings.HOST");
+    expect(read.entry()).toBe("HOST");
+    expect(read.defaulted()).toBe(true);
+    expect(read.fallback()?.evaluated?.()).toBe("localhost");
+    expect(read.objectPath(["settings", "process"])).toBe("settings");
+    expect(read.keysSuppliedTo(global("process.env"))).toEqual([]);
+  });
+
+  it("reads no entry at a call, and nothing is off it", () => {
+    const call = readAt("run()");
+    expect(call.entry()).toBeUndefined();
+    expect(call.isOff(global("run"))).toBe(false);
+  });
+});
+
+const HELPERS = `
+  declare function unknown(name: string): string;
+  function need(name: string) {
+    return process.env[name] ?? "";
+  }
+  function viteNeed(name: string) {
+    return import.meta.env[name];
+  }
+  function forward(key: string) {
+    return need(key);
+  }
+  function makeReader(prefix: string) {
+    return (name: string) => need(prefix + name);
+  }
+  const read = makeReader("X_");
+  export function reads(key: string) {
+    return [need("G"), forward(key), viteNeed("V"), read("Y"), unknown("Z"), need()];
+  }
+`;
+
+/** A store that knows the environment objects Node and Vite give a program. */
+function environmentStore(project: Project): ResolutionStore {
+  const environment: PatternPack = {
+    name: "environment",
+    languages: ["typescript"],
+    protocol: "in-process",
+    discovery: [],
+    terminals: [],
+    inputMapping: { type: "positionalParams", params: [] },
+    environmentObjects: ["process.env", "import.meta.env"],
+  };
+  const store = ResolutionStore.forPacks([environment]);
+  store.notePossibleCallers(project.getSourceFiles());
+  return store;
+}
+
+describe("the keys a helper call supplies", () => {
+  function keysAt(source: string, file: string, call: string, path: string) {
+    const project = createTestProject();
+    const sourceFile = project.createSourceFile(file, source);
+    const store = environmentStore(project);
+    const node = sourceFile
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getText() === call);
+    if (node === undefined) {
+      throw new Error(`no call ${call}`);
+    }
+    return (readOpsAt(node, store).keysSuppliedTo(global(path)) ?? []).map(
+      (key) => [
+        key.at,
+        key.value.evaluated?.() ?? null,
+        key.forwarded,
+        key.sites.map((site) => site.objectPath([path])),
+      ],
+    );
+  }
+
+  it("finds the argument a helper's parameter takes a read's key from, off the object the site reads", () => {
+    expect(keysAt(HELPERS, "/env.ts", 'need("G")', "process.env")).toEqual([
+      [0, "G", false, ["process.env"]],
+    ]);
+    expect(keysAt(HELPERS, "/env.ts", 'need("G")', "import.meta.env")).toEqual(
+      [],
+    );
+    expect(
+      keysAt(HELPERS, "/env.ts", 'viteNeed("V")', "import.meta.env"),
+    ).toEqual([[0, "V", false, ["import.meta.env"]]]);
+  });
+
+  it("says a key the caller's own parameter forwards belongs to the caller's callers", () => {
+    expect(keysAt(HELPERS, "/env.ts", "need(key)", "process.env")).toEqual([
+      [0, null, true, ["process.env"]],
+    ]);
+  });
+
+  it("finds no key through a factory's helper that builds the key, a callee nothing defines, or a call that passes none", () => {
+    expect(
+      ['read("Y")', 'unknown("Z")', "need()"].flatMap((call) =>
+        keysAt(HELPERS, "/env.ts", call, "process.env"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads a helper's own body when the store states nothing for its file", () => {
+    const knobs = `
+      const envInt = (name: string, fallback: number): number => {
+        const raw = process.env[name];
+        return raw === undefined ? fallback : Number.parseInt(raw, 10);
+      };
+      const runs = envInt("FUZZ_RUNS", 60);
+    `;
+    expect(
+      keysAt(knobs, "/knobs.test.ts", 'envInt("FUZZ_RUNS", 60)', "process.env"),
+    ).toEqual([[0, "FUZZ_RUNS", false, ["process.env"]]]);
   });
 });

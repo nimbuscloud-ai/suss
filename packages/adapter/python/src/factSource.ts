@@ -11,6 +11,7 @@ import { answersFor, fileOfKey, givenBackFunction } from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
 import { field, numberLiteralValue, stringLiteralValue } from "./ast.js";
+import { copingAt, sitesNamingParameter } from "./envReads.js";
 import { encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
@@ -28,6 +29,7 @@ import {
   evaluatedValue,
   moduleOf,
   nodeOfResolutionKey,
+  resolutionKeyOf,
   stringValueOf,
 } from "./values/evaluator.js";
 
@@ -117,6 +119,16 @@ export function pythonFactSource(db: Database): FactSource {
           (origin.named === undefined || origin.named.includes(found.name)) &&
           origin.importedFrom.some((module) => inModule(found.module, module)),
       ),
+    defaultedAt: (key) => {
+      const node = nodeAt(key);
+      return node !== null && copingAt(node).defaulted;
+    },
+    fallbackOf: (key) => {
+      const node = nodeAt(key);
+      const fallback = node === null ? null : copingAt(node).fallback;
+      return fallback === null ? null : resolutionKeyOf(fallback, db);
+    },
+    sitesNaming: (parameter) => sitesNamingParameter(db, parameter),
   };
 }
 

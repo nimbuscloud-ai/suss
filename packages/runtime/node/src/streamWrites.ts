@@ -16,7 +16,7 @@
 import { anyOf, compile, global, streamWrites, typed } from "@suss/recognize";
 import { GLOBAL_MODULE } from "@suss/resolution";
 
-const RECOGNITION = "@suss/runtime-node";
+import { RECOGNITION } from "./configBinding.js";
 
 /** The streams `process` has, as a program spells them, and the stream each is. */
 const PROCESS_STREAM_NAMES = {

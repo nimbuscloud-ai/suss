@@ -1,44 +1,28 @@
-import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import nodeRuntimePack from "./index.js";
-import { processSurfaceRecognizer } from "./processSurface.js";
+import { compiledReads, runtimeReadMatches } from "./runtimeReads.js";
 
 import type { Effect } from "@suss/behavioral-ir";
+import type { SourceFile } from "ts-morph";
 
 function makeFile(source: string): SourceFile {
   const project = createTestProject();
   return project.createSourceFile("user.ts", source);
 }
 
+/** The chains over `process`, `import.meta` and the module globals. */
 function recognizeAll(file: SourceFile): Effect[] {
   return effectsOverFile(
     file,
-    packWithOnly(nodeRuntimePack(), { access: [processSurfaceRecognizer()] }),
+    packWithOnly(nodeRuntimePack(), {
+      access: compiledReads(runtimeReadMatches({}).rest),
+    }),
   );
-}
-
-// Extraction never hands a recognizer a bracket access, so the two tests
-// that read `process.argv[N]` feed these nodes in themselves.
-function recognizeWithBracketAccess(file: SourceFile): Effect[] {
-  const rec = processSurfaceRecognizer();
-  const out: Effect[] = [];
-  file.forEachDescendant((node) => {
-    if (
-      !Node.isPropertyAccessExpression(node) &&
-      !Node.isElementAccessExpression(node)
-    ) {
-      return;
-    }
-    const emitted = rec(node, { sourceFile: file });
-    if (emitted !== null) {
-      out.push(...emitted);
-    }
-  });
-  return out;
 }
 
 function configReadsOf(effects: Effect[]) {
@@ -72,18 +56,6 @@ describe("process-surface recognizer", () => {
     const reads = configReadsOf(recognizeAll(file));
     const argv = reads.filter((r) => r.interaction.name === "argv");
     expect(argv).toHaveLength(1);
-  });
-
-  it("recognizes process.argv[N] with the index in the channel name", () => {
-    const file = makeFile(`
-      function handler() {
-        const script = process.argv[1];
-        return script;
-      }
-    `);
-    const reads = configReadsOf(recognizeWithBracketAccess(file));
-    const indexed = reads.find((r) => r.interaction.name === "argv[1]");
-    expect(indexed).toBeDefined();
   });
 
   it("recognizes process.cwd / .platform / .version as runtime metadata", () => {
@@ -124,13 +96,11 @@ describe("process-surface recognizer", () => {
         return process.argv[2];
       }
     `);
-    const effects = recognizeWithBracketAccess(file);
+    const effects = recognizeAll(file);
     expect(metadataReadsOf(effects)).toHaveLength(0);
-    expect(
-      configReadsOf(effects)
-        .map((r) => r.interaction.name)
-        .sort(),
-    ).toEqual(["argv", "argv[2]"]);
+    expect(configReadsOf(effects).map((r) => r.interaction.name)).toEqual([
+      "argv",
+    ]);
   });
 
   it("does NOT match process.env reads (handled by env-var pack)", () => {
@@ -154,6 +124,29 @@ describe("process-surface recognizer", () => {
     const effects = recognizeAll(file);
     expect(configReadsOf(effects)).toHaveLength(0);
     expect(metadataReadsOf(effects)).toHaveLength(0);
+  });
+
+  it("matches the line each read chain says it matches", () => {
+    const pack = nodeRuntimePack();
+    const ran = runExamples(pack, (code) =>
+      effectsOverFile(
+        makeFile(`export function example() { return ${code}; }`),
+        packWithOnly(pack, { access: pack.accessRecognizers ?? [] }),
+      ),
+    ).filter((one) => one.match === "runtimeRead");
+    expect(
+      ran.map((one) =>
+        one.effects.map((effect) =>
+          effect.type === "interaction" ? effect.interaction.class : null,
+        ),
+      ),
+    ).toEqual([
+      ["config-read"],
+      ["config-read"],
+      ["config-read"],
+      ["metadata-read"],
+      ["metadata-read"],
+    ]);
   });
 
   it("records a write of process.exitCode as the code it sets, and ignores a read of it", () => {

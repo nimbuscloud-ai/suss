@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { Database } from "@suss/datalog";
 import { factValueOps } from "@suss/recognize/ops";
 
+import { bindEnvFacts, envFactsIn } from "./envReads.js";
 import { pythonFactSource } from "./factSource.js";
 import { parsePython } from "./parser.js";
 import { factsForFile } from "./project.js";
@@ -258,5 +260,62 @@ describe("the Python fact source", () => {
       ['json.dumps({"a": 1})', 'json {"a": 1}'],
       ['json.loads("{}")', null],
     ]);
+  });
+});
+
+const READS = `import os
+
+def need(name):
+    return os.environ[name]
+
+def reads(x):
+    a = os.environ["A"]
+    f = os.environ.get("F", "y")
+    b = x.attr or "b"
+    return a, f, b, need("G")
+`;
+
+describe("the Python fact source's read members", () => {
+  async function readsFor() {
+    const tree = await parsePython(READS);
+    const root = tree.rootNode;
+    const module = bindModule(root);
+    const db = factsForFile({ file: FILE, root, module, packs: [] });
+    bindEnvFacts(db, [envFactsIn(FILE, root, module)]);
+    const source = pythonFactSource(db);
+    const keys = ["readsEntry", "readsProperty", "readsKeyed", "call"].flatMap(
+      (relation) => db.facts(relation).map((row) => String(row[0])),
+    );
+    const at = (text: string): string =>
+      keys.find((key) => source.textOf(key) === text) ?? "";
+    const parameter = String(
+      db.facts("paramOf").find((row) => String(row[2]).endsWith("#name"))?.[2],
+    );
+    return { source, at, parameter };
+  }
+
+  it("says whether a read copes with a missing value, and what it falls back to", async () => {
+    const { source, at } = await readsFor();
+    const coping = (text: string) => [
+      source.defaultedAt?.(at(text)),
+      factValueOps(source.fallbackOf?.(at(text)) ?? "", source).evaluated?.(),
+    ];
+
+    expect(coping('os.environ["A"]')).toEqual([false, null]);
+    expect(coping('os.environ.get("F", "y")')).toEqual([true, "y"]);
+    expect(coping("x.attr")).toEqual([true, "b"]);
+    expect(source.defaultedAt?.("nowhere")).toBe(false);
+    expect(source.fallbackOf?.("nowhere")).toBeNull();
+  });
+
+  it("gives the sites a parameter supplies the key of, once the environment is stated", async () => {
+    const { source, parameter } = await readsFor();
+
+    expect(
+      source.sitesNaming?.(parameter)?.map((site) => source.textOf(site)),
+    ).toEqual(["os.environ[name]"]);
+    expect(pythonFactSource(new Database()).sitesNaming?.(parameter)).toEqual(
+      [],
+    );
   });
 });
