@@ -15,15 +15,19 @@ import { Node as N } from "ts-morph";
 
 import {
   isDefaultedAt,
+  peelValue,
   propertyFunctionOf,
   propertyNameOf,
 } from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
-import { entrypointTriggerFunctions } from "./discovery.js";
+import { isEntrypointTrigger } from "./discovery.js";
 import { TRIGGERS } from "./handlers.js";
 
-import type { ResolutionStore } from "@suss/adapter-typescript";
+import type {
+  ResolutionStore,
+  TsAccessRecognizerContext,
+} from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 import type { Node, ParameterDeclaration } from "ts-morph";
@@ -49,8 +53,8 @@ export function envBindingRecognizer(
   options: EnvBindingRecognizerOptions = {},
 ): AccessRecognizer {
   return (access, ctx) => {
-    const { resolution } = ctx as { resolution?: ResolutionStore };
-    const read = envReadAt(access as Node, resolution);
+    const reading = ctx as Partial<TsAccessRecognizerContext>;
+    const read = envReadAt(access as Node, reading);
     return read === null ? null : [configReadEffect(read, options.scriptName)];
   };
 }
@@ -58,21 +62,33 @@ export function envBindingRecognizer(
 interface EnvRead {
   name: string;
   defaulted: boolean;
+  /** The value the read falls back to, when it settles to one. */
+  fallback: string | number | boolean | null;
 }
 
 function envReadAt(
   node: Node,
-  resolution: ResolutionStore | undefined,
+  reading: Partial<TsAccessRecognizerContext>,
 ): EnvRead | null {
   if (!N.isPropertyAccessExpression(node)) {
     return null;
   }
-  const subject = node.getExpression();
-  if (!N.isIdentifier(subject) || !isTriggerEnvArgument(subject, resolution)) {
+  const subject = peelValue(node.getExpression());
+  if (
+    !N.isIdentifier(subject) ||
+    !isTriggerEnvArgument(subject, reading.resolution)
+  ) {
     return null;
   }
   const name = node.getName();
-  return name.length === 0 ? null : { name, defaulted: isDefaultedAt(node) };
+  if (name.length === 0) {
+    return null;
+  }
+  const defaulted = isDefaultedAt(node);
+  const fallback = defaulted
+    ? (reading.read?.fallback()?.evaluated?.() ?? null)
+    : null;
+  return { name, defaulted, fallback };
 }
 
 /** Whether an identifier refers to the env argument of a trigger. */
@@ -117,9 +133,7 @@ function isTriggerBody(
   resolution: ResolutionStore | undefined,
 ): boolean {
   if (resolution !== undefined) {
-    return entrypointTriggerFunctions(owner.getSourceFile(), resolution).has(
-      owner,
-    );
+    return isEntrypointTrigger(owner, resolution);
   }
   return writtenUnderTriggerName(owner);
 }
@@ -155,6 +169,7 @@ function configReadEffect(
       class: "config-read",
       name: read.name,
       defaulted: read.defaulted,
+      ...(read.fallback === null ? {} : { default: read.fallback }),
     },
   };
 }

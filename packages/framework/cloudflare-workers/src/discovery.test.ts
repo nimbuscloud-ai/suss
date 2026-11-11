@@ -136,6 +136,16 @@ beforeAll(() => {
      const base = { fetch };
      export default { ...base };`,
   );
+  write(
+    "src/castBindings.ts",
+    `interface Env { CAST_ORIGIN: string; ASSERTED_ORIGIN: string }
+     export default {
+       async fetch(request: Request, env: Env | undefined) {
+         const origin = (env as Env).CAST_ORIGIN;
+         return new Response(origin + env!.ASSERTED_ORIGIN);
+       },
+     };`,
+  );
 });
 
 afterAll(() => {
@@ -300,6 +310,48 @@ describe("envBindingRecognizer", () => {
         }),
       ]),
     );
+  });
+
+  it("records the value a defaulted read falls back to", async () => {
+    const units = inFile(await run(), "allTriggers.ts");
+    const fetchUnit = units.find((u) => u.identity.name === "fetch");
+    const timeout = (fetchUnit?.transitions ?? [])
+      .flatMap((t) => t.effects)
+      .find(
+        (e) =>
+          e.type === "interaction" &&
+          e.interaction.class === "config-read" &&
+          e.interaction.name === "TIMEOUT_MS",
+      );
+    expect(timeout).toMatchObject({
+      interaction: { defaulted: true, default: "500" },
+    });
+  });
+
+  it("reads the bindings through a cast and a non-null assertion", async () => {
+    const units = inFile(await run(), "castBindings.ts");
+    const names = (units[0]?.transitions ?? [])
+      .flatMap((t) => t.effects)
+      .flatMap((e) =>
+        e.type === "interaction" && e.interaction.class === "config-read"
+          ? [e.callee]
+          : [],
+      );
+    expect(new Set(names)).toEqual(
+      new Set(["env.CAST_ORIGIN", "env.ASSERTED_ORIGIN"]),
+    );
+  });
+
+  it("reads the bindings of a trigger written in another file", async () => {
+    const units = inFile(await run(), "importedHandler.ts");
+    const names = (units[0]?.transitions ?? [])
+      .flatMap((t) => t.effects)
+      .flatMap((e) =>
+        e.type === "interaction" && e.interaction.class === "config-read"
+          ? [e.interaction.name]
+          : [],
+      );
+    expect(new Set(names)).toEqual(new Set(["REMOTE_ORIGIN"]));
   });
 
   it("names the Worker on a read only when the caller says which Worker this is", async () => {

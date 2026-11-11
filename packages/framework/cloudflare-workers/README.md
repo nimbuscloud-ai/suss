@@ -55,7 +55,7 @@ async fetch(request: Request, env: Env) {
 }
 ```
 
-A read from that argument becomes a `config-read` interaction, the same one `@suss/runtime-node` records for `process.env.X`, so the runtime-config check pairs it with whatever declares the variable. The pack finds the argument by resolving the identifier back to its declaration and checking whether that parameter belongs to a trigger. So a project that calls it something other than `env` is read the same way.
+A read from that argument becomes a `config-read` interaction, the same one `@suss/runtime-node` records for `process.env.X`, so the runtime-config check pairs it with whatever declares the variable. A read with a fallback, such as `env.TIMEOUT_MS ?? "500"`, records the fallback as its default when it settles to one value. The pack finds the argument by resolving the identifier back to its declaration and checking whether that parameter belongs to a trigger. So a project that calls it something other than `env` is read the same way, and so is a trigger written in another file and imported into the entrypoint.
 
 ## Store calls on a binding
 
