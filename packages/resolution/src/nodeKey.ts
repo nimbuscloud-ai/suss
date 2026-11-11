@@ -6,11 +6,14 @@
 
 /** What a tree-sitter node offers for finding it by span again. */
 export interface SpannedNode<N> {
+  readonly type: string;
   readonly startIndex: number;
   readonly endIndex: number;
   readonly parent: N | null;
   descendantForIndex(start: number, end: number): N | null;
 }
+
+const KEYS_EVERY_TYPE: ReadonlySet<string> = new Set();
 
 const SPAN_KEY = /^(.*):(\d+)-(\d+)$/;
 
@@ -41,14 +44,13 @@ export function spanOfKey(key: string): KeySpan | null {
 /**
  * The node a key refers to: the smallest node over the span, walked up
  * to the one whose span matches. A key that is not a node, such as a
- * name, has none. A parent and a child can share one span, as Ruby's
- * `%w[users]` word and its content do, so `keyed` says which nodes the
- * adapter ever keys, and one it never keys is passed over for its parent.
+ * name, has none. A node of a type in `neverKeyed`, such as the content
+ * of Ruby's `%w[users]` word, is passed over for its parent of one span.
  */
 export function nodeOfKey<N extends SpannedNode<N>>(
   rootsByFile: ReadonlyMap<string, N>,
   key: string,
-  keyed: (node: N) => boolean = () => true,
+  neverKeyed: ReadonlySet<string> = KEYS_EVERY_TYPE,
 ): N | null {
   const span = spanOfKey(key);
   if (span === null) {
@@ -64,7 +66,7 @@ export function nodeOfKey<N extends SpannedNode<N>>(
     if (
       current.startIndex === start &&
       current.endIndex === end &&
-      keyed(current)
+      !neverKeyed.has(current.type)
     ) {
       return current;
     }

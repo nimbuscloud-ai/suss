@@ -86,8 +86,10 @@ export function rubyNodeOfKey(
   rootsByFile: ReadonlyMap<string, RbNode>,
   key: string,
 ): RbNode | null {
-  return nodeOfKey(rootsByFile, key, (node) => node.type !== "string_content");
+  return nodeOfKey(rootsByFile, key, NEVER_KEYED);
 }
+
+const NEVER_KEYED: ReadonlySet<string> = new Set(["string_content"]);
 
 /** The path the facts key this node's file on, or undefined for a file the run did not bind. */
 export function boundFileOf(node: RbNode): string | undefined {
