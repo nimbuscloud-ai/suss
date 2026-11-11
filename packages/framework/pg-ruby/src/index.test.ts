@@ -81,6 +81,15 @@ describe("which connections the pack reads", () => {
     ).toEqual(["accounts", "plans", "teams", "users"]);
   });
 
+  it("reads a connection opened where the statement is sent", async () => {
+    expect(
+      await tablesRead(
+        '    PG.connect("x").exec("SELECT id FROM accounts")',
+        '    PG::Connection.new("x").exec("SELECT id FROM plans")',
+      ),
+    ).toEqual(["accounts", "plans"]);
+  });
+
   it("leaves alone a receiver another library or another PG class made", async () => {
     expect(
       await tablesRead(
