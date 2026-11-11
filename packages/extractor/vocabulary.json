@@ -130,6 +130,7 @@
   "receiver": "suss: CallStep variant tag",
   "record": "shape kind the extractor records",
   "reference": "suss: unsettled reading, keep the reference for whoever can ground it",
+  "registeredFunction": "suss: DiscoveryMatch variant tag",
   "registrationCall": "suss: DiscoveryMatch variant tag",
   "render": "suss: terminal kind",
   "requestBody": "suss: input role",

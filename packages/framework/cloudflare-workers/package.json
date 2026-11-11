@@ -51,11 +51,13 @@
     "@suss/adapter-typescript": "0.39.0",
     "@suss/behavioral-ir": "0.39.0",
     "@suss/extractor": "0.39.0",
+    "@suss/recognize": "0.39.0",
     "@suss/sql": "0.39.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@suss/ir-core": "*",
+    "@suss/pack-harness": "*",
     "@suss/test-project": "*",
     "ts-morph": "*",
     "tsup": "*",

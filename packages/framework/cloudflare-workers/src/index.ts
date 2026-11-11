@@ -5,23 +5,32 @@
  * export also acts as the import gate.
  *
  * Bindings arrive as the second argument to every trigger, and the env
- * and store recognizers read them there. The README explains why an HTTP
- * Worker gets one boundary for all of its paths.
+ * chain and the store recognizer read them there. The README explains
+ * why an HTTP Worker gets one boundary for all of its paths.
  */
 
 import { z } from "zod";
 
-import { cloudflareWorkersDiscovery } from "./discovery.js";
-import { envBindingRecognizer } from "./envBindings.js";
+import { compile, declarationsIn, describeDiscovery } from "@suss/recognize";
+
+import { envReads } from "./bindings.js";
 import { storeBindingRecognizer } from "./storeBindings.js";
+import { entrypointObject, listener } from "./triggers.js";
 
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
-export { cloudflareWorkersDiscovery, METADATA_NAMESPACE } from "./discovery.js";
-export { envBindingRecognizer } from "./envBindings.js";
 export { TRIGGERS, type TriggerShape } from "./handlers.js";
 export { storeBindingRecognizer } from "./storeBindings.js";
+export { METADATA_NAMESPACE } from "./triggers.js";
+
+const RECOGNITION = "@suss/framework-cloudflare-workers";
+
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "2";
 
 export const optionsSchema = z
   .object({
@@ -39,16 +48,21 @@ export type CloudflareWorkersPackOptions = z.infer<typeof optionsSchema>;
 export function cloudflareWorkersFramework(
   options: CloudflareWorkersPackOptions = {},
 ): PatternPack {
+  const { scriptName } = options;
+  const patterns = [entrypointObject(scriptName), listener(scriptName)];
+  const env = envReads({
+    deploymentTarget: "worker",
+    ...(scriptName === undefined ? {} : { instanceName: scriptName }),
+  });
   return {
     name: "cloudflare-workers",
-    version: "1",
+    version: VERSION,
     protocol: "http",
     languages: ["typescript", "javascript"],
 
-    // A Worker registers nothing in code, so the pattern list stays empty
-    // and the callback reads the exported object.
-    discovery: [],
-    discoverUnits: cloudflareWorkersDiscovery(options),
+    // Neither pattern states an import, since a Worker imports nothing to
+    // be one, so the pack reads every file.
+    discovery: patterns,
 
     terminals: [
       {
@@ -110,10 +124,17 @@ export function cloudflareWorkersFramework(
       ],
     },
 
-    accessRecognizers: [envBindingRecognizer(options)],
+    accessRecognizers: [compile(env.declared, RECOGNITION)],
 
     // A store call on an env binding: `env.SESSIONS.get(key)`.
     invocationRecognizers: [storeBindingRecognizer as InvocationRecognizer],
+
+    declarations: {
+      declarations: [
+        ...declarationsIn([env]).declarations,
+        ...patterns.map(describeDiscovery),
+      ],
+    },
   };
 }
 

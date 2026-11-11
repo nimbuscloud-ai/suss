@@ -9,6 +9,9 @@
   },
   "references": [
     {
+      "path": "../../../tools/pack-harness/tsconfig.typecheck.json"
+    },
+    {
       "path": "../../../tools/test-project/tsconfig.typecheck.json"
     },
     {
@@ -19,6 +22,9 @@
     },
     {
       "path": "../../extractor/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../recognize/tsconfig.typecheck.json"
     },
     {
       "path": "../../sql/tsconfig.typecheck.json"
