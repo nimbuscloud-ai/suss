@@ -166,7 +166,42 @@ function readOf(site: ReadOps, reading: Reading): Effect[] {
   if (meaning === null) {
     return [];
   }
-  return entryEffect(meaning, { entry, reading, site });
+  return [
+    ...entryEffect(meaning, { entry, reading, site }),
+    ...indexedReads(meaning, site, reading),
+  ];
+}
+
+/**
+ * The reads of entries off the entry's own value, each named the way the
+ * meaning's `indexed` says: `process.argv[2]` beside `process.argv`. A key
+ * the program works out at run time is the entry's own read already.
+ */
+function indexedReads(
+  meaning: EntryMeaning,
+  site: ReadOps,
+  reading: Reading,
+): Effect[] {
+  if (meaning.reads !== "config" || meaning.indexed === undefined) {
+    return [];
+  }
+  const { indexed } = meaning;
+  return site.readsOff().flatMap((off) => {
+    const key = off.entry();
+    if (key === undefined || key === null || key === "") {
+      return [];
+    }
+    return [
+      configRead(
+        {
+          reads: "config",
+          named: indexed.replace("{key}", key),
+          callee: "site",
+        },
+        { entry: key, reading, site: off },
+      ),
+    ];
+  });
 }
 
 /** The table's own entry for a key, then `otherwise`. A computed key, which is null, only ever takes `otherwise`. */

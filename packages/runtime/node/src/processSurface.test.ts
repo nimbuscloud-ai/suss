@@ -100,6 +100,25 @@ describe("process-surface recognizer", () => {
     expect(metadataReadsOf(effects)).toHaveLength(0);
     expect(configReadsOf(effects).map((r) => r.interaction.name)).toEqual([
       "argv",
+      "argv[2]",
+    ]);
+  });
+
+  it("recognizes process.argv[N] with the index in the channel name, written as the source writes it", () => {
+    const file = makeFile(`
+      function handler() {
+        const script = process.argv[1] || "";
+        const command = process.argv[next()];
+        return [script, command];
+      }
+    `);
+    const reads = configReadsOf(recognizeAll(file));
+    expect(
+      reads.map((r) => [r.callee, r.interaction.name, r.interaction.defaulted]),
+    ).toEqual([
+      ["process.argv", "argv", false],
+      ["process.argv[1]", "argv[1]", true],
+      ["process.argv", "argv", false],
     ]);
   });
 

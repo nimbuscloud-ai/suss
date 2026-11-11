@@ -38,7 +38,9 @@ suss extract -p tsconfig.json -f express -f node -o summaries/code.json
 
 `process.env.X` reads and `process.argv` come back as a runtime-config
 boundary, which describes a deployable unit's configuration. The two
-options below set what that boundary is called.
+options below set what that boundary is called. An argument read at a
+position the source writes, `process.argv[2]`, is a read of `argv[2]`
+beside the read of `argv`.
 
 `__dirname`, `import.meta.url`, `process.cwd` and the rest of the
 process metadata come back on the same boundary with a different
