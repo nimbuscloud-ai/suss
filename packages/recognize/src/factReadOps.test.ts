@@ -137,7 +137,8 @@ describe("the read ops over the facts", () => {
       factReadOps("other", facts).isOff(env),
       factReadOps("named", facts).isOff(handedIn("ctx")),
       factReadOps("a", facts).isOff(env),
-    ]).toEqual([true, true, false, false, false]);
+      factReadOps("needCall", facts).isOff(env),
+    ]).toEqual([true, true, false, false, false, false]);
   });
 
   it("asks the adapter for the object first when it says so, without stating the site", () => {
