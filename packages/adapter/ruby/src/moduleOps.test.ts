@@ -54,4 +54,10 @@ describe("one Ruby file read on its own as module ops", () => {
     expect(get?.valueAt(0)?.evaluatedWith?.(bindings)).toBe("users/x");
     expect(get?.keywordAt?.("to")?.evaluatedWith?.(bindings)).toBeNull();
   });
+
+  it("gives a list written as %w[] or %i[] the shape of an array, as it gives [...]", () => {
+    const [call] = opsOf("only %w[a], %i[b], [:c], list\n").bodyCalls();
+    const shapes = [0, 1, 2, 3].map((at) => call?.valueAt(at)?.shape?.()?.type);
+    expect(shapes).toEqual(["array", "array", "array", "unknown"]);
+  });
 });
