@@ -1557,6 +1557,26 @@ describe("railsFramework", () => {
       ]);
     });
 
+    it("walks a gem's block whose only routing call is under a conditional", () => {
+      const pack = projectWith(
+        app(
+          "  authenticated :admin do\n" +
+            "    if Rails.env.production?\n" +
+            '      get "jobs", to: "jobs#index"\n' +
+            "    end\n" +
+            "  end",
+        ),
+      );
+      const p = pattern(pack);
+      expect(firstRoute(p, "JobsController", "index")).toEqual({
+        method: "GET",
+        path: "/jobs",
+      });
+      expect(p.routingGaps?.()).toEqual([
+        expect.stringContaining("wraps routes in authenticated"),
+      ]);
+    });
+
     it("reads nothing from an extra routes file that does not exist", () => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-engines-"));
       const table = readRoutes({

@@ -870,18 +870,26 @@ function walkBody(
   walkStatements(bodyStatements(body), ctx, out);
 }
 
+/**
+ * The calls written as statements among `statements`, in order, through
+ * the branches of any `if`, `unless`, `case` or `begin` among them. A
+ * route under `if Rails.env.development?` is declared in the same scope
+ * as one written outside it.
+ */
+function callStatements(statements: readonly RbNode[]): RbNode[] {
+  return statements.flatMap((statement) =>
+    statement.type === "call"
+      ? [statement]
+      : callStatements(nestedStatements(statement)),
+  );
+}
+
 function walkStatements(
   statements: RbNode[],
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  for (const statement of statements) {
-    if (statement.type !== "call") {
-      // A route under `if Rails.env.development?` is declared in the
-      // same scope as one written outside it.
-      walkStatements(nestedStatements(statement), ctx, out);
-      continue;
-    }
+  for (const statement of callStatements(statements)) {
     if (field(statement, "receiver") !== null) {
       replayLiteralLoop(statement, ctx, out);
       continue;
@@ -905,11 +913,9 @@ function walkStatements(
 }
 
 /**
- * A gem's block call, such as `devise_scope :user do ... end` or
- * `authenticated :admin do ... end`, wraps routes written in the
- * ordinary grammar and leaves their path and controller alone. A block
- * with no routing call at its top level, such as `direct` building a
- * URL, stays unread under the call's own name.
+ * A gem's block call, such as `devise_scope :user do ... end`, wraps
+ * routes in the ordinary grammar and leaves their path and controller
+ * alone. A block with no routing call, such as `direct`, stays unread.
  */
 function blockWrittenInRoutesGrammar(call: RbNode): boolean {
   const block = field(call, "block");
@@ -917,9 +923,8 @@ function blockWrittenInRoutesGrammar(call: RbNode): boolean {
   if (body === null) {
     return false;
   }
-  return bodyStatements(body).some(
+  return callStatements(bodyStatements(body)).some(
     (statement) =>
-      statement.type === "call" &&
       field(statement, "receiver") === null &&
       Object.hasOwn(HANDLERS, field(statement, "method")?.text ?? ""),
   );
