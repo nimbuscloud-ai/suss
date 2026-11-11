@@ -39,7 +39,7 @@ import type {
   SubUnitOpsCarrier,
   ValueForm,
 } from "@suss/extractor";
-import type { SqlPlaceholder } from "@suss/sql";
+import type { QualifiedTable, SqlPlaceholder } from "@suss/sql";
 import type {
   AccessKind,
   AccessPathLink,
@@ -51,6 +51,7 @@ import type {
   CallStep,
   Chain,
   ChannelPart,
+  ContainerArgument,
   ContainerLink,
   ContainerMember,
   ContainersLink,
@@ -953,8 +954,7 @@ function addressOf(
       container: containerOf(chain, selector, subject, unsettled),
     };
   }
-  const [name] = namesAt(subject, link.argument, unsettled);
-  const split = name === undefined ? null : splitQualifiedTable(name);
+  const split = qualifiedTableAt(subject, link.argument, unsettled);
   if (split === null) {
     return null;
   }
@@ -962,6 +962,26 @@ function addressOf(
     scope: split.qualifier[split.qualifier.length - 1] ?? scope,
     container: split.table,
   };
+}
+
+/**
+ * The first table one of the picks gives, split from the namespaces
+ * written in front of it. A pick whose name is not a table falls to the
+ * next one, as a pick that reaches no name does.
+ */
+function qualifiedTableAt(
+  subject: CallOps,
+  says: ContainerArgument["argument"],
+  unsettled: UnsettledName,
+): QualifiedTable | null {
+  for (const pick of inOrder(says)) {
+    const [name] = namesAt(subject, pick, unsettled);
+    const split = name === undefined ? null : splitQualifiedTable(name);
+    if (split !== null) {
+      return split;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1344,7 +1364,18 @@ function containerOf(
   if ("of" in link) {
     return memberNamed(subject, link);
   }
-  return namesAt(subject, link.argument, unsettled)[0] ?? null;
+  for (const pick of inOrder(link.argument)) {
+    const [name] = namesAt(subject, pick, unsettled);
+    if (name !== undefined) {
+      return name;
+    }
+  }
+  return null;
+}
+
+/** A pick written alone, or each pick of a list, in the order to try them. */
+function inOrder<T extends object>(says: T | readonly T[]): readonly T[] {
+  return Array.isArray(says) ? (says as readonly T[]) : [says as T];
 }
 
 /** Which way into the container the call took, when the chain says where. */
@@ -1947,6 +1978,7 @@ function sqlAccess(matched: Matched): Effect[] | null {
     (matched.meaning as SqlMethod).parameters,
   );
   const system = systemOf(ending.system, ops);
+  const scope = scopeOf(chain, subject, "nothing") ?? ending.scope;
   return accesses.map((access) => {
     const effect: Effect = {
       type: "interaction",
@@ -1957,9 +1989,9 @@ function sqlAccess(matched: Matched): Effect[] | null {
           ? {}
           : { transport: ending.transport }),
         // A statement that qualifies its table says which namespace
-        // the access is in, and the pack's own scope is the fallback
-        // for a statement that leaves it out.
-        scope: access.qualifier[access.qualifier.length - 1] ?? ending.scope,
+        // the access is in. The call's own scope, then the pack's, are
+        // the fallbacks for a statement that leaves it out.
+        scope: access.qualifier[access.qualifier.length - 1] ?? scope,
         container: access.table,
       }),
       callee: ops.calleeText(),
@@ -2005,9 +2037,9 @@ function placeholderValues(
   if (stated.parts.length > 1 && !writesItsOwn) {
     return { numbered: stated.value.interpolated?.() ?? [], named: null };
   }
-  const picks = says === undefined ? [] : Array.isArray(says) ? says : [says];
+  const picks = says === undefined ? [] : inOrder(says);
   const given = picks
-    .map((pick) => statedValue(subject, pick as OneArgument))
+    .map((pick) => statedValue(subject, pick))
     .find((value): value is ValueOps => value !== null);
   return given === undefined
     ? { numbered: [], named: null }
@@ -2045,8 +2077,7 @@ function statementIn(
   subject: CallOps,
   says: SqlMethod["statement"],
 ): Statement | null {
-  const picks = Array.isArray(says) ? says : [says as OneArgument];
-  for (const pick of picks) {
+  for (const pick of inOrder(says)) {
     const value = statedValue(subject, pick);
     const parts = value?.parts() ?? null;
     if (value !== null && parts !== null) {

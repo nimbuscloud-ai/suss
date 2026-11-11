@@ -197,7 +197,13 @@ export type Naming = "asWritten" | "upperFirst";
 /** The container as one of the call's own arguments states it. */
 export interface ContainerArgument {
   readonly asks: "container";
-  readonly argument: ArgumentPick;
+  /**
+   * Where the call states the container. A list is tried in order until
+   * one of the picks reaches a name. BigQuery's `load` is passed the
+   * table on a dataset and a file on a table, so its pack lists the
+   * chain's `table` call first and the call's own argument second.
+   */
+  readonly argument: ArgumentPick | readonly ArgumentPick[];
   /**
    * Whether the argument writes the table the way a statement does,
    * `"analytics.events"`, so the part before the table is the scope. A

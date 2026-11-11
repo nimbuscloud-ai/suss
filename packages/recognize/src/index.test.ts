@@ -540,6 +540,69 @@ describe("a container written the way a statement writes a table", () => {
   });
 });
 
+describe("a container the call can state in more than one place", () => {
+  // On a shelf the first argument is a file, and on the deck itself it is
+  // the shelf, so the shelf the chain reached is tried first.
+  const SHELF: CallStep = { to: "receiver", method: "shelf" };
+  const shelved = store().container([{ of: [SHELF], at: 0 }, { at: 0 }], {
+    qualified: true,
+  });
+  const onShelf = (shelf: string | null, given: string | null) =>
+    callOps({
+      method: "get",
+      from: ["tapedeck"],
+      args: [given],
+      receiver: callOps({ method: "shelf", args: [shelf] }),
+    });
+
+  it("takes the first pick that reaches a name", () => {
+    expect(
+      run(shelved, onShelf("archive.tapes", "gs://exports/tapes.json"))?.[0],
+    ).toMatchObject({
+      binding: { semantics: { scope: "archive", container: "tapes" } },
+    });
+  });
+
+  it("falls to the next pick where the first reaches nothing", () => {
+    expect(
+      run(
+        shelved,
+        callOps({ method: "get", from: ["tapedeck"], args: ["archive.reels"] }),
+      )?.[0],
+    ).toMatchObject({
+      binding: { semantics: { scope: "archive", container: "reels" } },
+    });
+    expect(run(shelved, onShelf(null, "archive.reels"))?.[0]).toMatchObject({
+      binding: { semantics: { container: "reels" } },
+    });
+  });
+
+  it("records no access when no pick settles", () => {
+    expect(run(shelved, onShelf(null, null))).toBeNull();
+  });
+
+  it("tries the picks in order for a name that is not qualified", () => {
+    const either = store().container([{ at: 1 }, { at: 0 }]);
+
+    expect(
+      containerOf(
+        run(
+          either,
+          callOps({ method: "get", from: ["tapedeck"], args: ["a", "b"] }),
+        )?.[0],
+      ),
+    ).toBe("b");
+    expect(
+      containerOf(
+        run(
+          either,
+          callOps({ method: "get", from: ["tapedeck"], args: ["a", null] }),
+        )?.[0],
+      ),
+    ).toBe("a");
+  });
+});
+
 describe("an argument passed under a keyword, or inside an object", () => {
   const byKeyword = store().container({ at: 0, keyword: "table" });
 
@@ -2242,6 +2305,37 @@ describe("a chain over statements written as SQL", () => {
 
     expect(effects?.[0]).toMatchObject({
       binding: { semantics: { container: "dim_account", scope: "default" } },
+    });
+  });
+
+  it("takes the namespace the call says for a table the statement leaves bare", () => {
+    const inArea = queries({ dialect: "bigquery" }).scope({
+      of: [{ to: "receiver", method: "area" }],
+      at: 0,
+    });
+    const asked = (area: string | null) =>
+      runQuery(
+        inArea,
+        callOps({
+          method: "query",
+          from: ["tapedeck"],
+          values: {
+            0: "SELECT t.id FROM tapes t JOIN `archive.reels` r ON r.tape_id = t.id",
+          },
+          receiver: callOps({ method: "area", args: [area] }),
+        }),
+      );
+
+    expect(
+      asked("core")?.map((effect) =>
+        effect.type === "interaction" ? effect.binding?.semantics : null,
+      ),
+    ).toEqual([
+      expect.objectContaining({ container: "tapes", scope: "core" }),
+      expect.objectContaining({ container: "reels", scope: "archive" }),
+    ]);
+    expect(asked(null)?.[0]).toMatchObject({
+      binding: { semantics: { container: "tapes", scope: "default" } },
     });
   });
 

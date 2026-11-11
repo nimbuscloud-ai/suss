@@ -64,6 +64,13 @@ export interface MemberContainer {
   naming?: Naming;
 }
 
+/** Every form `container` takes. */
+type ContainerSays =
+  | ArgumentPick
+  | readonly ArgumentPick[]
+  | MemberContainer
+  | LinkFunction<[readonly string[], CallOps], string | null>;
+
 /** Which calls in hand a chain about another call reads. */
 export interface AboutOptions {
   /** The methods the call in hand may be. Any other call is not read. */
@@ -95,13 +102,11 @@ export interface StorageCalls {
   /**
    * Which container a call's selector belongs to, as an argument, as the
    * member the call is made on, or as the pack's own rule. Without this
-   * the first name a call reached is the container.
+   * the first name a call reached is the container. A list of arguments
+   * is tried in order until one reaches a name.
    */
   container(
-    says:
-      | ArgumentPick
-      | MemberContainer
-      | LinkFunction<[readonly string[], CallOps], string | null>,
+    says: ContainerSays,
     options?: { qualified?: boolean },
   ): StorageCalls;
   /**
@@ -166,14 +171,18 @@ export function storageCalls(spec: StorageCallsSpec): StorageCalls {
 
 /** The container link a `container` call adds, by which form it was given. */
 function containerLink(
-  says:
-    | ArgumentPick
-    | MemberContainer
-    | LinkFunction<[readonly string[], CallOps], string | null>,
+  says: ContainerSays,
   qualified: boolean,
 ): Link<StorageMethod> {
   if (typeof says === "function") {
     return { asks: "container", from: says };
+  }
+  if (isPickList(says)) {
+    return {
+      asks: "container",
+      argument: says,
+      ...(qualified ? { qualified: true } : {}),
+    };
   }
   if (!("at" in says) && !("from" in says)) {
     return {
@@ -187,6 +196,11 @@ function containerLink(
     argument: says,
     ...(qualified ? { qualified: true } : {}),
   };
+}
+
+// `Array.isArray` does not narrow a readonly array out of a union.
+function isPickList(says: ContainerSays): says is readonly ArgumentPick[] {
+  return Array.isArray(says);
 }
 
 /** The subject link an `about` call adds, with the options after its steps when it states some. */

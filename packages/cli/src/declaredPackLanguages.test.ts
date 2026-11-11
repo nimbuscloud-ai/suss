@@ -33,7 +33,7 @@ import {
 import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
-import type { InputRule } from "@suss/recognize";
+import type { InputRule, OneArgument } from "@suss/recognize";
 
 // Ruby has no imports, so a client comes from a library through the
 // library's own constant, which each origin lists beside the module.
@@ -181,8 +181,49 @@ const BUILDER_PUTS = storageCalls({
   .slots("none")
   .example("records.put({ a: 1, ...base })");
 
+// A warehouse whose `stock` is handed the shelf when it is called on an
+// area and a file when it is called on a shelf, and whose statements
+// take the area off the chain for a table they leave bare.
+const DEPOT = constructedFrom({
+  from: ["depot", "Depot"],
+  named: ["Warehouse"],
+});
+const AREA_OF_DEPOT = returnedBy("area", DEPOT);
+const IN_DEPOT = anyOf(
+  DEPOT,
+  AREA_OF_DEPOT,
+  returnedBy("shelf", anyOf(DEPOT, AREA_OF_DEPOT)),
+);
+const AREA: OneArgument = { of: [{ to: "receiver", method: "area" }], at: 0 };
+
+const DEPOT_QUESTIONS = sqlStatements({
+  system: "warehouse",
+  dialect: "bigquery",
+  client: IN_DEPOT,
+})
+  .methods({ ask: { statement: { at: 0 } } })
+  .scope(AREA)
+  .example('depot.area("core").ask("SELECT id FROM events")');
+
+const DEPOT_STOCKS = storageCalls({
+  system: "warehouse",
+  client: IN_DEPOT,
+  unsettledName: "nothing",
+})
+  .methods({ stock: { kind: "write" } })
+  .container(
+    [{ of: [{ to: "receiver", method: "shelf" }], at: 0 }, { at: 0 }],
+    { qualified: true },
+  )
+  .scope(AREA)
+  .example('depot.area("core").shelf("accounts").stock("gs://f.json")');
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-depot", [DEPOT_QUESTIONS, DEPOT_STOCKS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-builder", [BUILDER_UPDATES, BUILDER_PUTS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -222,6 +263,7 @@ const TYPESCRIPT = `
   import { Dispatcher } from "relay";
   import { Pool } from "sqldb";
   import { eq, Qb, table } from "qb";
+  import { Warehouse } from "depot";
 
   const cache = new Cache();
   const db = new Pool();
@@ -267,6 +309,14 @@ const TYPESCRIPT = `
     builder.putAll([{ a: 1 }, { b: 2 }]);
     builder.put();
   }
+
+  export function shelve() {
+    const depot = new Warehouse();
+    depot.area("core").ask("SELECT id FROM events");
+    depot.ask("SELECT id FROM \`archive.plans\`");
+    depot.area("core").shelf("accounts").stock("gs://exports/accounts.json");
+    depot.area("core").stock("orders", []);
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
@@ -276,6 +326,7 @@ from ledger import publish
 from relay import Dispatcher
 from sqldb import Pool
 from qb import Qb, eq, table
+from depot import Warehouse
 
 cache = Cache()
 db = Pool()
@@ -327,6 +378,14 @@ def keep():
     builder.put({"a": 1, **base})
     builder.putAll([{"a": 1}, {"b": 2}])
     builder.put()
+
+
+def shelve():
+    depot = Warehouse()
+    depot.area("core").ask("SELECT id FROM events")
+    depot.ask("SELECT id FROM \`archive.plans\`")
+    depot.area("core").shelf("accounts").stock("gs://exports/accounts.json")
+    depot.area("core").stock("orders", [])
 `;
 
 const RUBY = `module Store
@@ -372,6 +431,14 @@ const RUBY = `module Store
     builder.putAll([{ a: 1 }, { b: 2 }])
     builder.put()
   end
+
+  def self.shelve
+    depot = Depot::Warehouse.new
+    depot.area("core").ask("SELECT id FROM events")
+    depot.ask("SELECT id FROM \`archive.plans\`")
+    depot.area("core").shelf("accounts").stock("gs://exports/accounts.json")
+    depot.area("core").stock("orders", [])
+  end
 end
 `;
 
@@ -398,6 +465,18 @@ const LIBRARIES: Record<string, string> = {
     }
     export declare function table(name: string): unknown;
     export declare function eq(a: unknown, b: unknown): unknown;
+  `,
+  depot: `
+    export declare class Shelf { stock(what: unknown): unknown; }
+    export declare class Area {
+      shelf(name: string): Shelf;
+      ask(statement: string): unknown;
+      stock(shelf: string, rows: unknown[]): unknown;
+    }
+    export declare class Warehouse {
+      area(name: string): Area;
+      ask(statement: string): unknown;
+    }
   `,
 };
 
@@ -657,6 +736,39 @@ describe("a pack declared once", () => {
     expect((await rubyEffects("keep")).map(placeless)).toEqual(fromTypeScript);
   });
 });
+
+describe("a pack that says where the container and the scope are along the chain", () => {
+  it("takes the container from the first place that names one and the scope from the chain, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("shelve").map(placeless);
+
+    expect(fromTypeScript.map(addressOf)).toEqual([
+      ["ask", "core", "events"],
+      ["ask", "archive", "plans"],
+      ["stock", "core", "accounts"],
+      ["stock", "core", "orders"],
+    ]);
+    expect((await pythonEffects("shelve")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("shelve")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+  });
+});
+
+/** The operation, scope and container a storage access records. */
+function addressOf(effect: unknown): readonly (string | null)[] | null {
+  const written = effect as Effect;
+  return written.type === "interaction" &&
+    written.interaction.class === "storage-access" &&
+    written.binding?.semantics.name === "storage"
+    ? [
+        written.interaction.operation ?? null,
+        written.binding.semantics.scope,
+        written.binding.semantics.container,
+      ]
+    : null;
+}
 
 /** The fields a storage access records, or null for any other effect. */
 function fieldsWritten(effect: unknown): readonly string[] | null {
