@@ -600,6 +600,24 @@ describe("railsFramework", () => {
       expect(routeFor(source, "UnspelledController", "show")).toBeNull();
     });
 
+    it("reads action: written in Ruby 3.1's shorthand as the loop variable of that name", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  %w[diff annotate].each do |action|\n" +
+        '    get "files/#{action}", controller: "repositories", action:\n' +
+        "  end\n" +
+        "end\n";
+      expect(routesFor(source, "RepositoriesController", "diff")).toEqual([
+        { method: "GET", path: "/files/diff" },
+      ]);
+      expect(routesFor(source, "RepositoriesController", "annotate")).toEqual([
+        { method: "GET", path: "/files/annotate" },
+      ]);
+      expect(routesFor(source, "RepositoriesController", "files/diff")).toEqual(
+        [],
+      );
+    });
+
     it("leaves a loop over anything but a literal list unread", () => {
       const source =
         "Rails.application.routes.draw do\n" +
