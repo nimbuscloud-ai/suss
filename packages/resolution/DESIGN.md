@@ -268,8 +268,10 @@ Calls:
 call(r, c)                  r is a call whose callee is c, keyed as the
                             value the callee is written as
 callArg(r, k, a)            r passes a at position k
-callKeywordArg(r, n, a)     r passes a under the keyword n
-                            (Python, Ruby)
+callKeywordArg(r, n, a)     r passes a under the keyword n. Ruby 3.1's
+                            f(n:) passes the local, method or constant
+                            spelled n, and a is keyed the way f(n: n)
+                            keys it (Python, Ruby)
 callArgCount(r, k)          r is written with k arguments, keyword ones
                             and a splat included (Python)
 callOutsideMethod(r)        the call r is outside every method body

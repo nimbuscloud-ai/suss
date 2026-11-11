@@ -19,6 +19,7 @@ import {
   children,
   field,
   hashKeySymbolName,
+  pairValue,
   rangeOf,
   readCallArgs,
   runStatements,
@@ -302,7 +303,7 @@ function listItemsNullable(
   );
   for (const pair of pairs) {
     const key = field(pair, "key");
-    const value = field(pair, "value");
+    const value = pair.type === "pair" ? pairValue(pair) : null;
     if (
       pair.type === "pair" &&
       key !== null &&

@@ -21,6 +21,7 @@ import {
   children,
   field,
   hashKeySymbolName,
+  pairValue,
   rangeOf,
   spanOf,
   symbolValue,
@@ -1043,7 +1044,7 @@ function hasSkipMetadata(call: RbNode, keys: readonly string[]): boolean {
 
 function pairSkips(pair: RbNode, keys: readonly string[]): boolean {
   const name = keyName(field(pair, "key"));
-  const value = field(pair, "value");
+  const value = pairValue(pair);
   return (
     name !== null &&
     keys.includes(name) &&

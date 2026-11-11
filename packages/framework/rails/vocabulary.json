@@ -41,7 +41,6 @@
   "arguments": "suss: tree-sitter-ruby field name for a call's own argument list",
   "pair": "suss: tree-sitter-ruby node type for a key: value or key => value argument",
   "key": "suss: tree-sitter-ruby field name for a pair node's key",
-  "value": "suss: tree-sitter-ruby field name for a pair node's value",
   "block": "suss: tree-sitter-ruby field name for a call's do...end block",
   "body": "suss: tree-sitter-ruby field name for a block's own body",
   "receiver": "suss: tree-sitter-ruby field name for a call's receiver expression",

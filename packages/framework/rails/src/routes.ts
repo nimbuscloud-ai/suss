@@ -18,6 +18,7 @@ import {
   field,
   hashKeySymbolName,
   nestedStatements,
+  pairValue,
   parseRubySync,
   stringValueOf,
   symbolValue,
@@ -110,12 +111,10 @@ function readSimpleArgs(
       continue;
     }
     const keyNode = field(child, "key");
-    if (keyNode === null) {
+    const valueNode = pairValue(child);
+    if (keyNode === null || valueNode === null) {
       continue;
     }
-    // Ruby 3.1 writes `action:` for `action: action`, and the evaluator
-    // reads such a key as the local it spells.
-    const valueNode = field(child, "value") ?? keyNode;
     // `constraints: x` and `:constraints => x` are the same keyword.
     const symbolKey = hashKeySymbolName(keyNode) ?? symbolValue(keyNode);
     if (symbolKey !== null) {

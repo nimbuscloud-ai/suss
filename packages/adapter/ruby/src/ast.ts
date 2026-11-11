@@ -824,6 +824,50 @@ export function hashKeySymbolName(node: RbNode): string | null {
   return node.type === "hash_key_symbol" ? node.text : null;
 }
 
+/**
+ * Whether this is the key of a pair written with no value. Ruby 3.1 reads
+ * `f(a:)` as `f(a: a)` and `{ id: }` as `{ id: id }`, so the key is the
+ * only node there is for the value: the local, method or constant it
+ * spells.
+ */
+export function isShorthandKey(
+  node: RbNode,
+  parent: RbNode | null = node.parent,
+): boolean {
+  return (
+    node.type === "hash_key_symbol" &&
+    parent?.type === "pair" &&
+    field(parent, "value") === null
+  );
+}
+
+/** The node for the value a pair passes, which for `a:` is its key. */
+export function pairValue(pair: RbNode): RbNode | null {
+  const value = field(pair, "value");
+  if (value !== null) {
+    return value;
+  }
+  const key = field(pair, "key");
+  return key !== null && isShorthandKey(key, pair) ? key : null;
+}
+
+/** A constant's name starts with a capital, `Foo:` passing the constant `Foo`. */
+const CONSTANT_NAME = /^[A-Z]/;
+
+/**
+ * The type of node this is read as. A shorthand key reads the name it
+ * spells, the way the identifier or constant written out in full would.
+ */
+export function readAsType(
+  node: RbNode,
+  parent: RbNode | null = node.parent,
+): string {
+  if (!isShorthandKey(node, parent)) {
+    return node.type;
+  }
+  return CONSTANT_NAME.test(node.text) ? "constant" : "identifier";
+}
+
 export function booleanLiteralValue(node: RbNode): boolean | null {
   if (node.type === "true") {
     return true;
@@ -865,7 +909,7 @@ export function readCallArgs(argumentList: RbNode | null): CallArgs {
   for (const child of bodyStatements(argumentList)) {
     if (child.type === "pair") {
       const keyNode = field(child, "key");
-      const valueNode = field(child, "value");
+      const valueNode = pairValue(child);
       const name = keyNode !== null ? hashKeySymbolName(keyNode) : null;
       if (name !== null && valueNode !== null) {
         keyword[name] = valueNode;

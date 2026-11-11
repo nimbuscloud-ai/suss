@@ -426,6 +426,19 @@ describe("records and sequences", () => {
     ).toBe("1");
   });
 
+  it("reads a hash field written with no value as the name it spells", async () => {
+    expect(
+      await literal(
+        'prefix = "/api"\ncfg = { prefix: }\nsubject = cfg[:prefix]',
+      ),
+    ).toBe("/api");
+    const { subject } = await projectValues({
+      "a.rb":
+        'def prefix\n  "/api"\nend\nPATH = "/v1"\nsubject = { prefix:, PATH: }[:prefix] + { prefix:, PATH: }[:PATH]',
+    });
+    expect(literalOf(subject("a.rb"))).toBe("/api/v1");
+  });
+
   it("reads an element off an array", async () => {
     expect(await literal('xs = ["/a", "/b"]\nsubject = xs[1]')).toBe("/b");
   });
@@ -583,6 +596,17 @@ describe("functions", () => {
     expect(await route('subject = "/api" + unknown_call("x")')).toBe(
       "/api{unknown_call}",
     );
+  });
+
+  it("passes the local a keyword written with no value spells", async () => {
+    expect(
+      await literal('def p(v:)\n  v\nend\nv = "/x"\nsubject = p(v:)'),
+    ).toBe("/x");
+    expect(
+      await literal(
+        'def p(v:)\n  v\nend\ndef run(v)\n  p(v:)\nend\nsubject = run("/y")',
+      ),
+    ).toBe("/y");
   });
 
   it("binds a keyword argument and takes a keyword default", async () => {

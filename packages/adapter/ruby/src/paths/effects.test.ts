@@ -168,6 +168,24 @@ describe("ruby invocation effects", () => {
     expect(effects[0]?.args).toEqual([{ kind: "string", value: "orders" }]);
   });
 
+  it("reads a keyword written with no value as the local or the call it spells", async () => {
+    const effects = await effectsFor([
+      "def total",
+      "  items = load",
+      "  publish(items:, queue:)",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual([
+      "load",
+      "publish",
+      "queue",
+    ]);
+    expect(effects[1]?.args).toEqual([
+      { kind: "identifier", name: "items" },
+      { kind: "identifier", name: "queue" },
+    ]);
+  });
+
   it("keeps a call written inside a block, because it runs in this method", async () => {
     const effects = await effectsFor([
       "def total",

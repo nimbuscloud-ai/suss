@@ -41,6 +41,8 @@ import {
   NodeSet,
   OWN_BODY_TYPES,
   PREPEND_CALL,
+  pairValue,
+  readAsType,
   readCallArgs,
   runStatements,
   scopesDefinedIn,
@@ -130,7 +132,10 @@ function nameKey(
 
 /** The test group a bare name belongs to, when the name is no local, since a local wins over a group's value in Ruby. */
 function groupOwnerOf(node: RbNode, enclosing: RbNode | null): RbNode | null {
-  if (node.type !== "identifier" || isLocalName(node, node.text, enclosing)) {
+  if (
+    readAsType(node) !== "identifier" ||
+    isLocalName(node, node.text, enclosing)
+  ) {
     return null;
   }
   return groupNameOwner(node, node.text);
@@ -154,7 +159,8 @@ export function readKey(
   parent?: RbNode | null,
 ): string {
   const node = readThrough(written);
-  const type = node.type;
+  const above = node === written && parent !== undefined ? parent : node.parent;
+  const type = readAsType(node, above);
   if (type !== "identifier" && type !== "constant") {
     return nodeId(filePath, node);
   }
@@ -163,7 +169,6 @@ export function readKey(
   if (described !== null) {
     return readKey(filePath, described, null);
   }
-  const above = node === written && parent !== undefined ? parent : node.parent;
   if (
     isMethodOfReceiver(node, above) ||
     (type === "identifier" && bareNameIsCall(node, above, enclosing))
@@ -199,7 +204,8 @@ function isReceiverOfCall(node: RbNode, parent: RbNode | null): boolean {
  */
 function isBareCall(node: RbNode, enclosing: RbNode | null): boolean {
   return (
-    node.type === "identifier" && bareNameIsCall(node, node.parent, enclosing)
+    readAsType(node) === "identifier" &&
+    bareNameIsCall(node, node.parent, enclosing)
   );
 }
 
@@ -816,7 +822,7 @@ function emitCallArguments(emitter: Emitter, site: CallSite): void {
   for (const argument of args === null ? [] : children(args)) {
     if (argument.type === "pair") {
       const key = field(argument, "key");
-      const value = field(argument, "value");
+      const value = pairValue(argument);
       const keyText = key === null ? null : pairKeyText(key);
       if (keyText !== null && value !== null) {
         add(
@@ -895,7 +901,7 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
       continue;
     }
     const key = field(pair, "key");
-    const value = field(pair, "value");
+    const value = pairValue(pair);
     if (key === null || value === null) {
       continue;
     }
@@ -1083,7 +1089,7 @@ function walkExpressions(
   blocks: OpenBlocks | null = null,
 ): void {
   for (const child of children(node)) {
-    const type = child.type;
+    const type = readAsType(child, node);
     if (OWN_BODY_TYPES.has(type)) {
       nested?.push(child);
       continue;

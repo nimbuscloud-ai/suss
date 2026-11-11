@@ -20,8 +20,11 @@ import {
   field,
   hashKeySymbolName,
   isRaiseCall,
+  isShorthandKey,
   NESTING_TYPES,
   numberLiteralValue,
+  pairValue,
+  readAsType,
   stringLiteralValue,
   symbolValue,
 } from "../ast.js";
@@ -164,7 +167,7 @@ export function rubyLowering(options: LoweringOptions): Lowering<RbNode> {
 /** The name a hole takes for an expression nothing could read. */
 export function placeholderName(node: RbNode): string {
   const peeled = peelValue(node);
-  if (NAME_TYPES.has(peeled.type)) {
+  if (NAME_TYPES.has(readAsType(peeled))) {
     return peeled.text.replace(/^@+|^\$/, "");
   }
   const environmentVariable = environmentVariableOf(peeled);
@@ -204,16 +207,15 @@ function fromFields<T>(
   return build(...(found as RbNode[]));
 }
 
-/**
- * Ruby 3.1 writes `get "x", action:` for `get "x", action: action`, so the
- * key of a pair written with no value reads the name it spells. A key with
- * a value is no value of its own.
- */
-function shorthandRead(key: RbNode): Expression<RbNode> {
-  const pair = key.parent;
-  return pair?.type === "pair" && field(pair, "value") === null
-    ? { kind: "name", text: key.text }
-    : OPAQUE;
+/** Build from a pair's key and the value it passes, or fall back when the parse left one out. */
+function fromPair<T>(
+  pair: RbNode,
+  fallback: T,
+  build: (key: RbNode, value: RbNode) => T,
+): T {
+  const key = field(pair, "key");
+  const value = pairValue(pair);
+  return key === null || value === null ? fallback : build(key, value);
 }
 
 /** `ENV["X"]` reads the environment variable `X`; `ENV.fetch` is a row. */
@@ -241,7 +243,6 @@ const EXPRESSION_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
   // A constant path is never bound locally, so the read falls through to
   // the `binds` fact that points at the constant's definition.
   scope_resolution: (node) => ({ kind: "name", text: node.text }),
-  hash_key_symbol: shorthandRead,
   element_reference: (node) => {
     const object = field(node, "object");
     const indexes =
@@ -308,7 +309,7 @@ function expressionOf(node: RbNode): Expression<RbNode> {
   if (literal !== undefined) {
     return literal(peeled);
   }
-  if (NAME_TYPES.has(peeled.type)) {
+  if (NAME_TYPES.has(readAsType(peeled))) {
     return { kind: "name", text: peeled.text };
   }
   const lower = EXPRESSION_TYPES[peeled.type];
@@ -446,7 +447,7 @@ function argumentsOf(call: RbNode): Element<RbNode>[] {
     if (argument.type !== "pair") {
       return [elementOf(argument)];
     }
-    return fromFields(argument, ["key", "value"], [], (key, value) => {
+    return fromPair(argument, [], (key, value) => {
       const name = hashKeySymbolName(key) ?? symbolValue(key);
       return name === null ? [] : [{ kind: "named", name, node: value }];
     });
@@ -501,7 +502,7 @@ function fieldOf(node: RbNode): Field<RbNode>[] {
   if (node.type !== "pair") {
     return [];
   }
-  return fromFields(node, ["key", "value"], [], (key, value) => {
+  return fromPair(node, [], (key, value) => {
     const name =
       hashKeySymbolName(key) ?? symbolValue(key) ?? stringLiteralValue(key);
     return name === null
@@ -1061,14 +1062,18 @@ function freeNamesOf(fn: RbNode): readonly string[] {
   const read = new Set<string>();
   const visit = (node: RbNode): void => {
     for (const child of named(node)) {
-      if (!NAME_TYPES.has(child.type)) {
+      if (!NAME_TYPES.has(readAsType(child, node))) {
         visit(child);
         continue;
       }
       if (node.type === "call" && field(node, "method")?.id === child.id) {
         continue;
       }
-      if (node.type === "pair" && field(node, "key")?.id === child.id) {
+      if (
+        node.type === "pair" &&
+        field(node, "key")?.id === child.id &&
+        !isShorthandKey(child, node)
+      ) {
         continue;
       }
       if (
