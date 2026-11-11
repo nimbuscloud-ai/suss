@@ -64,7 +64,8 @@ beforeAll(() => {
   );
   write(
     "src/listener.ts",
-    `addEventListener("fetch", (event: FetchEvent) => {
+    `console.log("registering");
+     addEventListener("fetch", (event: FetchEvent) => {
        event.respondWith(new Response("hi", { status: 200 }));
      });`,
   );
