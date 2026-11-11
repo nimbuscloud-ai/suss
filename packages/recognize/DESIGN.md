@@ -482,6 +482,20 @@ true })`. The part before the table is the scope, and a name that does
 not settle leaves the call without an access, the same as a statement
 whose table does not settle.
 
+`container` also takes a list of picks, tried in order until one
+reaches a name, the way a statement's picks are. BigQuery's Ruby gem
+offers `load` on a dataset, where the first argument is the table, and
+on a table, where it is the file:
+
+```ts
+.container([{ of: [{ to: "receiver", method: "table" }], at: 0 }, { at: 0 }], { qualified: true })
+```
+
+The table the chain picked comes first, so `table.load(file)` writes
+the table and `dataset.load("accounts", file)` writes `accounts`. With
+`qualified`, a pick whose name is not a table falls to the next pick,
+and when none of the picks settles, the call does not record an access.
+
 ## A call on a model's delegate
 
 An ORM reads a model off the client and calls the method on that:
@@ -777,7 +791,11 @@ lists both picks, and they are tried in order until one returns text:
 A BigQuery table is written `` `project.dataset.table` ``. `@suss/sql`
 splits the name, so the container is the table a provider declares and
 the dataset becomes the scope of the access. A statement that qualifies
-nothing records the scope the pack was built with.
+nothing records the scope the call states, when the chain has a
+`scope` link, and the scope the pack was built with otherwise. A Ruby
+caller writes `bigquery.dataset("core").query(sql)`, so the pack's
+`.scope({ of: [DATASET_STEP], at: 0 })` puts a bare `events` under
+`core`, and a table the statement qualifies keeps its own dataset.
 
 ### A hole that is a table
 
