@@ -93,7 +93,7 @@ A block can leave out what the checker pairs on. The checker reports it as `unke
 | `semantics` | yes | `function-call`. |
 | `package` | no | The package name, when the boundary is something a package publishes. |
 | `exportPath` | no | The path to the export inside the package: the sub-path, then any nested names. |
-| `module` | no | The module of this application the function belongs to, by the name `suss.json` gives it. A server action gives the file it is written in instead. |
+| `module` | no | The module of this application the function belongs to, by the name `suss.json` gives it. A server action gives the file whose `"use server"` makes it an action instead. That is the file that exports it when the directive opens the file, even when the function is written in another file and re-exported or wrapped. |
 | `exportName` | no | The name the module or package exports the function under. |
 | `transport` | no | Defaults to `in-process`. |
 | `receives` | no | The arguments the boundary needs, by parameter name. |
