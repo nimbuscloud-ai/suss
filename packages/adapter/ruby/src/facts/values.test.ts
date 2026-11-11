@@ -4,6 +4,7 @@ import { Database } from "@suss/datalog";
 
 import { bodyBlocksIn } from "../pack.js";
 import { parseRuby } from "../parser.js";
+import { RUBY_PROGRAM } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
 import type { BodyBlocks } from "../ast.js";
@@ -1868,5 +1869,93 @@ describe("ruby value facts", () => {
     expect(compared[0]?.[0]).toBe(keyOf(source, "price > 100"));
     expect(textAt(source, compared[0]?.[1] ?? "")).toBe("price");
     expect(compared[0]?.[2]).toBe(keyOf(source, "100"));
+  });
+});
+
+describe("the calls a body writes as statements, and the pairs a call passes", () => {
+  /** Each body's calls in order, as the first word of each call's text. */
+  function placed(db: Database, source: string): Record<string, string[]> {
+    const byOwner: Record<string, string[]> = {};
+    const sorted = [...rows(db, "bodyCallAt")].sort(
+      (a, b) => Number(a[1]) - Number(b[1]),
+    );
+    for (const [owner = "", , call = ""] of sorted) {
+      const word = textAt(source, call).split(/[\s(]/)[0] ?? "";
+      byOwner[owner] = [...(byOwner[owner] ?? []), word];
+    }
+    return byOwner;
+  }
+
+  it("places a block's calls in order through a conditional, and not a nested block's", async () => {
+    const source =
+      "draw do\n" +
+      '  get "a"\n' +
+      "  if dev?\n" +
+      '    post "b"\n' +
+      "  else\n" +
+      '    put "c"\n' +
+      "  end\n" +
+      "  scope do\n" +
+      '    delete "d"\n' +
+      "  end\n" +
+      "end\n";
+    const db = await factsFor(source);
+    expect(placed(db, source)).toEqual({
+      "": ["draw"],
+      [keyOf(source, source.slice(5, -1))]: ["get", "post", "put", "scope"],
+      [keyOf(source, 'do\n    delete "d"\n  end')]: ["delete"],
+    });
+  });
+
+  it("places a method's calls and a class body's calls", async () => {
+    const source =
+      "module Billing\n" +
+      "  class Engine < ::Rails::Engine\n" +
+      "    isolate_namespace Billing\n" +
+      '    engine_name "billing"\n' +
+      "    def setup\n" +
+      "      helper :y\n" +
+      "    end\n" +
+      "  end\n" +
+      "end\n";
+    const db = await factsFor(source);
+    const engine = keyOf(source, source.slice(17, -5));
+    const setup = keyOf(source, "def setup\n      helper :y\n    end");
+    expect(placed(db, source)).toEqual({
+      [engine]: ["isolate_namespace", "engine_name"],
+      [setup]: ["helper"],
+    });
+  });
+
+  it("states a pair whose key is a string, a constant or a local, and keeps a string key as a keyword too", async () => {
+    const source =
+      'get "status" => "health#show", :constraints => {}\n' +
+      'mount Sidekiq::Web => "/sidekiq"\n' +
+      '%w[a].each { |name| get name => "letters#show" }\n';
+    const db = await factsFor(source);
+    const block = keyOf(source, '{ |name| get name => "letters#show" }');
+    const pairs = rows(db, "callPairArg").map(([, key = "", value = ""]) => [
+      key.includes("#") ? key : textAt(source, key),
+      textAt(source, value),
+    ]);
+    expect(pairs).toEqual([
+      ['"status"', '"health#show"'],
+      ["Sidekiq::Web", '"/sidekiq"'],
+      [`${block}#name`, '"letters#show"'],
+    ]);
+    expect(rows(db, "callKeywordArg").map((row) => row[1])).toEqual([
+      "status",
+      "constraints",
+    ]);
+  });
+
+  it("states facts no rule of a Ruby run reads", () => {
+    const read = new Set(
+      RUBY_PROGRAM.rules.flatMap((rule) =>
+        rule.body.map((literal) => literal.relation),
+      ),
+    );
+    expect(read.has("bodyCallAt")).toBe(false);
+    expect(read.has("callPairArg")).toBe(false);
   });
 });

@@ -1669,3 +1669,59 @@ describe("python value facts", () => {
     ]);
   });
 });
+
+describe("the calls a body writes as statements", () => {
+  it("places a function's and the module's calls in order through if, try and with, and not a nested def's", async () => {
+    const source =
+      "setup()\n" +
+      "def routes():\n" +
+      "    get('a')\n" +
+      "    if dev:\n" +
+      "        post('b')\n" +
+      "    elif ci:\n" +
+      "        put('c')\n" +
+      "    else:\n" +
+      "        patch('d')\n" +
+      "    try:\n" +
+      "        delete('e')\n" +
+      "    except Error:\n" +
+      "        head('f')\n" +
+      "    finally:\n" +
+      "        options('g')\n" +
+      "    with lock:\n" +
+      "        trace('h')\n" +
+      "    x = build('i')\n" +
+      "    def inner():\n" +
+      "        skip('j')\n" +
+      "    for item in items:\n" +
+      "        loop('k')\n" +
+      "run()\n";
+    const db = await factsFor(source);
+    const placed: Record<string, string[]> = {};
+    const sorted = [...rows(db, "bodyCallAt")].sort(
+      (a, b) => Number(a[1]) - Number(b[1]),
+    );
+    for (const [owner = "", , call = ""] of sorted) {
+      const owned =
+        owner === "" ? "module" : textAt(source, owner).slice(4, 10);
+      placed[owned] = [
+        ...(placed[owned] ?? []),
+        textAt(source, call).split("(")[0] ?? "",
+      ];
+    }
+    expect(placed).toEqual({
+      module: ["setup", "run"],
+      routes: [
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        "head",
+        "options",
+        "trace",
+      ],
+      "inner(": ["skip"],
+    });
+  });
+});
