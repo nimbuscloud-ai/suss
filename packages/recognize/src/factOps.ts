@@ -400,7 +400,12 @@ class FactCall implements CallOps {
     if (this.calleeRead === null) {
       return this.calleeKey;
     }
-    const asWritten = this.source.writtenAs(this.calleeRead.object);
+    const { object } = this.calleeRead;
+    // `PG.connect(url).exec(sql)` writes the call that made the receiver
+    // in place, so nothing was written to a name for the facts to settle.
+    const asWritten =
+      this.source.writtenAs(object) ??
+      (isCall(object, this.source) ? object : null);
     const written =
       reading === "asWritten"
         ? asWritten
