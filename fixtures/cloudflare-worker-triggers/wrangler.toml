@@ -10,6 +10,8 @@ GREETING_TABLE = "greetings"
 REMOTE_ORIGIN = "https://origin.example.com"
 CAST_ORIGIN = "https://cast.example.com"
 ASSERTED_ORIGIN = "https://asserted.example.com"
+PASSED_ORIGIN = "https://passed.example.com"
+LOCAL_REGION = "weur"
 
 [[kv_namespaces]]
 binding = "SESSIONS"
