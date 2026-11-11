@@ -12,6 +12,7 @@ export {
   declaredBy,
   global,
   handedBy,
+  handedIn,
   imported,
   inherits,
   opsIn,

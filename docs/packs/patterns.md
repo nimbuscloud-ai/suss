@@ -141,6 +141,8 @@ React Router uses it for `loader`, `action` and `default`, and the React pack us
 
 With only `names`, the TypeScript adapter reads it with its own handler. Any other field makes it a declared pattern, which every adapter reads the same way through the module ops: `pattern` takes the exports whose name the regular expression matches, `skipFiles` leaves out files the globs match, and `bodyEndsIn: "element"` keeps only a function one of whose returned values is a JSX element. `members` takes the listed members of the exported object instead of the export itself, each as the unit its `UnitSpec` says, so `names: ["default"]` with `fetch` and `queue` listed finds a Cloudflare Worker's handlers.
 
+A `UnitSpec` can say which of the unit's parameters the platform fills when it calls the unit, with `handedIn: [{ at: 1, name: "env" }]`. The adapter records that on the parameter when it claims the unit, so a read chain off `handedIn("env")` reads `env.GREETING` in the body, whatever the parameter is called.
+
 ### `manifest`
 
 ```typescript

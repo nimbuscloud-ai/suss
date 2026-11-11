@@ -8,7 +8,7 @@
  * environment reads themselves.
  */
 
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -18,27 +18,44 @@ import {
   parsePython,
   pythonFactSource,
   factsForFile as pythonFacts,
+  nodeId as pythonNodeId,
 } from "@suss/adapter-python";
 import {
   emitEnvFacts,
   parseRuby,
   rubyFactSource,
   factsForFile as rubyFacts,
+  nodeId as rubyNodeId,
 } from "@suss/adapter-ruby";
 import {
   accessContextFor,
+  discoverUnits,
   ResolutionStore,
   readOpsAt,
 } from "@suss/adapter-typescript";
 import nodeRuntimePack from "@suss/packs/node";
-import { compile, global, runtimeReads } from "@suss/recognize";
-import { factCallOps, factReadOps } from "@suss/recognize/ops";
+import {
+  compile,
+  discoverDeclared,
+  global,
+  handedIn,
+  runtimeReads,
+} from "@suss/recognize";
+import { factCallOps, factModuleOps, factReadOps } from "@suss/recognize/ops";
+import { stateHandedIn } from "@suss/resolution";
 import { createTestProject } from "@suss/test-project";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { FactSource, ReadOps, RuntimeObject } from "@suss/extractor";
-import type { SourceFile } from "ts-morph";
+import type {
+  DeclaredDiscoveryPattern,
+  FactSource,
+  ReadOps,
+  RuntimeObject,
+  UnitSpec,
+} from "@suss/extractor";
+import type { DeclaredUnit } from "@suss/recognize";
+import type { PropertyAccessExpression, SourceFile } from "ts-morph";
 
 const TYPESCRIPT = `
 function need(name: string) {
@@ -340,5 +357,171 @@ describe("the read ops, in every language", () => {
   it("find no key at a call that passes none to a helper", () => {
     const { sites } = typescriptSites();
     expect(sites.at("process.env.A").keysSuppliedTo(sites.object)).toEqual([]);
+  });
+});
+
+/**
+ * A unit whose second parameter the platform fills, found the way a
+ * Workers pack finds a trigger, and a function beside it with the same
+ * parameter that no pattern finds. Ruby states no export for a hash it
+ * writes, so its unit comes from a manifest instead of an exported
+ * object's members.
+ */
+const HANDED_IN_SPEC: UnitSpec = {
+  kind: "handler",
+  name: "fetch",
+  handedIn: [{ at: 1, name: "env" }],
+};
+
+const MEMBERS: DeclaredDiscoveryPattern = {
+  kind: "handler",
+  match: {
+    type: "namedExport",
+    names: ["default"],
+    members: { named: { fetch: HANDED_IN_SPEC } },
+  },
+};
+
+const MANIFEST: DeclaredDiscoveryPattern = {
+  kind: "handler",
+  match: {
+    type: "manifest",
+    entries: () => [{ path: ["serve"], units: [HANDED_IN_SPEC] }],
+  },
+};
+
+const HANDED_TYPESCRIPT = `
+interface Env { GREETING: string; OTHER: string }
+export default {
+  async fetch(request: Request, env: Env) {
+    return env.GREETING;
+  },
+};
+export function other(request: Request, env: Env) {
+  return env.OTHER;
+}
+`;
+
+const HANDED_PYTHON = `def serve(request, env):
+    return env.GREETING
+
+
+def other(request, env):
+    return env.OTHER
+
+
+default = {"fetch": serve}
+`;
+
+const HANDED_RUBY = `def serve(request, env)
+  env.greeting
+end
+
+def other(request, env)
+  env.other
+end
+`;
+
+/** Whether the read of each entry is off the handed-in parameter, by entry. */
+function offHandedIn(
+  db: Database,
+  source: FactSource,
+  entries: readonly string[],
+): boolean[] {
+  return entries.map((entry) => {
+    const site =
+      db.facts("readsProperty").find((row) => String(row[2]) === entry)?.[0] ??
+      raise(`no read of ${entry}`);
+    return factReadOps(String(site), source).isOff(handedIn("env"));
+  });
+}
+
+/** The units the pattern finds in one file, through the module ops over its facts. */
+function foundIn(
+  source: FactSource,
+  file: string,
+  pattern: DeclaredDiscoveryPattern,
+): DeclaredUnit[] {
+  const module = factModuleOps(file, source, { calls: () => [] });
+  return discoverDeclared(pattern.match, pattern.kind, module);
+}
+
+/** The config reads the env chain gives at one property read. */
+function envChainReadsAt(
+  read: PropertyAccessExpression,
+  file: SourceFile,
+  store: ResolutionStore,
+) {
+  const env = runtimeReads({ object: handedIn("env") }).entries(
+    {},
+    { reads: "config" },
+  );
+  const recognize = compile(env.declared, RECOGNITION);
+  return configReadsIn(
+    recognize(read, accessContextFor(read, file, store)) ?? [],
+  );
+}
+
+describe("a parameter the platform fills, in every language", () => {
+  it("is what a TypeScript unit's reads are off, and the chain reads it as env", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile("/src/worker.ts", HANDED_TYPESCRIPT);
+    const store = ResolutionStore.forPacks([]);
+    const units = discoverUnits(file, [MEMBERS], store);
+    for (const unit of units) {
+      if (unit.func !== null && unit.handedIn !== undefined) {
+        store.stateHandedIn(unit.func, unit.handedIn);
+      }
+    }
+    const [greeting, other] = ["env.GREETING", "env.OTHER"].map(
+      (text) =>
+        file
+          .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+          .find((node) => node.getText() === text) ?? raise(`no read ${text}`),
+    ) as [PropertyAccessExpression, PropertyAccessExpression];
+
+    expect(units.map((unit) => unit.name)).toEqual(["fetch"]);
+    expect(
+      [greeting, other].map((read) =>
+        readOpsAt(read, store).isOff(handedIn("env")),
+      ),
+    ).toEqual([true, false]);
+    expect(envChainReadsAt(greeting, file, store)).toEqual([
+      ["env.GREETING", "GREETING", false, null],
+    ]);
+  });
+
+  it("is what a Python unit's reads are off", async () => {
+    const tree = await parsePython(HANDED_PYTHON);
+    const root = tree.rootNode;
+    const module = bindModule(root);
+    const db = pythonFacts({ file: "worker.py", root, module, packs: [] });
+    const source = pythonFactSource(db);
+    const units = foundIn(source, "worker.py", MEMBERS);
+    for (const unit of units) {
+      const func = pythonNodeId("worker.py", unit.func as never);
+      stateHandedIn(db, func, unit.handedIn ?? []);
+    }
+    expect(units.map((unit) => unit.name)).toEqual(["fetch"]);
+    expect(offHandedIn(db, source, ["GREETING", "OTHER"])).toEqual([
+      true,
+      false,
+    ]);
+  });
+
+  it("is what a Ruby unit's reads are off", async () => {
+    const tree = await parseRuby(HANDED_RUBY);
+    const db = rubyFacts({ file: "worker.rb", root: tree.rootNode, packs: [] });
+    const source = rubyFactSource(db);
+    const units = foundIn(source, "worker.rb", MANIFEST);
+    for (const unit of units) {
+      const func = rubyNodeId("worker.rb", unit.func as never);
+      stateHandedIn(db, func, unit.handedIn ?? []);
+    }
+    expect(units.map((unit) => unit.name)).toEqual(["fetch"]);
+    expect(offHandedIn(db, source, ["greeting", "other"])).toEqual([
+      true,
+      false,
+    ]);
   });
 });

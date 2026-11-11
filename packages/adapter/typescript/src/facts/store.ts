@@ -37,6 +37,7 @@ import {
   DISPATCH_QUESTION,
   type ExplainStats,
   fallbackWrittenAs,
+  type HandedInAt,
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
@@ -48,6 +49,7 @@ import {
   RESOLUTION_RULES as SHARED_RULES,
   type SourceLeaf,
   sourceLeavesOf,
+  stateHandedIn,
   type ValueUses,
   writtenAnswersFor,
   writtenValueUnder,
@@ -1364,6 +1366,29 @@ export class ResolutionStore {
       const written = declared.getTypeNode()?.getText();
       return written !== undefined && typeNames.includes(written);
     });
+  }
+
+  /**
+   * Records which of a unit's parameters the platform fills, as
+   * `handedIn(p, name)` on the parameter at each position. A unit is
+   * claimed before its body is read, so a read chain off the parameter
+   * finds the fact at every read in the body.
+   */
+  stateHandedIn(func: Node, handedIn: readonly HandedInAt[]): void {
+    this.factAccess().state(func);
+    stateHandedIn(this.db, nodeId(func), handedIn);
+  }
+
+  /** Whether a name refers to a parameter the platform fills under `name`. */
+  refersToHandedIn(reference: Node, name: string): boolean {
+    if (this.db.lookup("handedIn", 1, name).length === 0) {
+      return false;
+    }
+    // A name's binds are stated with its own facts.
+    this.factAccess().state(reference);
+    return this.db
+      .lookup("binds", 0, nodeId(reference))
+      .some((row) => this.db.has("handedIn", [String(row[1]), name]));
   }
 
   /**

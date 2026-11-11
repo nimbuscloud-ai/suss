@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { type FactSource, factReadOps } from "./factOps.js";
-import { global } from "./ops.js";
+import { global, handedIn } from "./ops.js";
 
 /**
  * The facts for, in source order:
@@ -116,6 +116,28 @@ describe("the read ops over the facts", () => {
       reachedBy(["sys.stdout"]).isOff(ENV),
       factReadOps("a", without("globalsReaching")).isOff(global("x")),
     ]).toEqual([true, "os.environ", null, false, false]);
+  });
+
+  it("says a site is off a parameter the platform fills, read as itself or through a name bound to it", () => {
+    const facts = source();
+    const db = facts.db as Database;
+    const add = (relation: string, ...row: string[]) => db.add(relation, row);
+    add("func", "fetchFn");
+    add("paramOf", "fetchFn", "1", "envParam");
+    add("handedIn", "envParam", "env");
+    add("readsProperty", "direct", "envParam", "X");
+    add("readsProperty", "named", "envRef", "Y");
+    add("binds", "envRef", "envParam");
+    add("readsProperty", "other", "otherRef", "Z");
+    add("binds", "otherRef", "other");
+    const env = handedIn("env");
+    expect([
+      factReadOps("direct", facts).isOff(env),
+      factReadOps("named", facts).isOff(env),
+      factReadOps("other", facts).isOff(env),
+      factReadOps("named", facts).isOff(handedIn("ctx")),
+      factReadOps("a", facts).isOff(env),
+    ]).toEqual([true, true, false, false, false]);
   });
 
   it("asks the adapter for the object first when it says so, without stating the site", () => {

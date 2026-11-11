@@ -1522,6 +1522,9 @@ function extractFromSourceFile(
         tallies,
         sourceFile.getFilePath(),
       );
+      if (unit.handedIn !== undefined && unit.func !== null) {
+        resolution?.stateHandedIn(unit.func, unit.handedIn);
+      }
       const raw = extractCodeStructure(
         unit,
         pack,

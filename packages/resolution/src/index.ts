@@ -43,6 +43,7 @@ export {
 export { exitCodeFunctions } from "./exitCode.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export { importedFilesByFile } from "./fileImports.js";
+export { type HandedInAt, stateHandedIn } from "./handedIn.js";
 export { boundByImport } from "./importBinding.js";
 export { memberOf } from "./members.js";
 export {

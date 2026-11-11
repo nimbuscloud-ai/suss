@@ -19,6 +19,7 @@ import {
 } from "@suss/extractor";
 import { discoverDeclared } from "@suss/recognize";
 import { factCallOps, factModuleOps } from "@suss/recognize/ops";
+import { stateHandedIn } from "@suss/resolution";
 
 import { LAMBDA_TYPE, METHOD_TYPES } from "./ast.js";
 import { rubyFactSource } from "./factSource.js";
@@ -74,9 +75,13 @@ export function declaredDiscoveryUnits(
       );
       for (const unit of found) {
         const node = unit.func as RbNode;
-        if (node.tree === root.tree) {
-          units.push(unitOf(file, node, unit, pack, options));
+        if (node.tree !== root.tree) {
+          continue;
         }
+        if (unit.handedIn !== undefined) {
+          stateHandedIn(facts, nodeId(file, node), unit.handedIn);
+        }
+        units.push(unitOf(file, node, unit, pack, options));
       }
     }
   }

@@ -43,6 +43,7 @@ import type {
   DeclaredBy,
   Global,
   HandedBy,
+  HandedIn,
   Imported,
   Inheriting,
   Inherits,
@@ -154,6 +155,15 @@ export function imported(spec: {
  */
 export function global(...paths: readonly string[]): Global {
   return { origin: "global", paths };
+}
+
+/**
+ * The parameter the platform fills when it calls a unit, under the name
+ * the pack's unit spec gives it in `handedIn`: `handedIn("env")` for the
+ * bindings a Worker's trigger is handed.
+ */
+export function handedIn(name: string): HandedIn {
+  return { origin: "handedIn", name };
 }
 
 const MODULES: ByOrigin<readonly string[]> = {
