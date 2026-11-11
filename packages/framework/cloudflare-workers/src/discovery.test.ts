@@ -146,6 +146,26 @@ beforeAll(() => {
        },
      };`,
   );
+  write(
+    "src/nestedListener.ts",
+    `export function registerLater(): void {
+       addEventListener("fetch", (event: FetchEvent) => {
+         event.respondWith(new Response("late"));
+       });
+     }`,
+  );
+  write(
+    "src/bothForms.ts",
+    `interface Env { GREETING: string }
+     addEventListener("fetch", (event: FetchEvent) => {
+       event.respondWith(new Response("listener"));
+     });
+     export default {
+       async fetch(request: Request, env: Env) {
+         return new Response(env.GREETING);
+       },
+     };`,
+  );
 });
 
 afterAll(() => {
@@ -269,8 +289,30 @@ describe("cloudflareWorkersDiscovery", () => {
     expect(units.map((u) => u.identity.name)).toEqual(["fetch"]);
   });
 
-  it("leaves a registration and a property it cannot read alone", async () => {
-    expect(inFile(await run(), "oddities.ts")).toEqual([]);
+  it("reads an event name kept in a const and leaves what it cannot read alone", async () => {
+    const units = inFile(await run(), "oddities.ts");
+    expect(
+      units.map((u) => [u.identity.name, u.metadata?.cloudflareWorkers]),
+    ).toEqual([
+      ["fetch", { trigger: "fetch", registration: "addEventListener" }],
+    ]);
+  });
+
+  it("leaves a registration inside a function alone", async () => {
+    expect(inFile(await run(), "nestedListener.ts")).toEqual([]);
+  });
+
+  it("makes a unit of each form when a file registers one trigger both ways", async () => {
+    const units = inFile(await run(), "bothForms.ts");
+    expect(
+      units
+        .map(
+          (u) =>
+            (u.metadata?.cloudflareWorkers as { registration: string })
+              .registration,
+        )
+        .sort(),
+    ).toEqual(["addEventListener", "default-export"]);
   });
 
   it("stamps the deployable when the caller says which Worker this is", async () => {

@@ -20,7 +20,7 @@ import { cloudflareWorkersFramework } from "@suss/framework-cloudflare-workers";
 const pack = cloudflareWorkersFramework();
 ```
 
-Each property Cloudflare calls becomes one unit. When a property's value is a function written somewhere else, the pack follows it to that function, so a service that keeps its handler in its own file is still read. The older `addEventListener("fetch", handler)` form registers the same triggers and comes out as the same units.
+Each property Cloudflare calls becomes one unit. When a property's value is a function written somewhere else, the pack follows it to that function, so a service that keeps its handler in its own file is still read. The older `addEventListener("fetch", handler)` form registers the same triggers and comes out as the same units. The pack reads a registration the module body makes, outside every function, and reads an event name kept in a const. A file that registers one trigger both ways, on two functions, gets a unit for each.
 
 ## One boundary for the whole Worker
 

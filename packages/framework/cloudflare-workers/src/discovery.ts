@@ -10,9 +10,11 @@ import { Node as N } from "ts-morph";
 
 import {
   functionValueOf,
+  peelValue,
   propertiesOf,
   propertyFunctionOf,
   propertyNameOf,
+  readName,
 } from "@suss/adapter-typescript";
 
 import { TRIGGERS } from "./handlers.js";
@@ -54,18 +56,12 @@ export function cloudflareWorkersDiscovery(
     const { resolution } = ctx as TsDiscoveryContext;
     const exported = defaultExportTriggers(sf, resolution);
     recordTriggerFunctions(exported, resolution);
-    const triggers = [...exported, ...listenerTriggers(sf, resolution)];
-
-    const units: DiscoveredCustomUnit[] = [];
-    const taken = new Set<string>();
-    for (const trigger of triggers) {
-      if (taken.has(trigger.name)) {
-        continue;
-      }
-      taken.add(trigger.name);
-      units.push(unitFor(trigger, options.scriptName));
-    }
-    return units;
+    // The adapter keeps one unit per function, kind and binding, so a
+    // function registered both ways is one unit and two functions
+    // registered under one trigger are two.
+    return [...exported, ...listenerTriggers(sf, resolution)].map((trigger) =>
+      unitFor(trigger, options.scriptName),
+    );
   };
 }
 
@@ -174,16 +170,21 @@ export function defaultExportObject(
 }
 
 /**
- * Only a string literal event name is read, since nothing can pair with
- * a name computed at run time.
+ * A registration the module body makes, outside every function, since
+ * that is where a service worker registers what the platform calls. A
+ * registration inside a function runs only if something calls it.
  */
 function listenerTriggers(
   sf: SourceFile,
   resolution: ResolutionStore,
 ): Trigger[] {
   const triggers: Trigger[] = [];
-  sf.forEachDescendant((node) => {
-    const registered = listenerAt(node);
+  sf.forEachDescendant((node, traversal) => {
+    if (N.isFunctionLikeDeclaration(node)) {
+      traversal.skip();
+      return;
+    }
+    const registered = listenerAt(node, resolution);
     if (registered === null) {
       return;
     }
@@ -199,11 +200,18 @@ function listenerTriggers(
   return triggers;
 }
 
-function listenerAt(node: Node): { event: string; handler: Node } | null {
+/**
+ * The event name is read the way a name is read anywhere, so one kept in
+ * a const is read too. A name nothing settles is not a trigger.
+ */
+function listenerAt(
+  node: Node,
+  resolution: ResolutionStore,
+): { event: string; handler: Node } | null {
   if (!N.isCallExpression(node)) {
     return null;
   }
-  const callee = node.getExpression();
+  const callee = peelValue(node.getExpression());
   if (!N.isIdentifier(callee) || callee.getText() !== "addEventListener") {
     return null;
   }
@@ -211,11 +219,12 @@ function listenerAt(node: Node): { event: string; handler: Node } | null {
   if (event === undefined || handler === undefined) {
     return null;
   }
-  if (
-    !N.isStringLiteral(event) ||
-    TRIGGERS[event.getLiteralValue()] === undefined
-  ) {
+  const name = readName(peelValue(event), {
+    unsettled: "nothing",
+    resolve: (value) => resolution.resolveWrittenValue(value),
+  });
+  if (name === null || TRIGGERS[name] === undefined) {
     return null;
   }
-  return { event: event.getLiteralValue(), handler };
+  return { event: name, handler };
 }
