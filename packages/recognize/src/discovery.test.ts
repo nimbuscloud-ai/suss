@@ -417,6 +417,27 @@ describe("marked", () => {
     );
   });
 
+  it("states nothing about a file whose text never mentions the word", () => {
+    const asked: string[] = [];
+    const module = factModuleOps(FILE, moduleFacts(), {
+      state: () => {
+        asked.push("state");
+      },
+      calls: () => [],
+      functions: () => {
+        asked.push("functions");
+        return [{ key: "save", assignedName: "save" }];
+      },
+      mentions: (word) => word !== "use server",
+    });
+
+    expect(module.marked("use server")).toBe(false);
+    expect(module.markedFunctions("use server")).toEqual([]);
+    expect(asked).toEqual([]);
+    expect(module.markedFunctions("use client")).toEqual([]);
+    expect(asked).toEqual(["functions"]);
+  });
+
   it("reads only the module's mark when the pattern leaves function scope out, and a function's mark off its value", () => {
     expect(
       found({

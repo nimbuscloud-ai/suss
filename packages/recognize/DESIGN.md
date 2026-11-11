@@ -331,8 +331,8 @@ module ops from these facts:
 |---|---|
 | `exports()` | `exportsAs(file, n, v)`, or the adapter's own export table where it follows a re-export, as TypeScript's does |
 | `export(path, member)` | the first name through `exports()`, then `member` for each name after it, then the member asked for. Ruby writes a nested constant in one piece too, `class Reports::Nightly`, so its module ops also try the leading names joined with `::`, and a class written both ways is two values, the first that has the member winning |
-| `marked(word)` | `marks(file, word)` |
-| `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it |
+| `marked(word)` | `marks(file, word)`, once the adapter's `mentions(word)` says the file's text has the word |
+| `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it. It asks `mentions(word)` first, since stating every function of every file to find a word most files never write costs more than the rest of a run |
 | `calls()` | the calls the adapter lists outside every function body, each as the fact ops for it |
 
 Each reader ends at `function()` and hands the adapter back its own

@@ -4,6 +4,8 @@ import { imported } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "../adapter.js";
+import { ResolutionStore } from "../facts/store.js";
+import { moduleOpsFor } from "./declared.js";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
@@ -85,6 +87,31 @@ describe("a declared discovery pattern", () => {
       "action save",
       "action serverAction#0",
     ]);
+  });
+
+  it("states no function of a file whose text never writes the directive", () => {
+    const project = createTestProject();
+    const store = new ResolutionStore();
+    const plain = project.createSourceFile(
+      "/plain.ts",
+      "export function helper() { return () => 1; }",
+    );
+    expect(moduleOpsFor(plain, store).marked("use server")).toBe(false);
+    expect(moduleOpsFor(plain, store).markedFunctions("use server")).toEqual(
+      [],
+    );
+    expect(store.factAccess().db.size("func")).toBe(0);
+
+    const marked = project.createSourceFile(
+      "/marked.ts",
+      'export function save() { "use server"; return 1; }',
+    );
+    expect(
+      moduleOpsFor(marked, store)
+        .markedFunctions("use server")
+        .map((found) => found.assignedName),
+    ).toEqual(["save"]);
+    expect(store.factAccess().db.size("func")).toBeGreaterThan(0);
   });
 
   it("reads a registration the module body runs, and none written inside a function", async () => {

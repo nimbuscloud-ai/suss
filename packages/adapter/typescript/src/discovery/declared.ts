@@ -58,6 +58,7 @@ export function moduleOpsFor(
           access.state(fn);
           return { key: nodeId(fn), assignedName: assignedNameOf(fn) };
         }),
+      mentions: (word) => sourceFile.getFullText().includes(word),
     },
   );
 }
