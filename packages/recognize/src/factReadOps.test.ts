@@ -141,6 +141,21 @@ describe("the read ops over the facts", () => {
     ]).toEqual([true, true, false, false, false, false]);
   });
 
+  it("says a site is off a parameter the platform fills when the rules followed it into the object", () => {
+    const facts = source({
+      handedReaching: (key) => (key === "localRef" ? ["env"] : []),
+    });
+    const db = facts.db as Database;
+    db.add("handedIn", ["envParam", "env"]);
+    db.add("readsProperty", ["local", "localRef", "X"]);
+    db.add("readsProperty", ["helper", "settingsRef", "Y"]);
+    expect([
+      factReadOps("local", facts).isOff(handedIn("env")),
+      factReadOps("helper", facts).isOff(handedIn("env")),
+      factReadOps("local", facts).isOff(handedIn("ctx")),
+    ]).toEqual([true, false, false]);
+  });
+
   it("asks the adapter for the object first when it says so, without stating the site", () => {
     const read = factReadOps(
       "unstated",

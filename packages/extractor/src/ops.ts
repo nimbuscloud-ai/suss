@@ -807,6 +807,12 @@ export interface FactSource {
    * objects too.
    */
   globalsReaching?(key: string): readonly string[];
+  /**
+   * The names of the handed-in parameters whose value the rules followed
+   * into the value at the key: a helper's parameter a unit passes its
+   * bindings to, or a local set to one.
+   */
+  handedReaching?(key: string): readonly string[];
   /** The one string, number or boolean the evaluator settles the value at the key to, or null. */
   evaluatedOf?(key: string): string | number | boolean | null;
   /**

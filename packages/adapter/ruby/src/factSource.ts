@@ -18,6 +18,7 @@ import {
   classMemberOf,
   GLOBAL_MODULE,
   givenBackFunction,
+  handedNamesReaching,
 } from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
@@ -28,6 +29,7 @@ import { CONSTRUCTOR } from "./facts/languageWords.js";
 import { parametersOf, paramNameOf } from "./facts/locals.js";
 import {
   anchorCallsOf,
+  RUBY_PROGRAM,
   resolveStreamObjects,
   resolveValues,
   writtenValueOf,
@@ -126,6 +128,7 @@ export function rubyFactSource(db: Database): FactSource {
         return path === null ? [] : [path];
       });
     },
+    handedReaching: (key) => handedNamesReaching(db, key, RUBY_PROGRAM),
     evaluatedOf: (key) => {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));

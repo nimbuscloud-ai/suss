@@ -228,6 +228,46 @@ describe("a declared discovery pattern", () => {
     ]).toEqual([true, false, false]);
   });
 
+  it("follows the parameter into a local and into a helper it is passed to, whichever is asked first", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/worker.ts",
+      [
+        "function helper(settings: { H: string }) { return settings.H; }",
+        "export default {",
+        "  fetch(request: unknown, env: { H: string; L: string; O: string }) {",
+        "    const scoped = env;",
+        "    return scoped.L + helper(env);",
+        "  },",
+        "};",
+        "export function other(request: unknown, env: { O: string }) { return env.O; }",
+      ].join("\n"),
+    );
+    const reached = (store: ResolutionStore, entry: string): string[] => {
+      const read = file
+        .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+        .find((node) => node.getName() === entry);
+      return read === undefined
+        ? []
+        : [...store.handedReaching(read.getExpression())];
+    };
+    const [fetch] = file.getDescendantsOfKind(SyntaxKind.MethodDeclaration);
+    const orders = [
+      ["O", "L", "H"],
+      ["L", "H", "O"],
+    ].map((order) => {
+      const store = new ResolutionStore();
+      expect(reached(store, "L")).toEqual([]);
+      store.stateHandedIn(fetch as Node, [{ at: 1, name: "env" }]);
+      return Object.fromEntries(
+        order.map((entry) => [entry, reached(store, entry)]),
+      );
+    });
+    for (const answers of orders) {
+      expect(answers).toEqual({ O: [], L: ["env"], H: ["env"] });
+    }
+  });
+
   it("finds the export a manifest spells through a re-export", async () => {
     expect(
       await unitsFor(

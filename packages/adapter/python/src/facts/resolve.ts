@@ -13,6 +13,7 @@ import {
   askSources,
   callsRun,
   declaredTypesOf,
+  handedNamesReaching,
   readUses,
   resolutionProgram,
   resolutionUnderProgram,
@@ -123,6 +124,11 @@ export function resolveStreamObjects(
   objectKeys: readonly string[],
 ): void {
   askResolution(db, objectKeys, "wantedStreamObject", programFor(db));
+}
+
+/** The names of the handed-in parameters the rules followed into the value at `key`. */
+export function handedNamesAt(db: Database, key: string): string[] {
+  return handedNamesReaching(db, key, programFor(db));
 }
 
 /**
