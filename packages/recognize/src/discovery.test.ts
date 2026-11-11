@@ -14,6 +14,7 @@ import { describeDiscovery } from "./pack.js";
 import type {
   DeclaredDiscoveryMatch,
   FactSource,
+  MarkedMatch,
   ModuleOps,
   ValueForm,
 } from "@suss/extractor";
@@ -363,6 +364,78 @@ describe("marked", () => {
         moduleOf(["functions"]),
       ),
     ).toEqual([]);
+  });
+
+  it("binds every unit as a call of the module under its name, read with the pattern's unit when it gives one", () => {
+    const marked: MarkedMatch = {
+      type: "marked",
+      word: "use server",
+      scopes: ["module", "function"],
+      name: ["assignedName", "countInFile"],
+      countedAs: "serverAction",
+    };
+    const unit: NonNullable<MarkedMatch["unit"]> = {
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "allPositional" },
+    };
+    const names = ["handle", "aliased", "Card", "save", "serverAction#0"];
+
+    expect(
+      discoverDeclared({ ...marked, unit }, "action", moduleOf()).map(
+        ({ name, functionCallInfo, terminals, inputMapping }) => ({
+          name,
+          functionCallInfo,
+          terminals,
+          inputMapping,
+        }),
+      ),
+    ).toEqual(
+      names.map((name) => ({
+        name,
+        functionCallInfo: { module: FILE, exportName: name },
+        ...unit,
+      })),
+    );
+    expect(
+      discoverDeclared(marked, "action", moduleOf()).map(
+        ({ name, functionCallInfo, terminals, inputMapping }) => ({
+          name,
+          functionCallInfo,
+          terminals,
+          inputMapping,
+        }),
+      ),
+    ).toEqual(
+      names.map((name) => ({
+        name,
+        functionCallInfo: { module: FILE, exportName: name },
+        terminals: undefined,
+        inputMapping: undefined,
+      })),
+    );
+  });
+
+  it("states nothing about a file whose text never mentions the word", () => {
+    const asked: string[] = [];
+    const module = factModuleOps(FILE, moduleFacts(), {
+      state: () => {
+        asked.push("state");
+      },
+      calls: () => [],
+      functions: () => {
+        asked.push("functions");
+        return [{ key: "save", assignedName: "save" }];
+      },
+      mentions: (word) => word !== "use server",
+    });
+
+    expect(module.marked("use server")).toBe(false);
+    expect(module.markedFunctions("use server")).toEqual([]);
+    expect(asked).toEqual([]);
+    expect(module.markedFunctions("use client")).toEqual([]);
+    expect(asked).toEqual(["functions"]);
   });
 
   it("reads only the module's mark when the pattern leaves function scope out, and a function's mark off its value", () => {

@@ -1060,6 +1060,13 @@ export interface ModuleWritten {
   }[];
   /** How the language writes a nested name in one piece, `::` in Ruby, so `class Reports::Nightly` is found at the path `Reports`, `Nightly`. */
   qualifier?: string;
+  /**
+   * Whether the file's own text has the word anywhere, asked before any
+   * fact is stated. A file that never writes `use server` has no mark,
+   * and stating every function in it to learn that costs more than the
+   * rest of the run. Unset reads the facts.
+   */
+  mentions?(word: string): boolean;
 }
 
 /** The module ops for one file, over the facts and what the adapter lists about the file. */
@@ -1133,11 +1140,17 @@ class FactModule implements ModuleOps {
   }
 
   marked(word: string): boolean {
+    if (!this.mentions(word)) {
+      return false;
+    }
     this.state();
     return marks(this.file, word, this.facts);
   }
 
   markedFunctions(word: string): readonly MarkedFunction[] {
+    if (!this.mentions(word)) {
+      return [];
+    }
     return (this.written.functions?.() ?? []).flatMap(
       ({ key, assignedName }) => {
         this.facts.read(key);
@@ -1166,6 +1179,10 @@ class FactModule implements ModuleOps {
       this.stated = true;
       this.written.state?.();
     }
+  }
+
+  private mentions(word: string): boolean {
+    return this.written.mentions?.(word) ?? true;
   }
 }
 

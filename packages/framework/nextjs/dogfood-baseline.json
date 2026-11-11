@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-nextjs",
-  "exports": 4,
-  "internal": 8,
-  "consumers": 6,
+  "exports": 2,
+  "internal": 2,
+  "consumers": 7,
   "unfollowedCalls": 0
 }

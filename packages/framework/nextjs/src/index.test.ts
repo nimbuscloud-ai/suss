@@ -44,13 +44,18 @@ function statusesOf(summary: BehavioralSummary): number[] {
 }
 
 describe("nextjsFramework: pack shape", () => {
-  it("finds route files by where they sit, not by an import", () => {
+  it("finds route files by where they sit, and server actions by their directive", () => {
     const pack = nextjsFramework();
     expect(pack.name).toBe("nextjs");
     expect(pack.discovery.map((d) => d.match.type)).toEqual([
       "fileConvention",
       "fileConvention",
+      "marked",
     ]);
+    expect(pack.discoverUnits).toBeUndefined();
+    expect(
+      pack.declarations?.declarations.map((declared) => declared.name),
+    ).toEqual(["marked"]);
   });
 });
 

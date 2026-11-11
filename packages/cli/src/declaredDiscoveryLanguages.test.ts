@@ -72,6 +72,16 @@ async function typescriptUnits(
   files: Record<string, string>,
   patterns: DeclaredDiscoveryPattern[],
 ): Promise<string[]> {
+  return found(
+    await typescriptSummaries(files, patterns),
+    "declared-discovery",
+  );
+}
+
+async function typescriptSummaries(
+  files: Record<string, string>,
+  patterns: DeclaredDiscoveryPattern[],
+): Promise<BehavioralSummary[]> {
   const project = createTestProject();
   project.createSourceFile(
     "/node_modules/workers/package.json",
@@ -91,7 +101,7 @@ async function typescriptUnits(
     project,
     frameworks: [typescriptPack(patterns)],
   });
-  return found(await adapter.extractAll(), "declared-discovery");
+  return await adapter.extractAll();
 }
 
 let root: string;
@@ -506,29 +516,44 @@ describe("marked", () => {
   ];
 
   it("takes every exported function of a marked module, and each marked function elsewhere, by its name or a count, in TypeScript", async () => {
-    expect(
-      await typescriptUnits(
-        {
-          "/actions.ts": [
-            '"use server";',
-            "export async function save(form: unknown) { return form; }",
-            "export const remove = async (id: string) => id;",
-          ].join("\n"),
-          "/form.tsx": [
-            "export function Form() {",
-            '  const submit = async () => { "use server"; return 1; };',
-            '  return go(submit, async () => { "use server"; return 2; });',
-            "}",
-            "function go(...runs: unknown[]) { return runs; }",
-          ].join("\n"),
-        },
-        SERVER_ACTIONS,
-      ),
-    ).toEqual([
+    const summaries = await typescriptSummaries(
+      {
+        "/actions.ts": [
+          '"use server";',
+          "export async function save(form: unknown) { return form; }",
+          "export const remove = async (id: string) => id;",
+        ].join("\n"),
+        "/form.tsx": [
+          "export function Form() {",
+          '  const submit = async () => { "use server"; return 1; };',
+          '  return go(submit, async () => { "use server"; return 2; });',
+          "}",
+          "function go(...runs: unknown[]) { return runs; }",
+        ].join("\n"),
+      },
+      SERVER_ACTIONS,
+    );
+
+    expect(found(summaries, "declared-discovery")).toEqual([
       "action remove function-call",
       "action save function-call",
       "action serverAction#0 function-call",
       "action submit function-call",
+    ]);
+    expect(
+      summaries
+        .map((summary) => summary.identity.boundaryBinding?.semantics)
+        .flatMap((semantics) =>
+          semantics?.name === "function-call"
+            ? [`${semantics.module} ${semantics.exportName}`]
+            : [],
+        )
+        .sort(),
+    ).toEqual([
+      "/actions.ts remove",
+      "/actions.ts save",
+      "/form.tsx serverAction#0",
+      "/form.tsx submit",
     ]);
   });
 
@@ -537,6 +562,18 @@ describe("marked", () => {
       await pythonUnits(
         "marked-py",
         { "actions.py": '"use server"\n\ndef save(form):\n    return form\n' },
+        SERVER_ACTIONS,
+      ),
+    ).toEqual([]);
+  });
+
+  it("finds nothing in Ruby, which writes no directive", async () => {
+    expect(
+      await rubyUnits(
+        "marked-rb",
+        {
+          "actions.rb": '"use server"\n\ndef save(form)\n  form\nend\n',
+        },
         SERVER_ACTIONS,
       ),
     ).toEqual([]);
