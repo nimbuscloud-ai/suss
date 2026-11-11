@@ -11,5 +11,6 @@
   "pages": "Next.js: Pages Router source directory",
   "request": "suss: input role",
   "route": "Next.js: App Router route handler file basename",
+  "serverAction": "suss: the name an anonymous server action is counted under, serverAction#0",
   "status": "Next.js: NextResponse.json option key, and the Pages res method"
 }

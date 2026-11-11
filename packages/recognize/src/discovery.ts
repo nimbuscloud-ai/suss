@@ -198,12 +198,24 @@ function readMarked(
 ): DeclaredUnit[] {
   const units: DeclaredUnit[] = [];
   const taken = new Set<unknown>();
+  const marked = (
+    func: unknown,
+    name: string,
+    foundAt: readonly string[] | null,
+  ): DeclaredUnit => ({
+    func,
+    kind,
+    name,
+    ...match.unit,
+    functionCallInfo: { module: module.path(), exportName: name },
+    foundAt,
+  });
   if (match.scopes.includes("module") && module.marked(match.word)) {
     for (const { name, value } of module.exports()) {
       const func = nodeOfFunction(value);
       if (func !== null && !taken.has(func)) {
         taken.add(func);
-        units.push({ func, kind, name, foundAt: [name] });
+        units.push(marked(func, name, [name]));
       }
     }
   }
@@ -219,7 +231,7 @@ function readMarked(
     const name = markedName(match, assignedName, counted);
     if (name !== null) {
       taken.add(func);
-      units.push({ func, kind, name, foundAt: null });
+      units.push(marked(func, name, null));
     }
   }
   return units;

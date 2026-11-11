@@ -6,10 +6,21 @@
  * React pack. The README covers `pages/api` handlers and server actions.
  */
 
-import { nextjsServerActions } from "./serverActions.js";
+import { describeDiscovery } from "@suss/recognize";
 
-import type { BindingExtraction, PatternPack } from "@suss/extractor";
+import type {
+  BindingExtraction,
+  DeclaredDiscoveryPattern,
+  PatternPack,
+  TerminalPattern,
+} from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
+
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
 
 const ROUTE_METHODS = [
   "GET",
@@ -53,9 +64,32 @@ const PAGES_ROUTES: Extract<
  */
 const NEXT_SERVER = ["next/server"];
 
+/** A server action returns a value where a route handler sends a response, so it keeps its own terminals. */
+const ACTION_TERMINALS: TerminalPattern[] = [
+  { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+  { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+];
+
+/** The functions a `"use server"` directive turns into server actions, each bound by its module and name. */
+const SERVER_ACTIONS: DeclaredDiscoveryPattern = {
+  kind: "action",
+  match: {
+    type: "marked",
+    word: "use server",
+    scopes: ["module", "function"],
+    name: ["assignedName", "countInFile"],
+    countedAs: "serverAction",
+    unit: {
+      terminals: ACTION_TERMINALS,
+      inputMapping: { type: "allPositional" },
+    },
+  },
+};
+
 export function nextjsFramework(): PatternPack {
   return {
     name: "nextjs",
+    version: VERSION,
     protocol: "http",
     languages: ["typescript", "javascript"],
 
@@ -86,9 +120,8 @@ export function nextjsFramework(): PatternPack {
           path: PAGES_ROUTES,
         },
       },
+      SERVER_ACTIONS,
     ],
-
-    discoverUnits: nextjsServerActions,
 
     terminals: [
       {
@@ -181,6 +214,8 @@ export function nextjsFramework(): PatternPack {
         { position: 1, role: "context" },
       ],
     },
+
+    declarations: { declarations: [describeDiscovery(SERVER_ACTIONS)] },
   };
 }
 

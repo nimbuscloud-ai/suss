@@ -547,6 +547,8 @@ export interface SubclassOfMatch {
  * A directive at module scope makes every exported function a unit; at
  * function scope it makes that function one, exported or not. Only
  * TypeScript writes a directive, so the pattern finds nothing elsewhere.
+ * Each unit is bound as a call of its module under the unit's name,
+ * since the framework exposes a marked function by that name.
  */
 export interface MarkedMatch {
   type: "marked";
@@ -560,6 +562,12 @@ export interface MarkedMatch {
    */
   name: readonly ("assignedName" | "countInFile")[];
   countedAs: string;
+  /**
+   * What every unit is read with beyond its function and name, when the
+   * pack's own terminals and input mapping do not fit it: a server action
+   * returns a value where a route handler sends a response.
+   */
+  unit?: Pick<UnitSpec, "terminals" | "inputMapping">;
 }
 
 /** The members a pattern takes from a value, by name, each with the unit it is. */

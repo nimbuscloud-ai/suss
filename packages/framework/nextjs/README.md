@@ -89,7 +89,10 @@ uses.
 A `"use server"` directive turns a function into an endpoint that a
 client component calls as if it were local, while the runtime sends a
 POST. The pack makes each such function an `action` unit, so its
-summary shows what a button press runs on the server.
+summary shows what a button press runs on the server. It finds them
+with a [`marked`](../../../docs/packs/patterns.md#marked) discovery
+pattern, which binds each action as a call of its module under the
+action's name.
 
 A directive at the top of a file makes every function the file exports
 an action, named by the name it is exported under. A default export is
@@ -134,8 +137,9 @@ file writes them.
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/extractor`, for the `PatternPack` type.
-It has no analysis logic of its own.
+The pack depends on `@suss/extractor` for the `PatternPack` type, and
+on `@suss/recognize` to describe its `marked` pattern in the pack health
+report. It has no analysis logic of its own.
 
 ## Coverage
 
