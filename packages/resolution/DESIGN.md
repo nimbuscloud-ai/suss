@@ -274,7 +274,9 @@ callKeywordArg(r, n, a)     r passes a under the keyword n. Ruby 3.1's
                             keys it (Python, Ruby)
 callArgCount(r, k)          r is written with k arguments, keyword ones
                             and a splat included (Python)
-callOutsideMethod(r)        the call r is outside every method body
+callOutsideMethod(r)        the call r is outside every method body. Ruby
+                            states one for a call written as a statement
+                            of a class body, which runs as the class loads
 callsChosenEntry(r)         the call r runs the member its own entry read
                             chooses, as Ruby's send(k) does (Ruby)
 bodyCalls(f, c)             f's body calls the callee c, keyed the way

@@ -27,6 +27,7 @@ import {
 
 import {
   bareCallArgumentGroups,
+  bodyBlockCalls,
   bodyStatementsRun,
   children,
   definesClassMethod,
@@ -1301,16 +1302,47 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // a `define_method` call is checked here.
   emitDynamicDefinition(emitter, node, node.type);
   const blocks: OpenBlocks = { filePath: emitter.filePath, keys: [] };
-  walkExpressions(
-    node,
-    (child, type, parent) => {
-      const site = callSiteAt(emitter, child, type, parent);
-      emitExpressionFact(emitter, child, type, parent, site);
-      emitBlockCalls(emitter, blocks, type, site);
-    },
-    null,
-    blocks,
-  );
+  walkExpressions(node, expressionVisit(emitter, blocks), null, blocks);
+}
+
+/**
+ * The facts a statement of a class body gives, its own among them. A walk
+ * over a method body or a file reaches each statement as a child, and a
+ * class body's statements are walked one at a time, so a call written as
+ * one, `isolate_namespace Billing` say, is visited here first.
+ */
+function emitStatementFacts(emitter: Emitter, statement: RbNode): void {
+  const blocks: OpenBlocks = { filePath: emitter.filePath, keys: [] };
+  const visit = expressionVisit(emitter, blocks);
+  visit(statement, statement.type, statement.parent ?? statement);
+  walkExpressions(statement, visit, null, blocks);
+}
+
+/**
+ * The facts a body-block call such as `included do` gives, and those of
+ * what it is passed. The class body reads the block's statements as its
+ * own, so the walk leaves the block alone.
+ */
+function emitBodyBlockCallFacts(emitter: Emitter, call: RbNode): void {
+  const blocks: OpenBlocks = { filePath: emitter.filePath, keys: [] };
+  const visit = expressionVisit(emitter, blocks);
+  visit(call, call.type, call.parent ?? call);
+  const args = field(call, "arguments");
+  if (args !== null) {
+    walkExpressions(args, visit, null, blocks);
+  }
+}
+
+/** What a walk over expressions states for each one it reaches. */
+function expressionVisit(
+  emitter: Emitter,
+  blocks: OpenBlocks,
+): ExpressionVisit {
+  return (child, type, parent) => {
+    const site = callSiteAt(emitter, child, type, parent);
+    emitExpressionFact(emitter, child, type, parent, site);
+    emitBlockCalls(emitter, blocks, type, site);
+  };
 }
 
 /** The facts one expression gives, with the call at it read once by the caller. */
@@ -2497,6 +2529,11 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       ? []
       : singletonMethodsByName(body, emitter.bodyBlocks).values(),
   );
+  for (const call of body === null
+    ? []
+    : bodyBlockCalls(body, cls.type === "module", emitter.bodyBlocks)) {
+    emitBodyBlockCallFacts(within, call);
+  }
   for (const statement of statements) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
@@ -2528,7 +2565,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     if (!METHOD_TYPES.has(statement.type)) {
       // Ruby runs a class body, so a statement there such as
       // `Settings.filters.each do ... end` gets the same facts as in a method.
-      emitExpressionFacts(within, statement);
+      emitStatementFacts(within, statement);
     }
     for (const method of methodsDefinedAt(statement)) {
       emitMethodOfClass(within, classKey, method, offeredOnClass);
