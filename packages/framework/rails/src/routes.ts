@@ -110,10 +110,12 @@ function readSimpleArgs(
       continue;
     }
     const keyNode = field(child, "key");
-    const valueNode = field(child, "value");
-    if (keyNode === null || valueNode === null) {
+    if (keyNode === null) {
       continue;
     }
+    // Ruby 3.1 writes `action:` for `action: action`, and the evaluator
+    // reads such a key as the local it spells.
+    const valueNode = field(child, "value") ?? keyNode;
     // `constraints: x` and `:constraints => x` are the same keyword.
     const symbolKey = hashKeySymbolName(keyNode) ?? symbolValue(keyNode);
     if (symbolKey !== null) {
@@ -179,16 +181,25 @@ function readRouteTarget(
   return null;
 }
 
-function readSymbolList(node: RbNode | undefined): string[] | null {
+/**
+ * The names a keyword such as `only:` lists. Rails takes each name as a
+ * string, so `[:index, "show"]`, `%i[index show]`, `%w[index show]` and a
+ * single `:index` all list names. Null when the keyword is not given, or
+ * gives one value that is no name.
+ */
+function readNameList(
+  node: RbNode | undefined,
+  ctx: RouteContext,
+): string[] | null {
   if (node === undefined) {
     return null;
   }
-  if (node.type === "array") {
+  if (LITERAL_LIST_TYPES.has(node.type)) {
     return bodyStatements(node)
-      .map((child) => symbolValue(child))
+      .map((child) => wordValue(child, ctx))
       .filter((name): name is string => name !== null);
   }
-  const single = symbolValue(node);
+  const single = wordValue(node, ctx);
   return single === null ? null : [single];
 }
 
@@ -378,8 +389,8 @@ function handleResourceCall(
   plural: boolean,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const symbol = args.positional[0] ? symbolValue(args.positional[0]) : null;
-  if (symbol === null) {
+  const name = wordValue(args.positional[0], ctx);
+  if (name === null) {
     return;
   }
   // Rails routes a singular resource to the plural controller, and
@@ -387,7 +398,7 @@ function handleResourceCall(
   // `module:` puts the controller under one more directory.
   const controllerSegment =
     wordValue(args.keyword.controller, ctx) ??
-    (plural ? symbol : pluralize(symbol));
+    (plural ? name : pluralize(name));
   const moduleName = wordValue(args.keyword.module, ctx);
   const modulePrefix =
     moduleName === null
@@ -396,13 +407,10 @@ function handleResourceCall(
   const controllerKey = joinKey(modulePrefix, controllerSegment);
   const prefixBase =
     ctx.resource !== undefined ? ctx.resource.nestedBase : ctx.pathPrefix;
-  const base = joinPath(
-    prefixBase,
-    wordValue(args.keyword.path, ctx) ?? symbol,
-  );
+  const base = joinPath(prefixBase, wordValue(args.keyword.path, ctx) ?? name);
 
-  const only = readSymbolList(args.keyword.only);
-  const except = readSymbolList(args.keyword.except);
+  const only = readNameList(args.keyword.only, ctx);
+  const except = readNameList(args.keyword.except, ctx);
   const table = plural ? RESTFUL_ROUTES_PLURAL : RESTFUL_ROUTES_SINGULAR;
   for (const [action, routesAt] of Object.entries(table)) {
     if (only !== null && !only.includes(action)) {
@@ -418,7 +426,7 @@ function handleResourceCall(
 
   // Rails takes the nesting parameter from the resource's own name,
   // whatever `path:` said the URL reads.
-  const nestedBase = plural ? `${base}/:${singularize(symbol)}_id` : base;
+  const nestedBase = plural ? `${base}/:${singularize(name)}_id` : base;
   const nested: ResourceScope = {
     controllerKey,
     collectionBase: base,
@@ -427,7 +435,7 @@ function handleResourceCall(
     ambientBase: nestedBase,
   };
   const inside: RouteContext = { ...ctx, modulePrefix, resource: nested };
-  applyConcerns(readSymbolList(args.keyword.concerns) ?? [], inside, out);
+  applyConcerns(readNameList(args.keyword.concerns, ctx) ?? [], inside, out);
 
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
@@ -504,13 +512,13 @@ function handleVerb(
   }
   // `post :recording, action: :start_recording` routes to the `action:`
   // keyword's action, at the path the first argument gives.
-  const action = wordValue(args.keyword.action, ctx) ?? segment;
+  const action = wordValue(args.keyword.action, ctx) ?? actionFromPath(segment);
   const controller = wordValue(args.keyword.controller, ctx);
   const controllerKey =
     controller !== null
       ? joinKey(ctx.modulePrefix, controller)
       : ctx.resource?.controllerKey;
-  if (controllerKey === undefined) {
+  if (controllerKey === undefined || action === null) {
     return;
   }
   out.add(controllerKey, action, {
@@ -518,6 +526,16 @@ function handleVerb(
     path: joinPath(base, segment),
     ...format,
   });
+}
+
+/**
+ * The action Rails takes from a bare verb's path when nothing else gives
+ * one: the path itself when it is one word, with each `-` changed to `_`,
+ * as ActionDispatch does. A path with any other character in it, a slash
+ * or a parameter's colon, gives no action.
+ */
+function actionFromPath(segment: string): string | null {
+  return /^[\w-]+$/.test(segment) ? segment.replaceAll("-", "_") : null;
 }
 
 /** `format: false` turns off the `.:format` Rails adds to a route. */
@@ -550,13 +568,13 @@ function handleNamespace(
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const symbol = args.positional[0] ? symbolValue(args.positional[0]) : null;
+  const name = wordValue(args.positional[0], ctx);
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
-  if (symbol === null || body === null) {
+  if (name === null || body === null) {
     return;
   }
-  walkBody(body, enterScope(ctx, symbol, symbol), out);
+  walkBody(body, enterScope(ctx, name, name), out);
 }
 
 /**
@@ -634,9 +652,7 @@ function replayLiteralLoop(
   if (element === undefined) {
     return;
   }
-  const elements = bodyStatements(receiver).map((node) =>
-    listElementWord(node, ctx),
-  );
+  const elements = bodyStatements(receiver).map((node) => wordValue(node, ctx));
   elements.forEach((word, position) => {
     if (word === null) {
       return;
@@ -648,14 +664,6 @@ function replayLiteralLoop(
     }
     walkBody(body, { ...ctx, bindings }, out);
   });
-}
-
-/** One element of a literal list as a word: `%i[a]` spells a bare symbol, `[:a]` a symbol, `%w[a]` and `["a"]` a string. */
-function listElementWord(node: RbNode, ctx: RouteContext): string | null {
-  if (node.type === "bare_symbol") {
-    return node.text;
-  }
-  return wordValue(node, ctx);
 }
 
 /** A block whose calls route under the enclosing scope unchanged: `constraints` only narrows which requests match. */
@@ -691,7 +699,7 @@ function handleConcern(
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const name = args.positional[0] ? symbolValue(args.positional[0]) : null;
+  const name = wordValue(args.positional[0], ctx);
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
   if (name !== null && body !== null) {
@@ -720,14 +728,14 @@ function handleConcerns(
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
   const names = args.positional
-    .map((node) => symbolValue(node))
+    .map((node) => wordValue(node, ctx))
     .filter((name): name is string => name !== null);
   applyConcerns(names, ctx, out);
 }
 
 /** The HTTP methods a `match ... via:` serves, `*` for `via: :all`. */
-function methodsOfVia(node: RbNode | undefined): string[] {
-  const names = readSymbolList(node) ?? [];
+function methodsOfVia(node: RbNode | undefined, ctx: RouteContext): string[] {
+  const names = readNameList(node, ctx) ?? [];
   if (names.includes("all")) {
     return ["*"];
   }
@@ -740,7 +748,7 @@ function handleMatch(
   out: RouteAccumulator,
 ): void {
   const via = readSimpleArgs(call, ctx.defaults).keyword.via;
-  for (const method of methodsOfVia(via)) {
+  for (const method of methodsOfVia(via, ctx)) {
     handleVerb(call, ctx, out, method);
   }
 }
@@ -862,18 +870,26 @@ function walkBody(
   walkStatements(bodyStatements(body), ctx, out);
 }
 
+/**
+ * The calls written as statements among `statements`, in order, through
+ * the branches of any `if`, `unless`, `case` or `begin` among them. A
+ * route under `if Rails.env.development?` is declared in the same scope
+ * as one written outside it.
+ */
+function callStatements(statements: readonly RbNode[]): RbNode[] {
+  return statements.flatMap((statement) =>
+    statement.type === "call"
+      ? [statement]
+      : callStatements(nestedStatements(statement)),
+  );
+}
+
 function walkStatements(
   statements: RbNode[],
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  for (const statement of statements) {
-    if (statement.type !== "call") {
-      // A route under `if Rails.env.development?` is declared in the
-      // same scope as one written outside it.
-      walkStatements(nestedStatements(statement), ctx, out);
-      continue;
-    }
+  for (const statement of callStatements(statements)) {
     if (field(statement, "receiver") !== null) {
       replayLiteralLoop(statement, ctx, out);
       continue;
@@ -897,11 +913,9 @@ function walkStatements(
 }
 
 /**
- * A gem's block call, such as `devise_scope :user do ... end` or
- * `authenticated :admin do ... end`, wraps routes written in the
- * ordinary grammar and leaves their path and controller alone. A block
- * with no routing call at its top level, such as `direct` building a
- * URL, stays unread under the call's own name.
+ * A gem's block call, such as `devise_scope :user do ... end`, wraps
+ * routes in the ordinary grammar and leaves their path and controller
+ * alone. A block with no routing call, such as `direct`, stays unread.
  */
 function blockWrittenInRoutesGrammar(call: RbNode): boolean {
   const block = field(call, "block");
@@ -909,9 +923,8 @@ function blockWrittenInRoutesGrammar(call: RbNode): boolean {
   if (body === null) {
     return false;
   }
-  return bodyStatements(body).some(
+  return callStatements(bodyStatements(body)).some(
     (statement) =>
-      statement.type === "call" &&
       field(statement, "receiver") === null &&
       Object.hasOwn(HANDLERS, field(statement, "method")?.text ?? ""),
   );

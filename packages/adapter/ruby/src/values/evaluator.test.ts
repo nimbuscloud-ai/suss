@@ -810,6 +810,35 @@ describe("stringValueOf", () => {
       "u/x",
     );
   });
+
+  it("reads the key of a keyword written in Ruby 3.1's shorthand as the local it spells", async () => {
+    const keysOf = (call: RbNode): RbNode[] =>
+      bodyStatements(field(call, "arguments") as RbNode)
+        .slice(1)
+        .map((pair) => field(pair, "key") as RbNode);
+    const local = await parseRuby(
+      'action = "show"\nget "x", action:, format: "html"\n',
+    );
+    const [shorthand, written] = keysOf(
+      bodyStatements(local.rootNode)[1] as RbNode,
+    );
+    expect(stringValueOf(shorthand as RbNode)).toBe("show");
+    expect(stringValueOf(written as RbNode)).toBeNull();
+
+    const loop = await parseRuby(
+      '%w[diff].each do |action|\n  get "x", action:\nend\n',
+    );
+    const block = field(bodyStatements(loop.rootNode)[0] as RbNode, "block");
+    const body = field(block as RbNode, "body") as RbNode;
+    const [variable] = keysOf(bodyStatements(body)[0] as RbNode);
+    expect(
+      stringValueOf(
+        variable as RbNode,
+        undefined,
+        new Map([["action", "diff"]]),
+      ),
+    ).toBe("diff");
+  });
 });
 
 describe("reading a value under one construction", () => {

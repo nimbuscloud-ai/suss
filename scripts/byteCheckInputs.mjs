@@ -75,12 +75,29 @@ function prismaGenerate(schema) {
   return ["npx", "prisma", "generate", `--schema=${schema}`, "--no-hints"];
 }
 
-/** The rails pack, over a Rails layout's app/ and config/routes.rb. */
-function railsIn(root) {
+/**
+ * The rails pack, over a Rails layout's app/ and config/routes.rb, with
+ * any more options the app needs, such as `engineRoots`.
+ */
+function railsIn(root, more = {}) {
   return withConfig("rails", {
     root: inBase(`${root}/app`),
     routesFile: inBase(`${root}/config/routes.rb`),
+    ...more,
   });
+}
+
+/** A Rails app read the way the first run reads one, with this rails pack. */
+function railsApp(rails) {
+  return [
+    ...lang("ruby"),
+    ...packs(
+      rails,
+      "net-http",
+      "pg-ruby",
+      withConfig("activerecord", POSTGRES),
+    ),
+  ];
 }
 
 export const FIXTURE_INPUTS = [
@@ -765,17 +782,29 @@ export const FIELD_INPUTS = [
     name: "mastodon",
     group: "field",
     repo: "mastodon",
-    args: [
-      ...lang("ruby"),
-      ...packs(
-        railsIn("."),
-        "net-http",
-        "pg-ruby",
-        withConfig("activerecord", POSTGRES),
-      ),
-    ],
+    args: railsApp(railsIn(".")),
   },
 ];
+
+/**
+ * Rails apps beside the field one, each with routes files the rails pack
+ * reads differently, and two of them again with the engines and plugin
+ * files they keep in their own tree.
+ */
+const RAILS_APPS = [
+  "chatwoot",
+  "diaspora",
+  "discourse",
+  "forem",
+  "lobsters",
+  "loomio",
+  "openproject",
+].map((repo) => ({
+  name: repo,
+  group: "extra",
+  repo,
+  args: railsApp(railsIn(".")),
+}));
 
 /**
  * The story directories `suss init` lists in the apps that write
@@ -945,6 +974,24 @@ export const EXTRA_INPUTS = [
         "node",
       ),
     ],
+  },
+  ...RAILS_APPS,
+  {
+    name: "openproject-engines",
+    group: "extra",
+    repo: "openproject",
+    args: railsApp(railsIn(".", { engineRoots: [inBase("modules/*")] })),
+  },
+  {
+    name: "discourse-plugins",
+    group: "extra",
+    repo: "discourse",
+    args: railsApp(
+      railsIn(".", {
+        engineRoots: [inBase("plugins/*")],
+        routesFiles: [inBase("plugins/*/plugin.rb")],
+      }),
+    ),
   },
   ...STORY_DIRECTORIES.map(([repo, directory]) => ({
     name: `storybook ${repo} ${directory}`,

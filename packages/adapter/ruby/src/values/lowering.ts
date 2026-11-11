@@ -197,6 +197,18 @@ function fromFields<T>(
   return build(...(found as RbNode[]));
 }
 
+/**
+ * Ruby 3.1 writes `get "x", action:` for `get "x", action: action`, so the
+ * key of a pair written with no value reads the name it spells. A key with
+ * a value is no value of its own.
+ */
+function shorthandRead(key: RbNode): Expression<RbNode> {
+  const pair = key.parent;
+  return pair?.type === "pair" && field(pair, "value") === null
+    ? { kind: "name", text: key.text }
+    : OPAQUE;
+}
+
 /** `ENV["X"]` reads the environment variable `X`; `ENV.fetch` is a row. */
 function environmentVariableOf(node: RbNode): string | null {
   if (node.type !== "element_reference") {
@@ -222,6 +234,7 @@ const EXPRESSION_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
   // A constant path is never bound locally, so the read falls through to
   // the `binds` fact that points at the constant's definition.
   scope_resolution: (node) => ({ kind: "name", text: node.text }),
+  hash_key_symbol: shorthandRead,
   element_reference: (node) => {
     const object = field(node, "object");
     const indexes =
