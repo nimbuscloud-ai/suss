@@ -181,16 +181,25 @@ function readRouteTarget(
   return null;
 }
 
-function readSymbolList(node: RbNode | undefined): string[] | null {
+/**
+ * The names a keyword such as `only:` lists. Rails takes each name as a
+ * string, so `[:index, "show"]`, `%i[index show]`, `%w[index show]` and a
+ * single `:index` all list names. Null when the keyword is not given, or
+ * gives one value that is no name.
+ */
+function readNameList(
+  node: RbNode | undefined,
+  ctx: RouteContext,
+): string[] | null {
   if (node === undefined) {
     return null;
   }
-  if (node.type === "array") {
+  if (LITERAL_LIST_TYPES.has(node.type)) {
     return bodyStatements(node)
-      .map((child) => symbolValue(child))
+      .map((child) => wordValue(child, ctx))
       .filter((name): name is string => name !== null);
   }
-  const single = symbolValue(node);
+  const single = wordValue(node, ctx);
   return single === null ? null : [single];
 }
 
@@ -380,8 +389,8 @@ function handleResourceCall(
   plural: boolean,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const symbol = args.positional[0] ? symbolValue(args.positional[0]) : null;
-  if (symbol === null) {
+  const name = wordValue(args.positional[0], ctx);
+  if (name === null) {
     return;
   }
   // Rails routes a singular resource to the plural controller, and
@@ -389,7 +398,7 @@ function handleResourceCall(
   // `module:` puts the controller under one more directory.
   const controllerSegment =
     wordValue(args.keyword.controller, ctx) ??
-    (plural ? symbol : pluralize(symbol));
+    (plural ? name : pluralize(name));
   const moduleName = wordValue(args.keyword.module, ctx);
   const modulePrefix =
     moduleName === null
@@ -398,13 +407,10 @@ function handleResourceCall(
   const controllerKey = joinKey(modulePrefix, controllerSegment);
   const prefixBase =
     ctx.resource !== undefined ? ctx.resource.nestedBase : ctx.pathPrefix;
-  const base = joinPath(
-    prefixBase,
-    wordValue(args.keyword.path, ctx) ?? symbol,
-  );
+  const base = joinPath(prefixBase, wordValue(args.keyword.path, ctx) ?? name);
 
-  const only = readSymbolList(args.keyword.only);
-  const except = readSymbolList(args.keyword.except);
+  const only = readNameList(args.keyword.only, ctx);
+  const except = readNameList(args.keyword.except, ctx);
   const table = plural ? RESTFUL_ROUTES_PLURAL : RESTFUL_ROUTES_SINGULAR;
   for (const [action, routesAt] of Object.entries(table)) {
     if (only !== null && !only.includes(action)) {
@@ -420,7 +426,7 @@ function handleResourceCall(
 
   // Rails takes the nesting parameter from the resource's own name,
   // whatever `path:` said the URL reads.
-  const nestedBase = plural ? `${base}/:${singularize(symbol)}_id` : base;
+  const nestedBase = plural ? `${base}/:${singularize(name)}_id` : base;
   const nested: ResourceScope = {
     controllerKey,
     collectionBase: base,
@@ -429,7 +435,7 @@ function handleResourceCall(
     ambientBase: nestedBase,
   };
   const inside: RouteContext = { ...ctx, modulePrefix, resource: nested };
-  applyConcerns(readSymbolList(args.keyword.concerns) ?? [], inside, out);
+  applyConcerns(readNameList(args.keyword.concerns, ctx) ?? [], inside, out);
 
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
@@ -562,13 +568,13 @@ function handleNamespace(
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const symbol = args.positional[0] ? symbolValue(args.positional[0]) : null;
+  const name = wordValue(args.positional[0], ctx);
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
-  if (symbol === null || body === null) {
+  if (name === null || body === null) {
     return;
   }
-  walkBody(body, enterScope(ctx, symbol, symbol), out);
+  walkBody(body, enterScope(ctx, name, name), out);
 }
 
 /**
@@ -646,9 +652,7 @@ function replayLiteralLoop(
   if (element === undefined) {
     return;
   }
-  const elements = bodyStatements(receiver).map((node) =>
-    listElementWord(node, ctx),
-  );
+  const elements = bodyStatements(receiver).map((node) => wordValue(node, ctx));
   elements.forEach((word, position) => {
     if (word === null) {
       return;
@@ -660,14 +664,6 @@ function replayLiteralLoop(
     }
     walkBody(body, { ...ctx, bindings }, out);
   });
-}
-
-/** One element of a literal list as a word: `%i[a]` spells a bare symbol, `[:a]` a symbol, `%w[a]` and `["a"]` a string. */
-function listElementWord(node: RbNode, ctx: RouteContext): string | null {
-  if (node.type === "bare_symbol") {
-    return node.text;
-  }
-  return wordValue(node, ctx);
 }
 
 /** A block whose calls route under the enclosing scope unchanged: `constraints` only narrows which requests match. */
@@ -703,7 +699,7 @@ function handleConcern(
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const name = args.positional[0] ? symbolValue(args.positional[0]) : null;
+  const name = wordValue(args.positional[0], ctx);
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
   if (name !== null && body !== null) {
@@ -732,14 +728,14 @@ function handleConcerns(
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
   const names = args.positional
-    .map((node) => symbolValue(node))
+    .map((node) => wordValue(node, ctx))
     .filter((name): name is string => name !== null);
   applyConcerns(names, ctx, out);
 }
 
 /** The HTTP methods a `match ... via:` serves, `*` for `via: :all`. */
-function methodsOfVia(node: RbNode | undefined): string[] {
-  const names = readSymbolList(node) ?? [];
+function methodsOfVia(node: RbNode | undefined, ctx: RouteContext): string[] {
+  const names = readNameList(node, ctx) ?? [];
   if (names.includes("all")) {
     return ["*"];
   }
@@ -752,7 +748,7 @@ function handleMatch(
   out: RouteAccumulator,
 ): void {
   const via = readSimpleArgs(call, ctx.defaults).keyword.via;
-  for (const method of methodsOfVia(via)) {
+  for (const method of methodsOfVia(via, ctx)) {
     handleVerb(call, ctx, out, method);
   }
 }

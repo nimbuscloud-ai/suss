@@ -415,6 +415,51 @@ describe("railsFramework", () => {
       expect(routeFor(source, "OrdersController", "destroy")).toBeNull();
     });
 
+    it("reads only: and except: in every spelling of a list Rails takes", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :orders, only: %i[index]\n" +
+        "  resources :invoices, only: %w[show]\n" +
+        '  resources :refunds, except: ["destroy", :update]\n' +
+        "end\n";
+      expect(routeFor(source, "OrdersController", "index")).toEqual({
+        method: "GET",
+        path: "/orders",
+      });
+      expect(routeFor(source, "OrdersController", "show")).toBeNull();
+      expect(routeFor(source, "InvoicesController", "show")).toEqual({
+        method: "GET",
+        path: "/invoices/:id",
+      });
+      expect(routeFor(source, "InvoicesController", "index")).toBeNull();
+      expect(routeFor(source, "RefundsController", "index")).toEqual({
+        method: "GET",
+        path: "/refunds",
+      });
+      expect(routeFor(source, "RefundsController", "destroy")).toBeNull();
+      expect(routeFor(source, "RefundsController", "update")).toBeNull();
+    });
+
+    it("reads a namespace, a resource and a concern written as a string, as Rails does", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  concern "pageable" do\n' +
+        '    get "page"\n' +
+        "  end\n" +
+        '  namespace "settings" do\n' +
+        '    resources "tokens", only: [:index], concerns: ["pageable"]\n' +
+        "  end\n" +
+        "end\n";
+      expect(routeFor(source, "Settings::TokensController", "index")).toEqual({
+        method: "GET",
+        path: "/settings/tokens",
+      });
+      expect(routeFor(source, "Settings::TokensController", "page")).toEqual({
+        method: "GET",
+        path: "/settings/tokens/:token_id/page",
+      });
+    });
+
     it("writes an optional scope as the set of paths it allows, which a client's plain path meets", () => {
       const source =
         "Rails.application.routes.draw do\n" +
