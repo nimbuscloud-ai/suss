@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-rails",
   "exports": 6,
-  "internal": 89,
-  "consumers": 49,
+  "internal": 108,
+  "consumers": 19,
   "unfollowedCalls": 3
 }
