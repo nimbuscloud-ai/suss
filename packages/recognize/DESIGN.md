@@ -334,6 +334,15 @@ module ops from these facts:
 | `marked(word)` | `marks(file, word)`, once the adapter's `mentions(word)` says the file's text has the word |
 | `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it. It asks `mentions(word)` first, since stating every function of every file to find a word most files never write costs more than the rest of a run |
 | `calls()` | the calls the adapter lists outside every function body, each as the fact ops for it |
+| `mentions(word)` | the adapter's own `mentions`, which in TypeScript looks for the word in the file's text. Python and Ruby leave it unset, and the module ops then say yes |
+
+`registeredFunction` with a global start and no method asks
+`mentions` for each of the start's paths before it lists the calls. A
+call to a global is written with the global's own name, so a file
+whose text has none of them makes no such call, and listing the module
+body's calls states facts for every one of them. A method on a global
+can be called through a variable imported from another file, so that
+form is always read.
 
 Each reader ends at `function()` and hands the adapter back its own
 node. The TypeScript adapter runs a pattern like any other in its

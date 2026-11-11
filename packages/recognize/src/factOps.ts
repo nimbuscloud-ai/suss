@@ -1179,15 +1179,15 @@ class FactModule implements ModuleOps {
     }));
   }
 
+  mentions(word: string): boolean {
+    return this.written.mentions?.(word) ?? true;
+  }
+
   private state(): void {
     if (!this.stated) {
       this.stated = true;
       this.written.state?.();
     }
-  }
-
-  private mentions(word: string): boolean {
-    return this.written.mentions?.(word) ?? true;
   }
 }
 

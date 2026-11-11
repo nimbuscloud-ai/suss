@@ -190,7 +190,9 @@ Every unit is bound as a call of its module under the unit's name, since the fra
 }
 ```
 
-`registeredFunction` finds a function a call in the module body hands to a library, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name as a literal from an argument, and keeps only the names it lists.
+`registeredFunction` finds a function a call in the module body hands to a library, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name from an argument, a literal or a name kept in a const, and keeps only the names it lists.
+
+When the start is a global and there is no `method`, as with `global("addEventListener")`, the call has to be written with the global's name, so a file whose text never writes it is skipped before its calls are read.
 
 ### `fileConvention`
 
