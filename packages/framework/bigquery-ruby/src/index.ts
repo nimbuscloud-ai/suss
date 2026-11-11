@@ -1,65 +1,106 @@
 /**
  * Records which BigQuery tables a Ruby body reads and writes through the
- * google-cloud-bigquery gem. Ruby has no type annotations, so the adapter
- * types a receiver by following it back to the gem call that produced
- * it. The README lists the calls this reaches and what it leaves out.
+ * google-cloud-bigquery gem. Ruby has no type annotations, so a receiver
+ * counts when it follows back to the gem call that produced it. The
+ * README lists the calls this reaches and what it leaves out.
  */
 
-import type { RbRawSqlPattern, RubyPack } from "@suss/adapter-ruby";
+import {
+  anyOf,
+  constructedFrom,
+  pack,
+  returnedBy,
+  sqlStatements,
+  storageCalls,
+} from "@suss/recognize";
+
+import type { RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
+import type {
+  ArgumentPick,
+  CallStep,
+  PatternPack,
+  SqlMethod,
+  StorageMethod,
+} from "@suss/recognize";
 
 /** The store name from OpenTelemetry's semantic conventions. */
 const STORAGE_SYSTEM = "gcp.bigquery";
 
 const DIALECT = "bigquery";
 
-const ADDRESSING: NonNullable<RbRawSqlPattern["addressing"]> = {
-  dataset: { says: "scope", at: 0 },
-  table: { says: "container", at: 0 },
-};
-
-/** A client and a dataset both accept these. */
-const STATEMENTS: NonNullable<RbRawSqlPattern["statements"]> = {
-  query: { at: 0 },
-  query_job: { at: 0 },
-};
-
-/**
- * Called on a dataset these take the table as the first argument, and
- * called on a table they take the rows or a file there instead. The
- * adapter reads the chain's own table first, so one entry covers both.
- */
-const ROW_CALLS: NonNullable<RbRawSqlPattern["rowCalls"]> = {
-  insert: { kind: "write", container: { at: 0 } },
-  insert_async: { kind: "write", container: { at: 0 } },
-  load: { kind: "write", container: { at: 0 } },
-  load_job: { kind: "write", container: { at: 0 } },
-  data: { kind: "read" },
-  "exists?": { kind: "read" },
-  delete: { kind: "write" },
-};
+/** The extraction cache keys on this, so it goes up whenever what the pack reads changes. */
+const VERSION = "1";
 
 /**
  * The gem builds a client from `Google::Cloud::Bigquery.new` or from the
- * shorthand `Google::Cloud.bigquery`. Calls on the client read the same
- * way whichever one built it.
+ * shorthand `Google::Cloud.bigquery`. The adapter reads a call to `new`
+ * as a construction of the class it is called on, here `Bigquery`.
  */
-export function bigqueryRawSql(): RbRawSqlPattern[] {
-  const calls = {
-    addressing: ADDRESSING,
-    statements: STATEMENTS,
-    rowCalls: ROW_CALLS,
-    storageSystem: STORAGE_SYSTEM,
-    dialect: DIALECT,
-  };
-  return [
-    {
-      constantName: "Google::Cloud::Bigquery",
-      clientBuilders: ["new"],
-      ...calls,
-    },
-    { constantName: "Google::Cloud", clientBuilders: ["bigquery"], ...calls },
-  ];
+const CLIENT = anyOf(
+  constructedFrom({ from: ["Google::Cloud::Bigquery"], named: ["Bigquery"] }),
+  constructedFrom({ from: ["Google::Cloud"], named: ["bigquery"] }),
+);
+
+const DATASET_OF_CLIENT = returnedBy("dataset", CLIENT);
+
+/** The client, a dataset picked off it, or a table picked off either. */
+const ADDRESSED = anyOf(
+  CLIENT,
+  DATASET_OF_CLIENT,
+  returnedBy("table", anyOf(CLIENT, DATASET_OF_CLIENT)),
+);
+
+const DATASET_STEP: CallStep = { to: "receiver", method: "dataset" };
+const TABLE_STEP: CallStep = { to: "receiver", method: "table" };
+
+const DATASET: ArgumentPick = { of: [DATASET_STEP], at: 0 };
+
+/** A client and a dataset both accept these. */
+const STATEMENT: SqlMethod = { statement: { at: 0 } };
+
+const QUERIES = sqlStatements({
+  system: STORAGE_SYSTEM,
+  dialect: DIALECT,
+  client: ADDRESSED,
+})
+  .methods({ query: STATEMENT, query_job: STATEMENT })
+  .scope(DATASET)
+  .example('bigquery.dataset("core").query("SELECT id FROM events")');
+
+const WRITE: StorageMethod = { kind: "write" };
+const READ: StorageMethod = { kind: "read" };
+
+/**
+ * Called on a dataset these take the table as the first argument, and
+ * called on a table they take the rows or a file there instead, so the
+ * table the chain picked comes first.
+ */
+const ROWS = storageCalls({
+  system: STORAGE_SYSTEM,
+  client: ADDRESSED,
+  unsettledName: "nothing",
+})
+  .methods({
+    insert: WRITE,
+    insert_async: WRITE,
+    load: WRITE,
+    load_job: WRITE,
+    data: READ,
+    "exists?": READ,
+    delete: WRITE,
+  })
+  .container([{ of: [TABLE_STEP], at: 0 }, { at: 0 }], { qualified: true })
+  .scope(DATASET)
+  .example('bigquery.dataset("core").table("report_runs").insert(rows)');
+
+/** The gem's queries and row calls, declared once for any adapter that runs them. */
+export function bigqueryQueries(): PatternPack {
+  return pack("bigquery-ruby", [QUERIES, ROWS], {
+    languages: ["ruby"],
+    recognizedAs: "ruby-raw-sql",
+    version: VERSION,
+  });
 }
 
 /**
@@ -68,19 +109,27 @@ export function bigqueryRawSql(): RbRawSqlPattern[] {
  * pack still discovers the units and this adds the table accesses.
  */
 export function withBigquery(pack: RubyPack): RubyPack {
+  const queries = bigqueryQueries();
   return {
     ...pack,
-    rawSql: [...(pack.rawSql ?? []), ...bigqueryRawSql()],
+    invocationRecognizers: [
+      ...(pack.invocationRecognizers ?? []),
+      ...(queries.invocationRecognizers ?? []),
+    ],
+    accessRecognizers: [
+      ...(pack.accessRecognizers ?? []),
+      ...(queries.accessRecognizers ?? []),
+    ],
   };
 }
 
 export function bigqueryRubyFramework(): RubyPack {
-  return {
+  return withBigquery({
     name: "bigquery-ruby",
+    version: VERSION,
     protocol: STORAGE_SYSTEM,
     discovery: [],
-    rawSql: bigqueryRawSql(),
-  };
+  });
 }
 
 export const declares: PackDeclaration = {

@@ -14,6 +14,7 @@
 import { chainStart } from "./chain.js";
 
 import type {
+  ArgumentPick,
   Chain,
   InterpolatesLink,
   Link,
@@ -54,6 +55,13 @@ export interface SqlStatements {
   ): SqlStatements;
   /** What the values a statement interpolates come to. */
   interpolating(says: Omit<InterpolatesLink, "asks">): SqlStatements;
+  /**
+   * Which namespace a statement's bare tables are in, when the call says
+   * rather than the pack. A table the statement qualifies keeps its own:
+   * `dataset("core").query(sql)` reads `events` as `core.events` and
+   * `other.events` as itself.
+   */
+  scope(says: ArgumentPick): SqlStatements;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): SqlStatements;
   /** The links and the ending, as data. */
@@ -91,6 +99,7 @@ function chainFrom(declared: Chain<SqlMethod>): SqlStatements {
         ignoringCase: options?.ignoringCase ?? false,
       }),
     interpolating: (says) => adding({ asks: "interpolates", ...says }),
+    scope: (says) => adding({ asks: "scope", argument: says }),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
 }

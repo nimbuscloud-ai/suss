@@ -2,6 +2,6 @@
   "name": "@suss/framework-bigquery-ruby",
   "exports": 4,
   "internal": 0,
-  "consumers": 0,
+  "consumers": 1,
   "unfollowedCalls": 0
 }
