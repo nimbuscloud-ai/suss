@@ -40,7 +40,7 @@ bigquery.query("SELECT id FROM `#{ACCOUNTS_TABLE}`")
 | `.table("report_runs")` | the container, for a call with no statement |
 | a `@tier` or `#{...}` in the statement | a parameter, so the selector reads and the value does not |
 
-Calls that take a statement: `query`, `query_job`. Calls that reach rows with no statement: `insert`, `insert_async`, `load`, `load_job`, `data`, `exists?`, `delete`. Called on a dataset, these take the table as their first argument. Called on a table, they leave it out. Both ways of calling `insert` come out the same.
+Calls that take a statement: `query`, `query_job`. Calls that reach rows with no statement: `insert`, `insert_async`, `load`, `load_job`, `data`, `exists?`, `delete`. Called on a dataset, these take the table as their first argument. Called on a table, they take the rows or a file there instead, so the pack reads the table from the chain whenever the chain has one. `table.load("gs://exports/accounts.json")` writes the table, not the file. Both ways of calling `insert` come out the same.
 
 ## What it will not tell you
 

@@ -148,6 +148,33 @@ describe("a project that queries BigQuery", () => {
     ]);
   });
 
+  it("reads a load onto a table as a write to that table, not to the file it loads", async () => {
+    const effects = await harness.effectsAcross(
+      {
+        "loader.rb": [
+          "class Loader",
+          "  def run",
+          "    bigquery = Google::Cloud::Bigquery.new",
+          '    table = bigquery.dataset("core").table("accounts")',
+          '    table.load("gs://exports/accounts.json")',
+          '    bigquery.dataset("core").load_job("events", "gs://exports/events.json")',
+          "  end",
+          "end",
+        ].join("\n"),
+      },
+      "loader.rb",
+    );
+    expect(
+      effects.map((effect) => {
+        const { semantics, interaction } = storageOf(effect);
+        return [interaction.operation, semantics.scope, semantics.container];
+      }),
+    ).toEqual([
+      ["load", "core", "accounts"],
+      ["load_job", "core", "events"],
+    ]);
+  });
+
   it("says nothing about a statement handed in from outside", async () => {
     const effects = await reportEffects();
     const tables = effects.flatMap((effect) =>

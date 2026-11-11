@@ -25,7 +25,7 @@ import type { Database } from "@suss/datalog";
 import type { SqlAccess } from "@suss/sql";
 import type { Value } from "@suss/values";
 import type { CallArgs } from "./ast.js";
-import type { RbArgumentPlace, RbRawSqlPattern } from "./pack.js";
+import type { RbArgumentPlace, RbRawSqlPattern, RbRowCall } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
 export interface RbRawSqlOptions {
@@ -163,14 +163,10 @@ function rowCallEffects(
     return [];
   }
 
-  const given =
-    rowCall.container === undefined
-      ? null
-      : namedTable(stringAt(args, rowCall.container, options.facts));
-  const reached = {
-    scope: given?.scope ?? address.scope,
-    container: given?.container ?? address.container,
-  };
+  const reached =
+    address.container === null
+      ? givenContainer(args, address, rowCall, options)
+      : address;
   if (reached.container === null) {
     return [];
   }
@@ -182,6 +178,26 @@ function rowCallEffects(
       selector: [],
     }),
   ];
+}
+
+/**
+ * The table a row call is passed, read only when the chain reached none:
+ * on a table the same call is passed the rows or a file in that place.
+ */
+function givenContainer(
+  args: CallArgs,
+  address: Address,
+  rowCall: RbRowCall,
+  options: RbRawSqlOptions,
+): Address {
+  const given =
+    rowCall.container === undefined
+      ? null
+      : namedTable(stringAt(args, rowCall.container, options.facts));
+  return {
+    scope: given?.scope ?? address.scope,
+    container: given?.container ?? null,
+  };
 }
 
 /**

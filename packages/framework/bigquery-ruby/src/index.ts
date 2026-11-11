@@ -26,8 +26,8 @@ const STATEMENTS: NonNullable<RbRawSqlPattern["statements"]> = {
 
 /**
  * Called on a dataset these take the table as the first argument, and
- * called on a table they leave it out. The adapter falls back to the
- * chain's own table, so one entry covers both.
+ * called on a table they take the rows or a file there instead. The
+ * adapter reads the chain's own table first, so one entry covers both.
  */
 const ROW_CALLS: NonNullable<RbRawSqlPattern["rowCalls"]> = {
   insert: { kind: "write", container: { at: 0 } },
