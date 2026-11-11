@@ -53,6 +53,19 @@ function source(over: Partial<FactSource> = {}): FactSource {
   add("call", "isolate", "isolate#callee");
   add("objectValue", "Other");
   add("exportsAs", "app.rb", "Other", "Other");
+  // xs.forEach((x) => ...), whose function is its first argument.
+  add("call", "forEach", "forEach#callee");
+  add("readsProperty", "forEach#callee", "xs", "forEach");
+  add("callArg", "forEach", "0", "cb");
+  add("func", "cb");
+  add("paramOf", "cb", "0", "cb#x");
+  add("paramNamed", "cb", "x", "cb#x");
+  add("elementOf", "cb#x", "xs");
+  // config.tap do ... end, whose block takes no element.
+  add("call", "tap", "tap#callee");
+  add("readsProperty", "tap#callee", "config", "tap");
+  add("callBlock", "tap", "tapped");
+  add("func", "tapped");
 
   const text: Record<string, string> = {
     "get#callee": "get",
@@ -137,6 +150,14 @@ describe("a call's pairs and loops", () => {
   it("finds no loop on a call that runs nothing per element", () => {
     expect(callOf("getA", source()).loopsOver?.()).toBeNull();
     expect(callOf("draw", source()).loopsOver?.()).toBeNull();
+    expect(callOf("tap", source()).loopsOver?.()).toBeNull();
+  });
+
+  it("reads a loop whose function is the call's first argument, by the parameter's own name", () => {
+    const loop = callOf("forEach", source()).loopsOver?.();
+    expect(loop?.element).toBe("x");
+    expect(loop?.position).toBeNull();
+    expect(loop?.over.source?.()).toBe("xs");
   });
 });
 
