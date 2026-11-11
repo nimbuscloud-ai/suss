@@ -5,11 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { rubyPackUnderTest, storageOf } from "@suss/pack-harness";
 
-import {
-  bigqueryRawSql,
-  bigqueryRubyFramework,
-  withBigquery,
-} from "./index.js";
+import { bigqueryRubyFramework, withBigquery } from "./index.js";
 
 import type { RubyPack } from "@suss/adapter-ruby";
 import type { Effect } from "@suss/behavioral-ir";
@@ -52,18 +48,52 @@ function reached(effects: Effect[], operation: string) {
   });
 }
 
+/** The scope and table of each access the lines make, run inside a method. */
+async function tablesReached(...lines: string[]) {
+  const effects = await harness.effectsAcross(
+    {
+      "report.rb": [
+        "class Report",
+        "  def run(rows)",
+        ...lines.map((line) => `    ${line}`),
+        "  end",
+        "end",
+      ].join("\n"),
+    },
+    "report.rb",
+  );
+  return effects.map((effect) => {
+    const { semantics } = storageOf(effect);
+    return [semantics.storageSystem, semantics.scope, semantics.container];
+  });
+}
+
 describe("what the pack declares", () => {
-  it("reads the gem's two entry constants", () => {
-    expect(bigqueryRawSql().map((pattern) => pattern.constantName)).toEqual([
-      "Google::Cloud::Bigquery",
-      "Google::Cloud",
+  it("reads a client from either of the gem's entry constants, built in place or kept in a name", async () => {
+    expect(
+      await tablesReached(
+        "a = Google::Cloud::Bigquery.new",
+        'a.query("SELECT id FROM `p.core.accounts`")',
+        "b = Google::Cloud.bigquery",
+        'b.query("SELECT id FROM `p.core.plans`")',
+        'Google::Cloud::Bigquery.new.query("SELECT id FROM `p.core.teams`")',
+      ),
+    ).toEqual([
+      ["gcp.bigquery", "core", "accounts"],
+      ["gcp.bigquery", "core", "plans"],
+      ["gcp.bigquery", "core", "teams"],
     ]);
   });
 
-  it("says BigQuery's store and BigQuery's dialect, which are spelled differently", () => {
-    const [pattern] = bigqueryRawSql();
-    expect(pattern?.storageSystem).toBe("gcp.bigquery");
-    expect(pattern?.dialect).toBe("bigquery");
+  it("leaves alone a receiver another library or another gem class made", async () => {
+    expect(
+      await tablesReached(
+        "a = Other::Client.new",
+        'a.query("SELECT id FROM `p.core.accounts`")',
+        "b = Google::Cloud::Bigquery::Dataset.new",
+        'b.query("SELECT id FROM `p.core.plans`")',
+      ),
+    ).toEqual([]);
   });
 
   it("adds itself to a pack without disturbing its discovery", () => {
@@ -75,10 +105,11 @@ describe("what the pack declares", () => {
     const composed = withBigquery(rails);
     expect(composed.name).toBe("rails");
     expect(composed.discovery).toBe(rails.discovery);
-    expect(composed.rawSql).toHaveLength(2);
+    expect(composed.accessRecognizers?.length).toBeGreaterThan(0);
+    expect(composed.invocationRecognizers?.length).toBeGreaterThan(0);
   });
 
-  it("keeps a raw SQL pattern the pack already had", () => {
+  it("keeps the raw SQL patterns and hooks the pack already had", () => {
     const already: RubyPack = {
       name: "rails",
       protocol: "http",
@@ -91,8 +122,13 @@ describe("what the pack declares", () => {
           dialect: "postgresql",
         },
       ],
+      invocationRecognizers: [() => null],
     };
-    expect(withBigquery(already).rawSql).toHaveLength(3);
+    const composed = withBigquery(already);
+    expect(composed.rawSql).toBe(already.rawSql);
+    expect(composed.invocationRecognizers?.[0]).toBe(
+      already.invocationRecognizers?.[0],
+    );
   });
 });
 

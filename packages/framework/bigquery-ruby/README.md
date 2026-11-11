@@ -4,7 +4,7 @@ This pack records which BigQuery tables a Ruby service reads and writes through 
 
 ## What this package is
 
-A pattern pack for the Ruby adapter. It records the same `storage-access` effects an ActiveRecord call does. So a table a job reads or writes is the same kind of boundary whether the query went through an ORM or was written out as SQL.
+A pack for the Ruby adapter, declared with `@suss/recognize`. It records the same `storage-access` effects an ActiveRecord call does. So a table a job reads or writes is the same kind of boundary whether the query went through an ORM or was written out as SQL.
 
 ```ts
 import { bigqueryRubyFramework, withBigquery } from "@suss/framework-bigquery-ruby";
@@ -52,7 +52,7 @@ The pack only knows which project a dataset belongs to when the statement spells
 
 ## Where it fits in suss
 
-The pack depends on `@suss/adapter-ruby` for the `RubyPack` contract, and on `@suss/ir-core` for the binding it builds. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the dataset.
+The pack depends on `@suss/recognize`, where its calls are declared, on `@suss/adapter-ruby` for the `RubyPack` contract, and on `@suss/ir-core` for the `PackDeclaration` it exports. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the dataset.
 
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
