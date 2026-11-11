@@ -175,7 +175,10 @@ OrderService.new.cancel_order(id)   # Order.update, then normalize_reference alo
 ```
 
 The pack declares which event each write triggers, and which call
-registers a callback for which events. `on:` narrows one declaration.
+registers a callback for which events. `on:` narrows one declaration to
+the event it gives, or to every event in a list such as
+`on: %i(create update)`. An `on:` value that does not settle leaves every
+event in.
 Callbacks do not get a unit of their own. Each one is an invocation on
 the body that did the write, so whatever the callback reaches ends up on
 that body's summary too. A callback registered on `ApplicationRecord`
