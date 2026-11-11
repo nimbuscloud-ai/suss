@@ -306,6 +306,12 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `returns()`, `marked(word)` | `returnsValue(f, v)` and `marks(f, word)` on the function `function()` settles to |
 | `tag()` | `jsxElement(v, t)` on the value as written |
 | `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names; its `members(kind)` are the functions among its `holdsProperty` rows |
+| `name()` on a class | `rbConstantName(c, q)` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere |
+| `bodyCalls()` on a value, a class or a module | `bodyCallAt(f, k, r)` on the value's own key, the class's, or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
+| `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
+| `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
+| `loopsOver()` | the call's block from `callBlock(r, b)`, or else a function written as its first argument. The `elementOf(x, o)` row off the call's receiver `o` whose `x` is that function's first parameter, by `paramOf` or the adapter's `parameterOf`, gives the element's variable, and `positionOf(i, x)` the position's. A variable's name is the one `paramNamed` gives it, or its text |
+| `evaluatedWith(bindings)` | the adapter's `evaluatedWith`, its evaluator with the names bound. An adapter with none reads the value as `name("nothing")` does |
 
 A read chain asks its questions of `ReadOps`, which `factReadOps` reads
 the same way:

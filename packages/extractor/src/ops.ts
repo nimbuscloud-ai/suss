@@ -311,6 +311,22 @@ export interface ValueOps {
    */
   evaluated?(): string | number | boolean | null;
   /**
+   * What `evaluated` gives, with each name in `bindings` read as the
+   * string it maps to, the way a loop variable is for one element of the
+   * loop. An adapter with no evaluator to bind them in reads the value as
+   * `name("nothing")` does.
+   */
+  evaluatedWith?(
+    bindings: ReadonlyMap<string, string>,
+  ): string | number | boolean | null;
+  /**
+   * The calls written as statements of the body of the function, block,
+   * class or file this value is, in source order, through the branches of
+   * a conditional and not into a nested function or block. Empty for any
+   * other value.
+   */
+  bodyCalls?(): readonly CallOps[];
+  /**
    * The object this value comes to, through names and through a call
    * that returns its argument, or null for anything else. A call into a
    * factory comes to nothing here.
@@ -398,6 +414,16 @@ export interface ClassValueOps {
   inherits(spec: Inherits): boolean;
   /** The methods the class writes itself, instance ones or the class's own, in source order. */
   members(kind: "instance" | "singleton"): readonly ModuleMember[];
+  /**
+   * The name the class is declared under, with every namespace around it
+   * in Ruby, as `Billing::Engine`. Null when the facts state none.
+   */
+  name(): string | null;
+  /**
+   * The calls written as statements of the class body, as
+   * `ValueOps.bodyCalls` lists them. Only Ruby writes a call there.
+   */
+  bodyCalls(): readonly CallOps[];
 }
 
 /** A member asked for by name, `singleton` for the class's own member rather than an instance's. */
@@ -427,6 +453,15 @@ export interface ModuleOps {
   export(path: readonly string[], member?: ModuleMemberName): ValueOps | null;
   /** The calls the module body runs outside every function, in source order. */
   calls(): readonly CallOps[];
+  /**
+   * The calls written as the file's own statements, in source order,
+   * through the branches of a conditional and not into a function, a
+   * block or a class. `calls` also lists the calls inside those, such as
+   * an argument's.
+   */
+  bodyCalls(): readonly CallOps[];
+  /** The classes and modules the file writes, nested ones included, in source order. */
+  classes(): readonly ClassValueOps[];
   /** Whether the file opens with the directive. */
   marked(word: string): boolean;
   /** The functions the file writes whose body opens with the directive, in source order. */
@@ -641,6 +676,22 @@ export interface CallOps {
    */
   block?(): ValueOps | null;
   /**
+   * The pairs the call passes whose key is a value rather than a keyword,
+   * in the order the call writes them: `"status" => "health#show"` and
+   * `Sidekiq::Web => "/sidekiq"` in Ruby. A pair keyed by a plain string
+   * is read under `keywordAt` as well. Unset in a language whose calls
+   * pass no such pairs.
+   */
+  pairArgs?(): readonly PairArg[];
+  /**
+   * The collection the call runs its block, or the function it is
+   * handed, once per element of, with the variables that take each
+   * element and its position: `%w[a b].each_with_index do |name, i|` in
+   * Ruby, `xs.forEach((name, i) => ...)` in TypeScript. Null when the
+   * call runs nothing once per element.
+   */
+  loopsOver?(): Loop | null;
+  /**
    * The one call behind the receiver the origin accepts, however many
    * name, construction, or query hops separate them, such as Mongoose's
    * `model(...)` behind a document. Null when nothing
@@ -662,6 +713,22 @@ export interface CallOps {
    * on the transition. Leaving it out changes only that record.
    */
   statesSlots?(effect: Effect, slots: readonly StatedSlot[]): void;
+}
+
+/** A pair a call passes, `key => value`, whose key is a value of its own. */
+export interface PairArg {
+  readonly key: ValueOps;
+  readonly value: ValueOps;
+}
+
+/** A call that runs a function once per element of a collection. */
+export interface Loop {
+  /** The collection, as the call's receiver writes it. */
+  readonly over: ValueOps;
+  /** The variable each element is given. */
+  readonly element: string;
+  /** The variable each element's position is given, or null when none is. */
+  readonly position: string | null;
 }
 
 /**
@@ -842,6 +909,11 @@ export interface FactSource {
   handedReaching?(key: string): readonly string[];
   /** The one string, number or boolean the evaluator settles the value at the key to, or null. */
   evaluatedOf?(key: string): string | number | boolean | null;
+  /** `evaluatedOf`, with each name in `bindings` read as the string it maps to. */
+  evaluatedWith?(
+    key: string,
+    bindings: ReadonlyMap<string, string>,
+  ): string | number | boolean | null;
   /**
    * Every function and object the value at the key comes to, through
    * names and through a call that returns its argument. The ops pick the

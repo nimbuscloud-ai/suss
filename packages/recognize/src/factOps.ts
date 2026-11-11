@@ -38,10 +38,12 @@ import type {
   Imported,
   Inheriting,
   Inherits,
+  Loop,
   MarkedFunction,
   ModuleMember,
   ModuleMemberName,
   ModuleOps,
+  PairArg,
   ReadOff,
   ReceiverOrigin,
   ReturnedBy,
@@ -278,6 +280,46 @@ class FactCall implements CallOps {
   block(): ValueOps | null {
     const block = only(this.source.db.lookup("callBlock", 0, this.key), 1);
     return block === null ? null : factValueOps(block, this.source);
+  }
+
+  pairArgs(): readonly PairArg[] {
+    return this.source.db.lookup("callPairArg", 0, this.key).map((row) => ({
+      key: factValueOps(String(row[1]), this.source),
+      value: factValueOps(String(row[2]), this.source),
+    }));
+  }
+
+  /**
+   * One `elementOf` row off the receiver whose variable is the first
+   * parameter of the function the call runs, and the `positionOf` row
+   * for that variable.
+   */
+  loopsOver(): Loop | null {
+    const handed = this.handedFunction();
+    if (this.calleeRead === null || handed === null) {
+      return null;
+    }
+    const { object } = this.calleeRead;
+    const element = firstParameterGiven(object, handed, this.source);
+    if (element === null) {
+      return null;
+    }
+    const position = only(this.source.db.lookup("positionOf", 1, element), 0);
+    return {
+      over: factValueOps(object, this.source),
+      element: variableName(element, this.source),
+      position: position === null ? null : variableName(position, this.source),
+    };
+  }
+
+  /** The block the call is written with, or else a function written as its first argument. */
+  private handedFunction(): string | null {
+    const block = only(this.source.db.lookup("callBlock", 0, this.key), 1);
+    if (block !== null) {
+      return block;
+    }
+    const first = this.arguments().get(0);
+    return first !== undefined && isFunction(first, this.source) ? first : null;
   }
 
   receiverIsFrom(origin: ReceiverOrigin): boolean {
@@ -579,6 +621,47 @@ function callsHanding(
   ];
 }
 
+/**
+ * The variable a loop gives each element of `over` in, the first
+ * parameter of `func`: by its `paramOf` row, or by the adapter's
+ * `parameterOf` where it states none, as Ruby does for a block's.
+ */
+function firstParameterGiven(
+  over: string,
+  func: string,
+  source: FactSource,
+): string | null {
+  const given = source.db
+    .lookup("elementOf", 1, over)
+    .map((row) => String(row[0]))
+    .filter(
+      (variable) =>
+        source.db
+          .lookup("paramOf", 2, variable)
+          .some((row) => String(row[0]) === func && String(row[1]) === "0") ||
+        unstatedOwner(variable, 0, source).includes(func),
+    );
+  return onlyKey(given);
+}
+
+/** A variable's name: the one `paramNamed` gives it, or else its source text. */
+function variableName(variable: string, source: FactSource): string {
+  return (
+    only(source.db.lookup("paramNamed", 2, variable), 1) ??
+    source.textOf(variable)
+  );
+}
+
+/** The calls `bodyCallAt` places as the statements of the body at `key`, in order. */
+function bodyCallsOf(key: string, source: FactSource): CallOps[] {
+  return [...source.db.lookup("bodyCallAt", 0, key)]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .flatMap((row) => {
+      const ops = factCallOps(String(row[2]), source);
+      return ops === null ? [] : [ops];
+    });
+}
+
 /** The function a parameter with no `paramOf` row belongs to, when it is at this position. */
 function unstatedOwner(
   parameter: string,
@@ -746,6 +829,19 @@ class FactValue implements ValueOps {
 
   evaluated(): string | number | boolean | null {
     return this.facts.evaluatedOf?.(this.key) ?? null;
+  }
+
+  evaluatedWith(
+    bindings: ReadonlyMap<string, string>,
+  ): string | number | boolean | null {
+    const evaluate = this.facts.evaluatedWith;
+    return evaluate === undefined
+      ? this.name("nothing")
+      : evaluate(this.key, bindings);
+  }
+
+  bodyCalls(): readonly CallOps[] {
+    return bodyCallsOf(this.key, this.facts);
   }
 
   object(): ValueOps | null {
@@ -1083,6 +1179,19 @@ class FactClass implements ClassValueOps {
         : [{ name, value: factValueOps(held, this.facts) }];
     });
   }
+
+  /** `rbConstantName` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere. */
+  name(): string | null {
+    const { db } = this.facts;
+    return (
+      only(db.lookup("rbConstantName", 0, this.key), 1) ??
+      only(db.lookup("exportsAs", 2, this.key), 1)
+    );
+  }
+
+  bodyCalls(): readonly CallOps[] {
+    return bodyCallsOf(this.key, this.facts);
+  }
 }
 
 /**
@@ -1134,6 +1243,8 @@ export interface ModuleWritten {
   exports?(): readonly { readonly name: string; readonly key: string }[];
   /** The calls the module body runs outside every function, in source order. */
   calls(): readonly CallOps[];
+  /** The keys of the classes and modules the file writes, nested ones included, in source order. Unset lists none. */
+  classes?(): readonly string[];
   /** Every function the file writes, with the variable or property it is assigned to. Unset where the language writes no directive. */
   functions?(): readonly {
     readonly key: string;
@@ -1218,6 +1329,19 @@ class FactModule implements ModuleOps {
 
   calls(): readonly CallOps[] {
     return this.written.calls();
+  }
+
+  /** `bodyCallAt` keys a file's own statements by the file's path, as `exportsAs` keys its exports. */
+  bodyCalls(): readonly CallOps[] {
+    this.state();
+    return bodyCallsOf(this.file, this.facts);
+  }
+
+  classes(): readonly ClassValueOps[] {
+    return (this.written.classes?.() ?? []).map((key) => {
+      this.facts.read(key);
+      return new FactClass(key, this.facts);
+    });
   }
 
   marked(word: string): boolean {
