@@ -1303,6 +1303,14 @@ a question per call. Python and Ruby ask the same question the first
 time a declared stream write looks a receiver up. Their own stream
 readers still spell the stream at the call.
 
+`wantedEnvValue` is the same answer for the environment, from the
+`wantedEnvObject` seed the TypeScript store already asks once per run.
+A read chain at `env.PORT` looks `env` up in it, as written or as the
+parameter or declaration it refers to, so a function that defaults a
+parameter to `process.env`, or is handed it, reads `PORT` off the
+environment. Python and Ruby derive it with the rest of the
+environment question and nothing reads it there yet.
+
 ## Which returns become the exit code
 
 A command often returns its exit code up a chain of functions and

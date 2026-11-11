@@ -97,6 +97,27 @@ describe("the read ops over the facts", () => {
     ]).toEqual([true, false, false, "os.environ", "os.environ", undefined]);
   });
 
+  it("says a site is off an object the rules followed into its own, and which of two it cannot say", () => {
+    const reachedBy = (paths: string[]) =>
+      factReadOps(
+        "a",
+        source({
+          spellsGlobal: () => false,
+          globalsReaching: (key) => (key === "env" ? paths : []),
+        }),
+      );
+    expect([
+      reachedBy(["os.environ"]).isOff(ENV),
+      reachedBy(["os.environ"]).objectPath(["os.environ", "sys.stdout"]),
+      reachedBy(["os.environ", "sys.stdout"]).objectPath([
+        "os.environ",
+        "sys.stdout",
+      ]),
+      reachedBy(["sys.stdout"]).isOff(ENV),
+      factReadOps("a", without("globalsReaching")).isOff(global("x")),
+    ]).toEqual([true, "os.environ", null, false, false]);
+  });
+
   it("asks the adapter for the object first when it says so, without stating the site", () => {
     const read = factReadOps(
       "unstated",

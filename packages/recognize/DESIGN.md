@@ -292,7 +292,7 @@ the same way:
 | op | read from |
 |---|---|
 | `entry()` | `readsProperty(x, o, n)` or `readsEntry(x, o, n)` gives `n`, and `readsKeyed(x, o, k)` gives null. At a site the facts state none of the three at, it is undefined and a chain doesn't match |
-| `isOff(global)`, `objectPath(paths)` | the adapter's `spellsGlobal` on the object the site reads off. The adapter's `objectOf` gives that object without stating the site, and the rows above give it otherwise |
+| `isOff(global)`, `objectPath(paths)` | the adapter's `spellsGlobal` on the object the site reads off, or else `globalsReaching` on it. TypeScript follows the environment objects there through `wantedEnvValue`, so `env.PORT` is off `process.env` when `env` is a parameter that defaults to it or a caller hands it. The adapter's `objectOf` gives the object without stating the site, and the rows above give it otherwise |
 | `isOff(handedIn)` | false, since no adapter states which parameter a platform fills yet |
 | `readsOff()` | the adapter's `readsOff`: in TypeScript, the element read `o[k]` or the binding elements of `const { A } = o` when the site is `o`, stated as they are asked. Python and Ruby visit those sites themselves and leave it unset |
 | `defaulted()`, `fallback()` | the adapter's `defaultedAt` and `fallbackOf`, each its own walk over the syntax. What counts as coping with a missing value is the language's |

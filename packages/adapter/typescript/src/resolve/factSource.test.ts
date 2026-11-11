@@ -603,3 +603,36 @@ describe("the keys a helper call supplies", () => {
     ).toEqual([[0, "FUZZ_RUNS", false, ["process.env"]]]);
   });
 });
+
+const REACHED = `
+  export function portFrom(env: NodeJS.ProcessEnv = process.env) {
+    return env.PORT;
+  }
+  function hostFrom(source: NodeJS.ProcessEnv) {
+    return source.HOST;
+  }
+  export const host = hostFrom(process.env);
+  const settings = { PORT: "1" };
+  export const port = settings.PORT;
+  export const self = this.PORT;
+`;
+
+describe("the environment a name is reached by", () => {
+  it("is the one a parameter defaults to or a caller hands it, and none for anything else", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile("/reached.ts", REACHED);
+    const store = environmentStore(project);
+    const pathAt = (text: string) => {
+      const node = file
+        .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+        .find((one) => one.getText() === text);
+      return node === undefined
+        ? "no site"
+        : readOpsAt(node, store).objectPath(["process.env", "import.meta.env"]);
+    };
+
+    expect(
+      ["env.PORT", "source.HOST", "settings.PORT", "this.PORT"].map(pathAt),
+    ).toEqual(["process.env", "process.env", undefined, undefined]);
+  });
+});

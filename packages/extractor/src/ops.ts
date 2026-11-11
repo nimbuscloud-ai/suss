@@ -796,8 +796,9 @@ export interface FactSource {
   callsGlobal?(call: string, path: string): boolean;
   /**
    * The global paths whose value the rules followed into the value at the
-   * key, through names and the parameters callers passed it to. Only the
-   * output streams are followed so far.
+   * key, through names and the parameters callers passed it to. Every
+   * adapter follows the output streams, and TypeScript the environment
+   * objects too.
    */
   globalsReaching?(key: string): readonly string[];
   /** The one string, number or boolean the evaluator settles the value at the key to, or null. */
