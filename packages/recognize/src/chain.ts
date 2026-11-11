@@ -419,6 +419,12 @@ export interface ConfigEntry {
   readonly named?: string;
   /** Defaults to `dotted`. */
   readonly callee?: CalleeSpelling;
+  /**
+   * The name a read of an entry off this entry's value gets, with `{key}`
+   * for that entry: `argv[{key}]` reads `process.argv[2]` as `argv[2]`,
+   * beside the read of `argv` itself. Its callee is the read as written.
+   */
+  readonly indexed?: string;
 }
 
 /** A read of something the runtime knows about itself, which nothing pairs against. */

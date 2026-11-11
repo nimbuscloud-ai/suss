@@ -614,7 +614,7 @@ describe("node runtime pack — env-var wiring", () => {
   });
 
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.7.1");
+    expect(nodeRuntimePack().version).toBe("0.8.0");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {

@@ -1061,7 +1061,11 @@ program works out at run time is read through it with no name. A
 callee is `dotted`, the object's path and the entry however the read
 was written, `site`, the read as written, or `object`, the path alone.
 A config read is dotted unless it says otherwise and a metadata read is
-the site. An empty key isn't read.
+the site. An empty key isn't read. A config entry with `indexed` reads
+the entries off its own value too, each under the name `indexed` gives
+it: `process.argv[2]` is `argv[2]`, beside the read of `argv`, with the
+read as written for its callee. A position the program works out at run
+time adds nothing, since the read of `argv` covers it.
 
 The chain runs on the access walk, which visits property reads and
 calls. At a property read it reports the read when the site is off the
