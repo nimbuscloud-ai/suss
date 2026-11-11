@@ -390,13 +390,28 @@ describe("a call that reaches rows with no statement", () => {
     expect(reached(effects[0]).container).toBe("accounts");
   });
 
-  it("falls back to the chain's container when that argument is not a table", async () => {
+  it("takes the chain's container when that argument is not a table", async () => {
     const effects = await effectsFor(
       connected('conn.area("core").table("accounts").put(rows)'),
       QUALIFIED,
     );
 
     expect(reached(effects[0]).container).toBe("accounts");
+  });
+
+  it("takes the chain's container over a string the call is passed in that place", async () => {
+    const effects = await effectsFor(
+      connected(
+        'conn.area("core").table("accounts").put("gs://exports/accounts.json")',
+      ),
+      QUALIFIED,
+    );
+
+    expect(reached(effects[0])).toEqual({
+      storageSystem: "warehouse.cloud",
+      scope: "core",
+      container: "accounts",
+    });
   });
 
   it("follows a client kept in an instance variable", async () => {
