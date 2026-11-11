@@ -373,7 +373,7 @@ bigquery.dataset("core").table("accounts").insert(rows)     # write to accounts 
 bigquery.dataset("core").insert("accounts", rows)           # the same write
 ```
 
-A row call can take the container as an argument, which is how the last example gives its table. Declare that argument's position in `container`. When the argument does not settle on a string, the container from the chain is used, so both spellings of `insert` come from one declaration.
+A row call can take the container as an argument, which is how the last example gives its table. Declare that argument's position in `container`. The container from the chain comes first, and the argument is read only when the chain reached none, so both spellings of `insert` come from one declaration. On a table the same place is passed the rows or a file, and `table.load("gs://bucket/file.json")` writes the table.
 
 `@suss/sql` splits a table written with namespaces in front of it, such as BigQuery's `project.dataset.table`, and the namespace nearest the table becomes the scope. A table name passed to a call goes through `splitQualifiedTable` for the same split, so a call and a statement give the same result. A table written with no namespace belongs to whatever the chain addressed, and to `scope` when the chain addressed nothing.
 

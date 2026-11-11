@@ -551,9 +551,9 @@ export interface RbRowCall {
   /**
    * Where the call can take the container, for a library that offers the
    * same call on the container and one level above it: BigQuery's
-   * `table.insert(rows)` and `dataset.insert("accounts", rows)`. When this
-   * argument does not settle on a string, as with a rows argument, the
-   * chain's own container is used.
+   * `table.insert(rows)` and `dataset.insert("accounts", rows)`. The
+   * argument is read only when the chain reached no container, since on
+   * a container the same place is passed the rows or a file.
    */
   container?: RbArgumentPlace;
 }
