@@ -306,7 +306,6 @@ describe("the read ops, in every language", () => {
       ["process.env.F", "F", true, "y"],
       ["process.env.D", "D", false, null],
       ["process.env.G", "G", false, null],
-      ["process.env.W", "W", false, null],
     ]);
   });
 

@@ -1074,7 +1074,8 @@ destructuring on the line its object is on.
 An entry `writes` lists gives a state change when the site is assigned
 to, with the number the value settles to or its source as written, and
 is read through `entries` otherwise. `writes({}, { changes: "nothing" })`
-makes an assignment to any entry no read at all.
+makes an assignment to any entry no read at all, which is what the
+Node pack says of `process.env.X = v`.
 
 `throughHelpers()` reads a key a call passes down to a read off the
 object: `requireEnv("TABLE")` passes `TABLE` to the `name` that
@@ -1083,7 +1084,8 @@ the caller's own parameter forwards belongs to whoever calls the
 caller. Each name is read once, in the order the arguments first pass
 it, and it is defaulted when every site that reads it copes with a
 missing value or the call itself does. Its callee spells the object
-its first site reads.
+its first site reads. A site the chain counts as a write is left out,
+so `setEnv("TABLE", v)` into `process.env[name] = value` reads nothing.
 
 `getters` reads a call on the object that takes the key as an
 argument, Python's `os.environ.get("B", "d")` or Ruby's
