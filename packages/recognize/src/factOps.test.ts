@@ -125,6 +125,21 @@ describe("factCallOps", () => {
     expect(opsAt("set").receiverIsFrom(constructedFrom("redis"))).toBe(false);
   });
 
+  it("reads a receiver the construction made in place, as in `new Redis().set(k)`", () => {
+    const inPlace = source();
+    const db = inPlace.db as Database;
+    db.add("call", ["made", "Redis"]);
+    db.add("call", ["setAtOnce", "made.set"]);
+    db.add("readsProperty", ["made.set", "made", "set"]);
+
+    expect(
+      opsAt("setAtOnce", inPlace).receiverIsFrom(constructedFrom("ioredis")),
+    ).toBe(true);
+    expect(
+      opsAt("setAtOnce", inPlace).receiverIsFrom(constructedFrom("redis")),
+    ).toBe(false);
+  });
+
   it("checks a callee by the module it was imported from and the export it names", () => {
     const put = opsAt("send").argument(0);
 
