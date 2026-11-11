@@ -52,6 +52,7 @@
   "bare_symbol": "suss: tree-sitter-ruby node type for one element of a %i[] list",
   "false": "suss: tree-sitter-ruby node type for the literal false, as in a route's format: false",
   "all": "Rails routing DSL: the via: value on match that routes every HTTP method",
+  "_": "Rails routing DSL: ActionDispatch::Routing::Mapper#add_route writes each - in a bare verb's one-word path as _ when it takes the action from the path",
   "mount": "Rails routing DSL: ActionDispatch::Routing::Mapper::Base#mount, serving an engine's route set under a path",
   "routes": "Rails: Rails::Engine#routes, the route set an app or engine draws into",
   "isolate_namespace": "Rails: Rails::Engine.isolate_namespace, which puts every controller the engine routes under the given module",

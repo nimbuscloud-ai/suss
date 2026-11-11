@@ -513,6 +513,37 @@ describe("railsFramework", () => {
       });
     });
 
+    it("takes a bare verb's action from a one-word path, with each hyphen as an underscore", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :users, only: [] do\n" +
+        '    member { post "reset-bounce-score" }\n' +
+        "  end\n" +
+        "end\n";
+      expect(
+        routesFor(source, "UsersController", "reset_bounce_score"),
+      ).toEqual([{ method: "POST", path: "/users/:id/reset-bounce-score" }]);
+      expect(
+        routesFor(source, "UsersController", "reset-bounce-score"),
+      ).toEqual([]);
+    });
+
+    it("takes no action from a bare verb's path of more than one word", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :stories, only: [] do\n" +
+        '    get "/stories/:short_id", to: redirect("/s/%{short_id}")\n' +
+        '    get "details/:id(/:tab)", action: options.fetch(:action, :show)\n' +
+        "  end\n" +
+        "end\n";
+      expect(
+        routesFor(source, "StoriesController", "/stories/:short_id"),
+      ).toEqual([]);
+      expect(
+        routesFor(source, "StoriesController", "details/:id(/:tab)"),
+      ).toEqual([]);
+    });
+
     it("replays a block looped over a word list once per element", () => {
       const source =
         "Rails.application.routes.draw do\n" +

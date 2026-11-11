@@ -504,13 +504,13 @@ function handleVerb(
   }
   // `post :recording, action: :start_recording` routes to the `action:`
   // keyword's action, at the path the first argument gives.
-  const action = wordValue(args.keyword.action, ctx) ?? segment;
+  const action = wordValue(args.keyword.action, ctx) ?? actionFromPath(segment);
   const controller = wordValue(args.keyword.controller, ctx);
   const controllerKey =
     controller !== null
       ? joinKey(ctx.modulePrefix, controller)
       : ctx.resource?.controllerKey;
-  if (controllerKey === undefined) {
+  if (controllerKey === undefined || action === null) {
     return;
   }
   out.add(controllerKey, action, {
@@ -518,6 +518,16 @@ function handleVerb(
     path: joinPath(base, segment),
     ...format,
   });
+}
+
+/**
+ * The action Rails takes from a bare verb's path when nothing else gives
+ * one: the path itself when it is one word, with each `-` changed to `_`,
+ * as ActionDispatch does. A path with any other character in it, a slash
+ * or a parameter's colon, gives no action.
+ */
+function actionFromPath(segment: string): string | null {
+  return /^[\w-]+$/.test(segment) ? segment.replaceAll("-", "_") : null;
 }
 
 /** `format: false` turns off the `.:format` Rails adds to a route. */
