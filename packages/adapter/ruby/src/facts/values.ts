@@ -52,6 +52,7 @@ import {
   symbolValue,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
+import { compoundName } from "../scope.js";
 import {
   BLOCK_WRAPPERS,
   CONSTRUCTOR,
@@ -2626,9 +2627,11 @@ export function emitValueFacts(
     if (name === null) {
       return;
     }
-    add(emitter, "binds", nameId(filePath, name.text), key);
+    // `module ::Boards` declares `Boards`.
+    const declared = compoundName(name);
+    add(emitter, "binds", nameId(filePath, declared), key);
     // Another file can refer to a top-level declaration by name.
-    add(emitter, "exportsAs", filePath, name.text, key);
+    add(emitter, "exportsAs", filePath, declared, key);
   };
 
   const walk = (node: RbNode): void => {
