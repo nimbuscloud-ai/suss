@@ -4,14 +4,15 @@
  * functions count.
  */
 
-import { Node, SyntaxKind } from "ts-morph";
+import { Node } from "ts-morph";
 
+import type { TsDiscoveryContext } from "@suss/adapter-typescript";
 import type { DiscoveredCustomUnit, TerminalPattern } from "@suss/extractor";
 import type {
   ArrowFunction,
-  Block,
   FunctionDeclaration,
   FunctionExpression,
+  MethodDeclaration,
   SourceFile,
   Statement,
 } from "ts-morph";
@@ -23,6 +24,12 @@ const ACTION_TERMINALS: TerminalPattern[] = [
   { kind: "return", match: { type: "returnStatement" }, extraction: {} },
   { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
 ];
+
+type WrittenFunction =
+  | FunctionDeclaration
+  | MethodDeclaration
+  | ArrowFunction
+  | FunctionExpression;
 
 function leadingDirectives(statements: Statement[]): string[] {
   const found: string[] = [];
@@ -39,18 +46,12 @@ function leadingDirectives(statements: Statement[]): string[] {
   return found;
 }
 
-function fileIsServerModule(sourceFile: SourceFile): boolean {
-  return leadingDirectives(sourceFile.getStatements()).includes(DIRECTIVE);
-}
-
-function bodyStartsWithDirective(
-  fn: FunctionDeclaration | ArrowFunction | FunctionExpression,
-): boolean {
+function bodyStartsWithDirective(fn: WrittenFunction): boolean {
   const body = fn.getBody();
   if (body === undefined || !Node.isBlock(body)) {
     return false;
   }
-  return leadingDirectives((body as Block).getStatements()).includes(DIRECTIVE);
+  return leadingDirectives(body.getStatements()).includes(DIRECTIVE);
 }
 
 function actionUnit(
@@ -72,16 +73,60 @@ function actionUnit(
 }
 
 /**
- * The variable or property an inline action is assigned to. An action
- * passed anonymously, as in `<form action={async () => {...}}>`, gets
- * null here, and the caller numbers it.
+ * Each function the module exports, under the name it is exported as. A
+ * call written as the export, such as a caching helper's, is the closure
+ * it gives back when that closure never calls what it was handed, since
+ * the closure is what the client's call runs.
  */
-function inlineName(fn: ArrowFunction | FunctionExpression): string | null {
-  const parent = fn.getParent();
-  if (parent !== undefined && Node.isVariableDeclaration(parent)) {
-    return parent.getName();
+function exportedFunctionsOf(
+  sf: SourceFile,
+  ctx: TsDiscoveryContext,
+): { name: string; func: unknown }[] {
+  const followed = new Map<string, unknown>(
+    ctx.exportedFunctions(sf).map(({ name, func }) => [name, func]),
+  );
+  const found: { name: string; func: unknown }[] = [];
+  for (const [name, [first]] of ctx.resolution.exportsOf(sf)) {
+    const func =
+      followed.get(name) ??
+      (first === undefined
+        ? null
+        : ctx.resolution.resolveReturnedCallable(first));
+    if (func !== null) {
+      found.push({ name, func });
+    }
   }
-  if (parent !== undefined && Node.isPropertyAssignment(parent)) {
+  return found;
+}
+
+/** Every function the file writes, declared, assigned or written in place, in source order. */
+function functionsIn(sf: SourceFile): WrittenFunction[] {
+  const found: WrittenFunction[] = [];
+  sf.forEachDescendant((node) => {
+    if (
+      Node.isFunctionDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isArrowFunction(node) ||
+      Node.isFunctionExpression(node)
+    ) {
+      found.push(node);
+    }
+  });
+  return found;
+}
+
+/**
+ * A declaration's own name, or the variable or property a function
+ * written in place is assigned to. An action passed anonymously, as in
+ * `<form action={async () => {...}}>`, gets null here, and the caller
+ * numbers it.
+ */
+function assignedNameOf(fn: WrittenFunction): string | null {
+  if (Node.isFunctionDeclaration(fn) || Node.isMethodDeclaration(fn)) {
+    return fn.getName() ?? null;
+  }
+  const parent = fn.getParent();
+  if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) {
     return parent.getName();
   }
   return null;
@@ -89,7 +134,7 @@ function inlineName(fn: ArrowFunction | FunctionExpression): string | null {
 
 export function nextjsServerActions(
   sourceFile: unknown,
-  _ctx: unknown,
+  ctx: unknown,
 ): DiscoveredCustomUnit[] {
   const sf = sourceFile as SourceFile;
   if (!sf.getFullText().includes(DIRECTIVE)) {
@@ -98,48 +143,28 @@ export function nextjsServerActions(
 
   const out: DiscoveredCustomUnit[] = [];
   const claimed = new Set<unknown>();
-  const fileLevel = fileIsServerModule(sf);
   const module = sf.getFilePath();
 
-  for (const fn of sf.getFunctions()) {
-    const name = fn.getName();
-    if (name === undefined || fn.getBody() === undefined) {
-      continue;
-    }
-
-    if ((fileLevel && fn.isExported()) || bodyStartsWithDirective(fn)) {
-      claimed.add(fn);
-      out.push(actionUnit(fn, name, module));
-    }
-  }
-
-  for (const statement of sf.getVariableStatements()) {
-    if (!fileLevel || !statement.isExported()) {
-      continue;
-    }
-    for (const decl of statement.getDeclarations()) {
-      const init = decl.getInitializer();
-      if (
-        init !== undefined &&
-        (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-      ) {
-        claimed.add(init);
-        out.push(actionUnit(init, decl.getName(), module));
+  if (leadingDirectives(sf.getStatements()).includes(DIRECTIVE)) {
+    for (const { name, func } of exportedFunctionsOf(
+      sf,
+      ctx as TsDiscoveryContext,
+    )) {
+      if (claimed.has(func)) {
+        continue;
       }
+      claimed.add(func);
+      out.push(actionUnit(func, name, module));
     }
   }
 
   let inlineIndex = 0;
-  const inlineCandidates: (ArrowFunction | FunctionExpression)[] = [
-    ...sf.getDescendantsOfKind(SyntaxKind.ArrowFunction),
-    ...sf.getDescendantsOfKind(SyntaxKind.FunctionExpression),
-  ];
-  for (const fn of inlineCandidates) {
+  for (const fn of functionsIn(sf)) {
     if (claimed.has(fn) || !bodyStartsWithDirective(fn)) {
       continue;
     }
     claimed.add(fn);
-    const name = inlineName(fn);
+    const name = assignedNameOf(fn);
     if (name === null) {
       out.push(actionUnit(fn, `serverAction#${inlineIndex}`, module));
       inlineIndex += 1;

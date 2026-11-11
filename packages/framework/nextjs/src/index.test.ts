@@ -87,10 +87,15 @@ describe("nextjsFramework: extraction", () => {
       })
       .sort();
     expect(bound).toEqual([
+      "app/actions.ts archiveOrder archiveOrder",
       "app/actions.ts cancelOrder cancelOrder",
       "app/actions.ts createOrder createOrder",
+      "app/actions.ts default default",
       "app/actions.ts quote quote",
-      "app/actions.ts submitOrder submitOrder",
+      "app/actions.ts refundOrder refundOrder",
+      "app/actions.ts updateOrder updateOrder",
+      "app/cache.ts default default",
+      "app/cache.ts getOrderHistory getOrderHistory",
       "app/cache.ts revalidateOrders revalidateOrders",
     ]);
   });
@@ -289,6 +294,150 @@ describe("server actions", () => {
     });
 
     expect(actionsOf(summaries)).toEqual(["serverAction#0", "submit"]);
+  });
+
+  function placeOf(summaries: BehavioralSummary[], name: string): string {
+    const found = summaries.find((one) => one.identity.name === name);
+    return `${found?.location.file}:${found?.location.range.start}`;
+  }
+
+  it("reads an export list and a re-export, and names the default export default", async () => {
+    const summaries = await extract({
+      "/app/actions.ts": `
+        "use server";
+
+        export default async function submitOrder(form: FormData) {
+          return form;
+        }
+
+        const refundOrder = async (id: string) => id;
+        export { refundOrder };
+
+        export { archiveOrder } from "./lib";
+      `,
+      "/app/lib.ts": `
+        export async function archiveOrder(id: string) {
+          return id;
+        }
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual([
+      "archiveOrder",
+      "default",
+      "refundOrder",
+    ]);
+    const archived = summaries.find(
+      (one) => one.identity.name === "archiveOrder",
+    );
+    expect(archived?.location.file).toBe("/app/lib.ts");
+    expect(archived?.identity.boundaryBinding?.semantics).toMatchObject({
+      module: "/app/actions.ts",
+      exportName: "archiveOrder",
+    });
+  });
+
+  it("makes an anonymous default export an action named default", async () => {
+    const summaries = await extract({
+      "/app/anonymous.ts": `
+        "use server";
+
+        export default async function () {
+          return null;
+        }
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual(["default"]);
+  });
+
+  it("reads an export a project wrapper builds as the function the wrapper runs, or else the closure it returns", async () => {
+    const summaries = await extract({
+      "/app/lib.ts": `
+        import { unstable_cache } from "next/cache";
+
+        export function withTeam(action: (form: FormData) => Promise<string>) {
+          return async (form: FormData) => {
+            if (!form.has("team")) {
+              throw new Error("Team not found");
+            }
+            return action(form);
+          };
+        }
+
+        export function cached(fn: (id: string) => Promise<string>) {
+          const cachedFn = unstable_cache(fn, ["key"]);
+          return async (id: string) => {
+            return cachedFn(id);
+          };
+        }
+      `,
+      "/app/actions.ts": `
+        "use server";
+
+        import { cached, withTeam } from "./lib";
+
+        export const checkout = withTeam(async (form) => {
+          return String(form.get("price"));
+        });
+
+        export const history = cached(async (id) => id);
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual(["checkout", "history"]);
+    expect(placeOf(summaries, "checkout")).toBe("/app/actions.ts:6");
+    expect(placeOf(summaries, "history")).toBe("/app/lib.ts:15");
+  });
+
+  it("reads a directive in a declaration nested in a function and in a method", async () => {
+    const summaries = await extract({
+      "/app/page.tsx": `
+        export default function Page() {
+          async function archive(form: FormData) {
+            "use server";
+            return form;
+          }
+          return <form action={archive} />;
+        }
+
+        export class OrderForm {
+          async save(form: FormData) {
+            "use server";
+            return form;
+          }
+        }
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual(["archive", "save"]);
+  });
+
+  it("numbers anonymous actions in the order the file writes them", async () => {
+    const summaries = await extract({
+      "/app/page.tsx": `
+        export default function Page() {
+          return (
+            <form
+              action={async function () {
+                "use server";
+                return 1;
+              }}
+            >
+              <button
+                formAction={async () => {
+                  "use server";
+                  return 2;
+                }}
+              />
+            </form>
+          );
+        }
+      `,
+    });
+
+    expect(placeOf(summaries, "serverAction#0")).toBe("/app/page.tsx:5");
+    expect(placeOf(summaries, "serverAction#1")).toBe("/app/page.tsx:11");
   });
 
   it("ignores the directive anywhere but the prologue", async () => {
