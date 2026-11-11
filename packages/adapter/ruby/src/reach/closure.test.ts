@@ -1950,6 +1950,58 @@ describe("the callbacks a write through a model runs", () => {
     ).toBe(false);
   });
 
+  it("narrows a registration to every event in its list", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  after_commit :rewrite_cache, on: %i(create update)",
+      "  after_commit :expire_cache, on: [:destroy]",
+      "",
+      "  def rewrite_cache",
+      "    Audit.where(kind: 'rewrite')",
+      "  end",
+      "",
+      "  def expire_cache",
+      "    Audit.where(kind: 'expire')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).update(state: 1)");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(callTo(unitNamed(summaries, "suspend"), "rewrite_cache")).toBe(
+      summaryIdentifier(unitNamed(summaries, "rewrite_cache")),
+    );
+    expect(
+      summaries.some((summary) => summary.identity.name === "expire_cache"),
+    ).toBe(false);
+  });
+
+  it("keeps every event when one in the list does not settle", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  after_commit :expire_cache, on: [:destroy, later_event]",
+      "",
+      "  def expire_cache",
+      "    Audit.where(kind: 'expire')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).update(state: 1)");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(callTo(unitNamed(summaries, "suspend"), "expire_cache")).toBe(
+      summaryIdentifier(unitNamed(summaries, "expire_cache")),
+    );
+  });
+
   it("runs a callback a base class registered on every model below it", async () => {
     write("app/models/application_record.rb", [
       "class ApplicationRecord < ActiveRecord::Base",
