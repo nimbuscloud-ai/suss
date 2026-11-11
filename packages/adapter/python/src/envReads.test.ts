@@ -910,6 +910,29 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([{ name: "A", defaulted: false }]);
   });
 
+  it("says nothing at a call to a helper that only sets the variable it is given", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def set_env(key, value):",
+          "    os.environ[key] = value",
+          "",
+          "",
+          "def ensure_env(key):",
+          '    os.environ[key] = os.environ.get(key, "on")',
+          "",
+          "",
+          'set_env("SET_ONLY", "1")',
+          'ensure_env("READ_TOO")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "READ_TOO", defaulted: true }]);
+  });
+
   it("says nothing when the caller writes no argument at the parameter", async () => {
     expect(
       await moduleReadsWithFacts(`${SUBSCRIPT_HELPER}A = env()\n`),

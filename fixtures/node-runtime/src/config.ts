@@ -39,3 +39,15 @@ export function tracing(): string {
 export function portFrom(env: NodeJS.ProcessEnv = process.env): string {
   return env.PORT ?? "3000";
 }
+
+// An assignment sets the variable for the rest of the run, written on
+// process.env or on a name the environment reaches, so none is a read.
+export function quietLogs(): void {
+  process.env.LOG_LEVEL = "fatal";
+  const env = process.env as Record<string, string>;
+  env.TELEMETRY_DISABLED = "1";
+}
+
+export function pinRegion(env: NodeJS.ProcessEnv = process.env): void {
+  env.AWS_REGION = "us-east-1";
+}

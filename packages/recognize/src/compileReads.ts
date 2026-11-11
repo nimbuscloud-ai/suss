@@ -29,6 +29,7 @@ import type {
   MethodMeaning,
   OffLink,
   RuntimeReadEnding,
+  WriteMeaning,
   WritesLink,
 } from "./chain.js";
 import type {
@@ -155,11 +156,10 @@ function readOf(site: ReadOps, reading: Reading): Effect[] {
   if (entry === undefined || entry === "") {
     return [];
   }
-  const write = writeMeaningOf(entry, reading.writes);
-  const assigned = write === null ? null : site.assigned();
-  if (write !== null && assigned !== null) {
-    return write.changes === "state"
-      ? [stateChange(site.source(), assigned)]
+  const write = writeAt(site, entry, reading);
+  if (write !== null) {
+    return write.meaning.changes === "state"
+      ? [stateChange(site.source(), write.assigned)]
       : [];
   }
   const meaning = entryMeaningOf(entry, reading.entries);
@@ -187,7 +187,7 @@ function entryMeaningOf(
 function writeMeaningOf(
   entry: string | null,
   link: WritesLink | null,
-): { changes: "state" | "nothing" } | null {
+): WriteMeaning | null {
   if (link === null) {
     return null;
   }
@@ -196,6 +196,22 @@ function writeMeaningOf(
       ? link.table[entry]
       : undefined;
   return listed ?? link.otherwise ?? null;
+}
+
+/**
+ * What the chain says an assignment to the site does, with the value
+ * assigned, or null when the site is no assignment the chain lists. The
+ * site is asked only when the chain lists one, since an adapter may
+ * state facts to answer.
+ */
+function writeAt(
+  site: ReadOps,
+  entry: string | null,
+  reading: Reading,
+): { meaning: WriteMeaning; assigned: ValueOps } | null {
+  const meaning = writeMeaningOf(entry, reading.writes);
+  const assigned = meaning === null ? null : site.assigned();
+  return meaning === null || assigned === null ? null : { meaning, assigned };
 }
 
 /**
@@ -363,7 +379,8 @@ interface Supplied {
 /**
  * The names the call's arguments settle to, each with whether every
  * site reading it copes with a missing value and the object its first
- * site reads. A forwarded key belongs to whoever calls the caller.
+ * site reads. A forwarded key belongs to whoever calls the caller, and a
+ * helper that only assigns the entry it is handed reads nothing.
  */
 function namesSupplied(
   keys: readonly SuppliedKey[],
@@ -371,15 +388,21 @@ function namesSupplied(
 ): Map<string, Supplied> {
   const byName = new Map<string, Supplied>();
   for (const key of keys) {
-    const [first] = key.sites;
-    if (first === undefined || key.forwarded) {
+    if (key.sites.length === 0 || key.forwarded) {
       continue;
     }
     const name = key.value.evaluated?.() ?? null;
     if (typeof name !== "string" || name.length === 0) {
       continue;
     }
-    const everywhere = key.sites.every((site) => site.defaulted());
+    const sites = key.sites.filter(
+      (site) => writeAt(site, site.entry() ?? null, reading) === null,
+    );
+    const [first] = sites;
+    if (first === undefined) {
+      continue;
+    }
+    const everywhere = sites.every((site) => site.defaulted());
     const known = byName.get(name);
     byName.set(name, {
       defaulted: (known?.defaulted ?? true) && everywhere,

@@ -267,6 +267,44 @@ describe("a read chain", () => {
     expect([assigned.length, read.length]).toEqual([0, 1]);
   });
 
+  it("reads nothing through a helper that only assigns the entry it is handed, when an assignment is nothing", () => {
+    const chain = runtimeReads({ object: global("process.env") })
+      .entries({}, CONFIG)
+      .writes({}, { changes: "nothing" })
+      .throughHelpers();
+    const assigns = site({
+      object: "process.env",
+      entry: null,
+      assigned: value(null, "value"),
+    });
+    const reads = site({ object: "process.env", entry: null, defaulted: true });
+    const namesAt = (sites: ReadOps[]) =>
+      run(chain, {
+        read: site({
+          keys: [{ at: 0, value: value("TABLE"), forwarded: false, sites }],
+        }),
+      }).map((effect) =>
+        effect.type === "interaction" ? effect.interaction : null,
+      );
+    expect([namesAt([assigns]), namesAt([assigns, reads])]).toEqual([
+      [],
+      [{ class: "config-read", name: "TABLE", defaulted: true }],
+    ]);
+  });
+
+  it("reads through a helper that assigns the entry when the chain says nothing about assignments", () => {
+    const sites = [
+      site({ object: "process.env", entry: null, assigned: value("1") }),
+    ];
+    expect(
+      run(ENV, {
+        read: site({
+          keys: [{ at: 0, value: value("TABLE"), forwarded: false, sites }],
+        }),
+      }),
+    ).toHaveLength(1);
+  });
+
   it("reads nothing off a parameter a platform fills, since none is stated yet", () => {
     const chain = runtimeReads({
       object: { origin: "handedIn", name: "env" },
