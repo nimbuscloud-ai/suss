@@ -77,7 +77,11 @@ export { parseConditionExpression } from "./predicates.js";
 // The executor ops a declared pack runs on. Exported so a pack's test
 // harness can build the same context the adapter threads through.
 export { callOpsFor } from "./resolve/callOps.js";
-export { factSourceFor, statedFactKey } from "./resolve/factSource.js";
+export {
+  factSourceFor,
+  readOpsAt,
+  statedFactKey,
+} from "./resolve/factSource.js";
 export { functionTargetOf, symbolBehind } from "./resolve/functionBehind.js";
 export {
   type Accessed,
@@ -92,6 +96,7 @@ export {
 } from "./resolve/opsOverFacts.js";
 export { GENERIC_TERMINALS } from "./resolve/reachableClosure.js";
 export { type ReadNameOptions, readName } from "./resolve/readName.js";
+export { helperCalleeOf } from "./resolve/suppliedKeys.js";
 export { declarationsBehind, hasBody } from "./resolve/unfollowedCall.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export {

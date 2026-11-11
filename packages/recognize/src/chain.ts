@@ -21,6 +21,7 @@ import type {
 import type {
   CallOps,
   ReceiverOrigin,
+  RuntimeObject,
   UnsettledName,
   ValueOps,
 } from "./ops.js";
@@ -364,7 +365,121 @@ export type Link<TMeaning> =
   | SlotsLink
   | RelationsLink
   | InterpolatesLink
-  | UnitWhenInPlaceLink;
+  | UnitWhenInPlaceLink
+  | OffLink
+  | EntriesLink
+  | GettersLink
+  | WritesLink
+  | ThroughHelpersLink;
+
+/**
+ * Where a read chain starts: the object its reads are off. A call chain
+ * starts at a receiver instead, and a read has none.
+ */
+export interface OffLink {
+  readonly asks: "off";
+  readonly object: RuntimeObject;
+}
+
+/** What a read of each entry is. `otherwise` is any entry the table does not list. */
+export interface EntriesLink {
+  readonly asks: "entries";
+  readonly table: Readonly<Record<string, EntryMeaning>>;
+  /** Without it, an entry the table does not list is no read. */
+  readonly otherwise?: EntryMeaning;
+}
+
+/** Methods that read one entry, with where the key and the fallback are. */
+export interface GettersLink {
+  readonly asks: "getters";
+  readonly table: Readonly<Record<string, GetterMeaning>>;
+}
+
+/** Entries whose assignment is a state change, and what an assignment to any other entry is. */
+export interface WritesLink {
+  readonly asks: "writes";
+  readonly table: Readonly<Record<string, WriteMeaning>>;
+  readonly otherwise?: WriteMeaning;
+}
+
+/** A call into a project function whose parameter supplies a read's key is a read at the call. */
+export interface ThroughHelpersLink {
+  readonly asks: "throughHelpers";
+}
+
+/** What a read of one entry of a runtime object is. */
+export type EntryMeaning = ConfigEntry | MetadataEntry | NoEntry;
+
+/**
+ * A read of configuration the deployment supplies, which pairs against
+ * whatever declares it. `named` replaces the entry as the read's name.
+ */
+export interface ConfigEntry {
+  readonly reads: "config";
+  readonly named?: string;
+  /** Defaults to `dotted`. */
+  readonly callee?: CalleeSpelling;
+}
+
+/** A read of something the runtime knows about itself, which nothing pairs against. */
+export interface MetadataEntry {
+  readonly reads: "metadata";
+  /** Defaults to `site`. */
+  readonly callee?: CalleeSpelling;
+}
+
+/** An entry whose read is not one, such as `import.meta.env`, which another chain reads off. */
+export interface NoEntry {
+  readonly reads: "nothing";
+}
+
+/**
+ * How the effect writes its callee: the object's path and the entry
+ * however the read was spelled (`process.env.X` for `process.env["X"]`
+ * too), the site as written, or the object's path alone.
+ */
+export type CalleeSpelling = "dotted" | "site" | "object";
+
+/** An argument by position, or under a keyword in a language that has them. */
+export interface ArgumentPosition {
+  readonly at: number;
+  readonly keyword?: string;
+}
+
+/** Where a getter call passes its fallback: an argument, or the block a Ruby call is written with. */
+export type FallbackPick = ArgumentPosition | { readonly block: true };
+
+/** A method that reads one entry, such as Python's `os.environ.get(key, default)`. */
+export interface GetterMeaning {
+  readonly key: ArgumentPosition;
+  /** Where the call passes its fallback, or the places it can, tried in order: `ENV.fetch("X", d)` and `ENV.fetch("X") { d }`. */
+  readonly fallback?: FallbackPick | readonly FallbackPick[];
+  /** The getter raises when the entry is missing and no fallback is given, so a read with none is not defaulted. */
+  readonly raisesWithout?: boolean;
+}
+
+/** What an assignment to one entry does. */
+export interface WriteMeaning {
+  readonly changes: "state" | "nothing";
+}
+
+/** What a read chain's effects say about the deployment a config read belongs to. */
+export interface Deployment {
+  readonly deploymentTarget?: DeployableUnit["deploymentTarget"];
+  readonly instanceName?: string;
+}
+
+/**
+ * A read of an object the runtime provides. A config read pairs against
+ * whatever declares the entry, a metadata read records that the unit
+ * depends on the runtime, and an assignment the chain lists under
+ * `writes` is a state change.
+ */
+export interface RuntimeReadEnding {
+  readonly yields: "runtimeRead";
+  /** Left off a metadata read, which belongs to no deployment. */
+  readonly deployment: Deployment;
+}
 
 /**
  * The meaning of a bare call of the tracked client itself. A store hook
@@ -647,13 +762,19 @@ export interface StreamWriteMethod {
   readonly to: string;
 }
 
-/** What one method table can say a method does. */
+/**
+ * What one table in a chain can say: what a method does, or for a read
+ * chain what a read of an entry, a getter or an assignment is.
+ */
 export type MethodMeaning =
   | StorageMethod
   | SqlMethod
   | MessageSendMethod
   | CallbackMethod
-  | StreamWriteMethod;
+  | StreamWriteMethod
+  | EntryMeaning
+  | GetterMeaning
+  | WriteMeaning;
 
 /** What a chain produces when every link matches. */
 export type Ending =
@@ -662,7 +783,8 @@ export type Ending =
   | MessageSendEnding
   | UnitInvokeEnding
   | ScheduleEnding
-  | StreamWriteEnding;
+  | StreamWriteEnding
+  | RuntimeReadEnding;
 
 /**
  * A write to one of the process's own output streams. Nothing pairs

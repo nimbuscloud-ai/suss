@@ -127,6 +127,14 @@ says which path that was. A chain that starts at a global also matches
 a call of the global with no receiver, `print(x)` or `puts x`, looking
 its callee up in the methods table.
 
+A read has no receiver, so a read chain starts at the object its reads
+are off, with an `off` link rather than a `start` one. The object is a
+`RuntimeObject`: a `global`, spelled the way a receiver is, or a
+`HandedIn`, the parameter a platform fills when it calls a unit it
+discovered, as the `env` a Worker's `fetch(request, env, ctx)` is
+handed. The pack that discovers the unit says which parameter. No
+adapter states that yet, so a read is never off a `HandedIn` today.
+
 A chain can also match a call made directly on the tracked value, with
 no method, by adding `.calls(meaning)` next to its methods table. A
 store hook is the usual case. `useAppStore((s) => s.bears)` calls no
@@ -277,6 +285,25 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `returns()`, `marked(word)` | `returnsValue(f, v)` and `marks(f, word)` on the function `function()` settles to |
 | `tag()` | `jsxElement(v, t)` on the value as written |
 | `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names; its `members(kind)` are the functions among its `holdsProperty` rows |
+
+A read chain asks its questions of `ReadOps`, which `factReadOps` reads
+the same way:
+
+| op | read from |
+|---|---|
+| `entry()` | `readsProperty(x, o, n)` or `readsEntry(x, o, n)` gives `n`, and `readsKeyed(x, o, k)` gives null. At a site the facts state none of the three at, it is undefined and a chain doesn't match |
+| `isOff(global)`, `objectPath(paths)` | the adapter's `spellsGlobal` on the object the site reads off. The adapter's `objectOf` gives that object without stating the site, and the rows above give it otherwise |
+| `isOff(handedIn)` | false, since no adapter states which parameter a platform fills yet |
+| `readsOff()` | the adapter's `readsOff`: in TypeScript, the element read `o[k]` or the binding elements of `const { A } = o` when the site is `o`, stated as they are asked. Python and Ruby visit those sites themselves and leave it unset |
+| `defaulted()`, `fallback()` | the adapter's `defaultedAt` and `fallbackOf`, each its own walk over the syntax. What counts as coping with a missing value is the language's |
+| `assigned()` | `assigns(x, v)`: the site is the left side of a plain `=` and `v` the value written on the right |
+| `keysSuppliedTo(object)` | the adapter's `keysSupplied` where it has one, as TypeScript does. Otherwise, for each parameter of the function `call(r, c)` comes to, the sites the adapter's `sitesNaming` says take their key from it, kept when they are off the object |
+
+`keysSuppliedTo` is on the read ops rather than on the call's. A read
+chain asks it at every call the access walk visits, and in TypeScript
+building a call's ops states the call's facts, which for a call at
+module scope the invocation walk never does. Asked this way, a call that
+supplies no key is read off its nodes and nothing is stated.
 
 `classAt`, `parameterReadsAt`, `statesSlots` and the two batching
 hints are left out. Each comes in with the pack that reads it.
@@ -1010,6 +1037,59 @@ ends its JSON report with a newline. Any other single value is recorded
 as `text` with its own `shape()`, and several values become a record
 keyed by position. The effect's `groupId` is `callSiteKey` of the
 effect.
+
+## A read of a runtime object
+
+`runtimeReads` records a read of an object the runtime provides and
+nothing declares, such as the environment:
+
+```ts
+runtimeReads({ object: global("process.env"), deployment })
+  .entries({}, { reads: "config" })
+  .throughHelpers();
+
+runtimeReads({ object: global("process") })
+  .entries({ argv: { reads: "config", named: "argv", callee: "site" }, cwd: META })
+  .writes({ exitCode: { changes: "state" } });
+```
+
+`entries` says what a read of each entry is: a config read, which pairs
+against whatever declares the entry, a metadata read, which records
+that the unit depends on the runtime and pairs with nothing, or no read.
+`otherwise` covers every entry the table does not list, and a key the
+program works out at run time is read through it with no name. A
+callee is `dotted`, the object's path and the entry however the read
+was written, `site`, the read as written, or `object`, the path alone.
+A config read is dotted unless it says otherwise and a metadata read is
+the site. An empty key isn't read.
+
+The chain runs on the access walk, which visits property reads and
+calls. At a property read it reports the read when the site is off the
+object. When the site is spelled as the object itself, as `process.env`
+is, it also reports the reads off it that the walk never visits, the
+adapter's `readsOff`, from this site. A bracket read and a destructured
+one are reported at the site the walk visits, which keeps a multi-line
+destructuring on the line its object is on.
+
+An entry `writes` lists gives a state change when the site is assigned
+to, with the number the value settles to or its source as written, and
+is read through `entries` otherwise. `writes({}, { changes: "nothing" })`
+makes an assignment to any entry no read at all.
+
+`throughHelpers()` reads a key a call passes down to a read off the
+object: `requireEnv("TABLE")` passes `TABLE` to the `name` that
+`process.env[name]` reads, so the call records a read of `TABLE`. A key
+the caller's own parameter forwards belongs to whoever calls the
+caller. Each name is read once, in the order the arguments first pass
+it, and it is defaulted when every site that reads it copes with a
+missing value or the call itself does. Its callee spells the object
+its first site reads.
+
+`getters` reads a call on the object that takes the key as an
+argument, Python's `os.environ.get("B", "d")` or Ruby's
+`ENV.fetch("B", "d")`. The table says where the key is and where the
+fallback can be, and a getter that raises without one is not defaulted
+when the call passes none. No shipped pack declares a getter yet.
 
 ## The example every declaration states
 

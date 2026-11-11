@@ -911,6 +911,21 @@ export const EXTRA_INPUTS = [
       ),
     ],
   },
+  // Two Node apps for the runtime reads: between them destructured reads,
+  // reads through a helper, reads with no name, import.meta and
+  // process.exitCode, which the two servers below have little of.
+  {
+    name: "formbricks-web",
+    group: "extra",
+    repo: "formbricks",
+    args: [...dir("apps/web"), ...packs("nextjs", "react", "fetch", "node")],
+  },
+  {
+    name: "n8n-cli",
+    group: "extra",
+    repo: "n8n",
+    args: [...dir("packages/cli"), ...packs("express", "fetch", "node")],
+  },
   // A NestJS server read without its dependencies, for its stream writes.
   // CONTRIBUTING.md says why it doesn't record a TypeORM access.
   {

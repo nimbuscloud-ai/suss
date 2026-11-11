@@ -115,6 +115,7 @@ const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
   unitInvoke: "invocation",
   schedule: "invocation",
   streamWrite: "invocation",
+  runtimeRead: "access",
 };
 
 /** The chains a pack dispatches on one of the two walks. */
@@ -227,7 +228,7 @@ function byEnding<T>(table: ByEnding<T>, ending: Ending): T {
 
 /**
  * A callback runs in the same process as the call that hands it over,
- * and a process writes its own streams.
+ * and a process writes its own streams and reads its own runtime.
  */
 const WIRE: ByEnding<string> = {
   storageAccess: (ending) => ending.transport ?? systemNamed(ending.system),
@@ -236,6 +237,7 @@ const WIRE: ByEnding<string> = {
   unitInvoke: (ending) => ending.platform,
   schedule: () => "in-process",
   streamWrite: () => "in-process",
+  runtimeRead: () => "in-process",
 };
 
 /**
@@ -262,6 +264,7 @@ const DECLARED_NAME: ByEnding<string> = {
   unitInvoke: (ending) => ending.platform,
   schedule: (ending) => ending.yields,
   streamWrite: (ending) => ending.yields,
+  runtimeRead: (ending) => ending.yields,
 };
 
 /** The wire every chain in a pack reaches over. */
@@ -336,6 +339,7 @@ const SYSTEMS_ASKED: ByEnding<readonly (readonly [string, StorageSystem])[]> = {
   unitInvoke: () => [],
   schedule: () => [],
   streamWrite: () => [],
+  runtimeRead: () => [],
 };
 
 /** The questions an ending settles with a rule over the call's file rather than as data. */

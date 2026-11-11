@@ -7,6 +7,8 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { factReadOps } from "@suss/recognize/ops";
+
 import {
   scalarValueOf,
   stringValuesOf,
@@ -15,6 +17,7 @@ import {
 import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { encodedIn } from "../values/encoded.js";
 import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
+import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
@@ -34,11 +37,13 @@ import {
   type OriginatesFrom,
 } from "./invocationEffects.js";
 import { readName } from "./readName.js";
+import { keysSuppliedAt } from "./suppliedKeys.js";
 
 import type {
   AstCapableValueOps,
   CallOps,
   FactSource,
+  ReadOps,
   ValueForm,
   ValueOps,
 } from "@suss/extractor";
@@ -50,6 +55,41 @@ export interface FactSourceOptions {
   readonly resolve?: (value: Node) => Node | null;
   /** The adapter's own members for the call at a node, added to the fact ops for it. */
   readonly extend?: (call: Node, ops: CallOps) => CallOps;
+  /**
+   * Nodes the caller has in hand that the store may not have stated yet,
+   * by key: the read site a walk is at, which is stated only once a chain
+   * finds it is off a runtime object.
+   */
+  readonly held?: Map<string, Node>;
+}
+
+/** The read ops for one site a walk visits: a property read, an element read, a binding element or a call. */
+export function readOpsAt(
+  site: Node,
+  store: ResolutionStore,
+  originatesFrom?: OriginatesFrom,
+): ReadOps {
+  return new ReadSites(store, originatesFrom).at(site);
+}
+
+/**
+ * The read ops for each site one walk visits, over one fact source. A
+ * walk visits every property read and call in a unit, and a fact source
+ * of its own for each would be most of what the walk allocates.
+ */
+export class ReadSites {
+  private readonly held = new Map<string, Node>();
+  private readonly source: FactSource;
+
+  constructor(store: ResolutionStore, originatesFrom?: OriginatesFrom) {
+    this.source = factSourceFor(store, originatesFrom, { held: this.held });
+  }
+
+  at(site: Node): ReadOps {
+    const key = nodeId(site);
+    this.held.set(key, site);
+    return factReadOps(key, this.source);
+  }
 }
 
 /** The fact source for one run's store. */
@@ -59,7 +99,17 @@ export function factSourceFor(
   options: FactSourceOptions = {},
 ): FactSource {
   const access = store.factAccess();
-  const nodeOf = (key: string): Node | null => access.nodeOf(key) ?? null;
+  const held = options.held ?? new Map<string, Node>();
+  const nodeOf = (key: string): Node | null =>
+    access.nodeOf(key) ?? held.get(key) ?? null;
+  // The key of a node read without stating it, found again through `held`.
+  const hold = (node: Node): string => {
+    const key = nodeId(node);
+    if (access.nodeOf(key) === undefined) {
+      held.set(key, node);
+    }
+    return key;
+  };
   const resolve =
     options.resolve ??
     ((value: Node): Node | null => store.resolveWrittenValue(value));
@@ -177,7 +227,88 @@ export function factSourceFor(
         const object = receiverWritten(node);
         return object !== null && typedAsInheriting(object, spec, store);
       }),
+    objectOf: (site) =>
+      at(site, null, (node) => {
+        const object = objectReadOff(node);
+        return object === null ? null : hold(object);
+      }),
+    readsOff: (key) =>
+      at(key, [], (node) =>
+        readsUnvisitedOff(node).map((site) => {
+          access.state(site);
+          return nodeId(site);
+        }),
+      ),
+    defaultedAt: (key) => at(key, false, copesWithMissing),
+    fallbackOf: (key) =>
+      at(key, null, (node) => {
+        const fallback = fallbackOf(node);
+        return fallback === null ? null : hold(fallback);
+      }),
+    keysSupplied: (call, object) =>
+      at(call, [], (node) => keysSuppliedAt(node, object, store, hold)),
   };
+}
+
+/**
+ * The object a read site reads off, as the facts key it: past any cast
+ * around it. A destructured read is off the value the pattern takes
+ * apart. Null for a site that is not a read, such as a call.
+ */
+function objectReadOff(site: Node): Node | null {
+  if (
+    Node.isPropertyAccessExpression(site) ||
+    Node.isElementAccessExpression(site)
+  ) {
+    return peelValue(site.getExpression());
+  }
+  if (!Node.isBindingElement(site)) {
+    return null;
+  }
+  const declaration = site.getParent().getParent();
+  const container = Node.isVariableDeclaration(declaration)
+    ? declaration.getInitializer()
+    : undefined;
+  return container === undefined ? null : peelValue(container);
+}
+
+/**
+ * The reads off a value that the access walk never visits, since it
+ * visits property reads and calls only: the element read `o[k]` the value
+ * is the object of, or each element of `const { A, B: b } = o`. A rest
+ * element takes the entries left over and a computed key cannot be read
+ * back, so neither is one.
+ */
+function readsUnvisitedOff(value: Node): Node[] {
+  const parent = value.getParent();
+  if (
+    Node.isElementAccessExpression(parent) &&
+    parent.getExpression() === value
+  ) {
+    return [parent];
+  }
+  if (!Node.isVariableDeclaration(parent)) {
+    return [];
+  }
+  const pattern = parent.getNameNode();
+  if (!Node.isObjectBindingPattern(pattern)) {
+    return [];
+  }
+  return pattern.getElements().filter((element) => {
+    const property = element.getPropertyNameNode() ?? element.getNameNode();
+    return (
+      element.getDotDotDotToken() === undefined &&
+      (Node.isIdentifier(property) || Node.isStringLiteral(property))
+    );
+  });
+}
+
+/** A binding's own default covers a missing value the way `??` does after a read. */
+function copesWithMissing(site: Node): boolean {
+  if (Node.isBindingElement(site) && site.getInitializer() !== undefined) {
+    return true;
+  }
+  return isDefaultedAt(site);
 }
 
 /**

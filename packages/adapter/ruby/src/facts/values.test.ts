@@ -63,6 +63,18 @@ function lastKeyOf(source: string, text: string): string {
 }
 
 describe("ruby value facts", () => {
+  it("states the value a plain = assigns to an entry, and reads no entry there", async () => {
+    const source = 'ENV["W"] = "1"\ntotals[:a] ||= 2\n';
+    const db = await factsFor(source);
+    expect(
+      rows(db, "assigns").map(([site, value]) => [
+        textAt(source, site ?? ""),
+        textAt(source, value ?? ""),
+      ]),
+    ).toEqual([['ENV["W"]', '"1"']]);
+    expect(rows(db, "readsEntry")).toEqual([]);
+  });
+
   it("says a def is a function and binds its name to it", async () => {
     const db = await factsFor("def handler\nend\n");
     expect(db.size("func")).toBe(1);

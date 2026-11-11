@@ -16,12 +16,17 @@ export type {
   DeclaredBy,
   Global,
   HandedBy,
+  HandedIn,
   Imported,
   Inheriting,
   Inherits,
   OpsCarrier,
+  ReadOps,
+  ReadOpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
+  RuntimeObject,
+  SuppliedKey,
   Typed,
   UnsettledName,
   ValueEntry,
@@ -42,6 +47,8 @@ import type {
   Inheriting,
   Inherits,
   OpsCarrier,
+  ReadOps,
+  ReadOpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
   Typed,
@@ -170,4 +177,10 @@ export function modulesOf(origin: ReceiverOrigin): readonly string[] {
 export function opsIn(ctx: unknown): CallOps | null {
   const carrier = ctx as OpsCarrier | null | undefined;
   return carrier?.ops ?? null;
+}
+
+/** The read ops in an access recognizer's context, or null when the adapter has none. */
+export function readIn(ctx: unknown): ReadOps | null {
+  const carrier = ctx as ReadOpsCarrier | null | undefined;
+  return carrier?.read ?? null;
 }

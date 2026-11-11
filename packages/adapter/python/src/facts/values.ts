@@ -921,6 +921,26 @@ function emitStoreTarget(emitter: Emitter, assignment: PyNode): void {
     valueKey(emitter, right),
     nodeId(emitter.filePath, assignment),
   );
+  emitAssignedValue(emitter, left, right);
+}
+
+/** The read sites an assignment can write through, which a read chain tells apart from a read of them. */
+const ASSIGNED_SITES: ReadonlySet<string> = new Set(["subscript", "attribute"]);
+
+/** `os.environ["W"] = v`: the value assigned to an entry or an attribute. */
+function emitAssignedValue(
+  emitter: Emitter,
+  left: PyNode,
+  right: PyNode,
+): void {
+  if (ASSIGNED_SITES.has(left.type)) {
+    add(
+      emitter,
+      "assigns",
+      nodeId(emitter.filePath, left),
+      valueKey(emitter, right),
+    );
+  }
 }
 
 /**

@@ -1,16 +1,26 @@
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it, vi } from "vitest";
 
 import { accessContextFor, ResolutionStore } from "@suss/adapter-typescript";
 import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
-import { envVarRecognizer, findProcessEnvReads } from "./envVars.js";
 import nodeRuntimePack from "./index.js";
+import { compiledReads, runtimeReadMatches } from "./runtimeReads.js";
+import { schemaReadRecognizer } from "./schemaReads.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
+import type { DeploymentOptions } from "./configBinding.js";
+
+/** The two environment chains and the schema recognizer, in the pack's order. */
+function envRecognizers(where: DeploymentOptions = {}): AccessRecognizer[] {
+  return [
+    ...compiledReads(runtimeReadMatches(where).environment),
+    schemaReadRecognizer(where),
+  ];
+}
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -35,7 +45,7 @@ function storeOver(project: Project): ResolutionStore {
 }
 
 function recognizeWith(
-  recognizer: AccessRecognizer,
+  recognizers: AccessRecognizer[],
   sourceFile: SourceFile,
   resolution?: ResolutionStore,
 ): Effect[] {
@@ -44,7 +54,7 @@ function recognizeWith(
   const seen = new Set<string>();
   return effectsOverFile(
     sourceFile,
-    packWithOnly(nodeRuntimePack(), { access: [recognizer] }),
+    packWithOnly(nodeRuntimePack(), { access: recognizers }),
     resolution,
   ).filter((effect) => {
     const key = JSON.stringify(effect);
@@ -61,28 +71,38 @@ function recognizeWith(
  * the adapter's library entry points without a run gets.
  */
 function recognizeWithoutStore(sourceFile: SourceFile): Effect[] {
-  const recognizer = envVarRecognizer();
+  const recognizers = envRecognizers();
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
     if (Node.isPropertyAccessExpression(node) || Node.isCallExpression(node)) {
       const ctx = accessContextFor(node, sourceFile);
-      effects.push(...(recognizer(node, ctx) ?? []));
+      for (const recognizer of recognizers) {
+        effects.push(...(recognizer(node, ctx) ?? []));
+      }
     }
   });
   return effects;
 }
 
 function recognizeAll(sourceFile: SourceFile): Effect[] {
-  return recognizeWith(envVarRecognizer(), sourceFile);
+  return recognizeWith(envRecognizers(), sourceFile);
 }
 
 /** Every read the recognizer finds with the store the adapter would give it. */
 function recognizeWithStore(sourceFile: SourceFile): Effect[] {
   return recognizeWith(
-    envVarRecognizer(),
+    envRecognizers(),
     sourceFile,
     storeOver(sourceFile.getProject()),
   );
+}
+
+/** The name and whether it is defaulted, for each read that says which variable. */
+function namedReadsIn(sourceFile: SourceFile): Array<[string, boolean]> {
+  return configReadEffectsOf(recognizeAll(sourceFile)).map((read) => [
+    read.interaction.name,
+    read.interaction.defaulted,
+  ]);
 }
 
 /**
@@ -356,13 +376,12 @@ describe("env-var recognizer — happy path", () => {
         useCache(process.env.CACHE_URL);
       }
     `);
-    const reads = findProcessEnvReads(file);
-    expect(reads.map((r) => [r.name, r.defaulted])).toEqual([
+    // The second read of REGION and of CACHE_URL is the same effect, and
+    // `recognizeWith` keeps one of each.
+    expect(namedReadsIn(file)).toEqual([
       ["APP_VERSION", true],
       ["FEATURE_FLAG", true],
       ["REGION", true],
-      ["REGION", true],
-      ["CACHE_URL", true],
       ["CACHE_URL", true],
     ]);
   });
@@ -380,12 +399,10 @@ describe("env-var recognizer — happy path", () => {
         }
       }
     `);
-    expect(findProcessEnvReads(file).map((r) => [r.name, r.defaulted])).toEqual(
-      [
-        ["ANALYTICS_URL", false],
-        ["REGION", false],
-      ],
-    );
+    expect(namedReadsIn(file)).toEqual([
+      ["ANALYTICS_URL", false],
+      ["REGION", false],
+    ]);
   });
 
   it("leaves a read undefaulted when its local is also used outside the test", () => {
@@ -485,9 +502,9 @@ describe("env-var recognizer — happy path", () => {
     const file = makeProject(`
       const x = process.env.FOO;
     `);
-    const recognizer = envVarRecognizer({ instanceName: "ReportJob" });
+    const recognizers = envRecognizers({ instanceName: "ReportJob" });
     const read =
-      configReadEffectsOf(recognizeWith(recognizer, file))[0] ??
+      configReadEffectsOf(recognizeWith(recognizers, file))[0] ??
       raise("no read");
     expect(read.binding.semantics).toEqual({
       name: "runtime-config",
@@ -499,9 +516,9 @@ describe("env-var recognizer — happy path", () => {
     const file = makeProject(`
       const x = process.env.FOO;
     `);
-    const recognizer = envVarRecognizer({ deploymentTarget: "ecs-task" });
+    const recognizers = envRecognizers({ deploymentTarget: "ecs-task" });
     const read =
-      configReadEffectsOf(recognizeWith(recognizer, file))[0] ??
+      configReadEffectsOf(recognizeWith(recognizers, file))[0] ??
       raise("no read");
     expect(read.binding.semantics).toMatchObject({
       deploymentTarget: "ecs-task",
@@ -531,60 +548,31 @@ describe("env-var recognizer — rejection cases", () => {
   });
 });
 
-describe("findProcessEnvReads helper", () => {
-  it("walks property accesses and returns env reads with line numbers", () => {
-    const file = makeProject(`
-      const a = process.env.AWS_REGION;
-      const b = process.env.PORT ?? "3000";
-    `);
-    const reads = findProcessEnvReads(file);
-    expect(reads).toHaveLength(2);
-    expect(reads.map((r) => r.name).sort()).toEqual(["AWS_REGION", "PORT"]);
-    const port = reads.find((r) => r.name === "PORT") ?? raise("no PORT");
-    expect(port.defaulted).toBe(true);
-  });
-
-  it("skips accesses whose middle segment is not env", () => {
-    const file = makeProject(`
-      const a = process.argv.length;
-      const b = config.env.MODE;
-      const c = process.env.KEEP;
-    `);
-    const reads = findProcessEnvReads(file);
-    expect(reads.map((r) => r.name)).toEqual(["KEEP"]);
-  });
-
-  it("does not mark defaulted for non-?? binary parents", () => {
-    const file = makeProject(`
-      const same = process.env.MODE === "production";
-      const fallback = readFile() ?? process.env.BACKUP_PATH;
-    `);
-    const reads = findProcessEnvReads(file);
-    expect(reads.find((r) => r.name === "MODE")?.defaulted).toBe(false);
-    expect(reads.find((r) => r.name === "BACKUP_PATH")?.defaulted).toBe(false);
-  });
-});
-
 describe("node runtime pack — env-var wiring", () => {
-  it("includes an access recognizer that recognizes process.env.X", () => {
+  it("reads process.env.X once across every recognizer the pack has", () => {
     const pack = nodeRuntimePack();
     const recognizers = pack.accessRecognizers ?? raise("no recognizers");
     const file = makeProject(`
       const x = process.env.FOO;
     `);
-    const effects: Effect[] = [];
-    for (const rec of recognizers) {
-      effects.push(...recognizeWith(rec, file));
-    }
-    const reads = configReadEffectsOf(effects);
-    // Exactly one recognizer (the env-var one) claims process.env.FOO;
-    // the process-surface recognizer skips it, so no duplication.
+    const reads = configReadEffectsOf(recognizeWith(recognizers, file));
     expect(reads).toHaveLength(1);
     expect(reads[0]?.interaction.name).toBe("FOO");
   });
 
+  it("does not mark defaulted a read that is compared or is itself the fallback", () => {
+    const file = makeProject(`
+      const same = process.env.MODE === "production";
+      const fallback = readFile() ?? process.env.BACKUP_PATH;
+    `);
+    expect(namedReadsIn(file)).toEqual([
+      ["MODE", false],
+      ["BACKUP_PATH", false],
+    ]);
+  });
+
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.6.0");
+    expect(nodeRuntimePack().version).toBe("0.7.0");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {
@@ -611,14 +599,19 @@ describe("node runtime pack — env-var wiring", () => {
       }
       export const table = requireEnv("TABLE_NAME");
     `);
-    const reads = findProcessEnvReads(sourceFile);
-    const callLine = sourceFile
-      .getFullText()
-      .split("\n")
-      .findIndex((text) => text.includes('requireEnv("TABLE_NAME")'));
-    expect(reads).toEqual([
-      { name: "TABLE_NAME", defaulted: true, line: callLine + 1 },
-    ]);
+    const store = storeOver(sourceFile.getProject());
+    const call =
+      sourceFile
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .find((one) => one.getText() === 'requireEnv("TABLE_NAME")') ??
+      raise("no call");
+    const ctx = accessContextFor(call, sourceFile, store);
+    const reads = configReadEffectsOf(
+      envRecognizers().flatMap((recognizer) => recognizer(call, ctx) ?? []),
+    );
+    expect(
+      reads.map((read) => [read.interaction.name, read.interaction.defaulted]),
+    ).toEqual([["TABLE_NAME", true]]);
   });
 
   it("says nothing about a computed read of something other than the parameter", () => {
@@ -674,7 +667,7 @@ describe("node runtime pack — env-var wiring", () => {
     const store = storeOver(sourceFile.getProject());
     const asked = vi.spyOn(store, "resolveCallable");
     const reads = configReadEffectsOf(
-      recognizeWith(envVarRecognizer(), sourceFile, store),
+      recognizeWith(envRecognizers(), sourceFile, store),
     );
     expect(reads).toEqual([]);
     expect(asked).not.toHaveBeenCalled();
@@ -1066,7 +1059,7 @@ describe("a helper call resolved from the caller's side", () => {
     // read `settings.ts` or `env.ts`, and gets the same answer.
     const store = ResolutionStore.forPacks([nodeRuntimePack()]);
     const reads = configReadEffectsOf(
-      recognizeWith(envVarRecognizer(), handler, store),
+      recognizeWith(envRecognizers(), handler, store),
     );
     expect(reads.map((read) => read.interaction.name)).toEqual([
       "DATABASE_URL",
@@ -1103,7 +1096,7 @@ describe("a helper call resolved from the caller's side", () => {
       project.getSourceFiles().filter((one) => !one.isInNodeModules()),
     );
     const reads = configReadEffectsOf(
-      recognizeWith(envVarRecognizer(), handler, store),
+      recognizeWith(envRecognizers(), handler, store),
     );
     expect(reads.map((read) => read.interaction.name)).toEqual([
       "DATABASE_URL",
@@ -1318,20 +1311,12 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });
 
-  it("finds the helper's own read in its body when there is no store, past an unrelated element access", () => {
+  it("reads nothing without a store, since a read is told apart by its facts", () => {
     const sourceFile = makeProject(`
-      const flags = ["a", "b"];
-      function requireEnv(name: string): string {
-        const first = flags[0];
-        return first + (process.env[name] ?? "");
-      }
-      export const table = requireEnv("TABLE_NAME");
+      export const port = process.env.PORT;
+      export const table = process.env["TABLE_NAME"];
     `);
-    const effects = recognizeWithoutStore(sourceFile);
-    expect(
-      configReadEffectsOf(effects).map((read) => read.interaction.name),
-    ).toEqual(["TABLE_NAME"]);
-    expect(namelessReadsOf(effects)).toEqual(["process.env[name]"]);
+    expect(recognizeWithoutStore(sourceFile)).toEqual([]);
   });
 
   it("does not credit the parameter with a read done by a local that shadows its name", () => {
@@ -1461,7 +1446,7 @@ describe("a helper call resolved from the caller's side", () => {
       project.getSourceFiles().filter((one) => !one.isInNodeModules()),
     );
     const reads = configReadEffectsOf(
-      recognizeWith(envVarRecognizer(), handler, store),
+      recognizeWith(envRecognizers(), handler, store),
     );
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });

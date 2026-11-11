@@ -17,6 +17,7 @@ import { byOrigin, lastValueWins } from "@suss/extractor";
 import { rootIdentifier } from "../configuredCall.js";
 import {
   propertyValueOf,
+  scalarValueOf,
   stringValuesOf,
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
@@ -913,6 +914,7 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
         isSameValue(read, written, target, resolve),
       );
     },
+    evaluated: () => scalarValueOf(value, reading.resolution),
   };
   nodesOfValues.set(ops, value);
   return ops;

@@ -4,11 +4,7 @@ import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
 import { createTestProject } from "@suss/test-project";
 
 import nodeRuntimePack from "./index.js";
-import {
-  fileLocationRecognizer,
-  findBareFileLocationGlobals,
-  importMetaRecognizer,
-} from "./moduleSurface.js";
+import { compiledReads, runtimeReadMatches } from "./runtimeReads.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { SourceFile } from "ts-morph";
@@ -18,11 +14,12 @@ function makeFile(source: string): SourceFile {
   return project.createSourceFile("user.ts", source);
 }
 
+/** The chains over `process`, `import.meta` and the module globals. */
 function runRecognizers(file: SourceFile): Effect[] {
   return effectsOverFile(
     file,
     packWithOnly(nodeRuntimePack(), {
-      access: [importMetaRecognizer, fileLocationRecognizer],
+      access: compiledReads(runtimeReadMatches({}).rest),
     }),
   );
 }
@@ -86,29 +83,5 @@ describe("module-surface recognizers", () => {
     const reads = metadataReadsOf(runRecognizers(file));
     const names = reads.map((r) => r.interaction.name).sort();
     expect(names).toEqual(["__dirname", "__filename"]);
-  });
-
-  it("findBareFileLocationGlobals scans bare references", () => {
-    const file = makeFile(`
-      const dir = __dirname;
-      const file = __filename;
-      const obj = { __dirname: 1 };
-    `);
-    const found = findBareFileLocationGlobals(file)
-      .map((m) => m.name)
-      .sort();
-    // __dirname (bare) + __filename (bare). The property assignment
-    // `{ __dirname: 1 }` uses the same identifier text but in a
-    // PropertyAssignment context: getNameNode of that property is
-    // the same identifier; we filter PropertyAccess receivers but
-    // not PropertyAssignment names. Two bare refs is the expected
-    // result; the property name matches as identifier text but
-    // doesn't pass our PropertyAccess filter (it isn't one). The
-    // count comes out to 3 unless we also exclude assignment name
-    // contexts, which is a known v0 gap.
-    // For now lock the v0 behaviour in:
-    expect(found.length).toBeGreaterThanOrEqual(2);
-    expect(found.includes("__dirname")).toBe(true);
-    expect(found.includes("__filename")).toBe(true);
   });
 });

@@ -23,6 +23,7 @@ import { scalarOf } from "@suss/values";
 
 import { numberLiteralValue, stringLiteralValue } from "./ast.js";
 import { encodedIn } from "./encoded.js";
+import { copingAt, sitesNamingParameter } from "./envReads.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
 import { parametersOf, paramNameOf } from "./facts/locals.js";
 import {
@@ -35,6 +36,7 @@ import { argOf } from "./paths/effects.js";
 import {
   evaluatedValue,
   nodeOfResolutionKey,
+  resolutionKeyOf,
   stringValueOf,
 } from "./values/evaluator.js";
 import { writtenShapeOf } from "./writtenShape.js";
@@ -143,6 +145,16 @@ export function rubyFactSource(db: Database): FactSource {
     // The node is found only when a pack asks for it, since the declared
     // hooks make the ops for every value they read.
     extendValue: (key, ops) => Object.assign(ops, { ast: () => nodeAt(key) }),
+    defaultedAt: (key) => {
+      const node = nodeAt(key);
+      return node !== null && copingAt(node, db).defaulted;
+    },
+    fallbackOf: (key) => {
+      const node = nodeAt(key);
+      const fallback = node === null ? null : copingAt(node, db).fallback;
+      return fallback === null ? null : resolutionKeyOf(fallback);
+    },
+    sitesNaming: (parameter) => sitesNamingParameter(db, parameter),
   };
 }
 
