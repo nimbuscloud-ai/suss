@@ -41,11 +41,14 @@ export function spanOfKey(key: string): KeySpan | null {
 /**
  * The node a key refers to: the smallest node over the span, walked up
  * to the one whose span matches. A key that is not a node, such as a
- * name, has none.
+ * name, has none. A parent and a child can share one span, as Ruby's
+ * `%w[users]` word and its content do, so `keyed` says which nodes the
+ * adapter ever keys, and one it never keys is passed over for its parent.
  */
 export function nodeOfKey<N extends SpannedNode<N>>(
   rootsByFile: ReadonlyMap<string, N>,
   key: string,
+  keyed: (node: N) => boolean = () => true,
 ): N | null {
   const span = spanOfKey(key);
   if (span === null) {
@@ -58,7 +61,11 @@ export function nodeOfKey<N extends SpannedNode<N>>(
   }
   let current: N | null = root.descendantForIndex(start, end - 1);
   while (current !== null) {
-    if (current.startIndex === start && current.endIndex === end) {
+    if (
+      current.startIndex === start &&
+      current.endIndex === end &&
+      keyed(current)
+    ) {
       return current;
     }
     if (current.startIndex < start || current.endIndex > end) {

@@ -41,6 +41,16 @@ describe("nodeOfKey", () => {
     expect(nodeOfKey(roots, "a.rb:0-20")).toBe(root);
   });
 
+  it("passes over a node the adapter never keys for its parent of the same span", () => {
+    const content = new FakeNode(10, 15);
+    const word = new FakeNode(10, 15, [content]);
+    const list = new FakeNode(9, 16, [word]);
+    const one = new Map([["w.rb", new FakeNode(0, 20, [list])]]);
+    expect(nodeOfKey(one, "w.rb:10-15")).toBe(content);
+    expect(nodeOfKey(one, "w.rb:10-15", (node) => node !== content)).toBe(word);
+    expect(nodeOfKey(one, "w.rb:9-16", (node) => node !== list)).toBeNull();
+  });
+
   it("returns null for a name key, an unknown file or a span no node has", () => {
     expect(nodeOfKey(roots, "a.rb#name")).toBeNull();
     expect(nodeOfKey(roots, "b.rb:4-8")).toBeNull();

@@ -75,7 +75,18 @@ export function nodeOfResolutionKey(
   db: Database | undefined,
 ): RbNode | null {
   const roots = db === undefined ? undefined : rootsByDb.get(db);
-  return roots === undefined ? null : nodeOfKey(roots, key);
+  return roots === undefined ? null : rubyNodeOfKey(roots, key);
+}
+
+/**
+ * The node a key the facts state refers to. A `%w[users]` word and its
+ * content share one span, and the facts key the word, never its content.
+ */
+export function rubyNodeOfKey(
+  rootsByFile: ReadonlyMap<string, RbNode>,
+  key: string,
+): RbNode | null {
+  return nodeOfKey(rootsByFile, key, (node) => node.type !== "string_content");
 }
 
 /** The path the facts key this node's file on, or undefined for a file the run did not bind. */
@@ -164,7 +175,7 @@ export function possibleValueNodes(
     const written = writtenValuesOf(db, key);
     for (const answer of written.length === 0 ? [key] : written) {
       noteKeyRead(db, answer);
-      const value = nodeOfKey(roots, answer);
+      const value = rubyNodeOfKey(roots, answer);
       const behind =
         value === null || depth === 0 ? [] : valuesBehind(value, db);
       if (behind.length === 0) {
@@ -387,7 +398,7 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
       }
       // The evaluator goes on to read the syntax around the answer.
       noteKeyRead(db, answer);
-      return nodeOfKey(rootsByFile, answer);
+      return rubyNodeOfKey(rootsByFile, answer);
     },
     callable: (call) => {
       const file = fileOf(call);

@@ -55,7 +55,6 @@ import {
   importedFilesByFile,
   mergeStoredDependencies,
   noDependencies,
-  nodeOfKey,
   observeDemand,
   type PackWords,
   recordsToReplay,
@@ -133,6 +132,7 @@ import {
   bindEvaluator,
   forgetEvaluations,
   methodDefinitionsIn,
+  rubyNodeOfKey,
 } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 
@@ -794,7 +794,8 @@ async function runRuby(
             changes,
           );
         });
-  const nodeOf = (key: string): RbNode | null => nodeOfKey(rootsByFile, key);
+  const nodeOf = (key: string): RbNode | null =>
+    rubyNodeOfKey(rootsByFile, key);
 
   const seeds: Seed[] = [];
   const seedKeys = new Set<string>();
