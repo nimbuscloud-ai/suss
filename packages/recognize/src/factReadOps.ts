@@ -36,6 +36,7 @@ class FactRead implements ReadOps {
   private objectKey: string | null | undefined;
   private stated: StatedRead | null | undefined;
   private readonly paths = new Map<string, string | null | undefined>();
+  private reaching: readonly string[] | undefined;
 
   constructor(
     private readonly key: string,
@@ -47,22 +48,38 @@ class FactRead implements ReadOps {
   }
 
   /**
-   * The path the object is spelled as. The rules follow only the output
-   * streams into a value so far, and no read chain is about a stream, so
-   * nothing a read is off is asked of them.
+   * The path the object is spelled as, or else the one path among those
+   * the rules followed into it: a parameter a caller hands the
+   * environment, or one that defaults to it.
    */
   objectPath(paths: readonly string[]): string | null | undefined {
     const asked = paths.join("\u0000");
     if (this.paths.has(asked)) {
       return this.paths.get(asked);
     }
-    const object = this.object();
-    const path =
-      object === null
-        ? undefined
-        : paths.find((one) => this.facts.spellsGlobal?.(object, one) === true);
+    const path = this.pathAmong(paths);
     this.paths.set(asked, path);
     return path;
+  }
+
+  private pathAmong(paths: readonly string[]): string | null | undefined {
+    const object = this.object();
+    if (object === null) {
+      return undefined;
+    }
+    const spelled = paths.find(
+      (one) => this.facts.spellsGlobal?.(object, one) === true,
+    );
+    if (spelled !== undefined) {
+      return spelled;
+    }
+    this.reaching ??= this.facts.globalsReaching?.(object) ?? [];
+    const reached = new Set(this.reaching.filter((one) => paths.includes(one)));
+    const [one] = reached;
+    if (one === undefined) {
+      return undefined;
+    }
+    return reached.size === 1 ? one : null;
   }
 
   entry(): string | null | undefined {

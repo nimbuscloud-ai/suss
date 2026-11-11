@@ -239,11 +239,29 @@ const NO_NAMERS: EnvironmentNamers = { sitesNaming: () => [] };
 
 const NO_STREAMS: ReadonlySet<string> = new Set();
 
+const NO_ENVIRONMENTS: ReadonlySet<string> = new Set();
+
+/** Note that the environment at `path` reaches the value at `key`, when the path is one a pack declares. */
+function addReached(
+  reached: Map<string, Set<string>>,
+  key: string,
+  path: string | null,
+): void {
+  if (path === null) {
+    return;
+  }
+  const paths = reached.get(key) ?? new Set<string>();
+  paths.add(path);
+  reached.set(key, paths);
+}
+
 /** What the store works out once about where the environment goes. */
 interface EnvironmentAnswers {
   namers: EnvironmentNamers;
   /** Parameters some caller hands the environment object to, by fact key. */
   receivers: ReadonlySet<string>;
+  /** The environment objects each value the rules followed one into is, as a pack spells them, by fact key. */
+  reached: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** One round of the environment question, before it settles. */
@@ -252,6 +270,7 @@ interface EnvironmentAsked {
   receivers: Set<string>;
   /** Calls that hand the environment object to something, by fact key. */
   passingCalls: string[];
+  reached: Map<string, Set<string>>;
 }
 
 /**
@@ -1000,7 +1019,11 @@ export class ResolutionStore {
     }
     const siteFiles = this.environmentSiteFiles(project);
     if (siteFiles.length === 0) {
-      this.envAnswers = { namers: NO_NAMERS, receivers: new Set() };
+      this.envAnswers = {
+        namers: NO_NAMERS,
+        receivers: new Set(),
+        reached: new Map(),
+      };
       return this.envAnswers;
     }
 
@@ -1011,7 +1034,8 @@ export class ResolutionStore {
     for (const helperFile of this.filesOf(helpers)) {
       this.readPossibleCallersOf(helperFile);
     }
-    const { byParameter, receivers } = this.followEnvironment(siteFiles);
+    const { byParameter, receivers, reached } =
+      this.followEnvironment(siteFiles);
     const siteFilePaths = new Set(siteFiles.map((one) => one.getFilePath()));
     this.envAnswers = {
       namers: {
@@ -1019,8 +1043,30 @@ export class ResolutionStore {
           this.sitesNamedBy(byParameter, siteFilePaths, parameter),
       },
       receivers,
+      reached,
     };
     return this.envAnswers;
+  }
+
+  /**
+   * The environment objects the rules followed into a name, for a reader
+   * at `env.PORT`: each as the path a pack declared, such as
+   * `process.env`. The name is looked up as written, and as the
+   * declaration it refers to, which is where a parameter the environment
+   * is handed or defaults to is keyed. Only a bare name is looked up.
+   */
+  environmentsReaching(value: Node): ReadonlySet<string> {
+    const name = factKeyOf(value);
+    if (!Node.isIdentifier(name)) {
+      return NO_ENVIRONMENTS;
+    }
+    const { reached } = this.environmentAnswers(value.getProject());
+    const declared = name.getSymbol()?.getValueDeclaration();
+    return (
+      reached.get(nodeId(name)) ??
+      (declared === undefined ? undefined : reached.get(nodeId(declared))) ??
+      NO_ENVIRONMENTS
+    );
   }
 
   /**
@@ -1094,6 +1140,7 @@ export class ResolutionStore {
     const byParameter = new Map<string, Node[]>();
     const receivers = new Set<string>();
     const passingCalls: string[] = [];
+    const reached = new Map<string, Set<string>>();
     try {
       for (const [object] of this.db.facts("environmentObject")) {
         this.wantKey("wantedEnvObject", String(object));
@@ -1115,10 +1162,21 @@ export class ResolutionStore {
       for (const [call] of this.db.facts("wantedEnvPassingCall")) {
         passingCalls.push(String(call));
       }
+      for (const [value, object] of this.db.facts("wantedEnvValue")) {
+        addReached(reached, String(value), this.environmentPathOf(object));
+      }
     } finally {
       this.forgetQuery();
     }
-    return { byParameter, receivers, passingCalls };
+    return { byParameter, receivers, passingCalls, reached };
+  }
+
+  /** The path a pack declares the environment object at this key as, or null. */
+  private environmentPathOf(object: unknown): string | null {
+    const spelling = this.table.byId.get(String(object));
+    return spelling === undefined
+      ? null
+      : this.spelledEnvironmentPath(spelling);
   }
 
   /**

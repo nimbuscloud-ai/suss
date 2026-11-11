@@ -170,7 +170,10 @@ export function factSourceFor(
           bareCalleeName(node.getExpression()) === path,
       ),
     globalsReaching: (key) =>
-      at(key, [], (node) => streamsReachingName(node, store)),
+      at(key, [], (node) => [
+        ...streamsReachingName(node, store),
+        ...store.environmentsReaching(node),
+      ]),
     evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
     comesTo: (key) =>
       at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),
