@@ -12,6 +12,9 @@
  */
 
 export { annotationToShape, shapeFromName } from "./annotations.js";
+// One file as the module ops a declared reader asks, for a test that
+// asks the same questions of each language.
+export { pythonModuleOps } from "./declaredDiscovery.js";
 export { classifyDecorator } from "./decorators.js";
 export { discoverUnits } from "./discovery.js";
 // What one file says about the environment, stated beside its other facts

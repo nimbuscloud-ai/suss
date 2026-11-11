@@ -133,6 +133,12 @@ export function rubyFactSource(db: Database): FactSource {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));
     },
+    evaluatedWith: (key, bindings) => {
+      const node = valueNode(key);
+      return node === null
+        ? null
+        : scalarOf(evaluatedValue(node, db, bindings));
+    },
     comesTo: (key) => {
       resolveValues(db, [key]);
       return answersFor(db, "wantedComesTo", key);

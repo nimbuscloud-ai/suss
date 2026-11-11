@@ -62,6 +62,7 @@ export {
   factsForFile,
   findRubyFiles,
   keptRubyParses,
+  moduleOpsForFile,
   parseRubyAhead,
 } from "./project.js";
 export {
