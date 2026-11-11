@@ -170,10 +170,13 @@ With only `names`, the TypeScript adapter reads it with its own handler. Any oth
   scopes: ("module" | "function")[];
   name: ("assignedName" | "countInFile")[];
   countedAs: string;                              // "serverAction"
+  unit?: { terminals?: TerminalPattern[]; inputMapping?: InputMappingPattern };
 }
 ```
 
-`marked` reads a directive prologue. At module scope it makes every exported function a unit, and at function scope it makes each function whose body opens with the directive one. A function is named by the first rule that gives a name: the variable or property it is assigned to, or `countedAs#0`, `countedAs#1` and so on in the file. Only TypeScript writes a directive.
+`marked` reads a directive prologue. At module scope it makes every exported function a unit, under the name it is exported as, and at function scope it makes each function whose body opens with the directive one. A function is named by the first rule that gives a name: the variable or property it is assigned to, or `countedAs#0`, `countedAs#1` and so on in the file. Only TypeScript writes a directive.
+
+Every unit is bound as a call of its module under the unit's name, since the framework exposes a marked function by that name, inline ones included. `unit` gives the terminals and input mapping each unit is read with when the pack's own do not fit, as a server action returns a value where the pack's route handlers send a response. The Next.js pack uses it for server actions.
 
 ### `registeredFunction`
 
