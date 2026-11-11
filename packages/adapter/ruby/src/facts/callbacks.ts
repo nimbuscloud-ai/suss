@@ -12,7 +12,7 @@
 
 import { field, readCallArgs, runStatements } from "../ast.js";
 import { symbolArgumentNames } from "../filters.js";
-import { stringValueOf } from "../values/evaluator.js";
+import { namesOf } from "../values/literals.js";
 import { nodeId } from "./values.js";
 
 import type { Database } from "@suss/datalog";
@@ -65,8 +65,10 @@ export function emitClassCallbacks(
 
 /**
  * The events one registration covers: every event the registering call
- * fires on, narrowed to one when the call writes the pack's event
- * keyword. Empty when this call registers nothing.
+ * fires on, narrowed to the ones the pack's event keyword lists when the
+ * call writes it, as `on: :create` or `on: %i(create update)`. A value
+ * that does not settle leaves every event in. Empty when this call
+ * registers nothing.
  */
 function eventsOf(
   args: ReturnType<typeof readCallArgs>,
@@ -80,9 +82,9 @@ function eventsOf(
   }
 
   const written = args.keyword[callbacks.eventKeyword];
-  const narrowed = written === undefined ? null : stringValueOf(written, db);
+  const narrowed = written === undefined ? null : namesOf(written, db);
   if (narrowed === null) {
     return covered;
   }
-  return covered.filter((event) => event === narrowed);
+  return covered.filter((event) => narrowed.includes(event));
 }
