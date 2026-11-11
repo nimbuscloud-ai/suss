@@ -62,12 +62,36 @@ describe("nextjsFramework: extraction", () => {
   }, 90_000);
 
   it("reads one handler per method a route file exports", () => {
-    expect(summaries.map(routeOf).sort()).toEqual([
+    expect(
+      summaries
+        .filter((one) => one.kind === "handler")
+        .map(routeOf)
+        .sort(),
+    ).toEqual([
       "* /api/legacy",
       "DELETE /api/orders/{id}",
       "GET /api/orders",
       "GET /api/orders/{id}",
       "POST /api/orders",
+    ]);
+  });
+
+  it("makes the functions a use server module exports actions, each bound by its module and name", () => {
+    const bound = summaries
+      .filter((one) => one.kind === "action")
+      .map((one) => {
+        const semantics = one.identity.boundaryBinding?.semantics;
+        return semantics?.name === "function-call"
+          ? `${path.relative(fixturesDir, semantics.module ?? "")} ${semantics.exportName} ${one.identity.name}`
+          : `${one.identity.name} <unbound>`;
+      })
+      .sort();
+    expect(bound).toEqual([
+      "app/actions.ts cancelOrder cancelOrder",
+      "app/actions.ts createOrder createOrder",
+      "app/actions.ts quote quote",
+      "app/actions.ts submitOrder submitOrder",
+      "app/cache.ts revalidateOrders revalidateOrders",
     ]);
   });
 
