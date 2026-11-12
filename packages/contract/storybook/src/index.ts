@@ -211,7 +211,7 @@ function renderPropsOf(
   if (render === null) {
     return null;
   }
-  const argNames = argNamesOf(render.getParameters()[0]);
+  const args = argDeclarationsOf(render.getParameters()[0]);
   const elements = [
     ...render.getDescendantsOfKind(SyntaxKind.JsxOpeningElement),
     ...render.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement),
@@ -228,14 +228,17 @@ function renderPropsOf(
       passed.add(attribute.getNameNode().getText());
       continue;
     }
-    if (!argNames.has(attribute.getExpression().getText())) {
+    if (!spreadsTheArgs(attribute.getExpression(), args)) {
       return null;
     }
   }
   return [...passed].sort();
 }
 
-/** Whether anything between the element's tags reaches it as `children`. */
+/**
+ * Whether anything between the element's tags reaches it as `children`.
+ * React passes none for a comment alone between the tags.
+ */
 function hasJsxChildren(element: Node): boolean {
   const parent = element.getParent();
   if (!N.isJsxOpeningElement(element) || !N.isJsxElement(parent)) {
@@ -244,36 +247,46 @@ function hasJsxChildren(element: Node): boolean {
   return parent
     .getJsxChildren()
     .some(
-      (child) => !(N.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces()),
+      (child) =>
+        !(N.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces()) &&
+        !(N.isJsxExpression(child) && child.getExpression() === undefined),
     );
 }
 
 /**
- * What a render function's first parameter calls the args, or the rest
- * of them after a destructure. Spreading one of these passes the
- * component only args the story already lists.
+ * The declarations a name refers to when it is the story's args: the
+ * render function's first parameter, or the rest of that parameter's
+ * destructure. Spreading one of these passes the component only args the
+ * story already lists.
  */
-function argNamesOf(parameter: ParameterDeclaration | undefined): Set<string> {
-  const names = new Set<string>();
+function argDeclarationsOf(
+  parameter: ParameterDeclaration | undefined,
+): Set<Node> {
   const nameNode = parameter?.getNameNode();
-  if (nameNode === undefined) {
-    return names;
+  if (parameter === undefined || nameNode === undefined) {
+    return new Set();
   }
   if (N.isIdentifier(nameNode)) {
-    names.add(nameNode.getText());
-    return names;
+    return new Set([parameter]);
   }
   const elements = N.isObjectBindingPattern(nameNode)
     ? nameNode
         .getDescendantsOfKind(SyntaxKind.BindingElement)
         .filter((element) => element.getParent() === nameNode)
     : [];
-  for (const element of elements) {
-    if (element.getDotDotDotToken() !== undefined) {
-      names.add(element.getName());
-    }
-  }
-  return names;
+  return new Set(
+    elements.filter((element) => element.getDotDotDotToken() !== undefined),
+  );
+}
+
+/** A callback inside the render function can name its own parameter `args` too, and spreading that passes something else. */
+function spreadsTheArgs(spread: Node, args: ReadonlySet<Node>): boolean {
+  return (
+    N.isIdentifier(spread) &&
+    declarationsBehind(symbolBehind(spread)).some((declared) =>
+      args.has(declared),
+    )
+  );
 }
 
 interface ComponentModule {

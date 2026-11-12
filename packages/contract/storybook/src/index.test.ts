@@ -307,6 +307,20 @@ describe("args on the meta", () => {
     expect(renderPropsOf("Chip.Elsewhere")).toBeUndefined();
     expect(renderPropsOf("Chip.Extra")).toBeUndefined();
   });
+
+  it("counts no comment as children, and no spread of a callback's own parameter as the args", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(importsDir, "src/Chip/__stories__/ChipRendered.stories.tsx")],
+      { projectRoot: importsDir },
+    );
+    const renderPropsOf = (name: string) =>
+      readStorybookMetadata(
+        summaries.find((s) => s.identity.name === name) as BehavioralSummary,
+      )?.renderProps;
+
+    expect(renderPropsOf("Chip.Commented")).toEqual(["label"]);
+    expect(renderPropsOf("Chip.Mapped")).toBeUndefined();
+  });
 });
 
 describe("generateSummariesFromStories — shape variants", () => {
