@@ -83,7 +83,14 @@ client, the client a transaction hands over and each delegate
 differently, and a project reaches them through a module of its own,
 so the calling file need not import the library. TypeScript reads the
 file that declares the type, which is under the package in
-`node_modules` or in a copy of the module its generator wrote.
+`node_modules` or in a copy of the module its generator wrote. A type
+the runtime declares, listed under `GLOBAL_MODULE`, is imported by no
+file, so its name is enough: a parameter's annotation as written,
+`NodeJS.WriteStream`, or the name of one of the receiver's own types,
+`KVNamespace` on a Worker's `env.SESSIONS` through its `Env` interface.
+When the checker cannot resolve the type, TypeScript reads the names
+written on the declaration, and a local with none is read through what
+it was set to.
 
 A NestJS service extends the client and the container hands it to
 whoever asks, so neither its type nor where it was made says which
