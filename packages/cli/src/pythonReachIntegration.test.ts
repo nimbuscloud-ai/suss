@@ -179,7 +179,7 @@ describe("what a Python route reaches", () => {
     const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
     expect(text).toContain("list_orders -> orders_for -> read_orders");
     expect(text).toContain(
-      "read_orders reads postgresql:Orders through select(Orders.id).all() (app/store.py:3)",
+      "read_orders reads postgresql:Orders through select(Orders.id).all (app/store.py:3)",
     );
     expect(text).not.toContain("in its own body");
   });

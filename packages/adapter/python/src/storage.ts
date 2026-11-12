@@ -27,7 +27,7 @@ import {
 import { pythonFactSource } from "./factSource.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
-import { bodyCalls } from "./paths/effects.js";
+import { bodyCalls, calleeText } from "./paths/effects.js";
 import { rawSqlEffects, rawSqlOptionsOf } from "./rawSql.js";
 import { ownReceiverName } from "./reach/receivers.js";
 import {
@@ -629,7 +629,7 @@ function effectFor(
       scope: "default",
       container: model,
     }),
-    callee: chain.last.text,
+    callee: calleeText(chain.last),
     interaction: {
       class: "storage-access",
       kind: pattern.writes.includes(operation) ? "write" : "read",
