@@ -33,9 +33,9 @@ import { builtinDeclarations } from "./extract.js";
 import { readSubmodules } from "./gitSubmodules.js";
 import {
   detectLanguages,
+  isSkippedDirectory,
   LANGUAGE_LABEL,
   projectFilesOf,
-  SKIP_DIRECTORIES,
 } from "./language.js";
 import {
   extractReadsAnything,
@@ -957,7 +957,7 @@ function* filesUnder(
     return;
   }
   for (const entry of entries) {
-    if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) {
+    if (isSkippedDirectory(entry.name)) {
       continue;
     }
     const full = path.join(dir, entry.name);

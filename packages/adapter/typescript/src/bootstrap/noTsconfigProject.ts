@@ -54,6 +54,14 @@ export const SKIP_DIRECTORIES: ReadonlySet<string> = new Set([
   "tmp",
 ]);
 
+/**
+ * Whether a walk for source leaves this entry out: one of the folders
+ * above, or anything hidden, such as `.github` or an editor's settings.
+ */
+export function isSkippedDirectory(name: string): boolean {
+  return name.startsWith(".") || SKIP_DIRECTORIES.has(name);
+}
+
 /** Every source file under `rootDir`, skipping build output and dependencies. */
 export function findSourceFiles(rootDir: string, depth = 0): string[] {
   // Bounded so the walk cannot dominate the run on a deep tree.
@@ -70,7 +78,7 @@ export function findSourceFiles(rootDir: string, depth = 0): string[] {
   }
 
   for (const entry of entries) {
-    if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) {
+    if (isSkippedDirectory(entry.name)) {
       continue;
     }
     const full = path.join(rootDir, entry.name);
