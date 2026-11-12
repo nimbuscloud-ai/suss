@@ -914,6 +914,18 @@ export const EXTRA_INPUTS = [
       ...packs("react-query", "react", "axios", "fetch", "node"),
     ],
   },
+  // A desktop app whose main process passes its handlers from functions
+  // nothing exports, called under a block at the top of the file, so a
+  // parameter's value is read only through callers no export reaches.
+  {
+    name: "react-companion",
+    group: "extra",
+    repo: "twenty",
+    args: [
+      ...dir("packages/twenty-companion"),
+      ...packs("react", "fetch", "node"),
+    ],
+  },
   // The packs `suss init` picks, since only the NestJS packs make the
   // services that call TypeORM into units. CONTRIBUTING.md says why the
   // clone needs its dependencies installed.
