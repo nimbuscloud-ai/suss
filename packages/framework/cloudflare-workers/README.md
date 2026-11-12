@@ -84,4 +84,4 @@ For KV and R2, the key an operation addresses is recorded as the selector. A D1 
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor` for the pack type, `@suss/recognize` for the trigger patterns and the env chain, `@suss/behavioral-ir` for the bindings it writes, `@suss/adapter-typescript` for reading names, and `@suss/sql` for classifying a D1 statement. `@suss/contract-wrangler` declares the other side: the variables the Worker is given, the queues it produces to and consumes from, and the stores it is bound to.
+Every path is a `@suss/recognize` declaration: two discovery patterns for the triggers, a read chain for `env`, and a chain for each store, so the pack doesn't read a syntax tree itself. It depends on `@suss/extractor` for the pack type, `@suss/recognize` for the declarations, and `@suss/resolution` for the name the store types are declared under. `@suss/contract-wrangler` declares the other side: the variables the Worker is given, the queues it produces to and consumes from, and the stores it is bound to.
