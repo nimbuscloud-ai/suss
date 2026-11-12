@@ -12,14 +12,7 @@
 
 import path from "node:path";
 
-import {
-  type Identifier,
-  Node as N,
-  type Node,
-  type ParameterDeclaration,
-  Project,
-  SyntaxKind,
-} from "ts-morph";
+import { type Identifier, Node as N, type Node, Project } from "ts-morph";
 
 import {
   declarationsBehind,
@@ -28,7 +21,6 @@ import {
   projectPlaceOf,
   ResolutionStore,
   symbolBehind,
-  toFunctionRoot,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
@@ -198,95 +190,31 @@ function argReadersOf(storyOrMeta: ValueOps): ArgReader[] {
 /**
  * The props a `render` function passes the story's component by name,
  * besides the args it spreads in. Null when that cannot be said: there
- * is no render function, it cannot be read, it never renders the
- * component's element itself, or it spreads something other than its
- * args into it.
+ * is no render function, it never renders the component's element
+ * itself, or it spreads something into it other than its first
+ * parameter, which is the story's args, or the rest of that parameter's
+ * destructure.
  */
 function renderPropsOf(
   storyOrMeta: ValueOps,
   componentName: string,
 ): string[] | null {
-  const found = storyOrMeta.property("render")?.function?.() ?? null;
-  const render = found === null ? null : toFunctionRoot(nodeBehind(found));
-  if (render === null) {
+  const render = storyOrMeta.property("render")?.function?.() ?? null;
+  const elements = render?.elements?.(componentName) ?? [];
+  if (render === null || elements.length === 0) {
     return null;
   }
-  const args = argDeclarationsOf(render.getParameters()[0]);
-  const elements = [
-    ...render.getDescendantsOfKind(SyntaxKind.JsxOpeningElement),
-    ...render.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement),
-  ].filter((element) => element.getTagNameNode().getText() === componentName);
-  if (elements.length === 0) {
+  const spreadsOther = elements.some((element) =>
+    element.spreads().some((spread) => spread.parameterAt?.(render) !== 0),
+  );
+  if (spreadsOther) {
     return null;
   }
-  const passed = new Set<string>();
-  if (elements.some(hasJsxChildren)) {
+  const passed = new Set(elements.flatMap((element) => element.props()));
+  if (elements.some((element) => element.hasChildren())) {
     passed.add("children");
   }
-  for (const attribute of elements.flatMap((e) => e.getAttributes())) {
-    if (N.isJsxAttribute(attribute)) {
-      passed.add(attribute.getNameNode().getText());
-      continue;
-    }
-    if (!spreadsTheArgs(attribute.getExpression(), args)) {
-      return null;
-    }
-  }
   return [...passed].sort();
-}
-
-/**
- * Whether anything between the element's tags reaches it as `children`.
- * React passes none for a comment alone between the tags.
- */
-function hasJsxChildren(element: Node): boolean {
-  const parent = element.getParent();
-  if (!N.isJsxOpeningElement(element) || !N.isJsxElement(parent)) {
-    return false;
-  }
-  return parent
-    .getJsxChildren()
-    .some(
-      (child) =>
-        !(N.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces()) &&
-        !(N.isJsxExpression(child) && child.getExpression() === undefined),
-    );
-}
-
-/**
- * The declarations a name refers to when it is the story's args: the
- * render function's first parameter, or the rest of that parameter's
- * destructure. Spreading one of these passes the component only args the
- * story already lists.
- */
-function argDeclarationsOf(
-  parameter: ParameterDeclaration | undefined,
-): Set<Node> {
-  const nameNode = parameter?.getNameNode();
-  if (parameter === undefined || nameNode === undefined) {
-    return new Set();
-  }
-  if (N.isIdentifier(nameNode)) {
-    return new Set([parameter]);
-  }
-  const elements = N.isObjectBindingPattern(nameNode)
-    ? nameNode
-        .getDescendantsOfKind(SyntaxKind.BindingElement)
-        .filter((element) => element.getParent() === nameNode)
-    : [];
-  return new Set(
-    elements.filter((element) => element.getDotDotDotToken() !== undefined),
-  );
-}
-
-/** A callback inside the render function can name its own parameter `args` too, and spreading that passes something else. */
-function spreadsTheArgs(spread: Node, args: ReadonlySet<Node>): boolean {
-  return (
-    N.isIdentifier(spread) &&
-    declarationsBehind(symbolBehind(spread)).some((declared) =>
-      args.has(declared),
-    )
-  );
 }
 
 interface ComponentModule {
@@ -358,9 +286,8 @@ function declaredNameOf(declaration: Node): string | undefined {
 }
 
 /**
- * The node a value was read at, for the two reads the value ops cannot
- * make yet: the component's declaration, which takes the type checker,
- * and the JSX a render function returns, which the facts do not state.
+ * The node a value was read at, for the one read the value ops cannot
+ * make yet: the component's declaration, which takes the type checker.
  */
 function nodeBehind(value: ValueOps): Node {
   return (value as AstCapableValueOps).ast() as Node;
