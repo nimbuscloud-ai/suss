@@ -22,6 +22,7 @@ import {
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
 import { isFunctionRoot } from "../discovery/shared.js";
+import { isWrittenAgain } from "../facts/assignments.js";
 import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { MAPPING_METHOD } from "../facts/languageWords.js";
 import { parameterReads } from "../parameterReads.js";
@@ -653,10 +654,9 @@ export function callOpsFor(
       return outer === null ? null : callOpsFor(outer, values);
     },
     member: () => {
-      const read = callee?.getExpression() ?? null;
-      return read !== null && Node.isPropertyAccessExpression(read)
-        ? memberOpsFor(read, reading)
-        : null;
+      const read =
+        callee === null ? null : memberReadAt(callee.getExpression());
+      return read === null ? null : memberOpsFor(read, reading);
     },
     file: () => call.getSourceFile().getFilePath(),
     argument: (index) => opsOverCall(argumentsOf()[index], values),
@@ -700,6 +700,32 @@ function chainedCallOn(call: Called): CallExpression | null {
 }
 
 /**
+ * The member read written at `value`, or the one a local there was set
+ * to, `db.users` for `users` after `const users = db.users`. One
+ * declaration and no further, as the fact ops follow it.
+ */
+function memberReadAt(value: Node): PropertyAccessExpression | null {
+  if (Node.isPropertyAccessExpression(value)) {
+    return value;
+  }
+  if (!Node.isIdentifier(value)) {
+    return null;
+  }
+  const declarations = value.getSymbol()?.getDeclarations() ?? [];
+  const declared = declarations.length === 1 ? declarations[0] : undefined;
+  if (
+    declared === undefined ||
+    !Node.isVariableDeclaration(declared) ||
+    isWrittenAgain(declared)
+  ) {
+    return null;
+  }
+  const initializer = declared.getInitializer();
+  const read = initializer === undefined ? null : peelValue(initializer);
+  return read !== null && Node.isPropertyAccessExpression(read) ? read : null;
+}
+
+/**
  * The ops for the member read a call is made on, `db.user` in
  * `db.user.findMany()`. The read passes no arguments, its method is the
  * member's name, and its receiver questions are about `db`, asked the
@@ -735,10 +761,8 @@ function memberOpsFor(
         originatesFrom,
       }),
     member: () => {
-      const object = read.getExpression();
-      return Node.isPropertyAccessExpression(object)
-        ? memberOpsFor(object, reading)
-        : null;
+      const object = memberReadAt(read.getExpression());
+      return object === null ? null : memberOpsFor(object, reading);
     },
     file: () => read.getSourceFile().getFilePath(),
     argument: () => null,

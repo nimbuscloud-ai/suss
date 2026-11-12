@@ -343,6 +343,21 @@ describe("drizzle recognizer — relational query API", () => {
     expect(interaction.fields).toEqual(["*"]);
   });
 
+  it("reads a query table kept in a local before the call", () => {
+    const effects = effectsIn(`
+      import { drizzle } from "drizzle-orm";
+      import * as schema from "./schema.js";
+      const db = drizzle({}, { schema });
+      export async function list() {
+        const table = db.query.users;
+        return table.findMany();
+      }
+    `);
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBe("users");
+    expect(interactionOf(effects[0]).operation).toBe("findMany");
+  });
+
   it("follows a database made in another file, over a schema spread from modules", () => {
     const effects = drizzle.effectsAcross(
       {

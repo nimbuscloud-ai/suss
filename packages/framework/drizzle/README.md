@@ -46,7 +46,7 @@ Both options make the effects this pack records pair with the provider side. Pas
 - `alias(users, "u")` self-join aliases.
 - Join clauses (`.leftJoin(orders, ...)`). The joined table does not get a second effect.
 - A relational query on a schema written as an object literal, `drizzle(client, { schema: { users, orders } })`. The table comes out null. A whole-module import (`import * as schema`), or a spread of several, is followed.
-- A relational query whose table is kept in a variable first, `const table = db.query.users; table.findMany()`. Nothing is recorded.
+- A relational query whose table is copied from one variable into another before the call. A table kept in one variable, `const table = db.query.users; table.findMany()`, is read.
 - A `where` condition built by a helper function, or kept in a variable. The access is recorded without a selector.
 
 ## Where it fits in suss

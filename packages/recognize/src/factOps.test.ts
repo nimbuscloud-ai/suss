@@ -768,6 +768,71 @@ describe("factValueOps over a mapped list and a project call", () => {
   });
 });
 
+/**
+ * The facts for, with TypeScript's reference, declaration and value rows,
+ * and a Ruby name bound to its value:
+ *
+ *   const users = db.users;   users.find(1)
+ *   const again = users;      again.find(2)
+ *   const client = new Client();   client.find(3)
+ *   models = db.models        models.find(4)
+ */
+function heldFirst(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  const callOn = (call: string, object: string, method: string) => {
+    add("call", call, `${object}.${method}`);
+    add("readsProperty", `${object}.${method}`, object, method);
+  };
+  callOn("find1", "usersRef", "find");
+  add("binds", "usersRef", "usersDecl");
+  add("binds", "usersDecl", "db.users");
+  add("readsProperty", "db.users", "db", "users");
+  callOn("find2", "againRef", "find");
+  add("binds", "againRef", "againDecl");
+  add("binds", "againDecl", "usersCopied");
+  add("binds", "usersCopied", "usersDecl");
+  callOn("find3", "clientRef", "find");
+  add("binds", "clientRef", "clientDecl");
+  add("binds", "clientDecl", "newClient");
+  add("call", "newClient", "Client");
+  callOn("find4", "models", "find");
+  add("binds", "models", "db.models()");
+  callOn("db.models()", "db", "models");
+
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+}
+
+describe("the ops over a member kept in a name", () => {
+  it("reads the member a name was set to through its declaration", () => {
+    const member = opsAt("find1", heldFirst()).member?.() ?? null;
+
+    expect(member?.method()).toBe("users");
+    expect(member?.calleeText()).toBe("db.users");
+  });
+
+  it("follows one declaration and no further, and leaves a name set to a construction alone", () => {
+    expect(opsAt("find2", heldFirst()).member?.()).toBeNull();
+    expect(opsAt("find3", heldFirst()).member?.()).toBeNull();
+  });
+
+  it("reads a name set to a call made on a receiver with no arguments, which is how Ruby reads a member", () => {
+    expect(opsAt("find4", heldFirst()).member?.()?.method()).toBe("models");
+  });
+});
+
 describe("the block a call is written with", () => {
   it("is the function the call states as its block, and null for a call without one", () => {
     const facts = spreads();
