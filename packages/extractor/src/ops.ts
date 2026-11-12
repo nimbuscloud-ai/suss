@@ -412,6 +412,12 @@ export interface ModuleOps {
   marked(word: string): boolean;
   /** The functions the file writes whose body opens with the directive, in source order. */
   markedFunctions(word: string): readonly MarkedFunction[];
+  /**
+   * Whether the file's text has the word anywhere. A file whose adapter
+   * cannot answer from the text says yes, so a reader that asks first
+   * only ever skips a file that cannot match.
+   */
+  mentions(word: string): boolean;
 }
 
 /** A function whose body opens with a directive, with the variable or property it is assigned to. */

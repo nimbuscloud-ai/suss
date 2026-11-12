@@ -261,6 +261,9 @@ function readRegistrations(
   kind: string,
   module: ModuleOps,
 ): DeclaredUnit[] {
+  if (!mayCallTheStart(match, module)) {
+    return [];
+  }
   return module.calls().flatMap((call) => {
     if (!registers(call, match)) {
       return [];
@@ -279,6 +282,23 @@ function readRegistrations(
     const spec = name === null ? undefined : match.nameAt.named[name];
     return spec === undefined ? [] : [built(spec, func, null)];
   });
+}
+
+/**
+ * A call to a global is written with the global's own name, so a file
+ * whose text has none of the paths makes no such call, and listing the
+ * module body's calls would state facts for every one of them. A method
+ * on a global can be called through a variable imported from another
+ * file, so that form is always read.
+ */
+function mayCallTheStart(
+  match: RegisteredFunctionMatch,
+  module: ModuleOps,
+): boolean {
+  if (match.method !== undefined || match.start.origin !== "global") {
+    return true;
+  }
+  return match.start.paths.some((path) => module.mentions(path));
 }
 
 /** Whether the call is the registration: a method on the start, or the start called itself. */

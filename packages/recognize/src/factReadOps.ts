@@ -121,6 +121,32 @@ class FactRead implements ReadOps {
   }
 
   /**
+   * Whether the site reads off a parameter the platform fills under this
+   * name: the parameter itself, which is how Python and Ruby key a name,
+   * or a name the facts bind to it, which is how TypeScript does. A run
+   * with no such unit states no `handedIn` row, so its sites stop at the
+   * first lookup.
+   */
+  offHandedIn(name: string): boolean {
+    const { db } = this.facts;
+    if (db.lookup("handedIn", 1, name).length === 0) {
+      return false;
+    }
+    const object = this.object();
+    if (object === null) {
+      return false;
+    }
+    const handed = (key: string): boolean =>
+      db.lookup("handedIn", 0, key).some((row) => String(row[1]) === name);
+    if (handed(object)) {
+      return true;
+    }
+    // A name's binds are stated with its own facts.
+    this.facts.read(object);
+    return db.lookup("binds", 0, object).some((row) => handed(String(row[1])));
+  }
+
+  /**
    * The object the site reads off. An adapter that states facts on
    * demand says so without stating the site, which only the sites off a
    * runtime object ever need.
@@ -153,9 +179,7 @@ const OFF: {
   ) => boolean;
 } = {
   global: (read, object) => read.objectPath(object.paths) !== undefined,
-  // No adapter states which parameter a platform fills yet, so a read is
-  // never off one.
-  handedIn: () => false,
+  handedIn: (read, object) => read.offHandedIn(object.name),
 };
 
 /** The relations a read is stated under, the ones that spell the entry first. */

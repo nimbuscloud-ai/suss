@@ -13,6 +13,8 @@
 import { Node as N } from "ts-morph";
 
 import {
+  propertyFunctionOf,
+  propertyNameOf,
   readName,
   receiverTypesOf,
   stringValueOf,
@@ -20,11 +22,12 @@ import {
 import { storageBinding } from "@suss/behavioral-ir";
 import { readSqlAccess } from "@suss/sql";
 
-import { isTriggerEnvArgument } from "./envBindings.js";
+import { TRIGGERS } from "./handlers.js";
+import { ENV } from "./triggers.js";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
-import type { CallExpression, Node } from "ts-morph";
+import type { CallExpression, Node, ParameterDeclaration } from "ts-morph";
 
 const RECOGNITION = "@suss/framework-cloudflare-workers";
 
@@ -220,11 +223,54 @@ function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
     return null;
   }
   const env = receiver.getExpression();
-  if (!N.isIdentifier(env) || !isTriggerEnvArgument(env, reading.resolution)) {
+  if (!N.isIdentifier(env) || !isTriggerEnv(env, reading.resolution)) {
     return null;
   }
   const store = storeTypedOn(receiver);
   return store === null ? null : { name: receiver.getName(), store };
+}
+
+/**
+ * Whether a name refers to the bindings a trigger is handed, which the
+ * adapter records on the parameter when it claims the trigger's unit.
+ * Without the run's store, only a trigger written into the entrypoint
+ * object is known, since accepting more would treat every second
+ * parameter in the file as bindings.
+ */
+function isTriggerEnv(
+  env: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  if (resolution !== undefined) {
+    return resolution.refersToHandedIn(env, ENV);
+  }
+  return (env.getSymbol()?.getDeclarations() ?? []).some(
+    (declaration) =>
+      N.isParameterDeclaration(declaration) &&
+      isBindingsOfTriggerWrittenInPlace(declaration),
+  );
+}
+
+/** The second parameter of a function written as a trigger's value in an object. */
+function isBindingsOfTriggerWrittenInPlace(
+  parameter: ParameterDeclaration,
+): boolean {
+  const owner = parameter.getParentOrThrow();
+  if (
+    !N.isFunctionLikeDeclaration(owner) ||
+    owner.getParameters()[1] !== parameter
+  ) {
+    return false;
+  }
+  const property = N.isMethodDeclaration(owner)
+    ? owner
+    : owner.getParentOrThrow();
+  const name = propertyNameOf(property);
+  return (
+    name !== null &&
+    TRIGGERS[name] !== undefined &&
+    propertyFunctionOf(property, undefined) === owner
+  );
 }
 
 /** Which store the receiver is, by the first Cloudflare store type it has. */

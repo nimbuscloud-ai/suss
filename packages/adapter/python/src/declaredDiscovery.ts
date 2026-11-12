@@ -16,6 +16,7 @@ import {
 } from "@suss/extractor";
 import { discoverDeclared } from "@suss/recognize";
 import { factCallOps, factModuleOps } from "@suss/recognize/ops";
+import { stateHandedIn } from "@suss/resolution";
 
 import { pythonFactSource } from "./factSource.js";
 import { nodeId } from "./facts/values.js";
@@ -76,6 +77,9 @@ function unitOf(
   const node = unit.func as PyNode;
   if (node.tree !== file.root.tree) {
     return null;
+  }
+  if (unit.handedIn !== undefined) {
+    stateHandedIn(options.facts, nodeId(file.file, node), unit.handedIn);
   }
   const raw = libraryUnit(
     {

@@ -1819,9 +1819,22 @@ export interface DiscoveredCustomUnit {
   /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit?: DeployableUnit;
   /**
+   * The parameters the platform fills with an object of its own when it
+   * calls the unit, such as the `env` a Worker's `fetch(request, env)` is
+   * handed. The adapter states `handedIn` on each before it reads the
+   * unit's body, so a read chain off `handedIn(name)` finds the reads.
+   */
+  handedIn?: readonly HandedInParameter[];
+  /**
    * Metadata merged onto the resulting summary's `metadata` field.
    */
   metadata?: Record<string, unknown>;
+}
+
+/** A parameter the platform fills, by its position and the name a read chain asks for it under. */
+export interface HandedInParameter {
+  readonly at: number;
+  readonly name: string;
 }
 
 /**

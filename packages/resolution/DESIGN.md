@@ -178,6 +178,13 @@ paramNamed(f, n, p)         p is f's parameter called n
 paramDefault(p, d)          p takes the value d when a caller passes no
                             argument at all. Ruby states it for a lambda's
                             or a block's parameter only
+handedIn(p, n)              the platform fills the parameter p with an
+                            object of its own when it calls the unit, and
+                            a read chain asks for it under the name n, as
+                            with the env a Worker's fetch is handed. The
+                            adapter states it when it claims a unit whose
+                            spec lists the parameter. The read ops in
+                            @suss/recognize/ops read it, and no rule does
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
 elementOf(x, over)          the parameter or block variable x is given one

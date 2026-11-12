@@ -6,7 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { imported } from "@suss/recognize";
 
-import { extractPythonProject } from "./project.js";
+import { declaredDiscoveryUnits } from "./declaredDiscovery.js";
+import { parsePython } from "./parser.js";
+import { extractPythonProject, factsForFile } from "./project.js";
+import { bindModule } from "./scope.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PythonPack } from "./pack.js";
@@ -144,5 +147,56 @@ describe("a declared discovery pattern in Python", () => {
       instanceName: "App",
     });
     expect(handler?.metadata?.declaredTest).toEqual({ name: "handler" });
+  });
+
+  it("states which parameter the platform fills before it reads the unit", async () => {
+    const file = path.join(root, "worker.py");
+    const tree = await parsePython(
+      'def serve(request, env):\n    return env.GREETING\n\n\ndefault = {"fetch": serve}\n',
+    );
+    const module = bindModule(tree.rootNode);
+    const facts = factsForFile({
+      file,
+      root: tree.rootNode,
+      module,
+      packs: [],
+    });
+    const handing: PythonPack = {
+      name: "handed-in-test-pack",
+      protocol: "in-process",
+      discovery: [],
+      declaredDiscovery: [
+        {
+          kind: "handler",
+          match: {
+            type: "namedExport",
+            names: ["default"],
+            members: {
+              named: {
+                fetch: {
+                  kind: "handler",
+                  name: "fetch",
+                  handedIn: [{ at: 1, name: "env" }],
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+    const units = declaredDiscoveryUnits(
+      { file, displayPath: file, root: tree.rootNode, module },
+      [handing],
+      { facts, storageFor: () => undefined, tallies: new Map() },
+    );
+    expect(units.map((unit) => unit.identity.name)).toEqual(["fetch"]);
+    expect(
+      facts
+        .facts("handedIn")
+        .map(([parameter, name]) => [
+          String(parameter).split("#").at(-1),
+          name,
+        ]),
+    ).toEqual([["env", "env"]]);
   });
 });

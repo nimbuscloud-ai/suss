@@ -173,6 +173,7 @@ export type {
   FailureDelivery,
   GeneratedModuleSpec,
   GlobalPrefixCall,
+  HandedInParameter,
   InputMappingPattern,
   InvocationRecognizer,
   ManifestEntry,

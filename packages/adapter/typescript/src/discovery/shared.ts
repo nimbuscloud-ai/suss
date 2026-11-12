@@ -23,6 +23,7 @@ import type {
 import type {
   DiscoveredCustomUnit,
   DiscoveryPattern,
+  HandedInParameter,
   InputMappingPattern,
   TerminalPattern,
 } from "@suss/extractor";
@@ -214,6 +215,8 @@ export interface DiscoveredUnit {
   registrationSubjectId?: string;
   /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit?: DeployableUnit;
+  /** The parameters the platform fills, which the claim states `handedIn` on. */
+  handedIn?: readonly HandedInParameter[];
   /**
    * Metadata merged onto the assembled summary's `metadata` field.
    * Populated when a pack's `discoverUnits` callback stamps provenance
@@ -287,6 +290,7 @@ export function discoveredUnitOf(found: DiscoveredCustomUnit): DiscoveredUnit {
     ...(found.functionCallInfo !== undefined
       ? { functionCallInfo: found.functionCallInfo }
       : {}),
+    ...(found.handedIn !== undefined ? { handedIn: found.handedIn } : {}),
     ...(found.metadata !== undefined ? { metadata: found.metadata } : {}),
   };
 }

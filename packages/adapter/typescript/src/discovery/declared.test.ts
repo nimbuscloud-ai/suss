@@ -1,6 +1,7 @@
+import { type Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { imported } from "@suss/recognize";
+import { compile, handedIn, imported, runtimeReads } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "../adapter.js";
@@ -141,6 +142,90 @@ describe("a declared discovery pattern", () => {
         ],
       ),
     ).toEqual(["handler serve"]);
+  });
+
+  it("states which parameter the platform fills on a unit it claims, so a read chain off it reads the body", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/worker.ts",
+      [
+        "interface Env { GREETING: string }",
+        "export default {",
+        "  fetch(request: unknown, settings: Env) { return settings.GREETING; },",
+        "};",
+      ].join("\n"),
+    );
+    const env = runtimeReads({ object: handedIn("env") }).entries(
+      {},
+      { reads: "config" },
+    );
+    const pack: PatternPack = {
+      name: "declared",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "handler",
+          match: {
+            type: "namedExport",
+            names: ["default"],
+            members: {
+              named: {
+                fetch: {
+                  kind: "handler",
+                  name: "fetch",
+                  handedIn: [{ at: 1, name: "env" }],
+                },
+              },
+            },
+          },
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+      accessRecognizers: [compile(env.declared, "declared")],
+    };
+    const [fetch] = await createTypeScriptAdapter({
+      project,
+      frameworks: [pack],
+    }).extractAll();
+    expect(
+      fetch?.transitions
+        .flatMap((transition) => transition.effects)
+        .map((effect) => (effect.type === "interaction" ? effect.callee : "")),
+    ).toEqual(["env.GREETING"]);
+  });
+
+  it("says a name refers to the parameter only inside the unit it was stated on", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/worker.ts",
+      [
+        "export default { fetch(request: unknown, env: { A: string }) { return env.A; } };",
+        "export function other(request: unknown, env: { B: string }) { return env.B; }",
+      ].join("\n"),
+    );
+    const store = new ResolutionStore();
+    const reference = (text: string): Node => {
+      const read = file
+        .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+        .find((node) => node.getText() === text);
+      if (read === undefined) {
+        throw new Error(`no read ${text}`);
+      }
+      return read.getExpression();
+    };
+    expect(store.refersToHandedIn(reference("env.A"), "env")).toBe(false);
+
+    const [fetch] = file.getDescendantsOfKind(SyntaxKind.MethodDeclaration);
+    store.stateHandedIn(fetch as Node, [{ at: 1, name: "env" }]);
+    expect([
+      store.refersToHandedIn(reference("env.A"), "env"),
+      store.refersToHandedIn(reference("env.B"), "env"),
+      store.refersToHandedIn(reference("env.A"), "ctx"),
+    ]).toEqual([true, false, false]);
   });
 
   it("finds the export a manifest spells through a re-export", async () => {

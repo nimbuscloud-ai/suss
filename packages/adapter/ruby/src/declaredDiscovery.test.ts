@@ -8,7 +8,7 @@ import { imported } from "@suss/recognize";
 
 import { declaredDiscoveryUnits } from "./declaredDiscovery.js";
 import { parseRuby } from "./parser.js";
-import { extractRubyProject } from "./project.js";
+import { extractRubyProject, factsForFile } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { RubyPack } from "./pack.js";
@@ -170,5 +170,53 @@ describe("a declared discovery pattern in Ruby", () => {
         tallies: new Map(),
       }),
     ).toEqual([]);
+  });
+
+  it("states which parameter the platform fills before it reads the unit", async () => {
+    const file = path.join(root, "worker.rb");
+    const tree = await parseRuby(
+      "def serve(request, env)\n  env.greeting\nend\n",
+    );
+    const facts = factsForFile({ file, root: tree.rootNode, packs: [] });
+    const handing: RubyPack = {
+      name: "handed-in-test-pack",
+      protocol: "in-process",
+      discovery: [],
+      declaredDiscovery: [
+        {
+          kind: "handler",
+          match: {
+            type: "manifest",
+            entries: () => [
+              {
+                path: ["serve"],
+                units: [
+                  {
+                    kind: "handler",
+                    name: "fetch",
+                    handedIn: [{ at: 1, name: "env" }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    declaredDiscoveryUnits(tree.rootNode, file, {
+      packs: [handing],
+      displayPathOf: (one) => one,
+      onReachSeed: () => undefined,
+      tallies: new Map(),
+      facts,
+    });
+    expect(
+      facts
+        .facts("handedIn")
+        .map(([parameter, name]) => [
+          String(parameter).split("#").at(-1),
+          name,
+        ]),
+    ).toEqual([["env", "env"]]);
   });
 });
