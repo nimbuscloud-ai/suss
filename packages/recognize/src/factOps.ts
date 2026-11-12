@@ -120,6 +120,10 @@ class FactCall implements CallOps {
     return factCallOps(made, this.source);
   }
 
+  site(): string {
+    return this.key;
+  }
+
   /**
    * The call whose callee reads a method off what this call returns, as
    * `.set(v)` does off `db.update(t)`. It is one hop of the

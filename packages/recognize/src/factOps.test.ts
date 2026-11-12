@@ -125,6 +125,11 @@ describe("factCallOps", () => {
     expect(opsAt("set").receiverIsFrom(constructedFrom("redis"))).toBe(false);
   });
 
+  it("gives the same site for every ops over one call, so a walk can tell it came back", () => {
+    expect(opsAt("set").receiver()?.site?.()).toBe("new");
+    expect(opsAt("new").site?.()).toBe("new");
+  });
+
   it("reads a receiver the construction made in place, as in `new Redis().set(k)`", () => {
     const inPlace = source();
     const db = inPlace.db as Database;

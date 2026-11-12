@@ -518,6 +518,14 @@ export interface CallOps {
    */
   receiver(): CallOps | null;
   /**
+   * The call these ops are about, as a key that any two ops over the
+   * same call share. A walk up the receivers keeps the keys it has
+   * passed, since `x = x.next()` makes `x.next()` its own receiver.
+   * Unset in an adapter that cannot say, and the walk then compares the
+   * ops themselves.
+   */
+  site?(): string;
+  /**
    * The call made on what this call returns, when the source writes one
    * there: `.set(v)` for `db.update(t)` in `db.update(t).set(v)`. Null
    * when the result is stored, returned or passed instead, and unset in
