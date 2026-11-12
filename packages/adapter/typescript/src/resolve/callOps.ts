@@ -704,6 +704,7 @@ export function callOpsFor(
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
     calleeText: () => expression.getText(),
+    mentions: (word) => call.getSourceFile().getFullText().includes(word),
     namedCallee: () => Node.isIdentifier(expression),
     calleeImportedAs: (modules) =>
       calleeImportedAs(expression, modules, reading.resolution),

@@ -1072,16 +1072,61 @@ The effect records the callee as `via`, and `callbackRef` says what was
 found: `literal` for a function written in place, the name for a name,
 and the pack's `unread` reasons for anything else or for nothing.
 
+A runtime's timer takes nothing but its callback in the first place, so
+the Node pack reads it with `written: "argument"`, which takes whatever
+the source writes at the position. A value there that is neither a
+function nor a name is a callback the run cannot read, and the effect
+gives the `other` reason where `written: "callback"` would pass over it.
+A method that takes a delay says where, and `hasDelay` says whether the
+call passes an argument there:
+
+```ts
+const WAITS = { callback: { written: "argument", at: 0 }, delay: { at: 1 } };
+
+callbacks({ client: global("setTimeout", "setInterval") })
+  .methods({ setTimeout: WAITS, setInterval: WAITS })
+  .schedules({ via: "asWritten", unread: { missing: "missing-callback-argument", other: "non-literal-callback" } })
+  .unitWhenInPlace({
+    kind: "scheduled-callback",
+    name: ["parent", "callee", "countPerCallee"],
+    metadata: { node: { schedulingPrimitive: { reads: "callee" } } },
+  });
+```
+
+A `global` start matches a call with no receiver spelled as one of its
+paths. In TypeScript and Python a name the program binds itself, to an
+import or to a declaration of its own, is not the global, so a local
+`setTimeout` or one imported from `node:timers/promises` does not match.
+Ruby still matches the spelling.
+
 `.unitWhenInPlace` compiles to the pack's `subUnits` hook. The adapter
 runs it for a unit and hands it `calls(parent)`, the calls the parent's
 body runs in source order, the ones in functions it runs inline
-included. The hook matches each call the way the recognizer does and
-claims the callback when its `form()` is `function`, handing back the
-adapter's own node through `ast()`. The name is built from the parts in
-order: the parent's name, `.` and the callee, `#` and how many claims
-under that callee came before it in the parent. A callback written
-inside another claimed one still belongs to the parent, because the
-calls are not cut at a claim.
+included. The hook matches each call the way the recognizer does, a bare
+call of the chain's global first, and claims the callback when its
+`form()` is `function`, handing back the adapter's own node through
+`ast()`. The name is built from the parts in order: the parent's name,
+`.` and the callee, `#` and how many claims under that callee came
+before it in the parent. A callback written inside another claimed one
+still belongs to the parent, because the calls are not cut at a claim.
+
+`metadata` on the link is a record of records whose leaves say what to
+read, and the claim's summary records it with each leaf read, keeping
+the order the pack wrote the keys in. `{ reads: "callee" }` is the
+callee as the source writes it. A pack that builds its `PatternPack` by
+hand takes the hook from `subUnitsOf(matches)`, which is what `pack()`
+uses.
+
+A pack built by hand can pass `{ onlyWhereWritten: true }` to `compile`
+and to `subUnitsOf`, and the hooks then read the file's text through the
+adapter's `mentions` before they ask the store anything. The sub-unit
+hook skips a parent whose file writes none of the chains' method names
+or modules, and a bare call is read as another name's export only in a
+file that mentions one of the chain's modules. Without it, a chain that
+starts from a module asks the store which export every bare call is, in
+every file the pack reads, and the Node pack reads every file. A callee
+that a project module re-exports under another name is lost with the
+gate on, so `pack()` leaves it off.
 
 ## A write to one of the process's streams
 

@@ -22,7 +22,12 @@ export {
   returnedBy,
   typed,
 } from "./ops.js";
-export { declarationsIn, describeDiscovery, pack } from "./pack.js";
+export {
+  declarationsIn,
+  describeDiscovery,
+  pack,
+  subUnitsOf,
+} from "./pack.js";
 export { runtimeReads } from "./runtimeReads.js";
 export { slotsDeclared } from "./slots.js";
 export { sqlStatements } from "./sqlStatements.js";
@@ -51,16 +56,20 @@ export type {
   ArgumentPick,
   ArgumentPosition,
   ArgumentsFrom,
+  CallbackAnyArgument,
   CallbackArgument,
   CallbackBlock,
   CallbackMethod,
   CallbackPick,
   CallbackProperty,
+  CalleeLeaf,
   CalleeSpelling,
   CallStep,
   CallsLink,
   Chain,
   ChannelPart,
+  ClaimMetadata,
+  ClaimMetadataLeaf,
   ConfigEntry,
   ContainerArgument,
   ContainerLink,
@@ -134,6 +143,7 @@ export type {
   WriteMeaning,
   WritesLink,
 } from "./chain.js";
+export type { CompileOptions } from "./compile.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
 export type { DeclaredUnit } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";

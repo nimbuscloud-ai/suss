@@ -9,7 +9,12 @@
  * recognized under, which is the npm package callers install.
  */
 
-import { compile, compileSubUnits, modulesOfChain } from "./compile.js";
+import {
+  type CompileOptions,
+  compile,
+  compileSubUnits,
+  modulesOfChain,
+} from "./compile.js";
 
 import type {
   DeclaredDiscoveryPattern,
@@ -187,6 +192,26 @@ function passedThrough(spec: PackSpec): Pick<PatternPack, PassedThrough> {
     stated.map((field) => [field, spec[field]]),
   ) as Pick<PatternPack, PassedThrough>;
 }
+
+/**
+ * The `subUnits` hook for a set of chains, for a pack that builds its
+ * `PatternPack` by hand. It is the hook `pack()` gives a pack whose
+ * chains claim a callback, and it claims nothing when none of them says
+ * what a callback written in place becomes.
+ */
+export function subUnitsOf(
+  matches: readonly Match[],
+  options: CompileOptions = {},
+): NonNullable<PatternPack["subUnits"]> {
+  return (
+    compileSubUnits(
+      matches.map((match) => match.declared),
+      options,
+    ) ?? NO_CLAIMS
+  );
+}
+
+const NO_CLAIMS: NonNullable<PatternPack["subUnits"]> = () => [];
 
 /**
  * Describes a set of chains for the pack health report, for a pack that

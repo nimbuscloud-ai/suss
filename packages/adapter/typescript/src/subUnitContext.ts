@@ -143,6 +143,8 @@ export function createTsSubUnitContext(
     ...(resolution === undefined
       ? {}
       : { resolution, calls: (parent) => callsRunAsOps(parent, resolution) }),
+    mentions: (parent, word) =>
+      (parent.func as Node).getSourceFile().getFullText().includes(word),
   };
 }
 
