@@ -316,6 +316,18 @@ describe("the database work a Python body does", () => {
     ).toEqual(["email", "id"]);
   });
 
+  it("takes a column only off the model the chain works on", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "",
+        "found = select(User.id, Group.name, token.sub).all()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map(accessOf)).toMatchObject([{ fields: ["id"] }]);
+  });
+
   it("reads a query built from a function another module re-exports", async () => {
     const effects = await effectsFor(
       ["from base import select", "", "found = select(User.id).all()", ""].join(

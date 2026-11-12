@@ -286,8 +286,12 @@ function queryTypePattern(
   );
 }
 
-/** The columns a chain says it wants, as written. */
-function fieldsOf(chain: Chain, valueMethods: readonly string[]): string[] {
+/** The columns a chain says it wants, as written, positional ones only when read off its model. */
+function fieldsOf(
+  chain: Chain,
+  valueMethods: readonly string[],
+  model: string | null,
+): string[] {
   const args = field(chain.root, "arguments");
   const named: string[] = [];
   for (const argument of args === null ? [] : children(args)) {
@@ -298,12 +302,10 @@ function fieldsOf(chain: Chain, valueMethods: readonly string[]): string[] {
       }
       continue;
     }
-    // `User.id` in `select(User.id)` says the column, and a bare name does not.
-    if (argument.type === "attribute") {
-      const property = field(argument, "attribute");
-      if (property !== null) {
-        named.push(property.text);
-      }
+    // `token.sub` in `session.get(User, token.sub)` is a value, not a column.
+    const column = model === null ? null : columnOfModel(argument, model);
+    if (column !== null) {
+      named.push(column);
     }
   }
   for (const call of laterCalls(chain)) {
@@ -472,10 +474,17 @@ function columnsCompared(node: PyNode, model: string): string[] {
     return [];
   }
   return children(node).flatMap((side) => {
-    const object = side.type === "attribute" ? field(side, "object") : null;
-    const column = object?.text === model ? field(side, "attribute") : null;
-    return column === null ? [] : [column.text];
+    const column = columnOfModel(side, model);
+    return column === null ? [] : [column];
   });
+}
+
+/** The column `Item.id` reads off the model `Item`, or null when the node reads nothing off it. */
+function columnOfModel(node: PyNode, model: string): string | null {
+  const object = node.type === "attribute" ? field(node, "object") : null;
+  return object?.text === model
+    ? (field(node, "attribute")?.text ?? null)
+    : null;
 }
 
 /** The calls whose first argument says which table a statement reads when `select(func.count())` did not. */
@@ -633,7 +642,7 @@ function effectFor(
     interaction: {
       class: "storage-access",
       kind: pattern.writes.includes(operation) ? "write" : "read",
-      fields: fieldsOf(chain, valueMethods),
+      fields: fieldsOf(chain, valueMethods, model),
       operation,
       ...(picked.length > 0 ? { selector: picked } : {}),
     },

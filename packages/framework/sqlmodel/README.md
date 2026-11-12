@@ -72,7 +72,7 @@ writes. `session.exec(stmt)` records nothing itself, since the statement
 it runs is its own chain. `begin`, `rollback` and `close` record nothing
 either.
 
-A statement's operation comes from its constructor. `update(Item).where(...).values(title="x")` is an update whose `fields` are the `values` keywords. `select(Item.id)` puts the column in `fields`, and a keyword the chain selects rows by goes in `selector`. A comparison written positionally, `where(Item.id == 1)`, is not read.
+A statement's operation comes from its constructor. `update(Item).where(...).values(title="x")` is an update whose `fields` are the `values` keywords. `select(Item.id)` puts the column in `fields`. Only a column read off the model the chain works on counts, so `token.sub` in `session.get(User, token.sub)` is a value and stays out. A keyword the chain selects rows by goes in `selector`. A comparison written positionally, `where(Item.id == 1)`, is not read.
 
 Raw SQL passed to `text("...")` is read as its own effect, with the kind
 and the table taken from the statement.
