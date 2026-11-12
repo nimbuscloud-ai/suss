@@ -12,7 +12,12 @@
  * summary has.
  */
 
-import { assembleSummary, claimBinding, runPackHook } from "@suss/extractor";
+import {
+  assembleSummary,
+  claimBinding,
+  runPackHook,
+  stampClaimMetadata,
+} from "@suss/extractor";
 import { factCallOps } from "@suss/recognize/ops";
 import { fileOfKey } from "@suss/resolution";
 
@@ -307,12 +312,7 @@ function subUnitSummary(
     declaredContract: null,
   };
   const summary = assembleSummary(raw, { gapHandling: reading.gapHandling });
-  if (
-    subUnit.metadata !== undefined &&
-    Object.keys(subUnit.metadata).length > 0
-  ) {
-    summary.metadata = { ...(summary.metadata ?? {}), ...subUnit.metadata };
-  }
+  stampClaimMetadata(summary, subUnit);
   summary.confidence = { source: "inferred_static", level: "medium" };
   return summary;
 }
