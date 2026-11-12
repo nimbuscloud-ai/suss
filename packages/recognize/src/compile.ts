@@ -105,14 +105,6 @@ import type {
   ValueOps,
 } from "./ops.js";
 
-/**
- * How many calls a walk climbs before it gives up, up the receivers or
- * out along the calls chained on a result. A receiver chain can loop
- * back to where it started through a variable, and no pack means a step
- * eight hops away.
- */
-const MAX_RECEIVER_HOPS = 8;
-
 /** What every ending is handed once the shared links have matched. */
 interface Matched {
   /** The call in hand, which is what the effect records as its callee. */
@@ -450,21 +442,51 @@ function walk(from: readonly CallOps[], steps: readonly CallStep[]): CallOps[] {
 
 /**
  * The receiver, or the one up the chain that calls the named method,
- * when it came from the step's origin. Climbing stops at the bound, so a
- * receiver that comes back round through a variable ends the walk rather
- * than hanging the run.
+ * when it came from the step's origin.
  */
 function receiversOf(ops: CallOps, step: ToReceiver): CallOps[] {
+  const found = climb(
+    ops,
+    (at) => at.receiver(),
+    (at) => step.method === undefined || at.method() === step.method,
+  );
+  return found !== null && cameFrom(found.at, step.origin)
+    ? [chainedBack(found.at, found.from)]
+    : [];
+}
+
+/** The call a climb stopped at, and the call it stepped there from. */
+interface Climbed {
+  readonly at: CallOps;
+  readonly from: CallOps;
+}
+
+/**
+ * The first call `wanted` accepts, one hop after another from `ops`. A
+ * call the climb has already passed ends it. A receiver kept in a
+ * variable can be a call made on that same variable, as in `x =
+ * x.next()`, and a field, or two variables each written as a call on
+ * the other, come back round the same way.
+ */
+function climb(
+  ops: CallOps,
+  hop: (at: CallOps) => CallOps | null,
+  wanted: (at: CallOps) => boolean,
+): Climbed | null {
+  const passed = new Set<unknown>();
   let from = ops;
-  let at = ops.receiver();
-  for (let hops = 0; at !== null && hops < MAX_RECEIVER_HOPS; hops += 1) {
-    if (step.method === undefined || at.method() === step.method) {
-      return cameFrom(at, step.origin) ? [chainedBack(at, from)] : [];
+  for (let at = hop(ops); at !== null; at = hop(at)) {
+    if (wanted(at)) {
+      return { at, from };
     }
+    const site = at.site?.() ?? at;
+    if (passed.has(site)) {
+      return null;
+    }
+    passed.add(site);
     from = at;
-    at = at.receiver();
   }
-  return [];
+  return null;
 }
 
 /**
@@ -493,18 +515,15 @@ function membersOf(ops: CallOps, step: ToMember): CallOps[] {
 
 /**
  * The nearest call to `method` out along the calls chained on what this
- * call returns. The walk is `receiversOf` pointed the other way, and
- * stops at the same bound.
+ * call returns. The walk is `receiversOf` pointed the other way.
  */
 function chainedOf(ops: CallOps, method: string): CallOps[] {
-  let at = ops.chainedOn?.() ?? null;
-  for (let hops = 0; at !== null && hops < MAX_RECEIVER_HOPS; hops += 1) {
-    if (at.method() === method) {
-      return [at];
-    }
-    at = at.chainedOn?.() ?? null;
-  }
-  return [];
+  const found = climb(
+    ops,
+    (at) => at.chainedOn?.() ?? null,
+    (at) => at.method() === method,
+  );
+  return found === null ? [] : [found.at];
 }
 
 /**

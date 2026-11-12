@@ -10,6 +10,7 @@ import { Node } from "ts-morph";
 
 import { factCallOps, factValueOps } from "@suss/recognize/ops";
 
+import { nodeId } from "../facts/extract.js";
 import { type CallReading, callOpsFor } from "./callOps.js";
 import { factSourceFor, statedFactKey } from "./factSource.js";
 
@@ -103,6 +104,7 @@ function withNodeMembers(
     nameAt: (index, unsettled) => ops.nameAt(index, unsettled),
     calleeText: () => ops.calleeText(),
     receiver: () => ops.receiver(),
+    site: () => ops.site?.() ?? nodeId(node),
     chainedOn: () => ops.chainedOn?.() ?? null,
     member: () => ops.member?.() ?? null,
     file: () => ops.file?.() ?? null,

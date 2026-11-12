@@ -734,6 +734,42 @@ describe("the calls one call reaches", () => {
     expect(ops.receiver()?.method()).toBe("side");
   });
 
+  it.each(["facts", "nodes"] as const)(
+    "gives the same site for a receiver that comes back round to itself, over the %s",
+    (over) => {
+      const project = createTestProject();
+      const file = project.createSourceFile(
+        "/repo.ts",
+        `
+          var cursor: any = cursor.next();
+          export function play() {
+            return cursor.play("1");
+          }
+        `,
+      );
+      const call = file
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .find((one) => one.getText() === 'cursor.play("1")');
+      if (call === undefined) {
+        throw new Error("the fixture contains no play");
+      }
+      const store = new ResolutionStore();
+      const reading = {
+        resolve: (value: TsNode) => store.resolveWrittenValue(value),
+        resolution: store,
+      };
+      const play =
+        over === "nodes"
+          ? callOpsFor(call, reading)
+          : opsOverFacts(call, reading);
+      const next = play.receiver();
+
+      expect(next?.calleeText()).toBe("cursor.next");
+      expect(next?.receiver()?.site?.()).toBe(next?.site?.());
+      expect(next?.site?.()).not.toBe(play.site?.());
+    },
+  );
+
   it("says nothing about a receiver that is not a call", () => {
     const ops = opsForLastCall(`
       import Deck from "tapedeck";

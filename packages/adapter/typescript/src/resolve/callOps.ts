@@ -22,7 +22,7 @@ import {
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
 import { isFunctionRoot } from "../discovery/shared.js";
-import { dottedPathOf } from "../facts/extract.js";
+import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { MAPPING_METHOD } from "../facts/languageWords.js";
 import { parameterReads } from "../parameterReads.js";
 import { extractShape } from "../shapes/shapes.js";
@@ -647,6 +647,7 @@ export function callOpsFor(
     parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
       callee === null ? null : opsOverReceiver(callee.getExpression(), values),
+    site: () => nodeId(call),
     chainedOn: () => {
       const outer = chainedCallOn(call);
       return outer === null ? null : callOpsFor(outer, values);

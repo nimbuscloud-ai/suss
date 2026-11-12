@@ -451,14 +451,16 @@ and does not stop at the await.
 A step with a `method` searches up the receivers for that method
 instead of counting a fixed number of hops, because
 `bucket(b).file(p).download()` and `bucket(b).getFiles()` have the
-bucket at different distances. The search stops after eight receivers.
-A receiver chain can loop back to itself through a variable, and a pack
-that asks for more than eight hops has made a mistake in the step.
+bucket at different distances. The search goes as far up as the
+receivers go. A receiver chain can loop back to itself through a
+variable: after `x = x.next()`, the receiver of `x.next()` is
+`x.next()` again. So the walk keeps the `site()` of every call it has
+passed and stops when one comes round a second time.
 
 A `chained` step searches the other way, out along the calls made on
 what the call returns, through `chainedOn()`. The ops take one hop and
-the walk is here, as with `receiver()`, so both walks stop at the same
-bound. A call the walk reached as another call's receiver knows that
+the walk is here, as with `receiver()`, so both walks stop the same
+way. A call the walk reached as another call's receiver knows that
 other call is made on its result, even when the source kept the result
 in a name first: `const query = db.select(); query.from(t)` reaches
 `db.select()` through `query`, and a `chained` step from there comes

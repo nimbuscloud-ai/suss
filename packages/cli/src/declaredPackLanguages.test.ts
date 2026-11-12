@@ -218,8 +218,24 @@ const DEPOT_STOCKS = storageCalls({
   .scope(AREA)
   .example('depot.area("core").shelf("accounts").stock("gs://f.json")');
 
+// A read built up over many calls before it runs. The chain is about the
+// call that says the table, however many filters come between it and
+// the call that runs the read.
+const ROW_READS = storageCalls({
+  system: "warehouse",
+  client: constructedFrom({ from: ["rows", "Rows"], named: ["Client"] }),
+})
+  .about({ to: "receiver", method: "read" }, { calledAs: ["single"] })
+  .methods({ read: { kind: "read" } })
+  .container({ at: 0 })
+  .example('rows.read("orders").eq("id", 1).single()');
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-rows", [ROW_READS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-depot", [DEPOT_QUESTIONS, DEPOT_STOCKS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -264,6 +280,7 @@ const TYPESCRIPT = `
   import { Pool } from "sqldb";
   import { eq, Qb, table } from "qb";
   import { Warehouse } from "depot";
+  import { Client } from "rows";
 
   const cache = new Cache();
   const db = new Pool();
@@ -317,6 +334,16 @@ const TYPESCRIPT = `
     depot.area("core").shelf("accounts").stock("gs://exports/accounts.json");
     depot.area("core").stock("orders", []);
   }
+
+  export function fetch(id: number) {
+    const rows = new Client();
+    rows.read("orders").select("id").eq("id", id).neq("state", "void").gt("total", 0).lt("total", 100).order("placed").limit(1).range(0, 1).single();
+  }
+
+  export function spin() {
+    var cursor: any = cursor.next();
+    cursor.single();
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
@@ -327,6 +354,7 @@ from relay import Dispatcher
 from sqldb import Pool
 from qb import Qb, eq, table
 from depot import Warehouse
+from rows import Client
 
 cache = Cache()
 db = Pool()
@@ -386,6 +414,16 @@ def shelve():
     depot.ask("SELECT id FROM \`archive.plans\`")
     depot.area("core").shelf("accounts").stock("gs://exports/accounts.json")
     depot.area("core").stock("orders", [])
+
+
+def fetch(id):
+    rows = Client()
+    rows.read("orders").select("id").eq("id", id).neq("state", "void").gt("total", 0).lt("total", 100).order("placed").limit(1).range(0, 1).single()
+
+
+def spin():
+    cursor = cursor.next()
+    cursor.single()
 `;
 
 const RUBY = `module Store
@@ -439,6 +477,16 @@ const RUBY = `module Store
     depot.area("core").shelf("accounts").stock("gs://exports/accounts.json")
     depot.area("core").stock("orders", [])
   end
+
+  def self.fetch(id)
+    rows = Rows::Client.new
+    rows.read("orders").select("id").eq("id", id).neq("state", "void").gt("total", 0).lt("total", 100).order("placed").limit(1).range(0, 1).single()
+  end
+
+  def self.spin
+    cursor = cursor.next()
+    cursor.single()
+  end
 end
 `;
 
@@ -478,6 +526,7 @@ const LIBRARIES: Record<string, string> = {
       ask(statement: string): unknown;
     }
   `,
+  rows: "export declare class Client { read(table: string): any; }",
 };
 
 /** What the pack's hooks make of every call inside the TypeScript function `unit`. */
@@ -753,6 +802,26 @@ describe("a pack that says where the container and the scope are along the chain
     expect((await rubyEffects("shelve")).map(placeless)).toEqual(
       fromTypeScript,
     );
+  });
+});
+
+describe("a pack whose chain climbs the receivers", () => {
+  it("reaches a call more than eight receivers up, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("fetch").map(placeless);
+
+    expect(fromTypeScript.map(addressOf)).toEqual([
+      ["read", "default", "orders"],
+    ]);
+    expect((await pythonEffects("fetch")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("fetch")).map(placeless)).toEqual(fromTypeScript);
+  });
+
+  it("stops at a receiver that comes back round to itself, in TypeScript, Python and Ruby", async () => {
+    expect(typescriptEffects("spin")).toEqual([]);
+    expect(await pythonEffects("spin")).toEqual([]);
+    expect(await rubyEffects("spin")).toEqual([]);
   });
 });
 
