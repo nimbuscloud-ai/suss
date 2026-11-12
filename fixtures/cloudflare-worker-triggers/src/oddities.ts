@@ -1,6 +1,6 @@
-// Registrations the pack doesn't make a unit from: an event that is not
-// a trigger, a listener with no handler, an event name kept in a const,
-// and trigger keys whose values are not functions.
+// An event that is not a trigger, a listener with no handler, and keys
+// whose values are not functions make no unit. The event name kept in a
+// const is read, so that listener is one.
 
 addEventListener("install", () => {});
 // @ts-expect-error a registration with no handler

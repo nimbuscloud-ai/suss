@@ -10,9 +10,11 @@ import { Node as N } from "ts-morph";
 
 import {
   functionValueOf,
+  peelValue,
   propertiesOf,
   propertyFunctionOf,
   propertyNameOf,
+  readName,
 } from "@suss/adapter-typescript";
 
 import { TRIGGERS } from "./handlers.js";
@@ -52,21 +54,14 @@ export function cloudflareWorkersDiscovery(
   return (sourceFile, ctx) => {
     const sf = sourceFile as SourceFile;
     const { resolution } = ctx as TsDiscoveryContext;
-    const triggers = [
-      ...defaultExportTriggers(sf, resolution),
-      ...listenerTriggers(sf, resolution),
-    ];
-
-    const units: DiscoveredCustomUnit[] = [];
-    const taken = new Set<string>();
-    for (const trigger of triggers) {
-      if (taken.has(trigger.name)) {
-        continue;
-      }
-      taken.add(trigger.name);
-      units.push(unitFor(trigger, options.scriptName));
-    }
-    return units;
+    const exported = defaultExportTriggers(sf, resolution);
+    recordTriggerFunctions(exported, resolution);
+    // The adapter keeps one unit per function, kind and binding, so a
+    // function registered both ways is one unit and two functions
+    // registered under one trigger are two.
+    return [...exported, ...listenerTriggers(sf, resolution)].map((trigger) =>
+      unitFor(trigger, options.scriptName),
+    );
   };
 }
 
@@ -128,35 +123,34 @@ function defaultExportTriggers(
 }
 
 /**
- * The functions the entrypoint's trigger properties refer to, written in
- * the object or referred to by name. The env-binding recognizer calls
- * this for every property read in the file, so the result is cached for
- * as long as the run's resolution store lives.
+ * Whether discovery found this function as a trigger of an entrypoint's
+ * default export in this run. The function can be written in another
+ * file than the entrypoint, imported and spread in, and the adapter
+ * extracts a unit's body only after discovery found it, so asking the
+ * run's own record reaches it wherever it is.
  */
-export function entrypointTriggerFunctions(
-  sf: SourceFile,
+export function isEntrypointTrigger(
+  func: Node,
   resolution: ResolutionStore,
-): Set<Node> {
-  let perRun = triggerFunctionsPerRun.get(resolution);
-  if (perRun === undefined) {
-    perRun = new Map();
-    triggerFunctionsPerRun.set(resolution, perRun);
-  }
-  const filePath = sf.getFilePath();
-  let found = perRun.get(filePath);
-  if (found === undefined) {
-    found = new Set(
-      defaultExportTriggers(sf, resolution).map((trigger) => trigger.func),
-    );
-    perRun.set(filePath, found);
-  }
-  return found;
+): boolean {
+  return triggerFunctionsPerRun.get(resolution)?.has(func) ?? false;
 }
 
-const triggerFunctionsPerRun = new WeakMap<
-  ResolutionStore,
-  Map<string, Set<Node>>
->();
+function recordTriggerFunctions(
+  triggers: readonly Trigger[],
+  resolution: ResolutionStore,
+): void {
+  let found = triggerFunctionsPerRun.get(resolution);
+  if (found === undefined) {
+    found = new Set();
+    triggerFunctionsPerRun.set(resolution, found);
+  }
+  for (const trigger of triggers) {
+    found.add(trigger.func);
+  }
+}
+
+const triggerFunctionsPerRun = new WeakMap<ResolutionStore, Set<Node>>();
 
 /**
  * The object the file default-exports, written in place or referred to
@@ -176,16 +170,21 @@ export function defaultExportObject(
 }
 
 /**
- * Only a string literal event name is read, since nothing can pair with
- * a name computed at run time.
+ * A registration the module body makes, outside every function, since
+ * that is where a service worker registers what the platform calls. A
+ * registration inside a function runs only if something calls it.
  */
 function listenerTriggers(
   sf: SourceFile,
   resolution: ResolutionStore,
 ): Trigger[] {
   const triggers: Trigger[] = [];
-  sf.forEachDescendant((node) => {
-    const registered = listenerAt(node);
+  sf.forEachDescendant((node, traversal) => {
+    if (N.isFunctionLikeDeclaration(node)) {
+      traversal.skip();
+      return;
+    }
+    const registered = listenerAt(node, resolution);
     if (registered === null) {
       return;
     }
@@ -201,11 +200,18 @@ function listenerTriggers(
   return triggers;
 }
 
-function listenerAt(node: Node): { event: string; handler: Node } | null {
+/**
+ * The event name is read the way a name is read anywhere, so one kept in
+ * a const is read too. A name nothing settles is not a trigger.
+ */
+function listenerAt(
+  node: Node,
+  resolution: ResolutionStore,
+): { event: string; handler: Node } | null {
   if (!N.isCallExpression(node)) {
     return null;
   }
-  const callee = node.getExpression();
+  const callee = peelValue(node.getExpression());
   if (!N.isIdentifier(callee) || callee.getText() !== "addEventListener") {
     return null;
   }
@@ -213,11 +219,12 @@ function listenerAt(node: Node): { event: string; handler: Node } | null {
   if (event === undefined || handler === undefined) {
     return null;
   }
-  if (
-    !N.isStringLiteral(event) ||
-    TRIGGERS[event.getLiteralValue()] === undefined
-  ) {
+  const name = readName(peelValue(event), {
+    unsettled: "nothing",
+    resolve: (value) => resolution.resolveWrittenValue(value),
+  });
+  if (name === null || TRIGGERS[name] === undefined) {
     return null;
   }
-  return { event: event.getLiteralValue(), handler };
+  return { event: name, handler };
 }

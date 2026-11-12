@@ -940,6 +940,18 @@ export const EXTRA_INPUTS = [
       ),
     ],
   },
+  // A Next.js site deployed to Cloudflare, which `suss init` gives the
+  // Workers pack. Its Worker entrypoint is generated at build time, so
+  // the pack finds nothing, and the input checks that it adds nothing.
+  {
+    name: "twenty-website",
+    group: "extra",
+    repo: "twenty",
+    args: [
+      ...dir("packages/twenty-website"),
+      ...packs("nextjs", "react", "cloudflare-workers", "fetch", "node"),
+    ],
+  },
   // Two Node apps for the runtime reads: between them destructured reads,
   // reads through a helper, reads with no name, import.meta and
   // process.exitCode, which the two servers below have little of.
