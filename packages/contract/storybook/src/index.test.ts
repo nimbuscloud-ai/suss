@@ -159,7 +159,7 @@ describe("the module a story's component comes from", () => {
     expect(story?.componentImport).toBeUndefined();
   });
 
-  it("records no module for a component reached through a namespace member", () => {
+  it("follows a component written as a member of a namespace import to the module that declares it", () => {
     const summaries = generateSummariesFromStories(
       [path.join(importsDir, "src/Icons.stories.tsx")],
       { projectRoot: importsDir },
@@ -168,7 +168,11 @@ describe("the module a story's component comes from", () => {
       "Icons.Star.Default",
     ]);
     const story = readStorybookMetadata(summaries[0] as BehavioralSummary);
-    expect(story?.componentModule).toBeUndefined();
+    expect(story?.componentModule).toEqual({
+      workspace: "ui-kit",
+      file: "src/icons.tsx",
+      name: "Star",
+    });
     expect(story?.componentImport).toBeUndefined();
     expect(story?.args).toEqual({ size: "sm", onPick: "onPick() {}" });
   });
