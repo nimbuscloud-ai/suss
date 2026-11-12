@@ -1247,6 +1247,27 @@ describe("a statement a call was handed as a tagged template", () => {
     expect(values[0]?.name("nothing")).toBe("archive.sides");
     expect(values[1]?.name("nothing")).toBeNull();
   });
+
+  it("gives the pieces and holes of a statement a project function returns", () => {
+    const ops = opsForOuterCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      function bySide(side: string) {
+        return \`SELECT id FROM tapes WHERE side = \${side}\`;
+      }
+      export function play() {
+        return deck.queryText(bySide("a"));
+      }
+    `);
+    const statement = ops.valueAt(0);
+
+    expect(statement?.parts()).toEqual([
+      "SELECT id FROM tapes WHERE side = ",
+      "",
+    ]);
+    expect(statement?.holes()).toHaveLength(1);
+    expect(statement?.interpolated?.()).toHaveLength(1);
+  });
 });
 
 describe("a bare call of a bound name", () => {

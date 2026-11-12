@@ -651,7 +651,7 @@ class FactValue implements ValueOps {
   }
 
   parts(): readonly string[] | null {
-    const written = this.written();
+    const written = this.shaped();
     const literal = this.facts.literalOf(written);
     if (typeof literal === "string") {
       return [literal];
@@ -791,7 +791,7 @@ class FactValue implements ValueOps {
   }
 
   private holeKeys(): string[] {
-    return templatePieces(this.written(), this.facts).flatMap((piece) =>
+    return templatePieces(this.shaped(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],
     );
   }
@@ -802,11 +802,11 @@ class FactValue implements ValueOps {
   }
 
   /**
-   * What an object or list is read off: the value as written, or the one
-   * value a call into a project function returns. A text or a name is
-   * read off `written()` instead, since the adapter settles a call there
-   * with the call's arguments in place, which reading what the function
-   * returns would lose.
+   * What an object, a list or a template's pieces are read off: the value
+   * as written, or the one value a call into a project function returns.
+   * A text or a name is read off `written()` instead, since the adapter
+   * settles a call there with the call's arguments in place, which
+   * reading what the function returns would lose.
    */
   private shaped(): string {
     this.shapedKey ??= followedCall(this.written(), this.facts);

@@ -259,6 +259,60 @@ send(Other.generate({ d: 4 }))
     ]);
   });
 
+  it("read a statement's pieces off what a project function returns", async () => {
+    const typescript = typescriptArguments(
+      `
+        function ledgerQuery() {
+          return "SELECT * FROM ledger";
+        }
+        function bySide(side: string) {
+          return \`SELECT id FROM tapes WHERE side = \${side}\`;
+        }
+        run(ledgerQuery());
+        run(bySide("a"));
+      `,
+      "run",
+    );
+    const python = await pythonArguments(
+      `def ledger_query():
+    return "SELECT * FROM ledger"
+
+def by_side(side):
+    return f"SELECT id FROM tapes WHERE side = {side}"
+
+run(ledger_query())
+run(by_side("a"))
+`,
+      "run",
+    );
+    const ruby = await rubyArguments(
+      `def ledger_query
+  "SELECT * FROM ledger"
+end
+
+def by_side(side)
+  "SELECT id FROM tapes WHERE side = #{side}"
+end
+
+run(ledger_query)
+run(by_side("a"))
+`,
+      "run",
+    );
+    const piecesOf = (statement: ValueOps | null) => ({
+      parts: statement?.parts?.() ?? null,
+      holes: statement?.interpolated?.().length ?? null,
+    });
+    const READ = [
+      { parts: ["SELECT * FROM ledger"], holes: 0 },
+      { parts: ["SELECT id FROM tapes WHERE side = ", ""], holes: 1 },
+    ];
+
+    expect(typescript.map(piecesOf)).toEqual(READ);
+    expect(python.map(piecesOf)).toEqual(READ);
+    expect(ruby.map(piecesOf)).toEqual(READ);
+  });
+
   it("follow an object through a name and a function that returns its argument", async () => {
     const [, typescript] = typescriptArguments();
     const [, python] = await pythonArguments();

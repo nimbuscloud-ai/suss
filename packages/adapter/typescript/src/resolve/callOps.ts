@@ -898,9 +898,9 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     settledValue ??= settled(value, resolve) ?? value;
     return settledValue;
   };
-  // An object or a list is read off what a project call returns, as the
-  // fact ops read one. A text or a name keeps the call, which `readName`
-  // settles with the call's arguments in place.
+  // An object, a list or a template's pieces are read off what a project
+  // call returns, as the fact ops read them. A text or a name keeps the
+  // call, which `readName` settles with the call's arguments in place.
   let shapedValue: Node | undefined;
   const shaped = (): Node => {
     shapedValue ??= followedCall(written(), resolve);
@@ -919,9 +919,9 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
       const inside = initializerOf(shaped(), name, resolve);
       return inside === null ? null : valueOpsFor(inside, reading);
     },
-    parts: () => literalParts(written()),
-    holes: () => templateHoles(written(), reading),
-    interpolated: () => interpolatedValues(written(), reading),
+    parts: () => literalParts(shaped()),
+    holes: () => templateHoles(shaped(), reading),
+    interpolated: () => interpolatedValues(shaped(), reading),
     encoded: () => {
       const found = encodedIn(written());
       return found === null
