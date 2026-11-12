@@ -302,6 +302,39 @@ describe("the runtime's globals, read by both kinds of ops", () => {
     expect(byCallee.get("setTimeout")?.bare).toBe(true);
     expect(byCallee.get("console.log")?.bare).toBe(false);
   });
+
+  it("reads a name the program binds as that binding, not as the global", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/timers.ts",
+      `
+        import { setTimeout } from "node:timers/promises";
+        export async function run() {
+          (setInterval)(() => null, 5);
+          await setTimeout(10);
+        }
+      `,
+    );
+    const store = ResolutionStore.forPacks([]);
+    const asked = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .map((call) => {
+        const global = {
+          origin: "global",
+          paths: ["setTimeout", "setInterval"],
+        } as const;
+        return [
+          callOpsFor(call, { resolution: store }).isFrom(global),
+          factCallOps(statedFactKey(call, store), factSourceFor(store))?.isFrom(
+            global,
+          ),
+        ];
+      });
+    expect(asked).toEqual([
+      [true, true],
+      [false, false],
+    ]);
+  });
 });
 
 describe("a mapped list and a project call, read by both kinds of ops", () => {
