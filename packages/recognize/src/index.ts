@@ -173,6 +173,7 @@ export type {
   ConstructedFrom,
   DeclaredBy,
   Decoded,
+  ElementOps,
   Global,
   HandedBy,
   HandedIn,

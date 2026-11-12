@@ -409,6 +409,14 @@ export interface ValueOps {
   marked?(word: string): boolean;
   /** The tag a JSX element renders, which a component's name is written as. Null for any other value. */
   tag?(): ValueOps | null;
+  /** On a function: the JSX elements it writes, or a function written inside it writes, whose tag is written `tag`, in source order. */
+  elements?(tag: string): readonly ElementOps[];
+  /**
+   * The position of `fn`'s parameter this value is, named as the parameter
+   * itself or as the rest of a destructure written for it. Null for any
+   * other value.
+   */
+  parameterAt?(fn: ValueOps): number | null;
   /** The class this value settles to, as a discovery pattern asks about one. Null when it is not a class. */
   asClass?(): ClassValueOps | null;
   /**
@@ -446,6 +454,16 @@ export interface ValueOps {
 export interface CallsAndOptions {
   readonly calls: readonly string[];
   readonly options: readonly string[];
+}
+
+/** A JSX element a function writes, as a reader asks which props it passes. */
+export interface ElementOps {
+  /** The attributes the element writes, by name, in source order. */
+  props(): readonly string[];
+  /** The values the element spreads into its props, in source order. */
+  spreads(): readonly ValueOps[];
+  /** Whether anything between its tags reaches it as children. */
+  hasChildren(): boolean;
 }
 
 /**
@@ -967,6 +985,12 @@ export interface FactSource {
   textOf(key: string): string;
   /** The line the node at the key starts on, or null when the key has no node. */
   lineOf?(key: string): number | null;
+  /**
+   * The JSX elements the function at the key writes, in source order,
+   * with their `writesElement`, `jsxElement`, `jsxAttribute`, `jsxSpread`
+   * and `jsxChild` rows stated. Unset in a language that writes no JSX.
+   */
+  elementsOf?(func: string): readonly string[];
   /** How the source wrote the value at the key, as `ValueOps.form` says. Unset reads every value as other. */
   formOf?(key: string): ValueForm;
   /** The string, number or boolean written at the key, or null when it is not one. */
