@@ -1,10 +1,12 @@
 import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { GLOBAL_MODULE } from "@suss/resolution";
 import { createStrictTestProject } from "@suss/test-project";
 
-import { receiverTypesOf } from "./receiverType.js";
+import { receiverTypesOf, typedAsExported } from "./receiverType.js";
 
+import type { Typed } from "@suss/extractor";
 import type { ReceiverType } from "./receiverType.js";
 
 const LIBRARY = `
@@ -164,5 +166,79 @@ describe("receiverTypesOf without the library's declarations", () => {
       env.ORDERS.select();
     `;
     expect(typesOf(source)).toEqual([]);
+  });
+});
+
+describe("typedAsExported with a type the runtime declares", () => {
+  const GLOBAL_KV: Typed = {
+    origin: "typed",
+    importedFrom: [GLOBAL_MODULE],
+    named: ["KVNamespace"],
+  };
+
+  const WORKER = `
+    type Sessions = KVNamespace & { readonly region: string };
+    type MaybeArchive = R2Bucket | undefined;
+    interface TaggedSessions extends KVNamespace { readonly tag: string }
+    interface Env {
+      PLAIN: KVNamespace;
+      ALIASED: Sessions;
+      OPTIONAL: KVNamespace | undefined;
+      JOINED: KVNamespace & { readonly region: string };
+      EXTENDED: TaggedSessions;
+      ARCHIVE: MaybeArchive;
+    }
+    export async function fetch(env: Env) {
+      await env.PLAIN.get("a");
+      await env.ALIASED.get("b");
+      await env.OPTIONAL?.get("c");
+      await env.JOINED.get("d");
+      await env.EXTENDED.get("e");
+      await env.ARCHIVE?.get("f");
+    }
+  `;
+
+  /** The receiver of each `.get` the origin takes, as written. */
+  function receiversTaken(origin: Typed, declared: boolean): string[] {
+    const project = createStrictTestProject();
+    if (declared) {
+      project.createSourceFile(
+        "/workerConfiguration.d.ts",
+        `declare interface KVNamespace { get(key: string): Promise<string | null> }
+         declare interface R2Bucket { get(key: string): Promise<unknown> }`,
+      );
+    }
+    const file = project.createSourceFile("/worker.ts", WORKER);
+    return file
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .filter((read) => read.getName() === "get")
+      .map((read) => read.getExpression())
+      .filter((receiver) => typedAsExported(receiver, origin, undefined))
+      .map((receiver) => receiver.getText());
+  }
+
+  it("reads a member's type through an alias, a union, an intersection and an extending interface", () => {
+    expect(receiversTaken(GLOBAL_KV, true)).toEqual([
+      "env.PLAIN",
+      "env.ALIASED",
+      "env.OPTIONAL",
+      "env.JOINED",
+      "env.EXTENDED",
+    ]);
+  });
+
+  it("reads the names written when nothing declares the type", () => {
+    expect(receiversTaken(GLOBAL_KV, false)).toEqual([
+      "env.PLAIN",
+      "env.ALIASED",
+      "env.OPTIONAL",
+      "env.JOINED",
+    ]);
+  });
+
+  it("asks a module's type of the name the file imports it under", () => {
+    const fromModule: Typed = { ...GLOBAL_KV, importedFrom: ["workers-kit"] };
+
+    expect(receiversTaken(fromModule, true)).toEqual([]);
   });
 });
