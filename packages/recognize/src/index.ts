@@ -3,7 +3,7 @@
 export { callbacks } from "./callbacks.js";
 export { compile } from "./compile.js";
 export { configuredSends } from "./configuredSends.js";
-export { discoverDeclared } from "./discovery.js";
+export { discoverDeclared, discoverEntryObject } from "./discovery.js";
 export { examplesMissing, runExamples } from "./example.js";
 export { messageReceives } from "./messageReceives.js";
 export { messageSends } from "./messageSends.js";
@@ -42,6 +42,9 @@ export { unitInvokes } from "./unitInvokes.js";
 // type the adapters load it as.
 export type {
   DeclaredMatch,
+  EntryMember,
+  EntryObject,
+  EntryObjectMatch,
   HelperDeclarations,
   HelperSink,
   HelperValue,

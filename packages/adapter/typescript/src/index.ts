@@ -30,7 +30,7 @@ export {
   namedImportsOf,
   specifierImportedAs,
 } from "./discovery/importScan.js";
-export { discoverUnits } from "./discovery/index.js";
+export { discoverUnits, moduleOpsFor } from "./discovery/index.js";
 // What a value at a position turns out to be. A pack calls these
 // rather than reading the syntax there, which stops at a name.
 export {
