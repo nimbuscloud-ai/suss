@@ -164,44 +164,45 @@ export function storeBindingRecognizer(
   if (binding === null) {
     return null;
   }
-  const { store } = binding;
   const method = callee.getName();
-  const access = store.read(method, callNode, reading);
-  if (access === null) {
-    return null;
-  }
-
-  return [
-    {
-      type: "interaction",
-      binding: storageBinding({
-        recognition: RECOGNITION,
-        storageSystem: store.storageSystem,
-        scope: "default",
-        container: binding.name,
-        accessPath: null,
-      }),
-      callee: callee.getText(),
-      interaction: {
-        class: "storage-access",
-        kind: access.kind,
-        // KV and R2 values are opaque, and a D1 statement is read at the
-        // database level, so a call never records a field.
-        fields: [],
-        operation: method,
-        ...(access.selector !== undefined
-          ? { selector: [access.selector] }
-          : {}),
+  const effects = binding.stores.flatMap((store): Effect[] => {
+    const access = store.read(method, callNode, reading);
+    if (access === null) {
+      return [];
+    }
+    return [
+      {
+        type: "interaction",
+        binding: storageBinding({
+          recognition: RECOGNITION,
+          storageSystem: store.storageSystem,
+          scope: "default",
+          container: binding.name,
+          accessPath: null,
+        }),
+        callee: callee.getText(),
+        interaction: {
+          class: "storage-access",
+          kind: access.kind,
+          // KV and R2 values are opaque, and a D1 statement is read at
+          // the database level, so a call never records a field.
+          fields: [],
+          operation: method,
+          ...(access.selector !== undefined
+            ? { selector: [access.selector] }
+            : {}),
+        },
       },
-    },
-  ];
+    ];
+  });
+  return effects.length > 0 ? effects : null;
 }
 
 interface BoundReceiver {
   /** The binding's name, which is the property read off env. */
   name: string;
-  /** The store its type on the Env declaration says it is. */
-  store: Store;
+  /** The stores its type on the Env declaration says it is. */
+  stores: Store[];
 }
 
 /**
@@ -226,8 +227,8 @@ function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
   if (!N.isIdentifier(env) || !isTriggerEnv(env, reading.resolution)) {
     return null;
   }
-  const store = storeTypedOn(receiver);
-  return store === null ? null : { name: receiver.getName(), store };
+  const stores = storesTypedOn(receiver);
+  return stores.length === 0 ? null : { name: receiver.getName(), stores };
 }
 
 /**
@@ -273,14 +274,16 @@ function isBindingsOfTriggerWrittenInPlace(
   );
 }
 
-/** Which store the receiver is, by the first Cloudflare store type it has. */
-function storeTypedOn(receiver: Node): Store | null {
-  for (const type of receiverTypesOf(receiver)) {
-    if (Object.hasOwn(STORES, type.name)) {
-      return STORES[type.name];
-    }
-  }
-  return null;
+/**
+ * Every store the receiver's types say it is, in the order the table
+ * lists them. A binding typed as two stores can be either, and the order
+ * a union is written in says nothing about which.
+ */
+function storesTypedOn(receiver: Node): Store[] {
+  const names = new Set(receiverTypesOf(receiver).map((type) => type.name));
+  return Object.entries(STORES)
+    .filter(([name]) => names.has(name))
+    .map(([, store]) => store);
 }
 
 /** A local variable's initializer, for a binding assigned to one first. */

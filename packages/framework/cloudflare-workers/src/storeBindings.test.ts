@@ -129,6 +129,16 @@ beforeAll(() => {
      };`,
   );
   write(
+    "src/twoStores.ts",
+    `interface Env { EITHER: R2Bucket | KVNamespace }
+     export default {
+       async fetch(request: Request, env: Env): Promise<Response> {
+         await env.EITHER.get("k");
+         return new Response("ok");
+       },
+     };`,
+  );
+  write(
     "src/abstains.ts",
     `interface Env { SESSIONS: KVNamespace; LEDGER: D1Database }
      declare const elsewhere: Env;
@@ -304,6 +314,11 @@ describe("storeBindingRecognizer", () => {
       "JOINED cloudflare-kv",
       "OPTIONAL cloudflare-kv",
     ]);
+  });
+
+  it("records an access on each store a binding is typed as, KV before R2", async () => {
+    const stores = storageEffects(await run(), "twoStores.ts").map(storeOf);
+    expect(stores).toEqual(["EITHER cloudflare-kv", "EITHER r2"]);
   });
 
   it("abstains from methods, statements and receivers it cannot settle", async () => {
