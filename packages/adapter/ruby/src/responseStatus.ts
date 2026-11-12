@@ -22,6 +22,7 @@ import {
 import { constantOf, literalOf } from "@suss/values";
 
 import {
+  type CallArgs,
   children,
   field,
   OWN_BODY_TYPES,
@@ -342,9 +343,10 @@ export interface BranchOptions {
 }
 
 /**
- * The status a call passes for each of the helper's positional
- * parameters, where the argument settles on one, as `404` does in
- * `respond_with_error(404)`.
+ * The status a call passes for each of the helper's parameters, where it
+ * settles on one, as `404` does in `respond_with_error(404)`. A parameter
+ * the call leaves out takes its default, so `status: :found` binds 302
+ * when the call passes no status.
  */
 export function boundStatusArguments(
   helper: RbNode,
@@ -352,26 +354,62 @@ export function boundStatusArguments(
   pattern: ControllerActions,
   facts: Database | undefined,
 ): ReadonlyMap<string, number> {
-  const parameters = children(field(helper, "parameters")).filter(
-    (child) => child.type === "identifier",
-  );
-  const args =
+  const args: CallArgs =
     call.type === "call"
-      ? readCallArgs(field(call, "arguments")).positional
-      : [];
+      ? readCallArgs(field(call, "arguments"))
+      : { positional: [], keyword: {} };
   const bound = new Map<string, number>();
-  parameters.forEach((parameter, index) => {
-    const arg = args[index];
-    const status =
-      arg === undefined
-        ? null
-        : statusNumberOf(arg, pattern.statusCodeNames ?? {}, facts);
-    if (status !== null) {
-      bound.set(parameter.text, status);
+  let position = 0;
+  for (const parameter of children(field(helper, "parameters"))) {
+    const passed = PASSED_FOR[parameter.type]?.(parameter, args, position);
+    if (passed === undefined) {
+      continue;
     }
-  });
+    position += passed.takesPosition ? 1 : 0;
+    const status =
+      passed.written === null
+        ? null
+        : statusNumberOf(passed.written, pattern.statusCodeNames ?? {}, facts);
+    if (passed.name !== null && status !== null) {
+      bound.set(passed.name.text, status);
+    }
+  }
   return bound;
 }
+
+/** A parameter's name, what the call passes for it or else its default, and whether it takes the next positional argument. */
+interface Passed {
+  readonly name: RbNode | null;
+  readonly written: RbNode | null;
+  readonly takesPosition: boolean;
+}
+
+/** How each kind of parameter takes its value from a call. */
+const PASSED_FOR: Record<
+  string,
+  (parameter: RbNode, args: CallArgs, position: number) => Passed
+> = {
+  identifier: (parameter, args, position) => ({
+    name: parameter,
+    written: args.positional[position] ?? null,
+    takesPosition: true,
+  }),
+  optional_parameter: (parameter, args, position) => ({
+    name: field(parameter, "name"),
+    written: args.positional[position] ?? field(parameter, "value"),
+    takesPosition: true,
+  }),
+  keyword_parameter: (parameter, args) => {
+    const name = field(parameter, "name");
+    return {
+      name,
+      written:
+        (name === null ? undefined : args.keyword[name.text]) ??
+        field(parameter, "value"),
+      takesPosition: false,
+    };
+  },
+};
 
 /**
  * What a helper method responds with, read one hop deep: every path

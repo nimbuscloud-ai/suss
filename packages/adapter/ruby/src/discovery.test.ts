@@ -781,6 +781,47 @@ describe("discoverUnits: controller actions", () => {
     expect(statuses("index")).toEqual([404, 200]);
   });
 
+  it("binds a helper's keyword or optional status to what the call passes, or else to its default", async () => {
+    const pack = railsTestPack({
+      routesFor: () => [],
+      responseStatusCalls: [
+        { name: "redirect_to", statusKeyword: "status" },
+        { name: "head", statusArgument: 0 },
+      ],
+      statusCodeNames: {
+        found: 302,
+        see_other: 303,
+        unprocessable_entity: 422,
+      },
+    });
+    const units = await discoverActions(
+      [
+        "class OrdersController < ApplicationController",
+        "  def index",
+        "    return go_back(orders_path) if done?",
+        "    return go_back(orders_path, status: :see_other) if moved?",
+        "    refuse",
+        "  end",
+        "  private",
+        "  def go_back(url, status: :found)",
+        "    redirect_to url, status: status",
+        "  end",
+        "  def refuse(status = :unprocessable_entity)",
+        "    head status",
+        "  end",
+        "end",
+      ].join("\n"),
+      pack,
+    );
+    const index = units.find((unit) => unit.identity.name === "index");
+    expect(
+      index?.branches.map((branch) => {
+        const reading = branch.statusCodeReading?.reading;
+        return reading?.kind === "written" ? reading.value : reading?.kind;
+      }),
+    ).toEqual([302, 303, 422]);
+  });
+
   it("keeps a raise of a class the run did not read as a throw a StandardError handler may catch", async () => {
     const pack = railsTestPack({
       routesFor: () => [],
