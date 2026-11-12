@@ -7,6 +7,9 @@ compatibility_date = "2026-01-01"
 [vars]
 GREETING = "hello"
 GREETING_TABLE = "greetings"
+REMOTE_ORIGIN = "https://origin.example.com"
+CAST_ORIGIN = "https://cast.example.com"
+ASSERTED_ORIGIN = "https://asserted.example.com"
 
 [[kv_namespaces]]
 binding = "SESSIONS"

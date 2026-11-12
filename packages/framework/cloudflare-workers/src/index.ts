@@ -41,6 +41,7 @@ export function cloudflareWorkersFramework(
 ): PatternPack {
   return {
     name: "cloudflare-workers",
+    version: "1",
     protocol: "http",
     languages: ["typescript", "javascript"],
 
