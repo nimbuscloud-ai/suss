@@ -1263,7 +1263,7 @@ describe("several values in one question", () => {
     expect(together.get(values[4] as Node)).toBeNull();
   });
 
-  it("costs as many evaluations for every argument as for the two that reach other files", () => {
+  it("costs as many evaluations for every argument as for the ones that reach other files or callers", () => {
     const project = projectOf(FILES);
     const values = argumentsOfRun(project);
     const together = profileEvaluation(() =>
@@ -1272,6 +1272,7 @@ describe("several values in one question", () => {
     const crossingOne = profileEvaluation(() =>
       new ResolutionStore().resolveWrittenValues([
         values[0] as Node,
+        values[3] as Node,
         values[4] as Node,
       ]),
     ).profile.evaluations;
@@ -2589,6 +2590,119 @@ describe("argumentsPassedTo", () => {
         "send",
       ),
     ).toEqual([{ call: "send(payload)", argument: "payload" }]);
+  });
+
+  it("finds a caller written in a function its file does not export", () => {
+    expect(
+      passedTo(
+        {
+          "/wrapper.ts": "export function send(body: unknown) { return body; }",
+          "/one.ts": `
+            import { send } from "./wrapper";
+            const first = () => send("hello");
+            if (process.argv.length > 2) {
+              first();
+            }
+          `,
+        },
+        "send",
+      ),
+    ).toEqual([{ call: 'send("hello")', argument: '"hello"' }]);
+  });
+
+  it("finds a caller in the function's own file", () => {
+    expect(
+      passedTo(
+        {
+          "/wrapper.ts": `
+            export function send(body: unknown) { return body; }
+            function greet() { return send("hello"); }
+            if (process.argv.length > 2) {
+              greet();
+            }
+          `,
+        },
+        "send",
+      ),
+    ).toEqual([{ call: 'send("hello")', argument: '"hello"' }]);
+  });
+});
+
+describe("a value a caller passed, whatever was asked before it", () => {
+  // The caller is a function the file does not export, run from a block
+  // at the top of its file, so nothing the file exports reaches it.
+  const MENU = {
+    "/menu.ts": `
+      export interface MenuActions { openApp: () => void }
+      export function buildMenu(actions: MenuActions) {
+        return [{ label: "Open", click: () => actions.openApp() }];
+      }
+    `,
+    "/main.ts": `
+      import { buildMenu } from "./menu";
+      const showApp = () => { console.log("shown"); };
+      const refreshMenu = () => buildMenu({ openApp: showApp });
+      if (process.argv.length > 2) {
+        setTimeout(() => refreshMenu(), 0);
+      }
+    `,
+  };
+
+  function openAppIn(project: Project): Node {
+    const read = project
+      .getSourceFileOrThrow("/menu.ts")
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .find((node) => node.getText() === "actions.openApp");
+    if (read === undefined) {
+      throw new Error("No actions.openApp in /menu.ts");
+    }
+    return read;
+  }
+
+  /** States the calls `/main.ts` makes outside every function, as a reader of a module's calls does. */
+  function stateModuleCalls(project: Project, store: ResolutionStore): void {
+    const access = store.factAccess();
+    project
+      .getSourceFileOrThrow("/main.ts")
+      .forEachDescendant((node, traversal) => {
+        if (Node.isFunctionLikeDeclaration(node)) {
+          traversal.skip();
+          return;
+        }
+        if (Node.isCallExpression(node)) {
+          access.state(node);
+        }
+      });
+  }
+
+  it("follows a parameter to the argument a caller nothing exports passed", () => {
+    const project = projectOf(MENU);
+    const store = new ResolutionStore();
+
+    expect(resolvedBody(store, openAppIn(project))).toBe(
+      '() => { console.log("shown"); }',
+    );
+  });
+
+  it("gives the same answer after a reader stated the caller's file", () => {
+    const project = projectOf(MENU);
+    const cold = new ResolutionStore();
+    const warm = new ResolutionStore();
+    stateModuleCalls(project, warm);
+
+    expect(resolvedBody(warm, openAppIn(project))).toBe(
+      resolvedBody(cold, openAppIn(project)),
+    );
+  });
+
+  it("says the caller's file went into the answer", () => {
+    const project = projectOf(MENU);
+    const store = new ResolutionStore();
+    const sink = createDependencySink();
+
+    withDependencySink(sink, () => store.resolveCallable(openAppIn(project)));
+
+    expect([...sink.files]).toContain("/main.ts");
   });
 });
 
