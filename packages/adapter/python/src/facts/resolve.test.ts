@@ -93,6 +93,41 @@ describe("resolving a value across files", () => {
     ]);
   });
 
+  it("follows a parameter to what a caller in a function only the script guard runs passed", async () => {
+    const { facts, dir } = await factsFor({
+      "menu.py": [
+        "def build_menu(on_open):",
+        "    return [lambda: on_open()]",
+        "",
+      ].join("\n"),
+      "main.py": [
+        "from menu import build_menu",
+        "",
+        "def show_app():",
+        "    pass",
+        "",
+        "def refresh_menu():",
+        "    build_menu(show_app)",
+        "",
+        'if __name__ == "__main__":',
+        "    refresh_menu()",
+        "",
+      ].join("\n"),
+    });
+
+    const call = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#on_open"));
+    expect(call, "the call was not recorded").toBeDefined();
+    const showApp = facts
+      .facts("func")
+      .map((row) => String(row[0]))
+      .find((key) => key.startsWith(path.join(dir, "main.py")));
+
+    resolveCalls(facts, [String(call?.[1])]);
+    expect(resolvedFunctions(facts, String(call?.[1]))).toEqual([showApp]);
+  });
+
   it("keeps the local name when an import renames what it brings in", async () => {
     const { facts, dir } = await factsFor({
       "source.py": "value = 1\n",
