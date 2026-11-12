@@ -21,10 +21,11 @@ import {
   stringLiteralValue,
 } from "./ast.js";
 import { calleeText } from "./paths/effects.js";
-import { evaluatedValue } from "./values/evaluator.js";
+import { evaluatedValue, resolutionKeyOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { HeardSlot } from "@suss/recognize/ops";
 import type { SqlAccess, SqlPlaceholder } from "@suss/sql";
 import type { Value } from "@suss/values";
 import type { RawSqlPattern } from "./pack.js";
@@ -67,7 +68,7 @@ export function rawSqlEffects(
     for (const access of match.accesses) {
       const effect = effectFor(match, access);
       found.effects.push({ effect, at: match.call });
-      for (const slot of boundSlots(access, match.binds)) {
+      for (const slot of boundSlots(access, match.binds, options.facts)) {
         found.slots.push({ ...slot, effect });
       }
     }
@@ -91,8 +92,12 @@ const SLOT_OF: Record<SqlPlaceholder["clause"], SlotValue["slot"]> = {
   selector: "selector",
 };
 
-/** Each column the statement gives a placeholder, with the value bound to it. */
-function boundSlots(access: SqlAccess, binds: Binds): SlotValue[] {
+/** Each column the statement gives a placeholder, with the key of the value bound to it. */
+function boundSlots(
+  access: SqlAccess,
+  binds: Binds,
+  facts: Database,
+): HeardSlot[] {
   return (access.placeholders ?? []).flatMap((one) => {
     const value =
       typeof one.placeholder === "number"
@@ -100,7 +105,13 @@ function boundSlots(access: SqlAccess, binds: Binds): SlotValue[] {
         : (binds.named.get(one.placeholder) ?? null);
     return value === null
       ? []
-      : [{ slot: SLOT_OF[one.clause], name: one.field, value }];
+      : [
+          {
+            slot: SLOT_OF[one.clause],
+            name: one.field,
+            key: resolutionKeyOf(value, facts),
+          },
+        ];
   });
 }
 

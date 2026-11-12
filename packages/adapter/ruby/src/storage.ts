@@ -14,7 +14,7 @@
 
 import { packRecognizers, runPackRecognizer } from "@suss/extractor";
 import { storageBinding } from "@suss/ir-core";
-import { factCallOps } from "@suss/recognize/ops";
+import { factCallOps, SlotsHeard } from "@suss/recognize/ops";
 import { askResolution, classMemberName } from "@suss/resolution";
 
 import {
@@ -47,12 +47,14 @@ import { compoundName } from "./scope.js";
 import {
   evaluatedValue,
   evaluationScope,
+  resolutionKeyOf,
   stringValueOf,
 } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { PackRecognizer, PackTally } from "@suss/extractor";
+import type { HeardSlot } from "@suss/recognize/ops";
 import type {
   RbArgumentPlace,
   RbLoaderPattern,
@@ -91,7 +93,7 @@ export interface RbStorageOptions {
   /** The pack declarations for calls that take SQL the project wrote itself. */
   readonly rawSql?: readonly RbRawSqlPattern[];
   /** Told the value each effect's columns are given, when somebody listens. */
-  readonly statesSlots?: (effect: Effect, slots: readonly SlotValue[]) => void;
+  readonly statesSlots?: (effect: Effect, slots: readonly HeardSlot[]) => void;
   /** The hooks packs declared with `@suss/recognize`, run over every call in a method. */
   readonly declared?: readonly PackRecognizer[];
 }
@@ -282,6 +284,15 @@ export interface SlotValue {
   slot: "field" | "selector";
   name: string;
   value: RbNode;
+}
+
+/**
+ * The slot with its value given as the key the rules read it at. A
+ * source walk starts from the key, and a declared hook's slots come
+ * with keys only.
+ */
+function keyedSlot(one: SlotValue): HeardSlot {
+  return { slot: one.slot, name: one.name, key: resolutionKeyOf(one.value) };
 }
 
 /** A hash key's name, `id` for each of `id:`, `:id =>` and `"id" =>`. */
@@ -603,7 +614,7 @@ function modelCallEffects(
     if (options.statesSlots !== undefined) {
       const slots = slotsOf(worked, pattern, library.kind, options.facts);
       if (slots.length > 0) {
-        options.statesSlots(access, slots);
+        options.statesSlots(access, slots.map(keyedSlot));
       }
     }
     return [access, ...ran.map((callback) => callbackEffect(callback, worked))];
@@ -742,8 +753,8 @@ function receiverKeysToAsk(
   return keys;
 }
 
-/** One column of one effect, and the value the call passes for it. */
-export interface EffectSlot extends SlotValue {
+/** One column of one effect, and the key the rules read its value at. */
+export interface EffectSlot extends HeardSlot {
   effect: Effect;
 }
 
@@ -813,8 +824,9 @@ function recognizeMethodStorage(
 
 /**
  * What the hooks a pack declared with `@suss/recognize` make of each
- * call, over the ops in `@suss/recognize/ops`. A hook reads only the ops
- * on its context, so it runs here unchanged from TypeScript.
+ * call, over the ops in `@suss/recognize/ops`, telling `statesSlots` the
+ * slots they state about each effect. A hook reads only the ops on its
+ * context, so it runs here unchanged from TypeScript.
  */
 function declaredEffects(
   calls: readonly RbNode[],
@@ -826,17 +838,26 @@ function declaredEffects(
     return [];
   }
   const source = rubyFactSource(options.facts);
+  const { statesSlots } = options;
   return calls.flatMap((call) => {
     const ops = factCallOps(nodeId(file, call), source);
     if (ops === null) {
       return [];
     }
+    const heard = new SlotsHeard();
+    if (statesSlots !== undefined) {
+      Object.assign(ops, { statesSlots: heard.listen });
+    }
     const at = { file, line: rangeOf(call).start };
     return hooks.flatMap((hook) =>
-      (runPackRecognizer(hook, at, call, { ops }) ?? []).map((effect) => ({
-        effect: { ...effect, location: rangeOf(call) },
-        at: call,
-      })),
+      (runPackRecognizer(hook, at, call, { ops }) ?? []).map((effect) => {
+        const located = { ...effect, location: rangeOf(call) };
+        const slots = heard.of(effect);
+        if (statesSlots !== undefined && slots.length > 0) {
+          statesSlots(located, slots);
+        }
+        return { effect: located, at: call };
+      }),
     );
   });
 }

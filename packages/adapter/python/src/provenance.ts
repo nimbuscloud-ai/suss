@@ -83,10 +83,10 @@ export function askFileSources(
     lookup === undefined
       ? []
       : functions.flatMap((fn) =>
-          bodyStorage(fn, lookup).slots.map((one) => one.value),
+          bodyStorage(fn, lookup).slots.flatMap((one) => one.key ?? []),
         );
   askSourceQuestions(facts, keysOf(operands, facts), "wantedInputRead");
-  askSourceQuestions(facts, keysOf(values, facts), "wantedSource");
+  askSourceQuestions(facts, [...new Set(values)], "wantedSource");
 }
 
 /** The statements whose `condition` a body's paths branch on. */
@@ -139,15 +139,15 @@ export function slotProvenance(
   slots: readonly EffectSlot[],
   context: SourceContext,
 ): RawProvenance[] {
-  const found = valueSources(
-    slots.map((one) => one.value),
+  const found = keySources(
+    slots.flatMap((one) => one.key ?? []),
     context,
   );
   return slots.map((one) => ({
     effect: one.effect,
     slot: one.slot,
     name: one.name,
-    from: found.get(one.value) ?? [],
+    from: (one.key === null ? undefined : found.get(one.key)) ?? [],
   }));
 }
 
@@ -157,23 +157,37 @@ export function valueSources(
   context: SourceContext,
   question: SourceQuestion = "wantedSource",
 ): NodeMap<ValueRef[]> {
-  const { facts } = context;
   const keys = new NodeMap<string>();
-  const asked = new Set<string>();
   for (const value of values) {
-    const key = resolutionKeyOf(value, facts);
+    const key = resolutionKeyOf(value, context.facts);
     if (key !== null) {
       keys.set(value, key);
-      asked.add(key);
     }
   }
-  const leaves = sourcesOf(facts, [...asked], question);
-  const spelling = spellingFor(context);
+  const sources = keySources(
+    [...keys].map(([, key]) => key),
+    context,
+    question,
+  );
   const found = new NodeMap<ValueRef[]>();
   for (const [value, key] of keys) {
-    found.set(value, sourceRefsOf(leaves.get(key) ?? [], spelling));
+    found.set(value, sources.get(key) ?? []);
   }
   return found;
+}
+
+/** Where the value at each key came from, asked as one question. */
+function keySources(
+  keys: readonly string[],
+  context: SourceContext,
+  question: SourceQuestion = "wantedSource",
+): Map<string, ValueRef[]> {
+  const asked = [...new Set(keys)];
+  const leaves = sourcesOf(context.facts, asked, question);
+  const spelling = spellingFor(context);
+  return new Map(
+    asked.map((key) => [key, sourceRefsOf(leaves.get(key) ?? [], spelling)]),
+  );
 }
 
 function spellingFor(context: SourceContext): SourceSpelling<SourceLeaf> {

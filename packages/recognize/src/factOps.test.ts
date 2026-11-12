@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { type FactSource, factCallOps, factValueOps } from "./factOps.js";
+import {
+  type FactSource,
+  factCallOps,
+  factValueOps,
+  SlotsHeard,
+} from "./factOps.js";
 import {
   allOf,
   anyOf,
@@ -18,6 +23,7 @@ import {
   typed,
 } from "./ops.js";
 
+import type { Effect } from "@suss/behavioral-ir";
 import type { ReceiverOrigin, ValueOps } from "@suss/extractor";
 
 /**
@@ -414,6 +420,53 @@ describe("factCallOps, where nothing settles", () => {
     expect(opsAt("send").propertyAt(5, "TableName", "nothing")).toBeNull();
     expect(opsAt("send").valueAt(5)).toBeNull();
     expect(opsAt("send").argument(5)).toBeNull();
+  });
+});
+
+describe("SlotsHeard", () => {
+  const effectAt = (callee: string): Effect => ({
+    type: "invocation",
+    callee,
+    args: [],
+    async: false,
+  });
+
+  it("keeps the slots stated about each effect, each value as the key the ops read it at", () => {
+    const heard = new SlotsHeard();
+    const options = opsAt("set").valueAt(1);
+    const ttl = options?.property("ttl");
+    const tags = options?.property("tags");
+    if (ttl == null || tags == null) {
+      throw new Error("the options pass no ttl or no tags");
+    }
+    const set = effectAt("client.set");
+    heard.listen(set, [{ slot: "field", name: "ttl", value: ttl }]);
+    heard.listen(set, [{ slot: "selector", name: "tags", value: tags }]);
+
+    expect(heard.of(set)).toEqual([
+      { slot: "field", name: "ttl", key: "five" },
+      { slot: "selector", name: "tags", key: "tags" },
+    ]);
+    expect(heard.of(effectAt("client.set"))).toEqual([]);
+  });
+
+  it("gives a value the ops did not hand out no key", () => {
+    const heard = new SlotsHeard();
+    const set = effectAt("client.set");
+    const made: ValueOps = {
+      text: () => "5",
+      name: () => null,
+      flag: () => null,
+      entries: () => [],
+      items: () => [],
+      property: () => null,
+      asArg: () => null,
+      parts: () => null,
+      holes: () => [],
+    };
+    heard.listen(set, [{ slot: "field", name: "ttl", value: made }]);
+
+    expect(heard.of(set)).toEqual([{ slot: "field", name: "ttl", key: null }]);
   });
 });
 

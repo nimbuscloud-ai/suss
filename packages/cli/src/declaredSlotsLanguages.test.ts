@@ -4,12 +4,9 @@
  * leaves its slots to what its rules read, one declares them with
  * `.slots()`, and one declares that its calls state none.
  *
- * The TypeScript adapter writes what a compiled hook states as the
- * transition's provenance, so that half reads the summaries. Python and
- * Ruby run a declared hook without listening for its slots, so their
- * summaries say nothing yet, and the test pins that. What the
- * declaration finds is checked in all three languages over each
- * adapter's ops instead.
+ * Each adapter writes what a compiled hook states as the transition's
+ * provenance, so the three languages' summaries must agree. What the
+ * declaration finds is also checked over each adapter's ops.
  */
 
 import fs from "node:fs";
@@ -421,13 +418,13 @@ describe("the slots a declared storage chain states", () => {
     expect(declaredIn(await rubyCalls())).toEqual(found);
   });
 
-  it("leaves every slot out of Python's and Ruby's summaries, which run a declared hook without listening", async () => {
-    const accesses = accessesOf(await typescriptSummaries());
+  it("gives Python's and Ruby's summaries the same slots as TypeScript's", async () => {
+    const typescript = await typescriptSummaries();
 
-    expect(accesses).toHaveLength(6);
+    expect(accessesOf(typescript)).toHaveLength(6);
     for (const summaries of [await pythonSummaries(), await rubySummaries()]) {
-      expect(accessesOf(summaries)).toEqual(accesses);
-      expect(slotsOf(summaries)).toEqual([]);
+      expect(accessesOf(summaries)).toEqual(accessesOf(typescript));
+      expect(slotsOf(summaries)).toEqual(slotsOf(typescript));
     }
   });
 });
