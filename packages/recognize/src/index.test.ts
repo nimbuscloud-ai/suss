@@ -1038,6 +1038,49 @@ describe("a chain read back up its receivers", () => {
       binding: { semantics: { container: null } },
     });
   });
+
+  it("finds a hop more than eight receivers back", () => {
+    let receiver = side;
+    for (let filter = 0; filter < 10; filter += 1) {
+      receiver = callOps({ method: "skip", receiver });
+    }
+    const far = callOps({ method: "track", args: ["1"], receiver });
+
+    const effects = run(
+      chainCalls,
+      callOps({ method: "play", from: ["tapedeck"], receiver: far }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "a" } },
+      interaction: { selector: ["1"] },
+    });
+  });
+
+  it("stops at a call it has passed, when each hop hands back new ops for it", () => {
+    // Fact ops build new ops on every hop, so only the site says that
+    // `x.next()` after `x = x.next()` has come round again.
+    let hops = 0;
+    const next = (): CallOps => {
+      hops += 1;
+      if (hops > 100) {
+        throw new Error("the walk did not stop");
+      }
+      return Object.assign(callOps({ method: "next" }), {
+        site: () => "x.next()",
+        receiver: next,
+      });
+    };
+
+    const effects = run(
+      chainCalls,
+      callOps({ method: "play", from: ["tapedeck"], receiver: next() }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: null } },
+    });
+  });
 });
 
 describe("a chain read out along the calls chained on a result", () => {
@@ -1098,6 +1141,17 @@ describe("a chain read out along the calls chained on a result", () => {
     expect(
       effect?.type === "interaction" && effect.interaction,
     ).not.toHaveProperty("selector");
+  });
+
+  it("reads the columns off a `.where` more than eight calls out", () => {
+    let chained: CallOps = where;
+    for (let join = 0; join < 10; join += 1) {
+      chained = callOps({ method: "leftJoin", chained });
+    }
+
+    expect(run(updates, update(chained))?.[0]).toMatchObject({
+      interaction: { fields: ["*"], selector: ["id"] },
+    });
   });
 
   it("gives up on a call chained back round onto itself", () => {
