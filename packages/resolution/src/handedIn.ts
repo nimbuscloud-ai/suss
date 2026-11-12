@@ -8,7 +8,9 @@
  * read chain off `handedIn(name)` then finds every read off it.
  */
 
-import type { Database } from "@suss/datalog";
+import { askResolution } from "./program.js";
+
+import type { Database, OnDemandRules } from "@suss/datalog";
 
 /** A parameter the platform fills, by its position and the name a read chain asks for it under. */
 export interface HandedInAt {
@@ -39,4 +41,29 @@ export function stateHandedIn(
     }
   }
   return added;
+}
+
+/**
+ * The names of the handed-in parameters the rules followed into the
+ * value at `key`, asked from every parameter stated so far. For an
+ * adapter that states a file's facts before it asks anything, as Python
+ * and Ruby do; a parameter stated later is asked about when it arrives.
+ */
+export function handedNamesReaching(
+  db: Database,
+  key: string,
+  program: OnDemandRules,
+): string[] {
+  const parameters = db.facts("handedIn").map((row) => String(row[0]));
+  if (parameters.length === 0) {
+    return [];
+  }
+  askResolution(db, parameters, "wantedHandedObject", program);
+  return db
+    .lookup("wantedHandedValue", 0, key)
+    .flatMap((row) =>
+      db
+        .lookup("handedIn", 0, String(row[1]))
+        .map((handed) => String(handed[1])),
+    );
 }

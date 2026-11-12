@@ -391,10 +391,14 @@ const MANIFEST: DeclaredDiscoveryPattern = {
 };
 
 const HANDED_TYPESCRIPT = `
-interface Env { GREETING: string; OTHER: string }
+interface Env { GREETING: string; OTHER: string; HELPER: string; LOCAL: string }
+function helper(settings: Env) {
+  return settings.HELPER;
+}
 export default {
   async fetch(request: Request, env: Env) {
-    return env.GREETING;
+    const scoped = env;
+    return env.GREETING + scoped.LOCAL + helper(env);
   },
 };
 export function other(request: Request, env: Env) {
@@ -402,8 +406,13 @@ export function other(request: Request, env: Env) {
 }
 `;
 
-const HANDED_PYTHON = `def serve(request, env):
-    return env.GREETING
+const HANDED_PYTHON = `def helper(settings):
+    return settings.HELPER
+
+
+def serve(request, env):
+    scoped = env
+    return env.GREETING + scoped.LOCAL + helper(env)
 
 
 def other(request, env):
@@ -413,14 +422,24 @@ def other(request, env):
 default = {"fetch": serve}
 `;
 
-const HANDED_RUBY = `def serve(request, env)
-  env.greeting
+const HANDED_RUBY = `def helper(settings)
+  settings.helper
+end
+
+def serve(request, env)
+  scoped = env
+  env.greeting + scoped.local + helper(env)
 end
 
 def other(request, env)
   env.other
 end
 `;
+
+/** The reads each language writes, in its own spelling: off the parameter, off another function's, through a helper, through a local. */
+const HANDED_READS = ["GREETING", "OTHER", "HELPER", "LOCAL"];
+
+const OFF_HANDED_IN = [true, false, true, true];
 
 /** Whether the read of each entry is off the handed-in parameter, by entry. */
 function offHandedIn(
@@ -473,21 +492,25 @@ describe("a parameter the platform fills, in every language", () => {
         store.stateHandedIn(unit.func, unit.handedIn);
       }
     }
-    const [greeting, other] = ["env.GREETING", "env.OTHER"].map(
-      (text) =>
+    const reads = HANDED_READS.map(
+      (entry) =>
         file
           .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
-          .find((node) => node.getText() === text) ?? raise(`no read ${text}`),
-    ) as [PropertyAccessExpression, PropertyAccessExpression];
+          .find((node) => node.getName() === entry) ??
+        raise(`no read of ${entry}`),
+    );
 
     expect(units.map((unit) => unit.name)).toEqual(["fetch"]);
     expect(
-      [greeting, other].map((read) =>
-        readOpsAt(read, store).isOff(handedIn("env")),
+      reads.map((read) => readOpsAt(read, store).isOff(handedIn("env"))),
+    ).toEqual(OFF_HANDED_IN);
+    expect(
+      [reads[0], reads[2]].flatMap((read) =>
+        read === undefined ? [] : envChainReadsAt(read, file, store),
       ),
-    ).toEqual([true, false]);
-    expect(envChainReadsAt(greeting, file, store)).toEqual([
+    ).toEqual([
       ["env.GREETING", "GREETING", false, null],
+      ["env.HELPER", "HELPER", false, null],
     ]);
   });
 
@@ -503,10 +526,7 @@ describe("a parameter the platform fills, in every language", () => {
       stateHandedIn(db, func, unit.handedIn ?? []);
     }
     expect(units.map((unit) => unit.name)).toEqual(["fetch"]);
-    expect(offHandedIn(db, source, ["GREETING", "OTHER"])).toEqual([
-      true,
-      false,
-    ]);
+    expect(offHandedIn(db, source, HANDED_READS)).toEqual(OFF_HANDED_IN);
   });
 
   it("is what a Ruby unit's reads are off", async () => {
@@ -519,9 +539,12 @@ describe("a parameter the platform fills, in every language", () => {
       stateHandedIn(db, func, unit.handedIn ?? []);
     }
     expect(units.map((unit) => unit.name)).toEqual(["fetch"]);
-    expect(offHandedIn(db, source, ["greeting", "other"])).toEqual([
-      true,
-      false,
-    ]);
+    expect(
+      offHandedIn(
+        db,
+        source,
+        HANDED_READS.map((entry) => entry.toLowerCase()),
+      ),
+    ).toEqual(OFF_HANDED_IN);
   });
 });

@@ -184,7 +184,8 @@ handedIn(p, n)              the platform fills the parameter p with an
                             with the env a Worker's fetch is handed. The
                             adapter states it when it claims a unit whose
                             spec lists the parameter. The read ops in
-                            @suss/recognize/ops read it, and no rule does
+                            @suss/recognize/ops read it, and so does the
+                            runtimeObject rule
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
 elementOf(x, over)          the parameter or block variable x is given one
@@ -1300,8 +1301,9 @@ writes to whatever its callers pass. The adapter records
 `process.stderr`, `sys.stdout` or `sys.stderr` in Python, and
 `$stdout`, `STDOUT`, `$stderr` or `STDERR` in Ruby. A spelling that is
 only the receiver of a call, `sys.stdout.write(x)`, hands the stream to
-nobody and is left out. `runtimeObject` is either of the two seeds, so
-`runtimeValue` follows both kinds of object with the same three rules.
+nobody and is left out. `runtimeObject` is either of the two seeds, or
+a parameter with a `handedIn` row, so `runtimeValue` follows all three
+kinds of object with the same three rules.
 `wantedStreamObject` seeds the question from every stream spelling, and
 `wantedStreamValue` hands back every expression a stream reaches. The
 store asks it once per run and keeps the answer, so a recognizer at
@@ -1309,6 +1311,20 @@ store asks it once per run and keeps the answer, so a recognizer at
 a question per call. Python and Ruby ask the same question the first
 time a declared stream write looks a receiver up. Their own stream
 readers still spell the stream at the call.
+
+A parameter the platform fills is followed the same way.
+`wantedHandedObject` seeds the question from every parameter with a
+`handedIn` row, `wantedHandedValue` hands back every expression one
+reaches, and `wantedHandedPassingCall` lists the calls that hand one on,
+whose callees the TypeScript store reads before it asks again. Python
+and Ruby state a file's facts before they ask, so that one question
+covers a read anywhere. The TypeScript store states a local's facts
+only when something reads it, so it asks `wantedHandedName(o, n)` from
+the one expression, the way `wantedEnvironmentValue` is asked, and
+takes a parameter's answer from the forward question, which it asks
+again whenever a claim has stated another parameter. A read chain off
+`handedIn(name)` then reads `settings.X` in a helper the trigger passes
+its bindings to, and `e.X` after `const e = env`.
 
 `wantedEnvValue` is the same answer for the environment, from the
 `wantedEnvObject` seed the TypeScript store already asks once per run.

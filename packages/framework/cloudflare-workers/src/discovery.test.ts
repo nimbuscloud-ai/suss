@@ -148,6 +148,19 @@ beforeAll(() => {
      };`,
   );
   write(
+    "src/passedOn.ts",
+    `interface Env { PASSED: string; LOCAL: string }
+     function originOf(settings: Env) {
+       return settings.PASSED;
+     }
+     export default {
+       async fetch(request: Request, env: Env) {
+         const bindings = env;
+         return new Response(originOf(env) + bindings.LOCAL);
+       },
+     };`,
+  );
+  write(
     "src/nestedListener.ts",
     `export function registerLater(): void {
        addEventListener("fetch", (event: FetchEvent) => {
@@ -383,6 +396,30 @@ describe("envBindingRecognizer", () => {
     expect(new Set(names)).toEqual(
       new Set(["env.CAST_ORIGIN", "env.ASSERTED_ORIGIN"]),
     );
+  });
+
+  it("reads the bindings in a local set to them and in a helper they are passed to", async () => {
+    const reads = inFile(await run("greeting-router"), "passedOn.ts")
+      .map((unit) => [
+        unit.identity.name,
+        [
+          ...new Set(
+            unit.transitions
+              .flatMap((t) => t.effects)
+              .flatMap((e) =>
+                e.type === "interaction" &&
+                e.interaction.class === "config-read"
+                  ? [e.callee]
+                  : [],
+              ),
+          ),
+        ],
+      ])
+      .sort();
+    expect(reads).toEqual([
+      ["fetch", ["env.LOCAL"]],
+      ["originOf", ["env.PASSED"]],
+    ]);
   });
 
   it("reads the bindings of a trigger written in another file", async () => {
