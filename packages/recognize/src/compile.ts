@@ -1996,6 +1996,10 @@ function sqlAccess(matched: Matched): Effect[] | null {
   if (accesses.length === 0) {
     return null;
   }
+  const member: ContainerLink | null = linkIn(chain, "container");
+  if (member !== null && "of" in member) {
+    return [databaseAccess(matched, accesses, memberNamed(subject, member))];
+  }
   const values = placeholderValues(
     stated,
     subject,
@@ -2038,6 +2042,42 @@ function sqlAccess(matched: Matched): Effect[] | null {
     }
     return effect;
   });
+}
+
+/**
+ * One access on the database a statement runs against, for a store
+ * whose contract declares the database and not its tables: a write when
+ * the statement writes any table, else a read, with no fields and no
+ * selector, since the tables are not what the access is on.
+ */
+function databaseAccess(
+  matched: Matched,
+  accesses: readonly { readonly kind: "read" | "write" }[],
+  container: string | null,
+): Effect {
+  const { ops, subject, method, chain, recognition } = matched;
+  const ending = chain.ending as SqlEnding;
+  return {
+    type: "interaction",
+    binding: storageBinding({
+      recognition,
+      storageSystem: systemOf(ending.system, ops),
+      ...(ending.transport === undefined
+        ? {}
+        : { transport: ending.transport }),
+      scope: scopeOf(chain, subject, "nothing") ?? ending.scope,
+      container,
+    }),
+    callee: ops.calleeText(),
+    interaction: {
+      class: "storage-access",
+      kind: accesses.some((access) => access.kind === "write")
+        ? "write"
+        : "read",
+      fields: [],
+      operation: method,
+    },
+  };
 }
 
 const SLOT_OF: Record<SqlPlaceholder["clause"], StatedSlot["slot"]> = {

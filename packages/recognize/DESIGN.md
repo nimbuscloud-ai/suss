@@ -815,7 +815,18 @@ method table, and not two declarations.
 
 The invocation walk never visits a tagged template, so `pack` runs a
 chain with this ending on the access walk. The access walk visits calls
-too, so it also catches the unsafe form.
+too, so it also catches the unsafe form. A client that only ever takes
+its statement as a call's argument can say `walk: "invocation"`, which
+keeps its accesses among the call effects, in the order the calls were
+made, before every effect of the access walk.
+
+A Cloudflare D1 database is declared in `wrangler.toml` by its binding,
+and the contract says nothing about its tables. `.container({ of: [{
+to: "member" }] })` makes the access one per call, on the member the
+call is made on: `env.LEDGER.prepare(sql)` is a read or a write on
+`LEDGER`, a write when the statement writes any table, with no fields
+and no selector. A statement the parser can't find a table in still
+records nothing.
 
 Some libraries accept the statement either as the argument or under a
 key of an options object, and both forms are the same call. The method
