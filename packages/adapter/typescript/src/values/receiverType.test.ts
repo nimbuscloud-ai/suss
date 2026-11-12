@@ -167,6 +167,17 @@ describe("receiverTypesOf without the library's declarations", () => {
     `;
     expect(typesOf(source)).toEqual([]);
   });
+
+  it("reads a local with no type written through what it was set to", () => {
+    const source = `
+      interface Env { ORDERS: OrderStore }
+      declare const env: Env;
+      const orders = env.ORDERS;
+      const again = orders;
+      again.select();
+    `;
+    expect(typesOf(source).map((type) => type.name)).toEqual(["OrderStore"]);
+  });
 });
 
 describe("typedAsExported with a type the runtime declares", () => {
@@ -195,6 +206,8 @@ describe("typedAsExported with a type the runtime declares", () => {
       await env.JOINED.get("d");
       await env.EXTENDED.get("e");
       await env.ARCHIVE?.get("f");
+      const held = env.PLAIN;
+      await held.get("g");
     }
   `;
 
@@ -224,15 +237,17 @@ describe("typedAsExported with a type the runtime declares", () => {
       "env.OPTIONAL",
       "env.JOINED",
       "env.EXTENDED",
+      "held",
     ]);
   });
 
-  it("reads the names written when nothing declares the type", () => {
+  it("reads the names written when nothing declares the type, through a local too", () => {
     expect(receiversTaken(GLOBAL_KV, false)).toEqual([
       "env.PLAIN",
       "env.ALIASED",
       "env.OPTIONAL",
       "env.JOINED",
+      "held",
     ]);
   });
 

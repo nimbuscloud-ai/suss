@@ -256,18 +256,35 @@ function writtenTypesOf(node: Node): ReceiverType[] {
     .map((name) => ({ name, declaredIn: [], extendsWritten: [] }));
 }
 
-function writtenTypeNodesOf(node: Node): Node[] {
+/**
+ * The types written on what the node's name was declared as. A local
+ * with none written has the type of what it was set to, as the checker
+ * would infer it, so `const sessions = env.SESSIONS` is read through
+ * `SESSIONS`.
+ */
+function writtenTypeNodesOf(node: Node, seen = new Set<Node>()): Node[] {
   const peeled = peelSyntax(node);
   const name = Node.isPropertyAccessExpression(peeled)
     ? peeled.getNameNode()
     : peeled;
   const typeNodes: Node[] = [];
   for (const declaration of name.getSymbol()?.getDeclarations() ?? []) {
+    if (seen.has(declaration)) {
+      continue;
+    }
+    seen.add(declaration);
     const typeNode = Node.isTyped(declaration)
       ? declaration.getTypeNode()
       : undefined;
     if (typeNode !== undefined) {
       typeNodes.push(typeNode);
+      continue;
+    }
+    const initializer = Node.isVariableDeclaration(declaration)
+      ? declaration.getInitializer()
+      : undefined;
+    if (initializer !== undefined) {
+      typeNodes.push(...writtenTypeNodesOf(initializer, seen));
     }
   }
   return typeNodes;
