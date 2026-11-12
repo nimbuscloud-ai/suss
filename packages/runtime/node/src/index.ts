@@ -45,7 +45,7 @@ export { streamWriteRecognizers } from "./streamWrites.js";
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.9.0";
+const PACK_VERSION = "0.10.0";
 
 /**
  * The options in a `-f node=config.json` file. The CLI checks the file

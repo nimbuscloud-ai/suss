@@ -529,10 +529,28 @@ function globalNameOf(callee: Node): string | null {
 }
 
 function declaredOnlyByLibraries(name: Node): boolean {
-  const declarations = name.getSymbol()?.getDeclarations() ?? [];
-  return (
-    declarations.length > 0 &&
-    declarations.every((one) => isLibraryDeclarationFile(one.getSourceFile()))
+  const declarations = declarationsOf(name);
+  return declarations.length > 0 && !declaredInProgram(declarations);
+}
+
+/**
+ * Whether the program binds this name itself, to an import or to a
+ * declaration in one of its own files. A local `setTimeout`, or one
+ * imported from a module, is not the runtime's global of that name. A
+ * name nothing declares, as in a project without the runtime's types,
+ * is not bound.
+ */
+export function boundInProgram(name: Node): boolean {
+  return declaredInProgram(declarationsOf(name));
+}
+
+function declarationsOf(name: Node): Node[] {
+  return name.getSymbol()?.getDeclarations() ?? [];
+}
+
+function declaredInProgram(declarations: readonly Node[]): boolean {
+  return declarations.some(
+    (one) => !isLibraryDeclarationFile(one.getSourceFile()),
   );
 }
 
