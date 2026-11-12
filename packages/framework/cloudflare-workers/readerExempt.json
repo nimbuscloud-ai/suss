@@ -1,4 +1,3 @@
 {
-  "src/envBindings.ts": "isTriggerEnvArgument",
-  "src/storeBindings.ts": "declaredInitializer"
+  "src/storeBindings.ts": "declaredInitializer, and isTriggerEnv when the run has no store"
 }

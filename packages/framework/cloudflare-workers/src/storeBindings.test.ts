@@ -326,7 +326,7 @@ describe("storeBindingRecognizer", () => {
     expect(effects.length).toBeGreaterThan(0);
   });
 
-  it("leaves an env argument alone outside a trigger when there is no resolver", () => {
+  it("leaves an env argument alone outside a trigger, or first in one, when there is no resolver", () => {
     const project = createFixtureProject(root, "src/*.ts");
     const sf = project.createSourceFile(
       path.join(root, "src/notATrigger.ts"),
@@ -335,10 +335,14 @@ describe("storeBindingRecognizer", () => {
          async warm(request: Request, env: Env): Promise<void> {
            await env.SESSIONS.get("k");
          },
+         async fetch(env: Env): Promise<void> {
+           await env.SESSIONS.get("first");
+         },
        };`,
     );
     const calls = sf.getDescendants().filter(TsNode.isCallExpression);
     expect(calls.map((call) => storeBindingRecognizer(call, {}))).toEqual([
+      null,
       null,
     ]);
   });

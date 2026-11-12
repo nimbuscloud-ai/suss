@@ -141,6 +141,8 @@ React Router uses it for `loader`, `action` and `default`, and the React pack us
 
 With only `names`, the TypeScript adapter reads it with its own handler. Any other field makes it a declared pattern, which every adapter reads the same way through the module ops: `pattern` takes the exports whose name the regular expression matches, `skipFiles` leaves out files the globs match, and `bodyEndsIn: "element"` keeps only a function one of whose returned values is a JSX element. `members` takes the listed members of the exported object instead of the export itself, each as the unit its `UnitSpec` says, so `names: ["default"]` with `fetch` and `queue` listed finds a Cloudflare Worker's handlers.
 
+A `UnitSpec` can say which of the unit's parameters the platform fills when it calls the unit, with `handedIn: [{ at: 1, name: "env" }]`. The adapter records that on the parameter when it claims the unit, so a read chain off `handedIn("env")` reads `env.GREETING` in the body, whatever the parameter is called.
+
 ### `manifest`
 
 ```typescript
@@ -190,7 +192,9 @@ Every unit is bound as a call of its module under the unit's name, since the fra
 }
 ```
 
-`registeredFunction` finds a function a call in the module body hands to a library, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name as a literal from an argument, and keeps only the names it lists.
+`registeredFunction` finds a function a call in the module body hands to a library, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name from an argument, a literal or a name kept in a const, and keeps only the names it lists.
+
+When the start is a global and there is no `method`, as with `global("addEventListener")`, the call has to be written with the global's name, so a file whose text never writes it is skipped before its calls are read.
 
 ### `fileConvention`
 

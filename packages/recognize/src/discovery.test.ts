@@ -8,7 +8,7 @@ import { Database } from "@suss/datalog";
 
 import { discoverDeclared } from "./discovery.js";
 import { factCallOps, factModuleOps, inheritsFrom } from "./factOps.js";
-import { imported } from "./ops.js";
+import { global, imported } from "./ops.js";
 import { describeDiscovery } from "./pack.js";
 
 import type {
@@ -497,6 +497,41 @@ describe("registeredFunction", () => {
         handler: { at: 1 },
       }),
     ).toEqual([]);
+  });
+
+  it("asks for no call in a file whose text never writes the global it calls", () => {
+    const source: FactSource = {
+      ...moduleFacts([
+        ["call", "listen", "addEventListener"],
+        ["callArg", "listen", "0", "fetchName"],
+        ["callArg", "listen", "1", "serve"],
+      ]),
+      callsGlobal: (call, path) =>
+        call === "listen" && path === "addEventListener",
+    };
+    const asked: string[] = [];
+    const moduleWriting = (written: boolean): ModuleOps =>
+      factModuleOps(FILE, source, {
+        calls: () => {
+          asked.push("calls");
+          const ops = factCallOps("listen", source);
+          return ops === null ? [] : [ops];
+        },
+        mentions: (word) => written && word === "addEventListener",
+      });
+    const listener: DeclaredDiscoveryMatch = {
+      type: "registeredFunction",
+      start: global("addEventListener"),
+      handler: { at: 1 },
+      nameAt: { at: 0, named: { fetch: { kind: "handler", name: "fetch" } } },
+    };
+
+    expect(found(listener, moduleWriting(false))).toEqual([]);
+    expect(asked).toEqual([]);
+    expect(found(listener, moduleWriting(true))).toEqual([
+      "handler fetch serve -",
+    ]);
+    expect(asked).toEqual(["calls"]);
   });
 });
 

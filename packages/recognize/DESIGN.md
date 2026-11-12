@@ -293,7 +293,7 @@ the same way:
 |---|---|
 | `entry()` | `readsProperty(x, o, n)` or `readsEntry(x, o, n)` gives `n`, and `readsKeyed(x, o, k)` gives null. At a site the facts state none of the three at, it is undefined and a chain doesn't match |
 | `isOff(global)`, `objectPath(paths)` | the adapter's `spellsGlobal` on the object the site reads off, or else `globalsReaching` on it. TypeScript follows the environment objects there through `wantedEnvValue`, so `env.PORT` is off `process.env` when `env` is a parameter that defaults to it or a caller hands it. The adapter's `objectOf` gives the object without stating the site, and the rows above give it otherwise |
-| `isOff(handedIn)` | false, since no adapter states which parameter a platform fills yet |
+| `isOff(handedIn)` | `handedIn(p, n)` on the object the site reads off, which is how Python and Ruby key a parameter's reads, or on what a `binds` row takes that object to, which is how TypeScript does. A run that states no `handedIn` row under the name stops at the first lookup |
 | `readsOff()` | the adapter's `readsOff`: in TypeScript, the element read `o[k]` or the binding elements of `const { A } = o` when the site is `o`, stated as they are asked. Python and Ruby visit those sites themselves and leave it unset |
 | `defaulted()`, `fallback()` | the adapter's `defaultedAt` and `fallbackOf`, each its own walk over the syntax. What counts as coping with a missing value is the language's |
 | `assigned()` | `assigns(x, v)`: the site is the left side of a plain `=` and `v` the value written on the right |
@@ -334,6 +334,22 @@ module ops from these facts:
 | `marked(word)` | `marks(file, word)`, once the adapter's `mentions(word)` says the file's text has the word |
 | `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it. It asks `mentions(word)` first, since stating every function of every file to find a word most files never write costs more than the rest of a run |
 | `calls()` | the calls the adapter lists outside every function body, each as the fact ops for it |
+| `mentions(word)` | the adapter's own `mentions`, which in TypeScript looks for the word in the file's text. Python and Ruby leave it unset, and the module ops then say yes |
+
+`registeredFunction` with a global start and no method asks
+`mentions` for each of the start's paths before it lists the calls. A
+call to a global is written with the global's own name, so a file
+whose text has none of them makes no such call, and listing the module
+body's calls states facts for every one of them. A method on a global
+can be called through a variable imported from another file, so that
+form is always read.
+
+A unit spec's `handedIn` lists the parameters the platform fills when
+it calls the unit, by position and the name a read chain asks for each
+under. When an adapter claims a unit, before it reads the body, it
+states `handedIn(p, name)` on the parameter at each position, with
+`stateHandedIn` in `@suss/resolution`. A read chain off
+`handedIn(name)` then finds the reads in the body.
 
 Each reader ends at `function()` and hands the adapter back its own
 node. The TypeScript adapter runs a pattern like any other in its
@@ -1069,7 +1085,16 @@ runtimeReads({ object: global("process.env"), deployment })
 runtimeReads({ object: global("process") })
   .entries({ argv: { reads: "config", named: "argv", callee: "site" }, cwd: META })
   .writes({ exitCode: { changes: "state" } });
+
+runtimeReads({ object: handedIn("env"), deployment })
+  .entries({}, { reads: "config" });
 ```
+
+The object is a global the source spells, or `handedIn(name)`, a
+parameter the platform fills when it calls a unit, as a Worker's
+trigger is handed its bindings. A dotted callee spells a handed-in
+object by its name, so `settings.GREETING` reads as `env.GREETING`
+whatever the project calls the parameter.
 
 `entries` says what a read of each entry is: a config read, which pairs
 against whatever declares the entry, a metadata read, which records

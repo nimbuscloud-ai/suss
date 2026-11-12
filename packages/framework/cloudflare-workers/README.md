@@ -22,6 +22,8 @@ const pack = cloudflareWorkersFramework();
 
 Each property Cloudflare calls becomes one unit. When a property's value is a function written somewhere else, the pack follows it to that function, so a service that keeps its handler in its own file is still read. The older `addEventListener("fetch", handler)` form registers the same triggers and comes out as the same units. The pack reads a registration the module body makes, outside every function, and reads an event name kept in a const. A file that registers one trigger both ways, on two functions, gets a unit for each.
 
+Both forms are declared patterns: a [`namedExport`](../../../docs/packs/patterns.md#namedexport) with `names: ["default"]` and the four triggers as its `members`, and a [`registeredFunction`](../../../docs/packs/patterns.md#registeredfunction) on the global `addEventListener`. Neither states an import, since a Worker imports nothing to be one, so the pack reads every file.
+
 ## One boundary for the whole Worker
 
 A Worker usually routes inside `fetch`, on `new URL(request.url).pathname`, with an `if` chain or a switch. Nothing in the code declares those paths as routes, and the route the Worker is bound to (`example.com/*`) is set in `wrangler.toml` or in the deployment's Terraform.
@@ -55,7 +57,7 @@ async fetch(request: Request, env: Env) {
 }
 ```
 
-A read from that argument becomes a `config-read` interaction, the same one `@suss/runtime-node` records for `process.env.X`, so the runtime-config check pairs it with whatever declares the variable. A read with a fallback, such as `env.TIMEOUT_MS ?? "500"`, records the fallback as its default when it settles to one value. The pack finds the argument by resolving the identifier back to its declaration and checking whether that parameter belongs to a trigger. So a project that calls it something other than `env` is read the same way, and so is a trigger written in another file and imported into the entrypoint.
+A read from that argument becomes a `config-read` interaction, the same one `@suss/runtime-node` records for `process.env.X`, so the runtime-config check pairs it with whatever declares the variable. A read with a fallback, such as `env.TIMEOUT_MS ?? "500"`, records the fallback as its default when it settles to one value. Each trigger's unit says that its second parameter is the bindings, with `handedIn`, and the adapter records that on the parameter when it claims the unit. The pack's read chain is off `handedIn("env")`, so a project that calls the parameter something other than `env` is read the same way, and so is a trigger written in another file and imported into the entrypoint. Every read is spelled `env.<name>`, whatever the parameter is called.
 
 ## Store calls on a binding
 
@@ -82,4 +84,4 @@ For KV and R2, the key an operation addresses is recorded as the selector. A D1 
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor` for the pack type, `@suss/behavioral-ir` for the bindings it writes, `@suss/adapter-typescript` for reading names, and `@suss/sql` for classifying a D1 statement. `@suss/contract-wrangler` declares the other side: the variables the Worker is given, the queues it produces to and consumes from, and the stores it is bound to.
+The pack depends on `@suss/extractor` for the pack type, `@suss/recognize` for the trigger patterns and the env chain, `@suss/behavioral-ir` for the bindings it writes, `@suss/adapter-typescript` for reading names, and `@suss/sql` for classifying a D1 statement. `@suss/contract-wrangler` declares the other side: the variables the Worker is given, the queues it produces to and consumes from, and the stores it is bound to.
