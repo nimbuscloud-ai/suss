@@ -84,6 +84,52 @@ describe("where a value is declared", () => {
     ]);
   });
 
+  it("follows a member read off an object a module writes out, written with type arguments too, through the value ops", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/internal/CardRoot.tsx",
+      "export const CardRoot = (props: { title: string }) => null;",
+    );
+    project.createSourceFile(
+      "/internal/SliderRoot.tsx",
+      "export function SliderRoot<T>(props: { value: T }) { return null; }",
+    );
+    project.createSourceFile(
+      "/card.ts",
+      [
+        'import { CardRoot } from "./internal/CardRoot";',
+        'import { SliderRoot } from "./internal/SliderRoot";',
+        "export const Card = { Root: CardRoot };",
+        "export const Slider = { Root: SliderRoot };",
+      ].join("\n"),
+    );
+    const file = project.createSourceFile(
+      "/use.tsx",
+      [
+        'import { Card, Slider } from "./card";',
+        "use({ card: Card.Root, slider: Slider.Root<number>, missing: Card.Missing });",
+      ].join("\n"),
+    );
+    const store = new ResolutionStore();
+    const [call] = file.getDescendantsOfKind(SyntaxKind.CallExpression);
+    const written =
+      call === undefined
+        ? null
+        : factCallOps(statedFactKey(call, store), factSourceFor(store))
+            ?.valueAt(0)
+            ?.object?.();
+
+    expect(
+      ["card", "slider", "missing"].map(
+        (name) => written?.property(name)?.declaration?.() ?? null,
+      ),
+    ).toEqual([
+      { file: "/internal/CardRoot.tsx", name: "CardRoot" },
+      { file: "/internal/SliderRoot.tsx", name: "SliderRoot" },
+      null,
+    ]);
+  });
+
   it("is what the value ops over the fact source say, beside the JSX a function writes", () => {
     const project = createTestProject();
     project.createSourceFile(

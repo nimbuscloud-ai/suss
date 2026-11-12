@@ -7,7 +7,7 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
-import { factReadOps } from "@suss/recognize/ops";
+import { factReadOps, factValueOps } from "@suss/recognize/ops";
 
 import {
   scalarValueOf,
@@ -152,8 +152,17 @@ export function factSourceFor(
     textOf: (key) => at(key, "", (node) => node.getText()),
     lineOf: (key) => at(key, null, (node) => node.getStartLineNumber()),
     elementsOf: (func) => at(func, [], (node) => store.elementsWrittenIn(node)),
+    // `Slider.Root<number>` is declared where `Slider.Root` is, a member
+    // the value ops follow themselves, so its expression is asked whole.
     declarationOf: (key) =>
-      at(key, null, (node) => declarationBehind(node, store)),
+      at(key, null, (node) =>
+        Node.isExpressionWithTypeArguments(node)
+          ? (factValueOps(
+              hold(node.getExpression()),
+              factSourceFor(store, originatesFrom, { ...options, held }),
+            ).declaration?.() ?? null)
+          : declarationBehind(node, store),
+      ),
     formOf: (key) => at(key, "other", valueFormOf),
     literalOf: (key) => at(key, null, literalOf),
     nameOf: (key, unsettled) =>
