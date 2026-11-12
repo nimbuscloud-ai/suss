@@ -23,8 +23,8 @@ import {
 
 import {
   declarationsBehind,
-  exportedValuesOf,
   findNearestTsconfig,
+  moduleOpsFor,
   projectPlaceOf,
   ResolutionStore,
   symbolBehind,
@@ -32,8 +32,8 @@ import {
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
+import { discoverEntryObject } from "@suss/recognize";
 
-import type { ExportedValue } from "@suss/adapter-typescript";
 import type {
   BehavioralSummary,
   BoundaryBinding,
@@ -41,7 +41,12 @@ import type {
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { ValueOps } from "@suss/recognize";
+import type {
+  EntryMember,
+  EntryObject,
+  EntryObjectMatch,
+  ValueOps,
+} from "@suss/recognize";
 import type { AstCapableValueOps } from "@suss/recognize/ast";
 
 export interface StorybookStubOptions {
@@ -58,6 +63,18 @@ export interface StorybookStubOptions {
    */
   componentModules?: boolean;
 }
+
+/**
+ * A CSF file: the default export is the meta, which says the component,
+ * and every named export that comes to an object is a story. Each story's
+ * args go over the meta's.
+ */
+const STORIES: EntryObjectMatch = {
+  type: "entryObject",
+  entry: "default",
+  target: "component",
+  inputs: "args",
+};
 
 /**
  * Reads `.stories.ts` and `.stories.tsx` files and returns one summary per
@@ -83,15 +100,15 @@ export function generateSummariesFromStories(
         storyFile,
         options.projectRoot ?? defaultProjectRoot(storyFile),
       );
-      const exported = exportedValuesOf(sf, resolution);
-      const meta = extractMeta(exported, componentModules);
-      if (meta === null) {
+      const found = discoverEntryObject(STORIES, moduleOpsFor(sf, resolution));
+      if (found === null) {
         continue;
       }
+      const meta = metaOf(found, componentModules);
       byFile.set(
         sf.getFilePath(),
-        extractStories(exported, meta).map((story) =>
-          buildSummary(story, meta, relPath),
+        found.members.map((member) =>
+          buildSummary(storyOf(member, meta), meta, relPath),
         ),
       );
     }
@@ -158,8 +175,6 @@ interface MetaInfo {
   componentName: string;
   componentModule: ComponentModule | undefined;
   componentImport: string | undefined;
-  /** Args on the default export, which Storybook gives every story in the file. */
-  args: Record<string, string>;
   argReaders: ArgReader[];
   /** What the meta's render function passes the component, from `renderPropsOf`. */
   renderProps: string[] | null;
@@ -267,30 +282,18 @@ interface ComponentModule {
   name: string;
 }
 
-function extractMeta(
-  exported: Map<string, ExportedValue[]>,
-  componentModules: boolean,
-): MetaInfo | null {
-  for (const { value } of exported.get("default") ?? []) {
-    const meta = value.object?.() ?? null;
-    const component = meta?.property("component") ?? null;
-    if (meta === null || component === null) {
-      continue;
-    }
-    const componentName = textOf(component);
-    return {
-      componentName,
-      componentModule: componentModules
-        ? declaredModuleOf(nodeBehind(component))
-        : undefined,
-      componentImport: component.importedFrom?.() ?? undefined,
-      args: argsOf(meta),
-      argReaders: argReadersOf(meta),
-      renderProps: renderPropsOf(meta, componentName),
-    };
-  }
-
-  return null;
+function metaOf(found: EntryObject, componentModules: boolean): MetaInfo {
+  const { entry: meta, target: component } = found;
+  const componentName = textOf(component);
+  return {
+    componentName,
+    componentModule: componentModules
+      ? declaredModuleOf(nodeBehind(component))
+      : undefined,
+    componentImport: component.importedFrom?.() ?? undefined,
+    argReaders: argReadersOf(meta),
+    renderProps: renderPropsOf(meta, componentName),
+  };
 }
 
 /**
@@ -367,57 +370,36 @@ interface StoryInfo {
   line: number;
 }
 
-function extractStories(
-  exported: Map<string, ExportedValue[]>,
-  meta: MetaInfo,
-): StoryInfo[] {
-  const results: StoryInfo[] = [];
-
-  // Any named export that resolves to an object literal counts as a story.
-  // The `Story` type annotation is never checked.
-  for (const [name, values] of exported) {
-    if (name === "default") {
-      continue;
-    }
-    for (const { value, line } of values) {
-      const story = value.object?.() ?? null;
-      if (story === null) {
-        continue;
-      }
-
-      // A story's own arg, or its own render function, replaces the meta's.
-      const ownReaders = argReadersOf(story);
-      results.push({
-        name,
-        args: { ...meta.args, ...argsOf(story) },
-        argReaders: ARG_READERS.filter(
-          (reader) =>
-            meta.argReaders.includes(reader) || ownReaders.includes(reader),
-        ),
-        renderProps: ownReaders.includes("render")
-          ? renderPropsOf(story, meta.componentName)
-          : meta.renderProps,
-        line,
-      });
-    }
-  }
-
-  return results;
+/**
+ * Any named export that comes to an object is a story. The `Story` type
+ * annotation is never checked. A story's own render function replaces
+ * the meta's.
+ */
+function storyOf(member: EntryMember, meta: MetaInfo): StoryInfo {
+  const ownReaders = argReadersOf(member.value);
+  return {
+    name: member.name,
+    args: argsOf(member.inputs),
+    argReaders: ARG_READERS.filter(
+      (reader) =>
+        meta.argReaders.includes(reader) || ownReaders.includes(reader),
+    ),
+    renderProps: ownReaders.includes("render")
+      ? renderPropsOf(member.value, meta.componentName)
+      : meta.renderProps,
+    line: member.line ?? 0,
+  };
 }
 
 /**
- * The `args` of a story or of the meta. An arg that evaluates to a string
- * gives that string, so a constant or a template gives the same value as
- * a quoted literal. Anything else, such as a number, JSX or a method,
- * keeps its source text.
+ * A story's args, the meta's under its own. An arg that evaluates to a
+ * string gives that string, so a constant or a template gives the same
+ * value as a quoted literal. Anything else, such as a number, JSX or a
+ * method, keeps its source text.
  */
-function argsOf(storyOrMeta: ValueOps): Record<string, string> {
+function argsOf(inputs: EntryMember["inputs"]): Record<string, string> {
   const args: Record<string, string> = {};
-  const object = storyOrMeta.property("args")?.object?.() ?? null;
-  for (const { key, value } of object?.entries("nothing") ?? []) {
-    if (key === null) {
-      continue;
-    }
+  for (const { key, value } of inputs) {
     const settled = value.evaluated?.() ?? null;
     args[key] = typeof settled === "string" ? settled : textOf(value);
   }

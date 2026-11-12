@@ -94,10 +94,6 @@ export {
   isImportedFrom,
   methodDeclaredIn,
 } from "./resolve/invocationEffects.js";
-export {
-  type ExportedValue,
-  exportedValuesOf,
-} from "./resolve/opsOverFacts.js";
 export { GENERIC_TERMINALS } from "./resolve/reachableClosure.js";
 export { type ReadNameOptions, readName } from "./resolve/readName.js";
 export { helperCalleeOf } from "./resolve/suppliedKeys.js";
