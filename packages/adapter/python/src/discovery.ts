@@ -24,7 +24,7 @@ import {
   walkDescendants,
   writtenReading,
 } from "@suss/extractor";
-import { constantOf, literalOf, pathOf } from "@suss/values";
+import { constantOf, literalOf, pathOf, takenOverUnread } from "@suss/values";
 
 import {
   aliasValueOf,
@@ -789,6 +789,9 @@ function statusFromReturnedValue(
     return null;
   }
   const value = evaluatedValue(node, facts);
+  if (takenOverUnread(value)) {
+    return null;
+  }
   const number = constantOf(value);
   if (typeof number === "number") {
     return Number.isInteger(number) ? number : null;

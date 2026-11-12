@@ -17,6 +17,7 @@ import {
   type Piece,
   type Range,
   string,
+  takenOverUnread,
   textPiece,
   unbounded,
   type Value,
@@ -28,7 +29,8 @@ export function join(left: Value, right: Value): Value {
   const a = force(left);
   const b = force(right);
   if (sameValue(a, b)) {
-    return a;
+    // A default taken over an unread value on either side keeps its mark.
+    return takenOverUnread(b) ? b : a;
   }
   if (a.kind === "hole") {
     return a;

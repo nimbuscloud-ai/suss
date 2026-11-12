@@ -12,7 +12,7 @@
  * called `abort` is not mistaken for Flask's.
  */
 
-import { constantOf } from "@suss/values";
+import { settledConstantOf } from "@suss/values";
 
 import { children, field, rangeOf, stringLiteralValue } from "../ast.js";
 import {
@@ -53,7 +53,7 @@ export function statusNumberOf(
   node: PyNode,
   options: Pick<RaisedResponseOptions, "module" | "facts" | "constants">,
 ): number | null {
-  const value = constantOf(evaluatedValue(node, options.facts));
+  const value = settledConstantOf(evaluatedValue(node, options.facts));
   if (typeof value === "number") {
     return value;
   }

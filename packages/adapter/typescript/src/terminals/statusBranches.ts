@@ -16,7 +16,7 @@
 
 import { Node } from "ts-morph";
 
-import { constantOf } from "@suss/values";
+import { settledConstantOf } from "@suss/values";
 
 import { writesToBinding } from "../facts/assignments.js";
 import { evaluatedValue } from "../values/evaluator.js";
@@ -100,6 +100,6 @@ function numberOf(
   node: TsNode,
   resolution: ResolutionStore | undefined,
 ): number | null {
-  const value = constantOf(evaluatedValue(node, resolution));
+  const value = settledConstantOf(evaluatedValue(node, resolution));
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

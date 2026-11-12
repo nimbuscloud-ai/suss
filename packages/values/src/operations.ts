@@ -15,6 +15,7 @@ import {
   hole,
   holePiece,
   literalOf,
+  overUnread,
   type Piece,
   string,
   text,
@@ -249,7 +250,7 @@ export function readableFallback(
   const left = force(a);
   const right = force(b);
   if (left.kind === "hole") {
-    return right;
+    return overUnread(right);
   }
   if (right.kind === "hole") {
     return left;

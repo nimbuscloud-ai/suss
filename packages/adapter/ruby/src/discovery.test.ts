@@ -993,6 +993,37 @@ describe("discoverUnits: controller actions", () => {
     ).toEqual(["unreadable"]);
   });
 
+  it("claims a status written `x || n` only when x reads as absent", async () => {
+    const pack = railsTestPack({
+      routesFor: () => [],
+      responseStatusCalls: [{ name: "head", statusArgument: 0 }],
+    });
+    const units = await discoverActions(
+      [
+        "class OrdersController < ApplicationController",
+        "  def index",
+        "    return head(lookup_status || 500) if failed?",
+        "    return render_error(message: 'gone', status: 410) if gone?",
+        "    head(nil || 404)",
+        "  end",
+        "  private",
+        "  def render_error(arg)",
+        "    status = arg[:status] || 500",
+        "    head status",
+        "  end",
+        "end",
+      ].join("\n"),
+      pack,
+    );
+    const index = units.find((unit) => unit.identity.name === "index");
+    expect(
+      index?.branches.map((branch) => {
+        const reading = branch.statusCodeReading?.reading;
+        return reading?.kind === "written" ? reading.value : reading?.kind;
+      }),
+    ).toEqual(["unreadable", "unreadable", 404]);
+  });
+
   it("discovers every instance method a controller defines directly, routed or not", async () => {
     const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +
