@@ -13,6 +13,7 @@
 import { Node as N } from "ts-morph";
 
 import {
+  peelValue,
   propertyFunctionOf,
   propertyNameOf,
   readName,
@@ -223,8 +224,8 @@ function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
   if (!N.isPropertyAccessExpression(receiver)) {
     return null;
   }
-  const env = receiver.getExpression();
-  if (!N.isIdentifier(env) || !isTriggerEnv(env, reading.resolution)) {
+  const env = peelValue(receiver.getExpression());
+  if (!isTriggerEnv(env, reading.resolution)) {
     return null;
   }
   const stores = storesTypedOn(receiver);
@@ -232,18 +233,22 @@ function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
 }
 
 /**
- * Whether a name refers to the bindings a trigger is handed, which the
- * adapter records on the parameter when it claims the trigger's unit.
- * Without the run's store, only a trigger written into the entrypoint
- * object is known, since accepting more would treat every second
- * parameter in the file as bindings.
+ * Whether a value is the bindings a trigger is handed, which the adapter
+ * records on the parameter when it claims the trigger's unit: the
+ * parameter itself, or a local or a helper's parameter the rules follow
+ * it into, as the env reads are found. Without the run's store, only a
+ * trigger written into the entrypoint object is known, since accepting
+ * more would treat every second parameter in the file as bindings.
  */
 function isTriggerEnv(
   env: Node,
   resolution: ResolutionStore | undefined,
 ): boolean {
   if (resolution !== undefined) {
-    return resolution.refersToHandedIn(env, ENV);
+    return (
+      resolution.refersToHandedIn(env, ENV) ||
+      resolution.handedReaching(env).has(ENV)
+    );
   }
   return (env.getSymbol()?.getDeclarations() ?? []).some(
     (declaration) =>
