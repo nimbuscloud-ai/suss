@@ -1376,6 +1376,7 @@ export type {
   ClassOps,
   ClassValueOps,
   ConstructedFrom,
+  Declaration,
   DeclaredBy,
   Decoded,
   ElementOps,

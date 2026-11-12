@@ -32,6 +32,7 @@ import type {
   CallsAndOptions,
   ClassValueOps,
   ConstructedFrom,
+  Declaration,
   DeclaredBy,
   Decoded,
   EffectArg,
@@ -1073,6 +1074,12 @@ class FactValue implements ValueOps {
     return func === null ? null : parameterPosition(this.key, func, this.facts);
   }
 
+  declaration(): Declaration | null {
+    return this.facts.declarationOf === undefined
+      ? declarationInFacts(this.key, this.facts, new Set())
+      : this.facts.declarationOf(this.key);
+  }
+
   private holeKeys(): string[] {
     return templatePieces(this.shaped(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],
@@ -1126,6 +1133,61 @@ class FactElement implements ElementOps {
  * declaration the name binds to, or the parameter whose destructure has
  * that declaration as its rest. Null when it is none, or more than one.
  */
+/**
+ * Where the value at `key` is declared, for an adapter that states every
+ * fact up front: through `imports` to what the module exports, or else the
+ * `exportsAs` row of the value or what it `binds` to in its own file.
+ */
+function declarationInFacts(
+  key: string,
+  source: FactSource,
+  seen: Set<string>,
+): Declaration | null {
+  if (seen.has(key)) {
+    return null;
+  }
+  seen.add(key);
+  const imported = source.db.lookup("imports", 0, key);
+  if (imported.length > 0) {
+    return importedDeclaration(imported, source, seen);
+  }
+  for (const declared of [
+    key,
+    ...source.db.lookup("binds", 0, key).map((row) => String(row[1])),
+  ]) {
+    const [row] = source.db.lookup("exportsAs", 2, declared);
+    if (row !== undefined) {
+      return { file: String(row[0]), name: String(row[1]) };
+    }
+  }
+  return null;
+}
+
+/**
+ * What one of the modules a name was imported from exports under the
+ * imported name. A module that imports that name in turn passes it on,
+ * and the module that writes it is the declaration.
+ */
+function importedDeclaration(
+  imported: readonly (readonly unknown[])[],
+  source: FactSource,
+  seen: Set<string>,
+): Declaration | null {
+  for (const [, module, name] of imported) {
+    const exported = source.db
+      .lookup("exportsAs", 0, String(module))
+      .find((row) => row[1] === name);
+    if (exported === undefined) {
+      continue;
+    }
+    const value = String(exported[2]);
+    return source.db.lookup("imports", 0, value).length > 0
+      ? declarationInFacts(value, source, seen)
+      : { file: String(module), name: String(name) };
+  }
+  return null;
+}
+
 function parameterPosition(
   key: string,
   func: string,

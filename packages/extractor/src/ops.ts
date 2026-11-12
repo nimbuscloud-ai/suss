@@ -417,6 +417,15 @@ export interface ValueOps {
    * other value.
    */
   parameterAt?(fn: ValueOps): number | null;
+  /**
+   * Where this value is declared under a name: the file, and the name of
+   * the variable, function or class, followed through imports, renames and
+   * re-exports to the module that writes it. The name is null for a value
+   * declared with no name of its own, such as an anonymous default export.
+   * Null when no declaration in the run is behind it, such as an import
+   * from a package that is not installed.
+   */
+  declaration?(): Declaration | null;
   /** The class this value settles to, as a discovery pattern asks about one. Null when it is not a class. */
   asClass?(): ClassValueOps | null;
   /**
@@ -454,6 +463,12 @@ export interface ValueOps {
 export interface CallsAndOptions {
   readonly calls: readonly string[];
   readonly options: readonly string[];
+}
+
+/** A file, and the name a value is declared under there. */
+export interface Declaration {
+  readonly file: string;
+  readonly name: string | null;
 }
 
 /** A JSX element a function writes, as a reader asks which props it passes. */
@@ -991,6 +1006,13 @@ export interface FactSource {
    * and `jsxChild` rows stated. Unset in a language that writes no JSX.
    */
   elementsOf?(func: string): readonly string[];
+  /**
+   * Where the value at the key is declared, as `ValueOps.declaration`
+   * says, for an adapter that states a module's exports on demand. Unset
+   * reads it from `imports`, `exportsAs` and `binds`, which an adapter
+   * that states every fact up front has already stated.
+   */
+  declarationOf?(key: string): Declaration | null;
   /** How the source wrote the value at the key, as `ValueOps.form` says. Unset reads every value as other. */
   formOf?(key: string): ValueForm;
   /** The string, number or boolean written at the key, or null when it is not one. */
