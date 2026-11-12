@@ -1363,6 +1363,7 @@ export type {
   PackTally,
 } from "./extractionReport.js";
 export type {
+  AllOf,
   AnyOf,
   AstCapableOps,
   AstCapableValueOps,
@@ -1387,6 +1388,7 @@ export type {
   ModuleMemberName,
   ModuleOps,
   OpsCarrier,
+  ReadOff,
   ReadOps,
   ReadOpsCarrier,
   ReceiverOrigin,

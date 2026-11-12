@@ -46,6 +46,8 @@ The starts that begin at a receiver form their own union,
 | `declaredBy` | a receiver whose method one of these modules declared | yes |
 | `constructed` | a client made from one of these modules' exports | yes |
 | `anyOf` | a receiver any one of several origins accepts | yes |
+| `allOf` | a receiver every one of several origins accepts, asked in order | yes |
+| `readOff` | a member read off a runtime object: `env.SESSIONS` off the `env` a Worker is handed | yes |
 | `returnedBy` | what a library method returned, called on a receiver from another origin: `hook.get_client()` | yes |
 | `typed` | a receiver the program declares as one of a module's named types, `to: CommandDispatcher`, or as any type the module declares when no name is given | yes |
 | `inherits` | a receiver of a class whose ancestry reaches a library base: `class PrismaService extends PrismaClient` | yes |
@@ -110,6 +112,18 @@ gives the callback a client for the transaction as its first
 parameter. The callback is the call's first argument, a function
 written there or passed by a name bound to it, or a Ruby call's block,
 and the call has to go to `method` on a receiver `on` accepts.
+
+`readOff(object)` takes a receiver that is a member read off a
+`RuntimeObject`, the object a read chain starts from. A Worker's
+bindings arrive in `env`, so `env.SESSIONS.get(key)` is made on a
+member read off `handedIn("env")`. The receiver is asked the way a read
+site is, so a local set to `env`, a helper's parameter `env` is passed
+to, and a cast around it all count, and a member put in a local first,
+`const sessions = env.SESSIONS`, is followed through its declaration.
+Which store a binding is comes from its type, so the Workers pack writes
+`allOf(readOff(handedIn("env")), typed({ from: [GLOBAL_MODULE], named:
+["KVNamespace"] }))`. `allOf` asks its origins in order and stops at the
+first that refuses, so a pack lists the cheap one first.
 
 `imported({ from, named })` takes a value the file brought in: a
 function it calls bare, or a module or a class it calls a method on.

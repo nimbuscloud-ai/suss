@@ -4,14 +4,17 @@ import { astLink } from "./ast.js";
 import { examplesMissing, runExamples } from "./example.js";
 import { messageSends } from "./messageSends.js";
 import {
+  allOf,
   anyOf,
   constructedFrom,
   declaredBy,
   handedBy,
+  handedIn,
   imported,
   inherits,
   modulesOf,
   opsIn,
+  readOff,
   returnedBy,
   typed,
 } from "./ops.js";
@@ -1975,6 +1978,18 @@ describe("a pack that reads more files than its chains match in", () => {
       .example('deck.get("side_a:1")');
 
     expect(packOf(either).requiresImport).toEqual(["tapedeck", "player"]);
+  });
+
+  it("gates on the modules allOf mentions, and none for a read off a runtime object", () => {
+    const both = storageCalls({
+      system: "cassette",
+      client: allOf(readOff(handedIn("env")), declaredBy("tapedeck")),
+    })
+      .methods({ get: READ_KEY })
+      .example('env.DECK.get("side_a:1")');
+
+    expect(packOf(both).requiresImport).toEqual(["tapedeck"]);
+    expect(modulesOf(readOff(handedIn("env")))).toEqual([]);
   });
 });
 

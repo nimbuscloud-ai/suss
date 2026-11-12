@@ -344,7 +344,10 @@ const BARE_CALL_FROM: ByOrigin<boolean, [CallOps]> = {
   handedBy: (origin, ops) => writtenFrom(origin, ops),
   anyOf: (origin, ops) =>
     origin.of.some((one) => byOrigin(BARE_CALL_FROM, one, ops)),
+  allOf: (origin, ops) =>
+    origin.of.every((one) => byOrigin(BARE_CALL_FROM, one, ops)),
   global: (origin, ops) => ops.isFrom(origin),
+  readOff: (origin, ops) => writtenFrom(origin, ops),
 };
 
 /** Whether the call the callee was written as came from the origin. */
@@ -638,6 +641,8 @@ function streamTarget(matched: Matched): string | null {
 const GLOBAL_PATHS: ByOrigin<readonly string[]> = {
   global: (origin) => origin.paths,
   anyOf: (origin) => origin.of.flatMap((one) => byOrigin(GLOBAL_PATHS, one)),
+  allOf: (origin) => origin.of.flatMap((one) => byOrigin(GLOBAL_PATHS, one)),
+  readOff: () => [],
   declaredBy: () => [],
   constructed: () => [],
   returnedBy: () => [],
