@@ -5,6 +5,10 @@
  * directly over each adapter's fact source, and the three have to agree.
  */
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
@@ -400,6 +404,110 @@ run(by_side("a"))
         functionWithParameter(db, source, "first")?.elements?.("Chip"),
       ).toEqual([]);
     }
+  });
+
+  it("say where a value is declared, through an import and in its own file, in every language", async () => {
+    const project = createTestProject();
+    project.createSourceFile("/src/things.ts", "export function Thing() {}");
+    const file = project.createSourceFile(
+      "/src/use.ts",
+      `
+        import { Thing as Renamed } from "./things";
+        import { Missing } from "not-installed";
+        function local() {}
+        register(Renamed);
+        register(local);
+        register(Missing);
+      `,
+    );
+    const store = new ResolutionStore();
+    const tsSource = factSourceFor(store);
+    const typescript = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .map(
+        (call) =>
+          factCallOps(statedFactKey(call, store), tsSource)?.valueAt(0) ?? null,
+      );
+
+    const dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-declaration-")),
+    );
+    const pythonFile = (name: string, source: string) => {
+      const full = path.join(dir, name);
+      fs.writeFileSync(full, source);
+      return full;
+    };
+    const thingsPy = pythonFile("things.py", "def Thing():\n    return 1\n");
+    const usePy = pythonFile(
+      "use.py",
+      [
+        "from things import Thing as Renamed",
+        "from not_installed import Missing",
+        "def local():",
+        "    return 1",
+        "register(Renamed)",
+        "register(local)",
+        "register(Missing)",
+        "",
+      ].join("\n"),
+    );
+    const pythonDbs = await Promise.all(
+      [thingsPy, usePy].map(async (pyFile) => {
+        const root = (await parsePython(fs.readFileSync(pyFile, "utf8")))
+          .rootNode;
+        return pythonFacts({
+          file: pyFile,
+          root,
+          module: bindModule(root),
+          packs: [],
+          roots: [dir],
+        });
+      }),
+    );
+    const [thingsDb, useDb] = pythonDbs as [Database, Database];
+    for (const relation of thingsDb.relationNames()) {
+      for (const row of thingsDb.facts(relation)) {
+        useDb.add(relation, [...row]);
+      }
+    }
+    const python = argumentsOf(useDb, pythonFactSource(useDb), "register");
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    const rubyTree = await parseRuby(
+      [
+        "class Thing",
+        "end",
+        "LOCAL = -> { nil }",
+        "register(Thing)",
+        "register(LOCAL)",
+        "register(Missing::Thing)",
+        "",
+      ].join("\n"),
+    );
+    const rubyDb = rubyFacts({
+      file: "use.rb",
+      root: rubyTree.rootNode,
+      packs: [],
+    });
+    const ruby = argumentsOf(rubyDb, rubyFactSource(rubyDb), "register");
+
+    const declared = (values: readonly (ValueOps | null)[]) =>
+      values.map((value) => value?.declaration?.() ?? null);
+    expect(declared(typescript)).toEqual([
+      { file: "/src/things.ts", name: "Thing" },
+      { file: "/src/use.ts", name: "local" },
+      null,
+    ]);
+    expect(declared(python)).toEqual([
+      { file: thingsPy, name: "Thing" },
+      { file: usePy, name: "local" },
+      null,
+    ]);
+    expect(declared(ruby)).toEqual([
+      { file: "use.rb", name: "Thing" },
+      { file: "use.rb", name: "LOCAL" },
+      null,
+    ]);
   });
 
   it("follow an object through a name and a function that returns its argument", async () => {
