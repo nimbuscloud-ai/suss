@@ -15,6 +15,7 @@ import { copingAt, sitesNamingParameter } from "./envReads.js";
 import { encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
+  handedNamesAt,
   originsOf,
   resolveCalls,
   resolveStreamObjects,
@@ -98,6 +99,7 @@ export function pythonFactSource(db: Database): FactSource {
       );
     },
     globalsReaching: (key) => streamsReaching(db, key),
+    handedReaching: (key) => handedNamesAt(db, key),
     evaluatedOf: (key) => {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));

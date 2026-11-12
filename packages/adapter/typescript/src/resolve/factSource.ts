@@ -174,6 +174,8 @@ export function factSourceFor(
         ...streamsReachingName(node, store),
         ...store.environmentsReaching(node),
       ]),
+    handedReaching: (key) =>
+      at(key, [], (node) => [...store.handedReaching(node)]),
     evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
     comesTo: (key) =>
       at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),

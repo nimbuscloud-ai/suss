@@ -140,6 +140,7 @@ type Question =
   | "wantedSites"
   | "wantedEnvObject"
   | "wantedStreamObject"
+  | "wantedHandedObject"
   | "wantedExitSink"
   | typeof DISPATCH_QUESTION
   | typeof CALLS_RUN_QUESTION
@@ -242,6 +243,8 @@ const NO_NAMERS: EnvironmentNamers = { sitesNaming: () => [] };
 const NO_STREAMS: ReadonlySet<string> = new Set();
 
 const NO_ENVIRONMENTS: ReadonlySet<string> = new Set();
+
+const NO_NAMES: ReadonlySet<string> = new Set();
 
 /** Note that the environment at `path` reaches the value at `key`, when the path is one a pack declares. */
 function addReached(
@@ -355,6 +358,11 @@ export class ResolutionStore {
   /** See `streamAnswers`: the declared streams each expression reaches. */
   private streamsReached: ReadonlyMap<string, ReadonlySet<string>> | null =
     null;
+  /** See `handedAnswers`: what each handed-in parameter reaches, and how many parameters that was asked from. */
+  private handedReached: {
+    seeds: number;
+    reached: ReadonlyMap<string, ReadonlySet<string>>;
+  } | null = null;
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
   /** See `notePossibleCallers`. */
@@ -1071,14 +1079,22 @@ export class ResolutionStore {
     );
   }
 
-  /**
-   * Ask until every call handing the environment on has had its callee
-   * read, one hop a round, so the answer covers each parameter it lands in.
-   */
   private followEnvironment(seeds: readonly SourceFile[]): EnvironmentAsked {
+    return this.followPassingCalls(() => this.askEnvironment(seeds));
+  }
+
+  /**
+   * Ask until every call handing a runtime object on has had its callee
+   * read, one hop a round, so the answer covers each parameter it lands
+   * in. The environment, the streams and a handed-in parameter are each
+   * followed this way.
+   */
+  private followPassingCalls<T extends { passingCalls: readonly string[] }>(
+    ask: () => T,
+  ): T {
     const followed = new Set<string>();
     for (;;) {
-      const asked = this.askEnvironment(seeds);
+      const asked = ask();
       const next = asked.passingCalls.filter((call) => !followed.has(call));
       if (next.length === 0) {
         return asked;
@@ -1236,25 +1252,10 @@ export class ResolutionStore {
     return this.streamsReached;
   }
 
-  /**
-   * The environment's loop for the streams: ask, read the callee of every
-   * call that hands a stream on, and ask again until no new call turns up.
-   */
   private followStreams(
     seeds: readonly SourceFile[],
   ): Map<string, Set<string>> {
-    const followed = new Set<string>();
-    for (;;) {
-      const { reached, passingCalls } = this.askStreams(seeds);
-      const next = passingCalls.filter((call) => !followed.has(call));
-      if (next.length === 0) {
-        return reached;
-      }
-      for (const callId of next) {
-        followed.add(callId);
-        this.readCalleeOf(callId);
-      }
-    }
+    return this.followPassingCalls(() => this.askStreams(seeds)).reached;
   }
 
   private askStreams(seeds: readonly SourceFile[]): {
@@ -1376,7 +1377,95 @@ export class ResolutionStore {
    */
   stateHandedIn(func: Node, handedIn: readonly HandedInAt[]): void {
     this.factAccess().state(func);
-    stateHandedIn(this.db, nodeId(func), handedIn);
+    // The runtimeObject rule reads the fact, so a new row is new work.
+    if (stateHandedIn(this.db, nodeId(func), handedIn)) {
+      this.stale = true;
+    }
+  }
+
+  /**
+   * The names of the handed-in parameters the rules followed into a
+   * value: a local set to one, or a helper's parameter a unit passes its
+   * bindings to. The value is asked about on its own, with its facts
+   * stated first, the way `isEnvironmentValue` asks. A parameter's
+   * answer depends on its callers, so it comes from what the handed-in
+   * parameters reach, worked out once for each set of claimed units.
+   */
+  handedReaching(value: Node): ReadonlySet<string> {
+    if (this.db.size("handedIn") === 0) {
+      return NO_NAMES;
+    }
+    const target = factKeyOf(value);
+    const asked = this.askAbout(target, "wanted", () => {
+      this.derive();
+      return {
+        names: this.answersFor("wantedHandedName", nodeId(target)),
+        parameters: this.answersFor("wantedRefersToParam", nodeId(target)),
+      };
+    });
+    const names = new Set(asked.names);
+    if (asked.parameters.length > 0) {
+      const reached = this.handedAnswers();
+      for (const parameter of asked.parameters) {
+        for (const name of reached.get(parameter) ?? []) {
+          names.add(name);
+        }
+      }
+    }
+    return names;
+  }
+
+  /**
+   * Worked out again whenever a claim has stated another parameter,
+   * since each claimed unit is one more place the walk starts from.
+   */
+  private handedAnswers(): ReadonlyMap<string, ReadonlySet<string>> {
+    const seeds = this.db.facts("handedIn");
+    if (this.handedReached?.seeds === seeds.length) {
+      return this.handedReached.reached;
+    }
+    const files = new Set<SourceFile>();
+    for (const [parameter] of seeds) {
+      const node = this.table.byId.get(String(parameter));
+      if (node !== undefined) {
+        files.add(node.getSourceFile());
+      }
+    }
+    const { reached } = this.followPassingCalls(() =>
+      this.askHanded([...files]),
+    );
+    this.handedReached = { seeds: seeds.length, reached };
+    return reached;
+  }
+
+  private askHanded(seeds: readonly SourceFile[]): {
+    reached: Map<string, Set<string>>;
+    passingCalls: string[];
+  } {
+    const reached = new Map<string, Set<string>>();
+    const passingCalls: string[] = [];
+    try {
+      for (const [parameter] of this.db.facts("handedIn")) {
+        this.wantKey("wantedHandedObject", String(parameter));
+      }
+      this.extractDemanded(seeds);
+      this.derive();
+      for (const [value, parameter] of this.db.facts("wantedHandedValue")) {
+        for (const [, name] of this.db.lookup(
+          "handedIn",
+          0,
+          String(parameter),
+        )) {
+          addReached(reached, String(value), String(name));
+        }
+      }
+      for (const [call] of this.db.facts("wantedHandedPassingCall")) {
+        passingCalls.push(String(call));
+      }
+    } finally {
+      this.forgetQuery();
+    }
+    return { reached, passingCalls };
   }
 
   /** Whether a name refers to a parameter the platform fills under `name`. */

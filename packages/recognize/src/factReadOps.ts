@@ -123,9 +123,10 @@ class FactRead implements ReadOps {
   /**
    * Whether the site reads off a parameter the platform fills under this
    * name: the parameter itself, which is how Python and Ruby key a name,
-   * or a name the facts bind to it, which is how TypeScript does. A run
-   * with no such unit states no `handedIn` row, so its sites stop at the
-   * first lookup.
+   * a name the facts bind to it, which is how TypeScript does, or a value
+   * the rules followed the parameter into, such as a helper's parameter
+   * or a local. A run with no such unit states no `handedIn` row, so its
+   * sites stop at the first lookup.
    */
   offHandedIn(name: string): boolean {
     const { db } = this.facts;
@@ -143,7 +144,10 @@ class FactRead implements ReadOps {
     }
     // A name's binds are stated with its own facts.
     this.facts.read(object);
-    return db.lookup("binds", 0, object).some((row) => handed(String(row[1])));
+    if (db.lookup("binds", 0, object).some((row) => handed(String(row[1])))) {
+      return true;
+    }
+    return (this.facts.handedReaching?.(object) ?? []).includes(name);
   }
 
   /**

@@ -57,7 +57,7 @@ async fetch(request: Request, env: Env) {
 }
 ```
 
-A read from that argument becomes a `config-read` interaction, the same one `@suss/runtime-node` records for `process.env.X`, so the runtime-config check pairs it with whatever declares the variable. A read with a fallback, such as `env.TIMEOUT_MS ?? "500"`, records the fallback as its default when it settles to one value. Each trigger's unit says that its second parameter is the bindings, with `handedIn`, and the adapter records that on the parameter when it claims the unit. The pack's read chain is off `handedIn("env")`, so a project that calls the parameter something other than `env` is read the same way, and so is a trigger written in another file and imported into the entrypoint. Every read is spelled `env.<name>`, whatever the parameter is called.
+A read from that argument becomes a `config-read` interaction, the same one `@suss/runtime-node` records for `process.env.X`, so the runtime-config check pairs it with whatever declares the variable. A read with a fallback, such as `env.TIMEOUT_MS ?? "500"`, records the fallback as its default when it settles to one value. Each trigger's unit says that its second parameter is the bindings, with `handedIn`, and the adapter records that on the parameter when it claims the unit. The pack's read chain is off `handedIn("env")`, so a project that calls the parameter something other than `env` is read the same way, and so is a trigger written in another file and imported into the entrypoint. The rules follow the parameter into a local set to it and into a helper the trigger passes it to, however many calls deep, so `readOrigin(env)` records the reads the helper makes. Every read is spelled `env.<name>`, whatever the parameter is called.
 
 ## Store calls on a binding
 
@@ -77,7 +77,7 @@ For KV and R2, the key an operation addresses is recorded as the selector. A D1 
 
 ## Out of scope for now
 
-- **A read one hop away from the trigger.** Most services pass `env` to a service class and read the bindings there. Only reads in the trigger's own body, or in a function the entrypoint exports as a trigger, come out as config reads.
+- **Bindings kept on an object.** A service class that stores `env` in a field and reads `this.env.X` in its methods is not followed into the field, so those reads do not come out as config reads.
 - **`env["SOME_VAR"]`.** Access recognizers only see property accesses, so the bracket form is not read.
 - **Durable Object classes.** A `DurableObject` subclass is its own deployable with its own methods, and it is not part of the entrypoint object.
 - **The status a Worker sends through a helper of its own.** `new Response(...)` and the two static helpers are read where they are written. A project's own `jsonResponse()` comes out as an unread return.

@@ -43,7 +43,11 @@ export {
 export { exitCodeFunctions } from "./exitCode.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export { importedFilesByFile } from "./fileImports.js";
-export { type HandedInAt, stateHandedIn } from "./handedIn.js";
+export {
+  type HandedInAt,
+  handedNamesReaching,
+  stateHandedIn,
+} from "./handedIn.js";
 export { boundByImport } from "./importBinding.js";
 export { memberOf } from "./members.js";
 export {
@@ -1420,10 +1424,11 @@ const STATED_RULES = [
   ),
 
   // An object the runtime provides and nothing declares: the process
-  // environment, or one of the process's output streams. Each is
-  // followed the same way, from the spot a pack says spells it.
+  // environment, an output stream, or a parameter the platform fills.
+  // Each is followed the same way from where a pack says it is.
   rule("runtimeObject", [v("w")], [lit("environmentObject", v("w"))]),
   rule("runtimeObject", [v("w")], [lit("streamObject", v("w"))]),
+  rule("runtimeObject", [v("w")], [lit("handedIn", v("w"), v("n"))]),
 
   // An expression whose value is the runtime object w: the way a pack
   // spells it, a name declared as that, or a parameter a caller handed
@@ -2474,12 +2479,31 @@ export const RESOLUTION_QUESTIONS = [
       lit("environmentObject", v("w")),
     ],
   ),
+  // The same for a parameter the platform fills, by the name it is
+  // handed in under, for a reader at `e.X` after `const e = env`.
+  rule(
+    "wantedHandedName",
+    [v("o"), v("n")],
+    [
+      lit("wanted", v("o")),
+      lit("runtimeValue", v("w"), v("o")),
+      lit("handedIn", v("w"), v("n")),
+    ],
+  ),
   // Every expression an output stream reaches, from the spots that spell
   // one, so a writer at `out.write(...)` looks its receiver up.
   rule(
     "wantedStreamValue",
     [v("o"), v("w")],
     [lit("wantedStreamObject", v("w")), lit("runtimeValue", v("w"), v("o"))],
+  ),
+  // Every expression a parameter the platform fills reaches, from the
+  // parameters the claimed units say, so a read off a helper's parameter
+  // or a local set to one looks its object up.
+  rule(
+    "wantedHandedValue",
+    [v("o"), v("w")],
+    [lit("wantedHandedObject", v("w")), lit("runtimeValue", v("w"), v("o"))],
   ),
   // The same for the environment, from the same seed the environment
   // question already has, so a read off a parameter the environment is
@@ -2605,6 +2629,16 @@ export const RESOLUTION_QUESTIONS = [
     [v("r")],
     [
       lit("wantedStreamObject", v("w")),
+      lit("runtimeValue", v("w"), v("a")),
+      lit("callArg", v("r"), v("k"), v("a")),
+    ],
+  ),
+  // The same for a parameter the platform fills.
+  rule(
+    "wantedHandedPassingCall",
+    [v("r")],
+    [
+      lit("wantedHandedObject", v("w")),
       lit("runtimeValue", v("w"), v("a")),
       lit("callArg", v("r"), v("k"), v("a")),
     ],
