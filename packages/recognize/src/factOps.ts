@@ -1075,9 +1075,7 @@ class FactValue implements ValueOps {
   }
 
   declaration(): Declaration | null {
-    return this.facts.declarationOf === undefined
-      ? declarationInFacts(this.key, this.facts, new Set())
-      : this.facts.declarationOf(this.key);
+    return declarationAt(this.key, this.facts, new Set());
   }
 
   private holeKeys(): string[] {
@@ -1133,6 +1131,45 @@ class FactElement implements ElementOps {
  * declaration the name binds to, or the parameter whose destructure has
  * that declaration as its rest. Null when it is none, or more than one.
  */
+/**
+ * Where the value at `key` is declared: by the adapter's own reading or
+ * the facts, and failing both, for a member read off an object the
+ * module writes out, `Card.Root` with `Card = { Root: CardRoot }`, where
+ * the value the object has under that name is declared.
+ */
+function declarationAt(
+  key: string,
+  source: FactSource,
+  seen: Set<string>,
+): Declaration | null {
+  if (seen.has(key)) {
+    return null;
+  }
+  seen.add(key);
+  const declared =
+    source.declarationOf === undefined
+      ? declarationInFacts(key, source, new Set())
+      : source.declarationOf(key);
+  return declared ?? memberDeclaration(key, source, seen);
+}
+
+function memberDeclaration(
+  key: string,
+  source: FactSource,
+  seen: Set<string>,
+): Declaration | null {
+  for (const [, object, name] of source.db.lookup("readsProperty", 0, key)) {
+    const member =
+      factValueOps(String(object), source).object?.()?.property(String(name)) ??
+      null;
+    const memberKey = member === null ? undefined : keysOfValues.get(member);
+    if (memberKey !== undefined) {
+      return declarationAt(memberKey, source, seen);
+    }
+  }
+  return null;
+}
+
 /**
  * Where the value at `key` is declared, for an adapter that states every
  * fact up front: through `imports` to what the module exports, or else the

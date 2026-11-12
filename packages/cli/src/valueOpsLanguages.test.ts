@@ -510,6 +510,81 @@ run(by_side("a"))
     ]);
   });
 
+  it("say where a member read off an object the file writes out is declared, in TypeScript and Python", async () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/src/card.ts",
+      `
+        function CardRoot() {}
+        const Card = { Root: CardRoot };
+        register(Card.Root);
+        register(Card.Missing);
+      `,
+    );
+    const store = new ResolutionStore();
+    const tsSource = factSourceFor(store);
+    const typescript = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .map(
+        (call) =>
+          factCallOps(statedFactKey(call, store), tsSource)?.valueAt(0) ?? null,
+      );
+
+    const pythonTree = await parsePython(
+      [
+        "def card_root():",
+        "    return 1",
+        'Card = {"Root": card_root}',
+        "register(Card.Root)",
+        "register(Card.Missing)",
+        "",
+      ].join("\n"),
+    );
+    const pythonDb = pythonFacts({
+      file: "card.py",
+      root: pythonTree.rootNode,
+      module: bindModule(pythonTree.rootNode),
+      packs: [],
+    });
+    const python = argumentsOf(
+      pythonDb,
+      pythonFactSource(pythonDb),
+      "register",
+    );
+
+    const rubyTree = await parseRuby(
+      [
+        "CardRoot = -> { nil }",
+        "module Card",
+        "  Root = CardRoot",
+        "end",
+        "register(Card::Root)",
+        "register(Card::Missing)",
+        "",
+      ].join("\n"),
+    );
+    const rubyDb = rubyFacts({
+      file: "card.rb",
+      root: rubyTree.rootNode,
+      packs: [],
+    });
+    const ruby = argumentsOf(rubyDb, rubyFactSource(rubyDb), "register");
+
+    const declared = (values: readonly (ValueOps | null)[]) =>
+      values.map((value) => value?.declaration?.() ?? null);
+    expect(declared(typescript)).toEqual([
+      { file: "/src/card.ts", name: "CardRoot" },
+      null,
+    ]);
+    expect(declared(python)).toEqual([
+      { file: "card.py", name: "card_root" },
+      null,
+    ]);
+    // Ruby states an export row only for a constant at the top of a file,
+    // so a constant inside a module has nothing that says where it is.
+    expect(declared(ruby)).toEqual([null, null]);
+  });
+
   it("follow an object through a name and a function that returns its argument", async () => {
     const [, typescript] = typescriptArguments();
     const [, python] = await pythonArguments();
