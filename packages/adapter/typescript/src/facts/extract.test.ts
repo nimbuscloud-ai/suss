@@ -83,6 +83,22 @@ describe("the modules a file imports", () => {
       "/accounts.ts",
     ]);
   });
+
+  it("keys a subpath import by its package too, and one of Node's own modules by itself alone", () => {
+    const { db } = factsFor({
+      "/mod.ts": [
+        'import { report } from "@acme/reports/esm";',
+        'import { setTimeout } from "node:timers/promises";',
+        "export const both = [report, setTimeout];",
+        "",
+      ].join("\n"),
+    });
+
+    const modules = db.facts("imports").map((row) => String(row[1]));
+    expect(modules).toContain("@acme/reports");
+    expect(modules).toContain("node:timers/promises");
+    expect(modules).not.toContain("node:timers");
+  });
 });
 
 describe("a function's declared return type", () => {

@@ -75,6 +75,7 @@ import {
   MAP_ENTRY_WRITE,
   MAPPING_METHOD,
 } from "./languageWords.js";
+import { isSubpathOf } from "./moduleGraph.js";
 import { specifierTargets } from "./specifierTargets.js";
 
 import type { Database } from "@suss/datalog";
@@ -319,8 +320,14 @@ function moduleKeysOf(
   const packageKeys =
     specifier === undefined || specifier.startsWith(".")
       ? []
-      : [specifier, packagePartOf(specifier)];
+      : [specifier, ...packageAbove(specifier)];
   return [moduleKey, ...packageKeys, ...packagesDeclaring(moduleKey)];
+}
+
+/** The package a specifier imports a subpath of, when it imports one. */
+function packageAbove(specifier: string): string[] {
+  const owner = packagePartOf(specifier);
+  return isSubpathOf(specifier, owner) ? [owner] : [];
 }
 
 /**
