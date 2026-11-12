@@ -480,6 +480,60 @@ describe("the member a call is made on", () => {
     ).toBeNull();
   });
 
+  it.each(["facts", "nodes"] as const)(
+    "reads the member a local was set to, one declaration and no further, over the %s",
+    (over) => {
+      const held = lastCall(
+        `
+          import { Client } from "ormkit";
+          declare const db: Client;
+          export function list() {
+            const users = db.users;
+            return users.find({});
+          }
+        `,
+        over,
+      ).member?.();
+
+      expect(held?.method()).toBe("users");
+      expect(held?.calleeText()).toBe("db.users");
+      expect(held?.receiverIsFrom(ANY_ORM_TYPE)).toBe(true);
+
+      const copied = lastCall(
+        `
+          import { Client } from "ormkit";
+          declare const db: Client;
+          export function list() {
+            const users = db.users;
+            const again = users;
+            return again.find({});
+          }
+        `,
+        over,
+      ).member?.();
+
+      expect(copied).toBeNull();
+    },
+  );
+
+  it.each(["facts", "nodes"] as const)(
+    "gives no member for a local set to the client itself, over the %s",
+    (over) => {
+      expect(
+        lastCall(
+          `
+            import { Client } from "ormkit";
+            export function list() {
+              const db = new Client();
+              return db.find({});
+            }
+          `,
+          over,
+        ).member?.(),
+      ).toBeNull();
+    },
+  );
+
   it("asks a member its own member, and what declared it", () => {
     const ops = lastCall(
       `
@@ -1192,6 +1246,27 @@ describe("a statement a call was handed as a tagged template", () => {
     expect(values).toHaveLength(2);
     expect(values[0]?.name("nothing")).toBe("archive.sides");
     expect(values[1]?.name("nothing")).toBeNull();
+  });
+
+  it("gives the pieces and holes of a statement a project function returns", () => {
+    const ops = opsForOuterCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      function bySide(side: string) {
+        return \`SELECT id FROM tapes WHERE side = \${side}\`;
+      }
+      export function play() {
+        return deck.queryText(bySide("a"));
+      }
+    `);
+    const statement = ops.valueAt(0);
+
+    expect(statement?.parts()).toEqual([
+      "SELECT id FROM tapes WHERE side = ",
+      "",
+    ]);
+    expect(statement?.holes()).toHaveLength(1);
+    expect(statement?.interpolated?.()).toHaveLength(1);
   });
 });
 

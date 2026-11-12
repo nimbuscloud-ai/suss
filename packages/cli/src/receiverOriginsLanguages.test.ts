@@ -81,7 +81,7 @@ const INVOCATION = PACKS.flatMap((one) => one.invocationRecognizers ?? []);
 
 /** The models each origin's pack read, and what every language reads. */
 const READS: Record<string, readonly string[]> = {
-  "@suss/member": ["User", "Account"],
+  "@suss/member": ["User", "Account", "Widget"],
   "@suss/typed": ["Entry"],
   "@suss/inherits": ["Post"],
   "@suss/handedBy": ["Order"],
@@ -102,6 +102,8 @@ export function cases(book: Book) {
   db.run((tx) => tx.order.get({ id: 3 }));
   book.entry.get({ id: 4 });
   db.account.get({ include: { owner: true } });
+  const widgets = db.widget;
+  widgets.get({ id: 5 });
 }
 `;
 
@@ -123,6 +125,8 @@ def cases(book: Book):
     db.run(lambda tx: tx.order.get({"id": 3}))
     book.entry.get({"id": 4})
     db.account.get({"include": {"owner": True}})
+    widgets = db.widget
+    widgets.get({"id": 5})
 `;
 
 const RUBY = `module Store
@@ -138,6 +142,8 @@ const RUBY = `module Store
     db.run { |tx| tx.order.get({ id: 3 }) }
     book.entry.get({ id: 4 })
     db.account.get({ include: { owner: true } })
+    widgets = db.widget
+    widgets.get({ id: 5 })
   end
 end
 `;
