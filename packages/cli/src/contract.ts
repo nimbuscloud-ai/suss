@@ -16,6 +16,7 @@ import path from "node:path";
 import { defaultProjectRoot } from "@suss/behavioral-ir/files";
 
 import { writeSummaries } from "./jsonStream.js";
+import { isSkippedDirectory } from "./language.js";
 import { nearestProjectFile } from "./projectModules.js";
 import { repositoryRecord, stampRepository } from "./repositoryRecord.js";
 
@@ -238,6 +239,12 @@ function walkForStoryFiles(dir: string): string[] {
   const out: string[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
+    // Installed packages ship stories of their own, such as the templates
+    // Storybook writes for a new project, and none of them are the app's.
+    if (isSkippedDirectory(entry.name)) {
+      continue;
+    }
+
     const full = path.join(dir, entry.name);
     if (entry.isFile()) {
       if (/\.stories\.tsx?$/.test(entry.name)) {
