@@ -14,10 +14,10 @@ setTimeout(() => flush(table), 1000);
 `@suss/runtime-node` exports a `PatternPack`, which is data the adapter
 reads. It covers:
 
-- **Invocation recognizers** for the scheduling calls: `setImmediate`,
-  `setTimeout`, `setInterval`, `queueMicrotask` and `process.nextTick`,
-  and for what a program prints through `console`, `process.stdout` and
-  `process.stderr`.
+- **Call chains**, declared with `@suss/recognize`, for the scheduling
+  calls `setImmediate`, `setTimeout`, `setInterval`, `queueMicrotask`
+  and `process.nextTick`, and for what a program prints through
+  `console`, `process.stdout` and `process.stderr`.
 - **Read chains**, declared with `@suss/recognize`, for
   `process.env.X` and `import.meta.env.X` reads, the rest of the
   process object (`argv`, `exitCode` and the process metadata), and the

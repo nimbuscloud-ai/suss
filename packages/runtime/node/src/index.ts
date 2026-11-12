@@ -12,20 +12,21 @@
 
 import { z } from "zod";
 
-import { declarationsIn } from "@suss/recognize";
+import { compile, declarationsIn, subUnitsOf } from "@suss/recognize";
 
+import { RECOGNITION } from "./configBinding.js";
 import {
   compiledReads,
   ENVIRONMENT_OBJECTS,
   runtimeReadMatches,
 } from "./runtimeReads.js";
-import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
 import { schemaReadRecognizer } from "./schemaReads.js";
 import {
   PROCESS_STREAMS,
   STREAM_WRITE_MATCHES,
   streamWriteRecognizers,
 } from "./streamWrites.js";
+import { TIMER_MATCHES } from "./timers.js";
 
 import type {
   ArgumentParser,
@@ -35,17 +36,26 @@ import type {
 import type { PackDeclaration } from "@suss/ir-core";
 
 export { runtimeReadMatches } from "./runtimeReads.js";
-export {
-  nodeSchedulingSubUnits,
-  schedulingRecognizer,
-} from "./scheduling.js";
 export { schemaReadRecognizer } from "./schemaReads.js";
 export { streamWriteRecognizers } from "./streamWrites.js";
+export { TIMER_MATCHES } from "./timers.js";
 
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.10.0";
+const PACK_VERSION = "0.11.0";
+
+/**
+ * Every timer call writes a timer's name or imports one from Node's
+ * timers module, so a file whose text has neither asks the store nothing
+ * about its calls.
+ */
+const TIMERS_WRITTEN = { onlyWhereWritten: true };
+
+/** The timers, as the hooks the adapter calls on every call. */
+const timerRecognizers = TIMER_MATCHES.map((match) =>
+  compile(match.declared, RECOGNITION, TIMERS_WRITTEN),
+);
 
 /**
  * The options in a `-f node=config.json` file. The CLI checks the file
@@ -115,10 +125,11 @@ export function nodeRuntimePack(
     exitCodeWrites: ["process.exitCode"],
     argumentParsers: PARSE_ARGS,
     inputMapping: { type: "positionalParams", params: [] },
-    invocationRecognizers: [schedulingRecognizer, ...streamWriteRecognizers],
+    invocationRecognizers: [...timerRecognizers, ...streamWriteRecognizers],
     environmentObjects: [...ENVIRONMENT_OBJECTS],
     streamObjects: PROCESS_STREAMS,
     declarations: declarationsIn([
+      ...TIMER_MATCHES,
       ...STREAM_WRITE_MATCHES,
       ...reads.environment,
       ...reads.rest,
@@ -130,7 +141,7 @@ export function nodeRuntimePack(
       schemaReadRecognizer(deployment),
       ...compiledReads(reads.rest),
     ],
-    subUnits: nodeSchedulingSubUnits,
+    subUnits: subUnitsOf(TIMER_MATCHES, TIMERS_WRITTEN),
   };
 }
 

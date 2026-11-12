@@ -764,7 +764,7 @@ interface DiscoveredSubUnitParent {
 }
 ```
 
-`subUnits` returns extra units built from a parent's body. Use it when one construct the author wrote spawns several units that the runtime schedules: React event handlers on JSX elements, `useEffect` bodies, a Node `setTimeout` callback, class-component lifecycle methods.
+`subUnits` returns extra units built from a parent's body. Use it when one construct the author wrote spawns several units that the runtime schedules: React event handlers on JSX elements, `useEffect` bodies, class-component lifecycle methods. A callback handed to a call, such as a Node `setTimeout` callback or a TanStack Query function, is declared with `callbacks(...).unitWhenInPlace(...)` in `@suss/recognize` instead, which compiles to this hook.
 
 Returned units go through the same pipeline top-level units do, and each becomes its own `BehavioralSummary`. Put per-unit `terminals` and `inputMapping` on the `DiscoveredSubUnit` when a sub-unit is written differently from the parent pack's defaults.
 
