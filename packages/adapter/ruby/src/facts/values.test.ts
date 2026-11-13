@@ -468,20 +468,18 @@ describe("ruby value facts", () => {
   });
 
   it("reads the expressions a class body runs, which Ruby runs like any other code", async () => {
-    const db = await factsFor(
-      [
-        "class Subject",
-        "  Settings.filters.each do |filter|",
-        "    define_method(filter) { 1 }",
-        "  end",
-        "end",
-        "",
-      ].join("\n"),
-    );
-    expect(rows(db, "readsProperty")[0]?.slice(1)).toEqual([
-      "#Settings",
-      ".filters",
-    ]);
+    const source = [
+      "class Subject",
+      "  Settings.filters.each do |filter|",
+      "    define_method(filter) { 1 }",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const reads = rows(db, "readsProperty").map((row) => row.slice(1));
+    expect(reads).toContainEqual(["#Settings", ".filters"]);
+    expect(reads).toContainEqual([keyOf(source, "Settings.filters"), "each"]);
   });
 
   it("gives back what an assignment on the last line wrote", async () => {
@@ -1728,6 +1726,82 @@ describe("ruby value facts", () => {
         .map((row) => textAt(source, row[0] as string))
         .sort(),
     ).toEqual(["built", "plain_call", "top"]);
+  });
+
+  it("states a call written as a statement of a class body, which runs as the class loads", async () => {
+    const source = [
+      "module Billing",
+      "  class Engine < ::Rails::Engine",
+      "    isolate_namespace Billing",
+      "    has_many :items, dependent: :destroy",
+      "    private",
+      "  end",
+      "  module Ledger",
+      "    included do",
+      "      before_action :check",
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const callees = new Map(
+      rows(db, "call").map((row) => [textAt(source, row[0] as string), row[1]]),
+    );
+    expect(callees.get("isolate_namespace Billing")).toBe("#isolate_namespace");
+    expect(callees.get("private")).toBe("#private");
+    expect(callees.get("before_action :check")).toBe("#before_action");
+    expect(
+      callees.get("included do\n      before_action :check\n    end"),
+    ).toBe("#included");
+    expect(
+      rows(db, "callArg")
+        .filter((row) =>
+          textAt(source, row[0] as string).startsWith("has_many"),
+        )
+        .map((row) => [row[1], textAt(source, row[2] as string)]),
+    ).toEqual([["0", ":items"]]);
+    expect(
+      rows(db, "callKeywordArg")
+        .filter((row) =>
+          textAt(source, row[0] as string).startsWith("has_many"),
+        )
+        .map((row) => [row[1], textAt(source, row[2] as string)]),
+    ).toEqual([["dependent", ":destroy"]]);
+    expect(
+      rows(db, "callOutsideMethod")
+        .map((row) => textAt(source, row[0] as string))
+        .sort(),
+    ).toEqual([
+      "before_action :check",
+      "has_many :items, dependent: :destroy",
+      "included do\n      before_action :check\n    end",
+      "isolate_namespace Billing",
+      "private",
+    ]);
+  });
+
+  it("states what a body-block call is passed, and leaves its block to the class body", async () => {
+    const source = [
+      "class Admin",
+      "  with_options if: :admin? do",
+      "    before_action :check",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const options = keyOf(
+      source,
+      "with_options if: :admin? do\n    before_action :check\n  end",
+    );
+    expect(rows(db, "callKeywordArg")).toContainEqual([
+      options,
+      "if",
+      keyOf(source, ":admin?"),
+    ]);
+    expect(rows(db, "writtenValue")).toContainEqual([keyOf(source, ":admin?")]);
+    expect(db.size("callBlock")).toBe(0);
   });
 
   it("states the container and the key of a read the source works out", async () => {
