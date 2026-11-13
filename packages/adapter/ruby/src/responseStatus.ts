@@ -19,7 +19,7 @@ import {
   unreadableReading,
   writtenReading,
 } from "@suss/extractor";
-import { constantOf, literalOf } from "@suss/values";
+import { constantOf, literalOf, takenOverUnread } from "@suss/values";
 
 import {
   type CallArgs,
@@ -96,6 +96,9 @@ function statusNumberOf(
     return passed;
   }
   const value = evaluatedValue(node, facts);
+  if (takenOverUnread(value)) {
+    return null;
+  }
   const constant = constantOf(value);
   if (typeof constant === "number") {
     return constant;

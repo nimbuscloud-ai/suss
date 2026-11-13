@@ -121,6 +121,31 @@ export function force(value: Value): Value {
   return value.kind === "deferred" ? value.force() : value;
 }
 
+/**
+ * Defaults a fallback took only because the value before it did not
+ * read, such as `500` in `x || 500` when `x` is a hole. Every other
+ * reader sees the default as the value, which is what a route path or a
+ * config default wants. The mark is kept apart from the value, so a
+ * summary never changes because of it.
+ */
+const TAKEN_OVER_UNREAD = new WeakSet<Value>();
+
+/** A copy of a fallback's default, marked as taken over an unread value. */
+export function overUnread(value: Value): Value {
+  const copy = { ...force(value) };
+  TAKEN_OVER_UNREAD.add(copy);
+  return copy;
+}
+
+/**
+ * Whether a value is a fallback's default taken over an unread value.
+ * A reader that claims the value outright, as a response status does,
+ * claims nothing for one, since the unread value may be anything.
+ */
+export function takenOverUnread(value: Value): boolean {
+  return TAKEN_OVER_UNREAD.has(force(value));
+}
+
 function uniqueSorted(options: readonly string[]): readonly string[] {
   return [...new Set(options)].sort();
 }
@@ -227,6 +252,11 @@ export function constantOf(value: Value): Constant | undefined {
     return undefined;
   }
   return forced.options[0];
+}
+
+/** The one constant a value settles on, where a default taken over an unread value does not settle. */
+export function settledConstantOf(value: Value): Constant | undefined {
+  return takenOverUnread(value) ? undefined : constantOf(value);
 }
 
 /** The one string, number or boolean a value settles on, or null. */

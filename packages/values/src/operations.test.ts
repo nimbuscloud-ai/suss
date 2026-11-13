@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { join } from "./lattice.js";
 import {
   appended,
   caseRows,
@@ -24,12 +25,15 @@ import {
 import {
   concat,
   constant,
+  constantOf,
   hole,
   holePiece,
   literalOf,
   record,
   sequence,
+  settledConstantOf,
   string,
+  takenOverUnread,
   text,
   textPiece,
   unbounded,
@@ -316,6 +320,28 @@ describe("row helpers", () => {
     expect(readableFallback(constant(null), text("b"), isPresent)).toEqual(
       text("b"),
     );
+  });
+
+  it("marks a default taken over an unread value, and only that one", () => {
+    const overHole = readableFallback(hole("x"), constant(500), isPresent);
+    expect(constantOf(overHole)).toBe(500);
+    expect(takenOverUnread(overHole)).toBe(true);
+    expect(settledConstantOf(overHole)).toBeUndefined();
+
+    const overAbsent = readableFallback(
+      constant(null),
+      constant(404),
+      isPresent,
+    );
+    expect(takenOverUnread(overAbsent)).toBe(false);
+    expect(settledConstantOf(overAbsent)).toBe(404);
+  });
+
+  it("keeps the mark where a branch with the default meets one without it", () => {
+    const overHole = readableFallback(hole("x"), constant(500), isPresent);
+    expect(takenOverUnread(join(constant(500), overHole))).toBe(true);
+    expect(takenOverUnread(join(overHole, constant(500)))).toBe(true);
+    expect(takenOverUnread(join(constant(500), constant(500)))).toBe(false);
   });
 
   it("folds a path join of literals and joins anything else with a slash", () => {
