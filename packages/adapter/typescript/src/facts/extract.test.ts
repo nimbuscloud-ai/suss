@@ -813,3 +813,55 @@ describe("the calls a body runs", () => {
     expect(fromFacts).not.toContain("log()");
   });
 });
+
+describe("the calls a body writes as statements", () => {
+  it("places a function's and the file's calls in order through if, switch and try, and not a nested function's or a loop's", () => {
+    const { db, table } = factsFor({
+      "/routes.ts": [
+        "setup();",
+        "export function routes(kind: string) {",
+        '  get("a");',
+        "  if (dev) {",
+        '    post("b");',
+        '  } else put("c");',
+        "  switch (kind) {",
+        '    case "x":',
+        '      patch("d");',
+        "  }",
+        "  try {",
+        '    remove("e");',
+        "  } catch {",
+        '    head("f");',
+        "  } finally {",
+        '    trace("g");',
+        "  }",
+        '  const x = build("h");',
+        '  const inner = () => { skip("i"); };',
+        '  for (const item of items) { loop("j"); }',
+        "}",
+        "run();",
+      ].join("\n"),
+    });
+    const placed: Record<string, string[]> = {};
+    const sorted = [...rows(db, table, "bodyCallAt")].sort(
+      (a, b) => Number(a[1]) - Number(b[1]),
+    );
+    for (const [owner = "", , call = ""] of sorted) {
+      const owned = owner.slice(0, 22);
+      placed[owned] = [...(placed[owned] ?? []), call.split("(")[0] ?? ""];
+    }
+    expect(placed).toEqual({
+      "/routes.ts": ["setup", "run"],
+      "export function routes": [
+        "get",
+        "post",
+        "put",
+        "patch",
+        "remove",
+        "head",
+        "trace",
+      ],
+      '() => { skip("i"); }': ["skip"],
+    });
+  });
+});

@@ -17,7 +17,7 @@ import {
   restBinding,
 } from "@suss/behavioral-ir";
 import { absentReading, runPackHook, unreadableReading } from "@suss/extractor";
-import { nodeOfKey, spanOfKey } from "@suss/resolution";
+import { spanOfKey } from "@suss/resolution";
 
 import {
   ancestryOf,
@@ -107,7 +107,7 @@ import { streamWriteEffects } from "./streamWrites.js";
 import { testCaseUnits, testPatternsIn } from "./testCases.js";
 import { testClassPatternsIn, testClassUnits } from "./testClasses.js";
 import { typeShapeFromNode } from "./typeShape.js";
-import { stringValueOf } from "./values/evaluator.js";
+import { rubyNodeOfKey, stringValueOf } from "./values/evaluator.js";
 
 import type {
   DispatchTable,
@@ -461,7 +461,7 @@ async function jobUnits(
     const node =
       at === null || tree === null
         ? null
-        : nodeOfKey(new Map([[at.file, tree]]), handler.functionKey);
+        : rubyNodeOfKey(new Map([[at.file, tree]]), handler.functionKey);
     if (at === null || node === null) {
       continue;
     }

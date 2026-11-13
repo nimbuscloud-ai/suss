@@ -110,7 +110,25 @@ export function pythonModuleOps(
   const source = pythonFactSource(db);
   return factModuleOps(file.file, source, {
     calls: () => callsOutsideFunctions(file, source),
+    classes: () => classesIn(file),
   });
+}
+
+/** Every class the module writes, however deep, in source order. */
+function classesIn(file: BoundPythonFile): string[] {
+  const found: string[] = [];
+  const visit = (node: PyNode): void => {
+    if (node.type === "class_definition") {
+      found.push(nodeId(file.file, node));
+    }
+    for (const child of node.namedChildren) {
+      if (child !== null) {
+        visit(child);
+      }
+    }
+  };
+  visit(file.root);
+  return found;
 }
 
 /** Functions and lambdas run later, so their calls are not the module body's. */

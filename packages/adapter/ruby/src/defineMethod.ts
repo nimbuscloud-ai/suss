@@ -12,11 +12,11 @@
  * only in part becomes a pattern the whole name has to match.
  */
 
-import { type KeySpan, nodeOfKey, spanOfKey } from "@suss/resolution";
+import { type KeySpan, spanOfKey } from "@suss/resolution";
 import { hole, literalOf, piecesOf } from "@suss/values";
 
 import { field } from "./ast.js";
-import { evaluatedValue } from "./values/evaluator.js";
+import { evaluatedValue, rubyNodeOfKey } from "./values/evaluator.js";
 import { type LoopElement, loopElementsOf } from "./values/literals.js";
 
 import type { Database } from "@suss/datalog";
@@ -115,7 +115,7 @@ function readOne(
   loops: readonly LoopBlock[],
 ): { names: string[]; patterns: RegExp[] } | null {
   // A key with no node in the run is treated like an unreadable name.
-  const node = nodeOfKey(rootsByFile, nameKey);
+  const node = rubyNodeOfKey(rootsByFile, nameKey);
   const names: string[] = [];
   const patterns: RegExp[] = [];
   for (const bindings of loopTurns(db, rootsByFile, loops)) {
@@ -248,11 +248,11 @@ function collectionNode(
   rootsByFile: ReadonlyMap<string, RbNode>,
   loop: LoopBlock,
 ): RbNode | null {
-  const written = nodeOfKey(rootsByFile, loop.over);
+  const written = rubyNodeOfKey(rootsByFile, loop.over);
   if (written !== null) {
     return written;
   }
-  const call = nodeOfKey(rootsByFile, loop.block.key)?.parent ?? null;
+  const call = rubyNodeOfKey(rootsByFile, loop.block.key)?.parent ?? null;
   return call === null ? null : field(call, "receiver");
 }
 

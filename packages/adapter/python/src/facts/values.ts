@@ -1451,8 +1451,65 @@ function emitFunctionFacts(
     emitReturnAnnotation(emitter, fn, funcKey);
   }
   emitReturnName(emitter, fn, funcKey);
+  if (fn.type !== "lambda") {
+    emitBodyCallPositions(emitter, funcKey, children(body));
+  }
 
   return funcKey;
+}
+
+/** The statements that run what is written under them in place, one branch or another. */
+const BRANCHING_STATEMENTS: ReadonlySet<string> = new Set([
+  "if_statement",
+  "elif_clause",
+  "else_clause",
+  "try_statement",
+  "except_clause",
+  "except_group_clause",
+  "finally_clause",
+  "with_statement",
+]);
+
+/**
+ * The calls written as statements among `statements`, in order, through
+ * the branches of an `if`, a `try` or a `with` and not into a nested
+ * function or class.
+ */
+function callStatementsIn(statements: readonly PyNode[]): PyNode[] {
+  return statements.flatMap((statement) => {
+    const [only, ...more] = children(statement);
+    if (statement.type === "expression_statement") {
+      return only?.type === "call" && more.length === 0 ? [only] : [];
+    }
+    if (!BRANCHING_STATEMENTS.has(statement.type)) {
+      return [];
+    }
+    return children(statement).flatMap((part) => {
+      if (part.type === "block") {
+        return callStatementsIn(children(part));
+      }
+      return BRANCHING_STATEMENTS.has(part.type)
+        ? callStatementsIn([part])
+        : [];
+    });
+  });
+}
+
+/** `bodyCallAt` for each call written as a statement among `statements`, which the function or module at `ownerKey` runs in that order. */
+function emitBodyCallPositions(
+  emitter: Emitter,
+  ownerKey: string,
+  statements: readonly PyNode[],
+): void {
+  callStatementsIn(statements).forEach((call, position) => {
+    add(
+      emitter,
+      "bodyCallAt",
+      ownerKey,
+      String(position),
+      nodeId(emitter.filePath, call),
+    );
+  });
 }
 
 /**
@@ -2653,5 +2710,6 @@ export function emitValueFacts(
   emitNestedDefinitions(emitter, root);
   emitScopeWrites(emitter, readScope(root, []), true);
   emitExpressionFacts(emitter, root);
+  emitBodyCallPositions(emitter, filePath, children(root));
   emitNamedStores(emitter);
 }

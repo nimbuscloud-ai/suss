@@ -17,6 +17,9 @@ import {
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
 
+/** `[...]`, and the `%w[]` and `%i[]` lists of words. */
+const ARRAY_TYPES = new Set(["array", "string_array", "symbol_array"]);
+
 const SCALARS: Readonly<Record<string, TypeShape>> = {
   integer: { type: "integer" },
   float: { type: "number" },
@@ -40,7 +43,7 @@ export function writtenShapeOf(node: RbNode): TypeShape {
   if (node.type === "hash") {
     return hashShape(node);
   }
-  if (node.type === "array") {
+  if (ARRAY_TYPES.has(node.type)) {
     const first = children(node).find((child) => child !== null);
     return {
       type: "array",

@@ -2213,6 +2213,9 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
         recordBodyNode(db, table, fnId, descendant, returns, writes),
       );
       emitNamedStores(db, table, writes);
+      if (Node.isBlock(body)) {
+        emitBodyCallPositions(db, table, fnId, body.getStatements());
+      }
     }
 
     if (!returns.stated) {
@@ -2460,6 +2463,69 @@ function emitTopLevelStatements(
     }
   }
   emitNamedStores(db, table, writes);
+  emitBodyCallPositions(
+    db,
+    table,
+    sourceFile.getFilePath(),
+    sourceFile.getStatements(),
+  );
+}
+
+/**
+ * The calls written as statements among `statements`, in order, through
+ * a block and the branches of an `if`, a `switch` or a `try`, and not into
+ * a loop or a nested function.
+ */
+function callStatementsIn(statements: readonly Node[]): CallExpression[] {
+  return statements.flatMap((statement): CallExpression[] => {
+    if (Node.isExpressionStatement(statement)) {
+      const expression = statementExpressionOf(statement);
+      return Node.isCallExpression(expression) ? [expression] : [];
+    }
+    if (Node.isBlock(statement)) {
+      return callStatementsIn(statement.getStatements());
+    }
+    if (Node.isIfStatement(statement)) {
+      const otherwise = statement.getElseStatement();
+      return callStatementsIn([
+        statement.getThenStatement(),
+        ...(otherwise === undefined ? [] : [otherwise]),
+      ]);
+    }
+    if (Node.isSwitchStatement(statement)) {
+      return statement
+        .getClauses()
+        .flatMap((clause) => callStatementsIn(clause.getStatements()));
+    }
+    if (Node.isTryStatement(statement)) {
+      const caught = statement.getCatchClause()?.getBlock();
+      const last = statement.getFinallyBlock();
+      return callStatementsIn([
+        statement.getTryBlock(),
+        ...(caught === undefined ? [] : [caught]),
+        ...(last === undefined ? [] : [last]),
+      ]);
+    }
+    return [];
+  });
+}
+
+/** `bodyCallAt` for each call written as a statement among `statements`, which the function or file at `ownerKey` runs in that order. */
+function emitBodyCallPositions(
+  db: Database,
+  table: NodeTable,
+  ownerKey: string,
+  statements: readonly Node[],
+): void {
+  callStatementsIn(statements).forEach((call, position) => {
+    fact(
+      db,
+      "bodyCallAt",
+      ownerKey,
+      String(position),
+      emitValue(db, table, call),
+    );
+  });
 }
 
 /**

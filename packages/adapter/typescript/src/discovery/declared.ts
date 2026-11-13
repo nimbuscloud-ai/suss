@@ -53,6 +53,11 @@ export function moduleOpsFor(
         callsOutsideFunctions(sourceFile).map((call) =>
           opsOverFacts(call, { resolution: store, originatesFrom }),
         ),
+      classes: () =>
+        classesIn(sourceFile).map((cls) => {
+          access.state(cls);
+          return nodeId(cls);
+        }),
       functions: () =>
         functionsIn(sourceFile).map((fn) => {
           access.state(fn);
@@ -78,6 +83,21 @@ function callsOutsideFunctions(sourceFile: SourceFile): Called[] {
     }
   });
   return calls;
+}
+
+/** Every class the file writes, declared or assigned to a name, in source order. */
+function classesIn(sourceFile: SourceFile): Node[] {
+  const found: Node[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (
+      Node.isClassDeclaration(node) ||
+      (Node.isClassExpression(node) &&
+        Node.isVariableDeclaration(node.getParent()))
+    ) {
+      found.push(node);
+    }
+  });
+  return found;
 }
 
 /** Every function the file writes, declared, assigned or written in place, in source order. */

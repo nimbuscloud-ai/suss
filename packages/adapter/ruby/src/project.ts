@@ -55,7 +55,6 @@ import {
   importedFilesByFile,
   mergeStoredDependencies,
   noDependencies,
-  nodeOfKey,
   observeDemand,
   type PackWords,
   recordsToReplay,
@@ -66,7 +65,7 @@ import {
 
 import { rangeOf } from "./ast.js";
 import { claimsSubUnits } from "./claims.js";
-import { declaredDiscoveryUnits } from "./declaredDiscovery.js";
+import { declaredDiscoveryUnits, rubyModuleOps } from "./declaredDiscovery.js";
 import { readDynamicNames } from "./defineMethod.js";
 import {
   buildRubyExtractionReport,
@@ -93,7 +92,7 @@ import { emitRequireFacts } from "./facts.js";
 import { jobDeclarationsIn } from "./jobs.js";
 import { moduleExportUnits, settleRubyModules } from "./moduleSurface.js";
 import { bodyBlocksIn, inflectionsIn, scopeCallsIn } from "./pack.js";
-import { parseRuby } from "./parser.js";
+import { parseRuby, parseRubySync } from "./parser.js";
 import {
   EVERY_ARGLESS_CALL,
   moduleScopeInvocationEffects,
@@ -133,6 +132,7 @@ import {
   bindEvaluator,
   forgetEvaluations,
   methodDefinitionsIn,
+  rubyNodeOfKey,
 } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 
@@ -145,6 +145,7 @@ import type {
   DeclaredModule,
   ExtractionReport,
   ExtractorOptions,
+  ModuleOps,
   PackTally,
   PartialPlan,
   RawCodeStructure,
@@ -404,6 +405,16 @@ export function factsForFile(options: FileFactsOptions): Database {
   facts.addFile(options.file, options.root);
   facts.finish();
   return facts.db;
+}
+
+/**
+ * One file read on its own, as `factsForFile` states it with no pack, as
+ * the module ops a declared reader asks. A pack that reads a file the
+ * walk does not, such as a routes file, reads it through these.
+ */
+export function moduleOpsForFile(file: string): ModuleOps {
+  const root = parseRubySync(fs.readFileSync(file, "utf8")).rootNode;
+  return rubyModuleOps(root, file, factsForFile({ file, root, packs: [] }));
 }
 
 /** A unit's record while the run that will store it is still going. */
@@ -794,7 +805,8 @@ async function runRuby(
             changes,
           );
         });
-  const nodeOf = (key: string): RbNode | null => nodeOfKey(rootsByFile, key);
+  const nodeOf = (key: string): RbNode | null =>
+    rubyNodeOfKey(rootsByFile, key);
 
   const seeds: Seed[] = [];
   const seedKeys = new Set<string>();

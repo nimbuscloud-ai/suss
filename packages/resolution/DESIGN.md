@@ -271,7 +271,14 @@ callArg(r, k, a)            r passes a at position k
 callKeywordArg(r, n, a)     r passes a under the keyword n. Ruby 3.1's
                             f(n:) passes the local, method or constant
                             spelled n, and a is keyed the way f(n: n)
-                            keys it (Python, Ruby)
+                            keys it. Ruby states a key written as a
+                            string here as well (Python, Ruby)
+callPairArg(r, k, v)        r passes the pair k => v, whose key is a value
+                            rather than a keyword: a string, a constant
+                            or any other expression, as in
+                            mount Sidekiq::Web => "/sidekiq". The ops in
+                            @suss/recognize/ops read it, and no rule does
+                            (Ruby)
 callArgCount(r, k)          r is written with k arguments, keyword ones
                             and a splat included (Python)
 callOutsideMethod(r)        the call r is outside every method body. Ruby
@@ -282,6 +289,15 @@ callsChosenEntry(r)         the call r runs the member its own entry read
 bodyCalls(f, c)             f's body calls the callee c, keyed the way
                             call keys that call's callee
 makesCall(f, r)             the call r is written in f's own body
+bodyCallAt(f, k, r)         the call r is written as the k-th statement
+                            of f's body, counting in source order through
+                            the branches of a conditional and not into a
+                            nested function or block. f is a function, a
+                            Ruby block or class, or a file under its
+                            path. makesCall has no order, and reaches
+                            into nested blocks and into arguments. The
+                            ops in @suss/recognize/ops read it, and no
+                            rule does
 callBlock(r, b)             the call r is written with the block b, which
                             is a function of its own. The ops in
                             @suss/recognize/ops read it to find the call
