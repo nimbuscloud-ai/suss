@@ -30,7 +30,7 @@ const RECOGNITION = "@suss/framework-cloudflare-workers";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "3";
+const VERSION = "4";
 
 export const optionsSchema = z
   .object({
