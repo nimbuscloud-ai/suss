@@ -130,6 +130,12 @@ describe("the calls a body writes as statements", () => {
   it("gives nothing for a value that writes no body", () => {
     expect(factValueOps("a", source()).bodyCalls?.()).toEqual([]);
   });
+
+  it("reads a value written as a call as that call, and any other value as none", () => {
+    const facts = source();
+    expect(factValueOps("getA", facts).asCall?.()?.calleeText()).toBe("get");
+    expect(factValueOps("list", facts).asCall?.()).toBeNull();
+  });
 });
 
 describe("a call's pairs and loops", () => {
