@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { Database, lit, rule, variable as v } from "@suss/datalog";
+import { constant, Database, lit, rule, variable as v } from "@suss/datalog";
 
 import { calleeOutcomeOf, calleeOutcomes, couldBeSettled } from "./callee.js";
 import { RESOLUTION_QUESTIONS, RESOLUTION_RULES, VALUE_STEP } from "./index.js";
@@ -326,6 +326,23 @@ describe("askResolution", () => {
     expect(db.lookup("wantedCallOriginPair", 0, "write")).toEqual([
       ["write", "lib", "write"],
     ]);
+  });
+
+  it("refuses a rule that derives a cleared relation from facts read from source alone", () => {
+    // With the import first, the demand on the chain comes from every
+    // namespace read in the project rather than from the question.
+    const importsFirst = rule(
+      "wantedCallOriginPair",
+      [v("x"), v("m"), v("p")],
+      [
+        lit("imports", v("o"), v("m"), constant("*")),
+        lit("readsProperty", v("y"), v("o"), v("p")),
+        lit("callOriginChain", v("x"), v("y")),
+      ],
+    );
+    expect(() => resolutionProgram([importsFirst])).toThrow(
+      /derived from facts read from source alone.*wanted:callOriginChain:fb/,
+    );
   });
 });
 

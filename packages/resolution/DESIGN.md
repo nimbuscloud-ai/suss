@@ -1948,6 +1948,9 @@ Asking where `mod.readFile` comes from gave `readFile` from
 `./reader.js` when it was the first question about the file, and
 nothing once any other question had read the file first. Those rules
 now start at `callOriginChain`, which only the question fills.
+`resolutionProgram` refuses to build a program in which a relation that
+is cleared after each question can be derived from facts read from
+source alone, and the error says which relation it is.
 
 ## What is not modelled
 

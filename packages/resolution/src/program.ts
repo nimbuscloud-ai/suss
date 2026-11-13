@@ -100,8 +100,53 @@ function builtProgram(
     process.env.SUSS_RESOLUTION_ON_DEMAND === "0"
       ? { rules, demandDriven: [], demands: [] }
       : deriveOnDemand(rules, complete);
+  refuseClearedRowsFromSource(program);
   cache.set(languageRules, program);
   return program;
+}
+
+/**
+ * A relation a question takes back has to come from the question.
+ * Clearing drops its rows after every question, and a resumed
+ * evaluation derives only from facts added since, so a row the rules
+ * derive from facts read from source alone comes back only while those
+ * facts are new. The question that first read a file would see it, and
+ * every later question would go without. DESIGN.md's section on
+ * changing a rule shows the rule body that does this.
+ */
+function refuseClearedRowsFromSource(program: OnDemandRules): void {
+  const derived = clearedRelationsFromSource(program);
+  if (derived.length === 0) {
+    return;
+  }
+  throw new Error(
+    `These relations are cleared after every question but derived from facts read from source alone, so a question after the first would not see them: ${derived.join(", ")}. ` +
+      "Put the literal a question fills first in the rule that passes the demand on.",
+  );
+}
+
+/** The relations a question takes back that the rules can derive with no question asked. */
+function clearedRelationsFromSource(program: OnDemandRules): string[] {
+  const asking = new Set(ASKING_RELATIONS);
+  const derived = new Set(program.rules.map((one) => one.head.relation));
+  const fromSource = new Set<string>();
+  const readFromSource = (relation: string): boolean =>
+    fromSource.has(relation) ||
+    (!derived.has(relation) && !asking.has(relation));
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const one of program.rules) {
+      if (
+        !fromSource.has(one.head.relation) &&
+        one.body.every((literal) => readFromSource(literal.relation))
+      ) {
+        fromSource.add(one.head.relation);
+        grew = true;
+      }
+    }
+  }
+  return queryFacts(program).filter((relation) => fromSource.has(relation));
 }
 
 /**
