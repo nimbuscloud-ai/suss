@@ -165,6 +165,27 @@ describe("the database work a Python body does", () => {
     });
   });
 
+  it("writes the callee as written, without the last call's arguments", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "",
+        "found = Orders.query().filter_by(id=1).first()",
+        "count = select(User.id).where(User.id == 1)",
+        "",
+      ].join("\n"),
+    );
+
+    expect(
+      effects.map((effect) =>
+        effect.type === "interaction" ? effect.callee : null,
+      ),
+    ).toEqual([
+      "Orders.query().filter_by(id=1).first",
+      "select(User.id).where",
+    ]);
+  });
+
   it("counts a chain once rather than once per call in it", async () => {
     const effects = await effectsFor(
       "found = Orders.query().filter_by(id=1).all()\n",
