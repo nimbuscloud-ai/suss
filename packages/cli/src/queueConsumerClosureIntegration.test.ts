@@ -25,6 +25,7 @@ import {
   awsLambdaPython as lambdaPython,
   awsLambdaRuby as lambdaRuby,
 } from "@suss/framework-aws-lambda";
+import sqsFramework from "@suss/packs/aws-sqs";
 import faradayClient from "@suss/packs/faraday";
 import requestsClient from "@suss/packs/requests";
 
@@ -54,6 +55,33 @@ describe("repeat delivery over a queue worker on a shared CodeUri", () => {
       "src/handlers/orders.ts",
       "src/lib/billing.ts",
     ]);
+  });
+
+  it("reads the TypeScript worker's receive, though its handler types the event in place and imports nothing from aws-lambda", async () => {
+    clearTemplateCache();
+    const adapter = createTypeScriptAdapter({
+      tsConfigFilePath: path.join(typescriptRoot, "tsconfig.json"),
+      frameworks: [awsLambdaFramework(), sqsFramework(), webFetchPack()],
+      cacheDir: null,
+    });
+    const worker = (await adapter.extractAll()).find(
+      (summary) => summary.identity.name === "OrdersWorker.handler",
+    );
+    const receives = (worker?.transitions ?? [])
+      .flatMap((transition) => transition.effects)
+      .flatMap((effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "message-receive"
+          ? [
+              Object.keys(
+                (effect.interaction.body as { fields?: object } | undefined)
+                  ?.fields ?? {},
+              ),
+            ]
+          : [],
+      );
+
+    expect(receives).toEqual([["id", "account"]]);
   });
 
   it("reports the Python worker's own call and its helper's, and nothing else", async () => {

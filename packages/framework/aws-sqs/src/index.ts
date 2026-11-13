@@ -138,6 +138,9 @@ export function sqsFramework(options: SqsPackOptions = {}): PatternPack {
       // A handler file imports `SQSEvent` from aws-lambda and often never
       // imports the SQS client.
       requiresImport: ["aws-lambda"],
+      // A handler that types its event in place imports neither, and what
+      // it spells to read a message is what admits its file.
+      requiresText: ["Records", "JSON.parse"],
     },
   );
 }

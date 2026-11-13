@@ -51,6 +51,7 @@ export function computePackApplicability(
     pack: PatternPack;
     gates: string[];
     named: string[];
+    words: readonly string[];
     generated: GeneratedModules;
   }> = [];
   for (const pack of packs) {
@@ -62,6 +63,7 @@ export function computePackApplicability(
       pack,
       gates: collectPackGates(pack),
       named: collectPackNameGates(pack),
+      words: pack.requiresText ?? [],
       generated: generatedModulesOf([pack], tallies),
     });
   }
@@ -89,10 +91,11 @@ export function computePackApplicability(
   // would be work nobody needs.
   const gateMatches = (
     sf: SourceFile,
-    { gates, named, generated }: (typeof gatedPacks)[number],
+    { gates, named, words, generated }: (typeof gatedPacks)[number],
   ): boolean =>
     namesAnyPackage(importsOf(sf), gates) ||
     matchesTestFileName(sf.getFilePath(), named) ||
+    spellsEvery(sf.getFullText(), words) ||
     generated.reachedFrom(sf.getFilePath(), importsOf(sf), compilerOptions);
 
   const reachingByPack = new Map<PatternPack, ReadonlySet<SourceFile>>();
@@ -141,7 +144,10 @@ export function packIsUngated(pack: PatternPack): boolean {
   // A pack-level `requiresImport` is ALWAYS a gate, even on
   // recognizer-only packs. Lets `@suss/framework-aws-sqs` declare
   // `["@aws-sdk/client-sqs"]` and skip files that don't import it.
-  if (pack.requiresImport !== undefined && pack.requiresImport.length > 0) {
+  if (
+    (pack.requiresImport !== undefined && pack.requiresImport.length > 0) ||
+    (pack.requiresText !== undefined && pack.requiresText.length > 0)
+  ) {
     return false;
   }
   // Packs whose only mechanism is a recognizer or a `discoverUnits`
@@ -175,12 +181,22 @@ export function packIsUngated(pack: PatternPack): boolean {
 }
 
 /**
- * Strings a pack looks for in a file's own text, from `projectHelpers`.
- * A pack whose library is reached over HTTP has no import to gate on.
+ * Strings a pack looks for in a file's own text, from `projectHelpers`
+ * and the pack's text gate. A pack whose library is reached over HTTP has
+ * no import to gate on. A file with any one of them is loaded, and the
+ * gate itself asks for all of a pack's `requiresText` once it is.
  */
 export function collectPackMarks(pack: PatternPack): string[] {
   const find = pack.projectHelpers?.find;
-  return find?.by === "text" ? [...find.contains] : [];
+  return [
+    ...(find?.by === "text" ? find.contains : []),
+    ...(pack.requiresText ?? []),
+  ];
+}
+
+/** Whether the text spells every word, for a gate that lists any. */
+function spellsEvery(text: string, words: readonly string[]): boolean {
+  return words.length > 0 && words.every((word) => text.includes(word));
 }
 
 /**
