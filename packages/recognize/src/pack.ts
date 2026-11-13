@@ -126,19 +126,23 @@ type Walk = "invocation" | "access";
  * whether the source wrote a call or a template, unless the chain says
  * its statements are always a call's argument.
  */
-const DISPATCHED_ON: ByEnding<Walk> = {
+const DISPATCHED_ON: ByEnding<Walk | "none"> = {
   storageAccess: () => "invocation",
   sqlAccess: (ending) => ending.walk ?? "access",
   messageSend: () => "invocation",
   messageReceive: () => "invocation",
   unitInvoke: () => "invocation",
   schedule: () => "invocation",
+  claims: () => "none",
   streamWrite: () => "invocation",
   runtimeRead: () => "access",
 };
 
-/** The walk a chain is dispatched on. */
-function walkOf(chain: Chain<MethodMeaning>): Walk {
+/**
+ * The walk a chain is dispatched on. A chain that only claims callbacks
+ * records nothing, so no walk dispatches on it.
+ */
+function walkOf(chain: Chain<MethodMeaning>): Walk | "none" {
   return byEnding(DISPATCHED_ON, chain.ending);
 }
 
@@ -288,6 +292,7 @@ const WIRE: ByEnding<string> = {
   messageReceive: (ending) => ending.wire,
   unitInvoke: (ending) => ending.platform,
   schedule: () => "in-process",
+  claims: () => "in-process",
   streamWrite: () => "in-process",
   runtimeRead: () => "in-process",
 };
@@ -316,6 +321,7 @@ const DECLARED_NAME: ByEnding<string> = {
   messageReceive: (ending) => ending.wire,
   unitInvoke: (ending) => ending.platform,
   schedule: (ending) => ending.yields,
+  claims: (ending) => ending.yields,
   streamWrite: (ending) => ending.yields,
   runtimeRead: (ending) => ending.yields,
 };
@@ -392,6 +398,7 @@ const SYSTEMS_ASKED: ByEnding<readonly (readonly [string, StorageSystem])[]> = {
   messageReceive: () => [],
   unitInvoke: () => [],
   schedule: () => [],
+  claims: () => [],
   streamWrite: () => [],
   runtimeRead: () => [],
 };

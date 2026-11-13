@@ -367,6 +367,8 @@ export interface UnitWhenInPlaceLink {
   readonly kind: CodeUnitKind;
   /** The parts its name is built from, in order. */
   readonly name: readonly SubUnitNamePart[];
+  /** The word `countInParent` writes before its count. The callee as written when unset. */
+  readonly countedAs?: string;
   /** What the unit's summary records about the call that made it, when the pack says. */
   readonly metadata?: ClaimMetadata;
 }
@@ -381,7 +383,12 @@ export type ClaimMetadata = Readonly<
 >;
 
 /** What one metadata field is read from. */
-export type ClaimMetadataLeaf = CalleeLeaf;
+export type ClaimMetadataLeaf =
+  | CalleeLeaf
+  | TextLeaf
+  | ParentLeaf
+  | CountLeaf
+  | ArgumentItemsLeaf;
 
 /** The callee of the call that handed the callback over, as the source writes it. */
 export interface CalleeLeaf {
@@ -393,9 +400,41 @@ export interface CalleeLeaf {
  * as the source writes it, and a count of the claims under that callee
  * in the parent, in source order. `["parent", "callee",
  * "countPerCallee"]` names the second `useQuery` callback in `OrderList`
- * `OrderList.useQuery#1`.
+ * `OrderList.useQuery#1`. `countInParent` counts every claim this chain
+ * makes in the parent, however the callee is spelled, and writes the
+ * link's `countedAs` before it: `Panel.effect#1`.
  */
-export type SubUnitNamePart = "parent" | "callee" | "countPerCallee";
+export type SubUnitNamePart =
+  | "parent"
+  | "callee"
+  | "countPerCallee"
+  | "countInParent";
+
+/** Text the pack writes as it is. */
+export interface TextLeaf {
+  readonly reads: "text";
+  readonly text: string;
+}
+
+/** The name of the unit the callback was written in. */
+export interface ParentLeaf {
+  readonly reads: "parent";
+}
+
+/** How many claims this chain made in the parent before this one, the number `countInParent` writes. */
+export interface CountLeaf {
+  readonly reads: "count";
+}
+
+/**
+ * The items of the list the call passes at `at`, each as written, or the
+ * whole argument as written in a list of one when it is not a list
+ * written there. Null when the call passes nothing at `at`.
+ */
+export interface ArgumentItemsLeaf {
+  readonly reads: "argumentItems";
+  readonly at: number;
+}
 
 /** One question in a chain, and the answer the pack gave for it. */
 export type Link<TMeaning> =
@@ -873,8 +912,19 @@ export type Ending =
   | MessageReceiveEnding
   | UnitInvokeEnding
   | ScheduleEnding
+  | ClaimsEnding
   | StreamWriteEnding
   | RuntimeReadEnding;
+
+/**
+ * A chain that records nothing on the call's unit and only claims the
+ * callbacks its calls write in place, as React's `useEffect` does: the
+ * component's summary keeps nothing of an effect, and the effect's body
+ * is a unit of its own.
+ */
+export interface ClaimsEnding {
+  readonly yields: "claims";
+}
 
 /**
  * A write to one of the process's own output streams. Nothing pairs

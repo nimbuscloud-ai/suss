@@ -45,6 +45,7 @@ import type { QualifiedTable, SqlPlaceholder } from "@suss/sql";
 import type {
   AccessKind,
   AccessPathLink,
+  ArgumentItemsLeaf,
   ArgumentPick,
   CallbackAnyArgument,
   CallbackArgument,
@@ -94,6 +95,7 @@ import type {
   StreamWriteMethod,
   SubjectLink,
   SubUnitNamePart,
+  TextLeaf,
   ToArgument,
   ToBuilder,
   ToChained,
@@ -210,11 +212,10 @@ function methodMatched(
   subject: CallOps,
   modules: readonly string[],
   onlyWhereWritten: boolean,
-): { method: string; meaning: MethodMeaning } | null {
-  const written = operationOf(subject);
-  const meaning = listed(methods, written);
-  if (meaning !== null) {
-    return startsHere(chain, subject) ? { method: written, meaning } : null;
+): MethodMatch | null {
+  const asWritten = matchedAsWritten(chain, methods, subject);
+  if (asWritten !== undefined) {
+    return asWritten;
   }
   if (
     subject.method() !== null ||
@@ -223,6 +224,61 @@ function methodMatched(
   ) {
     return null;
   }
+  return matchedByExport(methods, subject, modules);
+}
+
+/**
+ * The same match, for the sub-unit hook, asking what a bare call's
+ * callee was imported as before whether the call starts at the chain's
+ * origin. A component calls its own setters far more often than a hook,
+ * and a callee no import binds is turned down without asking the store.
+ */
+function claimMatched(
+  chain: Chain<MethodMeaning>,
+  methods: MethodsLink<MethodMeaning>,
+  subject: CallOps,
+  modules: readonly string[],
+  onlyWhereWritten: boolean,
+): MethodMatch | null {
+  const asWritten = matchedAsWritten(chain, methods, subject);
+  if (asWritten !== undefined) {
+    return asWritten;
+  }
+  if (
+    subject.method() !== null ||
+    (onlyWhereWritten && !mentionsAny(subject, modules))
+  ) {
+    return null;
+  }
+  const byExport = matchedByExport(methods, subject, modules);
+  return byExport !== null && startsHere(chain, subject) ? byExport : null;
+}
+
+interface MethodMatch {
+  readonly method: string;
+  readonly meaning: MethodMeaning;
+}
+
+/** The match for an operation the table lists as written, or undefined when it does not list it. */
+function matchedAsWritten(
+  chain: Chain<MethodMeaning>,
+  methods: MethodsLink<MethodMeaning>,
+  subject: CallOps,
+): MethodMatch | null | undefined {
+  const written = operationOf(subject);
+  const meaning = listed(methods, written);
+  if (meaning === null) {
+    return undefined;
+  }
+  return startsHere(chain, subject) ? { method: written, meaning } : null;
+}
+
+/** The match for a bare call by the export its callee was imported as. */
+function matchedByExport(
+  methods: MethodsLink<MethodMeaning>,
+  subject: CallOps,
+  modules: readonly string[],
+): MethodMatch | null {
   const exported = subject.calleeImportedAs?.(modules) ?? null;
   const byExport = exported === null ? null : listed(methods, exported);
   return exported === null || byExport === null
@@ -652,7 +708,10 @@ export function startsHere(
   );
 }
 
-/** One ending per thing a call chain can produce. */
+/**
+ * One ending per thing a call chain can produce. A chain that only
+ * claims callbacks produces nothing, and no walk dispatches on it.
+ */
 const YIELD: Record<
   Exclude<Ending["yields"], "runtimeRead" | "messageReceive">,
   (matched: Matched) => Effect[] | null
@@ -662,6 +721,7 @@ const YIELD: Record<
   messageSend: messageSend,
   unitInvoke: unitInvoke,
   schedule: schedule,
+  claims: () => null,
   streamWrite: streamWrite,
 };
 
@@ -922,6 +982,7 @@ export function compileSubUnits(
     }
     const calls = carrier?.calls?.(parent) ?? [];
     const counts = new Map<string, number>();
+    const countsInParent = new Map<UnitWhenInPlaceLink, number>();
     const claims: DiscoveredSubUnit[] = [];
     for (const call of calls) {
       const claim = claiming
@@ -933,11 +994,20 @@ export function compileSubUnits(
       if (claim === undefined) {
         continue;
       }
+      const { link } = claim.one;
       const callee = call.calleeText();
       const count = counts.get(callee) ?? 0;
       counts.set(callee, count + 1);
-      const naming: ClaimNaming = { parent: parent.name, callee, count };
-      const { link } = claim.one;
+      const countInParent = countsInParent.get(link) ?? 0;
+      countsInParent.set(link, countInParent + 1);
+      const naming: ClaimNaming = {
+        parent: parent.name,
+        callee,
+        count,
+        countInParent,
+        countedAs: link.countedAs ?? callee,
+        call,
+      };
       claims.push({
         func: claim.func,
         kind: link.kind,
@@ -979,13 +1049,19 @@ function writesAny(
 interface ClaimNaming {
   readonly parent: string;
   readonly callee: string;
+  /** The claims under this callee in the parent before this one. */
   readonly count: number;
+  /** The claims this chain made in the parent before this one. */
+  readonly countInParent: number;
+  readonly countedAs: string;
+  readonly call: CallOps;
 }
 
 const NAME_PART: Record<SubUnitNamePart, (naming: ClaimNaming) => string> = {
   parent: (naming) => naming.parent,
   callee: (naming) => `.${naming.callee}`,
   countPerCallee: (naming) => `#${naming.count}`,
+  countInParent: (naming) => `.${naming.countedAs}#${naming.countInParent}`,
 };
 
 /** How each kind of metadata leaf reads the claim. */
@@ -994,6 +1070,11 @@ const METADATA_LEAF: Record<
   (leaf: ClaimMetadataLeaf, naming: ClaimNaming) => unknown
 > = {
   callee: (_leaf, naming) => naming.callee,
+  text: (leaf) => (leaf as TextLeaf).text,
+  parent: (_leaf, naming) => naming.parent,
+  count: (_leaf, naming) => naming.countInParent,
+  argumentItems: (leaf, naming) =>
+    argumentItems(naming.call, (leaf as ArgumentItemsLeaf).at),
 };
 
 /** The metadata the link declares, with each leaf read off the claim, in the order the pack wrote the keys. */
@@ -1015,6 +1096,19 @@ function metadataOf(
 }
 
 /**
+ * The items of a list the call passes at `at`, each as written, so a
+ * reader sees what the source lists. Anything else is its whole text in
+ * a list of one, since a name for a list is what the call passes.
+ */
+function argumentItems(call: CallOps, at: number): readonly string[] | null {
+  const value = call.valueAt(at);
+  if (value === null) {
+    return null;
+  }
+  return value.writtenItems?.() ?? [value.source?.() ?? ""];
+}
+
+/**
  * The adapter's own node for the callback a call writes in place, when
  * this chain matches the call. A bare call of a global is asked first,
  * the order the recognizer asks in.
@@ -1030,7 +1124,7 @@ function claimedIn(
 ): unknown {
   const matched =
     bareCall(claiming.chain, call, claiming.modules) ??
-    methodMatched(
+    claimMatched(
       claiming.chain,
       claiming.methods,
       call,
