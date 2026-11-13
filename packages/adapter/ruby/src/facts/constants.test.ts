@@ -165,6 +165,32 @@ describe("a Ruby constant", () => {
     expect(absolute?.[1]?.startsWith("other.rb")).toBe(true);
   });
 
+  it("names a module declared with a leading `::` from the top level, and binds a read of it", async () => {
+    const db = await factsFor({
+      "engine.rb": [
+        "module ::Boards",
+        "  class Engine < ::Rails::Engine",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+      "routes.rb": "mount Boards::Engine, at: '/boards'\n",
+    });
+
+    const names = db.facts("rbConstantName").map((row) => String(row[1]));
+    expect(names).toEqual(["Boards", "Boards::Engine"]);
+    const engineKey = db
+      .facts("rbConstantName")
+      .find((row) => row[1] === "Boards::Engine")?.[0];
+    const mounted = bindingsOf(db).find(([from]) =>
+      from.startsWith("routes.rb:"),
+    );
+    expect(mounted?.[1]).toBe(engineKey);
+    expect(
+      db.facts("exportsAs").map((row) => [String(row[0]), String(row[1])]),
+    ).toContainEqual(["engine.rb", "Boards"]);
+  });
+
   it("binds a name two files open to the first body, the way Ruby reopens one class", async () => {
     const db = await factsFor({
       "one.rb": "class Order\nend\n",
