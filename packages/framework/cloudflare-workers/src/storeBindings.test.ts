@@ -129,6 +129,31 @@ beforeAll(() => {
      };`,
   );
   write(
+    "src/passedOn.ts",
+    `interface Env { SESSIONS: KVNamespace; ARCHIVE: R2Bucket }
+     async function lastSession(settings: Env) {
+       return settings.SESSIONS.get("session:last");
+     }
+     export default {
+       async fetch(request: Request, env: Env): Promise<Response> {
+         const bindings = env;
+         await bindings.ARCHIVE.head("reports/latest.csv");
+         await (env as Env).SESSIONS.put("session:current", "started");
+         return new Response(await lastSession(env));
+       },
+     };`,
+  );
+  write(
+    "src/twoStores.ts",
+    `interface Env { EITHER: R2Bucket | KVNamespace }
+     export default {
+       async fetch(request: Request, env: Env): Promise<Response> {
+         await env.EITHER.get("k");
+         return new Response("ok");
+       },
+     };`,
+  );
+  write(
     "src/abstains.ts",
     `interface Env { SESSIONS: KVNamespace; LEDGER: D1Database }
      declare const elsewhere: Env;
@@ -195,6 +220,17 @@ function storeOf(effect: Effect): string {
     throw new Error(`expected storage, got ${semantics.name}`);
   }
   return `${semantics.container} ${semantics.storageSystem}`;
+}
+
+/** The operation a storage access records. */
+function operationOf(effect: Effect): string {
+  if (
+    effect.type !== "interaction" ||
+    effect.interaction.class !== "storage-access"
+  ) {
+    throw new Error(`expected a storage access, got ${effect.type}`);
+  }
+  return effect.interaction.operation ?? "";
 }
 
 describe("storeBindingRecognizer", () => {
@@ -304,6 +340,22 @@ describe("storeBindingRecognizer", () => {
       "JOINED cloudflare-kv",
       "OPTIONAL cloudflare-kv",
     ]);
+  });
+
+  it("follows env into a local, a helper and a cast, as the env reads do", async () => {
+    const accesses = storageEffects(await run(), "passedOn.ts").map(
+      (effect) => `${storeOf(effect)} ${operationOf(effect)}`,
+    );
+    expect(accesses.sort()).toEqual([
+      "ARCHIVE r2 head",
+      "SESSIONS cloudflare-kv get",
+      "SESSIONS cloudflare-kv put",
+    ]);
+  });
+
+  it("records an access on each store a binding is typed as, KV before R2", async () => {
+    const stores = storageEffects(await run(), "twoStores.ts").map(storeOf);
+    expect(stores).toEqual(["EITHER cloudflare-kv", "EITHER r2"]);
   });
 
   it("abstains from methods, statements and receivers it cannot settle", async () => {

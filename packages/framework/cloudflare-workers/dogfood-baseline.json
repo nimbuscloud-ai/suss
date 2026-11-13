@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-cloudflare-workers",
   "exports": 3,
-  "internal": 8,
-  "consumers": 22,
-  "unfollowedCalls": 2
+  "internal": 7,
+  "consumers": 23,
+  "unfollowedCalls": 1
 }
