@@ -7,6 +7,7 @@ export { discoverDeclared } from "./discovery.js";
 export { examplesMissing, runExamples } from "./example.js";
 export { messageSends } from "./messageSends.js";
 export {
+  allOf,
   anyOf,
   constructedFrom,
   declaredBy,
@@ -17,6 +18,7 @@ export {
   inherits,
   opsIn,
   readIn,
+  readOff,
   returnedBy,
   typed,
 } from "./ops.js";
@@ -137,6 +139,7 @@ export type { DeclaredUnit } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
 export type {
+  AllOf,
   AnyOf,
   CallOps,
   ClassOps,
@@ -149,6 +152,7 @@ export type {
   Inheriting,
   Inherits,
   OpsCarrier,
+  ReadOff,
   ReadOps,
   ReadOpsCarrier,
   ReceiverOrigin,

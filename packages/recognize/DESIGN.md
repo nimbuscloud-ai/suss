@@ -46,6 +46,8 @@ The starts that begin at a receiver form their own union,
 | `declaredBy` | a receiver whose method one of these modules declared | yes |
 | `constructed` | a client made from one of these modules' exports | yes |
 | `anyOf` | a receiver any one of several origins accepts | yes |
+| `allOf` | a receiver every one of several origins accepts, asked in order | yes |
+| `readOff` | a member read off a runtime object: `env.SESSIONS` off the `env` a Worker is handed | yes |
 | `returnedBy` | what a library method returned, called on a receiver from another origin: `hook.get_client()` | yes |
 | `typed` | a receiver the program declares as one of a module's named types, `to: CommandDispatcher`, or as any type the module declares when no name is given | yes |
 | `inherits` | a receiver of a class whose ancestry reaches a library base: `class PrismaService extends PrismaClient` | yes |
@@ -110,6 +112,18 @@ gives the callback a client for the transaction as its first
 parameter. The callback is the call's first argument, a function
 written there or passed by a name bound to it, or a Ruby call's block,
 and the call has to go to `method` on a receiver `on` accepts.
+
+`readOff(object)` takes a receiver that is a member read off a
+`RuntimeObject`, the object a read chain starts from. A Worker's
+bindings arrive in `env`, so `env.SESSIONS.get(key)` is made on a
+member read off `handedIn("env")`. The receiver is asked the way a read
+site is, so a local set to `env`, a helper's parameter `env` is passed
+to, and a cast around it all count, and a member put in a local first,
+`const sessions = env.SESSIONS`, is followed through its declaration.
+Which store a binding is comes from its type, so the Workers pack writes
+`allOf(readOff(handedIn("env")), typed({ from: [GLOBAL_MODULE], named:
+["KVNamespace"] }))`. `allOf` asks its origins in order and stops at the
+first that refuses, so a pack lists the cheap one first.
 
 `imported({ from, named })` takes a value the file brought in: a
 function it calls bare, or a module or a class it calls a method on.
@@ -801,7 +815,18 @@ method table, and not two declarations.
 
 The invocation walk never visits a tagged template, so `pack` runs a
 chain with this ending on the access walk. The access walk visits calls
-too, so it also catches the unsafe form.
+too, so it also catches the unsafe form. A client that only ever takes
+its statement as a call's argument can say `walk: "invocation"`, which
+keeps its accesses among the call effects, in the order the calls were
+made, before every effect of the access walk.
+
+A Cloudflare D1 database is declared in `wrangler.toml` by its binding,
+and the contract says nothing about its tables. `.container({ of: [{
+to: "member" }] })` makes the access one per call, on the member the
+call is made on: `env.LEDGER.prepare(sql)` is a read or a write on
+`LEDGER`, a write when the statement writes any table, with no fields
+and no selector. A statement the parser can't find a table in still
+records nothing.
 
 Some libraries accept the statement either as the argument or under a
 key of an options object, and both forms are the same call. The method

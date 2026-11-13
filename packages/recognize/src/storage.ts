@@ -14,6 +14,7 @@ import type {
   ArgumentPick,
   CallStep,
   Chain,
+  ContainerMember,
   DeclaredSlots,
   Link,
   LinkFunction,
@@ -185,16 +186,21 @@ function containerLink(
     };
   }
   if (!("at" in says) && !("from" in says)) {
-    return {
-      asks: "container",
-      of: says.of,
-      ...(says.naming === undefined ? {} : { naming: says.naming }),
-    };
+    return memberContainerLink(says);
   }
   return {
     asks: "container",
     argument: says,
     ...(qualified ? { qualified: true } : {}),
+  };
+}
+
+/** The container link for the member the steps reach, which a SQL chain states too. */
+export function memberContainerLink(says: MemberContainer): ContainerMember {
+  return {
+    asks: "container",
+    of: says.of,
+    ...(says.naming === undefined ? {} : { naming: says.naming }),
   };
 }
 

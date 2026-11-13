@@ -5,7 +5,7 @@
  * export also acts as the import gate.
  *
  * Bindings arrive as the second argument to every trigger, and the env
- * chain and the store recognizer read them there. The README explains
+ * chain and the store chains read them there. The README explains
  * why an HTTP Worker gets one boundary for all of its paths.
  */
 
@@ -14,14 +14,13 @@ import { z } from "zod";
 import { compile, declarationsIn, describeDiscovery } from "@suss/recognize";
 
 import { envReads } from "./bindings.js";
-import { storeBindingRecognizer } from "./storeBindings.js";
+import { STORE_CALLS } from "./stores.js";
 import { entrypointObject, listener } from "./triggers.js";
 
-import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export { TRIGGERS, type TriggerShape } from "./handlers.js";
-export { storeBindingRecognizer } from "./storeBindings.js";
 export { METADATA_NAMESPACE } from "./triggers.js";
 
 const RECOGNITION = "@suss/framework-cloudflare-workers";
@@ -30,7 +29,7 @@ const RECOGNITION = "@suss/framework-cloudflare-workers";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "4";
+const VERSION = "5";
 
 export const optionsSchema = z
   .object({
@@ -126,12 +125,15 @@ export function cloudflareWorkersFramework(
 
     accessRecognizers: [compile(env.declared, RECOGNITION)],
 
-    // A store call on an env binding: `env.SESSIONS.get(key)`.
-    invocationRecognizers: [storeBindingRecognizer as InvocationRecognizer],
+    // A store call on an env binding: `env.SESSIONS.get(key)`. A call
+    // matches one chain per store its binding is typed as.
+    invocationRecognizers: STORE_CALLS.map((chain) =>
+      compile(chain.declared, RECOGNITION),
+    ),
 
     declarations: {
       declarations: [
-        ...declarationsIn([env]).declarations,
+        ...declarationsIn([env, ...STORE_CALLS]).declarations,
         ...patterns.map(describeDiscovery),
       ],
     },

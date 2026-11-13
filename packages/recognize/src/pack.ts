@@ -100,32 +100,41 @@ export interface PackSpec {
   discoveryInputs?: (files: readonly string[]) => string[];
 }
 
+/** One of the two walks an adapter dispatches recognizers on. */
+type Walk = "invocation" | "access";
+
 /**
  * Which walk a chain is dispatched on.
  *
  * A statement written as a tagged template is not an invocation, so the
  * invocation walk never reaches it. The access walk visits calls as
  * well as templates, so a chain over statements is dispatched there
- * whether the source wrote a call or a template.
+ * whether the source wrote a call or a template, unless the chain says
+ * its statements are always a call's argument.
  */
-const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
-  storageAccess: "invocation",
-  sqlAccess: "access",
-  messageSend: "invocation",
-  unitInvoke: "invocation",
-  schedule: "invocation",
-  streamWrite: "invocation",
-  runtimeRead: "access",
+const DISPATCHED_ON: ByEnding<Walk> = {
+  storageAccess: () => "invocation",
+  sqlAccess: (ending) => ending.walk ?? "access",
+  messageSend: () => "invocation",
+  unitInvoke: () => "invocation",
+  schedule: () => "invocation",
+  streamWrite: () => "invocation",
+  runtimeRead: () => "access",
 };
+
+/** The walk a chain is dispatched on. */
+function walkOf(chain: Chain<MethodMeaning>): Walk {
+  return byEnding(DISPATCHED_ON, chain.ending);
+}
 
 /** The chains a pack dispatches on one of the two walks. */
 function walkedBy(
   chains: readonly Chain<MethodMeaning>[],
-  walk: "invocation" | "access",
+  walk: Walk,
   recognizedAs: string,
 ): InvocationRecognizer[] {
   return chains
-    .filter((chain) => DISPATCHED_ON[chain.ending.yields] === walk)
+    .filter((chain) => walkOf(chain) === walk)
     .map((chain) => compile(chain, recognizedAs));
 }
 

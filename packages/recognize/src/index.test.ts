@@ -4,14 +4,17 @@ import { astLink } from "./ast.js";
 import { examplesMissing, runExamples } from "./example.js";
 import { messageSends } from "./messageSends.js";
 import {
+  allOf,
   anyOf,
   constructedFrom,
   declaredBy,
   handedBy,
+  handedIn,
   imported,
   inherits,
   modulesOf,
   opsIn,
+  readOff,
   returnedBy,
   typed,
 } from "./ops.js";
@@ -1976,6 +1979,18 @@ describe("a pack that reads more files than its chains match in", () => {
 
     expect(packOf(either).requiresImport).toEqual(["tapedeck", "player"]);
   });
+
+  it("gates on the modules allOf mentions, and none for a read off a runtime object", () => {
+    const both = storageCalls({
+      system: "cassette",
+      client: allOf(readOff(handedIn("env")), declaredBy("tapedeck")),
+    })
+      .methods({ get: READ_KEY })
+      .example('env.DECK.get("side_a:1")');
+
+    expect(packOf(both).requiresImport).toEqual(["tapedeck"]);
+    expect(modulesOf(readOff(handedIn("env")))).toEqual([]);
+  });
 });
 
 const STATEMENT: SqlMethod = { statement: { at: 0 } };
@@ -2410,6 +2425,92 @@ describe("a chain over statements written as SQL", () => {
         example: 'deck.query("SELECT id FROM tapes")',
       },
     ]);
+  });
+});
+
+describe("a chain over statements against a database its contract declares", () => {
+  const ledger = (walk?: "invocation" | "access") =>
+    sqlStatements({
+      system: "d1",
+      dialect: "sqlite",
+      client: declaredBy("tapedeck"),
+      ...(walk === undefined ? {} : { walk }),
+    })
+      .methods({ prepare: STATEMENT })
+      .container({ of: [{ to: "member" }] })
+      .example('env.LEDGER.prepare("SELECT total FROM entries")');
+
+  const assembled = (walk?: "invocation" | "access") =>
+    pack("tapedeck", [ledger(walk)], {
+      languages: ["typescript"],
+      recognizedAs: "@suss/framework-tapedeck",
+    });
+
+  /** What the chain records for one `env.LEDGER.prepare(statement)`. */
+  const prepared = (statement: unknown): Effect[] | null => {
+    const [recognizer] = assembled("invocation").invocationRecognizers ?? [];
+    return (
+      recognizer?.(null, {
+        ops: callOps({
+          method: "prepare",
+          from: ["tapedeck"],
+          callee: "env.LEDGER.prepare",
+          member: callOps({ method: "LEDGER" }),
+          values: { 0: statement },
+        }),
+      }) ?? null
+    );
+  };
+
+  it("records one access per call on the member, a write when the statement writes any table", () => {
+    expect(
+      prepared("INSERT INTO entries (day) SELECT day FROM drafts"),
+    ).toEqual([
+      {
+        type: "interaction",
+        binding: {
+          transport: "d1",
+          semantics: {
+            name: "storage",
+            storageSystem: "d1",
+            scope: "default",
+            container: "LEDGER",
+            accessPath: null,
+          },
+          recognition: "@suss/framework-tapedeck",
+        },
+        callee: "env.LEDGER.prepare",
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: [],
+          operation: "prepare",
+        },
+      },
+    ]);
+  });
+
+  it("reads a statement that only reads as one read, and records nothing for text it cannot parse", () => {
+    const read = prepared(
+      "SELECT e.total FROM entries e JOIN days d ON d.id = e.day",
+    );
+
+    expect(read).toHaveLength(1);
+    expect(read?.[0]).toMatchObject({ interaction: { kind: "read" } });
+    expect(prepared("NOT A STATEMENT ;;;")).toBeNull();
+  });
+
+  it("goes on the walk the chain states, and the access walk otherwise", () => {
+    const walks = (walk?: "invocation" | "access") => {
+      const built = assembled(walk);
+      return {
+        invocation: built.invocationRecognizers?.length ?? 0,
+        access: built.accessRecognizers?.length ?? 0,
+      };
+    };
+
+    expect(walks("invocation")).toEqual({ invocation: 1, access: 0 });
+    expect(walks()).toEqual({ invocation: 0, access: 1 });
   });
 });
 

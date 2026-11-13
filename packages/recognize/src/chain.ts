@@ -884,6 +884,13 @@ export interface SqlEnding {
    * wrong tables rather than none.
    */
   readonly dialect: StorageSystem;
+  /**
+   * Which walk the chain runs on. The access walk is the default, since
+   * it also visits a statement written as a tagged template. A client
+   * that only ever takes its statement as an argument can run on the
+   * invocation walk, which keeps its accesses among the call effects.
+   */
+  readonly walk?: "invocation" | "access";
 }
 
 /**

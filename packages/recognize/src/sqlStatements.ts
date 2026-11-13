@@ -12,6 +12,7 @@
  */
 
 import { chainStart } from "./chain.js";
+import { memberContainerLink } from "./storage.js";
 
 import type {
   ArgumentPick,
@@ -23,6 +24,7 @@ import type {
   StorageSystem,
 } from "./chain.js";
 import type { ReceiverOrigin } from "./ops.js";
+import type { MemberContainer } from "./storage.js";
 
 /** What a pack says about the store its statements reach. */
 export interface SqlStatementsSpec {
@@ -44,6 +46,13 @@ export interface SqlStatementsSpec {
   dialect: StorageSystem;
   /** How the pack pins down the client its calls are on. */
   client?: ReceiverOrigin;
+  /**
+   * Which walk the chain runs on. A client that takes its statement as
+   * a call's argument and never as a tagged template keeps its accesses
+   * among the call effects, which come before the access walk's.
+   * Defaults to "access".
+   */
+  walk?: "invocation" | "access";
 }
 
 /** A chain over statements, and the links that can still be added. */
@@ -62,6 +71,14 @@ export interface SqlStatements {
    * `other.events` as itself.
    */
   scope(says: ArgumentPick): SqlStatements;
+  /**
+   * The container as the member the call is made on, for a store whose
+   * contract declares the database and not its tables. Each call is then
+   * one access on that member: a write when the statement writes any
+   * table, else a read, with no fields and no selector, since the tables
+   * in the statement are not what the access is on.
+   */
+  container(says: MemberContainer): SqlStatements;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): SqlStatements;
   /** The links and the ending, as data. */
@@ -76,6 +93,7 @@ export function sqlStatements(spec: SqlStatementsSpec): SqlStatements {
     ...(spec.transport === undefined ? {} : { transport: spec.transport }),
     scope: spec.scope ?? "default",
     dialect: spec.dialect,
+    ...(spec.walk === undefined ? {} : { walk: spec.walk }),
   };
   const client = spec.client;
   return chainFrom({
@@ -100,6 +118,7 @@ function chainFrom(declared: Chain<SqlMethod>): SqlStatements {
       }),
     interpolating: (says) => adding({ asks: "interpolates", ...says }),
     scope: (says) => adding({ asks: "scope", argument: says }),
+    container: (says) => adding(memberContainerLink(says)),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
 }

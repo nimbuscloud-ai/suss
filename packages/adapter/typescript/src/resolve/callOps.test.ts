@@ -2,7 +2,16 @@ import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it, vi } from "vitest";
 
 import { profileEvaluation } from "@suss/datalog";
-import { constructedFrom, imported, inherits, typed } from "@suss/recognize";
+import {
+  allOf,
+  constructedFrom,
+  global,
+  handedIn,
+  imported,
+  inherits,
+  readOff,
+  typed,
+} from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
@@ -580,6 +589,81 @@ describe("the member a call is made on", () => {
     expect(lastCall(subclassed, "nodes").member?.()?.receiverIsFrom(BASE)).toBe(
       false,
     );
+  });
+});
+
+describe("a receiver read off an object the runtime provides", () => {
+  const WORKER = `
+    interface Env { SESSIONS: { get(key: string): unknown } }
+    export default {
+      async fetch(request: Request, env: Env) {
+        env.SESSIONS.get("a");
+        const held = env.SESSIONS;
+        held.get("b");
+        process.stdout.write("c");
+      },
+    };
+    export function other(request: Request, env: Env) {
+      env.SESSIONS.get("d");
+    }
+  `;
+
+  /** What each origin says of every call made on a member, over the facts and over the nodes. */
+  function asked(origin: ReceiverOrigin, stated: boolean) {
+    const file = createTestProject().createSourceFile("/worker.ts", WORKER);
+    const store = new ResolutionStore();
+    const fetch = file.getDescendantsOfKind(SyntaxKind.MethodDeclaration)[0];
+    if (stated && fetch !== undefined) {
+      store.stateHandedIn(fetch, [{ at: 1, name: "env" }]);
+    }
+    return file.getDescendantsOfKind(SyntaxKind.CallExpression).map((call) => ({
+      call: call.getExpression().getText(),
+      facts: opsOverFacts(call, { resolution: store }).receiverIsFrom(origin),
+      nodes: callOpsFor(call, { resolution: store }).receiverIsFrom(origin),
+    }));
+  }
+
+  const OFF_ENV = readOff(handedIn("env"));
+
+  it("takes a member read off the handed-in parameter, as written or kept in a local", () => {
+    expect(asked(OFF_ENV, true)).toEqual([
+      { call: "env.SESSIONS.get", facts: true, nodes: true },
+      { call: "held.get", facts: true, nodes: true },
+      { call: "process.stdout.write", facts: false, nodes: false },
+      { call: "env.SESSIONS.get", facts: false, nodes: false },
+    ]);
+  });
+
+  it("knows no handed-in parameter where no unit says one is", () => {
+    expect(
+      asked(OFF_ENV, false).filter((one) => one.facts || one.nodes),
+    ).toEqual([]);
+  });
+
+  it("takes a member read off a global the way a read site is, and allOf only where every origin does", () => {
+    const offProcess = readOff(global("process"));
+    const both = allOf(OFF_ENV, offProcess);
+    const takenByBoth = (one: { facts: boolean; nodes: boolean }) =>
+      one.facts && one.nodes;
+
+    expect(asked(offProcess, true).map(takenByBoth)).toEqual([
+      false,
+      false,
+      true,
+      false,
+    ]);
+    expect(asked(both, true).map(takenByBoth)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(asked(allOf(OFF_ENV), true).map(takenByBoth)).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
   });
 });
 
