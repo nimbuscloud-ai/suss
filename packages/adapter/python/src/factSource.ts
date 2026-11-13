@@ -75,6 +75,7 @@ export function pythonFactSource(db: Database): FactSource {
       const node = nodeAt(key);
       return node === null ? null : rangeOf(node).start;
     },
+    writtenItemsOf: (key) => writtenItemsOf(nodeAt(key)),
     formOf: (key) => formOf(nodeAt(key)),
     extendValue: (key, ops) => {
       const node = nodeAt(key);
@@ -364,6 +365,16 @@ const SHAPES: Record<string, "object" | "list"> = {
 
 function shapeOf(node: PyNode | null): "object" | "list" | null {
   return node === null ? null : (SHAPES[node.type] ?? null);
+}
+
+/** Each item of a list, tuple or set written out at this node, as written. */
+function writtenItemsOf(node: PyNode | null): string[] | null {
+  if (node === null || SHAPES[node.type] !== "list") {
+    return null;
+  }
+  return node.namedChildren
+    .filter((child) => child.type !== "comment")
+    .map((child) => child.text);
 }
 
 const FORMS: Record<string, ValueForm> = {

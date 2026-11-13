@@ -903,6 +903,10 @@ class FactValue implements ValueOps {
     return this.facts.textOf(this.key);
   }
 
+  writtenItems(): readonly string[] | null {
+    return this.facts.writtenItemsOf?.(this.key) ?? null;
+  }
+
   form(): ValueForm {
     return this.facts.formOf?.(this.key) ?? "other";
   }

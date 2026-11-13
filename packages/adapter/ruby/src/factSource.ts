@@ -84,6 +84,7 @@ export function rubyFactSource(db: Database): FactSource {
       const node = nodeAt(key);
       return node === null ? null : rangeOf(node).start;
     },
+    writtenItemsOf: (key) => writtenItemsOf(nodeAt(key)),
     formOf: (key) => formOf(nodeAt(key)),
     literalOf: (key) => literalOf(nodeAt(key)),
     nameOf: (key, unsettled) => {
@@ -337,6 +338,16 @@ const SHAPES: Record<string, "object" | "list"> = {
 
 function shapeOf(node: RbNode | null): "object" | "list" | null {
   return node === null ? null : (SHAPES[node.type] ?? null);
+}
+
+/** Each item of an array written out at this node, `%w[]` and `%i[]` included, as written. */
+function writtenItemsOf(node: RbNode | null): string[] | null {
+  if (node === null || SHAPES[node.type] !== "list") {
+    return null;
+  }
+  return node.namedChildren
+    .filter((child) => child.type !== "comment")
+    .map((child) => child.text);
 }
 
 /** A string, number or boolean the source writes out at this node, read as written. */

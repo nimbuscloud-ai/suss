@@ -488,6 +488,20 @@ describe("factValueOps, of a value an encoder was handed", () => {
   });
 });
 
+describe("factValueOps, the items of a list as written", () => {
+  it("gives what the adapter reads at the value, and nothing where the adapter reads none", () => {
+    const listed = source({
+      writtenItemsOf: (key) => (key === "tags" ? ['"a"', "...rest"] : null),
+    });
+    expect(factValueOps("tags", listed).writtenItems?.()).toEqual([
+      '"a"',
+      "...rest",
+    ]);
+    expect(factValueOps("opts", listed).writtenItems?.()).toBeNull();
+    expect(factValueOps("tags", source()).writtenItems?.()).toBeNull();
+  });
+});
+
 describe("factValueOps, further", () => {
   it("reads a computed key through the adapter, and a flag the source wrote", () => {
     const bag = opsAt("sqsSend", moreSource()).valueAt(1);

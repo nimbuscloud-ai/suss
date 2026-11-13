@@ -45,6 +45,22 @@ describe("the Ruby fact source", () => {
     expect(source.shapeOf(options ?? "")).toBe("object");
   });
 
+  it("gives each item of an array written out as written, and nothing for a name or a hash", async () => {
+    const tree = await parseRuby(
+      'TAGS = ["a", *REST]\nWORDS = %w[b c]\nOPTS = { c: 1 }\n',
+    );
+    const source = rubyFactSource(
+      factsForFile({ file: FILE, root: tree.rootNode, packs: [] }),
+    );
+    const itemsAt = (name: string) =>
+      source.writtenItemsOf?.(source.writtenAs(`${FILE}#${name}`) ?? "");
+
+    expect(itemsAt("TAGS")).toEqual(['"a"', "*REST"]);
+    expect(itemsAt("WORDS")).toEqual(["b", "c"]);
+    expect(itemsAt("OPTS")).toBeNull();
+    expect(source.writtenItemsOf?.(`${FILE}#TAGS`)).toBeNull();
+  });
+
   it("gives the lambda a constant comes to, and the one a method call gives back", async () => {
     const { source, isFunction } = await sourceFor();
 
