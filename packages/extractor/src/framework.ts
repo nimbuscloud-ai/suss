@@ -14,6 +14,7 @@
  */
 
 import type {
+  BehavioralSummary,
   CodeUnitKind,
   DeployableUnit,
   Effect,
@@ -1864,4 +1865,17 @@ export interface DiscoveredSubUnit {
    * Packs use this to stamp provenance (`metadata.react = { kind: "handler", ... }`).
    */
   metadata?: Record<string, unknown>;
+}
+
+/** Merges the metadata a pack stamped on a claim onto the claim's summary, the same way in every adapter. */
+export function stampClaimMetadata(
+  summary: BehavioralSummary,
+  subUnit: DiscoveredSubUnit,
+): void {
+  if (
+    subUnit.metadata !== undefined &&
+    Object.keys(subUnit.metadata).length > 0
+  ) {
+    summary.metadata = { ...(summary.metadata ?? {}), ...subUnit.metadata };
+  }
 }

@@ -346,6 +346,25 @@ export interface UnitWhenInPlaceLink {
   readonly kind: CodeUnitKind;
   /** The parts its name is built from, in order. */
   readonly name: readonly SubUnitNamePart[];
+  /** What the unit's summary records about the call that made it, when the pack says. */
+  readonly metadata?: ClaimMetadata;
+}
+
+/**
+ * The metadata a claimed callback's summary records: a record of
+ * records, each leaf saying what to read. The keys are written in the
+ * order the pack declares them.
+ */
+export type ClaimMetadata = Readonly<
+  Record<string, Readonly<Record<string, ClaimMetadataLeaf>>>
+>;
+
+/** What one metadata field is read from. */
+export type ClaimMetadataLeaf = CalleeLeaf;
+
+/** The callee of the call that handed the callback over, as the source writes it. */
+export interface CalleeLeaf {
+  readonly reads: "callee";
 }
 
 /**
@@ -726,7 +745,11 @@ export interface UnitInvokeMethod {
  * picks in the order to try them, and the first one that finds a value
  * settles which function the call runs.
  */
-export type CallbackPick = CallbackArgument | CallbackProperty | CallbackBlock;
+export type CallbackPick =
+  | CallbackArgument
+  | CallbackAnyArgument
+  | CallbackProperty
+  | CallbackBlock;
 
 /**
  * The argument at `at`, when the source writes a function there or a
@@ -736,6 +759,19 @@ export type CallbackPick = CallbackArgument | CallbackProperty | CallbackBlock;
  */
 export interface CallbackArgument {
   readonly written: "callback";
+  readonly at: number;
+  /** The keyword the argument can be passed under instead, in Python or Ruby. */
+  readonly keyword?: string;
+}
+
+/**
+ * The argument at `at`, whatever the source writes there. A timer takes
+ * nothing else in that place, so a value there that is neither a
+ * function nor a name is a callback the run cannot read, and the effect
+ * gives the pack's `other` reason for it.
+ */
+export interface CallbackAnyArgument {
+  readonly written: "argument";
   readonly at: number;
   /** The keyword the argument can be passed under instead, in Python or Ruby. */
   readonly keyword?: string;
@@ -760,9 +796,11 @@ export interface CallbackBlock {
   readonly written: "block";
 }
 
-/** What one method that takes a callback does: where it states the callback. */
+/** What one method that takes a callback does: where it states the callback, and the delay when it takes one. */
 export interface CallbackMethod {
   readonly callback: CallbackPick | readonly CallbackPick[];
+  /** Where the method takes a delay. The effect says the call has one when it passes an argument there. */
+  readonly delay?: { readonly at: number };
 }
 
 /**

@@ -76,6 +76,7 @@ import {
   runRootOf,
   type SettledModule,
   splitAtHandOffs,
+  stampClaimMetadata,
   stampModuleImports,
   stampModules,
   storedPathsOfRun,
@@ -3954,15 +3955,7 @@ function buildSubUnitSummary(
   }
 
   const summary = assembleSummary(raw, options);
-  if (
-    subUnit.metadata !== undefined &&
-    Object.keys(subUnit.metadata).length > 0
-  ) {
-    summary.metadata = {
-      ...(summary.metadata ?? {}),
-      ...subUnit.metadata,
-    };
-  }
+  stampClaimMetadata(summary, subUnit);
   summary.confidence = { source: "inferred_static", level: "medium" };
   return summary;
 }

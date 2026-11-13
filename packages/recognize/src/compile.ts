@@ -32,6 +32,7 @@ import type {
   AstCapableValueOps,
   ByOrigin,
   DiscoveredSubUnit,
+  DiscoveredSubUnitParent,
   EffectArg,
   InvocationRecognizer,
   PatternPack,
@@ -44,6 +45,7 @@ import type {
   AccessKind,
   AccessPathLink,
   ArgumentPick,
+  CallbackAnyArgument,
   CallbackArgument,
   CallbackMethod,
   CallbackPick,
@@ -51,6 +53,8 @@ import type {
   CallStep,
   Chain,
   ChannelPart,
+  ClaimMetadata,
+  ClaimMetadataLeaf,
   ContainerArgument,
   ContainerLink,
   ContainerMember,
@@ -125,6 +129,7 @@ interface Matched {
 export function compile(
   chain: Chain<MethodMeaning>,
   recognition: string,
+  options: CompileOptions = {},
 ): InvocationRecognizer {
   // A read chain runs on a read site rather than a call.
   const yields = chain.ending.yields;
@@ -133,6 +138,7 @@ export function compile(
   }
   const receiverMethods = methodsWhoseReceiversAreAsked(chain);
   const modules = modulesOfChain(chain);
+  const onlyWhereWritten = options.onlyWhereWritten === true;
   return (_call: unknown, ctx: unknown): Effect[] | null => {
     const ops = opsIn(ctx);
     if (ops === null) {
@@ -160,7 +166,13 @@ export function compile(
       ops.readingReceivers?.(receiverMethods);
     }
     for (const subject of subjectsOf(chain, ops)) {
-      const matched = methodMatched(chain, methods, subject, modules);
+      const matched = methodMatched(
+        chain,
+        methods,
+        subject,
+        modules,
+        onlyWhereWritten,
+      );
       if (matched === null) {
         continue;
       }
@@ -183,20 +195,26 @@ export function compile(
  * the chain's start accepts the subject. A call with no receiver that the
  * table does not list as written is read as the export its callee was
  * imported as, so `new Get(...)` after `import { GetCommand as Get }` is
- * `GetCommand`. That question asks the store, so it comes last.
+ * `GetCommand`. That question asks the store, so it comes last, and with
+ * `onlyWhereWritten` only where the file mentions one of the modules.
  */
 function methodMatched(
   chain: Chain<MethodMeaning>,
   methods: MethodsLink<MethodMeaning>,
   subject: CallOps,
   modules: readonly string[],
+  onlyWhereWritten: boolean,
 ): { method: string; meaning: MethodMeaning } | null {
   const written = operationOf(subject);
   const meaning = listed(methods, written);
   if (meaning !== null) {
     return startsHere(chain, subject) ? { method: written, meaning } : null;
   }
-  if (subject.method() !== null || !startsHere(chain, subject)) {
+  if (
+    subject.method() !== null ||
+    (onlyWhereWritten && !mentionsAny(subject, modules)) ||
+    !startsHere(chain, subject)
+  ) {
     return null;
   }
   const exported = subject.calleeImportedAs?.(modules) ?? null;
@@ -204,6 +222,14 @@ function methodMatched(
   return exported === null || byExport === null
     ? null
     : { method: exported, meaning: byExport };
+}
+
+/** Whether the call's file mentions one of the words, or the adapter cannot say. */
+function mentionsAny(subject: CallOps, words: readonly string[]): boolean {
+  return (
+    subject.mentions === undefined ||
+    words.some((word) => subject.mentions?.(word) === true)
+  );
 }
 
 /**
@@ -707,10 +733,8 @@ function schedule(matched: Matched): Effect[] {
   const { ops, subject, chain, recognition } = matched;
   const ending = chain.ending as ScheduleEnding;
   const callee = ops.calleeText();
-  const found = callbackIn(
-    subject,
-    (matched.meaning as CallbackMethod).callback,
-  );
+  const { callback, delay } = matched.meaning as CallbackMethod;
+  const found = callbackIn(subject, callback);
   return [
     {
       type: "interaction",
@@ -723,7 +747,7 @@ function schedule(matched: Matched): Effect[] {
           found === null
             ? { type: "opaque", reason: ending.unread.missing }
             : CALLBACK_REF[formOf(found)](found, ending.unread),
-        hasDelay: false,
+        hasDelay: delay !== undefined && subject.argumentCount() > delay.at,
       },
     },
   ];
@@ -774,6 +798,10 @@ const CALLBACK_PICKED: Record<
 > = {
   callback: (subject, pick) =>
     callbackWrittenAt(subject, pick as CallbackArgument),
+  argument: (subject, pick) => {
+    const written = pick as CallbackAnyArgument;
+    return pickedIn(subject, written, written.at);
+  },
   here: (subject, pick) => propertyWrittenAt(subject, pick as CallbackProperty),
   block: (subject) => subject.block?.() ?? null,
 };
@@ -824,6 +852,7 @@ function propertyWrittenAt(
  */
 export function compileSubUnits(
   chains: readonly Chain<MethodMeaning>[],
+  options: CompileOptions = {},
 ): NonNullable<PatternPack["subUnits"]> | null {
   const claiming = chains.flatMap((chain) => {
     const link: UnitWhenInPlaceLink | null = linkIn(chain, "unitWhenInPlace");
@@ -835,13 +864,27 @@ export function compileSubUnits(
   if (claiming.length === 0) {
     return null;
   }
+  const words =
+    options.onlyWhereWritten === true
+      ? claiming.flatMap(({ methods, modules }) => [
+          ...Object.keys(methods.table),
+          ...modules,
+        ])
+      : null;
   return (parent, ctx) => {
-    const calls = (ctx as SubUnitOpsCarrier | null)?.calls?.(parent) ?? [];
+    const carrier = ctx as SubUnitOpsCarrier | null;
+    if (words !== null && !writesAny(carrier, parent, words)) {
+      return [];
+    }
+    const calls = carrier?.calls?.(parent) ?? [];
     const counts = new Map<string, number>();
     const claims: DiscoveredSubUnit[] = [];
     for (const call of calls) {
       const claim = claiming
-        .map((one) => ({ one, func: claimedIn(one, call) }))
+        .map((one) => ({
+          one,
+          func: claimedIn(one, call, words !== null),
+        }))
         .find(({ func }) => func !== null);
       if (claim === undefined) {
         continue;
@@ -849,22 +892,46 @@ export function compileSubUnits(
       const callee = call.calleeText();
       const count = counts.get(callee) ?? 0;
       counts.set(callee, count + 1);
+      const naming: ClaimNaming = { parent: parent.name, callee, count };
+      const { link } = claim.one;
       claims.push({
         func: claim.func,
-        kind: claim.one.link.kind,
-        name: claim.one.link.name
-          .map((part) =>
-            NAME_PART[part]({ parent: parent.name, callee, count }),
-          )
-          .join(""),
+        kind: link.kind,
+        name: link.name.map((part) => NAME_PART[part](naming)).join(""),
         inputMapping: { type: "positionalParams", params: [] },
+        ...(link.metadata === undefined
+          ? {}
+          : { metadata: metadataOf(link.metadata, naming) }),
       });
     }
     return claims;
   };
 }
 
-/** What a claimed callback's name is built from. */
+/** How a hand-built pack asks for its compiled hooks. */
+export interface CompileOptions {
+  /**
+   * Read the file's text before asking the store. The sub-unit hook
+   * skips a parent whose file writes none of the chains' method names or
+   * modules, and a bare call is read as another name's export only where
+   * the file mentions one of the modules. A callee a project module
+   * re-exports under another name is lost, so a pack that allows that
+   * leaves this off.
+   */
+  readonly onlyWhereWritten?: boolean;
+}
+
+/** Whether the parent's file writes one of the words, or the adapter cannot say. */
+function writesAny(
+  carrier: SubUnitOpsCarrier | null,
+  parent: DiscoveredSubUnitParent,
+  words: readonly string[],
+): boolean {
+  const mentions = carrier?.mentions;
+  return mentions === undefined || words.some((word) => mentions(parent, word));
+}
+
+/** What a claimed callback's name and metadata are built from. */
 interface ClaimNaming {
   readonly parent: string;
   readonly callee: string;
@@ -877,7 +944,37 @@ const NAME_PART: Record<SubUnitNamePart, (naming: ClaimNaming) => string> = {
   countPerCallee: (naming) => `#${naming.count}`,
 };
 
-/** The adapter's own node for the callback a call writes in place, when this chain matches the call. */
+/** How each kind of metadata leaf reads the claim. */
+const METADATA_LEAF: Record<
+  ClaimMetadataLeaf["reads"],
+  (leaf: ClaimMetadataLeaf, naming: ClaimNaming) => unknown
+> = {
+  callee: (_leaf, naming) => naming.callee,
+};
+
+/** The metadata the link declares, with each leaf read off the claim, in the order the pack wrote the keys. */
+function metadataOf(
+  declared: ClaimMetadata,
+  naming: ClaimNaming,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(declared).map(([namespace, fields]) => [
+      namespace,
+      Object.fromEntries(
+        Object.entries(fields).map(([field, leaf]) => [
+          field,
+          METADATA_LEAF[leaf.reads](leaf, naming),
+        ]),
+      ),
+    ]),
+  );
+}
+
+/**
+ * The adapter's own node for the callback a call writes in place, when
+ * this chain matches the call. A bare call of a global is asked first,
+ * the order the recognizer asks in.
+ */
 function claimedIn(
   claiming: {
     chain: Chain<MethodMeaning>;
@@ -885,13 +982,17 @@ function claimedIn(
     modules: readonly string[];
   },
   call: CallOps,
+  onlyWhereWritten: boolean,
 ): unknown {
-  const matched = methodMatched(
-    claiming.chain,
-    claiming.methods,
-    call,
-    claiming.modules,
-  );
+  const matched =
+    bareCall(claiming.chain, call, claiming.modules) ??
+    methodMatched(
+      claiming.chain,
+      claiming.methods,
+      call,
+      claiming.modules,
+      onlyWhereWritten,
+    );
   const found =
     matched === null
       ? null

@@ -18,15 +18,15 @@ import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { encodedIn } from "../values/encoded.js";
 import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
 import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
-import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
   anchorAccepts,
-  bareCalleeName,
+  globalCalleeName,
   literalFlag,
   literalText,
   noteValueNode,
   streamsReachingName,
+  valueFormOf,
   writtenShapeOf,
 } from "./callOps.js";
 import { functionCalledAt } from "./functionBehind.js";
@@ -44,7 +44,6 @@ import type {
   CallOps,
   FactSource,
   ReadOps,
-  ValueForm,
   ValueOps,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -144,7 +143,7 @@ export function factSourceFor(
       at(key, [], (node) => store.importedAsOf(node, [module])),
     shapeOf: (key) => at(key, null, shapeOf),
     textOf: (key) => at(key, "", (node) => node.getText()),
-    formOf: (key) => at(key, "other", formOf),
+    formOf: (key) => at(key, "other", valueFormOf),
     literalOf: (key) => at(key, null, literalOf),
     nameOf: (key, unsettled) =>
       at(key, null, (node) => readName(node, { resolve, unsettled })),
@@ -167,7 +166,7 @@ export function factSourceFor(
         false,
         (node) =>
           Node.isCallExpression(node) &&
-          bareCalleeName(node.getExpression()) === path,
+          globalCalleeName(node.getExpression()) === path,
       ),
     globalsReaching: (key) =>
       at(key, [], (node) => [
@@ -356,28 +355,6 @@ function specifierBound(declarations: readonly (Node | null)[]): string | null {
   );
   const [one] = specifiers;
   return specifiers.size === 1 && one !== undefined ? one : null;
-}
-
-/** A method written into an object literal is a function written in place, as an arrow is. */
-function formOf(node: Node): ValueForm {
-  if (
-    Node.isArrowFunction(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isMethodDeclaration(node)
-  ) {
-    return "function";
-  }
-  if (Node.isObjectLiteralExpression(node)) {
-    return "object";
-  }
-  if (
-    Node.isJsxElement(node) ||
-    Node.isJsxSelfClosingElement(node) ||
-    Node.isJsxFragment(node)
-  ) {
-    return "element";
-  }
-  return Node.isIdentifier(node) && !writesUndefined(node) ? "name" : "other";
 }
 
 function shapeOf(node: Node): "object" | "list" | null {

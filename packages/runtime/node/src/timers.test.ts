@@ -3,19 +3,28 @@ import { describe, expect, it } from "vitest";
 import {
   createTsSubUnitContext,
   createTypeScriptAdapter,
+  ResolutionStore,
 } from "@suss/adapter-typescript";
 import { effectsOverFile, packWithOnly } from "@suss/pack-harness";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
-import {
-  nodeRuntimePack,
-  nodeSchedulingSubUnits,
-  schedulingRecognizer,
-} from "./index.js";
+import { nodeRuntimePack, streamWriteRecognizers } from "./index.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type {
+  DiscoveredSubUnit,
+  DiscoveredSubUnitParent,
+  PatternPack,
+} from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
+
+const pack = nodeRuntimePack();
+
+/** The timer chains' hooks, without the stream writes compiled beside them. */
+const timerRecognizers = (pack.invocationRecognizers ?? []).filter(
+  (recognizer) => !streamWriteRecognizers.includes(recognizer),
+);
 
 function makeFile(source: string): SourceFile {
   const project = createTestProject();
@@ -25,11 +34,22 @@ function makeFile(source: string): SourceFile {
 function recognizeAll(file: SourceFile): Effect[] {
   return effectsOverFile(
     file,
-    packWithOnly(nodeRuntimePack(), { invocation: [schedulingRecognizer] }),
+    packWithOnly(pack, { invocation: timerRecognizers }),
   );
 }
 
-const subUnitContext = createTsSubUnitContext();
+/** What the pack's sub-unit hook claims in the parent. */
+function claimed(
+  parent: DiscoveredSubUnitParent,
+  ctx: unknown,
+): DiscoveredSubUnit[] {
+  return pack.subUnits?.(parent, ctx) ?? [];
+}
+
+/** The context the adapter hands the hook, over a store of its own, which lists the calls a parent runs. */
+function withStore(): unknown {
+  return createTsSubUnitContext(ResolutionStore.forPacks([pack]));
+}
 
 function scheduleEffectsOf(effects: Effect[]): Array<
   Extract<Effect, { type: "interaction" }> & {
@@ -253,9 +273,9 @@ describe("scheduling subUnits", () => {
         queueMicrotask(() => {});
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub).toHaveLength(2);
     expect(sub.map((s) => s.kind)).toEqual([
@@ -275,9 +295,9 @@ describe("scheduling subUnits", () => {
         setImmediate(() => {});
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub.map((s) => s.name)).toEqual([
       "parent.setImmediate#0",
@@ -292,9 +312,9 @@ describe("scheduling subUnits", () => {
         setImmediate(task);
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub).toHaveLength(0);
   });
@@ -314,9 +334,9 @@ describe("scheduling subUnits", () => {
         };
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub.map((s) => s.name)).toEqual(["parent.setImmediate#0"]);
   });
@@ -328,9 +348,9 @@ describe("scheduling subUnits", () => {
         return load.then(() => setTimeout(() => work(), 10));
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub.map((s) => [s.name, (s.func as Node).getText()])).toEqual([
       ["parent.setTimeout#0", "() => work()"],
@@ -346,9 +366,9 @@ describe("scheduling subUnits", () => {
         });
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub.map((s) => s.name)).toEqual(["parent.setImmediate#0"]);
   });
@@ -362,9 +382,9 @@ describe("scheduling subUnits", () => {
         load.then(() => setTimeout(function last() {}));
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub.map((s) => s.name)).toEqual([
       "parent.setTimeout#0",
@@ -381,9 +401,9 @@ describe("scheduling subUnits", () => {
         process.nextTick(() => {});
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(sub).toHaveLength(1);
     expect(sub[0]?.name).toBe("parent.process.nextTick#0");
@@ -398,9 +418,9 @@ describe("scheduling subUnits", () => {
         delay(5);
       }
     `);
-    const sub = nodeSchedulingSubUnits(
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      withStore(),
     );
     expect(
       sub.map((s) => [s.name, (s.func as Node).getText(), s.metadata]),
@@ -413,24 +433,15 @@ describe("scheduling subUnits", () => {
     ]);
   });
 
-  it("claims no timer a project module re-exports, since only a direct import is read", () => {
-    const project = createTestProject();
-    project.createSourceFile(
-      "/timers.ts",
-      'export { setTimeout as later } from "node:timers";',
-    );
-    const file = project.createSourceFile(
-      "/user.ts",
-      `
-        import { later } from "./timers";
-        function parent() {
-          later(() => {}, 5);
-        }
-      `,
-    );
-    const sub = nodeSchedulingSubUnits(
+  it("claims nothing when the run has no store to list the parent's calls", () => {
+    const file = makeFile(`
+      function parent() {
+        setTimeout(() => {}, 5);
+      }
+    `);
+    const sub = claimed(
       { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
-      subUnitContext,
+      createTsSubUnitContext(),
     );
     expect(sub).toHaveLength(0);
   });
@@ -493,17 +504,44 @@ describe("scheduling sub-units in an extraction", () => {
   });
 });
 
+describe("the timer declarations", () => {
+  it("match the line each one says it matches", () => {
+    const ran = runExamples(pack, (code) =>
+      recognizeAll(
+        makeFile(`
+          import { setTimeout as nodeSetTimeout } from "node:timers";
+          declare function flush(): void;
+          export function example() { ${code}; }
+        `),
+      ),
+    ).filter((one) => one.match === "schedule");
+    expect(
+      ran.map((one) =>
+        scheduleEffectsOf(one.effects).map((effect) => [
+          effect.interaction.via,
+          effect.interaction.callbackRef,
+          effect.interaction.hasDelay,
+        ]),
+      ),
+    ).toEqual([
+      [["setTimeout", { type: "literal" }, true]],
+      [["nodeSetTimeout", { type: "literal" }, true]],
+      [["process.nextTick", { type: "literal" }, false]],
+    ]);
+  });
+});
+
 describe("nodeRuntimePack — pack shape", () => {
   it("declares the expected pack interface", () => {
-    const pack = nodeRuntimePack();
     expect(pack.name).toBe("node");
     expect(pack.protocol).toBe("in-process");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
     expect(pack.discovery).toEqual([]);
     expect(pack.terminals.map((terminal) => terminal.kind)).toEqual(["exit"]);
     expect(pack.terminals.every((terminal) => terminal.inEveryUnit)).toBe(true);
-    // Scheduling, then the console writes and the stream writes.
-    expect(pack.invocationRecognizers).toHaveLength(3);
-    expect(pack.subUnits).toBe(nodeSchedulingSubUnits);
+    // The three timer chains, then the console writes and the stream writes.
+    expect(pack.invocationRecognizers).toHaveLength(5);
+    expect(timerRecognizers).toHaveLength(3);
+    expect(typeof pack.subUnits).toBe("function");
   });
 });

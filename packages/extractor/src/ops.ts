@@ -641,6 +641,11 @@ export interface CallOps {
    */
   calleeImportedAs?(modules: readonly string[]): string | null;
   /**
+   * Whether the text of the file the call is in contains the word, which
+   * asks nothing of the store. Undefined means the adapter cannot say.
+   */
+  mentions?(word: string): boolean;
+  /**
    * The properties the function argument in this position reads off
    * its first parameter, one per distinct first segment: `(s) =>
    * s.bears.count` reads `bears`, and a parameter used whole reads
@@ -1028,6 +1033,11 @@ export interface SubUnitOpsCarrier {
    * written inside another one belongs to the same parent.
    */
   calls?(parent: DiscoveredSubUnitParent): readonly CallOps[];
+  /**
+   * Whether the text of the parent's file contains the word, which asks
+   * nothing of the store. Undefined means the adapter cannot say.
+   */
+  mentions?(parent: DiscoveredSubUnitParent, word: string): boolean;
 }
 
 /**
