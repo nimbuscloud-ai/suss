@@ -15,6 +15,7 @@ import { copingAt, sitesNamingParameter } from "./envReads.js";
 import { decoderCalled, encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
+  environmentsAt,
   handedNamesAt,
   originsOf,
   resolveCalls,
@@ -129,6 +130,22 @@ export function pythonFactSource(db: Database): FactSource {
       return fallback === null ? null : resolutionKeyOf(fallback, db);
     },
     sitesNaming: (parameter) => sitesNamingParameter(db, parameter),
+    runtimePathOf: (key, object) => {
+      if (object.origin !== "global") {
+        return undefined;
+      }
+      const spelled = importPathOf(db, key);
+      if (spelled !== null && object.paths.includes(spelled)) {
+        return spelled;
+      }
+      // A parameter's default states no facts of its own, so the text of
+      // the environment written there says which object it is.
+      const listed = (value: string): boolean =>
+        object.paths.includes(
+          importPathOf(db, value) ?? nodeAt(value)?.text ?? "",
+        );
+      return environmentsAt(db, key).some(listed) ? object.paths[0] : undefined;
+    },
   };
 }
 
