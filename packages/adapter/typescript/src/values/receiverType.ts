@@ -55,7 +55,8 @@ export function typedAsExported(
   if (named === undefined) {
     return typedAsDeclaredBy(node, origin.importedFrom, resolution);
   }
-  if (typedAsGlobal(node, named, origin.importedFrom, resolution)) {
+  const global = origin.importedFrom.includes(GLOBAL_MODULE);
+  if (global && annotatedAs(node, named, resolution)) {
     return true;
   }
   const types = receiverTypesOf(node).filter((type) =>
@@ -63,6 +64,11 @@ export function typedAsExported(
   );
   if (types.length === 0) {
     return false;
+  }
+  // The runtime declares a global type, or nobody does, so no file
+  // imports it and its name is all there is to match.
+  if (global) {
+    return true;
   }
   const file = node.getSourceFile();
   return origin.importedFrom.some((module) =>
@@ -73,20 +79,17 @@ export function typedAsExported(
 }
 
 /**
- * Whether the node is a parameter annotated as one of the origin's types,
- * for a type the runtime declares, such as `NodeJS.WriteStream`. No file
- * imports one, so the annotation as written is what says.
+ * Whether the node is a parameter annotated as one of these types, as the
+ * source writes them, such as `NodeJS.WriteStream`. A type's own name
+ * leaves out the namespace, so a qualified one is matched here only.
  */
-function typedAsGlobal(
+function annotatedAs(
   node: Node,
   named: readonly string[],
-  modules: readonly string[],
   resolution: ResolutionStore | undefined,
 ): boolean {
   return (
-    resolution !== undefined &&
-    modules.includes(GLOBAL_MODULE) &&
-    resolution.parameterAnnotatedAs(node, named)
+    resolution !== undefined && resolution.parameterAnnotatedAs(node, named)
   );
 }
 
@@ -253,18 +256,35 @@ function writtenTypesOf(node: Node): ReceiverType[] {
     .map((name) => ({ name, declaredIn: [], extendsWritten: [] }));
 }
 
-function writtenTypeNodesOf(node: Node): Node[] {
+/**
+ * The types written on what the node's name was declared as. A local
+ * with none written has the type of what it was set to, as the checker
+ * would infer it, so `const sessions = env.SESSIONS` is read through
+ * `SESSIONS`.
+ */
+function writtenTypeNodesOf(node: Node, seen = new Set<Node>()): Node[] {
   const peeled = peelSyntax(node);
   const name = Node.isPropertyAccessExpression(peeled)
     ? peeled.getNameNode()
     : peeled;
   const typeNodes: Node[] = [];
   for (const declaration of name.getSymbol()?.getDeclarations() ?? []) {
+    if (seen.has(declaration)) {
+      continue;
+    }
+    seen.add(declaration);
     const typeNode = Node.isTyped(declaration)
       ? declaration.getTypeNode()
       : undefined;
     if (typeNode !== undefined) {
       typeNodes.push(typeNode);
+      continue;
+    }
+    const initializer = Node.isVariableDeclaration(declaration)
+      ? declaration.getInitializer()
+      : undefined;
+    if (initializer !== undefined) {
+      typeNodes.push(...writtenTypeNodesOf(initializer, seen));
     }
   }
   return typeNodes;
