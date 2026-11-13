@@ -768,6 +768,97 @@ describe("factValueOps over a mapped list and a project call", () => {
   });
 });
 
+/**
+ * The facts for, with TypeScript's reference, declaration and value rows,
+ * and a Ruby name bound to its value:
+ *
+ *   const users = db.users;   users.find(1)
+ *   const again = users;      again.find(2)
+ *   const client = new Client();   client.find(3)
+ *   models = db.models        models.find(4)
+ *   run(ledgerQuery())   where ledgerQuery returns "SELECT * FROM ledger"
+ *   run(forTable())      where forTable returns `SELECT * FROM ${name}`
+ */
+function heldFirst(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  const callOn = (call: string, object: string, method: string) => {
+    add("call", call, `${object}.${method}`);
+    add("readsProperty", `${object}.${method}`, object, method);
+  };
+  callOn("find1", "usersRef", "find");
+  add("binds", "usersRef", "usersDecl");
+  add("binds", "usersDecl", "db.users");
+  add("readsProperty", "db.users", "db", "users");
+  callOn("find2", "againRef", "find");
+  add("binds", "againRef", "againDecl");
+  add("binds", "againDecl", "usersCopied");
+  add("binds", "usersCopied", "usersDecl");
+  callOn("find3", "clientRef", "find");
+  add("binds", "clientRef", "clientDecl");
+  add("binds", "clientDecl", "newClient");
+  add("call", "newClient", "Client");
+  callOn("find4", "models", "find");
+  add("binds", "models", "db.models()");
+  callOn("db.models()", "db", "models");
+  add("call", "run1", "run");
+  add("callArg", "run1", "0", "ledgerQuery()");
+  add("call", "ledgerQuery()", "ledgerQuery");
+  add("call", "run2", "run");
+  add("callArg", "run2", "0", "forTable()");
+  add("call", "forTable()", "forTable");
+  add("partAt", "template", "0", "SELECT * FROM ");
+  add("holeAt", "template", "1", "name");
+  add("writtenValue", "template");
+
+  const returned: Record<string, string> = {
+    "ledgerQuery()": "ledgerText",
+    "forTable()": "template",
+  };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => returned[key] ?? null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: (key) => (key === "ledgerText" ? "SELECT * FROM ledger" : null),
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+}
+
+describe("the ops over a value kept in a name or returned by a project function", () => {
+  it("reads the member a name was set to through its declaration", () => {
+    const member = opsAt("find1", heldFirst()).member?.() ?? null;
+
+    expect(member?.method()).toBe("users");
+    expect(member?.calleeText()).toBe("db.users");
+  });
+
+  it("follows one declaration and no further, and leaves a name set to a construction alone", () => {
+    expect(opsAt("find2", heldFirst()).member?.()).toBeNull();
+    expect(opsAt("find3", heldFirst()).member?.()).toBeNull();
+  });
+
+  it("reads a name set to a call made on a receiver with no arguments, which is how Ruby reads a member", () => {
+    expect(opsAt("find4", heldFirst()).member?.()?.method()).toBe("models");
+  });
+
+  it("reads a statement's pieces off what a project function returns", () => {
+    const ledger = opsAt("run1", heldFirst()).valueAt(0);
+    const table = opsAt("run2", heldFirst()).valueAt(0);
+
+    expect(ledger?.parts?.()).toEqual(["SELECT * FROM ledger"]);
+    expect(table?.parts?.()).toEqual(["SELECT * FROM ", ""]);
+    expect(table?.interpolated?.().map((hole) => hole.source?.())).toEqual([
+      "name",
+    ]);
+  });
+});
+
 describe("the block a call is written with", () => {
   it("is the function the call states as its block, and null for a call without one", () => {
     const facts = spreads();

@@ -142,8 +142,7 @@ class FactCall implements CallOps {
 
   /**
    * The member read the receiver is, as ops whose callee is that read. A
-   * call with no arguments counts as one, since Ruby writes `db.users`
-   * that way.
+   * name set to one first counts as that read.
    */
   member(): CallOps | null {
     if (this.calleeRead === null) {
@@ -151,12 +150,22 @@ class FactCall implements CallOps {
     }
     const { object } = this.calleeRead;
     this.source.read(object);
-    if (memberRead(object, this.source) !== null) {
-      const read = new FactCall(object, object, this.source);
-      return this.source.extend?.(object, read) ?? read;
+    if (!isName(object, this.source)) {
+      return memberOpsAt(object, this.source);
     }
-    const called = factCallOps(object, this.source);
-    return called !== null && called.argumentCount() === 0 ? called : null;
+    // A name set to a client, `const db = new Client()`, is the client
+    // and not a member of it, so only a value read off something counts.
+    const members = new Map<string, CallOps>();
+    for (const value of declaredValuesOf(object, this.source)) {
+      const ops = isReadOff(value, this.source)
+        ? memberOpsAt(value, this.source)
+        : null;
+      if (ops !== null) {
+        members.set(value, ops);
+      }
+    }
+    const [only, ...more] = members.values();
+    return only === undefined || more.length > 0 ? null : only;
   }
 
   file(): string {
@@ -642,7 +651,7 @@ class FactValue implements ValueOps {
   }
 
   parts(): readonly string[] | null {
-    const written = this.written();
+    const written = this.shaped();
     const literal = this.facts.literalOf(written);
     if (typeof literal === "string") {
       return [literal];
@@ -782,7 +791,7 @@ class FactValue implements ValueOps {
   }
 
   private holeKeys(): string[] {
-    return templatePieces(this.written(), this.facts).flatMap((piece) =>
+    return templatePieces(this.shaped(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],
     );
   }
@@ -793,11 +802,11 @@ class FactValue implements ValueOps {
   }
 
   /**
-   * What an object or list is read off: the value as written, or the one
-   * value a call into a project function returns. A text or a name is
-   * read off `written()` instead, since the adapter settles a call there
-   * with the call's arguments in place, which reading what the function
-   * returns would lose.
+   * What an object, a list or a template's pieces are read off: the value
+   * as written, or the one value a call into a project function returns.
+   * A text or a name is read off `written()` instead, since the adapter
+   * settles a call there with the call's arguments in place, which
+   * reading what the function returns would lose.
    */
   private shaped(): string {
     this.shapedKey ??= followedCall(this.written(), this.facts);
@@ -1507,6 +1516,55 @@ function memberRead(
   }
   const [only, ...more] = reads.values();
   return only === undefined || more.length > 0 ? null : only;
+}
+
+/**
+ * The member read at `key` as ops whose callee is that read, or null. A
+ * call with no arguments counts as one, since Ruby writes `db.users`
+ * that way.
+ */
+function memberOpsAt(key: string, source: FactSource): CallOps | null {
+  source.read(key);
+  if (memberRead(key, source) !== null) {
+    const read = new FactCall(key, key, source);
+    return source.extend?.(key, read) ?? read;
+  }
+  const called = factCallOps(key, source);
+  return called !== null && called.argumentCount() === 0 ? called : null;
+}
+
+/** Whether the value is read off an object: a member read, or a call made on a receiver. */
+function isReadOff(key: string, source: FactSource): boolean {
+  source.read(key);
+  if (memberRead(key, source) !== null) {
+    return true;
+  }
+  const callee = calleeOf(key, source);
+  if (callee === null) {
+    return false;
+  }
+  source.read(callee);
+  return memberRead(callee, source) !== null;
+}
+
+/**
+ * What a name is bound to through its declaration, so a member read kept
+ * in a local is read as if written in its place. TypeScript binds a
+ * reference to its declaration and the declaration to its value, so both
+ * rows count, and a read copied into a second name is not reached. Python
+ * and Ruby bind a name to its value directly, so there the second row
+ * reaches through one copy.
+ */
+function declaredValuesOf(name: string, source: FactSource): string[] {
+  const bound = (key: string): string[] => {
+    source.read(key);
+    return source.db.lookup("binds", 0, key).map((row) => String(row[1]));
+  };
+  const direct = bound(name);
+  return [
+    ...direct,
+    ...direct.filter((key) => isName(key, source)).flatMap(bound),
+  ];
 }
 
 /** The leftmost name of a member read, `aws` in `aws.sqs.send`. */
