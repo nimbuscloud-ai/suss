@@ -24,6 +24,7 @@ export {
   field,
   hashKeySymbolName,
   nestedStatements,
+  pairValue,
   readCallArgs,
   runStatements,
   stringLiteralValue,

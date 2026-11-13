@@ -19,9 +19,11 @@ import {
   bodyStatements,
   enclosingDefinition,
   field,
+  isShorthandKey,
   LAMBDA_TYPE,
   NodeMap,
   OWN_BODY_TYPES,
+  readAsType,
 } from "../ast.js";
 
 import type { NameReads, OrderedWrite } from "@suss/resolution";
@@ -327,7 +329,7 @@ export function ownerOfName(
   enclosing: RbNode | null,
 ): RbNode | null {
   // Ruby refuses a constant assignment inside a method, so a constant is never a local.
-  if (node.type === "constant") {
+  if (readAsType(node) === "constant") {
     return null;
   }
   for (const scope of scopesAround(enclosing)) {
@@ -509,16 +511,25 @@ function orderedWrite(write: LocalWrite, scope: RbNode): OrderedWrite<RbNode> {
  */
 function nameReads(targetIds: ReadonlySet<number>): NameReads<RbNode> {
   return {
-    nameTypes: RUBY_NAME_TYPES,
+    nameTypes: READ_NAME_TYPES,
     laterBodies: LATER_BODY_TYPES,
     childrenOf: bodyStatements,
     isRead: (node) => isNameRead(node, targetIds),
   };
 }
 
+/** A key written with no value, the `a` in `f(a:)`, reads the local it spells too. */
+const READ_NAME_TYPES: ReadonlySet<string> = new Set([
+  ...RUBY_NAME_TYPES,
+  "hash_key_symbol",
+]);
+
 function isNameRead(node: RbNode, targetIds: ReadonlySet<number>): boolean {
   if (targetIds.has(node.id)) {
     return false;
+  }
+  if (node.type === "hash_key_symbol") {
+    return isShorthandKey(node);
   }
   // In `query.where`, `where` is a method called on the receiver, even when a local has that name.
   const parent = node.parent;

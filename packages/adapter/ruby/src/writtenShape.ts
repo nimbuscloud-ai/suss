@@ -9,6 +9,7 @@ import {
   children,
   field,
   hashKeySymbolName,
+  pairValue,
   stringLiteralValue,
   symbolValue,
 } from "./ast.js";
@@ -57,7 +58,7 @@ function hashShape(node: RbNode): TypeShape {
       continue;
     }
     const key = field(pair, "key");
-    const value = field(pair, "value");
+    const value = pairValue(pair);
     const name = key === null ? null : keyName(key);
     if (name !== null && value !== null) {
       properties[name] = writtenShapeOf(value);

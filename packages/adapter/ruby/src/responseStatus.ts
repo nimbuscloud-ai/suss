@@ -27,6 +27,7 @@ import {
   field,
   OWN_BODY_TYPES,
   rangeOf,
+  readAsType,
   readCallArgs,
   statementsOf,
 } from "./ast.js";
@@ -91,7 +92,8 @@ function statusNumberOf(
   facts: Database | undefined,
   bound: ReadonlyMap<string, number> = new Map(),
 ): number | null {
-  const passed = node.type === "identifier" ? bound.get(node.text) : undefined;
+  const passed =
+    readAsType(node) === "identifier" ? bound.get(node.text) : undefined;
   if (passed !== undefined) {
     return passed;
   }

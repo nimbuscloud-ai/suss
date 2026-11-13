@@ -17,6 +17,7 @@ import {
   enclosingDefinition,
   field,
   isRaiseCall,
+  readAsType,
   readCallArgs,
 } from "./ast.js";
 import { envSpellingAt, isEnv, isSameName } from "./envSpellings.js";
@@ -659,16 +660,19 @@ function bindingKeyOf(name: RbNode): string {
 
 function refersTo(identifier: RbNode, local: Local): boolean {
   return (
-    identifier.type === "identifier" &&
+    readAsType(identifier) === "identifier" &&
     identifier.text === local.name.text &&
     bindingKeyOf(identifier) === local.key
   );
 }
 
+/** The node types a use of a local is written with, `f(a:)` passing `a` too. */
+const USE_TYPES = ["identifier", "hash_key_symbol"];
+
 /** Every read or write of the local, apart from the assignment the read is in. */
 function usesOf(local: Local): RbNode[] {
   return local.owner
-    .descendantsOfType("identifier")
+    .descendantsOfType(USE_TYPES)
     .filter(
       (identifier): identifier is RbNode =>
         identifier !== null &&

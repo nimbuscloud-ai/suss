@@ -21,6 +21,7 @@ import {
   children,
   field,
   hashKeySymbolName,
+  pairValue,
   rangeOf,
   readCallArgs,
   stringLiteralValue,
@@ -234,7 +235,7 @@ function pairValues(call: RbNode): Array<{ name: string; value: RbNode }> {
       continue;
     }
     const key = field(argument, "key");
-    const value = field(argument, "value");
+    const value = pairValue(argument);
     const name = key === null ? null : keyNameOf(key);
     if (name !== null && value !== null) {
       found.push({ name, value });

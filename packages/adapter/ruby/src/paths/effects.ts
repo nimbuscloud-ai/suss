@@ -13,7 +13,9 @@ import {
   isLambdaArgument,
   MODULE_SCOPE_STOPS,
   OWN_BODY_TYPES,
+  pairValue,
   rangeOf,
+  readAsType,
 } from "../ast.js";
 import { claimedBodyOf, claimedIn, isClaimed } from "../claims.js";
 import { evaluatedValue } from "../values/evaluator.js";
@@ -115,7 +117,7 @@ export function callsReported(
  * receiver's text as the method name.
  */
 export function calleeMethodName(call: RbNode): string | undefined {
-  if (call.type === "identifier") {
+  if (readAsType(call) === "identifier") {
     return call.text;
   }
   const method = field(call, "method");
@@ -297,7 +299,7 @@ function argsOf(call: RbNode, facts: Database | undefined): EffectArg[] {
   }
   return children(args).map((child) =>
     child.type === "pair"
-      ? argOf(field(child, "value") ?? child, facts)
+      ? argOf(pairValue(child) ?? child, facts)
       : argOf(child, facts),
   );
 }
