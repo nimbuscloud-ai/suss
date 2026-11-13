@@ -23,7 +23,7 @@ import {
 
 import { factReadOps } from "./factReadOps.js";
 
-import type { TypeShape } from "@suss/behavioral-ir";
+import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
   ByOrigin,
   CallOps,
@@ -45,6 +45,7 @@ import type {
   ReadOff,
   ReceiverOrigin,
   ReturnedBy,
+  StatedSlot,
   Typed,
   UnsettledName,
   ValueEntry,
@@ -77,6 +78,39 @@ export function factValueOps(key: string, source: FactSource): ValueOps {
 
 /** The key each value the ops handed out was read at, so one value can be compared with another. */
 const keysOfValues = new WeakMap<ValueOps, string>();
+
+/** One column a hook stated a value for, and the key the value was read at. */
+export interface HeardSlot {
+  readonly slot: StatedSlot["slot"];
+  readonly name: string;
+  /** Null for a value these ops did not hand out. */
+  readonly key: string | null;
+}
+
+/**
+ * The slots the hooks state about the effects they build from one call,
+ * kept until the adapter knows which effect it records for each. A value
+ * comes back as its key, since a name in Python or Ruby has a key and no
+ * node, and a source walk starts from the key.
+ */
+export class SlotsHeard {
+  private readonly byEffect = new Map<Effect, HeardSlot[]>();
+
+  /** What the ops of the call in hand take as `statesSlots`. */
+  readonly listen = (effect: Effect, slots: readonly StatedSlot[]): void => {
+    const already = this.byEffect.get(effect) ?? [];
+    for (const one of slots) {
+      const key = keysOfValues.get(one.value) ?? null;
+      already.push({ slot: one.slot, name: one.name, key });
+    }
+    this.byEffect.set(effect, already);
+  };
+
+  /** The slots stated about one effect a hook returned. */
+  of(effect: Effect): readonly HeardSlot[] {
+    return this.byEffect.get(effect) ?? [];
+  }
+}
 
 class FactCall implements CallOps {
   private readonly calleeRead: { object: string; name: string } | null;

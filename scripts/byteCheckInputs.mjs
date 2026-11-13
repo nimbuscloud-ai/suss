@@ -926,6 +926,32 @@ export const EXTRA_INPUTS = [
       ...packs("react", "fetch", "node"),
     ],
   },
+  // Two FastAPI apps beside the field one, for the SQLAlchemy and
+  // SQLModel packs, with the packs `suss init` picks for each.
+  {
+    name: "sqlalchemy",
+    group: "extra",
+    repo: "mealie",
+    args: [
+      ...lang("python"),
+      ...packs(
+        "fastapi",
+        "httpx",
+        "requests",
+        withConfig("sqlalchemy", POSTGRES),
+      ),
+    ],
+  },
+  {
+    name: "sqlmodel",
+    group: "extra",
+    repo: "full-stack-fastapi-template",
+    args: [
+      ...dir("backend"),
+      ...lang("python"),
+      ...packs("fastapi", "httpx", withConfig("sqlmodel", POSTGRES)),
+    ],
+  },
   // The packs `suss init` picks, since only the NestJS packs make the
   // services that call TypeORM into units. CONTRIBUTING.md says why the
   // clone needs its dependencies installed.
