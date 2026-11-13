@@ -2,14 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { Node as TsNode } from "ts-morph";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { createFixtureProject } from "@suss/test-project";
 
 import { cloudflareWorkersFramework } from "./index.js";
-import { storeBindingRecognizer } from "./storeBindings.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 
@@ -129,6 +127,18 @@ beforeAll(() => {
      };`,
   );
   write(
+    "src/notATrigger.ts",
+    `interface Env { SESSIONS: KVNamespace }
+     export default {
+       async warm(request: Request, env: Env): Promise<void> {
+         await env.SESSIONS.get("k");
+       },
+       async fetch(env: Env): Promise<void> {
+         await env.SESSIONS.get("first");
+       },
+     };`,
+  );
+  write(
     "src/passedOn.ts",
     `interface Env { SESSIONS: KVNamespace; ARCHIVE: R2Bucket }
      async function lastSession(settings: Env) {
@@ -233,7 +243,7 @@ function operationOf(effect: Effect): string {
   return effect.interaction.operation ?? "";
 }
 
-describe("storeBindingRecognizer", () => {
+describe("the store chains", () => {
   it("reads each store by the type its Env declaration states", async () => {
     const effects = storageEffects(await run(), "stores.ts");
     expect(effects).toEqual(
@@ -362,41 +372,8 @@ describe("storeBindingRecognizer", () => {
     expect(storageEffects(await run(), "abstains.ts")).toEqual([]);
   });
 
-  it("reads a call when the context has no resolver", () => {
-    const project = createFixtureProject(root, "src/*.ts");
-    const sf = project.getSourceFileOrThrow(path.join(root, "src/stores.ts"));
-    const effects: Effect[] = [];
-    sf.forEachDescendant((node) => {
-      if (!TsNode.isCallExpression(node)) {
-        return;
-      }
-      const emitted = storeBindingRecognizer(node, {});
-      if (emitted !== null) {
-        effects.push(...emitted);
-      }
-    });
-    expect(effects.length).toBeGreaterThan(0);
-  });
-
-  it("leaves an env argument alone outside a trigger, or first in one, when there is no resolver", () => {
-    const project = createFixtureProject(root, "src/*.ts");
-    const sf = project.createSourceFile(
-      path.join(root, "src/notATrigger.ts"),
-      `interface Env { SESSIONS: KVNamespace }
-       export default {
-         async warm(request: Request, env: Env): Promise<void> {
-           await env.SESSIONS.get("k");
-         },
-         async fetch(env: Env): Promise<void> {
-           await env.SESSIONS.get("first");
-         },
-       };`,
-    );
-    const calls = sf.getDescendants().filter(TsNode.isCallExpression);
-    expect(calls.map((call) => storeBindingRecognizer(call, {}))).toEqual([
-      null,
-      null,
-    ]);
+  it("leaves an env argument alone outside a trigger, or first in one", async () => {
+    expect(storageEffects(await run(), "notATrigger.ts")).toEqual([]);
   });
 
   it("keeps the config-read beside the storage access", async () => {
@@ -418,7 +395,7 @@ describe("storeBindingRecognizer", () => {
   });
 });
 
-describe("storeBindingRecognizer with the store types declared", () => {
+describe("the store chains with the store types declared", () => {
   const typedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-cf-typed-"));
 
   beforeAll(() => {

@@ -4,13 +4,16 @@ import { Database } from "@suss/datalog";
 
 import { type FactSource, factCallOps, factValueOps } from "./factOps.js";
 import {
+  allOf,
   anyOf,
   constructedFrom,
   declaredBy,
   global,
   handedBy,
+  handedIn,
   imported,
   inherits,
+  readOff,
   returnedBy,
   typed,
 } from "./ops.js";
@@ -856,6 +859,72 @@ describe("the ops over a value kept in a name or returned by a project function"
     expect(table?.interpolated?.().map((hole) => hole.source?.())).toEqual([
       "name",
     ]);
+  });
+});
+
+/**
+ * The facts for a Worker's trigger handed `env`, in TypeScript's rows:
+ *
+ *   env.SESSIONS.get("a")
+ *   const sessions = env.SESSIONS;   sessions.get("b")
+ *   other.SESSIONS.get("c")
+ */
+function handedEnv(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  const callOn = (call: string, object: string, method: string) => {
+    add("call", call, `${object}.${method}`);
+    add("readsProperty", `${object}.${method}`, object, method);
+  };
+  add("paramOf", "fetch", "1", "envParam");
+  add("handedIn", "envParam", "env");
+  add("binds", "envRef", "envParam");
+  add("readsProperty", "env.SESSIONS", "envRef", "SESSIONS");
+  callOn("getA", "env.SESSIONS", "get");
+  add("binds", "sessionsRef", "sessionsDecl");
+  add("binds", "sessionsDecl", "env.SESSIONS");
+  callOn("getB", "sessionsRef", "get");
+  add("readsProperty", "other.SESSIONS", "otherRef", "SESSIONS");
+  callOn("getC", "other.SESSIONS", "get");
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+  };
+}
+
+describe("a receiver read off an object the runtime provides", () => {
+  const OFF_ENV = readOff(handedIn("env"));
+  const calls = ["getA", "getB", "getC"];
+
+  it("takes a member read off the handed-in parameter, as written or kept in a local", () => {
+    expect(
+      calls.map((call) => opsAt(call, handedEnv()).receiverIsFrom(OFF_ENV)),
+    ).toEqual([true, true, false]);
+    expect(
+      calls.map((call) => opsAt(call, handedEnv()).isFrom(OFF_ENV)),
+    ).toEqual([true, true, false]);
+  });
+
+  it("takes a receiver every origin in allOf accepts, and no other", () => {
+    const both = allOf(OFF_ENV, readOff(handedIn("env")));
+    const neither = allOf(OFF_ENV, global("process.env"));
+
+    expect(
+      calls.map((call) => opsAt(call, handedEnv()).receiverIsFrom(both)),
+    ).toEqual([true, true, false]);
+    expect(
+      calls.map((call) => opsAt(call, handedEnv()).receiverIsFrom(neither)),
+    ).toEqual([false, false, false]);
+    expect(opsAt("getA", handedEnv()).isFrom(neither)).toBe(false);
   });
 });
 

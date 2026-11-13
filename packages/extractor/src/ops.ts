@@ -24,12 +24,14 @@ export type ReceiverOrigin =
   | DeclaredBy
   | ConstructedFrom
   | AnyOf
+  | AllOf
   | ReturnedBy
   | Typed
   | Inheriting
   | HandedBy
   | Imported
-  | Global;
+  | Global
+  | ReadOff;
 
 /**
  * A receiver, or the callee of a call with no receiver, spelled as one of
@@ -96,6 +98,23 @@ export interface ConstructedFrom {
 export interface AnyOf {
   readonly origin: "anyOf";
   readonly of: readonly ReceiverOrigin[];
+}
+
+/** A receiver every one of these origins accepts, asked in the order listed. */
+export interface AllOf {
+  readonly origin: "allOf";
+  readonly of: readonly ReceiverOrigin[];
+}
+
+/**
+ * A receiver that is a member read off an object the runtime provides:
+ * `env.SESSIONS` in `env.SESSIONS.get(key)`, where `env` is the
+ * parameter a Worker is handed. A read put in a local first counts, the
+ * way the member step reads one.
+ */
+export interface ReadOff {
+  readonly origin: "readOff";
+  readonly object: RuntimeObject;
 }
 
 /**

@@ -30,15 +30,19 @@ import {
 import {
   accessContextFor,
   discoverUnits,
+  factSourceFor,
   ResolutionStore,
   readOpsAt,
+  statedFactKey,
 } from "@suss/adapter-typescript";
 import nodeRuntimePack from "@suss/packs/node";
 import {
+  allOf,
   compile,
   discoverDeclared,
   global,
   handedIn,
+  readOff,
   runtimeReads,
 } from "@suss/recognize";
 import { factCallOps, factModuleOps, factReadOps } from "@suss/recognize/ops";
@@ -48,6 +52,7 @@ import { createTestProject } from "@suss/test-project";
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
+  CallOps,
   DeclaredDiscoveryPattern,
   FactSource,
   ReadOps,
@@ -546,5 +551,128 @@ describe("a parameter the platform fills, in every language", () => {
         HANDED_READS.map((entry) => entry.toLowerCase()),
       ),
     ).toEqual(OFF_HANDED_IN);
+  });
+});
+
+/** A call on a member read off the parameter, the same member kept in a local, and one read off something else. */
+const STORE_TYPESCRIPT = `
+interface Store { get(key: string): unknown }
+interface Env { SESSIONS: Store }
+declare const other: Env;
+export default {
+  async fetch(request: Request, env: Env) {
+    env.SESSIONS.get("a");
+    const held = env.SESSIONS;
+    held.get("b");
+    other.SESSIONS.get("c");
+  },
+};
+`;
+
+const STORE_PYTHON = `def serve(request, env):
+    env.sessions.get("a")
+    held = env.sessions
+    held.get("b")
+    other.sessions.get("c")
+
+
+default = {"fetch": serve}
+`;
+
+const STORE_RUBY = `def serve(request, env)
+  env.sessions.get("a")
+  held = env.sessions
+  held.get("b")
+  OTHER.sessions.get("c")
+end
+`;
+
+const OFF_ENV = readOff(handedIn("env"));
+
+/** What each origin says of the receiver of every `get`, in source order. */
+function receiversTaken(calls: readonly CallOps[]) {
+  return {
+    readOff: calls.map((call) => call.receiverIsFrom(OFF_ENV)),
+    allOf: calls.map((call) =>
+      call.receiverIsFrom(allOf(OFF_ENV, readOff(handedIn("env")))),
+    ),
+    allOfRefused: calls.map((call) =>
+      call.receiverIsFrom(allOf(OFF_ENV, global("process.env"))),
+    ),
+  };
+}
+
+const TAKEN = {
+  readOff: [true, true, false],
+  allOf: [true, true, false],
+  allOfRefused: [false, false, false],
+};
+
+/** Every call to `get` the facts state, by where it starts. */
+function getsIn(db: Database, source: FactSource): CallOps[] {
+  return db
+    .facts("call")
+    .filter((row) => source.textOf(String(row[1])).endsWith(".get"))
+    .map((row) => String(row[0]))
+    .sort((a, b) => startOf(a) - startOf(b))
+    .map((call) => factCallOps(call, source) ?? raise(`no call at ${call}`));
+}
+
+/** Where a node key starts in its file, `worker.py:120-180` giving 120. */
+function startOf(key: string): number {
+  return Number((key.split(":")[1] ?? "").split("-")[0]);
+}
+
+describe("a receiver read off the parameter the platform fills, in every language", () => {
+  it("is a member read off it, as written or kept in a local, in TypeScript", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile("/src/worker.ts", STORE_TYPESCRIPT);
+    const store = ResolutionStore.forPacks([]);
+    for (const unit of discoverUnits(file, [MEMBERS], store)) {
+      if (unit.func !== null && unit.handedIn !== undefined) {
+        store.stateHandedIn(unit.func, unit.handedIn);
+      }
+    }
+    const source = factSourceFor(store);
+    const calls = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .filter((call) => call.getExpression().getText().endsWith(".get"))
+      .map(
+        (call) =>
+          factCallOps(statedFactKey(call, store), source) ??
+          raise(`no call at ${call.getText()}`),
+      );
+
+    expect(receiversTaken(calls)).toEqual(TAKEN);
+  });
+
+  it("is a member read off it, as written or kept in a local, in Python", async () => {
+    const tree = await parsePython(STORE_PYTHON);
+    const root = tree.rootNode;
+    const db = pythonFacts({
+      file: "worker.py",
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    for (const unit of foundIn(source, "worker.py", MEMBERS)) {
+      const func = pythonNodeId("worker.py", unit.func as never);
+      stateHandedIn(db, func, unit.handedIn ?? []);
+    }
+
+    expect(receiversTaken(getsIn(db, source))).toEqual(TAKEN);
+  });
+
+  it("is a member read off it, as written or kept in a local, in Ruby", async () => {
+    const tree = await parseRuby(STORE_RUBY);
+    const db = rubyFacts({ file: "worker.rb", root: tree.rootNode, packs: [] });
+    const source = rubyFactSource(db);
+    for (const unit of foundIn(source, "worker.rb", MANIFEST)) {
+      const func = rubyNodeId("worker.rb", unit.func as never);
+      stateHandedIn(db, func, unit.handedIn ?? []);
+    }
+
+    expect(receiversTaken(getsIn(db, source))).toEqual(TAKEN);
   });
 });

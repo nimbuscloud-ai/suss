@@ -50,6 +50,7 @@ import type {
   Imported,
   ReceiverOrigin,
   ReturnedBy,
+  RuntimeObject,
   StatedSlot,
   UnsettledName,
   ValueEntry,
@@ -121,6 +122,22 @@ const ORIGIN: ByOrigin<boolean, [Receiver]> = {
   },
   anyOf: (origin, receiver) =>
     origin.of.some((one) => byOrigin(ORIGIN, one, receiver)),
+  allOf: (origin, receiver) =>
+    origin.of.every((one) => byOrigin(ORIGIN, one, receiver)),
+  readOff: (origin, receiver) => {
+    const read =
+      receiver.callee === null
+        ? null
+        : memberReadAt(receiver.callee.getExpression());
+    return (
+      read !== null &&
+      isOffObject(
+        peelValue(read.getExpression()),
+        origin.object,
+        receiver.resolution,
+      )
+    );
+  },
   returnedBy: (origin, receiver) => {
     if (receiver.callee === null) {
       return false;
@@ -161,6 +178,40 @@ const ORIGIN: ByOrigin<boolean, [Receiver]> = {
       receiver.resolution,
     ) !== undefined,
 };
+
+/**
+ * Whether an object a member is read off is the runtime object, the way
+ * the read ops ask it of a read site: a path spelled or followed into
+ * it, or the handed-in parameter, a name bound to it, or a value the
+ * rules followed it into. A run with no store knows no handed-in one.
+ */
+const OFF_OBJECT: {
+  readonly [K in RuntimeObject["origin"]]: (
+    object: Node,
+    runtime: Extract<RuntimeObject, { origin: K }>,
+    resolution: ResolutionStore | undefined,
+  ) => boolean;
+} = {
+  global: (object, runtime, resolution) =>
+    receiverGlobalOf(object, runtime.paths, resolution) !== undefined,
+  handedIn: (object, runtime, resolution) =>
+    resolution !== undefined &&
+    (resolution.refersToHandedIn(object, runtime.name) ||
+      resolution.handedReaching(object).has(runtime.name)),
+};
+
+function isOffObject(
+  object: Node,
+  runtime: RuntimeObject,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  const check = OFF_OBJECT[runtime.origin] as (
+    object: Node,
+    runtime: RuntimeObject,
+    resolution: ResolutionStore | undefined,
+  ) => boolean;
+  return check(object, runtime, resolution);
+}
 
 /**
  * The one path among `paths` a receiver is: spelled as it, or else the
@@ -366,6 +417,8 @@ const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
     ),
   anyOf: (origin, receiver) =>
     origin.of.some((one) => byOrigin(CALL_ORIGIN, one, receiver)),
+  allOf: (origin, receiver) =>
+    origin.of.every((one) => byOrigin(CALL_ORIGIN, one, receiver)),
   returnedBy: (origin, receiver) =>
     receiver.callee !== null &&
     receiver.callee.getName() === origin.method &&
@@ -373,6 +426,7 @@ const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
   typed: ORIGIN.typed,
   inherits: ORIGIN.inherits,
   handedBy: ORIGIN.handedBy,
+  readOff: ORIGIN.readOff,
   imported: (origin, receiver) =>
     importedAsAsked(origin, receiver.expression, receiver.resolution),
   global: (origin, receiver) =>

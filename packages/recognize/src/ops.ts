@@ -8,6 +8,7 @@
  */
 
 export type {
+  AllOf,
   AnyOf,
   AstCapableOps,
   CallOps,
@@ -21,6 +22,7 @@ export type {
   Inheriting,
   Inherits,
   OpsCarrier,
+  ReadOff,
   ReadOps,
   ReadOpsCarrier,
   ReceiverOrigin,
@@ -36,6 +38,7 @@ export type {
 import { byOrigin } from "@suss/extractor";
 
 import type {
+  AllOf,
   AnyOf,
   ByOrigin,
   CallOps,
@@ -48,10 +51,12 @@ import type {
   Inheriting,
   Inherits,
   OpsCarrier,
+  ReadOff,
   ReadOps,
   ReadOpsCarrier,
   ReceiverOrigin,
   ReturnedBy,
+  RuntimeObject,
   Typed,
 } from "@suss/extractor";
 
@@ -92,6 +97,24 @@ export function constructedFrom(
 /** A receiver any one of these origins accepts, such as a client a program makes itself or gets from another client. */
 export function anyOf(...of: readonly ReceiverOrigin[]): AnyOf {
   return { origin: "anyOf", of };
+}
+
+/**
+ * A receiver every one of these origins accepts. They are asked in the
+ * order given and the first refusal stops the rest, so a pack lists the
+ * check that costs least first.
+ */
+export function allOf(...of: readonly ReceiverOrigin[]): AllOf {
+  return { origin: "allOf", of };
+}
+
+/**
+ * A receiver read off an object the runtime provides:
+ * `readOff(handedIn("env"))` takes `env.SESSIONS` in a Worker, and
+ * `sessions` after `const sessions = env.SESSIONS`.
+ */
+export function readOff(object: RuntimeObject): ReadOff {
+  return { origin: "readOff", object };
 }
 
 /** A receiver `method` returned, called on a receiver from `on`. */
@@ -170,12 +193,14 @@ const MODULES: ByOrigin<readonly string[]> = {
   declaredBy: (origin) => origin.importedFrom,
   constructed: (origin) => origin.importedFrom,
   anyOf: (origin) => origin.of.flatMap((one) => modulesOf(one)),
+  allOf: (origin) => origin.of.flatMap((one) => modulesOf(one)),
   returnedBy: (origin) => modulesOf(origin.on),
   typed: (origin) => origin.importedFrom,
   inherits: (origin) => origin.from,
   handedBy: (origin) => modulesOf(origin.on),
   imported: (origin) => origin.importedFrom,
   global: () => [],
+  readOff: () => [],
 };
 
 /** Every module an origin mentions, which a file has to import before it can match. */

@@ -21,6 +21,8 @@ import {
   fileOfKey,
 } from "@suss/resolution";
 
+import { factReadOps } from "./factReadOps.js";
+
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
   ByOrigin,
@@ -40,6 +42,7 @@ import type {
   ModuleMember,
   ModuleMemberName,
   ModuleOps,
+  ReadOff,
   ReceiverOrigin,
   ReturnedBy,
   Typed,
@@ -49,7 +52,7 @@ import type {
   ValueOps,
 } from "@suss/extractor";
 
-export { factReadOps } from "./factReadOps.js";
+export { factReadOps };
 
 export type { FactRows, FactSource } from "@suss/extractor";
 
@@ -145,26 +148,48 @@ class FactCall implements CallOps {
    * name set to one first counts as that read.
    */
   member(): CallOps | null {
+    const key = this.memberKey();
+    return key === null ? null : memberOpsAt(key, this.source);
+  }
+
+  /**
+   * Whether the receiver is a member read off the runtime object, as
+   * written or kept in a local first, asked the way a read site is.
+   */
+  receiverReadOff(origin: ReadOff): boolean {
+    const member = this.memberKey();
+    if (member === null || memberOpsAt(member, this.source) === null) {
+      return false;
+    }
+    // Ruby writes a member read as a call, and the read is its callee.
+    const read =
+      memberRead(member, this.source) === null
+        ? calleeOf(member, this.source)
+        : member;
+    return read !== null && factReadOps(read, this.source).isOff(origin.object);
+  }
+
+  /**
+   * The key the member the receiver is was written at: the receiver
+   * itself, or what a name there was set to. A name set to a client,
+   * `const db = new Client()`, is the client and not a member of it, so
+   * only a value read off something counts.
+   */
+  private memberKey(): string | null {
     if (this.calleeRead === null) {
       return null;
     }
     const { object } = this.calleeRead;
     this.source.read(object);
     if (!isName(object, this.source)) {
-      return memberOpsAt(object, this.source);
+      return object;
     }
-    // A name set to a client, `const db = new Client()`, is the client
-    // and not a member of it, so only a value read off something counts.
-    const members = new Map<string, CallOps>();
-    for (const value of declaredValuesOf(object, this.source)) {
-      const ops = isReadOff(value, this.source)
-        ? memberOpsAt(value, this.source)
-        : null;
-      if (ops !== null) {
-        members.set(value, ops);
-      }
-    }
-    const [only, ...more] = members.values();
+    const held = new Set(
+      declaredValuesOf(object, this.source).filter((value) =>
+        isReadOff(value, this.source),
+      ),
+    );
+    const [only, ...more] = held;
     return only === undefined || more.length > 0 ? null : only;
   }
 
@@ -569,6 +594,8 @@ function receiverOrigin(call: FactCall): ByOrigin<boolean> {
     handedBy: (origin) => call.receiverHanded(origin),
     imported: (origin) => call.receiverImported(origin),
     global: (origin) => call.receiverGlobal(origin.paths) !== undefined,
+    allOf: (origin) => origin.of.every((one) => call.receiverIsFrom(one)),
+    readOff: (origin) => call.receiverReadOff(origin),
   };
 }
 
@@ -584,6 +611,8 @@ function callOrigin(call: FactCall): ByOrigin<boolean> {
     handedBy: (origin) => call.receiverHanded(origin),
     imported: (origin) => call.calleeImported(origin),
     global: (origin) => call.callsGlobal(origin),
+    allOf: (origin) => origin.of.every((one) => call.isFrom(one)),
+    readOff: (origin) => call.receiverReadOff(origin),
   };
 }
 

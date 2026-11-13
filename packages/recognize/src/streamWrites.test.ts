@@ -4,13 +4,16 @@ import { byOrigin } from "@suss/extractor";
 
 import { compile } from "./compile.js";
 import {
+  allOf,
   anyOf,
   constructedFrom,
   declaredBy,
   global,
   handedBy,
+  handedIn,
   imported,
   inherits,
+  readOff,
   returnedBy,
   typed,
 } from "./ops.js";
@@ -70,6 +73,8 @@ function writeCall(over: {
         origin.paths.includes(over.receiverGlobal)),
     typed: () => over.typed === true,
     anyOf: (origin) => origin.of.some((one) => byOrigin(receiverFrom, one)),
+    allOf: (origin) => origin.of.every((one) => byOrigin(receiverFrom, one)),
+    readOff: () => false,
     declaredBy: () => false,
     constructed: () => false,
     returnedBy: () => false,
@@ -248,7 +253,8 @@ describe("a stream-write chain", () => {
         imported({ from: ["tape"] }),
         inherits({ from: ["tape"], named: ["Deck"] }),
         handedBy("record", declaredBy("tape"), { parameter: 0 }),
-        global("process.stdout"),
+        readOff(handedIn("env")),
+        allOf(global("process.stdout")),
       ),
     }).methods({ write: { to: "receiver" } });
     const call = writeCall({
@@ -262,7 +268,11 @@ describe("a stream-write chain", () => {
   it("matches a bare call of a global through a calls link, when the client lists one", () => {
     const tracked = storageCalls({
       system: "tally",
-      client: anyOf(global("track"), declaredBy("tally")),
+      client: anyOf(
+        readOff(handedIn("env")),
+        allOf(global("track")),
+        declaredBy("tally"),
+      ),
     }).calls({ kind: "write" });
     const call = writeCall({
       method: null,

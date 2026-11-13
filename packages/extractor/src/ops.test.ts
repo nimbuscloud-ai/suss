@@ -21,6 +21,9 @@ const DESCRIBE: ByOrigin<string, [string]> = {
     `${byOrigin(DESCRIBE, origin.on, prefix)}.${origin.method}((${origin.parameter}) => ...)`,
   imported: (origin, prefix) => `${prefix}import ${origin.importedFrom.join()}`,
   global: (origin, prefix) => `${prefix}${origin.paths.join()}`,
+  allOf: (origin, prefix) =>
+    origin.of.map((one) => byOrigin(DESCRIBE, one, prefix)).join(" & "),
+  readOff: (origin, prefix) => `${prefix}${origin.object.origin}.*`,
 };
 
 describe("dispatching on the kind of origin", () => {
@@ -40,6 +43,19 @@ describe("dispatching on the kind of origin", () => {
     expect(byOrigin(DESCRIBE, origin, "> ")).toBe(
       "> pg | > new hooks.client()",
     );
+    expect(
+      byOrigin(
+        DESCRIBE,
+        {
+          origin: "allOf",
+          of: [
+            { origin: "readOff", object: { origin: "handedIn", name: "env" } },
+            { origin: "typed", importedFrom: ["global"], named: ["R2Bucket"] },
+          ],
+        },
+        "> ",
+      ),
+    ).toBe("> handedIn.* & > : R2Bucket");
   });
 });
 
