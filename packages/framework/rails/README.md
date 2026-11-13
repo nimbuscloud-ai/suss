@@ -65,7 +65,7 @@ Framework pack for [Rails](https://rubyonrails.org/) controller actions and the 
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/adapter-ruby`, for the `RubyPack` type, the `controllerActions` discovery pattern it implements, and the parser it reads `config/routes.rb` with. Apart from the routes grammar in `routes.ts`, it has no analysis logic of its own.
+The pack depends on `@suss/adapter-ruby` for the `RubyPack` type, the `controllerActions` discovery pattern it implements, and the module ops it reads `config/routes.rb` and each engine's class through, and on `@suss/extractor` for the types of those ops. The adapter states one file's facts on their own for the ops to answer from, so the pack asks for a call's name, its arguments and the calls its block writes, and never handles a syntax tree. Apart from the routes grammar in `routes.ts`, it has no analysis logic of its own.
 
 ## Configuration
 

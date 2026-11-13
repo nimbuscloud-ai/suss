@@ -11,15 +11,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  bodyStatements,
-  children,
-  field,
-  parseRubySync,
-  underscoreConstantPath,
-} from "@suss/adapter-ruby";
+import { moduleOpsForFile, underscoreConstantPath } from "@suss/adapter-ruby";
 
-import type { RbNode } from "@suss/adapter-ruby";
+import type { ClassValueOps, Inherits, ModuleOps } from "@suss/extractor";
 
 export interface RailsEngine {
   /** The class as a `mount` call writes it, such as `Billing::Engine`. */
@@ -33,8 +27,8 @@ export interface RailsEngine {
   readonly routesFile: string | null;
 }
 
-const ENGINE_BASE_NAMES = new Set(["Rails::Engine", "::Rails::Engine"]);
-const CONSTANT_TYPES = new Set(["constant", "scope_resolution"]);
+/** The base every engine class extends, which Ruby reaches through Rails' own constant. */
+const RAILS_ENGINE: Inherits = { from: ["Rails"], named: ["Engine"] };
 
 /**
  * Every engine defined under one of `roots`, in the order the roots were
@@ -50,9 +44,7 @@ export function readEngines(
   for (const root of roots) {
     const routesFile = engineRoutesFile(root);
     for (const file of engineFilesUnder(root)) {
-      const source = fs.readFileSync(file, "utf8");
-      const rootNode = parseRubySync(source).rootNode;
-      for (const found of engineClassesIn(rootNode, acronyms)) {
+      for (const found of engineClassesIn(moduleOpsForFile(file), acronyms)) {
         engines.push({ ...found, routesFile });
       }
     }
@@ -131,67 +123,36 @@ function rubyFilesUnder(directory: string): string[] {
     .sort();
 }
 
+/** Each class in the file that extends `Rails::Engine`, by the name its namespaces give it. */
 function engineClassesIn(
-  node: RbNode,
+  module: ModuleOps,
   acronyms: readonly string[],
-  enclosing: readonly string[] = [],
 ): Omit<RailsEngine, "routesFile">[] {
-  const found: Omit<RailsEngine, "routesFile">[] = [];
-  for (const child of children(node)) {
-    if (child.type === "class" && extendsEngine(child)) {
-      const name = definedName(child);
-      if (name !== undefined) {
-        found.push({
-          qualifiedName: [...enclosing, name].join("::"),
-          modulePrefix: isolatedNamespaceOf(child, acronyms),
-        });
-      }
-      continue;
-    }
-    const nested =
-      child.type === "module" || child.type === "class"
-        ? [...enclosing, definedName(child) ?? ""]
-        : enclosing;
-    found.push(...engineClassesIn(child, acronyms, nested));
-  }
-  return found;
-}
-
-/** The constant a `module`/`class` line defines, with a leading `::` dropped: `module ::Billing` defines `Billing`. */
-function definedName(definition: RbNode): string | undefined {
-  return field(definition, "name")?.text.replace(/^::/, "");
-}
-
-function extendsEngine(classNode: RbNode): boolean {
-  const superclass = field(classNode, "superclass");
-  const base = children(superclass).find((child) =>
-    CONSTANT_TYPES.has(child.type),
-  );
-  return base !== undefined && ENGINE_BASE_NAMES.has(base.text);
+  return module.classes().flatMap((cls) => {
+    const name = cls.name();
+    return name === null || !cls.inherits(RAILS_ENGINE)
+      ? []
+      : [
+          {
+            qualifiedName: name,
+            modulePrefix: isolatedNamespaceOf(cls, acronyms),
+          },
+        ];
+  });
 }
 
 /** The module `isolate_namespace Name` puts the engine's controllers under, as a routing key prefix. */
 function isolatedNamespaceOf(
-  classNode: RbNode,
+  cls: ClassValueOps,
   acronyms: readonly string[],
 ): string {
-  const body = field(classNode, "body");
-  if (body === null) {
-    return "";
-  }
-  for (const statement of bodyStatements(body)) {
-    if (
-      statement.type !== "call" ||
-      field(statement, "method")?.text !== "isolate_namespace"
-    ) {
-      continue;
-    }
-    const arguments_ = field(statement, "arguments");
-    const argument =
-      arguments_ === null ? undefined : bodyStatements(arguments_)[0];
-    if (argument !== undefined && CONSTANT_TYPES.has(argument.type)) {
-      return underscoreConstantPath(argument.text.replace(/^::/, ""), acronyms);
-    }
-  }
-  return "";
+  const isolates = cls
+    .bodyCalls()
+    .find(
+      (call) => (call.method() ?? call.calleeText()) === "isolate_namespace",
+    );
+  const written = isolates?.valueAt(0)?.source?.() ?? null;
+  return written === null
+    ? ""
+    : underscoreConstantPath(written.replace(/^::/, ""), acronyms);
 }

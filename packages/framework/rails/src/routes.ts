@@ -7,26 +7,20 @@
  * or a gem's own routing call, is left unread and reported once per file
  * as a gap. A gem's block whose body is written in the grammar is walked
  * as if the call were not there.
+ *
+ * Each file is read through the module ops the Ruby adapter states for
+ * it on its own: a call's name, its arguments, its block, and the calls
+ * a block writes as statements.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  bodyStatements,
-  children,
-  field,
-  hashKeySymbolName,
-  nestedStatements,
-  pairValue,
-  parseRubySync,
-  stringValueOf,
-  symbolValue,
-} from "@suss/adapter-ruby";
+import { moduleOpsForFile } from "@suss/adapter-ruby";
 
 import { pathWithOptionalGroups } from "./optionalSegments.js";
 
-import type { ParameterBindings, RbNode } from "@suss/adapter-ruby";
+import type { CallOps, ModuleOps, PairArg, ValueOps } from "@suss/extractor";
 import type { RailsEngine } from "./engines.js";
 
 export interface Route {
@@ -76,67 +70,86 @@ interface RouteContext {
   modulePrefix: string;
   resource?: ResourceScope;
   /** Keywords an enclosing `with_options` gives every call inside it; a call's own keyword wins. */
-  defaults: Record<string, RbNode>;
+  defaults: Readonly<Record<string, ValueOps>>;
   /**
    * The loop variables an enclosing `%w[a b].each do |name|` binds, so a
    * string that interpolates `name` reads as a literal.
    */
-  bindings?: ParameterBindings;
+  bindings?: ReadonlyMap<string, string>;
 }
 
+/** Every keyword a routing call here reads, and so every one `with_options` can hand down. */
+const KEYWORDS = [
+  "to",
+  "on",
+  "action",
+  "controller",
+  "format",
+  "path",
+  "module",
+  "only",
+  "except",
+  "concerns",
+  "via",
+  "at",
+] as const;
+
 interface SimpleArgs {
-  positional: RbNode[];
-  keyword: Record<string, RbNode>;
-  /**
-   * A `"path" => "controller#action"` argument. tree-sitter parses a bare
-   * hash written with `=>` as a pair in the argument list.
-   */
-  hashRocketPair: { key: RbNode; value: RbNode } | null;
+  positional: ValueOps[];
+  keyword: Record<string, ValueOps>;
+  /** The last `"path" => "controller#action"` argument, whose key is a value rather than a keyword. */
+  pair: PairArg | null;
 }
 
 function readSimpleArgs(
-  call: RbNode,
-  defaults: Record<string, RbNode> = {},
+  call: CallOps,
+  defaults: Readonly<Record<string, ValueOps>> = {},
 ): SimpleArgs {
-  const argumentList = field(call, "arguments");
-  const positional: RbNode[] = [];
-  const keyword: Record<string, RbNode> = { ...defaults };
-  let hashRocketPair: SimpleArgs["hashRocketPair"] = null;
-  if (argumentList === null) {
-    return { positional, keyword, hashRocketPair };
-  }
-  for (const child of bodyStatements(argumentList)) {
-    if (child.type !== "pair") {
-      positional.push(child);
-      continue;
-    }
-    const keyNode = field(child, "key");
-    const valueNode = pairValue(child);
-    if (keyNode === null || valueNode === null) {
-      continue;
-    }
-    // `constraints: x` and `:constraints => x` are the same keyword.
-    const symbolKey = hashKeySymbolName(keyNode) ?? symbolValue(keyNode);
-    if (symbolKey !== null) {
-      keyword[symbolKey] = valueNode;
-    } else {
-      hashRocketPair = { key: keyNode, value: valueNode };
+  const pairs = call.pairArgs?.() ?? [];
+  // A string key is a keyword to the adapter as well, and a pair to Rails.
+  const pairKeys = new Set(pairs.map((pair) => pair.key.text()));
+  const keyword: Record<string, ValueOps> = { ...defaults };
+  for (const name of KEYWORDS) {
+    const value = pairKeys.has(name) ? null : (call.keywordAt?.(name) ?? null);
+    if (value !== null) {
+      keyword[name] = value;
     }
   }
-  return { positional, keyword, hashRocketPair };
+  const positional: ValueOps[] = [];
+  for (let at = 0; at < call.argumentCount(); at++) {
+    const value = call.valueAt(at);
+    if (value !== null) {
+      positional.push(value);
+    }
+  }
+  return { positional, keyword, pair: pairs[pairs.length - 1] ?? null };
 }
 
-/** The string `node` evaluates to, with any loop variable an enclosing `.each` binds. */
-function textValue(node: RbNode, ctx: RouteContext): string | null {
-  return stringValueOf(node, undefined, ctx.bindings);
-}
-
-/** A keyword's value read as a plain word, written either as a symbol or as a string. */
-function wordValue(node: RbNode | undefined, ctx: RouteContext): string | null {
-  if (node === undefined) {
+/**
+ * The string a value comes to: a loop variable it names, or else what it
+ * evaluates to with the loop variables bound. A symbol reads as its name.
+ */
+function textValue(
+  value: ValueOps | undefined,
+  ctx: RouteContext,
+): string | null {
+  if (value === undefined) {
     return null;
   }
-  return symbolValue(node) ?? textValue(node, ctx);
+  const bound =
+    value.form?.() === "name"
+      ? ctx.bindings?.get(value.source?.() ?? "")
+      : undefined;
+  if (bound !== undefined) {
+    return bound;
+  }
+  const evaluated = value.evaluatedWith?.(ctx.bindings ?? new Map()) ?? null;
+  return typeof evaluated === "string" ? evaluated : null;
+}
+
+/** Whether the source writes the value out as a list here: `[...]`, `%w[]` or `%i[]`. */
+function writtenAsList(value: ValueOps): boolean {
+  return value.shape?.()?.type === "array";
 }
 
 function splitControllerAction(
@@ -163,14 +176,14 @@ function readRouteTarget(
   args: SimpleArgs,
   ctx: RouteContext,
 ): ResolvedTarget | null {
-  const toText = args.keyword.to ? textValue(args.keyword.to, ctx) : null;
+  const toText = textValue(args.keyword.to, ctx);
   if (toText !== null) {
     const target = splitControllerAction(toText);
     return target === null ? null : { ...target, path: null };
   }
-  if (args.hashRocketPair !== null) {
-    const pathText = textValue(args.hashRocketPair.key, ctx);
-    const actionText = textValue(args.hashRocketPair.value, ctx);
+  if (args.pair !== null) {
+    const pathText = textValue(args.pair.key, ctx);
+    const actionText = textValue(args.pair.value, ctx);
     const target =
       actionText !== null ? splitControllerAction(actionText) : null;
     return target !== null && pathText !== null
@@ -187,18 +200,19 @@ function readRouteTarget(
  * gives one value that is no name.
  */
 function readNameList(
-  node: RbNode | undefined,
+  value: ValueOps | undefined,
   ctx: RouteContext,
 ): string[] | null {
-  if (node === undefined) {
+  if (value === undefined) {
     return null;
   }
-  if (LITERAL_LIST_TYPES.has(node.type)) {
-    return bodyStatements(node)
-      .map((child) => wordValue(child, ctx))
+  if (writtenAsList(value)) {
+    return value
+      .items()
+      .map((item) => textValue(item, ctx))
       .filter((name): name is string => name !== null);
   }
-  const single = wordValue(node, ctx);
+  const single = textValue(value, ctx);
   return single === null ? null : [single];
 }
 
@@ -267,8 +281,8 @@ function singularize(word: string): string {
 /** An engine's own route set, walked under the path each `mount` gives it. */
 interface EngineRouteSet {
   readonly modulePrefix: string;
-  /** The block of the engine's `Name::Engine.routes.draw do ... end`, or null when its routes file draws none. */
-  readonly body: RbNode | null;
+  /** The calls in the block of the engine's `Name::Engine.routes.draw do ... end`, or null when its routes file draws none. */
+  readonly body: readonly CallOps[] | null;
   /** The engine's routes file, as a gap message prints it. */
   readonly displayPath: string;
 }
@@ -279,8 +293,8 @@ class RouteAccumulator {
   /** Per file, the gem block calls whose bodies were walked as if the call were not there. */
   private readonly walkedBlocks = new Map<string, Set<string>>();
   private readonly missingDrawn: { file: string; name: string }[] = [];
-  /** The block each `concern :name do ... end` declared, for `concerns` to replay. */
-  readonly concerns = new Map<string, RbNode>();
+  /** The calls in each `concern :name do ... end` block, for `concerns` to replay. */
+  readonly concerns = new Map<string, readonly CallOps[]>();
   /** Files `draw(:name)` has already read, so a file drawing itself stops. */
   readonly drawn = new Set<string>();
   /** Every engine a `mount` may refer to, keyed by class name. */
@@ -381,14 +395,20 @@ function joinPath(prefix: string, segment: string): string {
   return trimmed === "" ? base || "/" : `${base}/${trimmed}`;
 }
 
+/** The calls the call's block writes as statements, or null when it has no block. */
+function blockCalls(call: CallOps): readonly CallOps[] | null {
+  const block = call.block?.() ?? null;
+  return block === null ? null : (block.bodyCalls?.() ?? []);
+}
+
 function handleResourceCall(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
   plural: boolean,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const name = wordValue(args.positional[0], ctx);
+  const name = textValue(args.positional[0], ctx);
   if (name === null) {
     return;
   }
@@ -396,9 +416,9 @@ function handleResourceCall(
   // `controller:` or `path:` overrides what the name would have given.
   // `module:` puts the controller under one more directory.
   const controllerSegment =
-    wordValue(args.keyword.controller, ctx) ??
+    textValue(args.keyword.controller, ctx) ??
     (plural ? name : pluralize(name));
-  const moduleName = wordValue(args.keyword.module, ctx);
+  const moduleName = textValue(args.keyword.module, ctx);
   const modulePrefix =
     moduleName === null
       ? ctx.modulePrefix
@@ -406,7 +426,7 @@ function handleResourceCall(
   const controllerKey = joinKey(modulePrefix, controllerSegment);
   const prefixBase =
     ctx.resource !== undefined ? ctx.resource.nestedBase : ctx.pathPrefix;
-  const base = joinPath(prefixBase, wordValue(args.keyword.path, ctx) ?? name);
+  const base = joinPath(prefixBase, textValue(args.keyword.path, ctx) ?? name);
 
   const only = readNameList(args.keyword.only, ctx);
   const except = readNameList(args.keyword.except, ctx);
@@ -436,15 +456,14 @@ function handleResourceCall(
   const inside: RouteContext = { ...ctx, modulePrefix, resource: nested };
   applyConcerns(readNameList(args.keyword.concerns, ctx) ?? [], inside, out);
 
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
+  const body = blockCalls(call);
   if (body !== null) {
-    walkBody(body, inside, out);
+    walkCalls(body, inside, out);
   }
 }
 
 function handleOnBlock(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
   isMember: boolean,
@@ -452,15 +471,14 @@ function handleOnBlock(
   if (ctx.resource === undefined) {
     return;
   }
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
+  const body = blockCalls(call);
   if (body === null) {
     return;
   }
   const ambientBase = isMember
     ? ctx.resource.memberBase
     : ctx.resource.collectionBase;
-  walkBody(body, { ...ctx, resource: { ...ctx.resource, ambientBase } }, out);
+  walkCalls(body, { ...ctx, resource: { ...ctx.resource, ambientBase } }, out);
 }
 
 /** The base path for a bare verb inside a resource, given its `on:` keyword. */
@@ -475,13 +493,13 @@ function baseForOn(resource: ResourceScope, on: string | null): string {
 }
 
 function handleVerb(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
   method: string,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const on = wordValue(args.keyword.on, ctx);
+  const on = textValue(args.keyword.on, ctx);
   // Inside a resource block, the path starts from the resource's base for
   // this `on:` value.
   const base =
@@ -489,9 +507,7 @@ function handleVerb(
   const target = readRouteTarget(args, ctx);
   const format = formatOf(args);
   if (target !== null) {
-    const literalPath = args.positional[0]
-      ? textValue(args.positional[0], ctx)
-      : null;
+    const literalPath = textValue(args.positional[0], ctx);
     const path = target.path ?? literalPath;
     if (path !== null) {
       out.add(joinKey(ctx.modulePrefix, target.controllerKey), target.action, {
@@ -503,16 +519,14 @@ function handleVerb(
     return;
   }
 
-  const segment = args.positional[0]
-    ? wordValue(args.positional[0], ctx)
-    : null;
+  const segment = textValue(args.positional[0], ctx);
   if (segment === null) {
     return;
   }
   // `post :recording, action: :start_recording` routes to the `action:`
   // keyword's action, at the path the first argument gives.
-  const action = wordValue(args.keyword.action, ctx) ?? actionFromPath(segment);
-  const controller = wordValue(args.keyword.controller, ctx);
+  const action = textValue(args.keyword.action, ctx) ?? actionFromPath(segment);
+  const controller = textValue(args.keyword.controller, ctx);
   const controllerKey =
     controller !== null
       ? joinKey(ctx.modulePrefix, controller)
@@ -539,11 +553,11 @@ function actionFromPath(segment: string): string | null {
 
 /** `format: false` turns off the `.:format` Rails adds to a route. */
 function formatOf(args: SimpleArgs): Pick<Route, "formatless"> {
-  return args.keyword.format?.type === "false" ? { formatless: true } : {};
+  return args.keyword.format?.flag() === false ? { formatless: true } : {};
 }
 
 function handleRoot(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
@@ -562,18 +576,17 @@ function handleRoot(
 }
 
 function handleNamespace(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const name = wordValue(args.positional[0], ctx);
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
+  const name = textValue(args.positional[0], ctx);
+  const body = blockCalls(call);
   if (name === null || body === null) {
     return;
   }
-  walkBody(body, enterScope(ctx, name, name), out);
+  walkCalls(body, enterScope(ctx, name, name), out);
 }
 
 /**
@@ -600,107 +613,92 @@ function enterScope(
 }
 
 function handleScope(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const moduleName = wordValue(args.keyword.module, ctx);
+  const moduleName = textValue(args.keyword.module, ctx);
   // `scope "v1"` and `scope path: "v1"` both set the path in Rails.
   const pathSegment =
-    wordValue(args.keyword.path, ctx) ??
-    (args.positional[0] ? wordValue(args.positional[0], ctx) : null);
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
+    textValue(args.keyword.path, ctx) ?? textValue(args.positional[0], ctx);
+  const body = blockCalls(call);
   if (body === null) {
     return;
   }
-  walkBody(body, enterScope(ctx, pathSegment, moduleName), out);
+  walkCalls(body, enterScope(ctx, pathSegment, moduleName), out);
 }
 
-const LITERAL_LIST_TYPES = new Set(["array", "string_array", "symbol_array"]);
 const LOOP_METHODS = new Set(["each", "each_with_index"]);
 
 /**
  * `%w[users u].each do |root_path| ... end` declares its block once per
- * element, so the block is walked once per element with the parameter
- * bound. A loop over anything else is skipped, because its elements are
- * unknown here.
+ * element, so the block is walked once per element with the variable
+ * bound. A loop over anything but a list written out in place is
+ * skipped, because its elements are unknown here.
  */
 function replayLiteralLoop(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  const receiver = field(call, "receiver");
-  const method = field(call, "method")?.text;
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
-  const parameters = block !== null ? field(block, "parameters") : null;
+  const loop = call.loopsOver?.() ?? null;
+  const body = blockCalls(call);
   if (
-    receiver === null ||
-    !LITERAL_LIST_TYPES.has(receiver.type) ||
-    method === undefined ||
-    !LOOP_METHODS.has(method) ||
+    loop === null ||
     body === null ||
-    parameters === null
+    !LOOP_METHODS.has(call.method() ?? "") ||
+    !writtenAsList(loop.over)
   ) {
     return;
   }
-  const [element, index] = bodyStatements(parameters).map((p) => p.text);
-  if (element === undefined) {
-    return;
-  }
-  const elements = bodyStatements(receiver).map((node) => wordValue(node, ctx));
-  elements.forEach((word, position) => {
+  loop.over.items().forEach((item, position) => {
+    const word = textValue(item, ctx);
     if (word === null) {
       return;
     }
     const bindings = new Map(ctx.bindings ?? []);
-    bindings.set(element, word);
-    if (index !== undefined) {
-      bindings.set(index, String(position));
+    bindings.set(loop.element, word);
+    if (loop.position !== null) {
+      bindings.set(loop.position, String(position));
     }
-    walkBody(body, { ...ctx, bindings }, out);
+    walkCalls(body, { ...ctx, bindings }, out);
   });
 }
 
 /** A block whose calls route under the enclosing scope unchanged: `constraints` only narrows which requests match. */
 function walkBlockInPlace(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
+  const body = blockCalls(call);
   if (body !== null) {
-    walkBody(body, ctx, out);
+    walkCalls(body, ctx, out);
   }
 }
 
 function handleWithOptions(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
+  const body = blockCalls(call);
   if (body === null) {
     return;
   }
-  walkBody(body, { ...ctx, defaults: args.keyword }, out);
+  walkCalls(body, { ...ctx, defaults: args.keyword }, out);
 }
 
 function handleConcern(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const name = wordValue(args.positional[0], ctx);
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
+  const name = textValue(args.positional[0], ctx);
+  const body = blockCalls(call);
   if (name !== null && body !== null) {
     out.concerns.set(name, body);
   }
@@ -715,26 +713,29 @@ function applyConcerns(
   for (const name of names) {
     const body = out.concerns.get(name);
     if (body !== undefined) {
-      walkBody(body, ctx, out);
+      walkCalls(body, ctx, out);
     }
   }
 }
 
 function handleConcerns(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
   const names = args.positional
-    .map((node) => wordValue(node, ctx))
+    .map((value) => textValue(value, ctx))
     .filter((name): name is string => name !== null);
   applyConcerns(names, ctx, out);
 }
 
 /** The HTTP methods a `match ... via:` serves, `*` for `via: :all`. */
-function methodsOfVia(node: RbNode | undefined, ctx: RouteContext): string[] {
-  const names = readNameList(node, ctx) ?? [];
+function methodsOfVia(
+  value: ValueOps | undefined,
+  ctx: RouteContext,
+): string[] {
+  const names = readNameList(value, ctx) ?? [];
   if (names.includes("all")) {
     return ["*"];
   }
@@ -742,7 +743,7 @@ function methodsOfVia(node: RbNode | undefined, ctx: RouteContext): string[] {
 }
 
 function handleMatch(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
@@ -766,12 +767,12 @@ export function drawDirectoryOf(routesFile: string): string {
 
 /** `draw(:name)` reads `name.rb` from the draw directory; its top-level calls route under the scope the draw was written in. */
 function handleDraw(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const name = args.positional[0] ? wordValue(args.positional[0], ctx) : null;
+  const name = textValue(args.positional[0], ctx);
   if (name === null) {
     return;
   }
@@ -784,17 +785,16 @@ function handleDraw(
     out.recordMissingDrawn(name);
     return;
   }
-  const tree = parseRubySync(fs.readFileSync(file, "utf8"));
-  walkBody(tree.rootNode, ctx, out);
+  walkCalls(moduleOpsForFile(file).bodyCalls(), ctx, out);
 }
 
-type StatementHandler = (
-  call: RbNode,
+type CallHandler = (
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ) => void;
 
-const HANDLERS: Record<string, StatementHandler> = {
+const HANDLERS: Record<string, CallHandler> = {
   resources: (call, ctx, out) => handleResourceCall(call, ctx, out, true),
   resource: (call, ctx, out) => handleResourceCall(call, ctx, out, false),
   member: (call, ctx, out) => handleOnBlock(call, ctx, out, true),
@@ -824,16 +824,16 @@ const HANDLERS: Record<string, StatementHandler> = {
  * recorded as unread.
  */
 function handleMount(
-  call: RbNode,
+  call: CallOps,
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const target = args.positional[0] ?? args.hashRocketPair?.key;
-  const at = args.keyword.at ?? args.hashRocketPair?.value;
-  const name = target?.text.replace(/^::/, "");
+  const target = args.positional[0] ?? args.pair?.key;
+  const at = args.keyword.at ?? args.pair?.value;
+  const name = target?.source?.().replace(/^::/, "");
   const engine = name === undefined ? undefined : out.engines.get(name);
-  const mountPath = at === undefined ? null : textValue(at, ctx);
+  const mountPath = textValue(at, ctx);
   if (
     name === undefined ||
     engine === undefined ||
@@ -843,13 +843,14 @@ function handleMount(
     out.recordUnread("mount");
     return;
   }
-  if (engine.body === null) {
+  const body = engine.body;
+  if (body === null) {
     return;
   }
   out.mounting.add(name);
   out.inFile(engine.displayPath, () => {
-    walkBody(
-      engine.body as RbNode,
+    walkCalls(
+      body,
       {
         pathPrefix: joinPath(ctx.pathPrefix, mountPath),
         modulePrefix: engine.modulePrefix,
@@ -861,50 +862,44 @@ function handleMount(
   out.mounting.delete(name);
 }
 
-function walkBody(
-  body: RbNode,
-  ctx: RouteContext,
-  out: RouteAccumulator,
-): void {
-  walkStatements(bodyStatements(body), ctx, out);
+/**
+ * The name a call is matched against the handlers by: its method, or the
+ * name it calls bare, which the facts give no method for.
+ */
+function nameOf(call: CallOps): string {
+  return call.method() ?? call.calleeText();
+}
+
+/** Whether the call is written on a receiver, which a bare routing call never is. */
+function hasReceiver(call: CallOps): boolean {
+  return call.calleeText() !== nameOf(call);
 }
 
 /**
- * The calls written as statements among `statements`, in order, through
- * the branches of any `if`, `unless`, `case` or `begin` among them. A
- * route under `if Rails.env.development?` is declared in the same scope
- * as one written outside it.
+ * Walks the calls a block or a file writes as statements, which the ops
+ * list through the branches of any `if`, `unless`, `case` or `begin`
+ * among them, so a route under `if Rails.env.development?` is declared
+ * in the same scope as one written outside it.
  */
-function callStatements(statements: readonly RbNode[]): RbNode[] {
-  return statements.flatMap((statement) =>
-    statement.type === "call"
-      ? [statement]
-      : callStatements(nestedStatements(statement)),
-  );
-}
-
-function walkStatements(
-  statements: RbNode[],
+function walkCalls(
+  calls: readonly CallOps[],
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  for (const statement of callStatements(statements)) {
-    if (field(statement, "receiver") !== null) {
-      replayLiteralLoop(statement, ctx, out);
+  for (const call of calls) {
+    if (hasReceiver(call)) {
+      replayLiteralLoop(call, ctx, out);
       continue;
     }
-    const name = field(statement, "method")?.text;
-    if (name === undefined) {
-      continue;
-    }
+    const name = nameOf(call);
     const handler = HANDLERS[name];
     if (handler !== undefined) {
-      handler(statement, ctx, out);
+      handler(call, ctx, out);
       continue;
     }
-    if (blockWrittenInRoutesGrammar(statement)) {
+    if (blockWrittenInRoutesGrammar(call)) {
       out.recordWalkedBlock(name);
-      walkBlockInPlace(statement, ctx, out);
+      walkBlockInPlace(call, ctx, out);
       continue;
     }
     out.recordUnread(name);
@@ -916,16 +911,10 @@ function walkStatements(
  * routes in the ordinary grammar and leaves their path and controller
  * alone. A block with no routing call, such as `direct`, stays unread.
  */
-function blockWrittenInRoutesGrammar(call: RbNode): boolean {
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
-  if (body === null) {
-    return false;
-  }
-  return callStatements(bodyStatements(body)).some(
+function blockWrittenInRoutesGrammar(call: CallOps): boolean {
+  return (blockCalls(call) ?? []).some(
     (statement) =>
-      field(statement, "receiver") === null &&
-      Object.hasOwn(HANDLERS, field(statement, "method")?.text ?? ""),
+      !hasReceiver(statement) && Object.hasOwn(HANDLERS, nameOf(statement)),
   );
 }
 
@@ -949,56 +938,58 @@ interface RouteDeclaration {
   /** What the block adds routes to, as written before `.routes`: `Rails.application`, `Shop::Application` or `Billing::Engine`. */
   readonly owner: string;
   readonly kind: DeclarationKind;
-  readonly body: RbNode;
+  readonly body: readonly CallOps[];
   readonly displayPath: string;
 }
 
-/** Every `<owner>.routes.draw|prepend|append do ... end` written anywhere in the file, however deep. */
+/**
+ * Every `<owner>.routes.draw|prepend|append do ... end` the file writes
+ * outside a method: among the calls of its body, or among the calls a
+ * block outside a method writes as statements, however deep.
+ */
 function routeDeclarations(
-  root: RbNode,
+  module: ModuleOps,
   displayPath: string,
 ): RouteDeclaration[] {
   const found: RouteDeclaration[] = [];
-  const visit = (node: RbNode): void => {
-    const declaration = asRouteDeclaration(node, displayPath);
+  const visit = (call: CallOps): void => {
+    const declaration = asRouteDeclaration(call, displayPath);
     if (declaration !== null) {
       found.push(declaration);
       return;
     }
-    for (const child of children(node)) {
-      visit(child);
+    for (const inner of blockCalls(call) ?? []) {
+      visit(inner);
     }
   };
-  visit(root);
+  for (const call of module.calls()) {
+    visit(call);
+  }
   return found;
 }
 
+/** How the call a declaration is made on ends: `Rails.application.routes`. */
+const ROUTES_READ = ".routes";
+
 function asRouteDeclaration(
-  node: RbNode,
+  call: CallOps,
   displayPath: string,
 ): RouteDeclaration | null {
-  if (node.type !== "call") {
-    return null;
-  }
-  const kind = field(node, "method")?.text;
-  const receiver = field(node, "receiver");
-  const block = field(node, "block");
-  const body = block !== null ? field(block, "body") : null;
+  const kind = call.method();
+  const routes = call.receiver();
+  const body = blockCalls(call);
+  const written = routes?.calleeText() ?? "";
   if (
-    kind === undefined ||
+    kind === null ||
     !isDeclarationKind(kind) ||
-    receiver === null ||
-    receiver.type !== "call" ||
-    field(receiver, "method")?.text !== "routes" ||
+    routes?.method() !== "routes" ||
+    !written.endsWith(ROUTES_READ) ||
     body === null
   ) {
     return null;
   }
-  const owner = field(receiver, "receiver");
-  if (owner === null) {
-    return null;
-  }
-  return { owner: owner.text.replace(/^::/, ""), kind, body, displayPath };
+  const owner = written.slice(0, -ROUTES_READ.length).replace(/^::/, "");
+  return { owner, kind, body, displayPath };
 }
 
 /** `Rails.application` and the `Shop::Application` class Rails generates are the same route set, the app's own. */
@@ -1025,8 +1016,7 @@ function parseDeclarations(source: RoutesSource): RouteDeclaration[] {
   if (!fs.existsSync(source.file)) {
     return [];
   }
-  const tree = parseRubySync(fs.readFileSync(source.file, "utf8"));
-  return routeDeclarations(tree.rootNode, source.displayPath);
+  return routeDeclarations(moduleOpsForFile(source.file), source.displayPath);
 }
 
 /**
@@ -1079,7 +1069,7 @@ export function readRoutes(input: RoutesInput): RouteTable {
     );
   for (const { declaration } of ordered) {
     out.inFile(declaration.displayPath, () => {
-      walkBody(
+      walkCalls(
         declaration.body,
         { pathPrefix: "", modulePrefix: "", defaults: {} },
         out,
