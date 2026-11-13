@@ -107,12 +107,16 @@ export function collectFileConstants(
       const written = name === null ? null : writtenName(name);
       if (written !== null) {
         const classKey = nodeId(filePath, node);
+        // `module ::Boards` defines the top-level `Boards`, whatever it is written inside.
+        const qualifiedName = written.startsWith("::")
+          ? written.slice(2)
+          : qualify(nesting, written);
         definitions.push({
-          qualifiedName: qualify(nesting, written),
+          qualifiedName,
           key: classKey,
           kind: "declaration",
         });
-        const inside = [...nesting, ...written.split("::")];
+        const inside = qualifiedName.split("::");
         for (const declared of associationsDeclaredIn(
           node,
           classKey,
