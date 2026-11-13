@@ -323,6 +323,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `name()` on a class | `rbConstantName(c, q)` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere |
 | `bodyCalls()` on a value, a class or a module | `bodyCallAt(f, k, r)` on the value's own key, the class's, or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
 | `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
+| `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
 | `loopsOver()` | the call's block from `callBlock(r, b)`, or else a function written as its first argument. The `elementOf(x, o)` row off the call's receiver `o` whose `x` is that function's first parameter, by `paramOf` or the adapter's `parameterOf`, gives the element's variable, and `positionOf(i, x)` the position's. A variable's name is the one `paramNamed` gives it, or its text |
 | `evaluatedWith(bindings)` | the adapter's `evaluatedWith`, its evaluator with the names bound. An adapter with none reads the value as `name("nothing")` does |

@@ -412,6 +412,12 @@ export interface ValueOps {
   /** The class this value settles to, as a discovery pattern asks about one. Null when it is not a class. */
   asClass?(): ClassValueOps | null;
   /**
+   * The call the source writes at this spot, such as a list item
+   * written `get("/x")`, or null when it writes anything else. A name
+   * that refers to a call's result is not followed.
+   */
+  asCall?(): CallOps | null;
+  /**
    * The properties this value reads off `object`, through the calls,
    * comparisons, entries and template holes it is written from, each
    * once, in source order. `eq(users.id, id)` reads `id` off `users`,
