@@ -2569,6 +2569,53 @@ export function extractFileFacts(
   emitTopLevelStatements(db, table, sourceFile);
 }
 
+/** The nodes `extractCallFacts` states: every function, every class, and every call. */
+const CALLER_FACT_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  ...FUNCTION_ROOT_KINDS,
+  SyntaxKind.ClassDeclaration,
+  SyntaxKind.CallExpression,
+  SyntaxKind.NewExpression,
+]);
+
+/**
+ * Every call the file makes, each with the body it is written in. The
+ * file's own facts reach only what its exports refer to and the
+ * statements at its top level, so a call inside a function nothing
+ * exports, or under a block at the top of the file, is stated here or
+ * only when some other question happens to reach it.
+ *
+ * A function's facts already cover the calls in its body and in the
+ * functions written inside it, so the walk stops at one. It goes on into
+ * a class, since a field's value can be a function the class's facts
+ * leave out, and into a constructor, which only a declared class states.
+ */
+export function extractCallFacts(
+  db: Database,
+  table: NodeTable,
+  sourceFile: SourceFile,
+): void {
+  forEachDescendantOfKinds(sourceFile, CALLER_FACT_KINDS, (node) => {
+    if (Node.isClassDeclaration(node)) {
+      emitClassFacts(db, table, node);
+      return false;
+    }
+
+    if (Node.isFunctionDeclaration(node) || Node.isMethodDeclaration(node)) {
+      if (node.hasBody()) {
+        emitFunctionDeclaration(db, table, node);
+      }
+      return true;
+    }
+
+    if (Node.isExpression(node)) {
+      emitValue(db, table, node);
+      return isFunctionRoot(node);
+    }
+
+    return false;
+  });
+}
+
 /**
  * The exports this file states in its own syntax, with no chain
  * following: the `moduleExport` rules flatten re-exports, so the

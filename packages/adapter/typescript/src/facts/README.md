@@ -134,9 +134,10 @@ evaluates again, and repeats until the rules ask for nothing new. Then
 it reads the answer.
 
 So the question decides which files it reads: the value's own file,
-plus every module the chain from that value imports through, to any
-depth, and nothing else. A value that resolves without leaving its own
-file costs one file of extraction. An import of a package resolves to
+every module the chain from that value imports through, to any depth,
+and the callers of any parameter the chain reaches, as the next section
+says. A value that resolves without leaving its own file costs one file
+of extraction. An import of a package resolves to
 the package's declaration file, which is read like any other module.
 That file's own imports are followed only where a name the chain
 reaches is re-exported from them.
@@ -186,9 +187,23 @@ million specifier resolutions for 35,000 distinct edges.
 ## Reading a caller's file
 
 A query follows the imports of the file it starts in, which is where a
-value's definition is. What a caller passed runs the other direction.
-The call is in a file that imports this one, and no rule demands a file
-by who imports it, so the query never gets there.
+value's definition is. What a caller passed runs the other direction:
+the call is in a file that imports this one, or in the same file. When
+the chain reaches a parameter, the rules ask which calls run its
+function, and that question shows up as a demand on `callsFunction`
+with the function bound. The store reads it the way it reads a demand
+on `moduleExport`. It states every call in the function's own file and
+in each file that reaches that file through its imports, then evaluates
+again.
+
+Every call in those files goes in, not only what their exports refer
+to. A file's own extraction states its exports and the statements at
+its top level. A call inside a function nothing exports, or under an
+`if` at the top of the file, is otherwise stated only when some other
+question walks into it, and then what a parameter comes to would depend
+on which questions the run asked first: one more pack in the run could
+change another pack's summaries. Each file's calls are stated once per
+run, however many parameters lead to it.
 
 `ResolutionStore.extractFiles` reads a set of files before any question
 is asked, so their facts are already in the store. Route discovery uses

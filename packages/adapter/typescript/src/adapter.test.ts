@@ -5462,9 +5462,11 @@ describe("wrapper expansion", () => {
     });
     const summaries = await adapter.extractAll();
 
+    // A parameter with one caller has that caller's value, so the wrapper
+    // makes the same request the caller's summary does.
     const wrapper = summaries.find((s) => s.identity.name === "getJson");
     expect(wrapper).toBeDefined();
-    expect(restPathOf(wrapper)).toBeNull();
+    expect(restPathOf(wrapper)).toBe("/pet/{id}");
 
     const caller = summaries.find((s) => s.identity.name === "getPet");
     expect(caller).toBeDefined();
