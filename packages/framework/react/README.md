@@ -29,7 +29,13 @@ The declared `namedExport` pattern, which `@suss/recognize` reads, takes every e
 
 The pack declares `useCallback`, `memo` and `forwardRef` as transparent wrappers, since each hands back the function it was given. An export written as `memo(Card)` is then the `Card` function, and a call through a hook's `useCallback` result runs the callback. A cast around the export or around the returned JSX is read through, so `forwardRef(Picker) as <T>(props: Props<T>) => JSX.Element`, which is how a generic component keeps its type parameter, is the `Picker` function. An export a project factory makes, such as `export const Label = styledDiv("label")`, is the component the factory gives back.
 
-The `discoverUnits` callback reads the calls React provides for booting an app: `createRoot` and `hydrateRoot` from `react-dom/client`, and `ReactDOM.render`. It resolves the rendered element back to its declaration and records that as a component. An `App` wired up this way is often exported by nothing. The closure then follows its JSX references, so everything the app renders is reachable from there.
+The `discoverUnits` callback reads the calls React provides for booting an app, wherever the file writes them, inside a function too:
+
+- `.render(<App />)` on a root `createRoot` or `hydrateRoot` made, written in place or kept in a variable, and imported by name or read off the default or namespace import of `react-dom/client` or `react-dom`.
+- `hydrateRoot(document, <App />)`, which takes the element second.
+- React 17's `ReactDOM.render(<App />, el)` and `ReactDOM.hydrate(<App />, el)`, and `render` and `hydrate` imported from `react-dom` by name.
+
+It follows the element's tag to the function it settles to, through `memo` and `forwardRef` and a member such as `<Shell.Root />`, records that as a component, and names it by the tag as written. An `App` wired up this way is often exported by nothing. The closure then follows its JSX references, so everything the app renders is reachable from there. A file whose text never writes `react-dom` is skipped before any call in it is read. A wrapper around the root, such as `<StrictMode><App /></StrictMode>`, is not followed into.
 
 ### Sub-units
 

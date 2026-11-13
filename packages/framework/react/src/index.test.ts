@@ -82,9 +82,11 @@ describe("reactFramework: integration", () => {
     const components = summaries.filter((s) => s.kind === "component");
     const names = components.map((s) => s.identity.name).sort();
     expect(names).toEqual([
+      "App",
       "Badge",
       "Banner",
       "Button",
+      "Checkout",
       "Clock",
       "Conditional",
       "Counter",
@@ -93,17 +95,28 @@ describe("reactFramework: integration", () => {
       "FilterButton",
       "Form",
       "Greeting",
+      "Inbox.Root",
       "Legacy",
       "MenuItemLabel",
       "Nav",
+      "Popup",
+      "Profile",
       "RowBuilder",
       "SaveBar",
-      "Shell",
+      "Settings",
+      "Sidebar",
+      "Storefront",
       "Ticker",
       "Toast",
+      "Toolbar",
       "UserCard",
       "Widget",
     ]);
+  });
+
+  it("names a root booted under another name by the tag the boot writes", () => {
+    const shell = summaries.find((s) => s.location.file.endsWith("shell.tsx"));
+    expect(shell?.identity.name).toBe("App");
   });
 
   it("Counter emits one Input per destructured prop (role = prop name, type resolved)", () => {
@@ -950,8 +963,13 @@ describe("root discovery", () => {
       types: "index.d.ts",
     }),
     "/node_modules/react-dom/index.d.ts": `
-      declare const ReactDOM: { render(el: unknown, node: unknown): void };
+      declare const ReactDOM: {
+        render(el: unknown, node: unknown): void;
+        hydrate(el: unknown, node: unknown): void;
+      };
       export default ReactDOM;
+      export declare function render(el: unknown, node: unknown): void;
+      export declare function hydrate(el: unknown, node: unknown): void;
     `,
     "/node_modules/react-dom/client/package.json": JSON.stringify({
       name: "react-dom-client",
@@ -960,6 +978,8 @@ describe("root discovery", () => {
     "/node_modules/react-dom/client/index.d.ts": `
       export declare function createRoot(el: unknown): { render(node: unknown): void };
       export declare function hydrateRoot(el: unknown, node: unknown): { render(node: unknown): void };
+      declare const client: { createRoot: typeof createRoot; hydrateRoot: typeof hydrateRoot };
+      export default client;
     `,
   };
 
@@ -1055,6 +1075,71 @@ describe("root discovery", () => {
         (one) => one.identity.name === "NotBooted" && one.kind === "component",
       ),
     ).toBe(false);
+  });
+
+  it.each([
+    [
+      "a boot inside a function",
+      `import { createRoot } from "react-dom/client";
+       function mount() { createRoot(document.body).render(<Root />); }`,
+      "Root",
+    ],
+    [
+      "createRoot read off the default import",
+      `import ReactDOM from "react-dom/client";
+       ReactDOM.createRoot(document.body).render(<Root />);`,
+      "Root",
+    ],
+    [
+      "a root kept in a variable",
+      `import { createRoot } from "react-dom/client";
+       const root = createRoot(document.body);
+       root.render(<Root />);`,
+      "Root",
+    ],
+    [
+      "hydrateRoot, which takes the element second",
+      `import { hydrateRoot } from "react-dom/client";
+       hydrateRoot(document, <Root />);`,
+      "Root",
+    ],
+    [
+      "React 17's hydrate off the default import",
+      `import ReactDOM from "react-dom";
+       ReactDOM.hydrate(<Root />, document.body);`,
+      "Root",
+    ],
+    [
+      "render imported by name",
+      `import { render } from "react-dom";
+       render(<Root />, document.body);`,
+      "Root",
+    ],
+    [
+      "a root wrapped in memo",
+      `import { memo } from "react";
+       import { createRoot } from "react-dom/client";
+       const Memoized = memo(() => <main />);
+       createRoot(document.body).render(<Memoized />);`,
+      "Memoized",
+    ],
+    [
+      "a root written as a member",
+      `import { createRoot } from "react-dom/client";
+       const Shell = { Root };
+       createRoot(document.body).render(<Shell.Root />);`,
+      "Shell.Root",
+    ],
+  ])("finds the root of %s, named by its tag", async (_, boot, name) => {
+    const summaries = await extractFiles({
+      "/app/main.tsx": `function Root() { return <main />; }\n${boot}`,
+    });
+
+    expect(
+      summaries
+        .filter((one) => one.kind === "component")
+        .map((one) => one.identity.name),
+    ).toEqual([name]);
   });
 });
 
