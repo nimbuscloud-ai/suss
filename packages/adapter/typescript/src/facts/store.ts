@@ -68,6 +68,7 @@ import {
   emitFunctionDeclaration,
   emitValue,
   environmentObjectsIn,
+  extractCallFacts,
   extractFileFacts,
   factKeyOf,
   importedModuleKeys,
@@ -180,6 +181,21 @@ const MODULE_DEMANDS: readonly string[] = RESOLUTION_PROGRAM.demands
     (one) =>
       (one.relation === "moduleExport" || one.relation === "moduleForwards") &&
       one.bound[0] === true,
+  )
+  .map((one) => one.demand);
+
+/**
+ * A rule asking which calls run a function, with the function known and
+ * the call not, is the rules saying they need its callers. A parameter
+ * steps to what its callers passed this way. The function is the second
+ * column of the relation and the only one bound, so it is the demand row.
+ */
+const CALLER_DEMANDS: readonly string[] = RESOLUTION_PROGRAM.demands
+  .filter(
+    (one) =>
+      one.relation === "callsFunction" &&
+      one.bound[0] === false &&
+      one.bound[1] === true,
   )
   .map((one) => one.demand);
 
@@ -367,7 +383,10 @@ export class ResolutionStore {
   private readonly graph = new ModuleGraph();
   /** See `notePossibleCallers`. */
   private readonly possibleCallers = new Set<SourceFile>();
-  private readonly callerFilesRead = new Set<string>();
+  /** See `readPossibleCallersOf`, by the path of the file the function is in. */
+  private readonly callerFiles = new Map<string, readonly SourceFile[]>();
+  /** Files whose every call `extractCallFacts` has stated. */
+  private readonly callsStated = new Set<string>();
   /** Containers whose writes `dispatchedFunctions` has already stated. */
   private readonly containersRead = new Set<string>();
 
@@ -1592,22 +1611,62 @@ export class ResolutionStore {
     }
   }
 
-  private readPossibleCallersOf(target: SourceFile): void {
+  /**
+   * The files that may call a function written in `target`, with every
+   * call each of them makes stated: the file itself, and every file that
+   * reaches it through its imports. A question about a parameter reads
+   * the calls of its function, and a caller's call is stated by nothing
+   * else unless some other question happened to reach it, so reading
+   * them all is what keeps the answer the same whatever was asked first.
+   */
+  private readPossibleCallersOf(target: SourceFile): readonly SourceFile[] {
     const targetPath = target.getFilePath();
-    if (this.callerFilesRead.has(targetPath)) {
-      return;
+    const known = this.callerFiles.get(targetPath);
+    if (known !== undefined) {
+      return known;
     }
-    this.callerFilesRead.add(targetPath);
+    const files = this.callerFilesOf(target);
+    this.callerFiles.set(targetPath, files);
+    for (const sourceFile of files) {
+      this.stateCallsIn(sourceFile);
+    }
+    return files;
+  }
+
+  /** A library's declarations have no callers the run states, and every file of a project can reach them. */
+  private callerFilesOf(target: SourceFile): SourceFile[] {
+    if (target.isInNodeModules() || target.isDeclarationFile()) {
+      return [];
+    }
     const candidates = [...this.callerCandidates(target)].filter(
       (one) => one !== target,
     );
     if (candidates.length === 0) {
-      return;
+      return [target];
     }
     const [reaching] = this.graph.filesReachingFile([
       { sourceFiles: candidates, target },
     ]);
-    this.extractFiles(reaching ?? []);
+    return [target, ...(reaching ?? [])];
+  }
+
+  private stateCallsIn(sourceFile: SourceFile): void {
+    const filePath = sourceFile.getFilePath();
+    if (this.callsStated.has(filePath)) {
+      return;
+    }
+    this.callsStated.add(filePath);
+    this.extractFile(sourceFile);
+    if (!checkerReads(sourceFile.getProject(), filePath)) {
+      return;
+    }
+    // A file whose calls earlier questions already stated adds nothing,
+    // and deriving again over nothing new costs a whole evaluation.
+    const before = this.sourceFactCount();
+    extractCallFacts(this.db, this.table, sourceFile);
+    if (this.sourceFactCount() !== before) {
+      this.stale = true;
+    }
   }
 
   private callerCandidates(target: SourceFile): Iterable<SourceFile> {
@@ -2071,10 +2130,11 @@ export class ResolutionStore {
   }
 
   /**
-   * Extract the seed files, then every module the rules ask for, until
-   * they ask for nothing new. The files a question reads are then fixed
-   * by the question alone, so its answer does not depend on what an
-   * earlier question left in the store.
+   * Extract the seed files, then every module the rules ask for and the
+   * callers of every function they ask about, until they ask for nothing
+   * new. The files a question reads are then fixed by the question
+   * alone, so its answer does not depend on what an earlier question
+   * left in the store.
    */
   private extractDemanded(seeds: readonly SourceFile[]): void {
     const project = seeds[0]?.getProject();
@@ -2085,9 +2145,12 @@ export class ResolutionStore {
     // still has its demand followed, or this query stops short.
     const read = new Set<string>();
     const considered = new Set<string>();
+    const callersRead = new Set<string>();
     this.lastQueryWalked = [];
     let pending: SourceFile[] = [...seeds];
-    while (pending.length > 0) {
+    // Stating a caller's calls can leave every file it needs read already,
+    // and the rules still have to run over what was stated.
+    while (pending.length > 0 || this.stale) {
       const readThisRound: SourceFile[] = [];
       for (const sourceFile of pending) {
         const filePath = sourceFile.getFilePath();
@@ -2116,6 +2179,13 @@ export class ResolutionStore {
           pending.push(sourceFile);
         }
       }
+      for (const target of this.demandedCallees(readThisRound)) {
+        if (callersRead.has(target.getFilePath())) {
+          continue;
+        }
+        callersRead.add(target.getFilePath());
+        pending.push(...this.readPossibleCallersOf(target));
+      }
     }
   }
 
@@ -2131,6 +2201,23 @@ export class ResolutionStore {
     }
     return MODULE_DEMANDS.flatMap((relation) =>
       this.db.facts(relation).map((tuple) => String(tuple[0])),
+    );
+  }
+
+  /**
+   * The files of the functions whose callers the rules are waiting on.
+   * The unrestricted program says nothing about which functions those
+   * are, so every file read this round is one.
+   */
+  private demandedCallees(readThisRound: readonly SourceFile[]): SourceFile[] {
+    if (RESOLUTION_PROGRAM.demands.length === 0) {
+      return [...readThisRound];
+    }
+    return CALLER_DEMANDS.flatMap((relation) =>
+      this.db.facts(relation).flatMap((tuple) => {
+        const callee = this.table.byId.get(String(tuple[0]));
+        return callee === undefined ? [] : [callee.getSourceFile()];
+      }),
     );
   }
 
