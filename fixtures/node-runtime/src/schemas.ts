@@ -2,10 +2,12 @@
 // reads. Each schema's keys are the variables read.
 
 import { createEnv } from "@t3-oss/env-core";
-import { cleanEnv, port, str } from "envalid";
+import { cleanEnv, cleanEnv as load, port, str } from "envalid";
 import * as v from "valibot";
 import { z } from "zod";
 import { parseEnv } from "znv";
+
+import { AppEnv } from "./envSchema.js";
 
 const shared = { LOG_FORMAT: z.string().default("json") };
 
@@ -64,4 +66,38 @@ export function valibotConfig() {
 // A request body parsed in a file that also reads the environment.
 export function parseRequest(body: unknown) {
   return z.object({ id: z.string() }).parse(body);
+}
+
+// A schema another file builds.
+export function crossFile() {
+  return AppEnv.parse(process.env);
+}
+
+// A refinement chained on a schema kept in a name.
+const Base = z.object({ BASE_URL: z.string() });
+const Strict = Base.strict();
+export function namedRefinement() {
+  return Strict.parse(process.env);
+}
+
+// A call named like a defaulting one, inside a function written in the key.
+export function functionInKey() {
+  return z
+    .object({
+      PORT_NUMBER: z
+        .string()
+        .transform((value) => Number(value ?? defaults.or(3))),
+    })
+    .parse(process.env);
+}
+const defaults = { or: (n: number) => n };
+
+// The environment Vite gives the program.
+export function viteEnv() {
+  return z.object({ VITE_API: z.string() }).parse(import.meta.env);
+}
+
+// An envalid function imported under another name.
+export function aliased() {
+  return load(process.env, { ALIASED_KEY: str({ default: "x" }) });
 }
