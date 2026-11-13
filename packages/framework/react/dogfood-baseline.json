@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-react",
   "exports": 6,
-  "internal": 11,
-  "consumers": 11,
+  "internal": 7,
+  "consumers": 12,
   "unfollowedCalls": 0
 }

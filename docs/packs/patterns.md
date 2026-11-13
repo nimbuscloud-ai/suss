@@ -137,7 +137,7 @@ registerCrud(app, "users", userHandlers);
 export async function loader({ params }) { ... }
 ```
 
-React Router uses it for `loader`, `action` and `default`, and the React pack uses it for `default`.
+React Router uses it for `loader`, `action` and `default`. The React pack uses it for `default`, and again with `pattern: "^[A-Z]"`, its story and test files in `skipFiles`, and `bodyEndsIn: "element"` for every other component a module exports.
 
 With only `names`, the TypeScript adapter reads it with its own handler. Any other field makes it a declared pattern, which every adapter reads the same way through the module ops: `pattern` takes the exports whose name the regular expression matches, `skipFiles` leaves out files the globs match, and `bodyEndsIn: "element"` keeps only a function one of whose returned values is a JSX element. `members` takes the listed members of the exported object instead of the export itself, each as the unit its `UnitSpec` says, so `names: ["default"]` with `fetch` and `queue` listed finds a Cloudflare Worker's handlers.
 
@@ -795,7 +795,7 @@ discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
 
 `discoverUnits` is the discovery counterpart of `subUnits`. When a framework's convention doesn't fit any of the `DiscoveryMatch` variants, the pack ships its own walker and the adapter calls it once per source file alongside the data-driven dispatch.
 
-Use it for conventions that do not generalize, such as React's component-export heuristic (PascalCase plus a JSX return). Adding each of those to the central union would make every unrelated pack deal with them.
+Use it for conventions that do not generalize, such as the React pack's walk over the calls an app boots with, `createRoot(el).render(<App />)`. Adding each of those to the central union would make every unrelated pack deal with them.
 
 When this callback finds a unit at the same `(func, kind)` as one from another pack's data-driven discovery, suss keeps the unit from whichever pack claimed it first. The order of the packs in the run decides which one that is.
 
