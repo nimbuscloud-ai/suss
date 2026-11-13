@@ -76,6 +76,7 @@ describe("reactFramework: integration", () => {
     const components = summaries.filter((s) => s.kind === "component");
     const names = components.map((s) => s.identity.name).sort();
     expect(names).toEqual([
+      "Badge",
       "Banner",
       "Button",
       "Clock",
@@ -83,9 +84,11 @@ describe("reactFramework: integration", () => {
       "Counter",
       "Dashboard",
       "EffectyComponent",
+      "FilterButton",
       "Form",
       "Greeting",
       "Legacy",
+      "MenuItemLabel",
       "Nav",
       "RowBuilder",
       "SaveBar",
@@ -770,6 +773,54 @@ describe("reactFramework, a component a barrel re-exports", () => {
     expect(summaries.filter((s) => s.identity.name === "Panel")).toHaveLength(
       2,
     );
+  });
+});
+
+describe("reactFramework, an export written as something other than a function", () => {
+  /** Each component as its name and the start of the function it is on. */
+  async function componentsOf(source: string): Promise<string[][]> {
+    const summaries = await summariesOf({ "/src/parts.tsx": source });
+    return summaries
+      .filter((summary) => summary.kind === "component")
+      .map((summary) => [
+        summary.identity.name,
+        String(summary.location.range.start),
+      ]);
+  }
+
+  it("reads a wrapper call under a cast as the component it wraps", async () => {
+    expect(
+      await componentsOf(`
+        import { forwardRef } from "react";
+        function PickerInner() {
+          return <select />;
+        }
+        export const Picker = forwardRef(PickerInner) as <T>(props: T) => JSX.Element;
+      `),
+    ).toEqual([["Picker", "3"]]);
+  });
+
+  it("reads a JSX return under a cast", async () => {
+    expect(
+      await componentsOf(`
+        export function Badge() {
+          return (<span />) as JSX.Element;
+        }
+      `),
+    ).toEqual([["Badge", "2"]]);
+  });
+
+  it("reads each export a project factory makes as the component it gives back, once", async () => {
+    expect(
+      await componentsOf(`
+        import { forwardRef } from "react";
+        function styledDiv(className: string) {
+          return forwardRef((props, ref) => <div ref={ref} className={className} />);
+        }
+        export const Label = styledDiv("label");
+        export const Icon = styledDiv("icon");
+      `),
+    ).toEqual([["Label", "4"]]);
   });
 });
 

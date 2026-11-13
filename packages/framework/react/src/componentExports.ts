@@ -6,7 +6,7 @@ import type {
   TsDiscoveryContext,
 } from "@suss/adapter-typescript";
 import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
-import type { SourceFile } from "ts-morph";
+import type { Node, SourceFile } from "ts-morph";
 
 const STORY_FILE_PATTERN = /\.stories\.tsx?$/;
 const TEST_FILE_PATTERN = /\.(test|spec)\.tsx?$/;
@@ -41,15 +41,16 @@ export const reactComponentExports: NonNullable<
     return [];
   }
 
+  const followed = new Map<string, unknown>(
+    tsCtx.exportedFunctions(sf).map(({ name, func }) => [name, func]),
+  );
   const out: DiscoveredCustomUnit[] = [];
-  for (const { name, func, isDefault } of tsCtx.exportedFunctions(sf)) {
-    if (isDefault) {
-      continue;
-    }
+  for (const [name, [first]] of tsCtx.resolution.exportsOf(sf)) {
     if (!startsWithUppercase(name)) {
       continue;
     }
-    if (!tsCtx.hasJsxReturn(func as FunctionRoot)) {
+    const func = followed.get(name) ?? factoryMade(first, tsCtx);
+    if (func === null || !tsCtx.hasJsxReturn(func as FunctionRoot)) {
       continue;
     }
     out.push({
@@ -60,3 +61,16 @@ export const reactComponentExports: NonNullable<
   }
   return out;
 };
+
+/**
+ * The component a project factory gives back for an export it makes,
+ * `export const Label = styledDiv("label")`, since that is what renders.
+ */
+function factoryMade(
+  declaration: Node | undefined,
+  ctx: TsDiscoveryContext,
+): Node | null {
+  return declaration === undefined
+    ? null
+    : ctx.resolution.resolveReturnedCallable(declaration);
+}

@@ -69,6 +69,44 @@ describe("createTsDiscoveryContext", () => {
     const fn = ctx().exportedFunctions(file)[0].func;
     expect(ctx().hasJsxReturn(fn)).toBe(false);
   });
+
+  it("detects JSX returned under a cast, in a body and as an arrow's expression", () => {
+    const file = sourceFile(`
+      export function Body() { return (<b />) as JSX.Element; }
+      export const Expression = () => <i /> satisfies JSX.Element;
+    `);
+    const found = ctx()
+      .exportedFunctions(file)
+      .map((entry) => [entry.name, ctx().hasJsxReturn(entry.func)]);
+    expect(found).toEqual([
+      ["Body", true],
+      ["Expression", true],
+    ]);
+  });
+});
+
+describe("an export written under a cast", () => {
+  it("reads the function, the name or the wrapper call inside the cast", () => {
+    const file = sourceFile(`
+      function withTheme<P>(render: (props: P) => JSX.Element) {
+        return (props: P) => render(props);
+      }
+      function PickerInner() { return <div />; }
+      export const Arrow = (() => <span />) as () => JSX.Element;
+      export const Named = PickerInner as unknown as () => JSX.Element;
+      export const Picker = withTheme(PickerInner) as <T>(props: T) => JSX.Element;
+    `);
+    const withRules = createTsDiscoveryContext(new ResolutionStore());
+
+    const found = withRules
+      .exportedFunctions(file)
+      .map((entry) => [entry.name, entry.func.getText()]);
+    expect(found).toEqual([
+      ["Arrow", "() => <span />"],
+      ["Named", "function PickerInner() { return <div />; }"],
+      ["Picker", "function PickerInner() { return <div />; }"],
+    ]);
+  });
 });
 
 describe("an export whose binding is written again", () => {

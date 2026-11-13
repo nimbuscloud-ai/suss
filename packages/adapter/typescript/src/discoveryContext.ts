@@ -18,7 +18,7 @@ import { isWrittenAgain } from "./facts/assignments.js";
 import { ResolutionStore } from "./facts/store.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
 import { forEachDescendantWhere } from "./walk/rawDescent.js";
-import { peelParens } from "./walk/unwrap.js";
+import { peelValue } from "./walk/unwrap.js";
 
 import type { FunctionRoot } from "./conditions.js";
 
@@ -159,10 +159,18 @@ function valueToAskAbout(decl: Node, writtenAgain: boolean): Node | null {
   if (writtenAgain) {
     return decl;
   }
-  const value = Node.isVariableDeclaration(decl)
-    ? (decl.getInitializer() ?? decl)
-    : decl;
+  const value = writtenValueOf(decl) ?? decl;
   return couldStillNameAFunction(value) ? value : null;
+}
+
+/**
+ * What a variable is set to, through the casts and parentheses around it.
+ * A generic component keeps its type parameter through `forwardRef` with
+ * a cast, `forwardRef(Inner) as <T>(props: Props<T>) => JSX.Element`.
+ */
+function writtenValueOf(decl: Node): Node | null {
+  const init = Node.isVariableDeclaration(decl) ? decl.getInitializer() : null;
+  return init === undefined || init === null ? null : peelValue(init);
 }
 
 function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {
@@ -170,14 +178,12 @@ function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {
   if (fn !== null) {
     return fn;
   }
-  if (Node.isVariableDeclaration(decl)) {
-    const init = decl.getInitializer();
-    if (
-      init !== undefined &&
-      (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-    ) {
-      return init as FunctionRoot;
-    }
+  const init = writtenValueOf(decl);
+  if (
+    init !== null &&
+    (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
+  ) {
+    return init as FunctionRoot;
   }
   return null;
 }
@@ -217,7 +223,7 @@ function hasJsxReturn(func: FunctionRoot): boolean {
 }
 
 function isJsxOrFragment(node: Node): boolean {
-  const current = peelParens(node);
+  const current = peelValue(node);
   return (
     Node.isJsxElement(current) ||
     Node.isJsxSelfClosingElement(current) ||
