@@ -59,7 +59,7 @@ describe("marks", () => {
 });
 
 describe("jsxElement", () => {
-  it("states the tag an element renders, for a self-closing element and an element with children", () => {
+  it("states the tag an element renders, for a self-closing element, an element with children and each child", () => {
     expect(
       rowsFor(
         "export function App() {\n  return cond ? <Page /> : <Layout><Page /></Layout>;\n}\n",
@@ -68,6 +68,7 @@ describe("jsxElement", () => {
     ).toEqual([
       ["<Page />", "Page"],
       ["<Layout><Page /></Layout>", "Layout"],
+      ["<Page />", "Page"],
     ]);
   });
 

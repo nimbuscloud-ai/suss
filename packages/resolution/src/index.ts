@@ -132,6 +132,7 @@ export {
   inSourceOrder,
   readCallsRun,
 } from "./runsCall.js";
+export { ELEMENTS_RUN_QUESTION, readElementsRun } from "./runsElement.js";
 export { explainResolvedKey, proofRules } from "./session.js";
 export {
   answersFor,
@@ -227,6 +228,7 @@ import { CLASS_BODY_QUESTIONS, CLASS_BODY_RULES } from "./classBody.js";
 import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
 import { SELF_QUESTIONS, SELF_RULES } from "./receiverSelf.js";
 import { RUNS_CALL_QUESTIONS, RUNS_CALL_RULES } from "./runsCall.js";
+import { RUNS_ELEMENT_QUESTIONS, RUNS_ELEMENT_RULES } from "./runsElement.js";
 
 import type { Rule, Term } from "@suss/datalog";
 
@@ -2300,6 +2302,8 @@ const STATED_RULES = [
   ...RUNS_CALL_RULES,
 
   ...CLASS_BODY_RULES,
+
+  ...RUNS_ELEMENT_RULES,
 ];
 
 /**
@@ -3066,6 +3070,7 @@ export const RESOLUTION_QUESTIONS = [
   ...RUNS_CALL_QUESTIONS,
 
   ...CLASS_BODY_QUESTIONS,
+  ...RUNS_ELEMENT_QUESTIONS,
 
   // Where a value came from, asked from the value. DESIGN.md says why the
   // walk takes `hop`, why it descends into the object a read is off, and

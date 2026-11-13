@@ -103,6 +103,40 @@ describe("the JSX a function writes", () => {
   });
 });
 
+describe("an attribute the body walk states too", () => {
+  it("has one row, its value keyed past parentheses and a cast, whichever of the two states it first", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const sourceFile = project.createSourceFile(
+      "/mod.tsx",
+      [
+        "export function Toast({ close }: { close: () => void }) {",
+        '  return <button onClick={(close)} title={"x" as string} />;',
+        "}",
+      ].join("\n"),
+    );
+    const toast = sourceFile.getFunctionOrThrow("Toast");
+    const store = new ResolutionStore();
+    const rendered = store.elementsRunBy(toast);
+    store.elementsWrittenIn(toast);
+    const access = store.factAccess();
+
+    expect(rendered.map((element) => element.getText())).toEqual([
+      '<button onClick={(close)} title={"x" as string} />',
+    ]);
+    expect(
+      access.db
+        .facts("jsxAttribute")
+        .map((row) => [
+          String(row[1]),
+          shown(access.nodeOf(String(row[2])), String(row[2])),
+        ]),
+    ).toEqual([
+      ["onClick", "close"],
+      ["title", '"x"'],
+    ]);
+  });
+});
+
 describe("restOf", () => {
   it("states the rest of a parameter's destructure, and no other rest element", () => {
     const project = new Project({ useInMemoryFileSystem: true });

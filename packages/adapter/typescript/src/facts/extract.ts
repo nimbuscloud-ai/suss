@@ -85,6 +85,9 @@ import type {
   CallExpression,
   ClassDeclaration,
   ElementAccessExpression,
+  JsxAttribute,
+  JsxElement,
+  JsxSelfClosingElement,
   MethodDeclaration,
   NewExpression,
   ParameterDeclaration,
@@ -2492,8 +2495,79 @@ const BODY_FACT_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.BinaryExpression,
   SyntaxKind.CallExpression,
   SyntaxKind.NewExpression,
+  SyntaxKind.JsxElement,
+  SyntaxKind.JsxSelfClosingElement,
   ...VALUE_WRAPPER_KINDS,
 ]);
+
+/**
+ * An element the body renders, with its tag and each attribute it writes.
+ * A fragment has no tag and is not stated. The value's own facts are
+ * stated when a reader asks, as a tag's are, since no rule reads them.
+ */
+function emitRenderedElement(
+  db: Database,
+  table: NodeTable,
+  fnId: string,
+  element: JsxElement | JsxSelfClosingElement,
+): void {
+  if (jsxTagOf(element) === null) {
+    return;
+  }
+  const id = keyedIn(table, element);
+  fact(db, "rendersElement", fnId, id);
+  emitElementRows(db, table, element, id);
+}
+
+/**
+ * An element's tag and each attribute it writes, the value keyed after
+ * `peelValue` as the body walk keys every value. A reader asking which
+ * elements a function writes states them here too, so an attribute
+ * written in parentheses still has one row.
+ */
+export function emitElementRows(
+  db: Database,
+  table: NodeTable,
+  element: JsxElement | JsxSelfClosingElement,
+  id: string,
+): void {
+  const tag = jsxTagOf(element);
+  if (tag !== null) {
+    fact(db, "jsxElement", id, keyedIn(table, tag));
+  }
+  const opening = Node.isJsxElement(element)
+    ? element.getOpeningElement()
+    : element;
+  for (const attribute of opening.getAttributes()) {
+    if (Node.isJsxAttribute(attribute)) {
+      fact(
+        db,
+        "jsxAttribute",
+        id,
+        attribute.getNameNode().getText(),
+        keyedIn(table, attributeValueOf(attribute)),
+      );
+    }
+  }
+}
+
+/** The value an attribute is written with, through casts and parentheses. One written with none is set by being there, so it is its own value. */
+function attributeValueOf(attribute: JsxAttribute): Node {
+  const initializer = attribute.getInitializer();
+  if (initializer === undefined) {
+    return attribute;
+  }
+  const written = Node.isJsxExpression(initializer)
+    ? initializer.getExpression()
+    : initializer;
+  return written === undefined ? attribute : peelValue(written);
+}
+
+function keyedIn(table: NodeTable, node: Node): string {
+  const id = nodeId(node);
+  table.byId.set(id, node);
+  return id;
+}
 
 /**
  * The same walk with what the body gives back left out, which is what a
@@ -2511,6 +2585,11 @@ function recordBodyCalls(
     emitValue(db, table, node as Expression);
     emitContainedFunction(db, fnId, node);
     return true;
+  }
+
+  if (Node.isJsxElement(node) || Node.isJsxSelfClosingElement(node)) {
+    emitRenderedElement(db, table, fnId, node);
+    return false;
   }
 
   if (!Node.isExpression(node)) {
