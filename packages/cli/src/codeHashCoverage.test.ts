@@ -24,7 +24,7 @@ const STARTS: Record<string, readonly string[]> = {
   ],
   "@suss/adapter-python": ["@suss/values", "@suss/sql"],
   "@suss/adapter-ruby": ["@suss/values", "@suss/sql"],
-  "@suss/packs/aws-sqs": ["@suss/recognize", "@suss/adapter-typescript"],
+  "@suss/packs/aws-sqs": ["@suss/recognize", "@suss/extractor"],
   "@suss/packs/aws-lambda": ["@suss/recognize", "@suss/manifest-aws"],
   "@suss/packs/graphql-ruby": ["@suss/contract-graphql"],
   "@suss/runtime-node": ["@suss/adapter-typescript"],
