@@ -32,6 +32,7 @@ import {
   withDescentStops,
 } from "./walk/descent.js";
 import { forEachDescendantOfKinds } from "./walk/rawDescent.js";
+import { peelValue } from "./walk/unwrap.js";
 
 import type {
   CallOps,
@@ -86,8 +87,8 @@ export interface TsSubUnitContext extends SubUnitOpsCarrier {
 
   /**
    * Return the Nth argument of a call as a function body, if it's an
-   * inline arrow or function expression. Returns null for identifier
-   * references, property accesses, or non-function values.
+   * arrow or function expression, through parentheses and casts. Returns
+   * null for identifier references, property accesses, or other values.
    */
   getCallArgumentFunction(
     call: CallExpression,
@@ -100,9 +101,9 @@ export interface TsSubUnitContext extends SubUnitOpsCarrier {
   getCallArgument(call: CallExpression, position: number): Node | null;
 
   /**
-   * If `node` is an array literal expression, return each element's
-   * source text. If it's some other expression, return a single entry
-   * with the node's full text. Null means no deps argument was given.
+   * Each element's source text for an array literal, read through
+   * parentheses and casts, or else the whole expression's text as one
+   * entry. Null means no deps argument was given.
    */
   readArrayLiteralText(node: Node | null): string[] | null;
 
@@ -279,10 +280,11 @@ function getCallArgumentFunction(
   call: CallExpression,
   position: number,
 ): FunctionRoot | null {
-  const arg = call.getArguments()[position];
-  if (arg === undefined) {
+  const written = call.getArguments()[position];
+  if (written === undefined) {
     return null;
   }
+  const arg = peelValue(written);
   if (Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)) {
     return arg as FunctionRoot;
   }
@@ -293,10 +295,11 @@ function getCallArgument(call: CallExpression, position: number): Node | null {
   return call.getArguments()[position] ?? null;
 }
 
-function readArrayLiteralText(node: Node | null): string[] | null {
-  if (node === null) {
+function readArrayLiteralText(written: Node | null): string[] | null {
+  if (written === null) {
     return null;
   }
+  const node = peelValue(written);
   if (Node.isArrayLiteralExpression(node)) {
     return (node as ArrayLiteralExpression)
       .getElements()

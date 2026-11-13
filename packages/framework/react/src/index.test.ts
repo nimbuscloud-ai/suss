@@ -463,14 +463,25 @@ describe("reactFramework: integration", () => {
     );
     const names = effects.map((s) => s.identity.name).sort();
     expect(names).toEqual([
-      "Banner.effect#0",
-      "Clock.effect#0",
       "EffectyComponent.effect#0",
       "EffectyComponent.effect#1",
       "EffectyComponent.effect#2",
       "Ticker.effect#0",
       "Ticker.effect#1",
+      "Ticker.effect#2",
     ]);
+  });
+
+  it("reads an effect's callback and dependency list through parentheses and casts", () => {
+    const deps = ["Ticker.effect#0", "Ticker.effect#1", "Ticker.effect#2"].map(
+      (name) =>
+        (
+          summaries.find((s) => s.identity.name === name)?.metadata?.react as
+            | { deps?: unknown }
+            | undefined
+        )?.deps,
+    );
+    expect(deps).toEqual([["symbols"], ["interval"], []]);
   });
 
   it("useEffect summaries record their dependency arrays in metadata", () => {
@@ -732,6 +743,43 @@ describe("reactFramework, an effect written off the React import", () => {
       expect(effect?.inputReads?.map((read) => read.input)).toEqual(["label"]);
     },
   );
+
+  it.each([
+    ["Preact's hook", `import { useEffect } from "preact/hooks";`],
+    ["a project's own function", `import { useEffect } from "./lifecycle";`],
+    ["a name nothing imports", ""],
+  ])("gives no unit to a useEffect that is %s", async (_, line) => {
+    const summaries = await summariesOf({
+      "/src/lifecycle.ts":
+        "export function useEffect(run: () => void, deps: unknown[]) { run(); }",
+      "/src/title.tsx": `
+        ${line}
+        export function Title({ label }: { label: string }) {
+          useEffect${EFFECT_BODY};
+          return <h1>{label}</h1>;
+        }
+      `,
+    });
+
+    expect(summaries.map((s) => s.identity.name)).not.toContain(
+      "Title.effect#0",
+    );
+  });
+
+  it("gives a unit to a useEffect a project barrel re-exports from React", async () => {
+    const summaries = await summariesOf({
+      "/src/hooks.ts": `export { useEffect } from "react";`,
+      "/src/title.tsx": `
+        import { useEffect } from "./hooks";
+        export function Title({ label }: { label: string }) {
+          useEffect${EFFECT_BODY};
+          return <h1>{label}</h1>;
+        }
+      `,
+    });
+
+    expect(summaries.map((s) => s.identity.name)).toContain("Title.effect#0");
+  });
 });
 
 const PANEL_SOURCE = `
