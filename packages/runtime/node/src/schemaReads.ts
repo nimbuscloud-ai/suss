@@ -24,12 +24,6 @@ import type { CallExpression } from "ts-morph";
 import type { DeploymentOptions } from "./configBinding.js";
 import type { SchemaEnvRead } from "./schemaEnv.js";
 
-/**
- * A schema read does not spell the object it parses, so it is named as a
- * read of `process.env`.
- */
-const SCHEMA_OBJECT = "process.env";
-
 /** The recognizer for keys read through a schema parsed against the environment. */
 export function schemaReadRecognizer(
   where: DeploymentOptions = {},
@@ -76,7 +70,7 @@ function schemaReadEffect(
   return {
     type: "interaction",
     binding: configBinding(where),
-    callee: `${SCHEMA_OBJECT}.${read.name}`,
+    callee: `${read.object}.${read.name}`,
     interaction: {
       class: "config-read",
       name: read.name,

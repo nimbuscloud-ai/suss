@@ -24,7 +24,7 @@ import {
 } from "@suss/adapter-typescript";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
-import type { CallExpression, Node, SourceFile } from "ts-morph";
+import type { CallExpression, Node } from "ts-morph";
 
 /** Where the call takes the environment object from. */
 type EnvironmentAt =
@@ -98,18 +98,16 @@ const SCHEMA_READERS: readonly SchemaReader[] = [
   },
 ];
 
-/** A variable read through one key of a schema. */
-export interface SchemaEnvRead {
+/** One key of a schema, and whether it accepts a missing variable. */
+interface SchemaKey {
   name: string;
   defaulted: boolean;
 }
 
-const PARSE_CALL_NAMES = new Set(
-  SCHEMA_READERS.flatMap((reader) => [...reader.calls]),
-);
-
-/** The packages a file's text mentions, worked out once per file. */
-const MODULES_MENTIONED = new WeakMap<SourceFile, ReadonlySet<string>>();
+/** A variable read through one key of a schema, and the environment object the call parsed. */
+export interface SchemaEnvRead extends SchemaKey {
+  object: string;
+}
 
 /** The callee's name as written, for the checks that need no store query. */
 function writtenCalleeName(callee: Node): string | null {
@@ -117,41 +115,6 @@ function writtenCalleeName(callee: Node): string | null {
     return callee.getText();
   }
   return N.isPropertyAccessExpression(callee) ? callee.getName() : null;
-}
-
-function modulesMentionedIn(sourceFile: SourceFile): ReadonlySet<string> {
-  const remembered = MODULES_MENTIONED.get(sourceFile);
-  if (remembered !== undefined) {
-    return remembered;
-  }
-  const text = sourceFile.getFullText();
-  const found = new Set(
-    SCHEMA_READERS.flatMap((reader) => [...reader.modules]).filter((module) =>
-      text.includes(module),
-    ),
-  );
-  MODULES_MENTIONED.set(sourceFile, found);
-  return found;
-}
-
-/**
- * Checks that run before any store query, since most calls named `parse`
- * are not schemas. A schema method shows no package, so for zod only the
- * name is checked here and the package is checked later on the receiver.
- */
-function readerCouldFire(
-  call: CallExpression,
-  reader: SchemaReader,
-  written: string,
-): boolean {
-  if (!reader.calls.includes(written)) {
-    return false;
-  }
-  if (reader.onSchema === true) {
-    return true;
-  }
-  const mentioned = modulesMentionedIn(call.getSourceFile());
-  return reader.modules.some((module) => mentioned.has(module));
 }
 
 /**
@@ -166,46 +129,76 @@ export function schemaEnvReads(
   if (resolution === undefined) {
     return [];
   }
-  const written = writtenCalleeName(call.getExpression());
-  if (written === null || !PARSE_CALL_NAMES.has(written)) {
+  const callee = call.getExpression();
+  const written = writtenCalleeName(callee);
+  if (written === null) {
     return [];
   }
   for (const reader of SCHEMA_READERS) {
-    if (
-      !readerCouldFire(call, reader, written) ||
-      !callMatches(call, reader, resolution)
-    ) {
+    if (!callMatches(callee, written, reader, resolution)) {
       continue;
     }
     // Most `parse(text)` calls are not parsing against a schema, so the
     // schema is read before the store is asked about the argument.
-    const reads = readsFromSchema(call, reader, resolution);
-    if (reads.length === 0) {
+    const keys = readsFromSchema(call, reader, resolution);
+    if (keys.length === 0) {
       continue;
     }
     const environment = environmentArgument(call, reader, resolution);
     if (environment !== null && resolution.isEnvironmentValue(environment)) {
-      return reads;
+      const object = resolution.environmentReadOff(environment);
+      return keys.map((key) => ({ ...key, object }));
     }
   }
   return [];
 }
 
-/** True when the call is written the way the reader describes. */
+/**
+ * True when the call is written the way the reader describes: one of its
+ * calls off a schema, for zod, and otherwise one of its calls as the
+ * library exports it. A schema method shows no package, so for zod the
+ * package is checked later on the receiver.
+ */
 function callMatches(
-  call: CallExpression,
+  callee: Node,
+  written: string,
   reader: SchemaReader,
   resolution: ResolutionStore,
 ): boolean {
-  const callee = call.getExpression();
   if (reader.onSchema === true) {
     return (
-      N.isPropertyAccessExpression(callee) &&
-      reader.calls.includes(callee.getName())
+      N.isPropertyAccessExpression(callee) && reader.calls.includes(written)
     );
   }
-  const name = moduleCallName(callee, reader.modules, resolution);
+  const name = reader.calls.includes(written)
+    ? moduleCallName(callee, reader.modules, resolution)
+    : importedUnderAlias(callee, reader.modules);
   return name !== null && reader.calls.includes(name);
+}
+
+/**
+ * The name one of the modules exports a bare callee under, when the file
+ * imported it from there under another name. It is read off the import
+ * itself, so a call to any other function asks the store nothing.
+ */
+function importedUnderAlias(
+  callee: Node,
+  modules: readonly string[],
+): string | null {
+  if (!N.isIdentifier(callee)) {
+    return null;
+  }
+  for (const declaration of callee.getSymbol()?.getDeclarations() ?? []) {
+    if (
+      N.isImportSpecifier(declaration) &&
+      modules.includes(
+        declaration.getImportDeclaration().getModuleSpecifierValue(),
+      )
+    ) {
+      return declaration.getName();
+    }
+  }
+  return null;
 }
 
 /**
@@ -248,7 +241,7 @@ function readsFromSchema(
   call: CallExpression,
   reader: SchemaReader,
   resolution: ResolutionStore,
-): SchemaEnvRead[] {
+): SchemaKey[] {
   return schemaLiterals(call, reader, resolution).flatMap((literal) =>
     keysOf(literal, resolution),
   );
@@ -303,9 +296,18 @@ function namedValue(
 }
 
 /**
+ * How many calls up its receivers the walk to a schema's builder goes.
+ * A schema with more refinements chained onto it than this loses its
+ * keys, and a receiver that comes back round to itself ends the walk.
+ */
+const MAX_BUILDER_HOPS = 8;
+
+/**
  * The literal a library's own schema builder was given, through however
- * many refinements the program chained onto it: `z.object({ ... })` and
- * `z.object({ ... }).strict()` describe the same keys.
+ * many refinements the program chained onto it, written in place or kept
+ * in a name: `z.object({ ... })`, `z.object({ ... }).strict()` and
+ * `Base.strict()` after `const Base = z.object({ ... })` describe the
+ * same keys.
  */
 function builtSchema(
   value: Node,
@@ -313,16 +315,48 @@ function builtSchema(
   builders: readonly string[],
   resolution: ResolutionStore,
 ): Node[] {
-  const built = chainRoot(writtenCallOf(value, resolution));
-  if (built === null) {
-    return [];
+  let at = writtenCallOf(value, resolution);
+  for (let hops = 0; at !== null && hops <= MAX_BUILDER_HOPS; hops += 1) {
+    if (isBuilder(at, modules, builders, resolution)) {
+      const literal = at.getArguments()[0];
+      return literal === undefined ? [] : [literal];
+    }
+    at = receiverCallOf(at, resolution);
   }
-  const name = moduleCallName(built.getExpression(), modules, resolution);
-  if (name === null || !builders.includes(name)) {
-    return [];
+  return [];
+}
+
+/**
+ * Whether the call is one of the library's builders, called off a value
+ * the library exports or as the export itself. The method's name is
+ * looked at before the store is asked about the receiver.
+ */
+function isBuilder(
+  call: CallExpression,
+  modules: readonly string[],
+  builders: readonly string[],
+  resolution: ResolutionStore,
+): boolean {
+  const callee = call.getExpression();
+  if (
+    N.isPropertyAccessExpression(callee) &&
+    !builders.includes(callee.getName())
+  ) {
+    return false;
   }
-  const literal = built.getArguments()[0];
-  return literal === undefined ? [] : [literal];
+  const name = moduleCallName(callee, modules, resolution);
+  return name !== null && builders.includes(name);
+}
+
+/** The call a method was called on, written in place or kept in a name. */
+function receiverCallOf(
+  call: CallExpression,
+  resolution: ResolutionStore,
+): CallExpression | null {
+  const callee = call.getExpression();
+  return N.isPropertyAccessExpression(callee)
+    ? writtenCallOf(callee.getExpression(), resolution)
+    : null;
 }
 
 /** The call a value comes down to, written out here or bound to a name. */
@@ -334,30 +368,13 @@ function writtenCallOf(
   return written !== null && N.isCallExpression(written) ? written : null;
 }
 
-/** The call at the bottom of a chain of methods called on its result. */
-function chainRoot(call: CallExpression | null): CallExpression | null {
-  let at = call;
-  while (at !== null) {
-    const callee = at.getExpression();
-    if (!N.isPropertyAccessExpression(callee)) {
-      return at;
-    }
-    const receiver = callee.getExpression();
-    if (!N.isCallExpression(receiver)) {
-      return at;
-    }
-    at = receiver;
-  }
-  return null;
-}
-
 /** One read per key the schema literal sets. */
-function keysOf(literal: Node, resolution: ResolutionStore): SchemaEnvRead[] {
+function keysOf(literal: Node, resolution: ResolutionStore): SchemaKey[] {
   const object = objectLiteralOf(literal, resolution);
   if (object === null) {
     return [];
   }
-  const reads: SchemaEnvRead[] = [];
+  const reads: SchemaKey[] = [];
   for (const property of propertiesOf(object, resolution)) {
     const name = propertyNameOf(property);
     if (name === null || name.length === 0) {
@@ -384,10 +401,21 @@ const DEFAULTING_CALLS = new Set([
 /** The options an envalid validator takes a fallback under. */
 const DEFAULTING_OPTIONS = new Set(["default", "devDefault"]);
 
-/** Whether the program supplies a value when the variable is absent. */
+/**
+ * Whether the program supplies a value when the variable is absent. A
+ * function written in the key runs on the value later, so a call inside
+ * it says nothing about whether the variable may be missing.
+ */
 function suppliesValue(value: Node): boolean {
+  if (N.isFunctionLikeDeclaration(value)) {
+    return false;
+  }
   let found = defaults(value);
   value.forEachDescendant((node, traversal) => {
+    if (N.isFunctionLikeDeclaration(node)) {
+      traversal.skip();
+      return;
+    }
     if (!defaults(node)) {
       return;
     }

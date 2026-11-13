@@ -43,7 +43,7 @@ export { TIMER_MATCHES } from "./timers.js";
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.11.0";
+const PACK_VERSION = "0.12.0";
 
 /**
  * Every timer call writes a timer's name or imports one from Node's

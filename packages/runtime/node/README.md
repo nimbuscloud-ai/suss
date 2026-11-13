@@ -245,14 +245,26 @@ const config = Env.safeParse(process.env);                              // zod
 
 `@t3-oss/env-nextjs` is read the same way as `@t3-oss/env-core`, and
 `parseAsync` and `safeParseAsync` the same way as their synchronous
-versions. A zod schema is read through any refinements the program
-chains onto it, so `z.object({ ... }).strict()` gives the same keys.
-Keys a schema spreads in from another literal are read too.
+versions. A zod schema is read through up to eight refinements the
+program chains onto it, written in place or kept in a name, so
+`z.object({ ... }).strict()` and `Base.strict()` after
+`const Base = z.object({ ... })` give the same keys. Keys a schema
+spreads in from another literal are read too.
+
+A library's function is read as the name it exports, so
+`import { cleanEnv as load } from "envalid"` reads `load(...)` as
+`cleanEnv`, and a project module that re-exports `createEnv` is read
+the same way as the library itself.
 
 A key reports `defaulted` when its chain of calls contains `default`,
 `optional`, `nullish`, `catch` or `or`, or when it has an envalid
 `default` or `devDefault` option, whichever way the library writes the
-call.
+call. A function written in the key, such as the callback `transform`
+takes, runs on the value later, so a call inside it does not count.
+
+The read's callee is the environment object the call was handed, so a
+schema parsed against `import.meta.env` reads `import.meta.env.X`. A
+parameter the environment reaches is read as `process.env`.
 
 The reader only fires when the environment object passed to the call
 traces back to `process.env`. It can be written there, kept in a
@@ -294,9 +306,9 @@ It cannot read two things.
 
 A library that the table above does not cover does not produce any reads, since
 the table is what gives the position of the schema and the environment
-object in each call. Aliasing the import, as in
-`import { cleanEnv as load }`, hides the call the same way, because the
-name written in the source is the first thing checked.
+object in each call. A project module that re-exports a library's
+function under another name hides the call the same way, since only an
+alias the file itself writes is read off the import.
 
 A `runtimeEnv` that lists the variables one by one,
 `{ DB_NAME: process.env.DB_NAME }`, is read by the reader for dotted
