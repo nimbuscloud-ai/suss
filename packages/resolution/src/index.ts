@@ -2741,24 +2741,25 @@ export const RESOLUTION_QUESTIONS = [
     ],
   ),
   // A namespace member: the module's export of the member's own name.
-  // The imports literal leads, since it is the smallest relation.
+  // The chain leads, so what these rules ask for comes from the question.
+  // DESIGN.md's section on changing a rule says why that matters.
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("p")],
     [
-      lit("imports", v("o"), v("m"), NAMESPACE_IMPORT),
-      lit("readsProperty", v("y"), v("o"), v("p")),
       lit("callOriginChain", v("x"), v("y")),
+      lit("readsProperty", v("y"), v("o"), v("p")),
+      lit("imports", v("o"), v("m"), NAMESPACE_IMPORT),
     ],
   ),
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("p")],
     [
-      lit("imports", v("d"), v("m"), NAMESPACE_IMPORT),
-      lit("binds", v("o"), v("d")),
-      lit("readsProperty", v("y"), v("o"), v("p")),
       lit("callOriginChain", v("x"), v("y")),
+      lit("readsProperty", v("y"), v("o"), v("p")),
+      lit("binds", v("o"), v("d")),
+      lit("imports", v("d"), v("m"), NAMESPACE_IMPORT),
     ],
   ),
   // What a call made: through the call to its callee, whose own alias

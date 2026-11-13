@@ -26,9 +26,11 @@ import {
 
 import {
   ANSWER_RELATIONS,
+  NAMESPACE_IMPORT_NAME,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
 } from "./index.js";
+import { ASKING_RELATIONS, queryFacts } from "./program.js";
 
 // Pinned so a run repeats and a counterexample can be reproduced from
 // the seed alone. The nightly fuzz job sets SUSS_FUZZ_SEED from its run
@@ -40,12 +42,12 @@ const PROGRAM = deriveOnDemand(COMPLETE, ANSWER_RELATIONS);
 const ON_DEMAND = PROGRAM.rules;
 
 /** What the store takes back once it has read a query's answer. */
-const QUERY_FACTS = [
-  ...PROGRAM.demandDriven,
-  "wanted",
-  "wantedOrigin",
-  "wantedType",
-];
+const QUERY_FACTS = queryFacts(PROGRAM);
+
+const ASKING: ReadonlySet<string> = new Set(ASKING_RELATIONS);
+
+/** The questions whose answers `readableFor` reads back. */
+const READ_BACK = new Set(["wanted", "wantedOrigin", "wantedCallOrigin"]);
 
 /**
  * How wide each base relation is. Every relation an adapter supplies
@@ -79,6 +81,7 @@ const ARITY: Record<string, number> = {
   instanceOf: 2,
   wanted: 1,
   wantedOrigin: 1,
+  wantedCallOrigin: 1,
   wantedType: 1,
 };
 
@@ -86,6 +89,7 @@ const ARITY: Record<string, number> = {
 // than describing a forest of disconnected pairs.
 const VALUES = ["a", "b", "c", "d", "e", "f"];
 const NAMES = ["n", "m"];
+const IMPORTED_NAMES = [...NAMES, NAMESPACE_IMPORT_NAME];
 const MODULES = ["lib", "app"];
 const POSITIONS = ["0", "1"];
 
@@ -103,7 +107,7 @@ const COLUMNS: Record<string, string[][]> = {
   callArg: [VALUES, POSITIONS, VALUES],
   paramNamed: [VALUES, NAMES, VALUES],
   callKeywordArg: [VALUES, NAMES, VALUES],
-  imports: [VALUES, MODULES, NAMES],
+  imports: [VALUES, MODULES, IMPORTED_NAMES],
   exportsAs: [MODULES, NAMES, VALUES],
   reExports: [MODULES, NAMES, MODULES, NAMES],
   reExportsAll: [MODULES, MODULES],
@@ -162,11 +166,12 @@ function derivedFor(db: Database, relation: string): string[] {
 }
 
 /**
- * What a caller reads back after asking one of the two questions about
- * `value`. `wanted` asks what the value is and reads the three answer
- * relations keyed by it; `wantedOrigin` asks where the name came from
- * and reads the imports it carries plus the calls made by whatever it
- * comes to.
+ * What a caller reads back after asking one of the three questions
+ * about `value`. `wanted` asks what the value is and reads the three
+ * answer relations keyed by it; `wantedCallOrigin` asks which import a
+ * callee comes from; `wantedOrigin` asks where the name came from and
+ * reads the imports behind it plus the calls made by whatever it comes
+ * to.
  */
 function readableFor(
   db: Database,
@@ -185,6 +190,13 @@ function readableFor(
       wantedResolves: keyed("wantedResolves"),
       wantedComesTo: keyed("wantedComesTo"),
       wantedIsWrittenAs: keyed("wantedIsWrittenAs"),
+    };
+  }
+
+  if (question === "wantedCallOrigin") {
+    return {
+      wantedCallOriginPair: keyed("wantedCallOriginPair"),
+      wantedCallOriginMember: keyed("wantedCallOriginMember"),
     };
   }
 
@@ -241,12 +253,8 @@ describe("deriving the resolution rules on demand", () => {
   it("answers the same when the questions arrive after the facts", () => {
     fc.assert(
       fc.property(arbFacts, (facts) => {
-        const asking = facts.filter(
-          ([relation]) => relation === "wanted" || relation === "wantedOrigin",
-        );
-        const rest = facts.filter(
-          ([relation]) => relation !== "wanted" && relation !== "wantedOrigin",
-        );
+        const asking = facts.filter(([relation]) => ASKING.has(relation));
+        const rest = facts.filter(([relation]) => !ASKING.has(relation));
 
         const late = fill(rest);
         evaluate(late, ON_DEMAND);
@@ -272,7 +280,7 @@ describe("deriving the resolution rules on demand", () => {
         for (const [relation, tuple] of facts) {
           scoped.add(relation, tuple);
           keeping.add(relation, tuple);
-          if (relation !== "wanted" && relation !== "wantedOrigin") {
+          if (!READ_BACK.has(relation)) {
             continue;
           }
           evaluate(scoped, ON_DEMAND);
@@ -285,6 +293,21 @@ describe("deriving the resolution rules on demand", () => {
         }
       }),
       { numRuns: 300, seed: PROPERTY_SEED },
+    );
+  });
+
+  it("derives nothing a question takes back until a question is asked", () => {
+    // A cleared row derived from the facts alone would come back only
+    // while those facts are new, so a later question would go without it.
+    fc.assert(
+      fc.property(arbFacts, (facts) => {
+        const db = fill(facts.filter(([relation]) => !ASKING.has(relation)));
+        evaluate(db, ON_DEMAND);
+        for (const relation of QUERY_FACTS) {
+          expect(db.size(relation), relation).toBe(0);
+        }
+      }),
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 

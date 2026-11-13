@@ -2706,6 +2706,60 @@ describe("a value a caller passed, whatever was asked before it", () => {
   });
 });
 
+describe("an import origin, whatever was asked before it", () => {
+  const LOADERS = {
+    "/reader.ts": "export function readFile(path: string) { return path; }",
+    "/contract.ts": `
+      import { randomUUID } from "node:crypto";
+      const LOADERS: Record<string, (path: string) => Promise<string>> = {
+        openapi: async (path) => {
+          const mod = await import("./reader.js");
+          return mod.readFile(path);
+        },
+      };
+      export async function readContract(from: string, path: string) {
+        return LOADERS[from](path + randomUUID());
+      }
+    `,
+  };
+
+  function calleeIn(project: Project, text: string): Node {
+    const callee = project
+      .getSourceFileOrThrow("/contract.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .map((call) => call.getExpression())
+      .find((one) => one.getText() === text);
+    if (callee === undefined) {
+      throw new Error(`No call of ${text} in /contract.ts`);
+    }
+    return callee;
+  }
+
+  function readFileOrigin(store: ResolutionStore, project: Project): unknown {
+    return store.importOriginsOf(calleeIn(project, "mod.readFile"), [
+      "/reader.ts",
+    ]);
+  }
+
+  it("gives a dynamic import's member the export it names", () => {
+    const project = projectOf(LOADERS);
+
+    expect(readFileOrigin(new ResolutionStore(), project)).toEqual([
+      { module: "/reader.ts", path: ["readFile"] },
+    ]);
+  });
+
+  it("gives the same origin after a question about another callee read the file", () => {
+    const project = projectOf(LOADERS);
+    const store = new ResolutionStore();
+    store.importedAsOf(calleeIn(project, "randomUUID"), ["node:timers"]);
+
+    expect(readFileOrigin(store, project)).toEqual([
+      { module: "/reader.ts", path: ["readFile"] },
+    ]);
+  });
+});
+
 describe("callsPassing", () => {
   function passing(
     files: Record<string, string>,

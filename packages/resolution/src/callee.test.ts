@@ -313,6 +313,20 @@ describe("askResolution", () => {
     askResolution(db, ["run"], "wantedOrigin");
     expect(db.facts("wantedComesFrom")).toEqual([["run", "lib", "load"]]);
   });
+
+  it("finds a namespace member's import for a question after the first", () => {
+    // const mod = await import("lib"); mod.read(); mod.write();
+    const db = new Database();
+    db.add("imports", ["modDecl", "lib", "*"]);
+    db.add("binds", ["modRef", "modDecl"]);
+    db.add("readsProperty", ["read", "modRef", "read"]);
+    db.add("readsProperty", ["write", "modRef", "write"]);
+    askResolution(db, ["read"], "wantedCallOrigin");
+    askResolution(db, ["write"], "wantedCallOrigin");
+    expect(db.lookup("wantedCallOriginPair", 0, "write")).toEqual([
+      ["write", "lib", "write"],
+    ]);
+  });
 });
 
 describe("ASKING_RELATIONS", () => {
