@@ -754,6 +754,53 @@ describe("where each piece of a value written out goes", () => {
       ["at", "{ id, 'full-name': label, ...others }"],
     ]);
   });
+
+  it("gives the variable a for...of or a for await...of declares one element of what it runs over", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const event: { Records: { body: string }[] };",
+        "declare const pages: AsyncIterable<string>;",
+        "declare function use(value: unknown): void;",
+        "export async function handler() {",
+        "  for (const record of event.Records) use(record.body);",
+        "  for await (const page of pages) use(page);",
+        "  let index = 0;",
+        "  for (index of [1, 2]) use(index);",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "elementOf")).toEqual([
+      ["record", "event.Records"],
+      ["page", "pages"],
+    ]);
+    // The body's read of the variable binds to the declaration elementOf keys.
+    expect(rows(db, table, "binds")).toContainEqual(["record", "record"]);
+  });
+
+  it("gives each name a for...of takes the element apart into its part, by property or by position", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const users: { id: string; 'full-name': string }[];",
+        "declare const sizes: Record<string, number>;",
+        "declare function use(...values: unknown[]): void;",
+        "export function handler() {",
+        "  for (const { id, 'full-name': label, ...others } of users) use(id, label, others);",
+        "  for (const [name, size] of Object.entries(sizes)) use(name, size);",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "elementPartOf")).toEqual([
+      ["id", "users", "id"],
+      ["'full-name': label", "users", "full-name"],
+      ["name", "Object.entries(sizes)", "0"],
+      ["size", "Object.entries(sizes)", "1"],
+    ]);
+    expect(db.size("elementOf")).toBe(0);
+  });
 });
 
 describe("finding the environment objects in a file", () => {
