@@ -1316,6 +1316,46 @@ every file the pack reads, and the Node pack reads every file. A callee
 that a project module re-exports under another name is lost with the
 gate on, so `pack()` leaves it off.
 
+## A function an element is handed
+
+React calls the function a component hands an element under an `on`
+prop when the event fires, so a pack claims it as a unit of its own:
+
+```ts
+renderedProps({ matching: "^on[A-Z]" })
+  .unitWhenInPlace({
+    kind: "handler",
+    name: ["parent", "callee", "prop", "countOnCollision"],
+    inputs: [{ position: 0, role: "event" }],
+  })
+  .unitWhenNamedInParent({
+    kind: "handler",
+    name: ["parent", "written"],
+    inputs: [{ position: 0, role: "event" }],
+  });
+```
+
+The hook asks the adapter's `elements(parent)` for the JSX elements the
+parent renders, its own and those in functions it runs inline, the same
+list `runsElement` gives. Each element's `tag()` comes from its
+`jsxElement` row and its `attributes()` from its `jsxAttribute` rows,
+each value keyed after `peelValue`. For an attribute whose name matches
+the pattern, a value whose `form()` is `function` is claimed by
+`unitWhenInPlace`, and a `name` whose `function()` the adapter's
+`writes(parent, fn)` says the parent writes, at any depth, by
+`unitWhenNamedInParent`. A name for a function declared elsewhere, a
+prop passed through, or a member read is not claimed.
+
+For an element the callee is its tag as written. `prop` is the
+attribute's name, `written` the name the function was handed over as,
+and `countOnCollision` adds `#N`, in source order, only when two claims
+in the parent come out with the same name: two inline `onClick`s on
+`<button>` are `Panel.button.onClick#0` and `#1`, and one on `<a>` beside
+them is `Panel.a.onClick`. `inputs` becomes the unit's positional input
+mapping. A chain over elements claims before a chain over calls. Python
+and Ruby write no JSX and list no elements, so the chain claims nothing
+there.
+
 ## A write to one of the process's streams
 
 `streamWrites` records a write to stdout or stderr. Nothing pairs

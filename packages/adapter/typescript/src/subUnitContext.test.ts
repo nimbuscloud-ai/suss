@@ -72,6 +72,56 @@ describe("an effect's arguments", () => {
   });
 });
 
+describe("elements", () => {
+  it("lists the elements a parent renders with their attributes, and says which functions the parent writes", () => {
+    const parent = componentFunction(`
+      function Panel() {
+        const save = () => outside();
+        return (
+          <form onSubmit={save} onReset={outside}>
+            <button onClick={(() => save())} disabled />
+          </form>
+        );
+      }
+      function outside() {}
+    `);
+    const unit = { func: parent, name: "Panel", kind: "component" };
+    const ctx = createTsSubUnitContext(new ResolutionStore());
+    const elements = ctx.elements?.(unit) ?? [];
+    const [onSubmit, onReset] = elements[0]?.attributes() ?? [];
+    const written = (value: (typeof onSubmit)["value"] | undefined) => {
+      const fn = value?.function?.() ?? null;
+      return fn !== null && ctx.writes?.(unit, fn) === true;
+    };
+
+    expect(
+      elements.map((element) => [
+        element.tag(),
+        element.attributes().map(({ name, value }) => [name, value.form?.()]),
+      ]),
+    ).toEqual([
+      [
+        "form",
+        [
+          ["onSubmit", "name"],
+          ["onReset", "name"],
+        ],
+      ],
+      [
+        "button",
+        [
+          ["onClick", "function"],
+          ["disabled", "other"],
+        ],
+      ],
+    ]);
+    expect([written(onSubmit?.value), written(onReset?.value)]).toEqual([
+      true,
+      false,
+    ]);
+  });
+});
+
 describe("calls", () => {
   const SOURCE = `
     function Orders() {

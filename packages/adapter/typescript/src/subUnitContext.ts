@@ -23,9 +23,10 @@ import {
   SyntaxKind,
 } from "ts-morph";
 
-import { factValueOps } from "@suss/recognize/ops";
+import { factElementOps, factValueOps } from "@suss/recognize/ops";
 
 import { importedReferenceSpellings } from "./discovery/resolveImport.js";
+import { nodeId } from "./facts/extract.js";
 import { ResolutionStore } from "./facts/store.js";
 import { factSourceFor, statedFactKey } from "./resolve/factSource.js";
 import { opsOverFacts } from "./resolve/opsOverFacts.js";
@@ -41,7 +42,9 @@ import type {
   AstCapableValueOps,
   CallOps,
   DiscoveredSubUnitParent,
+  ElementOps,
   SubUnitOpsCarrier,
+  ValueOps,
 } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
 
@@ -149,10 +152,36 @@ export function createTsSubUnitContext(
     readArrayLiteralText,
     ...(resolution === undefined
       ? {}
-      : { resolution, calls: (parent) => callsRunAsOps(parent, resolution) }),
+      : {
+          resolution,
+          calls: (parent) => callsRunAsOps(parent, resolution),
+          elements: (parent) => elementsRunAsOps(parent, resolution),
+          writes: (parent, fn) => parentWrites(parent, fn),
+        }),
     mentions: (parent, word) =>
       (parent.func as Node).getSourceFile().getFullText().includes(word),
   };
+}
+
+/** The JSX elements the parent renders, as the ops a declared pack reads each one's tag and attributes through. */
+function elementsRunAsOps(
+  parent: DiscoveredSubUnitParent,
+  store: ResolutionStore,
+): ElementOps[] {
+  const source = factSourceFor(store, (value, module) =>
+    store.originatesFrom(value, module),
+  );
+  return store
+    .elementsRunBy(parent.func as FunctionRoot)
+    .map((element) => factElementOps(nodeId(element), source));
+}
+
+/** Whether the function a value settles to is written in the parent's body, at any depth. */
+function parentWrites(parent: DiscoveredSubUnitParent, fn: ValueOps): boolean {
+  const node = (fn as Partial<AstCapableValueOps>).ast?.() ?? null;
+  return (
+    node instanceof Node && isWithinFunction(node, parent.func as FunctionRoot)
+  );
 }
 
 /**

@@ -38,6 +38,7 @@ import type {
   DeclaredBy,
   Decoded,
   EffectArg,
+  ElementAttribute,
   ElementOps,
   Encoded,
   FactSource,
@@ -91,6 +92,15 @@ export function factValueOps(key: string, source: FactSource): ValueOps {
 
 /** The key each value the ops handed out was read at, so one value can be compared with another. */
 const keysOfValues = new WeakMap<ValueOps, string>();
+
+/**
+ * The ops for the JSX element at `key`: its tag from its `jsxElement`
+ * row, and its attributes from its `jsxAttribute` rows, in the order
+ * the adapter stated them, which is the order the source writes them.
+ */
+export function factElementOps(key: string, source: FactSource): ElementOps {
+  return new FactElement(key, source);
+}
 
 /** One column a hook stated a value for, and the key the value was read at. */
 export interface HeardSlot {
@@ -1114,6 +1124,18 @@ class FactElement implements ElementOps {
     private readonly key: string,
     private readonly facts: FactSource,
   ) {}
+
+  tag(): string {
+    const [row] = this.facts.db.lookup("jsxElement", 0, this.key);
+    return row === undefined ? "" : this.facts.textOf(String(row[1]));
+  }
+
+  attributes(): readonly ElementAttribute[] {
+    return this.facts.db.lookup("jsxAttribute", 0, this.key).map((row) => ({
+      name: String(row[1]),
+      value: factValueOps(String(row[2]), this.facts),
+    }));
+  }
 
   props(): readonly string[] {
     return this.facts.db
