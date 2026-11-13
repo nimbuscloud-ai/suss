@@ -581,6 +581,27 @@ describe("a read whose key the source computes", () => {
     expect(rows(db, table, "environmentObject")).toEqual([]);
   });
 
+  it("states a destructured key the source computes as a keyed read, and no read for the rest", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const settings: Record<string, string>;",
+        "declare function use(...values: unknown[]): void;",
+        "export function get(name: string): void {",
+        "  const { [name]: chosen, 'full-name': label, ...rest } = settings;",
+        "  use(chosen, label, rest);",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "readsKeyed")).toEqual([
+      ["[name]: chosen", "settings", "name"],
+    ]);
+    expect(rows(db, table, "readsProperty")).toEqual([
+      ["'full-name': label", "settings", "full-name"],
+    ]);
+  });
+
   it("states nothing for a literal index, which stays a property read", () => {
     const { db, table } = factsFor(
       {
