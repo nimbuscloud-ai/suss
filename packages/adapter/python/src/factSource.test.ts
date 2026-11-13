@@ -261,6 +261,73 @@ describe("the Python fact source", () => {
       ['json.loads("{}")', null],
     ]);
   });
+
+  it("gives what json.loads was handed, and nothing for json.load, which reads a file", async () => {
+    const tree = await parsePython(
+      [
+        "import json",
+        "from mylib import codec",
+        "",
+        'json.loads(message["body"])',
+        "json.load(handle)",
+        "codec.loads(text)",
+        'json.dumps({"a": 1})',
+      ].join("\n"),
+    );
+    const root = tree.rootNode;
+    const db = factsForFile({
+      file: FILE,
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    const decodings = db
+      .facts("call")
+      .map((row) => source.decodedOf?.(String(row[0])) ?? null)
+      .flatMap((found) =>
+        found === null ? [] : [`${found.codec} ${source.textOf(found.value)}`],
+      );
+
+    expect(decodings).toEqual(['json message["body"]']);
+  });
+
+  it("says a name is typed as a class the file imports when its annotation names it, and a name with none is not", async () => {
+    const tree = await parsePython(
+      [
+        "from aws_lambda_typing.events import SQSRecord",
+        "",
+        "def read(record: SQSRecord, other):",
+        '    return record["body"], other["body"]',
+        "",
+        "first = None",
+      ].join("\n"),
+    );
+    const root = tree.rootNode;
+    const db = factsForFile({
+      file: FILE,
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    const [read] = db.facts("func").map((row) => String(row[0]));
+    const origin = {
+      origin: "typed" as const,
+      importedFrom: ["aws_lambda_typing"],
+      named: ["SQSRecord"],
+    };
+
+    expect(source.valueTypedAs?.(`${read}#record`, origin)).toBe(true);
+    expect(source.valueTypedAs?.(`${read}#other`, origin)).toBe(false);
+    expect(source.valueTypedAs?.(`${FILE}#first`, origin)).toBe(false);
+    expect(
+      source.valueTypedAs?.(`${read}#record`, {
+        ...origin,
+        named: ["SNSRecord"],
+      }),
+    ).toBe(false);
+  });
 });
 
 const READS = `import os

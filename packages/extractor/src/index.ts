@@ -1373,6 +1373,7 @@ export type {
   ClassValueOps,
   ConstructedFrom,
   DeclaredBy,
+  Decoded,
   Encoded,
   FactRows,
   FactSource,
@@ -1404,6 +1405,7 @@ export type {
   ValueEntry,
   ValueForm,
   ValueOps,
+  ValueRead,
 } from "./ops.js";
 export type {
   HealthCheck,

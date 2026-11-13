@@ -752,6 +752,23 @@ messageBusBinding({
 
 `ctx` is the adapter's recognizer context, `TsRecognizerContext` for TypeScript, with the source file handle and an `extractArgs()` helper. A recognizer casts both arguments to the context it was written against, and that cast is where the pack declares which adapter it needs.
 
+### A message a handler reads
+
+A pack declares a consumer's receive with `messageReceives` from `@suss/recognize`, and the declaration runs on every adapter. The receive is read at a call of the language's decoder for the codec, and each envelope is the path from what the platform hands the handler to the encoded payload, outermost first:
+
+```ts
+messageReceives({
+  wire: "aws_sqs",
+  codec: "json",
+  envelope: [
+    { path: [{ read: "Records" }, { each: true }, { read: "body" }] },
+    { from: typed({ from: ["aws-lambda"], named: ["SQSRecord"] }), path: [{ read: "body" }] },
+  ],
+});
+```
+
+It records a `message-receive` interaction with no channel, since the deployment says which queue the handler drains. The body's fields are the keys the handler reads off the decoded value, at the decode or through the one name it keeps it in. A `read` step is a property or an entry with its key written out, an `each` step is the element a loop or a `map` callback is given, and `from` asks whether the value the last step reads off is declared as one of the types. Ruby declares no types, so an envelope with `from` matches nothing there.
+
 ## Sub-units
 
 ```typescript

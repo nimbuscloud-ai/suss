@@ -187,6 +187,28 @@ describe("the Ruby fact source", () => {
       "json { b: 2 }",
     ]);
   });
+
+  it("gives what JSON's readers were handed, and nothing for a writer or another constant", async () => {
+    const tree = await parseRuby(
+      [
+        'JSON.parse(message["body"])',
+        "JSON.load(io)",
+        "JSON.generate({ a: 1 })",
+        "Other.parse(text)",
+        "JSON.parse",
+      ].join("\n"),
+    );
+    const db = factsForFile({ file: FILE, root: tree.rootNode, packs: [] });
+    const source = rubyFactSource(db);
+    const decodings = db
+      .facts("call")
+      .map((row) => source.decodedOf?.(String(row[0])) ?? null)
+      .flatMap((found) =>
+        found === null ? [] : [`${found.codec} ${source.textOf(found.value)}`],
+      );
+
+    expect(decodings.sort()).toEqual(["json io", 'json message["body"]']);
+  });
 });
 
 const READS = `module Settings

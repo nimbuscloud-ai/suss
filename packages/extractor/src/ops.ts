@@ -368,6 +368,29 @@ export interface ValueOps {
    */
   encoded?(): Encoded | null;
   /**
+   * The read this value is, `record.body` or `record["body"]` with the
+   * key written out. A name set to one read, `const text = record.body`,
+   * is that read, as a member read kept in a local is. Null for anything
+   * else.
+   */
+  read?(): ValueRead | null;
+  /**
+   * The collection this value is one element of, when it is a name a loop
+   * or a callback is given one element at a time: `record` in
+   * `for (const record of event.Records)`. Null for anything else.
+   */
+  element?(): ValueOps | null;
+  /** Whether the program declares this value as one of the origin's types, as `receiverIsFrom` asks of a receiver. */
+  typed?(origin: Typed): boolean;
+  /**
+   * The keys the program reads off this value, `v.n`, `v["n"]` and a
+   * destructure, at the value and through the one name it is kept in,
+   * each once, in the order first read. A method called on the value, a
+   * write to one of its keys, a rest element and a key worked out at run
+   * time are not keys read.
+   */
+  keysRead?(): readonly string[];
+  /**
    * The shape the source writes this value in at this spot, without
    * following a name: a record for an object written out, a reference
    * for a name. Null when the adapter cannot say.
@@ -488,6 +511,22 @@ export interface Encoded {
   readonly value: ValueOps;
 }
 
+/** What a decoder was handed, and what it gives back. */
+export interface Decoded {
+  /** The encoding, such as `json`. */
+  readonly codec: string;
+  /** The encoded value the call was handed. */
+  readonly value: ValueOps;
+  /** What the call gives back, which the program reads the message's fields off. */
+  readonly result: ValueOps;
+}
+
+/** A read of one key off an object, as the source writes it. */
+export interface ValueRead {
+  readonly key: string;
+  readonly object: ValueOps;
+}
+
 /** How the source wrote a value where it is read. Only TypeScript writes an element. */
 export type ValueForm = "function" | "name" | "object" | "element" | "other";
 
@@ -561,6 +600,12 @@ export interface CallOps {
   isFrom(origin: ReceiverOrigin): boolean;
   /** How many arguments the call passes. */
   argumentCount(): number;
+  /**
+   * What this call decodes, when it calls one of the language's decoders:
+   * `JSON.parse(x)`, `json.loads(x)` and Ruby's `JSON.parse(x)` decode `x`
+   * under `json`. Null for any other call.
+   */
+  decodes?(): Decoded | null;
   /** The name the argument in this position gives. */
   nameAt(index: number, unsettled: UnsettledName): string | null;
   /** The callee, as the source writes it. */
@@ -889,6 +934,28 @@ export interface FactSource {
    * its encoders in one table beside its other language words.
    */
   encodedOf?(key: string): { codec: string; value: string } | null;
+  /**
+   * The key of the value the call at `key` decodes, and the encoding,
+   * when the call is one of the language's decoders. Each adapter keeps
+   * its decoders in one table beside its encoders.
+   */
+  decodedOf?(key: string): { codec: string; value: string } | null;
+  /**
+   * Whether the value at the key is declared as one of the origin's
+   * types, as `typedAs` asks of a call's receiver. Unset in a language
+   * that declares none, where the ops check what the value was made by.
+   */
+  valueTypedAs?(key: string, origin: Typed): boolean;
+  /**
+   * The read sites on the value at the key and on each reference to the
+   * one name it is kept in, `v.n`, `v["n"]` and the elements of a pattern
+   * it initializes, each stated, with a call's callee and an assignment's
+   * target left out. An adapter that states a read only when something
+   * asks about it lists them here. Unset, the ops read the sites off the
+   * rows: off the value, off each name `binds` takes to it, and off each
+   * reference `binds` takes to that name.
+   */
+  readSitesOf?(key: string): readonly string[];
   /** The shape the value at the key is written in there, as `ValueOps.shape` says. */
   typeShapeOf?(key: string): TypeShape | null;
   /** Whether the value at the key is spelled as this global path, the language's way. */

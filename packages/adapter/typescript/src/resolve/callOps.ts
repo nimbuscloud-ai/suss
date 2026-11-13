@@ -27,7 +27,9 @@ import { boundInProgram, dottedPathOf, nodeId } from "../facts/extract.js";
 import { MAPPING_METHOD } from "../facts/languageWords.js";
 import { parameterReads } from "../parameterReads.js";
 import { extractShape } from "../shapes/shapes.js";
-import { encodedIn } from "../values/encoded.js";
+import { elementCollectionOf } from "../values/elements.js";
+import { decodedIn, encodedIn } from "../values/encoded.js";
+import { keyedReadOf, keysReadOf } from "../values/readSites.js";
 import { typedAsExported } from "../values/receiverType.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { climbValue, peelValue } from "../walk/unwrap.js";
@@ -701,6 +703,16 @@ export function callOpsFor(
         ? undefined
         : receiverGlobalOf(callee.getExpression(), paths, reading.resolution),
     argumentCount: () => argumentsOf().length,
+    decodes: () => {
+      const found = decodedIn(call);
+      return found === null
+        ? null
+        : {
+            codec: found.codec,
+            value: valueOpsFor(found.value, values),
+            result: valueOpsFor(call, values),
+          };
+    },
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
     calleeText: () => expression.getText(),
@@ -991,6 +1003,19 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
         ? null
         : { codec: found.codec, value: valueOpsFor(found.value, reading) };
     },
+    read: () => {
+      const found = keyedReadOf(value);
+      return found === null
+        ? null
+        : { key: found.key, object: valueOpsFor(found.object, reading) };
+    },
+    element: () => {
+      const over = elementCollectionOf(value);
+      return over === null ? null : valueOpsFor(over, reading);
+    },
+    typed: (origin) =>
+      typedAsExported(peelValue(value), origin, reading.resolution),
+    keysRead: () => keysReadOf(value),
     shape: () => writtenShapeOf(value),
     readsOff: (object) => {
       const written = nodeOfValue(object);
