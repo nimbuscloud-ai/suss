@@ -36,7 +36,7 @@ The `discoverUnits` callback reads the calls React provides for booting an app: 
 React runs these callbacks separately from the render body, with different inputs, outputs and triggers, so each one becomes its own `BehavioralSummary` under the component's identity.
 
 - One `handler` unit per JSX prop whose name is `on` followed by an uppercase letter, and whose value resolves to a function written in the project. A reference passed through from props, like `onClick={props.onDelete}`, is skipped, because that handler belongs to another component. A named local function becomes `Component.fnName`. An inline arrow becomes `Component.tag.propName`, with a `#N` suffix when the same element and prop have more than one.
-- One `handler` unit per `useEffect(fn, deps?)` call in the component body, named `Component.effect#N`, with `metadata.react.kind` set to `"effect"` and the source text of the deps array recorded. Missing deps come through as `null` (runs again on every render), and `[]` means it runs on mount only. `React.useEffect(...)` off a default or namespace import of `react`, and an aliased import such as `useEffect as useMount`, count the same. A bare `useEffect` counts when it was imported from `react`, directly or through a project file that re-exports it, so Preact's hook or a project's own function of that name gets no unit. A `useEffect` whose callback is an identifier is skipped, since there is no body to read. The callback and the deps are read through parentheses and casts, so `[id] as const` records `id`.
+- One `handler` unit per `useEffect(fn, deps?)` call in the component body, named `Component.effect#N`, with `metadata.react.kind` set to `"effect"` and the source text of the deps array recorded. Missing deps come through as `null` (runs again on every render), and `[]` means it runs on mount only. `React.useEffect(...)` off a default or namespace import of `react`, and an aliased import such as `useEffect as useMount`, count the same. A bare `useEffect` counts when it was imported from `react`, directly or through a project file that re-exports it, so Preact's hook or a project's own function of that name gets no unit. A `useEffect` whose callback is an identifier is skipped, since there is no body to read. The callback and the deps are read through parentheses and casts, so `[id] as const` records `id`. The effects are a `callbacks` chain that `@suss/recognize` compiles to the pack's `subUnits` hook beside the handler walk. The chain says nothing about a schedule, so the component's own summary records nothing of an effect.
 
 ## Not covered yet
 
@@ -44,7 +44,7 @@ Class components, defaults wrapped in a HOC, React Server Component specifics, a
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor`, for the `PatternPack` type, on `@suss/recognize`, which reads its declared pattern, and on `@suss/adapter-typescript`, since the two callbacks are written against that adapter's discovery and sub-unit contexts. `ts-morph` is a peer dependency, because the boot walk reads the AST directly.
+The pack depends on `@suss/extractor`, for the `PatternPack` type, on `@suss/recognize`, which reads its declared pattern and compiles its effects chain, and on `@suss/adapter-typescript`, since the boot walk and the handler walk are written against that adapter's discovery and sub-unit contexts. `ts-morph` is a peer dependency, because the boot walk reads the AST directly.
 
 ## Coverage
 

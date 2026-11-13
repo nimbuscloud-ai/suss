@@ -1,9 +1,10 @@
 /**
- * React runs a component's event handlers and effect bodies apart from
- * its render body, on their own triggers, so each one becomes a unit of
- * its own under the component (decisions #35 and #36). The adapter's
- * `subUnits` hook calls this once per component, so the pack needs no
- * scanner of its own to find several units per component.
+ * React runs a component's event handlers apart from its render body, on
+ * their own triggers, so each one becomes a unit of its own under the
+ * component (decision #35). The adapter's `subUnits` hook calls this once
+ * per component, so the pack needs no scanner of its own to find several
+ * units per component. Effect bodies are claimed by a declared chain
+ * beside it.
  *
  * The README describes which handlers count and how each unit is named.
  */
@@ -14,20 +15,14 @@ import type {
   DiscoveredSubUnitParent,
   InputMappingPattern,
 } from "@suss/extractor";
-import type { CallExpression } from "ts-morph";
 
 const EVENT_HANDLER_INPUT: InputMappingPattern = {
   type: "positionalParams",
   params: [{ position: 0, role: "event" }],
 };
 
-const USE_EFFECT_INPUT: InputMappingPattern = {
-  type: "positionalParams",
-  params: [],
-};
-
-/** Returns the event-handler and `useEffect` units in one component body. */
-export function reactSubUnits(
+/** Returns the event-handler units in one component body. */
+export function reactEventHandlers(
   parent: DiscoveredSubUnitParent,
   ctx: unknown,
 ): DiscoveredSubUnit[] {
@@ -37,10 +32,7 @@ export function reactSubUnits(
   const tsCtx = ctx as TsSubUnitContext;
   const parentFunc = parent.func as FunctionRoot;
 
-  return [
-    ...synthesizeEventHandlers(parent.name, parentFunc, tsCtx),
-    ...synthesizeUseEffects(parent.name, parentFunc, tsCtx),
-  ];
+  return synthesizeEventHandlers(parent.name, parentFunc, tsCtx);
 }
 
 /**
@@ -154,64 +146,4 @@ function handlerUnitName(
   const idx = anonSeen.get(key) ?? 0;
   anonSeen.set(key, idx + 1);
   return `${componentName}.${m.tag}.${m.propName}#${idx}`;
-}
-
-function synthesizeUseEffects(
-  componentName: string,
-  parentFunc: FunctionRoot,
-  ctx: TsSubUnitContext,
-): DiscoveredSubUnit[] {
-  const out: DiscoveredSubUnit[] = [];
-  let index = 0;
-
-  for (const call of ctx.findCallExpressionsByName(
-    parentFunc,
-    "useEffect",
-    "react",
-  )) {
-    if (!isReactsEffect(call, ctx)) {
-      continue;
-    }
-    const body = ctx.getCallArgumentFunction(call, 0);
-    if (body === null) {
-      // An identifier or a value that is not a function has no body here
-      // to summarize.
-      continue;
-    }
-    const depsArg = ctx.getCallArgument(call, 1);
-    const deps = ctx.readArrayLiteralText(depsArg);
-
-    out.push({
-      func: body,
-      kind: "handler",
-      name: `${componentName}.effect#${index}`,
-      inputMapping: USE_EFFECT_INPUT,
-      metadata: {
-        react: {
-          kind: "effect",
-          component: componentName,
-          index,
-          // `null` means no deps argument, so the effect runs after every
-          // render. `[]` means it runs on mount only.
-          deps,
-        },
-      },
-    });
-    index += 1;
-  }
-
-  return out;
-}
-
-/**
- * Whether a call spelled `useEffect` is React's. Preact and a project
- * can each export their own, so a bare `useEffect` counts only when it
- * was imported from React, directly or through a project barrel.
- */
-function isReactsEffect(call: CallExpression, ctx: TsSubUnitContext): boolean {
-  const callee = call.getExpression();
-  return (
-    callee.getText() !== "useEffect" ||
-    ctx.resolution?.originatesFrom(callee, "react") === true
-  );
 }
