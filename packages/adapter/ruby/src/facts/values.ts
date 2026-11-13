@@ -29,6 +29,7 @@ import {
   bareCallArgumentGroups,
   bodyBlockCalls,
   bodyStatementsRun,
+  callStatementsOf,
   children,
   definesClassMethod,
   field,
@@ -823,18 +824,7 @@ function emitCallArguments(emitter: Emitter, site: CallSite): void {
   let position = 0;
   for (const argument of args === null ? [] : children(args)) {
     if (argument.type === "pair") {
-      const key = field(argument, "key");
-      const value = pairValue(argument);
-      const keyText = key === null ? null : pairKeyText(key);
-      if (keyText !== null && value !== null) {
-        add(
-          emitter,
-          "callKeywordArg",
-          site.key,
-          keyText,
-          valueKey(emitter, value, argument),
-        );
-      }
+      emitPairArgument(emitter, site, argument);
       continue;
     }
     add(
@@ -845,6 +835,45 @@ function emitCallArguments(emitter: Emitter, site: CallSite): void {
       valueKey(emitter, argument, args),
     );
     position += 1;
+  }
+}
+
+/** The key types that make a pair a keyword: `to:` and `:to =>`. */
+const KEYWORD_KEY_TYPES = new Set(["hash_key_symbol", "simple_symbol"]);
+
+/**
+ * A pair a call passes. A string key reads as a keyword too, so
+ * `foo("query" => sql)` is read under `query`, and any key that is not a
+ * symbol is a value of its own as well.
+ */
+function emitPairArgument(
+  emitter: Emitter,
+  site: CallSite,
+  pair: RbNode,
+): void {
+  const key = field(pair, "key");
+  const value = pairValue(pair);
+  if (key === null || value === null) {
+    return;
+  }
+  const keyText = pairKeyText(key);
+  if (keyText !== null) {
+    add(
+      emitter,
+      "callKeywordArg",
+      site.key,
+      keyText,
+      valueKey(emitter, value, pair),
+    );
+  }
+  if (!KEYWORD_KEY_TYPES.has(key.type)) {
+    add(
+      emitter,
+      "callPairArg",
+      site.key,
+      valueKey(emitter, key, pair),
+      valueKey(emitter, value, pair),
+    );
   }
 }
 
@@ -1126,6 +1155,7 @@ function emitBlockFunction(
   add(emitter, "func", blockKey);
   add(emitter, "inlineFn", blockKey);
   add(emitter, "callBlock", nodeId(emitter.filePath, call), blockKey);
+  emitBodyCallPositions(emitter, blockKey, field(block, "body"));
   if (emitter.enclosing !== null) {
     add(
       emitter,
@@ -1134,6 +1164,29 @@ function emitBlockFunction(
       blockKey,
     );
   }
+}
+
+/**
+ * `bodyCallAt` for each call written as a statement of `body`, which the
+ * method, block, class or file at `ownerKey` runs in that order.
+ */
+function emitBodyCallPositions(
+  emitter: Emitter,
+  ownerKey: string,
+  body: RbNode | null,
+): void {
+  if (body === null) {
+    return;
+  }
+  callStatementsOf(body).forEach((call, position) => {
+    add(
+      emitter,
+      "bodyCallAt",
+      ownerKey,
+      String(position),
+      nodeId(emitter.filePath, call),
+    );
+  });
 }
 
 /**
@@ -2171,6 +2224,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
     }
   }
   bodyFacts.flushInto(emitter.db);
+  emitBodyCallPositions(emitter, funcKey, body);
   const implicit = implicitReturn(body);
   if (implicit !== null) {
     add(inside, "returnsValue", funcKey, valueKey(inside, implicit));
@@ -2572,6 +2626,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       emitMethodOfClass(within, classKey, method, offeredOnClass);
     }
   }
+  emitBodyCallPositions(within, classKey, body);
   emitInstanceWrites(within, classKey, collected);
   if (body !== null) {
     emitLambdasIn(within, body);
@@ -2651,6 +2706,7 @@ export function emitValueFacts(
 
   walk(root);
   emitExpressionFacts(emitter, root);
+  emitBodyCallPositions(emitter, filePath, root);
   emitNamedStores(emitter);
   emitScopeWrites(emitter, writes);
   emitLambdasIn(emitter, root);

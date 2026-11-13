@@ -21,7 +21,7 @@ import { discoverDeclared } from "@suss/recognize";
 import { factCallOps, factModuleOps } from "@suss/recognize/ops";
 import { stateHandedIn } from "@suss/resolution";
 
-import { LAMBDA_TYPE, METHOD_TYPES } from "./ast.js";
+import { LAMBDA_TYPE, METHOD_TYPES, NESTING_TYPES } from "./ast.js";
 import { rubyFactSource } from "./factSource.js";
 import { nodeId } from "./facts/values.js";
 import { libraryUnit } from "./reach/closure.js";
@@ -134,8 +134,26 @@ export function rubyModuleOps(
   const source = rubyFactSource(db);
   return factModuleOps(file, source, {
     calls: () => callsOutsideMethods(root, file, source),
+    classes: () => classesIn(root, file),
     qualifier: QUALIFIER,
   });
+}
+
+/** Every class and module the file writes, however deep, in source order. */
+function classesIn(root: RbNode, file: string): string[] {
+  const found: string[] = [];
+  const visit = (node: RbNode): void => {
+    if (NESTING_TYPES.has(node.type)) {
+      found.push(nodeId(file, node));
+    }
+    for (const child of node.namedChildren) {
+      if (child !== null) {
+        visit(child);
+      }
+    }
+  };
+  visit(root);
+  return found;
 }
 
 /** A method, a lambda and a block run later, so their calls are not the file body's. */

@@ -13,6 +13,7 @@ class FakeNode implements SpannedNode<FakeNode> {
     readonly startIndex: number,
     readonly endIndex: number,
     children: FakeNode[] = [],
+    readonly type = "node",
   ) {
     for (const child of children) {
       child.parent = this;
@@ -39,6 +40,16 @@ describe("nodeOfKey", () => {
     expect(nodeOfKey(roots, "a.rb:4-8")).toBe(leaf);
     expect(nodeOfKey(roots, "a.rb:0-8")).toBe(call);
     expect(nodeOfKey(roots, "a.rb:0-20")).toBe(root);
+  });
+
+  it("passes over a node the adapter never keys for its parent of the same span", () => {
+    const content = new FakeNode(10, 15, [], "content");
+    const word = new FakeNode(10, 15, [content], "word");
+    const list = new FakeNode(9, 16, [word], "list");
+    const one = new Map([["w.rb", new FakeNode(0, 20, [list])]]);
+    expect(nodeOfKey(one, "w.rb:10-15")).toBe(content);
+    expect(nodeOfKey(one, "w.rb:10-15", new Set(["content"]))).toBe(word);
+    expect(nodeOfKey(one, "w.rb:9-16", new Set(["list"]))).toBeNull();
   });
 
   it("returns null for a name key, an unknown file or a span no node has", () => {

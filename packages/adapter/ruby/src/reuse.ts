@@ -9,12 +9,7 @@
  * records and the checks.
  */
 
-import {
-  EntryReuse,
-  nodeOfKey,
-  noteLookup,
-  WatchedMap,
-} from "@suss/resolution";
+import { EntryReuse, noteLookup, WatchedMap } from "@suss/resolution";
 
 import { instanceMethodsByName, singletonMethodsByName } from "./ast.js";
 import { filesDeclaring } from "./baseClass.js";
@@ -24,6 +19,7 @@ import {
 } from "./constantPath.js";
 import { envLookupAgain } from "./envReads.js";
 import { nodeId } from "./facts/values.js";
+import { rubyNodeOfKey } from "./values/evaluator.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -300,6 +296,6 @@ export class WalkReplay {
 
   /** The node a stored key refers to, found again in this run's trees. */
   nodeOf(key: string): RbNode | null {
-    return nodeOfKey(this.rootsByFile, key);
+    return rubyNodeOfKey(this.rootsByFile, key);
   }
 }

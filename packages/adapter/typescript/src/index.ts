@@ -16,6 +16,9 @@ export {
 export { collectAncestorBranches } from "./conditions.js";
 export { rootIdentifier } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
+// One file as the module ops a declared reader asks, for a test that
+// asks the same questions of each language.
+export { moduleOpsFor } from "./discovery/declared.js";
 export { buildProjectHelperIndex } from "./discovery/helperIndex.js";
 export {
   type ImportScanOptions,
