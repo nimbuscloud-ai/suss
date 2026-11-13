@@ -8,7 +8,7 @@ import { Database } from "@suss/datalog";
 
 import { discoverDeclared, discoverEntryObject } from "./discovery.js";
 import { factCallOps, factModuleOps, inheritsFrom } from "./factOps.js";
-import { global, imported } from "./ops.js";
+import { anyOf, constructedFrom, global, imported } from "./ops.js";
 import { describeDiscovery } from "./pack.js";
 
 import type {
@@ -17,6 +17,7 @@ import type {
   FactSource,
   MarkedMatch,
   ModuleOps,
+  ReceiverOrigin,
   ValueForm,
 } from "@suss/extractor";
 import type { ModuleWritten } from "./factOps.js";
@@ -533,6 +534,47 @@ describe("registeredFunction", () => {
       "handler fetch serve -",
     ]);
     expect(asked).toEqual(["calls"]);
+  });
+
+  it("reads the calls the pattern says, and none in a file that writes none of the modules every member of its start comes from", () => {
+    const source = moduleFacts();
+    const scopes: string[] = [];
+    const moduleWriting = (written: boolean): ModuleOps =>
+      factModuleOps(FILE, source, {
+        calls: (scope) => {
+          scopes.push(scope);
+          const ops = factCallOps("boot", source);
+          return ops === null ? [] : [ops];
+        },
+        mentions: (word) => written && word === "lib",
+      });
+    const registered = (
+      origin: ReceiverOrigin,
+      scope?: "file",
+    ): DeclaredDiscoveryMatch => ({
+      type: "registeredFunction",
+      start: origin,
+      method: "register",
+      handler: { at: 1 },
+      nameAt: { at: 0, named: { fetch: { kind: "handler", name: "fetch" } } },
+      ...(scope === undefined ? {} : { in: scope }),
+    });
+    const fromLib = anyOf(start, constructedFrom("lib"));
+
+    expect(found(registered(fromLib, "file"), moduleWriting(false))).toEqual(
+      [],
+    );
+    expect(scopes).toEqual([]);
+    expect(found(registered(fromLib, "file"), moduleWriting(true))).toEqual([
+      "handler fetch serve -",
+    ]);
+    expect(found(registered(start), moduleWriting(true))).toEqual([
+      "handler fetch serve -",
+    ]);
+    expect(
+      found(registered(anyOf(start, global("hooks"))), moduleWriting(false)),
+    ).toEqual(["handler fetch serve -"]);
+    expect(scopes).toEqual(["file", "moduleBody", "moduleBody"]);
   });
 });
 

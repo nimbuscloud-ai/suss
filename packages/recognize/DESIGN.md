@@ -389,7 +389,7 @@ module ops from these facts:
 | `export(path, member)` | the first name through `exports()`, then `member` for each name after it, then the member asked for. Ruby writes a nested constant in one piece too, `class Reports::Nightly`, so its module ops also try the leading names joined with `::`, and a class written both ways is two values, the first that has the member winning |
 | `marked(word)` | `marks(file, word)`, once the adapter's `mentions(word)` says the file's text has the word |
 | `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it. It asks `mentions(word)` first, since stating every function of every file to find a word most files never write costs more than the rest of a run |
-| `calls()` | the calls the adapter lists outside every function body, each as the fact ops for it |
+| `calls(scope)` | the calls the adapter lists outside every function body, or with `file` every call the file writes, each as the fact ops for it in source order |
 | `mentions(word)` | the adapter's own `mentions`, which in TypeScript looks for the word in the file's text. Python and Ruby leave it unset, and the module ops then say yes |
 
 `registeredFunction` with a global start and no method asks
@@ -398,7 +398,19 @@ call to a global is written with the global's own name, so a file
 whose text has none of them makes no such call, and listing the module
 body's calls states facts for every one of them. A method on a global
 can be called through a variable imported from another file, so that
-form is always read.
+form is always read. A start every member of which is an import or a
+construction from a module is read the same way: the file's text has
+to write one of the modules, so `react-dom` gates React's boot calls.
+Without the gate, reading every call of every file of a frontend stated
+facts in an order that changed what other packs found, since what the
+store answers about a parameter depends on which callers' facts it has
+already stated.
+
+`in: "file"` reads every call the file writes, the ones inside
+functions too, since most apps boot inside a function. Each adapter's
+walk skips the bodies it defers for the module body, a function in
+TypeScript and Python and a method, lambda or block in Ruby, and keeps
+them for `file`.
 
 A unit spec's `handedIn` lists the parameters the platform fills when
 it calls the unit, by position and the name a read chain asks for each

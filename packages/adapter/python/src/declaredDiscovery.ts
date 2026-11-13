@@ -26,6 +26,7 @@ import type { CodeUnitKind } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   CallOps,
+  CallScope,
   FactSource,
   ModuleOps,
   PackTally,
@@ -109,7 +110,7 @@ export function pythonModuleOps(
 ): ModuleOps {
   const source = pythonFactSource(db);
   return factModuleOps(file.file, source, {
-    calls: () => callsOutsideFunctions(file, source),
+    calls: (scope) => callsWritten(file, source, scope),
     classes: () => classesIn(file),
   });
 }
@@ -137,13 +138,15 @@ const DEFERRED_BODIES: ReadonlySet<string> = new Set([
   "lambda",
 ]);
 
-function callsOutsideFunctions(
+/** The calls the module body runs outside every function, or every call in the file for `file`. */
+function callsWritten(
   file: BoundPythonFile,
   source: FactSource,
+  scope: CallScope,
 ): CallOps[] {
   const calls: CallOps[] = [];
   const visit = (node: PyNode): void => {
-    if (DEFERRED_BODIES.has(node.type)) {
+    if (scope === "moduleBody" && DEFERRED_BODIES.has(node.type)) {
       return;
     }
     if (node.type === "call") {

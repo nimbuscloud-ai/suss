@@ -13,7 +13,11 @@ import { opsOverFacts } from "../resolve/opsOverFacts.js";
 import { functionNameOf, memberNameOf } from "../walk/propertyName.js";
 import { discoveredUnitOf } from "./shared.js";
 
-import type { DeclaredDiscoveryMatch, ModuleOps } from "@suss/extractor";
+import type {
+  CallScope,
+  DeclaredDiscoveryMatch,
+  ModuleOps,
+} from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
@@ -50,8 +54,8 @@ export function moduleOpsFor(
           const [first] = declarations;
           return first === undefined ? [] : [{ name, key: nodeId(first) }];
         }),
-      calls: () =>
-        callsOutsideFunctions(sourceFile).map((call) =>
+      calls: (scope) =>
+        callsWritten(sourceFile, scope).map((call) =>
           opsOverFacts(call, { resolution: store, originatesFrom }),
         ),
       classes: () =>
@@ -71,11 +75,14 @@ export function moduleOpsFor(
 
 type Called = Parameters<typeof opsOverFacts>[0];
 
-/** The calls the module body runs, outside every function, a call before the calls inside it. */
-function callsOutsideFunctions(sourceFile: SourceFile): Called[] {
+/**
+ * The calls the file writes, a call before the calls inside it: the
+ * module body's, outside every function, or every one for `file`.
+ */
+function callsWritten(sourceFile: SourceFile, scope: CallScope): Called[] {
   const calls: Called[] = [];
   sourceFile.forEachDescendant((node, traversal) => {
-    if (Node.isFunctionLikeDeclaration(node)) {
+    if (scope === "moduleBody" && Node.isFunctionLikeDeclaration(node)) {
       traversal.skip();
       return;
     }

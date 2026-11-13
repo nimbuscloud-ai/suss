@@ -667,6 +667,76 @@ describe("registeredFunction", () => {
     ).toEqual(expected);
   });
 
+  it("takes a registration inside a function too when the pattern reads the whole file, in TypeScript, Python and Ruby", async () => {
+    const anywhere: DeclaredDiscoveryPattern[] = REGISTERED.map((pattern) => ({
+      ...pattern,
+      match: { ...pattern.match, in: "file" },
+    })) as DeclaredDiscoveryPattern[];
+    const expected = [
+      "consumer queue function-call",
+      "handler fetch function-call",
+    ];
+    expect(
+      await typescriptUnits(
+        {
+          "/boot.ts": [
+            'import { hooks } from "workers";',
+            "function drain(batch: unknown) { return batch; }",
+            'hooks.register("queue", drain);',
+            "export function main() {",
+            '  hooks.register("fetch", (request: unknown) => request);',
+            "}",
+          ].join("\n"),
+        },
+        anywhere,
+      ),
+    ).toEqual(expected);
+    expect(
+      await pythonUnits(
+        "registered-anywhere-py",
+        {
+          "boot.py": [
+            "from workers import hooks",
+            "",
+            "def drain(batch):",
+            "    return batch",
+            "",
+            'hooks.register("queue", drain)',
+            "",
+            "def main():",
+            '    hooks.register("fetch", lambda request: request)',
+            "",
+          ].join("\n"),
+        },
+        anywhere,
+      ),
+    ).toEqual(expected);
+    expect(
+      await rubyUnits(
+        "registered-anywhere-rb",
+        {
+          "boot.rb": [
+            'Workers.register("queue", ->(batch) { batch })',
+            "",
+            "module Boot",
+            "  def self.main",
+            '    Workers.register("fetch", ->(request) { request })',
+            "  end",
+            "end",
+            "",
+          ].join("\n"),
+        },
+        anywhere.map((pattern) => ({
+          ...pattern,
+          match: {
+            ...pattern.match,
+            start: imported({ from: ["Workers"], named: ["*"] }),
+          },
+        })) as DeclaredDiscoveryPattern[],
+      ),
+    ).toEqual(expected);
+  });
+
   // Only TypeScript writes JSX, so only it hands a component over as an element.
   it("follows an element to the component its tag renders, in TypeScript", async () => {
     const booted: DeclaredDiscoveryPattern[] = [

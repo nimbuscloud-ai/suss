@@ -29,6 +29,7 @@ import type {
   MemberPick,
   ModuleOps,
   NamedExportMatch,
+  ReceiverOrigin,
   RegisteredFunctionMatch,
   SubclassOfMatch,
   UnitSpec,
@@ -321,7 +322,7 @@ function readRegistrations(
   if (!mayCallTheStart(match, module)) {
     return [];
   }
-  return module.calls().flatMap((call) => {
+  return module.calls(match.in ?? "moduleBody").flatMap((call) => {
     if (!registers(call, match)) {
       return [];
     }
@@ -346,16 +347,38 @@ function readRegistrations(
  * whose text has none of the paths makes no such call, and listing the
  * module body's calls would state facts for every one of them. A method
  * on a global can be called through a variable imported from another
- * file, so that form is always read.
+ * file, so that form is always read. A start every member of which is
+ * an import or a construction from a module is read only in a file
+ * whose text writes one of those modules.
  */
 function mayCallTheStart(
   match: RegisteredFunctionMatch,
   module: ModuleOps,
 ): boolean {
+  const modules = modulesWrittenFor(match.start);
+  if (modules !== null) {
+    return modules.some((one) => module.mentions(one));
+  }
   if (match.method !== undefined || match.start.origin !== "global") {
     return true;
   }
   return match.start.paths.some((path) => module.mentions(path));
+}
+
+/**
+ * The modules a file has to write for the start to be in it, or null
+ * when a member of the start can be reached without the file writing
+ * one, as a global can.
+ */
+function modulesWrittenFor(start: ReceiverOrigin): readonly string[] | null {
+  if (start.origin === "anyOf") {
+    const each = start.of.map(modulesWrittenFor);
+    return each.every((one): one is readonly string[] => one !== null)
+      ? each.flat()
+      : null;
+  }
+  const writes = start.origin === "imported" || start.origin === "constructed";
+  return writes && start.importedFrom.length > 0 ? start.importedFrom : null;
 }
 
 /** Whether the call is the registration: a method on the start, or the start called itself. */
