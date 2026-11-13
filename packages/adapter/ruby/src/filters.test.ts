@@ -129,6 +129,31 @@ end
     expect(filterCoversAction(filter, "index")).toBe(false);
   });
 
+  it("reads a constant list every time the class body uses it", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  OPEN = %i[logo]
+
+  before_action :require_login
+  before_action :require_admin, except: OPEN
+  skip_before_action :require_login, only: OPEN
+
+  def require_login
+  end
+
+  def require_admin
+  end
+end
+`);
+
+    const named = (name: string) =>
+      filters.find((filter) => filter.methodName === name) as never;
+    expect(filterCoversAction(named("require_admin"), "show")).toBe(true);
+    expect(filterCoversAction(named("require_admin"), "logo")).toBe(false);
+    expect(filterCoversAction(named("require_login"), "show")).toBe(true);
+    expect(filterCoversAction(named("require_login"), "logo")).toBe(false);
+  });
+
   it("leaves out the actions an except: keyword names", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController

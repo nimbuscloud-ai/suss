@@ -20,6 +20,7 @@ import {
   field,
   hashKeySymbolName,
   isRaiseCall,
+  NESTING_TYPES,
   numberLiteralValue,
   stringLiteralValue,
   symbolValue,
@@ -124,22 +125,28 @@ export function rubyLowering(options: LoweringOptions): Lowering<RbNode> {
   const { context, rows } = options;
   const readingMethods = readingMethodsOf(rows);
   const mutatedByRoot = new Map<number, Set<string>>();
+  const callable = (node: RbNode): RbNode | null => {
+    if (!isInlinableCall(node)) {
+      return null;
+    }
+    const resolved = context === null ? null : context.callable(node);
+    return resolved ?? sameFileCallable(node);
+  };
 
   return {
     idOf: (node) => node.id,
     expression: expressionOf,
-    statement: statementOf,
+    // A library's class macro reads what it is handed and leaves it as it
+    // was, so a list handed to one keeps its items for the next reader.
+    statement: (node) =>
+      isClassMacro(node) && callable(node) === null
+        ? OPAQUE
+        : statementOf(node),
     siteOf,
     functionOf,
     writtenTo: (node, site) =>
       context === null ? null : context.writtenTo(node, site),
-    callable: (node) => {
-      if (!isInlinableCall(node)) {
-        return null;
-      }
-      const resolved = context === null ? null : context.callable(node);
-      return resolved ?? sameFileCallable(node);
-    },
+    callable,
     mutatedInNestedFunction: (root, name) => {
       let mutated = mutatedByRoot.get(root.id);
       if (mutated === undefined) {
@@ -457,6 +464,22 @@ function isInlinableCall(call: RbNode): boolean {
     named(argumentList).every(
       (argument) => argument.type !== "hash_splat_argument",
     )
+  );
+}
+
+/**
+ * A call with no receiver and no block, written as a statement of a
+ * class or module body, such as `before_action :load, only: ACTIONS`.
+ * Ruby runs it once as the class loads.
+ */
+function isClassMacro(node: RbNode): boolean {
+  const body = node.parent;
+  return (
+    node.type === "call" &&
+    field(node, "receiver") === null &&
+    blockOf(node) === null &&
+    body?.type === "body_statement" &&
+    NESTING_TYPES.has(body.parent?.type ?? "")
   );
 }
 
@@ -908,7 +931,12 @@ function sameFileCallable(call: RbNode): RbNode | null {
   if (receiver !== null && receiver.type !== "self") {
     return null;
   }
-  return definitionNamed(method.text, call, receiver !== null);
+  // A class macro runs on the class itself, so it reaches `def self.name`.
+  return definitionNamed(
+    method.text,
+    call,
+    receiver !== null || isClassMacro(call),
+  );
 }
 
 function definitionNamed(

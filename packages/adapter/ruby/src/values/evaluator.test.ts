@@ -487,6 +487,35 @@ describe("records and sequences", () => {
     );
     expect(value).toMatchObject({ kind: "unbounded" });
   });
+
+  it("keeps a list a library's class macro is handed, and follows a macro the class defines", async () => {
+    const subjectInClass = async (lines: string[]) => {
+      const tree = await parseRuby(
+        ["class Orders", ...lines.map((line) => `  ${line}`), "end"].join("\n"),
+      );
+      const body = bodyStatements(tree.rootNode)[0];
+      return evaluatedValue(
+        subjectNodeIn(field(body as RbNode, "body") as RbNode),
+      );
+    };
+
+    const handed = await subjectInClass([
+      "OPEN = %i[logo]",
+      "before_action :require_admin, except: OPEN",
+      "subject = OPEN",
+    ]);
+    expect(handed).toMatchObject({ kind: "sequence" });
+
+    const added = await subjectInClass([
+      "OPEN = %i[logo]",
+      "def self.register(list)",
+      "  list << :favicon",
+      "end",
+      "register(OPEN)",
+      "subject = OPEN",
+    ]);
+    expect(added.kind === "sequence" ? added.items.length : 0).toBe(2);
+  });
 });
 
 describe("functions", () => {
