@@ -80,6 +80,28 @@ a helper that only sets the variable it is given, as
 `process.env[name] = value` does, either. A `??=`, `||=` or `+=` reads
 the variable before it sets it, so each of those is still a read.
 
+## Timers
+
+A call to `setTimeout` is the runtime's timer unless the program binds
+that name itself. A function the file declares under the name, or one it
+imports from a module, is that function and not a timer. A timer
+imported from `timers` or `node:timers` is Node's own under whatever name
+the file gives it, and the effect records the callee as the file writes
+it:
+
+```ts
+import { setTimeout as later } from "node:timers";
+
+later(() => flush(), 5); // a schedule effect whose `via` is `later`
+```
+
+`node:timers/promises` exports timers under the same names that take the
+delay first and return a promise. They hand no callback over, so the
+pack records nothing for them. Parentheses and a cast around the callee
+or the callback change nothing at run time, and the pack reads through
+them. `undefined` in the callback's place hands over no function, so the
+effect says the callback could not be read.
+
 ## `import.meta.env`
 
 Vite and Bun give a program its environment as `import.meta.env`, and
