@@ -16,7 +16,7 @@ export function OrderRow({ order, onDelete }: Props) {
 
 `@suss/framework-react` exports a `PatternPack`, which is data the adapter reads. It covers:
 
-- **Discovery** in three layers. The data-driven `namedExport(["default"])` pattern covers default exports, including anonymous ones. A declared `namedExport` pattern covers every other export that is a component, and a `discoverUnits` callback finds the component an app boots with.
+- **Discovery** in three layers. The data-driven `namedExport(["default"])` pattern covers default exports, including anonymous ones. A declared `namedExport` pattern covers every other export that is a component, and four declared `registeredFunction` patterns find the component an app boots with.
 - **Terminals**: a JSX return becomes a `render` output that records the root element or component. Any other return becomes a `return` terminal (`return null` is how a component renders nothing). A `throw` is recorded so checks across the boundary have something to go on, since an error boundary further up the tree handles it.
 - **Input mapping**: `componentProps` on the first positional parameter. A destructured parameter gives one Input per prop name. A parameter that is not destructured gives a single Input with role `props`.
 - **Sub-units**: event handlers and `useEffect` bodies, described below.
@@ -29,7 +29,7 @@ The declared `namedExport` pattern, which `@suss/recognize` reads, takes every e
 
 The pack declares `useCallback`, `memo` and `forwardRef` as transparent wrappers, since each hands back the function it was given. An export written as `memo(Card)` is then the `Card` function, and a call through a hook's `useCallback` result runs the callback. A cast around the export or around the returned JSX is read through, so `forwardRef(Picker) as <T>(props: Props<T>) => JSX.Element`, which is how a generic component keeps its type parameter, is the `Picker` function. An export a project factory makes, such as `export const Label = styledDiv("label")`, is the component the factory gives back.
 
-The `discoverUnits` callback reads the calls React provides for booting an app, wherever the file writes them, inside a function too:
+The four `registeredFunction` patterns read the calls React provides for booting an app, wherever the file writes them, inside a function too, with `in: "file"`:
 
 - `.render(<App />)` on a root `createRoot` or `hydrateRoot` made, written in place or kept in a variable, and imported by name or read off the default or namespace import of `react-dom/client` or `react-dom`.
 - `hydrateRoot(document, <App />)`, which takes the element second.
@@ -50,7 +50,7 @@ Class components, defaults wrapped in a HOC, React Server Component specifics, a
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor`, for the `PatternPack` type, on `@suss/recognize`, which reads its declared pattern and compiles its effects chain, and on `@suss/adapter-typescript`, since the boot walk and the handler walk are written against that adapter's discovery and sub-unit contexts. `ts-morph` is a peer dependency, because the boot walk reads the AST directly.
+The pack depends on `@suss/extractor`, for the `PatternPack` type, on `@suss/recognize`, which reads its declared patterns and compiles its effects chain, and on `@suss/adapter-typescript`, since the handler walk is written against that adapter's sub-unit context. `ts-morph` is a peer dependency, because the handler walk is handed the adapter's nodes.
 
 ## Coverage
 

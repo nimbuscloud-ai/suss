@@ -14,6 +14,7 @@
 //   2. A declared `namedExport` pattern for every other export with a
 //      capitalised name whose function returns JSX, outside story and
 //      test files.
+//   3. Four `registeredFunction` patterns for the root an app boots.
 //
 // Deferred: class components, HOC-wrapped defaults, React Server
 // Component specifics, custom-hook-as-code-unit discovery (hooks are
@@ -30,7 +31,6 @@ import {
   subUnitsOf,
 } from "@suss/recognize";
 
-import { reactRootComponents } from "./rootDiscovery.js";
 import { reactEventHandlers } from "./subUnits.js";
 
 import type { DeclaredDiscoveryPattern, PatternPack } from "@suss/extractor";
@@ -40,7 +40,7 @@ import type { PackDeclaration } from "@suss/ir-core";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "2";
+const VERSION = "3";
 
 const PASS_THROUGH = ["useCallback", "memo", "forwardRef"];
 
@@ -65,6 +65,74 @@ const COMPONENT_EXPORTS: DeclaredDiscoveryPattern = {
     bodyEndsIn: "element",
   },
 };
+
+const DOM = ["react-dom/client", "react-dom"];
+
+/**
+ * The component an app boots with, `createRoot(el).render(<App />)` and
+ * React 17's `ReactDOM.render(<App />, el)`. It is often exported by
+ * nothing, and most apps boot inside a function, so every call in the
+ * file is read.
+ */
+const BOOT_RENDER: DeclaredDiscoveryPattern = {
+  kind: "component",
+  match: {
+    type: "registeredFunction",
+    start: anyOf(
+      constructedFrom({ from: DOM, named: ["createRoot", "hydrateRoot"] }),
+      imported({ from: DOM, named: ["default", "*"] }),
+    ),
+    method: "render",
+    handler: { at: 0, through: "element" },
+    in: "file",
+  },
+};
+
+/** `hydrateRoot(document, <App />)` hands the element over second. */
+const BOOT_HYDRATE_ROOT: DeclaredDiscoveryPattern = {
+  kind: "component",
+  match: {
+    type: "registeredFunction",
+    start: constructedFrom({ from: DOM, named: ["hydrateRoot"] }),
+    handler: { at: 1, through: "element" },
+    in: "file",
+  },
+};
+
+/** React 17's server-rendered boot, `ReactDOM.hydrate(<App />, el)`. */
+const BOOT_LEGACY_HYDRATE: DeclaredDiscoveryPattern = {
+  kind: "component",
+  match: {
+    type: "registeredFunction",
+    start: imported({ from: ["react-dom"], named: ["default", "*"] }),
+    method: "hydrate",
+    handler: { at: 0, through: "element" },
+    in: "file",
+  },
+};
+
+/** The legacy calls imported by name: `import { render } from "react-dom"; render(<App />, el)`. */
+const BOOT_LEGACY_NAMED: DeclaredDiscoveryPattern = {
+  kind: "component",
+  match: {
+    type: "registeredFunction",
+    start: constructedFrom({
+      from: ["react-dom"],
+      named: ["render", "hydrate"],
+    }),
+    handler: { at: 0, through: "element" },
+    in: "file",
+  },
+};
+
+/** The patterns `@suss/recognize` reads, in the order their units are claimed after the default export's. */
+const DECLARED_DISCOVERY = [
+  COMPONENT_EXPORTS,
+  BOOT_RENDER,
+  BOOT_HYDRATE_ROOT,
+  BOOT_LEGACY_HYDRATE,
+  BOOT_LEGACY_NAMED,
+];
 
 /** React's hooks, imported by name or read off the default or namespace import. */
 const HOOKS = anyOf(
@@ -122,7 +190,7 @@ export function reactFramework(): PatternPack {
         // every file is better than missing those files.
         requiresImport: [],
       },
-      COMPONENT_EXPORTS,
+      ...DECLARED_DISCOVERY,
     ],
 
     terminals: [
@@ -176,11 +244,10 @@ export function reactFramework(): PatternPack {
       ...reactEventHandlers(parent, ctx),
       ...EFFECT_UNITS(parent, ctx),
     ],
-    discoverUnits: reactRootComponents,
 
     declarations: {
       declarations: [
-        describeDiscovery(COMPONENT_EXPORTS),
+        ...DECLARED_DISCOVERY.map(describeDiscovery),
         ...declarationsIn([EFFECTS]).declarations,
       ],
     },
