@@ -11,7 +11,7 @@ import {
   type ObjectLiteralExpression,
 } from "ts-morph";
 
-import { constantOf } from "@suss/values";
+import { settledConstantOf } from "@suss/values";
 
 import { extractShape, extractShapeWithArguments } from "../shapes/shapes.js";
 import { encodedIn } from "../values/encoded.js";
@@ -164,7 +164,7 @@ function statusOf(
   value: Expression,
   ctx: ExtractionContext,
 ): RawTerminal["statusCode"] {
-  const status = constantOf(evaluatedValue(value, ctx.resolution));
+  const status = settledConstantOf(evaluatedValue(value, ctx.resolution));
   if (typeof status === "number") {
     return { type: "literal", value: status };
   }

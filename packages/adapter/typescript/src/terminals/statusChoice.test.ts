@@ -227,3 +227,28 @@ describe("a status written as a choice", () => {
     expect(outcomes).toEqual(["400 under 1", "202 under 2", "200 under 2"]);
   });
 });
+
+describe("a status written as a fallback", () => {
+  it("claims the fallback only when the value before it reads as absent", async () => {
+    const outcomes = await outcomesOf(
+      [
+        "  if (req.query.a) {",
+        "    res.status(req.query.code ?? 500).json({ error: 1 });",
+        "    return;",
+        "  }",
+        "  if (req.query.b) {",
+        "    const code = Number(req.query.code) || 503;",
+        "    res.status(code).json({ error: 2 });",
+        "    return;",
+        "  }",
+        "  res.status(undefined ?? 404).json({ ok: true });",
+      ].join("\n"),
+    );
+
+    expect(outcomes).toEqual([
+      "unresolved under 1",
+      "unresolved under 2",
+      "404 under 2",
+    ]);
+  });
+});

@@ -906,6 +906,16 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     expect(unreadTextOf(unit)).toContain("cannot resolve to a number");
   });
 
+  it("claims no status for a returned `x or n` when x does not read", async () => {
+    const units = await unitsOf(
+      resourceReturning(['return {"a": 1}, some_status() or "201 CREATED"']),
+      [flaskRestxWithReturnStatus],
+    );
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toBeNull();
+  });
+
   it("claims no status for the one branch whose returned status is not a literal", async () => {
     const units = await unitsOf(
       resourceReturning([
@@ -1257,6 +1267,24 @@ describe("discoverUnits: a raise the pack says the library responds with", () =>
       ["404", ["comparison"]],
       ["200", ["!comparison"]],
     ]);
+  });
+
+  it("claims a status written `x or n` only when x reads as absent", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException(status_code=lookup_status(item_id) or 500)",
+        "if item_id < 0:",
+        "    raise HTTPException(status_code=None or 404)",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(
+      outcomesOf(units.find((u) => u.identity.name === "show"))?.map(
+        ([status]) => status,
+      ),
+    ).toEqual(["null", "404", "200"]);
   });
 
   it("responds with the route's status on a path that runs off the end of the body", async () => {
