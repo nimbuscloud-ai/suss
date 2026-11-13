@@ -276,10 +276,37 @@ export function bodyStatementsRun(
     if (declaredBlockAt(statement, isModule, blocks) === null) {
       return [statement];
     }
-    const block = field(statement, "block");
-    const inner = block === null ? null : field(block, "body");
+    const inner = blockBodyOf(statement);
     return inner === null ? [] : bodyStatementsRun(inner, isModule, blocks);
   });
+}
+
+/**
+ * The declared body-block calls a class or module body writes, such as
+ * `included do`, outermost first: the calls `bodyStatementsRun` reads
+ * the statements of in place of the call itself.
+ */
+export function bodyBlockCalls(
+  body: RbNode,
+  isModule: boolean,
+  blocks: BodyBlocks,
+): RbNode[] {
+  return bodyStatements(body).flatMap((statement) => {
+    if (declaredBlockAt(statement, isModule, blocks) === null) {
+      return [];
+    }
+    const inner = blockBodyOf(statement);
+    return [
+      statement,
+      ...(inner === null ? [] : bodyBlockCalls(inner, isModule, blocks)),
+    ];
+  });
+}
+
+/** The statements of the block a call is written with, or null when it has none. */
+function blockBodyOf(call: RbNode): RbNode | null {
+  const block = field(call, "block");
+  return block === null ? null : field(block, "body");
 }
 
 /** A class method a scope call defines: its name, and the lambda that runs. */
