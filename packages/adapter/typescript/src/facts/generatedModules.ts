@@ -155,8 +155,10 @@ export const NO_GENERATOR = new GeneratedModules();
 
 /**
  * Whether the package declared what this file declares: the file is in
- * the package's folder under `node_modules`, or in a directory its
- * generator wrote into the project.
+ * the package's folder under `node_modules`, in the folder DefinitelyTyped
+ * publishes its types to, or in a directory its generator wrote into the
+ * project. A package that ships no types of its own, such as
+ * `aws-lambda`, is described by `@types/aws-lambda`.
  */
 export function declaredByPackage(
   filePath: string,
@@ -165,8 +167,16 @@ export function declaredByPackage(
 ): boolean {
   return (
     filePath.includes(`/node_modules/${module}/`) ||
+    filePath.includes(`/node_modules/${typesPackageOf(module)}/`) ||
     generated.wroteFor(filePath, module)
   );
+}
+
+/** Where DefinitelyTyped publishes a module's types: `@types/foo` for `foo`, `@types/scope__name` for `@scope/name`. */
+function typesPackageOf(module: string): string {
+  return module.startsWith("@")
+    ? `@types/${module.slice(1).replace("/", "__")}`
+    : `@types/${module}`;
 }
 
 /**
