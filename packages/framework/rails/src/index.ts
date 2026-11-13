@@ -304,7 +304,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
 
   return {
     name: "rails",
-    version: "1",
+    version: "2",
     protocol: "http",
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,
