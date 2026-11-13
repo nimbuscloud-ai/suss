@@ -182,6 +182,10 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/aws-sqs/tsconfig.json"),
     ...packs("aws-lambda", "aws-sqs"),
   ]),
+  fixture("aws-sqs-consumers", [
+    ...project("fixtures/aws-sqs-consumers/tsconfig.json"),
+    ...packs("aws-lambda", "aws-sqs"),
+  ]),
   fixture("aws-stub-producer", [
     ...project("fixtures/aws-stub-producer/tsconfig.json"),
     ...packs("aws-lambda", "aws-sqs", "aws-eventbridge"),
