@@ -32,8 +32,5 @@
   "createEnv": "@t3-oss/env-core: the call a program declares its environment with",
   "runtimeEnv": "@t3-oss/env-core: the option the environment object goes under",
   "server": "@t3-oss/env-core: the schema section for server-side variables",
-  "shared": "@t3-oss/env-core: the schema section both sides read",
-  "properties": "suss: a schema reader finds several literals under named keys",
-  "builtAt": "suss: a schema reader finds an argument that is a builder call",
-  "builtAtReceiver": "suss: a schema reader finds a receiver that is a builder call"
+  "shared": "@t3-oss/env-core: the schema section both sides read"
 }
