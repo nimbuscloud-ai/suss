@@ -186,7 +186,7 @@ end
       { file: "lib/flags.rb", above: "  def self.on?" },
     ],
     unit: "notify_account",
-    settled: "lib/flags.rb::Flags.on?#null@2",
+    settled: "lib/flags.rb::Flags.on?@2",
   },
 };
 

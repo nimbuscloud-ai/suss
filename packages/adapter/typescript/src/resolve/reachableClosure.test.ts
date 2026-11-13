@@ -320,3 +320,30 @@ describe("a call nothing declares", () => {
     ]);
   });
 });
+
+describe("two methods reached in one file under one name", () => {
+  it("numbers them by their order in the file, since their boundary has no key", async () => {
+    const summaries = await extract({
+      "/repos.ts": `
+        export class Orders {
+          list() { return "orders"; }
+        }
+        export class Invoices {
+          list() { return "invoices"; }
+        }
+      `,
+      "/entry.ts": `
+        import { Invoices, Orders } from "./repos";
+        export function run() {
+          new Invoices().list();
+          return new Orders().list();
+        }
+      `,
+    });
+
+    expect(linksOnRun(summaries)).toEqual([
+      ["new Invoices().list", "/repos.ts::list@2"],
+      ["new Orders().list", "/repos.ts::list"],
+    ]);
+  });
+});

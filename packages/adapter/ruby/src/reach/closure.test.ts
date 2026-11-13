@@ -182,6 +182,33 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
   });
 
+  it("numbers a class method and an instance method of one name by their order in the file, since their boundary has no key", async () => {
+    writeQueryType("orders", ["OrderService.call(current_user)"]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def self.call(user)",
+      "    new.call(user)",
+      "  end",
+      "",
+      "  def call(user)",
+      "    user.orders",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const onClass = "app/services/order_service.rb::OrderService.call";
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([
+      ["OrderService.call", onClass],
+    ]);
+    const classMethod = summaries.find(
+      (summary) => summary.identity.id === onClass,
+    );
+    expect(classMethod === undefined ? [] : calls(classMethod)).toEqual([
+      ["new.call", `${onClass}@2`],
+    ]);
+  });
+
   it("follows a class method called through a local the constant was written to", async () => {
     writeQueryType("orders", [
       "service = OrderService",
