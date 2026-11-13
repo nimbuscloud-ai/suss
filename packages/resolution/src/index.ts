@@ -40,6 +40,7 @@ export {
   type StoredWalkRecord,
   walkRecordsByFile,
 } from "./entryReuse.js";
+export { environmentsReaching } from "./environmentReach.js";
 export { exitCodeFunctions } from "./exitCode.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export { importedFilesByFile } from "./fileImports.js";
@@ -122,6 +123,7 @@ export {
 export {
   CALLS_RUN_QUESTION,
   callsRun,
+  inSourceOrder,
   readCallsRun,
 } from "./runsCall.js";
 export { explainResolvedKey, proofRules } from "./session.js";

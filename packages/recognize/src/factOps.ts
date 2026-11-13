@@ -19,15 +19,17 @@ import {
   classMemberName,
   classMemberOf,
   fileOfKey,
+  inSourceOrder,
   spanOfKey,
 } from "@suss/resolution";
 
-import { factReadOps } from "./factReadOps.js";
+import { factReadOps, handedInAs } from "./factReadOps.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
   ByOrigin,
   CallOps,
+  CallsAndOptions,
   ClassValueOps,
   ConstructedFrom,
   DeclaredBy,
@@ -49,6 +51,7 @@ import type {
   ReadOff,
   ReceiverOrigin,
   ReturnedBy,
+  RuntimeObject,
   StatedSlot,
   Typed,
   UnsettledName,
@@ -522,6 +525,30 @@ class FactCall implements CallOps {
     );
     const [one] = names;
     return names.size === 1 && one !== undefined ? one : null;
+  }
+
+  calleeImport(modules: readonly string[]): string | null {
+    const imported =
+      this.source.importedUnder === undefined
+        ? importedUnder(this.calleeKey, modules, this.source.db)
+        : this.source.importedUnder(this.calleeKey, modules);
+    const names = new Set(imported.filter((name) => !WHOLE_MODULE.has(name)));
+    const [one] = names;
+    return names.size === 1 && one !== undefined ? one : null;
+  }
+
+  callsInCallee(): readonly CallOps[] {
+    const adapters = this.source.callsInCallee;
+    if (adapters !== undefined) {
+      return adapters(this.key);
+    }
+    const func = functionBehind(this.calleeKey, this.source);
+    return func === null
+      ? []
+      : callsWrittenIn(func, this.source).flatMap((call) => {
+          const ops = factCallOps(call, this.source);
+          return ops === null ? [] : [ops];
+        });
   }
 
   private madeExpression(reading: "asWritten" | "throughProjectCalls"): string {
@@ -1008,6 +1035,20 @@ class FactValue implements ValueOps {
     return cls === null ? null : new FactClass(cls, this.facts);
   }
 
+  /** Asked of the value as written here, as a read site's object is. */
+  runtimePath(object: RuntimeObject): string | undefined {
+    const adapters = this.facts.runtimePathOf;
+    if (adapters !== undefined) {
+      return adapters(this.key, object);
+    }
+    return RUNTIME_PATH[object.origin](this.key, object as never, this.facts);
+  }
+
+  /** Asked of the value as written here, so a name for a schema says nothing. */
+  mentions(words: CallsAndOptions): boolean {
+    return mentionsWords(this.key, words, this.facts);
+  }
+
   private holeKeys(): string[] {
     return templatePieces(this.shaped(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],
@@ -1167,6 +1208,134 @@ export function functionBehind(key: string, source: FactSource): string | null {
 
 function isFunction(key: string, source: FactSource): boolean {
   return source.db.lookup("func", 0, key).length > 0;
+}
+
+/**
+ * The path a value is among a runtime object's, for an adapter that does
+ * not work it out itself: the one it is spelled as, or the first when
+ * the rules followed one of them into it.
+ */
+const RUNTIME_PATH: {
+  readonly [K in RuntimeObject["origin"]]: (
+    key: string,
+    object: Extract<RuntimeObject, { origin: K }>,
+    facts: FactSource,
+  ) => string | undefined;
+} = {
+  global: (key, object, facts) => {
+    const spelled = object.paths.find(
+      (path) => facts.spellsGlobal?.(key, path) === true,
+    );
+    if (spelled !== undefined) {
+      return spelled;
+    }
+    const reached = (facts.globalsReaching?.(key) ?? []).some((path) =>
+      object.paths.includes(path),
+    );
+    return reached ? object.paths[0] : undefined;
+  },
+  handedIn: (key, object, facts) =>
+    handedInAs(key, object.name, facts) ? object.name : undefined,
+};
+
+/**
+ * The calls written in a function, the ones in every function inside it
+ * included, in source order: `makesCall` closed over `containsFn`, the
+ * way the `callInBody` rule reads them.
+ */
+function callsWrittenIn(func: string, source: FactSource): string[] {
+  const calls: string[] = [];
+  const seen = new Set<string>();
+  const visit = (fn: string): void => {
+    if (seen.has(fn)) {
+      return;
+    }
+    seen.add(fn);
+    source.read(fn);
+    for (const row of source.db.lookup("makesCall", 0, fn)) {
+      calls.push(String(row[1]));
+    }
+    for (const row of source.db.lookup("containsFn", 0, fn)) {
+      visit(String(row[1]));
+    }
+  };
+  visit(func);
+  return inSourceOrder(calls);
+}
+
+/**
+ * Whether a value is written with a call to one of the words' calls, or
+ * sets one of their options. The walk goes from a call to its callee and
+ * from a member read to its object, which is the receiver, and into
+ * arguments, entries and the branches of a fallback or a conditional. A
+ * method's name is the member read's, and a bare callee's is the export
+ * its import binds. A function written in the value runs later, so the
+ * walk does not go into one.
+ */
+function mentionsWords(
+  key: string,
+  words: CallsAndOptions,
+  source: FactSource,
+): boolean {
+  const { db } = source;
+  const seen = new Set<string>();
+  const pending = [key];
+  for (let at = pending.pop(); at !== undefined; at = pending.pop()) {
+    if (seen.has(at)) {
+      continue;
+    }
+    seen.add(at);
+    source.read(at);
+    if (isFunction(at, source)) {
+      continue;
+    }
+    for (const row of db.lookup("call", 0, at)) {
+      const callee = String(row[1]);
+      if (calleeNames(callee, source).some((n) => words.calls.includes(n))) {
+        return true;
+      }
+      pending.push(callee);
+    }
+    for (const relation of NAMED_ENTRIES) {
+      for (const row of db.lookup(relation, 0, at)) {
+        if (words.options.includes(String(row[1]))) {
+          return true;
+        }
+        pending.push(String(row[2]));
+      }
+    }
+    pending.push(
+      ...MENTION_STEPS.flatMap(([relation, column]) =>
+        db.lookup(relation, 0, at).map((row) => String(row[column])),
+      ),
+    );
+  }
+  return false;
+}
+
+/**
+ * The relations whose rows state a value under a name: an object's
+ * entry, and an argument passed under a keyword, which is how Python and
+ * Ruby set an option.
+ */
+const NAMED_ENTRIES = ["holdsProperty", "callKeywordArg"] as const;
+
+/** The other relations `mentionsWords` follows from a value, and the column each one leads on to. */
+const MENTION_STEPS: readonly (readonly [string, number])[] = [
+  ["readsProperty", 1],
+  ["callArg", 2],
+  ["fallbackBranch", 1],
+  ["conditionalBranch", 1],
+];
+
+/** The names a callee is called by: a member read's name, or the export a bare name's import binds. */
+function calleeNames(callee: string, source: FactSource): string[] {
+  source.read(callee);
+  const read = memberRead(callee, source);
+  if (read !== null) {
+    return [read.name];
+  }
+  return importRowsOf(callee, source.db).map((row) => String(row[2]));
 }
 
 /** The key a member is stated under: a class's own member is spelled apart from an instance's. */
@@ -2011,6 +2180,28 @@ function namedAs(
     (importBinds(written, source) &&
       source.importedAs(written, module).some((name) => asked.includes(name)))
   );
+}
+
+/** The names the name at `key` was imported under from one of the modules. */
+function importedUnder(
+  key: string,
+  modules: readonly string[],
+  db: FactSource["db"],
+): string[] {
+  return importRowsOf(key, db)
+    .filter((row) => modules.includes(String(row[1])))
+    .map((row) => String(row[2]));
+}
+
+/** The `imports` rows of the name at `key`, or of what it binds to, as `boundByImport` reads them. */
+function importRowsOf(
+  key: string,
+  db: FactSource["db"],
+): readonly (readonly unknown[])[] {
+  return [
+    key,
+    ...db.lookup("binds", 0, key).map((row) => String(row[1])),
+  ].flatMap((one) => db.lookup("imports", 0, one));
 }
 
 /**

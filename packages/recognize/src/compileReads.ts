@@ -12,6 +12,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
+import { compileSchemaReads } from "./compileSchemaReads.js";
 import { opsIn, readIn } from "./ops.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -27,6 +28,7 @@ import type {
   GettersLink,
   Link,
   MethodMeaning,
+  MethodsLink,
   OffLink,
   RuntimeReadEnding,
   WriteMeaning,
@@ -41,7 +43,7 @@ import type {
 } from "./ops.js";
 
 /** A read chain's links, picked out once when it compiles. */
-interface Reading {
+export interface Reading {
   readonly object: RuntimeObject;
   readonly paths: readonly string[];
   readonly entries: EntriesLink | null;
@@ -57,6 +59,11 @@ export function compileReads(
   chain: Chain<MethodMeaning>,
   recognition: string,
 ): AccessRecognizer {
+  // A chain that lists the calls that parse a schema starts at a call.
+  const methods = linkIn<MethodsLink<MethodMeaning>>(chain.links, "methods");
+  if (methods !== null) {
+    return compileSchemaReads(chain, methods, recognition);
+  }
   const reading = readingOf(chain, recognition);
   return (_access: unknown, ctx: unknown): Effect[] | null => {
     const read = readIn(ctx);
@@ -75,7 +82,10 @@ export function compileReads(
   };
 }
 
-function readingOf(chain: Chain<MethodMeaning>, recognition: string): Reading {
+export function readingOf(
+  chain: Chain<MethodMeaning>,
+  recognition: string,
+): Reading {
   const off = linkIn<OffLink>(chain.links, "off");
   if (off === null) {
     throw new Error("a read chain states the object its reads are off");
@@ -92,7 +102,7 @@ function readingOf(chain: Chain<MethodMeaning>, recognition: string): Reading {
   };
 }
 
-function linkIn<T extends Link<MethodMeaning>>(
+export function linkIn<T extends Link<MethodMeaning>>(
   links: readonly Link<MethodMeaning>[],
   asks: T["asks"],
 ): T | null {
@@ -272,7 +282,7 @@ function stateChange(variable: string, assigned: ValueOps): Effect {
  * meaning needs, and a read through a helper or a getter says up front
  * what it worked out at the call instead.
  */
-interface ReadFacts {
+export interface ReadFacts {
   readonly entry: string | null;
   readonly reading: Reading;
   /** The read's own site, or the call a helper or getter read is reported at. */
@@ -335,7 +345,7 @@ function entryEffect(meaning: EntryMeaning, facts: ReadFacts): Effect[] {
  * A config read, named after its entry. One that copes with a missing
  * value records the value it falls back to, when that settles to one.
  */
-function configRead(
+export function configRead(
   meaning: Extract<EntryMeaning, { reads: "config" }>,
   facts: ReadFacts,
 ): Effect {

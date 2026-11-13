@@ -419,6 +419,27 @@ export interface ValueOps {
    * or a helper that builds it elsewhere, is not entered.
    */
   readsOff?(object: ValueOps): readonly string[];
+  /**
+   * The path among the runtime object's that this value is: the one it
+   * is spelled as, or the object's first path when the rules followed
+   * the object into the value, as they do into a parameter that defaults
+   * to `process.env`. Undefined when the value is not the object.
+   */
+  runtimePath?(object: RuntimeObject): string | undefined;
+  /**
+   * Whether the value is written with a call to one of `calls` or sets
+   * one of `options`: `z.string().default(8080)` calls `default`, and
+   * `port({ default: 9100 })` sets it. The value's receivers, arguments,
+   * entries and fallback branches count. A function written in the value
+   * runs later, so nothing inside it does.
+   */
+  mentions?(words: CallsAndOptions): boolean;
+}
+
+/** The method names and option keys `ValueOps.mentions` looks for. */
+export interface CallsAndOptions {
+  readonly calls: readonly string[];
+  readonly options: readonly string[];
 }
 
 /**
@@ -686,6 +707,19 @@ export interface CallOps {
    */
   calleeImportedAs?(modules: readonly string[]): string | null;
   /**
+   * The one export of these modules that the file's own import statement
+   * binds the callee to: `cleanEnv` for `load(...)` after `import {
+   * cleanEnv as load } from "envalid"`. It reads the import and nothing
+   * past it, so a project module that re-exports the name gives null,
+   * and the store is asked nothing.
+   */
+  calleeImport?(modules: readonly string[]): string | null;
+  /**
+   * The calls written in the project function the call reaches, nested
+   * functions included, in source order, or none for any other callee.
+   */
+  callsInCallee?(): readonly CallOps[];
+  /**
    * Whether the text of the file the call is in contains the word, which
    * asks nothing of the store. Undefined means the adapter cannot say.
    */
@@ -838,6 +872,11 @@ export interface ReadOps {
    * state a call's facts to answer it.
    */
   keysSuppliedTo(object: RuntimeObject): readonly SuppliedKey[] | null;
+  /**
+   * The call the site is, or null at a property read. A chain asks its
+   * name here first, since building a call's ops can state its facts.
+   */
+  call?(): CallOps | null;
 }
 
 /**
@@ -1069,6 +1108,21 @@ export interface FactSource {
     call: string,
     object: RuntimeObject,
   ): readonly KeySupplied[] | null;
+  /**
+   * The ops for the call at the key, for an adapter that reads a call's
+   * name without stating its facts. Unset uses the ops over the facts.
+   */
+  callAt?(key: string): CallOps | null;
+  /** The calls the callee of the call at the key writes, worked out the adapter's own way. Unset reads them off the facts. */
+  callsInCallee?(call: string): readonly CallOps[];
+  /** The path `ValueOps.runtimePath` gives for the value at the key, worked out the adapter's own way. */
+  runtimePathOf?(key: string, object: RuntimeObject): string | undefined;
+  /**
+   * The exports of the modules that the file's own import statements bind
+   * the name at the key to, for an adapter that reads them off the
+   * statement. Unset reads the `imports` rows.
+   */
+  importedUnder?(key: string, modules: readonly string[]): readonly string[];
 }
 
 /** One argument that becomes a read's key, as a fact source states it. */
