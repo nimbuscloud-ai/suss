@@ -483,6 +483,14 @@ describe("reactFramework: integration", () => {
     expect(propDelegated).toHaveLength(0);
   });
 
+  it("gives a handler memoized with useCallback, and one written in parentheses, a unit of its own", () => {
+    const handlerNames = summaries
+      .filter((s) => s.location.file.match(/(saveBar|toast)\.tsx$/) !== null)
+      .filter((s) => s.kind === "handler")
+      .map((s) => s.identity.name);
+    expect(handlerNames).toEqual(["SaveBar.save", "Toast.button.onClick"]);
+  });
+
   // -------------------------------------------------------------------
   // Phase 1.7: useEffect bodies as code units
   // -------------------------------------------------------------------
@@ -713,6 +721,44 @@ async function summariesOf(
   });
   return await adapter.extractAll();
 }
+
+describe("reactFramework, a handler handed to an element by name", () => {
+  it("takes the function useCallback was handed, and the render no longer reads its calls", async () => {
+    const summaries = await summariesOf({
+      "/src/save.tsx": `
+        import { useCallback } from "react";
+        export function SaveBar({ onSave }: { onSave: () => void }) {
+          const save = useCallback(() => onSave(), [onSave]);
+          return <button onClick={save}>Save</button>;
+        }
+      `,
+    });
+    const calls = (name: string) =>
+      (summaries.find((s) => s.identity.name === name)?.transitions ?? [])
+        .flatMap((transition) => transition.effects)
+        .flatMap((effect) =>
+          effect.type === "invocation" ? [effect.callee] : [],
+        );
+
+    expect(calls("SaveBar.save")).toEqual(["onSave"]);
+    expect(calls("SaveBar")).not.toContain("onSave");
+  });
+
+  it("leaves out a function declared outside the component and a prop name with a non-ASCII capital", async () => {
+    const summaries = await summariesOf({
+      "/src/panel.tsx": `
+        function outside() {}
+        export function Panel() {
+          return <div onClick={outside} onÉvent={() => outside()} />;
+        }
+      `,
+    });
+
+    expect(
+      summaries.filter((s) => s.kind === "handler").map((s) => s.identity.name),
+    ).toEqual([]);
+  });
+});
 
 describe("reactFramework, the props a component's handlers and effects use", () => {
   it("records them on the handler's and the effect's own summaries", async () => {

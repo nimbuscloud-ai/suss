@@ -36,19 +36,11 @@ export function reactEventHandlers(
 }
 
 /**
- * `on` followed by an uppercase letter covers DOM events and callback
- * props such as `onDelete`, with no list of DOM event names to maintain.
+ * `on` followed by an uppercase ASCII letter covers DOM events and
+ * callback props such as `onDelete`, with no list of DOM event names to
+ * maintain.
  */
-function isEventHandlerPropName(name: string): boolean {
-  if (name.length < 3) {
-    return false;
-  }
-  if (name[0] !== "o" || name[1] !== "n") {
-    return false;
-  }
-  const third = name[2];
-  return third === third.toUpperCase() && third !== third.toLowerCase();
-}
+const EVENT_HANDLER_PROP = /^on[A-Z]/;
 
 interface HandlerRaw {
   func: FunctionRoot;
@@ -65,7 +57,7 @@ function synthesizeEventHandlers(
   const raw: HandlerRaw[] = [];
 
   for (const attr of ctx.findJsxAttributes(parentFunc)) {
-    if (!isEventHandlerPropName(attr.name)) {
+    if (!EVENT_HANDLER_PROP.test(attr.name)) {
       continue;
     }
     const resolved = ctx.resolveAttributeValueFunction(attr, parentFunc);

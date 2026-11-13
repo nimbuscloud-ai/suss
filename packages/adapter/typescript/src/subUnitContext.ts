@@ -23,8 +23,11 @@ import {
   SyntaxKind,
 } from "ts-morph";
 
+import { factValueOps } from "@suss/recognize/ops";
+
 import { importedReferenceSpellings } from "./discovery/resolveImport.js";
-import { resolveDecl } from "./resolve/functionBehind.js";
+import { ResolutionStore } from "./facts/store.js";
+import { factSourceFor, statedFactKey } from "./resolve/factSource.js";
 import { opsOverFacts } from "./resolve/opsOverFacts.js";
 import {
   callsInUnitBody,
@@ -35,12 +38,12 @@ import { forEachDescendantOfKinds } from "./walk/rawDescent.js";
 import { peelValue } from "./walk/unwrap.js";
 
 import type {
+  AstCapableValueOps,
   CallOps,
   DiscoveredSubUnitParent,
   SubUnitOpsCarrier,
 } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
-import type { ResolutionStore } from "./facts/store.js";
 
 /**
  * The context the TypeScript adapter passes to a pack's `subUnits`
@@ -134,10 +137,13 @@ export interface TsJsxAttributeLocation {
 export function createTsSubUnitContext(
   resolution?: ResolutionStore,
 ): TsSubUnitContext {
+  // A bare context gets a store of its own to read a handler's name over.
+  const store = resolution ?? new ResolutionStore();
   return {
     findJsxAttributes,
     findCallExpressionsByName,
-    resolveAttributeValueFunction,
+    resolveAttributeValueFunction: (attr, parent) =>
+      resolveAttributeValueFunction(attr, parent, store),
     getCallArgumentFunction,
     getCallArgument,
     readArrayLiteralText,
@@ -235,34 +241,39 @@ function findCallExpressionsByName(
 function resolveAttributeValueFunction(
   attr: TsJsxAttributeLocation,
   parent: FunctionRoot,
+  store: ResolutionStore,
 ): { func: FunctionRoot; localName: string | null } | null {
-  const expr = attr.valueExpression;
-  if (expr === null) {
+  if (attr.valueExpression === null) {
     return null;
   }
+  const expr = peelValue(attr.valueExpression);
 
   if (Node.isArrowFunction(expr) || Node.isFunctionExpression(expr)) {
     return { func: expr as FunctionRoot, localName: null };
   }
 
-  if (Node.isIdentifier(expr)) {
-    const symbol = expr.getSymbol();
-    if (symbol === undefined) {
-      return null;
-    }
-    for (const decl of symbol.getDeclarations()) {
-      if (!isWithinFunction(decl, parent)) {
-        continue;
-      }
-      const resolved = resolveDecl(decl, expr.getText());
-      if (resolved !== null) {
-        return { func: resolved.func, localName: expr.getText() };
-      }
-    }
+  if (!Node.isIdentifier(expr)) {
     return null;
   }
+  const func = functionNamedBy(expr, store);
+  return func !== null && isWithinFunction(func, parent)
+    ? { func: func as FunctionRoot, localName: expr.getText() }
+    : null;
+}
 
-  return null;
+/**
+ * The function a name settles to over the facts, as a declared pack's
+ * value ops find it: through a `useCallback` the component declares as
+ * well as a declaration or an arrow kept in a const.
+ */
+function functionNamedBy(name: Node, store: ResolutionStore): Node | null {
+  const found =
+    factValueOps(
+      statedFactKey(name, store),
+      factSourceFor(store),
+    ).function?.() ?? null;
+  const node = (found as Partial<AstCapableValueOps> | null)?.ast?.() ?? null;
+  return node as Node | null;
 }
 
 function isWithinFunction(node: Node, func: FunctionRoot): boolean {

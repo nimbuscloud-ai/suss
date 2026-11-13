@@ -5,8 +5,6 @@
   "hydrate": "react-dom: React 17's call that attaches an element to server-rendered markup",
   "hydrateRoot": "react-dom/client: attaches to server-rendered markup",
   "memo": "react: wraps a component and hands back the component it was given",
-  "n": "the second character of the `on` prefix React event props carry",
-  "o": "the leading character of the `on` prefix React event props carry",
   "react": "pack name, React",
   "useCallback": "react: the hook that hands back the callback it was given"
 }
