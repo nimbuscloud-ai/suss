@@ -326,11 +326,16 @@ building a call's ops states the call's facts, which for a call at
 module scope the invocation walk never does. Asked this way, a call that
 supplies no key is read off its nodes and nothing is stated.
 
-`classAt`, `parameterReadsAt`, `statesSlots` and the two batching
-hints are left out. Each comes in with the pack that reads it.
-Until then an adapter adds them through `FactSource.extend`, which every
-call the ops reach goes through, and TypeScript takes them from
-`callOpsFor` at the same node.
+`classAt`, `parameterReadsAt` and the two batching hints are left out.
+Each comes in with the pack that reads it. Until then an adapter adds
+them through `FactSource.extend`, which every call the ops reach goes
+through, and TypeScript takes them from `callOpsFor` at the same node.
+
+`statesSlots` belongs to whoever runs the hooks, so the Python and Ruby
+runners set it on the ops of the call in hand only. They listen through
+`SlotsHeard`, which gives each value back as the key the ops read it
+at. A name in those languages has a key and no node, and the source
+walk behind a slot's provenance starts from the key.
 
 The pack harness runs every recognizer that reads the ops a second time
 over `callOpsFor`, and fails the test on any difference that
@@ -960,9 +965,8 @@ what its rules read. `slotsDeclared` is the same reading, exported, so
 a pack still written as code, as the Prisma pack is, states the same
 slots from the same declaration.
 
-The TypeScript adapter writes the slots it hears as provenance. The
-Python and Ruby adapters run a declared hook without listening for its
-slots, so a chain's slots reach their summaries only once they do.
+All three adapters write the slots they hear as provenance, so a
+chain's slots reach its summaries in every language it runs in.
 
 ## A send whose channel is on the client
 

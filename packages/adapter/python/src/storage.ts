@@ -7,7 +7,7 @@
 
 import { runPackRecognizer } from "@suss/extractor";
 import { storageBinding } from "@suss/ir-core";
-import { factCallOps } from "@suss/recognize/ops";
+import { factCallOps, SlotsHeard } from "@suss/recognize/ops";
 import { answersFor } from "@suss/resolution";
 
 import {
@@ -35,11 +35,16 @@ import {
   receiverTypeOrigins,
   statedTypeName,
 } from "./receiverTypes.js";
-import { constructionSitesOf, evaluationScope } from "./values/evaluator.js";
+import {
+  constructionSitesOf,
+  evaluationScope,
+  resolutionKeyOf,
+} from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { PackRecognizer } from "@suss/extractor";
+import type { HeardSlot } from "@suss/recognize/ops";
 import type { RawSqlPattern, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
@@ -408,6 +413,19 @@ export interface SlotValue {
   slot: "field" | "selector";
   name: string;
   value: PyNode;
+}
+
+/**
+ * The slot with its value given as the key the rules read it at. A
+ * source walk starts from the key, and a declared hook's slots come
+ * with keys only.
+ */
+function keyedSlot(one: SlotValue, facts: Database): HeardSlot {
+  return {
+    slot: one.slot,
+    name: one.name,
+    key: resolutionKeyOf(one.value, facts),
+  };
 }
 
 /**
@@ -893,8 +911,8 @@ export function storageEffects(
 /** Told the value each column of an effect is given. */
 export type SlotsStated = (effect: Effect, slots: readonly SlotValue[]) => void;
 
-/** One column of one effect, and the value the call passes for it. */
-export interface EffectSlot extends SlotValue {
+/** One column of one effect, and the key the rules read its value at. */
+export interface EffectSlot extends HeardSlot {
   effect: Effect;
 }
 
@@ -957,31 +975,40 @@ export function callStorage(
     ...lookup,
     filePath: lookup.factsPath,
     statesSlots: (effect, stated) => {
-      slots.push(...stated.map((one) => ({ ...one, effect })));
+      slots.push(
+        ...stated.map((one) => ({ ...keyedSlot(one, lookup.facts), effect })),
+      );
     },
   });
   const raw = rawSqlEffects(calls, rawSqlOptionsOf(lookup));
+  const declared = declaredStorage(calls, lookup);
   return {
-    effects: [...effects, ...raw.effects, ...declaredEffects(calls, lookup)],
-    slots: [...slots, ...raw.slots],
+    effects: [...effects, ...raw.effects, ...declared.effects],
+    slots: [...slots, ...raw.slots, ...declared.slots],
   };
 }
 
 /**
  * What the hooks a pack declared with `@suss/recognize` make of each
- * call, over the ops in `@suss/recognize/ops`. A hook reads only the ops
- * on its context, so it runs here unchanged from TypeScript.
+ * call, over the ops in `@suss/recognize/ops`, with the slots they state
+ * about each effect. A hook reads only the ops on its context, so it
+ * runs here unchanged from TypeScript.
  */
-function declaredEffects(
+function declaredStorage(
   calls: readonly PyNode[],
   lookup: StorageLookup,
-): EffectAt[] {
-  return declaredReads(calls, lookup).flatMap(({ call, effects }) =>
-    effects.map((effect) => ({
-      effect: { ...effect, location: rangeOf(call) },
-      at: call,
-    })),
-  );
+): SlottedEffects {
+  const found: SlottedEffects = { effects: [], slots: [] };
+  for (const { call, effects, heard } of declaredReads(calls, lookup, true)) {
+    for (const effect of effects) {
+      const located = { ...effect, location: rangeOf(call) };
+      found.effects.push({ effect: located, at: call });
+      found.slots.push(
+        ...heard.of(effect).map((one) => ({ ...one, effect: located })),
+      );
+    }
+  }
+  return found;
 }
 
 /** The calls a declared hook read, by node id, so the reach walk does not report them as lost. */
@@ -989,14 +1016,18 @@ export function declaredCallIds(
   calls: readonly PyNode[],
   lookup: StorageLookup,
 ): number[] {
-  return declaredReads(calls, lookup).map(({ call }) => call.id);
+  return declaredReads(calls, lookup, false).map(({ call }) => call.id);
 }
 
-/** Each call some declared hook read, with every effect the hooks made of it. */
+/**
+ * Each call some declared hook read, with every effect the hooks made of
+ * it, and when `listening`, the slots they stated about each one.
+ */
 function declaredReads(
   calls: readonly PyNode[],
   lookup: StorageLookup,
-): { call: PyNode; effects: Effect[] }[] {
+  listening: boolean,
+): { call: PyNode; effects: Effect[]; heard: SlotsHeard }[] {
   const hooks = lookup.declared ?? [];
   if (hooks.length === 0) {
     return [];
@@ -1004,6 +1035,10 @@ function declaredReads(
   const source = pythonFactSource(lookup.facts);
   return calls.flatMap((call) => {
     const ops = factCallOps(nodeId(lookup.factsPath, call), source);
+    const heard = new SlotsHeard();
+    if (ops !== null && listening) {
+      Object.assign(ops, { statesSlots: heard.listen });
+    }
     const at = { file: lookup.factsPath, line: rangeOf(call).start };
     const read =
       ops === null
@@ -1012,6 +1047,6 @@ function declaredReads(
             const made = runPackRecognizer(hook, at, call, { ops });
             return made === null ? [] : [made];
           });
-    return read.length === 0 ? [] : [{ call, effects: read.flat() }];
+    return read.length === 0 ? [] : [{ call, effects: read.flat(), heard }];
   });
 }
