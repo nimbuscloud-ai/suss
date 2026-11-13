@@ -101,7 +101,7 @@ Here is a whole summary, from `suss extract --dir fixtures/express -f express`, 
 
 The handler is 23 lines of Express with two guards and a nested condition. The `db` it calls is declared with no body, so the walk stopped there and the gap records which call it was.
 
-The `id` is the workspace, the file and the name. Discovery made the name `get` up from the route's method, so `nameKind` is `label`, and a summary named by a label always has its boundary on the end of its id. A callback a pack claims inside that handler, such as the timer `get.setTimeout#0`, is named by a label too, and since it has no boundary key of its own its id ends with its handler's boundary. Any other summary gets the boundary only when another summary in the run would have the same id, and a later one in the same file that still matches gets `@2`, `@3`.
+The `id` is the workspace, the file and the name. Discovery made the name `get` up from the route's method, so `nameKind` is `label`, and a summary named by a label always has its boundary on the end of its id. A callback a pack claims inside that handler, such as the timer `get.setTimeout#0`, is named by a label too, and since it has no boundary key of its own its id ends with its handler's boundary. Any other summary gets the boundary only when another summary in the run would have the same id and its boundary has a key, and a later one in the same file that still matches gets `@2`, `@3`.
 
 A parameter the library fills with one field of the request says which field under `field`. FastAPI's `x_tenant_id: str = Header()` is `{ "role": "headers", "field": "x-tenant-id" }`, with the underscores written the way FastAPI sends them.
 
