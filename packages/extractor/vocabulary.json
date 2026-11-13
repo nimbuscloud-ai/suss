@@ -45,6 +45,7 @@
   "count": "suss: claim metadata leaf, how many claims the chain made in the parent before this one",
   "countInFile": "suss: MarkedMatch name rule, how many marked functions earlier in the file were counted",
   "countInParent": "suss: sub-unit name part, how many claims the chain made in the parent before this one, after the link's countedAs",
+  "countOnCollision": "suss: sub-unit name part, a count added only when two claims in the parent come out with the same name",
   "countPerCallee": "suss: sub-unit name part, how many callbacks the parent's earlier calls of the same callee claimed",
   "cumulative": "OpenTelemetry metrics data model: aggregation temporality, the total since the series started",
   "declared": "suss: resolution confidence",
@@ -138,6 +139,7 @@
   "positionalParams": "suss: InputMappingPattern variant tag",
   "postgresql": "OpenTelemetry semconv: db.system.name value, Postgres",
   "plural": "suss: route table controller naming, the entry's name pluralized",
+  "prop": "suss: sub-unit name part, the attribute an element handed the function over under",
   "property": "expression kind the extractor records",
   "query": "GraphQL spec: operation type",
   "queryParams": "suss: input role",
@@ -186,5 +188,6 @@
   "utf8": "Node file encoding",
   "value": "suss: route table EntryPick, the value of a pair argument",
   "variable": "expression kind the extractor records",
-  "walkedBlock": "suss: route table gap kind, a library's wrapper walked in place"
+  "walkedBlock": "suss: route table gap kind, a library's wrapper walked in place",
+  "written": "suss: sub-unit name part, the name a function was handed over as"
 }
