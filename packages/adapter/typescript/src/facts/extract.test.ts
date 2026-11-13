@@ -2,14 +2,16 @@
 // any rule has looked at them. Everything else about extraction is
 // tested through the store, which runs the rules as well.
 
-import { Project } from "ts-morph";
+import { Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 import { addPackWords, askResolution, callsRun } from "@suss/resolution";
+import { createTestProject } from "@suss/test-project";
 
 import { callsInUnitBody } from "../walk/descent.js";
 import {
+  boundInProgram,
   createNodeTable,
   environmentObjectsIn,
   extractFileFacts,
@@ -81,6 +83,50 @@ describe("the modules a file imports", () => {
       "/orders.ts",
       "@acme/reports",
       "/accounts.ts",
+    ]);
+  });
+
+  it("keys a subpath import by its package too, and one of Node's own modules by itself alone", () => {
+    const { db } = factsFor({
+      "/mod.ts": [
+        'import { report } from "@acme/reports/esm";',
+        'import { setTimeout } from "node:timers/promises";',
+        "export const both = [report, setTimeout];",
+        "",
+      ].join("\n"),
+    });
+
+    const modules = db.facts("imports").map((row) => String(row[1]));
+    expect(modules).toContain("@acme/reports");
+    expect(modules).toContain("node:timers/promises");
+    expect(modules).not.toContain("node:timers");
+  });
+});
+
+describe("a name the program binds", () => {
+  it("is bound by an import or a declaration in a project file, and not by a library's global", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/timers.ts",
+      [
+        'import { setTimeout as later } from "node:timers";',
+        "function queueMicrotask(_fn: () => void): void {}",
+        "later(() => {});",
+        "queueMicrotask(() => {});",
+        "setInterval(() => {}, 5);",
+        "",
+      ].join("\n"),
+    );
+    const bound = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .map((call) => [
+        call.getExpression().getText(),
+        boundInProgram(call.getExpression()),
+      ]);
+    expect(bound).toEqual([
+      ["later", true],
+      ["queueMicrotask", true],
+      ["setInterval", false],
     ]);
   });
 });

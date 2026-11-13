@@ -26,6 +26,12 @@ describe("namesPackage", () => {
   it("says no for a file that names nothing relevant", () => {
     expect(namesPackage(["./local", "node:fs"], "express")).toBe(false);
   });
+
+  it("keeps each of Node's own modules apart from the one before the slash", () => {
+    expect(namesPackage(["node:timers/promises"], "node:timers")).toBe(false);
+    expect(namesPackage(["timers/promises"], "timers")).toBe(false);
+    expect(namesPackage(["node:timers"], "node:timers")).toBe(true);
+  });
 });
 
 describe("namesAnyPackage", () => {

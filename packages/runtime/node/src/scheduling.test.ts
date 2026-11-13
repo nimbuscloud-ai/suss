@@ -151,6 +151,93 @@ describe("scheduling recognizer", () => {
     `);
     expect(scheduleEffectsOf(recognizeAll(file))).toHaveLength(0);
   });
+
+  it("reads a timer imported from node:timers under another name", () => {
+    const file = makeFile(`
+      import { setTimeout as later } from "node:timers";
+      function handler() {
+        later(() => {}, 5);
+      }
+    `);
+    const effects = scheduleEffectsOf(recognizeAll(file));
+    expect(effects.map((e) => [e.callee, e.interaction])).toEqual([
+      [
+        "later",
+        {
+          class: "schedule",
+          via: "later",
+          callbackRef: { type: "literal" },
+          hasDelay: true,
+        },
+      ],
+    ]);
+  });
+
+  it("leaves out a promise timer, which takes no callback", () => {
+    const file = makeFile(`
+      import { setTimeout } from "node:timers/promises";
+      async function handler() {
+        await setTimeout(10);
+      }
+    `);
+    expect(scheduleEffectsOf(recognizeAll(file))).toHaveLength(0);
+  });
+
+  it("leaves out a function the file declares under a timer's name", () => {
+    const file = makeFile(`
+      function handler() {
+        const setTimeout = (fn: () => void) => fn();
+        setTimeout(() => {});
+      }
+    `);
+    expect(scheduleEffectsOf(recognizeAll(file))).toHaveLength(0);
+  });
+
+  it("reads the callee and the callback through parentheses and a cast", () => {
+    const file = makeFile(`
+      function handler() {
+        (setTimeout)((() => {}) as () => void, 5);
+        (process as NodeJS.Process).nextTick(() => {});
+      }
+    `);
+    const effects = scheduleEffectsOf(recognizeAll(file));
+    expect(
+      effects.map((e) => [
+        e.callee,
+        e.interaction.callbackRef,
+        e.interaction.hasDelay,
+      ]),
+    ).toEqual([
+      ["setTimeout", { type: "literal" }, true],
+      ["(process as NodeJS.Process).nextTick", { type: "literal" }, false],
+    ]);
+  });
+
+  it("reads undefined as no function", () => {
+    const file = makeFile(`
+      function handler() {
+        setTimeout(undefined, 5);
+      }
+    `);
+    const effects = scheduleEffectsOf(recognizeAll(file));
+    expect(effects[0]?.interaction.callbackRef).toEqual({
+      type: "opaque",
+      reason: "non-literal-callback",
+    });
+  });
+
+  it("says when the call hands over nothing", () => {
+    const file = makeFile(`
+      function handler() {
+        setImmediate();
+      }
+    `);
+    const effects = scheduleEffectsOf(recognizeAll(file));
+    expect(effects[0]?.interaction.callbackRef).toEqual({
+      type: "opaque",
+      reason: "missing-callback-argument",
+    });
+  });
 });
 
 describe("scheduling subUnits", () => {
@@ -300,6 +387,52 @@ describe("scheduling subUnits", () => {
     );
     expect(sub).toHaveLength(1);
     expect(sub[0]?.name).toBe("parent.process.nextTick#0");
+  });
+
+  it("names a claim by the callee as written, and claims a callback in a cast", () => {
+    const file = makeFile(`
+      import { setTimeout as later } from "node:timers";
+      import { setTimeout as delay } from "node:timers/promises";
+      function parent() {
+        later((() => {}) as () => void, 5);
+        delay(5);
+      }
+    `);
+    const sub = nodeSchedulingSubUnits(
+      { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
+      subUnitContext,
+    );
+    expect(
+      sub.map((s) => [s.name, (s.func as Node).getText(), s.metadata]),
+    ).toEqual([
+      [
+        "parent.later#0",
+        "() => {}",
+        { node: { schedulingPrimitive: "later" } },
+      ],
+    ]);
+  });
+
+  it("claims no timer a project module re-exports, since only a direct import is read", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/timers.ts",
+      'export { setTimeout as later } from "node:timers";',
+    );
+    const file = project.createSourceFile(
+      "/user.ts",
+      `
+        import { later } from "./timers";
+        function parent() {
+          later(() => {}, 5);
+        }
+      `,
+    );
+    const sub = nodeSchedulingSubUnits(
+      { func: findFunction(file, "parent"), name: "parent", kind: "handler" },
+      subUnitContext,
+    );
+    expect(sub).toHaveLength(0);
   });
 });
 

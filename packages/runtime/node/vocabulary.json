@@ -14,6 +14,7 @@
   "setTimeout": "Node: global scheduling a delayed callback",
   "setInterval": "Node: global scheduling a repeating callback",
   "queueMicrotask": "WHATWG HTML: global scheduling a microtask",
+  "timers": "Node: the core module exporting the timers, imported as node:timers or timers",
   "__dirname": "Node: CommonJS module global holding the directory",
   "__filename": "Node: CommonJS module global holding the file path",
   "lambda": "AWS deployment target, AWS Lambda",

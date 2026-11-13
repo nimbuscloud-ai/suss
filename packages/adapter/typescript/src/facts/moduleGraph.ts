@@ -12,6 +12,8 @@
 // specifiers already name the package settles it by itself,
 // and nothing below it needs resolving.
 
+import { isBuiltin } from "node:module";
+
 import { type SourceFile, SyntaxKind } from "ts-morph";
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
@@ -348,8 +350,18 @@ export function namesPackage(
   name: string,
 ): boolean {
   return specifiers.some(
-    (specifier) => specifier === name || specifier.startsWith(`${name}/`),
+    (specifier) => specifier === name || isSubpathOf(specifier, name),
   );
+}
+
+/**
+ * Whether a specifier imports a subpath of the package `name`, as
+ * `pkg/esm` does of `pkg`. Each of Node's own modules is a module of its
+ * own, so `node:timers/promises` is not part of `node:timers`: one
+ * returns promises where the other takes callbacks.
+ */
+export function isSubpathOf(specifier: string, name: string): boolean {
+  return specifier.startsWith(`${name}/`) && !isBuiltin(specifier);
 }
 
 /** Whether any of these module specifiers points at any of these packages. */
