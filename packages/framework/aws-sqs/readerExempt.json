@@ -1,3 +1,3 @@
 {
-  "src/index.ts": "isSqsRecordIdentifier"
+  "src/index.ts": "extractDestructuredFields"
 }

@@ -28,12 +28,18 @@ export class SendMessageBatchCommand {
 `;
 
 const LAMBDA_TYPES = `
+export interface Context {
+  awsRequestId: string;
+}
 export interface SQSRecord {
   messageId: string;
   body: string;
 }
 export interface SQSEvent {
   Records: SQSRecord[];
+}
+export interface SNSEvent {
+  Records: Array<{ Sns: { Message: string } }>;
 }
 `;
 
@@ -587,7 +593,7 @@ describe("sqs message-receive recognizer", () => {
     expect(messageReceiveEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
-  it("reads no fields off a body handed straight on, and nothing off a parse with a reviver or of an indexed record", () => {
+  it("reads no fields off a body handed straight on, and reads a parse with a reviver and of the first record as receives", () => {
     const source = `
       import type { SQSEvent } from "aws-lambda";
       declare function handle(order: unknown): void;
@@ -603,7 +609,75 @@ describe("sqs message-receive recognizer", () => {
     const receives = messageReceiveEffectsOf(recognizeAll(source));
     expect(receives.map((receive) => receive.interaction)).toEqual([
       { class: "message-receive" },
+      { class: "message-receive" },
+      { class: "message-receive" },
     ]);
+  });
+
+  it.each([
+    [
+      "an untyped callback over the batch",
+      "event.Records.forEach((record) => JSON.parse(record.body));",
+    ],
+    [
+      "a body kept in a name",
+      "for (const record of event.Records) { const text = record.body; JSON.parse(text); }",
+    ],
+    [
+      "a batch kept in a name",
+      "const records = event.Records; for (const message of records) JSON.parse(message.body);",
+    ],
+    [
+      "a cast of the loop's record",
+      "for (const record of event.Records) JSON.parse((record as any).body);",
+    ],
+    [
+      "a body read as an entry",
+      'for (const record of event.Records) JSON.parse(record["body"]);',
+    ],
+  ])("reads %s, where the event is typed in place", (_, loop) => {
+    const source = `
+      import type { Context } from "aws-lambda";
+      export async function handler(
+        event: { Records: Array<{ body: string }> },
+        context: Context,
+      ): Promise<void> {
+        ${loop}
+      }
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toHaveLength(1);
+  });
+
+  it("ignores a record taken apart in the loop's head, a cast of an unknown value, and another message's text", () => {
+    const source = `
+      import type { SNSEvent, SQSRecord } from "aws-lambda";
+      export async function handler(event: SNSEvent, other: unknown): Promise<void> {
+        for (const { body } of (event as any).Records) JSON.parse(body);
+        JSON.parse((other as SQSRecord).body);
+        for (const record of event.Records) JSON.parse(record.Sns.Message);
+      }
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toEqual([]);
+  });
+
+  it("ignores a record type the project declares in a folder named after the Lambda types", () => {
+    const sends = messageReceiveEffectsOf(
+      packUnderTest(sqsFramework(), { library: LIBRARY }).effectsAcross(
+        {
+          "/src/aws-lambda/types.ts":
+            "export interface SQSRecord { body: string }",
+          "/src/handler.ts": `
+            import type { Context } from "aws-lambda";
+            import type { SQSRecord } from "./aws-lambda/types";
+            export function readOwn(record: SQSRecord, context: Context) {
+              return JSON.parse(record.body);
+            }
+          `,
+        },
+        "/src/handler.ts",
+      ),
+    );
+    expect(sends).toEqual([]);
   });
 
   it("ignores parse calls that aren't JSON.parse", () => {

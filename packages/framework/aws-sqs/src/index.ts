@@ -12,7 +12,13 @@
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
 
-import { climbSyntax, receiverTypesOf } from "@suss/adapter-typescript";
+import {
+  climbSyntax,
+  dottedPathOf,
+  peelValue,
+  statedFactKey,
+  typedAsExported,
+} from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
 import { configuredCallOption } from "@suss/extractor";
 import {
@@ -20,9 +26,13 @@ import {
   constructedFrom,
   messageSends,
   pack,
+  typed,
 } from "@suss/recognize";
 
-import type { ReceiverType } from "@suss/adapter-typescript";
+import type {
+  ResolutionStore,
+  TsInvocationRecognizerContext,
+} from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   EffectArg,
@@ -81,10 +91,14 @@ function sendDeclarations(): Match[] {
   ];
 }
 
+/** The record Lambda hands an SQS handler, as aws-lambda's types declare it. */
+const LAMBDA_RECORD = typed({ from: ["aws-lambda"], named: ["SQSRecord"] });
+
 /**
- * Recognizes `JSON.parse(record.body)` inside a `for (const record of
- * event.Records)` loop and records a `message-receive` effect with the
- * fields the handler destructures.
+ * Recognizes `JSON.parse(record.body)`, where the record is one element of
+ * a read of `Records`, or a value typed as aws-lambda's `SQSRecord`, and
+ * records a `message-receive` effect with the fields the handler
+ * destructures.
  *
  * Only a destructured parse result gives fields. For a cast or an
  * assignment to a plain variable, the effect has no body and suss skips
@@ -95,38 +109,26 @@ function messageReceiveRecognizer(
   ctx: unknown,
 ): Effect[] | null {
   const callNode = call as CallExpression;
-  // Every check below reads only the syntax tree.
-  void ctx;
-
-  const calleeExpr = callNode.getExpression();
-  if (!N.isPropertyAccessExpression(calleeExpr)) {
-    return null;
-  }
-  if (calleeExpr.getName() !== "parse") {
-    return null;
-  }
-  const receiver = calleeExpr.getExpression();
-  if (!N.isIdentifier(receiver) || receiver.getText() !== "JSON") {
-    return null;
-  }
-
-  const args = callNode.getArguments();
-  if (args.length !== 1) {
-    return null;
-  }
-  const arg = args[0];
-  if (!N.isPropertyAccessExpression(arg)) {
-    return null;
-  }
-  if (arg.getName() !== "body") {
-    return null;
-  }
-  const recordExpr = arg.getExpression();
-  if (!N.isIdentifier(recordExpr)) {
+  const context = ctx as TsInvocationRecognizerContext;
+  const store = context.resolution;
+  // A reviver changes the values and not which message was read, so any
+  // number of arguments counts.
+  const [payload] = callNode.getArguments();
+  if (
+    store === undefined ||
+    payload === undefined ||
+    dottedPathOf(callNode.getExpression()) !== "JSON.parse"
+  ) {
     return null;
   }
 
-  if (!isSqsRecordIdentifier(recordExpr) && !isTypedSqsRecord(recordExpr)) {
+  const facts = new ReceiveFacts(store);
+  const body = facts.readAt(facts.keyOf(payload));
+  if (
+    body === null ||
+    body.name !== "body" ||
+    !(facts.isRecord(body.object) || facts.typedAsRecord(body.object))
+  ) {
     return null;
   }
 
@@ -154,57 +156,122 @@ function messageReceiveRecognizer(
 }
 
 /**
- * Accepts the loop variable of any `for...of` over a property named
- * `Records`, which covers `event.Records` and
- * `(event as SQSEvent).Records`.
+ * The run's facts, read the way the ops in `@suss/recognize/ops` read
+ * them, so a receive found here is the one a declared envelope finds.
  */
-function isSqsRecordIdentifier(recordExpr: Node): boolean {
-  if (!N.isIdentifier(recordExpr)) {
-    return false;
+class ReceiveFacts {
+  private readonly access: ReturnType<ResolutionStore["factAccess"]>;
+
+  constructor(private readonly store: ResolutionStore) {
+    this.access = store.factAccess();
   }
-  const symbol = recordExpr.getSymbol();
-  if (symbol === undefined) {
-    return false;
+
+  keyOf(node: Node): string {
+    return statedFactKey(peelValue(node), this.store);
   }
-  for (const decl of symbol.getDeclarations()) {
-    if (!N.isVariableDeclaration(decl)) {
-      continue;
+
+  /**
+   * The key and the object of the read the value is, `x.body` or
+   * `x["body"]`. A name set to one read, `const text = record.body`, is
+   * that read. Null for anything else.
+   */
+  readAt(key: string): Read | null {
+    const direct = this.readWrittenAt(key);
+    if (direct !== null || !this.isName(key)) {
+      return direct;
     }
-    // ForOfStatement -> VariableDeclarationList -> VariableDeclaration
-    const declList = decl.getParent();
-    if (declList === undefined) {
-      continue;
-    }
-    const forOf = declList.getParent();
-    if (forOf === undefined || !N.isForOfStatement(forOf)) {
-      continue;
-    }
-    const iterated = forOf.getExpression();
-    if (
-      N.isPropertyAccessExpression(iterated) &&
-      iterated.getName() === "Records"
-    ) {
-      return true;
-    }
+    const reads = this.declaredValuesOf(key).flatMap((value) => {
+      const read = this.readWrittenAt(value);
+      return read === null ? [] : [read];
+    });
+    const [only, ...more] = reads;
+    return only === undefined || more.length > 0 ? null : only;
   }
-  return false;
+
+  /**
+   * Whether the value is one element of a read of `Records`, as a loop
+   * or a callback over `event.Records` is given one.
+   */
+  isRecord(key: string): boolean {
+    const collection =
+      this.only("elementOf", key) ??
+      this.only("elementOf", this.only("binds", key));
+    return collection !== null && this.readAt(collection)?.name === "Records";
+  }
+
+  typedAsRecord(key: string): boolean {
+    const node = this.access.nodeOf(key);
+    return (
+      node !== undefined && typedAsExported(node, LAMBDA_RECORD, this.store)
+    );
+  }
+
+  /** The one read written at the key, `o.n` or `o["n"]`, or null. */
+  private readWrittenAt(key: string): Read | null {
+    const reads = new Map<string, Read>();
+    for (const relation of ["readsProperty", "readsEntry"]) {
+      for (const row of this.rows(relation, key)) {
+        const read = { object: String(row[1]), name: String(row[2]) };
+        reads.set(`${read.object}\u0000${read.name}`, read);
+      }
+    }
+    const [only, ...more] = reads.values();
+    return only === undefined || more.length > 0 ? null : only;
+  }
+
+  /**
+   * What a name is bound to through its declaration. A reference binds to
+   * its declaration and the declaration to its value, so both rows count.
+   */
+  private declaredValuesOf(name: string): string[] {
+    const bound = (key: string): string[] =>
+      this.rows("binds", key).map((row) => String(row[1]));
+    const direct = bound(name);
+    return [
+      ...direct,
+      ...direct.filter((key) => this.isName(key)).flatMap(bound),
+    ];
+  }
+
+  private isName(key: string): boolean {
+    return NOT_NAMES.every((relation) => this.rows(relation, key).length === 0);
+  }
+
+  /** The one value in the second column of the rows about the key, or null for none or several. */
+  private only(relation: string, key: string | null): string | null {
+    if (key === null) {
+      return null;
+    }
+    const values = new Set(
+      this.rows(relation, key).map((row) => String(row[1])),
+    );
+    const [one] = values;
+    return values.size === 1 && one !== undefined ? one : null;
+  }
+
+  private rows(relation: string, key: string): readonly (readonly unknown[])[] {
+    const node = this.access.nodeOf(key);
+    if (node !== undefined) {
+      this.access.state(node);
+    }
+    return this.access.db.lookup(relation, 0, key);
+  }
 }
 
-/**
- * Accepts a record typed with the Lambda event types, which covers a
- * record handed to a callback, as in `event.Records.map((record) => ...)`,
- * or to a helper that takes one.
- */
-function isTypedSqsRecord(recordExpr: Node): boolean {
-  return receiverTypesOf(recordExpr).some((type) => isLambdaSqsRecord(type));
+/** A read of one key off an object, as the facts key both. */
+interface Read {
+  readonly name: string;
+  readonly object: string;
 }
 
-function isLambdaSqsRecord(type: ReceiverType): boolean {
-  return (
-    type.name === "SQSRecord" &&
-    type.declaredIn.some((filePath) => filePath.includes("/aws-lambda/"))
-  );
-}
+/** The relations that state a value as something other than a name. */
+const NOT_NAMES = [
+  "call",
+  "readsProperty",
+  "objectValue",
+  "writtenValue",
+  "func",
+];
 
 /**
  * Returns the properties destructured from the parse result, or null
