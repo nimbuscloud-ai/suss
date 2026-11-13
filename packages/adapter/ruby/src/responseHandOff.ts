@@ -14,7 +14,13 @@
 
 import { helperPathsOnVariables, splitAtHandOffs } from "@suss/extractor";
 
-import { field, rangeOf, readCallArgs, stringLiteralValue } from "./ast.js";
+import {
+  field,
+  rangeOf,
+  readAsType,
+  readCallArgs,
+  stringLiteralValue,
+} from "./ast.js";
 import { claimedIn } from "./claims.js";
 import { parametersOf, paramNameOf } from "./facts/locals.js";
 import { escapingRaises, raisedClassRef } from "./raises.js";
@@ -98,7 +104,7 @@ function helperBranchesAt(
       : [],
   );
   const handedAs = Object.entries(args.keyword).flatMap(([name, argument]) =>
-    argument.type === "identifier" && refersToResponse(argument, options)
+    readAsType(argument) === "identifier" && refersToResponse(argument, options)
       ? [{ name, variable: argument.text }]
       : [],
   );

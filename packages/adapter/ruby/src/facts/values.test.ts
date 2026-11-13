@@ -173,6 +173,31 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  it("passes the local, method or constant a keyword written with no value spells, as Ruby 3.1 does", async () => {
+    const source =
+      "def run\n  locale = pick\n  post.update!(locale:, actor:, Limit:)\nend\n";
+    const db = await factsFor(source);
+    const run = keyOf(source, source.trimEnd());
+    const actor = keyOf(source, "actor");
+    expect(rows(db, "callKeywordArg").map((row) => [row[1], row[2]])).toEqual([
+      ["locale", `${run}#locale`],
+      ["actor", actor],
+      ["Limit", "#Limit"],
+    ]);
+    expect(rows(db, "call")).toContainEqual([actor, "#actor"]);
+    expect(rows(db, "makesCall")).toContainEqual([run, actor]);
+  });
+
+  it("holds a hash field written with no value as the name it spells", async () => {
+    const source = "id = 7\nrender json: { id:, name: label }\n";
+    const db = await factsFor(source);
+    const hash = keyOf(source, "{ id:, name: label }");
+    expect(rows(db, "holdsProperty").filter((row) => row[0] === hash)).toEqual([
+      [hash, "id", "#id"],
+      [hash, "name", keyOf(source, "label")],
+    ]);
+  });
+
   it("reads a receiver call as a call whose callee reads the receiver, with arguments or without", async () => {
     const read = "value = config.host\n";
     const withArgs = "value = config.fetch(key)\n";
@@ -1261,6 +1286,10 @@ describe("ruby value facts", () => {
       ["q = Entity.all", "log(q)", "q = Other.all", ""].join("\n"),
     );
     expect(db.size("endsHolding")).toBe(0);
+    const shorthand = await factsFor(
+      ["q = Entity.all", "log(q:)", "q = Other.all", ""].join("\n"),
+    );
+    expect(shorthand.size("endsHolding")).toBe(0);
   });
 
   it("reads a value through the parentheses it is written in", async () => {

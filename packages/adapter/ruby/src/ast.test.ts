@@ -12,6 +12,7 @@ import {
   methodHasStatements,
   nestedStatements,
   rangeOf,
+  readAsType,
   readCallArgs,
   resultUsedAsValue,
   runStatements,
@@ -229,6 +230,15 @@ describe("readCallArgs", () => {
 
   it("returns empty results for a null argument list", () => {
     expect(readCallArgs(null)).toEqual({ positional: [], keyword: {} });
+  });
+
+  it("passes the key of a keyword written with no value, which reads the name it spells", async () => {
+    const call = await firstCall("render json:, status: 201\n");
+    const { keyword } = readCallArgs(field(call, "arguments"));
+    expect(Object.keys(keyword)).toEqual(["json", "status"]);
+    expect(keyword.json?.type).toBe("hash_key_symbol");
+    expect(readAsType(must(keyword.json))).toBe("identifier");
+    expect(readAsType(must(keyword.status))).toBe("integer");
   });
 });
 

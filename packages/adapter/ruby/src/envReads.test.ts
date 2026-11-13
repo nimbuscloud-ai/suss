@@ -389,6 +389,16 @@ describe("a read the program uses only behind a presence test", () => {
     ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
   });
 
+  it("counts a keyword written with no value as a use of the local it spells", async () => {
+    expect(
+      await handlerReads([
+        'url = ENV["CACHE_URL"]',
+        "use(url:) if url",
+        "use(url:)",
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
+  });
+
   it("leaves a read undefaulted when the test is on a different variable", async () => {
     expect(
       await handlerReads([

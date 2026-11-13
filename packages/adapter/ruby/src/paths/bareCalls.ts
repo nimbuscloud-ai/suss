@@ -13,7 +13,7 @@
  * misses a call and never invents one.
  */
 
-import { bodyStatements, field } from "../ast.js";
+import { bodyStatements, field, readAsType } from "../ast.js";
 
 import type { RbNode } from "../parser.js";
 
@@ -157,7 +157,7 @@ export function isBareMethodCall(
   node: RbNode,
   locals: ReadonlySet<string>,
 ): boolean {
-  if (node.type !== "identifier" || locals.has(node.text)) {
+  if (readAsType(node) !== "identifier" || locals.has(node.text)) {
     return false;
   }
   return !KEYWORD_LITERALS.has(node.text) && !spellsAName(node);
