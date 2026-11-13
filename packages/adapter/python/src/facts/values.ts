@@ -669,8 +669,14 @@ function walkExpressions(
   }
 }
 
-/** A key the source writes out, which `readsEntry` covers when it is a string. */
-const WRITTEN_KEY_TYPES = new Set(["string", "integer", "concatenated_string"]);
+/**
+ * Whether the source writes the key out whole, which `readsEntry` covers
+ * for a string. `os.environ[f"{name}_KEY"]` writes a template, which the
+ * program works out like any other computed key.
+ */
+function isWrittenKey(key: PyNode): boolean {
+  return key.type === "integer" || stringLiteralValue(key) !== null;
+}
 
 /**
  * `settings[name]` and `settings.get(name)`: the container, and the
@@ -683,7 +689,7 @@ function emitKeyedRead(
   container: PyNode,
   key: PyNode,
 ): void {
-  if (WRITTEN_KEY_TYPES.has(key.type)) {
+  if (isWrittenKey(key)) {
     return;
   }
   const siteKey = nodeId(emitter.filePath, site);

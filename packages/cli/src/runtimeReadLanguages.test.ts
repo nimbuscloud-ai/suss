@@ -117,20 +117,22 @@ interface Sites {
   at(text: string): ReadOps;
 }
 
-function typescriptSites(): {
+function typescriptSites(text = TYPESCRIPT): {
   sites: Sites;
   file: SourceFile;
   store: ResolutionStore;
 } {
   const project = createTestProject();
-  const file = project.createSourceFile("/src/env.ts", TYPESCRIPT);
+  const file = project.createSourceFile("/src/env.ts", text);
   const store = ResolutionStore.forPacks([nodeRuntimePack()]);
   store.notePossibleCallers([file]);
   const nodes = file
     .getDescendants()
     .filter(
       (node) =>
-        Node.isPropertyAccessExpression(node) || Node.isCallExpression(node),
+        Node.isPropertyAccessExpression(node) ||
+        Node.isElementAccessExpression(node) ||
+        Node.isCallExpression(node),
     );
   return {
     file,
@@ -154,8 +156,8 @@ interface Stated {
   readonly source: FactSource;
 }
 
-async function pythonSites(): Promise<Stated> {
-  const tree = await parsePython(PYTHON);
+async function pythonSites(text = PYTHON): Promise<Stated> {
+  const tree = await parsePython(text);
   const root = tree.rootNode;
   const module = bindModule(root);
   const db = pythonFacts({ file: "env.py", root, module, packs: [] });
@@ -164,8 +166,8 @@ async function pythonSites(): Promise<Stated> {
   return { sites: sitesIn(db, source, global("os.environ")), db, source };
 }
 
-async function rubySites(): Promise<Stated> {
-  const tree = await parseRuby(RUBY);
+async function rubySites(text = RUBY): Promise<Stated> {
+  const tree = await parseRuby(text);
   const db = rubyFacts({ file: "env.rb", root: tree.rootNode, packs: [] });
   emitEnvFacts(db, "env.rb", tree.rootNode);
   const source = rubyFactSource(db);
@@ -290,6 +292,24 @@ describe("the read ops, in every language", () => {
     expect(readingsOf(sites, (entry) => `ENV["${entry}"]`)).toEqual(
       EVERY_LANGUAGE,
     );
+  });
+
+  it("read a key written as a template as one the program works out", async () => {
+    const typescript = typescriptSites(
+      "export function key(name: string) {\n  return process.env[`${name}_KEY`];\n}\n",
+    ).sites;
+    const python = await pythonSites(
+      'import os\n\n\ndef key(name):\n    return os.environ[f"{name}_KEY"]\n',
+    );
+    const ruby = await rubySites('def key(name)\n  ENV["#{name}_KEY"]\nend\n');
+    const keyed = (sites: Sites, text: string) => {
+      const site = sites.at(text);
+      return { entry: site.entry(), isOff: site.isOff(sites.object) };
+    };
+    const computed = { entry: null, isOff: true };
+    expect(keyed(typescript, "process.env[`${name}_KEY`]")).toEqual(computed);
+    expect(keyed(python.sites, 'os.environ[f"{name}_KEY"]')).toEqual(computed);
+    expect(keyed(ruby.sites, 'ENV["#{name}_KEY"]')).toEqual(computed);
   });
 
   it("read the entries TypeScript destructures off the object itself", () => {
