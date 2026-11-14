@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { astLink } from "./ast.js";
+import { association, callback, classBody } from "./classBody.js";
 import { examplesMissing, runExamples } from "./example.js";
 import { messageSends } from "./messageSends.js";
 import {
@@ -1943,22 +1944,37 @@ describe("a pack that reads more files than its chains match in", () => {
       dirs: (fromDir: string) => [`${fromDir}/generated`],
     };
     const inputs = () => ["/repo/tapedeck.yaml"];
+    const body = classBody({
+      calls: {
+        tracks: association({ name: { at: 0 }, plural: true }),
+        rewinds: callback({ methods: { from: 0 }, events: ["play"] }),
+      },
+    });
     const stated = pack("tapedeck", [store()], {
       languages: ["typescript"],
       recognizedAs: "@suss/framework-tapedeck",
       parameterSuppliers: [{ module: "tapedeck", name: "InjectDeck" }],
+      classBodies: [body],
       generatedModules,
       discoveryInputs: inputs,
     });
 
     expect(stated).toMatchObject({
       parameterSuppliers: [{ module: "tapedeck", name: "InjectDeck" }],
+      classBodies: [body],
       generatedModules,
       discoveryInputs: inputs,
+    });
+    // The pack health report counts each call the body declares as data.
+    expect(stated.declarations?.declarations.at(-1)).toMatchObject({
+      name: "classBody",
+      dataLinks: 2,
+      functionLinks: [],
     });
     const bare = packOf(store());
     for (const field of [
       "parameterSuppliers",
+      "classBodies",
       "generatedModules",
       "discoveryInputs",
     ]) {

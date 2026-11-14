@@ -503,10 +503,25 @@ export interface ClassValueOps {
    */
   name(): string | null;
   /**
-   * The calls written as statements of the class body, as
-   * `ValueOps.bodyCalls` lists them. Only Ruby writes a call there.
+   * The calls the class body makes outside every method, in source
+   * order: its statements, through the branches of a conditional, and in
+   * Ruby the statements of each block one of them is written with, as
+   * `included do`. A TypeScript class's statements are those of its
+   * static blocks.
    */
   bodyCalls(): readonly CallOps[];
+  /**
+   * The calls the class body assigns to a name of its own, in source
+   * order: `items = relationship("Item")` in Python, a field initialized
+   * by a call in TypeScript, a constant in Ruby.
+   */
+  fieldCalls(): readonly FieldCall[];
+}
+
+/** A call a class body assigns to one of the class's own names. */
+export interface FieldCall {
+  readonly name: string;
+  readonly call: CallOps;
 }
 
 /** A member asked for by name, `singleton` for the class's own member rather than an instance's. */
@@ -1081,6 +1096,12 @@ export interface FactSource {
     key: string,
     bindings: ReadonlyMap<string, string>,
   ): string | number | boolean | null;
+  /**
+   * The calls the class at the key makes in its body, in source order:
+   * what the rules' `classBodyCall` gives. Unset reads the body's own
+   * statements alone.
+   */
+  classBodyCalls?(key: string): readonly string[];
   /**
    * Every function and object the value at the key comes to, through
    * names and through a call that returns its argument. The ops pick the

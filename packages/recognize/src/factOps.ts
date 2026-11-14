@@ -16,6 +16,7 @@
 import { byOrigin, lastValueWins } from "@suss/extractor";
 import {
   boundByImport,
+  bySourceOrder,
   classMemberName,
   classMemberOf,
   fileOfKey,
@@ -39,6 +40,7 @@ import type {
   ElementOps,
   Encoded,
   FactSource,
+  FieldCall,
   Global,
   HandedBy,
   Imported,
@@ -1596,8 +1598,32 @@ class FactClass implements ClassValueOps {
     );
   }
 
+  /** `classBodyCall` through the adapter, which asks the rules, or the body's own statements without it. */
   bodyCalls(): readonly CallOps[] {
-    return bodyCallsOf(this.key, this.facts);
+    const asked = this.facts.classBodyCalls?.(this.key);
+    if (asked === undefined) {
+      return bodyCallsOf(this.key, this.facts);
+    }
+    return asked.flatMap((key) => {
+      const ops = factCallOps(key, this.facts);
+      return ops === null ? [] : [ops];
+    });
+  }
+
+  /** The `holdsProperty` and `declaresDefault` rows on the class whose value is a call. */
+  fieldCalls(): readonly FieldCall[] {
+    const { db } = this.facts;
+    const assigned = [
+      ...db.lookup("holdsProperty", 0, this.key),
+      ...db.lookup("declaresDefault", 0, this.key),
+    ].sort((a, b) => bySourceOrder(String(a[2]), String(b[2])));
+    return assigned.flatMap((row) => {
+      const call = factCallOps(String(row[2]), this.facts);
+      const stated = String(row[1]);
+      return call === null
+        ? []
+        : [{ name: classMemberOf(stated) ?? stated, call }];
+    });
   }
 }
 
