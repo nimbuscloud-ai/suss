@@ -443,11 +443,10 @@ export async function inspectProject(root: string): Promise<InitReport> {
     });
   }
 
-  for (const suggestion of lambdaHandlerPacks(
-    resolved,
-    suggestions,
-    languages,
-  )) {
+  for (const suggestion of [
+    ...lambdaHandlerPacks(resolved, suggestions, languages),
+    ...queueConsumerPacks(resolved, suggestions, languages, packs),
+  ]) {
     add(suggestion);
   }
 
@@ -498,10 +497,7 @@ function lambdaHandlerPacks(
   suggestions: ReadonlyArray<PackSuggestion>,
   languages: readonly Language[],
 ): PackSuggestion[] {
-  const manifest = suggestions.find(
-    (suggestion) =>
-      suggestion.name === "cloudformation" || suggestion.name === "serverless",
-  );
+  const manifest = functionManifestOf(suggestions);
   if (manifest?.file === undefined || !declaresFunctions(root, manifest)) {
     return [];
   }
@@ -519,6 +515,72 @@ function lambdaHandlerPacks(
           },
         ];
   });
+}
+
+/** The SAM template or Serverless service file found next to the source. */
+function functionManifestOf(
+  suggestions: ReadonlyArray<PackSuggestion>,
+): PackSuggestion | undefined {
+  return suggestions.find(
+    (suggestion) =>
+      suggestion.name === "cloudformation" || suggestion.name === "serverless",
+  );
+}
+
+/** The pack that reads the message a queue-triggered handler decodes, in each language that has one. */
+const QUEUE_CONSUMER_PACKS: Partial<Record<Language, string>> = {
+  typescript: "aws-sqs",
+};
+
+/**
+ * A handler that only drains a queue never imports the SQS client, and the
+ * Lambda event types it may import say nothing about which events reach
+ * it. So an SQS event source in the template or service file is what
+ * suggests the pack that reads the message the handler decodes.
+ */
+function queueConsumerPacks(
+  root: string,
+  suggestions: ReadonlyArray<PackSuggestion>,
+  languages: readonly Language[],
+  packs: ReadonlyArray<{ name: string; declares: PackDeclaration }>,
+): PackSuggestion[] {
+  const manifest = functionManifestOf(suggestions);
+  if (manifest?.file === undefined || !drainsAQueue(root, manifest)) {
+    return [];
+  }
+  return languages.flatMap((language) => {
+    const pack = packs.find(
+      (candidate) => candidate.name === QUEUE_CONSUMER_PACKS[language],
+    );
+    return pack === undefined
+      ? []
+      : [
+          {
+            name: pack.name,
+            packageName: pack.declares.package,
+            because: `${LANGUAGE_LABEL[language]} sources, and a function an SQS queue triggers in ${manifest.file}`,
+            kind: pack.declares.kind,
+            language,
+          },
+        ];
+  });
+}
+
+/**
+ * Whether the manifest wires a function to an SQS queue: a SAM event of
+ * type `SQS`, an event source mapping beside a queue the template
+ * declares, or a Serverless `sqs` event.
+ */
+function drainsAQueue(root: string, manifest: PackSuggestion): boolean {
+  const text = textOf(path.join(root, manifest.file ?? ""));
+  if (manifest.name === "serverless") {
+    return /^\s*-\s*sqs\s*:/m.test(text);
+  }
+  return (
+    /^\s*Type:\s*["']?SQS["']?\s*$/m.test(text) ||
+    (/AWS::Lambda::EventSourceMapping/.test(text) &&
+      /AWS::SQS::Queue/.test(text))
+  );
 }
 
 /** A service file always declares functions, and a template may declare none. */
