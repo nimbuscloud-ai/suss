@@ -1331,6 +1331,10 @@ function emitBindingValues(
     if (initializer !== undefined && imported === null) {
       fact(db, "binds", declarationId, emitValue(db, table, initializer));
     }
+    const over = loopCollectionOf(declaration);
+    if (over !== null) {
+      fact(db, "elementOf", declarationId, emitValue(db, table, over));
+    }
     return;
   }
 
@@ -1455,7 +1459,45 @@ export function emitBindingElementFacts(
   if (fallback !== undefined) {
     fact(db, "binds", id, emitValue(db, table, fallback));
   }
+  emitLoopPart(db, table, element);
   return id;
+}
+
+/**
+ * The collection a `for...of` or `for await...of` loop goes through, when
+ * the declaration is the one its head writes. The loop gives the
+ * variable one element each time round, as `map` gives its callback's
+ * parameter one.
+ */
+function loopCollectionOf(declaration: VariableDeclaration): Expression | null {
+  const loop = declaration.getParent().getParent();
+  return Node.isForOfStatement(loop) ? loop.getExpression() : null;
+}
+
+/**
+ * `for (const { id } of orders)`: the name a loop's head takes each
+ * element apart into is given that part of every element.
+ */
+function emitLoopPart(
+  db: Database,
+  table: NodeTable,
+  element: BindingElement,
+): void {
+  const pattern = element.getParent();
+  const declaration = pattern.getParent();
+  const over = Node.isVariableDeclaration(declaration)
+    ? loopCollectionOf(declaration)
+    : null;
+  const part = partsTakenApart(pattern).find((one) => one.variable === element);
+  if (over !== null && part !== undefined) {
+    fact(
+      db,
+      "elementPartOf",
+      nodeId(element),
+      emitValue(db, table, over),
+      part.key,
+    );
+  }
 }
 
 /**
