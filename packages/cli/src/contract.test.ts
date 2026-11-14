@@ -350,6 +350,26 @@ describe("contract CLI command", () => {
     }
   });
 
+  it("skips stories under installed packages and hidden folders when --from storybook targets a dir", async () => {
+    const fixtureStory = fs.readFileSync(
+      path.resolve(__dirname, "../../../fixtures/storybook/Button.stories.tsx"),
+      "utf8",
+    );
+    const placed = ["src", "node_modules/@storybook/react/template", ".cache"];
+    for (const folder of placed) {
+      fs.mkdirSync(path.join(tmpDir, folder), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpDir, folder, "Button.stories.tsx"),
+        fixtureStory,
+      );
+    }
+    const summaries = await readContract({ from: "storybook", spec: tmpDir });
+    const files = new Set(summaries.map((summary) => summary.location.file));
+    expect([...files]).toEqual([
+      expect.stringMatching(/(^|\/)src\/Button\.stories\.tsx$/),
+    ]);
+  });
+
   it("rejects a storybook spec path that doesn't exist", async () => {
     await expect(
       contract({ from: "storybook", spec: "/nonexistent/Stories.tsx" }),
