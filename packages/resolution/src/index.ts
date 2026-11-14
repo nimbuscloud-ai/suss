@@ -2693,6 +2693,18 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("m"), v("n")],
     [lit("wantedOrigin", v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
   ),
+  // A name imported from a project barrel also comes from what the
+  // barrel forwards. TypeScript states that module behind the import only
+  // when the package is installed, and `reExports` either way.
+  rule(
+    "wantedComesFrom",
+    [v("x"), v("m2"), v("n2")],
+    [
+      lit("wantedOrigin", v("x")),
+      lit("comesFrom", v("x"), v("m"), v("n")),
+      lit("moduleForwards", v("m"), v("n"), v("m2"), v("n2")),
+    ],
+  ),
 
   // Call-origin questions, for attribution, in their own demand
   // class. Attribution stops at the import declaration, so nothing
