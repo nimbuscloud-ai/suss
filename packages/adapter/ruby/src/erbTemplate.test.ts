@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { envReadEffects } from "./envReads.js";
 import { rubyInErbTemplate } from "./erbTemplate.js";
 import { parseRuby } from "./parser.js";
+import { factsForFile } from "./project.js";
+import { stdlibReads } from "./stdlib/dispatch.js";
 
 interface Read {
   name: string | null;
@@ -10,8 +11,9 @@ interface Read {
 }
 
 async function templateReads(template: string): Promise<Read[]> {
-  const tree = await parseRuby(rubyInErbTemplate(template));
-  return envReadEffects(tree.rootNode).flatMap(({ effect }) =>
+  const root = (await parseRuby(rubyInErbTemplate(template))).rootNode;
+  const db = factsForFile({ file: "database.yml", root, packs: [] });
+  return stdlibReads(root, db).flatMap(({ effect }) =>
     effect.type === "interaction" && effect.interaction.class === "config-read"
       ? [
           {

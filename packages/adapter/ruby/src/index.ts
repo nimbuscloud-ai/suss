@@ -72,6 +72,10 @@ export {
   walkClasses,
   walkDefinitions,
 } from "./scope.js";
+// The environment chain this adapter runs on every body, and the reads
+// it reports, for a test that runs each language's own chain.
+export { stdlibReads } from "./stdlib/dispatch.js";
+export { ENVIRONMENT } from "./stdlib/environment.js";
 export {
   pooledStorage,
   type RbStorageOptions,

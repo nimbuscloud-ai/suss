@@ -2,18 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import {
-  emitBlankToNilFacts,
-  emitEnvFacts,
-  envReadEffects,
-} from "./envReads.js";
-import {
-  collectFileConstants,
-  emitConstantBindings,
-} from "./facts/constants.js";
-import { emitValueFacts } from "./facts/values.js";
+import { emitBlankToNilFacts } from "./envReads.js";
 import { parseRuby } from "./parser.js";
-import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
+import { RunFacts } from "./project.js";
+import { stdlibReads } from "./stdlib/dispatch.js";
+import { ENVIRONMENT } from "./stdlib/environment.js";
+import { methodDefinitionsIn } from "./values/evaluator.js";
 
 import type { RbNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
@@ -38,14 +32,18 @@ function readsOf(found: readonly EffectAt[]): Read[] {
   });
 }
 
+/** The reads a file makes when it loads, over the facts a run with no pack states for it. */
+async function fileEffects(source: string): Promise<EffectAt[]> {
+  const { db, parsed } = await projectFacts({ "use.rb": source });
+  return stdlibReads(parsed[0]?.root as RbNode, db);
+}
+
 async function fileReads(source: string): Promise<Read[]> {
-  const tree = await parseRuby(source);
-  return readsOf(envReadEffects(tree.rootNode));
+  return readsOf(await fileEffects(source));
 }
 
 async function methodReads(source: string, name: string): Promise<Read[]> {
-  const tree = await parseRuby(source);
-  return readsOf(envReadEffects(findMethod(tree.rootNode, name)));
+  return projectMethodReads({ "use.rb": source }, name);
 }
 
 function findMethod(node: RbNode, name: string): RbNode {
@@ -75,29 +73,24 @@ function findMethodOrNull(node: RbNode, name: string): RbNode | null {
   }
 }
 
-/** The facts a run over these files would have, with the evaluator bound to them. */
+/**
+ * The facts a run with no pack states over these files, with the methods
+ * a pack says turn a blank value into nil.
+ */
 async function projectFacts(
   files: Record<string, string>,
   blankToNil: string[] = [],
 ) {
-  const db = new Database();
-  emitBlankToNilFacts(db, blankToNil);
+  const run = new RunFacts(new Database(), []);
+  emitBlankToNilFacts(run.db, blankToNil);
   const parsed: { file: string; root: RbNode }[] = [];
-  const constants = [];
-  const definitions = new Map<string, RbNode>();
   for (const [file, source] of Object.entries(files)) {
     const tree = await parseRuby(source);
     parsed.push({ file, root: tree.rootNode });
-    emitValueFacts(db, file, tree.rootNode);
-    emitEnvFacts(db, file, tree.rootNode);
-    for (const [key, method] of methodDefinitionsIn(file, tree.rootNode)) {
-      definitions.set(key, method);
-    }
-    constants.push(collectFileConstants(file, tree.rootNode));
+    run.addFile(file, tree.rootNode);
   }
-  emitConstantBindings(db, constants);
-  bindEvaluator(db, { files: parsed, definitions });
-  return { db, parsed };
+  run.finish();
+  return { db: run.db, parsed };
 }
 
 /** What `use.rb` reports when it loads, with every other file in the run beside it. */
@@ -117,7 +110,7 @@ async function projectEffects(
   if (entry === undefined) {
     throw new Error("no use.rb");
   }
-  return envReadEffects(entry.root, { db, file: "use.rb" });
+  return stdlibReads(entry.root, db);
 }
 
 /** The same, for what one method of `use.rb` reads when it runs. */
@@ -137,7 +130,7 @@ async function projectMethodEffects(
   if (entry === undefined) {
     throw new Error("no use.rb");
   }
-  return envReadEffects(findMethod(entry.root, name), { db, file: "use.rb" });
+  return stdlibReads(findMethod(entry.root, name), db);
 }
 
 /** Each read that records a value it falls back to, with that value. */
@@ -214,7 +207,7 @@ describe("ENV spellings", () => {
     );
     const root = parsed[0]?.root as RbNode;
     expect(
-      envReadEffects(root, { db, file: "use.rb" }).map(({ effect }) =>
+      stdlibReads(root, db).map(({ effect }) =>
         effect.type === "interaction" &&
         effect.interaction.class === "config-read"
           ? [effect.interaction.name, effect.interaction.default]
@@ -243,7 +236,7 @@ describe("ENV spellings", () => {
     });
     const root = parsed[0]?.root as RbNode;
     expect(
-      envReadEffects(root, { db, file: "use.rb" }).map(({ effect }) =>
+      stdlibReads(root, db).map(({ effect }) =>
         effect.type === "interaction" &&
         effect.interaction.class === "config-read"
           ? [effect.interaction.name, effect.interaction.default]
@@ -297,12 +290,18 @@ describe("ENV spellings", () => {
   it("records a read with no name when the name is not a string literal", async () => {
     expect(
       await fileReads(
-        'A = ENV[name]\nB = ENV.fetch("#{prefix}_B")\nC = ENV[:C]\n',
+        'A = ENV[name]\nB = ENV.fetch("#{prefix}_B")\nC = ENV.fetch(:C)\n',
       ),
     ).toEqual([
       { name: null, defaulted: false },
       { name: null, defaulted: false },
       { name: null, defaulted: false },
+    ]);
+  });
+
+  it("reads a symbol key at a subscript as the entry it spells, as the facts state a hash's, though ENV raises on one", async () => {
+    expect(await fileReads("C = ENV[:C]\n")).toEqual([
+      { name: "C", defaulted: false },
     ]);
   });
 
@@ -616,8 +615,7 @@ describe("what a method body reads", () => {
   });
 
   it("spells every read as ENV[...] so the checker names one channel", async () => {
-    const tree = await parseRuby('A = ENV.fetch("A")\n');
-    const [read] = envReadEffects(tree.rootNode);
+    const [read] = await fileEffects('A = ENV.fetch("A")\n');
     expect(read?.effect).toMatchObject({
       type: "interaction",
       callee: 'ENV["A"]',
@@ -626,13 +624,194 @@ describe("what a method body reads", () => {
   });
 
   it("leaves the deployment off a read, since the code does not say which one runs it", async () => {
-    const tree = await parseRuby('A = ENV.fetch("A")\n');
-    const [read] = envReadEffects(tree.rootNode);
+    const [read] = await fileEffects('A = ENV.fetch("A")\n');
     const effect = read?.effect;
     expect(read?.effect.location).toEqual({ start: 1, end: 1 });
     expect(effect?.type === "interaction" && effect.binding.semantics).toEqual({
       name: "runtime-config",
     });
+  });
+});
+
+const EVERY_SPELLING = `module Settings
+  KEY = "K"
+
+  def self.need(name)
+    ENV[name]
+  end
+
+  def self.need_or(name, fallback = nil)
+    ENV.fetch(name, fallback)
+  end
+
+  def self.keyed(name:)
+    ENV[name]
+  end
+
+  def self.reads
+    a = ENV["A"]
+    b = ENV.fetch("B", "d")
+    c = ENV.fetch("C") { "z" }
+    d = ::ENV["D"]
+    f = ENV["F"] || "y"
+    g = need("G")
+    h = ENV.fetch("H")
+    i = need_or("I", "z")
+    j = keyed(name: "J")
+    k1 = ENV.fetch(KEY, nil)
+    k2 = ENV[KEY]
+    p = ENV["P"].presence || "p"
+    q = need("Q").presence || "q"
+    ENV["W"] = "1"
+    ENV["X"] ||= "x"
+    e = ENV.key?("E")
+    [a, b, c, d, f, g, h, i, j, k1, k2, p, q, e]
+  end
+end
+
+class Client
+  def initialize(token: ENV["TOKEN"], host: ENV.fetch("HOST", "h"))
+    @token = token
+    @host = host
+  end
+
+  def self.build_with
+    new(token: "t")
+  end
+end
+
+LOADED = ENV.fetch("LOADED", "on")
+`;
+
+const CLASS_BODIES = `module App
+  class Application
+    config.force_ssl = ENV["FORCE_SSL"].present?
+    TOKEN = ENV["TOKEN"]
+    x = ENV["PLAIN"]
+  end
+end
+
+class Importer < Base
+  DB_USER = ENV["DB_USER"] || "x"
+end
+
+class Plain
+  def self.instance
+    new(key: ENV["#{name.upcase}_KEY"], other: ENV["OTHER"])
+  end
+end
+`;
+
+describe("every spelling in one file", () => {
+  /** Each read's callee, name, whether it is defaulted and what it falls back to, in one method or at load time. */
+  async function readsIn(
+    source: string,
+    unit: string | null,
+    blankToNil: string[] = [],
+  ) {
+    const { db, parsed } = await projectFacts({ "use.rb": source }, blankToNil);
+    const root = parsed[0]?.root as RbNode;
+    const body =
+      unit === null
+        ? root
+        : root
+            .descendantsOfType(["method", "singleton_method"])
+            .find((one) => one?.childForFieldName("name")?.text === unit);
+    return stdlibReads(body ?? root, db).map(({ effect }) =>
+      effect.type === "interaction" &&
+      effect.interaction.class === "config-read"
+        ? [
+            effect.callee,
+            effect.interaction.name,
+            effect.interaction.defaulted,
+            effect.interaction.default ?? null,
+          ]
+        : [],
+    );
+  }
+
+  it("reads each one as the variable it names, spelled at a key", async () => {
+    expect(await readsIn(EVERY_SPELLING, "reads")).toEqual([
+      ['ENV["A"]', "A", false, null],
+      ['ENV["B"]', "B", true, "d"],
+      ['ENV["C"]', "C", true, null],
+      ['ENV["D"]', "D", false, null],
+      ['ENV["F"]', "F", true, "y"],
+      ['ENV["G"]', "G", false, null],
+      ['ENV["H"]', "H", false, null],
+      ['ENV["I"]', "I", true, null],
+      ['ENV["J"]', "J", false, null],
+      ["ENV.fetch(KEY, nil)", null, true, null],
+      ["ENV[KEY]", null, false, null],
+      ['ENV["P"]', "P", false, null],
+      ['ENV["Q"]', "Q", false, null],
+    ]);
+  });
+
+  it("counts a fallback past a blank-to-nil method, at a read and at a helper call", async () => {
+    const reads = await readsIn(EVERY_SPELLING, "reads", ["presence"]);
+    expect(reads.filter(([, name]) => name === "P" || name === "Q")).toEqual([
+      ['ENV["P"]', "P", true, "p"],
+      ['ENV["Q"]', "Q", true, "q"],
+    ]);
+  });
+
+  it("reads a helper's own read with no name, and the fallback its one caller passes", async () => {
+    expect([
+      await readsIn(EVERY_SPELLING, "need"),
+      await readsIn(EVERY_SPELLING, "need_or"),
+    ]).toEqual([
+      [["ENV[name]", null, false, null]],
+      [["ENV.fetch(name, fallback)", null, true, "z"]],
+    ]);
+  });
+
+  it("reads the default a constructor call leaves out, at the call", async () => {
+    expect(await readsIn(EVERY_SPELLING, "build_with")).toEqual([
+      ['ENV["HOST"]', "HOST", true, "h"],
+    ]);
+  });
+
+  it("reads what the file runs when it loads, and nothing in a method", async () => {
+    expect(await readsIn(EVERY_SPELLING, null)).toEqual([
+      ['ENV["LOADED"]', "LOADED", true, "on"],
+    ]);
+  });
+
+  it("reads every statement a class body runs, and a key written as a template", async () => {
+    expect([
+      await readsIn(CLASS_BODIES, null),
+      await readsIn(CLASS_BODIES, "instance"),
+    ]).toEqual([
+      [
+        ['ENV["FORCE_SSL"]', "FORCE_SSL", false, null],
+        ['ENV["TOKEN"]', "TOKEN", false, null],
+        ['ENV["PLAIN"]', "PLAIN", false, null],
+        ['ENV["DB_USER"]', "DB_USER", true, "x"],
+      ],
+      [
+        ['ENV["#{name.upcase}_KEY"]', null, false, null],
+        ['ENV["OTHER"]', "OTHER", false, null],
+      ],
+    ]);
+  });
+
+  it("matches the example the chain declares", async () => {
+    const reads = await fileEffects(
+      `TABLE = ${ENVIRONMENT.declared.example}\n`,
+    );
+    expect(
+      reads.map(({ effect }) =>
+        effect.type === "interaction" ? effect.interaction : null,
+      ),
+    ).toEqual([
+      {
+        class: "config-read",
+        name: "TABLE_NAME",
+        defaulted: true,
+        default: "accounts",
+      },
+    ]);
   });
 });
 

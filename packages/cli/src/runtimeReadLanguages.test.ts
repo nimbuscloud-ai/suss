@@ -3,10 +3,10 @@
  * TypeScript, Python and Ruby: a plain read, a read with a fallback, an
  * assignment to an entry, and a read through a helper `need("G")`.
  * TypeScript also has a destructured read, and runs the Node pack's
- * chains through the access context. Python runs its own environment
- * chain through its read dispatch. Ruby still records environment reads
- * itself, so it gets a test chain run over its facts, as TypeScript does
- * for a mapping's getters.
+ * chains through the access context. Python and Ruby each run their own
+ * environment chain through their read dispatch. A function the runtime
+ * provides is a test chain in TypeScript and Ruby, whose environments
+ * have none.
  */
 
 import { Node, SyntaxKind } from "ts-morph";
@@ -24,11 +24,12 @@ import {
   stdlibReads,
 } from "@suss/adapter-python";
 import {
-  emitEnvFacts,
   parseRuby,
+  ENVIRONMENT as RUBY_ENVIRONMENT,
   rubyFactSource,
   factsForFile as rubyFacts,
   nodeId as rubyNodeId,
+  stdlibReads as rubyStdlibReads,
 } from "@suss/adapter-ruby";
 import {
   accessContextFor,
@@ -180,12 +181,16 @@ async function pythonSites(
   };
 }
 
-async function rubySites(text = RUBY): Promise<Stated> {
+async function rubySites(
+  text = RUBY,
+): Promise<
+  Stated & { root: Awaited<ReturnType<typeof parseRuby>>["rootNode"] }
+> {
   const tree = await parseRuby(text);
-  const db = rubyFacts({ file: "env.rb", root: tree.rootNode, packs: [] });
-  emitEnvFacts(db, "env.rb", tree.rootNode);
+  const root = tree.rootNode;
+  const db = rubyFacts({ file: "env.rb", root, packs: [] });
   const source = rubyFactSource(db);
-  return { sites: sitesIn(db, source, global("ENV")), db, source };
+  return { sites: sitesIn(db, source, global("ENV")), db, source, root };
 }
 
 /** The sites the facts state a read, an assignment or a call at, by their text. */
@@ -441,6 +446,10 @@ def reads(name):
 const MAPPING_RUBY = `module Settings
   KEY = "K"
 
+  def self.need(name:)
+    ENV[name]
+  end
+
   def self.reads(name)
     a = ENV["A"]
     n = ENV[name]
@@ -449,7 +458,10 @@ const MAPPING_RUBY = `module Settings
     d = ::ENV["D"]
     f = ENV.fetch("F") || "y"
     s = ENV.fetch("S") if ENV.key?("S")
-    [a, n, k, c, d, f, s]
+    h = need(name: "H")
+    ENV["Z"] = "z"
+    ENV["P"] ||= "x"
+    [a, n, k, c, d, f, s, h]
   end
 end
 `;
@@ -537,6 +549,22 @@ async function pythonOwnReads(text = MAPPING_PYTHON, unit = "reads") {
   };
 }
 
+/** Ruby's own reads, through the adapter's dispatch and its own chain. */
+async function rubyOwnReads(text = MAPPING_RUBY, unit = "reads") {
+  const stated = await rubySites(text);
+  const body =
+    stated.root
+      .descendantsOfType(["method", "singleton_method"])
+      .find((one) => one?.childForFieldName("name")?.text === unit) ??
+    raise(`no method ${unit}`);
+  return {
+    stated,
+    reads: configReadsIn(
+      rubyStdlibReads(body, stated.db).map(({ effect }) => effect),
+    ),
+  };
+}
+
 describe("a read chain over a mapping, in every language", () => {
   it("reads an entry at a key, and says what a computed key comes from", async () => {
     const { sites } = typescriptSites(MAPPING_TYPESCRIPT);
@@ -568,6 +596,7 @@ describe("a read chain over a mapping, in every language", () => {
 
   it("spells a keyed callee from the object's path, and a computed key's as written", async () => {
     const python = await pythonOwnReads();
+    const ruby = await rubyOwnReads();
     expect(
       typescriptReadsAt(mappingChain("process.env", "get"), [
         "process.env[name]",
@@ -583,13 +612,16 @@ describe("a read chain over a mapping, in every language", () => {
       python.reads.find(([callee]) => callee === "os.environ[name]"),
     ).toEqual(["os.environ[name]", null, false, null]);
     expect(
-      factReadsAt(await rubySites(MAPPING_RUBY), mappingChain("ENV", "fetch"), [
-        'ENV["A"]',
-        '::ENV["D"]',
-      ]),
+      ruby.reads.filter(([, name]) => name === "A" || name === "D"),
     ).toEqual([
       ['ENV["A"]', "A", false, null],
       ['ENV["D"]', "D", false, null],
+    ]);
+    expect(ruby.reads.find(([callee]) => callee === "ENV[name]")).toEqual([
+      "ENV[name]",
+      null,
+      false,
+      null,
     ]);
   });
 
@@ -621,9 +653,9 @@ describe("a read chain over a mapping, in every language", () => {
       python.reads.filter(([callee]) => callee === "os.environ.get(KEY)"),
     ).toEqual([["os.environ.get(KEY)", null, false, null]]);
     expect(
-      factReadsAt(await rubySites(MAPPING_RUBY), mappingChain("ENV", "fetch"), [
-        "ENV.fetch(KEY)",
-      ]),
+      (await rubyOwnReads()).reads.filter(
+        ([callee]) => callee === "ENV.fetch(KEY)",
+      ),
     ).toEqual([["ENV.fetch(KEY)", null, false, null]]);
   });
 
@@ -658,10 +690,9 @@ describe("a read chain over a mapping, in every language", () => {
       ['os.environ["F"]', "F", true, "y"],
     ]);
     expect(
-      factReadsAt(await rubySites(MAPPING_RUBY), mappingChain("ENV", "fetch"), [
-        'ENV.fetch("F")',
-        'ENV.fetch("S")',
-      ]),
+      (await rubyOwnReads()).reads.filter(
+        ([, name]) => name === "F" || name === "S",
+      ),
     ).toEqual([
       ['ENV["F"]', "F", true, "y"],
       ['ENV["S"]', "S", true, null],
@@ -670,41 +701,68 @@ describe("a read chain over a mapping, in every language", () => {
 
   it("says what a site reads before asking whether the program copes, and a test before a raising read copes", async () => {
     const python = await pythonOwnReads();
-    const said = (text: string) => {
-      const site = factSiteAt(python.stated, text);
-      const call = python.stated.db
-        .facts("call")
-        .map((row) => String(row[0]))
-        .find((key) => python.stated.source.textOf(key) === text);
-      return siteReadOf(ENVIRONMENT.declared, {
-        read: site,
-        ops:
-          call === undefined ? null : factCallOps(call, python.stated.source),
-      });
-    };
+    const ruby = await rubyOwnReads();
+    const saidIn =
+      (stated: Stated, chain: typeof ENVIRONMENT.declared) =>
+      (text: string) => {
+        const call = stated.db
+          .facts("call")
+          .map((row) => String(row[0]))
+          .find((key) => stated.source.textOf(key) === text);
+        return siteReadOf(chain, {
+          read: factSiteAt(stated, text),
+          ops: call === undefined ? null : factCallOps(call, stated.source),
+        });
+      };
+    const pythonSaid = saidIn(python.stated, ENVIRONMENT.declared);
+    const rubySaid = saidIn(ruby.stated, RUBY_ENVIRONMENT.declared);
     expect([
-      said('os.environ["A"]'),
-      said("os.environ[name]"),
-      said('os.getenv("C", "c")'),
-      said("os.environ.get"),
+      pythonSaid('os.environ["A"]'),
+      pythonSaid("os.environ[name]"),
+      pythonSaid('os.getenv("C", "c")'),
+      pythonSaid("os.environ.get"),
     ]).toMatchObject([
       { entry: "A", raises: true, passesFallback: false },
       { entry: null, keySource: "name", raises: true },
       { entry: "C", raises: false, passesFallback: true },
       null,
     ]);
+    expect([
+      rubySaid('ENV["A"]'),
+      rubySaid("ENV[name]"),
+      rubySaid('ENV.fetch("S")'),
+      rubySaid("ENV.fetch(KEY)"),
+    ]).toMatchObject([
+      { entry: "A", raises: false, passesFallback: false },
+      { entry: null, keySource: "name", raises: false },
+      { entry: "S", raises: true, passesFallback: false },
+      { entry: null, keySource: "KEY", raises: true },
+    ]);
     expect(python.reads.filter(([, name]) => name === "R")).toEqual([
       ['os.environ["R"]', "R", true, null],
     ]);
+    expect(ruby.reads.filter(([, name]) => name === "S")).toEqual([
+      ['ENV["S"]', "S", true, null],
+    ]);
   });
 
-  it("reads a key a helper is handed by keyword, and never a deleted or incremented entry", async () => {
+  it("reads a key a helper is handed by keyword, and never an entry the code assigns", async () => {
     const python = await pythonOwnReads();
-    const names = python.reads.map(([, name]) => name);
+    const ruby = await rubyOwnReads();
+    const pythonNames = python.reads.map(([, name]) => name);
+    const rubyNames = ruby.reads.map(([, name]) => name);
     expect(python.reads.filter(([, name]) => name === "H")).toEqual([
       ['os.environ["H"]', "H", false, null],
     ]);
-    expect([names.includes("Z"), names.includes("P")]).toEqual([false, false]);
+    expect(ruby.reads.filter(([, name]) => name === "H")).toEqual([
+      ['ENV["H"]', "H", false, null],
+    ]);
+    expect([
+      pythonNames.includes("Z"),
+      pythonNames.includes("P"),
+      rubyNames.includes("Z"),
+      rubyNames.includes("P"),
+    ]).toEqual([false, false, false, false]);
   });
 
   it("finds a helper's key by position in TypeScript and Ruby, with no keyword", async () => {
@@ -716,6 +774,15 @@ describe("a read chain over a mapping, in every language", () => {
       keyOf(sites.at('need("G")').keysSuppliedTo(sites.object)),
       keyOf(ruby.sites.at('need("G")').keysSuppliedTo(ruby.sites.object)),
     ]).toEqual([[[0, undefined]], [[0, undefined]]]);
+  });
+
+  it("finds a Ruby helper's key by keyword", async () => {
+    const ruby = await rubySites(MAPPING_RUBY);
+    expect(
+      (
+        ruby.sites.at('need(name: "H")').keysSuppliedTo(ruby.sites.object) ?? []
+      ).map((key) => [key.at, key.keyword, key.value.evaluated?.()]),
+    ).toEqual([[-1, "name", "H"]]);
   });
 });
 
