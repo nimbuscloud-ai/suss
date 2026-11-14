@@ -2017,3 +2017,110 @@ describe("the ops a receive asks, over the facts", () => {
     expect(value.keysRead?.()).toEqual([]);
   });
 });
+
+/**
+ * The facts for a render function and the JSX it writes:
+ *
+ *   function render(args, { ...rest }) {
+ *     <Chip label="x" {...args}>text</Chip>;
+ *     <Chip {...rest} />;
+ *     <Badge tone="warm" {...local} />;
+ *   }
+ *
+ * The second parameter is also keyed as a name is in Python and Ruby,
+ * where the name inside the function is the parameter itself.
+ */
+function rendered(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("func", "render");
+  add("paramOf", "render", "0", "argsParam");
+  add("paramOf", "render", "1", "restParam");
+  add("jsxElement", "chipWithChild", "chipTag");
+  add("jsxAttribute", "chipWithChild", "label", "x");
+  add("jsxSpread", "chipWithChild", "argsName");
+  add("jsxChild", "chipWithChild", "0", "text");
+  add("binds", "argsName", "argsParam");
+  add("jsxElement", "chipBare", "chipTag2");
+  add("jsxSpread", "chipBare", "restName");
+  add("binds", "restName", "restElement");
+  add("restOf", "restElement", "restParam");
+  add("jsxElement", "badge", "badgeTag");
+  add("jsxAttribute", "badge", "tone", "warm");
+  add("jsxSpread", "badge", "localName");
+  add("binds", "localName", "local");
+  const text: Record<string, string> = {
+    chipTag: "Chip",
+    chipTag2: "Chip",
+    badgeTag: "Badge",
+  };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => text[key] ?? key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: () => null,
+    elementsOf: (func) =>
+      func === "render" ? ["chipWithChild", "chipBare", "badge"] : [],
+  };
+}
+
+describe("the JSX a function writes and the parameter a value is, over the facts", () => {
+  it("gives the elements with the tag asked for, each with its props, its spreads and whether it has children", () => {
+    const facts = rendered();
+    const render = factValueOps("render", facts);
+    const read = (tag: string) =>
+      (render.elements?.(tag) ?? []).map((element) => ({
+        props: element.props(),
+        spreads: element
+          .spreads()
+          .map((spread) => spread.parameterAt?.(render)),
+        children: element.hasChildren(),
+      }));
+
+    expect(read("Chip")).toEqual([
+      { props: ["label"], spreads: [0], children: true },
+      { props: [], spreads: [1], children: false },
+    ]);
+    expect(read("Badge")).toEqual([
+      { props: ["tone"], spreads: [null], children: false },
+    ]);
+    expect(factValueOps("argsName", facts).elements?.("Chip")).toEqual([]);
+  });
+
+  it("reads a value that is the parameter itself, and nothing at a function that is no function", () => {
+    const facts = rendered();
+    const render = factValueOps("render", facts);
+
+    expect(factValueOps("restParam", facts).parameterAt?.(render)).toBe(1);
+    expect(
+      factValueOps("argsName", facts).parameterAt?.(
+        factValueOps("local", facts),
+      ),
+    ).toBeNull();
+    const unread: ValueOps = {
+      text: () => null,
+      name: () => null,
+      flag: () => null,
+      entries: () => [],
+      items: () => [],
+      property: () => null,
+      asArg: () => null,
+      parts: () => null,
+      holes: () => [],
+    };
+    expect(factValueOps("argsName", facts).parameterAt?.(unread)).toBeNull();
+  });
+
+  it("gives no elements where the adapter states no JSX", () => {
+    const { elementsOf: _, ...withoutJsx } = rendered();
+
+    expect(factValueOps("render", withoutJsx).elements?.("Chip")).toEqual([]);
+  });
+});

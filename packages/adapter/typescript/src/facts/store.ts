@@ -85,6 +85,7 @@ import {
   generatedModulesOf,
   NO_GENERATOR,
 } from "./generatedModules.js";
+import { stateElementsWritten } from "./jsxWrites.js";
 import {
   LANGUAGE_RECEIVER_RETURNS,
   LANGUAGE_WRAPPERS,
@@ -1514,6 +1515,15 @@ export class ResolutionStore {
         handedBack,
       );
     });
+  }
+
+  /**
+   * The JSX elements a function writes, in source order, with the rows
+   * that describe each one stated. No rule reads them, so nothing needs
+   * deriving again.
+   */
+  elementsWrittenIn(func: Node): string[] {
+    return stateElementsWritten(this.db, this.table, func);
   }
 
   /**

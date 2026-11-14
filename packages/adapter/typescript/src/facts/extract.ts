@@ -1477,6 +1477,19 @@ export function emitBindingElementFacts(
     fact(db, "binds", id, emitValue(db, table, fallback));
   }
   emitLoopPart(db, table, element);
+
+  const parameter = Node.isObjectBindingPattern(pattern)
+    ? pattern.getParent()
+    : undefined;
+  if (
+    element.getDotDotDotToken() !== undefined &&
+    parameter !== undefined &&
+    Node.isParameterDeclaration(parameter)
+  ) {
+    const parameterId = nodeId(parameter);
+    table.byId.set(parameterId, parameter);
+    fact(db, "restOf", id, parameterId);
+  }
   return id;
 }
 

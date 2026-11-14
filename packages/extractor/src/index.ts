@@ -1378,6 +1378,7 @@ export type {
   ConstructedFrom,
   DeclaredBy,
   Decoded,
+  ElementOps,
   Encoded,
   FactRows,
   FactSource,

@@ -193,6 +193,12 @@ handedIn(p, n)              the platform fills the parameter p with an
                             runtimeObject rule
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
+restOf(x, p)                x is the rest element of the object
+                            destructure written as the parameter p,
+                            ...rest in ({ a, ...rest }) =>. Stated with
+                            binds, when a name refers to x. The value
+                            ops' parameterAt reads it, and no rule does
+                            (TypeScript)
 elementOf(x, over)          the parameter, loop variable or block variable
                             x is given one element of the collection over
                             each time it runs: the first parameter of a
@@ -393,6 +399,26 @@ jsxElement(v, t)            v is a JSX element whose tag is written t,
                             the component it renders. A discovery
                             pattern reads it through the value ops, and
                             no rule does (TypeScript)
+writesElement(f, v)         the JSX element v is written inside the
+                            function f: in its own body, in a function
+                            written inside it, or in an attribute's
+                            value. Each element also gets its
+                            jsxElement(v, t) row
+jsxAttribute(v, n, x)       the element v writes the attribute n, as the
+                            source spells it, with the value x. An
+                            attribute written with no value is its own x
+jsxSpread(v, x)             the element v spreads x into its props,
+                            {...x}
+jsxChild(v, k, c)           c reaches the element v as its child at
+                            position k among what is written between its
+                            tags: an element, a fragment, an expression,
+                            or text other than whitespace. An empty
+                            expression such as a comment is no child.
+                            The fact source states these four for one
+                            function when the value ops' elements(tag)
+                            asks about it, and the body walk does not,
+                            so they are partial and no rule reads them
+                            (TypeScript)
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
 reExportsAll(m, m2)         m forwards everything m2 exports: export *
                             from in TypeScript, from m2 import * in
