@@ -1,7 +1,7 @@
 {
   "name": "@suss/extractor",
   "exports": 128,
-  "internal": 263,
+  "internal": 236,
   "consumers": 67,
-  "unfollowedCalls": 25
+  "unfollowedCalls": 40
 }

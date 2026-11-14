@@ -1,7 +1,7 @@
 {
   "name": "@suss/values",
   "exports": 56,
-  "internal": 90,
+  "internal": 84,
   "consumers": 4,
-  "unfollowedCalls": 21
+  "unfollowedCalls": 30
 }
