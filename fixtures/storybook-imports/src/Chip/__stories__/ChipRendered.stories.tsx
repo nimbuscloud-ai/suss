@@ -4,6 +4,7 @@ import { Chip } from "../Chip";
 
 const Frame = (props: { children?: unknown }) => props.children;
 const extra = { size: "sm" as const };
+const SIZES = [{ size: "sm" as const }, { size: "md" as const }];
 
 export default {
   component: Chip,
@@ -33,4 +34,16 @@ export const Wrapping = {
 
 export const Extra = {
   render: (args: { label: string }) => <Chip {...args} {...extra} />,
+};
+
+// A comment between the tags passes no children.
+export const Commented = {
+  render: () => <Chip label="x">{/* note */}</Chip>,
+};
+
+// The callback's own `args` is each entry of SIZES, not the story's args.
+export const Mapped = {
+  render: (args: { label: string }) => (
+    <Frame>{SIZES.map((args) => <Chip {...args} />)}</Frame>
+  ),
 };
