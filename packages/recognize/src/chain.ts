@@ -20,6 +20,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   CallOps,
+  CallsAndOptions,
   ReceiverOrigin,
   RuntimeObject,
   Typed,
@@ -90,7 +91,12 @@ export interface StartLink {
  * steps are data, so a pack that reads three calls states three steps
  * and never writes a function that walks the calls itself.
  */
-export type CallStep = ToReceiver | ToArgument | ToMember | ToChained;
+export type CallStep =
+  | ToReceiver
+  | ToArgument
+  | ToMember
+  | ToChained
+  | ToBuilder;
 
 /**
  * The call the receiver is. With a method, the walk keeps going up the
@@ -142,6 +148,20 @@ export interface ToMember {
 export interface ToChained {
   readonly to: "chained";
   readonly method: string;
+}
+
+/**
+ * The call a library's builder made a value with, through any methods
+ * chained on its result: `z.object({ ... }).strict()` back to
+ * `z.object({ ... })`. The builder is `method` called on a value
+ * imported from one of the modules, or imported from one under that
+ * name. The call the walk is at counts, so an argument written as
+ * `v.object({ ... })` is its own builder.
+ */
+export interface ToBuilder {
+  readonly to: "builder";
+  readonly method: string;
+  readonly from: readonly string[];
 }
 
 /**
@@ -396,7 +416,8 @@ export type Link<TMeaning> =
   | EntriesLink
   | GettersLink
   | WritesLink
-  | ThroughHelpersLink;
+  | ThroughHelpersLink
+  | DefaultedWhenLink;
 
 /**
  * Where a read chain starts: the object its reads are off. A call chain
@@ -431,6 +452,22 @@ export interface WritesLink {
 /** A call into a project function whose parameter supplies a read's key is a read at the call. */
 export interface ThroughHelpersLink {
   readonly asks: "throughHelpers";
+}
+
+/**
+ * What makes a schema's key accept a missing variable: a call to one of
+ * `calls` in the key's schema, or one of `options` set in it.
+ */
+export interface DefaultedWhenLink extends CallsAndOptions {
+  readonly asks: "defaultedWhen";
+}
+
+/** What a call that parses the environment against a schema says about it. */
+export interface SchemaParse {
+  /** Where the call takes the environment. */
+  readonly environment: OneArgument;
+  /** Where the objects whose keys are the variables are. Every pick that finds one adds its keys, in order. */
+  readonly schema: readonly OneArgument[];
 }
 
 /** What a read of one entry of a runtime object is. */
@@ -825,7 +862,8 @@ export type MethodMeaning =
   | StreamWriteMethod
   | EntryMeaning
   | GetterMeaning
-  | WriteMeaning;
+  | WriteMeaning
+  | SchemaParse;
 
 /** What a chain produces when every link matches. */
 export type Ending =

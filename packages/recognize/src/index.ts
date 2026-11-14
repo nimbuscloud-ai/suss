@@ -30,6 +30,7 @@ export {
   subUnitsOf,
 } from "./pack.js";
 export { runtimeReads } from "./runtimeReads.js";
+export { schemaReads } from "./schemaReads.js";
 export { slotsDeclared } from "./slots.js";
 export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
@@ -78,6 +79,7 @@ export type {
   ContainerRule,
   ContainersLink,
   DeclaredSlots,
+  DefaultedWhenLink,
   Deployment,
   Ending,
   EntriesLink,
@@ -119,6 +121,7 @@ export type {
   RuntimeReadEnding,
   ScheduleEnding,
   ScheduleUnread,
+  SchemaParse,
   ScopeLink,
   SelectorParamPick,
   SlotsLink,
@@ -137,6 +140,7 @@ export type {
   TheCall,
   ThroughHelpersLink,
   ToArgument,
+  ToBuilder,
   ToChained,
   ToMember,
   ToReceiver,
@@ -160,6 +164,7 @@ export type {
   AllOf,
   AnyOf,
   CallOps,
+  CallsAndOptions,
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
@@ -190,6 +195,7 @@ export type {
   RuntimeReads,
   RuntimeReadsSpec,
 } from "./runtimeReads.js";
+export type { SchemaReads, SchemaReadsSpec } from "./schemaReads.js";
 export type { SlotColumns } from "./slots.js";
 export type { SqlStatements, SqlStatementsSpec } from "./sqlStatements.js";
 export type {

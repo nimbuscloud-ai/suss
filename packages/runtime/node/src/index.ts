@@ -20,7 +20,7 @@ import {
   ENVIRONMENT_OBJECTS,
   runtimeReadMatches,
 } from "./runtimeReads.js";
-import { schemaReadRecognizer } from "./schemaReads.js";
+import { schemaReadMatches } from "./schemaReads.js";
 import {
   PROCESS_STREAMS,
   STREAM_WRITE_MATCHES,
@@ -36,14 +36,14 @@ import type {
 import type { PackDeclaration } from "@suss/ir-core";
 
 export { runtimeReadMatches } from "./runtimeReads.js";
-export { schemaReadRecognizer } from "./schemaReads.js";
+export { schemaReadMatches } from "./schemaReads.js";
 export { streamWriteRecognizers } from "./streamWrites.js";
 export { TIMER_MATCHES } from "./timers.js";
 
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.12.0";
+const PACK_VERSION = "0.13.0";
 
 /**
  * Every timer call writes a timer's name or imports one from Node's
@@ -115,6 +115,7 @@ export function nodeRuntimePack(
       : {}),
   };
   const reads = runtimeReadMatches(deployment);
+  const schemas = schemaReadMatches(deployment);
   return {
     name: "node",
     version: PACK_VERSION,
@@ -132,13 +133,14 @@ export function nodeRuntimePack(
       ...TIMER_MATCHES,
       ...STREAM_WRITE_MATCHES,
       ...reads.environment,
+      ...schemas,
       ...reads.rest,
     ]),
     accessRecognizers: [
       // A call whose own callee parses a schema has its keys recorded
       // after the reads it makes through a helper.
       ...compiledReads(reads.environment),
-      schemaReadRecognizer(deployment),
+      ...compiledReads(schemas),
       ...compiledReads(reads.rest),
     ],
     subUnits: subUnitsOf(TIMER_MATCHES, TIMERS_WRITTEN),

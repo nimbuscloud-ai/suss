@@ -13,6 +13,7 @@ import {
   askSources,
   callsRun,
   declaredTypesOf,
+  environmentsReaching,
   handedNamesReaching,
   readUses,
   resolutionProgram,
@@ -129,6 +130,11 @@ export function resolveStreamObjects(
 /** The names of the handed-in parameters the rules followed into the value at `key`. */
 export function handedNamesAt(db: Database, key: string): string[] {
   return handedNamesReaching(db, key, programFor(db));
+}
+
+/** The environment objects the rules followed into the value at `key`. */
+export function environmentsAt(db: Database, key: string): string[] {
+  return environmentsReaching(db, key, programFor(db));
 }
 
 /**

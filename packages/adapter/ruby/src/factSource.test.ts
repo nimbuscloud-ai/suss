@@ -264,3 +264,45 @@ describe("the Ruby fact source's read members", () => {
     ).toEqual(["ENV[name]"]);
   });
 });
+
+const PARSES = `def load(source)
+  parse(source)
+end
+
+def other(settings)
+  parse(settings)
+end
+
+load(ENV)
+`;
+
+describe("the environment a value is", () => {
+  it("is the path it is spelled as, or the first when the rules followed it in", async () => {
+    const tree = await parseRuby(PARSES);
+    const db = factsForFile({ file: FILE, root: tree.rootNode, packs: [] });
+    emitEnvFacts(db, FILE, tree.rootNode);
+    const source = rubyFactSource(db);
+    const argumentOf = (text: string) =>
+      String(
+        db
+          .facts("callArg")
+          .find((row) => source.textOf(String(row[0])) === text)?.[2],
+      );
+    const path = (text: string, paths: string[]) =>
+      factValueOps(argumentOf(text), source).runtimePath?.({
+        origin: "global",
+        paths,
+      });
+
+    expect(path("load(ENV)", ["ENV"])).toBe("ENV");
+    expect(path("parse(source)", ["ENV", "$env"])).toBe("ENV");
+    expect(path("parse(settings)", ["ENV"])).toBeUndefined();
+    expect(path("load(ENV)", ["STDOUT"])).toBeUndefined();
+    expect(
+      factValueOps(argumentOf("load(ENV)"), source).runtimePath?.({
+        origin: "handedIn",
+        name: "env",
+      }),
+    ).toBeUndefined();
+  });
+});

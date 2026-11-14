@@ -27,7 +27,7 @@ const STARTS: Record<string, readonly string[]> = {
   "@suss/packs/aws-sqs": ["@suss/recognize", "@suss/extractor"],
   "@suss/packs/aws-lambda": ["@suss/recognize", "@suss/manifest-aws"],
   "@suss/packs/graphql-ruby": ["@suss/contract-graphql"],
-  "@suss/runtime-node": ["@suss/adapter-typescript"],
+  "@suss/runtime-node": ["@suss/recognize", "@suss/resolution"],
 };
 
 const ADAPTERS = [

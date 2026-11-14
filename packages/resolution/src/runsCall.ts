@@ -65,10 +65,14 @@ export function callsRun(
  * them. A key that is not a node comes last.
  */
 export function readCallsRun(db: Database, fn: string): string[] {
-  const calls = [
-    ...new Set(db.lookup("wantedRunsCall", 0, fn).map((row) => String(row[1]))),
-  ];
-  return calls.sort(bySourceOrder);
+  return inSourceOrder(
+    db.lookup("wantedRunsCall", 0, fn).map((row) => String(row[1])),
+  );
+}
+
+/** Each key once, in the order `readCallsRun` gives calls in. */
+export function inSourceOrder(keys: Iterable<string>): string[] {
+  return [...new Set(keys)].sort(bySourceOrder);
 }
 
 function bySourceOrder(a: string, b: string): number {
