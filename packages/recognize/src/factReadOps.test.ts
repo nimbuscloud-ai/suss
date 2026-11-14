@@ -84,6 +84,21 @@ describe("the read ops over the facts", () => {
     ).toEqual(["A", "B", null, undefined, undefined]);
   });
 
+  it("says whether a site reads at a key, and what a computed key comes from", () => {
+    const facts = source();
+    expect(
+      ["a", "b", "keyed", "needCall"].map((key) => {
+        const read = factReadOps(key, facts);
+        return [read.byKey(), read.computedKey()?.source?.() ?? null];
+      }),
+    ).toEqual([
+      [true, null],
+      [false, null],
+      [true, "text of name"],
+      [false, null],
+    ]);
+  });
+
   it("says a site is off the object its object is spelled as", () => {
     const facts = source();
     const read = factReadOps("a", facts);
@@ -229,10 +244,23 @@ describe("the read ops over the facts", () => {
     const facts = source({
       keysSupplied: () => [
         { at: 2, value: "g", forwarded: false, sites: ["keyed"] },
+        {
+          at: -1,
+          keyword: "name",
+          value: "g",
+          forwarded: false,
+          sites: ["keyed"],
+        },
       ],
     });
-    const [key] = factReadOps("needCall", facts).keysSuppliedTo(ENV) ?? [];
-    expect([key?.at, key?.value.evaluated?.()]).toEqual([2, "G"]);
+    const [key, byKeyword] =
+      factReadOps("needCall", facts).keysSuppliedTo(ENV) ?? [];
+    expect([key?.at, key?.keyword, key?.value.evaluated?.()]).toEqual([
+      2,
+      undefined,
+      "G",
+    ]);
+    expect([byKeyword?.at, byKeyword?.keyword]).toEqual([-1, "name"]);
     expect(
       factReadOps(
         "needCall",

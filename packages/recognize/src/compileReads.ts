@@ -7,7 +7,10 @@
  * it that the walk never visits (a bracket read, a destructured one) are
  * reported from this site, where the walk does stand. At a call it asks
  * which arguments supply a read's key down the callee, and whether the
- * call is a getter on the object. DESIGN.md describes each step.
+ * call is a getter or a function that reads the object, whose read
+ * replaces the call's own. `siteReadOf` gives what the chain says one
+ * site reads, for an adapter's rule about coping with a missing value.
+ * DESIGN.md describes each step.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -21,14 +24,17 @@ import type {
   CalleeSpelling,
   Chain,
   Deployment,
+  EntriesBy,
   EntriesLink,
   EntryMeaning,
   FallbackPick,
+  FunctionsLink,
   GetterMeaning,
   GettersLink,
   Link,
   MethodMeaning,
   MethodsLink,
+  MissingEntry,
   OffLink,
   RuntimeReadEnding,
   WriteMeaning,
@@ -46,9 +52,12 @@ import type {
 export interface Reading {
   readonly object: RuntimeObject;
   readonly paths: readonly string[];
+  readonly entriesBy: EntriesBy;
+  readonly missing: MissingEntry;
   readonly entries: EntriesLink | null;
   readonly writes: WritesLink | null;
   readonly getters: GettersLink | null;
+  readonly functions: FunctionsLink | null;
   readonly throughHelpers: boolean;
   readonly deployment: Deployment;
   readonly recognition: string;
@@ -70,15 +79,90 @@ export function compileReads(
     if (read === null) {
       return null;
     }
-    // Only a getter needs the call's ops, which an adapter may have to
-    // state the call's facts to build, so they are asked for nowhere else.
-    const ops = reading.getters === null ? null : opsIn(ctx);
+    const getter = getterIn(ctx, reading);
     const effects = [
-      ...readsAtSite(read, reading),
+      ...(getter === null ? readsAtSite(read, reading) : []),
       ...helperReads(read, reading),
-      ...(ops === null ? [] : getterReads(ops, read, reading)),
+      ...(getter === null ? [] : getterReads(getter, read, reading)),
     ];
     return effects.length === 0 ? null : effects;
+  };
+}
+
+/** What a read chain says one site reads, before anything asks whether the program copes with a missing value. */
+export interface SiteRead {
+  /** The entry the source writes out, or null for a key the program works out. */
+  readonly entry: string | null;
+  /** The key as written, which two reads of one computed key share. */
+  readonly keySource: string;
+  /** What a getter call passes as its fallback, or null. A block passed as one counts, without a value. */
+  readonly fallback: ValueOps | null;
+  readonly passesFallback: boolean;
+  /** A missing entry raises here: a read at a key under `missing: "raises"`, or a getter with `raisesWithout` and no fallback. */
+  readonly raises: boolean;
+}
+
+const READINGS = new WeakMap<Chain<MethodMeaning>, Reading>();
+
+/**
+ * What a read chain says the site reads, or null when the chain doesn't
+ * cover it: an assignment, a member of a mapping, an entry the chain
+ * reads as nothing, or a site off another object.
+ */
+export function siteReadOf(
+  chain: Chain<MethodMeaning>,
+  ctx: { read: ReadOps; ops: CallOps | null },
+): SiteRead | null {
+  let reading = READINGS.get(chain);
+  if (reading === undefined) {
+    reading = readingOf(chain, "");
+    READINGS.set(chain, reading);
+  }
+  const getter = getterIn(ctx, reading);
+  if (getter !== null) {
+    return getter.site;
+  }
+  if (!ctx.read.isOff(reading.object)) {
+    return null;
+  }
+  const read = entryRead(ctx.read, reading);
+  if (read === null || writeAt(ctx.read, read.entry, reading) !== null) {
+    return null;
+  }
+  const meaning = entryMeaningOf(read.entry, reading.entries);
+  if (meaning === null || meaning.reads === "nothing") {
+    return null;
+  }
+  return {
+    entry: read.entry,
+    keySource:
+      read.entry ?? ctx.read.computedKey()?.source?.() ?? ctx.read.source(),
+    fallback: null,
+    passesFallback: false,
+    raises: reading.missing === "raises",
+  };
+}
+
+/**
+ * How a read chain says its object is spelled, for an adapter's own
+ * readers of the same spellings: the seeds its rules follow the object
+ * from, which run before any facts exist, and its value evaluator's rows.
+ */
+export interface ReadSpellings {
+  /** The global paths the object is spelled as. */
+  readonly paths: readonly string[];
+  /** The methods called on the object that read one entry. */
+  readonly getters: Readonly<Record<string, GetterMeaning>>;
+  /** The functions that read one entry, by global path. */
+  readonly functions: Readonly<Record<string, GetterMeaning>>;
+}
+
+export function readSpellingsOf(chain: Chain<MethodMeaning>): ReadSpellings {
+  const reading = readingOf(chain, "");
+  return {
+    paths: reading.object.origin === "global" ? reading.paths : [],
+    getters: reading.getters?.table ?? {},
+    functions: reading.functions?.table ?? {},
   };
 }
 
@@ -93,9 +177,12 @@ export function readingOf(
   return {
     object: off.object,
     paths: PATHS[off.object.origin](off.object as never),
+    entriesBy: off.entriesBy ?? "keyOrMember",
+    missing: off.missing ?? "nothing",
     entries: linkIn<EntriesLink>(chain.links, "entries"),
     writes: linkIn<WritesLink>(chain.links, "writes"),
     getters: linkIn<GettersLink>(chain.links, "getters"),
+    functions: linkIn<FunctionsLink>(chain.links, "functions"),
     throughHelpers: chain.links.some((link) => link.asks === "throughHelpers"),
     deployment: (chain.ending as RuntimeReadEnding).deployment,
     recognition,
@@ -160,12 +247,29 @@ function isTheObject(read: ReadOps, reading: Reading): boolean {
   });
 }
 
+/**
+ * The entry a site off the object reads, or null when it doesn't read
+ * one: a member of a mapping, a site the facts state no entry at, or an
+ * empty key.
+ */
+function entryRead(
+  site: ReadOps,
+  reading: Reading,
+): { entry: string | null } | null {
+  if (reading.entriesBy === "key" && !site.byKey()) {
+    return null;
+  }
+  const entry = site.entry();
+  return entry === undefined || entry === "" ? null : { entry };
+}
+
 /** What one read off the object is, by its entry: a write, a read, or nothing. */
 function readOf(site: ReadOps, reading: Reading): Effect[] {
-  const entry = site.entry();
-  if (entry === undefined || entry === "") {
+  const read = entryRead(site, reading);
+  if (read === null) {
     return [];
   }
+  const { entry } = read;
   const write = writeAt(site, entry, reading);
   if (write !== null) {
     return write.meaning.changes === "state"
@@ -289,8 +393,8 @@ export interface ReadFacts {
   readonly site: ReadOps;
   /** Whether the read copes with a missing value, when the call settled it. */
   readonly defaulted?: boolean;
-  /** The value a getter call passes as its fallback. */
-  readonly fallback?: ValueOps;
+  /** The value a getter call passes as its fallback, null for a block, which has none to record. */
+  readonly fallback?: ValueOps | null;
   /** The object's path, when the call settled it. */
   readonly path?: string;
 }
@@ -300,7 +404,7 @@ function defaultedIn(facts: ReadFacts): boolean {
 }
 
 function fallbackIn(facts: ReadFacts): ValueOps | null {
-  return facts.fallback ?? facts.site.fallback();
+  return facts.fallback === undefined ? facts.site.fallback() : facts.fallback;
 }
 
 /** The object's path, for a callee spelled from it. */
@@ -375,6 +479,10 @@ const CALLEE: Record<CalleeSpelling, (facts: ReadFacts) => string> = {
     facts.entry === null
       ? facts.site.source()
       : `${pathIn(facts)}.${facts.entry}`,
+  keyed: (facts) =>
+    facts.entry === null
+      ? facts.site.source()
+      : `${pathIn(facts)}["${facts.entry}"]`,
   site: (facts) => facts.site.source(),
   object: (facts) => pathIn(facts),
 };
@@ -461,38 +569,99 @@ function namesSupplied(
   return byName;
 }
 
+/** A call the chain's getters or functions read through, what it reads, and the object's path for its callee. */
+interface GetterCall {
+  /** Null when the call doesn't pass a key, so it reads nothing. */
+  readonly site: SiteRead | null;
+  readonly path: string;
+}
+
 /**
- * A getter's read: `os.environ.get("B", "d")` reads `B`, and copes with
- * a missing value through the fallback it passes.
+ * The getter or function the call is, when it is one: a method in the
+ * getters table called on the object, `os.environ.get("B")`, or a
+ * function in the functions table, `os.getenv("B")`. Only a chain with
+ * either asks for the call's ops, which an adapter may have to state
+ * the call's facts to build.
  */
-function getterReads(ops: CallOps, read: ReadOps, reading: Reading): Effect[] {
+function getterIn(ctx: unknown, reading: Reading): GetterCall | null {
+  if (
+    (reading.getters === null && reading.functions === null) ||
+    reading.object.origin !== "global"
+  ) {
+    return null;
+  }
+  const ops = opsIn(ctx);
+  if (ops === null) {
+    return null;
+  }
+  const firstPath = reading.paths[0] ?? "";
   const method = ops.method();
   const table = reading.getters?.table;
   if (
-    table === undefined ||
-    method === null ||
-    !Object.hasOwn(table, method) ||
-    reading.object.origin !== "global" ||
-    !ops.receiverIsFrom(reading.object)
+    table !== undefined &&
+    method !== null &&
+    Object.hasOwn(table, method) &&
+    ops.receiverIsFrom(reading.object)
   ) {
+    return {
+      site: getterSiteRead(ops, table[method] as GetterMeaning),
+      path: ops.receiverGlobal?.(reading.paths) ?? firstPath,
+    };
+  }
+  const called = Object.entries(reading.functions?.table ?? {}).find(([path]) =>
+    ops.isFrom({ origin: "global", paths: [path] }),
+  );
+  return called === undefined
+    ? null
+    : { site: getterSiteRead(ops, called[1]), path: firstPath };
+}
+
+/**
+ * What a getter call reads. Its key is read as the source writes it, so
+ * `os.environ.get(KEY)` reads a key the program works out, the way
+ * `os.environ[KEY]` does.
+ */
+function getterSiteRead(ops: CallOps, getter: GetterMeaning): SiteRead | null {
+  const key = argumentAt(ops, getter.key);
+  if (key === null) {
+    return null;
+  }
+  const written = key.literal?.() ?? null;
+  const passed = fallbackPassed(ops, getter);
+  return {
+    entry: typeof written === "string" ? written : null,
+    keySource: key.source?.() ?? "",
+    fallback: passed?.value ?? null,
+    passesFallback: passed !== null,
+    raises: getter.raisesWithout === true && passed === null,
+  };
+}
+
+/**
+ * A getter's read: `os.environ.get("B", "d")` reads `B`, and copes with
+ * a missing value through the fallback it passes or by the adapter's own
+ * rule, which knows a getter that raises without one.
+ */
+function getterReads(
+  getter: GetterCall,
+  read: ReadOps,
+  reading: Reading,
+): Effect[] {
+  const { site } = getter;
+  if (site === null || site.entry === "") {
     return [];
   }
-  const getter = table[method] as GetterMeaning;
-  const key = argumentAt(ops, getter.key)?.evaluated?.() ?? null;
-  const entry = typeof key === "string" ? key : null;
-  const meaning = entryMeaningOf(entry, reading.entries);
-  if (meaning === null || entry === "") {
+  const meaning = entryMeaningOf(site.entry, reading.entries);
+  if (meaning === null) {
     return [];
   }
-  const fallback = fallbackPassed(ops, getter);
   return entryEffect(meaning, {
-    entry,
+    entry: site.entry,
     reading,
     site: read,
-    defaulted:
-      fallback !== null || (getter.raisesWithout !== true && read.defaulted()),
-    ...(fallback === null ? {} : { fallback }),
-    path: ops.receiverGlobal?.(reading.paths) ?? reading.paths[0] ?? "",
+    defaulted: site.passesFallback || read.defaulted(),
+    ...(site.passesFallback ? { fallback: site.fallback } : {}),
+    path: getter.path,
   });
 }
 
@@ -508,16 +677,22 @@ function argumentAt(
   return named ?? ops.valueAt(position.at);
 }
 
-/** The fallback a getter call passes, or null when it passes none. A block passed as one has no value to record. */
-function fallbackPassed(ops: CallOps, getter: GetterMeaning): ValueOps | null {
+/** The fallback a getter call passes, or null when it doesn't pass one. A block passed as one has no value to record. */
+function fallbackPassed(
+  ops: CallOps,
+  getter: GetterMeaning,
+): { value: ValueOps | null } | null {
   for (const pick of fallbackPicks(getter)) {
-    const passed =
-      "block" in pick ? (ops.block?.() ?? null) : argumentAt(ops, pick);
+    const passed = "block" in pick ? blockPassed(ops) : argumentAt(ops, pick);
     if (passed !== null) {
-      return passed;
+      return { value: "block" in pick ? null : passed };
     }
   }
   return null;
+}
+
+function blockPassed(ops: CallOps): ValueOps | null {
+  return ops.block?.() ?? null;
 }
 
 function fallbackPicks(getter: GetterMeaning): readonly FallbackPick[] {

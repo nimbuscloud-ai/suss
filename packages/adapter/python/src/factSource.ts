@@ -113,7 +113,8 @@ export function pythonFactSource(db: Database): FactSource {
       const callee = node?.type === "call" ? field(node, "function") : null;
       return (
         callee !== null &&
-        isBuiltin(callee, scopeAt(callee, moduleOf(callee)), path)
+        (isBuiltin(callee, scopeAt(callee, moduleOf(callee)), path) ||
+          calleePathOf(db, call) === path)
       );
     },
     globalsReaching: (key) => streamsReaching(db, key),
@@ -163,6 +164,18 @@ export function pythonFactSource(db: Database): FactSource {
       return environmentsAt(db, key).some(listed) ? object.paths[0] : undefined;
     },
   };
+}
+
+/**
+ * The dotted path the callee of the call at the key is spelled as through
+ * the file's imports: `os.getenv` for `os.getenv(...)`, and for
+ * `getenv(...)` after `from os import getenv`.
+ */
+function calleePathOf(db: Database, call: string): string | null {
+  const [row, ...more] = db.lookup("call", 0, call);
+  return row === undefined || more.length > 0
+    ? null
+    : importPathOf(db, String(row[1]));
 }
 
 /** Where the class of the call's receiver came from, as its annotation or the call that built it says. */

@@ -235,6 +235,12 @@ export interface ValueOps {
   /** The text of the string the source wrote, or null for anything else. */
   text(): string | null;
   /**
+   * The string, number or boolean the source writes at this spot, or
+   * null for anything else. `text` follows a name to the value it was
+   * set to, and this doesn't, so `KEY` in `os.environ.get(KEY)` is null.
+   */
+  literal?(): string | number | boolean | null;
+  /**
    * The name of this value, when the source refers to it by name instead
    * of writing it out. A queue URL is nearly always
    * `process.env.ORDERS_QUEUE_URL`, so the value only exists at deploy
@@ -943,7 +949,10 @@ export interface Loop {
  * whoever calls the caller, and the read belongs to that call.
  */
 export interface SuppliedKey {
+  /** The position the call passes it at, or -1 for a keyword argument. */
   readonly at: number;
+  /** The keyword the call passes it under, in a language that has them. */
+  readonly keyword?: string;
   /** What the call passes there, which settles to the key. */
   readonly value: ValueOps;
   readonly forwarded: boolean;
@@ -971,6 +980,18 @@ export interface ReadOps {
    * entry at all, as a call does.
    */
   entry(): string | null | undefined;
+  /**
+   * Whether the site reads at a key, `o["n"]` or `o[k]`, rather than a
+   * member, `o.n`. A chain over a mapping, such as Python's `os.environ`,
+   * reads an entry only at a key, since its members are its methods.
+   */
+  byKey(): boolean;
+  /**
+   * What a key the program works out comes from: `name` in
+   * `os.environ[name]`. Null where the source writes the key out, and
+   * where the site doesn't read an entry.
+   */
+  computedKey(): ValueOps | null;
   /**
    * The reads off this site's own value that the adapter's walk hands no
    * site of its own: in TypeScript the element access and the binding
@@ -1276,7 +1297,10 @@ export interface FactSource {
 
 /** One argument that becomes a read's key, as a fact source states it. */
 export interface KeySupplied {
+  /** The position the call passes it at, or -1 for a keyword argument. */
   readonly at: number;
+  /** The keyword the call passes it under, in a language that has them. */
+  readonly keyword?: string;
   readonly value: string;
   readonly forwarded: boolean;
   readonly sites: readonly string[];
