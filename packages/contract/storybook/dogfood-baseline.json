@@ -2,6 +2,6 @@
   "name": "@suss/contract-storybook",
   "exports": 1,
   "internal": 10,
-  "consumers": 20,
+  "consumers": 21,
   "unfollowedCalls": 0
 }

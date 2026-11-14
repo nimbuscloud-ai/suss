@@ -12,7 +12,12 @@
 
 import path from "node:path";
 
-import { type Identifier, Node as N, type Node, Project } from "ts-morph";
+import {
+  Node as N,
+  type Node,
+  Project,
+  type Symbol as TsSymbol,
+} from "ts-morph";
 
 import {
   declarationsBehind,
@@ -243,10 +248,7 @@ function metaOf(found: EntryObject, componentModules: boolean): MetaInfo {
  * that file's project measures from, so the two can be compared.
  */
 function declaredModuleOf(component: Node): ComponentModule | undefined {
-  if (!N.isIdentifier(component)) {
-    return undefined;
-  }
-  const declaration = componentDeclarationOf(component);
+  const declaration = componentDeclarationOf(componentSymbolOf(component));
   if (declaration === undefined) {
     return undefined;
   }
@@ -258,9 +260,34 @@ function declaredModuleOf(component: Node): ComponentModule | undefined {
   };
 }
 
+/**
+ * The symbol of a name, or of a member read off a whole module, such as
+ * `Icons.Star` off `import * as Icons`. Any other object is not followed.
+ */
+function componentSymbolOf(component: Node): TsSymbol | undefined {
+  if (N.isIdentifier(component)) {
+    return symbolBehind(component);
+  }
+  if (!N.isPropertyAccessExpression(component)) {
+    return undefined;
+  }
+  const namespace = component.getExpression();
+  const member = component.getNameNode();
+  const isNamespace =
+    N.isIdentifier(namespace) &&
+    declarationsBehind(symbolBehind(namespace)).some((declared) =>
+      N.isSourceFile(declared),
+    );
+  return isNamespace && N.isIdentifier(member)
+    ? symbolBehind(member)
+    : undefined;
+}
+
 /** An import whose module did not resolve leaves only the import itself. */
-function componentDeclarationOf(component: Identifier): Node | undefined {
-  return declarationsBehind(symbolBehind(component)).find(
+function componentDeclarationOf(
+  symbol: TsSymbol | undefined,
+): Node | undefined {
+  return declarationsBehind(symbol).find(
     (declaration) => !isImportBinding(declaration),
   );
 }
