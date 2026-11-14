@@ -96,14 +96,15 @@ export function factValueOps(key: string, source: FactSource): ValueOps {
 const keysOfValues = new WeakMap<ValueOps, string>();
 
 /**
-<<<<<<< HEAD
  * The ops for the JSX element at `key`: its tag from its `jsxElement`
  * row, and its attributes from its `jsxAttribute` rows, in the order
  * the adapter stated them, which is the order the source writes them.
  */
 export function factElementOps(key: string, source: FactSource): ElementOps {
   return new FactElement(key, source);
-=======
+}
+
+/**
  * The key a value these ops handed out was read at, or null for one they
  * didn't. A name in Python or Ruby has a key and no node, so an adapter
  * that wants a value back as one of its own takes the key.

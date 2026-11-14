@@ -3,10 +3,10 @@
  * TypeScript, Python and Ruby: a plain read, a read with a fallback, an
  * assignment to an entry, and a read through a helper `need("G")`.
  * TypeScript also has a destructured read, and runs the Node pack's
- * chains through the access context. Python and Ruby each get a chain
- * over a mapping, run over their own facts, since their adapters still
- * record environment reads themselves, and TypeScript runs one too for
- * a mapping's getters.
+ * chains through the access context. Python runs its own environment
+ * chain through its read dispatch. Ruby still records environment reads
+ * itself, so it gets a test chain run over its facts, as TypeScript does
+ * for a mapping's getters.
  */
 
 import { Node, SyntaxKind } from "ts-morph";
@@ -15,11 +15,13 @@ import { describe, expect, it } from "vitest";
 import {
   bindEnvFacts,
   bindModule,
+  ENVIRONMENT,
   envFactsIn,
   parsePython,
   pythonFactSource,
   factsForFile as pythonFacts,
   nodeId as pythonNodeId,
+  stdlibReads,
 } from "@suss/adapter-python";
 import {
   emitEnvFacts,
@@ -159,14 +161,23 @@ interface Stated {
   readonly source: FactSource;
 }
 
-async function pythonSites(text = PYTHON): Promise<Stated> {
+async function pythonSites(
+  text = PYTHON,
+): Promise<
+  Stated & { root: Awaited<ReturnType<typeof parsePython>>["rootNode"] }
+> {
   const tree = await parsePython(text);
   const root = tree.rootNode;
   const module = bindModule(root);
   const db = pythonFacts({ file: "env.py", root, module, packs: [] });
   bindEnvFacts(db, [envFactsIn("env.py", root, module)]);
   const source = pythonFactSource(db);
-  return { sites: sitesIn(db, source, global("os.environ")), db, source };
+  return {
+    sites: sitesIn(db, source, global("os.environ")),
+    db,
+    source,
+    root,
+  };
 }
 
 async function rubySites(text = RUBY): Promise<Stated> {
@@ -510,22 +521,20 @@ function typescriptReadsAt(
   });
 }
 
-const PYTHON_GET = { key: { at: 0 }, fallback: { at: 1, keyword: "default" } };
-
-/** Python's `os.environ`, read the way its adapter will read it. */
-const PYTHON_ENVIRONMENT = runtimeReads({
-  object: global("os.environ"),
-  entriesBy: "key",
-  missing: "raises",
-})
-  .entries({}, { reads: "config", callee: "keyed" })
-  .getters({ get: PYTHON_GET })
-  .functions({ "os.getenv": PYTHON_GET });
-
-/** Python's reads at the sites whose text is given, through the chain above. */
-async function pythonReadsAt(texts: readonly string[]) {
-  const stated = await pythonSites(MAPPING_PYTHON);
-  return factReadsAt(stated, PYTHON_ENVIRONMENT, texts);
+/** Python's own reads, through the adapter's dispatch and its own chain. */
+async function pythonOwnReads(text = MAPPING_PYTHON, unit = "reads") {
+  const stated = await pythonSites(text);
+  const body =
+    stated.root
+      .descendantsOfType("function_definition")
+      .find((one) => one?.childForFieldName("name")?.text === unit) ??
+    raise(`no function ${unit}`);
+  return {
+    stated,
+    reads: configReadsIn(
+      stdlibReads(body, stated.db).map(({ effect }) => effect),
+    ),
+  };
 }
 
 describe("a read chain over a mapping, in every language", () => {
@@ -558,22 +567,21 @@ describe("a read chain over a mapping, in every language", () => {
   });
 
   it("spells a keyed callee from the object's path, and a computed key's as written", async () => {
+    const python = await pythonOwnReads();
     expect(
       typescriptReadsAt(mappingChain("process.env", "get"), [
         "process.env[name]",
       ]),
     ).toEqual([["process.env[name]", null, false, null]]);
     expect(
-      await pythonReadsAt([
-        'os.environ["A"]',
-        'environ["D"]',
-        "os.environ[name]",
-      ]),
+      python.reads.filter(([, name]) => name === "A" || name === "D"),
     ).toEqual([
       ['os.environ["A"]', "A", false, null],
       ['os.environ["D"]', "D", false, null],
-      ["os.environ[name]", null, false, null],
     ]);
+    expect(
+      python.reads.find(([callee]) => callee === "os.environ[name]"),
+    ).toEqual(["os.environ[name]", null, false, null]);
     expect(
       factReadsAt(await rubySites(MAPPING_RUBY), mappingChain("ENV", "fetch"), [
         'ENV["A"]',
@@ -603,14 +611,15 @@ describe("a read chain over a mapping, in every language", () => {
   });
 
   it("reads a getter's key as the source writes it, with one read at the call", async () => {
+    const python = await pythonOwnReads();
     expect(
       typescriptReadsAt(mappingChain("process.env", "get"), [
         "process.env.get(KEY)",
       ]),
     ).toEqual([["process.env.get(KEY)", null, false, null]]);
-    expect(await pythonReadsAt(["os.environ.get(KEY)"])).toEqual([
-      ["os.environ.get(KEY)", null, false, null],
-    ]);
+    expect(
+      python.reads.filter(([callee]) => callee === "os.environ.get(KEY)"),
+    ).toEqual([["os.environ.get(KEY)", null, false, null]]);
     expect(
       factReadsAt(await rubySites(MAPPING_RUBY), mappingChain("ENV", "fetch"), [
         "ENV.fetch(KEY)",
@@ -619,17 +628,18 @@ describe("a read chain over a mapping, in every language", () => {
   });
 
   it("reads a function the runtime provides, called bare or off its module", async () => {
+    const python = await pythonOwnReads();
     expect(
       typescriptReadsAt(mappingChain("process.env", "get"), [
         'getenv("C", "c")',
       ]),
     ).toEqual([['process.env["C"]', "C", true, "c"]]);
-    expect(await pythonReadsAt(['os.getenv("C", "c")', 'getenv("E")'])).toEqual(
-      [
-        ['os.environ["C"]', "C", true, "c"],
-        ['os.environ["E"]', "E", false, null],
-      ],
-    );
+    expect(
+      python.reads.filter(([, name]) => name === "C" || name === "E"),
+    ).toEqual([
+      ['os.environ["C"]', "C", true, "c"],
+      ['os.environ["E"]', "E", false, null],
+    ]);
     expect(
       factReadsAt(await rubySites(MAPPING_RUBY), mappingChain("ENV", "fetch"), [
         'getenv("C", "c")',
@@ -638,12 +648,13 @@ describe("a read chain over a mapping, in every language", () => {
   });
 
   it("takes the adapter's rule for a getter that passes no fallback", async () => {
+    const python = await pythonOwnReads();
     expect(
       typescriptReadsAt(mappingChain("process.env", "get"), [
         'process.env.get("F")',
       ]),
     ).toEqual([['process.env["F"]', "F", true, "y"]]);
-    expect(await pythonReadsAt(['os.environ.get("F")'])).toEqual([
+    expect(python.reads.filter(([, name]) => name === "F")).toEqual([
       ['os.environ["F"]', "F", true, "y"],
     ]);
     expect(
@@ -658,16 +669,17 @@ describe("a read chain over a mapping, in every language", () => {
   });
 
   it("says what a site reads before asking whether the program copes, and a test before a raising read copes", async () => {
-    const python = await pythonSites(MAPPING_PYTHON);
+    const python = await pythonOwnReads();
     const said = (text: string) => {
-      const site = factSiteAt(python, text);
-      const call = python.db
+      const site = factSiteAt(python.stated, text);
+      const call = python.stated.db
         .facts("call")
         .map((row) => String(row[0]))
-        .find((key) => python.source.textOf(key) === text);
-      return siteReadOf(PYTHON_ENVIRONMENT.declared, {
+        .find((key) => python.stated.source.textOf(key) === text);
+      return siteReadOf(ENVIRONMENT.declared, {
         read: site,
-        ops: call === undefined ? null : factCallOps(call, python.source),
+        ops:
+          call === undefined ? null : factCallOps(call, python.stated.source),
       });
     };
     expect([
@@ -681,9 +693,18 @@ describe("a read chain over a mapping, in every language", () => {
       { entry: "C", raises: false, passesFallback: true },
       null,
     ]);
-    expect(await pythonReadsAt(['os.environ["R"]'])).toEqual([
+    expect(python.reads.filter(([, name]) => name === "R")).toEqual([
       ['os.environ["R"]', "R", true, null],
     ]);
+  });
+
+  it("reads a key a helper is handed by keyword, and never a deleted or incremented entry", async () => {
+    const python = await pythonOwnReads();
+    const names = python.reads.map(([, name]) => name);
+    expect(python.reads.filter(([, name]) => name === "H")).toEqual([
+      ['os.environ["H"]', "H", false, null],
+    ]);
+    expect([names.includes("Z"), names.includes("P")]).toEqual([false, false]);
   });
 
   it("finds a helper's key by position in TypeScript and Ruby, with no keyword", async () => {

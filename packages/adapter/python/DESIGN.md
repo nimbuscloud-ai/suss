@@ -438,6 +438,8 @@ Discovery asks the same question through `routeOnDroppedApp` before it builds th
 
 `os.environ` is part of the standard library, so the adapter recognizes reads of it without a pack. Each read becomes the same `config-read` interaction that the TypeScript adapter emits for `process.env.X`, on the `runtime-config` binding, and is spelled `os.environ["X"]` whichever way the source wrote it. The runtime-config checker pairs those reads against what a template declares for the function the file runs in.
 
+The spellings are a read chain declared with `@suss/recognize`, in `stdlib/environment.ts`: `os.environ` read only at a key, since it is a mapping whose members are its methods, the getter `get`, the function `os.getenv`, assignments that change nothing, and reads through a helper. The adapter compiles the chain once and hands it every subscript, attribute and call in a body, over the value facts, which every run therefore states. The rule for whether a read copes with a missing value asks the chain what each test reads, so the rule and the chain agree on what counts as a read, and the value evaluator's rows for `os.getenv` and `os.environ.get` are made from the chain too.
+
 | Python | Recognized as | Defaulted |
 | --- | --- | --- |
 | `os.environ["X"]` | a read of `X` | no |
@@ -451,9 +453,9 @@ Discovery asks the same question through `routeOnDroppedApp` before it builds th
 | `if os.environ["X"]:`, or `x = os.environ["X"]` then `if x:` | a read of `X` | no: the subscript raises before the test runs |
 | `if not os.getenv("X"): raise ...`, or `if x: return x` then `raise ...` | a read of `X` | no: a missing value ends in a raise |
 | `import os as _os`, `from os import environ, getenv` | the same reads, through the alias | |
-| `os.environ[name]` where `name` is a parameter | nothing here, and a read at each call that supplies the name (below) | |
-| `os.environ.get(f"{prefix}_X")`, `os.environ[opts["key"]]` | nothing: nothing in the run shows which variable that is | |
-| `os.environ["X"] = "1"`, `del os.environ["X"]`, `"X" in os.environ` | nothing: a write or a membership test | |
+| `os.environ[name]` where `name` is a parameter | a read with no name here, and a read at each call that supplies the name (below) | |
+| `os.environ.get(f"{prefix}_X")`, `os.environ[opts["key"]]`, `os.environ.get(KEY)` | a read with no name: the run doesn't show which variable that is, and a key kept in a name is read the same way at a subscript and at a getter | |
+| `os.environ["X"] = "1"`, `os.environ["X"] += "1"`, `del os.environ["X"]`, `"X" in os.environ` | nothing: a write or a membership test | |
 | `os.environ.get("X") or os.environ.get("Y")` | `X` defaulted, `Y` not, since `Y` is the chain's last resort | |
 
 A read inside a route body goes on that route's summary. A read at module level, or in a class body, runs when the module is imported, so it goes on a `module-init` summary named after the file, one per file. A read inside a function that a route reaches through its calls goes on that function's own summary (see below). A read inside a function that nothing discovered and nothing reaches is reported nowhere, because nothing in the run shows when that function runs.
@@ -480,7 +482,7 @@ Keeping the two facts separate lets a read count when it is taken off something 
 
 The query is keyed on the environment objects. A project writes `os.environ` in a handful of places and has thousands of parameters that something could be passed to. So the run seeds `wantedEnvObject` once with every environment object the adapter recorded, and keeps the result: for each parameter, the read sites whose variable name its value ends up as. `os.getenv(name)` has no container, so the adapter records the `os.getenv` reference itself as the environment object and records the read against it.
 
-At `env("DATABASE_URL")`, the reader finds the callee and looks up each of its parameters in that one result. It reads the argument only for a parameter that appears there. The variable name is the argument's own value, either as a literal or as whatever the evaluator folds it to.
+At `env("DATABASE_URL")`, the chain asks the fact source which arguments supply a read's key. The fact source finds the callee, by position or by keyword across every function it resolves to, and looks up each of its parameters in that one result. It hands back the argument only for a parameter that appears there. The variable name is the argument's own value, either as a literal or as whatever the evaluator folds it to. The callees of one body are resolved in one round before the chain is asked, so a body costs one question to the rules.
 
 A variable has a fallback when every read the call reaches supplies one, or when the caller wrote an `or` of its own around the call. Both calls above are defaulted, since `os.environ.get(key, default)` returns `default`. So is `env("HOST") or "localhost"` against a helper that raises. When two reads inside the helper look up the same variable, the call gets one read, and it is defaulted only if both of them are.
 
@@ -488,7 +490,7 @@ The read is reported at the call, in the caller's unit. A call at module level l
 
 The callee can also be a value instead of a name the project declares, as long as the value comes from a call the project makes. `env = make_reader()` then `env("A")` reads `A`, whether `make_reader` returns a nested `def` or a lambda. The reader asks what the callee returns as well as what it resolves to, and one rule states that calling a name a factory assigned runs the function that factory returned.
 
-A helper that is passed the environment itself works too: `make_reader(os.environ)` returning `lambda name: env[name]`, and the same through any number of calls. The argument has to resolve to `os.environ`; a plain dict reads nothing. The reader treats a read in that helper's own body as having no fallback, because nothing scanned that body for one.
+A helper that is passed the environment itself works too: `make_reader(os.environ)` returning `lambda name: env[name]`, and the same through any number of calls. The argument has to resolve to `os.environ`; a plain dict reads nothing. The chain reads only what the source spells as the environment, so a read in that helper's own body copes with a missing value by the rule for any read: `env[name] or "x"` does, and a test on `name in env` before it doesn't count.
 
 Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object instead of a parameter, and a helper built by `functools.partial`.
 

@@ -21,7 +21,7 @@ import {
   rangeOf,
   stringLiteralValue,
 } from "./ast.js";
-import { copingAt, sitesNamingParameter } from "./envReads.js";
+import { copingAt, keysSuppliedAt } from "./envReads.js";
 import { decoderCalled, encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
@@ -41,7 +41,6 @@ import {
   evaluatedValue,
   moduleOf,
   nodeOfResolutionKey,
-  resolutionKeyOf,
   stringValueOf,
 } from "./values/evaluator.js";
 
@@ -50,8 +49,23 @@ import type { EffectArg, FactSource, Typed, ValueForm } from "@suss/extractor";
 import type { SubjectOrigin } from "./facts/resolve.js";
 import type { PyNode } from "./parser.js";
 
+/** A fact source with the run's whole database, which the rules this adapter asks read. */
+export type PythonFactSource = FactSource & { readonly db: Database };
+
+const sources = new WeakMap<Database, PythonFactSource>();
+
+/** The one fact source for a run's database, for a reader that asks at every site of every body. */
+export function factSourceOf(db: Database): PythonFactSource {
+  let source = sources.get(db);
+  if (source === undefined) {
+    source = pythonFactSource(db);
+    sources.set(db, source);
+  }
+  return source;
+}
+
 /** The fact source for one run's database. */
-export function pythonFactSource(db: Database): FactSource {
+export function pythonFactSource(db: Database): PythonFactSource {
   const nodeAt = (key: string | null): PyNode | null =>
     key === null ? null : nodeOfResolutionKey(key, db);
   // A name has no node, so its value is what it was written as.
@@ -139,14 +153,13 @@ export function pythonFactSource(db: Database): FactSource {
       receiverClassesOf(call, db).some((found) => originAccepts(origin, found)),
     defaultedAt: (key) => {
       const node = nodeAt(key);
-      return node !== null && copingAt(node).defaulted;
+      return node !== null && copingAt(node, factSourceOf(db)).defaulted;
     },
     fallbackOf: (key) => {
       const node = nodeAt(key);
-      const fallback = node === null ? null : copingAt(node).fallback;
-      return fallback === null ? null : resolutionKeyOf(fallback, db);
+      return node === null ? null : copingAt(node, factSourceOf(db)).fallback;
     },
-    sitesNaming: (parameter) => sitesNamingParameter(db, parameter),
+    keysSupplied: (call) => keysSuppliedAt(factSourceOf(db), call),
     runtimePathOf: (key, object) => {
       if (object.origin !== "global") {
         return undefined;

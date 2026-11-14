@@ -49,6 +49,10 @@ export {
 export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
 export { pythonSourceRoots, readTomlFile, tableAt } from "./sourceRoots.js";
+// The environment chain this adapter runs on every body, and the reads
+// it reports, for a test that runs each language's own chain.
+export { stdlibReads } from "./stdlib/dispatch.js";
+export { ENVIRONMENT } from "./stdlib/environment.js";
 export { pythonImportEvidence } from "./stubEvidence.js";
 export { ADAPTER_VERSION } from "./version.js";
 
