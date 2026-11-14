@@ -26,8 +26,3 @@ export function inTestFile(node: Node): boolean {
   testFiles.set(file, found);
   return found;
 }
-
-/** Whether `call` is a test calling `callee` when `callee` is production code. */
-export function testCallingProduction(call: Node, callee: Node): boolean {
-  return inTestFile(call) && !inTestFile(callee);
-}
