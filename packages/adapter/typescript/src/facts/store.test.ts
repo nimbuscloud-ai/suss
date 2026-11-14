@@ -1947,6 +1947,56 @@ describe("importedNamesOf", () => {
   });
 });
 
+describe("a name a project module re-exports from a package that is not installed", () => {
+  const MODULES = ["@t3-oss/env-core"];
+
+  function calleeIn(barrel: string, consumer: string): Node {
+    const project = projectOf({ "/envLib.ts": barrel, "/env.ts": consumer });
+    const call = project
+      .getSourceFileOrThrow("/env.ts")
+      .getFirstDescendantByKindOrThrow(SyntaxKind.CallExpression);
+    return call.getExpression();
+  }
+
+  it("comes from the package's export for every question the store answers", () => {
+    const callee = calleeIn(
+      `export { createEnv } from "@t3-oss/env-core";`,
+      `import { createEnv } from "./envLib.js";
+      export const env = createEnv({});`,
+    );
+    const store = new ResolutionStore();
+    expect(store.importedNamesOf(callee, MODULES)).toEqual(["createEnv"]);
+    expect(store.importedAsOf(callee, MODULES)).toEqual(["createEnv"]);
+    expect(store.importOriginsOf(callee, MODULES)).toEqual([
+      { module: "@t3-oss/env-core", path: ["createEnv"] },
+    ]);
+  });
+
+  it("comes from the name the package exports when the barrel renames it", () => {
+    const callee = calleeIn(
+      `export { createEnv as makeEnv } from "@t3-oss/env-core";`,
+      `import { makeEnv } from "./envLib.js";
+      export const env = makeEnv({});`,
+    );
+    const store = new ResolutionStore();
+    expect(store.importedAsOf(callee, MODULES)).toEqual(["createEnv"]);
+    expect(store.importOriginsOf(callee, MODULES)).toEqual([
+      { module: "@t3-oss/env-core", path: ["createEnv"] },
+    ]);
+  });
+
+  it("comes from no package a barrel does not forward to", () => {
+    const callee = calleeIn(
+      "export function createEnv(options: unknown) { return options; }",
+      `import { createEnv } from "./envLib.js";
+      export const env = createEnv({});`,
+    );
+    const store = new ResolutionStore();
+    expect(store.importedAsOf(callee, MODULES)).toEqual([]);
+    expect(store.importOriginsOf(callee, MODULES)).toEqual([]);
+  });
+});
+
 describe("a class field", () => {
   function fieldValue(project: Project, file: string, property: string): Node {
     const sourceFile = project.getSourceFileOrThrow(file);
