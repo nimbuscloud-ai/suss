@@ -349,6 +349,69 @@ describe("environment reads on a summary", () => {
     ]);
   });
 
+  it("reports a helper's read and a default a call runs in a method the field reaches", async () => {
+    const settings = write(
+      "app/graphql/settings.rb",
+      [
+        "module Settings",
+        "  def self.setting(key)",
+        "    ENV.fetch(key)",
+        "  end",
+        "end",
+        "",
+        "class Ledger",
+        '  def initialize(table: ENV.fetch("LEDGER_TABLE", "ledger"))',
+        "    @table = table",
+        "  end",
+        "end",
+        "",
+        "module Regions",
+        "  def self.current",
+        '    Settings.setting("AWS_REGION")',
+        "  end",
+        "",
+        "  def self.ledger",
+        "    Ledger.new",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const campaignType = write(
+      "app/graphql/types/campaign_type.rb",
+      [
+        "class Types::CampaignType < Types::BaseObject",
+        "  field :region, String, null: false",
+        "",
+        "  def region",
+        "    Regions.ledger",
+        "    Regions.current",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractRubyProject({
+      files: [settings, campaignType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+      workspaceRoot: tmpDir,
+    });
+
+    const reached = (name: string) =>
+      configReads(summaries.find((s) => s.identity.name === name));
+    expect([reached("current"), reached("ledger")]).toEqual([
+      [{ class: "config-read", name: "AWS_REGION", defaulted: false }],
+      [
+        {
+          class: "config-read",
+          name: "LEDGER_TABLE",
+          defaulted: true,
+          default: "ledger",
+        },
+      ],
+    ]);
+  });
+
   it("puts a boot template's reads on a load-time unit for the template, through a helper too", async () => {
     const settings = write(
       "config/settings.rb",
