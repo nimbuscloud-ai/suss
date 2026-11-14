@@ -19,6 +19,7 @@ import {
   classMemberName,
   classMemberOf,
   fileOfKey,
+  spanOfKey,
 } from "@suss/resolution";
 
 import { factReadOps } from "./factReadOps.js";
@@ -30,6 +31,7 @@ import type {
   ClassValueOps,
   ConstructedFrom,
   DeclaredBy,
+  Decoded,
   EffectArg,
   Encoded,
   FactSource,
@@ -53,6 +55,7 @@ import type {
   ValueEntry,
   ValueForm,
   ValueOps,
+  ValueRead,
 } from "@suss/extractor";
 
 export { factReadOps };
@@ -139,6 +142,17 @@ class FactCall implements CallOps {
     const stated = this.arguments();
     const counted = only(this.source.db.lookup("callArgCount", 0, this.key), 1);
     return Math.max(stated.size, counted === null ? 0 : Number(counted));
+  }
+
+  decodes(): Decoded | null {
+    const found = this.source.decodedOf?.(this.key) ?? null;
+    return found === null
+      ? null
+      : {
+          codec: found.codec,
+          value: factValueOps(found.value, this.source),
+          result: factValueOps(this.key, this.source),
+        };
   }
 
   nameAt(index: number, unsettled: UnsettledName): string | null {
@@ -912,6 +926,51 @@ class FactValue implements ValueOps {
     return found === null
       ? null
       : { codec: found.codec, value: factValueOps(found.value, this.facts) };
+  }
+
+  read(): ValueRead | null {
+    const found = readThrough(this.key, this.facts);
+    return found === null
+      ? null
+      : { key: found.name, object: factValueOps(found.object, this.facts) };
+  }
+
+  /** `elementOf` on the value, or on what its one `binds` row takes it to, as TypeScript binds a reference to its declaration. */
+  element(): ValueOps | null {
+    const over =
+      only(this.facts.db.lookup("elementOf", 0, this.key), 1) ??
+      elementOfBound(this.key, this.facts);
+    return over === null ? null : factValueOps(over, this.facts);
+  }
+
+  /**
+   * Whether the program declares the value as one of the origin's types.
+   * A language that declares none settles it by the construction the
+   * value was written as, as `receiverTyped` does.
+   */
+  typed(origin: Typed): boolean {
+    const typedAs = this.facts.valueTypedAs;
+    if (typedAs !== undefined) {
+      return typedAs(this.key, origin);
+    }
+    const made = this.written();
+    const callee = calleeOf(made, this.facts);
+    return (
+      callee !== null &&
+      writtenFrom(
+        {
+          origin: "constructed",
+          importedFrom: origin.importedFrom,
+          ...(origin.named === undefined ? {} : { named: origin.named }),
+        },
+        callee,
+        this.facts,
+      )
+    );
+  }
+
+  keysRead(): readonly string[] {
+    return keysReadOff(this.key, this.facts);
   }
 
   member(name: string, singleton = false): ValueOps | null {
@@ -1752,6 +1811,129 @@ function declaredValuesOf(name: string, source: FactSource): string[] {
     ...direct,
     ...direct.filter((key) => isName(key, source)).flatMap(bound),
   ];
+}
+
+/**
+ * The one read written at the value, `o.n` or `o["n"]`, or the one a name
+ * set to a read was written as, `text` after `const text = record.body`,
+ * the way a member read kept in a local is read. Null for anything else.
+ */
+function readThrough(key: string, source: FactSource): KeyedRead | null {
+  const direct = keyedRead(key, source);
+  if (direct !== null || !isName(key, source)) {
+    return direct;
+  }
+  const reads = declaredValuesOf(key, source).flatMap((value) => {
+    const read = keyedRead(value, source);
+    return read === null ? [] : [read];
+  });
+  const [one, ...more] = reads;
+  return one === undefined || more.length > 0 ? null : one;
+}
+
+/** A read of one key off an object, as the facts key both. */
+interface KeyedRead {
+  readonly object: string;
+  readonly name: string;
+}
+
+/** The object and the key a read is written with, a property or an entry, or null. */
+function keyedRead(key: string, source: FactSource): KeyedRead | null {
+  source.read(key);
+  const reads = new Map<string, KeyedRead>();
+  for (const read of [
+    ...propertiesReadAt(key, source),
+    ...entriesReadAt(key, source),
+  ]) {
+    reads.set(`${read.object}\u0000${read.name}`, read);
+  }
+  const [one, ...more] = reads.values();
+  return one === undefined || more.length > 0 ? null : one;
+}
+
+function propertiesReadAt(key: string, source: FactSource): KeyedRead[] {
+  return source.db.lookup("readsProperty", 0, key).flatMap((row) => {
+    const stated = String(row[2]);
+    const name =
+      source.memberName === undefined ? stated : source.memberName(stated);
+    return name === null ? [] : [{ object: String(row[1]), name }];
+  });
+}
+
+function entriesReadAt(key: string, source: FactSource): KeyedRead[] {
+  return source.db
+    .lookup("readsEntry", 0, key)
+    .map((row) => ({ object: String(row[1]), name: String(row[2]) }));
+}
+
+/** The collection the one name a value's `binds` row takes it to is given an element of. */
+function elementOfBound(key: string, source: FactSource): string | null {
+  const bound = only(source.db.lookup("binds", 0, key), 1);
+  if (bound === null) {
+    return null;
+  }
+  source.read(bound);
+  return only(source.db.lookup("elementOf", 0, bound), 1);
+}
+
+/**
+ * The keys the program reads off the value, each once, in the order the
+ * reads are written. A read that is a call's callee or an assignment's
+ * target is not a key the program reads.
+ */
+function keysReadOff(key: string, source: FactSource): string[] {
+  const sites = source.readSitesOf?.(key) ?? readSitesOff(key, source);
+  const keys = [...new Set(sites)]
+    .filter(
+      (site) =>
+        source.db.lookup("call", 1, site).length === 0 &&
+        source.db.lookup("assigns", 0, site).length === 0,
+    )
+    .sort(bySourceOrder)
+    .flatMap((site) =>
+      [...propertiesReadAt(site, source), ...entriesReadAt(site, source)].map(
+        (read) => read.name,
+      ),
+    );
+  return [...new Set(keys)];
+}
+
+/**
+ * The read sites off the value, off each name `binds` takes to it, and
+ * off each reference `binds` takes to that name, for an adapter that
+ * states every read up front.
+ */
+function readSitesOff(key: string, source: FactSource): string[] {
+  const names = boundTo(key, source);
+  const holders = [
+    key,
+    ...names,
+    ...names.flatMap((name) => boundTo(name, source)),
+  ];
+  return holders.flatMap((holder) => [
+    ...(source.readsOff?.(holder) ?? []),
+    ...source.db
+      .lookup("readsProperty", 1, holder)
+      .map((row) => String(row[0])),
+    ...source.db.lookup("readsEntry", 1, holder).map((row) => String(row[0])),
+  ]);
+}
+
+/** The keys whose `binds` row takes them to this one: the names it is kept in. */
+function boundTo(key: string, source: FactSource): string[] {
+  return source.db.lookup("binds", 1, key).map((row) => String(row[0]));
+}
+
+/** Two node keys in the order the source writes them. */
+function bySourceOrder(a: string, b: string): number {
+  const first = spanOfKey(a);
+  const second = spanOfKey(b);
+  if (first === null || second === null) {
+    return 0;
+  }
+  return first.file === second.file
+    ? first.start - second.start
+    : first.file.localeCompare(second.file);
 }
 
 /** The leftmost name of a member read, `aws` in `aws.sqs.send`. */

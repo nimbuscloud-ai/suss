@@ -17,12 +17,13 @@ where the match starts -> which method -> read the arguments -> yield
                                                                 a sub-unit
 ```
 
-Six endings are built, and all six are recognition endings that
+Seven endings are built, and all seven are recognition endings that
 yield effects: `storageAccess` asks the call what it reached,
 `sqlAccess` reads the statement the call was given, `messageSend`
-and `unitInvoke` read the object the call sends, `schedule` reads
-the callback the call hands over, and `streamWrite` reads what the
-call writes to a stream. A schedule chain can also say what a
+and `unitInvoke` read the object the call sends, `messageReceive`
+reads the message a handler decodes, `schedule` reads the callback
+the call hands over, and `streamWrite` reads what the call writes to
+a stream. A schedule chain can also say what a
 callback written in place becomes, which is how a pack claims a
 sub-unit as data. Discovery and terminals still come from the pack's
 discovery patterns. Each would become a new member of `Ending`, with
@@ -284,6 +285,11 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `form()` | the adapter's `formOf`, and `other` where it has none |
 | `ownProperty(name)` | `holdsProperty` and `writtenEntryAt` on the value's own key, its spreads left out, when `shapeOf` says it is an object |
 | `encoded()` | the adapter's `encodedOf`, asked of the value a name was written as, the way `asArg()` is, so an encoding kept in a name is still read. Python and Ruby find the encoded value through `call`, `readsProperty` and `callArg` |
+| `decodes()` | the adapter's `decodedOf` on the call, over a `DECODERS` table beside its encoders: `JSON.parse` in TypeScript, `json.loads` in Python, `JSON.parse` and `JSON.load` in Ruby. What the call gives back is the value at the call's own key |
+| `read()` | `readsProperty(x, o, n)` or `readsEntry(x, o, n)` at the value, with `memberName` as `member()` reads it. A name is followed through one declaration by `binds`, the way `member()` follows one, and gives the one read among what it is bound to, so `const text = record.body` reads as `record.body` |
+| `element()` | `elementOf(x, over)` on the value, or on what its one `binds` row takes it to, which is how TypeScript keys a loop's or a callback's variable through its declaration |
+| `typed(origin)` | the adapter's `valueTypedAs` on the value. Where an adapter has none, as in Ruby, the construction the value was written as, checked the way `constructed` is |
+| `keysRead()` | the read sites the adapter's `readSitesOf` lists, which TypeScript states as it is asked. Otherwise the `readsProperty` and `readsEntry` rows off the value, off each name `binds` takes to it, and off each reference `binds` takes to that name, with the adapter's `readsOff` on each. A site that is the callee of a `call` row, or has an `assigns` row, is left out, and the keys come in the order the sites are written, from the span in each key |
 | `shape()` | the adapter's `typeShapeOf` on the value's own key, with no name followed |
 | `receiverIsFrom`, `receiverGlobal` with `global` | the adapter's `spellsGlobal` on the receiver, or else `globalsReaching`: the paths `wantedStreamValue` says reach the receiver, from every `streamObject` |
 | `isFrom` with `global` | the adapter's `callsGlobal` on the call, for a call with no receiver |
@@ -1037,6 +1043,45 @@ messageSends({
 `configuredSends(spec, wire)` builds these from a dependency stub's
 statement. A subject nothing settles records the send with no channel,
 the way the SDK sends read theirs.
+
+## A message a handler reads
+
+A Lambda handler is handed a batch of records, and the producer wrote
+each record's `body` as JSON. The receive is read at the decode, a call
+of one of the adapter's decoders, and the pack says how the program gets
+from what the platform handed it to the payload:
+
+```ts
+messageReceives({
+  wire: "aws_sqs",
+  codec: "json",
+  envelope: [
+    { path: [{ read: "Records" }, { each: true }, { read: "body" }] },
+    {
+      from: typed({ from: ["aws-lambda"], named: ["SQSRecord"] }),
+      path: [{ read: "body" }],
+    },
+  ],
+});
+```
+
+The chain has no links. `compile` hands it to `compileReceives`, and the
+pack runs it on the invocation walk. At each call the hook asks
+`decodes()`, and a call that decodes nothing, or decodes under another
+encoding, matches nothing. Then it walks each envelope from the payload
+outward, last step first. A `read` step asks `read()` and needs the key
+the step says, then goes on to the object. An `each` step asks
+`element()` and goes on to the collection. When the steps run out,
+`from`, if the envelope states one, asks `typed()` of where the walk
+ended. The first envelope that gets through matches, so a typed record
+in a loop gives one receive and not two.
+
+The fields are the keys `keysRead()` reads off what the decoder gave
+back: at the call, through the one name the result is kept in, and in a
+destructure of that name. No key read means no body, and the checker
+then compares nothing. The effect names no channel, because the queue a
+handler drains is in the deployment. The checker pairs it with the
+sends on that queue through the consumer the template declares.
 
 ## A callback a call hands over
 

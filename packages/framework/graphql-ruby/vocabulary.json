@@ -15,7 +15,7 @@
   "input": "graphql-ruby: the one wire argument RelayClassicMutation wraps a mutation's declared arguments into",
   "dataloader": "graphql-ruby: the receiverless call HasDataloader gives a resolver for the request's GraphQL::Dataloader",
   "with": "graphql-ruby: the Dataloader method that picks a Source class and its batch arguments",
-  "load": "graphql-ruby: the Source method that fetches one key through the batch",
+  "load": "language: Ruby's JSON library spells JSON.load the same way. graphql-ruby: the Source method that fetches one key through the batch",
   "load_all": "graphql-ruby: the Source method that fetches several keys through the batch",
   "request": "graphql-ruby: the Source method that queues one key without waiting for it",
   "request_all": "graphql-ruby: the Source method that queues several keys without waiting for them",

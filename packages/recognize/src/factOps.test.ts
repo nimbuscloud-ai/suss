@@ -1849,3 +1849,171 @@ describe("the columns a condition reads, over the facts", () => {
     expect(condition?.readsOff?.(unspelled)).toEqual([]);
   });
 });
+
+/**
+ * The facts for a consumer, keyed the way TypeScript keys them, with the
+ * spans the source order is read from:
+ *
+ *   for (const record of event.Records) {
+ *     const text = record.body;
+ *     const order = JSON.parse(text);
+ *     order.seen = 1;
+ *     use(order.id, order.toString(), order["kind"], order.id);
+ *   }
+ */
+function consumer(
+  over: Partial<FactSource> = {},
+  more: readonly (readonly string[])[] = [],
+): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  for (const [relation, ...row] of more) {
+    add(relation ?? "", ...row);
+  }
+  add("readsProperty", "f:10-23", "event", "Records");
+  add("binds", "f:40-46", "record");
+  add("elementOf", "record", "f:10-23");
+  add("readsProperty", "f:40-51", "f:40-46", "body");
+  add("binds", "text", "f:40-51");
+  add("binds", "f:70-74", "text");
+  add("call", "f:60-75", "f:60-70");
+  add("callArg", "f:60-75", "0", "f:70-74");
+  add("binds", "order", "f:60-75");
+  for (const reference of [
+    "f:80-85",
+    "f:100-105",
+    "f:110-115",
+    "f:130-135",
+    "f:150-155",
+  ]) {
+    add("binds", reference, "order");
+  }
+  add("readsProperty", "f:80-90", "f:80-85", "seen");
+  add("assigns", "f:80-90", "one");
+  add("readsProperty", "f:100-108", "f:100-105", "id");
+  add("readsProperty", "f:110-124", "f:110-115", "toString");
+  add("call", "f:110-126", "f:110-124");
+  add("readsProperty", "f:130-143", "f:130-135", "kind");
+  add("readsProperty", "f:150-158", "f:150-155", "id");
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: () => null,
+    decodedOf: (key) =>
+      key === "f:60-75" ? { codec: "json", value: "f:70-74" } : null,
+    ...over,
+  };
+}
+
+describe("the ops a receive asks, over the facts", () => {
+  it("reads what a decoder was handed, a name set to a read as that read, and the collection a loop's record comes from", () => {
+    const decoded = opsAt("f:60-75", consumer()).decodes?.();
+    const body = decoded?.value.read?.();
+    const records = body?.object.element?.()?.read?.();
+
+    expect(decoded?.codec).toBe("json");
+    expect(body?.key).toBe("body");
+    expect(records?.key).toBe("Records");
+    expect(opsAt("f:110-126", consumer()).decodes?.()).toBeNull();
+  });
+
+  it("reads the keys off the decoded value through the name it is kept in, once each in source order, leaving out a write and a method", () => {
+    const decoded = opsAt("f:60-75", consumer()).decodes?.();
+
+    expect(decoded?.result.keysRead?.()).toEqual(["id", "kind"]);
+  });
+
+  it("reads the keys at the sites an adapter lists, when it lists them", () => {
+    const listing = consumer({
+      readSitesOf: (key) => (key === "f:60-75" ? ["f:130-143"] : []),
+    });
+
+    expect(factValueOps("f:60-75", listing).keysRead?.()).toEqual(["kind"]);
+  });
+
+  it("reads the sites the adapter's readsOff gives off the name the value is kept in, and an entry written out", () => {
+    const destructured = consumer(
+      { readsOff: (key) => (key === "order" ? ["f:170-180"] : []) },
+      [
+        ["readsProperty", "f:170-180", "order", "total"],
+        ["readsEntry", "f:190-199", "order", "region"],
+      ],
+    );
+
+    expect(factValueOps("f:60-75", destructured).keysRead?.()).toEqual([
+      "id",
+      "kind",
+      "total",
+      "region",
+    ]);
+  });
+
+  it("orders keys read in two files by file, and keeps a site with no span where the adapter listed it", () => {
+    const sites = (listed: string[]) =>
+      consumer({ readSitesOf: () => listed }, [
+        ["readsProperty", "g:5-9", "other", "zeta"],
+        ["readsProperty", "nospan", "other", "alpha"],
+      ]);
+
+    expect(
+      factValueOps("f:60-75", sites(["g:5-9", "f:130-143"])).keysRead?.(),
+    ).toEqual(["kind", "zeta"]);
+    expect(
+      factValueOps("f:60-75", sites(["nospan", "f:130-143"])).keysRead?.(),
+    ).toEqual(["alpha", "kind"]);
+  });
+
+  it("reads an entry written out as a read, as Python and Ruby state one", () => {
+    const python = consumer({}, [
+      ["readsEntry", "f:200-215", "f:200-206", "body"],
+      ["elementOf", "f:200-206", "f:10-23"],
+    ]);
+
+    const body = factValueOps("f:200-215", python).read?.();
+    expect(body?.key).toBe("body");
+    expect(body?.object.element?.()?.read?.()?.key).toBe("Records");
+  });
+
+  it("asks the adapter whether a value is typed, and reads what made it where the language declares no types", () => {
+    const typedRecord = typed({ from: ["aws-lambda"], named: ["SQSRecord"] });
+    const declaring = consumer({
+      valueTypedAs: (key, origin) =>
+        key === "f:40-46" && origin.named?.includes("SQSRecord") === true,
+    });
+    const made = consumer(
+      {
+        writtenAs: (key) => (key === "made" ? "f:300-320" : null),
+        importedFrom: (key, module) =>
+          key === "SQSRecord" && module === "aws-lambda",
+      },
+      [["call", "f:300-320", "SQSRecord"]],
+    );
+
+    expect(factValueOps("f:40-46", declaring).typed?.(typedRecord)).toBe(true);
+    expect(factValueOps("f:100-105", declaring).typed?.(typedRecord)).toBe(
+      false,
+    );
+    expect(factValueOps("made", made).typed?.(typedRecord)).toBe(true);
+    expect(
+      factValueOps("made", made).typed?.(
+        typed({ from: ["aws-lambda"], named: ["SNSRecord"] }),
+      ),
+    ).toBe(false);
+  });
+
+  it("gives no read, no element and no keys where nothing is stated", () => {
+    const value = factValueOps("one", consumer());
+
+    expect(value.read?.()).toBeNull();
+    expect(value.element?.()).toBeNull();
+    expect(value.keysRead?.()).toEqual([]);
+  });
+});

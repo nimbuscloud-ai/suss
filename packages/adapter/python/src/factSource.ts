@@ -12,7 +12,7 @@ import { scalarOf } from "@suss/values";
 
 import { field, numberLiteralValue, stringLiteralValue } from "./ast.js";
 import { copingAt, sitesNamingParameter } from "./envReads.js";
-import { encoderCalled } from "./facts/languageWords.js";
+import { decoderCalled, encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
   handedNamesAt,
@@ -35,7 +35,7 @@ import {
 } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
-import type { EffectArg, FactSource, ValueForm } from "@suss/extractor";
+import type { EffectArg, FactSource, Typed, ValueForm } from "@suss/extractor";
 import type { SubjectOrigin } from "./facts/resolve.js";
 import type { PyNode } from "./parser.js";
 
@@ -83,6 +83,8 @@ export function pythonFactSource(db: Database): FactSource {
         : argOf(node, db);
     },
     encodedOf: (key) => encodedBy(db, key),
+    decodedOf: (key) => decodedBy(db, key),
+    valueTypedAs: (key, origin) => valueTyped(db, key, origin),
     typeShapeOf: (key) => {
       const node = nodeAt(key);
       return node === null
@@ -116,11 +118,7 @@ export function pythonFactSource(db: Database): FactSource {
     declares: (call, module) =>
       receiverClassesOf(call, db).some((origin) => origin.module === module),
     typedAs: (call, origin) =>
-      receiverClassesOf(call, db).some(
-        (found) =>
-          (origin.named === undefined || origin.named.includes(found.name)) &&
-          origin.importedFrom.some((module) => inModule(found.module, module)),
-      ),
+      receiverClassesOf(call, db).some((found) => originAccepts(origin, found)),
     defaultedAt: (key) => {
       const node = nodeAt(key);
       return node !== null && copingAt(node).defaulted;
@@ -207,29 +205,87 @@ function encodedBy(
   db: Database,
   call: string,
 ): { codec: string; value: string } | null {
+  return handedTo(encoderCalled, db, call);
+}
+
+/** The argument a call of one of the decoders decodes, `body` in `json.loads(body)`, read the same way. */
+function decodedBy(
+  db: Database,
+  call: string,
+): { codec: string; value: string } | null {
+  return handedTo(decoderCalled, db, call);
+}
+
+function handedTo(
+  called: typeof encoderCalled,
+  db: Database,
+  call: string,
+): { codec: string; value: string } | null {
   for (const [, callee] of db.lookup("call", 0, call)) {
     for (const [, object, name] of db.lookup(
       "readsProperty",
       0,
       String(callee),
     )) {
-      const encoder = encoderCalled(String(name), (module) =>
+      const codec = called(String(name), (module) =>
         originsOf(db, String(object)).some((origin) =>
           importedNameIn(origin, module).includes("*"),
         ),
       );
-      if (encoder === null) {
+      if (codec === null) {
         continue;
       }
       const value = db
         .lookup("callArg", 0, call)
-        .find((row) => String(row[1]) === String(encoder.argument));
+        .find((row) => String(row[1]) === String(codec.argument));
       return value === undefined
         ? null
-        : { codec: encoder.codec, value: String(value[2]) };
+        : { codec: codec.codec, value: String(value[2]) };
     }
   }
   return null;
+}
+
+/**
+ * Whether the value at the key is a name annotated as one of the origin's
+ * types: `record` in `def read(record: SQSRecord)`. A name is keyed by its
+ * scope, so its annotation is read off a mention of it in that scope.
+ */
+function valueTyped(db: Database, key: string, origin: Typed): boolean {
+  const named = mentionOf(db, key);
+  return (
+    named !== null &&
+    receiverTypeOrigins(named, { facts: db, filePath: fileOfKey(key) }).some(
+      (found) => originAccepts(origin, found),
+    )
+  );
+}
+
+/** Whether a class the origin lists is the one found, by name and by the module it came from. */
+function originAccepts(origin: Typed, found: SubjectOrigin): boolean {
+  return (
+    (origin.named === undefined || origin.named.includes(found.name)) &&
+    origin.importedFrom.some((module) => inModule(found.module, module))
+  );
+}
+
+/**
+ * An identifier that spells the name at a name key, inside the scope the
+ * key gives: the node itself for a key that is one, and otherwise the
+ * first mention in the function the key is scoped to.
+ */
+function mentionOf(db: Database, key: string): PyNode | null {
+  const node = nodeOfResolutionKey(key, db);
+  if (node !== null) {
+    return node.type === "identifier" ? node : null;
+  }
+  const hash = key.lastIndexOf("#");
+  const scope = hash < 0 ? null : nodeOfResolutionKey(key.slice(0, hash), db);
+  const name = key.slice(hash + 1);
+  return (
+    scope?.descendantsOfType("identifier").find((one) => one?.text === name) ??
+    null
+  );
 }
 
 /**

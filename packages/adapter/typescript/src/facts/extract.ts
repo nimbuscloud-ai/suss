@@ -580,7 +580,7 @@ export function factKeyOf(value: Node): Node {
 }
 
 /** The name an index expression states, when it states one at all. */
-function literalIndexOf(index: Expression | undefined): string | null {
+export function literalIndexOf(index: Expression | undefined): string | null {
   if (index === undefined) {
     return null;
   }
@@ -1488,6 +1488,35 @@ export function emitBindingElementFacts(
 function loopCollectionOf(declaration: VariableDeclaration): Expression | null {
   const loop = declaration.getParent().getParent();
   return Node.isForOfStatement(loop) ? loop.getExpression() : null;
+}
+
+/**
+ * The collection a declaration is given one element of, by the rules the
+ * `elementOf` facts follow: the variable of a `for...of` that nothing
+ * writes again, or the first parameter of a function written into `map`
+ * or `forEach`. Null for any other declaration.
+ */
+export function collectionGivenTo(declaration: Node): Expression | null {
+  if (Node.isVariableDeclaration(declaration)) {
+    return isWrittenAgain(declaration) ? null : loopCollectionOf(declaration);
+  }
+  const callback = declaration.getParent();
+  const call = callback?.getParent();
+  if (
+    !Node.isParameterDeclaration(declaration) ||
+    !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback)) ||
+    !Node.isCallExpression(call) ||
+    call.getArguments()[0] !== callback ||
+    callback.getParameters()[0] !== declaration ||
+    declaration.isRestParameter()
+  ) {
+    return null;
+  }
+  const callee = peelValue(call.getExpression());
+  return Node.isPropertyAccessExpression(callee) &&
+    ELEMENT_CALLBACK_METHODS.has(callee.getName())
+    ? callee.getExpression()
+    : null;
 }
 
 /**
