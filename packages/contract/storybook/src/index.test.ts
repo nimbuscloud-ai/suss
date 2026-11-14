@@ -177,6 +177,12 @@ describe("the module a story's component comes from", () => {
     expect(story?.args).toEqual({ size: "sm", onPick: "onPick() {}" });
   });
 
+  it("records no module for a component read off a namespace by a computed key", () => {
+    expect(
+      storybookOf("src/IconsIndexed.stories.tsx")?.componentModule,
+    ).toBeUndefined();
+  });
+
   it("reads a component and args written inside a type assertion or parentheses, under a key the file computes", () => {
     const [summary] = generateSummariesFromStories(
       [path.join(importsDir, "src/Chip/__stories__/ChipWritten.stories.tsx")],
