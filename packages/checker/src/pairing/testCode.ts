@@ -20,11 +20,16 @@ export function isStory(summary: BehavioralSummary): boolean {
   return readStorybookMetadata(summary) !== undefined;
 }
 
-/** Whether a summary describes a test case, a story, or code in a test file. */
+/**
+ * Whether a summary describes a test case, a story, or code in a test
+ * file. The extract marks a file whose path does not show it, such as a
+ * test folder at the top of a package under the extract's root.
+ */
 export function isTestCode(summary: BehavioralSummary): boolean {
   return (
     summary.kind === "test" ||
     isStory(summary) ||
+    summary.location.inTests === true ||
     isTestFile(summary.location.file)
   );
 }

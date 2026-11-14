@@ -24,6 +24,8 @@ This directory has the base pairing code that every per-domain checker builds on
   - a folder anywhere named `__tests__`, `__mocks__`, `__fixtures__`, `__stories__`, `.storybook`, `testing` or `stories`. A plain `fixtures` folder is left alone, because projects keep sample apps there that should pair like any other code;
   - a `test`, `tests`, `spec` or `e2e` folder at the top of the project. Deeper folders with those names are left alone, because an application can serve a route from `app/api/test/route.ts`.
 
+  A summary's path starts at the directory the extract ran over, and every adapter reads the same rules from there. A package under that directory with its own package.json, pyproject.toml, setup.py, setup.cfg, Gemfile or gemspec is a project too, so the adapters also read `packages/api/test/app.js` as test code. The path alone does not show that, so the extract sets `location.inTests` on such a summary, and `isTestCode` reads it.
+
   `pairSummaries` lists those summaries under `unmatched.unpairable` with the reason `testCode`, and `checkAll` leaves them out of every other pass except the one that compares stories with their components.
 
 - **Null keys land in `unmatched.noBinding`.** A summary with a binding but no usable key (e.g. REST with an empty path) is left unpaired on purpose. It is recorded so reports can show what was skipped and why.

@@ -25,12 +25,14 @@ import {
 } from "@suss/adapter-typescript";
 import {
   dropIdleReceivers,
+  isTestFile,
   readTestMetadata,
   readWrapperMetadata,
   SUMMARY_SCHEMA_VERSION,
   withRewrittenPaths,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
+import { testFilesUnder } from "@suss/behavioral-ir/files";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 import {
   evaluatePackHealth,
@@ -1489,8 +1491,11 @@ export async function extract(
 
   const projectRoot = run.root;
   const ownHosts = projectHosts(projectRoot);
+  const inTests = testFilesUnder(projectRoot);
   for (const summary of summaries) {
+    const onDisk = path.resolve(projectRoot, summary.location.file);
     relativizeSummaryPaths(summary, projectRoot);
+    markTestCodeItsPathHides(summary, inTests(onDisk));
     forgetOwnHosts(summary, ownHosts);
     summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
@@ -1958,6 +1963,22 @@ function formatTimingBreakdown(report: TimingReport): string {
   }
   lines.push(`  ${report.totalMs.toFixed(0).padStart(6)}ms  100.0%  total`);
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Says on the summary that its unit is test code, when the adapter read
+ * the file as test code and the shortened `location.file` does not show
+ * it, because the file's own project starts below the run's root. The
+ * checker sees only the summary, and it has to leave out of pairing what
+ * the adapter treated as a test's.
+ */
+export function markTestCodeItsPathHides(
+  summary: BehavioralSummary,
+  inTests: boolean,
+): void {
+  if (inTests && !isTestFile(summary.location.file)) {
+    summary.location.inTests = true;
+  }
 }
 
 /**
