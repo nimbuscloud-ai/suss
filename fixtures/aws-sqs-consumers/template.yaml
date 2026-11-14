@@ -1,0 +1,294 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Consumers that read an SQS message in each way a handler writes one,
+  and a few that parse something other than a message. Invented fixture.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: .
+    Timeout: 10
+
+Resources:
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  OrdersTopic:
+    Type: AWS::SNS::Topic
+    Properties: {}
+
+  ForOfTyped:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/forOfTyped.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  ForOfUntyped:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/forOfUntyped.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  MappedTyped:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/mappedTyped.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  ForEachUntyped:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/forEachUntyped.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  TypedHelpers:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/typedHelpers.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  AliasedRecord:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/aliasedRecord.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  ProjectRecord:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/projectRecord.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  ProjectLambdaFolder:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/projectLambdaFolder.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  Reviver:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/reviver.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  FirstRecord:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/firstRecord.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+            BatchSize: 1
+
+  CastRecord:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/castRecord.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  KeptBody:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/keptBody.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  KeptRecords:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/keptRecords.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  CastUnknown:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/castUnknown.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  TakenApart:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/takenApart.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  NotABody:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/notABody.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  SnsMessage:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/snsMessage.handler
+      Events:
+        Orders:
+          Type: SNS
+          Properties:
+            Topic: !Ref OrdersTopic
+
+  KeptName:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/keptName.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  LaterDestructure:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/laterDestructure.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  ReadOffCall:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/readOffCall.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  AssignedLater:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/assignedLater.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  HandedOn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/handedOn.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  QuotedKey:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/quotedKey.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  ComputedKey:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/computedKey.handler
+      Environment:
+        Variables:
+          REGION_FIELD: region
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  RestElement:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/restElement.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  NestedPattern:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/nestedPattern.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  EmptyPattern:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/emptyPattern.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
