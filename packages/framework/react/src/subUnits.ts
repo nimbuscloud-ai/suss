@@ -14,6 +14,7 @@ import type {
   DiscoveredSubUnitParent,
   InputMappingPattern,
 } from "@suss/extractor";
+import type { CallExpression } from "ts-morph";
 
 const EVENT_HANDLER_INPUT: InputMappingPattern = {
   type: "positionalParams",
@@ -168,6 +169,9 @@ function synthesizeUseEffects(
     "useEffect",
     "react",
   )) {
+    if (!isReactsEffect(call, ctx)) {
+      continue;
+    }
     const body = ctx.getCallArgumentFunction(call, 0);
     if (body === null) {
       // An identifier or a value that is not a function has no body here
@@ -197,4 +201,17 @@ function synthesizeUseEffects(
   }
 
   return out;
+}
+
+/**
+ * Whether a call spelled `useEffect` is React's. Preact and a project
+ * can each export their own, so a bare `useEffect` counts only when it
+ * was imported from React, directly or through a project barrel.
+ */
+function isReactsEffect(call: CallExpression, ctx: TsSubUnitContext): boolean {
+  const callee = call.getExpression();
+  return (
+    callee.getText() !== "useEffect" ||
+    ctx.resolution?.originatesFrom(callee, "react") === true
+  );
 }

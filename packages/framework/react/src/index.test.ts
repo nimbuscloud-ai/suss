@@ -76,6 +76,7 @@ describe("reactFramework: integration", () => {
     const components = summaries.filter((s) => s.kind === "component");
     const names = components.map((s) => s.identity.name).sort();
     expect(names).toEqual([
+      "Badge",
       "Banner",
       "Button",
       "Clock",
@@ -83,9 +84,11 @@ describe("reactFramework: integration", () => {
       "Counter",
       "Dashboard",
       "EffectyComponent",
+      "FilterButton",
       "Form",
       "Greeting",
       "Legacy",
+      "MenuItemLabel",
       "Nav",
       "RowBuilder",
       "SaveBar",
@@ -460,14 +463,25 @@ describe("reactFramework: integration", () => {
     );
     const names = effects.map((s) => s.identity.name).sort();
     expect(names).toEqual([
-      "Banner.effect#0",
-      "Clock.effect#0",
       "EffectyComponent.effect#0",
       "EffectyComponent.effect#1",
       "EffectyComponent.effect#2",
       "Ticker.effect#0",
       "Ticker.effect#1",
+      "Ticker.effect#2",
     ]);
+  });
+
+  it("reads an effect's callback and dependency list through parentheses and casts", () => {
+    const deps = ["Ticker.effect#0", "Ticker.effect#1", "Ticker.effect#2"].map(
+      (name) =>
+        (
+          summaries.find((s) => s.identity.name === name)?.metadata?.react as
+            | { deps?: unknown }
+            | undefined
+        )?.deps,
+    );
+    expect(deps).toEqual([["symbols"], ["interval"], []]);
   });
 
   it("useEffect summaries record their dependency arrays in metadata", () => {
@@ -729,6 +743,43 @@ describe("reactFramework, an effect written off the React import", () => {
       expect(effect?.inputReads?.map((read) => read.input)).toEqual(["label"]);
     },
   );
+
+  it.each([
+    ["Preact's hook", `import { useEffect } from "preact/hooks";`],
+    ["a project's own function", `import { useEffect } from "./lifecycle";`],
+    ["a name nothing imports", ""],
+  ])("gives no unit to a useEffect that is %s", async (_, line) => {
+    const summaries = await summariesOf({
+      "/src/lifecycle.ts":
+        "export function useEffect(run: () => void, deps: unknown[]) { run(); }",
+      "/src/title.tsx": `
+        ${line}
+        export function Title({ label }: { label: string }) {
+          useEffect${EFFECT_BODY};
+          return <h1>{label}</h1>;
+        }
+      `,
+    });
+
+    expect(summaries.map((s) => s.identity.name)).not.toContain(
+      "Title.effect#0",
+    );
+  });
+
+  it("gives a unit to a useEffect a project barrel re-exports from React", async () => {
+    const summaries = await summariesOf({
+      "/src/hooks.ts": `export { useEffect } from "react";`,
+      "/src/title.tsx": `
+        import { useEffect } from "./hooks";
+        export function Title({ label }: { label: string }) {
+          useEffect${EFFECT_BODY};
+          return <h1>{label}</h1>;
+        }
+      `,
+    });
+
+    expect(summaries.map((s) => s.identity.name)).toContain("Title.effect#0");
+  });
 });
 
 const PANEL_SOURCE = `
@@ -770,6 +821,54 @@ describe("reactFramework, a component a barrel re-exports", () => {
     expect(summaries.filter((s) => s.identity.name === "Panel")).toHaveLength(
       2,
     );
+  });
+});
+
+describe("reactFramework, an export written as something other than a function", () => {
+  /** Each component as its name and the start of the function it is on. */
+  async function componentsOf(source: string): Promise<string[][]> {
+    const summaries = await summariesOf({ "/src/parts.tsx": source });
+    return summaries
+      .filter((summary) => summary.kind === "component")
+      .map((summary) => [
+        summary.identity.name,
+        String(summary.location.range.start),
+      ]);
+  }
+
+  it("reads a wrapper call under a cast as the component it wraps", async () => {
+    expect(
+      await componentsOf(`
+        import { forwardRef } from "react";
+        function PickerInner() {
+          return <select />;
+        }
+        export const Picker = forwardRef(PickerInner) as <T>(props: T) => JSX.Element;
+      `),
+    ).toEqual([["Picker", "3"]]);
+  });
+
+  it("reads a JSX return under a cast", async () => {
+    expect(
+      await componentsOf(`
+        export function Badge() {
+          return (<span />) as JSX.Element;
+        }
+      `),
+    ).toEqual([["Badge", "2"]]);
+  });
+
+  it("reads each export a project factory makes as the component it gives back, once", async () => {
+    expect(
+      await componentsOf(`
+        import { forwardRef } from "react";
+        function styledDiv(className: string) {
+          return forwardRef((props, ref) => <div ref={ref} className={className} />);
+        }
+        export const Label = styledDiv("label");
+        export const Icon = styledDiv("icon");
+      `),
+    ).toEqual([["Label", "4"]]);
   });
 });
 
