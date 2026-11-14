@@ -1947,6 +1947,60 @@ describe("importedNamesOf", () => {
   });
 });
 
+describe("importedAsOf", () => {
+  /** The callee of the first call in `/effects.ts`. */
+  function calleeIn(source: string): Node {
+    return projectOf({ "/effects.ts": source })
+      .getSourceFileOrThrow("/effects.ts")
+      .getFirstDescendantByKindOrThrow(SyntaxKind.CallExpression)
+      .getExpression();
+  }
+
+  it("reads a callee imported under another name as the export it is", () => {
+    const callee = calleeIn(`
+      import { useEffect as runEffect } from "react";
+      export const Title = () => { runEffect(() => {}); return null; };
+    `);
+
+    expect(new ResolutionStore().importedAsOf(callee, ["react"])).toEqual([
+      "useEffect",
+    ]);
+  });
+
+  it("reads a default and a namespace import as the whole module", () => {
+    const store = new ResolutionStore();
+
+    expect(
+      store.importedAsOf(calleeIn(`import React from "react"; React();`), [
+        "react",
+      ]),
+    ).toEqual(["default"]);
+    expect(
+      store.importedAsOf(calleeIn(`import * as React from "react"; React();`), [
+        "react",
+      ]),
+    ).toEqual(["*"]);
+  });
+
+  it("answers a callee an import binds without walking into the module it names", () => {
+    const callee = calleeIn(`
+      import { useEffect } from "react";
+      export const Title = () => { useEffect(() => {}); return null; };
+    `);
+
+    const { result, profile } = profileEvaluation(() =>
+      new ResolutionStore().importedAsOf(callee, ["react"]),
+    );
+
+    expect(result).toEqual(["useEffect"]);
+    expect(
+      profile.rules
+        .map((one) => one.head)
+        .filter((head) => /^(wanted:)?(reaches|comesFrom)\b/.test(head)),
+    ).toEqual([]);
+  });
+});
+
 describe("a name a project module re-exports from a package that is not installed", () => {
   const MODULES = ["@t3-oss/env-core"];
 

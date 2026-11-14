@@ -72,6 +72,16 @@ The result is memoized against the declaration. One wrapper is applied
 across hundreds of files, and the question is about the wrapper itself,
 whichever use of it prompted the question.
 
+`importedAsOf(value, modules)` asks only the first half: which export
+the value is under a local spelling. When an import binds the value,
+the store answers from the import and from what a project barrel
+forwards, which is the question `importOriginsOf` asks, and does not
+walk into the module's own exports. A pack that recognizes a call by
+the export its callee was imported as asks this about every callee an
+import binds, in every component of a frontend. Walking each one into
+the library's declaration file cost a derivation of its own each time,
+and on the largest React frontend that was most of the run.
+
 ## A module a generator wrote into the project
 
 A pack's import gate asks whether a file reaches the pack's package.
