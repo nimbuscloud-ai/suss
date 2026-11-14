@@ -13,15 +13,33 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { extractPythonProject } from "@suss/adapter-python";
-import { extractRubyProject } from "@suss/adapter-ruby";
-import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { imported } from "@suss/recognize";
+import {
+  bindModule,
+  extractPythonProject,
+  parsePython,
+  pythonFactSource,
+  factsForFile as pythonFacts,
+} from "@suss/adapter-python";
+import {
+  extractRubyProject,
+  parseRuby,
+  rubyFactSource,
+  factsForFile as rubyFacts,
+} from "@suss/adapter-ruby";
+import {
+  createTypeScriptAdapter,
+  moduleOpsFor,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
+import { discoverEntryObject, imported } from "@suss/recognize";
+import { factModuleOps } from "@suss/recognize/ops";
 import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
   DeclaredDiscoveryPattern,
+  EntryObject,
+  EntryObjectMatch,
   ManifestEntry,
   PatternPack,
   UnitSpec,
@@ -674,5 +692,132 @@ describe("registeredFunction", () => {
         booted,
       ),
     ).toEqual(["component App function-call"]);
+  });
+});
+
+// A Ruby constant cannot be called `default`, so the entry here is `Meta`
+// in every language.
+const STORIES: EntryObjectMatch = {
+  type: "entryObject",
+  entry: "Meta",
+  target: "component",
+  inputs: "args",
+};
+
+/** The target as written, and each member's name, line and inputs as `key=value`. */
+function entryReading(found: EntryObject | null) {
+  return found === null
+    ? null
+    : {
+        target: found.target.source?.(),
+        members: found.members.map((member) => ({
+          name: member.name,
+          line: member.line,
+          inputs: member.inputs.map(
+            ({ key, value }) => `${key}=${String(value.evaluated?.())}`,
+          ),
+        })),
+      };
+}
+
+describe("entryObject", () => {
+  it("reads the entry's target and the members beside it, the entry's inputs under each member's own, in all three languages", async () => {
+    const project = createTestProject();
+    project.createSourceFile("/chip.ts", "export function Chip() {}");
+    const stories = project.createSourceFile(
+      "/chip.stories.ts",
+      [
+        'import { Chip } from "./chip";',
+        'export const Meta = { component: Chip, args: { label: "base", size: "sm" } };',
+        'export const Primary = { args: { size: "lg", tone: "warm" } };',
+        "export const Bare = { render: () => null };",
+        "export function helper() { return 1; }",
+      ].join("\n"),
+    );
+    const typescript = discoverEntryObject(
+      STORIES,
+      moduleOpsFor(stories, new ResolutionStore()),
+    );
+
+    const pythonTree = await parsePython(
+      [
+        "from chip import Chip",
+        'Meta = {"component": Chip, "args": {"label": "base", "size": "sm"}}',
+        'Primary = {"args": {"size": "lg", "tone": "warm"}}',
+        'Bare = {"render": lambda: None}',
+        "def helper():",
+        "    return 1",
+        "",
+      ].join("\n"),
+    );
+    const pythonDb = pythonFacts({
+      file: "chip_stories.py",
+      root: pythonTree.rootNode,
+      module: bindModule(pythonTree.rootNode),
+      packs: [],
+    });
+    const python = discoverEntryObject(
+      STORIES,
+      factModuleOps("chip_stories.py", pythonFactSource(pythonDb), {
+        calls: () => [],
+      }),
+    );
+
+    const rubyTree = await parseRuby(
+      [
+        "# Chip is a component class another file defines.",
+        'Meta = { component: Chip, args: { label: "base", size: "sm" } }',
+        'Primary = { args: { size: "lg", tone: "warm" } }',
+        "Bare = { render: -> { nil } }",
+        "def helper",
+        "  1",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const rubyDb = rubyFacts({
+      file: "chip_stories.rb",
+      root: rubyTree.rootNode,
+      packs: [],
+    });
+    const ruby = discoverEntryObject(
+      STORIES,
+      factModuleOps("chip_stories.rb", rubyFactSource(rubyDb), {
+        calls: () => [],
+      }),
+    );
+
+    const expected = {
+      target: "Chip",
+      members: [
+        {
+          name: "Primary",
+          line: 3,
+          inputs: ["label=base", "size=lg", "tone=warm"],
+        },
+        { name: "Bare", line: 4, inputs: ["label=base", "size=sm"] },
+      ],
+    };
+    expect(entryReading(typescript)).toEqual(expected);
+    expect(entryReading(python)).toEqual(expected);
+    expect(entryReading(ruby)).toEqual(expected);
+  });
+
+  it("finds nothing in a module whose entry has no target", async () => {
+    const tree = await parsePython('Meta = {"args": {"label": "base"}}\n');
+    const db = pythonFacts({
+      file: "untargeted.py",
+      root: tree.rootNode,
+      module: bindModule(tree.rootNode),
+      packs: [],
+    });
+    expect(
+      discoverEntryObject(
+        STORIES,
+        factModuleOps("untargeted.py", pythonFactSource(db), {
+          calls: () => [],
+        }),
+      ),
+    ).toBeNull();
   });
 });

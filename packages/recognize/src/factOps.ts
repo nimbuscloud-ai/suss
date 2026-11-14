@@ -1408,7 +1408,7 @@ class FactClass implements ClassValueOps {
       const held = String(row[2]);
       return name === null || !isFunction(held, this.facts)
         ? []
-        : [{ name, value: factValueOps(held, this.facts) }];
+        : [memberAt(name, held, this.facts)];
     });
   }
 
@@ -1424,6 +1424,12 @@ class FactClass implements ClassValueOps {
   bodyCalls(): readonly CallOps[] {
     return bodyCallsOf(this.key, this.facts);
   }
+}
+
+/** The value comes first, since making it states the facts the line is read from. */
+function memberAt(name: string, key: string, source: FactSource): ModuleMember {
+  const value = factValueOps(key, source);
+  return { name, value, line: source.lineOf?.(key) ?? null };
 }
 
 /**
@@ -1605,10 +1611,7 @@ class FactModule implements ModuleOps {
       this.facts.db
         .lookup("exportsAs", 0, this.file)
         .map((row) => ({ name: String(row[1]), key: String(row[2]) }));
-    return named.map(({ name, key }) => ({
-      name,
-      value: factValueOps(key, this.facts),
-    }));
+    return named.map(({ name, key }) => memberAt(name, key, this.facts));
   }
 
   mentions(word: string): boolean {

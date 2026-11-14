@@ -22,7 +22,12 @@ import type {
   RequestSpellingMetadata,
 } from "@suss/behavioral-ir";
 import type { LibraryEnvVars } from "./libraryEnvReads.js";
-import type { Inherits, ModuleMemberName, ReceiverOrigin } from "./ops.js";
+import type {
+  Inherits,
+  ModuleMemberName,
+  ReceiverOrigin,
+  ValueOps,
+} from "./ops.js";
 import type { ProjectHelpers } from "./projectHelpers.js";
 
 // =============================================================================
@@ -569,6 +574,44 @@ export interface MarkedMatch {
    * returns a value where a route handler sends a response.
    */
   unit?: Pick<UnitSpec, "terminals" | "inputMapping">;
+}
+
+/**
+ * A module whose entry export says which unit the module is about, and
+ * whose other exports each give that unit one set of inputs: a Storybook
+ * file's default export says which component its stories render, and
+ * each named export is a story. Only an export that comes to an object
+ * counts. Every adapter reads it through the module ops. A member has
+ * no function of its own, so the match never builds a unit, and a pack
+ * cannot list it in `discovery`.
+ */
+export interface EntryObjectMatch {
+  type: "entryObject";
+  /** The entry's export name, `default`. */
+  entry: string;
+  /** The entry's property that says which unit, `component`. A module whose entry lacks it gives nothing. */
+  target: string;
+  /** The property the entry and each member write inputs under, `args`. A member's own input replaces the entry's under the same key. */
+  inputs: string;
+}
+
+/** What an entry object match finds in one module. */
+export interface EntryObject {
+  readonly entry: ValueOps;
+  readonly target: ValueOps;
+  /** Every other export that comes to an object, in the order the module exports them. */
+  readonly members: readonly EntryMember[];
+}
+
+export interface EntryMember {
+  readonly name: string;
+  readonly line: number | null;
+  readonly value: ValueOps;
+  /** The entry's inputs, then the member's own: each key once, at its first place, with the last value. A key nothing settles is left out. */
+  readonly inputs: readonly {
+    readonly key: string;
+    readonly value: ValueOps;
+  }[];
 }
 
 /** The members a pattern takes from a value, by name, each with the unit it is. */

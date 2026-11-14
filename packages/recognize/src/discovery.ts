@@ -8,16 +8,22 @@
  *
  * Every reader ends the same way: a value whose `function()` settles to
  * one function, handed back as the adapter's own node so the adapter
- * builds the unit on it the way it builds any other.
+ * builds the unit on it the way it builds any other. An entry object's
+ * members have no function, so it hands back the values instead.
  */
 
 import picomatch from "picomatch";
+
+import { lastValueWins } from "@suss/extractor";
 
 import type {
   AstCapableValueOps,
   CallOps,
   DeclaredDiscoveryMatch,
   DiscoveredCustomUnit,
+  EntryMember,
+  EntryObject,
+  EntryObjectMatch,
   ManifestEntry,
   MarkedMatch,
   MemberPick,
@@ -26,6 +32,7 @@ import type {
   RegisteredFunctionMatch,
   SubclassOfMatch,
   UnitSpec,
+  ValueEntry,
   ValueOps,
 } from "@suss/extractor";
 
@@ -49,6 +56,56 @@ export function discoverDeclared(
     match,
     kind,
     module,
+  );
+}
+
+/**
+ * The entry export and the members beside it, when the module's entry
+ * comes to an object with the target. Null for a module with no such
+ * entry.
+ */
+export function discoverEntryObject(
+  match: EntryObjectMatch,
+  module: ModuleOps,
+): EntryObject | null {
+  const exported = module.exports();
+  for (const { name, value } of exported) {
+    const entry = name === match.entry ? (value.object?.() ?? null) : null;
+    const target = entry?.property(match.target) ?? null;
+    if (entry === null || target === null) {
+      continue;
+    }
+    const shared = inputsOf(entry, match.inputs);
+    const members = exported.flatMap((member): EntryMember[] => {
+      const object =
+        member.name === match.entry ? null : (member.value.object?.() ?? null);
+      return object === null
+        ? []
+        : [
+            {
+              name: member.name,
+              line: member.line,
+              value: object,
+              inputs: lastValueWins([
+                ...shared,
+                ...inputsOf(object, match.inputs),
+              ]),
+            },
+          ];
+    });
+    return { entry, target, members };
+  }
+  return null;
+}
+
+/** The entries of the object under `name`, the ones whose key the source settles. */
+function inputsOf(
+  object: ValueOps,
+  name: string,
+): (ValueEntry & { readonly key: string })[] {
+  return (object.property(name)?.object?.()?.entries("nothing") ?? []).filter(
+    (entry): entry is ValueEntry & { readonly key: string } =>
+      entry.key !== null,
   );
 }
 

@@ -149,6 +149,7 @@ export function factSourceFor(
       at(key, [], (node) => store.importedAsOf(node, [module])),
     shapeOf: (key) => at(key, null, shapeOf),
     textOf: (key) => at(key, "", (node) => node.getText()),
+    lineOf: (key) => at(key, null, (node) => node.getStartLineNumber()),
     formOf: (key) => at(key, "other", valueFormOf),
     literalOf: (key) => at(key, null, literalOf),
     nameOf: (key, unsettled) =>

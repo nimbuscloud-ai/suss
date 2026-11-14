@@ -6,13 +6,14 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { discoverDeclared } from "./discovery.js";
+import { discoverDeclared, discoverEntryObject } from "./discovery.js";
 import { factCallOps, factModuleOps, inheritsFrom } from "./factOps.js";
 import { global, imported } from "./ops.js";
 import { describeDiscovery } from "./pack.js";
 
 import type {
   DeclaredDiscoveryMatch,
+  EntryObjectMatch,
   FactSource,
   MarkedMatch,
   ModuleOps,
@@ -532,6 +533,108 @@ describe("registeredFunction", () => {
       "handler fetch serve -",
     ]);
     expect(asked).toEqual(["calls"]);
+  });
+});
+
+/**
+ * A story file's facts: a meta with a component and two args, a story
+ * that replaces one arg and adds another under a key nothing settles, a
+ * story with no args, and a function export.
+ */
+function storyFacts(meta: "withComponent" | "withoutComponent"): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  const objects = new Set<string>();
+  const object = (key: string, entries: Record<string, string>) => {
+    objects.add(key);
+    Object.entries(entries).forEach(([name, held], at) => {
+      add("holdsProperty", key, name, held);
+      add("writtenEntryAt", key, String(at), held, "value");
+    });
+  };
+  add("exportsAs", FILE, "Primary", "primary");
+  add("exportsAs", FILE, "render", "renderFn");
+  add("exportsAs", FILE, "default", "meta");
+  add("exportsAs", FILE, "Bare", "bare");
+  add("func", "renderFn");
+  object(
+    "meta",
+    meta === "withComponent"
+      ? { component: "chip", args: "metaArgs" }
+      : { args: "metaArgs" },
+  );
+  object("metaArgs", { label: "metaLabel", size: "metaSize" });
+  object("primary", { args: "primaryArgs" });
+  object("primaryArgs", { size: "primarySize", tone: "primaryTone" });
+  add("holdsUnderKey", "primaryArgs", "computed");
+  add("writtenEntryAt", "primaryArgs", "2", "computed", "value");
+  object("bare", { render: "renderFn" });
+  const lines: Record<string, number> = { primary: 5, meta: 1, bare: 7 };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: (key) => (objects.has(key) ? "object" : null),
+    textOf: (key) => key,
+    lineOf: (key) => lines[key] ?? null,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: () => null,
+  };
+}
+
+const STORIES: EntryObjectMatch = {
+  type: "entryObject",
+  entry: "default",
+  target: "component",
+  inputs: "args",
+};
+
+describe("entryObject", () => {
+  it("gives the entry's target and each other export that comes to an object, with the entry's inputs under its own", () => {
+    const found = discoverEntryObject(
+      STORIES,
+      factModuleOps(FILE, storyFacts("withComponent"), { calls: () => [] }),
+    );
+    expect({
+      target: found?.target.source?.(),
+      members: found?.members.map((member) => ({
+        name: member.name,
+        line: member.line,
+        inputs: member.inputs.map(
+          ({ key, value }) => `${key}=${value.source?.()}`,
+        ),
+      })),
+    }).toEqual({
+      target: "chip",
+      members: [
+        {
+          name: "Primary",
+          line: 5,
+          inputs: ["label=metaLabel", "size=primarySize", "tone=primaryTone"],
+        },
+        { name: "Bare", line: 7, inputs: ["label=metaLabel", "size=metaSize"] },
+      ],
+    });
+  });
+
+  it("finds nothing in a module whose entry has no target, or that has no entry", () => {
+    const facts = storyFacts("withoutComponent");
+    expect(
+      discoverEntryObject(
+        STORIES,
+        factModuleOps(FILE, facts, { calls: () => [] }),
+      ),
+    ).toBeNull();
+    expect(
+      discoverEntryObject(
+        { ...STORIES, entry: "meta" },
+        factModuleOps(FILE, storyFacts("withComponent"), { calls: () => [] }),
+      ),
+    ).toBeNull();
   });
 });
 

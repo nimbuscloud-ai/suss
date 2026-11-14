@@ -115,6 +115,32 @@ describe("a declared discovery pattern", () => {
     expect(store.factAccess().db.size("func")).toBeGreaterThan(0);
   });
 
+  it("lists each export with the line its declaration starts on, in the file a re-export leads to", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/shared.ts",
+      ["// shared", "export const Shared = { args: {} };"].join("\n"),
+    );
+    const file = project.createSourceFile(
+      "/module.ts",
+      [
+        'const meta = { component: "Chip" };',
+        "export default meta;",
+        "",
+        "export const Plain = { args: { label: 'plain' } };",
+        "export { Plain as Alias };",
+        'export { Shared } from "./shared";',
+      ].join("\n"),
+    );
+    const exported = moduleOpsFor(file, new ResolutionStore()).exports();
+    expect(exported.map(({ name, line }) => `${name} ${line}`)).toEqual([
+      "Plain 4",
+      "Alias 4",
+      "default 1",
+      "Shared 2",
+    ]);
+  });
+
   it("reads a registration the module body runs, and none written inside a function", async () => {
     expect(
       await unitsFor(

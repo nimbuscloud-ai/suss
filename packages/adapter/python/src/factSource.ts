@@ -10,7 +10,12 @@ import { referenceName } from "@suss/behavioral-ir";
 import { answersFor, fileOfKey, givenBackFunction } from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
-import { field, numberLiteralValue, stringLiteralValue } from "./ast.js";
+import {
+  field,
+  numberLiteralValue,
+  rangeOf,
+  stringLiteralValue,
+} from "./ast.js";
 import { copingAt, sitesNamingParameter } from "./envReads.js";
 import { decoderCalled, encoderCalled } from "./facts/languageWords.js";
 import {
@@ -61,6 +66,10 @@ export function pythonFactSource(db: Database): FactSource {
       originsOf(db, key).flatMap((origin) => importedNameIn(origin, module)),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     textOf: (key) => nodeAt(key)?.text ?? nameIn(key),
+    lineOf: (key) => {
+      const node = nodeAt(key);
+      return node === null ? null : rangeOf(node).start;
+    },
     formOf: (key) => formOf(nodeAt(key)),
     extendValue: (key, ops) => {
       const node = nodeAt(key);
