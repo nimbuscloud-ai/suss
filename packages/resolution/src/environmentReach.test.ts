@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { environmentsReaching } from "./environmentReach.js";
+import { stateCallsOutsideTests } from "./handWrittenFacts.js";
 import { resolutionProgram } from "./index.js";
 
 /**
@@ -32,6 +33,7 @@ function reached(keys: readonly string[]): string[][] {
   for (const [name, ...tuple] of FACTS) {
     db.add(name, tuple);
   }
+  stateCallsOutsideTests(db);
   return keys.map((key) => environmentsReaching(db, key, resolutionProgram()));
 }
 

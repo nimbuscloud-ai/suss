@@ -221,7 +221,7 @@ import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
 import { SELF_QUESTIONS, SELF_RULES } from "./receiverSelf.js";
 import { RUNS_CALL_QUESTIONS, RUNS_CALL_RULES } from "./runsCall.js";
 
-import type { Rule } from "@suss/datalog";
+import type { Rule, Term } from "@suss/datalog";
 
 /** A step to the value x is written as. */
 export const VALUE_STEP = constant("value");
@@ -483,6 +483,27 @@ const DISPATCH_RULES: readonly Rule[] = [
   // so a write through a name for it lands on it.
   rule("refersToObject", [v("c"), v("c")], [lit("collectionValue", v("c"))]),
 ];
+
+/**
+ * A rule where `call` fills a parameter of `fn`, held back when the call
+ * is in test code and the function is not. A test calls production code
+ * with stand-ins, so what it passes never decides what production code
+ * reads, and a parameter only a test fills is as open as one nobody
+ * fills. A test calling its own helper still fills the helper's
+ * parameter. The demand rewrite refuses negation, so the rule comes back
+ * twice: once for a call written outside test code, and once for a
+ * function written inside it.
+ */
+function exceptTestCallingProduction(
+  call: Term,
+  fn: Term,
+  filling: Rule,
+): Rule[] {
+  return [
+    { ...filling, body: [...filling.body, lit("callOutsideTests", call)] },
+    { ...filling, body: [lit("functionInTests", fn), ...filling.body] },
+  ];
+}
 
 /**
  * The rules every language adapter shares. Concatenate a language's own
@@ -752,16 +773,20 @@ const STATED_RULES = [
 
   // A `.then` callback's first parameter is handed what the promise it
   // was chained on settles to, so the parameter steps to that receiver.
-  rule(
-    "hop",
-    [v("p"), v("r"), VALUE_STEP],
-    [
-      lit("paramOf", v("cb"), FIRST_POSITION, v("p")),
-      lit("callArg", v("t"), FIRST_POSITION, v("cb")),
-      lit("call", v("t"), v("m")),
-      lit("readsProperty", v("m"), v("r"), THEN_METHOD),
-    ],
-    "then gives",
+  ...exceptTestCallingProduction(
+    v("t"),
+    v("cb"),
+    rule(
+      "hop",
+      [v("p"), v("r"), VALUE_STEP],
+      [
+        lit("paramOf", v("cb"), FIRST_POSITION, v("p")),
+        lit("callArg", v("t"), FIRST_POSITION, v("cb")),
+        lit("call", v("t"), v("m")),
+        lit("readsProperty", v("m"), v("r"), THEN_METHOD),
+      ],
+      "then gives",
+    ),
   ),
 
   // What a function says it gives back when its body never states a
@@ -972,50 +997,52 @@ const STATED_RULES = [
   // A parameter goes on at the argument, under the context its caller
   // was read in, and only from the calls that run the function under the
   // context the walk is in. This is the one hop that changes context.
-  rule(
-    "reachesUnder",
-    [v("p"), v("c"), v("a"), v("c3"), VALUE_STEP],
-    [
-      lit("context", v("c")),
-      lit("paramOf", v("f"), v("i"), v("p")),
-      lit("entersUnder", v("r"), v("f"), v("c"), v("c3")),
-      lit("callArg", v("r"), v("i"), v("a")),
-    ],
-    "argument under a context",
-  ),
-  rule(
-    "reachesUnder",
-    [v("p"), v("c"), v("a"), v("c3"), VALUE_STEP],
-    [
-      lit("context", v("c")),
-      lit("paramNamed", v("f"), v("n"), v("p")),
-      lit("entersUnder", v("r"), v("f"), v("c"), v("c3")),
-      lit("callKeywordArg", v("r"), v("n"), v("a")),
-    ],
-    "keyword argument under a context",
-  ),
-  rule(
-    "reachesUnder",
-    [v("x"), v("c"), v("a"), v("c3"), v("kind")],
-    [
-      lit("reachesUnder", v("x"), v("c"), v("p"), v("c2"), v("kind")),
-      lit("paramOf", v("f"), v("i"), v("p")),
-      lit("entersUnder", v("r"), v("f"), v("c2"), v("c3")),
-      lit("callArg", v("r"), v("i"), v("a")),
-    ],
-    "reached argument under a context",
-  ),
-  rule(
-    "reachesUnder",
-    [v("x"), v("c"), v("a"), v("c3"), v("kind")],
-    [
-      lit("reachesUnder", v("x"), v("c"), v("p"), v("c2"), v("kind")),
-      lit("paramNamed", v("f"), v("n"), v("p")),
-      lit("entersUnder", v("r"), v("f"), v("c2"), v("c3")),
-      lit("callKeywordArg", v("r"), v("n"), v("a")),
-    ],
-    "reached keyword argument under a context",
-  ),
+  ...[
+    rule(
+      "reachesUnder",
+      [v("p"), v("c"), v("a"), v("c3"), VALUE_STEP],
+      [
+        lit("context", v("c")),
+        lit("paramOf", v("f"), v("i"), v("p")),
+        lit("entersUnder", v("r"), v("f"), v("c"), v("c3")),
+        lit("callArg", v("r"), v("i"), v("a")),
+      ],
+      "argument under a context",
+    ),
+    rule(
+      "reachesUnder",
+      [v("p"), v("c"), v("a"), v("c3"), VALUE_STEP],
+      [
+        lit("context", v("c")),
+        lit("paramNamed", v("f"), v("n"), v("p")),
+        lit("entersUnder", v("r"), v("f"), v("c"), v("c3")),
+        lit("callKeywordArg", v("r"), v("n"), v("a")),
+      ],
+      "keyword argument under a context",
+    ),
+    rule(
+      "reachesUnder",
+      [v("x"), v("c"), v("a"), v("c3"), v("kind")],
+      [
+        lit("reachesUnder", v("x"), v("c"), v("p"), v("c2"), v("kind")),
+        lit("paramOf", v("f"), v("i"), v("p")),
+        lit("entersUnder", v("r"), v("f"), v("c2"), v("c3")),
+        lit("callArg", v("r"), v("i"), v("a")),
+      ],
+      "reached argument under a context",
+    ),
+    rule(
+      "reachesUnder",
+      [v("x"), v("c"), v("a"), v("c3"), v("kind")],
+      [
+        lit("reachesUnder", v("x"), v("c"), v("p"), v("c2"), v("kind")),
+        lit("paramNamed", v("f"), v("n"), v("p")),
+        lit("entersUnder", v("r"), v("f"), v("c2"), v("c3")),
+        lit("callKeywordArg", v("r"), v("n"), v("a")),
+      ],
+      "reached keyword argument under a context",
+    ),
+  ].flatMap((filling) => exceptTestCallingProduction(v("r"), v("f"), filling)),
 
   // Which call runs which function under which context. A construction
   // runs its constructor under the site it makes, a method call runs
@@ -1386,24 +1413,26 @@ const STATED_RULES = [
   // so a caller can tell two call sites apart. The callee comes before the
   // parameter, so a walk that starts from the argument asks which function
   // its call runs instead of trying every function with a parameter there.
-  rule(
-    "passesArgument",
-    [v("r"), v("p"), v("a")],
-    [
-      lit("callsFunction", v("r"), v("f")),
-      lit("paramOf", v("f"), v("k"), v("p")),
-      lit("callArg", v("r"), v("k"), v("a")),
-    ],
-  ),
-  rule(
-    "passesArgument",
-    [v("r"), v("p"), v("a")],
-    [
-      lit("callsFunction", v("r"), v("f")),
-      lit("paramNamed", v("f"), v("n"), v("p")),
-      lit("callKeywordArg", v("r"), v("n"), v("a")),
-    ],
-  ),
+  ...[
+    rule(
+      "passesArgument",
+      [v("r"), v("p"), v("a")],
+      [
+        lit("callsFunction", v("r"), v("f")),
+        lit("paramOf", v("f"), v("k"), v("p")),
+        lit("callArg", v("r"), v("k"), v("a")),
+      ],
+    ),
+    rule(
+      "passesArgument",
+      [v("r"), v("p"), v("a")],
+      [
+        lit("callsFunction", v("r"), v("f")),
+        lit("paramNamed", v("f"), v("n"), v("p")),
+        lit("callKeywordArg", v("r"), v("n"), v("a")),
+      ],
+    ),
+  ].flatMap((filling) => exceptTestCallingProduction(v("r"), v("f"), filling)),
 
   // The expressions that refer to a parameter under another name. An
   // adapter may key a read of the parameter as the parameter itself,

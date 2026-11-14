@@ -15,6 +15,7 @@ import {
 } from "@suss/datalog";
 
 import { explainResolutionProof, renderExplanation } from "./explain.js";
+import { stateCallsOutsideTests } from "./handWrittenFacts.js";
 import { RESOLUTION_RULES, VALUE_STEP } from "./index.js";
 
 import type { Atom } from "@suss/datalog";
@@ -24,6 +25,7 @@ function evaluated(facts: Array<[string, ...string[]]>): Database {
   for (const [name, ...tuple] of facts) {
     db.add(name, tuple);
   }
+  stateCallsOutsideTests(db);
   evaluate(db, RESOLUTION_RULES, witnesses);
   return db;
 }

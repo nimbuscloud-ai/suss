@@ -11,6 +11,7 @@
  * reassigned name gets one value or none, never two.
  */
 
+import { isTestFile } from "@suss/behavioral-ir";
 import {
   type AddRow,
   addEntryRows,
@@ -257,6 +258,8 @@ interface Emitter {
   enclosing: FunctionScope | null;
   /** Whether the body being walked runs with a receiver, so a call in it has one too. */
   insideMethod: boolean;
+  /** Whether the file is test code, whose calls fill only test code's parameters. */
+  inTests: boolean;
   /** Where the walk puts each write to a property of a name the body declares. */
   namedWrites: NamedWrites | null;
   /** The assignments a receiver's or a declared name's stores collected, by node key. */
@@ -277,6 +280,14 @@ interface NamedWrites {
     string,
     { receiverKey: string; property: string; writes: ReceiverWrite[] }
   >;
+}
+
+/** A call of `callee`, and which side of test code the call is written on. */
+function addCall(emitter: Emitter, callKey: string, callee: string): void {
+  add(emitter, "call", callKey, callee);
+  if (!emitter.inTests) {
+    add(emitter, "callOutsideTests", callKey);
+  }
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -346,7 +357,7 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   }
   /* v8 ignore stop */
   const callKey = nodeId(emitter.filePath, call);
-  add(emitter, "call", callKey, callee);
+  addCall(emitter, callKey, callee);
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
   }
@@ -1311,6 +1322,9 @@ function emitFunctionFacts(
 ): string {
   const funcKey = nodeId(emitter.filePath, fn);
   add(emitter, "func", funcKey);
+  if (emitter.inTests) {
+    add(emitter, "functionInTests", funcKey);
+  }
 
   const params = field(fn, "parameters");
   // A method's first parameter is the receiver, which the caller does not
@@ -2161,7 +2175,7 @@ function emitDecoratorCalls(emitter: Emitter, decorated: PyNode): void {
       continue;
     }
     const callKey = nodeId(emitter.filePath, decorator);
-    add(emitter, "call", callKey, valueKey(emitter, expression));
+    addCall(emitter, callKey, valueKey(emitter, expression));
     add(emitter, "callArg", callKey, "0", applied);
     applied = callKey;
   }
@@ -2679,6 +2693,7 @@ export function emitValueFacts(
     filePath,
     enclosing: null,
     insideMethod: false,
+    inTests: isTestFile(filePath),
     // Every name read at the top of a module belongs to the module.
     namedWrites: { body: root, declares: () => true, byProperty: new Map() },
     placedWrites: new Set(),

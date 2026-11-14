@@ -1,7 +1,7 @@
 {
   "name": "@suss/checker-intent",
   "exports": 8,
-  "internal": 79,
+  "internal": 77,
   "consumers": 60,
-  "unfollowedCalls": 6
+  "unfollowedCalls": 10
 }

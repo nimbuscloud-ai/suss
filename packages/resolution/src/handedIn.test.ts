@@ -42,6 +42,7 @@ describe("handedNamesReaching", () => {
     ["binds", "originRef", "origin"],
     ["call", "passes", "originRef"],
     ["callArg", "passes", "0", "env"],
+    ["callOutsideTests", "passes"],
     ["func", "other"],
     ["paramOf", "other", "1", "otherEnv"],
   ];

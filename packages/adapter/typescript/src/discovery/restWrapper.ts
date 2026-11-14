@@ -17,7 +17,6 @@ import { Node } from "ts-morph";
 
 import { hole } from "@suss/values";
 
-import { testCallingProduction } from "../testCode.js";
 import { evaluatedValueUnder } from "../values/evaluator.js";
 import { enclosingFunctionRoot } from "./graphqlShared.js";
 
@@ -151,8 +150,7 @@ interface CallSite {
 /**
  * Every call of `func`, with the argument written at each parameter. A
  * parameter written as a pattern rather than a name is skipped, since
- * the evaluator binds by name and a pattern has none. A test calling
- * production code passes a stand-in, so its calls ground nothing.
+ * the evaluator binds by name and a pattern has none.
  */
 function callSitesOf(func: FunctionRoot, store: ResolutionStore): CallSite[] {
   const byCall = new Map<string, CallSite>();
@@ -163,9 +161,6 @@ function callSitesOf(func: FunctionRoot, store: ResolutionStore): CallSite[] {
     }
     for (const passed of store.argumentsPassedTo(parameter)) {
       if (!Node.isCallExpression(passed.call)) {
-        continue;
-      }
-      if (testCallingProduction(passed.call, func)) {
         continue;
       }
       const key = siteKey(passed.call);

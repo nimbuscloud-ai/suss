@@ -6,6 +6,7 @@
  * mixins recorded as `extends`, and instance variables as class properties.
  */
 
+import { isTestFile } from "@suss/behavioral-ir";
 import {
   type AddRow,
   addEntryRows,
@@ -279,6 +280,8 @@ interface Emitter {
   selfKey: string | null;
   /** Whether the body being walked runs with a receiver, so a call in it has one too. */
   insideMethod: boolean;
+  /** Whether the file is test code, whose calls fill only test code's parameters. */
+  inTests: boolean;
   /** Which of the class's methods a call on `self` here can run. */
   selfRuns: SelfRuns;
   /** The locals in scope here that every write gives a class constant. */
@@ -317,6 +320,14 @@ interface NamedWrites {
     string,
     { receiverKey: string; property: string; writes: InstanceWrite[] }
   >;
+}
+
+/** A call of `callee`, and which side of test code the call is written on. */
+function addCall(emitter: Emitter, callKey: string, callee: string): void {
+  add(emitter, "call", callKey, callee);
+  if (!emitter.inTests) {
+    add(emitter, "callOutsideTests", callKey);
+  }
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -493,7 +504,7 @@ function emitCall(emitter: Emitter, site: CallSite): void {
   if (site.invokedKey !== null) {
     // `f.call(x)` and `f.(x)` run whatever the receiver evaluates to, so
     // the callee is that value, not a method named `call`.
-    add(emitter, "call", site.key, site.invokedKey);
+    addCall(emitter, site.key, site.invokedKey);
   }
   if (!emitMessageSent(emitter, site) && site.invoked === null) {
     return;
@@ -682,7 +693,7 @@ function emitMessageSent(emitter: Emitter, site: CallSite): boolean {
   if (method === null || calleeKey === null) {
     return false;
   }
-  add(emitter, "call", site.key, calleeKey);
+  addCall(emitter, site.key, calleeKey);
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", site.key);
   }
@@ -2149,6 +2160,9 @@ function definitionBody(definition: RbNode): RbNode | null {
 function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const funcKey = nodeId(emitter.filePath, method);
   add(emitter, "func", funcKey);
+  if (emitter.inTests) {
+    add(emitter, "functionInTests", funcKey);
+  }
 
   let position = 0;
   for (const param of parametersOf(method)) {
@@ -2669,6 +2683,7 @@ export function emitValueFacts(
     enclosing: null,
     selfKey: null,
     insideMethod: false,
+    inTests: isTestFile(filePath),
     selfRuns: "instanceMethods",
     classLocals: classLocalsOf(filePath, writes),
     instanceWrites: null,
