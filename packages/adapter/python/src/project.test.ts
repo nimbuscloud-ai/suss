@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
+import { classBody, imported } from "@suss/recognize";
 import { addPackWords } from "@suss/resolution";
 
 import { resolveCalls, resolvedFunctions } from "./facts/resolve.js";
@@ -1432,15 +1433,21 @@ describe("what a pack's model declarations put in the facts", () => {
 
   it("keys a relationship constructor by the module it comes from", () => {
     const db = packFacts([
-      packWithModels([
-        {
-          baseNames: ["SQLModel"],
-          givesBack: [],
-          entryMethods: [],
-          entryFunctions: [],
-          relationships: [{ module: "sqlmodel", name: "Relationship" }],
-        },
-      ]),
+      {
+        ...packWithModels([]),
+        classBodies: [
+          classBody({
+            fields: {
+              association: {
+                madeBy: imported({
+                  from: ["sqlmodel"],
+                  named: ["Relationship"],
+                }),
+              },
+            },
+          }),
+        ],
+      },
     ]);
 
     expect(
