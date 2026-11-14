@@ -1883,9 +1883,17 @@ export class ResolutionStore {
    * The names from `modules` this value was imported under, as those
    * modules export them, through an alias or a project barrel. A value
    * that only calls into one of them is left out.
+   *
+   * For a name an import binds, the import and what a barrel forwards
+   * are the whole answer, and the call-origin question reads exactly
+   * those. The README's section on what a decorator means says why it
+   * is not asked as a value walk.
    */
   importedAsOf(value: Node, modules: string[]): string[] {
-    return this.namesReached(value, modules, "imported");
+    if (!this.boundByImport(value)) {
+      return this.namesReached(value, modules, "imported");
+    }
+    return exportNamesOf(this.importOriginsOf(value, modules));
   }
 
   /**
@@ -2622,6 +2630,20 @@ function onlySource(sources: readonly Node[]): Node | null {
  * or also those it ends up calling.
  */
 type NameReach = "imported" | "importedOrCalled";
+
+/** The export each origin points at. A member read off an export is left out. */
+function exportNamesOf(
+  origins: ReadonlyArray<{ path: readonly string[] }>,
+): string[] {
+  const names = new Set<string>();
+  for (const { path } of origins) {
+    const [name] = path;
+    if (path.length === 1 && name !== undefined) {
+      names.add(name);
+    }
+  }
+  return [...names].sort();
+}
 
 function namesFrom(pairs: string[], packages: string[]): string[] {
   const names = new Set<string>();

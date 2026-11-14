@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { Database, profileEvaluation } from "@suss/datalog";
+import { askResolution } from "@suss/resolution";
 
 import { emitModuleImportFacts } from "../facts.js";
 import { findPythonFiles } from "../index.js";
@@ -59,6 +60,34 @@ function connectFromLib(dir: string) {
     { module: "lib", name: "connect" },
   ];
 }
+
+describe("a module-level name bound to an import", () => {
+  const ALIASED = {
+    "lib.py": "def connect():\n    return 1\n",
+    "shared.py": "from lib import connect\nopen_db = connect\n",
+    "app.py": "from shared import open_db\nopen_db()\n",
+  };
+
+  it("forwards the module's export to the import, in the call-origin question", async () => {
+    const { facts, dir } = await factsFor(ALIASED);
+    const openDb = `${path.join(dir, "app.py")}#open_db`;
+    askResolution(facts, [openDb], "wantedCallOrigin");
+
+    expect(
+      facts
+        .lookup("wantedCallOriginPair", 0, openDb)
+        .map((row) => String(row[2])),
+    ).toContain("connect");
+  });
+
+  it("comes from the import it is bound to", async () => {
+    const { facts, dir } = await factsFor(ALIASED);
+
+    expect(originsOf(facts, `${path.join(dir, "app.py")}#open_db`)).toEqual(
+      expect.arrayContaining(connectFromLib(dir)),
+    );
+  });
+});
 
 describe("resolving a value across files", () => {
   it("follows a call into the list the function in another file returns", async () => {
