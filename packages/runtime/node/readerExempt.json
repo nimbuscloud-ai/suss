@@ -1,3 +1,1 @@
-{
-  "src/scheduling.ts": "timerImportedAs reads the name a timers import gives a callee off its import declaration; asking the store about every bound callee changes what it answers later in the run, and the declared timer chains replace this file"
-}
+{}

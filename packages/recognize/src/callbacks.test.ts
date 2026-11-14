@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { callbacks } from "./callbacks.js";
-import { constructedFrom, modulesOf } from "./ops.js";
-import { pack } from "./pack.js";
+import { compile } from "./compile.js";
+import { constructedFrom, global, modulesOf } from "./ops.js";
+import { pack, subUnitsOf } from "./pack.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { ValueForm } from "@suss/extractor";
@@ -43,16 +44,22 @@ function valueOps(written: Written): ValueOps {
   } as ValueOps;
 }
 
-/** A call to `callee`, made off the library `from` names, with these arguments. */
+/**
+ * A call to `callee`, made off the library `from` names, with these
+ * arguments. `global` makes it a bare call of the runtime's global of
+ * that name.
+ */
 function callOps(over: {
   callee: string;
   from?: readonly string[];
   args?: readonly Written[];
   block?: Written;
+  global?: boolean;
 }): CallOps {
   const from = over.from ?? ["@acme/jobs"];
   const args = over.args ?? [];
   const fromHere = (origin: ReceiverOrigin) =>
+    (origin.origin === "global" && over.global === true) ||
     modulesOf(origin).some((module) => from.includes(module));
   return {
     method: () => null,
@@ -120,6 +127,66 @@ function callbackRefOf(ops: CallOps): unknown {
 
 const KEY: Written = { form: "other", source: '"nightly"' };
 const INLINE: Written = { form: "function", node: "the arrow" };
+
+/** A runtime timer: a bare global that takes its callback first and a delay after it. */
+const LATER = callbacks({ client: global("later") })
+  .methods({
+    later: { callback: { written: "argument", at: 0 }, delay: { at: 1 } },
+  })
+  .schedules({
+    via: "asWritten",
+    unread: { missing: "missing-callback", other: "unread-callback" },
+  })
+  .unitWhenInPlace({
+    kind: "scheduled-callback",
+    name: ["parent", "callee", "countPerCallee"],
+    metadata: { timers: { scheduledBy: { reads: "callee" } } },
+  })
+  .example("later(() => sweep(), 5)");
+
+const TIMER_PACK = pack("timers", [LATER], {
+  languages: ["typescript"],
+  recognizedAs: "@suss/runtime-timers",
+});
+
+/** What the timer chain records for a bare call of the global. */
+function timerScheduled(args: readonly Written[]): unknown {
+  const [recognizer] = TIMER_PACK.invocationRecognizers ?? [];
+  const [effect] =
+    recognizer?.(null, {
+      ops: callOps({ callee: "later", global: true, args }),
+    }) ?? [];
+  return effect?.type === "interaction" &&
+    effect.interaction.class === "schedule"
+    ? [effect.interaction.callbackRef, effect.interaction.hasDelay]
+    : null;
+}
+
+describe("a timer, whose callback is whatever the call passes first", () => {
+  it("reads a function or a name there, and says the call has a delay when it passes one", () => {
+    expect(timerScheduled([INLINE, KEY])).toEqual([{ type: "literal" }, true]);
+    expect(timerScheduled([{ form: "name", source: "sweep" }])).toEqual([
+      { type: "identifier", name: "sweep" },
+      false,
+    ]);
+  });
+
+  it("takes a name for an object as the callback, and gives the other reason for anything that is neither a function nor a name", () => {
+    const options: Written = { form: "name", source: "options", object: true };
+    expect(timerScheduled([options, KEY])).toEqual([
+      { type: "identifier", name: "options" },
+      true,
+    ]);
+    expect(timerScheduled([{ form: "other", source: "undefined" }])).toEqual([
+      { type: "opaque", reason: "unread-callback" },
+      false,
+    ]);
+    expect(timerScheduled([])).toEqual([
+      { type: "opaque", reason: "missing-callback" },
+      false,
+    ]);
+  });
+});
 
 describe("a chain over calls that take a callback", () => {
   it("records a schedule effect on the callee as written, for a function written in place", () => {
@@ -218,6 +285,21 @@ describe("a chain over calls that take a callback", () => {
     });
   });
 
+  it("reads a bare call as another name's export only where the file mentions the module, when the pack asks", () => {
+    const aliased = (mentioned: boolean): CallOps => ({
+      ...callOps({ callee: "runLater", args: [KEY, INLINE] }),
+      calleeImportedAs: () => "later",
+      mentions: () => mentioned,
+    });
+    const gated = compile(JOBS.declared, "@suss/framework-jobs", {
+      onlyWhereWritten: true,
+    });
+    const plain = compile(JOBS.declared, "@suss/framework-jobs");
+    expect(gated(null, { ops: aliased(false) })).toBeNull();
+    expect(gated(null, { ops: aliased(true) })).toHaveLength(1);
+    expect(plain(null, { ops: aliased(false) })).toHaveLength(1);
+  });
+
   it("matches nothing off another library", () => {
     expect(
       scheduled(
@@ -270,6 +352,42 @@ describe("the unit a callback written in place becomes", () => {
     expect(built.subUnits).toBeUndefined();
     expect(built.protocol).toBe("in-process");
     expect(built.requiresImport).toEqual(["@acme/jobs"]);
+    expect(
+      subUnitsOf([plain])(parent, {
+        calls: () => [callOps({ callee: "later", args: [KEY, INLINE] })],
+      }),
+    ).toEqual([]);
+  });
+
+  it("claims a callback a bare call of a global hands over, with the metadata the link declares", () => {
+    const claimed =
+      TIMER_PACK.subUnits?.(parent, {
+        calls: () => [
+          callOps({ callee: "later", global: true, args: [INLINE, KEY] }),
+          callOps({ callee: "later", args: [INLINE] }),
+        ],
+      }) ?? [];
+    expect(claimed.map((one) => [one.func, one.name, one.metadata])).toEqual([
+      ["the arrow", "Sweeper.later#0", { timers: { scheduledBy: "later" } }],
+    ]);
+  });
+
+  it("skips a parent whose file writes none of the chain's words, when the pack asks it to", () => {
+    const hook = subUnitsOf([LATER], { onlyWhereWritten: true });
+    const calls = () => [
+      callOps({ callee: "later", global: true, args: [INLINE, KEY] }),
+    ];
+    const writing = (written: string) => ({
+      calls,
+      mentions: (_parent: unknown, word: string) => word === written,
+    });
+    expect(hook(parent, writing("sweep"))).toEqual([]);
+    expect(hook(parent, writing("later")).map((one) => one.name)).toEqual([
+      "Sweeper.later#0",
+    ]);
+    expect(hook(parent, { calls }).map((one) => one.name)).toEqual([
+      "Sweeper.later#0",
+    ]);
   });
 
   it("goes by the schedule ending in the pack health report", () => {

@@ -116,6 +116,7 @@ function withNodeMembers(
     anchorCall: (origin) => ops.anchorCall?.(origin) ?? null,
     namedCallee: () => nodes().namedCallee?.() ?? false,
     calleeImportedAs: (modules) => ops.calleeImportedAs?.(modules) ?? null,
+    mentions: (word) => node.getSourceFile().getFullText().includes(word),
     parameterReadsAt: (index) => nodes().parameterReadsAt?.(index) ?? null,
     classAt: (index) => nodes().classAt?.(index) ?? null,
     readingArguments: (first, last) => nodes().readingArguments?.(first, last),

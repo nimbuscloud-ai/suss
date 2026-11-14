@@ -23,12 +23,13 @@ import {
 } from "../discovery/resolveValue.js";
 import { isFunctionRoot } from "../discovery/shared.js";
 import { isWrittenAgain } from "../facts/assignments.js";
-import { dottedPathOf, nodeId } from "../facts/extract.js";
+import { boundInProgram, dottedPathOf, nodeId } from "../facts/extract.js";
 import { MAPPING_METHOD } from "../facts/languageWords.js";
 import { parameterReads } from "../parameterReads.js";
 import { extractShape } from "../shapes/shapes.js";
 import { encodedIn } from "../values/encoded.js";
 import { typedAsExported } from "../values/receiverType.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 import { climbValue, peelValue } from "../walk/unwrap.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
@@ -54,6 +55,7 @@ import type {
   StatedSlot,
   UnsettledName,
   ValueEntry,
+  ValueForm,
   ValueOps,
 } from "@suss/extractor";
 import type {
@@ -430,13 +432,19 @@ const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
   imported: (origin, receiver) =>
     importedAsAsked(origin, receiver.expression, receiver.resolution),
   global: (origin, receiver) =>
-    origin.paths.includes(bareCalleeName(receiver.expression) ?? ""),
+    origin.paths.includes(globalCalleeName(receiver.expression) ?? ""),
 };
 
-/** The name a call with no receiver goes to, `setTimeout` in `setTimeout(f)`, or null. */
-export function bareCalleeName(callee: Node): string | null {
+/**
+ * The global a call with no receiver goes to, `setTimeout` in
+ * `setTimeout(f)`, or null. A name the program binds itself, to an
+ * import or to a declaration of its own, is not the global.
+ */
+export function globalCalleeName(callee: Node): string | null {
   const name = peelValue(callee);
-  return Node.isIdentifier(name) ? name.getText() : null;
+  return Node.isIdentifier(name) && !boundInProgram(name)
+    ? name.getText()
+    : null;
 }
 
 /**
@@ -696,6 +704,7 @@ export function callOpsFor(
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
     calleeText: () => expression.getText(),
+    mentions: (word) => call.getSourceFile().getFullText().includes(word),
     namedCallee: () => Node.isIdentifier(expression),
     calleeImportedAs: (modules) =>
       calleeImportedAs(expression, modules, reading.resolution),
@@ -994,9 +1003,37 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
       );
     },
     evaluated: () => scalarValueOf(value, reading.resolution),
+    source: () => peelValue(value).getText(),
+    form: () => valueFormOf(peelValue(value)),
   };
   nodesOfValues.set(ops, value);
   return ops;
+}
+
+/**
+ * How the source wrote a value, past any parentheses or cast around it.
+ * A method written into an object literal is a function written in
+ * place, as an arrow is, and `undefined` is no name.
+ */
+export function valueFormOf(node: Node): ValueForm {
+  if (
+    Node.isArrowFunction(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isMethodDeclaration(node)
+  ) {
+    return "function";
+  }
+  if (Node.isObjectLiteralExpression(node)) {
+    return "object";
+  }
+  if (
+    Node.isJsxElement(node) ||
+    Node.isJsxSelfClosingElement(node) ||
+    Node.isJsxFragment(node)
+  ) {
+    return "element";
+  }
+  return Node.isIdentifier(node) && !writesUndefined(node) ? "name" : "other";
 }
 
 /**
@@ -1416,10 +1453,11 @@ function isCalled(value: Node): value is Called {
 }
 
 /** What the call goes to: the tag, where the source wrote a template. */
+/** The callee past any parentheses or cast around it, as the facts state it. */
 function calleeOf(call: Called): Node {
   return Node.isTaggedTemplateExpression(call)
     ? call.getTag()
-    : call.getExpression();
+    : peelValue(call.getExpression());
 }
 
 /** What the call was handed. A tagged template hands over the template. */

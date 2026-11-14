@@ -11,7 +11,11 @@
  * has a summary of its own.
  */
 
-import { assembleSummary, claimBinding } from "@suss/extractor";
+import {
+  assembleSummary,
+  claimBinding,
+  stampClaimMetadata,
+} from "@suss/extractor";
 import { factCallOps } from "@suss/recognize/ops";
 import { callsRun } from "@suss/resolution";
 
@@ -161,6 +165,7 @@ function claimsOf(
       const summary = assembleSummary(raw, {
         gapHandling: reading.gapHandling,
       });
+      stampClaimMetadata(summary, subUnit);
       summary.confidence = { source: "inferred_static", level: "medium" };
       return { key, summary };
     });

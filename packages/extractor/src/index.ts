@@ -1323,7 +1323,7 @@ export {
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
-export { declaredMatchOf } from "./framework.js";
+export { declaredMatchOf, stampClaimMetadata } from "./framework.js";
 export { makeIgnoredDirectory } from "./ignoredDirectory.js";
 export { KeptParses } from "./keptParses.js";
 export { byOrigin, lastValueWins } from "./ops.js";
