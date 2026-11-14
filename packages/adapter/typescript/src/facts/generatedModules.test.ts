@@ -125,6 +125,27 @@ describe("GeneratedModules", () => {
       ),
     ).toBe(true);
   });
+
+  it("reads the types DefinitelyTyped publishes for a package as that package's", () => {
+    expect(
+      declaredByPackage(
+        "/repo/node_modules/@types/aws-lambda/index.d.ts",
+        "aws-lambda",
+      ),
+    ).toBe(true);
+    expect(
+      declaredByPackage(
+        "/repo/node_modules/@types/acme__queue/index.d.ts",
+        "@acme/queue",
+      ),
+    ).toBe(true);
+    expect(
+      declaredByPackage(
+        "/repo/node_modules/@types/aws-lambda/index.d.ts",
+        "aws-lambda-extra",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("generatedModulesOf", () => {

@@ -42,9 +42,11 @@ export interface ReceiverType {
  * Whether the node is one of the origin's named types, as one of its
  * modules exports that type. The export is read through the file's own
  * import of the module, so a sub-path, a re-export from another package
- * and a module the project declares all count. A type the checker could
- * not resolve has no declaring file, and then the file importing that
- * name from the module is what says.
+ * and a module the project declares all count. A type the module's
+ * package declares counts too, so a file that reaches it through the
+ * project's own alias, and imports nothing from the module, still
+ * matches. A type the checker could not resolve has no declaring file,
+ * and then the file importing that name from the module is what says.
  */
 export function typedAsExported(
   node: Node,
@@ -71,9 +73,24 @@ export function typedAsExported(
     return true;
   }
   const file = node.getSourceFile();
-  return origin.importedFrom.some((module) =>
-    matchingImportDeclarations(file, module, resolution, true).some(
-      (declaration) => types.some((type) => exportsType(declaration, type)),
+  return origin.importedFrom.some(
+    (module) =>
+      types.some((type) => declaredBy(type, [module], resolution)) ||
+      matchingImportDeclarations(file, module, resolution, true).some(
+        (declaration) => types.some((type) => exportsType(declaration, type)),
+      ),
+  );
+}
+
+/** Whether a file one of the modules' packages contains declares the type. */
+function declaredBy(
+  type: ReceiverType,
+  modules: readonly string[],
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return type.declaredIn.some((file) =>
+    modules.some((module) =>
+      declaredByPackage(file, module, resolution?.generatedModules),
     ),
   );
 }
@@ -106,11 +123,7 @@ function typedAsDeclaredBy(
   resolution: ResolutionStore | undefined,
 ): boolean {
   return receiverTypesOf(node).some((type) =>
-    type.declaredIn.some((file) =>
-      modules.some((module) =>
-        declaredByPackage(file, module, resolution?.generatedModules),
-      ),
-    ),
+    declaredBy(type, modules, resolution),
   );
 }
 
