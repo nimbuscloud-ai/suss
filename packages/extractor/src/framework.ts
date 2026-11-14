@@ -1541,6 +1541,14 @@ export interface PatternPack {
    */
   requiresImport?: string[];
   /**
+   * Words that admit a file to the pack-level gate when the file's text
+   * contains every one of them, beside the imports `requiresImport` lists.
+   * A handler that writes its event's type in place imports nothing from
+   * the library, and what its code spells is the only sign the pack has
+   * something to read there. The TypeScript adapter reads it.
+   */
+  requiresText?: readonly string[];
+  /**
    * Where this library's code generator writes a copy of its module into
    * the project. An import into one counts as an import of `of`, for the
    * import gate and in the facts, and a declaration in one counts as

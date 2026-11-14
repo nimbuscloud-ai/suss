@@ -56,6 +56,30 @@ describe("computePackApplicability — pack-level requiresImport", () => {
     expect(result.get(noImports)).toBeUndefined();
   });
 
+  it("admits a file whose text spells every word the pack lists, and no file that spells only some", () => {
+    const sqsPack = basePack({
+      name: "sqs",
+      requiresImport: ["aws-lambda"],
+      requiresText: ["Records", "JSON.parse"],
+      invocationRecognizers: [noopInvocation],
+    });
+    const [inPlace, onlyParses, neither] = makeFiles({
+      "in-place.ts":
+        "export function handler(event: { Records: Array<{ body: string }> }) { for (const r of event.Records) JSON.parse(r.body); }",
+      "only-parses.ts":
+        "export const read = (text: string) => JSON.parse(text);",
+      "neither.ts": "export const y = 2;",
+    });
+
+    const result = computePackApplicability(
+      [inPlace, onlyParses, neither],
+      [sqsPack],
+    );
+    expect(result.get(inPlace)).toEqual([sqsPack]);
+    expect(result.get(onlyParses)).toBeUndefined();
+    expect(result.get(neither)).toBeUndefined();
+  });
+
   it("matches sub-paths of the gated module (prefix match)", () => {
     const sqsPack = basePack({
       name: "sqs",

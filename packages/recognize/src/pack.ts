@@ -78,6 +78,11 @@ export interface PackSpec {
    */
   requiresImport?: string[];
   /**
+   * Words that admit a file to the gate when its text contains every one
+   * of them, for code that imports nothing from the library.
+   */
+  requiresText?: readonly string[];
+  /**
    * Recognizers written against the adapter directly, run alongside the
    * declared chains. A pack moving to chains one call at a time keeps
    * the calls it has not declared yet here, and a call no ending can
@@ -178,6 +183,7 @@ export function pack(
 /** What a spec states that the pack takes as it is. */
 const PASSED_THROUGH = [
   "version",
+  "requiresText",
   "projectHelpers",
   "parameterSuppliers",
   "generatedModules",
