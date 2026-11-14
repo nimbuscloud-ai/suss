@@ -453,6 +453,41 @@ describe("python value facts", () => {
     expect(db.size("positionOf")).toBe(0);
   });
 
+  it("gives a for statement's target one element of what it runs over, the same way a comprehension's is given one", async () => {
+    const source = [
+      "def handler(event, context):",
+      '    for record in event["Records"]:',
+      '        handle(record["body"])',
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const records = `:${source.indexOf('event["Records"]')}-${source.indexOf(":\n        handle")}`;
+    expect(rows(db, "elementOf")).toEqual([[`${funcKey}#record`, records]]);
+    // The body reads the target on the key elementOf gives it.
+    expect(rows(db, "readsEntry").filter((row) => row[2] === "body")).toEqual([
+      [expect.any(String), `${funcKey}#record`, "body"],
+    ]);
+  });
+
+  it("gives each name a for statement takes the element apart into its part, and the count enumerate gives the first", async () => {
+    const source = [
+      "for key, value in sizes.items():",
+      "    pass",
+      "for at, user in enumerate(users):",
+      "    pass",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const items = `:${source.indexOf("sizes.items()")}-${source.indexOf("():") + 2}`;
+    expect(rows(db, "elementPartOf")).toEqual([
+      ["#key", items, "0"],
+      ["#value", items, "1"],
+    ]);
+    expect(rows(db, "elementOf")).toEqual([["#user", "#users"]]);
+    expect(rows(db, "positionOf")).toEqual([["#at", "#user"]]);
+  });
+
   it("gives the count enumerate unpacks to the first name it takes each element apart into", async () => {
     const db = await factsFor(
       "labels = [name for at, (name, kind) in enumerate(pairs)]\n",

@@ -1004,14 +1004,17 @@ function emitComprehensionElement(
 /** The comprehension that builds a dictionary, whose entries are under keys rather than in order. */
 const DICTIONARY_COMPREHENSION = "dictionary_comprehension";
 
+/** A `for` statement and a comprehension's `for`, which give their target each element in turn. */
+const LOOP_TYPES = new Set(["for_statement", "for_in_clause"]);
+
 /** `for at, item in ...` and `for (at, item) in ...`, which take each element apart into two names. */
 const PAIR_TARGET_TYPES = new Set(["pattern_list", "tuple_pattern"]);
 
 /**
- * A comprehension's `for item in items` gives `item` one element of
- * `items` each time round, and `for name, kind in pairs` gives each name
- * a part of one. `for at, item in enumerate(items)` gives `at` the
- * position as well, whichever way the element is taken.
+ * `for item in items`, as a statement or in a comprehension, gives `item`
+ * one element of `items` each time round, and `for name, kind in pairs`
+ * gives each name a part of one. `for at, item in enumerate(items)` gives
+ * `at` the position as well, whichever way the element is taken.
  */
 function emitElementVariables(emitter: Emitter, clause: PyNode): void {
   const target = field(clause, "left");
@@ -1217,7 +1220,7 @@ function emitExpressionFact(
   if (COMPREHENSION_TYPES.has(type)) {
     emitComprehensionElement(emitter, child, type);
   }
-  if (type === "for_in_clause") {
+  if (LOOP_TYPES.has(type)) {
     emitElementVariables(emitter, child);
   }
   if (type === "comparison_operator") {

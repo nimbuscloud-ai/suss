@@ -188,14 +188,18 @@ handedIn(p, n)              the platform fills the parameter p with an
                             runtimeObject rule
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
-elementOf(x, over)          the parameter or block variable x is given one
-                            element of the collection over each time it
-                            runs: the first parameter of a function
-                            written into map or forEach, a
-                            comprehension's variable, or the variable of
-                            a Ruby map or each block that takes one.
-                            Ruby's define_method reader reads it, and no
-                            rule does
+elementOf(x, over)          the parameter, loop variable or block variable
+                            x is given one element of the collection over
+                            each time it runs: the first parameter of a
+                            function written into map or forEach, the
+                            variable a TypeScript for...of declares, the
+                            target of a Python for statement or of a
+                            comprehension's for, or the variable of a
+                            Ruby map or each block that takes one. A Ruby
+                            for loop is left out, since its variable
+                            belongs to the method around it. Ruby's
+                            define_method reader reads it, and no rule
+                            does
 eachElement(c, x)           every element of the collection c is built
                             from x. When c is a call, x is the function
                             it hands over and each element is what that
@@ -208,7 +212,8 @@ eachElement(c, x)           every element of the collection c is built
 elementPartOf(x, over, k)   x is given the part under k of each element
                             of over, where the code takes the element
                             apart: ([name, kind]) or ({ id }) in a
-                            callback's parameter, for name, kind in a
+                            callback's parameter or a for...of's head,
+                            for name, kind in a for statement or a
                             comprehension, or |name, kind| and
                             |(name, kind)| in a Ruby block. k is a
                             position, or a property name for an object
@@ -218,8 +223,9 @@ elementPartOf(x, over, k)   x is given the part under k of each element
 positionOf(i, x)            i is given the position in its collection of
                             the element x is given, or takes a part of:
                             the second parameter of a map or forEach
-                            callback, the count enumerate gives a
-                            comprehension, or the second variable of an
+                            callback, the count enumerate gives a for
+                            statement or a comprehension, or the second
+                            variable of an
                             each_with_index block. No rule reads it yet
 returnsValue(f, v)          f returns v. A Ruby block returns its last
                             expression to whatever runs it
