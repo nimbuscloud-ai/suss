@@ -106,6 +106,35 @@ describe("stringLiteralValue", () => {
   it("keeps an escape past the last Unicode character as written", async () => {
     expect(await rightOfX('x = "\\U00110000"\n')).toBe("\\U00110000");
   });
+
+  it("leaves out the prefix of a prefixed string", async () => {
+    for (const prefix of ["b", "r", "u", "rb", "BR", "f"]) {
+      expect(await rightOfX(`x = ${prefix}"x"\n`), prefix).toBe("x");
+    }
+  });
+
+  it("leaves out all three quotes on each side of a triple-quoted string", async () => {
+    expect(await rightOfX('x = """a "b" c"""\n')).toBe('a "b" c');
+    expect(await rightOfX("x = '''a'''\n")).toBe("a");
+  });
+
+  it("joins adjacent strings into one", async () => {
+    expect(await rightOfX('x = "a" \'b\' r"\\c"\n')).toBe("ab\\c");
+  });
+
+  it("joins adjacent strings across a comment between them", async () => {
+    const root = await moduleOf('x = ("a"  # first\n  "b")\n');
+    const parenthesized = root
+      .namedChild(0)
+      ?.namedChild(0)
+      ?.childForFieldName("right");
+    const joined = parenthesized?.namedChild(0);
+    expect(joined && stringLiteralValue(joined)).toBe("ab");
+  });
+
+  it("returns null for adjacent strings when one interpolates a value", async () => {
+    expect(await rightOfX('x = "a" f"{b}"\n')).toBeNull();
+  });
 });
 
 describe("booleanLiteralValue", () => {

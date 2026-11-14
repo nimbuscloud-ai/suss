@@ -209,8 +209,8 @@ export function parameterNameAndType(
     : null;
 }
 
-/** The text inside a plain string node, with the quotes removed. An f-string with an interpolation returns null. */
-export function stringLiteralValue(node: PyNode): string | null {
+/** One string's value without its prefix and quotes. An f-string with an interpolation returns null. */
+function singleStringValue(node: PyNode): string | null {
   if (node.type !== "string") {
     return null;
   }
@@ -225,6 +225,40 @@ export function stringLiteralValue(node: PyNode): string | null {
     }
   }
   return content;
+}
+
+/** `"a" "b"`, which Python joins into the one string `ab`. */
+function joinedStringValue(node: PyNode): string | null {
+  let joined = "";
+  for (const part of children(node)) {
+    if (part.type === "comment") {
+      continue;
+    }
+    const value = singleStringValue(part);
+    if (value === null) {
+      return null;
+    }
+    joined += value;
+  }
+  return joined;
+}
+
+const STRING_READERS: Readonly<
+  Record<string, (node: PyNode) => string | null>
+> = {
+  string: singleStringValue,
+  concatenated_string: joinedStringValue,
+};
+
+/**
+ * The value a string literal writes, without its prefix and quotes and with
+ * its escapes read. A bytes literal reads as its text. Null for an f-string
+ * that interpolates a value, for adjacent strings when any of them does, and
+ * for any node that is not a string.
+ */
+export function stringLiteralValue(node: PyNode): string | null {
+  const read = STRING_READERS[node.type];
+  return read === undefined ? null : read(node);
 }
 
 /**
