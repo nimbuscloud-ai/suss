@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-sqlmodel",
-  "exports": 6,
+  "exports": 7,
   "internal": 2,
-  "consumers": 5,
+  "consumers": 8,
   "unfollowedCalls": 0
 }
