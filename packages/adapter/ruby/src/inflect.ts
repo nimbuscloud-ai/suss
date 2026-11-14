@@ -78,30 +78,106 @@ const UNCOUNTABLE: ReadonlySet<string> = new Set([
   "police",
 ]);
 
+/**
+ * A singular and the plural it gives, in the order ActiveSupport declares
+ * them, searched from the end the way `SINGULAR_RULES` are.
+ */
+const PLURAL_RULES: readonly (readonly [RegExp, string])[] = [
+  [/$/, "s"],
+  [/s$/i, "s"],
+  [/^(ax|test)is$/i, "$1es"],
+  [/(octop|vir)us$/i, "$1i"],
+  [/(octop|vir)i$/i, "$1i"],
+  [/(alias|status)$/i, "$1es"],
+  [/(bu)s$/i, "$1ses"],
+  [/(buffal|tomat)o$/i, "$1oes"],
+  [/([ti])um$/i, "$1a"],
+  [/([ti])a$/i, "$1a"],
+  [/sis$/i, "ses"],
+  [/(?:([^f])fe|([lr])f)$/i, "$1$2ves"],
+  [/(hive)$/i, "$1s"],
+  [/([^aeiouy]|qu)y$/i, "$1ies"],
+  [/(x|ch|ss|sh)$/i, "$1es"],
+  [/(matr|vert|ind)(?:ix|ex)$/i, "$1ices"],
+  [/^(m|l)ouse$/i, "$1ice"],
+  [/^(m|l)ice$/i, "$1ice"],
+  [/^(ox)$/i, "$1en"],
+  [/^(oxen)$/i, "$1"],
+  [/(quiz)$/i, "$1zes"],
+  [/(p)erson$/i, "$1eople"],
+  [/(p)eople$/i, "$1eople"],
+  [/(m)an$/i, "$1en"],
+  [/(m)en$/i, "$1en"],
+  [/(c)hild$/i, "$1hildren"],
+  [/(c)hildren$/i, "$1hildren"],
+  [/(s)ex$/i, "$1exes"],
+  [/(s)exes$/i, "$1exes"],
+  [/(m)ove$/i, "$1oves"],
+  [/(m)oves$/i, "$1oves"],
+  [/(z)ombie$/i, "$1ombies"],
+  [/(z)ombies$/i, "$1ombies"],
+];
+
 /** The singular of a word, the way ActiveSupport's `singularize` computes it. */
 export function singularize(word: string, project?: RbInflections): string {
-  if (
+  if (isUncountable(word, project)) {
+    return word;
+  }
+  return (
+    projectSingular(word, project) ?? lastMatching(SINGULAR_RULES, word) ?? word
+  );
+}
+
+/**
+ * The plural of a word, the way ActiveSupport's `pluralize` computes it.
+ * A project's own `inflect.plural` rules are not read, since the pack
+ * reads only the irregular and uncountable words a project declares.
+ */
+export function pluralize(word: string, project?: RbInflections): string {
+  if (isUncountable(word, project)) {
+    return word;
+  }
+  return (
+    projectPlural(word, project) ?? lastMatching(PLURAL_RULES, word) ?? word
+  );
+}
+
+function isUncountable(word: string, project?: RbInflections): boolean {
+  return (
     UNCOUNTABLE.has(word.toLowerCase()) ||
     (project?.uncountable ?? []).some(
       (uncountable) => uncountable.toLowerCase() === word.toLowerCase(),
     )
-  ) {
-    return word;
-  }
-  const own = projectSingular(word, project);
-  if (own !== null) {
-    return own;
-  }
-  for (let at = SINGULAR_RULES.length - 1; at >= 0; at--) {
-    const [pattern, replacement] = SINGULAR_RULES[at] as readonly [
-      RegExp,
-      string,
-    ];
+  );
+}
+
+/** The word with the last rule that matches it applied, or null when none does. */
+function lastMatching(
+  rules: readonly (readonly [RegExp, string])[],
+  word: string,
+): string | null {
+  for (let at = rules.length - 1; at >= 0; at--) {
+    const [pattern, replacement] = rules[at] as readonly [RegExp, string];
     if (pattern.test(word)) {
       return word.replace(pattern, replacement);
     }
   }
-  return word;
+  return null;
+}
+
+/** The plural an irregular word the project declares gives, by either spelling, or null. A word declared later is searched first. */
+function projectPlural(
+  word: string,
+  project: RbInflections | undefined,
+): string | null {
+  const irregular = [...(project?.irregular ?? [])].reverse();
+  for (const [plural, singular] of irregular) {
+    const lower = word.toLowerCase();
+    if (singular.toLowerCase() === lower || plural.toLowerCase() === lower) {
+      return matchingCase(word, plural);
+    }
+  }
+  return null;
 }
 
 /** What the project's own rules make of the word, or null when none of them matches. A rule declared later is searched first. */

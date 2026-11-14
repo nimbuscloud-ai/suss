@@ -257,6 +257,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       file,
       displayPath: displayPathOf(file),
     })),
+    inflections,
   });
 
   // Read lazily, because the WASM grammar loads once the adapter's file
@@ -304,7 +305,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
 
   return {
     name: "rails",
-    version: "2",
+    version: "3",
     protocol: "http",
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,
