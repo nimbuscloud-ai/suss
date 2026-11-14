@@ -24,7 +24,7 @@ import {
   ResolutionStore,
   statedFactKey,
 } from "@suss/adapter-typescript";
-import { factCallOps } from "@suss/recognize/ops";
+import { factCallOps, factValueOps } from "@suss/recognize/ops";
 import { createTestProject } from "@suss/test-project";
 
 import type { Database } from "@suss/datalog";
@@ -142,6 +142,16 @@ function argumentsOf(
     .map((row) => String(row[0]))
     .sort((a, b) => startOf(a) - startOf(b))
     .map((call) => factCallOps(call, source)?.valueAt(0) ?? null);
+}
+
+/** The function that has a parameter of this name, which Python and Ruby state with every other fact. */
+function functionWithParameter(
+  db: Database,
+  source: FactSource,
+  parameter: string,
+): ValueOps | null {
+  const row = db.facts("paramNamed").find((named) => named[1] === parameter);
+  return row === undefined ? null : factValueOps(String(row[0]), source);
 }
 
 /** Where a node key starts in its file, `use.py:120-180` giving 120. */
@@ -311,6 +321,85 @@ run(by_side("a"))
     expect(typescript.map(piecesOf)).toEqual(READ);
     expect(python.map(piecesOf)).toEqual(READ);
     expect(ruby.map(piecesOf)).toEqual(READ);
+  });
+
+  it("say which parameter of a function a value is, in every language", async () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/src/handle.ts",
+      `
+        function handle(first: unknown, second: unknown) {
+          use(second);
+          use(first);
+          use(other);
+        }
+        register(handle);
+      `,
+    );
+    const store = new ResolutionStore();
+    const tsSource = factSourceFor(store);
+    const tsArgument = (callee: string) =>
+      file
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .filter((call) => call.getExpression().getText() === callee)
+        .map(
+          (call) =>
+            factCallOps(statedFactKey(call, store), tsSource)?.valueAt(0) ??
+            null,
+        );
+    const tsHandle = tsArgument("register")[0]?.function?.() ?? null;
+
+    const pythonTree = await parsePython(
+      [
+        "def handle(first, second):",
+        "    use(second)",
+        "    use(first)",
+        "    use(other)",
+        "",
+      ].join("\n"),
+    );
+    const pythonDb = pythonFacts({
+      file: "handle.py",
+      root: pythonTree.rootNode,
+      module: bindModule(pythonTree.rootNode),
+      packs: [],
+    });
+    const rubyTree = await parseRuby(
+      [
+        "def handle(first, second)",
+        "  use(second)",
+        "  use(first)",
+        "  use(other)",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const rubyDb = rubyFacts({
+      file: "handle.rb",
+      root: rubyTree.rootNode,
+      packs: [],
+    });
+    const positions = (
+      values: readonly (ValueOps | null)[],
+      fn: ValueOps | null,
+    ) => values.map((value) => (fn === null ? null : value?.parameterAt?.(fn)));
+
+    expect(positions(tsArgument("use"), tsHandle)).toEqual([1, 0, null]);
+    for (const [db, source] of [
+      [pythonDb, pythonFactSource(pythonDb)],
+      [rubyDb, rubyFactSource(rubyDb)],
+    ] as const) {
+      expect(
+        positions(
+          argumentsOf(db, source, "use"),
+          functionWithParameter(db, source, "first"),
+        ),
+      ).toEqual([1, 0, null]);
+      // Only TypeScript writes JSX, so a function elsewhere writes no element.
+      expect(
+        functionWithParameter(db, source, "first")?.elements?.("Chip"),
+      ).toEqual([]);
+    }
   });
 
   it("follow an object through a name and a function that returns its argument", async () => {

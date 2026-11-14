@@ -35,6 +35,7 @@ import type {
   DeclaredBy,
   Decoded,
   EffectArg,
+  ElementOps,
   Encoded,
   FactSource,
   Global,
@@ -1053,6 +1054,25 @@ class FactValue implements ValueOps {
     return factCallOps(this.key, this.facts);
   }
 
+  elements(tag: string): readonly ElementOps[] {
+    const found = functionBehind(this.key, this.facts);
+    const written =
+      found === null ? [] : (this.facts.elementsOf?.(found) ?? []);
+    return written
+      .filter((element) =>
+        this.facts.db
+          .lookup("jsxElement", 0, element)
+          .some((row) => this.facts.textOf(String(row[1])) === tag),
+      )
+      .map((element) => new FactElement(element, this.facts));
+  }
+
+  parameterAt(fn: ValueOps): number | null {
+    const written = keysOfValues.get(fn) ?? null;
+    const func = written === null ? null : functionBehind(written, this.facts);
+    return func === null ? null : parameterPosition(this.key, func, this.facts);
+  }
+
   private holeKeys(): string[] {
     return templatePieces(this.shaped(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],
@@ -1075,6 +1095,62 @@ class FactValue implements ValueOps {
     this.shapedKey ??= followedCall(this.written(), this.facts);
     return this.shapedKey;
   }
+}
+
+class FactElement implements ElementOps {
+  constructor(
+    private readonly key: string,
+    private readonly facts: FactSource,
+  ) {}
+
+  props(): readonly string[] {
+    return this.facts.db
+      .lookup("jsxAttribute", 0, this.key)
+      .map((row) => String(row[1]));
+  }
+
+  spreads(): readonly ValueOps[] {
+    return this.facts.db
+      .lookup("jsxSpread", 0, this.key)
+      .map((row) => factValueOps(String(row[1]), this.facts));
+  }
+
+  hasChildren(): boolean {
+    return this.facts.db.lookup("jsxChild", 0, this.key).length > 0;
+  }
+}
+
+/**
+ * The position of the function's parameter the value at `key` is: the
+ * parameter itself, which is how Python and Ruby key a name for one, the
+ * declaration the name binds to, or the parameter whose destructure has
+ * that declaration as its rest. Null when it is none, or more than one.
+ */
+function parameterPosition(
+  key: string,
+  func: string,
+  source: FactSource,
+): number | null {
+  const declared = [
+    key,
+    ...source.db.lookup("binds", 0, key).map((row) => String(row[1])),
+  ];
+  const parameters = new Set(
+    declared.flatMap((declaration) => [
+      declaration,
+      ...source.db
+        .lookup("restOf", 0, declaration)
+        .map((row) => String(row[1])),
+    ]),
+  );
+  const positions = new Set(
+    source.db
+      .lookup("paramOf", 0, func)
+      .filter((row) => parameters.has(String(row[2])))
+      .map((row) => Number(row[1])),
+  );
+  const [one] = positions;
+  return positions.size === 1 && one !== undefined ? one : null;
 }
 
 /**
