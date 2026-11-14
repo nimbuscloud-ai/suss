@@ -74,6 +74,74 @@ describe("settling ids that more than one summary has", () => {
     disambiguateSummaryIds(summaries);
     expect(idsOf(summaries)).toEqual([undefined, undefined]);
   });
+
+  it("leaves a summary with no id without one when its boundary has a key", () => {
+    const summaries = [clientAt("/a", 1), clientAt("/b", 9)];
+    for (const summary of summaries) {
+      delete summary.identity.id;
+    }
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([undefined, undefined]);
+  });
+});
+
+/** A function a route calls, whose boundary has no key. */
+function helperAt(line: number): BehavioralSummary {
+  const summary = summaryAt("svc::src/a.ts::read", line);
+  summary.identity.boundaryBinding = {
+    transport: "in-process",
+    semantics: { name: "function-call" },
+    recognition: "reachable",
+  };
+  return summary;
+}
+
+/** A client of `GET path`, which keys its boundary. */
+function clientAt(path: string, line: number): BehavioralSummary {
+  const summary = summaryAt("svc::src/a.ts::read", line);
+  summary.identity.boundaryBinding = {
+    transport: "http",
+    semantics: { name: "rest", method: "GET", path },
+    recognition: "fetch",
+  };
+  return summary;
+}
+
+describe("settling an id whose boundary has no key", () => {
+  it("numbers two that share an id by their order in the file", () => {
+    const summaries = [helperAt(40), helperAt(10)];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([
+      "svc::src/a.ts::read@2",
+      "svc::src/a.ts::read",
+    ]);
+  });
+
+  it("extends only the one with a key when the other has none", () => {
+    const summaries = [helperAt(10), clientAt("/a", 30)];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([
+      "svc::src/a.ts::read",
+      "svc::src/a.ts::read#GET /a",
+    ]);
+  });
+
+  it("keeps its id when a keyed summary with the same id is added", () => {
+    const alone = [helperAt(10)];
+    const withAnother = [helperAt(10), clientAt("/a", 30)];
+    disambiguateSummaryIds(alone);
+    disambiguateSummaryIds(withAnother);
+    expect(withAnother[0]?.identity.id).toBe(alone[0]?.identity.id);
+  });
+
+  it("is numbered with a summary that has no boundary at all, by their order in the file", () => {
+    const summaries = [summaryAt("svc::src/a.ts::read", 30), helperAt(10)];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([
+      "svc::src/a.ts::read@2",
+      "svc::src/a.ts::read",
+    ]);
+  });
 });
 
 describe("the id of a summary named by a label", () => {
@@ -184,6 +252,25 @@ describe("the id of a summary named by a label", () => {
     expect(timer.identity.id).toBe(
       "svc::src/a.ts::get.inner.setTimeout#0#GET /a/inner",
     );
+  });
+
+  it("takes its handler's route when it shares its id with a claim that has no route to take", () => {
+    const summaries = [route("/a", 5), timerIn(5), timerIn(60)];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([
+      "svc::src/a.ts::get#GET /a",
+      "svc::src/a.ts::get.setTimeout#0#GET /a",
+      "svc::src/a.ts::get.setTimeout#0",
+    ]);
+  });
+
+  it("numbers two claims with no route to take by their order in the file", () => {
+    const summaries = [timerIn(60), timerIn(40)];
+    disambiguateSummaryIds(summaries);
+    expect(idsOf(summaries)).toEqual([
+      "svc::src/a.ts::get.setTimeout#0@2",
+      "svc::src/a.ts::get.setTimeout#0",
+    ]);
   });
 
   it("leaves a keyless label alone when no labelled summary around it has its name in front", () => {

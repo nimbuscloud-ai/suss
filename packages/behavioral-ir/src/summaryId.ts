@@ -24,14 +24,17 @@ export interface SummaryIdParts {
 
 /**
  * Extend only the ids that more than one summary ended up with, so an id
- * without a collision stays short. The boundary tells same-named
+ * without a collision stays short. The boundary key tells same-named
  * summaries apart first, and the order in the file settles the rest: the
  * first keeps its id and the later ones take `@2`, `@3`, so an id stays
- * the same when the code around it moves. A summary named by a label,
- * such as an Express handler named `get`, always has its boundary in its
- * id, because otherwise a second route in the file would rename the first.
- * The adapters run this after assigning ids, and the parse boundary runs
- * it over a backfilled v1 artifact.
+ * the same when the code around it moves. A summary whose boundary has
+ * no key, such as a helper a route calls, is told apart by its order
+ * alone, so a keyed sibling added beside it leaves its id as it was. A
+ * summary named by a label, such as an Express handler named `get`,
+ * always has its boundary in its id when it has one, because otherwise a
+ * second route in the file would rename the first. The adapters run this
+ * after assigning ids, and the parse boundary runs it over a backfilled
+ * v1 artifact.
  */
 export function disambiguateSummaryIds(summaries: BehavioralSummary[]): void {
   extendWithBoundary(summaries);
@@ -81,17 +84,28 @@ function extendWithBoundary(summaries: BehavioralSummary[]): void {
   const fromParent = labelParentBoundaries(summaries);
 
   for (const summary of summaries) {
-    const binding = summary.identity.boundaryBinding;
-    if (binding === null) {
+    const id = summary.identity.id;
+    const key = keyForId(summary, fromParent);
+    if (id === undefined || key === null) {
       continue;
     }
-    const key = boundaryKey(binding) ?? fromParent.get(summary) ?? null;
-    const shared = (claimed.get(summary.identity.id ?? "") ?? 0) > 1;
-    const labelled = summary.identity.nameKind === "label" && key !== null;
-    if (shared || labelled) {
-      summary.identity.id = `${summary.identity.id}#${key}`;
+    const shared = (claimed.get(id) ?? 0) > 1;
+    if (shared || summary.identity.nameKind === "label") {
+      summary.identity.id = `${id}#${key}`;
     }
   }
+}
+
+/** The boundary key a summary's id is extended with, its own or its labelled parent's, or null when it has neither. */
+function keyForId(
+  summary: BehavioralSummary,
+  fromParent: ReadonlyMap<BehavioralSummary, string>,
+): string | null {
+  const binding = summary.identity.boundaryBinding;
+  if (binding === null) {
+    return null;
+  }
+  return boundaryKey(binding) ?? fromParent.get(summary) ?? null;
 }
 
 /**

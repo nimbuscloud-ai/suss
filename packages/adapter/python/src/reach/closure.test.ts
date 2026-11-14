@@ -764,6 +764,34 @@ describe("the functions a route reaches", () => {
       expect(calls(route)).toEqual([["shared", summaryIdentifier(shared)]]);
     }
   });
+
+  it("numbers two nested helpers of one name by their order in the file, since their boundary has no key", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def first():",
+      "    def helper():",
+      "        return 1",
+      "    return helper()",
+      "",
+      "def second():",
+      "    def helper():",
+      "        return 2",
+      "    return helper()",
+      "",
+      '@app.get("/a")',
+      "def a():",
+      "    second()",
+      "    return first()",
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "first"))).toEqual([
+      ["helper", "app/main.py::helper"],
+    ]);
+    expect(calls(unitNamed(summaries, "second"))).toEqual([
+      ["helper", "app/main.py::helper@2"],
+    ]);
+  });
 });
 
 describe("the spellings a callee can have", () => {
