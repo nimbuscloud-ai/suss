@@ -250,6 +250,11 @@ const STRING_READERS: Readonly<
   concatenated_string: joinedStringValue,
 };
 
+/** Whether a node is a string literal, an f-string or adjacent strings included. */
+export function isStringLiteral(node: PyNode): boolean {
+  return STRING_READERS[node.type] !== undefined;
+}
+
 /**
  * The value a string literal writes, without its prefix and quotes and with
  * its escapes read. A bytes literal reads as its text. Null for an f-string

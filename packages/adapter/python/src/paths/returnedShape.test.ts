@@ -108,6 +108,57 @@ describe("the shape a return writes", () => {
     ).toEqual({ type: "dictionary", values: { type: "unknown" } });
   });
 
+  it("reads a string as the value it writes, whatever its prefix and quotes", async () => {
+    const cases: [string, string][] = [
+      ['"ok"', "ok"],
+      ['b"ok"', "ok"],
+      ['r"\\d+"', "\\d+"],
+      ['u"ok"', "ok"],
+      ['rb"ok"', "ok"],
+      ['"""ok"""', "ok"],
+      ["'''ok'''", "ok"],
+      ['f"ok"', "ok"],
+      ['"a\\nb"', "a\nb"],
+      ['"a" "b"', "ab"],
+    ];
+    for (const [source, value] of cases) {
+      expect(
+        await returnOf(`return ${source}`).then(returnedBodyShape),
+        source,
+      ).toEqual({ type: "literal", value });
+    }
+  });
+
+  it("reads an f-string that interpolates a value as text", async () => {
+    for (const source of ['f"user {id}"', '"user " f"{id}"']) {
+      expect(
+        await returnOf(`return ${source}`).then(returnedBodyShape),
+        source,
+      ).toEqual({ type: "text" });
+    }
+  });
+
+  it("reads a key by the value it writes, whatever its prefix and quotes", async () => {
+    expect(
+      await returnOf('return {"""a""": 1, u"b": 2, "c" "d": 3}').then(
+        returnedBodyShape,
+      ),
+    ).toEqual({
+      type: "record",
+      properties: {
+        a: { type: "literal", value: 1 },
+        b: { type: "literal", value: 2 },
+        cd: { type: "literal", value: 3 },
+      },
+    });
+  });
+
+  it("falls back to a dictionary when an f-string computes a key", async () => {
+    expect(
+      await returnOf('return {f"{prefix}_id": 1}').then(returnedBodyShape),
+    ).toEqual({ type: "dictionary", values: { type: "unknown" } });
+  });
+
   it("claims nothing for a returned tuple with nothing in it", async () => {
     const statement = await returnOf("return ()");
     expect(returnedBodyShape(statement)).toEqual({
