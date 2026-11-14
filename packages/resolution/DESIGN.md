@@ -492,7 +492,12 @@ in, which is what a project barrel hides. The checker finds that
 package only when it is installed, so a name asked about through
 `wantedComesFrom` also comes from what the barrel forwards, through
 `moduleForwards` over the barrel's `reExports`, the way the call-origin
-question already reads it. A relative import that
+question already reads it. A module forwards an export the same way
+when the export is a name written once with an import, as in `export
+const useMyEffect = useEffect`, or is the import itself, which is how
+Python states `open_db = connect` and every name a module imports. A
+name written again is not forwarded, since which write a caller sees
+is not settled. A relative import that
 resolves to no file is recorded under the absolute path it points at as
 well, so a pack can ask about a directory a code generator has not
 written yet. A declaration a library's own

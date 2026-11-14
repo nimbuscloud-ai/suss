@@ -1947,6 +1947,137 @@ describe("importedNamesOf", () => {
   });
 });
 
+describe("importedAsOf", () => {
+  /** The callee of the first call in `/effects.ts`. */
+  function calleeIn(source: string): Node {
+    return projectOf({ "/effects.ts": source })
+      .getSourceFileOrThrow("/effects.ts")
+      .getFirstDescendantByKindOrThrow(SyntaxKind.CallExpression)
+      .getExpression();
+  }
+
+  it("reads a callee imported under another name as the export it is", () => {
+    const callee = calleeIn(`
+      import { useEffect as runEffect } from "react";
+      export const Title = () => { runEffect(() => {}); return null; };
+    `);
+
+    expect(new ResolutionStore().importedAsOf(callee, ["react"])).toEqual([
+      "useEffect",
+    ]);
+  });
+
+  it("reads a default and a namespace import as the whole module", () => {
+    const store = new ResolutionStore();
+
+    expect(
+      store.importedAsOf(calleeIn(`import React from "react"; React();`), [
+        "react",
+      ]),
+    ).toEqual(["default"]);
+    expect(
+      store.importedAsOf(calleeIn(`import * as React from "react"; React();`), [
+        "react",
+      ]),
+    ).toEqual(["*"]);
+  });
+
+  it("answers a callee an import binds without walking into the module it names", () => {
+    const callee = calleeIn(`
+      import { useEffect } from "react";
+      export const Title = () => { useEffect(() => {}); return null; };
+    `);
+
+    const { result, profile } = profileEvaluation(() =>
+      new ResolutionStore().importedAsOf(callee, ["react"]),
+    );
+
+    expect(result).toEqual(["useEffect"]);
+    expect(
+      profile.rules
+        .map((one) => one.head)
+        .filter((head) => /^(wanted:)?(reaches|comesFrom)\b/.test(head)),
+    ).toEqual([]);
+  });
+});
+
+describe("a name a project module exports as a const bound to an import", () => {
+  /** The callee of the first call in `/app.ts`, over these modules. */
+  function calleeOver(files: Record<string, string>): Node {
+    return projectOf(files)
+      .getSourceFileOrThrow("/app.ts")
+      .getFirstDescendantByKindOrThrow(SyntaxKind.CallExpression)
+      .getExpression();
+  }
+
+  const CALLS_MY_EFFECT = `
+    import { useMyEffect } from "./hooks";
+    useMyEffect(() => {});
+  `;
+
+  it("comes from the export the import names", () => {
+    const callee = calleeOver({
+      "/hooks.ts": `
+        import { useEffect } from "react";
+        export const useMyEffect = useEffect;
+      `,
+      "/app.ts": CALLS_MY_EFFECT,
+    });
+    const store = new ResolutionStore();
+
+    expect(store.importedAsOf(callee, ["react"])).toEqual(["useEffect"]);
+    expect(store.importedNamesOf(callee, ["react"])).toEqual(["useEffect"]);
+    expect(store.importOriginsOf(callee, ["react"])).toEqual([
+      { module: "react", path: ["useEffect"] },
+    ]);
+  });
+
+  it("comes from the export a renamed import names", () => {
+    const callee = calleeOver({
+      "/hooks.ts": `
+        import { useEffect as runEffect } from "react";
+        export const useMyEffect = runEffect;
+      `,
+      "/app.ts": CALLS_MY_EFFECT,
+    });
+
+    expect(new ResolutionStore().importedAsOf(callee, ["react"])).toEqual([
+      "useEffect",
+    ]);
+  });
+
+  it("follows a chain of two modules", () => {
+    const callee = calleeOver({
+      "/base.ts": `
+        import { useEffect } from "react";
+        export const baseEffect = useEffect;
+      `,
+      "/hooks.ts": `
+        import { baseEffect } from "./base";
+        export const useMyEffect = baseEffect;
+      `,
+      "/app.ts": CALLS_MY_EFFECT,
+    });
+
+    expect(new ResolutionStore().importedAsOf(callee, ["react"])).toEqual([
+      "useEffect",
+    ]);
+  });
+
+  it("does not follow a name the module writes again", () => {
+    const callee = calleeOver({
+      "/hooks.ts": `
+        import { useEffect, useLayoutEffect } from "react";
+        export let useMyEffect = useEffect;
+        if (process.env.LAYOUT) { useMyEffect = useLayoutEffect; }
+      `,
+      "/app.ts": CALLS_MY_EFFECT,
+    });
+
+    expect(new ResolutionStore().importedAsOf(callee, ["react"])).toEqual([]);
+  });
+});
+
 describe("a name a project module re-exports from a package that is not installed", () => {
   const MODULES = ["@t3-oss/env-core"];
 
