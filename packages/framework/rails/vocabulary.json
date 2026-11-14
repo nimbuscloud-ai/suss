@@ -38,6 +38,7 @@
   "argument": "suss: RbControllerFilter method source, defined in @suss/adapter-ruby; the filter names its method as a leading symbol",
   "collection": "Rails routing DSL: on: value routing a bare verb call to a resource's own path, with no :id",
   "member": "Rails routing DSL: on: value routing a bare verb call to one resource's :id",
+  "shallow": "Rails routing DSL: the keyword resources takes to serve its nested resources' member routes outside the parent's path",
   "to": "Rails routing DSL: the keyword a verb takes its controller#action target under",
   "update": "Rails routing DSL: the RESTful action resources serves under both PATCH and PUT",
   "on": "Rails routing DSL: the keyword that puts a bare verb on a resource's member or collection",

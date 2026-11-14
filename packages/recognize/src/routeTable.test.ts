@@ -108,8 +108,8 @@ const VERB = (method: string): ServesRole => ({
 
 const PLURAL = {
   index: [{ method: "GET", suffix: "" }],
-  show: [{ method: "GET", suffix: "/{id}" }],
-  update: [{ method: "update", suffix: "/{id}" }],
+  show: [{ method: "GET", suffix: "{member}" }],
+  update: [{ method: "update", suffix: "{member}" }],
 };
 
 const TABLE: RouteTableDeclaration = {
@@ -141,6 +141,8 @@ const TABLE: RouteTableDeclaration = {
       path: { keyword: "path" },
       module: { keyword: "module" },
       concerns: { keyword: "concerns" },
+      param: { keyword: "param" },
+      shallow: { keyword: "shallow" },
       controllerNaming: "asWritten",
       nested: "singularId",
       member: "id",
@@ -150,12 +152,18 @@ const TABLE: RouteTableDeclaration = {
       role: "expands",
       name: { at: 0 },
       rows: { show: [{ method: "GET", suffix: "" }] },
+      shallow: { keyword: "shallow" },
       controllerNaming: "plural",
       nested: "self",
       member: "self",
       children: { in: "block" },
     },
-    namespace: { role: "scopes", both: { at: 0 }, children: { in: "block" } },
+    namespace: {
+      role: "scopes",
+      both: { at: 0 },
+      shallowPath: true,
+      children: { in: "block" },
+    },
     scope: {
       role: "scopes",
       path: [{ keyword: "path" }, { at: 0 }],
@@ -617,6 +625,71 @@ describe("composeRoutes", () => {
     });
     expect(set.routesFor("a", "b")).toEqual([
       { method: "GET", path: "/api/x" },
+    ]);
+  });
+
+  it("names the member segment and the nesting parameter after `param`", () => {
+    const set = compose(
+      call("resources", {
+        args: [word("accounts")],
+        keywords: { param: word("username"), only: list(word("show")) },
+        block: [
+          call("resources", {
+            args: [word("posts")],
+            keywords: { only: list(word("index")) },
+          }),
+        ],
+      }),
+    );
+    expect(set.routesFor("accounts", "show")).toEqual([
+      { method: "GET", path: "/accounts/:username" },
+    ]);
+    expect(set.routesFor("posts", "index")).toEqual([
+      { method: "GET", path: "/accounts/:account_username/posts" },
+    ]);
+  });
+
+  it("serves a shallow expansion's member routes, and what nests inside it, from the shallow path", () => {
+    const set = compose(
+      call("namespace", {
+        args: [word("admin")],
+        block: [
+          call("scope", {
+            args: [word("v1")],
+            block: [
+              call("resources", {
+                args: [word("projects")],
+                keywords: { shallow: flag(true), only: list() },
+                block: [
+                  call("resources", {
+                    args: [word("sections")],
+                    keywords: { only: list(word("index"), word("show")) },
+                    block: [
+                      call("resources", {
+                        args: [word("tags")],
+                        keywords: { only: list(word("index")) },
+                      }),
+                      call("resource", { args: [word("cover")] }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(set.routesFor("admin/sections", "index")).toEqual([
+      { method: "GET", path: "/admin/projects/:project_id/sections" },
+    ]);
+    expect(set.routesFor("admin/sections", "show")).toEqual([
+      { method: "GET", path: "/admin/sections/:id" },
+    ]);
+    expect(set.routesFor("admin/tags", "index")).toEqual([
+      { method: "GET", path: "/admin/sections/:section_id/tags" },
+    ]);
+    expect(set.routesFor("admin/covers", "show")).toEqual([
+      { method: "GET", path: "/admin/sections/:section_id/cover" },
     ]);
   });
 

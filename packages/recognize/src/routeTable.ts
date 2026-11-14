@@ -115,7 +115,11 @@ export interface ServesRole {
   readonly formatless?: { readonly pick: EntryPick; readonly when: boolean };
 }
 
-/** One route an expansion's row gives: its method, and what follows the base, with `{id}` for the member segment. */
+/**
+ * One route an expansion's row gives: its method, and its path, which is
+ * the collection base and the suffix, or the member base where the
+ * suffix starts with `{member}`.
+ */
 export interface ExpansionRow {
   readonly method: string;
   readonly suffix: string;
@@ -140,6 +144,15 @@ export interface ExpandsRole {
   readonly nested: "singularId" | "self";
   /** The member base: the base and `:id`, or the base itself. */
   readonly member: "id" | "self";
+  /** The name the member segment and the nesting parameter take in place of `id`, such as `param: :username`. */
+  readonly param?: EntryPick;
+  /**
+   * A flag that serves the member routes of an expansion with an id, and
+   * of every one inside it, under the shallow path rather than under the
+   * expansions around it. What is nested inside goes under the shallow
+   * path too, and the collection routes stay where they are.
+   */
+  readonly shallow?: EntryPick;
   readonly children: ChildrenIn;
 }
 
@@ -155,6 +168,8 @@ export interface ScopesRole {
   readonly namespace?: readonly EntryPick[];
   /** One word for both, as `namespace :admin` writes it. The scope opens only when it reads. */
   readonly both?: EntryPick;
+  /** Whether the path segment also starts the shallow path, as `namespace` does and `scope` does not. */
+  readonly shallowPath?: boolean;
   readonly children: ChildrenIn;
 }
 
@@ -270,6 +285,10 @@ interface Scope {
   readonly defaults: Readonly<Record<string, ValueOps>>;
   /** The loop variables an enclosing literal loop binds, each to one element. */
   readonly bindings: ReadonlyMap<string, string>;
+  /** Whether a shallow expansion encloses this scope. */
+  readonly shallow: boolean;
+  /** Where a shallow expansion's member routes start: the mount's prefix and each scope that starts the shallow path. */
+  readonly shallowPath: string;
 }
 
 /** A call's arguments, as the picks read them. */
@@ -315,6 +334,8 @@ const EMPTY_SCOPE: Scope = {
   namespace: "",
   defaults: {},
   bindings: new Map(),
+  shallow: false,
+  shallowPath: "",
 };
 
 /**
@@ -679,17 +700,20 @@ function aliased(
   return table.methodAliases?.[method] ?? [method];
 }
 
-/** The routes one row of an expansion gives under `base`, one for each method its method is served under. */
+/** The routes one row of an expansion gives from its two bases, one for each method its method is served under. */
 export function rowRoutes(
   table: RouteTableDeclaration,
   row: ExpansionRow,
-  base: string,
+  bases: { readonly collection: string; readonly member: string },
 ): TableRoute[] {
-  return aliased(table, row.method).map((method) => ({
-    method,
-    path: `${base}${row.suffix.replace("{id}", MEMBER_SEGMENT)}`,
-  }));
+  const path = row.suffix.startsWith(MEMBER)
+    ? `${bases.member}${row.suffix.slice(MEMBER.length)}`
+    : `${bases.collection}${row.suffix}`;
+  return aliased(table, row.method).map((method) => ({ method, path }));
 }
+
+/** Where a row's suffix starts from the member base. */
+const MEMBER = "{member}";
 
 /**
  * Walks the entries a root, a block or a file writes, which the ops list
@@ -1033,10 +1057,23 @@ function readExpands(
       ? scope.namespace
       : joinKey(walk, scope.namespace, moduleName);
   const controllerKey = joinKey(walk, namespace, controllerSegment);
+  const segment = pickedWord(args, role.path, scope) ?? name;
   const base = joinRoutePath(
     scope.expansion?.nestedBase ?? scope.pathPrefix,
-    pickedWord(args, role.path, scope) ?? name,
+    segment,
   );
+  const shallow = scope.shallow || pickedFlag(args, role.shallow) === true;
+  const bases = expansionBases(role, {
+    base,
+    // A shallow expansion's member routes leave the expansions around it
+    // and start from the shallow path.
+    memberFrom:
+      shallow && role.member === "id"
+        ? joinRoutePath(scope.shallowPath, segment)
+        : base,
+    param: pickedWord(args, role.param, scope) ?? "id",
+    singular: naming.singular(name),
+  });
 
   const only = namesOf(args, role.only, scope);
   const except = namesOf(args, role.except, scope);
@@ -1050,27 +1087,25 @@ function readExpands(
     }
 
     for (const route of rows.flatMap((row) =>
-      rowRoutes(walk.table, row, base),
+      rowRoutes(walk.table, row, {
+        collection: base,
+        member: bases.memberBase,
+      }),
     )) {
       addRoute(walk, controllerKey, action, route);
     }
   }
 
-  // The nesting parameter comes from the entry's own name, whatever
-  // `path:` said the URL reads.
-  const nestedBase =
-    role.nested === "singularId"
-      ? `${base}/:${naming.singular(name)}_id`
-      : base;
   const inside: Scope = {
     ...scope,
     namespace,
+    shallow,
     expansion: {
       controllerKey,
       collectionBase: base,
-      memberBase: role.member === "id" ? `${base}/${MEMBER_SEGMENT}` : base,
-      nestedBase,
-      ambientBase: nestedBase,
+      memberBase: bases.memberBase,
+      nestedBase: bases.nestedBase,
+      ambientBase: bases.nestedBase,
     },
   };
   replayFragments(namesOf(args, role.concerns, scope) ?? [], inside, walk);
@@ -1080,8 +1115,36 @@ function readExpands(
   }
 }
 
-/** The segment a member route's id is written as. */
-const MEMBER_SEGMENT = ":id";
+function pickedFlag(
+  args: EntryArgs,
+  pick: EntryPick | undefined,
+): boolean | null {
+  return pick === undefined ? null : (picked(args, pick)?.flag() ?? null);
+}
+
+/**
+ * The member base and the base a nested expansion goes under. The
+ * nesting parameter comes from the entry's own name and its `param`,
+ * whatever `path:` said the URL reads.
+ */
+function expansionBases(
+  role: ExpandsRole,
+  at: {
+    readonly base: string;
+    readonly memberFrom: string;
+    readonly param: string;
+    readonly singular: string;
+  },
+): { memberBase: string; nestedBase: string } {
+  return {
+    memberBase:
+      role.member === "id" ? `${at.memberFrom}/:${at.param}` : at.base,
+    nestedBase:
+      role.nested === "singularId"
+        ? `${at.memberFrom}/:${at.singular}_${at.param}`
+        : at.base,
+  };
+}
 
 function readScopes(
   role: ScopesRole,
@@ -1103,7 +1166,7 @@ function readScopes(
   }
   const segments = scopeSegments(role, entry.args, scope);
   if (segments !== null) {
-    walkEntries(children, enterScope(scope, segments, walk), walk);
+    walkEntries(children, enterScope(scope, segments, role, walk), walk);
   }
 }
 
@@ -1132,6 +1195,7 @@ function scopeSegments(
 function enterScope(
   scope: Scope,
   segments: { path: string | null; namespace: string | null },
+  role: ScopesRole,
   walk: Walk,
 ): Scope {
   const base = scope.expansion?.nestedBase ?? scope.pathPrefix;
@@ -1144,6 +1208,10 @@ function enterScope(
       segments.namespace !== null
         ? joinKey(walk, scope.namespace, segments.namespace)
         : scope.namespace,
+    shallowPath:
+      role.shallowPath === true && segments.path !== null
+        ? joinRoutePath(scope.shallowPath, segments.path)
+        : scope.shallowPath,
   };
 }
 
@@ -1239,13 +1307,15 @@ function readMount(
     return;
   }
   walk.mounting.add(owner.name);
+  const prefix = joinRoutePath(scope.pathPrefix, mountPath);
   inFile(walk, root.displayPath, () => {
     walkEntries(
       root.children,
       {
         ...EMPTY_SCOPE,
-        pathPrefix: joinRoutePath(scope.pathPrefix, mountPath),
+        pathPrefix: prefix,
         namespace: owner.namespace,
+        shallowPath: prefix,
       },
       walk,
     );
