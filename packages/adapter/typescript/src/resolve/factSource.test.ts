@@ -524,6 +524,33 @@ describe("the fact source's read members", () => {
     expect(reads[1]?.fallback()?.evaluated?.()).toBe("p");
   });
 
+  it("reads the entries a binding names through a cast or parentheses around the value", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/cast.ts",
+      [
+        "interface Order { id: string; total: number }",
+        "declare function parse(text: string): unknown;",
+        "export function read(text: string) {",
+        "  const { id, total: amount } = parse(text) as Order;",
+        "  const kind = (parse(text) as { kind: string })['kind'];",
+        "  return [id, amount, kind];",
+        "}",
+      ].join("\n"),
+    );
+    const store = new ResolutionStore();
+    const callsOf = file
+      .getDescendants()
+      .filter((one) => one.getText() === "parse(text)");
+    expect(
+      callsOf.map((call) =>
+        readOpsAt(call, store)
+          .readsOff()
+          .map((site) => site.entry()),
+      ),
+    ).toEqual([["id", "total"], ["kind"]]);
+  });
+
   it("says a read falls back to what follows ?? and which object it is off", () => {
     const read = readAt("settings.HOST");
     expect(read.entry()).toBe("HOST");

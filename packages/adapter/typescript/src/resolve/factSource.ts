@@ -18,7 +18,7 @@ import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { encodedIn } from "../values/encoded.js";
 import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
 import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
-import { peelValue } from "../walk/unwrap.js";
+import { climbSyntax, peelValue } from "../walk/unwrap.js";
 import {
   anchorAccepts,
   globalCalleeName,
@@ -279,15 +279,17 @@ function objectReadOff(site: Node): Node | null {
 /**
  * The reads off a value that the access walk never visits, since it
  * visits property reads and calls only: the element read `o[k]` the value
- * is the object of, or each element of `const { A, B: b } = o`. A rest
- * element takes the entries left over and a computed key cannot be read
- * back, so neither is one.
+ * is the object of, or each element of `const { A, B: b } = o`, with any
+ * cast or parentheses between the two looked through. A rest element
+ * takes the entries left over and a computed key cannot be read back, so
+ * neither is one.
  */
 function readsUnvisitedOff(value: Node): Node[] {
-  const parent = value.getParent();
+  const written = climbSyntax(value);
+  const parent = written.getParent();
   if (
     Node.isElementAccessExpression(parent) &&
-    parent.getExpression() === value
+    parent.getExpression() === written
   ) {
     return [parent];
   }

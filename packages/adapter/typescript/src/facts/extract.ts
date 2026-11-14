@@ -1414,7 +1414,8 @@ function emitParameterPropertyRead(
  *
  * `const { handler } = holder` reads a property off a container, which
  * is what `holder.handler` says, so it is written down the same way and
- * the property rule covers both unchanged.
+ * the property rule covers both unchanged. `const { [key]: value } =
+ * holder` is `holder[key]`, and is written down as that.
  *
  * A default (`const { handler = fallback } = holder`) is a second value
  * the name could be, and the code says nothing about which one it will
@@ -1440,18 +1441,33 @@ export function emitBindingElementFacts(
   table.seenBindings.add(element);
 
   const pattern = element.getParent();
-  const container = Node.isObjectBindingPattern(pattern)
-    ? containerOfBindingPattern(pattern)
-    : undefined;
+  // A rest element takes whatever entries are left, so it doesn't read one property.
+  const container =
+    Node.isObjectBindingPattern(pattern) &&
+    element.getDotDotDotToken() === undefined
+      ? containerOfBindingPattern(pattern)
+      : undefined;
+  const computed = computedKeyOf(element);
+  if (container !== undefined && computed !== null) {
+    fact(
+      db,
+      "readsKeyed",
+      id,
+      emitValue(db, table, container),
+      emitValue(db, table, computed),
+    );
+  }
   const property = bindingPropertyName(element);
   // `const { runCli } = await import("./run.js")` is a named import
   // written at run time, so it is recorded as one.
   const imported =
-    container === undefined ? null : dynamicImportKeysOf(container);
+    container === undefined || computed !== null
+      ? null
+      : dynamicImportKeysOf(container);
   for (const key of imported ?? []) {
     fact(db, "imports", id, key, property);
   }
-  if (container !== undefined && imported === null) {
+  if (container !== undefined && computed === null && imported === null) {
     fact(db, "readsProperty", id, emitValue(db, table, container), property);
   }
 
@@ -1498,6 +1514,14 @@ function emitLoopPart(
       part.key,
     );
   }
+}
+
+/** The expression that works out the key of `{ [key]: value }`, or null for a key the source writes out. */
+function computedKeyOf(element: BindingElement): Expression | null {
+  const property = element.getPropertyNameNode();
+  return Node.isComputedPropertyName(property)
+    ? property.getExpression()
+    : null;
 }
 
 /**
