@@ -1514,18 +1514,57 @@ const STATED_RULES = [
     ],
   ),
 
-  // Which module's export a re-exported name forwards to, however
-  // many barrels deep the forwarding runs.
+  // A module forwards an export to another module's when it re-exports
+  // it, or when the export is a name written once with an import, as in
+  // `export const useMyEffect = useEffect`.
+  rule(
+    "forwardsExport",
+    [v("m"), v("n"), v("m2"), v("n2")],
+    [lit("reExports", v("m"), v("n"), v("m2"), v("n2"))],
+  ),
+  // The export is the import itself, as Python states every name a
+  // module binds, or a name written once with one, directly or through
+  // a reference that binds to it.
+  rule(
+    "forwardsExport",
+    [v("m"), v("n"), v("m2"), v("n2")],
+    [
+      lit("exportsAs", v("m"), v("n"), v("d")),
+      lit("imports", v("d"), v("m2"), v("n2")),
+    ],
+  ),
+  rule(
+    "forwardsExport",
+    [v("m"), v("n"), v("m2"), v("n2")],
+    [
+      lit("exportsAs", v("m"), v("n"), v("d")),
+      lit("binds", v("d"), v("r")),
+      lit("imports", v("r"), v("m2"), v("n2")),
+    ],
+  ),
+  rule(
+    "forwardsExport",
+    [v("m"), v("n"), v("m2"), v("n2")],
+    [
+      lit("exportsAs", v("m"), v("n"), v("d")),
+      lit("binds", v("d"), v("r")),
+      lit("binds", v("r"), v("s")),
+      lit("imports", v("s"), v("m2"), v("n2")),
+    ],
+  ),
+
+  // Which module's export a forwarded name comes from, however many
+  // modules deep the forwarding runs.
   rule(
     "moduleForwards",
     [v("m"), v("n"), v("m2"), v("n2")],
-    [lit("reExports", v("m"), v("n"), v("m2"), v("n2"))],
+    [lit("forwardsExport", v("m"), v("n"), v("m2"), v("n2"))],
   ),
   rule(
     "moduleForwards",
     [v("m"), v("n"), v("m3"), v("n3")],
     [
-      lit("reExports", v("m"), v("n"), v("m2"), v("n2")),
+      lit("forwardsExport", v("m"), v("n"), v("m2"), v("n2")),
       lit("moduleForwards", v("m2"), v("n2"), v("m3"), v("n3")),
     ],
   ),
