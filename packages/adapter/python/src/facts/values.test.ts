@@ -398,6 +398,43 @@ describe("python value facts", () => {
     expect(rows(db, "holdsUnderKey").map((row) => row[1])).toEqual(["#value"]);
   });
 
+  it("puts a value under the value its key writes, whatever quotes and prefix the key has", async () => {
+    const db = await factsFor(
+      'row = {u"a": 1, """b""": 2, "c" "d": 3, "e\\n": 4, "it\'s": 5}\n',
+    );
+    expect(rows(db, "holdsProperty").map((row) => row[1])).toEqual([
+      "a",
+      "b",
+      "cd",
+      "e\n",
+      "it's",
+    ]);
+    expect(db.size("holdsUnderKey")).toBe(0);
+  });
+
+  it("reads an entry at the value its key writes", async () => {
+    const db = await factsFor(
+      'a = headers[r"x"]\nb = headers["y" "z"]\nc = headers["""w"""]\n',
+    );
+    expect(rows(db, "readsEntry").map((row) => row[2])).toEqual([
+      "x",
+      "yz",
+      "w",
+    ]);
+  });
+
+  it("chooses the member a getattr writes out, and halves the doubled braces around one it computes", async () => {
+    const db = await factsFor(
+      'a = getattr(obj, u"name")\nb = getattr(obj, f"on_{{x}}_{event}")\n',
+    );
+    expect(rows(db, "choosesNamedEntry").map((row) => row[2])).toEqual([
+      "name",
+    ]);
+    expect(rows(db, "choosesEntryLike").map((row) => [row[2], row[3]])).toEqual(
+      [["on_{x}_", ""]],
+    );
+  });
+
   it("states the expression that computes a key at the position of its entry", async () => {
     const source = 'row = {**base, key: x, "e": x, f"{key}_x": 1}\n';
     const db = await factsFor(source);

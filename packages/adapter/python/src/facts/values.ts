@@ -530,7 +530,8 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
     }
     const position = String(entries.length);
     entries.push(writtenEntry(emitter, value));
-    if (key.type !== "string" || isInterpolated(key)) {
+    const name = stringLiteralValue(key);
+    if (name === null) {
       add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value));
       add(
         emitter,
@@ -541,20 +542,9 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
       );
       continue;
     }
-    add(
-      emitter,
-      "holdsProperty",
-      objectKey,
-      key.text.slice(1, -1),
-      valueKey(emitter, value),
-    );
+    add(emitter, "holdsProperty", objectKey, name, valueKey(emitter, value));
   }
   addEntryRows(rowsOf(emitter), objectKey, entries);
-}
-
-/** Whether a string is an f-string that puts a value in, whose text is computed. */
-function isInterpolated(string: PyNode): boolean {
-  return children(string).some((part) => part.type === "interpolation");
 }
 
 /** `*items` in a list and `**options` in a dictionary unpack a collection into the one written around them. */
@@ -712,7 +702,7 @@ function emitAttributeChoice(emitter: Emitter, call: PyNode): void {
   }
   const siteKey = nodeId(emitter.filePath, call);
   const targetKey = valueKey(emitter, target.node);
-  const written = plainStringOf(name.node);
+  const written = stringLiteralValue(name.node);
   if (written !== null) {
     add(emitter, "choosesNamedEntry", siteKey, targetKey, written);
     return;
@@ -744,13 +734,10 @@ function writtenEnds(node: PyNode): { start: string; end: string } | null {
   }
   const lastComputed =
     parts.length - 1 - [...parts].reverse().findIndex((part) => !written(part));
-  const start = parts
-    .slice(0, firstComputed)
-    .map((part) => part.text)
-    .join("");
+  const start = parts.slice(0, firstComputed).map(stringContentValue).join("");
   const end = parts
     .slice(lastComputed + 1)
-    .map((part) => part.text)
+    .map(stringContentValue)
     .join("");
   return start === "" && end === "" ? null : { start, end };
 }
@@ -775,7 +762,7 @@ function emitWrittenKeyRead(
   container: PyNode,
   key: PyNode,
 ): void {
-  const name = plainStringOf(key);
+  const name = stringLiteralValue(key);
   if (name !== null) {
     add(
       emitter,
@@ -785,14 +772,6 @@ function emitWrittenKeyRead(
       name,
     );
   }
-}
-
-/** What a string written with one pair of plain quotes says, or null. */
-function plainStringOf(node: PyNode): string | null {
-  const written = /^(['"])([^'"\\]*)\1$/.exec(node.text);
-  return node.type === "string" && written !== null
-    ? (written[2] ?? null)
-    : null;
 }
 
 /** The subscript of `a[i]`, when the source writes exactly one. */
