@@ -99,23 +99,74 @@ export function enclosingFunction(node: PyNode): PyNode | null {
   return functionsAround.of(node);
 }
 
+/** What `\n`, `\t` and the other escapes of one character write, keyed by what follows the backslash. A backslash before a line break joins the two lines. */
+const CHARACTER_ESCAPES: Readonly<Record<string, string>> = {
+  "\\": "\\",
+  "'": "'",
+  '"': '"',
+  a: "\x07",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  v: "\v",
+  "\n": "",
+  "\r\n": "",
+};
+
+/** The character code an octal, `\x`, `\u` or `\U` escape writes, or null for any other escape. */
+function escapedCode(written: string): number | null {
+  const octal = /^\\([0-7]{1,3})$/.exec(written)?.[1];
+  if (octal !== undefined) {
+    return Number.parseInt(octal, 8);
+  }
+  const hex = /^\\[xuU]([0-9a-fA-F]+)$/.exec(written)?.[1];
+  return hex === undefined ? null : Number.parseInt(hex, 16);
+}
+
 /**
- * The text of one `string_content` run, with an f-string's doubled braces
- * halved. `f"/v1/{{id}}"` is the string `/v1/{id}`, and keeping the doubling
- * would pair the route with a path no request arrives at. The grammar marks
- * each doubled brace with an `escape_interpolation` child, and a plain
- * string has none, so its braces stay as written.
+ * The text one escape sequence writes. The grammar marks no escape in a
+ * raw string, and none of `\N`, `\u` and `\U` in a bytes literal, so every
+ * escape it marks is read. A `\N{...}` escape stays as written, because
+ * reading it would need Unicode's list of character names.
  */
+function escapeSequenceValue(sequence: PyNode): string {
+  const written = sequence.text;
+  const character = CHARACTER_ESCAPES[written.slice(1)];
+  if (character !== undefined) {
+    return character;
+  }
+  const code = escapedCode(written);
+  return code === null || code > 0x10ffff
+    ? written
+    : String.fromCodePoint(code);
+}
+
+/**
+ * How to read each kind of escape inside a `string_content` run. An
+ * f-string writes a literal brace doubled, so `f"/v1/{{id}}"` is the string
+ * `/v1/{id}`, and keeping the doubling would pair the route with a path no
+ * request arrives at. A plain string has no `escape_interpolation`, so its
+ * braces stay as written.
+ */
+const CONTENT_ESCAPES: Readonly<Record<string, (written: PyNode) => string>> = {
+  escape_interpolation: (doubled) => doubled.text.slice(0, 1),
+  escape_sequence: escapeSequenceValue,
+};
+
+/** The text of one `string_content` run, with each escape in it read. */
 export function stringContentValue(content: PyNode): string {
   const base = content.startIndex;
   let text = "";
   let cursor = 0;
   for (const child of children(content)) {
-    if (child.type !== "escape_interpolation") {
+    const read = CONTENT_ESCAPES[child.type];
+    if (read === undefined) {
       continue;
     }
     text += content.text.slice(cursor, child.startIndex - base);
-    text += child.text.slice(0, 1);
+    text += read(child);
     cursor = child.endIndex - base;
   }
   return text + content.text.slice(cursor);

@@ -70,6 +70,42 @@ describe("stringLiteralValue", () => {
   it("keeps the doubled braces of a plain string", async () => {
     expect(await rightOfX('x = "/v1/{{literal}}"\n')).toBe("/v1/{{literal}}");
   });
+
+  it("reads the escapes of one character", async () => {
+    expect(await rightOfX('x = "a\\nb\\t\\\\c\\\'d\\"e"\n')).toBe(
+      "a\nb\t\\c'd\"e",
+    );
+  });
+
+  it("reads an escape that writes a character by its code", async () => {
+    expect(await rightOfX('x = "\\x41\\101\\u00e9\\U0001F600\\0"\n')).toBe(
+      "AAé\u{1F600}\0",
+    );
+  });
+
+  it("joins the lines a backslash continues", async () => {
+    expect(await rightOfX('x = "a\\\nb"\n')).toBe("ab");
+  });
+
+  it("reads the escapes of an f-string between its doubled braces", async () => {
+    expect(await rightOfX('x = f"{{\\n}}"\n')).toBe("{\n}");
+  });
+
+  it("keeps every backslash of a raw string", async () => {
+    expect(await rightOfX('x = r"\\d+\\n"\n')).toBe("\\d+\\n");
+  });
+
+  it("keeps the escapes a bytes literal does not have", async () => {
+    expect(await rightOfX('x = b"\\u00e9\\x41"\n')).toBe("\\u00e9A");
+  });
+
+  it("keeps an escape written by its Unicode name", async () => {
+    expect(await rightOfX('x = "\\N{EM DASH}"\n')).toBe("\\N{EM DASH}");
+  });
+
+  it("keeps an escape past the last Unicode character as written", async () => {
+    expect(await rightOfX('x = "\\U00110000"\n')).toBe("\\U00110000");
+  });
 });
 
 describe("booleanLiteralValue", () => {
