@@ -640,7 +640,7 @@ describe("node runtime pack — env-var wiring", () => {
   });
 
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.11.0");
+    expect(nodeRuntimePack().version).toBe("0.12.0");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {
@@ -2093,7 +2093,7 @@ describe("env-var recognizer on the import.meta.env Vite and Bun give a program"
     ]);
   });
 
-  it("reads a schema parsed against import.meta.env", () => {
+  it("reads a schema parsed against import.meta.env, with the callee off that object", () => {
     const file = makeProject(`
       import { z } from "zod";
       export const config = z
@@ -2101,5 +2101,70 @@ describe("env-var recognizer on the import.meta.env Vite and Bun give a program"
         .parse(import.meta.env);
     `);
     expect(readsOf(file)).toEqual([["VITE_API_URL", false]]);
+    expect(
+      configReadEffectsOf(recognizeWithStore(file)).map((read) => read.callee),
+    ).toEqual(["import.meta.env.VITE_API_URL"]);
+  });
+});
+
+describe("env-var recognizer — a schema read the way its declaration reads it", () => {
+  it("reads a refinement kept in a name back to the schema it refines", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Base = z.object({ BASE_URL: z.string() });
+      const Strict = Base.strict();
+      export const config = Strict.parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["BASE_URL", false]]);
+  });
+
+  it("reads no default from a call inside a function written in the key", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const defaults = { or: (n: number) => n };
+      export const config = z
+        .object({
+          PORT: z.string().transform((value) => Number(value ?? defaults.or(3))),
+        })
+        .parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["PORT", false]]);
+  });
+
+  it("reads no default from a key whose value is itself a function", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      export const config = z
+        .object({ HOOK: () => z.string().default("x") })
+        .parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["HOOK", false]]);
+  });
+
+  it("reads nothing off a builder the source reaches by a computed name", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      export const config = z["object"]({ HIDDEN: z.string() }).parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
+  it("reads nothing when the run has no store to ask", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      export const config = z.object({ PORT: z.string() }).parse(process.env);
+    `);
+    const call = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getText().endsWith(".parse(process.env)"));
+    expect(schemaReadRecognizer()(call, {})).toBeNull();
+  });
+
+  it("reads a library function the file imported under another name", () => {
+    const file = makeProject(`
+      import { cleanEnv as load, str } from "envalid";
+      export const env = load(process.env, { ALIASED_KEY: str({ default: "x" }) });
+    `);
+    expect(readsOf(file)).toEqual([["ALIASED_KEY", true]]);
   });
 });
