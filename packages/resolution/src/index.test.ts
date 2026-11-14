@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { Database, evaluate } from "@suss/datalog";
 
+import { stateCallsOutsideTests } from "./handWrittenFacts.js";
 import {
   askResolution,
   askResolutionUnder,
@@ -33,6 +34,7 @@ function derive(
   for (const [name, ...tuple] of facts) {
     db.add(name, tuple);
   }
+  stateCallsOutsideTests(db);
   return evaluate(db, RESOLUTION_RULES)
     .facts(relation)
     .filter((t) => t[at] === subject);
@@ -533,6 +535,7 @@ describe("an argument reaching a parameter", () => {
     for (const [name, ...tuple] of facts) {
       db.add(name, tuple);
     }
+    stateCallsOutsideTests(db);
     askResolution(db, ["get#o"], "wanted", resolutionProgram());
     const walked = db
       .relationNames()
@@ -556,6 +559,7 @@ describe("a parameter that is an environment variable's name", () => {
     for (const [name, ...tuple] of facts) {
       db.add(name, tuple);
     }
+    stateCallsOutsideTests(db);
     const objects = facts
       .filter(([name]) => name === "environmentObject")
       .map((row) => row[1] as string);
@@ -622,6 +626,7 @@ describe("a parameter that is an environment variable's name", () => {
     for (const [name, ...tuple] of helper) {
       db.add(name, tuple);
     }
+    stateCallsOutsideTests(db);
     askResolution(db, ["env#key"], "wanted", resolutionProgram());
     expect(db.facts("wantedParamNamesEnv")).toEqual([]);
   });
@@ -1151,6 +1156,7 @@ describe("a construction as an object of its own", () => {
       for (const [name, ...tuple] of written) {
         db.add(name, tuple);
       }
+      stateCallsOutsideTests(db);
       askResolution(db, ["read"], "wanted", resolutionProgram());
       expect(db.facts("wantedIsWrittenAs")).toEqual([["read", "five"]]);
     });
@@ -1726,6 +1732,7 @@ describe("a value read under the site its receiver was made at", () => {
     for (const [name, ...tuple] of twoClients) {
       db.add(name, tuple);
     }
+    stateCallsOutsideTests(db);
     askResolution(db, ["base"], "wanted", resolutionProgram());
     const writtenAs = (): string[] =>
       db
@@ -3143,6 +3150,7 @@ describe("a name followed by every chain that stops somewhere", () => {
     for (const [name, ...tuple] of facts) {
       db.add(name, tuple);
     }
+    stateCallsOutsideTests(db);
     askResolution(db, [key], asking, resolutionProgram());
     return db
       .lookup(answer, 0, key)
@@ -3447,6 +3455,7 @@ describe("asking only what a value is written as", () => {
     for (const [name, ...tuple] of facts) {
       db.add(name, tuple);
     }
+    stateCallsOutsideTests(db);
     askResolution(db, ["timeoutRead", "handlerRead"], asking);
     return db;
   };

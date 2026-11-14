@@ -46,6 +46,7 @@ import {
   isFunctionRoot,
 } from "../discovery/shared.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { inTestFile } from "../testCode.js";
 import { runsInline } from "../walk/descent.js";
 import { propertyNameOf } from "../walk/propertyName.js";
 import {
@@ -1787,6 +1788,9 @@ function emitCallFacts(
   if (!insideMethodBody(call as unknown as Node)) {
     fact(db, "callOutsideMethod", callId);
   }
+  if (!inTestFile(call as unknown as Node)) {
+    fact(db, "callOutsideTests", callId);
+  }
   if (spellsOneOf(table.exitCalls, callee)) {
     fact(db, "exitCall", callId);
   }
@@ -2229,6 +2233,10 @@ function emitParameters(
   ownerId: string,
   parameters: ParameterDeclaration[],
 ): void {
+  const [first] = parameters;
+  if (first !== undefined && inTestFile(first)) {
+    fact(db, "functionInTests", ownerId);
+  }
   for (let position = 0; position < parameters.length; position++) {
     const parameter = parameters[position];
     if (parameter === undefined) {

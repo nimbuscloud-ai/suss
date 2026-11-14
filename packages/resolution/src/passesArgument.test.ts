@@ -33,9 +33,17 @@ const PROGRAM = deriveOnDemand(
   ["argumentGoesTo"],
 );
 
+/** Which side of test code the call and the function are written on. */
+interface Sides {
+  callInTests: boolean;
+  functionInTests: boolean;
+}
+
+const PRODUCTION: Sides = { callInTests: false, functionInTests: false };
+
 // `send(payload)` calls `function send(body)`, beside `others` functions
 // that each take a first parameter of their own and are never called.
-function sendDb(others: number): Database {
+function sendDb(others: number, sides: Sides = PRODUCTION): Database {
   const facts: Array<[string, ...string[]]> = [
     ["func", "send"],
     ["paramOf", "send", "0", "body"],
@@ -44,6 +52,12 @@ function sendDb(others: number): Database {
     ["callArg", "sendCall", "0", "payload"],
     ["argumentAsked", "payload"],
   ];
+  if (!sides.callInTests) {
+    facts.push(["callOutsideTests", "sendCall"]);
+  }
+  if (sides.functionInTests) {
+    facts.push(["functionInTests", "send"]);
+  }
   for (let i = 0; i < others; i++) {
     facts.push(["func", `other${i}`], ["paramOf", `other${i}`, "0", `p${i}`]);
   }
@@ -70,5 +84,29 @@ describe("an argument asked where it goes", () => {
 
   it("reads the same rows however many other functions take a parameter there", () => {
     expect(rowsToAsk(sendDb(200))).toBe(rowsToAsk(sendDb(10)));
+  });
+});
+
+describe("a call in test code", () => {
+  const goesTo = (sides: Sides): readonly unknown[] => {
+    const db = sendDb(0, sides);
+    rowsToAsk(db);
+    return db.facts("argumentGoesTo");
+  };
+
+  it("fills no parameter of a function outside test code", () => {
+    expect(goesTo({ callInTests: true, functionInTests: false })).toEqual([]);
+  });
+
+  it("fills the parameter of a function in test code", () => {
+    expect(goesTo({ callInTests: true, functionInTests: true })).toEqual([
+      ["sendCall", "body"],
+    ]);
+  });
+
+  it("leaves a call outside test code filling a function in test code", () => {
+    expect(goesTo({ callInTests: false, functionInTests: true })).toEqual([
+      ["sendCall", "body"],
+    ]);
   });
 });

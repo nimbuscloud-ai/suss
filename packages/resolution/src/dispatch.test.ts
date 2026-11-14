@@ -8,6 +8,7 @@ import { Database } from "@suss/datalog";
 
 import { dispatchOutcomes } from "./dispatch.js";
 import { exitCodeFunctions } from "./exitCode.js";
+import { stateCallsOutsideTests } from "./handWrittenFacts.js";
 
 import type { DispatchOutcome } from "./dispatch.js";
 
@@ -18,6 +19,7 @@ function load(facts: readonly Fact[]): Database {
   for (const [name, ...tuple] of facts) {
     db.add(name, tuple);
   }
+  stateCallsOutsideTests(db);
   return db;
 }
 

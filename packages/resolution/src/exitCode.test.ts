@@ -6,12 +6,14 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { exitCodeFunctions } from "./exitCode.js";
+import { stateCallsOutsideTests } from "./handWrittenFacts.js";
 
 function databaseOf(facts: Array<[string, ...string[]]>): Database {
   const db = new Database();
   for (const [name, ...tuple] of facts) {
     db.add(name, tuple);
   }
+  stateCallsOutsideTests(db);
   return db;
 }
 
