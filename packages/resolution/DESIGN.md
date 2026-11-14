@@ -488,7 +488,11 @@ The callee reaches the import through `comesFrom`, which follows the
 reached it. The TypeScript adapter writes an import once under each
 spelling: the resolved file, the specifier as written, its package part
 (`pkg/esm` is `pkg`), and every package the imported declaration lives
-in, which is what a project barrel hides. A relative import that
+in, which is what a project barrel hides. The checker finds that
+package only when it is installed, so a name asked about through
+`wantedComesFrom` also comes from what the barrel forwards, through
+`moduleForwards` over the barrel's `reExports`, the way the call-origin
+question already reads it. A relative import that
 resolves to no file is recorded under the absolute path it points at as
 well, so a pack can ask about a directory a code generator has not
 written yet. A declaration a library's own
