@@ -2214,6 +2214,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   };
 
   if (body === null) {
+    emitParameterDefaultFacts(inside, method);
     return funcKey;
   }
 
@@ -2262,8 +2263,43 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
       emitMethodFacts(inside, definition);
     }
   }
+  emitParameterDefaultFacts(inside, method);
 
   return funcKey;
+}
+
+/** The parameters whose default runs when a call leaves the argument out. */
+const DEFAULTED_PARAMETER_TYPES = new Set([
+  "optional_parameter",
+  "keyword_parameter",
+]);
+
+/**
+ * The facts of what a method's parameter defaults read. A default runs
+ * inside the method, so a name in it means what it means in the body.
+ * The method's own calls and returns still come from its body alone.
+ */
+function emitParameterDefaultFacts(emitter: Emitter, method: RbNode): void {
+  if (method.type === LAMBDA_TYPE) {
+    return;
+  }
+  const visit: ExpressionVisit = (child, type, parent) =>
+    emitExpressionFact(
+      emitter,
+      child,
+      type,
+      parent,
+      callSiteAt(emitter, child, type, parent),
+    );
+  for (const param of parametersOf(method)) {
+    const value = DEFAULTED_PARAMETER_TYPES.has(param.type)
+      ? field(param, "value")
+      : null;
+    if (value !== null) {
+      visit(value, readAsType(value, param), param);
+      walkExpressions(value, visit);
+    }
+  }
 }
 
 /** What one expression in a method's body says about the method: a value it returns, or a call it makes. */
