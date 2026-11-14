@@ -1,13 +1,18 @@
 {
   "Entries": "SQS batch input: the messages one batch call sends",
-  "JSON": "JavaScript built-in namespace object",
   "MessageBody": "AWS SDK v3: SendMessageCommand input field",
   "QueueUrl": "AWS SDK v3: SendMessageCommand input field",
   "Records": "AWS Lambda: SQSEvent field holding the delivered messages",
   "SQSRecord": "AWS Lambda: the type of one delivered SQS message",
   "SendMessageBatchCommand": "@aws-sdk/client-sqs: the batch-send operation's command class",
   "SendMessageCommand": "@aws-sdk/client-sqs: the single-send operation's command class",
+  "binds": "suss: resolution fact, a name and the value it is bound to, which the receive reads",
   "body": "AWS Lambda: SQSRecord field holding the message payload",
-  "parse": "JavaScript: JSON.parse",
-  "sqs": "AWS transport name, Amazon SQS"
+  "elementOf": "suss: resolution fact, a loop or callback variable and the collection it is given one element of, which the receive reads",
+  "func": "suss: resolution fact, a function written out, which the receive reads to tell a name from a value",
+  "objectValue": "suss: resolution fact, an object written out, which the receive reads to tell a name from a value",
+  "readsEntry": "suss: resolution fact, a read of an entry under a key written out, which the receive reads",
+  "readsProperty": "suss: resolution fact, a read of a property, which the receive reads",
+  "sqs": "AWS transport name, Amazon SQS",
+  "writtenValue": "suss: resolution fact, a value written out, which the receive reads to tell a name from a value"
 }
