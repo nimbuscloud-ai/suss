@@ -4,7 +4,13 @@
  * returned expression instead when it can.
  */
 
-import { children, field, numberLiteralValue } from "../ast.js";
+import {
+  children,
+  field,
+  isStringLiteral,
+  numberLiteralValue,
+  stringLiteralValue,
+} from "../ast.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { PyNode } from "../parser.js";
@@ -28,12 +34,13 @@ function recordShape(node: PyNode, depth: number): TypeShape {
       continue;
     }
     const key = field(pair, "key");
+    const name = key === null ? null : stringLiteralValue(key);
     const value = field(pair, "value");
-    if (key === null || value === null || key.type !== "string") {
+    if (name === null || value === null) {
       everyKeyWritten = false;
       continue;
     }
-    properties[key.text.slice(1, -1)] = shapeOfReturned(value, depth + 1);
+    properties[name] = shapeOfReturned(value, depth + 1);
   }
 
   return everyKeyWritten && Object.keys(properties).length > 0
@@ -56,8 +63,11 @@ export function shapeOfReturned(node: PyNode, depth = 0): TypeShape {
     return scalar;
   }
 
-  if (node.type === "string") {
-    return { type: "literal", value: node.text.slice(1, -1) };
+  // An f-string that interpolates a value has no one value to write
+  // down, so it reads as text, the same as a template in TypeScript.
+  if (isStringLiteral(node)) {
+    const value = stringLiteralValue(node);
+    return value === null ? { type: "text" } : { type: "literal", value };
   }
   if (node.type === "integer") {
     const value = numberLiteralValue(node);
