@@ -18,12 +18,34 @@ function fn(jsx: boolean): FunctionRoot {
   return { __jsx: jsx } as unknown as FunctionRoot;
 }
 
-function mockCtx(filePath: string, exports: Exported[]): TsDiscoveryContext {
+/** The export table lists every export, and `made` says what a factory gives back for an export's declaration. */
+function mockCtx(
+  filePath: string,
+  exports: Exported[],
+  made: ReadonlyMap<unknown, FunctionRoot> = new Map(),
+): TsDiscoveryContext {
+  const named = exports.map((entry) => ({
+    ...entry,
+    name: entry.isDefault ? "default" : entry.name,
+  }));
+  const declarations = [...made.keys()].map((declaration, index) => [
+    `Made${index}`,
+    [declaration],
+  ]);
   return {
     getFilePath: () => filePath,
-    exportedFunctions: () => exports,
+    exportedFunctions: () => named,
     hasJsxReturn: (f: FunctionRoot) =>
       (f as unknown as { __jsx: boolean }).__jsx === true,
+    resolution: {
+      exportsOf: () =>
+        new Map([
+          ...named.map((entry) => [entry.name, [entry.func]]),
+          ...declarations,
+        ] as [string, unknown[]][]),
+      resolveReturnedCallable: (declaration: unknown) =>
+        made.get(declaration) ?? null,
+    },
   } as unknown as TsDiscoveryContext;
 }
 
@@ -75,5 +97,14 @@ describe("reactComponentExports", () => {
       ]),
     );
     expect(out.map((u) => u.name)).toEqual(["Card"]);
+  });
+
+  it("takes the component a project factory gives back for an export it makes", () => {
+    const rendered = fn(true);
+    const out = reactComponentExports(
+      sf,
+      mockCtx("src/parts.tsx", [], new Map([[{}, rendered]])),
+    );
+    expect(out).toEqual([{ func: rendered, kind: "component", name: "Made0" }]);
   });
 });

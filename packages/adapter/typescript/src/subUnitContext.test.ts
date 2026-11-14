@@ -47,6 +47,31 @@ describe("resolveAttributeValueFunction", () => {
   });
 });
 
+describe("an effect's arguments", () => {
+  it("reads the callback and the dependency list through parentheses and casts", () => {
+    const parent = componentFunction(`
+      function Ticker(items: string[]) {
+        useEffect((() => {}), (items));
+        useEffect(function load() {} as () => void, [items] as const);
+        useEffect(sync, [...items, "k"]);
+      }
+    `);
+    const ctx = createTsSubUnitContext();
+    const read = ctx
+      .findCallExpressionsByName(parent, "useEffect")
+      .map((call) => [
+        ctx.getCallArgumentFunction(call, 0)?.getText() ?? null,
+        ctx.readArrayLiteralText(ctx.getCallArgument(call, 1)),
+      ]);
+
+    expect(read).toEqual([
+      ["() => {}", ["items"]],
+      ["function load() {}", ["items"]],
+      [null, ["...items", '"k"']],
+    ]);
+  });
+});
+
 describe("calls", () => {
   const SOURCE = `
     function Orders() {
