@@ -1053,12 +1053,13 @@ describe("python value facts", () => {
     expect(rows(db, "holdsProperty")).toEqual([]);
   });
 
-  it("states the value a plain = assigns to an entry or an attribute, and to nothing else", async () => {
+  it("states the value an = or a += assigns to an entry or an attribute, and to nothing else", async () => {
     const source = [
       "os.environ['W'] = '1'",
       "job.retries = 3",
       "count = 1",
       "totals['a'] += 2",
+      "count += 1",
       "",
     ].join("\n");
     const db = await factsFor(source);
@@ -1070,7 +1071,23 @@ describe("python value facts", () => {
     ).toEqual([
       ["os.environ['W']", "'1'"],
       ["job.retries", "3"],
+      ["totals['a']", "2"],
     ]);
+  });
+
+  it("states no read at an entry a del removes", async () => {
+    const source = [
+      "del os.environ['Z']",
+      "del cache[key], seen['a']",
+      "kept = cache[key]",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      ["readsEntry", "readsKeyed"].flatMap((relation) =>
+        rows(db, relation).map(([site]) => textAt(source, site ?? "")),
+      ),
+    ).toEqual(["cache[key]"]);
   });
 
   it("says nothing about an annotation that assigns no value", async () => {
