@@ -1054,4 +1054,36 @@ export const EXTRA_INPUTS = [
     command: "contract",
     args: ["--from", "storybook", directory],
   })),
+  // Two React frontends beside the desktop app above: a Remix app with the
+  // packs `suss init` picks, and the largest frontend, last because it
+  // takes longest.
+  {
+    name: "react-remix",
+    group: "extra",
+    repo: "documenso",
+    args: [
+      ...dir("apps/remix"),
+      ...packs(
+        "react-query",
+        "hono",
+        "react",
+        "react-router",
+        "fetch",
+        "aws-s3",
+        "redis",
+        "pg",
+        "prisma",
+        "node",
+      ),
+    ],
+  },
+  {
+    name: "react-front",
+    group: "extra",
+    repo: "twenty",
+    args: [
+      ...dir("packages/twenty-front"),
+      ...packs("react", "react-router", "apollo-client", "fetch", "node"),
+    ],
+  },
 ];
