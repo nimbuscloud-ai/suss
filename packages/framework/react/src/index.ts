@@ -11,27 +11,57 @@
 // Discovery layers:
 //   1. `namedExport(["default"])`: cheap data-driven path for the
 //      default-export case (anonymous defaults, `export default Cmp`).
-//   2. `discoverUnits` callback in componentExports.ts: named-export
-//      heuristic (PascalCase + JSX-return + .stories/.test exclusion).
-//      The conventions live in the React pack, not in the extractor.
+//   2. A declared `namedExport` pattern for every other export with a
+//      capitalised name whose function returns JSX, outside story and
+//      test files.
 //
 // Deferred: class components, HOC-wrapped defaults, React Server
 // Component specifics, custom-hook-as-code-unit discovery (hooks are
 // already pickable via dep-call tracking; giving them summaries of
 // their own comes later).
 
-import { reactComponentExports } from "./componentExports.js";
+import { describeDiscovery } from "@suss/recognize";
+
 import { reactRootComponents } from "./rootDiscovery.js";
 import { reactSubUnits } from "./subUnits.js";
 
-import type { PatternPack } from "@suss/extractor";
+import type { DeclaredDiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
+
 const PASS_THROUGH = ["useCallback", "memo", "forwardRef"];
+
+/**
+ * A function component a module exports by name. A lowercase export that
+ * returns JSX is usually a render helper such as `renderRow`, and story
+ * and test files export components that are not the app's.
+ */
+const COMPONENT_EXPORTS: DeclaredDiscoveryPattern = {
+  kind: "component",
+  match: {
+    type: "namedExport",
+    pattern: "^[A-Z]",
+    skipFiles: [
+      "**/*.stories.ts",
+      "**/*.stories.tsx",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+    ],
+    bodyEndsIn: "element",
+  },
+};
 
 export function reactFramework(): PatternPack {
   return {
     name: "react",
+    version: VERSION,
     languages: ["typescript", "javascript"],
     // React doesn't have its own wire protocol: it's a framework
     // running inside a JS runtime, and its boundaries
@@ -54,6 +84,7 @@ export function reactFramework(): PatternPack {
         // every file is better than missing those files.
         requiresImport: [],
       },
+      COMPONENT_EXPORTS,
     ],
 
     terminals: [
@@ -104,10 +135,9 @@ export function reactFramework(): PatternPack {
     })),
 
     subUnits: reactSubUnits,
-    discoverUnits: (sourceFile, ctx) => [
-      ...reactComponentExports(sourceFile, ctx),
-      ...reactRootComponents(sourceFile, ctx),
-    ],
+    discoverUnits: reactRootComponents,
+
+    declarations: { declarations: [describeDiscovery(COMPONENT_EXPORTS)] },
   };
 }
 
