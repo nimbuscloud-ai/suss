@@ -1,7 +1,7 @@
 {
   "name": "@suss/packs",
   "exports": 70,
-  "internal": 216,
+  "internal": 155,
   "consumers": 0,
-  "unfollowedCalls": 2
+  "unfollowedCalls": 1
 }
