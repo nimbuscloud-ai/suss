@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
+import { callback, classBody, definesMethod } from "@suss/recognize";
 
 import { graphqlRubyTestPack } from "../__fixtures__/graphqlRubyPattern.js";
 import { controllerActionsPattern } from "../__fixtures__/railsControllerPattern.js";
@@ -1795,9 +1796,15 @@ function railsWithModels(): RubyPack {
         reads: ["find", "where", "first"],
         givesBack: ["find", "where", "first"],
         byPrimaryKey: { methods: ["find"], column: "id" },
-        scopes: ["scope"],
         storageSystem: "postgresql",
       },
+    ],
+    classBodies: [
+      classBody({
+        calls: {
+          scope: definesMethod({ name: { at: 0 }, body: { at: 1 } }),
+        },
+      }),
     ],
   };
 }
@@ -1870,11 +1877,9 @@ describe("a scope a model declares", () => {
     ]);
     writeThroughAccount("Account.recent");
 
-    const pack = railsWithModels();
-    const [storage] = pack.storage ?? [];
     const { summaries } = await extractRubyProject({
       files: findRubyFiles(tmpDir),
-      packs: [{ ...pack, storage: [{ ...storage, scopes: [] }] }] as RubyPack[],
+      packs: [{ ...railsWithModels(), classBodies: [] }],
       workspaceRoot: tmpDir,
     });
     expect(callTo(unitNamed(summaries, "suspend"), "Account.recent")).toBe(
@@ -1892,20 +1897,31 @@ async function extractRails(): Promise<BehavioralSummary[]> {
   return summaries;
 }
 
-/** The three events this library's writes run, and the calls a model registers a method under. */
+/** The three events this library's writes run. */
 const MODEL_CALLBACKS = {
   eventOf: {
     save: ["create", "update"],
     update: ["update"],
     destroy: ["destroy"],
   },
-  registeredBy: {
-    before_save: ["create", "update"],
-    after_commit: ["create", "update", "destroy"],
-    after_destroy: ["destroy"],
-  },
-  eventKeyword: "on",
 };
+
+/** A call a model registers a method under, and the events it covers unless `on:` narrows them. */
+function registers(events: string[]) {
+  return callback({
+    methods: { from: 0 },
+    events,
+    narrowedBy: { keyword: "on" },
+  });
+}
+
+const CALLBACK_BODY = classBody({
+  calls: {
+    before_save: registers(["create", "update"]),
+    after_commit: registers(["create", "update", "destroy"]),
+    after_destroy: registers(["destroy"]),
+  },
+});
 
 async function extractRailsWithCallbacks(): Promise<BehavioralSummary[]> {
   const pack = railsWithModels();
@@ -1913,7 +1929,11 @@ async function extractRailsWithCallbacks(): Promise<BehavioralSummary[]> {
   const { summaries } = await extractRubyProject({
     files: findRubyFiles(tmpDir),
     packs: [
-      { ...pack, storage: [{ ...storage, callbacks: MODEL_CALLBACKS }] },
+      {
+        ...pack,
+        storage: [{ ...storage, callbacks: MODEL_CALLBACKS }],
+        classBodies: [...(pack.classBodies ?? []), CALLBACK_BODY],
+      },
     ] as RubyPack[],
     workspaceRoot: tmpDir,
   });

@@ -94,16 +94,17 @@ one comes from.
 
 `has_many`, `has_one`, `belongs_to` and `has_and_belongs_to_many` in a
 model's body each declare that the model reaches another one. The pack
-lists the four call names, split by whether Rails writes the name in
-the singular or the plural, and the keyword that gives the class
-explicitly:
+declares them in its class-body declaration, with whether Rails writes
+the name in the plural and the keyword that gives the class explicitly:
 
 ```ts
-associations: {
-  singular: ["has_one", "belongs_to"],
-  plural: ["has_many", "has_and_belongs_to_many"],
-  classNameKeyword: "class_name",
-}
+classBody({
+  calls: {
+    has_many: association({ name: { at: 0 }, target: { keyword: "class_name" }, plural: true }),
+    belongs_to: association({ name: { at: 0 }, target: { keyword: "class_name" } }),
+    // has_one and has_and_belongs_to_many the same way
+  },
+})
 ```
 
 The adapter turns each declaration into a fact the shared rules read, so
@@ -125,8 +126,9 @@ includes it.
 ## Scopes
 
 `scope :recent, -> { order(:created_at) }` defines a class method
-`recent` on the model, and the lambda is its body. The pack lists the
-call as `scopes: ["scope"]`, and the adapter reads `Account.recent` as a
+`recent` on the model, and the lambda is its body. The pack declares
+the call as `scope: definesMethod({ name: { at: 0 }, body: { at: 1 } })`,
+and the adapter reads `Account.recent` as a
 call to that lambda, which the reach walk follows like any class method
 the model writes with `def self.recent`. A subclass inherits the scope,
 and a scope in a concern's `included do` block belongs to each model

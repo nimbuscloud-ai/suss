@@ -15,6 +15,7 @@
 import { referenceName } from "@suss/behavioral-ir";
 import {
   answersFor,
+  classBodyCalls,
   classMemberOf,
   environmentsReaching,
   GLOBAL_MODULE,
@@ -142,6 +143,8 @@ export function rubyFactSource(db: Database): FactSource {
       resolveValues(db, [key]);
       return answersFor(db, "wantedComesTo", key);
     },
+    classBodyCalls: (key) =>
+      classBodyCalls(db, [key], RUBY_PROGRAM).get(key) ?? [],
     givesBack: (key) => {
       resolveValues(db, [key]);
       return givenBackFunction(db, key);

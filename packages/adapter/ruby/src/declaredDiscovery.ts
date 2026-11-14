@@ -130,8 +130,8 @@ export function rubyModuleOps(
   root: RbNode,
   file: string,
   db: Database,
+  source: FactSource = rubyFactSource(db),
 ): ModuleOps {
-  const source = rubyFactSource(db);
   return factModuleOps(file, source, {
     calls: () => callsOutsideMethods(root, file, source),
     classes: () => classesIn(root, file),
@@ -140,7 +140,7 @@ export function rubyModuleOps(
 }
 
 /** Every class and module the file writes, however deep, in source order. */
-function classesIn(root: RbNode, file: string): string[] {
+export function classesIn(root: RbNode, file: string): string[] {
   const found: string[] = [];
   const visit = (node: RbNode): void => {
     if (NESTING_TYPES.has(node.type)) {

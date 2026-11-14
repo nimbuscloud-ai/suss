@@ -1782,7 +1782,7 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("states what a body-block call is passed, and leaves its block to the class body", async () => {
+  it("states what a body-block call is passed, and only which calls its block writes", async () => {
     const source = [
       "class Admin",
       "  with_options if: :admin? do",
@@ -1802,7 +1802,14 @@ describe("ruby value facts", () => {
       keyOf(source, ":admin?"),
     ]);
     expect(rows(db, "writtenValue")).toContainEqual([keyOf(source, ":admin?")]);
-    expect(db.size("callBlock")).toBe(0);
+    const block = keyOf(source, "do\n    before_action :check\n  end");
+    expect(rows(db, "callBlock")).toEqual([[options, block]]);
+    expect(rows(db, "bodyCallAt")).toContainEqual([
+      block,
+      "0",
+      keyOf(source, "before_action :check"),
+    ]);
+    expect(rows(db, "func")).not.toContainEqual([block]);
   });
 
   it("states the container and the key of a read the source works out", async () => {

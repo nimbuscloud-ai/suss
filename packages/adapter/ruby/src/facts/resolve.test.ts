@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { association, classBody } from "@suss/recognize";
 import { addPackWords, askResolution } from "@suss/resolution";
 
 import { bodyBlocksIn } from "../pack.js";
 import { parseRuby } from "../parser.js";
+import { RunFacts } from "../project.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import {
   constructionSites,
@@ -26,6 +28,20 @@ const CONCERN_BLOCKS = bodyBlocksIn([
     bodyBlocks: [{ name: "included", moduleOnly: true }],
   },
 ]);
+
+const ASSOCIATIONS = classBody({
+  calls: {
+    belongs_to: association({
+      name: { at: 0 },
+      target: { keyword: "class_name" },
+    }),
+    has_many: association({
+      name: { at: 0 },
+      target: { keyword: "class_name" },
+      plural: true,
+    }),
+  },
+});
 
 async function factsFor(source: string) {
   const tree = await parseRuby(source);
@@ -440,20 +456,19 @@ describe("a method Ruby runs by reading it off a constant", () => {
 
 /** The same run, with a pack's word on what an association declaration looks like. */
 async function modelFactsFor(source: string) {
-  const tree = await parseRuby(source);
-  const db = new Database();
-  emitValueFacts(db, "f.rb", tree.rootNode, CONCERN_BLOCKS);
-  emitConstantBindings(db, [
-    collectFileConstants("f.rb", tree.rootNode, [
-      {
-        singular: ["belongs_to"],
-        plural: ["has_many"],
-        classNameKeyword: "class_name",
-      },
-    ]),
+  const facts = new RunFacts(new Database(), [
+    {
+      name: "test",
+      protocol: "http",
+      discovery: [],
+      bodyBlocks: [{ name: "included", moduleOnly: true }],
+      classBodies: [ASSOCIATIONS],
+    },
   ]);
-  addFinders(db, "find", "where", "first");
-  return db;
+  facts.addFile("f.rb", (await parseRuby(source)).rootNode);
+  facts.finish();
+  addFinders(facts.db, "find", "where", "first");
+  return facts.db;
 }
 
 /** Mastodon's shape: a concern declares the association, a controller reads it off a finder's result. */
