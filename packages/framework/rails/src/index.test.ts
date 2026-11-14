@@ -754,6 +754,27 @@ describe("railsFramework", () => {
       });
     });
 
+    it("names the parameter a nested resource is under the way ActiveSupport singularizes its parent", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :people do\n" +
+        "    resources :photos, only: [:index]\n" +
+        "  end\n" +
+        "  resources :news do\n" +
+        "    resources :comments, only: [:index]\n" +
+        "  end\n" +
+        "  resource :child, only: [:show]\nend\n";
+      expect(routeFor(source, "PhotosController", "index")?.path).toBe(
+        "/people/:person_id/photos",
+      );
+      expect(routeFor(source, "CommentsController", "index")?.path).toBe(
+        "/news/:news_id/comments",
+      );
+      expect(routeFor(source, "ChildrenController", "show")?.path).toBe(
+        "/child",
+      );
+    });
+
     it("routes a resource to the controller: it says, plural or singular", () => {
       const plural =
         "Rails.application.routes.draw do\n" +
@@ -1588,6 +1609,7 @@ describe("railsFramework", () => {
         routesFiles: [
           { file: path.join(dir, "missing.rb"), displayPath: "missing.rb" },
         ],
+        inflections: {},
       });
       expect(table.routesFor("status", "show")).toEqual([
         { method: "GET", path: "/ping" },

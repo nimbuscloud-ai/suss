@@ -1,6 +1,46 @@
 import { describe, expect, it } from "vitest";
 
-import { associationTargetName, camelize, singularize } from "./inflect.js";
+import {
+  associationTargetName,
+  camelize,
+  pluralize,
+  singularize,
+} from "./inflect.js";
+
+describe("pluralize", () => {
+  it.each([
+    ["status", "statuses"],
+    ["person", "people"],
+    ["child", "children"],
+    ["category", "categories"],
+    ["box", "boxes"],
+    ["address", "addresses"],
+    ["life", "lives"],
+    ["shelf", "shelves"],
+    ["medium", "media"],
+    ["analysis", "analyses"],
+    ["quiz", "quizzes"],
+    ["matrix", "matrices"],
+    ["mouse", "mice"],
+    ["key", "keys"],
+    ["profile", "profiles"],
+    ["settings", "settings"],
+    ["news", "news"],
+    ["sheep", "sheep"],
+  ])("writes %s as %s", (singular, plural) => {
+    expect(pluralize(singular)).toBe(plural);
+  });
+
+  it("takes an irregular word the project declares, by either spelling, and keeps an uncountable one", () => {
+    const project = {
+      irregular: [["cacti", "cactus"]] as [string, string][],
+      uncountable: ["metadata"],
+    };
+    expect(pluralize("cactus", project)).toBe("cacti");
+    expect(pluralize("Cacti", project)).toBe("Cacti");
+    expect(pluralize("metadata", project)).toBe("metadata");
+  });
+});
 
 describe("singularize", () => {
   it.each([
