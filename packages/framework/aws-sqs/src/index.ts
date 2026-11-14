@@ -9,13 +9,12 @@
  * dispatcher in a dependency stub.
  */
 
-import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
 
 import {
-  climbSyntax,
   dottedPathOf,
   peelValue,
+  readSitesOf,
   statedFactKey,
   typedAsExported,
 } from "@suss/adapter-typescript";
@@ -41,6 +40,7 @@ import type {
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { ConfiguredCallSpec, Match } from "@suss/recognize";
+import type { CallExpression, Node } from "ts-morph";
 
 const SQS = "@aws-sdk/client-sqs";
 
@@ -97,12 +97,8 @@ const LAMBDA_RECORD = typed({ from: ["aws-lambda"], named: ["SQSRecord"] });
 /**
  * Recognizes `JSON.parse(record.body)`, where the record is one element of
  * a read of `Records`, or a value typed as aws-lambda's `SQSRecord`, and
- * records a `message-receive` effect with the fields the handler
- * destructures.
- *
- * Only a destructured parse result gives fields. For a cast or an
- * assignment to a plain variable, the effect has no body and suss skips
- * the body comparison.
+ * records a `message-receive` effect with the fields the handler reads off
+ * the parsed message.
  */
 function messageReceiveRecognizer(
   call: unknown,
@@ -132,7 +128,7 @@ function messageReceiveRecognizer(
     return null;
   }
 
-  const fields = extractDestructuredFields(callNode);
+  const fields = fieldsRead(callNode, store);
 
   return [
     {
@@ -274,43 +270,30 @@ const NOT_NAMES = [
 ];
 
 /**
- * Returns the properties destructured from the parse result, or null
- * when the result is not destructured. A trailing cast is looked
- * through, so `const { id } = JSON.parse(record.body) as Order` counts.
+ * The fields the handler reads off what `JSON.parse` gives back, at the
+ * call or through the one name it is kept in, each once in source order.
+ * A destructure records the property it reads, so `{ total: amount }`
+ * records `total`, the name the producer wrote. Null when it reads none,
+ * and suss then skips comparing the body.
  */
-function extractDestructuredFields(
+function fieldsRead(
   call: CallExpression,
+  store: ResolutionStore,
 ): Record<string, EffectArg> | null {
-  const parent = climbSyntax(call).getParent();
-  if (parent === undefined || !N.isVariableDeclaration(parent)) {
-    return null;
-  }
-  const nameNode = parent.getNameNode();
-  if (!N.isObjectBindingPattern(nameNode)) {
-    return null;
-  }
+  const { db } = store.factAccess();
+  const sites = readSitesOf(call).sort((a, b) => a.getStart() - b.getStart());
   const fields: Record<string, EffectArg> = {};
-  for (const element of nameNode.getElements()) {
-    // The producer wrote the property names, so `{ total: totalAmount }`
-    // records `total` and drops the local alias.
-    const propertyNameNode = element.getPropertyNameNode();
-    let fieldName: string;
-    if (propertyNameNode !== undefined) {
-      fieldName = propertyNameNode.getText();
-    } else {
-      const nameInner = element.getNameNode();
-      if (!N.isIdentifier(nameInner)) {
-        continue;
+  for (const site of sites) {
+    const key = statedFactKey(site, store);
+    for (const relation of ["readsProperty", "readsEntry"]) {
+      for (const row of db.lookup(relation, 0, key)) {
+        const name = String(row[2]);
+        // Pairing compares field names only, so the value is a placeholder.
+        fields[name] ??= { kind: "identifier", name };
       }
-      fieldName = nameInner.getText();
     }
-    // Pairing compares field names only, so the value is a placeholder.
-    fields[fieldName] = {
-      kind: "identifier",
-      name: fieldName,
-    };
   }
-  return fields;
+  return Object.keys(fields).length === 0 ? null : fields;
 }
 
 /**

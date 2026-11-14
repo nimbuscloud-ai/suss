@@ -717,6 +717,82 @@ describe("sqs message-receive recognizer", () => {
   });
 });
 
+describe("the fields a receive reads", () => {
+  /** The field names of each receive in a handler whose loop body is `body`. */
+  function fieldsOf(body: string): (string[] | null)[] {
+    const source = `
+      import type { SQSEvent } from "aws-lambda";
+      declare function use(...values: unknown[]): void;
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          ${body}
+        }
+      }
+    `;
+    return messageReceiveEffectsOf(recognizeAll(source)).map((receive) => {
+      const body =
+        receive.interaction.class === "message-receive"
+          ? (receive.interaction.body as
+              | { fields: Record<string, unknown> }
+              | undefined)
+          : undefined;
+      return body === undefined ? null : Object.keys(body.fields);
+    });
+  }
+
+  it("reads the fields through the name the parsed body is kept in, in source order", () => {
+    expect(
+      fieldsOf(`
+        const order = JSON.parse(record.body);
+        if (order.priority) use(order.id, order["kind"], order.id);
+      `),
+    ).toEqual([["priority", "id", "kind"]]);
+  });
+
+  it("reads a field off the parse itself, and a destructure of the name a line later", () => {
+    expect(
+      fieldsOf(`
+        use(JSON.parse(record.body).kind);
+        const parsed = JSON.parse(record.body) as { userId: string };
+        const { userId, services } = parsed;
+        use(userId, services);
+      `),
+    ).toEqual([["kind"], ["userId", "services"]]);
+  });
+
+  it("leaves out a field the handler writes, and a method it calls on the body", () => {
+    expect(
+      fieldsOf(`
+        const order = JSON.parse(record.body);
+        order.seenAt = Date.now();
+        use(order.toString(), order.lines.length);
+      `),
+    ).toEqual([["lines"]]);
+  });
+
+  it("reads a quoted key as the property it names, and leaves out a computed key and the rest", () => {
+    expect(
+      fieldsOf(`
+        const key = "region";
+        const { "order-id": orderId, [key]: region, customer: { email }, ...rest } =
+          JSON.parse(record.body);
+        use(orderId, region, email, rest);
+      `),
+    ).toEqual([["order-id", "customer"]]);
+  });
+
+  it("records no body for an empty pattern, a name written again, or a body handed on whole", () => {
+    expect(
+      fieldsOf(`
+        const {} = JSON.parse(record.body);
+        let message = JSON.parse(record.body);
+        message = null;
+        use(message?.id, JSON.parse(record.body));
+      `),
+    ).toEqual([null, null, null]);
+  });
+});
+
 describe("sqs pack metadata", () => {
   it("declares correct pack identity (no discovery, no terminals, recognizer present)", () => {
     const pack = sqsFramework();

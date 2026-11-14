@@ -15,13 +15,16 @@ The pack covers only the AWS SDK v3 call pattern. SDK v2, `new AWS.SQS().sendMes
 
 The receive effect leaves its channel empty. An SQS handler's signature never says which queue it drains, because the CloudFormation event source mapping declares that. The pairing layer joins the effect to the consumer binding of the summary around it, by code scope.
 
-suss records the body's fields only when the parse result is destructured:
+suss records the fields the handler reads off the parsed body, at the parse or through the one name it is kept in:
 
 ```ts
-const { id, totalAmount } = JSON.parse(record.body);
+const { id, total: amount } = JSON.parse(record.body) as Order;   // id, total
+const order = JSON.parse(record.body);
+if (order.priority) save(order.id, order["kind"]);                 // priority, id, kind
+const { userId, services } = order;                                // userId, services
 ```
 
-It records the properties the binding reads, since the producer chose those names, and ignores the local aliases. For any other pattern, such as a cast or an assignment to a plain variable, it does not record any fields, and suss skips comparing the body instead of guessing.
+A destructure records the property it reads, since the producer chose that name, and ignores the local alias. A write to a field, `order.seenAt = now`, and a method called on the body are not fields the handler reads, and neither is a rest element or a key the code works out at run time. A name written again after the parse doesn't keep one value, so suss doesn't read fields through it. When the handler doesn't read a field, as when it hands the parsed body on whole, the effect has no body and suss skips comparing it instead of guessing.
 
 ### Channel identity
 
