@@ -1949,13 +1949,12 @@ describe("the calls a body writes as statements, and the pairs a call passes", (
     ]);
   });
 
-  it("states facts no rule of a Ruby run reads", () => {
+  it("states a pair's facts, which no rule of a Ruby run reads", () => {
     const read = new Set(
       RUBY_PROGRAM.rules.flatMap((rule) =>
         rule.body.map((literal) => literal.relation),
       ),
     );
-    expect(read.has("bodyCallAt")).toBe(false);
     expect(read.has("callPairArg")).toBe(false);
   });
 });

@@ -42,6 +42,20 @@ export function spanOfKey(key: string): KeySpan | null {
 }
 
 /**
+ * Orders node keys the way a walk down the tree reaches their nodes: by
+ * where each starts, and a node around another before it. A key that is
+ * not a node comes last.
+ */
+export function bySourceOrder(a: string, b: string): number {
+  const left = spanOfKey(a);
+  const right = spanOfKey(b);
+  if (left === null || right === null) {
+    return Number(left === null) - Number(right === null) || a.localeCompare(b);
+  }
+  return left.start - right.start || right.end - left.end;
+}
+
+/**
  * The node a key refers to: the smallest node over the span, walked up
  * to the one whose span matches. A key that is not a node, such as a
  * name, has none. A node of a type in `neverKeyed`, such as the content

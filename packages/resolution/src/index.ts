@@ -5,6 +5,11 @@ export {
   couldBeSettled,
   writtenSourcesOf,
 } from "./callee.js";
+export {
+  CLASS_BODY_QUESTION,
+  classBodyCalls,
+  readClassBodyCalls,
+} from "./classBody.js";
 export { classMemberName, classMemberOf } from "./classMember.js";
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
 export { declaredTypesOf } from "./declaredType.js";
@@ -67,6 +72,7 @@ export {
   writesRunInOrder,
 } from "./nameReads.js";
 export {
+  bySourceOrder,
   type KeySpan,
   nodeOfKey,
   type SpannedNode,
@@ -217,6 +223,7 @@ export type {
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
+import { CLASS_BODY_QUESTIONS, CLASS_BODY_RULES } from "./classBody.js";
 import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
 import { SELF_QUESTIONS, SELF_RULES } from "./receiverSelf.js";
 import { RUNS_CALL_QUESTIONS, RUNS_CALL_RULES } from "./runsCall.js";
@@ -2291,6 +2298,8 @@ const STATED_RULES = [
   ...SELF_RULES,
 
   ...RUNS_CALL_RULES,
+
+  ...CLASS_BODY_RULES,
 ];
 
 /**
@@ -3055,6 +3064,8 @@ export const RESOLUTION_QUESTIONS = [
   ...SELF_QUESTIONS,
 
   ...RUNS_CALL_QUESTIONS,
+
+  ...CLASS_BODY_QUESTIONS,
 
   // Where a value came from, asked from the value. DESIGN.md says why the
   // walk takes `hop`, why it descends into the object a read is off, and
