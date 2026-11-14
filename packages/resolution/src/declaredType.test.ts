@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { declaredTypesOf } from "./declaredType.js";
+import { stateCallsOutsideTests } from "./handWrittenFacts.js";
 
 /**
  * A helper `lookup` taking `db` by name and by position, with one call
@@ -40,6 +41,7 @@ function project(
     }
     db.add("callKeywordArg", [call, "db", argument]);
   }
+  stateCallsOutsideTests(db);
   return db;
 }
 
@@ -70,6 +72,7 @@ describe("the types a value is declared as", () => {
     db.add("call", ["view:call", "view:callee"]);
     db.add("binds", ["view:callee", "middle"]);
     db.add("callKeywordArg", ["view:call", "db", "view#session"]);
+    db.add("callOutsideTests", ["view:call"]);
     expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
   });
 

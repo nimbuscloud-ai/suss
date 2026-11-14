@@ -175,6 +175,11 @@ Functions and parameters:
 paramOf(f, k, p)            p is f's parameter at position k. A class
                             lists its constructor's parameters here
 paramNamed(f, n, p)         p is f's parameter called n
+functionInTests(f)          f, a function or a class that lists its
+                            constructor's parameters, is written in test
+                            code, so a call in test code fills its
+                            parameters too. TypeScript leaves out one with
+                            no parameters, since no call fills those
 paramDefault(p, d)          p takes the value d when a caller passes no
                             argument at all. Ruby states it for a lambda's
                             or a block's parameter only
@@ -290,6 +295,10 @@ callArgCount(r, k)          r is written with k arguments, keyword ones
 callOutsideMethod(r)        the call r is outside every method body. Ruby
                             states one for a call written as a statement
                             of a class body, which runs as the class loads
+callOutsideTests(r)         the call r is written outside test code,
+                            which isTestFile in @suss/behavioral-ir
+                            decides from the file's path. Only such a
+                            call fills a parameter of production code
 callsChosenEntry(r)         the call r runs the member its own entry read
                             chooses, as Ruby's send(k) does (Ruby)
 bodyCalls(f, c)             f's body calls the callee c, keyed the way
@@ -1157,6 +1166,27 @@ The rule starts from the factory's own call, which `callsFunction` has
 already settled, so nothing new starts from the call made through the
 name. A second rule covers the same function called straight off the
 factory's call, `register("created")(handler)`, with no name between.
+
+A call in test code fills a parameter only of a function in test code.
+A test calls production code with stand-ins. Without the rule, a
+keyboard handler whose only caller is its test would call the test's
+stubs, and one with a production caller as well would have two values
+and call neither. A test calling its own helper still fills the
+helper's parameter.
+
+Three kinds of rule fill a parameter from a call: `passesArgument`,
+the argument hops under a context, and the `.then` hop. Each is
+written once and stated twice. One copy requires
+`callOutsideTests` of the call, and the other requires
+`functionInTests` of the function. Saying it in one rule would take a
+negation, which the demand rewrite refuses.
+
+`isTestFile` decides which files are test code from their paths, as it
+does for pairing. A helper module that only tests import still counts
+as production code when its name matches none of the patterns. Its
+importers say too little to go on: a Ruby project requires few of its
+files by name, and a library's entry file is often imported by nothing
+but its tests.
 
 `returnsCall` asks `isWrittenAs` about what a function returns. A caller
 uses it to tell a wrapper that returns the library's call directly from

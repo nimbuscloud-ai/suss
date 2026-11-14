@@ -32,12 +32,14 @@ const TWO_CLIENTS: Array<[string, ...string[]]> = [
   ["call", "v1Site", "ApiRef"],
   ["writtenValue", "v1Site"],
   ["callOutsideMethod", "v1Site"],
+  ["callOutsideTests", "v1Site"],
   ["callArg", "v1Site", "0", "urlA"],
   ["writtenValue", "urlA"],
   ["binds", "v1", "v1Site"],
   ["call", "v2Site", "ApiRef"],
   ["writtenValue", "v2Site"],
   ["callOutsideMethod", "v2Site"],
+  ["callOutsideTests", "v2Site"],
   ["callArg", "v2Site", "0", "urlB"],
   ["writtenValue", "urlB"],
   ["binds", "v2", "v2Site"],
@@ -67,6 +69,28 @@ describe("reading an answer under one allocation site", () => {
   it("gives nothing back for a pair nobody asked about", () => {
     const db = askedDb([["base", "v1Site"]]);
 
+    expect(isWrittenAsUnder(db, "base", "v2Site")).toEqual([]);
+  });
+
+  it("leaves the constructor's parameter open under a construction a test writes", () => {
+    const db = new Database();
+    for (const [relation, ...tuple] of TWO_CLIENTS) {
+      const testWrites =
+        relation === "callOutsideTests" && tuple[0] === "v2Site";
+      if (!testWrites) {
+        db.add(relation, tuple);
+      }
+    }
+    askResolutionUnder(
+      db,
+      [
+        ["base", "v1Site"],
+        ["base", "v2Site"],
+      ],
+      resolutionUnderProgram(),
+    );
+
+    expect(isWrittenAsUnder(db, "base", "v1Site")).toEqual(["urlA"]);
     expect(isWrittenAsUnder(db, "base", "v2Site")).toEqual([]);
   });
 
@@ -278,10 +302,12 @@ describe("a parameter of a method called off a construction", () => {
       ["binds", "SenderRef", "Sender"],
       ["call", "sSite", "SenderRef"],
       ["callOutsideMethod", "sSite"],
+      ["callOutsideTests", "sSite"],
       ["binds", "s", "sSite"],
       ["readsProperty", "sendCallee", "s", "send"],
       ["call", "sendCall", "sendCallee"],
       ["callOutsideMethod", "sendCall"],
+      ["callOutsideTests", "sendCall"],
       ["callArg", "sendCall", "0", "payload"],
       ["writtenValue", "payload"],
     ];
@@ -291,6 +317,7 @@ describe("a parameter of a method called off a construction", () => {
         ["binds", `helperRef${i}`, `helper${i}`],
         ["call", `helperCall${i}`, `helperRef${i}`],
         ["callOutsideMethod", `helperCall${i}`],
+        ["callOutsideTests", `helperCall${i}`],
       );
     }
     const db = new Database();
