@@ -593,6 +593,11 @@ export const FIXTURE_INPUTS = [
       withConfig("activerecord", POSTGRES),
     ),
   ]),
+  fixture("ruby-concern-env", [
+    ...lang("ruby"),
+    ...dir("fixtures/ruby-concern-env"),
+    ...packs("sidekiq"),
+  ]),
   fixture("ruby-job", [
     ...lang("ruby"),
     ...dir("fixtures/ruby-job"),

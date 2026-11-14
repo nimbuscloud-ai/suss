@@ -516,6 +516,19 @@ export function methodsDefinedInBranches(stmt: RbNode): RbNode[] {
 }
 
 /**
+ * Every method one statement of a class body defines, wherever in it
+ * Ruby defines one: the statement itself, a `def` it passes to a call,
+ * or a `def` under its branches or in a block it runs, such as a
+ * concern's `included do`. The reach walk finds a body's methods through
+ * this, and the value facts state each one, so the two find the same
+ * methods whatever blocks the run's packs declare.
+ */
+export function methodsDefinedUnder(stmt: RbNode): RbNode[] {
+  const inner = OWN_BODY_TYPES.has(stmt.type) ? [] : runStatements(stmt);
+  return [stmt, ...inner].flatMap(methodsDefinedAt);
+}
+
+/**
  * The `def`s a statement writes: the statement itself, or each `def` it
  * passes to a call, as in `private def name` or `private memoize def
  * name`. Ruby evaluates an argument before it runs the call, so the
@@ -533,7 +546,7 @@ export function definitionsWrittenAt(stmt: RbNode): RbNode[] {
 
 /** Every method a class or module body defines, in source order. */
 export function methodsDefinedIn(body: RbNode): RbNode[] {
-  return runStatements(body).flatMap(methodsDefinedAt);
+  return bodyStatements(body).flatMap(methodsDefinedUnder);
 }
 
 export type MethodVisibility = "public" | "private" | "protected";
