@@ -44,3 +44,103 @@ export function Invoice() {
 export function InvoiceLines() {
   return <tbody />;
 }
+
+export function Profile() {
+  return <form />;
+}
+
+export function PageLoader({ children }: { children?: unknown }) {
+  return <div>{children}</div>;
+}
+
+export function Audit() {
+  return <table />;
+}
+
+export function Team() {
+  return <ul />;
+}
+
+export function ProjectsLayout() {
+  return <div />;
+}
+
+export function ProjectList() {
+  return <ul />;
+}
+
+export function ProjectBoard() {
+  return <section />;
+}
+
+export function BoardColumns() {
+  return <ol />;
+}
+
+export function AdminShell() {
+  return <div />;
+}
+
+export function AdminHome() {
+  return <main />;
+}
+
+export function AuditLog() {
+  return <table />;
+}
+
+export function Calendar() {
+  return <table />;
+}
+
+export function PreferencesShell() {
+  return <div />;
+}
+
+export function NotificationSettings() {
+  return <form />;
+}
+
+export function EmbedWidget() {
+  return <aside />;
+}
+
+export function InboxLayout({ children }: { children?: unknown }) {
+  return <div>{children}</div>;
+}
+
+export function Compose() {
+  return <form />;
+}
+
+export function Thread() {
+  return <article />;
+}
+
+export function HelpLayout({ children }: { children?: unknown }) {
+  return <div>{children}</div>;
+}
+
+export function HelpArticles() {
+  return <ul />;
+}
+
+export function Dashboard() {
+  return <main />;
+}
+
+export function Labs() {
+  return <section />;
+}
+
+export function LabsBeta() {
+  return <section />;
+}
+
+export function DailyReport() {
+  return <table />;
+}
+
+export function WeeklyReport() {
+  return <table />;
+}
