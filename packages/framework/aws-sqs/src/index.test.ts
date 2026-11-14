@@ -800,11 +800,12 @@ describe("sqs pack metadata", () => {
     expect(pack.protocol).toBe("sqs");
     expect(pack.discovery).toEqual([]);
     expect(pack.terminals).toEqual([]);
-    // Two recognizers: producer-side (sqsRecognizer) and consumer-side
-    // (messageReceiveRecognizer).
-    // The two send declarations compile to one recognizer each, plus
-    // the consumer-side receive recognizer.
+    // The two send declarations and the receive compile to one each.
     expect(pack.invocationRecognizers).toHaveLength(3);
+    expect(pack.version).toBe("1");
+    expect(
+      pack.declarations?.declarations.map((declared) => declared.functionLinks),
+    ).toEqual([[], [], []]);
   });
 
   it("adds a declaration and an import gate per configured producer", () => {

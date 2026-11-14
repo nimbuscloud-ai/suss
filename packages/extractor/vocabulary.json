@@ -80,7 +80,6 @@
   "high": "suss: confidence level",
   "histogram": "OpenTelemetry metrics data model: point kind, a bucketed measurement",
   "http": "transport name, HTTP",
-  "identifier": "expression kind the extractor records",
   "in": "suss: message location, the property named beside it contains many messages",
   "inTheInput": "suss: message location, the call's input is a list with one message per item",
   "input": "suss: ValueRef variant tag for a path off one of the unit's inputs, which graphql-ruby also happens to call the argument RelayClassicMutation wraps",
