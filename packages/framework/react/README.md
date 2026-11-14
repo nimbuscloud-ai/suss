@@ -16,7 +16,7 @@ export function OrderRow({ order, onDelete }: Props) {
 
 `@suss/framework-react` exports a `PatternPack`, which is data the adapter reads. It covers:
 
-- **Discovery** in two layers. The data-driven `namedExport(["default"])` pattern covers default exports, including anonymous ones. A `discoverUnits` callback covers the rest.
+- **Discovery** in three layers. The data-driven `namedExport(["default"])` pattern covers default exports, including anonymous ones. A declared `namedExport` pattern covers every other export that is a component, and a `discoverUnits` callback finds the component an app boots with.
 - **Terminals**: a JSX return becomes a `render` output that records the root element or component. Any other return becomes a `return` terminal (`return null` is how a component renders nothing). A `throw` is recorded so checks across the boundary have something to go on, since an error boundary further up the tree handles it.
 - **Input mapping**: `componentProps` on the first positional parameter. A destructured parameter gives one Input per prop name. A parameter that is not destructured gives a single Input with role `props`.
 - **Sub-units**: event handlers and `useEffect` bodies, described below.
@@ -25,13 +25,11 @@ The pack sets `protocol: "in-process"`, because a React boundary does not cross 
 
 ### How components are found
 
-The `discoverUnits` callback runs two walks.
-
-The named-export walk takes every export other than the default whose declaration is a function with a statement that returns JSX. It applies some React conventions, which live in this pack so the extractor stays free of them. It skips `.stories.tsx`, `.test.tsx` and `.spec.tsx` files. It skips the default export, since the data-driven pattern already covers it. And it requires a PascalCase name, because a lowercase export that returns JSX is usually a render-prop helper.
+The declared `namedExport` pattern, which `@suss/recognize` reads, takes every export whose name matches `^[A-Z]` and whose function returns a JSX element or fragment from its own body. A lowercase export that returns JSX is usually a render-prop helper, so it is left out, and so is the default export, which the first pattern covers. Exports of `.stories`, `.test` and `.spec` files with a `.ts` or `.tsx` extension are left out too, since those files export components that are not the app's.
 
 The pack declares `useCallback`, `memo` and `forwardRef` as transparent wrappers, since each hands back the function it was given. An export written as `memo(Card)` is then the `Card` function, and a call through a hook's `useCallback` result runs the callback. A cast around the export or around the returned JSX is read through, so `forwardRef(Picker) as <T>(props: Props<T>) => JSX.Element`, which is how a generic component keeps its type parameter, is the `Picker` function. An export a project factory makes, such as `export const Label = styledDiv("label")`, is the component the factory gives back.
 
-The root walk reads the calls React provides for booting an app: `createRoot` and `hydrateRoot` from `react-dom/client`, and `ReactDOM.render`. It resolves the rendered element back to its declaration and records that as a component. An `App` wired up this way is often exported by nothing. The closure then follows its JSX references, so everything the app renders is reachable from there.
+The `discoverUnits` callback reads the calls React provides for booting an app: `createRoot` and `hydrateRoot` from `react-dom/client`, and `ReactDOM.render`. It resolves the rendered element back to its declaration and records that as a component. An `App` wired up this way is often exported by nothing. The closure then follows its JSX references, so everything the app renders is reachable from there.
 
 ### Sub-units
 
@@ -46,7 +44,7 @@ Class components, defaults wrapped in a HOC, React Server Component specifics, a
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor`, for the `PatternPack` type, and on `@suss/adapter-typescript`, since the two callbacks are written against that adapter's discovery and sub-unit contexts. `ts-morph` is a peer dependency, because the root walk reads the AST directly.
+The pack depends on `@suss/extractor`, for the `PatternPack` type, on `@suss/recognize`, which reads its declared pattern, and on `@suss/adapter-typescript`, since the two callbacks are written against that adapter's discovery and sub-unit contexts. `ts-morph` is a peer dependency, because the boot walk reads the AST directly.
 
 ## Coverage
 

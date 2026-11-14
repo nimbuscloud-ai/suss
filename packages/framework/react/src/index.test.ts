@@ -35,15 +35,21 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 // ---------------------------------------------------------------------------
 
 describe("reactFramework: pack shape", () => {
-  it("exposes component discovery via the default export", () => {
+  it("finds a component by its default export, then by any capitalised export that returns JSX", () => {
     const pack = reactFramework();
     expect(pack.name).toBe("react");
-    expect(pack.discovery).toHaveLength(1);
-    expect(pack.discovery[0].kind).toBe("component");
-    expect(pack.discovery[0].match).toEqual({
-      type: "namedExport",
-      names: ["default"],
-    });
+    expect(pack.discovery.map((pattern) => pattern.kind)).toEqual([
+      "component",
+      "component",
+    ]);
+    expect(pack.discovery.map((pattern) => pattern.match)).toEqual([
+      { type: "namedExport", names: ["default"] },
+      expect.objectContaining({
+        type: "namedExport",
+        pattern: "^[A-Z]",
+        bodyEndsIn: "element",
+      }),
+    ]);
   });
 
   it("declares a jsxReturn terminal for render outputs", () => {
@@ -824,10 +830,13 @@ describe("reactFramework, a component a barrel re-exports", () => {
   });
 });
 
-describe("reactFramework, an export written as something other than a function", () => {
+describe("reactFramework, the exports that are components", () => {
   /** Each component as its name and the start of the function it is on. */
-  async function componentsOf(source: string): Promise<string[][]> {
-    const summaries = await summariesOf({ "/src/parts.tsx": source });
+  async function componentsOf(
+    source: string,
+    file = "/src/parts.tsx",
+  ): Promise<string[][]> {
+    const summaries = await summariesOf({ [file]: source });
     return summaries
       .filter((summary) => summary.kind === "component")
       .map((summary) => [
@@ -835,6 +844,30 @@ describe("reactFramework, an export written as something other than a function",
         String(summary.location.range.start),
       ]);
   }
+
+  it("takes a capitalised export that returns JSX, and leaves out a lowercase one and one that returns none", async () => {
+    expect(
+      await componentsOf(`
+        export function Widget() { return <div />; }
+        export const renderRow = (item: string) => <li>{item}</li>;
+        export function BuildConfig() { return { strict: true }; }
+        export default function Page() { return <main />; }
+      `),
+    ).toEqual([
+      ["Widget", "2"],
+      ["Page", "5"],
+    ]);
+  });
+
+  it.each([
+    "/src/Widget.stories.tsx",
+    "/src/Widget.test.tsx",
+    "/src/Widget.spec.ts",
+  ])("leaves out the exports of %s", async (file) => {
+    expect(
+      await componentsOf("export function Widget() { return <div />; }", file),
+    ).toEqual([]);
+  });
 
   it("reads a wrapper call under a cast as the component it wraps", async () => {
     expect(
