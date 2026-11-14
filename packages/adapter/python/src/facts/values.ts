@@ -11,7 +11,7 @@
  * reassigned name gets one value or none, never two.
  */
 
-import { isTestFile } from "@suss/behavioral-ir";
+import { isTestFileIn } from "@suss/behavioral-ir/files";
 import {
   type AddRow,
   addEntryRows,
@@ -2694,7 +2694,7 @@ export function emitValueFacts(
     filePath,
     enclosing: null,
     insideMethod: false,
-    inTests: isTestFile(filePath),
+    inTests: isTestFileIn(db, filePath),
     // Every name read at the top of a module belongs to the module.
     namedWrites: { body: root, declares: () => true, byProperty: new Map() },
     placedWrites: new Set(),
