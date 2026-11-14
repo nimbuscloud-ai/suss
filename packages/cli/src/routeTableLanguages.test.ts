@@ -110,7 +110,7 @@ function table(
         name: { at: 0 },
         rows: {
           index: [{ method: "GET", suffix: "" }],
-          show: [{ method: "GET", suffix: "/{id}" }],
+          show: [{ method: "GET", suffix: "{member}" }],
         },
         controllerNaming: "asWritten",
         nested: "singularId",

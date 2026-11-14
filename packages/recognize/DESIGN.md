@@ -476,7 +476,7 @@ The roles:
 | role | what the entry does |
 |---|---|
 | `serves` | serves one or more methods at a path, routed to the handler a pick reads, or, with no handler, to the action its path or `action` says on the expansion it is inside |
-| `expands` | serves a fixed list of rows under a base, such as `resources`, and opens an expansion that nested entries start from |
+| `expands` | serves a fixed list of rows under a base, such as `resources`, and opens an expansion that nested entries start from. `param` renames the member segment and the nesting parameter, and `shallow` serves the member routes, and what nests inside, from the shallow path that a scope with `shallowPath` starts |
 | `scopes` | adds a path segment, a namespace segment, both, or neither to every entry inside it |
 | `base` | chooses whether a bare entry inside an expansion starts from the member or the collection |
 | `defaults` | gives its keywords to every entry inside it that leaves them out |

@@ -83,10 +83,10 @@ const PLURAL_ROWS: Readonly<Record<string, readonly ExpansionRow[]>> = {
   index: [{ method: "GET", suffix: "" }],
   create: [{ method: "POST", suffix: "" }],
   new: [{ method: "GET", suffix: "/new" }],
-  show: [{ method: "GET", suffix: "/{id}" }],
-  edit: [{ method: "GET", suffix: "/{id}/edit" }],
-  update: [{ method: "update", suffix: "/{id}" }],
-  destroy: [{ method: "DELETE", suffix: "/{id}" }],
+  show: [{ method: "GET", suffix: "{member}" }],
+  edit: [{ method: "GET", suffix: "{member}/edit" }],
+  update: [{ method: "update", suffix: "{member}" }],
+  destroy: [{ method: "DELETE", suffix: "{member}" }],
 };
 
 const SINGULAR_ROWS: Readonly<Record<string, readonly ExpansionRow[]>> = {
@@ -115,6 +115,8 @@ const RESOURCE: Omit<
   path: { keyword: "path" },
   module: { keyword: "module" },
   concerns: { keyword: "concerns" },
+  param: { keyword: "param" },
+  shallow: { keyword: "shallow" },
   children: { in: "block" },
 };
 
@@ -156,7 +158,12 @@ export const RAILS_ROUTES: RouteTableDeclaration = {
       nested: "self",
       member: "self",
     },
-    namespace: { role: "scopes", both: { at: 0 }, children: { in: "block" } },
+    namespace: {
+      role: "scopes",
+      both: { at: 0 },
+      shallowPath: true,
+      children: { in: "block" },
+    },
     // `scope "v1"` and `scope path: "v1"` both set the path in Rails.
     scope: {
       role: "scopes",
@@ -193,7 +200,7 @@ export function restfulRoutes(action: string, base: string): Route[] {
     return [];
   }
   return (PLURAL_ROWS[action] ?? []).flatMap((row) =>
-    rowRoutes(RAILS_ROUTES, row, base),
+    rowRoutes(RAILS_ROUTES, row, { collection: base, member: `${base}/:id` }),
   );
 }
 
