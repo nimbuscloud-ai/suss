@@ -23,6 +23,7 @@
   "body": "suss: ResponsePropertyMeaning tag",
   "boolean": "TypeScript primitive type name",
   "brackets": "suss: filename dynamic-segment style",
+  "builder": "suss: CallStep variant tag, the library call that built a value through the methods chained on it",
   "cache": "suss: the adapter's on-disk cache directory name; client packs declare their library's cache option under the same spelling",
   "call": "expression kind the extractor records",
   "callArgument": "suss: channel source, read an argument off the call a callbackArgument match found the function in",

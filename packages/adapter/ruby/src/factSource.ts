@@ -16,6 +16,7 @@ import { referenceName } from "@suss/behavioral-ir";
 import {
   answersFor,
   classMemberOf,
+  environmentsReaching,
   GLOBAL_MODULE,
   givenBackFunction,
   handedNamesReaching,
@@ -158,6 +159,20 @@ export function rubyFactSource(db: Database): FactSource {
       return fallback === null ? null : resolutionKeyOf(fallback);
     },
     sitesNaming: (parameter) => sitesNamingParameter(db, parameter),
+    runtimePathOf: (key, object) => {
+      if (object.origin !== "global") {
+        return undefined;
+      }
+      const listed = (value: string): boolean =>
+        object.paths.includes(globalPathOf(db, value, nodeAt(value)) ?? "");
+      const spelled = globalPathOf(db, key, nodeAt(key));
+      if (spelled !== null && listed(key)) {
+        return spelled;
+      }
+      return environmentsReaching(db, key, RUBY_PROGRAM).some(listed)
+        ? object.paths[0]
+        : undefined;
+    },
   };
 }
 

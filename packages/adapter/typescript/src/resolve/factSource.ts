@@ -22,6 +22,7 @@ import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
 import { climbSyntax, peelValue } from "../walk/unwrap.js";
 import {
   anchorAccepts,
+  type CallReading,
   globalCalleeName,
   literalFlag,
   literalText,
@@ -30,6 +31,7 @@ import {
   valueFormOf,
   writtenShapeOf,
 } from "./callOps.js";
+import { deferredCallOps } from "./deferredCallOps.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
   effectArgOf,
@@ -45,6 +47,7 @@ import type {
   CallOps,
   FactSource,
   ReadOps,
+  RuntimeObject,
   ValueOps,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -115,6 +118,7 @@ export function factSourceFor(
     options.resolve ??
     ((value: Node): Node | null => store.resolveWrittenValue(value));
   const { extend } = options;
+  const reading: CallReading = { resolve, resolution: store, originatesFrom };
   const keyOf = (node: Node | null): string | null =>
     node === null ? null : nodeId(peelValue(node));
   const at = <T>(key: string, empty: T, read: (node: Node) => T): T => {
@@ -257,6 +261,20 @@ export function factSourceFor(
       }),
     keysSupplied: (call, object) =>
       at(call, [], (node) => keysSuppliedAt(node, object, store, hold)),
+    callAt: (key) =>
+      at(key, null, (node) =>
+        Node.isCallExpression(node) ? deferredCallOps(node, reading) : null,
+      ),
+    callsInCallee: (call) =>
+      at(call, [], (node) =>
+        Node.isCallExpression(node)
+          ? (deferredCallOps(node, reading).callsInCallee?.() ?? [])
+          : [],
+      ),
+    runtimePathOf: (key, object) =>
+      at(key, undefined, (node) => environmentPathOf(node, object, store)),
+    importedUnder: (key, modules) =>
+      at(key, [], (node) => store.importedUnder(node, modules)),
   };
 }
 
@@ -267,6 +285,23 @@ function codecKeyed(
   return found === null
     ? null
     : { codec: found.codec, value: nodeId(peelValue(found.value)) };
+}
+
+/**
+ * The environment a value is, asked the way the helper reads ask it: the
+ * object it is spelled as, or the first the packs declare when the rules
+ * followed one into it. Undefined when the object does not list it.
+ */
+function environmentPathOf(
+  value: Node,
+  object: RuntimeObject,
+  store: ResolutionStore,
+): string | undefined {
+  if (object.origin !== "global" || !store.isEnvironmentValue(value)) {
+    return undefined;
+  }
+  const path = store.environmentReadOff(value);
+  return object.paths.includes(path) ? path : undefined;
 }
 
 /**

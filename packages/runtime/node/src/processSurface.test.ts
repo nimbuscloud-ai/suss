@@ -149,22 +149,36 @@ describe("process-surface recognizer", () => {
     const pack = nodeRuntimePack();
     const ran = runExamples(pack, (code) =>
       effectsOverFile(
-        makeFile(`export function example() { return ${code}; }`),
+        makeFile(`
+          import { createEnv } from "@t3-oss/env-core";
+          import { cleanEnv, port } from "envalid";
+          import * as v from "valibot";
+          import { z } from "zod";
+          import { parseEnv } from "znv";
+          export function example() { return ${code}; }
+        `),
         packWithOnly(pack, { access: pack.accessRecognizers ?? [] }),
       ),
     ).filter((one) => one.match === "runtimeRead");
     expect(
       ran.map((one) =>
         one.effects.map((effect) =>
-          effect.type === "interaction" ? effect.interaction.class : null,
+          effect.type === "interaction"
+            ? [effect.interaction.class, effect.callee]
+            : null,
         ),
       ),
     ).toEqual([
-      ["config-read"],
-      ["config-read"],
-      ["config-read"],
-      ["metadata-read"],
-      ["metadata-read"],
+      [["config-read", "process.env.TABLE_NAME"]],
+      [["config-read", "import.meta.env.VITE_API_URL"]],
+      [["config-read", "process.env.PORT"]],
+      [["config-read", "process.env.PORT"]],
+      [["config-read", "process.env.DATABASE_URL"]],
+      [["config-read", "process.env.PORT"]],
+      [["config-read", "process.env.PORT"]],
+      [["config-read", "process.argv"]],
+      [["metadata-read", "import.meta.url"]],
+      [["metadata-read", "__dirname"]],
     ]);
   });
 

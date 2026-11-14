@@ -25,7 +25,7 @@ import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
 import { compileReads } from "./compileReads.js";
 import { compileReceives } from "./compileReceives.js";
-import { modulesOf, opsIn } from "./ops.js";
+import { imported, modulesOf, opsIn } from "./ops.js";
 import { type SlotColumns, slotsDeclared } from "./slots.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
@@ -95,6 +95,7 @@ import type {
   SubjectLink,
   SubUnitNamePart,
   ToArgument,
+  ToBuilder,
   ToChained,
   ToMember,
   ToReceiver,
@@ -398,7 +399,7 @@ function methodsIn(
  * method, and a call that reaches for no receiver, `new
  * GetObjectCommand(...)`, says it as the callee.
  */
-function operationOf(ops: CallOps): string {
+export function operationOf(ops: CallOps): string {
   return ops.method() ?? ops.calleeText();
 }
 
@@ -407,7 +408,7 @@ function operationOf(ops: CallOps): string {
  * table's own keys count, so `client.toString()` never finds the method
  * every object inherits.
  */
-function listed(
+export function listed(
   link: MethodsLink<MethodMeaning>,
   method: string,
 ): MethodMeaning | null {
@@ -463,6 +464,7 @@ const STEP: Record<
   argument: (step, ops) => argumentsOf(ops, step as ToArgument),
   member: (step, ops) => membersOf(ops, step as ToMember),
   chained: (step, ops) => chainedOf(ops, (step as ToChained).method),
+  builder: (step, ops) => builderOf(ops, step as ToBuilder),
 };
 
 /** The calls a list of steps reaches from where it starts. */
@@ -561,6 +563,40 @@ function chainedOf(ops: CallOps, method: string): CallOps[] {
 }
 
 /**
+ * How many receivers a builder step climbs past. A schema with more
+ * refinements chained on it than this loses its keys, and a receiver
+ * that comes back round to itself ends the climb here.
+ */
+const MAX_RECEIVER_HOPS = 8;
+
+/** The call the step's builder made, from this call up through its receivers. */
+function builderOf(ops: CallOps, step: ToBuilder): CallOps[] {
+  let at: CallOps | null = ops;
+  for (let hops = 0; at !== null && hops <= MAX_RECEIVER_HOPS; hops += 1) {
+    if (isBuilder(at, step)) {
+      return [at];
+    }
+    at = at.receiver();
+  }
+  return [];
+}
+
+/**
+ * Whether the call is the builder: its method called on a value the
+ * file imported from one of the modules, or the export itself called
+ * bare. The method's name is compared before the store is asked.
+ */
+function isBuilder(at: CallOps, step: ToBuilder): boolean {
+  const method = at.method();
+  if (method !== null) {
+    return (
+      method === step.method && at.receiverIsFrom(imported({ from: step.from }))
+    );
+  }
+  return at.calleeImportedAs?.(step.from) === step.method;
+}
+
+/**
  * The calls the picked arguments are, in the order the call passes
  * them, dropping the ones the step's origin rules out.
  */
@@ -607,7 +643,10 @@ const START: Record<
 };
 
 /** Whether the call is where the chain says its match starts. */
-function startsHere(chain: Chain<MethodMeaning>, subject: CallOps): boolean {
+export function startsHere(
+  chain: Chain<MethodMeaning>,
+  subject: CallOps,
+): boolean {
   return chain.links.every((link) =>
     link.asks === "start" ? START[link.at.starts](link.at, subject) : true,
   );
@@ -1533,7 +1572,10 @@ function scopeOf(
 }
 
 /** The value the call states where a pick points, or null for none. */
-function statedValue(subject: CallOps, pick: OneArgument): ValueOps | null {
+export function statedValue(
+  subject: CallOps,
+  pick: OneArgument,
+): ValueOps | null {
   for (const ops of walk([subject], pick.of ?? [])) {
     const stated = pickedIn(ops, pick, pick.at);
     if (stated === null) {

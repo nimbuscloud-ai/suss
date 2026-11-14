@@ -1900,6 +1900,27 @@ export class ResolutionStore {
     return boundByImport(this.db, nodeId(target));
   }
 
+  /**
+   * The exports of these modules that the file's own import statements
+   * bind this name to, read off the statements, so nothing is stated and
+   * no question is asked. A project module that re-exports the name is
+   * not followed, and a default or namespace import binds no export.
+   */
+  importedUnder(value: Node, modules: readonly string[]): string[] {
+    const name = factKeyOf(value);
+    if (!Node.isIdentifier(name)) {
+      return [];
+    }
+    return (name.getSymbol()?.getDeclarations() ?? []).flatMap((declaration) =>
+      Node.isImportSpecifier(declaration) &&
+      modules.includes(
+        declaration.getImportDeclaration().getModuleSpecifierValue(),
+      )
+        ? [declaration.getName()]
+        : [],
+    );
+  }
+
   private namesReached(
     value: Node,
     modules: string[],

@@ -12,6 +12,7 @@ export type {
   AnyOf,
   AstCapableOps,
   CallOps,
+  CallsAndOptions,
   ClassOps,
   ConstructedFrom,
   DeclaredBy,

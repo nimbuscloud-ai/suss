@@ -10,9 +10,10 @@
  * facts", has the fact behind each member.
  */
 
-import { factValueOps, functionBehind } from "./factOps.js";
+import { factCallOps, factValueOps, functionBehind } from "./factOps.js";
 
 import type {
+  CallOps,
   FactSource,
   KeySupplied,
   ReadOps,
@@ -37,6 +38,7 @@ class FactRead implements ReadOps {
   private stated: StatedRead | null | undefined;
   private readonly paths = new Map<string, string | null | undefined>();
   private reaching: readonly string[] | undefined;
+  private called: CallOps | null | undefined;
 
   constructor(
     private readonly key: string,
@@ -122,32 +124,25 @@ class FactRead implements ReadOps {
 
   /**
    * Whether the site reads off a parameter the platform fills under this
-   * name: the parameter itself, which is how Python and Ruby key a name,
-   * a name the facts bind to it, which is how TypeScript does, or a value
-   * the rules followed the parameter into, such as a helper's parameter
-   * or a local. A run with no such unit states no `handedIn` row, so its
-   * sites stop at the first lookup.
+   * name. A run with no such unit states no `handedIn` row, so its sites
+   * stop at the first lookup, before the object is asked for.
    */
   offHandedIn(name: string): boolean {
-    const { db } = this.facts;
-    if (db.lookup("handedIn", 1, name).length === 0) {
+    if (this.facts.db.lookup("handedIn", 1, name).length === 0) {
       return false;
     }
     const object = this.object();
-    if (object === null) {
-      return false;
+    return object !== null && handedInAs(object, name, this.facts);
+  }
+
+  call(): CallOps | null {
+    if (this.called === undefined) {
+      this.called =
+        this.facts.callAt === undefined
+          ? factCallOps(this.key, this.facts)
+          : this.facts.callAt(this.key);
     }
-    const handed = (key: string): boolean =>
-      db.lookup("handedIn", 0, key).some((row) => String(row[1]) === name);
-    if (handed(object)) {
-      return true;
-    }
-    // A name's binds are stated with its own facts.
-    this.facts.read(object);
-    if (db.lookup("binds", 0, object).some((row) => handed(String(row[1])))) {
-      return true;
-    }
-    return (this.facts.handedReaching?.(object) ?? []).includes(name);
+    return this.called;
   }
 
   /**
@@ -173,6 +168,35 @@ class FactRead implements ReadOps {
     }
     return this.stated;
   }
+}
+
+/**
+ * Whether the value at the key is a parameter the platform fills under
+ * this name: the parameter itself, which is how Python and Ruby key a
+ * name, a name the facts bind to it, which is how TypeScript does, or a
+ * value the rules followed the parameter into, such as a helper's
+ * parameter or a local.
+ */
+export function handedInAs(
+  key: string,
+  name: string,
+  facts: FactSource,
+): boolean {
+  const { db } = facts;
+  if (db.lookup("handedIn", 1, name).length === 0) {
+    return false;
+  }
+  const handed = (one: string): boolean =>
+    db.lookup("handedIn", 0, one).some((row) => String(row[1]) === name);
+  if (handed(key)) {
+    return true;
+  }
+  // A name's binds are stated with its own facts.
+  facts.read(key);
+  if (db.lookup("binds", 0, key).some((row) => handed(String(row[1])))) {
+    return true;
+  }
+  return (facts.handedReaching?.(key) ?? []).includes(name);
 }
 
 /** How each kind of runtime object checks the object a site reads off. */

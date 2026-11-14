@@ -1,15 +1,12 @@
 /**
- * The boundary binding for this pack's runtime-config reads.
+ * What a run can say about the deployment this pack's runtime-config
+ * reads belong to, and the name the pack's effects are recognized under.
  *
  * The code does not show which deployment runs it, so a read leaves the
  * deployment off unless the run configured one. The pairing pass takes
  * the deployment from the provider side, which is the template or task
  * definition that declares the variables.
  */
-
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
-
-import type { BoundaryBinding } from "@suss/behavioral-ir";
 
 /** What a run can say about the deployment its reads belong to. */
 export interface DeploymentOptions {
@@ -28,8 +25,3 @@ export interface DeploymentOptions {
 
 /** The name this pack's effects are recognized under. */
 export const RECOGNITION = "@suss/runtime-node";
-
-/** The binding on a runtime-config read this pack found. */
-export function configBinding(where: DeploymentOptions): BoundaryBinding {
-  return runtimeConfigBinding({ recognition: RECOGNITION, ...where });
-}

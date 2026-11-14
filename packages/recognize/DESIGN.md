@@ -215,6 +215,8 @@ recognizer context under `ops`.
 | `argument(index)` | the call that argument is, as ops of its own |
 | `callee()` | the call the callee itself was written as |
 | `namedCallee()` | whether the call goes to a name the program bound (optional) |
+| `calleeImport(modules)` | the export of one of the modules that the file's own import statement binds the callee to, read off the import and nothing past it (optional) |
+| `callsInCallee()` | the calls written in the project function the call reaches, nested functions included, in source order (optional) |
 | `parameterReadsAt(index)` | the fields a selector lambda in that position reads off its parameter (optional) |
 | `propertyAt(index, property, unsettled)` | what a named property of that argument says |
 | `valueAt(index)` | the value that argument states, as `ValueOps` |
@@ -244,6 +246,8 @@ walk it:
 | `encoded()` | the value a call of one of the language's encoders was handed, and the encoding: `x` under `json` for `JSON.stringify(x)`, `json.dumps(x)`, `JSON.generate(x)` or `x.to_json`. Null for any other value |
 | `shape()` | the shape the source writes the value in at this spot, without following a name |
 | `readsOff(object)` | the properties the value reads off `object`, through the calls, comparisons, entries and template holes it is written from, each once in source order. A function written in the value, or a helper that built it, is not entered |
+| `runtimePath(object)` | the path among a runtime object's that the value is: the one it is spelled as, or the object's first path when the rules followed the object into it. Undefined when it is not the object |
+| `mentions({ calls, options })` | whether the value is written with a call to one of `calls` or sets one of `options`, through its receivers, arguments, entries and fallback branches. A function written in the value is not entered |
 
 A message send records its body, and a unit invoke its payload, as the
 value that went into the encoder when there is one, since the consumer
@@ -306,6 +310,10 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `comesFrom(x, m, n)` over `imports`, `exportsAs` and `reExports`, so an alias and a project barrel read as the export. A value that only calls into an import does not count |
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
 | `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module. It is asked only when `imports` is stated for the callee or for what it `binds` to, so a parameter is never followed through its callers |
+| `calleeImport` | the `imports` rows of the callee, or of what it `binds` to, under one of the modules, kept when they give one export other than the whole module. TypeScript reads the import statement itself through `importedUnder`, which states nothing |
+| `callsInCallee` | `makesCall` closed over `containsFn` from the function `functionBehind` settles the callee to, in source order, the way `callInBody` reads a body. TypeScript keeps the checker's callee, `helperCalleeOf`, and the calls under it, and hands each one out as ops that read `method()` and `calleeText()` off the node and state the call only when a chain asks it something more |
+| `runtimePath(object)` | the adapter's `runtimePathOf`. TypeScript asks `isEnvironmentValue` and then `environmentReadOff`. Python and Ruby take the path the value is spelled as, and otherwise ask `wantedEnvironmentValue` whether an environment spelled as one of the paths reaches it. So the object has to be one of the run's environments. An adapter without it reads `spellsGlobal`, `globalsReaching` and the `handedIn` rows the way a read site's object is read |
+| `mentions(words)` | a closure from the value's own key over `call` to the callee and `readsProperty` to its object, `callArg`, `holdsProperty` and `callKeywordArg` to a value, and `fallbackBranch` and `conditionalBranch`. A method's name is the `readsProperty` name, a bare callee's is the export its `imports` row gives, and an option is a `holdsProperty` or `callKeywordArg` name. A key stated as `func` is not entered |
 | `named` on `constructed` | the name the constructor is written with, or the export the adapter's `importedAs` says it was imported as, asked only when an import binds the constructor the way `calleeImportedAs` checks |
 | `anchorCall` | the adapter's `anchorCalls`, with the single-answer policy |
 | `member(name, singleton)` | `holdsProperty` on the value, or on what it `comesTo`, the last statement winning; a class's own member is spelled as `classMemberName` spells it |
@@ -331,6 +339,7 @@ the same way:
 | `defaulted()`, `fallback()` | the adapter's `defaultedAt` and `fallbackOf`, each its own walk over the syntax. What counts as coping with a missing value is the language's |
 | `assigned()` | `assigns(x, v)`: the site is the left side of a plain `=` and `v` the value written on the right |
 | `keysSuppliedTo(object)` | the adapter's `keysSupplied` where it has one, as TypeScript does. Otherwise, for each parameter of the function `call(r, c)` comes to, the sites the adapter's `sitesNaming` says take their key from it, kept when they are off the object |
+| `call()` | the adapter's `callAt` where it has one, as TypeScript does, which reads the call's name without stating its facts. Otherwise the call ops at the site's key |
 
 `keysSuppliedTo` is on the read ops rather than on the call's. A read
 chain asks it at every call the access walk visits, and in TypeScript
@@ -468,6 +477,7 @@ A pack chooses that call with `about`, and a pick chooses its call with
 | `{ to: "member" }` | the member read the call is made on, `db.user` in `db.user.findMany()`, or in Ruby the call with no arguments `db.users` is |
 | `{ to: "member", named: "query" }` | the same, when the member is read under that name |
 | `{ to: "chained", method: "where" }` | the nearest call to `where` made out along what the call returns, `.where(c)` from `db.update(t)` in `db.update(t).set(v).where(c)` |
+| `{ to: "builder", method: "object", from: ["zod"] }` | the call a library's builder made the value with, this call included, through up to eight methods chained on its result: `z.object({ ... })` from `z.object({ ... }).strict()` |
 
 ```ts
 storageCalls({ system: "s3", client: constructedFrom("@aws-sdk/client-s3") })
@@ -1273,6 +1283,83 @@ argument, Python's `os.environ.get("B", "d")` or Ruby's
 `ENV.fetch("B", "d")`. The table says where the key is and where the
 fallback can be, and a getter that raises without one is not defaulted
 when the call passes none. No shipped pack declares a getter yet.
+
+## A schema the environment is parsed against
+
+A service that validates its configuration writes every variable it
+reads into one schema and hands the environment to a library, so no
+code writes `process.env.PORT`. The variables are the schema's keys:
+
+```ts
+schemaReads({ object: global("process.env", "import.meta.env"), client: exported(["envalid"], ["cleanEnv"]) })
+  .methods({ cleanEnv: { environment: { at: 0 }, schema: [{ at: 1 }] } })
+  .defaultedWhen({ calls: ["default", "optional"], options: ["default", "devDefault"] })
+  .throughHelpers();
+
+schemaReads({ object: global("process.env", "import.meta.env") })
+  .methods({
+    parse: {
+      environment: { at: 0 },
+      schema: [{ of: [{ to: "receiver" }, { to: "builder", method: "object", from: ["zod"] }], at: 0 }],
+    },
+  });
+```
+
+A schema chain is a read chain whose first link is the object the
+reads are off, followed by the start and the methods table a call
+chain has. Its ending is the runtime-read ending, so each key is a
+config read named off the object: the effect is the one a read of
+`process.env.PORT` gives. The table says, for each call that parses,
+where the call takes the environment and where the objects whose keys
+are the variables are. Every schema pick that finds an object adds its
+keys, in order, so t3-env's `server`, `client` and `shared` are three
+picks into one argument.
+
+The hook runs on the access walk at every call. It asks the read ops
+for the call with `call()` and looks its name up in the table before
+anything else, since nearly every call is not a parse, and only then
+asks whether the start accepts it. A bare call the table does not list
+as written is read as the export the file's own import binds it to,
+through `calleeImport`, so `load(...)` after `import { cleanEnv as load
+} from "envalid"` is `cleanEnv`. That import is where the call came
+from, so the start is not asked again. A chain with no client, as
+zod's has, takes no alias.
+
+The schema is read before the environment, since most calls named
+`parse` parse something else. Its keys are what `object()` and then
+`entries("nothing")` give, which read a spread in place and a computed
+key the source settles. Only a parse that has keys asks `runtimePath`
+of the value at the environment pick, and a value that is not the
+object reads nothing, so a request body parsed against the same schema
+adds no reads. The read's callee spells the object the call was handed,
+so a schema parsed against `import.meta.env` reads
+`import.meta.env.PORT`, and a parameter the rules followed the
+environment into reads as the object's first path.
+
+A key is defaulted when its value `mentions` one of the
+`defaultedWhen` calls or options: `z.string().default(8080)`,
+`v.optional(v.string())`, `port({ default: 9100 })`. A function
+written in the key runs on the value later, so a call inside the one
+`transform` takes says nothing about whether the variable may be
+missing. When a key is defaulted and the call itself has a fallback,
+`Env.parse(process.env) ?? fallback`, the read records it as its
+`default`.
+
+`throughHelpers()` reads a call into a project function whose body
+parses as a read at the call: each call `callsInCallee` lists is asked
+the same questions, and the keys of every parse among them are read at
+the call into the helper. A helper two calls away is not followed. Each
+chain reads its own library's parses, so a helper that parses with two
+libraries lists one library's keys before the other's.
+
+The builder step stops at the first call that is `method` called on a
+value imported from one of the modules, or a bare call `calleeImportedAs`
+says is that export. It starts at the call it is handed, so valibot's
+`v.object({ ... })` written as the argument is its own builder, and it
+goes up through `receiver()`, which follows a name, so `Base.strict()`
+after `const Base = z.object({ ... })` reaches the builder too. It
+climbs at most eight receivers, so a schema with more refinements than
+that chained on it loses its keys.
 
 ## The example every declaration states
 

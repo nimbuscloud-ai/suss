@@ -1321,8 +1321,9 @@ object free, so a pack looking at `cleanEnv(source, schema)` can ask
 about `source` alone. For that adornment the demand rewrite reverses
 every join. The walk runs from the argument to the parameter it refers
 to, out to that parameter's callers, and on until it reaches an
-`environmentObject` or runs out of callers. The store exposes this
-question as `isEnvironmentValue`.
+`environmentObject` or runs out of callers. The TypeScript store
+exposes this question as `isEnvironmentValue`, and Python and Ruby ask
+it through `environmentsReaching`.
 
 An output stream is followed the same way. A helper that takes the
 stream it writes to, `function say(out, line) { out.write(line) }`,

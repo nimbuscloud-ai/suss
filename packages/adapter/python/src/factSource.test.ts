@@ -386,3 +386,52 @@ describe("the Python fact source's read members", () => {
     );
   });
 });
+
+const PARSES = `import os
+
+
+def load(source):
+    return parse(source)
+
+
+def other(settings):
+    return parse(settings)
+
+
+load(os.environ)
+`;
+
+describe("the environment a value is", () => {
+  it("is the path an import spells it as, or the first when the rules followed it in", async () => {
+    const tree = await parsePython(PARSES);
+    const root = tree.rootNode;
+    const module = bindModule(root);
+    const db = factsForFile({ file: FILE, root, module, packs: [] });
+    bindEnvFacts(db, [envFactsIn(FILE, root, module)]);
+    const source = pythonFactSource(db);
+    const argumentOf = (text: string) =>
+      String(
+        db
+          .facts("callArg")
+          .find((row) => source.textOf(String(row[0])) === text)?.[2],
+      );
+    const path = (text: string, paths: string[]) =>
+      factValueOps(argumentOf(text), source).runtimePath?.({
+        origin: "global",
+        paths,
+      });
+
+    expect(path("load(os.environ)", ["os.environ"])).toBe("os.environ");
+    expect(path("parse(source)", ["os.environ", "os.getenv"])).toBe(
+      "os.environ",
+    );
+    expect(path("parse(settings)", ["os.environ"])).toBeUndefined();
+    expect(path("load(os.environ)", ["sys.stdout"])).toBeUndefined();
+    expect(
+      factValueOps(argumentOf("load(os.environ)"), source).runtimePath?.({
+        origin: "handedIn",
+        name: "env",
+      }),
+    ).toBeUndefined();
+  });
+});

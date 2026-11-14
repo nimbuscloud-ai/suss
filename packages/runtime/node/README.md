@@ -20,10 +20,10 @@ reads. It covers:
   `console`, `process.stdout` and `process.stderr`.
 - **Read chains**, declared with `@suss/recognize`, for
   `process.env.X` and `import.meta.env.X` reads, the rest of the
-  process object (`argv`, `exitCode` and the process metadata), and the
+  process object (`argv`, `exitCode` and the process metadata), the
   module-location globals `__dirname`, `__filename` and
-  `import.meta.url`. A recognizer written as code reads the keys of a
-  schema parsed against the environment.
+  `import.meta.url`, and the keys of a schema parsed against the
+  environment.
 - **Sub-units** for the callbacks passed to a scheduling call, so what
   runs later is described as its own unit. A call made inside another
   callback, such as a `.then` or a React effect, gets one too.
@@ -249,7 +249,9 @@ versions. A zod schema is read through up to eight refinements the
 program chains onto it, written in place or kept in a name, so
 `z.object({ ... }).strict()` and `Base.strict()` after
 `const Base = z.object({ ... })` give the same keys. Keys a schema
-spreads in from another literal are read too.
+spreads in from another literal are read too, and so is a key written
+under a computed name the source settles, `{ [key]: z.string() }`
+after `const key = "PORT"`.
 
 A library's function is read as the name it exports, so
 `import { cleanEnv as load } from "envalid"` reads `load(...)` as

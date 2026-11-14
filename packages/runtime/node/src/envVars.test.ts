@@ -7,18 +7,18 @@ import { createTestProject } from "@suss/test-project";
 
 import nodeRuntimePack from "./index.js";
 import { compiledReads, runtimeReadMatches } from "./runtimeReads.js";
-import { schemaReadRecognizer } from "./schemaReads.js";
+import { schemaReadMatches } from "./schemaReads.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 import type { DeploymentOptions } from "./configBinding.js";
 
-/** The two environment chains and the schema recognizer, in the pack's order. */
+/** The two environment chains and the schema chains, in the pack's order. */
 function envRecognizers(where: DeploymentOptions = {}): AccessRecognizer[] {
   return [
     ...compiledReads(runtimeReadMatches(where).environment),
-    schemaReadRecognizer(where),
+    ...compiledReads(schemaReadMatches(where)),
   ];
 }
 
@@ -524,6 +524,45 @@ describe("env-var recognizer — happy path", () => {
       deploymentTarget: "ecs-task",
     });
   });
+
+  it("hands the pack's options to a read and to a schema's keys alike", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      export const host = process.env.HOST;
+      export const config = z.object({ PORT: z.string() }).parse(process.env);
+    `);
+    const pack = nodeRuntimePack({
+      deploymentTarget: "lambda",
+      instanceName: "ReportJob",
+    });
+    const reads = configReadEffectsOf(
+      effectsOverFile(
+        file,
+        packWithOnly(pack, { access: pack.accessRecognizers ?? [] }),
+        storeOver(file.getProject()),
+      ),
+    );
+    expect(
+      reads.map((read) => [read.interaction.name, read.binding.semantics]),
+    ).toEqual([
+      [
+        "HOST",
+        {
+          name: "runtime-config",
+          deploymentTarget: "lambda",
+          instanceName: "ReportJob",
+        },
+      ],
+      [
+        "PORT",
+        {
+          name: "runtime-config",
+          deploymentTarget: "lambda",
+          instanceName: "ReportJob",
+        },
+      ],
+    ]);
+  });
 });
 
 describe("env-var recognizer — rejection cases", () => {
@@ -640,7 +679,7 @@ describe("node runtime pack — env-var wiring", () => {
   });
 
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.12.0");
+    expect(nodeRuntimePack().version).toBe("0.13.0");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {
@@ -1969,10 +2008,23 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
     expect(readsOf(file)).toEqual([]);
   });
 
-  it("skips a schema key written under a computed name", () => {
+  it("reads a schema key written under a computed name the source settles", () => {
     const file = makeProject(`
       import { z } from "zod";
       const key = "ORDERS_URL";
+      const Env = z.object({ [key]: z.string(), ACCOUNTS_TABLE: z.string() });
+      export const config = Env.parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ACCOUNTS_TABLE", false],
+      ["ORDERS_URL", false],
+    ]);
+  });
+
+  it("skips a schema key written under a computed name nothing settles", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      declare const key: string;
       const Env = z.object({ [key]: z.string(), ACCOUNTS_TABLE: z.string() });
       export const config = Env.parse(process.env);
     `);
@@ -2141,10 +2193,19 @@ describe("env-var recognizer — a schema read the way its declaration reads it"
     expect(readsOf(file)).toEqual([["HOOK", false]]);
   });
 
-  it("reads nothing off a builder the source reaches by a computed name", () => {
+  it("reads a builder the source reaches through a quoted name", () => {
     const file = makeProject(`
       import { z } from "zod";
-      export const config = z["object"]({ HIDDEN: z.string() }).parse(process.env);
+      export const config = z["object"]({ QUOTED: z.string() }).parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["QUOTED", false]]);
+  });
+
+  it("reads nothing off a builder the source reaches by a name it works out", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      declare const builder: "object";
+      export const config = z[builder]({ HIDDEN: z.string() }).parse(process.env);
     `);
     expect(readsOf(file)).toEqual([]);
   });
@@ -2157,7 +2218,12 @@ describe("env-var recognizer — a schema read the way its declaration reads it"
     const call = file
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .find((one) => one.getText().endsWith(".parse(process.env)"));
-    expect(schemaReadRecognizer()(call, {})).toBeNull();
+    const ctx = accessContextFor(call ?? raise("no parse"), file);
+    expect(
+      compiledReads(schemaReadMatches({})).map((recognize) =>
+        recognize(call, ctx),
+      ),
+    ).toEqual([null, null, null, null, null]);
   });
 
   it("reads a library function the file imported under another name", () => {
