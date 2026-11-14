@@ -22,9 +22,9 @@ import {
 } from "@suss/adapter-typescript";
 
 import {
+  isSkippedDirectory,
   languageOfFile,
   projectFilesOf,
-  SKIP_DIRECTORIES,
 } from "./language.js";
 
 import type { Language } from "./language.js";
@@ -42,7 +42,7 @@ export const TEST_DIRECTORIES = new Set([
   "cypress",
 ]);
 
-/** On top of `SKIP_DIRECTORIES`, which has the dependency and build output folders. */
+/** On top of the folders `isSkippedDirectory` leaves out, which are dependencies, build output and hidden folders. */
 const NOT_SOURCE_DIRECTORIES = new Set([
   ...TEST_DIRECTORIES,
   "public",
@@ -79,9 +79,7 @@ export function isProjectSourcePath(relative: string): boolean {
 }
 
 const isSourceDirectoryName = (name: string): boolean =>
-  !NOT_SOURCE_DIRECTORIES.has(name) &&
-  !SKIP_DIRECTORIES.has(name) &&
-  !name.startsWith(".");
+  !NOT_SOURCE_DIRECTORIES.has(name) && !isSkippedDirectory(name);
 
 /**
  * How many folders down a walk of one project goes. Init's walk for

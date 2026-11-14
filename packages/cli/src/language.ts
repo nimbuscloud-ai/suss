@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { SKIP_DIRECTORIES, SOURCE_SUFFIXES } from "@suss/adapter-typescript";
+import { isSkippedDirectory, SOURCE_SUFFIXES } from "@suss/adapter-typescript";
 
 export type Language = "typescript" | "python" | "ruby";
 
@@ -31,7 +31,7 @@ export const LANGUAGE_LABEL: Record<Language, string> = {
 };
 
 /** The TypeScript extract skips the same folders, so detection and extraction agree on what counts as source. */
-export { SKIP_DIRECTORIES };
+export { isSkippedDirectory };
 
 interface LanguageMarkers {
   /** Relative to the project root. */
@@ -164,7 +164,7 @@ function hasSourceFile(
 
   const directories: string[] = [];
   for (const entry of entries) {
-    if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) {
+    if (isSkippedDirectory(entry.name)) {
       continue;
     }
 
