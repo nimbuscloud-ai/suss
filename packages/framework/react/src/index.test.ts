@@ -72,19 +72,28 @@ describe("reactFramework: integration", () => {
     summaries = await runAdapter();
   }, 90_000);
 
-  it("discovers every default-exported component", () => {
+  it("discovers every component the fixture exports or boots", () => {
     const components = summaries.filter((s) => s.kind === "component");
     const names = components.map((s) => s.identity.name).sort();
     expect(names).toEqual([
+      "Banner",
       "Button",
+      "Clock",
       "Conditional",
       "Counter",
+      "Dashboard",
       "EffectyComponent",
       "Form",
       "Greeting",
+      "Legacy",
       "Nav",
       "RowBuilder",
+      "SaveBar",
+      "Shell",
+      "Ticker",
+      "Toast",
       "UserCard",
+      "Widget",
     ]);
   });
 
@@ -451,9 +460,13 @@ describe("reactFramework: integration", () => {
     );
     const names = effects.map((s) => s.identity.name).sort();
     expect(names).toEqual([
+      "Banner.effect#0",
+      "Clock.effect#0",
       "EffectyComponent.effect#0",
       "EffectyComponent.effect#1",
       "EffectyComponent.effect#2",
+      "Ticker.effect#0",
+      "Ticker.effect#1",
     ]);
   });
 
