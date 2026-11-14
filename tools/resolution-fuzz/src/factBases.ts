@@ -68,6 +68,19 @@ function say(p: Program, ...fact: Fact): void {
   p.facts.push(fact);
 }
 
+/**
+ * A call to `callee`, written as a value and outside test code, the way
+ * an adapter states a call in a production file. Only such a call fills
+ * a parameter of the function it calls.
+ */
+function writtenCall(p: Program, callee: string): string {
+  const r = id(p, "call");
+  say(p, "call", r, callee);
+  say(p, "callOutsideTests", r);
+  say(p, "writtenValue", r);
+  return r;
+}
+
 const asValue = (p: Program, node: string): string => {
   p.values.push(node);
   return node;
@@ -161,9 +174,7 @@ function fallbackValue(p: Program, rnd: Random): void {
  */
 function callSite(p: Program, rnd: Random): void {
   const callee = rnd.pickRecent(p.values);
-  const r = id(p, "call");
-  say(p, "call", r, callee);
-  say(p, "writtenValue", r);
+  const r = writtenCall(p, callee);
   const arity = rnd.below(3);
   for (let k = 0; k < arity; k += 1) {
     say(p, "callArg", r, String(k), rnd.pickRecent(p.values));
@@ -216,9 +227,7 @@ function callKnownFunction(p: Program, rnd: Random): void {
   }
   const f = rnd.pickRecent(p.functions);
   const callee = nameFor(p, rnd, f);
-  const r = id(p, "call");
-  say(p, "call", r, callee);
-  say(p, "writtenValue", r);
+  const r = writtenCall(p, callee);
   for (const position of p.positions.get(f) ?? ["0"]) {
     say(p, "callArg", r, position, rnd.pickRecent(p.values));
   }
@@ -387,9 +396,7 @@ function declaredWrapper(p: Program, rnd: Random): void {
     say(p, "readsProperty", callee, namespace, name);
   }
 
-  const r = id(p, "call");
-  say(p, "call", r, callee);
-  say(p, "writtenValue", r);
+  const r = writtenCall(p, callee);
   say(p, "callArg", r, position, rnd.pickRecent(p.values));
   asValue(p, r);
 }
@@ -463,6 +470,7 @@ export const STATED_RELATIONS: readonly string[] = [
   "call",
   "callArg",
   "callKeywordArg",
+  "callOutsideTests",
   "containsFn",
   "endsHolding",
   "exportsAs",
