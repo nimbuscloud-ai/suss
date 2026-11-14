@@ -486,6 +486,8 @@ export interface ModuleMemberName {
 export interface ModuleMember {
   readonly name: string;
   readonly value: ValueOps;
+  /** The line the value's declaration starts on, or null when the adapter cannot say. */
+  readonly line: number | null;
 }
 
 /** One file, as the questions a discovery pattern asks about it. */
@@ -963,6 +965,8 @@ export interface FactSource {
   constructedClass?(callee: string): string | null;
   /** The source text at the key. */
   textOf(key: string): string;
+  /** The line the node at the key starts on, or null when the key has no node. */
+  lineOf?(key: string): number | null;
   /** How the source wrote the value at the key, as `ValueOps.form` says. Unset reads every value as other. */
   formOf?(key: string): ValueForm;
   /** The string, number or boolean written at the key, or null when it is not one. */

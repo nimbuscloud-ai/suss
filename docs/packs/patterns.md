@@ -196,6 +196,15 @@ Every unit is bound as a call of its module under the unit's name, since the fra
 
 When the start is a global and there is no `method`, as with `global("addEventListener")`, the call has to be written with the global's name, so a file whose text never writes it is skipped before its calls are read.
 
+### `entryObject`
+
+```typescript
+{ type: "entryObject"; entry: string; target: string; inputs: string }
+// { type: "entryObject", entry: "default", target: "component", inputs: "args" }
+```
+
+`entryObject` reads a module whose entry export says which unit the module is about, and whose other exports each give that unit one set of inputs. In a Storybook file the default export says the component, and each named export that comes to an object is a story with its args. Each member's inputs are the entry's, then its own, so a story's arg replaces the meta's under the same key. A member has no function, so this match never builds a unit, and a pack cannot list it in `discovery`. A contract reader calls `discoverEntryObject` from `@suss/recognize` over a file's module ops instead, and it reads the same way in TypeScript, Python and Ruby.
+
 ### `fileConvention`
 
 ```typescript

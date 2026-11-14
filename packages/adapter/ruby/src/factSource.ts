@@ -23,7 +23,7 @@ import {
 } from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
-import { numberLiteralValue, stringLiteralValue } from "./ast.js";
+import { numberLiteralValue, rangeOf, stringLiteralValue } from "./ast.js";
 import { decodedIn, encodedIn } from "./encoded.js";
 import { copingAt, sitesNamingParameter } from "./envReads.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
@@ -79,6 +79,10 @@ export function rubyFactSource(db: Database): FactSource {
     memberName: (stated) => classMemberOf(stated) ?? stated,
     constructedClass: (callee) => constructedClass(nodeAt(callee)),
     textOf,
+    lineOf: (key) => {
+      const node = nodeAt(key);
+      return node === null ? null : rangeOf(node).start;
+    },
     formOf: (key) => formOf(nodeAt(key)),
     literalOf: (key) => literalOf(nodeAt(key)),
     nameOf: (key, unsettled) => {

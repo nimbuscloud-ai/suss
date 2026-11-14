@@ -377,7 +377,7 @@ module ops from these facts:
 
 | op | read from |
 |---|---|
-| `exports()` | `exportsAs(file, n, v)`, or the adapter's own export table where it follows a re-export, as TypeScript's does |
+| `exports()` | `exportsAs(file, n, v)`, or the adapter's own export table where it follows a re-export, as TypeScript's does. Each member's `line` is the adapter's `lineOf` at `v`, the line the declaration starts on, which for a re-export is in the file it leads to |
 | `export(path, member)` | the first name through `exports()`, then `member` for each name after it, then the member asked for. Ruby writes a nested constant in one piece too, `class Reports::Nightly`, so its module ops also try the leading names joined with `::`, and a class written both ways is two values, the first that has the member winning |
 | `marked(word)` | `marks(file, word)`, once the adapter's `mentions(word)` says the file's text has the word |
 | `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it. It asks `mentions(word)` first, since stating every function of every file to find a word most files never write costs more than the rest of a run |
@@ -398,6 +398,18 @@ under. When an adapter claims a unit, before it reads the body, it
 states `handedIn(p, name)` on the parameter at each position, with
 `stateHandedIn` in `@suss/resolution`. A read chain off
 `handedIn(name)` then finds the reads in the body.
+
+`discoverEntryObject` reads a module whose entry export says which unit
+the module is about, and whose other exports each give that unit one
+set of inputs. Storybook is the case it was written for: the default
+export says the component, and each named export is a story with its
+args. It takes the first export named `entry` whose `object()` has the
+`target` property, then every other export whose `object()` is not
+null, in `exports()` order. Each member's inputs are the entry's
+`inputs` entries, then its own, through `lastValueWins`, with a key
+nothing settles left out. A member has no function, so the match never
+builds a unit, and it is kept out of `DeclaredDiscoveryMatch` so that no
+pack can list it in `discovery`. A contract reader calls it directly.
 
 Each reader ends at `function()` and hands the adapter back its own
 node. The TypeScript adapter runs a pattern like any other in its
