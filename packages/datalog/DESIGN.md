@@ -422,6 +422,30 @@ the relations you listed as complete read from them. The complete
 relations keep what they already contain, which is the answers you have
 read.
 
+The resume also needs every cleared row to come back when a later
+question needs it. A complete relation has no demand of its own, so a
+rule for one passes demand into its body from the literals written
+before the derived one. When those are all facts you added rather than
+the question, the demand rows depend on no question. Clearing drops
+them, and a resumed run derives them again only from facts added after
+the clear, so the first question sees them and later ones do not. Write
+the literal the question fills first in such a rule:
+
+```ts
+// The demand on reaches comes from every edge, asked or not.
+rule("answer", [v("x"), v("z")], [
+  lit("edge", v("y"), v("z")),
+  lit("reaches", v("x"), v("y")),
+  lit("asked", v("x")),
+]);
+// The demand on reaches comes from the question.
+rule("answer", [v("x"), v("z")], [
+  lit("asked", v("x")),
+  lit("reaches", v("x"), v("y")),
+  lit("edge", v("y"), v("z")),
+]);
+```
+
 Keep the facts you add and the facts the rules derive in separate
 relations. When a conclusion is taken back, the engine cannot tell the
 two apart. Most Datalog is written with them split anyway.
