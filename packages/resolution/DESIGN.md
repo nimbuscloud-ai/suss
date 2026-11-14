@@ -1926,6 +1926,32 @@ baseline. A rule change then shows up as a diff for a reviewer to read.
 Run `npm run resolution:baseline` to accept the diff, and commit the
 rewritten baseline with the rule.
 
+The order of a rule's body decides where its demand comes from. The
+on-demand rewrite passes demand down a body from the literals before
+each derived one. In a rule for an answer relation, which has no demand
+of its own, those literals can all be facts read from source, and then
+the demand they produce comes from no question. Every adapter clears
+the demand relations after each question, and the next evaluation
+resumes from the facts added since, so those rows come back only while
+the facts behind them are new. The first question to read a file sees
+them, and every later question goes without.
+
+The namespace-member rules of `wantedCallOriginPair` used to start at
+`imports`:
+
+```ts
+const mod = await import("./reader.js");
+mod.readFile(path);
+```
+
+Asking where `mod.readFile` comes from gave `readFile` from
+`./reader.js` when it was the first question about the file, and
+nothing once any other question had read the file first. Those rules
+now start at `callOriginChain`, which only the question fills.
+`resolutionProgram` refuses to build a program in which a relation that
+is cleared after each question can be derived from facts read from
+source alone, and the error says which relation it is.
+
 ## What is not modelled
 
 **A handler passed as one property of a config.**
