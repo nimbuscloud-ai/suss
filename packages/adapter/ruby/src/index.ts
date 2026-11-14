@@ -52,6 +52,7 @@ export {
 } from "./facts/constants.js";
 export { emitValueFacts, nodeId, readKey } from "./facts/values.js";
 export { RubyWhySession } from "./facts/why.js";
+export { pluralize, singularize } from "./inflect.js";
 export {
   parseRuby,
   parseRubySync,

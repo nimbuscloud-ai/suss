@@ -16,11 +16,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { moduleOpsForFile } from "@suss/adapter-ruby";
+import { moduleOpsForFile, pluralize, singularize } from "@suss/adapter-ruby";
 import { composeRoutes, rowRoutes } from "@suss/recognize";
 
 import { pathWithOptionalGroups } from "./optionalSegments.js";
 
+import type { RbInflections } from "@suss/adapter-ruby";
 import type {
   ExpandsRole,
   ExpansionRow,
@@ -197,32 +198,6 @@ export function restfulRoutes(action: string, base: string): Route[] {
 }
 
 /**
- * A small pluralizer that covers the regular names a routes file uses.
- * The README lists what it leaves out.
- */
-function pluralize(word: string): string {
-  if (/[^aeiou]y$/.test(word)) {
-    return `${word.slice(0, -1)}ies`;
-  }
-  if (/(ss|us|is|x|z|ch|sh)$/.test(word)) {
-    return `${word}es`;
-  }
-  // A name that already ends in `s` is left as it is, the way Rails
-  // routes `resource :settings` to `SettingsController`.
-  return /s$/.test(word) ? word : `${word}s`;
-}
-
-function singularize(word: string): string {
-  if (/ies$/.test(word)) {
-    return `${word.slice(0, -3)}y`;
-  }
-  if (/(ses|xes|zes|ches|shes)$/.test(word)) {
-    return word.slice(0, -2);
-  }
-  return /s$/.test(word) ? word.slice(0, -1) : word;
-}
-
-/**
  * Rails serves each optional group a path writes, such as `(/:page)`,
  * both with and without it, so each distinct route is kept once after
  * the groups are read.
@@ -323,6 +298,12 @@ export interface RoutesInput {
   readonly engines: readonly (RailsEngine & { readonly displayPath: string })[];
   /** Files beyond the routes file that add routes, by a `routes.draw`, `routes.append` or `routes.prepend` block written anywhere in them. */
   readonly routesFiles: readonly RoutesSource[];
+  /**
+   * The words the project's inflector declares, which change the
+   * controller a singular resource routes to and the parameter a
+   * resource nested inside a plural one is under.
+   */
+  readonly inflections: RbInflections;
 }
 
 /**
@@ -395,7 +376,10 @@ export function readRoutes(input: RoutesInput): RouteTable {
       const file = path.join(drawDirectory, `${name}.rb`);
       return fs.existsSync(file) ? moduleOpsForFile(file) : null;
     },
-    naming: { singular: singularize, plural: pluralize },
+    naming: {
+      singular: (word) => singularize(word, input.inflections),
+      plural: (word) => pluralize(word, input.inflections),
+    },
   });
   return {
     routesFor: (controllerKey, action) =>
