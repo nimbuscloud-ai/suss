@@ -29,6 +29,7 @@ export {
   pack,
   subUnitsOf,
 } from "./pack.js";
+export { composeRoutes, rowRoutes } from "./routeTable.js";
 export { runtimeReads } from "./runtimeReads.js";
 export { schemaReads } from "./schemaReads.js";
 export { slotsDeclared } from "./slots.js";
@@ -190,6 +191,28 @@ export type {
   ValueRead,
 } from "./ops.js";
 export type { Match, PackSpec } from "./pack.js";
+export type {
+  BaseRole,
+  ChildrenIn,
+  DefaultsRole,
+  EntryPick,
+  ExpandsRole,
+  ExpansionRow,
+  FragmentRole,
+  IncludeRole,
+  MountRole,
+  ReplayRole,
+  RootRule,
+  RouteGap,
+  RouteRole,
+  RouteSet,
+  RouteSources,
+  RouteTableDeclaration,
+  ScopesRole,
+  ServesRole,
+  TableOwner,
+  TableRoute,
+} from "./routeTable.js";
 export type {
   ReadMeaning,
   RuntimeReads,

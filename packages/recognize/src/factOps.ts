@@ -1049,6 +1049,10 @@ class FactValue implements ValueOps {
     return mentionsWords(this.key, words, this.facts);
   }
 
+  asCall(): CallOps | null {
+    return factCallOps(this.key, this.facts);
+  }
+
   private holeKeys(): string[] {
     return templatePieces(this.shaped(), this.facts).flatMap((piece) =>
       piece.hole === null ? [] : [piece.hole],

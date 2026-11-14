@@ -33,7 +33,7 @@ export function routes(kind: string) {
     get(name);
   });
 }
-setup();
+setup([get("c"), "d"]);
 `;
 
 const PYTHON = `
@@ -45,7 +45,7 @@ def routes(kind):
     if kind:
         post("b")
 
-setup()
+setup([get("c"), "d"])
 `;
 
 const RUBY = `
@@ -66,7 +66,7 @@ def routes(kind)
   end
 end
 
-setup()
+setup([get("c"), "d"])
 `;
 
 let root: string;
@@ -148,6 +148,23 @@ describe("the ops over a body's statements, asked of three languages", () => {
         "x",
         "y",
       ]);
+    }
+  });
+
+  it("read a list item written as a call as that call, and any other item as no call", async () => {
+    for (const module of [
+      typescriptModule(),
+      await pythonModule(),
+      rubyModule(),
+    ]) {
+      const [setup] = module.bodyCalls();
+      const items = setup?.valueAt(0)?.items() ?? [];
+      expect(
+        items.map((item) => {
+          const call = item.asCall?.() ?? null;
+          return call === null ? null : calleesOf([call]);
+        }),
+      ).toEqual([["get"], null]);
     }
   });
 
