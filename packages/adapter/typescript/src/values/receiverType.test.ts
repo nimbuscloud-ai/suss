@@ -257,3 +257,72 @@ describe("typedAsExported with a type the runtime declares", () => {
     expect(receiversTaken(fromModule, true)).toEqual([]);
   });
 });
+
+describe("typedAsExported with a type a package publishes", () => {
+  const LAMBDA_TYPES = `
+    export interface SQSRecord { body: string }
+    export interface SQSEvent { Records: SQSRecord[] }
+  `;
+
+  /** Whether each helper's `record` is typed as the origin says, by the helper's name. */
+  function recordsTaken(
+    origin: Typed,
+    files: Record<string, string>,
+  ): string[] {
+    const project = createStrictTestProject();
+    project.createSourceFile(
+      "/node_modules/@types/aws-lambda/package.json",
+      JSON.stringify({ name: "@types/aws-lambda", types: "index.d.ts" }),
+    );
+    project.createSourceFile(
+      "/node_modules/@types/aws-lambda/index.d.ts",
+      LAMBDA_TYPES,
+    );
+    for (const [name, source] of Object.entries(files)) {
+      project.createSourceFile(name, source);
+    }
+    return project
+      .getSourceFiles()
+      .flatMap((file) => file.getFunctions())
+      .filter((helper) => {
+        const [record] = helper.getParameters();
+        return (
+          record !== undefined &&
+          typedAsExported(record.getNameNode(), origin, undefined)
+        );
+      })
+      .map((helper) => helper.getName() ?? "");
+  }
+
+  const ALIASED = {
+    "/types.ts": `
+      import type { SQSRecord } from "aws-lambda";
+      export type QueuedRecord = SQSRecord;
+    `,
+    "/helpers.ts": `
+      import type { QueuedRecord } from "./types";
+      interface SQSRecord { body: string }
+      export function readQueued(record: QueuedRecord) { return record.body; }
+      export function readOwn(record: SQSRecord) { return record.body; }
+    `,
+  };
+
+  it("takes the project's alias of the type in a file that never imports the module", () => {
+    const record: Typed = {
+      origin: "typed",
+      importedFrom: ["aws-lambda"],
+      named: ["SQSRecord"],
+    };
+
+    expect(recordsTaken(record, ALIASED)).toEqual(["readQueued"]);
+  });
+
+  it("reads a type under @types as the module's when the origin names no type", () => {
+    const anyLambdaType: Typed = {
+      origin: "typed",
+      importedFrom: ["aws-lambda"],
+    };
+
+    expect(recordsTaken(anyLambdaType, ALIASED)).toEqual(["readQueued"]);
+  });
+});

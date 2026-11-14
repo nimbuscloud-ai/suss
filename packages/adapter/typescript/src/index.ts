@@ -123,6 +123,7 @@ export { findTerminals } from "./terminals/index.js";
 export {
   type ReceiverType,
   receiverTypesOf,
+  typedAsExported,
 } from "./values/receiverType.js";
 export {
   ADAPTER_VERSION,
