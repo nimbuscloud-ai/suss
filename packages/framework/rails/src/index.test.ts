@@ -754,6 +754,29 @@ describe("railsFramework", () => {
       });
     });
 
+    it("names the member segment after param:, and serves a shallow resource's nested members from the top", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :accounts, param: :username, only: [:show] do\n" +
+        "    resources :statuses, only: [:index]\n" +
+        "  end\n" +
+        "  resources :projects, only: [] do\n" +
+        "    resources :categories, except: %i[index show], shallow: true\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "AccountsController", "show")?.path).toBe(
+        "/accounts/:username",
+      );
+      expect(routeFor(source, "StatusesController", "index")?.path).toBe(
+        "/accounts/:account_username/statuses",
+      );
+      expect(routeFor(source, "CategoriesController", "new")?.path).toBe(
+        "/projects/:project_id/categories/new",
+      );
+      expect(routeFor(source, "CategoriesController", "edit")?.path).toBe(
+        "/categories/:id/edit",
+      );
+    });
+
     it("names the parameter a nested resource is under the way ActiveSupport singularizes its parent", () => {
       const source =
         "Rails.application.routes.draw do\n" +
