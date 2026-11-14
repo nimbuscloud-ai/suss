@@ -5,6 +5,7 @@ export { compile } from "./compile.js";
 export { configuredSends } from "./configuredSends.js";
 export { discoverDeclared } from "./discovery.js";
 export { examplesMissing, runExamples } from "./example.js";
+export { messageReceives } from "./messageReceives.js";
 export { messageSends } from "./messageSends.js";
 export {
   allOf,
@@ -81,6 +82,8 @@ export type {
   Ending,
   EntriesLink,
   EntryMeaning,
+  Envelope,
+  EnvelopeStep,
   FallbackPick,
   FieldsReadPick,
   FromReceiver,
@@ -97,6 +100,7 @@ export type {
   ManyIn,
   MatchStart,
   MessageLocation,
+  MessageReceiveEnding,
   MessageSendEnding,
   MessageSendMethod,
   MetadataEntry,
@@ -147,6 +151,10 @@ export type { CompileOptions } from "./compile.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
 export type { DeclaredUnit } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";
+export type {
+  MessageReceives,
+  MessageReceivesSpec,
+} from "./messageReceives.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
 export type {
   AllOf,
@@ -155,6 +163,7 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  Decoded,
   Global,
   HandedBy,
   HandedIn,
@@ -173,6 +182,7 @@ export type {
   UnsettledName,
   ValueEntry,
   ValueOps,
+  ValueRead,
 } from "./ops.js";
 export type { Match, PackSpec } from "./pack.js";
 export type {

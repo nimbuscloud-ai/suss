@@ -337,6 +337,109 @@ describe("the runtime's globals, read by both kinds of ops", () => {
   });
 });
 
+const CONSUMER = `
+  import type { SQSRecord } from "aws-lambda";
+  declare function use(...values: unknown[]): void;
+  declare const event: { Records: Array<{ body: string }> };
+
+  export function handler() {
+    for (const record of event.Records) {
+      const text = record.body;
+      const order = JSON.parse(text);
+      order.seen = 1;
+      use(order.id, order.toString(), order["kind"]);
+      const { lines, ...rest } = order;
+    }
+    const records = event.Records;
+    records.forEach((message) => use(JSON.parse(message["body"]).kind));
+    for (const { body } of event.Records) use(JSON.parse(body));
+    use(JSON.stringify(event));
+  }
+
+  export function readOne(record: SQSRecord) {
+    const { id } = JSON.parse(record.body) as { id: string };
+    return id;
+  }
+`;
+
+const SQS_RECORD = typed({ from: ["aws-lambda"], named: ["SQSRecord"] });
+
+/** What the receive asks of one call's decode: the read the payload is, and what that read is off. */
+function receiveAnswers(ops: CallOps | null) {
+  const decoded = ops?.decodes?.() ?? null;
+  const body = decoded?.value.read?.() ?? null;
+  const collection = body?.object.element?.() ?? null;
+  return {
+    codec: decoded?.codec ?? null,
+    key: body?.key ?? null,
+    typed: body?.object.typed?.(SQS_RECORD) ?? null,
+    collection: collection?.read?.()?.key ?? null,
+    keys: decoded?.result.keysRead?.() ?? null,
+  };
+}
+
+describe("a receive's questions, read by both kinds of ops", () => {
+  const project = createTestProject();
+  project.createSourceFile(
+    "/node_modules/@types/aws-lambda/package.json",
+    JSON.stringify({ name: "@types/aws-lambda", types: "index.d.ts" }),
+  );
+  project.createSourceFile(
+    "/node_modules/@types/aws-lambda/index.d.ts",
+    "export interface SQSRecord { body: string }",
+  );
+  const file = project.createSourceFile("/consumer.ts", CONSUMER);
+  const store = new ResolutionStore();
+  const decodes = file
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .filter((call) => call.getExpression().getText().startsWith("JSON."));
+  const read = decodes.map((call) => ({
+    fromNodes: receiveAnswers(
+      callOpsFor(call, {
+        resolve: (value) => store.resolveWrittenValue(value),
+        resolution: store,
+      }),
+    ),
+    fromFacts: receiveAnswers(
+      factCallOps(statedFactKey(call, store), factSourceFor(store)),
+    ),
+  }));
+
+  it("gives the same answers either way", () => {
+    for (const { fromNodes, fromFacts } of read) {
+      expect(fromFacts).toEqual(fromNodes);
+    }
+  });
+
+  it("reads a body kept in a name, a batch kept in a name, and a typed helper's record, and leaves a record taken apart in a loop's head unread", () => {
+    expect(read.map(({ fromFacts }) => fromFacts)).toEqual([
+      {
+        codec: "json",
+        key: "body",
+        typed: false,
+        collection: "Records",
+        keys: ["id", "kind", "lines"],
+      },
+      {
+        codec: "json",
+        key: "body",
+        typed: false,
+        collection: "Records",
+        keys: ["kind"],
+      },
+      { codec: "json", key: null, typed: null, collection: null, keys: [] },
+      { codec: null, key: null, typed: null, collection: null, keys: null },
+      {
+        codec: "json",
+        key: "body",
+        typed: true,
+        collection: null,
+        keys: ["id"],
+      },
+    ]);
+  });
+});
+
 describe("a mapped list and a project call, read by both kinds of ops", () => {
   const played = () =>
     bothOps({ source: SHAPES }).filter(

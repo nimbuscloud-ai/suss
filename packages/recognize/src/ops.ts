@@ -15,6 +15,7 @@ export type {
   ClassOps,
   ConstructedFrom,
   DeclaredBy,
+  Decoded,
   Global,
   HandedBy,
   HandedIn,
@@ -33,6 +34,7 @@ export type {
   UnsettledName,
   ValueEntry,
   ValueOps,
+  ValueRead,
 } from "@suss/extractor";
 
 import { byOrigin } from "@suss/extractor";

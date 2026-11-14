@@ -24,6 +24,7 @@ import { byOrigin, callSiteKey } from "@suss/extractor";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 
 import { compileReads } from "./compileReads.js";
+import { compileReceives } from "./compileReceives.js";
 import { modulesOf, opsIn } from "./ops.js";
 import { type SlotColumns, slotsDeclared } from "./slots.js";
 
@@ -135,6 +136,10 @@ export function compile(
   const yields = chain.ending.yields;
   if (yields === "runtimeRead") {
     return compileReads(chain, recognition);
+  }
+  // A receive is read at a decoder, which no method table lists.
+  if (yields === "messageReceive") {
+    return compileReceives(chain, recognition);
   }
   const receiverMethods = methodsWhoseReceiversAreAsked(chain);
   const modules = modulesOfChain(chain);
@@ -610,7 +615,7 @@ function startsHere(chain: Chain<MethodMeaning>, subject: CallOps): boolean {
 
 /** One ending per thing a call chain can produce. */
 const YIELD: Record<
-  Exclude<Ending["yields"], "runtimeRead">,
+  Exclude<Ending["yields"], "runtimeRead" | "messageReceive">,
   (matched: Matched) => Effect[] | null
 > = {
   storageAccess: storageAccess,

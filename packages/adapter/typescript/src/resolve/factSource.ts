@@ -15,7 +15,8 @@ import {
   writtenNodeOf,
 } from "../discovery/resolveValue.js";
 import { dottedPathOf, nodeId } from "../facts/extract.js";
-import { encodedIn } from "../values/encoded.js";
+import { decodedIn, encodedIn } from "../values/encoded.js";
+import { readSitesOf } from "../values/readSites.js";
 import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
 import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
 import { climbSyntax, peelValue } from "../walk/unwrap.js";
@@ -47,6 +48,7 @@ import type {
   ValueOps,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
+import type { EncodedNode } from "../values/encoded.js";
 
 /** What a caller can put in place of the store's own reads. */
 export interface FactSourceOptions {
@@ -150,13 +152,17 @@ export function factSourceFor(
     namesOf: (key, cap) =>
       at(key, null, (node) => stringValuesOf(node, store, cap)),
     argOf: (key) => at(key, null, effectArgOf),
-    encodedOf: (key) =>
-      at(key, null, (node) => {
-        const found = encodedIn(node);
-        return found === null
-          ? null
-          : { codec: found.codec, value: nodeId(peelValue(found.value)) };
-      }),
+    encodedOf: (key) => at(key, null, (node) => codecKeyed(encodedIn(node))),
+    decodedOf: (key) => at(key, null, (node) => codecKeyed(decodedIn(node))),
+    valueTypedAs: (key, origin) =>
+      at(key, false, (node) => typedAsExported(node, origin, store)),
+    readSitesOf: (key) =>
+      at(key, [], (node) =>
+        readSitesOf(node).map((site) => {
+          access.state(site);
+          return nodeId(site);
+        }),
+      ),
     typeShapeOf: (key) => at(key, null, writtenShapeOf),
     spellsGlobal: (key, path) =>
       at(key, false, (node) => dottedPathOf(node) === path),
@@ -252,6 +258,15 @@ export function factSourceFor(
     keysSupplied: (call, object) =>
       at(call, [], (node) => keysSuppliedAt(node, object, store, hold)),
   };
+}
+
+/** An encoding or a decoding, with the value it was handed keyed as the facts key it. */
+function codecKeyed(
+  found: EncodedNode | null,
+): { codec: string; value: string } | null {
+  return found === null
+    ? null
+    : { codec: found.codec, value: nodeId(peelValue(found.value)) };
 }
 
 /**

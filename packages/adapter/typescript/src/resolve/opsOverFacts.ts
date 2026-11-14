@@ -101,6 +101,7 @@ function withNodeMembers(
     receiverGlobal: (paths) => ops.receiverGlobal?.(paths),
     isFrom: (origin) => ops.isFrom(origin),
     argumentCount: () => ops.argumentCount(),
+    decodes: () => ops.decodes?.() ?? null,
     nameAt: (index, unsettled) => ops.nameAt(index, unsettled),
     calleeText: () => ops.calleeText(),
     receiver: () => ops.receiver(),

@@ -39,7 +39,7 @@
   "find_each": "ActiveRecord::Batches#find_each: reads the matched rows in batches and yields each record",
   "find_in_batches": "ActiveRecord::Batches#find_in_batches: reads the matched rows and yields them a batch at a time",
   "in_batches": "ActiveRecord::Batches#in_batches: yields a relation per batch of matched rows",
-  "load": "ActiveRecord::Relation#load: runs the relation's query and keeps the records",
+  "load": "language: Ruby's JSON library spells JSON.load the same way. ActiveRecord::Relation#load: runs the relation's query and keeps the records",
   "not": "language: Ruby's own `not` keyword. ActiveRecord::QueryMethods::WhereChain#not: negates the conditions given after a bare `where`",
   "id": "ActiveRecord::AttributeMethods::PrimaryKey: the column a model keys on unless it declares another",
   "where": "ActiveRecord::QueryMethods#where: narrows a relation by the given conditions",

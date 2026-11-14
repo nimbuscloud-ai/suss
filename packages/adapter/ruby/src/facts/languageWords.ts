@@ -134,11 +134,11 @@ export const INITIALIZE_METHOD = "initialize";
 /** The method that returns the class an instance is one of. */
 export const CLASS_OF_INSTANCE = "class";
 
-/** Methods of a constant that encode one of their arguments, `JSON.generate(x)`. */
+/** Methods of a constant that encode or decode one of their arguments, `JSON.generate(x)`. */
 export interface ConstantEncoder {
   readonly constant: string;
   readonly methods: readonly string[];
-  /** Which positional argument is the value encoded. */
+  /** Which positional argument is the value encoded or decoded. */
   readonly argument: number;
   readonly codec: string;
 }
@@ -162,4 +162,13 @@ export const ENCODERS: readonly (ConstantEncoder | ReceiverEncoder)[] = [
     codec: "json",
   },
   { method: "to_json", of: "receiver", codec: "json" },
+];
+
+/**
+ * The standard library's decoders, the inverse of the encoders above.
+ * `JSON.load` also takes an IO, and a message it is handed is still a
+ * decode of the message.
+ */
+export const DECODERS: readonly ConstantEncoder[] = [
+  { constant: "JSON", methods: ["parse", "load"], argument: 0, codec: "json" },
 ];

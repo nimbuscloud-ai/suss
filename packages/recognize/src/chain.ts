@@ -22,6 +22,7 @@ import type {
   CallOps,
   ReceiverOrigin,
   RuntimeObject,
+  Typed,
   UnsettledName,
   ValueOps,
 } from "./ops.js";
@@ -831,6 +832,7 @@ export type Ending =
   | StorageEnding
   | SqlEnding
   | MessageSendEnding
+  | MessageReceiveEnding
   | UnitInvokeEnding
   | ScheduleEnding
   | StreamWriteEnding
@@ -1049,6 +1051,38 @@ export interface MessageSendEnding {
    */
   readonly unsettledName: UnsettledName;
 }
+
+/**
+ * A message a handler reads out of what the platform hands it, and
+ * decodes. It pairs with the sends on the queue the handler drains, and
+ * the deployment says which queue that is, so the ending has no channel.
+ */
+export interface MessageReceiveEnding {
+  readonly yields: "messageReceive";
+  /** The wire, in the words the IR's message-bus semantics use. */
+  readonly wire: MessageBusSemantics["messageBus"];
+  /**
+   * The encoding the payload is written in. A receive is read at a call
+   * of one of the adapter's decoders for it: `JSON.parse` in TypeScript,
+   * `json.loads` in Python, `JSON.parse` in Ruby.
+   */
+  readonly codec: string;
+  /** The ways the program reaches the encoded payload, tried in order. */
+  readonly envelope: readonly Envelope[];
+}
+
+/**
+ * The steps from what the platform hands a unit to the encoded payload,
+ * outermost first. `from` says what the first step is read off, and
+ * without it the first step can be read off any value.
+ */
+export interface Envelope {
+  readonly from?: Typed;
+  readonly path: readonly EnvelopeStep[];
+}
+
+/** A read of one key, `o.n` or `o["n"]`, or one element of a collection, as a loop or a callback is given it. */
+export type EnvelopeStep = { readonly read: string } | { readonly each: true };
 
 /** The message itself, as the body a send records. */
 export interface WholeMessage {

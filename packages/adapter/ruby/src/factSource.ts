@@ -23,7 +23,7 @@ import {
 import { scalarOf } from "@suss/values";
 
 import { numberLiteralValue, stringLiteralValue } from "./ast.js";
-import { encodedIn } from "./encoded.js";
+import { decodedIn, encodedIn } from "./encoded.js";
 import { copingAt, sitesNamingParameter } from "./envReads.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
 import { parametersOf, paramNameOf } from "./facts/locals.js";
@@ -96,14 +96,8 @@ export function rubyFactSource(db: Database): FactSource {
         ? { kind: "identifier", name: nameIn(key) }
         : argOf(node, db);
     },
-    encodedOf: (key) => {
-      const call = nodeAt(key);
-      const found = call === null ? null : encodedIn(call);
-      const value = found === null ? null : keyOfEncoded(db, key, found.at);
-      return found === null || value === null
-        ? null
-        : { codec: found.codec, value };
-    },
+    encodedOf: (key) => keyedCodec(db, key, nodeAt(key), encodedIn),
+    decodedOf: (key) => keyedCodec(db, key, nodeAt(key), decodedIn),
     typeShapeOf: (key) => {
       const node = nodeAt(key);
       return node === null ? { type: "unknown" } : writtenShapeOf(node);
@@ -190,6 +184,20 @@ function blockVariableOf(
           (param) => paramNameOf(param)?.text === name,
         );
   return position < 0 ? null : { func: block, position };
+}
+
+/** What an encoder or a decoder call at the key was handed, as the facts key it, and the encoding. */
+function keyedCodec(
+  db: Database,
+  key: string,
+  call: RbNode | null,
+  handed: (call: RbNode) => EncodedNode | null,
+): { codec: string; value: string } | null {
+  const found = call === null ? null : handed(call);
+  const value = found === null ? null : keyOfEncoded(db, key, found.at);
+  return found === null || value === null
+    ? null
+    : { codec: found.codec, value };
 }
 
 /** The key the facts give the value an encoder call encodes: its receiver, or one of its arguments. */
