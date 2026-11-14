@@ -19,6 +19,7 @@
 import { Node, type SourceFile } from "ts-morph";
 
 import { propertyWrittenAs } from "../walk/propertyName.js";
+import { peelValue } from "../walk/unwrap.js";
 import { namedImportsOf } from "./importScan.js";
 import {
   arrayLiteralOf,
@@ -215,19 +216,49 @@ function attributeValueOf(node: RouteJsxNode, name: string): Node | null {
 }
 
 /**
+ * The expression a JSX attribute's braces contain, so `path="x"` and
+ * `path={"x"}` read the same way. An object property's value has no
+ * braces, so it is the value itself.
+ */
+function insideBraces(value: Node): Node {
+  return Node.isJsxExpression(value) ? (value.getExpression() ?? value) : value;
+}
+
+/**
+ * What an attribute or property value is written as, under any
+ * parentheses and casts. The facts state a value at that node, so this
+ * reads it the way they do.
+ */
+function writtenValueOf(value: Node): Node {
+  return peelValue(insideBraces(value));
+}
+
+/**
  * The string a JSX attribute or object-property value is, following a
- * name through the resolution store. A JSX attribute's own container is
- * unwrapped first, so `path="x"` and `path={"x"}` both read the same
- * way; the object-property form never has that container to begin with.
+ * name through the resolution store.
  */
 function literalStringOf(
   value: Node,
   resolution: ResolutionStore | undefined,
 ): string | null {
-  const unwrapped = Node.isJsxExpression(value)
-    ? (value.getExpression() ?? value)
-    : value;
-  return stringValueOf(unwrapped, resolution);
+  return stringValueOf(insideBraces(value), resolution);
+}
+
+/**
+ * Whether a flag is set: written bare, which JSX reads as `true`, or
+ * set to the literal `true`. `index={false}` is no index route, and
+ * React Router reads it the same as leaving `index` out.
+ */
+function readsTrue(value: Node | null): boolean {
+  if (value === null) {
+    return false;
+  }
+
+  if (Node.isJsxAttribute(value)) {
+    return true;
+  }
+
+  return Node.isTrueLiteral(writtenValueOf(value));
 }
 
 function ownPathOfJsx(
@@ -245,7 +276,7 @@ function ownPathOfJsx(
 
   if (
     match.indexAttribute !== undefined &&
-    attributeValueOf(node, match.indexAttribute) !== null
+    readsTrue(attributeValueOf(node, match.indexAttribute))
   ) {
     return { kind: "inherited" };
   }
@@ -257,16 +288,11 @@ function elementTargetOfValue(value: Node | null): ElementTarget {
   if (value === null) {
     return { kind: "absent" };
   }
-  const unwrapped = Node.isJsxExpression(value)
-    ? (value.getExpression() ?? value)
-    : value;
-  if (
-    !Node.isJsxSelfClosingElement(unwrapped) &&
-    !Node.isJsxElement(unwrapped)
-  ) {
+  const written = writtenValueOf(value);
+  if (!Node.isJsxSelfClosingElement(written) && !Node.isJsxElement(written)) {
     return { kind: "unreadable" };
   }
-  const tag = tagNameOf(unwrapped);
+  const tag = tagNameOf(written);
   if (tag === null) {
     return { kind: "unreadable" };
   }
@@ -545,12 +571,15 @@ function unitsOfArrayElements(
   const results: DiscoveredUnit[] = [];
   for (const element of array.getElements()) {
     if (Node.isSpreadElement(element)) {
+      // The facts state a spread's entry at the collection it unpacks,
+      // so the abstention is announced there too.
+      const collection = peelValue(element.getExpression());
       results.push(
         abstention(
-          element,
+          collection,
           kind,
           SPREAD_NOT_ENUMERATED,
-          labelOfExpression(element.getExpression()),
+          labelOfExpression(collection),
         ),
       );
       continue;
@@ -686,11 +715,11 @@ function ownPathOfObject(
       : { kind: "unreadable" };
   }
 
-  if (match.indexAttribute !== undefined) {
-    const indexValue = routePropertyOf(object, match.indexAttribute);
-    if (indexValue !== null && Node.isTrueLiteral(indexValue)) {
-      return { kind: "inherited" };
-    }
+  if (
+    match.indexAttribute !== undefined &&
+    readsTrue(routePropertyOf(object, match.indexAttribute))
+  ) {
+    return { kind: "inherited" };
   }
 
   return { kind: "none" };
@@ -708,14 +737,16 @@ function objectLabelOf(target: ElementTarget): string {
   return target.kind === "named" ? target.identifier.getText() : "declaration";
 }
 
-function labelOfExpression(node: Node): string {
-  if (Node.isIdentifier(node)) {
-    return node.getText();
+/**
+ * What an abstention calls a value it could not read, through
+ * parentheses and casts: a call by its callee, and anything else, a
+ * name included, by its source text.
+ */
+function labelOfExpression(value: Node): string {
+  const written = peelValue(value);
+  if (Node.isCallExpression(written)) {
+    return written.getExpression().getText();
   }
 
-  if (Node.isCallExpression(node)) {
-    return node.getExpression().getText();
-  }
-
-  return node.getKindName();
+  return written.getText();
 }

@@ -381,4 +381,96 @@ describe("jsxElementRoute discovery", () => {
     `);
     expect(discoverUnits(file, [PATTERN], new ResolutionStore())).toEqual([]);
   });
+
+  it("reads the component a route renders through parentheses and casts", () => {
+    const file = makeFile(`
+      import { createRouter, Route } from "router-lib";
+      function Profile() { return <form />; }
+      function Audit() { return <table />; }
+      export const tree = <Route path="/profile" element={(<Profile />)} />;
+      export const router = createRouter([
+        { path: "/audit", element: (<Audit />) as unknown },
+      ]);
+    `);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
+    expect(units.map((u) => `${u.name} ${u.routeInfo?.path}`).sort()).toEqual([
+      "Audit /audit",
+      "Profile /profile",
+    ]);
+    expect(units.every((u) => u.func !== null)).toBe(true);
+  });
+
+  it("names an abstention after the component a route renders in parentheses", () => {
+    const file = makeFile(`
+      import { createRouter } from "router-lib";
+      function Team() { return <ul />; }
+      const where = "/team/" + String(Math.random());
+      export const router = createRouter([{ path: where, element: (<Team />) }]);
+    `);
+    const [unit] = discoverUnits(file, [PATTERN], new ResolutionStore());
+    expect(unit.name).toBe("Team");
+    expect(unit.unreadBinding).toContain("not written as a string literal");
+  });
+
+  it("serves nothing for a route whose index reads false, and keeps the routes inside it", () => {
+    const file = makeFile(`
+      import { Route } from "router-lib";
+      function List() { return <ul />; }
+      function Board() { return <section />; }
+      function Columns() { return <ol />; }
+      export const tree = (
+        <Route path="/projects">
+          <Route index={true} element={<List />} />
+          <Route index={false} element={<Board />}>
+            <Route path="board" element={<Columns />} />
+          </Route>
+        </Route>
+      );
+    `);
+    expect(routesOf(file)).toEqual(["GET /projects", "GET /projects/board"]);
+  });
+
+  it("reads a route object's index flag through a cast", () => {
+    const file = makeFile(`
+      import { createRouter } from "router-lib";
+      function Overview() { return <p />; }
+      function Draft() { return <p />; }
+      export const router = createRouter([
+        {
+          path: "/billing",
+          children: [
+            { index: true as const, element: <Overview /> },
+            { index: false, element: <Draft /> },
+          ],
+        },
+      ]);
+    `);
+    expect(routesOf(file)).toEqual(["GET /billing"]);
+  });
+
+  it("announces a spread where the collection it unpacks is written, through a cast", () => {
+    const file = makeFile(`
+      import { createRouter } from "router-lib";
+      import { extra, more } from "./extra";
+      export const router = createRouter([...extra, ...(more as never[])]);
+    `);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
+    expect(units.map((u) => [u.name, u.announcedAt?.getText()])).toEqual([
+      ["extra", "extra"],
+      ["more", "more"],
+    ]);
+  });
+
+  it("labels a value it cannot read by the name under a cast, or else by its source text", () => {
+    const file = makeFile(`
+      import { createRouter } from "router-lib";
+      import { routes, settings } from "./elsewhere";
+      export const one = createRouter(routes as never);
+      export const two = createRouter([
+        { path: "/settings", children: settings.routes },
+      ]);
+    `);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
+    expect(units.map((u) => u.name)).toEqual(["routes", "settings.routes"]);
+  });
 });
