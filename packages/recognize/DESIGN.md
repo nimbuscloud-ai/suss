@@ -323,6 +323,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `name()` on a class | `rbConstantName(c, q)` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere |
 | `bodyCalls()` on a value, a class or a module | `bodyCallAt(f, k, r)` on the value's own key, the class's, or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
 | `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
+| `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
 | `loopsOver()` | the call's block from `callBlock(r, b)`, or else a function written as its first argument. The `elementOf(x, o)` row off the call's receiver `o` whose `x` is that function's first parameter, by `paramOf` or the adapter's `parameterOf`, gives the element's variable, and `positionOf(i, x)` the position's. A variable's name is the one `paramNamed` gives it, or its text |
 | `evaluatedWith(bindings)` | the adapter's `evaluatedWith`, its evaluator with the names bound. An adapter with none reads the value as `name("nothing")` does |
@@ -446,6 +447,67 @@ records.put({ [key]: 1, ...config.base }); // the key's value, then base's entri
 
 `packages/cli/src/valuePolicyLanguages.test.ts` writes each of these
 cases in all three languages, with the paths a pack has to find in each.
+
+## A route table
+
+Some libraries write their routes as a table apart from the handlers,
+such as Rails' `config/routes.rb`, where `resources :orders do ... end`
+gives seven routes to `OrdersController`. A pack states such a
+table as a `RouteTableDeclaration`: what each entry is called and the
+role it plays. `composeRoutes(table, sources)` walks the entries through
+the module ops and returns a `RouteSet`, every route each controller
+action serves and the entries it could not read.
+
+```ts
+const RAILS_ROUTES: RouteTableDeclaration = {
+  roots: { calledOn: "routes", kinds: { prepend: 0, draw: 1, append: 2 }, children: { in: "block" } },
+  handler: { separator: "#", namespaceJoin: "/" },
+  loops: ["each", "each_with_index"],
+  roles: {
+    get: { role: "serves", methods: ["GET"], path: [{ pair: "key" }, { at: 0 }], handler: [{ keyword: "to" }, { pair: "value" }] },
+    namespace: { role: "scopes", both: { at: 0 }, children: { in: "block" } },
+    // ...
+  },
+};
+```
+
+The roles:
+
+| role | what the entry does |
+|---|---|
+| `serves` | serves one or more methods at a path, routed to the handler a pick reads, or, with no handler, to the action its path or `action` says on the expansion it is inside |
+| `expands` | serves a fixed list of rows under a base, such as `resources`, and opens an expansion that nested entries start from |
+| `scopes` | adds a path segment, a namespace segment, both, or neither to every entry inside it |
+| `base` | chooses whether a bare entry inside an expansion starts from the member or the collection |
+| `defaults` | gives its keywords to every entry inside it that leaves them out |
+| `fragment`, `replay` | gives a block of entries a name, and the replay walks it again in its own scope |
+| `include` | reads another file's entries in place |
+| `mount` | serves another table under a prefix, keyed under that table's namespace |
+
+An `EntryPick` says where an entry states a value: a position, a
+keyword, the key or value of a pair argument, or a key of an object
+entry. `ChildrenIn` says where an entry's children are: its block, the
+body of the function it is handed, or the calls a list it is handed
+contains. An entry with no role has its children where the roots have
+theirs: a loop over a literal list in `loops` is walked once per
+element with its variable bound, a library's wrapper with entries
+inside is walked in place and reported, and anything else is reported
+unread. `EntryPick.key` and `ChildrenIn.chain`, for a table written as
+objects or as a chain of calls, are in the types with no reader yet.
+
+What stays with the pack is what needs the file system or the pack's
+configuration: which files to read, which table an owner such as
+`Rails.application` refers to, the file an include reads, and how the
+library inflects a name. These are the `RouteSources`.
+
+`composeRoutes` joins paths with one slash between, the way
+`joinMountedPath` joins a mount prefix, and a segment that is nothing
+leaves the prefix as it is. A table that mounts itself and a file that
+includes itself each stop.
+
+`packages/cli/src/routeTableLanguages.test.ts` writes one table with
+blocks in Ruby, callbacks in TypeScript and lists in Python, and
+expects the same routes from each.
 
 ## Reaching a call next to this one
 
