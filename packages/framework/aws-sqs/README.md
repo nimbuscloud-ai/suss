@@ -30,7 +30,7 @@ A destructure records the property it reads, since the producer chose that name,
 
 On the producer side, the pack reads the env var name out of `QueueUrl`, so `process.env.ORDERS_QUEUE_URL` records `ORDERS_QUEUE_URL`. When pairing against a CloudFormation provider summary, suss resolves that name to a logical resource through the producing Lambda's `Environment` declaration, and that resource is the queue.
 
-A file is only read if it imports one of these: `@aws-sdk/client-sqs` for producer files, `aws-lambda` for consumer files (the `SQSEvent` type comes from there), or any module a configured dispatcher is declared in.
+A file is only read if it imports one of these: `@aws-sdk/client-sqs` for producer files, `aws-lambda` for consumer files (the `SQSEvent` type comes from there), or any module a configured dispatcher is declared in. A consumer that writes its event's type in place imports none of them, so a file whose text spells both `Records` and `JSON.parse` is read too.
 
 ## Telling it about your own dispatcher
 
