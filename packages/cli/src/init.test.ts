@@ -108,6 +108,80 @@ describe("inspectProject", () => {
     expect(await names(dir)).toEqual(["aws-lambda", "cloudformation"]);
   });
 
+  it("suggests the SQS pack for a handler a queue triggers, though the project never depends on the SQS client", async () => {
+    writeManifest({ devDependencies: { "@types/aws-lambda": "^8.10.0" } });
+    fs.writeFileSync(
+      path.join(dir, "template.yaml"),
+      [
+        "Resources:",
+        "  OrdersQueue:",
+        "    Type: AWS::SQS::Queue",
+        "  Worker:",
+        "    Type: AWS::Serverless::Function",
+        "    Properties:",
+        "      Handler: app.handler",
+        "      Events:",
+        "        FromOrders:",
+        "          Type: SQS",
+        "          Properties:",
+        "            Queue: !GetAtt OrdersQueue.Arn",
+        "",
+      ].join("\n"),
+    );
+    const report = await inspectProject(dir);
+
+    expect(await names(dir)).toEqual([
+      "aws-lambda",
+      "aws-sqs",
+      "cloudformation",
+    ]);
+    expect(
+      report.suggestions.find((suggestion) => suggestion.name === "aws-sqs")
+        ?.because,
+    ).toBe(
+      "TypeScript sources, and a function an SQS queue triggers in template.yaml",
+    );
+  });
+
+  it("suggests the SQS pack for an event source mapping, and for a Serverless sqs event", async () => {
+    writeManifest({});
+    fs.writeFileSync(
+      path.join(dir, "template.yaml"),
+      [
+        "Resources:",
+        "  OrdersQueue:",
+        "    Type: AWS::SQS::Queue",
+        "  Worker:",
+        "    Type: AWS::Lambda::Function",
+        "  Drain:",
+        "    Type: AWS::Lambda::EventSourceMapping",
+        "    Properties:",
+        "      EventSourceArn: !GetAtt OrdersQueue.Arn",
+        "      FunctionName: !Ref Worker",
+        "",
+      ].join("\n"),
+    );
+    expect(await names(dir)).toContain("aws-sqs");
+
+    fs.rmSync(path.join(dir, "template.yaml"));
+    fs.writeFileSync(
+      path.join(dir, "serverless.yml"),
+      [
+        "service: orders",
+        "provider:",
+        "  name: aws",
+        "functions:",
+        "  worker:",
+        "    handler: app.handler",
+        "    events:",
+        "      - sqs:",
+        "          arn: arn:aws:sqs:us-east-1:123456789012:orders",
+        "",
+      ].join("\n"),
+    );
+    expect(await names(dir)).toContain("aws-sqs");
+  });
+
   it("offers the AppSync reader too for a template that declares an AppSync API", async () => {
     writeManifest({ dependencies: {} });
     fs.writeFileSync(
