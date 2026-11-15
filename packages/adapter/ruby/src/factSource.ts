@@ -26,7 +26,7 @@ import { scalarOf } from "@suss/values";
 
 import { numberLiteralValue, rangeOf, stringLiteralValue } from "./ast.js";
 import { decodedIn, encodedIn } from "./encoded.js";
-import { copingAt, sitesNamingParameter } from "./envReads.js";
+import { copingAt, keysSuppliedAt } from "./envReads.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
 import { parametersOf, paramNameOf } from "./facts/locals.js";
 import {
@@ -40,7 +40,6 @@ import { argOf } from "./paths/effects.js";
 import {
   evaluatedValue,
   nodeOfResolutionKey,
-  resolutionKeyOf,
   stringValueOf,
 } from "./values/evaluator.js";
 import { writtenShapeOf } from "./writtenShape.js";
@@ -50,8 +49,23 @@ import type { EffectArg, FactSource, ValueForm } from "@suss/extractor";
 import type { EncodedNode } from "./encoded.js";
 import type { RbNode } from "./parser.js";
 
+/** A fact source with the run's whole database, which the rules this adapter asks read. */
+export type RubyFactSource = FactSource & { readonly db: Database };
+
+const sources = new WeakMap<Database, RubyFactSource>();
+
+/** The one fact source for a run's database, for a reader that asks at every site of every body. */
+export function factSourceOf(db: Database): RubyFactSource {
+  let source = sources.get(db);
+  if (source === undefined) {
+    source = rubyFactSource(db);
+    sources.set(db, source);
+  }
+  return source;
+}
+
 /** The fact source for one run's database. */
-export function rubyFactSource(db: Database): FactSource {
+export function rubyFactSource(db: Database): RubyFactSource {
   const nodeAt = (key: string | null): RbNode | null =>
     key === null ? null : nodeOfResolutionKey(key, db);
   // A name has no node, so its value is what it was written as.
@@ -165,14 +179,13 @@ export function rubyFactSource(db: Database): FactSource {
     extendValue: (key, ops) => Object.assign(ops, { ast: () => nodeAt(key) }),
     defaultedAt: (key) => {
       const node = nodeAt(key);
-      return node !== null && copingAt(node, db).defaulted;
+      return node !== null && copingAt(node, factSourceOf(db)).defaulted;
     },
     fallbackOf: (key) => {
       const node = nodeAt(key);
-      const fallback = node === null ? null : copingAt(node, db).fallback;
-      return fallback === null ? null : resolutionKeyOf(fallback);
+      return node === null ? null : copingAt(node, factSourceOf(db)).fallback;
     },
-    sitesNaming: (parameter) => sitesNamingParameter(db, parameter),
+    keysSupplied: (call) => keysSuppliedAt(factSourceOf(db), call),
     runtimePathOf: (key, object) => {
       if (object.origin !== "global") {
         return undefined;

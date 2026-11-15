@@ -369,3 +369,72 @@ export function environmentRead(args: readonly Value[]): Value {
   }
   return hole(name ?? "value");
 }
+
+/** Where a getter takes its key and its fallback: an argument, or a block, which has no value to read. */
+export interface GetterPositions {
+  readonly key: { readonly at: number };
+  readonly fallback?: FallbackPlace | readonly FallbackPlace[];
+}
+
+type FallbackPlace = { readonly at: number } | { readonly block: true };
+
+/**
+ * How a language spells a read of one environment variable: the global
+ * paths of the environment object, the methods called on it that read
+ * one entry, and the functions that do, by global path. A read chain
+ * says each of these, and the rows below are made from what it says.
+ */
+export interface EnvironmentSpellings {
+  readonly paths: readonly string[];
+  readonly getters: Readonly<Record<string, GetterPositions>>;
+  readonly functions: Readonly<Record<string, GetterPositions>>;
+}
+
+/**
+ * A read of the environment through one of its getters or functions,
+ * `os.getenv("X", d)`, `os.environ.get("X", d)` or `ENV.fetch("X", d)`,
+ * is its fallback when it passes one, read at the getter's own positions.
+ */
+export function environmentRows(spellings: EnvironmentSpellings): Row[] {
+  const origins = [
+    ...Object.entries(spellings.functions).map(([path, getter]) => {
+      const dot = path.lastIndexOf(".");
+      return {
+        origin: { module: path.slice(0, dot), name: path.slice(dot + 1) },
+        getter,
+      };
+    }),
+    ...Object.entries(spellings.getters).flatMap(([name, getter]) =>
+      spellings.paths.map((module) => ({ origin: { module, name }, getter })),
+    ),
+  ];
+  return origins.map(({ origin, getter }) => ({
+    kind: "callee",
+    origin,
+    apply: ({ args }) => ({
+      result: environmentRead(getterArguments(args, getter)),
+    }),
+  }));
+}
+
+/** The key a getter call passes, then its fallback, as `environmentRead` takes them. */
+function getterArguments(
+  args: readonly Value[],
+  getter: GetterPositions,
+): Value[] {
+  const key = args[getter.key.at];
+  const fallback = args[fallbackPosition(getter)];
+  if (key === undefined) {
+    return [];
+  }
+  return fallback === undefined ? [key] : [key, fallback];
+}
+
+/** The position a getter takes its fallback at, or -1 when it takes none by position. */
+function fallbackPosition(getter: GetterPositions): number {
+  const places = getter.fallback === undefined ? [] : [getter.fallback].flat();
+  const place = places.find(
+    (one): one is { readonly at: number } => !("block" in one),
+  );
+  return place?.at ?? -1;
+}

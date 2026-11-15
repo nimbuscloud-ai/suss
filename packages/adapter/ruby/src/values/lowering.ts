@@ -13,6 +13,8 @@
  * wrapper on every read.
  */
 
+import { readSpellingsOf } from "@suss/recognize";
+
 import {
   allChildren,
   bodyStatements,
@@ -28,6 +30,7 @@ import {
   stringLiteralValue,
   symbolValue,
 } from "../ast.js";
+import { ENVIRONMENT } from "../stdlib/environment.js";
 
 import type {
   Element,
@@ -218,13 +221,18 @@ function fromPair<T>(
   return key === null || value === null ? fallback : build(key, value);
 }
 
+/** The paths the environment is written as, `ENV`, which an element reference reads a variable off. */
+const ENVIRONMENT_PATHS: ReadonlySet<string> = new Set(
+  readSpellingsOf(ENVIRONMENT.declared).paths,
+);
+
 /** `ENV["X"]` reads the environment variable `X`; `ENV.fetch` is a row. */
 function environmentVariableOf(node: RbNode): string | null {
   if (node.type !== "element_reference") {
     return null;
   }
   const receiver = field(node, "object");
-  if (receiver === null || receiver.text !== "ENV") {
+  if (receiver === null || !ENVIRONMENT_PATHS.has(receiver.text)) {
     return null;
   }
   const index = named(node).find((child) => child.id !== receiver.id);
@@ -253,7 +261,7 @@ const EXPRESSION_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
     if (object === null || index === undefined || indexes.length !== 1) {
       return OPAQUE;
     }
-    if (object.text === "ENV") {
+    if (ENVIRONMENT_PATHS.has(object.text)) {
       return OPAQUE;
     }
     return { kind: "element", object, index };

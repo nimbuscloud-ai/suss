@@ -1,34 +1,32 @@
 /**
- * The environment variables a body reads through Ruby's `ENV` object.
- * `ENV["X"]`, `ENV.fetch("X", d)` and `ENV.fetch("X") { d }` become the
- * config-read effect the TypeScript adapter emits for `process.env.X`,
- * with the same defaulted flag, so the runtime-config checker pairs them
- * with a template the same way.
+ * What the environment chain needs from this adapter beyond its facts:
+ * which parameters of a project helper end up as a variable's name, which
+ * arguments a call passes them, which parameter defaults read a variable
+ * and so run at the call that leaves the argument out, and whether the
+ * program copes with a read coming back empty. The chain declares the
+ * spellings, and the read dispatch hands it each site.
  *
- * `ENV` is part of the language, so this belongs to the adapter and not
- * to a pack. Every expression that passes `ENV` somewhere becomes an
+ * Every expression that passes `ENV` somewhere becomes an
  * `environmentObject` fact. One question over those facts returns every
  * parameter whose value ends up naming a variable, so a body that calls
- * such a helper reports the read at the call.
+ * such a helper reports the read at the call. The seeds are found by
+ * syntax, since they are stated before any constant is bound.
  */
 
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
+import { readSpellingsOf } from "@suss/recognize";
+import { valueKeyOf } from "@suss/recognize/ops";
 import { answersFor, classMemberOf, noteLookup } from "@suss/resolution";
-import { scalarOf } from "@suss/values";
 
 import {
   children,
   enclosingDefinition,
   field,
   NodeMap,
-  rangeOf,
   readCallArgs,
   stringLiteralValue,
 } from "./ast.js";
-import { isClaimed } from "./claims.js";
 import { fallbackOperandOf, isDefaultedAt } from "./defaulted.js";
-import { envSpellingAt, isEnv } from "./envSpellings.js";
 import {
   CONSTRUCTOR,
   INITIALIZE_METHOD,
@@ -42,150 +40,22 @@ import {
   resolveValues,
 } from "./facts/resolve.js";
 import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
+import { ENVIRONMENT } from "./stdlib/environment.js";
+import { environmentReadAt } from "./stdlib/environmentRead.js";
 import { streamSpelledBy } from "./streamWrites.js";
 import {
-  evaluatedValue,
+  boundFileOf,
   nodeOfResolutionKey,
-  stringValueOf,
+  resolutionKeyOf,
 } from "./values/evaluator.js";
 
-import type { Effect } from "@suss/behavioral-ir";
 import type { Database, Tuple } from "@suss/datalog";
+import type { KeySupplied } from "@suss/extractor";
+import type { GetterMeaning, SiteRead } from "@suss/recognize";
+import type { RubyFactSource } from "./factSource.js";
 import type { RbNode } from "./parser.js";
-import type { EffectAt } from "./paths/effects.js";
 
-export const RUBY_ENV_RECOGNITION = "ruby-env";
-
-/**
- * Marks a read whose variable name is not a literal and which supplies a
- * fallback. The fallback is written at the read and the shared rules do
- * not carry it, so the adapter records it in a relation of its own. A
- * read site with no row here has no fallback.
- */
-const ENV_DEFAULTED = "rbEnvDefaulted";
-
-/** The project's facts, and the path they use as this body's file key. */
-export interface EnvFacts {
-  readonly db: Database;
-  readonly file: string;
-}
-
-/** The same facts, for a run with at least one helper that reads the environment. */
-interface HelperFacts extends EnvFacts {
-  /** Each parameter whose value becomes a variable name, with the read sites that name reaches. */
-  readonly named: ReadonlyMap<string, readonly string[]>;
-}
-
-interface EnvRead {
-  /**
-   * Null when the code works the name out at run time, as a helper's
-   * `ENV[name]` does. Each call to the helper records its own read with
-   * the name it passes.
-   */
-  name: string | null;
-  defaulted: boolean;
-  /** The value used when the variable is not set, when it settles to one. */
-  fallback?: string | number | boolean;
-}
-
-/** An `ENV` read before its name expression has been read as a string. */
-interface EnvSite {
-  /** The whole read, whose node id is the site the rules report. */
-  readonly read: RbNode;
-  /** Where the variable's name comes from. */
-  readonly name: RbNode;
-  readonly defaulted: boolean;
-  /** The expression that supplies a value when the variable is not set. */
-  readonly fallback: RbNode | null;
-}
-
-/** What a caller passes for a parameter the rules found. */
-interface NamingArgument {
-  /** The reads the parameter's value supplies the name to. */
-  readonly sites: readonly string[];
-  readonly argument: RbNode;
-}
-
-/** A place in the body's source order: a read found there, or a call still to resolve. */
-type Slot =
-  | { readonly read: EnvRead; readonly at: RbNode }
-  | { readonly call: RbNode };
-
-/** A method or lambda body runs when it is called, so its reads wait for its own unit. */
-const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
-
-/**
- * The config-read effects for every environment read under `root`,
- * in source order. `root` itself is not read: pass a method for its
- * body, or the program node for what runs when the file loads.
- *
- * With the run's facts, a call to a project helper that reads the
- * environment through one of its parameters reports the read here too.
- */
-export function envReadEffects(
-  root: RbNode,
-  facts?: EnvFacts,
-  claimed?: ReadonlySet<number>,
-): EffectAt[] {
-  const helpers = helperFactsOf(facts);
-  const defaults = facts !== undefined && hasDefaultReads(facts.db);
-  const blankToNil = blankToNilIn(facts?.db);
-  // The calls are resolved in one batch after the walk, so the walk keeps
-  // a slot for each one to preserve source order.
-  const slots: Slot[] = [];
-  walkDescendants<RbNode, null>(root, null, children, {
-    at: (node) => {
-      const read = envReadAt(node, blankToNil, facts?.db);
-      if (read !== null) {
-        slots.push({ read, at: node });
-        return;
-      }
-      // A bare method call parses as an `identifier` and takes no
-      // arguments, so it cannot pass a name to a helper. `Client.new`
-      // with no parentheses is a `call` and can still run a default.
-      if ((helpers !== null || defaults) && node.type === "call") {
-        slots.push({ call: node });
-      }
-    },
-    into: (node) =>
-      DEFERRED_BODY_TYPES.has(node.type) ||
-      isOwnParameter(node, root) ||
-      isClaimed(node, claimed)
-        ? SKIP_CHILDREN
-        : null,
-  });
-
-  const calls = slots.flatMap((slot) => ("call" in slot ? [slot.call] : []));
-  const throughHelpers =
-    facts === undefined || calls.length === 0
-      ? new NodeMap<EnvRead[]>()
-      : callReads(calls, facts, helpers, defaults);
-  return slots.flatMap((slot): EffectAt[] => {
-    if ("read" in slot) {
-      return [{ effect: configReadEffect(slot.read, slot.at), at: slot.at }];
-    }
-    return (throughHelpers.get(slot.call) ?? []).map((read) => ({
-      effect: configReadEffect(read, slot.call),
-      at: slot.call,
-    }));
-  });
-}
-
-/**
- * The run's facts with the parameters that name a variable, or null when
- * no parameter in the run does. The body's calls are then skipped.
- */
-function helperFactsOf(facts: EnvFacts | undefined): HelperFacts | null {
-  if (facts === undefined) {
-    return null;
-  }
-  const named = namedParameters(facts.db);
-  noteLookup(facts.db, NAMED_ANY, describeAny(named));
-  if (named.size === 0) {
-    return null;
-  }
-  return { ...facts, named };
-}
+const SPELLINGS = readSpellingsOf(ENVIRONMENT.declared);
 
 const NAMED_ANY = "envNamedAny";
 const NAMED_PARAMETER = "envNamed ";
@@ -217,8 +87,8 @@ export function settleNamedParameters(db: Database): void {
 }
 
 /**
- * The same lookup `envReadEffects` noted under `id`, made again in this
- * run, or null when `id` is not one of these.
+ * The same lookup a reader noted under `id`, made again in this run, or
+ * null when `id` is not one of these.
  */
 export function envLookupAgain(db: Database, id: string): string | null {
   if (id === NAMED_ANY) {
@@ -278,6 +148,13 @@ function helperNames(db: Database): ReadonlySet<string> {
     names.add(CONSTRUCTOR);
   }
   helperNamesByDb.set(db, names);
+  return names;
+}
+
+/** The same names, noted so a later run can tell whether they changed. */
+function notedHelperNames(db: Database): ReadonlySet<string> {
+  const names = helperNames(db);
+  noteLookup(db, HELPER_NAMES, describeNames(names));
   return names;
 }
 
@@ -366,26 +243,40 @@ export function emitBlankToNilFacts(
 
 const NO_METHODS: ReadonlySet<string> = new Set();
 
-function blankToNilIn(db: Database | undefined): ReadonlySet<string> {
-  const rows = db?.facts(BLANK_TO_NIL) ?? [];
+function blankToNilIn(db: Database): ReadonlySet<string> {
+  const rows = db.facts(BLANK_TO_NIL);
   return rows.length === 0
     ? NO_METHODS
     : new Set(rows.map((row) => String(row[0])));
 }
 
+/** A parameter default whose reads are stated once the constants are bound. */
+export interface WrittenDefault {
+  readonly file: string;
+  /** The parameter, keyed as the shared facts key it. */
+  readonly parameter: string;
+  readonly kind: DefaultKind;
+  readonly value: RbNode;
+}
+
 /**
  * Records which expressions spell `ENV` and pass it on, so the shared
  * rules can work out which parameters a caller's argument ends up
- * naming. Also records the fallback flag the rules do not carry.
+ * naming. Returns the file's parameter defaults, whose reads the chain
+ * says once every file's constants are bound.
  */
-export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
-  const blankToNil = blankToNilIn(db);
+export function emitEnvFacts(
+  db: Database,
+  file: string,
+  root: RbNode,
+): WrittenDefault[] {
+  const defaults: WrittenDefault[] = [];
   walkDescendants<RbNode, null>(root, null, children, {
     at: (node) => {
       if (DEFAULTED_PARAMETER_HOLDERS.has(node.type)) {
-        emitDefaultReads(db, file, node, blankToNil);
+        defaults.push(...defaultsOf(file, node));
       }
-      if (isEnv(node) && handsOnward(node)) {
+      if (spellsObject(node) && handsOnward(node)) {
         db.add("environmentObject", [
           readKey(file, node, enclosingDefinition(node)),
         ]);
@@ -395,17 +286,83 @@ export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
           readKey(file, node, enclosingDefinition(node)),
         ]);
       }
-      const spelling = envSpellingAt(node);
-      if (
-        spelling !== null &&
-        stringLiteralValue(spelling.name) === null &&
-        envSiteAt(node, blankToNil)?.defaulted === true
-      ) {
-        db.add(ENV_DEFAULTED, [nodeId(file, node)]);
-      }
     },
     into: () => null,
   });
+  return defaults;
+}
+
+/**
+ * Whether the node is spelled as one of the chain's paths, `ENV` or
+ * `::ENV`, each a constant at the top level. The seeds are found before
+ * the constants are bound, so this reads the syntax.
+ */
+function spellsObject(node: RbNode): boolean {
+  if (node.type === "constant") {
+    return SPELLINGS.paths.includes(node.text);
+  }
+  return (
+    node.type === "scope_resolution" &&
+    field(node, "scope") === null &&
+    SPELLINGS.paths.includes(field(node, "name")?.text ?? "")
+  );
+}
+
+/**
+ * Whether `ENV` is used for anything other than a read of a literal
+ * variable name. A file whose reads all write out their variable passes
+ * `ENV` nowhere, so the rules have nothing to follow.
+ */
+function handsOnward(node: RbNode): boolean {
+  const parent = node.parent;
+  if (
+    parent?.type === "element_reference" &&
+    field(parent, "object")?.id === node.id
+  ) {
+    const index = children(parent).find((child) => child.id !== node.id);
+    return isAssignedTo(parent) || !writesTheKey(index);
+  }
+  if (parent?.type === "call" && field(parent, "receiver")?.id === node.id) {
+    const getter = getterCalled(parent);
+    return getter === undefined || !writesTheKey(keyArgumentOf(parent, getter));
+  }
+  return true;
+}
+
+/** `ENV["X"] = v` and `ENV["X"] ||= v` change the environment rather than reading it. */
+function isAssignedTo(node: RbNode): boolean {
+  const parent = node.parent;
+  return (
+    parent !== null &&
+    (parent.type === "assignment" || parent.type === "operator_assignment") &&
+    field(parent, "left")?.id === node.id
+  );
+}
+
+/** Whether the source spells the variable at this read rather than working it out. */
+const writesTheKey = (key: RbNode | undefined): boolean =>
+  key !== undefined && stringLiteralValue(key) !== null;
+
+/** The chain's getter a call sends, `fetch` in `ENV.fetch("X")`. */
+function getterCalled(call: RbNode): GetterMeaning | undefined {
+  const method = field(call, "method")?.text ?? "";
+  return Object.hasOwn(SPELLINGS.getters, method)
+    ? SPELLINGS.getters[method]
+    : undefined;
+}
+
+/** The argument a getter call passes its key at. */
+function keyArgumentOf(
+  call: RbNode,
+  getter: GetterMeaning,
+): RbNode | undefined {
+  return readCallArgs(field(call, "arguments")).positional[getter.key.at];
+}
+
+/** `$stdout.puts x` writes to the stream it spells, and hands the stream to nobody. */
+function writtenThrough(node: RbNode): boolean {
+  const parent = node.parent;
+  return parent?.type === "call" && field(parent, "receiver")?.id === node.id;
 }
 
 /**
@@ -422,8 +379,15 @@ const DEFAULTED_PARAMETER_HOLDERS = new Set(["method", "singleton_method"]);
 const DEFAULTS_ANY = "envDefaultsAny";
 const DEFAULT_PARAMETER = "envDefault ";
 
+type DefaultKind = "positional" | "keyword";
+
+const DEFAULT_KIND: Record<string, DefaultKind> = {
+  optional_parameter: "positional",
+  keyword_parameter: "keyword",
+};
+
 /** Whether any parameter default in the run reads the environment, noted so a later run can tell whether that changed. */
-function hasDefaultReads(db: Database): boolean {
+export function hasDefaultReads(db: Database): boolean {
   const any = db.facts(DEFAULT_READ).length > 0;
   noteLookup(db, DEFAULTS_ANY, any ? "some" : "none");
   return any;
@@ -439,30 +403,32 @@ function defaultReadsOf(db: Database, paramKey: string): readonly Tuple[] {
 const describeDefaults = (rows: readonly Tuple[]): string =>
   rows.length === 0 ? "-" : rows.map((row) => row.slice(1).join(":")).join(",");
 
-const DEFAULT_KIND: Record<string, "positional" | "keyword"> = {
-  optional_parameter: "positional",
-  keyword_parameter: "keyword",
-};
-
-function emitDefaultReads(
-  db: Database,
-  file: string,
-  method: RbNode,
-  blankToNil: ReadonlySet<string>,
-): void {
+function defaultsOf(file: string, method: RbNode): WrittenDefault[] {
   const funcKey = nodeId(file, method);
-  for (const param of parametersOf(method)) {
+  return parametersOf(method).flatMap((param) => {
     const kind = DEFAULT_KIND[param.type];
     const name = field(param, "name");
     const value = field(param, "value");
-    if (kind === undefined || name === null || value === null) {
-      continue;
-    }
-    // The read's text goes in the row too, so a replayed caller notices
-    // a fallback edited in place, which keeps the read's range.
-    for (const read of namedReadsUnder(value, blankToNil)) {
-      db.add(DEFAULT_READ, [
-        `${funcKey}#${name.text}`,
+    return kind === undefined || name === null || value === null
+      ? []
+      : [{ file, parameter: `${funcKey}#${name.text}`, kind, value }];
+  });
+}
+
+/**
+ * States the reads in each parameter default, as the environment chain
+ * reads them, once the constants they read are bound. The read's text
+ * goes in the row too, so a replayed caller notices a fallback edited in
+ * place, which keeps the read's range.
+ */
+export function emitDefaultReadFacts(
+  source: RubyFactSource,
+  defaults: readonly WrittenDefault[],
+): void {
+  for (const { file, parameter, kind, value } of defaults) {
+    for (const read of namedReadsUnder(value, source)) {
+      source.db.add(DEFAULT_READ, [
+        parameter,
         kind,
         read.name,
         read.defaulted ? 1 : 0,
@@ -480,16 +446,21 @@ interface DefaultRead {
   readonly at: RbNode;
 }
 
+/** A method or a lambda written in a default runs when it is called, not when the default does. */
+const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
+
 /** The reads under a node that write out their variable, the node itself included. */
-function namedReadsUnder(
-  node: RbNode,
-  blankToNil: ReadonlySet<string>,
-): DefaultRead[] {
+function namedReadsUnder(node: RbNode, source: RubyFactSource): DefaultRead[] {
   const reads: DefaultRead[] = [];
   const take = (at: RbNode): void => {
-    const read = envReadAt(at, blankToNil);
-    if (read?.name !== null && read?.name !== undefined) {
-      reads.push({ name: read.name, defaulted: read.defaulted, at });
+    const site = environmentReadAt(at, source);
+    const name = site?.entry ?? null;
+    if (site !== null && name !== null && name !== "") {
+      reads.push({
+        name,
+        defaulted: copingWith(at, site, source).defaulted,
+        at,
+      });
     }
   };
   take(node);
@@ -501,22 +472,31 @@ function namedReadsUnder(
   return reads;
 }
 
-/** Whether a node is the default of one of `root`'s own parameters. */
-function isOwnParameter(node: RbNode, root: RbNode): boolean {
+/** Whether a node is the default of one of `root`'s own parameters, which runs at the call and not in the body. */
+export function isOwnParameter(node: RbNode, root: RbNode): boolean {
   return (
     DEFAULT_KIND[node.type] !== undefined && node.parent?.parent?.id === root.id
   );
 }
 
+/** A variable the defaults a call runs read, and the first of its sites. */
+export interface DefaultReadAtCall {
+  readonly name: string;
+  /** Whether every default that reads it copes with a missing value. */
+  readonly defaulted: boolean;
+  readonly site: string;
+}
+
 /**
- * The reads in the defaults a call runs: those of the parameters it
- * passes nothing for, across every method the callee settles on.
+ * The variables read in the defaults a call runs: those of the
+ * parameters it passes nothing for, across every method the callee
+ * settles on, one per variable in the order they first appear.
  */
-function defaultReadsAtCall(
+export function defaultReadsAtCall(
   db: Database,
   call: RbNode,
   callees: readonly string[],
-): EnvRead[] {
+): DefaultReadAtCall[] {
   const { positional, keyword } = readCallArgs(field(call, "arguments"));
   const omitted: Array<{ paramKey: string; kind: string }> = [];
   for (const func of callees.flatMap((key) => functionsRunBy(db, call, key))) {
@@ -545,36 +525,11 @@ function defaultReadsAtCall(
       });
     }
   }
-  return [...byName].map(([name, { defaulted, site }]) =>
-    withFallback({ name, defaulted }, defaulted ? fallbackAt(db, site) : null),
-  );
-}
-
-/** The value the read at this key falls back to, read where it is written. */
-function fallbackAt(
-  db: Database,
-  site: string,
-): string | number | boolean | null {
-  const node = nodeOfResolutionKey(site, db);
-  return node === null
-    ? null
-    : (envReadAt(node, blankToNilIn(db), db)?.fallback ?? null);
-}
-
-/** A defaulted read records the value it falls back to, when that settles to one. */
-function withFallback(
-  read: EnvRead,
-  fallback: string | number | boolean | null,
-): EnvRead {
-  return read.defaulted && fallback !== null ? { ...read, fallback } : read;
-}
-
-/** The value a fallback settles to, or null when it settles to none. */
-function settledValue(
-  fallback: RbNode | null,
-  db: Database | undefined,
-): string | number | boolean | null {
-  return fallback === null ? null : scalarOf(evaluatedValue(fallback, db));
+  return [...byName].map(([name, { defaulted, site }]) => ({
+    name,
+    defaulted,
+    site,
+  }));
 }
 
 /**
@@ -607,88 +562,106 @@ function constructorsOf(db: Database, cls: string, depth: number): string[] {
   );
 }
 
-/** `$stdout.puts x` writes to the stream it spells, and hands the stream to nobody. */
-function writtenThrough(node: RbNode): boolean {
-  const parent = node.parent;
-  return parent?.type === "call" && field(parent, "receiver")?.id === node.id;
+/**
+ * The keys the facts give the functions a call can run: the method it
+ * sends, and the value it invokes when it is `f.call(x)` or `f.(x)`. A
+ * Ruby call is keyed both ways, so it comes with a key for each.
+ */
+function calleeKeysOf(call: RbNode): string[] {
+  const file = boundFileOf(call);
+  if (file === undefined) {
+    return [];
+  }
+  const enclosing = enclosingDefinition(call);
+  return [
+    calleeKeyOf(file, call, enclosing),
+    invokedKeyOf(file, call, enclosing),
+  ].filter((key): key is string => key !== null);
 }
 
 /**
- * Whether `ENV` is used for anything other than a read of a literal
- * variable name. A file whose reads all write out their variable passes
- * `ENV` nowhere, so the rules have nothing to follow.
+ * Asks which functions the calls of one body come to, in one round, and
+ * returns each call's callee keys, so a call asked which keys it supplies
+ * or which defaults it runs has its answer already. Without a parameter
+ * that names a variable or a default that reads one, it asks nothing.
  */
-function handsOnward(node: RbNode): boolean {
-  const parent = node.parent;
-  if (parent === null) {
-    return true;
-  }
-  if (parent.type === "element_reference" || parent.type === "call") {
-    const spelling = envSpellingAt(parent);
-    return spelling === null || stringLiteralValue(spelling.name) === null;
-  }
-  return true;
-}
-
-/**
- * The environment reads each of a body's calls reaches through a project
- * helper, or through a parameter default the call runs. The callees are
- * resolved in one round, so a body costs one question instead of one per
- * call. Which parameters name a variable was already settled once for
- * the whole run.
- */
-function callReads(
+export function calleesOfCalls(
+  db: Database,
   calls: readonly RbNode[],
-  facts: EnvFacts,
-  helpers: HelperFacts | null,
   defaults: boolean,
-): NodeMap<EnvRead[]> {
-  const { db, file } = facts;
-  const names = helperNames(db);
-  noteLookup(db, HELPER_NAMES, describeNames(names));
+): NodeMap<string[]> {
   const callees = new NodeMap<string[]>();
+  if (calls.length === 0 || (!defaults && namedParameters(db).size === 0)) {
+    return callees;
+  }
+  const names = notedHelperNames(db);
   for (const call of calls) {
     if (!mayRunHelper(call, names)) {
       continue;
     }
-    const enclosing = enclosingDefinition(call);
-    const keys = [
-      calleeKeyOf(file, call, enclosing),
-      invokedKeyOf(file, call, enclosing),
-    ].filter((key): key is string => key !== null);
+    const keys = calleeKeysOf(call);
     if (keys.length > 0) {
       callees.set(call, keys);
     }
   }
-  const reads = new NodeMap<EnvRead[]>();
-  if (callees.size === 0) {
-    return reads;
+  if (callees.size > 0) {
+    resolveValues(
+      db,
+      [...callees].flatMap(([, keys]) => keys),
+    );
   }
-  resolveValues(
-    db,
-    [...callees].flatMap(([, keys]) => keys),
-  );
-
-  for (const [call, callee] of callees) {
-    const args =
-      helpers === null ? [] : namingArguments(db, helpers.named, call, callee);
-    const found = [
-      ...(args.length === 0 ? [] : readsAtCall(db, call, args)),
-      ...(defaults ? defaultReadsAtCall(db, call, callee) : []),
-    ];
-    if (found.length > 0) {
-      reads.set(call, found);
-    }
-  }
-  return reads;
+  return callees;
 }
 
 /**
- * The arguments this call passes for parameters that name a variable,
- * across every function the callee settles on. A Ruby call is keyed both
- * as a method call and as an invocation of a value, so it comes with a
- * key for each.
+ * The arguments of the call at the key whose value becomes a read's key
+ * down the callee, by position or by keyword, across every function the
+ * callee settles on. The value is keyed on the argument as written, so
+ * the evaluator reads it the way it reads any argument, and a parameter
+ * the caller passes on settles through the calls that reach the caller.
  */
+export function keysSuppliedAt(
+  source: RubyFactSource,
+  call: string,
+): KeySupplied[] {
+  const { db } = source;
+  if (db.lookup("call", 0, call).length === 0) {
+    return [];
+  }
+  const named = namedParameters(db);
+  noteLookup(db, NAMED_ANY, describeAny(named));
+  const node = named.size === 0 ? null : nodeOfResolutionKey(call, db);
+  const file = node === null ? undefined : boundFileOf(node);
+  if (
+    node === null ||
+    node.type !== "call" ||
+    file === undefined ||
+    !mayRunHelper(node, notedHelperNames(db))
+  ) {
+    return [];
+  }
+  const callees = calleeKeysOf(node);
+  resolveValues(db, callees);
+  return namingArguments(db, named, node, callees).map((naming) => ({
+    at: naming.at,
+    ...(naming.keyword === undefined ? {} : { keyword: naming.keyword }),
+    value: nodeId(file, naming.argument),
+    forwarded: false,
+    sites: naming.sites,
+  }));
+}
+
+/** What a caller passes for a parameter the rules found. */
+interface NamingArgument {
+  /** The reads the parameter's value supplies the name to. */
+  readonly sites: readonly string[];
+  readonly argument: RbNode;
+  /** The position the call passes it at, or -1 for a keyword argument. */
+  readonly at: number;
+  readonly keyword?: string;
+}
+
+/** The arguments this call passes for parameters that name a variable, across every function the callee settles on. */
 function namingArguments(
   db: Database,
   named: ReadonlyMap<string, readonly string[]>,
@@ -700,16 +673,18 @@ function namingArguments(
   for (const func of callees.flatMap((key) => resolvedFunctions(db, key))) {
     for (const row of db.lookup("paramOf", 0, func)) {
       const sites = sitesNamedBy(db, named, String(row[2]));
-      const argument = positional[Number(row[1])];
+      const at = Number(row[1]);
+      const argument = positional[at];
       if (sites !== undefined && argument !== undefined) {
-        found.push({ sites, argument });
+        found.push({ sites, argument, at });
       }
     }
     for (const row of db.lookup("paramNamed", 0, func)) {
       const sites = sitesNamedBy(db, named, String(row[2]));
-      const argument = keyword[String(row[1])];
+      const name = String(row[1]);
+      const argument = keyword[name];
       if (sites !== undefined && argument !== undefined) {
-        found.push({ sites, argument });
+        found.push({ sites, argument, at: -1, keyword: name });
       }
     }
   }
@@ -717,110 +692,43 @@ function namingArguments(
 }
 
 /**
- * The variables this call reads, reading each naming argument as a
- * string. One name read at two sites is one read, defaulted only where
- * every site supplies a fallback.
- */
-function readsAtCall(
-  db: Database,
-  call: RbNode,
-  args: readonly NamingArgument[],
-): EnvRead[] {
-  const defaultedAtCall = isDefaultedAt(call, undefined, blankToNilIn(db));
-  const byName = new Map<string, boolean>();
-  for (const { sites, argument } of args) {
-    const name = stringLiteralValue(argument) ?? stringValueOf(argument, db);
-    if (name === null) {
-      continue;
-    }
-    for (const site of sites) {
-      const defaulted =
-        defaultedAtCall || db.lookup(ENV_DEFAULTED, 0, site).length > 0;
-      byName.set(name, (byName.get(name) ?? true) && defaulted);
-    }
-  }
-  // The fallback a caller writes around the call, as in
-  // `load("X").presence || ENDPOINT`, is what the read falls back to.
-  const fallback = [...byName.values()].some(Boolean)
-    ? settledValue(copingAt(call, db).fallback, db)
-    : null;
-  return [...byName].map(([name, defaulted]) =>
-    withFallback({ name, defaulted }, fallback),
-  );
-}
-
-function configReadEffect(read: EnvRead, at: RbNode): Effect {
-  return {
-    type: "interaction",
-    binding: runtimeConfigBinding({ recognition: RUBY_ENV_RECOGNITION }),
-    callee: read.name === null ? at.text : `ENV["${read.name}"]`,
-    interaction: {
-      class: "config-read",
-      name: read.name,
-      defaulted: read.defaulted,
-      ...(read.fallback === undefined ? {} : { default: read.fallback }),
-    },
-    location: rangeOf(at),
-  };
-}
-
-function envReadAt(
-  node: RbNode,
-  blankToNil: ReadonlySet<string> = NO_METHODS,
-  db?: Database,
-): EnvRead | null {
-  const site = envSiteAt(node, blankToNil);
-  if (site === null) {
-    return null;
-  }
-  return withFallback(
-    { name: stringLiteralValue(site.name), defaulted: site.defaulted },
-    site.defaulted ? settledValue(site.fallback, db) : null,
-  );
-}
-
-/**
- * Whether a read copes with its value coming back empty, and the value
- * it falls back to, decided the way this reader decides it for an
- * environment read and by the plain rule for any other read.
+ * Whether a read copes with its value coming back empty, and the key of
+ * the value it falls back to, decided the way the environment chain
+ * reads an environment read and by the plain rule for any other read.
  */
 export function copingAt(
   node: RbNode,
-  db: Database,
-): { defaulted: boolean; fallback: RbNode | null } {
-  const blankToNil = blankToNilIn(db);
-  const site = envSiteAt(node, blankToNil);
-  return site === null
-    ? {
-        defaulted: isDefaultedAt(node, undefined, blankToNil),
-        fallback: fallbackOperandOf(node, blankToNil),
-      }
-    : { defaulted: site.defaulted, fallback: site.fallback };
+  source: RubyFactSource,
+): { defaulted: boolean; fallback: string | null } {
+  return copingWith(node, environmentReadAt(node, source), source);
 }
 
-/**
- * The sites whose variable name the parameter at this key ends up as,
- * from the run's one question about the environment.
- */
-export function sitesNamingParameter(
-  db: Database,
-  parameter: string,
-): readonly string[] {
-  return sitesNamedBy(db, namedParameters(db), parameter) ?? [];
-}
-
-function envSiteAt(
+function copingWith(
   node: RbNode,
-  blankToNil: ReadonlySet<string>,
-): EnvSite | null {
-  const spelling = envSpellingAt(node);
-  if (spelling === null) {
-    return null;
+  site: SiteRead | null,
+  source: RubyFactSource,
+): { defaulted: boolean; fallback: string | null } {
+  const blankToNil = blankToNilIn(source.db);
+  const fallback = fallbackKeyOf(node, site, blankToNil);
+  if (site === null) {
+    return { defaulted: isDefaultedAt(node, undefined, blankToNil), fallback };
   }
   return {
-    read: node,
-    name: spelling.name,
-    defaulted: spelling.hasDefault || isDefaultedAt(node, spelling, blankToNil),
-    fallback: spelling.fallback ?? fallbackOperandOf(node, blankToNil),
+    defaulted:
+      site.passesFallback || isDefaultedAt(node, { site, source }, blankToNil),
+    fallback,
   };
+}
+
+/** What a getter call passes as its fallback, or else what an `||` around the read supplies. */
+function fallbackKeyOf(
+  node: RbNode,
+  site: SiteRead | null,
+  blankToNil: ReadonlySet<string>,
+): string | null {
+  if (site !== null && site.fallback !== null) {
+    return valueKeyOf(site.fallback);
+  }
+  const operand = fallbackOperandOf(node, blankToNil);
+  return operand === null ? null : resolutionKeyOf(operand);
 }

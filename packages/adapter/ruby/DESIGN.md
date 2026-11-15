@@ -488,6 +488,8 @@ So the rules settle what `Account.recent` gives back from the lambda's last expr
 
 `ENV` is part of the language core, so the adapter recognizes reads of it without a pack. Each read becomes the same `config-read` interaction the TypeScript adapter emits for `process.env.X`, on the `runtime-config` binding. It is written `ENV["X"]` however the source spelled it. The runtime-config checker pairs those reads with what a template declares for the process the file runs in.
 
+The spellings are a read chain declared with `@suss/recognize`, in `stdlib/environment.ts`: `ENV` read only at a key, since it is a hash whose methods are not variables, the getter `fetch`, which raises without a fallback, assignments that change nothing, and reads through a helper. The adapter compiles the chain once and hands it every element reference and call in a body, over the value facts. The rule for whether a read copes with a missing value asks the chain what each test reads, so the rule and the chain agree on what counts as a read, and the value evaluator's row for `ENV.fetch` is made from the chain too.
+
 | Ruby | Recognized as | Defaulted |
 | --- | --- | --- |
 | `ENV["X"]`, `ENV['X']`, `::ENV["X"]` | a read of `X` | no |
@@ -502,9 +504,13 @@ So the rules settle what `Account.recent` gives back from the lambda's last expr
 | `raise "..." unless ENV["X"]`, or `return x if x` then `raise "..."` | a read of `X` | no: a missing value ends in a raise |
 | `Settings.setting("X")`, where the method reads `ENV[key]` or `ENV.fetch(key)` | a read of `X` at the call | whatever the read inside the method says, or yes when an `\|\|` follows the call |
 | `GET.call("X")` or `GET.("X")`, where `GET` is a lambda reading `ENV.fetch(key)` | a read of `X` at the call | whatever the read inside the lambda says, or yes when an `\|\|` follows the call |
-| `ENV[name]`, `ENV.fetch("#{prefix}_X")`, `ENV[:X]` | nothing: the name is not a string literal, and no caller supplies one | |
+| `ENV[name]`, `ENV.fetch("#{prefix}_X")`, `ENV.fetch(:X)` | a read with no name: the name is not a string literal, and no caller supplies one | |
+| `ENV[:X]` | a read of `X`, since the facts read a symbol key the way they read a hash's, though `ENV` raises on one | |
+| `Client.new`, where `initialize(token: ENV["TOKEN"])` | a read of `TOKEN` at the call, since the default runs there | whatever every default that reads it says |
 | `ENV["X"] = "1"`, `ENV.key?("X")`, `Settings::ENV["X"]` | nothing: a write, a membership test, or another constant | |
 | `other \|\| ENV["X"]` | `X` not defaulted, since it is the chain's last resort | |
+
+A parameter default runs at the call that leaves its argument out, so the call reports the reads in it and the method's own walk leaves the default out. A `Klass.new` call runs the `initialize` the class writes or inherits. The facts state what each default reads, and once the constants are bound the adapter records, as `rbEnvDefaultRead`, each variable a default reads and whether the read copes. A call reports one read for each variable, defaulted only when every default that reads it copes.
 
 A read inside a method that a pack discovers, such as a resolver method behind a GraphQL field, goes on that unit's summary. A read in the file body, in a class or module body, or in a block at those levels runs when the file loads. It goes on a `module-init` summary named after the file, and each file with such a read gets one. A read inside a method no pack discovers, or inside a lambda, is not reported, because the adapter has no way to know when it runs.
 

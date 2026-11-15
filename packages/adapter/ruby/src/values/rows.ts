@@ -5,11 +5,12 @@
  * method spelled `join` does not match the `File` row.
  */
 
+import { readSpellingsOf } from "@suss/recognize";
 import {
   appended,
   caseRows,
   concat,
-  environmentRead,
+  environmentRows,
   equals,
   extended,
   fallback,
@@ -29,6 +30,7 @@ import {
 } from "@suss/values";
 
 import { RECEIVER_RETURNS } from "../facts/languageWords.js";
+import { ENVIRONMENT } from "../stdlib/environment.js";
 
 function orRow(operator: string): Row {
   return {
@@ -229,11 +231,7 @@ const calleeRows: Row[] = [
     origin: { module: "File", name: "join" },
     apply: ({ args }) => ({ result: joinedPath(args) }),
   },
-  {
-    kind: "callee",
-    origin: { module: "ENV", name: "fetch" },
-    apply: ({ args }) => ({ result: environmentRead(args) }),
-  },
+  ...environmentRows(readSpellingsOf(ENVIRONMENT.declared)),
   ...["format", "sprintf"].map(
     (name): Row => ({
       kind: "callee",
