@@ -1379,9 +1379,14 @@ export function literalText(value: Node): string | null {
  * The yes or no the source writes out, or null for anything else. A
  * library that asks which fields a call wants takes a map of these, and
  * accepts a number in place of the boolean, so both are read the same
- * way round.
+ * way round. JSX sets an attribute written with no value, `<Route
+ * index />`, to `true`, and the attribute is its own value.
  */
 export function literalFlag(value: Node): boolean | null {
+  if (Node.isJsxAttribute(value) && value.getInitializer() === undefined) {
+    return true;
+  }
+
   if (Node.isTrueLiteral(value) || Node.isFalseLiteral(value)) {
     return Node.isTrueLiteral(value);
   }

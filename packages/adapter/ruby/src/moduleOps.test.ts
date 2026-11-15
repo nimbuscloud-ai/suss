@@ -25,6 +25,27 @@ function opsOf(source: string) {
 }
 
 describe("one Ruby file read on its own as module ops", () => {
+  it("reads a list through a name with its spreads in place, and no list a method returns", () => {
+    const module = opsOf(
+      "more = [b]\n" +
+        "routes = [a, *more, make()]\n" +
+        "router(routes)\n" +
+        "again(routes)\n" +
+        "router(built())\n",
+    );
+    const [first, second, third] = module
+      .calls()
+      .filter((call) => ["router", "again"].includes(call.calleeText()))
+      .map((call) => call.valueAt(0)?.listed?.() ?? null);
+
+    expect(
+      first?.entries.map(({ form, value }) => `${form} ${value.source?.()}`),
+    ).toEqual(["value a", "spread more", "value make()"]);
+    expect(second?.key).toBe(first?.key);
+    expect(third).toBeNull();
+    expect(module.importedNames(["rails"]).size).toBe(0);
+  });
+
   it("lists every class and module the file writes, by its full name, and whether it extends a library base", () => {
     const module = opsOf(
       "module Billing\n" +

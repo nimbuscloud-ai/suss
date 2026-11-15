@@ -1,12 +1,13 @@
 /**
- * The JSX a function writes, stated as facts when a reader asks about
- * that function: every element under it, the attributes and spreads each
- * one writes, and what reaches it as children. No rule reads these rows.
- * The body walk states the tag and attributes of each element a function
- * renders, through the same producer this uses, so they get one key. The
- * spreads, the children and `writesElement` would put a row in the store
- * for every element of every React file, so the body walk leaves them out
- * and they exist only for a function some reader asked about.
+ * The JSX a function or a file writes, stated as facts when a reader asks
+ * about it: every element under it, the attributes and spreads each one
+ * writes, what reaches it as children, and the element written with
+ * children that encloses it. No rule reads these rows. The body walk
+ * states the tag and attributes of each element a function renders,
+ * through the same producer this uses, so they get one key. The spreads,
+ * the children, the enclosing element and `writesElement` would put a row
+ * in the store for every element of every React file, so the body walk
+ * leaves them out and they exist only for what some reader asked about.
  */
 
 import { Node } from "ts-morph";
@@ -18,27 +19,32 @@ import type { JsxChild, JsxElement, JsxSelfClosingElement } from "ts-morph";
 import type { NodeTable } from "./extract.js";
 
 /**
- * Every element written under the function, in source order: in its own
- * body, in a function written inside it, or in an attribute's value.
- * Each gets its `writesElement` row and the rows that describe it.
+ * Every element written under the function or the file, in source order:
+ * in its own body, in a function written inside it, or in an attribute's
+ * value. Each gets its `writesElement` row and the rows that describe it.
  */
 export function stateElementsWritten(
   db: Database,
   table: NodeTable,
-  func: Node,
+  root: Node,
 ): string[] {
-  const funcId = keyOf(table, func);
+  const rootId = writerKeyOf(table, root);
   const elements: string[] = [];
-  func.forEachDescendant((node) => {
+  root.forEachDescendant((node) => {
     if (!Node.isJsxElement(node) && !Node.isJsxSelfClosingElement(node)) {
       return;
     }
     const id = keyOf(table, node);
-    db.add("writesElement", [funcId, id]);
+    db.add("writesElement", [rootId, id]);
     stateElement(db, table, node, id);
     elements.push(id);
   });
   return elements;
+}
+
+/** A file is keyed by its path, as `marks` and `exportsAs` key it, and a function by its node. */
+function writerKeyOf(table: NodeTable, root: Node): string {
+  return Node.isSourceFile(root) ? root.getFilePath() : keyOf(table, root);
 }
 
 function stateElement(
@@ -48,6 +54,10 @@ function stateElement(
   id: string,
 ): void {
   emitElementRows(db, table, element, id);
+  const parent = element.getFirstAncestor(Node.isJsxElement);
+  if (parent !== undefined) {
+    db.add("jsxParent", [id, keyOf(table, parent)]);
+  }
   const opening = Node.isJsxElement(element)
     ? element.getOpeningElement()
     : element;

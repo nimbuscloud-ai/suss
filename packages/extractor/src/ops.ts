@@ -416,6 +416,20 @@ export interface ValueOps {
   tag?(): ValueOps | null;
   /** On a function: the JSX elements it writes, or a function written inside it writes, whose tag is written `tag`, in source order. */
   elements?(tag: string): readonly ElementOps[];
+  /** On a JSX element: the attributes it is written with, in source order, the first of each name. Empty for any other value. */
+  attributes?(): readonly ValueEntry[];
+  /**
+   * On a JSX element written with children: the elements it is the
+   * nearest such element around, in source order, wherever they are
+   * written inside it. Empty for any other value.
+   */
+  elementsWithin?(): readonly ValueOps[];
+  /**
+   * The list this value comes to through names, without following a
+   * call, with each entry the source writes in it. A spread is an entry
+   * of its own. Null when the value comes to no list.
+   */
+  listed?(): ListedValues | null;
   /**
    * The position of `fn`'s parameter this value is, named as the parameter
    * itself or as the rest of a destructure written for it. Null for any
@@ -583,6 +597,15 @@ export interface ModuleOps {
   bodyCalls(): readonly CallOps[];
   /** The classes and modules the file writes, nested ones included, in source order. */
   classes(): readonly ClassValueOps[];
+  /** The JSX elements the file writes that no element written with children encloses, in source order. Empty in a language that writes no JSX. */
+  elements(): readonly ValueOps[];
+  /**
+   * Each name the file imports by name from one of the modules, under the
+   * name the file uses for it, mapped to the name the module exports:
+   * `import { Route as R }` gives `R` to `Route`. Empty where the adapter
+   * does not say.
+   */
+  importedNames(modules: readonly string[]): ReadonlyMap<string, string>;
   /** Whether the file opens with the directive. */
   marked(word: string): boolean;
   /** The functions the file writes whose body opens with the directive, in source order. */
@@ -643,6 +666,21 @@ export interface ValueEntry {
    */
   readonly key: string | null;
   /** What the entry says. */
+  readonly value: ValueOps;
+}
+
+/** A list as the source writes it, which `ValueOps.listed` gives. */
+export interface ListedValues {
+  /** Which list it is, the same for every value that comes to it, so a reader can tell a list it is already inside. */
+  readonly key: string;
+  /** The entries in source order. */
+  readonly entries: readonly ListedEntry[];
+}
+
+/** One entry of a list: a value written in place, or a spread of another collection, `...more`. */
+export interface ListedEntry {
+  readonly form: "value" | "spread";
+  /** The value, or for a spread the collection it unpacks. */
   readonly value: ValueOps;
 }
 
