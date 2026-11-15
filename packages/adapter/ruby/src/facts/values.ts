@@ -986,6 +986,30 @@ const LOOP_METHODS = new Set(["each", "each_with_index", "map"]);
 const COUNTING_LOOP = "each_with_index";
 
 /**
+ * Methods that run the block they are handed before they return, so a
+ * call in the block runs where the method is called: a loop over a list
+ * or a count, `tap`, and `class_eval` and its kin, which run the block on
+ * a class or an object. Ruby defines them all, so no pack lists them.
+ */
+const RUNS_BLOCK_IN_PLACE = new Set([
+  "each",
+  "each_with_index",
+  "each_with_object",
+  "each_pair",
+  "each_key",
+  "each_value",
+  "map",
+  "times",
+  "tap",
+  "class_eval",
+  "class_exec",
+  "module_eval",
+  "module_exec",
+  "instance_eval",
+  "instance_exec",
+]);
+
+/**
  * `elementOf` for the variable a loop block gives each element, and
  * `elementPartOf` for each variable of a block that takes the element
  * apart, as `|name, kind|` and `|(name, kind)|` do. `each_with_index`
@@ -1162,9 +1186,13 @@ function emitBlockFunction(
   call: RbNode,
 ): void {
   const blockKey = nodeId(emitter.filePath, block);
+  const callKey = nodeId(emitter.filePath, call);
   add(emitter, "func", blockKey);
   add(emitter, "inlineFn", blockKey);
-  add(emitter, "callBlock", nodeId(emitter.filePath, call), blockKey);
+  add(emitter, "callBlock", callKey, blockKey);
+  if (RUNS_BLOCK_IN_PLACE.has(field(call, "method")?.text ?? "")) {
+    add(emitter, "runsBlockInPlace", callKey);
+  }
   emitBodyCallPositions(emitter, blockKey, field(block, "body"));
   if (emitter.enclosing !== null) {
     add(
@@ -1402,7 +1430,9 @@ function emitBodyBlockCallFacts(emitter: Emitter, call: RbNode): void {
   const block = field(call, "block");
   if (block !== null) {
     const blockKey = nodeId(emitter.filePath, block);
-    add(emitter, "callBlock", nodeId(emitter.filePath, call), blockKey);
+    const callKey = nodeId(emitter.filePath, call);
+    add(emitter, "callBlock", callKey, blockKey);
+    add(emitter, "runsBlockInPlace", callKey);
     emitBodyCallPositions(emitter, blockKey, field(block, "body"));
   }
 }

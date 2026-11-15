@@ -52,6 +52,7 @@ const ACTIVE_RECORD = classBody({
 /** The blocks Rails runs as part of the body around them. */
 const RAILS_BODY_BLOCKS: RbBodyBlock[] = [
   { name: "included", moduleOnly: true },
+  { name: "concerning", moduleBody: true },
   { name: "with_options" },
 ];
 
@@ -193,7 +194,7 @@ describe("an association ActiveRecord declares", () => {
     expect(targetsOf(db)).toEqual({ statuses: "Admin::Status" });
   });
 
-  it("is read inside an `included do` block of a concern", async () => {
+  it("is not read inside an `included do` block of a concern when no pack says the block runs as part of the body", async () => {
     const db = await factsFor({
       "models.rb": [
         "class Status; end",
@@ -202,16 +203,79 @@ describe("an association ActiveRecord declares", () => {
         "  extend ActiveSupport::Concern",
         "",
         "  included do",
-        "    with_options dependent: :destroy do",
-        "      has_many :statuses",
-        "    end",
+        "    has_many :statuses",
         "  end",
         "end",
         "",
       ].join("\n"),
     });
 
-    expect(targetsOf(db)).toEqual({ statuses: "Status" });
+    expect(targetsOf(db)).toEqual({});
+  });
+
+  it("is read inside the `included do` block of a concern a class writes in place with `concerning`", async () => {
+    const db = await factsFor(
+      {
+        "models.rb": [
+          "class Profile; end",
+          "",
+          "class Account",
+          "  concerning :Profiles do",
+          "    included do",
+          "      has_one :profile",
+          "    end",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      },
+      undefined,
+      RAILS_BODY_BLOCKS,
+    );
+
+    expect(targetsOf(db)).toEqual({ profile: "Profile" });
+  });
+
+  it("is not read inside a block that runs after the class body, such as a callback's", async () => {
+    const db = await factsFor(
+      {
+        "models.rb": [
+          "class Status; end",
+          "",
+          "class Account",
+          "  after_commit do",
+          "    has_many :statuses",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      },
+      undefined,
+      RAILS_BODY_BLOCKS,
+    );
+
+    expect(targetsOf(db)).toEqual({});
+  });
+
+  it("is read inside a loop and a class_eval block, which run with the body", async () => {
+    const db = await factsFor({
+      "models.rb": [
+        "class Status; end",
+        "class Draft; end",
+        "",
+        "class Account",
+        "  %i[statuses].each do |name|",
+        "    has_many :statuses",
+        "  end",
+        "  class_eval do",
+        "    has_many :drafts",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    });
+
+    expect(targetsOf(db)).toEqual({ statuses: "Status", drafts: "Draft" });
   });
 
   it("is read inside a block the pack says runs as part of the body", async () => {

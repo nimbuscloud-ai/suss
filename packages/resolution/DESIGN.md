@@ -350,7 +350,17 @@ callBlock(r, b)             the call r is written with the block b, which
                             does. The ops in @suss/recognize/ops read it
                             to find the call that hands a block its
                             variable, and classBodyCall follows it into
-                            the block (Ruby)
+                            the block when runsBlockInPlace(r) says r
+                            runs it in place (Ruby)
+runsBlockInPlace(r)         the call r runs its block where r is written,
+                            before r returns: each, each_with_index,
+                            each_with_object, each_pair, each_key,
+                            each_value, map, times, tap, class_eval,
+                            class_exec, module_eval, module_exec,
+                            instance_eval and instance_exec, or a body
+                            block a pack declares, such as included do,
+                            where the class body reads it. Only
+                            classBodyCall reads it (Ruby)
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
 entersValue(x)              a with statement enters x, which calls its
@@ -1975,14 +1985,23 @@ lists them:
 
 ```
 classBodyCall(c, r) <- bodyCallAt(c, k, r), objectValue(c)
-classBodyCall(c, r) <- classBodyCall(c, outer), callBlock(outer, b), bodyCallAt(b, k, r)
+classBodyCall(c, r) <- classBodyCall(c, outer), runsBlockInPlace(outer), callBlock(outer, b), bodyCallAt(b, k, r)
 ```
 
 The first rule takes the class's own statements, which `bodyCallAt`
-lists through the branches of a conditional. The second follows each
-of those calls into the block it is written with, so a call inside
-`included do` or `with_options do` is the class body's too. A method,
-a lambda and a nested class are not blocks, so their calls stay out.
+lists through the branches of a conditional. The second follows a call
+into the block it is written with when the call runs that block in
+place, so a call inside `included do`, `with_options do` or
+`%i[a b].each do` is the class body's too. Ruby runs the block of a
+loop, `tap`, and `class_eval` and its kin there and then, and the
+adapter states those without a pack. It states a pack's body block
+where the class body reads one, the same place it reads the block's
+statements as the body's own. Any other block runs later or configures
+its call: the block of `after_commit do` runs when a record is saved, a
+Minitest `test "x" do` block runs when the test does, and the block of
+graphql-ruby's `field :x do` declares the field's arguments. Their
+calls are not the class body's. A method, a lambda and a nested class
+are not blocks, so their calls stay out.
 Only Ruby writes a block there. Python states a class body's call
 statements, and TypeScript the statements of a class's static blocks.
 

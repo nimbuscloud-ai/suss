@@ -18,6 +18,7 @@ import {
 import { storageSystemFromDatabaseYml } from "./databaseYml.js";
 
 import type {
+  RbBodyBlock,
   RbRawSqlPattern,
   RbStoragePattern,
   RubyPack,
@@ -341,6 +342,17 @@ export function activeRecordRawSql(
 }
 
 /**
+ * The ActiveSupport blocks a model's declarations are written in, whose
+ * statements run as part of the class or module body: a concern's
+ * `included do`, and `with_options do`. ActiveRecord brings ActiveSupport
+ * with it, so a run without the rails pack still reads them.
+ */
+export const ACTIVE_SUPPORT_BODY_BLOCKS: readonly RbBodyBlock[] = [
+  { name: "included", moduleOnly: true },
+  { name: "with_options" },
+];
+
+/**
  * Adds the storage patterns to the pack a run already uses. A project
  * picks its GraphQL library and its database library separately, so this
  * keeps everything the pack already has.
@@ -353,6 +365,7 @@ export function withActiveRecord(
     ...pack,
     storage: [...(pack.storage ?? []), ...activeRecordStorage(options)],
     classBodies: [...(pack.classBodies ?? []), ...activeRecordClassBodies()],
+    bodyBlocks: [...(pack.bodyBlocks ?? []), ...ACTIVE_SUPPORT_BODY_BLOCKS],
     rawSql: [...(pack.rawSql ?? []), ...activeRecordRawSql(options)],
   };
 }
@@ -369,11 +382,12 @@ export function activeRecordFramework(
   }
   return {
     name: "activerecord",
-    version: "1",
+    version: "2",
     protocol: options.storageSystem,
     discovery: [],
     storage: activeRecordStorage(options),
     classBodies: activeRecordClassBodies(),
+    bodyBlocks: [...ACTIVE_SUPPORT_BODY_BLOCKS],
     rawSql: activeRecordRawSql(options),
   };
 }
