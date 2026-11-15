@@ -18,7 +18,6 @@ import type {
   Chain,
   ClaimMetadata,
   Link,
-  ScheduleEnding,
   ScheduleUnread,
   SubUnitNamePart,
 } from "./chain.js";
@@ -37,9 +36,10 @@ export interface Callbacks {
     options?: { ignoringCase?: boolean },
   ): Callbacks;
   /**
-   * What the effect records: the callee as the source writes it as
-   * `via`, and the reasons it gives when the run cannot tell which
-   * function the call runs.
+   * That each call records a schedule effect on its unit: the callee as
+   * the source writes it as `via`, and the reasons it gives when the run
+   * cannot tell which function the call runs. Without it the chain
+   * records nothing and only claims callbacks.
    */
   schedules(spec: { via: "asWritten"; unread: ScheduleUnread }): Callbacks;
   /**
@@ -49,6 +49,7 @@ export interface Callbacks {
   unitWhenInPlace(spec: {
     kind: CodeUnitKind;
     name: readonly SubUnitNamePart[];
+    countedAs?: string;
     metadata?: ClaimMetadata;
   }): Callbacks;
   /** A line of code this matches, which the pack's tests run. */
@@ -57,22 +58,11 @@ export interface Callbacks {
   readonly declared: Chain<CallbackMethod>;
 }
 
-/** Until a pack says otherwise, the reasons are the library-neutral ones. */
-const UNREAD: ScheduleUnread = {
-  missing: "missing-callback",
-  other: "non-literal-callback",
-};
-
 /** A pack that recognizes calls taking a callback. */
 export function callbacks(spec: CallbacksSpec): Callbacks {
-  const ending: ScheduleEnding = {
-    yields: "schedule",
-    via: "asWritten",
-    unread: UNREAD,
-  };
   return chainFrom({
     links: chainStart(spec.client),
-    ending,
+    ending: { yields: "claims" },
     example: null,
   });
 }
@@ -95,11 +85,12 @@ function chainFrom(declared: Chain<CallbackMethod>): Callbacks {
         ...declared,
         ending: { yields: "schedule", via, unread },
       }),
-    unitWhenInPlace: ({ kind, name, metadata }) =>
+    unitWhenInPlace: ({ kind, name, countedAs, metadata }) =>
       adding({
         asks: "unitWhenInPlace",
         kind,
         name,
+        ...(countedAs === undefined ? {} : { countedAs }),
         ...(metadata === undefined ? {} : { metadata }),
       }),
     example: (code) => chainFrom({ ...declared, example: code }),

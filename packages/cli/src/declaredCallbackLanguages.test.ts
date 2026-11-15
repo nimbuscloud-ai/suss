@@ -26,9 +26,15 @@ import type { PatternPack } from "@suss/extractor";
 
 // Ruby has no imports, so the library comes in through its own constant,
 // which the origin lists beside the module.
+const LATER_CALLS = {
+  later: { callback: [{ written: "callback", at: 0 }, { written: "block" }] },
+} as const;
+
 const LATER = callbacks({ client: constructedFrom("jobs", "Jobs") })
-  .methods({
-    later: { callback: [{ written: "callback", at: 0 }, { written: "block" }] },
+  .methods(LATER_CALLS)
+  .schedules({
+    via: "asWritten",
+    unread: { missing: "missing-callback", other: "non-literal-callback" },
   })
   .unitWhenInPlace({
     kind: "scheduled-callback",
@@ -37,6 +43,30 @@ const LATER = callbacks({ client: constructedFrom("jobs", "Jobs") })
   .example("jobs.later(() => notify())");
 
 const DECLARED = pack("declared-later", [LATER], {
+  languages: ["typescript", "python", "ruby"],
+  recognizedAs: "@suss/declared-test",
+});
+
+// A chain that records nothing on the parent, numbers its claims across
+// the parent and reads the metadata each claim records.
+const QUEUED = callbacks({ client: constructedFrom("jobs", "Jobs") })
+  .methods(LATER_CALLS)
+  .unitWhenInPlace({
+    kind: "handler",
+    name: ["parent", "countInParent"],
+    countedAs: "job",
+    metadata: {
+      jobs: {
+        kind: { reads: "text", text: "queued" },
+        owner: { reads: "parent" },
+        index: { reads: "count" },
+        tags: { reads: "argumentItems", at: 1 },
+      },
+    },
+  })
+  .example('jobs.later(() => notify(), ["orders"])');
+
+const CLAIMING = pack("declared-claims", [QUEUED], {
   languages: ["typescript", "python", "ruby"],
   recognizedAs: "@suss/declared-test",
 });
@@ -90,7 +120,46 @@ const RUBY = `module Store
 end
 `;
 
-async function typescriptSummaries(): Promise<BehavioralSummary[]> {
+const QUEUED_TYPESCRIPT = `
+  import { Jobs } from "jobs";
+
+  const jobs = new Jobs();
+  const tags = ["nightly"];
+
+  export function enqueue() {
+    jobs.later(() => notify(), ["orders", ...tags]);
+    jobs.later(() => audit(), tags);
+    jobs.later(() => sweep());
+  }
+`;
+
+const QUEUED_PYTHON = `from jobs import Jobs
+
+jobs = Jobs()
+tags = ["nightly"]
+
+
+def enqueue():
+    jobs.later(lambda: notify(), ["orders", *tags])
+    jobs.later(lambda: audit(), tags)
+    jobs.later(lambda: sweep())
+`;
+
+const QUEUED_RUBY = `module Queue
+  def self.enqueue
+    jobs = Jobs::Queue.new
+    tags = ["nightly"]
+    jobs.later(-> { notify }, ["orders", *tags])
+    jobs.later(-> { audit }, tags)
+    jobs.later { sweep }
+  end
+end
+`;
+
+async function typescriptSummaries(
+  declared: PatternPack = DECLARED,
+  source = TYPESCRIPT,
+): Promise<BehavioralSummary[]> {
   const project = createTestProject();
   project.createSourceFile(
     "/node_modules/jobs/package.json",
@@ -98,13 +167,13 @@ async function typescriptSummaries(): Promise<BehavioralSummary[]> {
   );
   project.createSourceFile(
     "/node_modules/jobs/index.d.ts",
-    "export declare class Jobs { later(run: () => void): void; }",
+    "export declare class Jobs { later(run: () => void, tags?: string[]): void; }",
   );
-  project.createSourceFile("/jobs.ts", TYPESCRIPT);
+  project.createSourceFile("/jobs.ts", source);
   // TypeScript reads `process.env` through the Node runtime pack.
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [EXPORTS, DECLARED, nodeRuntimePack()],
+    frameworks: [EXPORTS, declared, nodeRuntimePack()],
   });
   return await adapter.extractAll();
 }
@@ -117,40 +186,52 @@ beforeAll(() => {
   );
   fs.mkdirSync(path.join(root, "store"));
   fs.writeFileSync(path.join(root, "store/__init__.py"), PYTHON);
+  fs.mkdirSync(path.join(root, "queue"));
+  fs.writeFileSync(path.join(root, "queue/__init__.py"), QUEUED_PYTHON);
   fs.mkdirSync(path.join(root, "lib/store"), { recursive: true });
   fs.writeFileSync(path.join(root, "lib/store.rb"), RUBY);
+  fs.mkdirSync(path.join(root, "lib/queue"), { recursive: true });
+  fs.writeFileSync(path.join(root, "lib/queue.rb"), QUEUED_RUBY);
 });
 
 afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-/** The hooks the declaration compiled to, the way the Python and Ruby adapters load a pack. */
-const LOADED = {
-  name: DECLARED.name,
-  protocol: DECLARED.protocol,
-  discovery: [],
-  invocationRecognizers: DECLARED.invocationRecognizers ?? [],
-  ...(DECLARED.subUnits === undefined ? {} : { subUnits: DECLARED.subUnits }),
-};
+/** The hooks a declaration compiled to, the way the Python and Ruby adapters load a pack. */
+function loaded(declared: PatternPack) {
+  return {
+    name: declared.name,
+    protocol: declared.protocol,
+    discovery: [],
+    invocationRecognizers: declared.invocationRecognizers ?? [],
+    ...(declared.subUnits === undefined ? {} : { subUnits: declared.subUnits }),
+  };
+}
 
-async function pythonSummaries(): Promise<BehavioralSummary[]> {
+async function pythonSummaries(
+  declared: PatternPack = DECLARED,
+  module = "store",
+): Promise<BehavioralSummary[]> {
   const { summaries } = await extractPythonProject({
-    files: [path.join(root, "store/__init__.py")],
+    files: [path.join(root, `${module}/__init__.py`)],
     roots: [root],
-    packs: [LOADED],
-    modules: [{ name: "store", root: path.join(root, "store") }],
+    packs: [loaded(declared)],
+    modules: [{ name: module, root: path.join(root, module) }],
     workspaceRoot: root,
     cacheDir: null,
   });
   return summaries;
 }
 
-async function rubySummaries(): Promise<BehavioralSummary[]> {
+async function rubySummaries(
+  declared: PatternPack = DECLARED,
+  module = "store",
+): Promise<BehavioralSummary[]> {
   const { summaries } = await extractRubyProject({
-    files: [path.join(root, "lib/store.rb")],
-    packs: [LOADED],
-    modules: [{ name: "store", root: path.join(root, "lib/store") }],
+    files: [path.join(root, `lib/${module}.rb`)],
+    packs: [loaded(declared)],
+    modules: [{ name: module, root: path.join(root, `lib/${module}`) }],
     workspaceRoot: root,
     cacheDir: null,
   });
@@ -259,5 +340,67 @@ describe("a callbacks declaration", () => {
     });
     expect(claimedIn(await pythonSummaries())).toEqual(fromTypeScript);
     expect(claimedIn(await rubySummaries())).toEqual(fromTypeScript);
+  });
+});
+
+/** Each claim the chain made in `enqueue`, by its name after the parent's, with its metadata and the owner said as the parent. */
+function claimsOf(summaries: readonly BehavioralSummary[]) {
+  const parent = summaries.find((summary) =>
+    summary.identity.name.endsWith("enqueue"),
+  );
+  const parentName = parent?.identity.name ?? "";
+  return {
+    onParent: effectsOf(parent).filter(
+      (effect) =>
+        effect.type === "interaction" &&
+        effect.binding?.recognition === "@suss/declared-test",
+    ),
+    claims: summaries
+      .filter(
+        (summary) =>
+          summary.kind === "handler" &&
+          summary.identity.name.startsWith(`${parentName}.`),
+      )
+      .map((summary) => {
+        const { owner, ...jobs } = (summary.metadata?.jobs ?? {}) as {
+          owner?: unknown;
+        };
+        return [
+          summary.identity.name.slice(parentName.length),
+          { ...jobs, ownerIsParent: owner === parentName },
+        ];
+      }),
+  };
+}
+
+/** The claims every language makes, with the spread in the first list as each one writes it. */
+function expectedClaims(spread: string) {
+  const metadata = (index: number, tags: string[] | null) => ({
+    kind: "queued",
+    index,
+    tags,
+    ownerIsParent: true,
+  });
+  return {
+    onParent: [],
+    claims: [
+      [".job#0", metadata(0, ['"orders"', spread])],
+      [".job#1", metadata(1, ["tags"])],
+      [".job#2", metadata(2, null)],
+    ],
+  };
+}
+
+describe("a callbacks declaration that only claims", () => {
+  it("records nothing on the parent, numbers its claims in the parent and reads the metadata the link declares, in TypeScript, Python and Ruby", async () => {
+    expect(
+      claimsOf(await typescriptSummaries(CLAIMING, QUEUED_TYPESCRIPT)),
+    ).toEqual(expectedClaims("...tags"));
+    expect(claimsOf(await pythonSummaries(CLAIMING, "queue"))).toEqual(
+      expectedClaims("*tags"),
+    );
+    expect(claimsOf(await rubySummaries(CLAIMING, "queue"))).toEqual(
+      expectedClaims("*tags"),
+    );
   });
 });

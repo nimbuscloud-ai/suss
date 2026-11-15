@@ -7,6 +7,5 @@
   "n": "the second character of the `on` prefix React event props carry",
   "o": "the leading character of the `on` prefix React event props carry",
   "react": "pack name, React",
-  "useCallback": "react: the hook that hands back the callback it was given",
-  "useEffect": "react: the effect hook"
+  "useCallback": "react: the hook that hands back the callback it was given"
 }
