@@ -423,7 +423,7 @@ const ENTRYPOINTS: DeclaredDiscoveryPattern[] = [
 ];
 
 describe("subclassOf", () => {
-  it("takes the listed methods of a class whose ancestry reaches the library base, through a project class between, in all three languages", async () => {
+  it("takes the listed methods of a class whose ancestry reaches the library base, through a project class between, in all three languages, and a Ruby class written in a module under its full name", async () => {
     const expected = [
       "handler Child.fetch function-call",
       "handler Default.fetch function-call",
@@ -442,6 +442,9 @@ describe("subclassOf", () => {
             "  fetch(request: unknown) { return request; }",
             "}",
             "export class Plain {",
+            "  fetch(request: unknown) { return request; }",
+            "}",
+            "class Hidden extends WorkerEntrypoint {",
             "  fetch(request: unknown) { return request; }",
             "}",
           ].join("\n"),
@@ -473,6 +476,12 @@ describe("subclassOf", () => {
             "class Plain:",
             "    def fetch(self, request):",
             "        return request",
+            "",
+            "def make():",
+            "    class Inner(WorkerEntrypoint):",
+            "        def fetch(self, request):",
+            "            return request",
+            "    return Inner",
             "",
           ].join("\n"),
         },
@@ -509,11 +518,19 @@ describe("subclassOf", () => {
             "  end",
             "end",
             "",
+            "module Billing",
+            "  class Nightly < Workers::WorkerEntrypoint",
+            "    def fetch(request)",
+            "      request",
+            "    end",
+            "  end",
+            "end",
+            "",
           ].join("\n"),
         },
         ENTRYPOINTS,
       ),
-    ).toEqual(expected);
+    ).toEqual(["handler Billing::Nightly.fetch function-call", ...expected]);
   });
 });
 

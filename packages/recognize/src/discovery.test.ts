@@ -290,6 +290,31 @@ describe("subclassOf", () => {
     ).toEqual([]);
   });
 
+  it("takes a class written inside a module, which no export leads to, under its full name", () => {
+    const source = moduleFacts([
+      ["rbConstantName", "nightly", "Reports::Nightly"],
+      ["rbConstantName", "weekly", "Jobs::Weekly"],
+    ]);
+    const module = factModuleOps(FILE, source, {
+      calls: () => [],
+      classes: () => ["reportsModule", "nightly", "weekly"],
+      qualifier: "::",
+    });
+    expect(
+      found(
+        {
+          type: "subclassOf",
+          inherits: { from: ["lib"], named: ["Base"] },
+          members: { kind: "singleton" },
+        },
+        module,
+      ),
+    ).toEqual([
+      "handler Jobs::Weekly.run run Jobs::Weekly/run",
+      "handler Reports::Nightly.run run Reports::Nightly/run",
+    ]);
+  });
+
   it("reads the ancestry once per class, so a loop ends", () => {
     const source = moduleFacts([["extends", "loopA", "loopB"]]);
     const looped: FactSource = {
