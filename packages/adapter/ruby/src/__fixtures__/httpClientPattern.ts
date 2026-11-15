@@ -20,6 +20,16 @@ export function requestCallsPattern(
   };
 }
 
+/** A library whose `fetch` can take a host, a path and a port, and whose builder takes a host and a port. */
+export function hostArgumentsPattern(): RbClientCall {
+  return requestCallsPattern({
+    verbMethodNames: { get: "GET", fetch: "GET" },
+    url: { position: 0 },
+    hostThenPath: { methods: ["fetch"], host: 0, path: 1, port: 2 },
+    builderHost: { host: 0, port: 1 },
+  });
+}
+
 /** A library that sends a request built somewhere else. */
 export function wrappedUrlsPattern(): RbClientCall {
   return requestCallsPattern({

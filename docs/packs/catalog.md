@@ -98,7 +98,7 @@ A client pack finds the call sites on the other side and binds each one to the m
 | [`faraday`](../../packages/client/faraday) | Faraday call sites (Ruby): a request method on the module itself or on a connection `Faraday.new` built, with the call's path resolved against that connection's own URL the way Faraday resolves it. | ![](../../.github/badges/coverage-faraday.svg) |
 | [`fetch`](../../packages/client/web) | Global `fetch` call sites. | ![](../../.github/badges/coverage-web.svg) |
 | [`httpx`](../../packages/client/httpx) | httpx call sites (Python): the verb functions, `httpx.request`, and a `Client` or `AsyncClient` held in an assignment or opened with `with`. | ![](../../.github/badges/coverage-httpx.svg) |
-| [`net-http`](../../packages/client/net-http) | Net::HTTP call sites (Ruby): the module methods that send on their own, and a request object built with `Net::HTTP::Get` and its siblings, with the URL read through `URI`. | ![](../../.github/badges/coverage-net-http.svg) |
+| [`net-http`](../../packages/client/net-http) | Net::HTTP call sites (Ruby): the module methods that send on their own, given a URL or a host and a path, and a request object built with `Net::HTTP::Get` and its siblings, with the URL read through `URI`. | ![](../../.github/badges/coverage-net-http.svg) |
 | [`requests`](../../packages/client/requests) | requests call sites (Python): the seven verb functions, `requests.request`, and a `Session`, each bound to the method and path the call states. | ![](../../.github/badges/coverage-requests.svg) |
 
 <!-- end client -->

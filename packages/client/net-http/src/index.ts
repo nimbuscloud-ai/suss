@@ -16,6 +16,7 @@ import type { PackDeclaration } from "@suss/ir-core";
 const VERB_METHODS: Record<string, string> = {
   get: "GET",
   get_response: "GET",
+  get_print: "GET",
   post: "POST",
   post_form: "POST",
   put: "PUT",
@@ -38,6 +39,7 @@ const REQUEST_CLASSES: Record<string, string> = {
 export function netHttpClient(): RubyPack {
   return {
     name: "net-http",
+    version: "1",
     protocol: "http",
     discovery: [],
     clients: [
@@ -48,7 +50,19 @@ export function netHttpClient(): RubyPack {
         // are part of Ruby, so the adapter already evaluates them and the
         // pack adds nothing for them.
         url: { position: 0 },
+        // `Net::HTTP.get("api.example.com", "/orders", 8080)` passes the
+        // host and the path apart. The get methods decide by the second
+        // argument: a path means this form, and a hash means headers.
+        hostThenPath: {
+          methods: ["get", "get_response", "get_print"],
+          host: 0,
+          path: 1,
+          port: 2,
+        },
         receiverBuilders: ["new"],
+        // `Net::HTTP.new(host, port)` takes no path, so a call on it goes
+        // to that host with the call's own path.
+        builderHost: { host: 0, port: 1 },
         requestObject: {
           attribute: "request",
           constructors: REQUEST_CLASSES,
@@ -76,7 +90,7 @@ export const declares: PackDeclaration = {
   shippedWith: "ruby",
   sourcePattern: /\bNet::HTTP\b/,
   reads:
-    "Net::HTTP call sites (Ruby): the module methods that send on their own, and a request object built with \`Net::HTTP::Get\` and its siblings, with the URL read through \`URI\`.",
+    "Net::HTTP call sites (Ruby): the module methods that send on their own, given a URL or a host and a path, and a request object built with \`Net::HTTP::Get\` and its siblings, with the URL read through \`URI\`.",
 };
 
 export default netHttpClient;
