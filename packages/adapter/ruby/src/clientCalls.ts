@@ -7,20 +7,19 @@
  * written. This module reads the calls in each method body, evaluates the
  * URL the same way a route's path is evaluated, and reports the enclosing
  * method as a client of that method and path. A call at the top level of
- * a file has no unit to belong to, and a call whose URL does not settle
- * on a string is skipped. A request object passed in place of a URL is
+ * a file has no unit to belong to. A URL that says nothing about where it
+ * goes gives a client with no path. A request object passed for a URL is
  * read through the value facts, so a run without facts sees only request
  * objects built in the call itself.
  */
 
 import {
   hasNameHole,
-  namesNothing,
   restBinding,
   statusMembersOf,
   testsStatus,
 } from "@suss/behavioral-ir";
-import { concat, hostOf, pathOf, text } from "@suss/values";
+import { concat, hostOf, pathOf, statedRequestPath, text } from "@suss/values";
 
 import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { callsUnder, claimedIn, claimsNamedAfter } from "./claims.js";
@@ -47,13 +46,24 @@ import type { CallArgs, Range } from "./ast.js";
 import type { RbClientCall, RbHostArguments, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
-/** What one request call states about the boundary it reaches. */
-interface RequestCall extends Target {
+/**
+ * What one request call states about the boundary it reaches. The path
+ * is null when the URL says nothing about where the request goes.
+ */
+interface RequestCall {
   method: string;
+  path: string | null;
+  host: string | undefined;
 }
 
-/** Where a URL goes: its path, and its host when it is absolute. */
+/** Where a URL goes: its path when it has one, and its host when it is absolute. */
 interface Target {
+  path: string | undefined;
+  host: string | undefined;
+}
+
+/** The base URL a connection was built with, whose path goes in front of a call's own. */
+interface Base {
   path: string;
   host: string | undefined;
 }
@@ -228,16 +238,17 @@ function requestCalls(
     );
 
   const plain = read();
-  if (plain !== null && !hasNameHole(plain.path)) {
+  if (plain !== null && plain.path !== null && !hasNameHole(plain.path)) {
     return [plain];
   }
 
   // Two constructions that give the same request count as one call,
-  // since nothing at the boundary tells them apart.
+  // since nothing at the boundary tells them apart. A request with no
+  // path is the one left when no construction says where it goes.
   const byBoundary = new Map<string, RequestCall>();
   for (const site of constructionSitesOf(call, options.facts)) {
     const stated = read(site);
-    if (stated !== null) {
+    if (stated !== null && stated.path !== null) {
       byBoundary.set(
         `${stated.method} ${stated.host ?? ""} ${stated.path}`,
         stated,
@@ -254,7 +265,7 @@ function requestCalls(
 function requestCall(
   call: RbNode,
   called: string,
-  base: Target | null,
+  base: Base | null,
   pattern: RbClientCall,
   options: ClientCallOptions,
   site?: string,
@@ -372,12 +383,22 @@ function hostWithPort(
 /**
  * A request's own URL under the base its connection was built with. An
  * absolute URL replaces the base, the way Faraday and Net::HTTP send it.
+ * A path that says nothing about where the request goes is no path, and
+ * the base's path does not go in front of it.
  */
-function underBase(base: Target | null, target: Target): Target {
+function underBase(
+  base: Base | null,
+  target: Target,
+): Pick<RequestCall, "path" | "host"> {
   if (base === null || target.host !== undefined) {
-    return target;
+    const path = statedRequestPath(target.path, target.host);
+    return { path: path ?? null, host: target.host };
   }
-  return { path: resolvedPath(base.path, target.path), host: base.host };
+  const path = statedRequestPath(target.path, base.host);
+  return {
+    path: path === undefined ? null : resolvedPath(base.path, path),
+    host: base.host,
+  };
 }
 
 // Pairing reads a hole at the front of a path as the base URL.
@@ -472,7 +493,7 @@ function receiverBase(
   pattern: RbClientCall,
   options: ClientCallOptions,
   site?: string,
-): Target | null {
+): Base | null {
   const built = builderCallBehind(receiver, pattern, options.facts);
   if (built === null) {
     return null;
@@ -544,9 +565,9 @@ function urlNodeIn(args: CallArgs, pattern: RbClientCall): RbNode | undefined {
 }
 
 /**
- * Where one node's URL goes, or null when it settles on no path. A URL
- * passed as an object instead of a string, such as `URI("...")`, comes
- * back from the value tables as the string it was built from, so
+ * Where one node's URL goes, or null when the call has no URL there. A
+ * URL passed as an object instead of a string, such as `URI("...")`,
+ * comes back from the value tables as the string it was built from, so
  * nothing here needs to unwrap it.
  */
 function targetAt(
@@ -557,13 +578,8 @@ function targetAt(
   if (written === undefined) {
     return null;
   }
-  // A URL passed in whole evaluates to a single hole. That path cannot
-  // match any route, so it is dropped.
   const value = evaluatedValue(written, options.facts, undefined, site);
-  const path = pathOf(value);
-  return path === undefined || namesNothing(path)
-    ? null
-    : { path, host: hostOf(value) };
+  return { path: pathOf(value), host: hostOf(value) };
 }
 
 /** The unit for the method the call is written in. */

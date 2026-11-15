@@ -205,7 +205,58 @@ describe("a method that calls a request method", () => {
       ].join("\n"),
     );
 
-    expect(units).toEqual([]);
+    expect(units).toHaveLength(1);
+    expect(boundary(units)).toEqual({ method: "GET", path: null });
+  });
+
+  it("is a client with no path for a URL made only of holes", async () => {
+    const units = await unitsIn(
+      [
+        "class ProxyClient",
+        "  def get(base_url, path)",
+        '    HttpClient.get("#{base_url}#{path}")',
+        "  end",
+        "  def get_under(base_url, path)",
+        '    HttpClient.get("#{base_url}/#{path}")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(paths(units)).toEqual(["", ""]);
+  });
+
+  it("keeps a path made only of holes at a host suss read, from the call or from the builder", async () => {
+    const units = await unitsIn(
+      [
+        "class KeyClient",
+        "  def key(kid)",
+        '    HttpClient.get("https://keys.example.com/#{kid}")',
+        "  end",
+        "  def key_on(kid)",
+        '    conn = HttpClient.build(base: "https://keys.example.com/v1")',
+        '    conn.get("#{kid}")',
+        "  end",
+        "  def key_anywhere(base, kid)",
+        "    conn = HttpClient.build(base: base)",
+        '    conn.get("#{kid}")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(
+      units.map((unit) => {
+        const semantics = unit.boundaryBinding?.semantics;
+        return semantics?.name === "rest"
+          ? [semantics.host ?? null, semantics.path]
+          : null;
+      }),
+    ).toEqual([
+      ["keys.example.com", "/{kid}"],
+      ["keys.example.com", "/v1/{kid}"],
+      [null, null],
+    ]);
   });
 
   it("says nothing about a receiver the library did not build", async () => {
@@ -673,7 +724,7 @@ describe("a library that sends a request object", () => {
     expect(units).toEqual([]);
   });
 
-  it("says nothing about a URL handed in whole, which names no route", async () => {
+  it("is a client with no path for a URL handed in whole", async () => {
     const units = await unitsIn(
       [
         "class OrderClient",
@@ -685,7 +736,8 @@ describe("a library that sends a request object", () => {
       WRAPPED_URLS,
     );
 
-    expect(units).toEqual([]);
+    expect(units).toHaveLength(1);
+    expect(boundary(units)).toEqual({ method: "GET", path: null });
   });
 
   it("reads a plain string where the library also takes one", async () => {
@@ -985,8 +1037,23 @@ describe("a URL the constructor was given", () => {
     expect(paths(units)).toEqual(["/users"]);
   });
 
-  it("gives nothing when nothing constructs the class", async () => {
-    expect(await unitsIn(RESOURCE)).toEqual([]);
+  it("gives one client with no path when nothing constructs the class", async () => {
+    const units = await unitsIn(RESOURCE);
+
+    expect(units).toHaveLength(1);
+    expect(boundary(units)).toEqual({ method: "GET", path: null });
+  });
+
+  it("leaves out a construction whose URL says nothing, when another one does", async () => {
+    const units = await unitsIn(`${RESOURCE}
+      USERS = Resource.new("/users")
+
+      def build(base)
+        Resource.new(base)
+      end
+    `);
+
+    expect(paths(units)).toEqual(["/users"]);
   });
 });
 

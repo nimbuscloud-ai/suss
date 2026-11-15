@@ -55,7 +55,14 @@ export {
   startsWith,
   stripped,
 } from "./operations.js";
-export { hostOf, isLocalUrl, pathOf, routePatternOf } from "./routePath.js";
+export {
+  hostOf,
+  isLocalUrl,
+  pathIsOnlyHoles,
+  pathOf,
+  routePatternOf,
+  statedRequestPath,
+} from "./routePath.js";
 export { shapeOfValue } from "./typeShape.js";
 export {
   type Constant,

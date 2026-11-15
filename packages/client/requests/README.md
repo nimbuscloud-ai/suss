@@ -25,7 +25,7 @@ def fetch_order(order_id: str) -> dict:
 
 ## Where it stops
 
-- **A URL that cannot be settled**, as in `requests.get(target)` where `target` is a parameter, records nothing, so the pack never guesses. The call stays an invocation effect on the function, like any other call.
+- **A URL that cannot be settled**, as in `requests.get(target)` where `target` is a parameter, makes the function a client with no path, so the pack never guesses. A binding with no path pairs with nothing. A path made only of holes, as in `f"{base}{path}"`, counts as no path, unless suss read the host.
 - **A call at module level** has no function to belong to and is ignored.
 - **`raise_for_status()` is not read.** A caller that writes it only handles a 2xx, and the summary does not record that yet. A test the caller writes itself, such as `if response.status_code == 404`, is read.
 - **`httpx` and `aiohttp`** are separate libraries with their own packs.

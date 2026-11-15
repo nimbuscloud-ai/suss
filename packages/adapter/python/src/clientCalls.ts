@@ -7,8 +7,8 @@
  * calls in each function body, evaluates the URL the same way a route's
  * path is evaluated, and reports the enclosing function as a client of
  * that method and path. A call at module level has no function to belong
- * to, and a call whose URL does not settle on a string claims no path.
- * Both are skipped here.
+ * to, so it is skipped. A URL that says nothing about where it goes
+ * makes its function a client with no path, which pairs with nothing.
  */
 
 import {
@@ -18,7 +18,7 @@ import {
   testsStatus,
 } from "@suss/behavioral-ir";
 import { redirectDeliveryWhenSet } from "@suss/extractor";
-import { hostOf, pathOf, scalarOf } from "@suss/values";
+import { hostOf, pathOf, scalarOf, statedRequestPath } from "@suss/values";
 
 import {
   children,
@@ -63,9 +63,12 @@ import type { PyNode } from "./parser.js";
 import type { TerminalBranch } from "./paths/bodyBranches.js";
 import type { ModuleBinding } from "./scope.js";
 
-/** Where a URL goes: its path, and its host when it is absolute. */
+/**
+ * Where a URL goes: its path, and its host when it is absolute. The path
+ * is null when it says nothing about where the request goes.
+ */
 interface Target {
-  path: string;
+  path: string | null;
   host: string | undefined;
 }
 
@@ -182,16 +185,17 @@ function requestCalls(
     return [];
   }
   const plain = requestCall(call, attribute, pattern, options);
-  if (plain !== null && !hasNameHole(plain.path)) {
+  if (plain !== null && plain.path !== null && !hasNameHole(plain.path)) {
     return [plain];
   }
 
   // Two constructions with the same method and path give one request,
-  // since the boundary is the same for both.
+  // since the boundary is the same for both. A request with no path is
+  // the one left when no construction says where it goes.
   const byBoundary = new Map<string, RequestCall>();
   for (const site of constructionSitesOf(call, options.facts)) {
     const stated = requestCall(call, attribute, pattern, options, site);
-    if (stated === null) {
+    if (stated === null || stated.path === null) {
       continue;
     }
     const key = `${stated.method} ${stated.host ?? ""} ${stated.path}`;
@@ -341,7 +345,7 @@ function receiverConstructor(
   return importModule.includes(origin.module) ? origin.name : null;
 }
 
-/** Where the URL argument goes, or null when it settles on no path. */
+/** Where the URL argument goes, or null when the call has no URL argument. */
 function urlAt(
   call: PyNode,
   position: number,
@@ -354,8 +358,8 @@ function urlAt(
     return null;
   }
   const value = evaluatedValue(argument, options.facts, site);
-  const path = pathOf(value);
-  return path === undefined ? null : { path, host: hostOf(value) };
+  const host = hostOf(value);
+  return { path: statedRequestPath(pathOf(value), host) ?? null, host };
 }
 
 /**

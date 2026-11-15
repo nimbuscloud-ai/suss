@@ -165,7 +165,7 @@ describe("a method that calls Net::HTTP", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("says nothing about a URL that does not settle on a string", async () => {
+  it("is a client with no path for a URL that does not settle on a string", async () => {
     const summaries = await summariesOf(
       [
         "class OrderClient",
@@ -176,7 +176,8 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(summaries).toEqual([]);
+    expect(summaries).toHaveLength(1);
+    expect(boundary(summaries)).toEqual({ method: "GET", path: null });
   });
 });
 

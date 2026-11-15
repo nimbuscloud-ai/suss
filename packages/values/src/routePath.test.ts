@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { hostOf, isLocalUrl, pathOf, routePatternOf } from "./routePath.js";
+import {
+  hostOf,
+  isLocalUrl,
+  pathIsOnlyHoles,
+  pathOf,
+  routePatternOf,
+  statedRequestPath,
+} from "./routePath.js";
 import { constant, hole, holePiece, string, text, textPiece } from "./value.js";
 
 describe("routePatternOf", () => {
@@ -228,5 +235,41 @@ describe("hostOf", () => {
         ]),
       ),
     ).toBe("www.example.net");
+  });
+});
+
+describe("statedRequestPath", () => {
+  it("keeps a path with text in it", () => {
+    expect(statedRequestPath("/orders/{id}", undefined)).toBe("/orders/{id}");
+    expect(statedRequestPath("{base}/orders", undefined)).toBe("{base}/orders");
+    expect(statedRequestPath("/", undefined)).toBe("/");
+  });
+
+  it("drops a path made only of holes and slashes when no host was read", () => {
+    expect(statedRequestPath("{url}", undefined)).toBeUndefined();
+    expect(statedRequestPath("{base}{path}", undefined)).toBeUndefined();
+    expect(statedRequestPath("{base}/{path}", undefined)).toBeUndefined();
+    expect(statedRequestPath("/{id}", "{host}:{port}")).toBeUndefined();
+    expect(statedRequestPath("/{id}", "{host}")).toBeUndefined();
+  });
+
+  it("keeps a path made only of holes at a host suss read some of", () => {
+    expect(statedRequestPath("/{kid}", "keys.example.com")).toBe("/{kid}");
+    expect(statedRequestPath("/{kid}", "keys.{region}.example.com")).toBe(
+      "/{kid}",
+    );
+    expect(statedRequestPath("/{id}", "localhost:{port}")).toBe("/{id}");
+  });
+
+  it("has no path to keep when the URL had none", () => {
+    expect(statedRequestPath(undefined, "keys.example.com")).toBeUndefined();
+  });
+});
+
+describe("pathIsOnlyHoles", () => {
+  it("is true only for a path with a hole and nothing but slashes beside it", () => {
+    expect(pathIsOnlyHoles("{a}/{b}")).toBe(true);
+    expect(pathIsOnlyHoles("/")).toBe(false);
+    expect(pathIsOnlyHoles("/orders/{id}")).toBe(false);
   });
 });

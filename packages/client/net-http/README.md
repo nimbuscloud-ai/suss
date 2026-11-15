@@ -33,7 +33,7 @@ end
 ## Where it stops
 
 - **`Net::HTTP.start(host, port) { |http| ... }`** passes the connection to a block parameter, and a call on that parameter is not read. A connection assigned to a name with `Net::HTTP.new` is read.
-- **A URI built somewhere else**, in another method or from a value that cannot be settled, records nothing, so the pack never guesses.
+- **A URI built somewhere else**, in another method or from a value that cannot be settled, makes the method a client with no path, so the pack never guesses. A binding with no path pairs with nothing.
 - **A request's body and headers** are not read. The request is reported by its method and path alone, and what `request.body =` sets is ignored.
 - **What the caller does with the response**: the pack declares `code` and `body`, and a test the caller writes on either one becomes a path of its summary. Net::HTTP returns the status as a string, so `response.code.to_i == 404` is read as a test on `code`.
 
