@@ -32,6 +32,7 @@ import { parametersOf, paramNameOf } from "./facts/locals.js";
 import {
   anchorCallsOf,
   RUBY_PROGRAM,
+  resolvedFunctions,
   resolveStreamObjects,
   resolveValues,
   writtenValueOf,
@@ -125,12 +126,14 @@ export function rubyFactSource(db: Database): RubyFactSource {
       return node === null ? { type: "unknown" } : writtenShapeOf(node);
     },
     spellsGlobal: (key, path) => globalPathOf(db, key, nodeAt(key)) === path,
+    // A class that defines its own `warn` runs that method on a bare call.
     callsGlobal: (call, path) => {
       const node = nodeAt(call);
       return (
         node?.type === "call" &&
         node.childForFieldName("receiver") === null &&
-        node.childForFieldName("method")?.text === path
+        node.childForFieldName("method")?.text === path &&
+        !runsProjectMethod(db, call)
       );
     },
     globalsReaching: (key) => {
@@ -241,6 +244,13 @@ function keyedCodec(
   return found === null || value === null
     ? null
     : { codec: found.codec, value };
+}
+
+/** Whether some function the project wrote is what the call at the key runs. */
+function runsProjectMethod(db: Database, call: string): boolean {
+  const callees = db.lookup("call", 0, call).map((row) => String(row[1]));
+  resolveValues(db, callees);
+  return callees.some((callee) => resolvedFunctions(db, callee).length > 0);
 }
 
 /** The key the facts give the value an encoder call encodes: its receiver, or one of its arguments. */

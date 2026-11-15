@@ -428,6 +428,27 @@ describe("extractRubyProject's on-disk cache", () => {
       expect(diagnostics[1]?.kind).toBe("partial");
     });
 
+    it("gives what a run without the cache gives after a base class in another file defines the warn a bare call names", async () => {
+      const { files, packs } = shopProject();
+      write(
+        "app/controllers/items_controller.rb",
+        'class ItemsController < ApplicationController\n  def index\n    warn "listing"\n    Item.all\n  end\nend\n',
+      );
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files(), packs, diagnostics);
+      write(
+        "app/controllers/application_controller.rb",
+        "class ApplicationController\n  def current_order\n    Order.find(params[:order_id])\n  end\n\n  def warn(message)\n    message\n  end\nend\n",
+      );
+
+      const { cached, cold } = await bothRuns(files(), packs, diagnostics);
+
+      expect(before.cold).toContain('"class":"stream-write"');
+      expect(cold).not.toContain('"class":"stream-write"');
+      expect(cached).toBe(cold);
+      expect(diagnostics[1]?.kind).toBe("partial");
+    });
+
     it("gives what a run without the cache gives after an edit to a model every controller reads", async () => {
       const { files, packs } = shopProject();
       const diagnostics: CacheDiagnostic[] = [];
