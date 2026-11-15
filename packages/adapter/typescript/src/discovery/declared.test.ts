@@ -6,9 +6,13 @@ import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "../adapter.js";
 import { ResolutionStore } from "../facts/store.js";
-import { moduleOpsFor } from "./declared.js";
+import { discoverDeclaredIn, moduleOpsFor } from "./declared.js";
 
-import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import type {
+  DeclaredDiscoveryMatch,
+  DiscoveryPattern,
+  PatternPack,
+} from "@suss/extractor";
 
 async function unitsFor(
   files: Record<string, string>,
@@ -380,6 +384,94 @@ describe("a declared discovery pattern", () => {
       ["R", "Route"],
       ["Routes", "Routes"],
     ]);
+  });
+
+  it("reads a route table of elements and objects into units, a path built at run time claiming none", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/routes.tsx",
+      [
+        'import { createBrowserRouter, Route as R, Routes } from "react-router-dom";',
+        'import { more } from "./more";',
+        "function Users() { return <ul />; }",
+        "function Detail() { return <li />; }",
+        "function Home() { return <main />; }",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: TypeScript source, whose template is the path that does not read
+        "const settingsPath = `/settings/${Math.random()}`;",
+        "export const tree = (",
+        "  <Routes>",
+        '    <R path="/users" element={<Users />}>',
+        '      <R path=":id" element={(<Detail />)} />',
+        "    </R>",
+        "    <R path={settingsPath} element={<Users />} />",
+        "  </Routes>",
+        ");",
+        'export const router = createBrowserRouter([{ path: "/", element: <Home /> }, ...more]);',
+      ].join("\n"),
+    );
+    const match: DeclaredDiscoveryMatch = {
+      type: "routeTable",
+      through: "element",
+      table: {
+        roots: {
+          kinds: { createBrowserRouter: 0 },
+          children: { in: "list", pick: { at: 0 } },
+          in: "file",
+          elements: true,
+        },
+        roles: {
+          Route: {
+            role: "serves",
+            methods: ["GET"],
+            path: [{ key: "path" }],
+            index: { key: "index" },
+            handler: { value: [{ key: "element" }] },
+            children: [
+              { in: "elements" },
+              { in: "list", pick: { key: "children" } },
+            ],
+          },
+        },
+        objects: "Route",
+        from: ["react-router-dom"],
+        absolutePaths: "standAlone",
+        loops: [],
+      },
+      unread: {
+        pathUnread: "own path",
+        prefixUnread: "enclosing path",
+        spread: "spread",
+        notAnEntry: "not an entry",
+        rootListUnread: "router list",
+        listUnread: "children list",
+      },
+    };
+    const units = discoverDeclaredIn(
+      file,
+      match,
+      "component",
+      new ResolutionStore(),
+    );
+
+    expect(
+      units
+        .map(
+          (unit) =>
+            `${unit.name} ${unit.func === null ? "at" : "on"} ${
+              unit.routeInfo?.path ?? unit.unreadBinding
+            }`,
+        )
+        .sort(),
+    ).toEqual([
+      "Detail on /users/:id",
+      "Home on /",
+      "Users at own path",
+      "Users on /users",
+      "more at spread",
+    ]);
+    expect(
+      units.find((unit) => unit.name === "more")?.announcedAt?.getText(),
+    ).toBe("more");
   });
 
   it("reads a list through a name with its spreads in place, and no list a function returns", () => {

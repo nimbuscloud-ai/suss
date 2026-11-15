@@ -30,6 +30,7 @@ import type {
   ValueOps,
 } from "./ops.js";
 import type { ProjectHelpers } from "./projectHelpers.js";
+import type { RouteTableDeclaration, RouteUnread } from "./routeTable.js";
 
 // =============================================================================
 // Discovery
@@ -47,6 +48,7 @@ export type DiscoveryMatch =
   | ManifestMatch
   | SubclassOfMatch
   | MarkedMatch
+  | RouteTableMatch
   | {
       type: "fileConvention";
       filePattern: string; // glob
@@ -637,19 +639,37 @@ export interface DeclaredDiscoveryPattern {
   match: DeclaredDiscoveryMatch;
 }
 
+/**
+ * The routes a table in one file declares, as `@suss/recognize` composes
+ * them: one unit per route on the function its handler settles to, and
+ * one per entry that could not be read, saying why. Only a table whose
+ * handlers are values, such as React Router's, builds units this way;
+ * Rails reads its table from the controllers' side.
+ */
+export interface RouteTableMatch {
+  type: "routeTable";
+  table: RouteTableDeclaration;
+  /** Read each handler as a JSX element and take the component its tag is. Unset takes the handler itself. */
+  through?: "element";
+  /** The sentence a unit that claims no route says it with, by why its entry could not be read. */
+  unread: Readonly<Record<RouteUnread, string>>;
+}
+
 /** The discovery members every adapter reads through the module ops. */
 export type DeclaredDiscoveryMatch =
   | NamedExportMatch
   | RegisteredFunctionMatch
   | ManifestMatch
   | SubclassOfMatch
-  | MarkedMatch;
+  | MarkedMatch
+  | RouteTableMatch;
 
 const DECLARED_TYPES: ReadonlySet<DiscoveryMatch["type"]> = new Set([
   "registeredFunction",
   "manifest",
   "subclassOf",
   "marked",
+  "routeTable",
 ]);
 
 /**
@@ -1953,6 +1973,16 @@ export interface DiscoveredCustomUnit {
    * Metadata merged onto the resulting summary's `metadata` field.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Where a unit with no function is written, as the adapter's own node:
+   * a route whose handler settles to no function, or an entry that could
+   * not be read. The unit is a boundary announced there.
+   */
+  announcedAt?: unknown;
+  /** `label` when the name was made up for a reader, such as a route's path, rather than bound in the program. */
+  nameKind?: "binding" | "label";
+  /** The sentence saying why the unit claims no boundary. */
+  unreadBinding?: string;
 }
 
 /** A parameter the platform fills, by its position and the name a read chain asks for it under. */

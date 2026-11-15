@@ -292,6 +292,13 @@ export function discoveredUnitOf(found: DiscoveredCustomUnit): DiscoveredUnit {
       : {}),
     ...(found.handedIn !== undefined ? { handedIn: found.handedIn } : {}),
     ...(found.metadata !== undefined ? { metadata: found.metadata } : {}),
+    ...(found.announcedAt !== undefined && found.announcedAt !== null
+      ? { announcedAt: found.announcedAt as Node }
+      : {}),
+    ...(found.nameKind !== undefined ? { nameKind: found.nameKind } : {}),
+    ...(found.unreadBinding !== undefined
+      ? { unreadBinding: found.unreadBinding }
+      : {}),
   };
 }
 

@@ -239,3 +239,85 @@ describe("one route table written in three languages", () => {
     expect(paths(["each", "map"])).toEqual(["/a", "/b", "/c"]);
   });
 });
+
+/** A table whose entries are objects in a list, each handing over a value as its handler. */
+const OBJECTS: RouteTableDeclaration = {
+  roots: { kinds: { routes: 0 }, children: { in: "list", pick: { at: 0 } } },
+  roles: {
+    entry: {
+      role: "serves",
+      methods: ["GET"],
+      path: [{ key: "path" }],
+      index: { key: "index" },
+      handler: { value: [{ key: "handler" }] },
+      children: [{ in: "list", pick: { key: "children" } }],
+    },
+  },
+  objects: "entry",
+  loops: [],
+};
+
+const OBJECTS_TYPESCRIPT = `
+const nested = [{ path: "b", handler: h2 }, { index: true, handler: h3 }];
+routes([
+  { path: "/a", handler: h1, children: nested },
+  { path: base, handler: h4, children: [{ path: "c", handler: h5 }] },
+  ...more,
+  make(),
+]);
+`;
+
+const OBJECTS_PYTHON = `
+nested = [{"path": "b", "handler": h2}, {"index": True, "handler": h3}]
+routes([
+    {"path": "/a", "handler": h1, "children": nested},
+    {"path": base, "handler": h4, "children": [{"path": "c", "handler": h5}]},
+    *more,
+    make(),
+])
+`;
+
+const OBJECTS_RUBY = `
+nested = [{ path: "b", handler: h2 }, { index: true, handler: h3 }]
+routes([
+  { path: "/a", handler: h1, children: nested },
+  { path: base, handler: h4, children: [{ path: "c", handler: h5 }] },
+  *more,
+  make(),
+])
+`;
+
+/** Each outcome, with a value by its source text. */
+function outcomes(set: RouteSet): string[] {
+  return set.outcomes.map((outcome) => {
+    if (outcome.kind === "route") {
+      return `${outcome.method} ${outcome.path} ${outcome.handler.source?.()}`;
+    }
+    return "handler" in outcome
+      ? `${outcome.reason} ${outcome.handler.source?.()}`
+      : `${outcome.reason} ${outcome.value.source?.()}`;
+  });
+}
+
+describe("one table of objects written in three languages", () => {
+  it("gives the same routes, and says the same entries did not read", async () => {
+    const expected = [
+      "GET /a h1",
+      "GET /a/b h2",
+      "GET /a h3",
+      "pathUnread h4",
+      "prefixUnread h5",
+      "spread more",
+      "notAnEntry make()",
+    ];
+    expect(
+      outcomes(compose(typescriptModule(OBJECTS_TYPESCRIPT), OBJECTS)),
+    ).toEqual(expected);
+    expect(
+      outcomes(compose(await pythonModule(OBJECTS_PYTHON), OBJECTS)),
+    ).toEqual(expected);
+    expect(
+      outcomes(compose(rubyModule(OBJECTS_RUBY, "objects.rb"), OBJECTS)),
+    ).toEqual(expected);
+  });
+});
