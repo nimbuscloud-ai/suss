@@ -10,7 +10,8 @@
  * rewrite refuses negation, so that happens here rather than in a rule.
  * A written-as question also sets aside a key's match against itself,
  * since a call is written as itself. A function does come to itself, so
- * the other questions keep that row. DESIGN.md has the detail.
+ * the other questions keep that row. A call is written as nothing when
+ * one of its function's returns settles on nothing. DESIGN.md has the detail.
  */
 
 import type { Database } from "@suss/datalog";
@@ -44,12 +45,19 @@ export function answersFor(
   return settle(db, key, answerColumn(db, relation, key), overrides);
 }
 
-/** `answersFor`, for a written-as question, with the key's match against itself set aside. */
+/**
+ * `answersFor`, for a written-as question, with the key's match against
+ * itself set aside. A call has no answer when the function it runs has a
+ * return the rules read as nothing.
+ */
 export function writtenAnswersFor(
   db: Database,
   relation: string,
   key: string,
 ): string[] {
+  if (hasUnsettledReturn(db, key)) {
+    return [];
+  }
   const answers = answerColumn(db, relation, key).filter(
     (answer) => answer !== key,
   );
@@ -115,6 +123,23 @@ export function givenBackFunction(db: Database, key: string): string | null {
 function onlyFunction(db: Database, answers: readonly string[]): string | null {
   const functions = answers.filter((answer) => db.has("func", [answer]));
   return functions.length === 1 ? (functions[0] as string) : null;
+}
+
+/**
+ * Whether a call runs a function with a return no answer reaches. The
+ * returns that do settle would otherwise stand for the whole result, and
+ * `except: return 0` would become the value of a call whose other
+ * return the rules cannot read.
+ */
+function hasUnsettledReturn(db: Database, key: string): boolean {
+  const returns = db.lookup("wantedResultReturn", 0, key);
+  if (returns.length === 0) {
+    return false;
+  }
+  const settled = new Set(
+    db.lookup("wantedSettledReturn", 0, key).map((row) => String(row[1])),
+  );
+  return returns.some((row) => !settled.has(String(row[1])));
 }
 
 function answerColumn(db: Database, relation: string, key: string): string[] {
