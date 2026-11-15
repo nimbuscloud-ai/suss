@@ -2,6 +2,7 @@
   "createRoot": "react-dom/client: makes the root a React app renders into",
   "event": "suss: sub-unit kind for a JSX event handler",
   "forwardRef": "react: wraps a component and hands back the component it was given",
+  "hydrate": "react-dom: React 17's call that attaches an element to server-rendered markup",
   "hydrateRoot": "react-dom/client: attaches to server-rendered markup",
   "memo": "react: wraps a component and hands back the component it was given",
   "n": "the second character of the `on` prefix React event props carry",
