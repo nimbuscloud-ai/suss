@@ -380,6 +380,12 @@ describe("branches and choices", () => {
     );
   });
 
+  it("names an environment read that passes no variable as a value", async () => {
+    expect(await route('import os\nsubject = os.environ.get() + "/x"')).toBe(
+      "{value}/x",
+    );
+  });
+
   it("joins path segments through os.path.join", async () => {
     expect(
       await literal('import os\nsubject = os.path.join("/api", "v1", "x")'),

@@ -9,6 +9,7 @@ import {
   factModuleOps,
   factValueOps,
   SlotsHeard,
+  valueKeyOf,
 } from "./factOps.js";
 import {
   allOf,
@@ -2384,5 +2385,42 @@ describe("where a value is declared, over the facts", () => {
     });
     expect(at("use.ts#Card.Other")).toBeNull();
     expect(at("loop.self")).toBeNull();
+  });
+});
+
+describe("a value read as the source writes it", () => {
+  /** `KEY = "K"`, then `KEY` and `"B"` passed somewhere: a name, and a string written out. */
+  function written(): FactSource {
+    const db = new Database();
+    db.add("writtenValue", ["lit"]);
+    db.add("writtenValue", ["kDecl"]);
+    const literals: Record<string, string> = { lit: "B", kDecl: "K" };
+    return {
+      db,
+      read: () => undefined,
+      writtenAs: (key) => (key === "keyRef" ? "kDecl" : null),
+      anchorCalls: () => [],
+      importedFrom: () => false,
+      importedAs: () => [],
+      shapeOf: () => null,
+      textOf: (key) => key,
+      literalOf: (key) => literals[key] ?? null,
+      nameOf: () => null,
+      argOf: () => null,
+    };
+  }
+
+  it("reads a literal at its own spot, where text follows a name to what it was set to", () => {
+    const facts = written();
+    const name = factValueOps("keyRef", facts);
+    const string = factValueOps("lit", facts);
+    expect([name.text(), name.literal?.()]).toEqual(["K", null]);
+    expect([string.text(), string.literal?.()]).toEqual(["B", "B"]);
+  });
+
+  it("gives back the key a value was read at, and nothing for one the ops did not hand out", () => {
+    const facts = written();
+    expect(valueKeyOf(factValueOps("keyRef", facts))).toBe("keyRef");
+    expect(valueKeyOf({} as ValueOps)).toBeNull();
   });
 });

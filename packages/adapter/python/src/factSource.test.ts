@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { global } from "@suss/recognize";
 import { factValueOps } from "@suss/recognize/ops";
 
 import { bindEnvFacts, envFactsIn } from "./envReads.js";
@@ -13,6 +14,8 @@ import type { AstCapableValueOps } from "@suss/extractor";
 import type { PyNode } from "./parser.js";
 
 const FILE = "use.py";
+
+const ENV = global("os.environ");
 
 const SOURCE = `
 from .things import Thing
@@ -372,10 +375,7 @@ describe("the Python fact source's read members", () => {
     );
     const at = (text: string): string =>
       keys.find((key) => source.textOf(key) === text) ?? "";
-    const parameter = String(
-      db.facts("paramOf").find((row) => String(row[2]).endsWith("#name"))?.[2],
-    );
-    return { source, at, parameter };
+    return { source, at };
   }
 
   it("says whether a read copes with a missing value, and what it falls back to", async () => {
@@ -392,15 +392,22 @@ describe("the Python fact source's read members", () => {
     expect(source.fallbackOf?.("nowhere")).toBeNull();
   });
 
-  it("gives the sites a parameter supplies the key of, once the environment is stated", async () => {
-    const { source, parameter } = await readsFor();
+  it("gives the arguments a call supplies a read's key with, once the environment is stated", async () => {
+    const { source, at } = await readsFor();
+    const supplied = source
+      .keysSupplied?.(at('need("G")'), ENV)
+      ?.map((key) => [
+        key.at,
+        source.textOf(key.value),
+        key.forwarded,
+        key.sites.map((site) => source.textOf(site)),
+      ]);
 
+    expect(supplied).toEqual([[0, '"G"', false, ["os.environ[name]"]]]);
+    expect(source.keysSupplied?.(at('os.environ["A"]'), ENV)).toEqual([]);
     expect(
-      source.sitesNaming?.(parameter)?.map((site) => source.textOf(site)),
-    ).toEqual(["os.environ[name]"]);
-    expect(pythonFactSource(new Database()).sitesNaming?.(parameter)).toEqual(
-      [],
-    );
+      pythonFactSource(new Database()).keysSupplied?.("nowhere", ENV),
+    ).toEqual([]);
   });
 });
 

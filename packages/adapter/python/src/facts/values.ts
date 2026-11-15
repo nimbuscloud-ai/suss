@@ -924,6 +924,28 @@ function emitStoreTarget(emitter: Emitter, assignment: PyNode): void {
 /** The read sites an assignment can write through, which a read chain tells apart from a read of them. */
 const ASSIGNED_SITES: ReadonlySet<string> = new Set(["subscript", "attribute"]);
 
+/**
+ * `os.environ["P"] += ":x"` assigns the entry, so a read chain counts it
+ * as a write and not as a read.
+ */
+function emitAugmentedTarget(emitter: Emitter, assignment: PyNode): void {
+  const left = field(assignment, "left");
+  const right = field(assignment, "right");
+  if (left !== null && right !== null) {
+    emitAssignedValue(emitter, left, right);
+  }
+}
+
+/**
+ * `del os.environ["Z"]` and `del a[x], b[y]` remove the entry without
+ * reading it.
+ */
+function isDeleted(subscript: PyNode): boolean {
+  const parent = subscript.parent;
+  const statement = parent?.type === "expression_list" ? parent.parent : parent;
+  return statement?.type === "delete_statement";
+}
+
 /** `os.environ["W"] = v`: the value assigned to an entry or an attribute. */
 function emitAssignedValue(
   emitter: Emitter,
@@ -1189,7 +1211,7 @@ function emitExpressionFact(
     }
     emitAttributeChoice(emitter, child);
   }
-  if (type === "subscript") {
+  if (type === "subscript" && !isDeleted(child)) {
     const index = singleSubscript(child);
     const container = field(child, "value");
     if (index !== null && container !== null) {
@@ -1210,6 +1232,9 @@ function emitExpressionFact(
     emitAssignedType(emitter, child);
     collectNamedWrite(emitter, child);
     emitStoreTarget(emitter, child);
+  }
+  if (type === "augmented_assignment") {
+    emitAugmentedTarget(emitter, child);
   }
   if (type === "with_item") {
     emitEnteredValue(emitter, child);

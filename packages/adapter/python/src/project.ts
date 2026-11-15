@@ -71,21 +71,12 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { discoverUnits } from "./discovery.js";
-import {
-  bindEnvFacts,
-  envFactsIn,
-  envReadEffects,
-  settleNamedParameters,
-} from "./envReads.js";
+import { bindEnvFacts, envFactsIn, settleNamedParameters } from "./envReads.js";
 import { exitSites, type FileExits, markExitCodeFunctions } from "./exits.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
-import {
-  bindJobQueues,
-  jobConsumerUnits,
-  jobQueueEntries,
-} from "./jobQueues.js";
+import { bindJobQueues, jobConsumerUnits } from "./jobQueues.js";
 import { libraryEnvReadMarkers } from "./libraryEnvReads.js";
 import { moduleExportUnits, settlePythonModules } from "./moduleSurface.js";
 import { parsePython } from "./parser.js";
@@ -104,6 +95,7 @@ import {
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 import { pythonSourceRoots } from "./sourceRoots.js";
+import { stdlibReads } from "./stdlib/dispatch.js";
 import { claimsLambdas, subUnitClaims } from "./subUnits.js";
 import { pythonTestIndex } from "./testCases.js";
 import { bindEvaluator, forgetEvaluations } from "./values/evaluator.js";
@@ -583,38 +575,19 @@ async function runPython(
   }
   options.keptParses?.keepOnly(options.files);
 
-  // Discovery asks the rules what built an object it cannot find by name,
-  // and router mounting asks what a loop over a call registers. Both read
+  // Every body's environment reads go through the read chains, which ask
   // the value facts, so those are emitted once here for the whole run.
+  // Discovery, router mounting and the packs' hooks ask them too.
   const mountsRouters = options.packs.some((pack) =>
     pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
   const declaredHooks = packRecognizers(options.packs, tallies);
-  const modelQueries = options.packs.flatMap((pack) => pack.models ?? []);
   // A module's public exports are discovered like a pack's routes.
   const declaredModules = settlePythonModules(options.modules);
-  const discovers =
-    declaredModules.length > 0 ||
-    options.packs.some(
-      (pack) =>
-        pack.discovery.length > 0 || (pack.declaredDiscovery ?? []).length > 0,
-    );
-  // A client pattern with a receiver asks the rules what built it.
-  const buildsReceivers = options.packs.some((pack) =>
-    (pack.clients ?? []).some(
-      (client) => (client.receiverConstructors ?? []).length > 0,
-    ),
-  );
-  // A helper that reads the environment through a parameter turns each of
-  // its call sites into a read, so every file's environment facts have to
-  // be collected before deciding whether the value facts are needed.
   const envFacts = bound.map((boundFile) =>
     envFactsIn(boundFile.file, boundFile.root, boundFile.module),
-  );
-  const readsEnvThroughNames = envFacts.some(
-    (one) => one.sites.length > 0 || one.objects.length > 0,
   );
   // An exit handing over a value is followed back to the functions whose
   // return that value is, which is a question over the value facts too.
@@ -622,25 +595,6 @@ async function runPython(
     file,
     sites: exitSites(root, module),
   }));
-  const handsOverExitCodes = exits.some(({ sites }) =>
-    sites.some((site) => site.code !== null),
-  );
-  const needsValues =
-    handsOverExitCodes ||
-    discovers ||
-    mountsRouters ||
-    buildsReceivers ||
-    readsEnvThroughNames ||
-    storagePatterns.length > 0 ||
-    modelQueries.length > 0 ||
-    // A statement written as SQL is read through the evaluator.
-    rawSqlPatterns.length > 0 ||
-    // A declared pack's hooks read the value facts through the ops.
-    declaredHooks.length > 0 ||
-    claimsLambdas(options.packs) ||
-    // A task's receiver is resolved through the rules, and so is its decorator.
-    jobQueueEntries(options.packs).length > 0 ||
-    options.packs.some((pack) => (pack.tests ?? []).length > 0);
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns and the call walk can start from a route.
   const definitions = new Map<string, PyNode>();
@@ -648,18 +602,14 @@ async function runPython(
     for (const { file, root, module: moduleBinding } of bound) {
       log?.startFile();
       emitModuleImportFacts(db, file, moduleBinding, { roots });
-      if (needsValues) {
-        emitValueFacts(db, file, root);
-      }
+      emitValueFacts(db, file, root);
       log?.endFile(file);
       indexDefinitions(definitions, file, root);
     }
     log?.startJoined();
-    if (needsValues) {
-      bindEvaluator(db, { files: bound, definitions });
-      bindEnvFacts(db, envFacts);
-      bindJobQueues(db, options.packs, roots);
-    }
+    bindEvaluator(db, { files: bound, definitions });
+    bindEnvFacts(db, envFacts);
+    bindJobQueues(db, options.packs, roots);
     bindRequestObjects(
       db,
       options.packs.flatMap((pack) => pack.requestObjects ?? []),
@@ -720,7 +670,7 @@ async function runPython(
     buildWrapperIndex(bound, {
       packs: options.packs,
       roots,
-      facts: needsValues ? db : undefined,
+      facts: db,
       definitions,
       storageFor,
       routers: plainRouterIndex,
@@ -803,7 +753,7 @@ async function runPython(
         gapHandling,
         wrappers: wrapperIndex,
         importedDefinition,
-        ...(needsValues ? { facts: db } : {}),
+        facts: db,
         ...(storage === undefined ? {} : { storage }),
       }),
       ...moduleExportUnits(boundFile, {
@@ -909,7 +859,7 @@ async function runPython(
   };
 
   for (const boundFile of bound) {
-    const { file, root, module: moduleBinding } = boundFile;
+    const { file, root } = boundFile;
     const displayPath = displayPathOf(file);
     const record = reuse === null ? undefined : reuse.discoveryOf(file);
     if (record !== undefined && discoveries.get(file) === record) {
@@ -948,9 +898,7 @@ async function runPython(
       record !== undefined && discoveries.get(file) === record
         ? null
         : timer.time("discover", () =>
-            charged(file, () =>
-              envReadEffects(root, moduleBinding, db).map((one) => one.effect),
-            ),
+            charged(file, () => stdlibReads(root, db).map((one) => one.effect)),
           );
     // What a module runs on the way in is a caller like any other, so it
     // joins the walk even when it reads nothing from the environment.

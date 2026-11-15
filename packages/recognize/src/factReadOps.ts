@@ -31,6 +31,10 @@ export function factReadOps(key: string, facts: FactSource): ReadOps {
 interface StatedRead {
   readonly object: string;
   readonly entry: string | null;
+  /** The relation the read is stated under. */
+  readonly relation: ReadRelation;
+  /** The value a computed key comes from, or null when the source writes the key out. */
+  readonly key: string | null;
 }
 
 class FactRead implements ReadOps {
@@ -87,6 +91,16 @@ class FactRead implements ReadOps {
   entry(): string | null | undefined {
     const read = this.read();
     return read === null ? undefined : read.entry;
+  }
+
+  byKey(): boolean {
+    const read = this.read();
+    return read !== null && read.relation !== "readsProperty";
+  }
+
+  computedKey(): ValueOps | null {
+    const key = this.read()?.key ?? null;
+    return key === null ? null : factValueOps(key, this.facts);
   }
 
   readsOff(): readonly ReadOps[] {
@@ -213,13 +227,18 @@ const OFF: {
 /** The relations a read is stated under, the ones that spell the entry first. */
 const READ_RELATIONS = ["readsProperty", "readsEntry", "readsKeyed"] as const;
 
+type ReadRelation = (typeof READ_RELATIONS)[number];
+
 function statedRead(key: string, facts: FactSource): StatedRead | null {
   for (const relation of READ_RELATIONS) {
     const reads = new Map<string, StatedRead>();
     for (const row of facts.db.lookup(relation, 0, key)) {
+      const keyed = relation === "readsKeyed";
       const read = {
         object: String(row[1]),
-        entry: relation === "readsKeyed" ? null : String(row[2]),
+        entry: keyed ? null : String(row[2]),
+        relation,
+        key: keyed ? String(row[2]) : null,
       };
       reads.set(`${read.object}\u0000${read.entry}`, read);
     }
@@ -239,6 +258,7 @@ function suppliedKey(key: KeySupplied, facts: FactSource): SuppliedKey {
   let value: ValueOps | undefined;
   return {
     at: key.at,
+    ...(key.keyword === undefined ? {} : { keyword: key.keyword }),
     forwarded: key.forwarded,
     sites: key.sites.map((site) => factReadOps(site, facts)),
     get value(): ValueOps {

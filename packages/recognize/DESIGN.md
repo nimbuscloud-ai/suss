@@ -287,6 +287,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `function()` | `func(x)` on the value itself, or else the one function among the `comesTo` answers, or else the adapter's `givesBack`: what `givesBackUnwrapped`, then `givesBack`, says a factory call returns |
 | `parts()`, `holes()`, `interpolated()` | `partAt` and `holeAt`, on the value a name was written as, or on what a call into a project function returns, through `writtenAs` on the call, so a statement a helper builds keeps its pieces |
 | `text()`, `flag()`, `name()`, `names()`, `asArg()` | the adapter's own reading of the value, `literalOf`, `nameOf`, `namesOf` and `argOf` |
+| `literal()` | the adapter's `literalOf` on the value's own key, where `text()` asks it of what a name was written as |
 | `evaluated()`, `source()`, `importedFrom()` | the adapter's evaluator through `evaluatedOf`, the text at the key through `textOf`, and the module specifier an import statement spells through `importSpecifierOf`. Ruby imports no names, so it gives no specifier |
 | `form()` | the adapter's `formOf`, and `other` where it has none |
 | `ownProperty(name)` | `holdsProperty` and `writtenEntryAt` on the value's own key, its spreads left out, when `shapeOf` says it is an object |
@@ -298,7 +299,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `keysRead()` | the read sites the adapter's `readSitesOf` lists, which TypeScript states as it is asked. Otherwise the `readsProperty` and `readsEntry` rows off the value, off each name `binds` takes to it, and off each reference `binds` takes to that name, with the adapter's `readsOff` on each. A site that is the callee of a `call` row, or has an `assigns` row, is left out, and the keys come in the order the sites are written, from the span in each key |
 | `shape()` | the adapter's `typeShapeOf` on the value's own key, with no name followed |
 | `receiverIsFrom`, `receiverGlobal` with `global` | the adapter's `spellsGlobal` on the receiver, or else `globalsReaching`: the paths `wantedStreamValue` says reach the receiver, from every `streamObject` |
-| `isFrom` with `global` | the adapter's `callsGlobal` on the call, for a call with no receiver |
+| `isFrom` with `global` | the adapter's `callsGlobal` on the call, for a call with no receiver, or in Python one whose callee the file's imports spell as the path: `os.getenv(...)`, and `getenv(...)` after `from os import getenv` |
 | `block()` | `callBlock(r, b)`, which only Ruby states |
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
@@ -346,12 +347,13 @@ the same way:
 | op | read from |
 |---|---|
 | `entry()` | `readsProperty(x, o, n)` or `readsEntry(x, o, n)` gives `n`, and `readsKeyed(x, o, k)` gives null. At a site the facts state none of the three at, it is undefined and a chain doesn't match |
+| `byKey()`, `computedKey()` | the same rows: a read at a key is `readsEntry` or `readsKeyed`, and a computed key is the `k` of `readsKeyed(x, o, k)` |
 | `isOff(global)`, `objectPath(paths)` | the adapter's `spellsGlobal` on the object the site reads off, or else `globalsReaching` on it. TypeScript follows the environment objects there through `wantedEnvValue`, so `env.PORT` is off `process.env` when `env` is a parameter that defaults to it or a caller hands it. The adapter's `objectOf` gives the object without stating the site, and the rows above give it otherwise |
 | `isOff(handedIn)` | `handedIn(p, n)` on the object the site reads off, which is how Python and Ruby key a parameter's reads, or on what a `binds` row takes that object to, which is how TypeScript does. Otherwise the adapter's `handedReaching`, the names the rules followed into the object through `runtimeValue`: a helper's parameter the unit passes the object to, or a local set to it. A run that states no `handedIn` row under the name stops at the first lookup |
 | `readsOff()` | the adapter's `readsOff`: in TypeScript, the element read `o[k]` or the binding elements of `const { A } = o` when the site is `o`, stated as they are asked. Python and Ruby visit those sites themselves and leave it unset |
 | `defaulted()`, `fallback()` | the adapter's `defaultedAt` and `fallbackOf`, each its own walk over the syntax. What counts as coping with a missing value is the language's |
 | `assigned()` | `assigns(x, v)`: the site is the left side of a plain `=` and `v` the value written on the right |
-| `keysSuppliedTo(object)` | the adapter's `keysSupplied` where it has one, as TypeScript does. Otherwise, for each parameter of the function `call(r, c)` comes to, the sites the adapter's `sitesNaming` says take their key from it, kept when they are off the object |
+| `keysSuppliedTo(object)` | the adapter's `keysSupplied` where it has one, as TypeScript and Python do. Python's passes a key by position or by keyword, across every function the callee resolves to. Otherwise, for each parameter of the function `call(r, c)` comes to, the sites the adapter's `sitesNaming` says take their key from it, kept when they are off the object |
 | `call()` | the adapter's `callAt` where it has one, as TypeScript does, which reads the call's name without stating its facts. Otherwise the call ops at the site's key |
 
 `keysSuppliedTo` is on the read ops rather than on the call's. A read
@@ -369,7 +371,9 @@ through, and TypeScript takes them from `callOpsFor` at the same node.
 runners set it on the ops of the call in hand only. They listen through
 `SlotsHeard`, which gives each value back as the key the ops read it
 at. A name in those languages has a key and no node, and the source
-walk behind a slot's provenance starts from the key.
+walk behind a slot's provenance starts from the key. `valueKeyOf` gives
+one value's key the same way, for the fallback a getter passes, which
+Python's `fallbackOf` hands back as a key.
 
 The pack harness runs every recognizer that reads the ops a second time
 over `callOpsFor`, and fails the test on any difference that
@@ -1525,9 +1529,37 @@ so `setEnv("TABLE", v)` into `process.env[name] = value` reads nothing.
 
 `getters` reads a call on the object that takes the key as an
 argument, Python's `os.environ.get("B", "d")` or Ruby's
-`ENV.fetch("B", "d")`. The table says where the key is and where the
-fallback can be, and a getter that raises without one is not defaulted
-when the call passes none. No shipped pack declares a getter yet.
+`ENV.fetch("B", "d")`. `functions` does the same for a function the
+runtime provides that reads one entry, keyed by the global path it is
+spelled as, Python's `os.getenv("B", "d")`. The table says where the key
+is and where the fallback can be. The key is read as the source writes
+it, through `ValueOps.literal`, so `os.environ.get(KEY)` is a read of a
+key the program works out, the way `os.environ[KEY]` is. A call the
+facts state a keyed read at is reported once, as the getter's read. The
+read copes with a missing value when the call passes a fallback, or
+when the adapter's rule says so; a getter with `raisesWithout` reaches
+that rule as a read that raises, so only a test that runs before it
+counts.
+
+A mapping says `entriesBy: "key"`: Python's `os.environ` and Ruby's
+`ENV` are read only at a key, and `os.environ.get` is a method of the
+mapping, never an entry. `missing: "raises"` says a read at a key the
+mapping lacks raises, which the adapter's rule reads. A config entry
+with `callee: "keyed"` spells its callee `os.environ["B"]`, whichever
+way the source read it, and a key the program works out as the site
+as written.
+
+`siteReadOf(chain, { read, ops })` says what the chain reads at one
+site before anything asks whether the program copes: the entry, the
+key as written, the fallback a getter passes, and whether a missing
+entry raises there. The compiled ending reads the same answer, and an
+adapter's rule asks it about the tests around a read, so the rule and
+the chain agree on what counts as a read. `readSpellingsOf(chain)`
+gives the object's paths, the getters and the functions as data, for
+an adapter's own readers of the same spellings: the seeds its rules
+start from, which run before any facts exist, and its value
+evaluator's rows. Python's environment is the shipped chain with a
+getter.
 
 ## A schema the environment is parsed against
 

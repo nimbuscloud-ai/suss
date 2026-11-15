@@ -1,282 +1,130 @@
 /**
- * The environment variables a body reads, through the standard library
- * or through a project helper. `os.environ["X"]`, `os.environ.get("X", d)`
- * and `os.getenv("X", d)` become the config-read effect the TypeScript
- * adapter emits for `process.env.X`, with the same defaulted flag, so the
- * runtime-config checker pairs them against a template the same way.
+ * What the environment chain needs from this adapter beyond its facts:
+ * which parameters of a project helper end up as a variable's name, which
+ * arguments a call passes them, and whether the program copes with a read
+ * coming back empty. The chain declares the spellings, and the read
+ * dispatch hands it each site.
  *
- * `os` is part of the standard library, so the adapter reads it without a
- * pack. Each expression that passes `os.environ` somewhere is recorded as
- * `environmentObject`, the value facts record the read, and one question
- * keyed on those objects returns the parameters that end up as a
- * variable's name. DESIGN.md lists the spellings.
+ * Each expression that hands `os.environ` or `os.getenv` somewhere is
+ * recorded as `environmentObject`, the value facts record the read, and
+ * one question keyed on those objects returns the parameters that end up
+ * as a variable's name. The seeds are found by syntax, since they are
+ * stated before any facts exist. DESIGN.md lists the spellings.
  */
 
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
-import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
-import { noteLookup } from "@suss/resolution";
-import { scalarOf } from "@suss/values";
+import { walkDescendants } from "@suss/extractor";
+import { readSpellingsOf } from "@suss/recognize";
+import { valueKeyOf } from "@suss/recognize/ops";
+import { isObserved, noteLookup } from "@suss/resolution";
 
 import {
   children,
   enclosingFunction,
   field,
   parameterIdentifier,
-  rangeOf,
   stringLiteralValue,
 } from "./ast.js";
 import { fallbackOperandOf, isDefaultedAt } from "./defaulted.js";
-import { envReadSpellingAt, isEnviron } from "./envSpellings.js";
 import {
   resolveCalls,
   resolvedFunctions,
   resolveEnvObjects,
 } from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
-import { scopeAt } from "./scope.js";
+import { ENVIRONMENT } from "./stdlib/environment.js";
+import { environmentReadAt } from "./stdlib/environmentRead.js";
+import { spellsStdlibPath } from "./stdlibNames.js";
 import { standardStream } from "./streamWrites.js";
-import {
-  evaluatedValue,
-  moduleOf,
-  resolutionKeyOf,
-  stringValueOf,
-} from "./values/evaluator.js";
+import { nodeOfResolutionKey, resolutionKeyOf } from "./values/evaluator.js";
 
-import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { EnvReadSpelling } from "./envSpellings.js";
+import type { KeySupplied } from "@suss/extractor";
+import type { GetterMeaning, SiteRead } from "@suss/recognize";
+import type { PythonFactSource } from "./factSource.js";
 import type { PyNode } from "./parser.js";
-import type { EffectAt } from "./paths/effects.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
-export const PYTHON_ENV_RECOGNITION = "python-env";
-
-interface EnvRead {
-  /**
-   * Null when the code works the name out at run time, as a helper's
-   * `os.environ[name]` does. Each call to the helper records its own
-   * read with the name it passes.
-   */
-  name: string | null;
-  defaulted: boolean;
-  /** The value used when the variable is not set, when it settles to one. */
-  fallback?: string | number | boolean;
-}
-
-/** A read of the environment, before anything is settled about the variable's name. */
-interface EnvReadSyntax {
-  /** The expression the variable's name comes from. */
-  name: PyNode;
-  defaulted: boolean;
-  /** The expression that supplies a value when the variable is not set. */
-  fallback: PyNode | null;
-}
-
-/** A nested function's reads happen when it is called, so its body waits for its own unit. */
-const DEFERRED_BODY_TYPES = new Set(["function_definition", "lambda"]);
-
-/** One place in a body: a read the body writes itself, or a call that may read through a helper. */
-type ReadSlot = { read: EnvRead; at: PyNode } | { call: PyNode };
+const SPELLINGS = readSpellingsOf(ENVIRONMENT.declared);
 
 /**
- * The config-read effects for every environment read under `root`,
- * in source order. `root` itself is not read: pass the unit's function
- * for its body, or the module node for what runs at import time.
- *
- * With `facts`, a call to a project helper that reads the environment
- * through one of its parameters is read too, at the call.
+ * Whether a read copes with its value coming back empty, and the key of
+ * the value it falls back to, decided the way the environment chain
+ * reads an environment read and by the plain rule for any other read.
  */
-export function envReadEffects(
-  root: PyNode,
-  module: ModuleBinding,
-  facts?: Database,
-): EffectAt[] {
-  const slots: ReadSlot[] = [];
-  // Without any sites in the run there is no helper to find behind a
-  // call, so the calls are not collected at all.
-  const readsHelpers = facts !== undefined && sitesByDb.has(facts);
-  const startScope = module.scopeFor.get(root.id) ?? module.moduleScope;
-  walkDescendants<PyNode, Scope>(root, startScope, children, {
-    at: (node, scope) => {
-      const syntax = envReadSyntaxAt(node, scope);
-      if (syntax !== null) {
-        const name = stringLiteralValue(syntax.name);
-        const fallback = settledFallback(syntax, facts);
-        slots.push({
-          read: {
-            name,
-            defaulted: syntax.defaulted,
-            ...(fallback === null ? {} : { fallback }),
-          },
-          at: node,
-        });
-        return;
-      }
-      if (readsHelpers && node.type === "call") {
-        slots.push({ call: node });
-      }
-    },
-    into: (node, scope) => {
-      if (DEFERRED_BODY_TYPES.has(node.type)) {
-        return SKIP_CHILDREN;
-      }
-      return module.scopeFor.get(node.id) ?? scope;
-    },
-  });
-
-  const throughHelpers = helperReadsByCall(
-    slots.flatMap((slot) => ("call" in slot ? [slot.call] : [])),
-    facts,
-  );
-  return slots.flatMap((slot): EffectAt[] => {
-    if ("read" in slot) {
-      return [{ effect: configReadEffect(slot.read, slot.at), at: slot.at }];
-    }
-    return (throughHelpers.get(slot.call.id) ?? []).map((effect) => ({
-      effect,
-      at: slot.call,
-    }));
-  });
-}
-
-function configReadEffect(read: EnvRead, at: PyNode): Effect {
-  return {
-    type: "interaction",
-    binding: runtimeConfigBinding({ recognition: PYTHON_ENV_RECOGNITION }),
-    callee: read.name === null ? at.text : `os.environ["${read.name}"]`,
-    interaction: {
-      class: "config-read",
-      name: read.name,
-      defaulted: read.defaulted,
-      ...(read.fallback === undefined ? {} : { default: read.fallback }),
-    },
-    location: rangeOf(at),
-  };
-}
-
-/**
- * Whether a read copes with its value coming back empty, and the value
- * it falls back to, decided the way this reader decides it for an
- * environment read and by the plain rule for any other read.
- */
-export function copingAt(node: PyNode): {
-  defaulted: boolean;
-  fallback: PyNode | null;
-} {
-  const syntax = envReadSyntaxAt(node, scopeAt(node, moduleOf(node)));
-  return syntax === null
-    ? { defaulted: isDefaultedAt(node), fallback: fallbackOperandOf(node) }
-    : { defaulted: syntax.defaulted, fallback: syntax.fallback };
-}
-
-/**
- * The sites whose variable name the parameter at this key ends up as,
- * from the run's one question about the environment.
- */
-export function sitesNamingParameter(
-  db: Database,
-  parameter: string,
-): readonly string[] {
-  const index = sitesByDb.get(db);
-  if (index === undefined) {
-    return [];
-  }
-  const sites = sitesEachParameterNames(db, index).get(parameter);
-  noteLookup(
-    db,
-    `${NAMED_PARAMETER}${parameter}`,
-    describeSites(sites, index.byId),
-  );
-  return sites ?? [];
-}
-
-function envReadSyntaxAt(node: PyNode, scope: Scope): EnvReadSyntax | null {
-  const spelling = envReadSpellingAt(node, scope);
-  if (spelling === null) {
-    return null;
-  }
-  return {
-    name: spelling.name,
-    defaulted: hasFallback(node, spelling, scope),
-    fallback: spelling.fallback ?? fallbackOperandOf(node),
-  };
-}
-
-/** The value a defaulted read falls back to, when the evaluator settles it to one. */
-function settledFallback(
-  syntax: EnvReadSyntax,
-  facts: Database | undefined,
-): string | number | boolean | null {
-  return syntax.defaulted ? settledValue(syntax.fallback, facts) : null;
-}
-
-function hasFallback(
+export function copingAt(
   node: PyNode,
-  spelling: EnvReadSpelling,
-  scope: Scope,
-): boolean {
-  return spelling.hasDefault || isDefaultedAt(node, { spelling, scope });
+  source: PythonFactSource,
+): { defaulted: boolean; fallback: string | null } {
+  const site = environmentReadAt(node, source);
+  const fallback = fallbackKeyOf(node, site, source);
+  if (site === null) {
+    return { defaulted: isDefaultedAt(node), fallback };
+  }
+  return {
+    defaulted: site.passesFallback || isDefaultedAt(node, { site, source }),
+    fallback,
+  };
+}
+
+/** What a getter call passes as its fallback, or else what an `or` around the read supplies. */
+function fallbackKeyOf(
+  node: PyNode,
+  site: SiteRead | null,
+  source: PythonFactSource,
+): string | null {
+  if (site !== null && site.fallback !== null) {
+    return valueKeyOf(site.fallback);
+  }
+  const operand = fallbackOperandOf(node);
+  return operand === null ? null : resolutionKeyOf(operand, source.db);
 }
 
 /**
- * A read whose variable name the source does not write out. The shared
- * rules join a parameter to this site, and a reader reports the read at
- * the call that supplies the name.
+ * A read through a function getter whose key the program works out,
+ * `os.getenv(name)`. The value facts state a keyed read off a container,
+ * and a function call has none, so this states one off the function.
  */
-export interface EnvNameSite {
-  /** The read expression, keyed the way the value facts key a node. */
+interface FunctionRead {
   site: string;
+  /** The function getter the read goes through, which seeds the rules like the object does. */
+  functionKey: string;
   /** The key of the expression the name comes from, which the rules join to a parameter. */
   nameKey: string;
-  defaulted: boolean;
-  /**
-   * The environment reference a read written as a call goes through.
-   * The value facts record the container of `os.environ[name]`, and
-   * `os.getenv(name)` has no container for them to record.
-   */
-  functionKey: string | null;
 }
 
 /** What one file says about the environment, for the shared rules. */
 export interface EnvFileFacts {
-  sites: EnvNameSite[];
   /** Keys of the expressions that spell the environment and hand it on. */
   objects: string[];
+  functionReads: FunctionRead[];
   /** Keys of the expressions that spell `sys.stdout` or `sys.stderr` and hand it on. */
   streams: string[];
 }
 
 /**
- * What a file does with the environment: every read whose variable name
- * is not a string literal, and every expression that passes the
- * environment object somewhere. This walk goes into function bodies,
- * where `envReadEffects` stops, because a helper's own read is written
- * inside one.
+ * What a file does with the environment: every expression that passes
+ * the object somewhere, and every function getter whose key it works
+ * out. This walk goes into function bodies, where a unit's own reads
+ * stop, because a helper's own read is written inside one.
  */
 export function envFactsIn(
   filePath: string,
   root: PyNode,
   module: ModuleBinding,
 ): EnvFileFacts {
-  const found: EnvFileFacts = { sites: [], objects: [], streams: [] };
+  const found: EnvFileFacts = { objects: [], functionReads: [], streams: [] };
   walkDescendants<PyNode, Scope>(root, module.moduleScope, children, {
     at: (node, scope) => {
-      if (isEnviron(node, scope) && handsOnward(node)) {
+      if (spellsObject(node, scope) && handsOnward(node)) {
         found.objects.push(keyOf(filePath, node));
       }
       if (spellsStream(node, scope) && !writtenThrough(node)) {
         found.streams.push(keyOf(filePath, node));
       }
-      const spelling = envReadSpellingAt(node, scope);
-      if (spelling === null || stringLiteralValue(spelling.name) !== null) {
-        return;
+      const read = functionReadAt(filePath, node, scope);
+      if (read !== null) {
+        found.functionReads.push(read);
       }
-      found.sites.push({
-        site: nodeId(filePath, node),
-        nameKey: keyOf(filePath, spelling.name),
-        defaulted: hasFallback(node, spelling, scope),
-        functionKey: functionReadKey(filePath, node, scope),
-      });
     },
     into: (node, scope) => module.scopeFor.get(node.id) ?? scope,
   });
@@ -287,24 +135,32 @@ export function envFactsIn(
 const keyOf = (filePath: string, node: PyNode): string =>
   readKey(filePath, node, enclosingFunction(node));
 
-/**
- * The `os.getenv` reference a read goes through, when the source writes
- * the read as a bare function call. `os.environ.get(name)` reads a
- * container the value facts already record.
- */
-function functionReadKey(
+function spellsObject(node: PyNode, scope: Scope): boolean {
+  return SPELLINGS.paths.some((path) => spellsStdlibPath(node, scope, path));
+}
+
+/** `os.getenv(name)`, a call of one of the chain's functions with a key the source doesn't write out. */
+function functionReadAt(
   filePath: string,
   node: PyNode,
   scope: Scope,
-): string | null {
-  if (node.type !== "call") {
+): FunctionRead | null {
+  const callee = node.type === "call" ? field(node, "function") : null;
+  if (callee === null) {
     return null;
   }
-  const callee = field(node, "function");
-  if (callee === null || isEnviron(field(callee, "object") ?? callee, scope)) {
+  const getter = Object.entries(SPELLINGS.functions).find(([path]) =>
+    spellsStdlibPath(callee, scope, path),
+  )?.[1];
+  const key = getter === undefined ? null : keyArgumentOf(node, getter);
+  if (key === null || writesTheKey(key)) {
     return null;
   }
-  return keyOf(filePath, callee);
+  return {
+    site: nodeId(filePath, node),
+    functionKey: keyOf(filePath, callee),
+    nameKey: keyOf(filePath, key),
+  };
 }
 
 /**
@@ -322,11 +178,15 @@ function handsOnward(node: PyNode): boolean {
   }
   if (parent.type === "attribute" && field(parent, "object")?.id === node.id) {
     const call = parent.parent;
+    const method = field(parent, "attribute")?.text ?? "";
+    const getter = Object.hasOwn(SPELLINGS.getters, method)
+      ? SPELLINGS.getters[method]
+      : undefined;
     return (
-      field(parent, "attribute")?.text === "get" &&
+      getter !== undefined &&
       call !== null &&
       call.type === "call" &&
-      !writesTheKey(firstArgumentOf(call))
+      !writesTheKey(keyArgumentOf(call, getter))
     );
   }
   return true;
@@ -352,17 +212,17 @@ function writtenThrough(node: PyNode): boolean {
 const writesTheKey = (key: PyNode | null): boolean =>
   key !== null && stringLiteralValue(key) !== null;
 
-function firstArgumentOf(call: PyNode): PyNode | null {
-  const first = callArguments(call).find(
-    (argument) => argument.kind === "positional" && argument.position === 0,
+/** The argument a getter call passes its key at. */
+function keyArgumentOf(call: PyNode, getter: GetterMeaning): PyNode | null {
+  const key = callArguments(call).find(
+    (argument) =>
+      argument.kind === "positional" && argument.position === getter.key.at,
   );
-  return first?.node ?? null;
+  return key?.node ?? null;
 }
 
 /** What one run recorded about the environment before the rules are asked. */
 interface EnvSiteIndex {
-  /** Each site by its node id, so a reader at a call can tell whether the read has a fallback. */
-  byId: Map<string, EnvNameSite>;
   /** Every expression recorded as the environment. The rules are seeded with these. */
   objects: Set<string>;
   /** For each parameter, the sites whose variable name it ends up as. Null until the rules have been asked. */
@@ -372,49 +232,45 @@ interface EnvSiteIndex {
 const sitesByDb = new WeakMap<Database, EnvSiteIndex>();
 
 /**
- * Adds the files' environment facts to the database, and keeps the parts
- * the rules do not record, so a reader at a call can ask whether one of
- * the callee's parameters is a variable's name.
+ * Adds the files' environment facts to the database, and keeps the
+ * objects the rules are seeded with, so a call can ask whether one of
+ * its callee's parameters is a variable's name.
  */
 export function bindEnvFacts(
   db: Database,
   found: readonly EnvFileFacts[],
 ): void {
-  const sites = found.flatMap((one) => one.sites);
   const objects = found.flatMap((one) => one.objects);
+  const functionReads = found.flatMap((one) => one.functionReads);
   for (const stream of found.flatMap((one) => one.streams)) {
     db.add("streamObject", [stream]);
   }
-  if (sites.length === 0 && objects.length === 0) {
+  if (functionReads.length === 0 && objects.length === 0) {
     return;
   }
   let index = sitesByDb.get(db);
   if (index === undefined) {
-    index = { byId: new Map(), objects: new Set(), sitesByParameter: null };
+    index = { objects: new Set(), sitesByParameter: null };
     sitesByDb.set(db, index);
   }
   for (const object of objects) {
     db.add("environmentObject", [object]);
     index.objects.add(object);
   }
-  for (const site of sites) {
-    index.byId.set(site.site, site);
-    if (site.functionKey === null) {
-      continue;
-    }
-    db.add("environmentObject", [site.functionKey]);
-    db.add("readsKeyed", [site.site, site.functionKey, site.nameKey]);
-    index.objects.add(site.functionKey);
+  for (const read of functionReads) {
+    db.add("environmentObject", [read.functionKey]);
+    db.add("readsKeyed", [read.site, read.functionKey, read.nameKey]);
+    index.objects.add(read.functionKey);
   }
 }
 
 /**
  * For each parameter, the sites whose variable name it ends up as, from
  * one question over every expression recorded as the environment. It is
- * asked the first time a reader reaches a call, when every file's facts
- * are in the database. The question is seeded with objects instead of
- * reads, because a read through a parameter is taken off an object that
- * no scan of the source would pick out.
+ * asked the first time a call is, when every file's facts are in the
+ * database. The question is seeded with objects instead of reads,
+ * because a read through a parameter is taken off an object that no scan
+ * of the source would pick out.
  */
 function sitesEachParameterNames(
   db: Database,
@@ -444,16 +300,23 @@ function sitesEachParameterNames(
 const NAMED_ANY = "envNamedAny";
 const NAMED_PARAMETER = "envNamed ";
 
-/** The sites a parameter names, each with whether it has a fallback, which a reader reads off the site. */
+/**
+ * The sites a parameter names, each marked when the program copes with
+ * it coming back empty, since a call's read is defaulted only when every
+ * site is.
+ */
 function describeSites(
   sites: readonly string[] | undefined,
-  siteById: ReadonlyMap<string, EnvNameSite>,
+  source: PythonFactSource,
 ): string {
   return sites === undefined
     ? "-"
-    : sites
-        .map((id) => `${id}${siteById.get(id)?.defaulted === true ? "!" : ""}`)
-        .join(",");
+    : sites.map((id) => `${id}${siteCopes(id, source) ? "!" : ""}`).join(",");
+}
+
+function siteCopes(id: string, source: PythonFactSource): boolean {
+  const node = nodeOfResolutionKey(id, source.db);
+  return node !== null && copingAt(node, source).defaulted;
 }
 
 /**
@@ -472,73 +335,111 @@ export function settleNamedParameters(db: Database): void {
  * The same lookup a reader noted under `id`, made again in this run, or
  * null when `id` is not one of these.
  */
-export function envLookupAgain(db: Database, id: string): string | null {
-  const index = sitesByDb.get(db);
+export function envLookupAgain(
+  source: PythonFactSource,
+  id: string,
+): string | null {
+  const index = sitesByDb.get(source.db);
   const named =
     index === undefined
       ? new Map<string, string[]>()
-      : sitesEachParameterNames(db, index);
+      : sitesEachParameterNames(source.db, index);
   if (id === NAMED_ANY) {
     return named.size === 0 ? "none" : "some";
   }
   if (id.startsWith(NAMED_PARAMETER)) {
-    return describeSites(
-      named.get(id.slice(NAMED_PARAMETER.length)),
-      index?.byId ?? new Map(),
-    );
+    return describeSites(named.get(id.slice(NAMED_PARAMETER.length)), source);
   }
   return null;
 }
 
 /**
- * The reads each of these calls makes through the helper it calls, keyed
- * by the call's node id. Without any sites in the run it returns an empty
- * map before looking at a call.
+ * Asks which functions the calls of one body come to, in one round, so a
+ * call asked which keys it supplies has its answer already. Without any
+ * parameter that names a variable it asks nothing.
  */
-function helperReadsByCall(
+export function resolveHelperCallees(
+  db: Database,
   calls: readonly PyNode[],
-  db: Database | undefined,
-): Map<number, Effect[]> {
-  const found = new Map<number, Effect[]>();
-  const index = db === undefined ? undefined : sitesByDb.get(db);
-  if (db === undefined || index === undefined || calls.length === 0) {
-    return found;
+): void {
+  const index = sitesByDb.get(db);
+  if (
+    index === undefined ||
+    calls.length === 0 ||
+    sitesEachParameterNames(db, index).size === 0
+  ) {
+    return;
+  }
+  const keys = new Set(
+    calls.flatMap((call) => {
+      const key = calleeKeyOf(call, db);
+      return key === null ? [] : [key];
+    }),
+  );
+  if (keys.size > 0) {
+    resolveCalls(db, [...keys]);
+  }
+}
+
+function calleeKeyOf(call: PyNode, db: Database): string | null {
+  const callee = field(call, "function");
+  return callee === null ? null : resolutionKeyOf(callee, db);
+}
+
+/**
+ * The arguments of the call at the key whose value becomes a read's key
+ * down the callee, by position or by keyword, across every function the
+ * callee resolves to. An argument that is the caller's own parameter is
+ * forwarded, and the read belongs to whoever calls the caller.
+ */
+export function keysSuppliedAt(
+  source: PythonFactSource,
+  call: string,
+): KeySupplied[] {
+  const { db } = source;
+  const index = sitesByDb.get(db);
+  if (index === undefined || db.lookup("call", 0, call).length === 0) {
+    return [];
+  }
+  const node = nodeOfResolutionKey(call, db);
+  if (node === null) {
+    return [];
   }
   const named = sitesEachParameterNames(db, index);
   noteLookup(db, NAMED_ANY, named.size === 0 ? "none" : "some");
-  if (named.size === 0) {
-    return found;
+  const calleeKey = named.size === 0 ? null : calleeKeyOf(node, db);
+  if (calleeKey === null) {
+    return [];
   }
-
-  const calleeKeys = new Map<number, string>();
-  for (const call of calls) {
-    const callee = field(call, "function");
-    const key = callee === null ? null : resolutionKeyOf(callee, db);
-    if (key !== null) {
-      calleeKeys.set(call.id, key);
-    }
-  }
-  if (calleeKeys.size === 0) {
-    return found;
-  }
-  resolveCalls(db, [...new Set(calleeKeys.values())]);
-
-  for (const call of calls) {
-    const key = calleeKeys.get(call.id);
-    if (key === undefined) {
-      continue;
-    }
-    const argumentAt = argumentsByParameter(db, call, key);
-    if (argumentAt.size === 0) {
-      continue;
-    }
-    const reads = readsThroughHelper(db, call, argumentAt, index.byId, named);
-    if (reads.length > 0) {
-      found.set(call.id, reads);
-    }
-  }
-  return found;
+  resolveCalls(db, [calleeKey]);
+  return argumentsByParameter(db, node, calleeKey).flatMap(
+    ({ parameter, argument }) => {
+      const sites = named.get(parameter);
+      if (isObserved(db)) {
+        noteLookup(
+          db,
+          `${NAMED_PARAMETER}${parameter}`,
+          describeSites(sites, source),
+        );
+      }
+      const value = resolutionKeyOf(argument.node, db);
+      if (sites === undefined || value === null) {
+        return [];
+      }
+      return [
+        {
+          at: argument.kind === "positional" ? argument.position : -1,
+          ...(argument.kind === "keyword" ? { keyword: argument.name } : {}),
+          value,
+          forwarded: handsOnParameter(argument.node),
+          sites,
+        },
+      ];
+    },
+  );
 }
+
+type WrittenArgument = ReturnType<typeof callArguments>[number];
 
 /**
  * The argument this call writes at each of the callee's parameters, by
@@ -549,22 +450,22 @@ function argumentsByParameter(
   db: Database,
   call: PyNode,
   calleeKey: string,
-): Map<string, PyNode> {
+): { parameter: string; argument: WrittenArgument }[] {
   const written = callArguments(call);
   if (written.length === 0) {
-    return new Map();
+    return [];
   }
-  const positional = new Map<string, PyNode>();
-  const byName = new Map<string, PyNode>();
+  const positional = new Map<string, WrittenArgument>();
+  const byName = new Map<string, WrittenArgument>();
   for (const argument of written) {
     if (argument.kind === "keyword") {
-      byName.set(argument.name, argument.node);
+      byName.set(argument.name, argument);
       continue;
     }
-    positional.set(String(argument.position), argument.node);
+    positional.set(String(argument.position), argument);
   }
 
-  const argumentAt = new Map<string, PyNode>();
+  const argumentAt = new Map<string, WrittenArgument>();
   for (const callee of resolvedFunctions(db, calleeKey)) {
     for (const row of db.lookup("paramOf", 0, callee)) {
       const at = positional.get(String(row[1]));
@@ -579,15 +480,12 @@ function argumentsByParameter(
       }
     }
   }
-  return argumentAt;
+  return [...argumentAt].map(([parameter, argument]) => ({
+    parameter,
+    argument,
+  }));
 }
 
-/**
- * What a call reads, given the argument it writes at each of the
- * callee's parameters. The name is the argument's own value. A variable
- * has a fallback when every read the call reaches supplies one, or when
- * the caller wrote an `or` of its own around the call.
- */
 /**
  * Whether the argument is the calling function's own parameter, as in
  * `get_env(key)` calling `require_env(key)`. The name comes from whoever
@@ -603,64 +501,4 @@ function handsOnParameter(argument: PyNode): boolean {
   return children(field(caller, "parameters")).some(
     (param) => parameterIdentifier(param)?.text === argument.text,
   );
-}
-
-function readsThroughHelper(
-  db: Database,
-  call: PyNode,
-  argumentAt: ReadonlyMap<string, PyNode>,
-  siteById: ReadonlyMap<string, EnvNameSite>,
-  named: ReadonlyMap<string, string[]>,
-): Effect[] {
-  const reads = new Map<string, boolean>();
-  for (const [parameter, argument] of argumentAt) {
-    const sites = named.get(parameter);
-    noteLookup(
-      db,
-      `${NAMED_PARAMETER}${parameter}`,
-      describeSites(sites, siteById),
-    );
-    if (sites === undefined || handsOnParameter(argument)) {
-      continue;
-    }
-    const name = stringLiteralValue(argument) ?? stringValueOf(argument, db);
-    if (name === null) {
-      continue;
-    }
-    for (const id of sites) {
-      // A site the rules derived is a read in a helper's own body, and
-      // nothing scanned it for a fallback, so it supplies none.
-      const defaulted = siteById.get(id)?.defaulted ?? false;
-      reads.set(name, (reads.get(name) ?? true) && defaulted);
-    }
-  }
-  if (reads.size === 0) {
-    return [];
-  }
-  const defaultedAtCall = isDefaultedAt(call);
-  // The fallback a caller writes around the call, as in
-  // `need("X") or "x"`, is what the read falls back to.
-  const fallback =
-    defaultedAtCall || [...reads.values()].some(Boolean)
-      ? settledValue(copingAt(call).fallback, db)
-      : null;
-  return [...reads].map(([name, defaulted]) => {
-    const coped = defaulted || defaultedAtCall;
-    return configReadEffect(
-      {
-        name,
-        defaulted: coped,
-        ...(coped && fallback !== null ? { fallback } : {}),
-      },
-      call,
-    );
-  });
-}
-
-/** The value a fallback settles to, or null when it settles to none. */
-function settledValue(
-  fallback: PyNode | null,
-  db: Database | undefined,
-): string | number | boolean | null {
-  return fallback === null ? null : scalarOf(evaluatedValue(fallback, db));
 }

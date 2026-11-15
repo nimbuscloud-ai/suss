@@ -35,13 +35,24 @@ export function isBuiltin(node: PyNode, scope: Scope, name: string): boolean {
   );
 }
 
-/** `module.name`, or `name` after `from module import name`. */
-export function isStdlibMember(
+/**
+ * Whether the node is spelled as a dotted path, `os.environ`, through
+ * whatever name the file imported the module or the member under:
+ * `o.environ` after `import os as o`, `env` after
+ * `from os import environ as env`. It reads the syntax, for a reader
+ * that runs before any facts exist.
+ */
+export function spellsStdlibPath(
   node: PyNode,
   scope: Scope,
-  module: string,
-  name: string,
+  path: string,
 ): boolean {
+  const dot = path.lastIndexOf(".");
+  if (dot < 0) {
+    return false;
+  }
+  const module = path.slice(0, dot);
+  const name = path.slice(dot + 1);
   if (node.type === "attribute") {
     const object = node.childForFieldName("object");
     return (
@@ -50,14 +61,27 @@ export function isStdlibMember(
       isStdlibModule(object, scope, module)
     );
   }
-  if (node.type !== "identifier" || node.text !== name) {
+  if (node.type !== "identifier") {
     return false;
   }
-  const binding = resolveName(scope, name);
+  const binding = resolveName(scope, node.text);
   return (
     binding?.kind === "importFrom" &&
     binding.module === module &&
     binding.relativeLevel === 0 &&
     binding.importedName === name
+  );
+}
+
+/** `module.name`, or `name` after `from module import name` under that name and no other. */
+export function isStdlibMember(
+  node: PyNode,
+  scope: Scope,
+  module: string,
+  name: string,
+): boolean {
+  return (
+    (node.type !== "identifier" || node.text === name) &&
+    spellsStdlibPath(node, scope, `${module}.${name}`)
   );
 }

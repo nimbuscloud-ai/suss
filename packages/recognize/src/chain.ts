@@ -491,6 +491,7 @@ export type Link<TMeaning> =
   | OffLink
   | EntriesLink
   | GettersLink
+  | FunctionsLink
   | WritesLink
   | ThroughHelpersLink
   | DefaultedWhenLink;
@@ -502,7 +503,22 @@ export type Link<TMeaning> =
 export interface OffLink {
   readonly asks: "off";
   readonly object: RuntimeObject;
+  /** Defaults to `keyOrMember`. */
+  readonly entriesBy?: EntriesBy;
+  /** What a read of a key the object lacks does. Defaults to `nothing`. */
+  readonly missing?: MissingEntry;
 }
+
+/**
+ * How the source reads one entry. Node's `process.env` is an object, so
+ * `process.env.X` and `process.env["X"]` both read `X`. Python's
+ * `os.environ` and Ruby's `ENV` are mappings, read only at a key, and
+ * `os.environ.get` is a method of the mapping.
+ */
+export type EntriesBy = "keyOrMember" | "key";
+
+/** A missing key raises, as `os.environ["X"]` does, or reads as nothing, as `process.env.X` does. */
+export type MissingEntry = "raises" | "nothing";
 
 /** What a read of each entry is. `otherwise` is any entry the table does not list. */
 export interface EntriesLink {
@@ -515,6 +531,16 @@ export interface EntriesLink {
 /** Methods that read one entry, with where the key and the fallback are. */
 export interface GettersLink {
   readonly asks: "getters";
+  readonly table: Readonly<Record<string, GetterMeaning>>;
+}
+
+/**
+ * Functions the runtime provides that read one entry of the object, by
+ * the global path each is spelled as: Python's `os.getenv`, called off
+ * its module or bare after `from os import getenv`.
+ */
+export interface FunctionsLink {
+  readonly asks: "functions";
   readonly table: Readonly<Record<string, GetterMeaning>>;
 }
 
@@ -581,9 +607,10 @@ export interface NoEntry {
 /**
  * How the effect writes its callee: the object's path and the entry
  * however the read was spelled (`process.env.X` for `process.env["X"]`
- * too), the site as written, or the object's path alone.
+ * too), the same at a key (`os.environ["X"]` for `os.getenv("X")` too),
+ * the site as written, or the object's path alone.
  */
-export type CalleeSpelling = "dotted" | "site" | "object";
+export type CalleeSpelling = "dotted" | "keyed" | "site" | "object";
 
 /** An argument by position, or under a keyword in a language that has them. */
 export interface ArgumentPosition {
@@ -599,7 +626,11 @@ export interface GetterMeaning {
   readonly key: ArgumentPosition;
   /** Where the call passes its fallback, or the places it can, tried in order: `ENV.fetch("X", d)` and `ENV.fetch("X") { d }`. */
   readonly fallback?: FallbackPick | readonly FallbackPick[];
-  /** The getter raises when the entry is missing and no fallback is given, so a read with none is not defaulted. */
+  /**
+   * The getter raises when the entry is missing and no fallback is given,
+   * so a read with none copes only through a test the adapter's rule
+   * finds before it.
+   */
   readonly raisesWithout?: boolean;
 }
 
