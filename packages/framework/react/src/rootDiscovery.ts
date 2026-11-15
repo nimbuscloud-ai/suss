@@ -3,115 +3,127 @@
  * `createRoot(el).render(<App />)`. That component is often exported by
  * nothing, so the export walk misses it. The closure follows its JSX
  * references from here, which makes the rest of the app reachable.
+ *
+ * Every call in the file is read, the ones inside functions too, since
+ * most apps boot inside a function they call once the page is ready.
+ * Each call is asked what made it or its receiver, over the store's
+ * facts, so a root kept in a variable and a boot call read off the
+ * default import both count. The README lists the spellings.
  */
 
 import { Node } from "ts-morph";
 
 import {
-  functionTargetOf,
-  importedNamesOf,
-  importedRootsOf,
+  callOpsFor,
+  factSourceFor,
+  statedFactKey,
 } from "@suss/adapter-typescript";
+import { anyOf, constructedFrom, imported } from "@suss/recognize";
+import { factCallOps } from "@suss/recognize/ops";
 
-import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
-import type { CallExpression, Identifier, SourceFile } from "ts-morph";
+import type { TsDiscoveryContext } from "@suss/adapter-typescript";
+import type {
+  AstCapableValueOps,
+  CallOps,
+  DiscoveredCustomUnit,
+  PatternPack,
+  ReceiverOrigin,
+} from "@suss/extractor";
+import type { CallExpression, NewExpression, SourceFile } from "ts-morph";
 
-const BOOT_CALLEES = ["createRoot", "hydrateRoot"];
-const BOOT_MODULES = ["react-dom/client", "react-dom"];
+const DOM = ["react-dom/client", "react-dom"];
 
-function importedBootNames(sourceFile: SourceFile): Set<string> {
-  const names = new Set<string>();
-  for (const [local, canonical] of importedNamesOf(sourceFile, BOOT_MODULES)) {
-    if (BOOT_CALLEES.includes(canonical)) {
-      names.add(local);
-    }
-  }
-  return names;
+/** One way an app hands React its root element: what makes the call, and where it passes the element. */
+interface BootCall {
+  readonly start: ReceiverOrigin;
+  /** The method called on what `start` made, or unset when the call is the start itself. */
+  readonly method?: string;
+  readonly at: number;
 }
 
-/** For `ReactDOM.render`, with react-dom imported as a namespace or default. */
-function importedDomNamespaces(sourceFile: SourceFile): Set<string> {
-  return importedRootsOf(sourceFile, BOOT_MODULES);
-}
-
-function isBootRender(
-  call: CallExpression,
-  bootNames: Set<string>,
-  domNamespaces: Set<string>,
-): boolean {
-  const callee = call.getExpression();
-  if (!Node.isPropertyAccessExpression(callee)) {
-    // Both boot forms read here call a `.render` property:
-    // `createRoot(el).render(...)` and `ReactDOM.render(...)`.
-    return false;
-  }
-  if (callee.getName() !== "render") {
-    return false;
-  }
-  const base = callee.getExpression();
-  if (Node.isCallExpression(base)) {
-    const inner = base.getExpression();
-    return Node.isIdentifier(inner) && bootNames.has(inner.getText());
-  }
-  return Node.isIdentifier(base) && domNamespaces.has(base.getText());
-}
-
-function renderedComponentOf(
-  call: CallExpression,
-): { func: unknown; name: string } | null {
-  const argument = call.getArguments()[0];
-  if (argument === undefined) {
-    return null;
-  }
-  let tag: Identifier | null = null;
-  if (Node.isJsxSelfClosingElement(argument)) {
-    const node = argument.getTagNameNode();
-    tag = Node.isIdentifier(node) ? node : null;
-  } else if (Node.isJsxElement(argument)) {
-    const node = argument.getOpeningElement().getTagNameNode();
-    tag = Node.isIdentifier(node) ? node : null;
-  }
-  if (tag === null || !/^[A-Z]/.test(tag.getText())) {
-    return null;
-  }
-  const target = functionTargetOf(tag);
-  return target === null ? null : { func: target.func, name: target.name };
-}
+/**
+ * `createRoot(el).render(<App />)` and `ReactDOM.render(<App />, el)`,
+ * `hydrateRoot(document, <App />)`, React 17's `ReactDOM.hydrate`, and
+ * `render` or `hydrate` imported from react-dom by name.
+ */
+const BOOT_CALLS: readonly BootCall[] = [
+  {
+    start: anyOf(
+      constructedFrom({ from: DOM, named: ["createRoot", "hydrateRoot"] }),
+      imported({ from: DOM, named: ["default", "*"] }),
+    ),
+    method: "render",
+    at: 0,
+  },
+  { start: constructedFrom({ from: DOM, named: ["hydrateRoot"] }), at: 1 },
+  {
+    start: imported({ from: ["react-dom"], named: ["default", "*"] }),
+    method: "hydrate",
+    at: 0,
+  },
+  {
+    start: constructedFrom({
+      from: ["react-dom"],
+      named: ["render", "hydrate"],
+    }),
+    at: 0,
+  },
+];
 
 export const reactRootComponents: NonNullable<PatternPack["discoverUnits"]> = (
   sourceFile,
-  _ctx,
+  ctx,
 ) => {
   const sf = sourceFile as SourceFile;
+  // A file that never writes a react-dom module makes no boot call, and
+  // reading its calls would state facts for every one of them.
   const text = sf.getFullText();
-  if (!text.includes("render")) {
+  if (!DOM.some((module) => text.includes(module))) {
     return [];
   }
+  const calls = callsIn(sf, (ctx as TsDiscoveryContext).resolution);
+  return BOOT_CALLS.flatMap((boot) =>
+    calls.flatMap((call) => rootBooted(call, boot)),
+  );
+};
 
-  const bootNames = importedBootNames(sf);
-  const domNamespaces = importedDomNamespaces(sf);
-  if (bootNames.size === 0 && domNamespaces.size === 0) {
-    return [];
-  }
-
-  const out: DiscoveredCustomUnit[] = [];
-  const claimed = new Set<unknown>();
+/** Every call the file writes, in source order, as the ops over the store's facts. */
+function callsIn(
+  sf: SourceFile,
+  store: TsDiscoveryContext["resolution"],
+): CallOps[] {
+  const originatesFrom = (value: Node, module: string): boolean =>
+    store.originatesFrom(value, module);
+  const source = factSourceFor(store, originatesFrom);
+  const written: (CallExpression | NewExpression)[] = [];
   sf.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    if (!isBootRender(node, bootNames, domNamespaces)) {
-      return;
-    }
-    const component = renderedComponentOf(node);
-    if (component !== null && !claimed.has(component.func)) {
-      claimed.add(component.func);
-      out.push({
-        func: component.func,
-        kind: "component",
-        name: component.name,
-      });
+    if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
+      written.push(node);
     }
   });
-  return out;
-};
+  return written.map(
+    (call) =>
+      factCallOps(statedFactKey(call, store), source) ??
+      callOpsFor(call, { resolution: store, originatesFrom }),
+  );
+}
+
+/** The component a boot call renders, named by its tag as written. */
+function rootBooted(call: CallOps, boot: BootCall): DiscoveredCustomUnit[] {
+  if (!boots(call, boot)) {
+    return [];
+  }
+  const tag = call.valueAt(boot.at)?.tag?.() ?? null;
+  const found = tag?.function?.() ?? null;
+  const func = (found as Partial<AstCapableValueOps> | null)?.ast?.() ?? null;
+  return tag === null || func === null
+    ? []
+    : [{ func, kind: "component", name: tag.source?.() ?? "" }];
+}
+
+function boots(call: CallOps, boot: BootCall): boolean {
+  if (boot.method === undefined) {
+    return call.isFrom(boot.start);
+  }
+  return call.method() === boot.method && call.receiverIsFrom(boot.start);
+}
