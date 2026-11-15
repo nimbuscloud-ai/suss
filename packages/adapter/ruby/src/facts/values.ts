@@ -40,6 +40,7 @@ import {
   METHOD_TYPES,
   methodsDefinedAt,
   methodsDefinedInBranches,
+  methodsDefinedUnder,
   NESTING_TYPES,
   NO_BODY_BLOCKS,
   NodeSet,
@@ -2611,6 +2612,21 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     : bodyBlockCalls(body, cls.type === "module", emitter.bodyBlocks)) {
     emitBodyBlockCallFacts(within, call);
   }
+  // A method in a block no pack declares belongs to whatever the block
+  // runs against, so it gets its body's facts and is not put on the class.
+  const emitMethodsUnder = (statement: RbNode): void => {
+    const onClass = new NodeSet([
+      ...methodsDefinedAt(statement),
+      ...methodsDefinedInBranches(statement),
+    ]);
+    for (const method of methodsDefinedUnder(statement)) {
+      if (onClass.has(method)) {
+        emitMethodOfClass(within, classKey, method, offeredOnClass);
+        continue;
+      }
+      emitMethodFacts(emitter, method);
+    }
+  };
   for (const statement of statements) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
@@ -2628,6 +2644,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       // as much as a constant's, so a bare call in them is looked up on
       // the class.
       emitExpressionFacts(within, statement);
+      emitMethodsUnder(statement);
       continue;
     }
     if (NESTING_TYPES.has(statement.type)) {
@@ -2645,12 +2662,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       // `Settings.filters.each do ... end` gets the same facts as in a method.
       emitStatementFacts(within, statement);
     }
-    for (const method of [
-      ...methodsDefinedAt(statement),
-      ...methodsDefinedInBranches(statement),
-    ]) {
-      emitMethodOfClass(within, classKey, method, offeredOnClass);
-    }
+    emitMethodsUnder(statement);
   }
   emitBodyCallPositions(within, classKey, body);
   emitInstanceWrites(within, classKey, collected);
