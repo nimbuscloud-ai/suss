@@ -1827,6 +1827,29 @@ describe("ruby value facts", () => {
     ).toEqual(['ENV["ALLOW"]']);
   });
 
+  it("states the body of a method a block no pack declares defines, and leaves it off the class", async () => {
+    const source = [
+      "module Throttled",
+      "  included do",
+      "    def throttle_key",
+      '      ENV["THROTTLE_PREFIX"]',
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source, new Map());
+    const method = keyOf(
+      source,
+      'def throttle_key\n      ENV["THROTTLE_PREFIX"]\n    end',
+    );
+    expect(rows(db, "func")).toContainEqual([method]);
+    expect(db.size("holdsProperty")).toBe(0);
+    expect(
+      rows(db, "readsEntry").map((row) => textAt(source, row[0] as string)),
+    ).toEqual(['ENV["THROTTLE_PREFIX"]']);
+  });
+
   it("states what a body-block call is passed, and only which calls its block writes", async () => {
     const source = [
       "class Admin",

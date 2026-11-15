@@ -249,6 +249,8 @@ The adapter reads a declared block's statements as if they were written in the b
 
 When no pack in the run declares any of these, every block is read as an ordinary block. The keywords such a call passes down to the calls inside its block are not read.
 
+A `def` inside a block no pack declares, such as a concern's `included do` in a run without the rails pack, still gets the facts of its body, the way a `def` at the top of a file does. The reach walk finds that method by syntax and can make a unit of it, and the reads and calls in the unit's body come from those facts. The method is not put on the class, because the call the block is written with decides which object it lands on. `methodsDefinedUnder` is the one list of the methods a class body statement defines, through its branches and its blocks, and both the reach walk and the value facts read it.
+
 ## What a body calls out to
 
 A pack lists, in `clients`, the constant that its library's request calls are made on. Each entry gives the constant as a project writes it, the method names and the request method each one sends, and where the URL is written. It also lists the builder methods that return a value accepting the same calls, and the keyword a builder takes its base URL under.
