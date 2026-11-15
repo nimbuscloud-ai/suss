@@ -13,6 +13,7 @@ import type {
   TypeShape,
 } from "@suss/behavioral-ir";
 import type {
+  ClassBodyDeclaration,
   DeclaredDiscoveryPattern,
   InvocationRecognizer,
   PatternPack,
@@ -39,13 +40,11 @@ export function inflectionsIn(packs: readonly RubyPack[]): RbInflections {
   return pooled;
 }
 
-/** Every scope call the run's storage patterns declare, pooled. */
-export function scopeCallsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
-  return new Set(
-    packs.flatMap((pack) =>
-      (pack.storage ?? []).flatMap((pattern) => pattern.scopes ?? []),
-    ),
-  );
+/** Every class-body declaration the run's packs make, pooled in the order the packs are listed. */
+export function classBodiesIn(
+  packs: readonly RubyPack[],
+): ClassBodyDeclaration[] {
+  return packs.flatMap((pack) => pack.classBodies ?? []);
 }
 
 /** Every body block the run's packs declare, pooled, with each optional flag defaulted to false. */
@@ -93,6 +92,11 @@ export interface RubyPack {
   clients?: RbClientCall[];
   /** The library's model calls that read or write the database. */
   storage?: RbStoragePattern[];
+  /**
+   * What the library reads out of a model's class body: the calls that
+   * declare an association, register a callback or define a class method.
+   */
+  classBodies?: ClassBodyDeclaration[];
   /** The calls the library offers for sending the store a statement the project wrote itself. */
   rawSql?: RbRawSqlPattern[];
   /**
@@ -484,14 +488,6 @@ export interface RbStoragePattern {
   byPrimaryKey?: RbPrimaryKeyLookup;
   /** Read methods whose symbol arguments are the columns they ask for. */
   columnArguments?: string[];
-  /** The calls a model uses to declare an association with another model, when the library has them. */
-  associations?: RbAssociationCalls;
-  /**
-   * The calls a model body makes to define a class method from a lambda,
-   * as `scope :recent, -> { order(:created_at) }` defines `recent`. The
-   * first argument is the method's name and the lambda after it runs.
-   */
-  scopes?: string[];
   /** Which database is behind the connection. The project decides this, so the pack passes it in. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
   /** The exception each of these methods raises when the row is missing or does not save, ActiveRecord's `RecordNotFound` from `find`. */
@@ -569,19 +565,12 @@ export interface RbArgumentPlace {
 /**
  * The methods a model registers in its class body for the library to
  * run when a write happens. A body that writes through the model runs
- * them too, so their effects belong to that body.
- *
- * Both tables are keyed by the library's own event names: a write method
- * lists the events it fires, and a registering call lists the events it
- * covers.
+ * them too, so their effects belong to that body. The pack's class-body
+ * declaration says which events each registering call covers.
  */
 export interface RbModelCallbacks {
   /** Each write method the pattern declares, and the events it fires. */
   eventOf: Record<string, string[]>;
-  /** Each class-body call that registers a callback, and the events it covers when the call does not narrow them. */
-  registeredBy: Record<string, string[]>;
-  /** The keyword that narrows one registration to some of those events, `on`. */
-  eventKeyword: string;
 }
 
 /** Which methods take the primary key positionally, and what that column is called. */
@@ -589,22 +578,6 @@ export interface RbPrimaryKeyLookup {
   methods: string[];
   /** The column the library uses unless a model sets another. */
   column: string;
-}
-
-/**
- * The class-body calls a model uses to declare an association, and the
- * keyword that gives the target class. The calls are split into two
- * lists because a plural call's target is the singularised association
- * name, and a singular call's target is the name as written. Only the
- * library knows which of its calls is which.
- */
-export interface RbAssociationCalls {
-  /** Calls written in the singular, `belongs_to :account` and `has_one :profile`. */
-  singular: string[];
-  /** Calls written in the plural, `has_many :statuses`. */
-  plural: string[];
-  /** The keyword that gives the target class's name explicitly, `class_name`. */
-  classNameKeyword: string;
 }
 
 /**

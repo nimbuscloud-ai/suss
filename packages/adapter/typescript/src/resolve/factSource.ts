@@ -202,6 +202,8 @@ export function factSourceFor(
     evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
     comesTo: (key) =>
       at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),
+    classBodyCalls: (key) =>
+      at(key, [], (node) => store.classBodyCallsOf(node)),
     givesBack: (key) =>
       at(key, null, (node) => keyOf(store.resolveReturnedCallable(node))),
     importSpecifierOf: (key) =>

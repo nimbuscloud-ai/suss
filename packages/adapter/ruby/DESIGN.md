@@ -280,15 +280,17 @@ storage: [
     givesBack: ["find", "where", "first"],
     byPrimaryKey: { methods: ["find", "update", "destroy"], column: "id" },
     columnArguments: ["select", "pluck", "pick"],
-    associations: {
-      singular: ["has_one", "belongs_to"],
-      plural: ["has_many", "has_and_belongs_to_many"],
-      classNameKeyword: "class_name",
-    },
     storageSystem: "postgresql",
   },
 ]
 ```
+
+What a model's body declares comes in as a `classBodies` declaration
+from `@suss/recognize`. The reader there lists the calls a class body
+makes outside every method, through any block written there, and the
+adapter states what each declares: an association as a constant
+reference read from the class's nesting, a callback as `classCallback`
+rows, and a scope's lambda held under the class method's name.
 
 One rule covers every call. A call is database work when `reads` or `writes` lists its method, the class behind its receiver has one of those base classes in its ancestry, and the project does not declare that method itself. Rails puts its own class between the library and every model. Following `extends` through the project and matching `extendsNamed` at the library handles that:
 

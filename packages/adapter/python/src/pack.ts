@@ -16,6 +16,7 @@ import type {
   RequestSpellingMetadata,
 } from "@suss/behavioral-ir";
 import type {
+  ClassBodyDeclaration,
   DeclaredDiscoveryPattern,
   InvocationRecognizer,
   LibraryEnvVars,
@@ -61,6 +62,11 @@ export interface PythonPack {
   storage?: StoragePattern[];
   /** Which of the library's calls give back one of a model class. DESIGN.md says what a chain of them composes into. */
   models?: PyModelQueries[];
+  /**
+   * What the library reads out of a model's class body: a field assigned
+   * from the library's own relationship callable reaches another model.
+   */
+  classBodies?: ClassBodyDeclaration[];
   /** Which of the library's classes return themselves from `__enter__`, so a `with` block gets the object itself. */
   contextManagers?: PyContextManager[];
   /** How the library lets a project hand the database SQL it wrote itself. */
@@ -287,21 +293,6 @@ export interface PyModelQueries {
   entryMethods: PyModelEntryMethod[];
   /** Functions the library exports that do the same, called on their own instead of on a session. */
   entryFunctions: PyModelEntryFunction[];
-  /** The library's own constructors for a field that reaches another model. */
-  relationships?: PyRelationshipConstructor[];
-}
-
-/**
- * The callable a model field is assigned from to say it points at another
- * model, as in `items: list[Item] = Relationship(...)`, and where it is
- * imported from. A match needs the import, so a project function with the
- * same name does not count.
- */
-export interface PyRelationshipConstructor {
-  /** The module it is imported from, `sqlmodel` or `sqlalchemy.orm`. */
-  module: string;
-  /** Its name, `Relationship` or `relationship`. */
-  name: string;
 }
 
 /** `session.get(User, id)`: the method, and where the class is written. */

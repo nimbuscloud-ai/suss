@@ -48,7 +48,6 @@ import {
   readAsType,
   readCallArgs,
   runStatements,
-  scopesDefinedIn,
   singletonMethodsByName,
   stringLiteralValue,
   symbolValue,
@@ -296,8 +295,6 @@ interface Emitter {
   namedWrites: NamedWrites | null;
   /** The calls whose block the run's packs declare runs as part of the surrounding body. */
   bodyBlocks: BodyBlocks;
-  /** The calls the run's packs declare define a class method from a lambda. */
-  scopeCalls: ReadonlySet<string>;
 }
 
 /**
@@ -1386,7 +1383,8 @@ function emitStatementFacts(emitter: Emitter, statement: RbNode): void {
 /**
  * The facts a body-block call such as `included do` gives, and those of
  * what it is passed. The class body reads the block's statements as its
- * own, so the walk leaves the block alone.
+ * own, so the walk leaves the block alone and states only which calls it
+ * writes, for a rule that lists the calls of a class body.
  */
 function emitBodyBlockCallFacts(emitter: Emitter, call: RbNode): void {
   const blocks: OpenBlocks = { filePath: emitter.filePath, keys: [] };
@@ -1395,6 +1393,12 @@ function emitBodyBlockCallFacts(emitter: Emitter, call: RbNode): void {
   const args = field(call, "arguments");
   if (args !== null) {
     walkExpressions(args, visit, null, blocks);
+  }
+  const block = field(call, "block");
+  if (block !== null) {
+    const blockKey = nodeId(emitter.filePath, block);
+    add(emitter, "callBlock", nodeId(emitter.filePath, call), blockKey);
+    emitBodyCallPositions(emitter, blockKey, field(block, "body"));
   }
 }
 
@@ -2644,23 +2648,23 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   emitInstanceWrites(within, classKey, collected);
   if (body !== null) {
     emitLambdasIn(within, body);
-    for (const scope of scopesDefinedIn(
-      body,
-      cls.type === "module",
-      emitter.bodyBlocks,
-      emitter.scopeCalls,
-    )) {
-      add(
-        emitter,
-        "holdsProperty",
-        classKey,
-        classSpelling(scope.name),
-        nodeId(emitter.filePath, scope.lambda),
-      );
-    }
   }
 
   return classKey;
+}
+
+/**
+ * The class method a pack says a class body call defines from a lambda,
+ * `scope :recent, -> { ... }`, held on the class under the name a class
+ * method is held under.
+ */
+export function emitDefinedMethod(
+  db: Database,
+  classKey: string,
+  name: string,
+  lambdaKey: string,
+): void {
+  db.add("holdsProperty", [classKey, classSpelling(name), lambdaKey]);
 }
 
 /**
@@ -2673,7 +2677,6 @@ export function emitValueFacts(
   filePath: string,
   root: RbNode,
   bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
-  scopeCalls: ReadonlySet<string> = new Set(),
 ): void {
   const writes = collectWrites(null, root);
   const emitter: Emitter = {
@@ -2689,7 +2692,6 @@ export function emitValueFacts(
     instanceWrites: null,
     namedWrites: { body: root, parameters: new Set(), byProperty: new Map() },
     bodyBlocks,
-    scopeCalls,
   };
 
   const declaresName = (child: RbNode, key: string): void => {

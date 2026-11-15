@@ -324,7 +324,9 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `parameterAt(fn)` | the position `k` of a `paramOf(f, k, p)` row on the function `fn` settles to, where `p` is the value itself (how Python and Ruby key a name for a parameter), what it `binds` to (how TypeScript does), or the parameter whose destructure has that declaration as its rest, `restOf(d, p)`. Null for none, or for two positions |
 | `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names; its `members(kind)` are the functions among its `holdsProperty` rows |
 | `name()` on a class | `rbConstantName(c, q)` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere |
-| `bodyCalls()` on a value, a class or a module | `bodyCallAt(f, k, r)` on the value's own key, the class's, or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
+| `bodyCalls()` on a value or a module | `bodyCallAt(f, k, r)` on the value's own key or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
+| `bodyCalls()` on a class | `classBodyCall(c, r)`, which the adapter asks the rules for: the class body's statements and, in Ruby, those of each block written there, in source order |
+| `fieldCalls()` | the `holdsProperty(c, n, v)` and `declaresDefault(c, n, v)` rows whose `v` is a call, in source order, each under its plain name |
 | `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
 | `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
@@ -1450,6 +1452,37 @@ asserts the effect the example states. When an example stops matching,
 the pack's test fails, and the documentation cannot go wrong without
 anyone noticing. `examplesMissing(pack)` lists the declarations with no
 example.
+
+## What a class body declares
+
+```ts
+classBody({
+  calls: {
+    has_many: association({ name: { at: 0 }, target: { keyword: "class_name" }, plural: true }),
+    after_commit: callback({ methods: { from: 0 }, events: ["create", "update", "destroy"], narrowedBy: { keyword: "on" } }),
+    scope: definesMethod({ name: { at: 0 }, body: { at: 1 } }),
+  },
+  fields: { association: { madeBy: imported({ from: ["sqlalchemy.orm"], named: ["relationship"] }) } },
+})
+```
+
+An ORM reads a model's body as well as the calls made on it. A
+`classBody` declaration says which calls the body writes, outside every
+method and with no receiver, mean what, and which fields assigned from
+a call declare an association. `declareClassBody(declaration, cls)`
+reads `cls.bodyCalls()` and `cls.fieldCalls()` and returns what the
+body declares. It states no fact. The adapter does, because an
+association's class comes from the language's own inflection when the
+call writes none, and only the adapter knows how its language keys a
+class.
+
+A call is matched by the name it is written under. A callback's events
+are the ones its `narrowedBy` argument lists, one name or a list, and
+every event the meaning lists when that argument is absent or does not
+settle. A method is defined only from an argument written as a
+function. A `classBodies` entry on `PackSpec` reaches the adapters
+through `PatternPack`, and the pack health report counts one data link
+for each call and field it declares.
 
 ## Ordering
 

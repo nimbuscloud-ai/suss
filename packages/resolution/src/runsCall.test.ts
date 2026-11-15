@@ -103,12 +103,14 @@ describe("callsRun", () => {
 });
 
 describe("callBlock", () => {
-  // Ruby states which block a call is written with, and DESIGN.md says no
-  // rule reads it. A rule that starts to read it changes that line.
-  it("is read by no rule yet", () => {
-    const read = [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS].flatMap(
-      (rule) => rule.body.map((literal) => literal.relation),
-    );
-    expect(read).not.toContain("callBlock");
+  // DESIGN.md says which rule reads it. Another rule that starts to read
+  // it changes that line.
+  it("is read only by the rule that lists a class body's calls", () => {
+    const readers = [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS]
+      .filter((rule) =>
+        rule.body.some((literal) => literal.relation === "callBlock"),
+      )
+      .map((rule) => rule.head.relation);
+    expect(readers).toEqual(["classBodyCall"]);
   });
 });

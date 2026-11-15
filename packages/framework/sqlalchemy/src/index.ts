@@ -7,6 +7,7 @@
 import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
+import { classBody, imported } from "@suss/recognize";
 
 import type {
   PyModelQueries,
@@ -14,6 +15,7 @@ import type {
   RawSqlPattern,
   StoragePattern,
 } from "@suss/adapter-python";
+import type { ClassBodyDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
@@ -142,8 +144,27 @@ export function sqlalchemyModels(): PyModelQueries[] {
       givesBack: [...NARROWS_A_QUERY, ...RUNS_A_QUERY],
       entryMethods: SESSION_ENTRY_METHODS,
       entryFunctions: [{ module: "sqlalchemy", name: "select", argument: 0 }],
-      relationships: [{ module: "sqlalchemy.orm", name: "relationship" }],
     },
+  ];
+}
+
+/**
+ * A model field assigned from `relationship(...)` reaches another model.
+ * The callable has to come from the library, so a project function with
+ * the same name does not count.
+ */
+export function sqlalchemyClassBodies(): ClassBodyDeclaration[] {
+  return [
+    classBody({
+      fields: {
+        association: {
+          madeBy: imported({
+            from: ["sqlalchemy.orm"],
+            named: ["relationship"],
+          }),
+        },
+      },
+    }),
   ];
 }
 
@@ -176,6 +197,7 @@ export function withSqlalchemy(
     ...pack,
     storage: [...(pack.storage ?? []), ...sqlalchemyStorage(options)],
     models: [...(pack.models ?? []), ...sqlalchemyModels()],
+    classBodies: [...(pack.classBodies ?? []), ...sqlalchemyClassBodies()],
     rawSql: [...(pack.rawSql ?? []), ...sqlalchemyRawSql(options)],
   };
 }
@@ -196,6 +218,7 @@ export function sqlalchemyFramework(
     discovery: [],
     storage: sqlalchemyStorage(options),
     models: sqlalchemyModels(),
+    classBodies: sqlalchemyClassBodies(),
     rawSql: sqlalchemyRawSql(options),
   };
 }

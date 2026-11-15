@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { association, classBody } from "@suss/recognize";
 import { addPackWords } from "@suss/resolution";
 
-import {
-  collectFileConstants,
-  emitConstantBindings,
-} from "./facts/constants.js";
-import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
-import { packWordsOf } from "./project.js";
+import { packWordsOf, RunFacts } from "./project.js";
 import { storageClaims, storageEffects } from "./storage.js";
 
-import type {
-  RbAssociationCalls,
-  RbLoaderPattern,
-  RbStoragePattern,
-} from "./pack.js";
+import type { RbLoaderPattern, RbStoragePattern } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
 const ACTIVE_RECORD: RbStoragePattern = {
@@ -49,13 +41,22 @@ const ACTIVE_RECORD: RbStoragePattern = {
   statements: { find_by_sql: { at: 0 }, count_by_sql: { at: 0 } },
   bindPlaceholder: "?",
   columnArguments: ["pluck", "select"],
-  associations: {
-    singular: ["has_one", "belongs_to"],
-    plural: ["has_many"],
-    classNameKeyword: "class_name",
-  },
   storageSystem: "postgresql",
 };
+
+const CLASS_NAME = { keyword: "class_name" };
+
+const MODEL_BODY = classBody({
+  calls: {
+    has_one: association({ name: { at: 0 }, target: CLASS_NAME }),
+    belongs_to: association({ name: { at: 0 }, target: CLASS_NAME }),
+    has_many: association({
+      name: { at: 0 },
+      target: CLASS_NAME,
+      plural: true,
+    }),
+  },
+});
 
 const DATALOADER: RbLoaderPattern = {
   loader: "dataloader",
@@ -89,23 +90,24 @@ function callsIn(node: RbNode, found: RbNode[] = []): RbNode[] {
 
 /** The facts a run would have for these files, and the parsed body of `use.rb`. */
 async function factsFor(files: Record<string, string>) {
-  const db = new Database();
-  const constants = [];
+  const facts = new RunFacts(new Database(), [
+    {
+      name: "models",
+      protocol: "postgresql",
+      discovery: [],
+      classBodies: [MODEL_BODY],
+    },
+  ]);
   let root: RbNode | null = null;
   for (const [file, text] of Object.entries(files)) {
     const tree = await parseRuby(text);
-    emitValueFacts(db, file, tree.rootNode);
-    constants.push(
-      collectFileConstants(file, tree.rootNode, [
-        ACTIVE_RECORD.associations as RbAssociationCalls,
-      ]),
-    );
+    facts.addFile(file, tree.rootNode);
     if (file === "use.rb") {
       root = tree.rootNode;
     }
   }
-  emitConstantBindings(db, constants);
-  return { db, root: root as RbNode };
+  facts.finish();
+  return { db: facts.db, root: root as RbNode };
 }
 
 async function effectsFor(source: string, models = MODELS) {

@@ -314,16 +314,21 @@ bodyCallAt(f, k, r)         the call r is written as the k-th statement
                             of f's body, counting in source order through
                             the branches of a conditional and not into a
                             nested function or block. f is a function, a
-                            Ruby block or class, or a file under its
-                            path. makesCall has no order, and reaches
+                            class, a Ruby block, or a file under its
+                            path. A TypeScript class's statements are
+                            those of its static blocks. makesCall has no
+                            order, and reaches
                             into nested blocks and into arguments. The
-                            ops in @suss/recognize/ops read it, and no
-                            rule does
+                            ops in @suss/recognize/ops read it, and so
+                            does classBodyCall
 callBlock(r, b)             the call r is written with the block b, which
-                            is a function of its own. The ops in
-                            @suss/recognize/ops read it to find the call
-                            that hands a block its variable, and no rule
-                            does (Ruby)
+                            is a function of its own, or which runs as
+                            part of the class body around it, as a
+                            declared body block such as included do
+                            does. The ops in @suss/recognize/ops read it
+                            to find the call that hands a block its
+                            variable, and classBodyCall follows it into
+                            the block (Ruby)
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
 entersValue(x)              a with statement enters x, which calls its
@@ -1874,6 +1879,30 @@ function's `makesCall`, though a TypeScript or Ruby default runs on
 each call. A `->` lambda written as an argument inside a Ruby block is
 contained in the method around both, so the block's own `runsCall`
 does not reach its calls.
+
+## The calls a class body makes
+
+A library that declares things in a class body, as ActiveRecord does
+with `has_many :items` and `scope :recent, -> { ... }`, is read
+through the calls the body makes outside every method. `classBodyCall`
+lists them:
+
+```
+classBodyCall(c, r) <- bodyCallAt(c, k, r), objectValue(c)
+classBodyCall(c, r) <- classBodyCall(c, outer), callBlock(outer, b), bodyCallAt(b, k, r)
+```
+
+The first rule takes the class's own statements, which `bodyCallAt`
+lists through the branches of a conditional. The second follows each
+of those calls into the block it is written with, so a call inside
+`included do` or `with_options do` is the class body's too. A method,
+a lambda and a nested class are not blocks, so their calls stay out.
+Only Ruby writes a block there. Python states a class body's call
+statements, and TypeScript the statements of a class's static blocks.
+
+A caller asks `wantedClassBody(c)`, and `classBodyCalls` returns each
+class's calls in source order, read off the keys the way `callsRun`
+reads them.
 
 ## Explaining an answer
 

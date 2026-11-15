@@ -65,6 +65,14 @@ import {
 
 import { rangeOf } from "./ast.js";
 import { claimsSubUnits } from "./claims.js";
+import {
+  askClassBodies,
+  associationsOf,
+  classBodiesIn,
+  definedMethodsOf,
+  emitClassCallbacks,
+  lambdaKey,
+} from "./classBodies.js";
 import { declaredDiscoveryUnits, rubyModuleOps } from "./declaredDiscovery.js";
 import { readDynamicNames } from "./defineMethod.js";
 import {
@@ -81,17 +89,22 @@ import {
 } from "./envReads.js";
 import { rubyInErbTemplate } from "./erbTemplate.js";
 import { exitSites, markExitCodeFunctions } from "./exits.js";
-import { callbacksIn, emitClassCallbacks } from "./facts/callbacks.js";
+import { rubyFactSource } from "./factSource.js";
 import {
+  type AssociationBinder,
   collectFileConstants,
   emitConstantBindings,
   type FileConstants,
 } from "./facts/constants.js";
-import { emitValueFacts, nodeId } from "./facts/values.js";
+import { emitDefinedMethod, emitValueFacts, nodeId } from "./facts/values.js";
 import { emitRequireFacts } from "./facts.js";
 import { jobDeclarationsIn } from "./jobs.js";
 import { moduleExportUnits, settleRubyModules } from "./moduleSurface.js";
-import { bodyBlocksIn, inflectionsIn, scopeCallsIn } from "./pack.js";
+import {
+  bodyBlocksIn,
+  classBodiesIn as classBodiesOfPacks,
+  inflectionsIn,
+} from "./pack.js";
 import { parseRuby, parseRubySync } from "./parser.js";
 import {
   EVERY_ARGLESS_CALL,
@@ -112,7 +125,6 @@ import {
   watchFileCache,
   watchReachContext,
 } from "./reuse.js";
-import { walkDefinitions } from "./scope.js";
 import { pooledStorage } from "./storage.js";
 import { startSubUnits, subUnitSummaries } from "./subUnits.js";
 import {
@@ -142,6 +154,7 @@ import type {
   CacheDiagnostic,
   CacheInput,
   CacheLayer,
+  ClassBodyDeclaration,
   DeclaredModule,
   ExtractionReport,
   ExtractorOptions,
@@ -155,13 +168,9 @@ import type {
 } from "@suss/extractor";
 import type { StoredDependencies, StoredFacts } from "@suss/resolution";
 import type { BodyBlocks, Range } from "./ast.js";
+import type { DefinedMethod } from "./classBodies.js";
 import type { ReachSeed } from "./discovery.js";
-import type {
-  RbAssociationCalls,
-  RbInflections,
-  RbTestCases,
-  RubyPack,
-} from "./pack.js";
+import type { RbInflections, RbTestCases, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { ReachedUnits, Seed } from "./reach/closure.js";
 import type {
@@ -249,21 +258,6 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
 }
 
 /**
- * The association calls every storage pattern in the run declares. The
- * constants pass reads model bodies with these, because the target class
- * of an association is resolved there.
- */
-export function associationCallsIn(
-  packs: readonly RubyPack[],
-): RbAssociationCalls[] {
-  return packs.flatMap((pack) =>
-    (pack.storage ?? []).flatMap((pattern) =>
-      pattern.associations === undefined ? [] : [pattern.associations],
-    ),
-  );
-}
-
-/**
  * The run's pack declarations in the form `addPackWords` takes. Ruby code
  * declares no return types, so a storage pattern's `givesBack` methods are
  * the only source for knowing that `Account.find(id)` returns an Account.
@@ -292,10 +286,11 @@ export class RunFacts {
   readonly db: Database;
   readonly parsed: EvaluatedFile[] = [];
   readonly bodyBlocks: BodyBlocks;
-  readonly scopeCalls: ReadonlySet<string>;
+  /** The class methods each class body defines from a lambda, by the class's key, for the reach walk to enter. */
+  readonly definedMethods = new Map<string, DefinedMethod[]>();
   private readonly packs: readonly RubyPack[];
   private readonly testPatterns: readonly RbTestCases[];
-  private readonly associationCalls: RbAssociationCalls[];
+  private readonly classBodies: readonly ClassBodyDeclaration[];
   private readonly inflections: RbInflections;
   private readonly definitions = new Map<string, RbNode>();
   private readonly constants: FileConstants[] = [];
@@ -307,9 +302,8 @@ export class RunFacts {
     this.db = db;
     this.packs = packs;
     this.bodyBlocks = bodyBlocksIn(packs);
-    this.scopeCalls = scopeCallsIn(packs);
     this.testPatterns = testPatternsIn(packs);
-    this.associationCalls = associationCallsIn(packs);
+    this.classBodies = classBodiesOfPacks(packs);
     this.inflections = inflectionsIn(packs);
     emitBlankToNilFacts(
       db,
@@ -320,7 +314,7 @@ export class RunFacts {
   addFile(file: string, root: RbNode): void {
     this.parsed.push({ file, root });
     const testPattern = registerTestFileNames(file, root, this.testPatterns);
-    emitValueFacts(this.db, file, root, this.bodyBlocks, this.scopeCalls);
+    emitValueFacts(this.db, file, root, this.bodyBlocks);
     if (testPattern !== null) {
       emitGroupFacts(this.db, file, root, testPattern);
       this.testFiles.push({ file, root, pattern: testPattern });
@@ -329,14 +323,12 @@ export class RunFacts {
     for (const [key, method] of methodDefinitionsIn(file, root)) {
       this.definitions.set(key, method);
     }
-    this.constants.push(
-      collectFileConstants(file, root, this.associationCalls, this.inflections),
-    );
+    this.constants.push(collectFileConstants(file, root));
   }
 
   /** Which file defines a constant is only known once every file is in, so references are bound here. */
   finish(): void {
-    emitConstantBindings(this.db, this.constants);
+    const associations = emitConstantBindings(this.db, this.constants);
     const known = new Set(this.parsed.map(({ file }) => file));
     for (const { file, root } of this.parsed) {
       emitRequireFacts(this.db, file, root, known);
@@ -375,13 +367,42 @@ export class RunFacts {
       this.packs.flatMap((pack) => pack.requestAccessors ?? []),
     );
     addPackWords(this.db, packWordsOf(this.packs));
-    const callbacks = callbacksIn(
-      this.packs.flatMap((pack) => pack.storage ?? []),
-    );
+    // Whether a class reaches a pack's base is known only once every
+    // constant is bound, so class bodies are read last.
+    this.stateClassBodies(associations);
+  }
+
+  /** States what each class body declares, in file order, the way the classes' facts expect it. */
+  private stateClassBodies(associations: AssociationBinder): void {
+    if (this.classBodies.length === 0) {
+      return;
+    }
+    const source = rubyFactSource(this.db);
+    askClassBodies(this.db, this.parsed);
     for (const { file, root } of this.parsed) {
-      walkDefinitions(root, (info) =>
-        emitClassCallbacks(this.db, file, info.node, callbacks),
+      const bodies = classBodiesIn(
+        this.db,
+        file,
+        root,
+        this.classBodies,
+        source,
       );
+      associations.bindAssociations(
+        file,
+        associationsOf(bodies, this.inflections),
+      );
+      for (const [classKey, methods] of definedMethodsOf(bodies)) {
+        for (const method of methods) {
+          emitDefinedMethod(
+            this.db,
+            classKey,
+            method.name,
+            lambdaKey(file, method),
+          );
+        }
+        this.definedMethods.set(classKey, methods);
+      }
+      emitClassCallbacks(this.db, bodies);
     }
   }
 }
@@ -729,7 +750,7 @@ async function runRuby(
   // Facts are emitted for every file before discovery starts, because the
   // storage recognizer asks during discovery which file defines a constant.
   const facts = new RunFacts(db, options.packs);
-  const { parsed, bodyBlocks, scopeCalls } = facts;
+  const { parsed, bodyBlocks, definedMethods } = facts;
   for (const file of walked.files) {
     await timer.timeAsync("parse", async () => {
       const root = await trees.get(file);
@@ -775,7 +796,7 @@ async function runRuby(
       bodyBlocks,
       watchedNames,
       loaderPatterns,
-      scopeCalls,
+      definedMethods,
     ),
   );
   const reachContext =

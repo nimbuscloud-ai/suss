@@ -34,6 +34,7 @@ import {
   askResolutionUnder,
   boundByImport,
   CALLS_RUN_QUESTION,
+  CLASS_BODY_QUESTION,
   DISPATCH_QUESTION,
   type ExplainStats,
   fallbackWrittenAs,
@@ -42,6 +43,7 @@ import {
   queryFacts,
   RESOLUTION_QUESTIONS,
   readCallsRun,
+  readClassBodyCalls,
   readDispatchOutcomes,
   readUses,
   resolutionProgram,
@@ -147,6 +149,7 @@ type Question =
   | "wantedExitSink"
   | typeof DISPATCH_QUESTION
   | typeof CALLS_RUN_QUESTION
+  | typeof CLASS_BODY_QUESTION
   | "wantedSubject"
   | "wantedUses"
   | "wantedSource";
@@ -927,6 +930,15 @@ export class ResolutionStore {
     });
     this.callsRunByKey.set(key, calls);
     return calls;
+  }
+
+  /** The calls a class's static blocks make, in source order, as `classBodyCall` lists them. */
+  classBodyCallsOf(cls: Node): string[] {
+    const key = nodeId(cls);
+    return this.askAbout(cls, CLASS_BODY_QUESTION, () => {
+      this.derive();
+      return readClassBodyCalls(this.db, key);
+    });
   }
 
   private nodesFor(keys: readonly string[]): Node[] {

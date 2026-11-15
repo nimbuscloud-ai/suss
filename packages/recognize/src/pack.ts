@@ -9,6 +9,7 @@
  * recognized under, which is the npm package callers install.
  */
 
+import { describeClassBody } from "./classBody.js";
 import {
   type CompileOptions,
   compile,
@@ -17,6 +18,7 @@ import {
 } from "./compile.js";
 
 import type {
+  ClassBodyDeclaration,
   DeclaredDiscoveryPattern,
   DeclaredMatch,
   GeneratedModuleSpec,
@@ -101,6 +103,8 @@ export interface PackSpec {
    * so a chain can start from the decorator a parameter was written with.
    */
   parameterSuppliers?: ParameterSupplier[];
+  /** What the library reads out of a class body, such as its association calls. */
+  classBodies?: ClassBodyDeclaration[];
   /** Where this library's generator writes a copy of its module into the project. */
   generatedModules?: GeneratedModuleSpec;
   /**
@@ -176,7 +180,12 @@ export function pack(
     ],
     ...(access.length === 0 ? {} : { accessRecognizers: access }),
     ...(subUnits === null ? {} : { subUnits }),
-    declarations: declarationsIn(matches),
+    declarations: {
+      declarations: [
+        ...declarationsIn(matches).declarations,
+        ...(spec.classBodies ?? []).map(describeClassBody),
+      ],
+    },
   };
 }
 
@@ -186,6 +195,7 @@ const PASSED_THROUGH = [
   "requiresText",
   "projectHelpers",
   "parameterSuppliers",
+  "classBodies",
   "generatedModules",
   "discoveryInputs",
 ] as const;

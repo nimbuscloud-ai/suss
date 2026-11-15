@@ -14,7 +14,7 @@
 
 import { lit, rule, variable as v } from "@suss/datalog";
 
-import { spanOfKey } from "./nodeKey.js";
+import { bySourceOrder } from "./nodeKey.js";
 import { askResolution, resolutionProgram } from "./program.js";
 
 import type { Database, OnDemandRules, Rule } from "@suss/datalog";
@@ -73,13 +73,4 @@ export function readCallsRun(db: Database, fn: string): string[] {
 /** Each key once, in the order `readCallsRun` gives calls in. */
 export function inSourceOrder(keys: Iterable<string>): string[] {
   return [...new Set(keys)].sort(bySourceOrder);
-}
-
-function bySourceOrder(a: string, b: string): number {
-  const left = spanOfKey(a);
-  const right = spanOfKey(b);
-  if (left === null || right === null) {
-    return Number(left === null) - Number(right === null) || a.localeCompare(b);
-  }
-  return left.start - right.start || right.end - left.end;
 }

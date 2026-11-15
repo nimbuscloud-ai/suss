@@ -7,7 +7,12 @@
  */
 
 import { referenceName } from "@suss/behavioral-ir";
-import { answersFor, fileOfKey, givenBackFunction } from "@suss/resolution";
+import {
+  answersFor,
+  classBodyCalls,
+  fileOfKey,
+  givenBackFunction,
+} from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
 import {
@@ -120,6 +125,7 @@ export function pythonFactSource(db: Database): FactSource {
       resolveCalls(db, [key]);
       return answersFor(db, "wantedComesTo", key);
     },
+    classBodyCalls: (key) => classBodyCalls(db, [key]).get(key) ?? [],
     givesBack: (key) => {
       resolveCalls(db, [key]);
       return givenBackFunction(db, key);

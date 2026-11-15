@@ -7,6 +7,12 @@
 import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
+import {
+  association,
+  callback,
+  classBody,
+  definesMethod,
+} from "@suss/recognize";
 
 import { storageSystemFromDatabaseYml } from "./databaseYml.js";
 
@@ -15,6 +21,7 @@ import type {
   RbStoragePattern,
   RubyPack,
 } from "@suss/adapter-ruby";
+import type { ClassBodyArgument, ClassBodyDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
@@ -202,6 +209,48 @@ const REGISTERED_BY: Record<string, string[]> = {
   after_destroy_commit: ["destroy"],
 };
 
+/** Where an association call writes the class it reaches, when the name alone would not say. */
+const CLASS_NAME: ClassBodyArgument = { keyword: "class_name" };
+
+/**
+ * What a model's body declares. A plural association's class is its
+ * name singularised, a callback runs on the events its registering call
+ * covers unless `on:` narrows them, and a scope's lambda runs as the
+ * class method the scope defines.
+ */
+export function activeRecordClassBodies(): ClassBodyDeclaration[] {
+  const callbacks = Object.fromEntries(
+    Object.entries(REGISTERED_BY).map(([registers, events]) => [
+      registers,
+      callback({
+        methods: { from: 0 },
+        events,
+        narrowedBy: { keyword: "on" },
+      }),
+    ]),
+  );
+  return [
+    classBody({
+      calls: {
+        has_one: association({ name: { at: 0 }, target: CLASS_NAME }),
+        belongs_to: association({ name: { at: 0 }, target: CLASS_NAME }),
+        has_many: association({
+          name: { at: 0 },
+          target: CLASS_NAME,
+          plural: true,
+        }),
+        has_and_belongs_to_many: association({
+          name: { at: 0 },
+          target: CLASS_NAME,
+          plural: true,
+        }),
+        ...callbacks,
+        scope: definesMethod({ name: { at: 0 }, body: { at: 1 } }),
+      },
+    }),
+  ];
+}
+
 /**
  * Every name here is ActiveRecord's own. A project's `ApplicationRecord`
  * is matched by following what it extends, so no project class goes in
@@ -244,18 +293,8 @@ export function activeRecordStorage(
       },
       statements: TAKES_A_STATEMENT,
       bindPlaceholder: "?",
-      callbacks: {
-        eventOf: EVENT_OF,
-        registeredBy: REGISTERED_BY,
-        eventKeyword: "on",
-      },
+      callbacks: { eventOf: EVENT_OF },
       columnArguments: ["select", "pluck", "pick"],
-      associations: {
-        singular: ["has_one", "belongs_to"],
-        plural: ["has_many", "has_and_belongs_to_many"],
-        classNameKeyword: "class_name",
-      },
-      scopes: ["scope"],
       storageSystem: options.storageSystem,
       raises: [
         {
@@ -312,6 +351,7 @@ export function withActiveRecord(
   return {
     ...pack,
     storage: [...(pack.storage ?? []), ...activeRecordStorage(options)],
+    classBodies: [...(pack.classBodies ?? []), ...activeRecordClassBodies()],
     rawSql: [...(pack.rawSql ?? []), ...activeRecordRawSql(options)],
   };
 }
@@ -331,6 +371,7 @@ export function activeRecordFramework(
     protocol: options.storageSystem,
     discovery: [],
     storage: activeRecordStorage(options),
+    classBodies: activeRecordClassBodies(),
     rawSql: activeRecordRawSql(options),
   };
 }
