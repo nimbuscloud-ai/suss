@@ -125,9 +125,12 @@ function outcomeOf(
   };
 }
 
+/** The facts that say a read takes an entry out of a container, by a key nothing narrows. */
+const UNNARROWED_READS = ["choosesEntry", "choosesWrittenEntry"];
+
 /** The facts that say a read takes an entry out of a container. */
 const ENTRY_READS = [
-  "choosesEntry",
+  ...UNNARROWED_READS,
   "choosesNamedEntry",
   "choosesEntryLike",
   "readsEntry",
@@ -156,7 +159,11 @@ function matchesWrittenPart(db: Database, site: string, name: string): boolean {
 function narrowedToOneName(db: Database, sites: readonly string[]): boolean {
   const names = new Set<string>();
   for (const site of sites) {
-    if (db.lookup("choosesEntry", 0, site).length > 0) {
+    if (
+      UNNARROWED_READS.some(
+        (relation) => db.lookup(relation, 0, site).length > 0,
+      )
+    ) {
       return false;
     }
     for (const relation of NAMED_READS) {

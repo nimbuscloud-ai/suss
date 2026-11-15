@@ -1897,6 +1897,24 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  it("lets a subscript or a fetch take only a written entry, and a send any method", async () => {
+    const source = [
+      "def read(settings, name)",
+      "  [settings[name], settings.fetch(name), settings.send(name)]",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const sites = (relation: string): string[] =>
+      rows(db, relation).map((row) => textAt(source, row[0] as string));
+
+    expect(sites("choosesWrittenEntry")).toEqual([
+      "settings[name]",
+      "settings.fetch(name)",
+    ]);
+    expect(sites("choosesEntry")).toEqual(["settings.send(name)"]);
+  });
+
   it("states nothing for a key the source writes out", async () => {
     const db = await factsFor(
       'def read(settings)\n  [settings["name"], settings[0]]\nend\n',

@@ -346,13 +346,18 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
       if (tables.size === 0) {
         return "no object contains a function under created and another under deleted, written without quotes";
       }
-      const reads = facts("choosesEntry");
+      const reads = [...facts("choosesEntry"), ...facts("choosesWrittenEntry")];
       if (reads.length === 0) {
-        return "the read at a key worked out at run time is not written down as choosesEntry, so no call through it finds the table's functions";
+        return "the read at a key worked out at run time is not written down as choosesEntry or choosesWrittenEntry, so no call through it finds the table's functions";
       }
-      return reads.some((row) => leadsToOneOf(facts, row[1] ?? "", tables))
+      if (!reads.some((row) => leadsToOneOf(facts, row[1] ?? "", tables))) {
+        return "the read's container is keyed so that nothing leads from it to the table";
+      }
+      const written = new Set(facts("writtenEntryAt").map((row) => row[0]));
+      return facts("choosesWrittenEntry").length === 0 ||
+        [...tables].some((table) => written.has(table))
         ? null
-        : "the read's container is keyed so that nothing leads from it to the table";
+        : "the table's entries are not written down as writtenEntryAt, so a subscript, which takes only those, never finds one";
     },
   },
   {

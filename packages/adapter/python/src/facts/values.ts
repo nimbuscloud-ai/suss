@@ -690,8 +690,9 @@ function emitKeyedRead(
   const containerKey = valueKey(emitter, container);
   add(emitter, "readsKeyed", siteKey, containerKey, valueKey(emitter, key));
   // Nothing in Python narrows a key the program works out, so the read
-  // can take any entry the container has.
-  add(emitter, "choosesEntry", siteKey, containerKey);
+  // can take any entry a dict or a list is written with. A class or an
+  // instance runs its own `__getitem__` or `get`, so its methods are not entries.
+  add(emitter, "choosesWrittenEntry", siteKey, containerKey);
 }
 
 /**
