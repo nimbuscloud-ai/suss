@@ -646,6 +646,25 @@ describe("functions", () => {
     expect(literalOf(value)).toBeNull();
     expect(pathOf(value)).toBe("{base}/x");
   });
+
+  it("reads a dictionary a project function returns each time the name bound to it is read", async () => {
+    const { subject } = await projectValues({
+      "app.py": [
+        "def options_for(token):",
+        '    return {"method": "DELETE", "headers": {"Authorization": token}}',
+        "",
+        'options = options_for("secret")',
+        "subject = options",
+        "",
+      ].join("\n"),
+    });
+    const methodOf = (value: Value): string | null =>
+      value.kind === "record"
+        ? literalOf(value.fields.get("method")?.value ?? value)
+        : value.kind;
+    expect(methodOf(subject("app.py"))).toBe("DELETE");
+    expect(methodOf(subject("app.py"))).toBe("DELETE");
+  });
 });
 
 describe("a parameter annotated as a few strings", () => {

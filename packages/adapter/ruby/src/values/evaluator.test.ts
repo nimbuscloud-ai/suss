@@ -715,6 +715,24 @@ describe("functions", () => {
     expect(literalOf(subject("a.rb"))).toBe("/api/x");
   });
 
+  it("reads a hash a method returns each time the name bound to it is read", async () => {
+    const { subject } = await projectValues({
+      "a.rb": [
+        "def options_for(token)",
+        '  { method: "DELETE", headers: { "Authorization" => token } }',
+        "end",
+        'options = options_for("secret")',
+        "subject = options",
+      ].join("\n"),
+    });
+    const methodOf = (value: Value): string | null =>
+      value.kind === "record"
+        ? literalOf(value.fields.get("method")?.value ?? value)
+        : value.kind;
+    expect(methodOf(subject("a.rb"))).toBe("DELETE");
+    expect(methodOf(subject("a.rb"))).toBe("DELETE");
+  });
+
   it("reads a file the project did not bind without the facts", async () => {
     const { db } = await projectValues({ "a.rb": 'subject = "/a"' });
     const tree = await parseRuby('P = "/b"\nsubject = P');

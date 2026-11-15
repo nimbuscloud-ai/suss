@@ -69,6 +69,15 @@ function evaluate(target: TestNode, bindings?: Record<string, Value>): Value {
   return force(evaluator.evaluate(target, options));
 }
 
+/** The `method` field of a record value, or the kind of value it is when it is not a record. */
+function methodOf(value: Value): string | null {
+  const forced = force(value);
+  if (forced.kind !== "record") {
+    return forced.kind;
+  }
+  return literalOf(force(forced.fields.get("method")?.value ?? hole("method")));
+}
+
 function piecesOf(value: Value): readonly Piece[] {
   const forced = force(value);
   if (forced.kind !== "string") {
@@ -822,6 +831,186 @@ describe("Evaluator", () => {
       const evaluator = new Evaluator(counting);
       expect(literalOf(force(evaluator.evaluate(target)))).toBe("/p/p");
       expect(resolved).toBe(1);
+    });
+  });
+
+  describe("a record a call returns, read after the call", () => {
+    /** `const config = helper();`, where `helper` returns a record with a `method` field. */
+    function configFromHelper(
+      body: TestNode[] | TestNode = record({ method: lit("DELETE") }),
+    ): { helper: TestNode; declaration: TestNode } {
+      const helper = fn([], body);
+      return {
+        helper,
+        declaration: declare({
+          config: call(null, "helper", [], { calls: helper }),
+        }),
+      };
+    }
+
+    it("reads the record every time the name is read with one evaluator", () => {
+      const { helper, declaration } = configFromHelper();
+      const target = name("config");
+      module([helper, declaration, expr(target)]);
+      const evaluator = new Evaluator(testLowering);
+      expect(methodOf(evaluator.evaluate(target))).toBe("DELETE");
+      expect(methodOf(evaluator.evaluate(target))).toBe("DELETE");
+      expect(methodOf(evaluator.evaluate(target))).toBe("DELETE");
+    });
+
+    it("reads the record at a later statement after an earlier one was read", () => {
+      const { helper, declaration } = configFromHelper();
+      const early = name("config");
+      const late = name("config");
+      module([helper, declaration, expr(early), expr(late)]);
+      const evaluator = new Evaluator(testLowering);
+      expect(methodOf(evaluator.evaluate(early))).toBe("DELETE");
+      expect(methodOf(evaluator.evaluate(late))).toBe("DELETE");
+    });
+
+    it("keeps what the function wrote into the record before returning it", () => {
+      const { helper, declaration } = configFromHelper([
+        declare({ built: record({}) }),
+        assign(member(name("built"), "method"), lit("DELETE")),
+        ret(name("built")),
+      ]);
+      const target = name("config");
+      module([helper, declaration, expr(target)]);
+      const evaluator = new Evaluator(testLowering);
+      expect(methodOf(evaluator.evaluate(target))).toBe("DELETE");
+      expect(methodOf(evaluator.evaluate(target))).toBe("DELETE");
+    });
+
+    it("keeps what the function wrote into a record another call returned to it", () => {
+      const base = fn([], record({ path: lit("/x") }));
+      const { helper, declaration } = configFromHelper([
+        declare({ built: call(null, "base", [], { calls: base }) }),
+        assign(member(name("built"), "method"), lit("DELETE")),
+        ret(name("built")),
+      ]);
+      const target = name("config");
+      module([base, helper, declaration, expr(target)]);
+      const evaluator = new Evaluator(testLowering);
+      expect(methodOf(evaluator.evaluate(target))).toBe("DELETE");
+      expect(methodOf(evaluator.evaluate(target))).toBe("DELETE");
+    });
+
+    /** `look(given)`, which reads `given.method` while it runs and writes nothing. */
+    function looking(): TestNode {
+      return fn(["given"], op("+", member(name("given"), "method"), lit("!")));
+    }
+
+    it("reads the record after a later call only read it", () => {
+      const { helper, declaration } = configFromHelper();
+      const look = looking();
+      const early = name("config");
+      const late = name("seen");
+      module([
+        helper,
+        look,
+        declaration,
+        expr(early),
+        declare({
+          seen: call(null, "look", [name("config")], { calls: look }),
+        }),
+        expr(late),
+      ]);
+      const evaluator = new Evaluator(testLowering);
+      evaluator.evaluate(late);
+      expect(methodOf(evaluator.evaluate(early))).toBe("DELETE");
+    });
+
+    it("reads the record after a call in one arm of a branch read it", () => {
+      const { helper, declaration } = configFromHelper();
+      const look = looking();
+      const target = name("config");
+      module([
+        helper,
+        look,
+        declaration,
+        branch(
+          name("flag"),
+          [],
+          [
+            branch(
+              call(null, "look", [name("config")], { calls: look }),
+              [],
+              [],
+            ),
+          ],
+        ),
+        expr(target),
+      ]);
+      expect(methodOf(evaluate(target))).toBe("DELETE");
+    });
+
+    it("joins a record read before a later call wrote to it with what that call wrote", () => {
+      const { helper, declaration } = configFromHelper();
+      const overwrite = fn(
+        ["given"],
+        [
+          assign(member(name("given"), "method"), lit("POST")),
+          ret(name("given")),
+        ],
+      );
+      const early = name("config");
+      const late = name("changed");
+      module([
+        helper,
+        overwrite,
+        declaration,
+        expr(early),
+        declare({
+          changed: call(null, "overwrite", [name("config")], {
+            calls: overwrite,
+          }),
+        }),
+        expr(late),
+      ]);
+      const evaluator = new Evaluator(testLowering);
+      expect(methodOf(evaluator.evaluate(late))).toBe("POST");
+      const method = force(evaluator.evaluate(early));
+      expect(
+        method.kind === "record"
+          ? piecesOf(method.fields.get("method")?.value ?? hole("method"))
+          : method.kind,
+      ).toEqual([{ kind: "text", options: ["DELETE", "POST"] }]);
+    });
+
+    it("keeps a write to the record after the call on every read", () => {
+      const { helper, declaration } = configFromHelper();
+      const target = name("config");
+      module([
+        helper,
+        declaration,
+        assign(member(name("config"), "method"), lit("POST")),
+        expr(target),
+      ]);
+      const evaluator = new Evaluator(testLowering);
+      expect(methodOf(evaluator.evaluate(target))).toBe("POST");
+      expect(methodOf(evaluator.evaluate(target))).toBe("POST");
+    });
+
+    it("joins a write in one arm with the record the other arm left alone", () => {
+      const { helper, declaration } = configFromHelper();
+      const early = name("config");
+      const target = member(name("config"), "method");
+      module([
+        helper,
+        declaration,
+        expr(early),
+        branch(
+          name("flag"),
+          [assign(member(name("config"), "method"), lit("POST"))],
+          [],
+        ),
+        expr(target),
+      ]);
+      const evaluator = new Evaluator(testLowering);
+      expect(methodOf(evaluator.evaluate(early))).toBe("DELETE");
+      expect(piecesOf(evaluator.evaluate(target))).toEqual([
+        { kind: "text", options: ["DELETE", "POST"] },
+      ]);
     });
   });
 
