@@ -1777,31 +1777,32 @@ describe("python value facts", () => {
 });
 
 describe("the calls a body writes as statements", () => {
+  const source =
+    "setup()\n" +
+    "def routes():\n" +
+    "    get('a')\n" +
+    "    if dev:\n" +
+    "        post('b')\n" +
+    "    elif ci:\n" +
+    "        put('c')\n" +
+    "    else:\n" +
+    "        patch('d')\n" +
+    "    try:\n" +
+    "        delete('e')\n" +
+    "    except Error:\n" +
+    "        head('f')\n" +
+    "    finally:\n" +
+    "        options('g')\n" +
+    "    with lock:\n" +
+    "        trace('h')\n" +
+    "    x = build('i')\n" +
+    "    def inner():\n" +
+    "        skip('j')\n" +
+    "    for item in items:\n" +
+    "        loop('k')\n" +
+    "run()\n";
+
   it("places a function's and the module's calls in order through if, try and with, and not a nested def's", async () => {
-    const source =
-      "setup()\n" +
-      "def routes():\n" +
-      "    get('a')\n" +
-      "    if dev:\n" +
-      "        post('b')\n" +
-      "    elif ci:\n" +
-      "        put('c')\n" +
-      "    else:\n" +
-      "        patch('d')\n" +
-      "    try:\n" +
-      "        delete('e')\n" +
-      "    except Error:\n" +
-      "        head('f')\n" +
-      "    finally:\n" +
-      "        options('g')\n" +
-      "    with lock:\n" +
-      "        trace('h')\n" +
-      "    x = build('i')\n" +
-      "    def inner():\n" +
-      "        skip('j')\n" +
-      "    for item in items:\n" +
-      "        loop('k')\n" +
-      "run()\n";
     const db = await factsFor(source);
     const placed: Record<string, string[]> = {};
     const sorted = [...rows(db, "bodyCallAt")].sort(
@@ -1829,5 +1830,14 @@ describe("the calls a body writes as statements", () => {
       ],
       "inner(": ["skip"],
     });
+  });
+
+  it("says which of them are written inside another statement: an if, a try and a with", async () => {
+    const db = await factsFor(source);
+    expect(
+      rows(db, "nestedBodyCall").map(
+        ([call = ""]) => textAt(source, call).split("(")[0],
+      ),
+    ).toEqual(["post", "put", "patch", "delete", "head", "options", "trace"]);
   });
 });

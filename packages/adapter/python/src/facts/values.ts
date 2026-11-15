@@ -1498,45 +1498,58 @@ const BRANCHING_STATEMENTS: ReadonlySet<string> = new Set([
   "with_statement",
 ]);
 
+/** A call written as a statement, and whether it is written inside another statement of the body. */
+interface StatementCall {
+  readonly call: PyNode;
+  readonly nested: boolean;
+}
+
 /**
  * The calls written as statements among `statements`, in order, through
  * the branches of an `if`, a `try` or a `with` and not into a nested
- * function or class.
+ * function or class. A call reached through one of those is nested.
  */
-function callStatementsIn(statements: readonly PyNode[]): PyNode[] {
+function callStatementsIn(
+  statements: readonly PyNode[],
+  nested = false,
+): StatementCall[] {
   return statements.flatMap((statement) => {
     const [only, ...more] = children(statement);
     if (statement.type === "expression_statement") {
-      return only?.type === "call" && more.length === 0 ? [only] : [];
+      return only?.type === "call" && more.length === 0
+        ? [{ call: only, nested }]
+        : [];
     }
     if (!BRANCHING_STATEMENTS.has(statement.type)) {
       return [];
     }
     return children(statement).flatMap((part) => {
       if (part.type === "block") {
-        return callStatementsIn(children(part));
+        return callStatementsIn(children(part), true);
       }
       return BRANCHING_STATEMENTS.has(part.type)
-        ? callStatementsIn([part])
+        ? callStatementsIn([part], true)
         : [];
     });
   });
 }
 
-/** `bodyCallAt` for each call written as a statement among `statements`, which the function, class or module at `ownerKey` runs in that order. */
+/**
+ * `bodyCallAt` for each call written as a statement among `statements`,
+ * which the function, class or module at `ownerKey` runs in that order,
+ * and `nestedBodyCall` for each one written inside another statement.
+ */
 function emitBodyCallPositions(
   emitter: Emitter,
   ownerKey: string,
   statements: readonly PyNode[],
 ): void {
-  callStatementsIn(statements).forEach((call, position) => {
-    add(
-      emitter,
-      "bodyCallAt",
-      ownerKey,
-      String(position),
-      nodeId(emitter.filePath, call),
-    );
+  callStatementsIn(statements).forEach(({ call, nested }, position) => {
+    const callKey = nodeId(emitter.filePath, call);
+    add(emitter, "bodyCallAt", ownerKey, String(position), callKey);
+    if (nested) {
+      add(emitter, "nestedBodyCall", callKey);
+    }
   });
 }
 

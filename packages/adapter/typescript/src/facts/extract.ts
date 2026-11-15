@@ -2700,60 +2700,80 @@ function emitTopLevelStatements(
   );
 }
 
+/** A call written as a statement, and whether it is written inside another statement of the body. */
+interface StatementCall {
+  readonly call: CallExpression;
+  readonly nested: boolean;
+}
+
 /**
  * The calls written as statements among `statements`, in order, through
  * a block and the branches of an `if`, a `switch` or a `try`, and not into
- * a loop or a nested function.
+ * a loop or a nested function. A call reached through one of those is
+ * nested.
  */
-function callStatementsIn(statements: readonly Node[]): CallExpression[] {
-  return statements.flatMap((statement): CallExpression[] => {
+function callStatementsIn(
+  statements: readonly Node[],
+  nested = false,
+): StatementCall[] {
+  return statements.flatMap((statement): StatementCall[] => {
     if (Node.isExpressionStatement(statement)) {
       const expression = statementExpressionOf(statement);
-      return Node.isCallExpression(expression) ? [expression] : [];
+      return Node.isCallExpression(expression)
+        ? [{ call: expression, nested }]
+        : [];
     }
     if (Node.isBlock(statement)) {
-      return callStatementsIn(statement.getStatements());
+      return callStatementsIn(statement.getStatements(), true);
     }
     if (Node.isIfStatement(statement)) {
       const otherwise = statement.getElseStatement();
-      return callStatementsIn([
-        statement.getThenStatement(),
-        ...(otherwise === undefined ? [] : [otherwise]),
-      ]);
+      return callStatementsIn(
+        [
+          statement.getThenStatement(),
+          ...(otherwise === undefined ? [] : [otherwise]),
+        ],
+        true,
+      );
     }
     if (Node.isSwitchStatement(statement)) {
       return statement
         .getClauses()
-        .flatMap((clause) => callStatementsIn(clause.getStatements()));
+        .flatMap((clause) => callStatementsIn(clause.getStatements(), true));
     }
     if (Node.isTryStatement(statement)) {
       const caught = statement.getCatchClause()?.getBlock();
       const last = statement.getFinallyBlock();
-      return callStatementsIn([
-        statement.getTryBlock(),
-        ...(caught === undefined ? [] : [caught]),
-        ...(last === undefined ? [] : [last]),
-      ]);
+      return callStatementsIn(
+        [
+          statement.getTryBlock(),
+          ...(caught === undefined ? [] : [caught]),
+          ...(last === undefined ? [] : [last]),
+        ],
+        true,
+      );
     }
     return [];
   });
 }
 
-/** `bodyCallAt` for each call written as a statement among `statements`, which the function or file at `ownerKey` runs in that order. */
+/**
+ * `bodyCallAt` for each call written as a statement among `statements`,
+ * which the function or file at `ownerKey` runs in that order, and
+ * `nestedBodyCall` for each one written inside another statement.
+ */
 function emitBodyCallPositions(
   db: Database,
   table: NodeTable,
   ownerKey: string,
   statements: readonly Node[],
 ): void {
-  callStatementsIn(statements).forEach((call, position) => {
-    fact(
-      db,
-      "bodyCallAt",
-      ownerKey,
-      String(position),
-      emitValue(db, table, call),
-    );
+  callStatementsIn(statements).forEach(({ call, nested }, position) => {
+    const callKey = emitValue(db, table, call);
+    fact(db, "bodyCallAt", ownerKey, String(position), callKey);
+    if (nested) {
+      fact(db, "nestedBodyCall", callKey);
+    }
   });
 }
 
