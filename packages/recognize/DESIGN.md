@@ -1609,13 +1609,23 @@ an instance made with any streams. `typed` from `GLOBAL_MODULE` reads
 the parameter's annotation as the source writes it, since no file
 imports a type the runtime declares.
 
+A method can say two more things. `streamAt: { keyword: "file" }` takes
+the stream from a keyword when the call passes one, so Python's
+`print(x, file=sys.stderr)` writes to the stream `streams` gives for the
+path the value is spelled as (`ValueOps.globalPath`). A value spelled as
+no stream is a file, and the call writes to no stream at all.
+`onlyWithArguments: true` says a call that passes no argument writes
+nothing, as Ruby's `abort` with no message exits without printing.
+
 The payload is read through the ops. One value written through an
 encoder is recorded as what went in, with `serialized: "json"`, and so
 is one a template puts nothing but whitespace around, the way a command
 ends its JSON report with a newline. Any other single value is recorded
 as `text` with its own `shape()`, and several values become a record
-keyed by position. The effect's `groupId` is `callSiteKey` of the
-effect.
+keyed by position. Only the values passed by position count: Python's
+fact source counts them through `positionalCount`, since its
+`argumentCount` counts a keyword such as `sep=` too. The effect's
+`groupId` is `callSiteKey` of the effect.
 
 ## A read of a runtime object
 

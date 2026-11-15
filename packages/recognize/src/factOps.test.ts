@@ -457,6 +457,29 @@ describe("factCallOps, at the runtime's own globals", () => {
     expect(print.receiverGlobal?.(["print"])).toBeUndefined();
     expect(opsAt("set").valueAt(0)?.shape?.()).toBeNull();
   });
+
+  it("reads the one path a value is spelled as, and none for a value spelled as none or two", () => {
+    const log = opsAt("log", globals([]));
+    const twice: FactSource = { ...globals([]), spellsGlobal: () => true };
+
+    expect(
+      factValueOps("console", globals([])).globalPath?.(["console", "puts"]),
+    ).toBe("console");
+    expect(log.valueAt(0)?.globalPath?.(["console"])).toBeNull();
+    expect(
+      factValueOps("console", twice).globalPath?.(["console", "puts"]),
+    ).toBeNull();
+  });
+
+  it("counts what a call passes by position as the adapter does, or as every argument", () => {
+    const counted: FactSource = {
+      ...globals([]),
+      positionalCount: (call) => (call === "log" ? 0 : 5),
+    };
+
+    expect(opsAt("log", counted).positionalCount?.()).toBe(0);
+    expect(opsAt("log", globals([])).positionalCount?.()).toBe(1);
+  });
 });
 
 describe("factCallOps, where nothing settles", () => {

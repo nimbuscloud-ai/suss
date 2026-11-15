@@ -31,10 +31,16 @@ interface Written {
   encodes?: Written;
   /** A template that puts this text either side of one hole. */
   around?: { parts: [string, string]; hole: Written };
+  /** The global path the value is spelled as. */
+  spells?: string;
 }
 
 function writtenValue(written: Written): ValueOps {
   return {
+    globalPath: (paths) =>
+      written.spells !== undefined && paths.includes(written.spells)
+        ? written.spells
+        : null,
     text: () => null,
     name: () => null,
     flag: () => null,
@@ -64,8 +70,12 @@ function writeCall(over: {
   bareGlobal?: string;
   typed?: boolean;
   args?: readonly Written[];
+  keywords?: Readonly<Record<string, Written>>;
+  /** What the adapter counts as passed by position, when it counts keywords apart. */
+  positional?: number;
 }): CallOps {
   const args = over.args ?? [];
+  const keywords = over.keywords ?? {};
   const receiverFrom: ByOrigin<boolean> = {
     global: (origin) =>
       over.receiverGlobal !== undefined &&
@@ -106,6 +116,13 @@ function writeCall(over: {
       const written = args[index];
       return written === undefined ? null : writtenValue(written);
     },
+    keywordAt: (name) => {
+      const written = keywords[name];
+      return written === undefined ? null : writtenValue(written);
+    },
+    ...(over.positional === undefined
+      ? {}
+      : { positionalCount: () => over.positional ?? 0 }),
   };
 }
 
@@ -241,6 +258,66 @@ describe("a stream-write chain", () => {
         serialized: "text",
       },
     ]);
+  });
+
+  it("writes to the stream a keyword spells, to none for a file, and to the method's own without one", () => {
+    const PRINT = streamWrites({
+      streams: { "sys.stdout": "stdout", "sys.stderr": "stderr" },
+      client: global("print"),
+    }).methods({ print: { to: "stdout", streamAt: { keyword: "file" } } });
+    const printed = (keywords: Readonly<Record<string, Written>>) =>
+      writes(
+        PRINT,
+        writeCall({
+          method: null,
+          callee: "print",
+          bareGlobal: "print",
+          args: [TEXT],
+          keywords,
+        }),
+      );
+    expect(targetsOf(printed({ file: { spells: "sys.stderr" } }))).toEqual([
+      "stderr",
+    ]);
+    expect(printed({ file: {} })).toBeNull();
+    expect(printed({ file: { spells: "sys.stdin" } })).toBeNull();
+    expect(targetsOf(printed({ sep: TEXT }))).toEqual(["stdout"]);
+  });
+
+  it("writes nothing for a call with no argument when the method says so", () => {
+    const ABORT = streamWrites({
+      streams: {},
+      client: global("abort"),
+    }).methods({ abort: { to: "stderr", onlyWithArguments: true } });
+    const aborted = (args: readonly Written[]) =>
+      writes(
+        ABORT,
+        writeCall({
+          method: "abort",
+          callee: "abort",
+          bareGlobal: "abort",
+          args,
+        }),
+      );
+    expect(aborted([])).toBeNull();
+    expect(targetsOf(aborted([TEXT]))).toEqual(["stderr"]);
+  });
+
+  it("writes only what the call passes by position, when the adapter counts keywords apart", () => {
+    const [effect] =
+      writes(
+        STDOUT_AND_STDERR,
+        writeCall({
+          method: "write",
+          callee: "process.stdout.write",
+          receiverGlobal: "process.stdout",
+          args: [TEXT, { shape: { type: "number" } }],
+          positional: 1,
+        }),
+      ) ?? [];
+    expect(effect).toMatchObject({
+      interaction: { payload: { type: "text" }, serialized: "text" },
+    });
   });
 
   it("reads the path of the global among any other origins the client lists", () => {

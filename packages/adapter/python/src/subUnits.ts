@@ -279,7 +279,6 @@ function subUnitSummary(
   // condition and every one of them goes on its one branch.
   const besidesCalls = effectsBesidesCalls(
     lambda,
-    reading.file.module,
     reading.storage,
     reading.facts,
   ).map(({ effect }) => effect);

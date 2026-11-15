@@ -76,3 +76,19 @@ function withGroupId(effect: Effect, ids: ReadonlyMap<string, string>): Effect {
   }
   return { ...effect, groupId: ids.get(effect.groupId) ?? effect.groupId };
 }
+
+/**
+ * The effect at a location, with its `groupId` listed after the location.
+ * A summary lists an effect's fields in the order they were set, and the
+ * Python and Ruby adapters list a stream write's location first.
+ */
+export function locatedBeforeGroupId(
+  effect: Effect,
+  location: NonNullable<Effect["location"]>,
+): Effect {
+  if (effect.type !== "interaction" || effect.groupId === undefined) {
+    return { ...effect, location };
+  }
+  const { groupId, ...rest } = effect;
+  return { ...rest, location, groupId };
+}

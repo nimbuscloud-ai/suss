@@ -480,6 +480,12 @@ export interface ValueOps {
    */
   runtimePath?(object: RuntimeObject): string | undefined;
   /**
+   * The one path among `paths` the value is spelled as, the language's
+   * way: `sys.stderr`, or `stderr` after `from sys import stderr`. Null
+   * when it is spelled as none of them.
+   */
+  globalPath?(paths: readonly string[]): string | null;
+  /**
    * Whether the value is written with a call to one of `calls` or sets
    * one of `options`: `z.string().default(8080)` calls `default`, and
    * `port({ default: 9100 })` sets it. The value's receivers, arguments,
@@ -771,6 +777,12 @@ export interface CallOps {
   isFrom(origin: ReceiverOrigin): boolean;
   /** How many arguments the call passes. */
   argumentCount(): number;
+  /**
+   * How many arguments the call passes by position, with splats and
+   * keywords left out. Unset where `argumentCount` already counts only
+   * those.
+   */
+  positionalCount?(): number;
   /**
    * What this call decodes, when it calls one of the language's decoders:
    * `JSON.parse(x)`, `json.loads(x)` and Ruby's `JSON.parse(x)` decode `x`
@@ -1236,6 +1248,12 @@ export interface FactSource {
    * so the call is what can say whether the name is the builtin.
    */
   callsGlobal?(call: string, path: string): boolean;
+  /**
+   * How many arguments the call at the key passes by position, with
+   * splats and keywords left out. Unset where the ops' `argumentCount`
+   * already counts only those.
+   */
+  positionalCount?(call: string): number;
   /**
    * The global paths whose value the rules followed into the value at the
    * key, through names and the parameters callers passed it to. Every

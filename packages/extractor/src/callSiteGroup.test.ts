@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { ioBinding } from "@suss/behavioral-ir";
 
-import { callSiteKey, numberRepeatedCallSites } from "./callSiteGroup.js";
+import {
+  callSiteKey,
+  locatedBeforeGroupId,
+  numberRepeatedCallSites,
+} from "./callSiteGroup.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 
@@ -70,5 +74,26 @@ describe("numberRepeatedCallSites", () => {
   it("keeps what an entry records beside its effect", () => {
     const [first] = numberRepeatedCallSites([site("a", "b")]);
     expect(first?.map((entry) => entry.line)).toEqual([0, 1]);
+  });
+});
+
+describe("locatedBeforeGroupId", () => {
+  const at = { start: 3, end: 4 };
+
+  it("lists the location before the group id", () => {
+    expect(Object.keys(locatedBeforeGroupId(write("a"), at))).toEqual([
+      "type",
+      "binding",
+      "callee",
+      "interaction",
+      "location",
+      "groupId",
+    ]);
+  });
+
+  it("adds the location last to an effect with no group id", () => {
+    const placed = locatedBeforeGroupId(write(), at);
+    expect(Object.keys(placed).at(-1)).toBe("location");
+    expect(placed.location).toEqual(at);
   });
 });
