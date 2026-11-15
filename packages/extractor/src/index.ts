@@ -1381,6 +1381,7 @@ export type {
   AstCapableValueOps,
   ByOrigin,
   CallOps,
+  CallScope,
   CallsAndOptions,
   ClassOps,
   ClassValueOps,

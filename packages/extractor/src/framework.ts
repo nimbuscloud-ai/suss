@@ -23,6 +23,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type { LibraryEnvVars } from "./libraryEnvReads.js";
 import type {
+  CallScope,
   Inherits,
   ModuleMemberName,
   ReceiverOrigin,
@@ -501,7 +502,8 @@ export interface NamedExportMatch {
  * A function a call hands to a library, when that call is the function's
  * only mention: `createRoot(el).render(<App />)` or
  * `addEventListener("fetch", handle)`. Every adapter reads it through the
- * module ops, over the calls the module body runs outside every function.
+ * module ops, over the calls the module body runs outside every function,
+ * or over every call the file writes when `in` says `file`.
  */
 export interface RegisteredFunctionMatch {
   type: "registeredFunction";
@@ -512,6 +514,8 @@ export interface RegisteredFunctionMatch {
   handler: { at: number; through?: "element" };
   /** The argument that states the unit's name as a literal, with the names it can state and the unit each one is. */
   nameAt?: { at: number } & MemberPick;
+  /** Which calls are read: the module body's, which is the default, or every call in the file, since an app often boots inside a function. */
+  in?: CallScope;
 }
 
 /**

@@ -30,6 +30,7 @@ import type { CodeUnitKind } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   CallOps,
+  CallScope,
   FactSource,
   ModuleOps,
   PackTally,
@@ -133,7 +134,7 @@ export function rubyModuleOps(
   source: FactSource = rubyFactSource(db),
 ): ModuleOps {
   return factModuleOps(file, source, {
-    calls: () => callsOutsideMethods(root, file, source),
+    calls: (scope) => callsWritten(root, file, source, scope),
     classes: () => classesIn(root, file),
     qualifier: QUALIFIER,
   });
@@ -164,14 +165,16 @@ const DEFERRED_BODIES: ReadonlySet<string> = new Set([
   "do_block",
 ]);
 
-function callsOutsideMethods(
+/** The calls the file body runs outside every method and block, or every call in the file for `file`. */
+function callsWritten(
   root: RbNode,
   file: string,
   source: FactSource,
+  scope: CallScope,
 ): CallOps[] {
   const calls: CallOps[] = [];
   const visit = (node: RbNode): void => {
-    if (DEFERRED_BODIES.has(node.type)) {
+    if (scope === "moduleBody" && DEFERRED_BODIES.has(node.type)) {
       return;
     }
     if (node.type === "call") {

@@ -189,12 +189,13 @@ Every unit is bound as a call of its module under the unit's name, since the fra
   method?: string;                              // "render"
   handler: { at: number; through?: "element" };
   nameAt?: { at: number; named: Record<string, UnitSpec> };
+  in?: "moduleBody" | "file";                   // "file"
 }
 ```
 
-`registeredFunction` finds a function a call in the module body hands to a library, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name from an argument, a literal or a name kept in a const, and keeps only the names it lists.
+`registeredFunction` finds a function a call in the module body hands to a library, or with `in: "file"` a call anywhere in the file, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name from an argument, a literal or a name kept in a const, and keeps only the names it lists.
 
-When the start is a global and there is no `method`, as with `global("addEventListener")`, the call has to be written with the global's name, so a file whose text never writes it is skipped before its calls are read.
+When the start is a global and there is no `method`, as with `global("addEventListener")`, the call has to be written with the global's name, so a file whose text never writes it is skipped before its calls are read. When every member of the start is an import or a construction from a module, the file's text has to write one of the modules, so the React pack's boot patterns read only files that write `react-dom`.
 
 ### `entryObject`
 
@@ -804,7 +805,7 @@ discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
 
 `discoverUnits` is the discovery counterpart of `subUnits`. When a framework's convention doesn't fit any of the `DiscoveryMatch` variants, the pack ships its own walker and the adapter calls it once per source file alongside the data-driven dispatch.
 
-Use it for conventions that do not generalize, such as the React pack's walk over the calls an app boots with, `createRoot(el).render(<App />)`. Adding each of those to the central union would make every unrelated pack deal with them.
+Use it for a convention no other pack shares and no declared member reads yet. Adding each of those to the central union would make every unrelated pack deal with them, so a pack starts with the hook and moves to a declared member once one fits, as the React pack did for its exports and its boot calls.
 
 When this callback finds a unit at the same `(func, kind)` as one from another pack's data-driven discovery, suss keeps the unit from whichever pack claimed it first. The order of the packs in the run decides which one that is.
 

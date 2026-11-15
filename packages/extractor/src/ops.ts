@@ -562,8 +562,8 @@ export interface ModuleOps {
    * written twice, the first that has the member is the answer.
    */
   export(path: readonly string[], member?: ModuleMemberName): ValueOps | null;
-  /** The calls the module body runs outside every function, in source order. */
-  calls(): readonly CallOps[];
+  /** The calls the module body runs outside every function, or every call the file writes for `file`, in source order. */
+  calls(scope?: CallScope): readonly CallOps[];
   /**
    * The calls written as the file's own statements, in source order,
    * through the branches of a conditional and not into a function, a
@@ -584,6 +584,13 @@ export interface ModuleOps {
    */
   mentions(word: string): boolean;
 }
+
+/**
+ * Which calls a module's ops list: the ones the module body runs, outside
+ * every function, or every call the file writes, the ones inside
+ * functions too.
+ */
+export type CallScope = "moduleBody" | "file";
 
 /** A function whose body opens with a directive, with the variable or property it is assigned to. */
 export interface MarkedFunction {
