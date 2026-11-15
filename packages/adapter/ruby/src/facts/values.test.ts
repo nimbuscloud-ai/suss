@@ -1782,6 +1782,51 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  it("states the reads of an assignment a class body runs, whatever it assigns to", async () => {
+    const source = [
+      "class Application",
+      '  config.force_ssl = ENV["FORCE_SSL"]',
+      '  local = ENV["LOCAL"]',
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "readsEntry").map((row) => [
+        textAt(source, row[0] as string),
+        row[2],
+      ]),
+    ).toEqual([
+      ['ENV["FORCE_SSL"]', "FORCE_SSL"],
+      ['ENV["LOCAL"]', "LOCAL"],
+    ]);
+    expect(
+      rows(db, "call").map((row) => textAt(source, row[0] as string)),
+    ).toContain("config.force_ssl");
+  });
+
+  it("states a method a class body defines under a condition as one of the class's", async () => {
+    const source = [
+      "class SessionController",
+      "  if !production?",
+      "    def become",
+      '      ENV["ALLOW"]',
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const method = keyOf(source, 'def become\n      ENV["ALLOW"]\n    end');
+    expect(rows(db, "func")).toContainEqual([method]);
+    expect(
+      rows(db, "holdsProperty").filter((row) => row[1] === "become"),
+    ).toEqual([[keyOf(source, source.trimEnd()), "become", method]]);
+    expect(
+      rows(db, "readsEntry").map((row) => textAt(source, row[0] as string)),
+    ).toEqual(['ENV["ALLOW"]']);
+  });
+
   it("states what a body-block call is passed, and only which calls its block writes", async () => {
     const source = [
       "class Admin",
