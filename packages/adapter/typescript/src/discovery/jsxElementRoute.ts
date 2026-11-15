@@ -18,6 +18,7 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { propertyWrittenAs } from "../walk/propertyName.js";
 import { namedImportsOf } from "./importScan.js";
 import {
   arrayLiteralOf,
@@ -699,7 +700,7 @@ function routePropertyOf(
   object: ObjectLiteralExpression,
   name: string,
 ): Node | null {
-  const property = object.getProperty(name);
+  const property = propertyWrittenAs(object, name);
   return property === undefined ? null : propertyValueOf(property);
 }
 

@@ -406,6 +406,43 @@ describe("stampGraphqlClientRefs", () => {
     expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("configured");
   });
 
+  it("stamps fragmentRegistry configured when the cache installs one under a quoted key", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient, InMemoryCache } from "@apollo/client";
+      import { createFragmentRegistry } from "@apollo/client/cache";
+      import { gql } from "@apollo/client";
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache: new InMemoryCache({
+          "fragments": createFragmentRegistry(gql\`fragment Invoice on Invoice { id }\`),
+        }),
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("configured");
+  });
+
+  it("reads a uri written under a quoted key", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      export const client = new ApolloClient({
+        "uri": "https://api.example.com/graphql",
+      });
+    `,
+    );
+    expect(collectGraphqlClientRefs([file], [clientPack], undefined)).toEqual([
+      { uri: "https://api.example.com/graphql", uriRef: null },
+    ]);
+  });
+
   it("stamps fragmentRegistry unknown when no construction is in the read set", () => {
     const project = createTestProject();
     const file = project.createSourceFile(

@@ -7,6 +7,8 @@ import { Node } from "ts-morph";
 import type {
   FunctionDeclaration,
   MethodDeclaration,
+  ObjectLiteralElementLike,
+  ObjectLiteralExpression,
   PropertyAssignment,
   PropertyDeclaration,
 } from "ts-morph";
@@ -24,6 +26,25 @@ export function propertyNameOf(property: Node): string | null {
     return keyNameOf(property.getNameNode());
   }
   return null;
+}
+
+/**
+ * The first property of an object literal written under `name`.
+ * ts-morph's `getProperty(name)` compares against the key's source
+ * text, so a quoted key never matches it.
+ */
+export function propertyWrittenAs(
+  object: ObjectLiteralExpression,
+  name: string,
+): ObjectLiteralElementLike | undefined {
+  return object.getProperties().find((property) => {
+    const key =
+      Node.isShorthandPropertyAssignment(property) ||
+      Node.isPropertyNamed(property)
+        ? property.getNameNode()
+        : undefined;
+    return key !== undefined && keyNameOf(key) === name;
+  });
 }
 
 /**

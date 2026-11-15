@@ -1514,6 +1514,28 @@ describe("resolverMap discovery, a map assembled across modules", () => {
     expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
   });
 
+  it("reads the map and the schema out of a server config written with quoted keys", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({
+        "typeDefs": "type Query { ping: String }",
+        "resolvers": { Query: { ping: () => "pong" } },
+      });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+    expect(units[0]?.resolverInfo?.schemaSdl).toContain("type Query");
+  });
+
   it("reads a per-type object another module exports", () => {
     const project = createProject();
     project.createSourceFile(
@@ -3455,6 +3477,22 @@ describe("graphqlImperativeCall discovery", () => {
     expect(units[0].operationInfo?.operationName).toBe("CreatePet");
   });
 
+  it("finds the document under a quoted key of the config", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: ApolloClient<unknown>;
+      export async function loadPet() {
+        return client.query({ "query": gql\`query LoadPet { pet { id } }\` });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units[0].operationInfo?.operationName).toBe("LoadPet");
+  });
+
   it("names a unit for a call written in a quoted method by the key, without its quotes", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -4030,6 +4068,24 @@ describe("decoratedMethod discovery", () => {
       [makeDecoratedMethodPattern()],
       new ResolutionStore(),
     );
+    expect(units[0].resolverInfo?.fieldName).toBe("allPets");
+  });
+
+  it("reads a name override written under a quoted key", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Query, Resolver } from "@nestjs/graphql";
+      @Resolver(() => Pet)
+      class PetResolver {
+        @Query(() => [Pet], { "name": "allPets" })
+        all(): Pet[] { return []; }
+      }
+      declare class Pet { id: string; }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
     expect(units[0].resolverInfo?.fieldName).toBe("allPets");
   });
 });

@@ -7,6 +7,7 @@ import {
   functionNameOf,
   memberNameOf,
   propertyNameOf,
+  propertyWrittenAs,
 } from "./propertyName.js";
 
 function fileOf(source: string) {
@@ -64,6 +65,28 @@ describe("functionNameOf", () => {
     expect(functionNameOf(declared)).toBe("declared");
     expect(functionNameOf(anonymous)).toBeUndefined();
     expect(functionNameOf(method)).toBe("quoted-method");
+  });
+});
+
+describe("propertyWrittenAs", () => {
+  it("finds a property by the name its key has, whichever way the key is written", () => {
+    const file = fileOf(`
+      export const o = { plain: 1, "quoted-key": 2, 0x10: 3, short, method() {}, get acc() { return 1; } };
+      declare const short: number;
+    `);
+    const object = file.getFirstDescendantByKindOrThrow(
+      SyntaxKind.ObjectLiteralExpression,
+    );
+    const textOf = (name: string) => propertyWrittenAs(object, name)?.getText();
+
+    expect(textOf("plain")).toBe("plain: 1");
+    expect(textOf("quoted-key")).toBe('"quoted-key": 2');
+    expect(textOf("16")).toBe("0x10: 3");
+    expect(textOf("short")).toBe("short");
+    expect(textOf("method")).toBe("method() {}");
+    expect(textOf("acc")).toBe("get acc() { return 1; }");
+    expect(textOf('"quoted-key"')).toBeUndefined();
+    expect(textOf("missing")).toBeUndefined();
   });
 });
 

@@ -15,6 +15,8 @@
 
 import { Node } from "ts-morph";
 
+import { memberNameOf } from "../walk/propertyName.js";
+
 import type { HelperSink, HelperValue } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 
@@ -137,15 +139,7 @@ function objectValue(node: Node, positions: Map<string, number>): HelperValue {
     if (initializer === undefined) {
       continue;
     }
-    properties[propertyKey(property.getNameNode())] = readValue(
-      initializer,
-      positions,
-    );
+    properties[memberNameOf(property)] = readValue(initializer, positions);
   }
   return { as: "object", properties };
-}
-
-/** What a property is written under, quoted or not. */
-function propertyKey(name: Node): string {
-  return Node.isStringLiteral(name) ? name.getLiteralValue() : name.getText();
 }

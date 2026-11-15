@@ -165,6 +165,41 @@ describe("a return through a project function that builds the response", () => {
     });
   });
 
+  it("reads the status the caller passes under a quoted key", () => {
+    const found = terminalsOf(
+      {
+        "/utils.ts": LOG_AND_RESPOND,
+        "/route.ts": `
+          import { logAndRespond } from "./utils";
+          export async function handler() {
+            return logAndRespond("Gone.", { "status": 410 });
+          }
+        `,
+      },
+      [NEW_RESPONSE],
+    );
+
+    expect(statusesOf(found)).toEqual([
+      { type: "literal", value: 410 },
+      { type: "literal", value: 410 },
+    ]);
+  });
+
+  it("reads the status a response is built with under a quoted key", () => {
+    const found = terminalsOf(
+      {
+        "/route.ts": `
+          export async function handler() {
+            return new Response("gone", { "status": 410 });
+          }
+        `,
+      },
+      [NEW_RESPONSE],
+    );
+
+    expect(statusesOf(found)).toEqual([{ type: "literal", value: 410 }]);
+  });
+
   it("puts the response at the caller's return, so the call stays an effect", () => {
     const found = terminalsOf(
       {
