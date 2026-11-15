@@ -646,6 +646,24 @@ describe("a name handed to a project helper", () => {
     ).toEqual([{ name: "REDIS_URL", defaulted: false }]);
   });
 
+  it("reports the read at a call of a lambda helper, which has no name of its own", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": [
+          "module Settings",
+          "  LOAD = ->(name) { ENV.fetch(name) }",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb":
+          'A = Settings::LOAD.call("A_URL")\nB = Settings::LOAD.("B_URL")\n',
+      }),
+    ).toEqual([
+      { name: "A_URL", defaulted: false },
+      { name: "B_URL", defaulted: false },
+    ]);
+  });
+
   it("takes defaulted from the read inside the helper", async () => {
     expect(
       await projectReads({

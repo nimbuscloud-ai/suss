@@ -216,11 +216,23 @@ export interface BodyReadOptions {
    * The reach walk reads a body without `facts` and sets this instead.
    */
   readonly claimsIn?: Database | undefined;
+  /**
+   * The run's facts, which the environment reader reads a body's reads
+   * over. The reach walk reads a body without `facts` and sets this instead.
+   */
+  readonly environmentIn?: Database | undefined;
 }
 
 /** The facts a body reader finds the run's claimed blocks through. */
 export function claimsFactsOf(read: BodyReadOptions): Database | undefined {
   return read.facts ?? read.claimsIn;
+}
+
+/** The facts the environment reader reads a body's reads over. */
+function environmentFactsOf(
+  read: Pick<BodyReadOptions, "facts" | "environmentIn">,
+): Database | undefined {
+  return read.facts ?? read.environmentIn;
 }
 
 export interface DiscoveryOptions extends BodyReadOptions {
@@ -1282,14 +1294,14 @@ export interface BodyToRead {
 export function effectsBesidesCalls(
   body: BodyToRead,
   database: readonly EffectAt[],
-  bodyRead: Pick<BodyReadOptions, "facts" | "jobs">,
+  bodyRead: Pick<BodyReadOptions, "facts" | "jobs" | "environmentIn">,
 ): EffectAt[] {
   const { root, method, file, claimed } = body;
-  const facts = bodyRead.facts;
+  const environment = environmentFactsOf(bodyRead);
   return [
     ...envReadEffects(
       root,
-      facts === undefined ? undefined : { db: facts, file },
+      environment === undefined ? undefined : { db: environment, file },
       claimed,
     ),
     ...database,
